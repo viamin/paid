@@ -292,6 +292,7 @@ Rails.application.routes.draw do
 
   # Chat sessions and messages
   resources :chat_sessions, path: "chat", only: %i[index create show update destroy] do
+    patch :archive, on: :member
     collection do
       get :sidebar_page
     end

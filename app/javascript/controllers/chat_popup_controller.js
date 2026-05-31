@@ -88,6 +88,34 @@ export default class extends Controller {
     }
   }
 
+  async archiveAndNewChat(event) {
+    event?.preventDefault()
+    if (this.loading) return
+
+    const previousSessionId = this.state.sessionId
+    let archiveCompleted = false
+
+    this.loading = true
+    this.contentTarget.innerHTML = this.loadingMarkup()
+
+    try {
+      await this.archiveSession(previousSessionId)
+      archiveCompleted = true
+
+      const sessionId = await this.createSession()
+      this.state.sessionId = sessionId
+      this.writeState()
+      await this.renderPanel(sessionId)
+    } catch (error) {
+      this.state.sessionId = archiveCompleted ? null : previousSessionId
+      this.writeState()
+      this.contentTarget.innerHTML = this.errorMarkup()
+      window.console.error("chat popup failed", error)
+    } finally {
+      this.loading = false
+    }
+  }
+
   async createSession() {
     const response = await window.fetch(this.createUrlValue, {
       method: "POST",
@@ -124,6 +152,16 @@ export default class extends Controller {
     })
 
     return response.ok
+  }
+
+  async archiveSession(sessionId) {
+    const response = await window.fetch(`${this.sessionUrl(sessionId)}/archive`, {
+      method: "PATCH",
+      headers: this.jsonHeaders(),
+      credentials: "same-origin"
+    })
+
+    if (!response.ok) throw new Error(`Archive request failed with ${response.status}`)
   }
 
   async renderPanel(sessionId) {
