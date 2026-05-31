@@ -26,7 +26,8 @@ module Tools
 
     def perform(project_id:, path: "", ref: "HEAD")
       project = project_for(project_id)
-      client = resolve_client(project)
+      repo_client = resolve_repo_read_client(project)
+      client = repo_client.client
 
       ref = project.default_branch if ref == "HEAD"
       ref ||= "main"
@@ -38,20 +39,13 @@ module Tools
         ref: ref,
         entries: entries.first(MAX_ENTRIES),
         truncated: entries.size > MAX_ENTRIES,
-        identity: identity_label(project)
+        identity: repo_client.identity
       }
     rescue GithubClient::NotFoundError
-      { error: "Path not found: #{path}", identity: identity_label(project) }
+      { error: "Path not found: #{path}", identity: repo_client.identity }
     end
 
     private
-
-    def resolve_client(project)
-      client = project.client
-      raise ArgumentError, "Project has no GitHub credentials configured" unless client
-
-      client
-    end
 
     def directory_entries(client, project, path, ref)
       data = client.contents(project.full_name, path: path, ref: ref)
@@ -59,16 +53,6 @@ module Tools
 
       data.map do |entry|
         { name: entry.name, path: entry.path, type: entry.type, size: entry.size }
-      end
-    end
-
-    def identity_label(project)
-      if project.github_installation.present?
-        "github-app:#{project.github_installation.github_installation_id}"
-      elsif project.github_token.present?
-        "project-token:#{project.github_token.name}"
-      else
-        "unknown"
       end
     end
 

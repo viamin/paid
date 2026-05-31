@@ -30,7 +30,8 @@ module Tools
 
     def perform(project_id:, query:, path_filter: nil)
       project = project_for(project_id)
-      client = resolve_client(project)
+      repo_client = resolve_repo_read_client(project)
+      client = repo_client.client
 
       qualified_query = build_query(project.full_name, query, path_filter)
 
@@ -48,20 +49,13 @@ module Tools
         total_count: result&.total_count || 0,
         matches: matches,
         truncated: (result&.total_count || 0) > MAX_RESULTS,
-        identity: identity_label(project)
+        identity: repo_client.identity
       }
     rescue GithubClient::NotFoundError
-      { matches: [], total_count: 0, identity: identity_label(project) }
+      { matches: [], total_count: 0, identity: repo_client.identity }
     end
 
     private
-
-    def resolve_client(project)
-      client = project.client
-      raise ArgumentError, "Project has no GitHub credentials configured" unless client
-
-      client
-    end
 
     def build_query(repo_full_name, query, path_filter)
       sanitized_query = sanitize_query(query)
@@ -78,16 +72,6 @@ module Tools
 
     def sanitize_path_filter(path_filter)
       path_filter.to_s.gsub(SEARCH_QUALIFIER_PATTERN, "").squish.split.first
-    end
-
-    def identity_label(project)
-      if project.github_installation.present?
-        "github-app:#{project.github_installation.github_installation_id}"
-      elsif project.github_token.present?
-        "project-token:#{project.github_token.name}"
-      else
-        "unknown"
-      end
     end
 
     def project_for(project_id)

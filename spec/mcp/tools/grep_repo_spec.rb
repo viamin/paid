@@ -9,18 +9,23 @@ RSpec.describe Tools::GrepRepo do
   let(:tool) { described_class.new(user: user, session: session) }
   let(:project) { create(:project, account: account) }
   let(:github_client) { instance_double(GithubClient) }
+  let(:identity) { "project-token:#{project.github_token.name}" }
+  let(:resolved_client) { Tools::RepoReadClientResolver::ResolvedClient.new(client: github_client, identity:) }
 
   before do
-    allow(GithubClient).to receive(:new).and_return(github_client)
+    allow(tool).to receive(:resolve_repo_read_client).and_return(resolved_client)
     allow(github_client).to receive(:search_code)
   end
 
   describe "#call" do
-    it "returns search results" do
+    it "prefers the chatting user's matching GitHub token" do
       items = [
         Struct.new(:path, :name, :html_url).new("app/models/foo.rb", "foo.rb", "https://github.com/owner/repo/blob/main/app/models/foo.rb")
       ]
       search_result = Struct.new(:total_count, :items).new(1, items)
+      allow(tool).to receive(:resolve_repo_read_client).and_return(
+        Tools::RepoReadClientResolver::ResolvedClient.new(client: github_client, identity: "user-token:Chat Token")
+      )
       allow(github_client).to receive(:search_code).and_return(search_result)
 
       result = tool.call(project_id: project.id, query: "def authorize")
@@ -28,6 +33,15 @@ RSpec.describe Tools::GrepRepo do
       expect(result[:total_count]).to eq(1)
       expect(result[:matches].size).to eq(1)
       expect(result[:matches].first[:path]).to eq("app/models/foo.rb")
+      expect(result[:identity]).to include("user-token")
+    end
+
+    it "falls back to the project credential when the user has no matching token" do
+      search_result = Struct.new(:total_count, :items).new(0, [])
+      allow(github_client).to receive(:search_code).and_return(search_result)
+
+      result = tool.call(project_id: project.id, query: "def authorize")
+
       expect(result[:identity]).to include("project-token")
     end
 

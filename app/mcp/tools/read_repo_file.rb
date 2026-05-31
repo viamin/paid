@@ -26,48 +26,32 @@ module Tools
 
     def perform(project_id:, path:, ref: "HEAD")
       project = project_for(project_id)
-      client = resolve_client(project)
+      repo_client = resolve_repo_read_client(project)
+      client = repo_client.client
 
       data = client.contents(project.full_name, path: path, ref: ref)
 
-      return error_result("Path is a directory, not a file", project) if data.is_a?(Array)
-      return error_result("Path is not a file", project) unless data.type == "file"
+      return error_result("Path is a directory, not a file", repo_client.identity) if data.is_a?(Array)
+      return error_result("Path is not a file", repo_client.identity) unless data.type == "file"
 
-      return error_result("File exceeds #{MAX_FILE_SIZE_BYTES / 1024}KB size limit", project, path: path) if data.size > MAX_FILE_SIZE_BYTES
-      return error_result("File is empty", project, path: path) unless data.content.present?
+      return error_result("File exceeds #{MAX_FILE_SIZE_BYTES / 1024}KB size limit", repo_client.identity, path: path) if data.size > MAX_FILE_SIZE_BYTES
+      return error_result("File is empty", repo_client.identity, path: path) unless data.content.present?
 
       raw = Base64.decode64(data.content)
-      return error_result("File appears to be binary", project, path: path) unless utf8_text?(raw)
+      return error_result("File appears to be binary", repo_client.identity, path: path) unless utf8_text?(raw)
 
       {
         path: data.path,
         size: raw.bytesize,
         encoding: "utf-8",
         content: raw,
-        identity: identity_label(project)
+        identity: repo_client.identity
       }
     rescue GithubClient::NotFoundError
-      { error: "File not found: #{path}", identity: identity_label(project) }
+      { error: "File not found: #{path}", identity: repo_client.identity }
     end
 
     private
-
-    def resolve_client(project)
-      client = project.client
-      raise ArgumentError, "Project has no GitHub credentials configured" unless client
-
-      client
-    end
-
-    def identity_label(project)
-      if project.github_installation.present?
-        "github-app:#{project.github_installation.github_installation_id}"
-      elsif project.github_token.present?
-        "project-token:#{project.github_token.name}"
-      else
-        "unknown"
-      end
-    end
 
     def utf8_text?(raw)
       return false if raw.include?("\x00")
@@ -75,8 +59,8 @@ module Tools
       raw.dup.force_encoding("UTF-8").valid_encoding?
     end
 
-    def error_result(message, project, path: nil)
-      result = { error: message, identity: identity_label(project) }
+    def error_result(message, identity, path: nil)
+      result = { error: message, identity: identity }
       result[:path] = path if path
       result
     end

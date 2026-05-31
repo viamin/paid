@@ -9,16 +9,21 @@ RSpec.describe Tools::ReadRepoFile do
   let(:tool) { described_class.new(user: user, session: session) }
   let(:project) { create(:project, account: account) }
   let(:github_client) { instance_double(GithubClient) }
+  let(:identity) { "project-token:#{project.github_token.name}" }
+  let(:resolved_client) { Tools::RepoReadClientResolver::ResolvedClient.new(client: github_client, identity:) }
 
   before do
-    allow(GithubClient).to receive(:new).and_return(github_client)
+    allow(tool).to receive(:resolve_repo_read_client).and_return(resolved_client)
     allow(github_client).to receive(:contents)
   end
 
   describe "#call" do
-    it "returns file contents" do
+    it "prefers the chatting user's matching GitHub token" do
       file_data = Struct.new(:path, :type, :content, :size).new(
         "app/models/foo.rb", "file", Base64.strict_encode64("class Foo; end"), 16
+      )
+      allow(tool).to receive(:resolve_repo_read_client).and_return(
+        Tools::RepoReadClientResolver::ResolvedClient.new(client: github_client, identity: "user-token:Chat Token")
       )
       allow(github_client).to receive(:contents).and_return(file_data)
 
@@ -26,6 +31,17 @@ RSpec.describe Tools::ReadRepoFile do
 
       expect(result[:path]).to eq("app/models/foo.rb")
       expect(result[:content]).to eq("class Foo; end")
+      expect(result[:identity]).to include("user-token")
+    end
+
+    it "falls back to the project credential when the user has no matching token" do
+      file_data = Struct.new(:path, :type, :content, :size).new(
+        "app/models/foo.rb", "file", Base64.strict_encode64("class Foo; end"), 16
+      )
+      allow(github_client).to receive(:contents).and_return(file_data)
+
+      result = tool.call(project_id: project.id, path: "app/models/foo.rb")
+
       expect(result[:identity]).to include("project-token")
     end
 
