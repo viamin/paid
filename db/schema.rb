@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_30_075312) do
+ActiveRecord::Schema[8.1].define(version: 2026_05_31_194841) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1321,17 +1321,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_30_075312) do
   create_table "llm_models", force: :cascade do |t|
     t.boolean "active", default: true, null: false
     t.decimal "capability_score", precision: 4, scale: 2
+    t.string "catalog_source", default: "seeded", null: false, comment: "How this model entered the catalog: seeded, openrouter_sync, or manual."
     t.string "category", limit: 50, default: "general", null: false
     t.integer "context_window"
     t.datetime "created_at", null: false
+    t.string "data_training_risk", comment: "Whether provider terms indicate prompts may be used for training."
     t.string "display_name", null: false
+    t.datetime "expires_at", comment: "Optional expiration time for temporary catalog entries."
     t.string "family", limit: 100
+    t.bigint "free_variant_of_id", comment: "Paid model that this free model variant corresponds to."
     t.decimal "input_cost_per_million", precision: 10, scale: 4
     t.jsonb "log_data"
     t.integer "max_output_tokens"
     t.jsonb "metadata", default: {}, null: false
     t.string "model_id", null: false
     t.decimal "output_cost_per_million", precision: 10, scale: 4
+    t.string "pricing_tier", default: "paid", null: false, comment: "Pricing availability for this model: paid, free, or freemium."
     t.string "provider", limit: 50, null: false
     t.boolean "supports_json_output", default: false, null: false
     t.boolean "supports_tools", default: false, null: false
@@ -1340,6 +1345,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_30_075312) do
     t.datetime "updated_at", null: false
     t.index ["active"], name: "index_llm_models_on_active"
     t.index ["category"], name: "index_llm_models_on_category"
+    t.index ["free_variant_of_id"], name: "index_llm_models_on_free_variant_of_id"
     t.index ["model_id"], name: "index_llm_models_on_model_id", unique: true
     t.index ["provider", "active"], name: "index_llm_models_on_provider_and_active"
     t.index ["provider"], name: "index_llm_models_on_provider"
@@ -1748,6 +1754,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_30_075312) do
     t.integer "completed_agent_runs_count", default: 0, null: false, comment: "Counter cache for completed agent runs"
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
+    t.string "data_classification", default: "internal", null: false, comment: "Sensitivity level for project data shared with model providers."
     t.string "default_branch", default: "main", null: false
     t.string "enhance_issue_enhanced_label_name", default: "paid-enhanced", null: false
     t.string "enhance_issue_needs_input_label_name", default: "paid-needs-input", null: false
@@ -2622,6 +2629,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_30_075312) do
   add_foreign_key "knowledge_usage_stats", "projects", on_delete: :cascade
   add_foreign_key "linear_tokens", "accounts"
   add_foreign_key "linear_tokens", "users", column: "created_by_id"
+  add_foreign_key "llm_models", "llm_models", column: "free_variant_of_id"
   add_foreign_key "llm_output_metrics", "accounts", on_delete: :cascade
   add_foreign_key "llm_output_metrics", "projects", on_delete: :cascade
   add_foreign_key "llm_output_metrics", "prompt_versions", on_delete: :nullify
