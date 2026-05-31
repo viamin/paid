@@ -14,8 +14,8 @@ Paid runs a tier-1 mutation suite from [`.mutant.yml`](../.mutant.yml) in CI. Th
 
 The green-light signal is simple: when `mutation-viamin-parity` starts passing without workflow-side workarounds, Paid can treat that as evidence that the structural blockers called out in issue `#2372` are effectively cleared and the sanctioned source can be flipped from the current release to `viamin/mutant`.
 
-Until then, the job’s step summary is the breadcrumb trail for upstream work. It records:
+Until then, the job's step summary is the breadcrumb trail for upstream work. It records:
 
 - which parity probe command failed
-- whether a CLI flag or subcommand was unrecognized
-- which main `mutant run` invocation exited non-zero
+- whether a CLI flag or legacy subcommand was unrecognized
+- which main `mutant` invocation exited non-zero

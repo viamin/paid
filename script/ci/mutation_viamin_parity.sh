@@ -13,7 +13,7 @@ declare -a failures=()
 extract_note() {
   local file="$1"
 
-  grep -Eim1 'wrong constant name run|unknown|unrecognized|invalid option|no such command|unknown switch' "$file" || true
+  grep -Eim1 'wrong constant name|unknown|unrecognized|invalid option|no such command|unknown switch' "$file" || true
 }
 
 run_probe() {
@@ -45,15 +45,15 @@ run_probe() {
   rm -f "$probe_file"
 }
 
-main_command=(bundle exec mutant run)
+main_command=(bundle exec mutant)
 if [[ "$mode" == "incremental" && -n "$target_ref" ]]; then
   main_command+=(--since "$target_ref")
 fi
 
 : > "${output_file}.probes"
-run_probe "mutant run --help" bundle exec mutant run --help
+run_probe "mutant --help" bundle exec mutant --help
 if [[ "$mode" == "incremental" && -n "$target_ref" ]]; then
-  run_probe "mutant run --since ${target_ref} --help" bundle exec mutant run --since "$target_ref" --help
+  run_probe "mutant --since ${target_ref} --help" bundle exec mutant --since "$target_ref" --help
 fi
 
 set +e
