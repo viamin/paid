@@ -83,6 +83,8 @@ class ChatMessagesController < ApplicationController
     # Client disconnected — nothing to send
   rescue NotImplementedError => e
     write_sse_event("error", { message: e.message }) rescue IOError
+  rescue ChatSessions::LlmClientConfigurationError => e
+    write_sse_event("error", { message: e.message }) rescue IOError
   rescue ArgumentError => e
     write_sse_event("error", { message: e.message }) rescue IOError
   rescue StandardError => e
@@ -105,6 +107,8 @@ class ChatMessagesController < ApplicationController
 
     render json: message_json(assistant_message), status: :created
   rescue NotImplementedError => e
+    render json: { error: e.message }, status: :service_unavailable
+  rescue ChatSessions::LlmClientConfigurationError => e
     render json: { error: e.message }, status: :service_unavailable
   rescue ArgumentError => e
     render json: { error: e.message }, status: :unprocessable_content

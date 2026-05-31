@@ -64,6 +64,8 @@ RSpec.describe "ChatMessages" do
       end
 
       it "creates a message and returns assistant response" do
+        llm_client = instance_double(Proc)
+        allow(ChatSessions::BuildLlmClient).to receive(:call).with(chat_session: chat_session).and_return(llm_client)
         allow(ChatSessions::SendMessage).to receive(:call).and_return(
           create(:chat_message, :assistant, chat_session: chat_session,
             content: "Hello back!", tokens_input: 10, tokens_output: 5)
@@ -97,6 +99,22 @@ RSpec.describe "ChatMessages" do
           request_type: "chat_message"
         )
       end
+
+      it "returns a clear setup error when no chat runner is configured" do
+        allow(ChatSessions::BuildLlmClient).to receive(:call)
+          .with(chat_session: chat_session)
+          .and_raise(
+            ChatSessions::LlmClientConfigurationError,
+            "Chat requires a configured API-key runner. Add a chat-enabled runner with an API key and select it for this session."
+          )
+
+        post chat_session_chat_messages_path(chat_session), params: { content: "Hello" }
+
+        expect(response).to have_http_status(:service_unavailable)
+        expect(response.parsed_body).to eq(
+          "error" => "Chat requires a configured API-key runner. Add a chat-enabled runner with an API key and select it for this session."
+        )
+      end
     end
 
     context "when authenticated with SSE response" do
@@ -105,6 +123,8 @@ RSpec.describe "ChatMessages" do
       it "returns SSE stream" do
         assistant_msg = create(:chat_message, :assistant, chat_session: chat_session,
           tokens_input: 10, tokens_output: 5)
+        llm_client = instance_double(Proc)
+        allow(ChatSessions::BuildLlmClient).to receive(:call).with(chat_session: chat_session).and_return(llm_client)
         allow(ChatSessions::SendMessage).to receive(:call) do |**args|
           args[:on_chunk].call("Hello ")
           args[:on_chunk].call("back!")
