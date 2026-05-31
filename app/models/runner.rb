@@ -18,6 +18,7 @@ class Runner < ApplicationRecord
   LEGACY_ROUTING_KEY_PREFIX = "provider:".freeze
   DEFAULT_WEIGHT = 1
   MAX_WEIGHT = 1000
+  RUNNER_KEYS = RunnerSupport::APP_RUNNER_KEYS
   TIER_MODEL_VALUE_KEYS = %w[model_id provider_id].freeze
   # Default cutoffs for mapping a complexity score (1-10) to an LlmModel tier.
   # complexity <= low_max => "low", <= mid_max => "mid", else "high".
@@ -338,7 +339,7 @@ class Runner < ApplicationRecord
   # (aider_config, aider_api_provider, aider_model_id) exists as prep work;
   # add aider_direct_outbound? here once the runtime path is implemented.
   def requires_direct_outbound?
-    opencode_direct_outbound? || kilocode_direct_outbound? || pi_direct_outbound?
+    opencode_direct_outbound? || kilocode_direct_outbound? || pi_direct_outbound? || openrouter_free_direct_outbound?
   end
 
   def opencode_required_api_service_type
@@ -434,7 +435,7 @@ class Runner < ApplicationRecord
   end
 
   def agent_harness_runtime?
-    opencode_agent_harness_runtime? || copilot_agent_harness_runtime? || pi_agent_harness_runtime?
+    opencode_agent_harness_runtime? || copilot_agent_harness_runtime? || pi_agent_harness_runtime? || openrouter_free_agent_harness_runtime?
   end
 
   def opencode_agent_harness_runtime?
@@ -449,6 +450,10 @@ class Runner < ApplicationRecord
     runner_key == "pi" &&
       api_key? &&
       PI_API_PROVIDER_KEYS.include?(pi_api_provider)
+  end
+
+  def openrouter_free_agent_harness_runtime?
+    openrouter_free_direct_outbound?
   end
 
   def direct_outbound_model_id
@@ -533,6 +538,7 @@ class Runner < ApplicationRecord
 
   def self.display_name_for(runner_key)
     return "Unknown" if runner_key.blank?
+    return "OpenRouter Free" if runner_key.to_s == "openrouter_free"
 
     provider = AgentHarness.provider(RunnerSupport.harness_runner_key_for(runner_key).to_sym)
 
@@ -670,6 +676,7 @@ class Runner < ApplicationRecord
 
   def clear_stale_direct_outbound_tier_models
     return unless tier_model_ids.present?
+    return if runner_key == "openrouter_free"
     return unless direct_outbound_capable_runner?
     return if requires_direct_outbound? && direct_outbound_model_id.present?
 
@@ -681,7 +688,7 @@ class Runner < ApplicationRecord
     # Anthropic runner in DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER,
     # so including it here would cause clear_stale_direct_outbound_tier_models
     # to erase its valid standard tier mappings on every save.
-    %w[kilocode opencode pi].include?(runner_key)
+    %w[kilocode opencode openrouter_free pi].include?(runner_key)
   end
 
   def direct_outbound_display_name(model_id)
@@ -1152,6 +1159,12 @@ class Runner < ApplicationRecord
       pi_model_id.present?
   end
 
+  def openrouter_free_direct_outbound?
+    runner_key == "openrouter_free" &&
+      api_key? &&
+      required_api_service_type == "openrouter"
+  end
+
   def opencode_runner_runtime
     model_id = opencode_qualified_model
     raise ArgumentError, "Missing OpenCode model id for runner #{id || runner_key}" if model_id.blank?
@@ -1194,4 +1207,26 @@ class Runner < ApplicationRecord
       }
     )
   end
+
+  def openrouter_free_runner_runtime(project:, model_id:)
+    plan = Runners::FreeModelExecutionPlan.call(runner: self, model_id: model_id, project: project)
+    config = plan.config
+
+    AgentHarness::ProviderRuntime.new(
+      model: config.fetch(:model),
+      env: {
+        config.fetch(:api_key_env) => effective_api_secret.to_s,
+        "OPENAI_BASE_URL" => config.fetch(:base_url)
+      },
+      unset_env: %w[OPENAI_HEADER_X_AGENT_RUN_ID OPENAI_HEADER_X_PROXY_TOKEN],
+      metadata: {
+        config: {
+          "provider" => {
+            "openrouter" => config.fetch(:provider_routing)
+          }
+        }
+      }
+    )
+  end
+  public :openrouter_free_runner_runtime
 end

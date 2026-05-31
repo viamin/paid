@@ -729,6 +729,10 @@ module Activities
 
       resolved_model = resolve_tier_model_for(runner_candidate, agent_run, user)
       model_id = resolved_model&.model_id
+      if runner_entry&.runner_key == "openrouter_free" && model_id.present?
+        return runner_entry.openrouter_free_runner_runtime(project: agent_run&.project, model_id: model_id)
+      end
+
       return configured_runtime if configured_runtime && model_id.blank?
       return nil if model_id.blank?
 

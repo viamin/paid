@@ -10,7 +10,7 @@ module Runners
       "gemini" => "google"
     }.freeze
 
-    DIRECT_OUTBOUND_RUNNER_KEYS = %w[kilocode opencode pi].freeze
+    DIRECT_OUTBOUND_RUNNER_KEYS = %w[kilocode opencode openrouter_free pi].freeze
 
     def self.call(runner_key:)
       new(runner_key: runner_key).call
