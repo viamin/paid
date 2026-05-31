@@ -43,6 +43,30 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
       end
     end
 
+    context "with an integration credential-backed API key runner" do
+      it "returns an HttpClient using the runner's effective secret" do
+        integration_credential = create(:integration_credential,
+          account: account,
+          created_by: user,
+          service_key: "claude",
+          secret: "sk-integration-test-key"
+        )
+        runner = create(:runner,
+          user: user,
+          runner_key: "claude",
+          auth_type: "api_key",
+          provider_api_key: nil,
+          integration_credential: integration_credential
+        )
+        chat_session = create(:chat_session, account: account, created_by: user, runner: runner, model: "claude-3-7-sonnet")
+
+        client = described_class.call(chat_session: chat_session)
+
+        expect(client).to be_a(described_class::HttpClient)
+        expect(client.model).to eq("claude-3-7-sonnet")
+      end
+    end
+
     context "with a subscription runner (no API key)" do
       it "raises a setup error" do
         runner = user.runners.find_or_create_by!(runner_key: "cursor", auth_type: "subscription")
