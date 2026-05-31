@@ -97,18 +97,30 @@ RSpec.describe Knowledge::ArtifactStore do
       let(:new_version) { create(:project_version, project: project) }
       let(:new_run) { create(:collector_run, project_version: new_version, collector_type: "test") }
       let(:new_store) { described_class.new(project: project, collector_run: new_run) }
+      let(:updated_data) do
+        artifact_data.merge(content: '{"method":"GET","path":"/api/users","auth":true}')
+      end
 
-      it "recovers by reusing the active artifact instead of raising" do
+      it "preserves the incoming content instead of reassigning the mismatched active row" do
         store.store_all([ artifact_data ])
 
-        allow(new_store).to receive(:create_artifact)
-          .and_raise(ActiveRecord::RecordNotUnique.new('PG::UniqueViolation: ERROR: duplicate key value violates unique constraint "idx_knowledge_artifacts_active_unique"'))
+        conflict_raised = false
+        original_create_artifact = new_store.method(:create_artifact)
+        allow(new_store).to receive(:create_artifact).and_wrap_original do |_method, *args|
+          if conflict_raised
+            original_create_artifact.call(*args)
+          else
+            conflict_raised = true
+            raise ActiveRecord::RecordNotUnique.new('PG::UniqueViolation: ERROR: duplicate key value violates unique constraint "idx_knowledge_artifacts_active_unique"')
+          end
+        end
 
-        expect { new_store.store_all([ artifact_data.merge(content: '{"method":"GET","path":"/api/users","auth":true}') ]) }
-          .not_to raise_error
+        expect { new_store.store_all([ updated_data ]) }.not_to raise_error
 
         expect(KnowledgeArtifact.active.count).to eq(1)
+        expect(KnowledgeArtifact.stale.count).to eq(1)
         expect(KnowledgeArtifact.active.first.collector_run).to eq(new_run)
+        expect(KnowledgeArtifact.active.first.content).to eq(updated_data[:content])
       end
     end
   end

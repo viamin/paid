@@ -40,27 +40,23 @@ module Knowledge
         if existing
           reassign_to_current_run(existing)
         else
-          # Atomic stale-then-insert to prevent interleaving with concurrent
-          # collectors that could violate the partial unique index on active artifacts.
           begin
-            KnowledgeArtifact.transaction do
-              mark_prior_stale(data)
-              create_artifact(data, content_hash)
-            end
+            replace_artifact(data, content_hash)
           rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid => e
             raise unless unique_conflict?(e)
 
-            existing_after_conflict = find_existing_artifact(data, content_hash)
-            existing_after_conflict ||= find_active_artifact(data)
-            existing_after_conflict ||= find_by_run_and_hash(content_hash)
-
-            if existing_after_conflict
-              reassign_to_current_run(existing_after_conflict)
-            else
-              raise
-            end
+            recover_conflicted_artifact(data, content_hash)
           end
         end
+      end
+    end
+
+    def replace_artifact(data, content_hash)
+      # Atomic stale-then-insert to prevent interleaving with concurrent
+      # collectors that could violate the partial unique index on active artifacts.
+      KnowledgeArtifact.transaction do
+        mark_prior_stale(data)
+        create_artifact(data, content_hash)
       end
     end
 
@@ -99,6 +95,29 @@ module Knowledge
         identifier: data[:identifier],
         status: "active"
       )
+    end
+
+    def recover_conflicted_artifact(data, content_hash)
+      matching_artifact = find_existing_artifact(data, content_hash)
+      return reassign_to_current_run(matching_artifact) if matching_artifact
+
+      active_artifact = find_active_artifact(data)
+      return replace_artifact(data, content_hash) if active_artifact
+
+      run_hash_artifact = find_by_run_and_hash(content_hash)
+      return reassign_to_current_run(run_hash_artifact) if run_hash_artifact
+
+      raise ActiveRecord::RecordNotUnique, "Could not recover conflicting knowledge artifact insert"
+    rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid => e
+      raise unless unique_conflict?(e)
+
+      matching_artifact = find_existing_artifact(data, content_hash)
+      return reassign_to_current_run(matching_artifact) if matching_artifact
+
+      run_hash_artifact = find_by_run_and_hash(content_hash)
+      return reassign_to_current_run(run_hash_artifact) if run_hash_artifact
+
+      raise
     end
 
     def reassign_to_current_run(artifact)
