@@ -64,7 +64,8 @@ RSpec.describe Models::Select do
         expect(orchestration_decision.actor).to eq("override")
         expect(orchestration_decision.context).to include(
           "decision_status" => "applied",
-          "issue_id" => agent_run.issue_id
+          "issue_id" => agent_run.issue_id,
+          "data_classification" => project.data_classification
         )
         expect(orchestration_decision.outputs).to include(
           "outcome" => "selected",
@@ -466,6 +467,76 @@ RSpec.describe Models::Select do
         expect(selection).to be_a(ModelSelection)
         expect(selection.llm_model).to eq(gpt_model)
         expect(selection.selector_type).to eq("override")
+      end
+    end
+
+    context "when a confidential project selects a risky free model" do
+      let!(:free_model) do
+        create(
+          :llm_model,
+          model_id: "free-risky-model",
+          tier: "mid",
+          pricing_tier: "free",
+          data_training_risk: "possible"
+        )
+      end
+
+      before do
+        project.update!(data_classification: "confidential", model_preferences: { "required_model_id" => free_model.model_id })
+      end
+
+      it "persists the selection and records the guardrail warning decision" do
+        expect { described_class.call(agent_run: agent_run) }
+          .to change(ModelSelection, :count).by(1)
+          .and change(OrchestrationDecision, :count).by(2)
+
+        warning_decision = agent_run.orchestration_decisions.order(:id).first
+        selection_decision = agent_run.orchestration_decisions.order(:id).last
+
+        expect(warning_decision.decision_type).to eq("check_data_classification")
+        expect(warning_decision.context).to include(
+          "decision_status" => "applied",
+          "data_classification" => "confidential"
+        )
+        expect(selection_decision.context).to include(
+          "decision_status" => "applied",
+          "data_classification" => "confidential"
+        )
+        expect(agent_run.model_selection.llm_model).to eq(free_model)
+      end
+    end
+
+    context "when model is an openrouter_sync free model" do
+      let!(:free_model) do
+        create(
+          :llm_model,
+          model_id: "openrouter-free-model",
+          tier: "mid",
+          pricing_tier: "free",
+          data_training_risk: "possible",
+          catalog_source: "openrouter_sync"
+        )
+      end
+
+      before do
+        project.update!(data_classification: "restricted", model_preferences: { "required_model_id" => free_model.model_id })
+      end
+
+      it "records provider_data_collection without warning" do
+        described_class.call(agent_run: agent_run)
+
+        warning_decision = agent_run.orchestration_decisions.order(:id).first
+        selection_decision = agent_run.orchestration_decisions.order(:id).last
+
+        expect(warning_decision.context).to include(
+          "decision_status" => "noop",
+          "data_classification" => "restricted",
+          "provider_data_collection" => "deny"
+        )
+        expect(selection_decision.context).to include(
+          "data_classification" => "restricted",
+          "provider_data_collection" => "deny"
+        )
       end
     end
 

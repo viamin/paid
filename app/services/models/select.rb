@@ -31,6 +31,7 @@ module Models
         return nil
       end
 
+      policy_result = Guardrails::DataClassificationPolicy.call(agent_run: agent_run, selection: selected)
       final_tier = selected[:tier] || tier_for(selected)
       escalation = detect_escalation(selected, final_tier)
       candidates = normalized_candidates(selected, selected_model_id: selected[:model].model_id)
@@ -50,6 +51,7 @@ module Models
         outcome: "selected",
         duration_ms: duration_ms,
         selected: selected,
+        policy_result: policy_result,
         final_tier: final_tier,
         escalation: escalation,
         selection: selection,
@@ -265,7 +267,7 @@ module Models
       }.compact
     end
 
-    def persist_decision_log(outcome:, duration_ms:, selected: nil, final_tier: nil, escalation: nil, selection: nil, candidates: nil, error: nil)
+    def persist_decision_log(outcome:, duration_ms:, selected: nil, policy_result: nil, final_tier: nil, escalation: nil, selection: nil, candidates: nil, error: nil)
       selection_payload = selection_payload(
         selected: selected,
         selection: selection,
@@ -279,6 +281,7 @@ module Models
         outcome: outcome,
         duration_ms: duration_ms,
         selected: selected,
+        policy_result: policy_result,
         selection_payload: selection_payload,
         inputs_payload: inputs_payload,
         error: error
@@ -315,11 +318,12 @@ module Models
       )
     end
 
-    def persist_orchestration_decision_safely(outcome:, duration_ms:, selected:, selection_payload:, inputs_payload:, error:)
+    def persist_orchestration_decision_safely(outcome:, duration_ms:, selected:, policy_result:, selection_payload:, inputs_payload:, error:)
       persist_orchestration_decision(
         outcome: outcome,
         duration_ms: duration_ms,
         selected: selected,
+        policy_result: policy_result,
         selection_payload: selection_payload,
         inputs_payload: inputs_payload,
         error: error
@@ -434,7 +438,7 @@ module Models
       }
     end
 
-    def persist_orchestration_decision(outcome:, duration_ms:, selected:, selection_payload:, inputs_payload:, error:)
+    def persist_orchestration_decision(outcome:, duration_ms:, selected:, policy_result:, selection_payload:, inputs_payload:, error:)
       OrchestrationDecision.record(
         project: agent_run.project,
         issue: agent_run.issue,
@@ -442,6 +446,7 @@ module Models
         action: "select_agent",
         decision_point: selected&.dig(:selector_type) || "model_selection",
         status: orchestration_status_for(outcome),
+        context: policy_result&.context || {},
         signals: inputs_payload.merge(
           "duration_ms" => duration_ms
         ),
