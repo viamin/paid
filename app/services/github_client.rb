@@ -650,6 +650,81 @@ class GithubClient
     end
   end
 
+  # Maximum issues fetched per batch in the GraphQL comment query.
+  # GitHub's issues(first: 100) returns up to 100 nodes, and the comments
+  # sub-field can fetch up to 100 per issue.
+  ISSUES_BATCH_SIZE = 100
+  MAX_COMMENTS_PER_ISSUE = 100
+
+  # Fetches the most recent comments for multiple issues in a single GraphQL request.
+  # Replaces N×(2 × pages) REST calls with one batched query.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param issue_numbers [Array<Integer>] Issue numbers to fetch comments for
+  # @param pages [Integer] Number of most-recent pages to fetch per issue (default: 1)
+  # @return [Hash{Integer => Array<Sawyer::Resource>}] Map of issue number to
+  #   sorted comments. Returns empty array per issue when none exist.
+  def issue_comments_batch(repo, issue_numbers, pages: 1)
+    return {} if issue_numbers.empty?
+
+    owner, name = repo.split("/", 2)
+
+    # Build individual-issue fragments using aliases so a single query can
+    # fetch comments for multiple issues without knowing their IDs in advance.
+    # GitHub GraphQL aliases must be valid GraphQL names: lowercase alphanumeric
+    # plus underscore, starting with a letter. Use "issue_${number}" pattern.
+    safe_issue_aliases = issue_numbers.map { |n| "issue_#{n}" }
+
+    nodes_subquery = safe_issue_aliases.map do |alias_name|
+      "      #{alias_name}: issue(number: #{alias_name.gsub("issue_", "")}) {\n" \
+      "        comments: comments(last: #{MAX_COMMENTS_PER_ISSUE}) {\n" \
+      "          nodes { author { login } body createdAt }\n" \
+      "          pageInfo { hasNextPage startCursor }\n" \
+      "        }\n" \
+      "      }"
+    end.join("\n")
+
+    query = <<~GRAPHQL
+      query($owner: String!, $name: String!) {
+        repository(owner: $owner, name: $name) {
+          #{nodes_subquery}
+        }
+      }
+    GRAPHQL
+
+    data = graphql_request(query, owner: owner, name: name)
+    raise_graphql_errors(data, context: "fetching issue comments for #{repo}")
+
+    repository = data.dig("data", "repository") || {}
+
+    result = {}
+    issue_numbers.each do |issue_number|
+      alias_name = "issue_#{issue_number}"
+      issue_data = repository[alias_name]
+
+      if issue_data.nil?
+        # Issue doesn't exist or is not accessible
+        result[issue_number] = []
+        next
+      end
+
+      comments_connection = issue_data["comments"] || {}
+      nodes = comments_connection["nodes"] || []
+
+      # Convert GraphQL nodes to Sawyer::Resource-like hashes so the existing
+      # code that calls .created_at, .user&.login, and .body works unchanged.
+      result[issue_number] = nodes.map do |node|
+        OpenStruct.new(
+          created_at: parse_timestamp(node["createdAt"]),
+          user: OpenStruct.new(login: node.dig("author", "login")),
+          body: node["body"]
+        )
+      end
+    end
+
+    result
+  end
+
   # Fetches review threads on a pull request via GraphQL.
   #
   # @param repo [String] Repository in "owner/name" format
