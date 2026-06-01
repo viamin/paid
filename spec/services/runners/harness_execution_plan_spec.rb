@@ -65,18 +65,46 @@ RSpec.describe Runners::HarnessExecutionPlan do
         prompt: "Say hello"
       )
 
-      mcp_flag_index = plan.command.index("--mcp-config")
+      # claude's --mcp-config is variadic, so the flag must use the --flag=value
+      # form to avoid swallowing the trailing positional prompt.
+      mcp_flag = plan.command.find { |part| part.start_with?("--mcp-config=") }
+      mcp_config_path = mcp_flag&.delete_prefix("--mcp-config=")
 
-      expect(mcp_flag_index).to be_present
+      expect(mcp_flag).to be_present
+      expect(plan.command).not_to include("--mcp-config")
       expect(plan.command.last).to eq("Say hello")
       expect(plan.preparation).to be_a(AgentHarness::ExecutionPreparation)
       expect(plan.preparation.file_writes).to contain_exactly(
         have_attributes(
-          path: plan.command.fetch(mcp_flag_index + 1),
+          path: mcp_config_path,
           content: JSON.generate("mcpServers" => {}),
           mode: 0o600
         )
       )
+    end
+
+    # Regression guard for the variadic --mcp-config bug (viamin/agent-harness#229,
+    # cleanup tracked in #2435). The Claude CLI treats `--mcp-config <configs...>`
+    # as variadic, so a bare "--mcp-config" token immediately before the positional
+    # prompt makes the CLI swallow the prompt as a second config path. The flag must
+    # always be the single-token --flag=value form, for both the empty-server and
+    # configured-server paths. A structural assertion (rather than running the CLI)
+    # is enough: the bug is purely about argv shape.
+    [
+      [ "empty server list", {} ],
+      [ "configured stdio server",
+        { mcp_servers: [ { name: "fs", transport: "stdio", command: "x", args: [ "/ws" ] } ] } ]
+    ].each do |label, options|
+      it "never emits a bare --mcp-config token before the prompt (#{label})" do
+        allow(AgentHarness).to receive(:provider_class).and_call_original
+        allow(AgentHarness).to receive(:build_config).and_call_original
+
+        plan = described_class.for_runner_key(runner_key: "claude", prompt: "the prompt", options: options)
+
+        expect(plan.command).not_to include("--mcp-config"), "found space-form --mcp-config that swallows the prompt: #{plan.command.inspect}"
+        expect(plan.command.count { |part| part.to_s.start_with?("--mcp-config=") }).to eq(1)
+        expect(plan.command.last).to eq("the prompt")
+      end
     end
   end
 

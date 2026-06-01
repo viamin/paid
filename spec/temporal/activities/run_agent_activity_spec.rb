@@ -4304,10 +4304,12 @@ expect(container_service).to receive(:execute).with(
           "url_servers" => []
         })
 
-        expect(container_service).to receive(:execute).with(
-          array_including("claude", "--mcp-config"),
-          hash_including(timeout: anything)
-        ).and_return(exec_success)
+        expect(container_service).to receive(:execute) do |command, options|
+          expect(command).to include("claude")
+          expect(command).to include(a_string_starting_with("--mcp-config="))
+          expect(command).not_to include("--mcp-config")
+          expect(options).to include(timeout: anything)
+        end.and_return(exec_success)
 
         activity.execute(agent_run_id: agent_run.id)
       end
@@ -4318,25 +4320,31 @@ expect(container_service).to receive(:execute).with(
           "url_servers" => [ { "name" => "pw", "transport" => "sse", "url" => "http://host:3000/sse" } ]
         })
 
-        expect(container_service).to receive(:execute).with(
-          array_including("claude", "--mcp-config"),
-          hash_including(timeout: anything)
-        ).and_return(exec_success)
+        expect(container_service).to receive(:execute) do |command, options|
+          expect(command).to include("claude")
+          expect(command).to include(a_string_starting_with("--mcp-config="))
+          expect(command).not_to include("--mcp-config")
+          expect(options).to include(timeout: anything)
+        end.and_return(exec_success)
 
         activity.execute(agent_run_id: agent_run.id)
       end
 
       it "passes an explicit empty MCP config when no servers are configured" do
         expect(container_service).to receive(:execute) do |command, options|
-          mcp_flag_index = command.index("--mcp-config")
+          # Variadic --mcp-config must use --flag=value so it does not swallow
+          # the trailing positional prompt.
+          mcp_flag = command.find { |part| part.to_s.start_with?("--mcp-config=") }
+          mcp_config_path = mcp_flag&.delete_prefix("--mcp-config=")
 
-          expect(command).to include("claude", "--mcp-config")
-          expect(mcp_flag_index).to be_present
+          expect(command).to include("claude")
+          expect(mcp_flag).to be_present
+          expect(command).not_to include("--mcp-config")
           expect(options).to include(timeout: anything)
           expect(options[:preparation]).to be_a(AgentHarness::ExecutionPreparation)
           expect(options[:preparation].file_writes).to include(
             have_attributes(
-              path: command.fetch(mcp_flag_index + 1),
+              path: mcp_config_path,
               content: JSON.generate("mcpServers" => {}),
               mode: 0o600
             )
