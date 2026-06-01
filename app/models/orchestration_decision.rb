@@ -50,8 +50,8 @@ class OrchestrationDecision < ApplicationRecord
   # Convenience factory for retry/escalation decision logging. Maps the
   # action/decision_point/signals/result interface used by orchestration
   # callers onto the generic OrchestrationDecision schema.
-  def self.record!(project:, decision_point:, action:, status:, issue: nil, agent_run: nil, signals: {}, result: {})
-    ctx = {}
+  def self.record!(project:, decision_point:, action:, status:, issue: nil, agent_run: nil, context: {}, signals: {}, result: {})
+    ctx = context.to_h.symbolize_keys
     ctx[:issue_id] = issue.id if issue
     ctx[:decision_status] = status
 
@@ -70,12 +70,12 @@ class OrchestrationDecision < ApplicationRecord
   # Non-bang variant that silently swallows failures. Use this inside rescue
   # blocks or lifecycle transactions so a logging failure cannot mask the
   # original exception or poison the caller's transaction.
-  def self.record(project:, decision_point:, action:, status:, issue: nil, agent_run: nil, signals: {}, result: {})
+  def self.record(project:, decision_point:, action:, status:, issue: nil, agent_run: nil, context: {}, signals: {}, result: {})
     transaction(requires_new: true) do
       record!(
         project: project, issue: issue, agent_run: agent_run,
         decision_point: decision_point, action: action, status: status,
-        signals: signals, result: result
+        context: context, signals: signals, result: result
       )
     end
   rescue StandardError => e
