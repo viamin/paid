@@ -23,7 +23,6 @@ class RunnersController < ApplicationController
   def new
     auth_type = sanitize_auth_type(params[:form_variant])
     requested_runner_key = params[:runner_key].to_s.presence
-    load_runner_options
 
     # Only honor API key auth_type if the user has compatible API keys;
     # otherwise default to subscription to avoid a form with no radio selected.

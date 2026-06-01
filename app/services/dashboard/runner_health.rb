@@ -50,7 +50,7 @@ module Dashboard
     end
 
     def runner_rows
-      state_by_runner = runner_states.index_by(&:runner_name)
+      state_by_runner = direct_runner_states
 
       configured_runners.map do |runner|
         build_runner_status(runner, state_by_runner[runner.state_key])
@@ -66,11 +66,32 @@ module Dashboard
         .ordered
     end
 
-    def runner_states
-      @runner_states ||= RunnerState
+    def direct_runner_states
+      @direct_runner_states ||= RunnerState
         .joins(:user)
         .where(users: { account_id: account.id })
-        .includes(:user)
+        .where(runner_name: configured_runners.map(&:state_key))
+        .index_by(&:runner_name)
+    end
+
+    def free_model_states_by_prefix
+      @free_model_states_by_prefix ||= begin
+        prefixes = configured_runners
+          .select { |r| r.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY }
+          .map(&:state_key)
+
+        return {} if prefixes.empty?
+
+        like_sql = prefixes.map { |_| "runner_states.runner_name LIKE ?" }.join(" OR ")
+        like_values = prefixes.map { |p| "#{p}:%" }
+
+        states = RunnerState
+          .joins(:user)
+          .where(users: { account_id: account.id })
+          .where(like_sql, *like_values)
+
+        states.group_by { |state| prefixes.find { |p| state.runner_name.start_with?("#{p}:") } }
+      end
     end
 
     def build_runner_status(runner, state)
@@ -125,8 +146,8 @@ module Dashboard
       total = LlmModel.free.active.count
       return { available: 0, total: 0, rate_limited: 0, recovery_at: nil } if total.zero?
 
-      prefix = "#{runner.state_key}:"
-      model_states = runner_states.select { |entry| entry.user_id == runner.user_id && entry.runner_name.start_with?(prefix) }
+      model_states = (free_model_states_by_prefix[runner.state_key] || [])
+        .select { |s| s.user_id == runner.user_id }
       rate_limited_states = model_states.select(&:rate_limited?)
       rate_limited = if rate_limited_states.any?
         rate_limited_states.count
