@@ -12,6 +12,10 @@ module ExceptionHandler
   #     context: { subsystem: :knowledge, project_id: 42 }
   #   )
   class Handle
+    RATE_LIMIT_THRESHOLD = 5
+    RATE_LIMIT_WINDOW = 1.hour
+    ACCOUNT_HOURLY_CAP = 500
+
     class Result
       attr_reader :incident, :action, :message
 
@@ -42,7 +46,16 @@ module ExceptionHandler
       classification = nil
       incident = nil
 
+      return account_cap_result if account_over_cap?
+
       fingerprint = Fingerprinter.call(exception: @exception, subsystem: @subsystem)
+      existing = ExceptionIncident.find_by(account: @account, fingerprint: fingerprint)
+
+      if existing && rate_limited?(existing)
+        fast_path_increment(existing)
+        return rate_limited_result(existing)
+      end
+
       classification = Classifier.call(exception: @exception, subsystem: @subsystem)
 
       if classification.action == "logged"
@@ -50,9 +63,14 @@ module ExceptionHandler
         return logged_result(classification)
       end
 
-      incident = find_or_create_incident(fingerprint, classification)
-      file_or_update_issue(incident, classification) if @project
+      incident = if existing
+        existing.record_occurrence!(new_context: occurrence_context)
+        existing
+      else
+        create_incident(fingerprint, classification)
+      end
 
+      file_or_update_issue(incident, classification) if @project
       notify_if_needed(incident, classification)
 
       Result.new(success: true, incident: incident, action: incident.action_taken)
@@ -107,19 +125,42 @@ module ExceptionHandler
       )
     end
 
-    def find_or_create_incident(fingerprint, classification)
-      incident = ExceptionIncident.find_by(account: @account, fingerprint: fingerprint)
+    def account_over_cap?
+      ExceptionIncident.where(account: @account)
+        .where("last_occurred_at > ?", RATE_LIMIT_WINDOW.ago)
+        .sum(:occurrence_count) >= ACCOUNT_HOURLY_CAP
+    end
 
-      if incident
-        incident.record_occurrence!(new_context: occurrence_context)
-        incident
-      else
-        create_incident(fingerprint, classification)
-      end
-    rescue ActiveRecord::RecordNotUnique
-      ExceptionIncident.find_by!(account: @account, fingerprint: fingerprint).tap do |inc|
-        inc.record_occurrence!(new_context: occurrence_context)
-      end
+    def rate_limited?(incident)
+      incident.last_occurred_at > RATE_LIMIT_WINDOW.ago &&
+        incident.occurrence_count >= RATE_LIMIT_THRESHOLD
+    end
+
+    def fast_path_increment(incident)
+      incident.record_occurrence!(new_context: occurrence_context)
+      Rails.logger.warn(
+        message: "exception_handler.rate_limited",
+        fingerprint: incident.fingerprint,
+        occurrence_count: incident.occurrence_count
+      )
+    end
+
+    def account_cap_result
+      Rails.logger.error(
+        message: "exception_handler.account_cap_dropped",
+        account_id: @account.id,
+        exception_class: @exception.class.name
+      )
+      Result.new(success: true, action: "logged", message: "Account hourly cap exceeded")
+    end
+
+    def rate_limited_result(incident)
+      Result.new(
+        success: true,
+        incident: incident,
+        action: incident.action_taken,
+        message: "Rate-limited (per-fingerprint cap)"
+      )
     end
 
     def create_incident(fingerprint, classification)

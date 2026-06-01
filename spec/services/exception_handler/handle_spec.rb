@@ -219,6 +219,193 @@ RSpec.describe ExceptionHandler::Handle do
       end
     end
 
+    context "with per-fingerprint rate limiting" do
+      let(:error) do
+        e = RuntimeError.new("spam burst test error")
+        e.set_backtrace([ "/app/services/knowledge/collector_runner.rb:95:in `collect'" ])
+        e
+      end
+      let(:context) { { subsystem: :knowledge } }
+
+      it "runs full pipeline on the 5th occurrence" do
+        allow(ExceptionHandler::Classifier).to receive(:call).and_call_original
+        allow(Notifications::Publish).to receive(:call)
+
+        5.times { described_class.call(exception: error, account: account, context: context) }
+
+        expect(ExceptionHandler::Classifier).to have_received(:call).exactly(5).times
+        incident = ExceptionIncident.last
+        expect(incident.occurrence_count).to eq(5)
+      end
+
+      it "fast-paths on the 6th occurrence, skipping classifier and notifications" do
+        allow(ExceptionHandler::Classifier).to receive(:call).and_call_original
+        allow(Notifications::Publish).to receive(:call)
+
+        6.times { described_class.call(exception: error, account: account, context: context) }
+
+        expect(ExceptionHandler::Classifier).to have_received(:call).exactly(5).times
+        expect(Notifications::Publish).to have_received(:call).exactly(5).times
+
+        incident = ExceptionIncident.last
+        expect(incident.occurrence_count).to eq(6)
+        expect(incident.last_occurred_at).to be_within(1.second).of(Time.current)
+      end
+
+      it "returns a rate-limited result on the 6th occurrence" do
+        5.times { described_class.call(exception: error, account: account, context: context) }
+
+        result = described_class.call(exception: error, account: account, context: context)
+
+        expect(result).to be_success
+        expect(result.message).to eq("Rate-limited (per-fingerprint cap)")
+      end
+
+      it "resets rate limiting after the window expires" do
+        5.times { described_class.call(exception: error, account: account, context: context) }
+
+        incident = ExceptionIncident.last
+        incident.update_column(:last_occurred_at, 2.hours.ago)
+        incident.update_column(:occurrence_count, 5)
+
+        allow(ExceptionHandler::Classifier).to receive(:call).and_call_original
+
+        described_class.call(exception: error, account: account, context: context)
+
+        expect(ExceptionHandler::Classifier).to have_received(:call).once
+      end
+
+      it "does not produce a log_exception entry for rate-limited captures" do
+        captured_log_count = 0
+        allow(Rails.logger).to receive(:warn) do |args|
+          captured_log_count += 1 if args.is_a?(Hash) && args[:message] == "exception_handler.captured"
+        end
+
+        5.times { described_class.call(exception: error, account: account, context: context) }
+        count_after_five = captured_log_count
+
+        described_class.call(exception: error, account: account, context: context)
+
+        expect(captured_log_count).to eq(count_after_five)
+      end
+
+      it "still updates occurrence_count and last_occurred_at on fast-path" do
+        5.times { described_class.call(exception: error, account: account, context: context) }
+
+        incident_before = ExceptionIncident.last
+        expect(incident_before.occurrence_count).to eq(5)
+
+        travel_to(1.minute.from_now) do
+          described_class.call(exception: error, account: account, context: context)
+        end
+
+        incident_after = ExceptionIncident.last
+        expect(incident_after.occurrence_count).to eq(6)
+        expect(incident_after.last_occurred_at).to be >= incident_before.last_occurred_at
+      end
+    end
+
+    context "with per-account rate limiting" do
+      let(:error) do
+        e = RuntimeError.new("account cap test error")
+        e.set_backtrace([ "/app/services/knowledge/collector_runner.rb:95:in `collect'" ])
+        e
+      end
+
+      it "drops with zero DB writes past the account cap" do
+        create(:exception_incident,
+          account: account,
+          occurrence_count: described_class::ACCOUNT_HOURLY_CAP,
+          last_occurred_at: 1.minute.ago,
+          action_taken: "notified",
+          subsystem: "knowledge")
+
+        expect {
+          result = described_class.call(exception: error, account: account, context: { subsystem: :knowledge })
+
+          expect(result).to be_success
+          expect(result.action).to eq("logged")
+          expect(result.message).to eq("Account hourly cap exceeded")
+          expect(result.incident).to be_nil
+        }.not_to change(ExceptionIncident, :count)
+      end
+
+      it "does not update any incident row when account cap is hit" do
+        incident = create(:exception_incident,
+          account: account,
+          occurrence_count: described_class::ACCOUNT_HOURLY_CAP,
+          last_occurred_at: 1.minute.ago,
+          action_taken: "notified",
+          subsystem: "knowledge")
+
+        original_count = incident.occurrence_count
+        original_timestamp = incident.last_occurred_at
+
+        described_class.call(exception: error, account: account, context: { subsystem: :knowledge })
+
+        incident.reload
+        expect(incident.occurrence_count).to eq(original_count)
+        expect(incident.last_occurred_at).to eq(original_timestamp)
+      end
+
+      it "allows captures under the cap" do
+        create(:exception_incident,
+          account: account,
+          occurrence_count: described_class::ACCOUNT_HOURLY_CAP - 1,
+          last_occurred_at: 1.minute.ago,
+          action_taken: "notified",
+          subsystem: "knowledge")
+
+        allow(Notifications::Publish).to receive(:call)
+
+        expect {
+          result = described_class.call(exception: error, account: account, context: { subsystem: :knowledge })
+
+          expect(result).to be_success
+          expect(result.incident).to be_a(ExceptionIncident)
+        }.to change(ExceptionIncident, :count).by(1)
+      end
+
+      it "does not count incidents outside the window toward the cap" do
+        create(:exception_incident,
+          account: account,
+          occurrence_count: described_class::ACCOUNT_HOURLY_CAP,
+          last_occurred_at: 2.hours.ago,
+          action_taken: "notified",
+          subsystem: "knowledge")
+
+        allow(Notifications::Publish).to receive(:call)
+
+        expect {
+          result = described_class.call(exception: error, account: account, context: { subsystem: :knowledge })
+
+          expect(result).to be_success
+          expect(result.incident).to be_a(ExceptionIncident)
+        }.to change(ExceptionIncident, :count).by(1)
+      end
+
+      it "logs a structured error when dropping due to account cap" do
+        create(:exception_incident,
+          account: account,
+          occurrence_count: described_class::ACCOUNT_HOURLY_CAP,
+          last_occurred_at: 1.minute.ago,
+          action_taken: "notified",
+          subsystem: "knowledge")
+
+        allow(Rails.logger).to receive(:error)
+
+        described_class.call(exception: error, account: account, context: { subsystem: :knowledge })
+
+        expect(Rails.logger).to have_received(:error).with(
+          hash_including(
+            message: "exception_handler.account_cap_dropped",
+            account_id: account.id,
+            exception_class: "RuntimeError"
+          )
+        )
+      end
+    end
+
     context "when the handler itself fails" do
       it "returns a failure result without raising" do
         allow(ExceptionHandler::Fingerprinter).to receive(:call).and_raise("handler bug")
