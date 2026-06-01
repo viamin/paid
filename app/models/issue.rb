@@ -458,6 +458,32 @@ class Issue < ApplicationRecord
     nil
   end
 
+  # Returns true when the most recent webhook of the given type arrived
+  # within the project's poll_interval window. Used by ScanPaidPrsActivity
+  # to skip redundant GitHub fetches when webhook delivery guarantees fresh data.
+  #
+  # @param event_type [Symbol] One of :pull_request_review, :pull_request,
+  #   :issue_comment, :check_suite, :check_run.
+  # @param poll_interval_seconds [Integer] The project's poll interval.
+  # @return [Boolean] true if a webhook of this type arrived within the window.
+  def webhook_fresh?(event_type, poll_interval_seconds)
+    return false unless is_pull_request?
+
+    webhook_at = case event_type
+                 when :pull_request_review then pull_request_review_webhook_at
+                 when :pull_request then pull_request_webhook_at
+                 when :issue_comment then issue_comment_webhook_at
+                 when :check_suite then check_suite_webhook_at
+                 when :check_run then check_run_webhook_at
+                 else return false
+                 end
+
+    return false if webhook_at.blank?
+    return false if poll_interval_seconds.to_i <= 0
+
+    webhook_at >= poll_interval_seconds.seconds.ago
+  end
+
   private
 
   CLOSING_KEYWORD_RE = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b/i

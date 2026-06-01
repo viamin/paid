@@ -515,7 +515,7 @@ module Activities
       # Only fetch PR data and check runs if blocking review triggers aren't enough.
       if all_triggers.empty?
         pr_data ||= fetch_pr_data(client, project, issue)
-        checks = fetch_check_runs(client, project, pr_data)
+        checks = fetch_check_runs(client, project, pr_data, issue: issue)
         ci_triggers = ci_failure_triggers_with_retry(checks || [], client: client, project: project, issue: issue)
         all_triggers.concat(ci_triggers)
       end
@@ -639,7 +639,7 @@ module Activities
       pr_data ||= fetch_pr_data(client, project, issue)
       return :skipped if pr_data.nil?
 
-      checks = fetch_check_runs(client, project, pr_data)
+      checks = fetch_check_runs(client, project, pr_data, issue: issue)
       ci_triggers = ci_failure_triggers(checks || [])
 
       if ci_triggers.any?
@@ -659,7 +659,7 @@ module Activities
     def scan_ready_pr(project, client, issue, pr_data:)
       return :skipped if pr_data.nil?
 
-      checks = fetch_check_runs(client, project, pr_data)
+      checks = fetch_check_runs(client, project, pr_data, issue: issue)
       mergeable = pr_data && pr_data[:mergeable]
       progress_state = pr_progress_state(project, issue)
 
@@ -747,7 +747,7 @@ module Activities
 
       # Owner approval on an escalated PR unblocks auto-merge.
       if project.auto_merge_enabled? && pr_data.present?
-        checks = fetch_check_runs(client, project, pr_data)
+        checks = fetch_check_runs(client, project, pr_data, issue: issue)
 
         if bot_user?(issue.github_creator_login)
           if auto_merge_eligible_bot?(project, client, issue,
@@ -864,7 +864,7 @@ module Activities
       unresolved_threads: nil)
       last_run = last_completed_run(project, issue)
       pr_data ||= fetch_pr_data(client, project, issue)
-      checks ||= fetch_check_runs(client, project, pr_data)
+      checks ||= fetch_check_runs(client, project, pr_data, issue: issue)
       reviews ||= fetch_reviews(client, project, issue)
       unresolved_threads ||= fetch_unresolved_threads(client, project, issue)
 
@@ -1369,7 +1369,7 @@ module Activities
       pr_data = fetch_pr_data(client, project, issue)
       return nil if pr_data.nil?
 
-      checks = fetch_check_runs(client, project, pr_data)
+      checks = fetch_check_runs(client, project, pr_data, issue: issue)
       return nil if checks.nil? || checks_pending?(checks)
 
       score = all_checks_green?(checks) ? 1.0 : 0.0
@@ -1380,7 +1380,7 @@ module Activities
       pr_data = fetch_pr_data(client, project, issue)
       return nil if pr_data.nil?
 
-      checks = fetch_check_runs(client, project, pr_data)
+      checks = fetch_check_runs(client, project, pr_data, issue: issue)
       return nil if checks.nil?
 
       reviews = fetch_reviews(client, project, issue)
@@ -1418,7 +1418,7 @@ module Activities
       pr_data = fetch_pr_data(client, project, issue)
       return nil if pr_data.nil? || pr_data.mergeable.nil?
 
-      checks = fetch_check_runs(client, project, pr_data)
+      checks = fetch_check_runs(client, project, pr_data, issue: issue)
       return nil if checks.nil? || checks_pending?(checks)
 
       unresolved_threads = fetch_unresolved_threads(client, project, issue)
@@ -1455,16 +1455,54 @@ module Activities
 
     # --- CI checks ---
 
-    def fetch_check_runs(client, project, pr_data)
+    # Skips the check_runs API call when a recent check_suite or check_run webhook
+    # delivered the same data within the poll interval window. GitHub sends both
+    # event types with full conclusion data when a suite/run completes.
+    def fetch_check_runs(client, project, pr_data, issue: nil)
       return [] unless pr_data
 
-      client.check_runs_for_ref(project.full_name, pr_data.head.sha)
+      # Use provided issue or look it up by PR number.
+      issue ||= find_issue_for_pr(project, pr_data)
+      return client.check_runs_for_ref(project.full_name, pr_data.head.sha) unless issue
+
+      return client.check_runs_for_ref(project.full_name, pr_data.head.sha) unless webhook_fresh?(issue, project)
+
+      logger.debug(
+        message: "pr_scanner.check_runs_skipped_webhook_fresh",
+        project_id: project.id,
+        pr_number: issue.github_number
+      )
+      []
     rescue GithubClient::Error => e
       logger.warn(
         message: "pr_scanner.ci_check_failed",
         project_id: project.id,
         error: e.message
       )
+      nil
+    end
+
+    # Returns true when a recent webhook delivered fresh data for the event
+    # type, making the corresponding API fetch redundant within the poll window.
+    def webhook_fresh?(issue, project, event_type)
+      return false unless issue && project
+      return false unless project.poll_interval_seconds.to_i > 0
+
+      case event_type
+      when :check_suite then issue.check_suite_webhook_at
+      when :check_run then issue.check_run_webhook_at
+      else return false
+      end && issue.webhook_fresh?(event_type, project.poll_interval_seconds)
+    rescue StandardError
+      false
+    end
+
+    def find_issue_for_pr(project, pr_data)
+      number = pr_data&.number || pr_data&.dig("number")
+      return nil unless number
+
+      project.issues.find_by(github_number: number, is_pull_request: true)
+    rescue StandardError
       nil
     end
 
@@ -1632,6 +1670,18 @@ module Activities
     # --- Review checks ---
 
     def fetch_unresolved_threads(client, project, issue)
+      # Skip when a recent issue_comment webhook delivered fresh data. GitHub
+      # sends issue_comment on both PR and issue comments, and new comments can
+      # resolve threads — the webhook gives us the same state without an API call.
+      if webhook_fresh?(issue, project, :issue_comment)
+        logger.debug(
+          message: "pr_scanner.threads_skipped_webhook_fresh",
+          project_id: project.id,
+          pr_number: issue.github_number
+        )
+        return []
+      end
+
       threads = client.review_threads(project.full_name, issue.github_number)
       threads.reject { |t| t[:is_resolved] }
     rescue GithubClient::Error => e
@@ -2314,11 +2364,36 @@ module Activities
       end
     end
 
+    # Skips the reviews API call when a recent pull_request_review webhook
+    # delivered the same data within the poll interval window. GitHub sends
+    # pull_request_review with the full review object when a review is submitted.
     def fetch_reviews(client, project, issue)
+      if webhook_fresh?(issue, project, :pull_request_review)
+        logger.debug(
+          message: "pr_scanner.reviews_skipped_webhook_fresh",
+          project_id: project.id,
+          pr_number: issue.github_number
+        )
+        return []
+      end
+
       client.pull_request_reviews(project.full_name, issue.github_number)
     rescue GithubClient::Error => e
       log_signal_error("fetch_reviews", project, issue, e)
       nil
+    end
+
+    def webhook_fresh?(issue, project, event_type)
+      return false unless issue && project
+      return false unless project.poll_interval_seconds.to_i > 0
+
+      case event_type
+      when :pull_request_review then issue.pull_request_review_webhook_at
+      when :issue_comment then issue.issue_comment_webhook_at
+      else return false
+      end && issue.webhook_fresh?(event_type, project.poll_interval_seconds)
+    rescue StandardError
+      false
     end
 
     def changes_requested_from_reviews(project, reviews, last_run)

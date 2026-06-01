@@ -46,6 +46,8 @@ module Api
         return
       end
 
+      record_webhook_timestamp(pr["number"], :pull_request_review)
+
       QualityMetrics::CollectReviewFeedback.call(
         agent_run: agent_run,
         review_state: review["state"],
@@ -72,6 +74,8 @@ module Api
       if %w[opened synchronize].include?(action) && @project&.auto_merge_dependabot?
         enqueue_dependabot_auto_merge(pr)
       end
+
+      record_webhook_timestamp(pr["number"], :pull_request)
 
       # Only act on merge events — other PR actions (opened, synchronize, etc.)
       # are not relevant to human feedback quality signals.
@@ -115,8 +119,10 @@ module Api
       pr_number = issue.dig("pull_request") ? issue["number"] : nil
 
       agent_run = if pr_number
+        record_webhook_timestamp(pr_number, :issue_comment)
         find_agent_run(pr_number)
       else
+        record_webhook_timestamp(issue["number"], :issue_comment)
         find_agent_run_by_issue(issue["number"])
       end
 
@@ -138,6 +144,10 @@ module Api
     def handle_check_suite
       return head(:ok) unless payload["action"] == "completed"
 
+      # Record webhook timestamp for all check_suite events (not just action=completed)
+      # so the PR scanner can skip check_run fetches when check_suite already delivered state.
+      record_webhook_timestamp_for_check_suite
+
       if @project&.auto_release_enabled?
         enqueue_auto_release_evaluation
       end
@@ -151,6 +161,8 @@ module Api
 
     def handle_check_run
       return head(:ok) unless payload["action"] == "completed"
+
+      record_webhook_timestamp_for_check_run
 
       if @project&.auto_release_enabled?
         enqueue_auto_release_evaluation
@@ -273,6 +285,81 @@ module Api
 
     def check_quality_pause(agent_run)
       QualityPause::Check.call(agent_run: agent_run)
+    end
+
+    # Records the webhook timestamp on the corresponding Issue row so that
+    # ScanPaidPrsActivity can skip redundant fetches within the poll interval window.
+    #
+    # @param pr_number [Integer, nil] The GitHub PR number, or nil for issues.
+    # @param event_type [Symbol] One of :pull_request_review, :pull_request, :issue_comment.
+    def record_webhook_timestamp(pr_number, event_type)
+      return unless @project && pr_number
+
+      issue = @project.issues.find_by(github_number: pr_number, is_pull_request: true)
+      return unless issue
+
+      column = case event_type
+               when :pull_request_review then "pull_request_review_webhook_at"
+               when :pull_request then "pull_request_webhook_at"
+               when :issue_comment then "issue_comment_webhook_at"
+               else return
+               end
+
+      issue.update_column(column, Time.current)
+    rescue StandardError => e
+      Rails.logger.warn(
+        message: "webhook.timestamp_record_failed",
+        project_id: @project.id,
+        pr_number: pr_number,
+        event_type: event_type,
+        error: e.message
+      )
+    end
+
+    # Records check_suite webhook timestamp for all associated PRs.
+    def record_webhook_timestamp_for_check_suite
+      return unless @project
+
+      pull_requests = payload.dig("check_suite", "pull_requests") || []
+      pull_requests.each do |pr_ref|
+        pr_number = pr_ref["number"]
+        next unless pr_number
+
+        issue = @project.issues.find_by(github_number: pr_number, is_pull_request: true)
+        next unless issue
+
+        issue.update_column("check_suite_webhook_at", Time.current)
+      rescue StandardError => e
+        Rails.logger.warn(
+          message: "webhook.check_suite_timestamp_record_failed",
+          project_id: @project.id,
+          pr_number: pr_number,
+          error: e.message
+        )
+      end
+    end
+
+    # Records check_run webhook timestamp for all associated PRs.
+    def record_webhook_timestamp_for_check_run
+      return unless @project
+
+      pull_requests = payload.dig("check_run", "pull_requests") || []
+      pull_requests.each do |pr_ref|
+        pr_number = pr_ref["number"]
+        next unless pr_number
+
+        issue = @project.issues.find_by(github_number: pr_number, is_pull_request: true)
+        next unless issue
+
+        issue.update_column("check_run_webhook_at", Time.current)
+      rescue StandardError => e
+        Rails.logger.warn(
+          message: "webhook.check_run_timestamp_record_failed",
+          project_id: @project.id,
+          pr_number: pr_number,
+          error: e.message
+        )
+      end
     end
 
     def payload
