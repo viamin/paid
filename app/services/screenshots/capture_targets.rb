@@ -374,6 +374,7 @@ module Screenshots
       when /\Ahome\// then [ :dashboard ]
       when /\Anotifications\// then [ :notifications ]
       when /\Aonboarding\// then [ :onboarding ]
+      when /\Afree_models\// then [ :free_models_catalog ]
       when /\Aintegrations\// then integrations_targets(relative_path.delete_prefix("integrations/"))
       when /\Aintegration_credentials\// then rest_resource_targets(relative_path, "integration_credentials", index: :integration_credentials, new: :integration_credential_new, show: :integration_credential_show, edit: :integration_credential_show)
       when /\Agithub_installations\// then github_installation_targets(relative_path.delete_prefix("github_installations/"))
