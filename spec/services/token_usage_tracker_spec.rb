@@ -96,6 +96,29 @@ RSpec.describe TokenUsageTracker do
       expect(usage.metadata).to include("pricing_tier" => "paid")
     end
 
+    it "preserves supplied metadata when the model cannot be resolved" do
+      described_class.track(
+        tracked_run: agent_run,
+        usage: {
+          tokens_input: 1000,
+          tokens_output: 500,
+          llm_model: "unknown-model",
+          request_type: "agent",
+          metadata: {
+            pricing_tier: "proxy-free",
+            provider_data_collection: nil,
+            source: "proxy"
+          }
+        }
+      )
+
+      expect(TokenUsage.last.metadata).to eq(
+        "pricing_tier" => "proxy-free",
+        "provider_data_collection" => nil,
+        "source" => "proxy"
+      )
+    end
+
     it "updates cost budgets for the project" do
       budget = create(:cost_budget, project: project, limit_cents: 100_000, period_started_at: Time.current.beginning_of_month)
 

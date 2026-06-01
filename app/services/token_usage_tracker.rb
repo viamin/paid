@@ -168,6 +168,8 @@ class TokenUsageTracker
 
   def self.record_per_request_usage(tracked_run:, input_tokens:, output_tokens:, cost_cents:, llm_model:, request_type:, metadata:)
     model = lookup_model(llm_model)
+    usage_metadata = metadata
+    usage_metadata = metadata.merge(pricing_tier: model.pricing_tier) if model&.pricing_tier.present?
 
     TokenUsage.create!(
       agent_run: tracked_run.is_a?(AgentRun) ? tracked_run : nil,
@@ -178,7 +180,7 @@ class TokenUsageTracker
       cost_cents: cost_cents,
       llm_model: llm_model,
       request_type: request_type,
-      metadata: metadata.merge(pricing_tier: model&.pricing_tier).compact
+      metadata: usage_metadata
     )
   end
   private_class_method :record_per_request_usage
