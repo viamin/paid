@@ -2313,6 +2313,166 @@ RSpec.describe GithubClient do
     end
   end
 
+  describe "#issue_comments_batch" do
+    let(:repo) { "owner/repo" }
+
+    context "when comments exist" do
+      before do
+        stub_request(:post, "#{api_base}/graphql")
+          .to_return(
+            status: 200,
+            body: {
+              data: {
+                repository: {
+                  issue_10: {
+                    comments: {
+                      pageInfo: { hasPreviousPage: false },
+                      nodes: [
+                        { author: { login: "alice" }, body: "first", createdAt: "2024-01-01T00:00:00Z" },
+                        { author: { login: "bob" }, body: "second", createdAt: "2024-01-02T00:00:00Z" }
+                      ]
+                    }
+                  },
+                  issue_20: {
+                    comments: {
+                      pageInfo: { hasPreviousPage: false },
+                      nodes: []
+                    }
+                  }
+                }
+              }
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "returns a hash mapping issue numbers to sorted comments" do
+        result = client.issue_comments_batch(repo, [ 10, 20 ])
+
+        expect(result.keys).to contain_exactly(10, 20)
+        expect(result[10].size).to eq(2)
+        expect(result[10].first.body).to eq("first")
+        expect(result[10].last.body).to eq("second")
+        expect(result[20]).to eq([])
+      end
+    end
+
+    context "when an issue does not exist" do
+      before do
+        stub_request(:post, "#{api_base}/graphql")
+          .to_return(
+            status: 200,
+            body: {
+              data: {
+                repository: {
+                  issue_99: nil
+                }
+              }
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "returns empty array for missing issues" do
+        result = client.issue_comments_batch(repo, [ 99 ])
+
+        expect(result[99]).to eq([])
+      end
+    end
+
+    context "when comments are truncated" do
+      before do
+        stub_request(:post, "#{api_base}/graphql")
+          .to_return(
+            status: 200,
+            body: {
+              data: {
+                repository: {
+                  issue_10: {
+                    comments: {
+                      pageInfo: { hasPreviousPage: true },
+                      nodes: [
+                        { author: { login: "alice" }, body: "recent", createdAt: "2024-01-02T00:00:00Z" }
+                      ]
+                    }
+                  }
+                }
+              }
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "logs a truncation warning" do
+        allow(Rails.logger).to receive(:warn)
+
+        client.issue_comments_batch(repo, [ 10 ])
+
+        expect(Rails.logger).to have_received(:warn).with(
+          hash_including(
+            message: "github_client.issue_comments_truncated",
+            repo: repo,
+            issue_number: 10
+          )
+        )
+      end
+    end
+
+    context "when GraphQL returns errors" do
+      before do
+        stub_request(:post, "#{api_base}/graphql")
+          .to_return(
+            status: 200,
+            body: {
+              errors: [ { message: "something went wrong" } ]
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "raises ApiError" do
+        expect { client.issue_comments_batch(repo, [ 10 ]) }
+          .to raise_error(GithubClient::ApiError, /something went wrong/)
+      end
+    end
+
+    context "with empty issue numbers" do
+      it "returns empty hash without making a request" do
+        result = client.issue_comments_batch(repo, [])
+
+        expect(result).to eq({})
+      end
+    end
+
+    context "with string issue numbers" do
+      before do
+        stub_request(:post, "#{api_base}/graphql")
+          .to_return(
+            status: 200,
+            body: {
+              data: {
+                repository: {
+                  issue_10: {
+                    comments: {
+                      pageInfo: { hasPreviousPage: false },
+                      nodes: []
+                    }
+                  }
+                }
+              }
+            }.to_json,
+            headers: { "Content-Type" => "application/json" }
+          )
+      end
+
+      it "coerces string numbers to integers" do
+        result = client.issue_comments_batch(repo, [ "10" ])
+
+        expect(result.keys).to contain_exactly(10)
+      end
+    end
+  end
+
   describe "GitHub health state integration" do
     it "records a failure on server errors" do
       stub_request(:get, "#{api_base}/user")

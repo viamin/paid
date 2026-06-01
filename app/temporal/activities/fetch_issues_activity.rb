@@ -9,7 +9,6 @@ module Activities
     DEFAULT_PER_PAGE = 100
     DEFAULT_RELATIONSHIP_PARSE_ISSUE_LIMIT = 100
     DEFAULT_RELATIONSHIP_PARSE_BUDGET_SECONDS = 30
-    DEFAULT_RELATIONSHIP_COMMENT_PAGES = 2
     ISSUE_RECONCILIATION_INTERVAL = 1.hour
 
     def execute(input)
@@ -484,6 +483,10 @@ module Activities
       adjacency = IssueDependency.account_adjacency(project.account)
       parent_child_changed = false
 
+      # Batch-fetch comments for all candidate issues in one GraphQL request
+      # instead of N separate REST calls.
+      comments_by_number = fetch_batch_comments(client, project, issues)
+
       issues.each_with_index do |issue, index|
         if index.positive? && monotonic_now >= deadline
           deferred_count += issues.size - index
@@ -501,11 +504,15 @@ module Activities
 
         parsed_before = issue.relationships_parsed_at
         check_rate_budget!(client)
-        comment_bodies = fetch_trusted_comment_bodies(client, project, issue)
-        # nil means comment fetch failed — skip ALL parsing for this issue to
-        # avoid stale-removal of comment-derived deps. Body-only parsing would
-        # delete previously-persisted comment deps that are still valid.
-        next if comment_bodies.nil?
+
+        github_comments = comments_by_number[issue.github_number]
+        # nil means the batch fetch failed entirely — skip ALL parsing for
+        # this issue to avoid stale-removal of comment-derived deps.
+        next if github_comments.nil?
+
+        comment_bodies = github_comments
+          .select { |c| project.trusted_github_user?(c.user&.login) }
+          .map { |c| c.body.to_s }
 
         Issues::ParseDependencies.call(issue: issue, adjacency: adjacency, comments: comment_bodies)
         parent_child_changed |= Issues::ParseParentChild.call(issue: issue, comments: comment_bodies)
@@ -515,8 +522,6 @@ module Activities
         # Always re-raise reactive rate-limit errors.
         raise
       rescue => e
-        # Re-raise proactive rate-limit errors so they propagate to the
-        # workflow instead of being swallowed by the generic handler.
         raise if e.is_a?(Temporalio::Error::ApplicationError) && e.type == "RateLimit"
         logger.warn(
           message: "github_sync.parse_issue_relationships_failed",
@@ -607,34 +612,28 @@ module Activities
       false
     end
 
-    # Returns trusted comment bodies, or nil if comments could not be fetched.
-    # Returning nil (vs empty array) lets callers distinguish "no comments" from
-    # "fetch failed", avoiding accidental deletion of comment-derived dependencies.
-    def fetch_trusted_comment_bodies(client, project, issue)
-      github_comments = client.recent_issue_comments(
-        project.full_name,
-        issue.github_number,
-        pages: relationship_comment_pages
-      )
-      # Sort by created_at to guarantee chronological processing regardless
-      # of API response ordering. ParseDependencies relies on comment order
-      # to resolve "latest directive wins" semantics.
-      github_comments
-        .sort_by { |c| c.created_at || Time.at(0) }
-        .select { |c| project.trusted_github_user?(c.user&.login) }
-        .map { |c| c.body.to_s }
+    # Batch-fetches comments for all candidate issues in a single GraphQL request.
+    # Returns a Hash mapping issue number to an array of comment objects, or nil
+    # for issues whose comments could not be fetched. Returning nil (vs empty
+    # array) lets callers distinguish "no comments" from "fetch failed", avoiding
+    # accidental deletion of comment-derived dependencies.
+    def fetch_batch_comments(client, project, issues)
+      issue_numbers = issues.map(&:github_number)
+      return {} if issue_numbers.empty?
+
+      result = client.issue_comments_batch(project.full_name, issue_numbers)
+      issue_numbers.to_h { |n| [ n, result.fetch(n, []) ] }
     rescue GithubClient::RateLimitError
       raise
     rescue => e
       logger.warn(
-        message: "github_sync.fetch_comments_failed",
+        message: "github_sync.fetch_batch_comments_failed",
         project_id: project.id,
-        issue_id: issue.id,
-        github_number: issue.github_number,
+        issue_count: issues.size,
         error_class: e.class.name,
         error: e.message
       )
-      nil
+      issues.map { |issue| [ issue.github_number, nil ] }.to_h
     end
 
     def relationship_parse_issue_limit
@@ -643,10 +642,6 @@ module Activities
 
     def relationship_parse_budget_seconds
       Integer(ENV.fetch("FETCH_ISSUES_RELATIONSHIP_PARSE_BUDGET_SECONDS", DEFAULT_RELATIONSHIP_PARSE_BUDGET_SECONDS))
-    end
-
-    def relationship_comment_pages
-      Integer(ENV.fetch("FETCH_ISSUES_RELATIONSHIP_COMMENT_PAGES", DEFAULT_RELATIONSHIP_COMMENT_PAGES))
     end
 
     def monotonic_now
