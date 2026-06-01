@@ -42,6 +42,7 @@ gem "csv"
 gem "octokit"
 
 gem "faraday-retry"
+gem "faraday-http-cache"
 
 # Temporal workflow orchestration [https://temporal.io]
 # Defer loading — 139 MB gem with native Rust extensions only needed for
