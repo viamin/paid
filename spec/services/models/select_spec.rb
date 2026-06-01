@@ -506,19 +506,19 @@ RSpec.describe Models::Select do
       end
     end
 
-    context "when openrouter_free is the effective runner" do
+    context "when model is an openrouter_sync free model" do
       let!(:free_model) do
         create(
           :llm_model,
           model_id: "openrouter-free-model",
           tier: "mid",
           pricing_tier: "free",
-          data_training_risk: "possible"
+          data_training_risk: "possible",
+          catalog_source: "openrouter_sync"
         )
       end
 
       before do
-        allow(agent_run).to receive(:effective_runner).and_return("openrouter_free")
         project.update!(data_classification: "restricted", model_preferences: { "required_model_id" => free_model.model_id })
       end
 

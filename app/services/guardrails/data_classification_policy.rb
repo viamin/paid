@@ -4,7 +4,6 @@ module Guardrails
   class DataClassificationPolicy
     DECISION_TYPE = "check_data_classification"
     DECISION_POINT = "data_classification_policy"
-    OPENROUTER_FREE_RUNNER_KEY = "openrouter_free"
 
     Result = Data.define(
       :data_classification,
@@ -20,7 +19,7 @@ module Guardrails
         {
           data_classification: data_classification,
           provider_data_collection: provider_data_collection
-        }.compact
+        }
       end
     end
 
@@ -67,12 +66,17 @@ module Guardrails
       return false unless sensitive_project?
       return false unless model&.free?
       return false unless model.data_training_risk == "possible"
+      return false if openrouter_routed?
 
-      runner_key != OPENROUTER_FREE_RUNNER_KEY
+      true
     end
 
     def sensitive_project?
       project.confidential? || project.restricted?
+    end
+
+    def openrouter_routed?
+      model&.catalog_source == "openrouter_sync"
     end
 
     def runner_key
@@ -80,7 +84,7 @@ module Guardrails
     end
 
     def routing_params
-      return {} unless runner_key == OPENROUTER_FREE_RUNNER_KEY
+      return {} unless openrouter_routed?
 
       case project.data_classification
       when "open", "internal"
@@ -97,7 +101,7 @@ module Guardrails
 
       "Data classification warning: selected free model #{model.model_id} has possible training risk " \
         "for #{project.data_classification} project on runner #{runner_key}. " \
-        "Use #{OPENROUTER_FREE_RUNNER_KEY} to enforce provider data_collection=#{data_collection || "deny"}."
+        "Use an OpenRouter-routed model to enforce provider data_collection=#{data_collection || "deny"}."
     end
 
     def persist_decision(result)

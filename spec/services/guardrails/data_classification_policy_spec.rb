@@ -18,7 +18,7 @@ RSpec.describe Guardrails::DataClassificationPolicy do
     end
     let(:data_classification) { "confidential" }
 
-    it "warns for sensitive projects using a risky free model outside openrouter_free" do
+    it "warns for sensitive projects using a risky free model outside openrouter" do
       result = described_class.call(agent_run: agent_run, selection: selection)
 
       expect(result).to be_warning
@@ -37,13 +37,14 @@ RSpec.describe Guardrails::DataClassificationPolicy do
       expect(decision.actor).to eq("data_classification_policy")
       expect(decision.context).to include(
         "decision_status" => "applied",
-        "data_classification" => "confidential"
+        "data_classification" => "confidential",
+        "provider_data_collection" => nil
       )
       expect(decision.outputs).to include("warning_emitted" => true)
     end
 
-    it "does not warn for openrouter_free because provider routing denies data collection" do
-      allow(agent_run).to receive(:effective_runner).and_return("openrouter_free")
+    it "does not warn for openrouter_sync models because provider routing denies data collection" do
+      model.update!(catalog_source: "openrouter_sync")
 
       result = described_class.call(agent_run: agent_run, selection: selection)
 
@@ -67,9 +68,9 @@ RSpec.describe Guardrails::DataClassificationPolicy do
       expect(result).not_to be_warning
     end
 
-    it "does not warn for restricted projects routed through openrouter_free" do
+    it "does not warn for restricted projects with openrouter_sync model" do
       project.update!(data_classification: "restricted")
-      allow(agent_run).to receive(:effective_runner).and_return("openrouter_free")
+      model.update!(catalog_source: "openrouter_sync")
 
       result = described_class.call(agent_run: agent_run, selection: selection)
 
