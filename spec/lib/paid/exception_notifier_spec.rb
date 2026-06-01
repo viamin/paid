@@ -95,7 +95,7 @@ RSpec.describe Paid::ExceptionNotifier do
       )
     end
 
-    it "falls back when exception.message itself raises" do
+    it "falls back when exception.message itself raises for anonymous exception classes" do
       Current.account = account
 
       broken_exception = Class.new(StandardError) do
@@ -108,8 +108,8 @@ RSpec.describe Paid::ExceptionNotifier do
         notifier.call(broken_exception, data: { subsystem: "knowledge" })
       }.to have_enqueued_job(HandleExceptionJob).with(
         hash_including(
-          exception_class: broken_exception.class.name,
-          exception_message: "[#{broken_exception.class.name} message raised]"
+          exception_class: "StandardError",
+          exception_message: "[StandardError message raised]"
         )
       )
     end

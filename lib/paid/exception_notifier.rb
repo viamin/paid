@@ -12,10 +12,11 @@ module Paid
       return nil unless account
 
       context = pinned_context(data)
+      exception_class = serialized_exception_class(exception)
 
       HandleExceptionJob.perform_later(
         account_id: account.id,
-        exception_class: exception.class.name,
+        exception_class: exception_class,
         exception_message: safe_message(exception).truncate(MAX_MESSAGE_LENGTH),
         exception_backtrace: exception.backtrace&.first(MAX_BACKTRACE_FRAMES),
         context: context
@@ -47,7 +48,11 @@ module Paid
     def safe_message(exception)
       exception.message.to_s
     rescue
-      "[#{exception.class.name} message raised]"
+      "[#{serialized_exception_class(exception)} message raised]"
+    end
+
+    def serialized_exception_class(exception)
+      exception.class.name || exception.class.superclass&.name || RuntimeError.name
     end
   end
 end
