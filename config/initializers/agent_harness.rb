@@ -76,8 +76,17 @@ end
 
 # Suppress Claude CLI .mcp.json auto-discovery when Paid did not explicitly
 # configure any MCP servers. We pass an empty {"mcpServers": {}} config via
-# --mcp-config so the CLI emits only the requested JSON envelope.
-# TODO(#2365): remove when agent-harness >= 0.19.0 ships native MCP suppression
+# --mcp-config so the CLI emits only the requested JSON envelope, AND we
+# materialize that config file into the container via ExecutionPreparation
+# (the gem's build_execution_preparation returns nil — it writes only a host-side
+# tempfile that never reaches the agent container).
+#
+# agent-harness 0.19.0 ships native suppression, hence the < 0.19.0 gate, but
+# adopting it is NOT a simple drop: upstream still emits the buggy variadic
+# space-form (see PaidAgentHarnessAnthropicMcpConfigFlagFormPatch) and still does
+# not materialize the config into containers. Both must be handled before this
+# patch can go.
+# TODO(#2364): remove when Paid adopts agent-harness >= 0.19.0 native suppression.
 module PaidAgentHarnessAnthropicMcpSuppressionPatch
   def send_message(prompt:, **options)
     super(prompt:, **with_explicit_empty_mcp_servers(options))
@@ -94,7 +103,13 @@ module PaidAgentHarnessAnthropicMcpSuppressionPatch
     return command unless suppress_mcp_autodiscovery?(options)
 
     plan = empty_mcp_config_plan(options)
-    command[0...-1] + [ "--mcp-config", plan.fetch(:path), command.last ]
+    # Use the --flag=value form (not a space-separated "--mcp-config <path>")
+    # because Claude's --mcp-config is variadic and would otherwise swallow the
+    # trailing positional prompt. See PaidAgentHarnessAnthropicMcpConfigFlagFormPatch
+    # below for the full explanation; this branch builds the empty-config flag by
+    # hand because agent-harness 0.18.2 emits no --mcp-config flag at all when the
+    # server list is empty.
+    command[0...-1] + [ "--mcp-config=#{plan.fetch(:path)}", command.last ]
   end
 
   def build_execution_preparation(options)
@@ -146,6 +161,39 @@ if agent_harness_version < Gem::Version.new("0.19.0")
   AgentHarness::Providers::Anthropic.prepend(PaidAgentHarnessAnthropicMcpSuppressionPatch) unless
     AgentHarness::Providers::Anthropic < PaidAgentHarnessAnthropicMcpSuppressionPatch
 end
+
+# Force Claude's --mcp-config flag into the `--flag=value` form.
+#
+# The Claude CLI declares `--mcp-config <configs...>` as a *variadic* option, so
+# the space-separated form ("--mcp-config", path) that agent-harness emits right
+# before the positional prompt makes the CLI greedily consume the prompt as a
+# second config path:
+#
+#   claude ... --mcp-config /tmp/cfg.json "Reply with exactly OK."
+#   => Error: Invalid MCP configuration:
+#      MCP config file not found: /workspace/Reply with exactly OK.
+#
+# The `=value` form captures exactly one path and leaves the prompt as a clean
+# positional argument. This covers the with-servers path on 0.18.2 AND every
+# invocation on >= 0.19.0, where the gem always passes --mcp-config (the #225
+# suppression fix) but still with the buggy space-form (confirmed through v0.20.0).
+#
+# Intentionally NOT folded under the < 0.19.0 suppression gate above: that gate
+# drops exactly when the gem starts emitting this flag everywhere, which is when
+# the bug bites hardest. The guard below makes this a no-op once the gem emits a
+# single equals-form token, so it self-deactivates and is safe to leave in place.
+# TODO(#2435): remove once agent-harness ships the =value form (viamin/agent-harness#229).
+module PaidAgentHarnessAnthropicMcpConfigFlagFormPatch
+  def build_mcp_flags(mcp_servers, working_dir: nil)
+    flags = super
+    return flags unless flags.length == 2 && flags.first == "--mcp-config"
+
+    [ "--mcp-config=#{flags.last}" ]
+  end
+end
+
+AgentHarness::Providers::Anthropic.prepend(PaidAgentHarnessAnthropicMcpConfigFlagFormPatch) unless
+  AgentHarness::Providers::Anthropic < PaidAgentHarnessAnthropicMcpConfigFlagFormPatch
 
 # Backport embedding support until agent-harness ships a native public API.
 # Keep this version-gated and narrow so Paid can switch back to upstream
