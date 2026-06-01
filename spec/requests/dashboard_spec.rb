@@ -700,6 +700,26 @@ RSpec.describe "Dashboard" do
 
       expect(response.body).to include("2 runners are recovering in half-open mode.")
     end
+
+    it "shows free-model availability details for openrouter_free" do
+      free_model = create(:llm_model, model_id: "high-free", provider: "openrouter", tier: "high", pricing_tier: "free")
+      create(:llm_model, model_id: "mid-free", provider: "openrouter", tier: "mid", pricing_tier: "free")
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+      runner = create(
+        :runner,
+        user: user,
+        runner_key: "openrouter_free",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        tier_model_ids: { "high" => free_model.model_id }
+      )
+      create(:runner_state, user: user, runner_name: "#{runner.state_key}:#{free_model.model_id}", rate_limited_until: 10.minutes.from_now)
+
+      get dashboard_runner_health_path
+
+      expect(response.body).to include("1 of 2 free models available")
+      expect(response.body).to include("Add OpenRouter credits")
+    end
   end
 
   describe "GET /dashboard/live" do

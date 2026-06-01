@@ -22,20 +22,24 @@ class RunnersController < ApplicationController
 
   def new
     auth_type = sanitize_auth_type(params[:form_variant])
+    requested_runner_key = params[:runner_key].to_s.presence
+    load_runner_options
 
     # Only honor API key auth_type if the user has compatible API keys;
     # otherwise default to subscription to avoid a form with no radio selected.
+    auth_type = preferred_auth_type_for_runner(requested_runner_key, fallback: auth_type) if requested_runner_key
     if auth_type == "api_key"
-      load_runner_options unless instance_variable_defined?(:@api_key_runner_options)
       auth_type = "subscription" if @api_key_runner_options.blank?
     end
 
-    @runner = resource_records.new(auth_type: auth_type)
+    @runner = resource_records.new(auth_type: auth_type, runner_key: requested_runner_key)
+    apply_new_runner_defaults(@runner)
     authorize @runner
   end
 
   def create
     @runner = resource_records.new(runner_params)
+    apply_new_runner_defaults(@runner)
     authorize @runner
     validate_runner_key_enabled!
     validate_container_executable!
@@ -222,12 +226,13 @@ class RunnersController < ApplicationController
   def load_runner_options
     addable_keys = resource_addable_keys
     existing_subscription_keys = resource_records.kept_only.subscription.pluck(:runner_key)
+    subscription_addable_keys = addable_keys.reject { |key| api_key_only_runner?(key) }
 
     # Subscription runners: only show keys not yet added
     @subscription_runner_options = if @runner&.persisted?
-      addable_keys - (existing_subscription_keys - [ @runner.runner_key ])
+      subscription_addable_keys - (existing_subscription_keys - [ @runner.runner_key ])
     else
-      addable_keys - existing_subscription_keys
+      subscription_addable_keys - existing_subscription_keys
     end
 
     # API key runners: show all addable keys that have a compatible API key
@@ -428,6 +433,7 @@ class RunnersController < ApplicationController
 
   def load_index_context
     @runners = policy_scope(resource_model_class).ordered
+    @free_model_runners = @runners.select { |runner| runner.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY }
     @runner_states = cached_runner_states
     @user_setting = current_user.settings
 
@@ -468,12 +474,13 @@ class RunnersController < ApplicationController
     @available_api_keys = current_user.provider_api_keys.ordered
     existing_subscription_keys = @runners.select(&:subscription?).map(&:runner_key)
     addable_keys = resource_addable_keys
+    subscription_addable_keys = addable_keys.reject { |key| api_key_only_runner?(key) }
     api_key_compatible_addable_keys =
       addable_keys.select do |key|
         @available_api_keys.any? { |api_key| compatible_api_key_for_runner?(api_key: api_key, runner_key: key) }
       end
     @addable_runner_options = (
-      (addable_keys - existing_subscription_keys) + api_key_compatible_addable_keys
+      (subscription_addable_keys - existing_subscription_keys) + api_key_compatible_addable_keys
     ).uniq.presence || []
   end
 
@@ -586,8 +593,31 @@ class RunnersController < ApplicationController
     if runner_key == "pi"
       return resource_model_class::PI_API_PROVIDERS.values.any? { |config| config[:service_type] == api_key.api_service_type }
     end
+    return api_key.api_service_type == "openrouter" if runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
 
     api_key.api_service_type == resource_api_service_type_for(runner_key)
+  end
+
+  def preferred_auth_type_for_runner(runner_key, fallback:)
+    return "api_key" if @api_key_runner_options.include?(runner_key) && !@subscription_runner_options.include?(runner_key)
+    return "subscription" if @subscription_runner_options.include?(runner_key) && !@api_key_runner_options.include?(runner_key)
+
+    fallback
+  end
+
+  def apply_new_runner_defaults(runner)
+    return unless runner.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
+
+    runner.auth_type = "api_key"
+    runner.enabled_for_agent_runs = true if runner.enabled_for_agent_runs.nil?
+    runner.enabled_for_chat = true if runner.enabled_for_chat.nil?
+    runner.enabled_for_fallback = true if runner.enabled_for_fallback.nil?
+    runner.fallback_role = "rate_limit_fallback"
+    runner.tier_model_ids = Runners::DefaultTierModelIds.call(runner_key: runner.runner_key) if runner.tier_model_ids.blank?
+  end
+
+  def api_key_only_runner?(runner_key)
+    runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
   end
 
   def enabled_agent_runner_identifiers

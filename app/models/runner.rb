@@ -9,6 +9,8 @@ class Runner < ApplicationRecord
   include Discard::Model
   include LegacyAttributeBridge
 
+  OPENROUTER_FREE_RUNNER_KEY = "openrouter_free"
+
   LEGACY_PROVIDER_ATTRIBUTE_BRIDGES = {
     "provider_key" => "runner_key"
   }.freeze
@@ -144,6 +146,7 @@ class Runner < ApplicationRecord
   validate :kilocode_api_key_config_must_be_valid
   validate :aider_api_key_config_must_be_valid
   validate :pi_api_key_config_must_be_valid
+  validate :openrouter_free_requires_api_key_auth
   validate :tier_model_ids_must_be_valid
   validate :tier_models_must_be_valid
   validate :complexity_thresholds_must_be_valid
@@ -542,6 +545,7 @@ class Runner < ApplicationRecord
 
   def self.display_name_for(runner_key)
     return "Unknown" if runner_key.blank?
+    return "OpenRouter Free" if runner_key.to_s == OPENROUTER_FREE_RUNNER_KEY
 
     provider = AgentHarness.provider(RunnerSupport.harness_runner_key_for(runner_key).to_sym)
 
@@ -907,6 +911,13 @@ class Runner < ApplicationRecord
     errors.add(:integration_credential, "must be active")
   end
 
+  def openrouter_free_requires_api_key_auth
+    return unless runner_key == OPENROUTER_FREE_RUNNER_KEY
+    return if api_key?
+
+    errors.add(:auth_type, "must be API key for OpenRouter Free")
+  end
+
   def opencode_api_key_config_must_be_valid
     return unless runner_key == "opencode"
     return unless api_key?
@@ -935,7 +946,7 @@ class Runner < ApplicationRecord
     end
 
     expected_provider = Runners::DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER[runner_key.to_s]
-    if expected_provider.nil? && !requires_direct_outbound?
+    if expected_provider.nil? && !requires_direct_outbound? && runner_key != OPENROUTER_FREE_RUNNER_KEY
       errors.add(:tier_model_ids, "is not configurable for runner #{runner_key}")
       return
     end
@@ -966,6 +977,11 @@ class Runner < ApplicationRecord
         configured = direct_outbound_model_id
         if configured.present? && model_id != configured
           errors.add(:tier_model_ids, "must match the configured direct-outbound model #{configured}")
+          return
+        end
+      elsif runner_key == OPENROUTER_FREE_RUNNER_KEY
+        unless model.free?
+          errors.add(:tier_model_ids, "model #{model_id} must be a free model")
           return
         end
       elsif expected_provider && model.provider != expected_provider

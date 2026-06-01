@@ -10,8 +10,8 @@ class IntegrationsController < ApplicationController
     @active_github_installations = @github_installations.select(&:active?)
     active_installation_ids = @active_github_installations.map(&:id)
     @projects_with_github_app = current_account.projects.where(github_installation_id: active_installation_ids).count
-    @projects_covered_by_github_app = current_account.projects.select(:id, :owner, :repo, :github_installation_id).count do |project|
-      project.paid_agents_installation(installations: @active_github_installations).present?
+    @projects_covered_by_github_app = current_account.projects.select(:id, :github_installation_id).to_a.count do |project|
+      active_installation_ids.include?(project.github_installation_id)
     end
   end
 

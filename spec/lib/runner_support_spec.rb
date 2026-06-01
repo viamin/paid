@@ -346,6 +346,7 @@ RSpec.describe RunnerSupport do
           "gemini" => "gemini",
           "kilocode" => "kilo",
           "opencode" => "opencode",
+          "openrouter_free" => "opencode",
           "pi" => "pi"
         }
 

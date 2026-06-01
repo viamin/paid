@@ -46,9 +46,13 @@ RSpec.describe "Runner tier model assignments", type: :system do
     expect(page).to have_content("Runner updated successfully.")
     expect(runner.reload.tier_model_ids["mid"]).to eq("claude-sonnet-4-5")
 
-    agent_run = create(:agent_run, :cursor, project: project, issue: issue, runner: runner)
+    agent_run = nil
+    selection = nil
 
-    selection = Models::Select.call(agent_run: agent_run)
+    TenantContext.with(account) do
+      agent_run = create(:agent_run, :cursor, project: project, issue: issue, runner: runner)
+      selection = Models::Select.call(agent_run: agent_run)
+    end
 
     expect(selection.llm_model.model_id).to eq("claude-sonnet-4-5")
     expect(selection.tier).to eq("mid")

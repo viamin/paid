@@ -65,5 +65,30 @@ RSpec.describe Dashboard::RunnerHealth do
       expect(stats[:recovering]).to eq(1)
       expect(stats[:runners].map(&:status)).to eq([ :recovering ])
     end
+
+    it "includes free-model availability details for openrouter_free runners" do
+      free_model = create(:llm_model, model_id: "high-free", provider: "openrouter", tier: "high", pricing_tier: "free")
+      create(:llm_model, model_id: "mid-free", provider: "openrouter", tier: "mid", pricing_tier: "free")
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+      runner = create(
+        :runner,
+        user: user,
+        runner_key: "openrouter_free",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        tier_model_ids: { "high" => free_model.model_id }
+      )
+      create(:runner_state, user: user, runner_name: "#{runner.state_key}:#{free_model.model_id}", rate_limited_until: 10.minutes.from_now)
+
+      stats = described_class.call(account: account)
+      summary = stats[:runners].find { |entry| entry.runner_key == "openrouter_free" }.free_model_summary
+
+      expect(summary).to include(
+        available: 1,
+        total: 2,
+        rate_limited: 1
+      )
+      expect(summary[:recovery_at]).to be_present
+    end
   end
 end
