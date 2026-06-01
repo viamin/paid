@@ -875,6 +875,26 @@ RSpec.describe Runner do
     let(:user) { create(:user, account: account, email: "sync-tier-#{SecureRandom.hex(6)}@example.com") }
     let(:api_key) { create(:provider_api_key, user: user, api_service_type: "openrouter") }
 
+    it "seeds openrouter_free tier_model_ids from active free models" do
+      create(:llm_model, model_id: "free-low", provider: "deepseek", tier: "low", pricing_tier: "free", capability_score: 4.0)
+      create(:llm_model, model_id: "free-mid", provider: "qwen", tier: "mid", pricing_tier: "free", capability_score: 6.0)
+      create(:llm_model, model_id: "free-high", provider: "moonshot", tier: "high", pricing_tier: "free", capability_score: 8.0)
+
+      runner = create(
+        :runner,
+        user: user,
+        runner_key: "openrouter_free",
+        auth_type: "api_key",
+        provider_api_key: api_key
+      )
+
+      expect(runner.tier_model_ids).to eq(
+        "low" => "free-low",
+        "mid" => "free-mid",
+        "high" => "free-high"
+      )
+    end
+
     it "clears stale tier_model_ids when runner no longer qualifies for direct-outbound" do
       runner = create(
         :runner,

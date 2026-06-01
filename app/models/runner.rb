@@ -666,6 +666,14 @@ class Runner < ApplicationRecord
   private
 
   def sync_direct_outbound_tier_models
+    if runner_key == "openrouter_free"
+      return unless tier_model_ids.blank?
+
+      default_tier_model_ids = Runners::DefaultTierModelIds.call(runner_key: runner_key)
+      self.tier_model_ids = default_tier_model_ids if default_tier_model_ids.present?
+      return
+    end
+
     return unless requires_direct_outbound?
     return unless direct_outbound_model_id.present?
     return unless will_save_change_to_config? || tier_model_ids.blank?
