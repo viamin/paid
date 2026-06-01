@@ -107,7 +107,7 @@ module ChatSessions
     end
 
     def default_runner_for_user
-      Runner.first_chat_enabled_for_owner(user)
+      Runner.first_configured_chat_enabled_for_owner(user) || Runner.first_chat_enabled_for_owner(user)
     end
   end
 end
