@@ -650,6 +650,35 @@ class GithubClient
     end
   end
 
+  # Maximum issues fetched per GraphQL batch. Each issue becomes an aliased
+  # field in the query, so GitHub's per-query complexity limit caps how many
+  # we can include in a single request.
+  ISSUES_BATCH_SIZE = 100
+  MAX_COMMENTS_PER_ISSUE = 100
+
+  CommentAuthor = Struct.new(:login, keyword_init: true)
+  CommentNode = Struct.new(:created_at, :user, :body, keyword_init: true)
+
+  # Fetches the most recent comments for multiple issues in one or more GraphQL
+  # requests. Replaces N×(2 × pages) REST calls with batched aliased queries.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param issue_numbers [Array<Integer>] Issue numbers to fetch comments for
+  # @return [Hash{Integer => Array<CommentNode>}] Map of issue number to
+  #   chronologically-sorted comments. Returns empty array per issue when none exist.
+  def issue_comments_batch(repo, issue_numbers)
+    return {} if issue_numbers.empty?
+
+    owner, name = repo.split("/", 2)
+    numbers = issue_numbers.map { |n| Integer(n) }
+
+    result = {}
+    numbers.each_slice(ISSUES_BATCH_SIZE) do |batch|
+      result.merge!(issue_comments_batch_query(repo, owner, name, batch))
+    end
+    result
+  end
+
   # Fetches review threads on a pull request via GraphQL.
   #
   # @param repo [String] Repository in "owner/name" format
@@ -1294,6 +1323,67 @@ class GithubClient
   }.freeze
 
   private
+
+  def issue_comments_batch_query(repo, owner, name, issue_numbers)
+    nodes_subquery = issue_numbers.map do |number|
+      "      issue_#{number}: issue(number: #{number}) {\n" \
+      "        comments: comments(last: #{MAX_COMMENTS_PER_ISSUE}) {\n" \
+      "          nodes { author { login } body createdAt }\n" \
+      "          pageInfo { hasPreviousPage }\n" \
+      "        }\n" \
+      "      }"
+    end.join("\n")
+
+    query = <<~GRAPHQL
+      query($owner: String!, $name: String!) {
+        repository(owner: $owner, name: $name) {
+          #{nodes_subquery}
+        }
+      }
+    GRAPHQL
+
+    data = graphql_request(query, owner: owner, name: name)
+    raise_graphql_errors(data, context: "fetching issue comments for #{repo}")
+
+    repository = data.dig("data", "repository") || {}
+
+    result = {}
+    issue_numbers.each do |issue_number|
+      alias_name = "issue_#{issue_number}"
+      issue_data = repository[alias_name]
+
+      if issue_data.nil?
+        result[issue_number] = []
+        next
+      end
+
+      comments_connection = issue_data["comments"] || {}
+
+      if comments_connection.dig("pageInfo", "hasPreviousPage")
+        Rails.logger.warn(
+          message: "github_client.issue_comments_truncated",
+          repo: repo, issue_number: issue_number,
+          max_comments: MAX_COMMENTS_PER_ISSUE
+        )
+      end
+
+      nodes = comments_connection["nodes"] || []
+
+      result[issue_number] = nodes
+        .map { |node| build_comment_node(node) }
+        .sort_by { |c| c.created_at || Time.at(0) }
+    end
+
+    result
+  end
+
+  def build_comment_node(node)
+    CommentNode.new(
+      created_at: parse_timestamp(node["createdAt"]),
+      user: CommentAuthor.new(login: node.dig("author", "login")),
+      body: node["body"]
+    )
+  end
 
   def tag_recent_issue_comments_metadata(page, multi_page:, older_pages_available:, next_older_page_url: nil)
     page.instance_variable_set(:@multi_page, multi_page)
