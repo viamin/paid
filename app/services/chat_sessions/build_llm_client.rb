@@ -100,15 +100,16 @@ module ChatSessions
         @provider_type = provider_type
       end
 
-      def call(conversation, on_chunk: nil)
+      def call(conversation, tools: nil, on_chunk: nil)
         messages = format_messages(conversation)
+        formatted_tools = format_tools(tools)
 
         stream_callback = build_stream_callback(on_chunk) if on_chunk
 
         response = if stream_callback
-          @transport.chat(messages: messages, model: model, stream: true, &stream_callback)
+          @transport.chat(messages: messages, model: model, tools: formatted_tools, stream: true, &stream_callback)
         else
-          @transport.chat(messages: messages, model: model, stream: false)
+          @transport.chat(messages: messages, model: model, tools: formatted_tools, stream: false)
         end
 
         {
@@ -127,15 +128,79 @@ module ChatSessions
       end
 
       def format_messages(conversation)
-        conversation.filter_map do |msg|
-          content = msg[:content]
-          next nil if content.nil?
+        conversation_object = build_conversation_object(conversation)
+        return conversation_object.to_openai_messages if @provider_type == :openai_compatible
 
-          entry = { role: msg[:role].to_s, content: content }
-          entry[:tool_call_id] = msg[:tool_call_id].to_s if msg[:tool_call_id].present?
-          entry[:tool_name] = msg[:tool_name].to_s if msg[:tool_name].present?
-          entry
+        anthropic_messages(conversation_object)
+      end
+
+      def build_conversation_object(conversation)
+        system_prompt, remaining_messages = extract_system_prompt(conversation)
+        AgentHarness::Conversation.new(system_prompt: system_prompt).tap do |conversation_object|
+          remaining_messages.each do |message|
+            next if skip_message?(message)
+
+            conversation_object.add_message(
+              message[:role],
+              normalize_content(message[:content], role: message[:role]),
+              tool_calls: message[:tool_calls],
+              tool_call_id: message[:tool_call_id],
+              tool_name: message[:tool_name],
+              tool_result: message[:content]
+            )
+          end
         end
+      end
+
+      def anthropic_messages(conversation_object)
+        formatted = conversation_object.to_anthropic_messages
+        return formatted[:messages] unless formatted[:system].present?
+
+        [ { role: "system", content: formatted[:system] } ] + formatted[:messages]
+      end
+
+      def extract_system_prompt(conversation)
+        first_message = conversation.first
+        return [ nil, conversation ] unless first_message && first_message[:role].to_s == "system"
+
+        [ first_message[:content], conversation.drop(1) ]
+      end
+
+      def skip_message?(message)
+        message[:content].nil? && message[:tool_calls].blank?
+      end
+
+      def normalize_content(content, role:)
+        return JSON.generate(content) if role.to_s == "tool" && !content.nil? && !content.is_a?(String)
+
+        content
+      end
+
+      def format_tools(definitions)
+        return nil if definitions.blank?
+
+        definitions.map do |definition|
+          if @provider_type == :anthropic
+            {
+              name: hash_value(definition, :name),
+              description: hash_value(definition, :description),
+              input_schema: hash_value(definition, :inputSchema)
+            }
+          else
+            {
+              type: "function",
+              function: {
+                name: hash_value(definition, :name),
+                description: hash_value(definition, :description),
+                parameters: hash_value(definition, :inputSchema)
+              }
+            }
+          end
+        end
+      end
+
+      def hash_value(hash, key)
+        hash[key] || hash[key.to_s]
       end
     end
   end
