@@ -303,15 +303,16 @@ module RunnerSupport
 
   # Upper bound for a trusted rate-limit reset. Real provider windows top out
   # at monthly (Codex weekly; some free tiers report "Weekly/Monthly Limit
-  # Exhausted" with an absolute reset up to ~30 days out), so ~45 days
-  # comfortably covers every legitimate reset. A parse beyond it is almost
-  # certainly an artifact — e.g. the year over-bump in agent-harness's
-  # parse_resets_date_time (viamin/agent-harness#231), where "resets Apr 6,
-  # 10pm (UTC)" parsed in June became 2027 and disabled the runner for ~10
-  # months. The over-bump always adds a full year, so bogus values land ~1
-  # year out, well clear of this bound. Beyond-bound parses are treated as
-  # unparseable so the caller falls back to the short default and re-probes
-  # soon, rather than skipping the runner for months.
+  # Exhausted" with an absolute reset up to ~30 days out), so the cap must be
+  # materially above 8 days or we'd misclassify legitimate monthly resets.
+  # ~45 days comfortably covers every real window while still rejecting the
+  # year-over-bump artifact in agent-harness's parse_resets_date_time
+  # (viamin/agent-harness#231), where "resets Apr 6, 10pm (UTC)" parsed in
+  # June became 2027 and disabled the runner for ~10 months. The over-bump
+  # always adds a full year, so bogus values land ~1 year out, well clear of
+  # this bound. Beyond-bound parses are treated as unparseable so the caller
+  # falls back to the short default and re-probes soon, rather than skipping
+  # the runner for months.
   MAX_RATE_LIMIT_RESET = 45.days
 
   # Parses a rate-limit reset time from runner output using the given
