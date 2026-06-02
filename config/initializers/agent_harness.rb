@@ -69,8 +69,14 @@ end
 
 # Drop this patch once agent-harness natively materialises Pi API-key auth.
 # Adjust the version ceiling to whichever harness release ships that support.
-# TODO(#2077): remove when agent-harness >= 0.19.0 ships native Pi API-key support
-if agent_harness_version < Gem::Version.new("0.19.0")
+# NOTE: 0.19.0 and 0.20.0 do NOT ship native Pi API-key auth.json
+# materialization — build_execution_preparation still returns nil for Pi, so
+# this backport must stay active. The ceiling was bumped from 0.19.0 to 0.21.0
+# after the 0.20.0 bump (#2440) silently disabled it and broke every Pi
+# API-key runner with "No API key found for <provider>".
+# TODO(#2077): remove (and re-check this ceiling) when agent-harness ships
+# native Pi API-key support.
+if agent_harness_version < Gem::Version.new("0.21.0")
   AgentHarness::Providers::Pi.prepend(PaidAgentHarnessPiRuntimePatch) unless
     AgentHarness::Providers::Pi < PaidAgentHarnessPiRuntimePatch
 end
