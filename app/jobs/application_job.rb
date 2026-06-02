@@ -1,19 +1,33 @@
 # frozen_string_literal: true
 
 class ApplicationJob < ActiveJob::Base
+  class_attribute :notification_subsystem, default: "general"
+  class_attribute :max_attempts, default: 1
+
+  rescue_from(StandardError) do |exception|
+    if executions >= self.class.max_attempts && !is_a?(HandleExceptionJob)
+      Paid::ExceptionNotifier.new.call(
+        exception,
+        data: {
+          subsystem: self.class.notification_subsystem,
+          project_id: notification_project_id
+        }
+      )
+    end
+    raise exception
+  end
+
   around_perform do |job, block|
     Database::QueryMonitor.instrument("job", job_class: job.class.name) do
       block.call
     end
   end
 
-  # Automatically retry jobs that encountered a deadlock
-  # retry_on ActiveRecord::Deadlocked
-
-  # Most jobs are safe to ignore if the underlying records are no longer available
-  # discard_on ActiveJob::DeserializationError
-
   around_perform :with_tenant_context
+
+  def notification_project_id
+    nil
+  end
 
   private
 

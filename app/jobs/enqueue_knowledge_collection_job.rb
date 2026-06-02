@@ -3,9 +3,16 @@
 class EnqueueKnowledgeCollectionJob < ApplicationJob
   queue_as :knowledge
 
+  self.notification_subsystem = "knowledge"
+  self.max_attempts = 5
+
   discard_on ActiveRecord::RecordNotFound
   retry_on WorktreeService::Error, wait: :polynomially_longer, attempts: 5
   retry_on Errno::ENOENT, wait: :polynomially_longer, attempts: 5
+
+  def notification_project_id
+    arguments.first
+  end
 
   def perform(project_id)
     project = Project.find(project_id)
