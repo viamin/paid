@@ -301,14 +301,18 @@ module ProviderSupport
       .gsub(/reset.?at:?\s*(\d+)/i, 'reset at \1')
   end
 
-  # Upper bound for a trusted rate-limit reset. Provider reset windows are
-  # short-lived (Codex's weekly limit is the longest, ~7 days); a parsed
-  # reset beyond this is almost certainly a parse artifact — e.g. the year
-  # over-bump in agent-harness's parse_resets_date_time, viamin/agent-harness#231,
-  # which turned "resets Apr 6, 10pm (UTC)" into a date ~10 months out and
-  # disabled a runner until that date. Treat such values as unparseable so
-  # the caller falls back to the short default and re-probes the runner soon.
-  MAX_RATE_LIMIT_RESET = 8.days
+  # Upper bound for a trusted rate-limit reset. Real provider windows top out
+  # at monthly (Codex weekly; some free tiers report "Weekly/Monthly Limit
+  # Exhausted" with an absolute reset up to ~30 days out), so ~45 days
+  # comfortably covers every legitimate reset. A parse beyond it is almost
+  # certainly an artifact — e.g. the year over-bump in agent-harness's
+  # parse_resets_date_time (viamin/agent-harness#231), where "resets Apr 6,
+  # 10pm (UTC)" parsed in June became 2027 and disabled the runner for ~10
+  # months. The over-bump always adds a full year, so bogus values land ~1
+  # year out, well clear of this bound. Beyond-bound parses are treated as
+  # unparseable so the caller falls back to the short default and re-probes
+  # soon, rather than skipping the runner for months.
+  MAX_RATE_LIMIT_RESET = 45.days
 
   # Parses a rate-limit reset time from provider output using the given
   # harness provider. Falls back to normalized text parsing and a 1-hour

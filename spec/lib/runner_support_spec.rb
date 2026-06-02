@@ -488,6 +488,13 @@ RSpec.describe RunnerSupport do
       expect(described_class.rate_limit_reset_at(harness_returning(reset), "anything")).to be_within(1.second).of(reset)
     end
 
+    it "preserves a legitimate monthly reset (Weekly/Monthly free-tier limits)" do
+      # The cap must clear the longest real window (~monthly) so a genuine
+      # 30-day exhaustion is honoured instead of being retried hourly.
+      reset = 30.days.from_now
+      expect(described_class.rate_limit_reset_at(harness_returning(reset), "anything")).to be_within(1.second).of(reset)
+    end
+
     it "caps an absurd far-future parse to the 1-hour fallback" do
       # Regression for viamin/agent-harness#231: a reset months out must not
       # disable a runner; it falls back to the short default and re-probes.
