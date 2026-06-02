@@ -140,13 +140,14 @@ module ChatSessions
           remaining_messages.each do |message|
             next if skip_message?(message)
 
+            normalized = normalize_content(message[:content], role: message[:role])
             conversation_object.add_message(
               message[:role],
-              normalize_content(message[:content], role: message[:role]),
+              normalized,
               tool_calls: message[:tool_calls],
               tool_call_id: message[:tool_call_id],
               tool_name: message[:tool_name],
-              tool_result: message[:content]
+              tool_result: normalized
             )
           end
         end
