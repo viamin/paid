@@ -10,6 +10,7 @@ class Runner < ApplicationRecord
   include LegacyAttributeBridge
 
   OPENROUTER_FREE_RUNNER_KEY = "openrouter_free"
+  OPENROUTER_FREE_MODEL_PROVIDER = "openrouter"
 
   LEGACY_PROVIDER_ATTRIBUTE_BRIDGES = {
     "provider_key" => "runner_key"
@@ -980,8 +981,8 @@ class Runner < ApplicationRecord
           return
         end
       elsif runner_key == OPENROUTER_FREE_RUNNER_KEY
-        unless model.free?
-          errors.add(:tier_model_ids, "model #{model_id} must be a free model")
+        unless model.free? && model.provider == OPENROUTER_FREE_MODEL_PROVIDER
+          errors.add(:tier_model_ids, "model #{model_id} must be a free OpenRouter model")
           return
         end
       elsif expected_provider && model.provider != expected_provider

@@ -143,7 +143,7 @@ module Dashboard
     def free_model_summary_for(runner, status:, state:)
       return unless runner.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
 
-      total = LlmModel.free.active.count
+      total = LlmModel.free.active.by_provider(Runner::OPENROUTER_FREE_MODEL_PROVIDER).count
       return { available: 0, total: 0, rate_limited: 0, recovery_at: nil } if total.zero?
 
       model_states = (free_model_states_by_prefix[runner.state_key] || [])

@@ -300,7 +300,7 @@
 
   <% tier_model_provider = Runners::DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER[runner.runner_key.to_s] %>
   <% tier_models = if runner.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
-       LlmModel.free.active.order(:display_name)
+       LlmModel.free.active.by_provider(Runner::OPENROUTER_FREE_MODEL_PROVIDER).order(:display_name)
      elsif tier_model_provider
        LlmModel.active.by_provider(tier_model_provider).order(:display_name)
      else

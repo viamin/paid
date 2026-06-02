@@ -41,7 +41,8 @@ module RunnerSupport
       registered = AgentHarness.providers
       APP_RUNNER_KEYS.each_with_object(Set.new) do |runner_key, set|
         if CUSTOM_PROVIDER_METADATA.key?(runner_key)
-          set << runner_key
+          canonical = CUSTOM_PROVIDER_METADATA[runner_key][:canonical_provider]
+          set << runner_key if registered.include?(canonical)
           next
         end
 
