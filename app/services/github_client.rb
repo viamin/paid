@@ -2,6 +2,7 @@
 
 require "octokit"
 require "faraday/retry"
+require "faraday/http_cache"
 
 # GitHub API client wrapper with error handling and rate limit awareness.
 #
@@ -1397,6 +1398,9 @@ class GithubClient
 
   def configure_middleware
     client.middleware = Faraday::RackBuilder.new do |builder|
+      builder.use Faraday::HttpCache,
+        store: Rails.cache,
+        serializer: Marshal
       builder.use Faraday::Retry::Middleware,
         max: RETRY_MAX,
         interval: RETRY_INTERVAL,
@@ -1466,6 +1470,9 @@ class GithubClient
 
   def build_graphql_connection(with_retry:)
     Faraday.new(url: "https://api.github.com") do |f|
+      f.use Faraday::HttpCache,
+        store: Rails.cache,
+        serializer: Marshal
       f.request :json
       if with_retry
         f.request :retry,
