@@ -258,6 +258,27 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
         expect(result[:tokens_output]).to eq(10)
       end
 
+      it "folds later system messages into the system prompt" do
+        allow(transport).to receive(:chat).and_return(response)
+
+        client.call([
+          { role: "system", content: "You are helpful." },
+          { role: "user", content: "Find the issue" },
+          { role: "system", content: "## Added Project Context: Paid" },
+          { role: "user", content: "What did you find?" }
+        ])
+
+        expect(transport).to have_received(:chat).with(
+          hash_including(
+            messages: [
+              { role: "system", content: "You are helpful.\n\n## Added Project Context: Paid" },
+              { role: "user", content: [ { type: "text", text: "Find the issue" } ] },
+              { role: "user", content: [ { type: "text", text: "What did you find?" } ] }
+            ]
+          )
+        )
+      end
+
       it "streams text chunks through on_chunk callback" do
         chunks_received = []
 
@@ -359,6 +380,27 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
           expect(kwargs[:model]).to eq(model)
           expect(kwargs[:stream]).to be(false)
         end
+      end
+
+      it "folds later system messages into the system prompt" do
+        allow(transport).to receive(:chat).and_return(response)
+
+        client.call([
+          { role: "system", content: "You are helpful." },
+          { role: "user", content: "Find the issue" },
+          { role: "system", content: "## Added Project Context: Paid" },
+          { role: "user", content: "What did you find?" }
+        ])
+
+        expect(transport).to have_received(:chat).with(
+          hash_including(
+            messages: [
+              { role: "system", content: "You are helpful.\n\n## Added Project Context: Paid" },
+              { role: "user", content: "Find the issue" },
+              { role: "user", content: "What did you find?" }
+            ]
+          )
+        )
       end
 
       it "returns nil tools when no definitions are provided" do

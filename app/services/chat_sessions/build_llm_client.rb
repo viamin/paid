@@ -138,7 +138,7 @@ module ChatSessions
         system_prompt, remaining_messages = extract_system_prompt(conversation)
         AgentHarness::Conversation.new(system_prompt: system_prompt).tap do |conversation_object|
           remaining_messages.each do |message|
-            next if skip_message?(message)
+            next if message[:role].to_s == "system" || skip_message?(message)
 
             normalized = normalize_content(message[:content], role: message[:role])
             conversation_object.add_message(
@@ -161,10 +161,14 @@ module ChatSessions
       end
 
       def extract_system_prompt(conversation)
-        first_message = conversation.first
-        return [ nil, conversation ] unless first_message && first_message[:role].to_s == "system"
+        system_messages = conversation.filter_map do |message|
+          next unless message[:role].to_s == "system"
+          next if message[:content].blank?
 
-        [ first_message[:content], conversation.drop(1) ]
+          message[:content]
+        end
+
+        [ system_messages.presence&.join("\n\n"), conversation ]
       end
 
       def skip_message?(message)
