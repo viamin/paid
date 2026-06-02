@@ -458,4 +458,25 @@ RSpec.describe ProviderSupport do
       expect(result).to eq([ "sh", "-c", "env -u VAR1 -u VAR2 my_cmd --flag" ])
     end
   end
+
+  describe ".rate_limit_reset_at" do
+    def harness_returning(reset)
+      Class.new do
+        def initialize(reset) = @reset = reset
+        def parse_rate_limit_reset(_text) = @reset
+      end.new(reset)
+    end
+
+    around { |example| travel_to(Time.utc(2026, 6, 2, 12, 0, 0)) { example.run } }
+
+    it "preserves a legitimate near-future reset within the cap" do
+      reset = 6.days.from_now
+      expect(described_class.rate_limit_reset_at(harness_returning(reset), "anything")).to be_within(1.second).of(reset)
+    end
+
+    it "caps an absurd far-future parse to the 1-hour fallback (viamin/agent-harness#231)" do
+      result = described_class.rate_limit_reset_at(harness_returning(10.months.from_now), "anything")
+      expect(result).to be_within(1.second).of(1.hour.from_now)
+    end
+  end
 end

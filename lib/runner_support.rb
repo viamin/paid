@@ -301,14 +301,28 @@ module RunnerSupport
       .gsub(/reset.?at:?\s*(\d+)/i, 'reset at \1')
   end
 
+  # Upper bound for a trusted rate-limit reset. Provider reset windows are
+  # short-lived (Codex's weekly limit is the longest, ~7 days); a parsed
+  # reset beyond this is almost certainly a parse artifact — e.g. the year
+  # over-bump in agent-harness's parse_resets_date_time, viamin/agent-harness#231,
+  # which turned "resets Apr 6, 10pm (UTC)" into a date ~10 months out and
+  # disabled a runner until that date. Treat such values as unparseable so
+  # the caller falls back to the short default and re-probes the runner soon.
+  MAX_RATE_LIMIT_RESET = 8.days
+
   # Parses a rate-limit reset time from runner output using the given
   # harness provider. Falls back to normalized text parsing and a 1-hour
-  # default. Shared by RunAgentActivity and TestAgent.
+  # default. Caps absurd far-future parses at MAX_RATE_LIMIT_RESET so a
+  # mis-parsed reset cannot disable a runner for months. Shared by
+  # RunAgentActivity and TestAgent.
   def rate_limit_reset_at(harness_provider, text)
     parsed_reset = harness_provider.parse_rate_limit_reset(text.to_s) ||
       harness_provider.parse_rate_limit_reset(normalized_rate_limit_reset_text(text)) ||
       1.hour.from_now
-    parsed_reset > Time.current ? parsed_reset : 1.hour.from_now
+    return 1.hour.from_now unless parsed_reset > Time.current
+    return 1.hour.from_now if parsed_reset > MAX_RATE_LIMIT_RESET.from_now
+
+    parsed_reset
   rescue AgentHarness::ConfigurationError, KeyError
     1.hour.from_now
   end

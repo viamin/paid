@@ -470,4 +470,44 @@ RSpec.describe RunnerSupport do
       expect(result).to eq([ "sh", "-c", "env -u VAR1 -u VAR2 my_cmd --flag" ])
     end
   end
+
+  describe ".rate_limit_reset_at" do
+    # Minimal stand-in for an AgentHarness provider: parse_rate_limit_reset
+    # returns the same configured value regardless of the text passed.
+    def harness_returning(reset)
+      Class.new do
+        def initialize(reset) = @reset = reset
+        def parse_rate_limit_reset(_text) = @reset
+      end.new(reset)
+    end
+
+    around { |example| travel_to(Time.utc(2026, 6, 2, 12, 0, 0)) { example.run } }
+
+    it "preserves a legitimate near-future reset within the cap" do
+      reset = 6.days.from_now
+      expect(described_class.rate_limit_reset_at(harness_returning(reset), "anything")).to be_within(1.second).of(reset)
+    end
+
+    it "caps an absurd far-future parse to the 1-hour fallback" do
+      # Regression for viamin/agent-harness#231: a reset months out must not
+      # disable a runner; it falls back to the short default and re-probes.
+      far_future = 10.months.from_now
+      result = described_class.rate_limit_reset_at(harness_returning(far_future), "anything")
+      expect(result).to be_within(1.second).of(1.hour.from_now)
+    end
+
+    it "falls back to the 1-hour default when the parsed reset is in the past" do
+      result = described_class.rate_limit_reset_at(harness_returning(1.hour.ago), "anything")
+      expect(result).to be_within(1.second).of(1.hour.from_now)
+    end
+
+    it "caps the real Codex year-over-bump parse of 'resets Apr 6, 10pm (UTC)'" do
+      # The live agent-harness parser turns this into 2027-04-06 (~10 months
+      # out) via parse_resets_date_time; the cap must neutralise it.
+      codex = AgentHarness.provider(:codex)
+      expect(codex.parse_rate_limit_reset("resets Apr 6, 10pm (UTC)")).to be > described_class::MAX_RATE_LIMIT_RESET.from_now
+      result = described_class.rate_limit_reset_at(codex, "You're out of usage · resets Apr 6, 10pm (UTC)")
+      expect(result).to be_within(1.second).of(1.hour.from_now)
+    end
+  end
 end
