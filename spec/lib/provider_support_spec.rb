@@ -474,8 +474,18 @@ RSpec.describe ProviderSupport do
       expect(described_class.rate_limit_reset_at(harness_returning(reset), "anything")).to be_within(1.second).of(reset)
     end
 
+    it "preserves a legitimate monthly reset (Weekly/Monthly free-tier limits)" do
+      reset = 30.days.from_now
+      expect(described_class.rate_limit_reset_at(harness_returning(reset), "anything")).to be_within(1.second).of(reset)
+    end
+
     it "caps an absurd far-future parse to the 1-hour fallback (viamin/agent-harness#231)" do
       result = described_class.rate_limit_reset_at(harness_returning(10.months.from_now), "anything")
+      expect(result).to be_within(1.second).of(1.hour.from_now)
+    end
+
+    it "falls back to the 1-hour default when the parsed reset is in the past" do
+      result = described_class.rate_limit_reset_at(harness_returning(1.hour.ago), "anything")
       expect(result).to be_within(1.second).of(1.hour.from_now)
     end
   end

@@ -510,11 +510,12 @@ RSpec.describe RunnerSupport do
 
     it "caps the real Codex year-over-bump parse of 'resets Apr 6, 10pm (UTC)'" do
       # The live agent-harness parser turns this into 2027-04-06 (~10 months
-      # out) via parse_resets_date_time; the cap must neutralise it.
+      # out) via parse_resets_date_time today; regardless of upstream parser
+      # behaviour, Paid must never store an absurd far-future reset.
       codex = AgentHarness.provider(:codex)
-      expect(codex.parse_rate_limit_reset("resets Apr 6, 10pm (UTC)")).to be > described_class::MAX_RATE_LIMIT_RESET.from_now
       result = described_class.rate_limit_reset_at(codex, "You're out of usage · resets Apr 6, 10pm (UTC)")
-      expect(result).to be_within(1.second).of(1.hour.from_now)
+      expect(result).to be > Time.current
+      expect(result).to be <= described_class::MAX_RATE_LIMIT_RESET.from_now
     end
   end
 end
