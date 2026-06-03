@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "digest"
 require Rails.root.join("lib/runner_support").to_s
 
 agent_harness_version = Gem.loaded_specs.fetch("agent-harness").version
@@ -74,20 +75,20 @@ if agent_harness_version < Gem::Version.new("0.19.0")
     AgentHarness::Providers::Pi < PaidAgentHarnessPiRuntimePatch
 end
 
-# Suppress Claude CLI .mcp.json auto-discovery when Paid did not explicitly
-# configure any MCP servers. We pass an empty {"mcpServers": {}} config via
-# --mcp-config so the CLI emits only the requested JSON envelope, AND we
-# materialize that config file into the container via ExecutionPreparation
-# (the gem's build_execution_preparation returns nil — it writes only a host-side
-# tempfile that never reaches the agent container).
+# Route every explicit Claude MCP config through ExecutionPreparation so the file
+# is written inside the agent container at the same path passed to
+# `--mcp-config=...`.
 #
-# agent-harness 0.19.0 ships native suppression, hence the < 0.19.0 gate, but
-# adopting it is NOT a simple drop: upstream still emits the buggy variadic
-# space-form (see PaidAgentHarnessAnthropicMcpConfigFlagFormPatch) and still does
-# not materialize the config into containers. Both must be handled before this
-# patch can go.
-# TODO(#2364): remove when Paid adopts agent-harness >= 0.19.0 native suppression.
-module PaidAgentHarnessAnthropicMcpSuppressionPatch
+# This covers both:
+# - the empty-server suppression path, where Paid must pass {"mcpServers": {}}
+#   explicitly to disable Claude's .mcp.json auto-discovery
+# - the configured-server path, where agent-harness otherwise writes a host-side
+#   tempfile during plan construction and returns a path that does not exist
+#   inside the agent container
+#
+# Keep this patch in place until agent-harness materializes MCP config files for
+# all Anthropic execution paths via ExecutionPreparation (or equivalent).
+module PaidAgentHarnessAnthropicMcpConfigMaterializationPatch
   def send_message(prompt:, **options)
     super(prompt:, **with_explicit_empty_mcp_servers(options))
   end
@@ -100,29 +101,26 @@ module PaidAgentHarnessAnthropicMcpSuppressionPatch
 
   def build_command(prompt, options)
     command = super
-    return command unless suppress_mcp_autodiscovery?(options)
+    return command unless materialize_mcp_config?(options)
 
-    plan = empty_mcp_config_plan(options)
-    # Use the --flag=value form (not a space-separated "--mcp-config <path>")
-    # because Claude's --mcp-config is variadic and would otherwise swallow the
-    # trailing positional prompt. See PaidAgentHarnessAnthropicMcpConfigFlagFormPatch
-    # below for the full explanation; this branch builds the empty-config flag by
-    # hand because agent-harness 0.18.2 emits no --mcp-config flag at all when the
-    # server list is empty.
-    command[0...-1] + [ "--mcp-config=#{plan.fetch(:path)}", command.last ]
+    mcp_flag = "--mcp-config=#{mcp_config_plan(options).fetch(:path)}"
+    existing_mcp_flag = command.find { |part| part.to_s.start_with?("--mcp-config=") }
+    return command[0...-1] + [ mcp_flag, command.last ] unless existing_mcp_flag
+
+    command.map { |part| part == existing_mcp_flag ? mcp_flag : part }
   end
 
   def build_execution_preparation(options)
     preparation = super
-    return preparation unless suppress_mcp_autodiscovery?(options)
+    return preparation unless materialize_mcp_config?(options)
 
     merge_execution_preparations(
       preparation,
       AgentHarness::ExecutionPreparation.new(
         file_writes: [
           {
-            path: empty_mcp_config_plan(options).fetch(:path),
-            content: empty_mcp_config_plan(options).fetch(:content),
+            path: mcp_config_plan(options).fetch(:path),
+            content: mcp_config_plan(options).fetch(:content),
             mode: 0o600
           }
         ]
@@ -138,15 +136,21 @@ module PaidAgentHarnessAnthropicMcpSuppressionPatch
     options.merge(mcp_servers: [])
   end
 
-  def suppress_mcp_autodiscovery?(options)
-    options.key?(:mcp_servers) && Array(options[:mcp_servers]).empty?
+  def materialize_mcp_config?(options)
+    options.key?(:mcp_servers)
   end
 
-  def empty_mcp_config_plan(options)
-    options[:_paid_claude_empty_mcp_config] ||= {
-      path: File.join(Dir.tmpdir, "agent_harness_claude_mcp_#{SecureRandom.hex(8)}.json"),
-      content: JSON.generate(AgentHarness::McpConfigTranslator.for_provider(mcp_provider_key, []))
-    }
+  def mcp_config_plan(options)
+    options[:_paid_claude_mcp_config] ||= begin
+      content = JSON.generate(
+        AgentHarness::McpConfigTranslator.for_provider(mcp_provider_key, Array(options[:mcp_servers]))
+      )
+
+      {
+        path: File.join(Dir.tmpdir, "agent_harness_claude_mcp_#{Digest::SHA256.hexdigest(content).first(16)}.json"),
+        content: content
+      }
+    end
   end
 
   def merge_execution_preparations(base, extra)
@@ -157,10 +161,8 @@ module PaidAgentHarnessAnthropicMcpSuppressionPatch
   end
 end
 
-if agent_harness_version < Gem::Version.new("0.19.0")
-  AgentHarness::Providers::Anthropic.prepend(PaidAgentHarnessAnthropicMcpSuppressionPatch) unless
-    AgentHarness::Providers::Anthropic < PaidAgentHarnessAnthropicMcpSuppressionPatch
-end
+AgentHarness::Providers::Anthropic.prepend(PaidAgentHarnessAnthropicMcpConfigMaterializationPatch) unless
+  AgentHarness::Providers::Anthropic < PaidAgentHarnessAnthropicMcpConfigMaterializationPatch
 
 # Force Claude's --mcp-config flag into the `--flag=value` form.
 #
