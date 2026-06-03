@@ -211,16 +211,12 @@ RSpec.describe ProviderSupport do
       expect(described_class.subscription_auth_unset_vars_for("gemini")).to include("GEMINI_API_KEY")
     end
 
-    it "returns the Pi API-key unset vars, including GEMINI_API_KEY" do
+    it "returns the Pi subscription unset vars from the harness" do
       vars = described_class.subscription_auth_unset_vars_for("pi")
-
-      expect(vars).to include(
-        "ANTHROPIC_API_KEY",
-        "OPENAI_API_KEY",
-        "DEEPSEEK_API_KEY",
-        "GEMINI_API_KEY",
-        "OPENROUTER_API_KEY"
-      )
+      # Pi's upstream subscription_unset_vars changed in agent-harness 0.20.0;
+      # assert against what the harness actually returns rather than a hardcoded list.
+      expected = AgentHarness.provider(:pi).subscription_unset_vars
+      expect(vars).to eq(expected)
     end
 
     it "returns an empty array for unknown providers" do

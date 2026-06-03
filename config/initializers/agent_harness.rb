@@ -310,7 +310,7 @@ module PaidAgentHarnessEmbeddingPatch
   end
 end
 
-if agent_harness_version < Gem::Version.new("0.19.0") && !AgentHarness.respond_to?(:embed)
+unless AgentHarness.respond_to?(:embed)
   AgentHarness::OpenAICompatibleTransport.prepend(PaidAgentHarnessEmbeddingTransportPatch) unless
     AgentHarness::OpenAICompatibleTransport < PaidAgentHarnessEmbeddingTransportPatch
   AgentHarness.extend(PaidAgentHarnessEmbeddingPatch)
