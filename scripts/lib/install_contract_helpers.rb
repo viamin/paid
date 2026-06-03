@@ -17,7 +17,7 @@ module InstallContractHelpers
     return command if command.empty?
 
     if postinstall_sensitive_contract?(contract)
-      return append_postinstall(command, contract)
+      return append_postinstall(ensure_ignore_scripts(command), contract)
     end
 
     fallback_command = opencode_fallback_install_command(contract)
