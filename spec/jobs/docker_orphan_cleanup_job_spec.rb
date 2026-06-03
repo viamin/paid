@@ -56,12 +56,16 @@ RSpec.describe DockerOrphanCleanupJob do
       .and_return(containers)
   end
 
-  def make_container(labels:, id: SecureRandom.hex(32), running: false, created_at: Time.current, mounts: [])
+  # `state_shape: :hash` mirrors the swarm backend (nested { "Running" => bool });
+  # `:string` mirrors Docker's list API used by the local/remote backends
+  # ("running"/"exited"). Both occur in production and must be handled.
+  def make_container(labels:, id: SecureRandom.hex(32), running: false, created_at: Time.current, mounts: [], state_shape: :hash)
+    state = state_shape == :string ? (running ? "running" : "exited") : { "Running" => running }
     instance_double(Docker::Container,
       id: id,
       info: {
         "Labels" => labels,
-        "State" => { "Running" => running },
+        "State" => state,
         "Created" => created_at.iso8601,
         "Mounts" => mounts
       },
@@ -451,6 +455,35 @@ RSpec.describe DockerOrphanCleanupJob do
         job.perform
 
         expect(container).not_to have_received(:delete)
+      end
+
+      # Regression: the list API (local/remote backends) returns State as a string,
+      # not the nested hash the swarm backend builds. A running collector reported
+      # this way must still be treated as active so its volume is not deleted.
+      it "keeps running collector containers reported with list-API string state" do
+        container = make_container(
+          labels: { "paid.resource" => "collector_container", "paid.project_id" => "42" },
+          running: true,
+          state_shape: :string
+        )
+        stub_collector_containers(container)
+
+        job.perform
+
+        expect(container).not_to have_received(:delete)
+      end
+
+      it "removes stopped collector containers reported with list-API string state" do
+        container = make_container(
+          labels: { "paid.resource" => "collector_container", "paid.project_id" => "42" },
+          running: false,
+          state_shape: :string
+        )
+        stub_collector_containers(container)
+
+        job.perform
+
+        expect(container).to have_received(:delete).with(force: true, v: true)
       end
     end
 
