@@ -339,8 +339,15 @@ class DockerOrphanCleanupJob < ApplicationJob
     end
   end
 
+  # `State` shape differs by backend: Docker's list API (local/remote) returns a
+  # string ("running", "exited", ...), while the swarm backend builds a nested
+  # hash ({ "Running" => true, ... }). Tolerate both so a live collector is never
+  # misread as inactive — which would delete its in-use volume.
   def collector_container_active?(container)
-    container.info.dig("State", "Running") == true
+    state = container.info["State"]
+    return state["Running"] == true if state.is_a?(Hash)
+
+    state == "running"
   end
 
   def collector_volume_names_for(container)
