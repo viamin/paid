@@ -211,16 +211,12 @@ RSpec.describe ProviderSupport do
       expect(described_class.subscription_auth_unset_vars_for("gemini")).to include("GEMINI_API_KEY")
     end
 
-    it "returns the Pi API-key unset vars, including GEMINI_API_KEY" do
+    it "returns the Pi subscription unset vars from the harness" do
       vars = described_class.subscription_auth_unset_vars_for("pi")
-
-      expect(vars).to include(
-        "ANTHROPIC_API_KEY",
-        "OPENAI_API_KEY",
-        "DEEPSEEK_API_KEY",
-        "GEMINI_API_KEY",
-        "OPENROUTER_API_KEY"
-      )
+      # Pi's upstream subscription_unset_vars changed in agent-harness 0.20.0;
+      # assert against what the harness actually returns rather than a hardcoded list.
+      expected = AgentHarness.provider(:pi).subscription_unset_vars
+      expect(vars).to eq(expected)
     end
 
     it "returns an empty array for unknown providers" do
@@ -456,6 +452,65 @@ RSpec.describe ProviderSupport do
     it "wraps a string command with sh -c and env -u flags" do
       result = described_class.command_with_unset_env("my_cmd --flag", %w[VAR1 VAR2])
       expect(result).to eq([ "sh", "-c", "env -u VAR1 -u VAR2 my_cmd --flag" ])
+    end
+  end
+
+  describe ".rate_limit_reset_at" do
+    let(:provider) { instance_double(AgentHarness::Providers::Codex) }
+
+    def stub_parse(reset)
+      allow(provider).to receive(:parse_rate_limit_reset).and_return(reset, nil)
+    end
+
+    it "returns a near-future parsed reset unchanged" do
+      reset = 30.minutes.from_now
+      stub_parse(reset)
+      expect(described_class.rate_limit_reset_at(provider, "rate limited")).to be_within(1.second).of(reset)
+    end
+
+    it "allows a legitimate weekly reset under the ceiling" do
+      reset = 6.days.from_now
+      stub_parse(reset)
+      expect(described_class.rate_limit_reset_at(provider, "resets next week")).to be_within(1.second).of(reset)
+    end
+
+    it "rejects an implausibly far-future reset from the upstream parse bug" do
+      # Codex "resets Jan 15" mis-parsed ~10 months out benches the provider.
+      stub_parse(10.months.from_now)
+      result = described_class.rate_limit_reset_at(provider, "resets Jan 15, 5pm (UTC)")
+      expect(result).to be_within(1.minute).of(1.hour.from_now)
+    end
+
+    it "logs a warning when it clamps an implausible reset" do
+      stub_parse(10.months.from_now)
+      expect(Rails.logger).to receive(:warn).with(
+        hash_including(message: "runner_support.rate_limit_reset_clamped")
+      )
+      described_class.rate_limit_reset_at(provider, "resets Jan 15, 5pm (UTC)")
+    end
+
+    it "does not log when the parsed reset is within the ceiling" do
+      stub_parse(2.hours.from_now)
+      expect(Rails.logger).not_to receive(:warn)
+      described_class.rate_limit_reset_at(provider, "resets soon")
+    end
+
+    it "falls back to one hour when the parsed reset is in the past" do
+      stub_parse(5.minutes.ago)
+      result = described_class.rate_limit_reset_at(provider, "stale reset")
+      expect(result).to be_within(1.minute).of(1.hour.from_now)
+    end
+
+    it "falls back to one hour when nothing is parseable" do
+      allow(provider).to receive(:parse_rate_limit_reset).and_return(nil)
+      result = described_class.rate_limit_reset_at(provider, "no reset here")
+      expect(result).to be_within(1.minute).of(1.hour.from_now)
+    end
+
+    it "falls back to one hour when the provider raises a configuration error" do
+      allow(provider).to receive(:parse_rate_limit_reset).and_raise(AgentHarness::ConfigurationError)
+      result = described_class.rate_limit_reset_at(provider, "anything")
+      expect(result).to be_within(1.minute).of(1.hour.from_now)
     end
   end
 end
