@@ -28,7 +28,11 @@ module RunnerSupport
   # bogus far-future value benches the runner for months. No real provider
   # rate-limit window exceeds a week (Codex's longest is its weekly cap), so
   # anything past this ceiling is a parse error, not a real reset.
-  MAX_RATE_LIMIT_RESET = 8.days
+  #
+  # Expressed in plain seconds (not 8.days) because this file is loaded by the
+  # agent-image runner-contract smoke test without ActiveSupport, where the
+  # Integer#days extension is unavailable.
+  MAX_RATE_LIMIT_RESET_SECONDS = 8 * 24 * 60 * 60
 
   module_function
 
@@ -322,16 +326,16 @@ module RunnerSupport
     return 1.hour.from_now unless parsed_reset > Time.current
 
     # Reject implausibly far-future resets from upstream parse bugs (see
-    # MAX_RATE_LIMIT_RESET); fall back to the conservative default so the
-    # next attempt re-detects the real limit instead of benching for months.
+    # MAX_RATE_LIMIT_RESET_SECONDS); fall back to the conservative default so
+    # the next attempt re-detects the real limit instead of benching for months.
     # Logged so operators can see the workaround firing and know when the
     # upstream fix has landed (clamp stops triggering => safe to remove).
-    if parsed_reset > MAX_RATE_LIMIT_RESET.from_now
+    if parsed_reset > MAX_RATE_LIMIT_RESET_SECONDS.seconds.from_now
       Rails.logger.warn(
         message: "runner_support.rate_limit_reset_clamped",
         provider: harness_provider.class.name,
         parsed_reset_at: parsed_reset.utc.iso8601,
-        max_reset_seconds: MAX_RATE_LIMIT_RESET.to_i
+        max_reset_seconds: MAX_RATE_LIMIT_RESET_SECONDS
       )
       return 1.hour.from_now
     end
