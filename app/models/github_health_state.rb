@@ -146,7 +146,7 @@ class GithubHealthState < ApplicationRecord
       return false unless circuit_opened_at.present?
       return false unless circuit_opened_at + timeout.seconds <= Time.current
 
-      update!(circuit_state: "half_open")
+      update!(circuit_state: "half_open", rate_limited_until: nil)
 
       Rails.logger.info(
         message: "github_health.circuit_half_open",

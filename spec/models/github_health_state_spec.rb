@@ -314,6 +314,16 @@ RSpec.describe GithubHealthState do
       expect(state.reload.circuit_state).to eq("open")
     end
 
+    it "clears rate_limited_until when transitioning to half_open" do
+      state = create(:github_health_state, circuit_state: "open", circuit_opened_at: 10.minutes.ago,
+        rate_limited_until: 30.minutes.from_now)
+      state.check_circuit_recovery!(timeout: 300)
+
+      state.reload
+      expect(state.circuit_state).to eq("half_open")
+      expect(state.rate_limited_until).to be_nil
+    end
+
     it "returns false for closed circuits" do
       state = create(:github_health_state, circuit_state: "closed")
       expect(state.check_circuit_recovery!(timeout: 300)).to be false

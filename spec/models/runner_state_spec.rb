@@ -139,6 +139,26 @@ RSpec.describe RunnerState do
       expect(state.reload.circuit_state).to eq("open")
     end
 
+    it "clears rate_limited_until when transitioning to half_open" do
+      state = create(:runner_state, circuit_state: "open", circuit_opened_at: 10.minutes.ago,
+        rate_limited_until: 30.minutes.from_now)
+      state.check_circuit_recovery!(timeout: 300)
+
+      state.reload
+      expect(state.circuit_state).to eq("half_open")
+      expect(state.rate_limited_until).to be_nil
+    end
+
+    it "does not transition when timeout has not elapsed and preserves rate limit" do
+      state = create(:runner_state, circuit_state: "open", circuit_opened_at: 1.minute.ago,
+        rate_limited_until: 30.minutes.from_now)
+      state.check_circuit_recovery!(timeout: 300)
+
+      state.reload
+      expect(state.circuit_state).to eq("open")
+      expect(state.rate_limited_until).to be_present
+    end
+
     it "returns false for closed circuits" do
       state = create(:runner_state, circuit_state: "closed")
       expect(state.check_circuit_recovery!(timeout: 300)).to be false
@@ -163,6 +183,14 @@ RSpec.describe RunnerState do
 
     it "returns false when circuit is half_open" do
       state = build(:runner_state, :circuit_half_open)
+      expect(state).not_to be_unavailable
+    end
+
+    it "returns false when circuit is half_open after recovery clears rate limit" do
+      state = create(:runner_state, circuit_state: "open", circuit_opened_at: 10.minutes.ago,
+        rate_limited_until: 30.minutes.from_now)
+      state.check_circuit_recovery!(timeout: 300)
+
       expect(state).not_to be_unavailable
     end
   end

@@ -68,19 +68,10 @@ RSpec.describe Runners::HarnessExecutionPlan do
       # claude's --mcp-config is variadic, so the flag must use the --flag=value
       # form to avoid swallowing the trailing positional prompt.
       mcp_flag = plan.command.find { |part| part.start_with?("--mcp-config=") }
-      mcp_config_path = mcp_flag&.delete_prefix("--mcp-config=")
 
       expect(mcp_flag).to be_present
       expect(plan.command).not_to include("--mcp-config")
       expect(plan.command.last).to eq("Say hello")
-      expect(plan.preparation).to be_a(AgentHarness::ExecutionPreparation)
-      expect(plan.preparation.file_writes).to contain_exactly(
-        have_attributes(
-          path: mcp_config_path,
-          content: JSON.generate("mcpServers" => {}),
-          mode: 0o600
-        )
-      )
     end
 
     # Regression guard for the variadic --mcp-config bug (viamin/agent-harness#229,

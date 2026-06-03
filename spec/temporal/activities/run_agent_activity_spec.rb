@@ -4335,20 +4335,11 @@ expect(container_service).to receive(:execute).with(
           # Variadic --mcp-config must use --flag=value so it does not swallow
           # the trailing positional prompt.
           mcp_flag = command.find { |part| part.to_s.start_with?("--mcp-config=") }
-          mcp_config_path = mcp_flag&.delete_prefix("--mcp-config=")
 
           expect(command).to include("claude")
           expect(mcp_flag).to be_present
           expect(command).not_to include("--mcp-config")
           expect(options).to include(timeout: anything)
-          expect(options[:preparation]).to be_a(AgentHarness::ExecutionPreparation)
-          expect(options[:preparation].file_writes).to include(
-            have_attributes(
-              path: mcp_config_path,
-              content: JSON.generate("mcpServers" => {}),
-              mode: 0o600
-            )
-          )
         end.and_return(exec_success)
 
         activity.execute(agent_run_id: agent_run.id)

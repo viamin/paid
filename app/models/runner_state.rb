@@ -62,12 +62,14 @@ class RunnerState < ApplicationRecord
   # @param timeout [Integer] Seconds to wait before trying half_open
   # @return [Boolean] true if transitioned to half_open
   def check_circuit_recovery!(timeout: 300)
-    return false unless circuit_state == "open"
-    return false unless circuit_opened_at.present?
-    return false unless circuit_opened_at + timeout.seconds <= Time.current
+    with_lock do
+      return false unless circuit_state == "open"
+      return false unless circuit_opened_at.present?
+      return false unless circuit_opened_at + timeout.seconds <= Time.current
 
-    update!(circuit_state: "half_open")
-    true
+      update!(circuit_state: "half_open", rate_limited_until: nil)
+      true
+    end
   end
 
   # Returns true if the circuit is open (runner should not be used).
