@@ -82,10 +82,28 @@ module ChatSessions
 
       messages.map do |msg|
         { role: msg.role, content: conversation_content_for(msg) }.tap do |entry|
-          entry[:tool_call_id] = msg.tool_call_id if msg.tool_call_id.present?
-          entry[:tool_name] = msg.tool_name if msg.tool_name.present?
+          if assistant_tool_call_message?(msg)
+            entry[:tool_calls] = [
+              {
+                id: msg.tool_call_id,
+                name: msg.tool_name,
+                arguments: msg.tool_arguments
+              }
+            ]
+          else
+            entry[:tool_call_id] = msg.tool_call_id if msg.tool_call_id.present?
+            entry[:tool_name] = msg.tool_name if msg.tool_name.present?
+          end
         end
       end
+    end
+
+    def assistant_tool_call_message?(message)
+      message.role == "assistant" &&
+        message.content.blank? &&
+        message.tool_call_id.present? &&
+        message.tool_name.present? &&
+        message.tool_arguments.present?
     end
 
     def conversation_content_for(message)
@@ -140,17 +158,21 @@ module ChatSessions
     end
 
     def invoke_llm_client(conversation, chunk_callback)
-      return llm_client.call(conversation) unless on_chunk
-
-      if llm_client_supports_chunk_callback?
-        llm_client.call(conversation, on_chunk: chunk_callback)
-      else
-        llm_client.call(conversation)
-      end
+      call_llm_client(
+        conversation,
+        include_tools: llm_client_supports_tools?,
+        include_on_chunk: on_chunk && llm_client_supports_chunk_callback?,
+        chunk_callback: chunk_callback
+      )
     rescue ArgumentError => error
-      raise error unless unsupported_on_chunk_callback?(error)
+      raise error unless unsupported_llm_client_keyword?(error)
 
-      llm_client.call(conversation)
+      call_llm_client(
+        conversation,
+        include_tools: false,
+        include_on_chunk: on_chunk && llm_client_supports_chunk_callback? && !unsupported_on_chunk_callback?(error),
+        chunk_callback: chunk_callback
+      )
     end
 
     def replay_response_content(response, chunk_callback)
@@ -163,10 +185,40 @@ module ChatSessions
       error.message.include?("unknown keyword: :on_chunk") || error.message.match?(/wrong number of arguments/)
     end
 
+    def unsupported_tools_keyword?(error)
+      error.message.include?("unknown keyword: :tools") || error.message.match?(/wrong number of arguments/)
+    end
+
+    def unsupported_llm_client_keyword?(error)
+      unsupported_on_chunk_callback?(error) || unsupported_tools_keyword?(error)
+    end
+
     def llm_client_supports_chunk_callback?
+      llm_client_supports_keyword?(:on_chunk)
+    end
+
+    def llm_client_supports_tools?
+      llm_client_supports_keyword?(:tools)
+    end
+
+    def llm_client_supports_keyword?(keyword)
       llm_client.method(:call).parameters.any? do |kind, name|
-        (kind == :keyrest) || ([ :key, :keyreq ].include?(kind) && name == :on_chunk)
+        (kind == :keyrest) || ([ :key, :keyreq ].include?(kind) && name == keyword)
       end
+    end
+
+    def call_llm_client(conversation, include_tools:, include_on_chunk:, chunk_callback:)
+      kwargs = {}
+      kwargs[:tools] = tool_definitions if include_tools
+      kwargs[:on_chunk] = chunk_callback if include_on_chunk
+
+      return llm_client.call(conversation, **kwargs) if kwargs.any?
+
+      llm_client.call(conversation)
+    end
+
+    def tool_definitions
+      @tool_definitions ||= PaidMcpServer.new(session: chat_session, user: chat_session.created_by).tool_definitions
     end
 
     def persist_assistant_response(response)
