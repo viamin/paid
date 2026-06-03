@@ -15,7 +15,10 @@ module InstallContractHelpers
   def normalized_install_command(contract)
     command = Array(contract[:install_command]).dup
     return command if command.empty?
-    return command if postinstall_sensitive_contract?(contract)
+
+    if postinstall_sensitive_contract?(contract)
+      return append_postinstall(command, contract)
+    end
 
     fallback_command = opencode_fallback_install_command(contract)
     return ensure_ignore_scripts(fallback_command) if fallback_command != command
@@ -40,6 +43,13 @@ module InstallContractHelpers
     # binary. Keep the hardening default for dependencies, then run the single
     # allowlisted postinstall explicitly until the upstream contract is released.
     command + [ "&&", "node", "$(npm root -g)/opencode-ai/postinstall.mjs" ]
+  end
+
+  def append_postinstall(command, contract)
+    postinstall = contract[:postinstall_command]
+    return command unless postinstall
+
+    command + [ "&&", *postinstall.split(" ") ]
   end
 
   def ensure_ignore_scripts(command)
