@@ -32,6 +32,27 @@ RSpec.describe ChatSessions::SendMessage do
       end
     end.new
   end
+  let(:tool_definitions) do
+    [
+      {
+        name: "search",
+        description: "Search the project",
+        inputSchema: { type: "object", properties: { query: { type: "string" } } }
+      }
+    ]
+  end
+  let(:expected_assistant_tool_call_entry) do
+    {
+      content: nil,
+      tool_calls: [
+        {
+          id: "call_1",
+          name: "search",
+          arguments: { "query" => "test" }
+        }
+      ]
+    }
+  end
 
   describe ".call" do
     it "persists the user message" do
@@ -231,6 +252,36 @@ RSpec.describe ChatSessions::SendMessage do
       expect(chunks.length).to be > 1
     end
 
+    it "passes tool definitions when the llm client supports tools" do
+      tool_aware_client = Class.new do
+        attr_reader :seen_tools
+
+        def initialize(response)
+          @response = response
+        end
+
+        def call(_conversation, tools: nil)
+          @seen_tools = tools
+          @response
+        end
+      end.new(llm_response)
+      mcp_server = instance_double(PaidMcpServer, tool_definitions: tool_definitions)
+      allow(PaidMcpServer).to receive(:new).and_return(mcp_server)
+
+      described_class.call(chat_session: chat_session, content: "Hello", llm_client: tool_aware_client)
+
+      expect(tool_aware_client.seen_tools).to eq(tool_definitions)
+    end
+
+    it "falls back when the llm client does not support tools" do
+      mcp_server = instance_double(PaidMcpServer, tool_definitions: tool_definitions)
+      allow(PaidMcpServer).to receive(:new).and_return(mcp_server)
+
+      expect {
+        described_class.call(chat_session: chat_session, content: "Hello", llm_client: llm_client)
+      }.not_to raise_error
+    end
+
     context "with tool calls in response" do
       let(:tool_llm_response) do
         {
@@ -282,14 +333,7 @@ RSpec.describe ChatSessions::SendMessage do
 
         follow_up_client = instance_double(Proc)
         allow(follow_up_client).to receive(:call) do |conversation|
-          tool_entry = conversation.find { |message| message[:role] == "tool" }
-
-          expect(tool_entry).to include(
-            content: { "status" => "not_implemented" },
-            tool_call_id: "call_1",
-            tool_name: "search"
-          )
-
+          expect_follow_up_tool_round_trip(conversation)
           llm_response
         end
 
@@ -298,5 +342,19 @@ RSpec.describe ChatSessions::SendMessage do
         expect(follow_up_client).to have_received(:call)
       end
     end
+  end
+
+  def expect_follow_up_tool_round_trip(conversation)
+    assistant_tool_call_entry = conversation.find do |message|
+      message[:role] == "assistant" && message[:tool_calls].present?
+    end
+    tool_entry = conversation.find { |message| message[:role] == "tool" }
+
+    expect(assistant_tool_call_entry).to include(expected_assistant_tool_call_entry)
+    expect(tool_entry).to include(
+      content: { "status" => "not_implemented" },
+      tool_call_id: "call_1",
+      tool_name: "search"
+    )
   end
 end
