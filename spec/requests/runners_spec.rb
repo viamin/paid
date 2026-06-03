@@ -782,7 +782,7 @@ RSpec.describe "Runners" do
           message: "Agent is healthy",
           error_type: nil
         )
-        allow(Runners::TestAgent).to receive(:call).and_return(result)
+        allow(Runners::TestAgent).to receive(:call).with(runner: runner).and_return(result)
 
         post test_agent_runner_path(runner), headers: { "Accept" => "application/json" }
 
@@ -800,7 +800,7 @@ RSpec.describe "Runners" do
           message: "Invalid API key",
           error_type: :authentication
         )
-        allow(Runners::TestAgent).to receive(:call).and_return(result)
+        allow(Runners::TestAgent).to receive(:call).with(runner: runner).and_return(result)
 
         post test_agent_runner_path(runner), headers: { "Accept" => "application/json" }
 
@@ -819,7 +819,7 @@ RSpec.describe "Runners" do
           message: "Agent is healthy",
           error_type: nil
         )
-        allow(Runners::TestAgent).to receive(:call).and_return(result)
+        allow(Runners::TestAgent).to receive(:call).with(runner: runner).and_return(result)
 
         # The test environment uses :null_store, so use a real store
         # to exercise the atomic rate-limit logic without mutating global state.
