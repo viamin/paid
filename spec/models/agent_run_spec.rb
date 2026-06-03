@@ -860,6 +860,98 @@ RSpec.describe AgentRun do
       end
     end
 
+    describe "#pre_runner_infra_failure?" do
+      it "returns true for Docker pull failure with zero tokens and no runner" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "Failed to start service container postgres: Failed to pull image postgres:16.13: Bad Gateway",
+          tokens_input: 0, final_runner: nil)
+
+        expect(agent_run.pre_runner_infra_failure?).to be true
+      end
+
+      it "returns true for DNS resolution failure" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "Failed to open TCP connection to api.github.com:443 (getaddrinfo: Temporary failure in name resolution)",
+          tokens_input: 0, final_runner: nil)
+
+        expect(agent_run.pre_runner_infra_failure?).to be true
+      end
+
+      it "returns true for PG connection slot exhaustion" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "connection slots are reserved for roles with the SUPERUSER attribute",
+          tokens_input: 0, final_runner: nil)
+
+        expect(agent_run.pre_runner_infra_failure?).to be true
+      end
+
+      it "returns false when tokens were consumed (runner was reached)" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "Failed to start service container postgres: Failed to pull image postgres:16",
+          tokens_input: 500, final_runner: nil)
+
+        expect(agent_run.pre_runner_infra_failure?).to be false
+      end
+
+      it "returns false when final_runner is present" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "Failed to start service container postgres: Failed to pull image postgres:16",
+          tokens_input: 0, final_runner: "claude")
+
+        expect(agent_run.pre_runner_infra_failure?).to be false
+      end
+
+      it "returns false for runner exhaustion error (runner was attempted)" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "All runners exhausted: Claude, Codex",
+          tokens_input: 0, final_runner: nil)
+
+        expect(agent_run.pre_runner_infra_failure?).to be false
+      end
+
+      it "returns false for non-failed status" do
+        agent_run = build(:agent_run, :completed,
+          error_message: "Failed to pull image postgres:16",
+          tokens_input: 0, final_runner: nil)
+
+        expect(agent_run.pre_runner_infra_failure?).to be false
+      end
+    end
+
+    describe "#operational_failure? excludes pre-runner infra failures" do
+      it "returns false for Docker pull failure (pre-runner infra)" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "Failed to start service container postgres: Failed to pull image postgres:16.13: Bad Gateway",
+          tokens_input: 0, final_runner: nil)
+
+        expect(agent_run.operational_failure?).to be false
+      end
+
+      it "returns false for DNS failure (pre-runner infra)" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "Failed to open TCP connection to api.github.com:443 (getaddrinfo: Temporary failure in name resolution)",
+          tokens_input: 0, final_runner: nil)
+
+        expect(agent_run.operational_failure?).to be false
+      end
+
+      it "still returns true for Docker exec error during agent execution" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "Docker exec error: container abc123 is not running",
+          tokens_input: 500, final_runner: "claude")
+
+        expect(agent_run.operational_failure?).to be true
+      end
+
+      it "still returns true for runner exhaustion" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "All runners exhausted: Claude, Codex",
+          tokens_input: 0, final_runner: nil)
+
+        expect(agent_run.operational_failure?).to be true
+      end
+    end
+
     describe "#infra_failure?" do
       it "returns true for failed run with validation error and zero tokens" do
         agent_run = build(:agent_run, :failed,

@@ -72,6 +72,11 @@ module Workflows
       "GithubClient::AuthenticationError"
     ].freeze
 
+    # Infrastructure failures that occur before the LLM runner is reached.
+    # When detected, the run is re-queued via RequeueInfraFailureActivity
+    # instead of staying permanently failed.
+    PRE_RUNNER_INFRA_PATTERNS = AgentRun::PRE_RUNNER_INFRA_KEYWORDS
+
     def execute(input)
       project_id = input[:project_id]
       issue_id = input[:issue_id]
@@ -118,6 +123,7 @@ module Workflows
       end
 
       agent_step_succeeded = false
+      runner_step_reached = false
       workflow_error = nil
 
       begin
@@ -240,6 +246,7 @@ module Workflows
           execution_limit = max_execution_seconds + 300
           activity_timeout = [ activity_timeout, execution_limit ].min
         end
+        runner_step_reached = true
         agent_result = run_activity(Activities::RunAgentActivity,
           { agent_run_id: agent_run_id },
           start_to_close_timeout: activity_timeout,
@@ -510,6 +517,29 @@ module Workflows
             error: e.message
           )
         end
+
+        # Re-queue pre-runner infrastructure failures (Docker pull errors, DNS
+        # failures) instead of leaving the run permanently failed. Containers
+        # have already been cleaned up at this point, so the re-queued run will
+        # provision fresh infrastructure on retry.
+        if agent_run_id.present? && workflow_error && !runner_step_reached
+          error_msg = unwrap_error_message(workflow_error)
+          if pre_runner_infra_error?(error_msg)
+            begin
+              run_activity(Activities::RequeueInfraFailureActivity,
+                { agent_run_id: agent_run_id },
+                start_to_close_timeout: 30,
+                retry_policy: NO_RETRY)
+            rescue => e
+              Temporalio::Workflow.logger.warn(
+                message: "agent_execution.infra_requeue_failed",
+                agent_run_id: agent_run_id,
+                error_class: e.class.name,
+                error: e.message
+              )
+            end
+          end
+        end
       end
     end
 
@@ -527,6 +557,11 @@ module Workflows
       else
         error.message
       end
+    end
+
+    def pre_runner_infra_error?(error_message)
+      msg = error_message.to_s.downcase
+      PRE_RUNNER_INFRA_PATTERNS.any? { |pattern| msg.include?(pattern.downcase) }
     end
 
     def stale_pull_request_error?(error)
