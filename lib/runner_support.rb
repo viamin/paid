@@ -19,6 +19,17 @@ module RunnerSupport
   # non-interactive agent execution.
   CONTAINER_EXECUTABLE_RUNNER_KEYS = Set.new(%w[aider claude codex copilot cursor gemini kilocode opencode pi]).freeze
 
+  # Upper bound on how far in the future a parsed rate-limit reset is trusted.
+  #
+  # WORKAROUND (remove when agent-harness reset parsing is fixed): the gem's
+  # shared "resets <Mon> <day>" parser infers the year by month comparison
+  # (`year += 1 if month < current_month`), so a reset like "resets Jan 15"
+  # seen mid-year is read as ~10-11 months out. Codex emits these, and the
+  # bogus far-future value benches the runner for months. No real provider
+  # rate-limit window exceeds a week (Codex's longest is its weekly cap), so
+  # anything past this ceiling is a parse error, not a real reset.
+  MAX_RATE_LIMIT_RESET = 8.days
+
   module_function
 
   # Returns supported runner keys in a deterministic order matching
@@ -308,7 +319,24 @@ module RunnerSupport
     parsed_reset = harness_provider.parse_rate_limit_reset(text.to_s) ||
       harness_provider.parse_rate_limit_reset(normalized_rate_limit_reset_text(text)) ||
       1.hour.from_now
-    parsed_reset > Time.current ? parsed_reset : 1.hour.from_now
+    return 1.hour.from_now unless parsed_reset > Time.current
+
+    # Reject implausibly far-future resets from upstream parse bugs (see
+    # MAX_RATE_LIMIT_RESET); fall back to the conservative default so the
+    # next attempt re-detects the real limit instead of benching for months.
+    # Logged so operators can see the workaround firing and know when the
+    # upstream fix has landed (clamp stops triggering => safe to remove).
+    if parsed_reset > MAX_RATE_LIMIT_RESET.from_now
+      Rails.logger.warn(
+        message: "runner_support.rate_limit_reset_clamped",
+        provider: harness_provider.class.name,
+        parsed_reset_at: parsed_reset.utc.iso8601,
+        max_reset_seconds: MAX_RATE_LIMIT_RESET.to_i
+      )
+      return 1.hour.from_now
+    end
+
+    parsed_reset
   rescue AgentHarness::ConfigurationError, KeyError
     1.hour.from_now
   end
