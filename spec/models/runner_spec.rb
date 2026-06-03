@@ -1003,7 +1003,7 @@ RSpec.describe Runner do
         "OPENAI_BASE_URL" => "https://openrouter.ai/api/v1"
       )
       expect(runtime.unset_env).to include("OPENAI_HEADER_X_AGENT_RUN_ID", "OPENAI_HEADER_X_PROXY_TOKEN")
-      expect(runtime.metadata[:config]["provider"]).to eq({ "openrouter" => {} })
+      expect(runtime.metadata[:config]).not_to have_key("provider")
     end
 
     it "qualifies zai_coding models with runner prefix" do
@@ -1024,7 +1024,7 @@ RSpec.describe Runner do
         "ZAI_CODING_API_KEY" => "sk-zai-secret",
         "OPENAI_BASE_URL" => "https://api.z.ai/api/coding/paas/v4"
       )
-      expect(runtime.metadata[:config]["provider"]).to eq({ "zai_coding" => {} })
+      expect(runtime.metadata[:config]).not_to have_key("provider")
     end
 
     it "qualifies zai models with runner prefix" do
