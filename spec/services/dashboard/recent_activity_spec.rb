@@ -68,5 +68,27 @@ RSpec.describe Dashboard::RecentActivity do
       expect(described_class.call(account: account, limit: 5).size).to eq(5)
       expect(described_class.call(account: account).size).to eq(described_class::DEFAULT_LIMIT)
     end
+
+    it "excludes stale activity outside the recent window" do
+      stale_run = create(:agent_run, project: project, status: "completed",
+                                     completed_at: 15.days.ago)
+      stale_pr = create(:issue, :pull_request, project: project,
+                                              pr_review_phase: "merged",
+                                              github_updated_at: 15.days.ago)
+      stale_pause_event = create(:quality_pause_event, :paused, project: project,
+                                                                created_at: 15.days.ago)
+      fresh_run = create(:agent_run, project: project, status: "completed",
+                                     completed_at: 1.hour.ago)
+      fresh_pr = create(:issue, :pull_request, project: project,
+                                              pr_review_phase: "merged",
+                                              github_updated_at: 30.minutes.ago)
+      fresh_pause_event = create(:quality_pause_event, :paused, project: project,
+                                                                created_at: 10.minutes.ago)
+
+      items = described_class.call(account: account)
+
+      expect(items).to contain_exactly(fresh_run, fresh_pr, fresh_pause_event)
+      expect(items).not_to include(stale_run, stale_pr, stale_pause_event)
+    end
   end
 end

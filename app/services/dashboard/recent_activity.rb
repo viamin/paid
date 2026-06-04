@@ -4,6 +4,7 @@ module Dashboard
   class RecentActivity
     DEFAULT_LIMIT = 10
     CACHE_TTL = 15.seconds
+    RECENT_WINDOW = 14.days
 
     def self.call(...)
       new(...).call
@@ -32,6 +33,7 @@ module Dashboard
       AgentRun.joins(:project)
         .where(projects: { account_id: account.id })
         .finished
+        .where("COALESCE(agent_runs.completed_at, agent_runs.created_at) > ?", activity_cutoff)
         .includes(:project, :issue)
         .order(Arel.sql("COALESCE(agent_runs.completed_at, agent_runs.created_at) DESC"))
         .limit(limit)
@@ -42,6 +44,7 @@ module Dashboard
       Issue.joins(:project)
         .where(projects: { account_id: account.id })
         .where(is_pull_request: true, pr_review_phase: "merged")
+        .where("issues.github_updated_at > ?", activity_cutoff)
         .includes(:project)
         .order(github_updated_at: :desc)
         .limit(limit)
@@ -51,6 +54,7 @@ module Dashboard
     def recent_quality_pause_events
       QualityPauseEvent.joins(:project)
         .where(projects: { account_id: account.id })
+        .where("quality_pause_events.created_at > ?", activity_cutoff)
         .includes(:project)
         .recent
         .limit(limit)
@@ -67,6 +71,10 @@ module Dashboard
 
     def cache_key
       "dashboard/recent_activity/#{account.id}/#{limit}"
+    end
+
+    def activity_cutoff
+      RECENT_WINDOW.ago
     end
   end
 end
