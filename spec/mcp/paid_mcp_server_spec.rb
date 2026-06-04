@@ -7,6 +7,7 @@ RSpec.describe PaidMcpServer do
   let(:user) { create(:user, :member, account: account) }
   let(:chat_session) { create(:chat_session, account: account, created_by: user) }
   let(:server) { described_class.new(session: chat_session, user: user) }
+  let(:project) { create(:project, account: account) }
 
   describe "#handle_request" do
     it "handles initialize" do
@@ -24,15 +25,18 @@ RSpec.describe PaidMcpServer do
     end
 
     it "handles tools/list" do
+      create(:project_membership, :member, user: user, project: project)
+
       result = server.handle_request(method: "tools/list", id: 2)
 
       expect(result[:result][:tools]).to be_an(Array)
       expect(result[:result][:tools].first).to have_key(:name)
       expect(result[:result][:tools].first).to have_key(:inputSchema)
+      expect(result[:result][:tools].map { |tool| tool[:name] }).not_to include("trigger_agent_run")
     end
 
     it "handles tools/call" do
-      create(:project, account: account)
+      project
 
       result = server.handle_request(
         method: "tools/call",
@@ -70,21 +74,35 @@ RSpec.describe PaidMcpServer do
 
       expect(result[:error]).to eq(code: -32602, message: "Tool arguments must be a JSON object")
     end
+
+    it "rejects direct calls to write tools hidden from tools/list" do
+      create(:project_membership, :member, user: user, project: project)
+
+      result = server.handle_request(
+        method: "tools/call",
+        params: { "name" => "trigger_agent_run", "arguments" => {} },
+        id: 7
+      )
+
+      expect(result[:error]).to eq(code: -32602, message: "Unknown tool: trigger_agent_run")
+    end
   end
 
   describe "#tool_definitions" do
-    it "returns all registered tool definitions" do
+    it "returns read-only tool definitions" do
+      create(:project_membership, :member, user: user, project: project)
+
       definitions = server.tool_definitions
 
       expect(definitions).to be_an(Array)
       names = definitions.map { |d| d[:name] }
       expect(names).to include(
         "list_projects", "get_project", "get_project_issues",
-        "get_project_pull_requests", "trigger_agent_run", "get_agent_run",
-        "list_agent_runs", "cancel_agent_run", "get_issue_details",
-        "get_pull_request_details", "search_code", "list_account_memberships",
-        "get_user_settings", "list_provider_api_keys"
+        "get_project_pull_requests", "get_agent_run", "list_agent_runs",
+        "get_issue_details", "get_pull_request_details", "search_code",
+        "list_account_memberships", "get_user_settings", "list_provider_api_keys"
       )
+      expect(names).not_to include("trigger_agent_run", "cancel_agent_run")
     end
 
     it "includes inputSchema for each tool" do
@@ -99,11 +117,11 @@ RSpec.describe PaidMcpServer do
 
   describe "#call_tool" do
     it "routes tool calls through the registry" do
-      allow(Tools::Registry).to receive(:dispatch).and_return([])
+      allow(Tools::Registry).to receive(:dispatch_read_only).and_return([])
 
       server.call_tool(name: "list_projects", arguments: {})
 
-      expect(Tools::Registry).to have_received(:dispatch).with(
+      expect(Tools::Registry).to have_received(:dispatch_read_only).with(
         name: "list_projects",
         arguments: {},
         user: user,
