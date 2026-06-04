@@ -46,8 +46,18 @@ module Automation
         private
 
         def resolve_client
+          # Prefer the project's credential-aware client, which resolves a
+          # GitHub App installation token for app-backed projects and a PAT
+          # client for token-backed projects. Without this, app-backed
+          # projects (github_token nil, github_installation_id set) raised
+          # "no GitHub token" and every provider write — including auto-merge
+          # — failed silently.
+          if project.respond_to?(:client) && (resolved = project.client)
+            return resolved
+          end
+
           token = project.respond_to?(:github_token) ? project.github_token : nil
-          raise provider_error_class, "Project #{project_identifier} has no GitHub token" if token.nil?
+          raise provider_error_class, "Project #{project_identifier} has no GitHub client" if token.nil?
 
           token.client
         end
