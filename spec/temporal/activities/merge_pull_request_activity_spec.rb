@@ -120,6 +120,92 @@ RSpec.describe Activities::MergePullRequestActivity do
       end
     end
 
+    context "when merging a PR that was escalated" do
+      let(:issue) do
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 42,
+          pr_review_phase: "escalated",
+          labels: [ "paid-generated", described_class::PAID_ESCALATED_LABEL ])
+      end
+      let(:pr_data) do
+        Automation::Providers::Data::PullRequest.new(
+          number: 42, title: "Test", body: nil, state: :open, draft: false,
+          merged: false, mergeable: true, head_sha: "abc", head_ref: "feature",
+          base_ref: "main", author_login: "user", labels: [], created_at: Time.current,
+          updated_at: Time.current, merged_at: nil, url: "https://example.com/pr/42",
+          raw_state: "open"
+        )
+      end
+      let(:merge_result) do
+        Automation::Providers::Data::MergeResult.new(merged: true, sha: "def456", message: "Merged")
+      end
+
+      before do
+        allow(provider).to receive(:fetch_pull_request)
+          .with(repo: project.full_name, number: 42)
+          .and_return(pr_data)
+        allow(provider).to receive(:merge_pull_request).and_return(merge_result)
+        allow(provider).to receive(:add_labels)
+        allow(provider).to receive(:add_comment)
+        allow(provider).to receive(:remove_label)
+      end
+
+      it "removes the paid-escalated label on the host" do
+        activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(provider).to have_received(:remove_label)
+          .with(repo: project.full_name, number: 42, label: described_class::PAID_ESCALATED_LABEL)
+      end
+
+      it "strips the paid-escalated label from the issue's labels" do
+        activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(issue.reload.labels).not_to include(described_class::PAID_ESCALATED_LABEL)
+      end
+
+      it "does not abort the merge when host label removal fails" do
+        allow(provider).to receive(:remove_label)
+          .and_raise(Automation::Providers::RepositoryProvider::ProviderError, "boom")
+
+        result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(result[:merged]).to be true
+        expect(issue.reload.pr_review_phase).to eq("merged")
+      end
+    end
+
+    context "when merging a PR that was not escalated" do
+      let(:pr_data) do
+        Automation::Providers::Data::PullRequest.new(
+          number: 42, title: "Test", body: nil, state: :open, draft: false,
+          merged: false, mergeable: true, head_sha: "abc", head_ref: "feature",
+          base_ref: "main", author_login: "user", labels: [], created_at: Time.current,
+          updated_at: Time.current, merged_at: nil, url: "https://example.com/pr/42",
+          raw_state: "open"
+        )
+      end
+      let(:merge_result) do
+        Automation::Providers::Data::MergeResult.new(merged: true, sha: "def456", message: "Merged")
+      end
+
+      before do
+        allow(provider).to receive(:fetch_pull_request)
+          .with(repo: project.full_name, number: 42)
+          .and_return(pr_data)
+        allow(provider).to receive(:merge_pull_request).and_return(merge_result)
+        allow(provider).to receive(:add_labels)
+        allow(provider).to receive(:add_comment)
+        allow(provider).to receive(:remove_label)
+      end
+
+      it "does not call remove_label" do
+        activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(provider).not_to have_received(:remove_label)
+      end
+    end
+
     context "when PR is already merged" do
       let(:pr_data) do
         Automation::Providers::Data::PullRequest.new(
