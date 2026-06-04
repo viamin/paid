@@ -49,7 +49,11 @@ module Tools
       end
 
       def definitions_for(user:)
-        tool_hash.values.select { |klass| tool_available_to?(klass, user:) }.map(&:definition)
+        definitions_for_classes(available_tool_classes_for(user:))
+      end
+
+      def read_only_definitions_for(user:)
+        definitions_for_classes(available_tool_classes_for(user:).reject(&:write_operation?))
       end
 
       def all
@@ -67,6 +71,14 @@ module Tools
 
       def tool_available_to?(klass, user:)
         klass.available_to?(user:)
+      end
+
+      def available_tool_classes_for(user:)
+        tool_hash.values.select { |klass| tool_available_to?(klass, user:) }
+      end
+
+      def definitions_for_classes(tool_classes)
+        tool_classes.map(&:definition)
       end
     end
   end
