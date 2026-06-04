@@ -57,11 +57,11 @@ module Tools
       end
 
       def definitions_for(user:)
-        authorized_tool_classes_for(user:).map(&:definition)
+        definitions_for_classes(available_tool_classes_for(user:))
       end
 
       def read_only_definitions_for(user:)
-        read_only_tool_classes_for(user:).map(&:definition)
+        definitions_for_classes(read_only_tool_classes_for(user:))
       end
 
       def all
@@ -81,12 +81,16 @@ module Tools
         klass.available_to?(user:)
       end
 
-      def authorized_tool_classes_for(user:)
+      def available_tool_classes_for(user:)
         tool_hash.values.select { |klass| tool_available_to?(klass, user:) }
       end
 
       def read_only_tool_classes_for(user:)
-        authorized_tool_classes_for(user:).reject(&:write_operation?)
+        available_tool_classes_for(user:).reject(&:write_operation?)
+      end
+
+      def definitions_for_classes(tool_classes)
+        tool_classes.map(&:definition)
       end
     end
   end

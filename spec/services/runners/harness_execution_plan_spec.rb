@@ -190,7 +190,7 @@ RSpec.describe Runners::HarnessExecutionPlan do
 
       expect(plan.preparation.file_writes.first.path).to eq("~/.config/opencode/opencode.json")
       parsed = JSON.parse(plan.preparation.file_writes.first.content)
-      expect(parsed["provider"]).to eq({ "openrouter" => {} })
+      expect(parsed).not_to have_key("provider")
       expect(parsed["model"]).to eq("openrouter/moonshotai/kimi-k2-0905")
       expect(parsed).not_to have_key("baseURL")
     end
