@@ -1923,10 +1923,21 @@ module Activities
       tenant_account_id = Current.account&.id
 
       # Wrap the worker thread in Rails executor and ActiveRecord connection
-      # pool management. The executor handles autoloading/reloading and the
-      # with_connection block ensures the DB connection is checked out only
-      # for the duration of the work and returned to the pool afterward,
-      # preventing connection-pool exhaustion from long-running activities.
+      # pool management. The executor handles autoloading/reloading; the
+      # with_connection block scopes the worker thread's DB connection and
+      # returns it to the pool when the run finishes.
+      #
+      # NOTE: this connection is intentionally held for the full duration of
+      # the run, not just discrete writes. The wrapped work streams agent
+      # output to the DB on every chunk (Containers::Provision#log_output),
+      # so a tighter scope would either thrash the pool (checkout/checkin per
+      # chunk) or drop the per-connection tenant RLS context that
+      # TenantContext sets via `SET paid.current_account_id`. This worker
+      # thread therefore runs concurrently with the activity's main thread and
+      # consumes a second connection per in-flight run — accounted for in
+      # Paid::TemporalWorkerConfig#agent_heartbeat_connections when sizing the
+      # pool. Do not narrow this scope without also batching the streaming
+      # writes and re-applying tenant context across reconnects.
       worker = Thread.new do
         executor = Rails.application.executor if defined?(Rails) && Rails.respond_to?(:application) && Rails.application.respond_to?(:executor)
         work = proc { yield }
