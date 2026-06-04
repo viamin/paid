@@ -11,7 +11,7 @@ RSpec.describe Github::MigrationService do
       create(
         :github_installation,
         account: account,
-        accessible_repositories: [ { "id" => 101, "full_name" => "acme/accessible" } ]
+        accessible_repositories: [ { "id" => 101, "full_name" => "test-org/accessible" } ]
       )
     end
     let!(:accessible_project) do
@@ -20,6 +20,8 @@ RSpec.describe Github::MigrationService do
         account: account,
         created_by: actor,
         github_token: github_token,
+        owner: "test-org",
+        repo: "accessible",
         github_id: 101
       )
     end
@@ -29,6 +31,8 @@ RSpec.describe Github::MigrationService do
         account: account,
         created_by: actor,
         github_token: github_token,
+        owner: "test-org",
+        repo: "inaccessible",
         github_id: 202
       )
     end
@@ -72,6 +76,19 @@ RSpec.describe Github::MigrationService do
       expect(result.failed).to eq(2)
       expect(result.results.map(&:error).uniq).to eq([ "GitHub App installation must be active" ])
     end
+
+    it "returns success with a warning when a project is already migrated" do
+      accessible_project.update!(github_token: nil, github_installation: installation)
+
+      result = described_class.migrate_project(
+        project: accessible_project,
+        github_installation: installation,
+        actor: actor
+      )
+
+      expect(result).to be_success
+      expect(result.warnings).to eq([ "Project is already using this GitHub App installation" ])
+    end
   end
 
   describe ".check_accessibility" do
@@ -81,7 +98,7 @@ RSpec.describe Github::MigrationService do
       create(
         :github_installation,
         account: account,
-        accessible_repositories: [ { "id" => 1, "full_name" => "acme/accessible" } ]
+        accessible_repositories: [ { "id" => 1, "full_name" => "test-org/accessible" } ]
       )
     end
 
@@ -89,8 +106,8 @@ RSpec.describe Github::MigrationService do
       allow(Github::AppRegistry).to receive(:configured?).and_return(true)
       allow(github_token).to receive(:accessible_repositories).and_return(
         [
-          { "id" => 1, "full_name" => "acme/accessible" },
-          { "id" => 2, "full_name" => "acme/requires-admin" }
+          { "id" => 1, "full_name" => "test-org/accessible" },
+          { "id" => 2, "full_name" => "test-org/requires-admin" }
         ]
       )
     end
@@ -102,8 +119,8 @@ RSpec.describe Github::MigrationService do
       )
 
       expect(result).to eq(
-        "acme/accessible" => :accessible,
-        "acme/requires-admin" => :requires_admin_action
+        "test-org/accessible" => :accessible,
+        "test-org/requires-admin" => :requires_admin_action
       )
     end
 

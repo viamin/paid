@@ -20,7 +20,6 @@ module Github
   #   )
   class MigrationService
     class MigrationError < StandardError; end
-    class UnsupportedRepositoryError < MigrationError; end
     class InstallationAccessDeniedError < MigrationError; end
 
     attr_reader :project, :github_token, :github_installation, :actor, :options
@@ -82,6 +81,13 @@ module Github
     # @return [Result]
     def migrate
       validate_preconditions!
+
+      if project.github_installation_id == github_installation.id
+        return Result.new(success: true, project: project, previous_token_id: previous_token_id).tap do |result|
+          result.warnings = [ "Project is already using this GitHub App installation" ]
+        end
+      end
+
       verify_installation_access!
 
       perform_migration
@@ -133,11 +139,10 @@ module Github
       raise MigrationError, "github_token is required" unless github_token
       validate_preconditions!
 
-      accessible_repo_ids = accessible_installation_repo_ids
       repo_by_name = github_token.accessible_repositories.index_by { |repo| repo["full_name"] }
 
-      repo_by_name.each_with_object({}) do |(full_name, repo), result|
-        if accessible_repo_ids.include?(repo["id"])
+      repo_by_name.each_with_object({}) do |(full_name, _repo), result|
+        if github_installation.covers_repository?(full_name)
           result[full_name] = :accessible
         else
           result[full_name] = :requires_admin_action
@@ -167,28 +172,18 @@ module Github
     def verify_installation_access!
       return unless github_token
 
-      accessible_repo_ids = accessible_installation_repo_ids
-      target_repo_ids = if project
-        [ project.github_id ]
+      target_repos = if project
+        [ project.full_name ]
       else
-        github_token.projects.pluck(:github_id)
+        github_token.projects.map(&:full_name)
       end
 
-      inaccessible = target_repo_ids.reject { |id| accessible_repo_ids.include?(id) }
+      inaccessible = target_repos.reject { |name| github_installation.covers_repository?(name) }
       return if inaccessible.empty?
 
-      # For single project migrations, this is a hard error
       raise InstallationAccessDeniedError,
         "Installation does not have access to repository. " \
         "Please request repository access in the GitHub App settings."
-    end
-
-    def accessible_installation_repos
-      github_installation.accessible_repositories || []
-    end
-
-    def accessible_installation_repo_ids
-      @accessible_installation_repo_ids ||= accessible_installation_repos.map { |repo| repo["id"] }.to_set
     end
 
     def perform_migration

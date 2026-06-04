@@ -144,6 +144,27 @@ RSpec.describe "GithubInstallations" do
       expect(response).to redirect_to(migrate_project_github_installation_path(installation))
     end
 
+    it "includes per-project error details in the flash when migration fails" do
+      installation = create(:github_installation, account: account)
+      github_token = create(:github_token, account: account, created_by: user)
+      project = create(:project, account: account, created_by: user, github_token: github_token, owner: "other-org", repo: "blocked")
+
+      allow(Github::MigrationService).to receive(:migrate_from_token).and_return(
+        Github::MigrationService::BulkResult.new(
+          total: 1, successful: 0, failed: 1,
+          results: [
+            Github::MigrationService::Result.new(success: false, project: project, error: "Installation does not have access")
+          ]
+        )
+      )
+
+      post migrate_project_github_installation_path(installation), params: { github_token_id: github_token.id }
+
+      expect(response).to redirect_to(migrate_project_github_installation_path(installation))
+      expect(flash[:alert]).to include("other-org/blocked")
+      expect(flash[:alert]).to include("Installation does not have access")
+    end
+
     it "rejects inactive tokens" do
       installation = create(:github_installation, account: account)
       github_token = create(:github_token, account: account, created_by: user, revoked_at: Time.current)
