@@ -64,7 +64,7 @@ module Dashboard
     end
 
     def cache_key
-      "dashboard/queue_preview/#{user.account_id}/#{user.id}"
+      "dashboard/queue_preview/#{user.account_id}/#{user.id}/#{Dashboard::CacheVersion.current(user.account)}"
     end
   end
 end

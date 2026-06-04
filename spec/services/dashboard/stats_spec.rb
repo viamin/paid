@@ -85,6 +85,19 @@ RSpec.describe Dashboard::Stats do
         expect(ic[:time_to_merge]).to eq(avg_seconds: 0, p50_seconds: 0, p90_seconds: 0)
         expect(ic[:agent_run_seconds]).to eq(avg_seconds: 0, p50_seconds: 0, p90_seconds: 0)
       end
+
+      it "refreshes cached stats after the dashboard version changes" do
+        first = described_class.call(account: account)
+        create(:agent_run, :completed, project:, duration_seconds: 60)
+
+        cached = described_class.call(account: account)
+        Dashboard::CacheVersion.bump(account)
+        refreshed = described_class.call(account: account)
+
+        expect(first[:run_volume][:total]).to eq(0)
+        expect(cached[:run_volume][:total]).to eq(0)
+        expect(refreshed[:run_volume][:total]).to eq(1)
+      end
     end
 
     context "with agent runs" do

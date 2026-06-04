@@ -3,6 +3,14 @@
 require "rails_helper"
 
 RSpec.describe Dashboard::RecentActivity do
+  around do |example|
+    original_store = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    example.run
+  ensure
+    Rails.cache = original_store
+  end
+
   describe ".call" do
     let(:account) { create(:account) }
     let(:project) { create(:project, account: account) }
@@ -67,6 +75,20 @@ RSpec.describe Dashboard::RecentActivity do
 
       expect(described_class.call(account: account, limit: 5).size).to eq(5)
       expect(described_class.call(account: account).size).to eq(described_class::DEFAULT_LIMIT)
+    end
+
+    it "refreshes the cached activity feed after the dashboard version changes" do
+      create(:agent_run, project: project, status: "completed", completed_at: 2.minutes.ago, duration_seconds: 30)
+      first = described_class.call(account: account)
+
+      create(:agent_run, project: project, status: "completed", completed_at: 1.minute.ago, duration_seconds: 30)
+      cached = described_class.call(account: account)
+      Dashboard::CacheVersion.bump(account)
+      refreshed = described_class.call(account: account)
+
+      expect(first.size).to eq(1)
+      expect(cached.size).to eq(1)
+      expect(refreshed.size).to eq(2)
     end
   end
 end

@@ -3,6 +3,14 @@
 require "rails_helper"
 
 RSpec.describe Dashboard::LiveBroadcaster do
+  around do |example|
+    original_store = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    example.run
+  ensure
+    Rails.cache = original_store
+  end
+
   describe ".call" do
     let(:account) { create(:account) }
     let(:project) { create(:project, account: account) }
@@ -15,11 +23,13 @@ RSpec.describe Dashboard::LiveBroadcaster do
         broadcast_updates << args
       end
       allow(Turbo::StreamsChannel).to receive(:broadcast_prepend_to)
+      allow(Dashboard::CacheVersion).to receive(:bump).and_call_original
     end
 
     it "broadcasts live stats and active runs" do
       described_class.call(account: account, agent_run: agent_run)
 
+      expect(Dashboard::CacheVersion).to have_received(:bump).with(account)
       expect(Turbo::StreamsChannel).to have_received(:broadcast_update_to).with(
         [ account, :live_dashboard ],
         hash_including(target: "live-stats", partial: "dashboard/live_stats")
@@ -28,6 +38,15 @@ RSpec.describe Dashboard::LiveBroadcaster do
         [ account, :live_dashboard ],
         hash_including(target: "active-runs", partial: "dashboard/active_runs")
       )
+    end
+
+    it "does not use wildcard cache invalidation" do
+      allow(Rails.cache).to receive(:delete_matched).and_call_original
+
+      described_class.call(account: account, agent_run: agent_run)
+
+      expect(Rails.cache).not_to have_received(:delete_matched).with("dashboard/queue_preview/#{account.id}/*")
+      expect(Rails.cache).not_to have_received(:delete_matched).with("dashboard/recent_activity/#{account.id}/*")
     end
 
     it "preloads final runner records for active-run fallback rows" do

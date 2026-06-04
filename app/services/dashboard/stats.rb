@@ -73,7 +73,8 @@ module Dashboard
         time_range,
         status_filter,
         goal_filter,
-        requested_sections.join("-")
+        requested_sections.join("-"),
+        Dashboard::CacheVersion.current(account)
       ].join("/")
     end
 
