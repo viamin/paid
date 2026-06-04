@@ -44,6 +44,14 @@ module Tools
         tool_class.new(user:, session:).dispatch(**arguments.symbolize_keys)
       end
 
+      def dispatch_read_only(name:, arguments:, user:, session:)
+        tool_class = read_only_tool_classes_for(user:).find { |klass| klass.tool_name == name }
+        raise ArgumentError, "Unknown tool: #{name}" unless tool_class
+        raise ArgumentError, "Tool arguments must be a JSON object" unless arguments.is_a?(Hash)
+
+        tool_class.new(user:, session:).dispatch(**arguments.symbolize_keys)
+      end
+
       def find(name)
         tool_hash[name]
       end
@@ -53,7 +61,7 @@ module Tools
       end
 
       def read_only_definitions_for(user:)
-        definitions_for_classes(available_tool_classes_for(user:).reject(&:write_operation?))
+        definitions_for_classes(read_only_tool_classes_for(user:))
       end
 
       def all
@@ -75,6 +83,10 @@ module Tools
 
       def available_tool_classes_for(user:)
         tool_hash.values.select { |klass| tool_available_to?(klass, user:) }
+      end
+
+      def read_only_tool_classes_for(user:)
+        available_tool_classes_for(user:).reject(&:write_operation?)
       end
 
       def definitions_for_classes(tool_classes)

@@ -436,10 +436,42 @@ class Project < ApplicationRecord
     Knowledge::RunnerConfiguration.for_embedding_candidate_runners(project: self).present?
   end
 
+  # Whether +login+ is a trusted human collaborator on this project. Use
+  # this for inputs that are an untrusted prompt-injection channel —
+  # issue/PR/review COMMENTS — so only operator-allowlisted humans reach the
+  # agent. Deliberately does NOT include the GitHub App bot: Paid must not
+  # feed its own bot's comments back into the agent. Compare with
+  # #trusted_github_author?, which is broader and covers issue/PR authorship.
   def trusted_github_user?(login)
     return false if login.blank?
 
     allowed_github_usernames.any? { |allowed| allowed.downcase == login.downcase }
+  end
+
+  # Logins trusted as the AUTHOR (creator) of an issue or PR — i.e. trusted
+  # for Paid to pick up and work on it. The human allowlist plus, for GitHub
+  # App projects, the app's own bot identity (implicit, never stored in
+  # allowed_github_usernames), so Paid can act on issues/PRs its own bot
+  # opens. Broader than #trusted_github_user? on purpose: the bot may author
+  # work Paid acts on, but its comments are never trusted human input. All
+  # logins are downcased for case-insensitive comparison.
+  #
+  # Uses github_author_login (the "[bot]" form, e.g. "paid-agents[bot]"),
+  # which is the only login GitHub ever reports as the author of app-created
+  # content. Deliberately NOT author_bot_logins, which also includes the bare
+  # app slug ("paid-agents") — that is a registerable human GitHub username
+  # and must not be granted author trust.
+  def trusted_github_author_logins
+    logins = Array(allowed_github_usernames).filter_map { |name| name.to_s.downcase.presence }
+    bot_author = github_author_login&.downcase
+    logins << bot_author if bot_author
+    logins.uniq
+  end
+
+  def trusted_github_author?(login)
+    return false if login.blank?
+
+    trusted_github_author_logins.include?(login.downcase)
   end
 
   # Returns the effective token limit per agent run at the project/account level.

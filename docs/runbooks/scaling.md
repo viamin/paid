@@ -126,9 +126,10 @@ in "pending" state.
 3. Verify DB pool can support new slot count:
 
    ```bash
-   # With TEMPORAL_WORKER_MODE=agent:
-   # DB_POOL >= TEMPORAL_ACTIVITY_SLOTS + TEMPORAL_LOCAL_ACTIVITY_SLOTS + 2
-   # 8 + 4 + 2 = 14, so DB_POOL=20 is sufficient
+   # With TEMPORAL_WORKER_MODE=agent (agent activities hold TWO connections each,
+   # so the agent-slot count is added twice):
+   # DB_POOL >= TEMPORAL_ACTIVITY_SLOTS + TEMPORAL_LOCAL_ACTIVITY_SLOTS + TEMPORAL_ACTIVITY_SLOTS + 2
+   # 8 + 4 + 8 + 2 = 22, so DB_POOL must be >= 22 (DB_POOL=20 is NOT enough)
    ```
 
 4. If the Docker host is out of memory for more containers:
@@ -267,9 +268,11 @@ in "pending" state.
 1. Check the worker startup log for the specific validation error
 2. Common fix: increase `DB_POOL` to satisfy
    the requirement for the mode you are running:
-   `agent => TEMPORAL_ACTIVITY_SLOTS + TEMPORAL_LOCAL_ACTIVITY_SLOTS + 2`,
+   `agent => TEMPORAL_ACTIVITY_SLOTS + TEMPORAL_LOCAL_ACTIVITY_SLOTS + TEMPORAL_ACTIVITY_SLOTS + 2`,
    `poll => TEMPORAL_POLL_ACTIVITY_SLOTS + TEMPORAL_POLL_LOCAL_ACTIVITY_SLOTS + 2`,
-   `both => both pools combined + 4`
+   `both => both pools combined + TEMPORAL_ACTIVITY_SLOTS + 4`
+   (agent activities hold two connections each — see docs/WORKER_POOL_TUNING.md).
+   `bin/temporal_worker` auto-corrects the pool at boot if `DB_POOL` is below this.
 
 ### Symptom: GoodJob Cron Jobs Running Multiple Times
 

@@ -150,9 +150,10 @@ so more slots improve throughput linearly up to the DB connection and Docker hos
 **Pool sizing constraints:**
 
 - `async_server` mode: `DB_POOL >= RAILS_MAX_THREADS + GOOD_JOB_MAX_THREADS`
-- Temporal worker in `agent` mode: `DB_POOL >= TEMPORAL_ACTIVITY_SLOTS + TEMPORAL_LOCAL_ACTIVITY_SLOTS + 2`
+- Temporal worker in `agent` mode: `DB_POOL >= TEMPORAL_ACTIVITY_SLOTS + TEMPORAL_LOCAL_ACTIVITY_SLOTS + TEMPORAL_ACTIVITY_SLOTS + 2`
 - Temporal worker in `poll` mode: `DB_POOL >= TEMPORAL_POLL_ACTIVITY_SLOTS + TEMPORAL_POLL_LOCAL_ACTIVITY_SLOTS + 2`
-- Temporal worker in `both` mode: `DB_POOL >= (TEMPORAL_ACTIVITY_SLOTS + TEMPORAL_LOCAL_ACTIVITY_SLOTS + TEMPORAL_POLL_ACTIVITY_SLOTS + TEMPORAL_POLL_LOCAL_ACTIVITY_SLOTS) + 4`
+- Temporal worker in `both` mode: `DB_POOL >= (TEMPORAL_ACTIVITY_SLOTS + TEMPORAL_LOCAL_ACTIVITY_SLOTS + TEMPORAL_POLL_ACTIVITY_SLOTS + TEMPORAL_POLL_LOCAL_ACTIVITY_SLOTS) + TEMPORAL_ACTIVITY_SLOTS + 4`
+- Each agent activity holds **two** connections (its main thread + a heartbeat worker thread that streams output to the DB), so `TEMPORAL_ACTIVITY_SLOTS` is counted twice. `bin/temporal_worker` auto-corrects the pool at boot if `DB_POOL` is below the minimum.
 - Total connections across all processes must not exceed PostgreSQL `max_connections`
 
 ### Agent Containers

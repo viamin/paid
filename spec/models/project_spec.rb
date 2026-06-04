@@ -667,6 +667,48 @@ RSpec.describe Project do
     end
   end
 
+  describe "GitHub App bot trust" do
+    let(:bot_login) { Github::AppRegistry.bot_login }
+
+    context "with GitHub App auth" do
+      let(:project) { build(:project, :with_github_installation, allowed_github_usernames: [ "viamin" ]) }
+
+      it "trusts the app bot as an issue/PR author (case-insensitively)" do
+        expect(project.trusted_github_author?(bot_login)).to be true
+        expect(project.trusted_github_author?(bot_login.upcase)).to be true
+        expect(project.trusted_github_author_logins).to include("viamin", bot_login.downcase)
+      end
+
+      it "does NOT author-trust the bare app slug (a registerable human username)" do
+        expect(bot_login).to end_with("[bot]")
+        expect(project.trusted_github_author?(Github::AppRegistry.slug)).to be false
+        expect(project.trusted_github_author_logins).not_to include(Github::AppRegistry.slug.downcase)
+      end
+
+      it "does NOT trust the app bot as a comment author" do
+        expect(project.trusted_github_user?(bot_login)).to be false
+      end
+
+      it "still trusts allowlisted humans for both comments and authorship" do
+        expect(project.trusted_github_user?("viamin")).to be true
+        expect(project.trusted_github_author?("viamin")).to be true
+      end
+
+      it "does not store the bot in allowed_github_usernames" do
+        expect(project.allowed_github_usernames).to eq([ "viamin" ])
+      end
+    end
+
+    context "with PAT auth" do
+      let(:project) { build(:project, allowed_github_usernames: [ "viamin" ]) }
+
+      it "does not trust the bot as either author or commenter" do
+        expect(project.trusted_github_author?(bot_login)).to be false
+        expect(project.trusted_github_user?(bot_login)).to be false
+      end
+    end
+  end
+
   describe ".ransackable_attributes" do
     it "returns the allowed sortable attributes" do
       expect(described_class.ransackable_attributes).to contain_exactly(
