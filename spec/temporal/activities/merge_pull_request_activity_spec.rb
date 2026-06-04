@@ -280,6 +280,25 @@ RSpec.describe Activities::MergePullRequestActivity do
       end
     end
 
+    context "when the pre-merge fetch raises a provider error" do
+      before do
+        allow(provider).to receive(:fetch_pull_request)
+          .and_raise(Automation::Providers::RepositoryProvider::ProviderError, "no GitHub client")
+      end
+
+      it "returns merged: false with the error instead of raising" do
+        result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(result).to include(merged: false, pr_number: 42, error: "no GitHub client")
+      end
+
+      it "does not update issue phase" do
+        activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(issue.reload.pr_review_phase).to eq("ready")
+      end
+    end
+
     context "with different merge methods" do
       let(:pr_data) do
         Automation::Providers::Data::PullRequest.new(
