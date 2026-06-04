@@ -143,7 +143,7 @@ class Issue < ApplicationRecord
   end
 
   def trusted?
-    project.trusted_github_user?(github_creator_login)
+    project.trusted_github_author?(github_creator_login)
   end
 
   def untrusted?

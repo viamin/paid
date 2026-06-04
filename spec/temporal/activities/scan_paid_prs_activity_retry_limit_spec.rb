@@ -5,7 +5,7 @@ require "rails_helper"
 RSpec.describe Activities::ScanPaidPrsActivity do
   describe "#scan_pr retry-limit phase handling", :no_db do
     let(:activity) { described_class.new }
-    let(:project) { instance_double(ProjectDouble, owner_reviewer_login: "viamin") }
+    let(:project) { instance_double(ProjectDouble, owner_reviewer_login: "viamin", github_author_login: nil) }
     let(:client) { instance_double(GithubClientDouble) }
     let(:progress_state) do
       instance_double(

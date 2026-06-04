@@ -131,6 +131,45 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
   end
 
+  describe "bot author classification" do
+    before do
+      allow(project).to receive(:github_author_login).and_return("paid-agents[bot]")
+    end
+
+    it "does not treat the project's own agent bot as a third-party bot" do
+      login = "paid-agents[bot]"
+
+      expect(activity.send(:bot_user?, login)).to be(true)
+      expect(activity.send(:paid_agent_pr_author?, project, login)).to be(true)
+      expect(activity.send(:third_party_bot_author?, project, login)).to be(false)
+    end
+
+    it "matches the agent bot login case-insensitively" do
+      expect(activity.send(:paid_agent_pr_author?, project, "Paid-Agents[bot]")).to be(true)
+    end
+
+    it "does not treat the bare app slug as the agent (it is a registerable human username)" do
+      expect(activity.send(:paid_agent_pr_author?, project, "paid-agents")).to be(false)
+    end
+
+    it "treats dependency-update bots as third-party bots" do
+      expect(activity.send(:third_party_bot_author?, project, "dependabot[bot]")).to be(true)
+      expect(activity.send(:paid_agent_pr_author?, project, "dependabot[bot]")).to be(false)
+    end
+
+    it "treats human authors as neither bot nor agent" do
+      expect(activity.send(:third_party_bot_author?, project, "viamin")).to be(false)
+      expect(activity.send(:paid_agent_pr_author?, project, "viamin")).to be(false)
+    end
+
+    it "treats every bot as third-party for PAT-backed projects (no app identity)" do
+      allow(project).to receive(:github_author_login).and_return(nil)
+
+      expect(activity.send(:paid_agent_pr_author?, project, "paid-agents[bot]")).to be(false)
+      expect(activity.send(:third_party_bot_author?, project, "dependabot[bot]")).to be(true)
+    end
+  end
+
   describe "#dependencies_resolved?" do
     let(:pr_issue) do
       create(:issue, :pull_request,

@@ -364,6 +364,15 @@ RSpec.describe Automation::Providers::Github::RepositoryProvider do
   end
 
   describe "client resolution" do
+    # Stand-in for an app-backed project, which exposes a credential-aware
+    # #client (GitHub App installation token) and has no github_token.
+    let(:project_with_client_class) do
+      Class.new do
+        attr_accessor :github_token, :client
+        def full_name = "acme/widgets"
+      end
+    end
+
     it "derives the client from the project's github_token when not injected" do
       project.github_token = token_class.new(client)
       resolved = described_class.new(project)
@@ -371,12 +380,30 @@ RSpec.describe Automation::Providers::Github::RepositoryProvider do
       expect(resolved.client).to eq(client)
     end
 
-    it "raises when no GitHub token is configured" do
+    it "prefers the project's credential-aware client for app-backed projects" do
+      app_project = project_with_client_class.new
+      app_project.github_token = nil
+      app_project.client = client
+      resolved = described_class.new(app_project)
+
+      expect(resolved.client).to eq(client)
+    end
+
+    it "falls back to github_token when the project client is nil" do
+      app_project = project_with_client_class.new
+      app_project.client = nil
+      app_project.github_token = token_class.new(client)
+      resolved = described_class.new(app_project)
+
+      expect(resolved.client).to eq(client)
+    end
+
+    it "raises when neither a client nor a GitHub token is configured" do
       project.github_token = nil
       resolved = described_class.new(project)
 
       expect { resolved.client }.to raise_error(
-        Automation::Providers::RepositoryProvider::ProviderError, /no GitHub token/
+        Automation::Providers::RepositoryProvider::ProviderError, /no GitHub client/
       )
     end
   end

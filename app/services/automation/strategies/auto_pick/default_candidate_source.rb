@@ -203,10 +203,9 @@ module Automation
               .where(source: [ Issue::GITHUB_SOURCE, Issue::SYNTHETIC_CODE_SCANNING_SOURCE ])
               .where.not(id: Issue.open_pull_request_parent_issue_ids(project: project).distinct)
 
-            trusted_usernames = Array(project.allowed_github_usernames).presence
+            trusted_usernames = project.trusted_github_author_logins.presence
             if trusted_usernames
-              downcased = trusted_usernames.map(&:downcase)
-              base = base.where("LOWER(issues.github_creator_login) IN (?)", downcased)
+              base = base.where("LOWER(issues.github_creator_login) IN (?)", trusted_usernames)
             end
 
             project.effective_auto_pick_skip_labels.reduce(base) do |scope, label|

@@ -282,7 +282,7 @@ module Activities
 
     def sync_issue(project, github_issue, eager_queue_enabled: false, eligible_issues: nil)
       creator_login = github_issue.user&.login || "unknown"
-      trusted = project.trusted_github_user?(creator_login)
+      trusted = project.trusted_github_author?(creator_login)
       existing_issue = project.issues.find_by(github_issue_id: github_issue.id)
       previous_labels = Array(existing_issue&.labels)
 
