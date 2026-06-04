@@ -51,6 +51,13 @@ module Automation
         }.compact)
       end
 
+      def mark_draft(issue_id:, pr_number:)
+        new(type: "mark_draft", payload: {
+          issue_id: issue_id,
+          pr_number: pr_number
+        })
+      end
+
       def escalate(issue_id:, pr_number:, owner_reviewer_login: nil, reason: nil)
         new(type: "escalate", payload: {
           issue_id: issue_id,

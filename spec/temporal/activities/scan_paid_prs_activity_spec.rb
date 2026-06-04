@@ -170,6 +170,51 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
   end
 
+  describe "#demote_unreviewed_agent_pr?" do
+    let(:agent_issue) do
+      create(:issue, :pull_request, project: project, github_number: 77,
+        github_creator_login: "paid-agents[bot]", pr_review_phase: "ready")
+    end
+
+    before do
+      enable_paid_agent_review!
+      allow(project).to receive(:github_author_login).and_return("paid-agents[bot]")
+      allow(activity).to receive(:allowed_review_bot_logins).with(project)
+        .and_return(Set["paid-code-reviewer[bot]"])
+    end
+
+    it "is true for an agent PR with no code review" do
+      expect(activity.send(:demote_unreviewed_agent_pr?, project, agent_issue, [])).to be(true)
+    end
+
+    it "is false once the review bot has reviewed" do
+      reviews = [ { user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+                    body: "Generated no new comments. The PR looks good." } ]
+      expect(activity.send(:demote_unreviewed_agent_pr?, project, agent_issue, reviews)).to be(false)
+    end
+
+    it "is false for a human-authored PR with no review" do
+      human = create(:issue, :pull_request, project: project, github_number: 78,
+        github_creator_login: "viamin", pr_review_phase: "ready")
+      expect(activity.send(:demote_unreviewed_agent_pr?, project, human, [])).to be(false)
+    end
+
+    it "is false when review is disabled for the project" do
+      project.update!(review_settings: { "enabled" => false })
+      expect(activity.send(:demote_unreviewed_agent_pr?, project, agent_issue, [])).to be(false)
+    end
+
+    it "scan_ready_pr emits a demote_to_draft trigger for an unreviewed agent PR" do
+      allow(activity).to receive_messages(fetch_check_runs: [], fetch_reviews: [])
+
+      result = activity.send(:scan_ready_pr, project, github_client, agent_issue,
+        pr_data: { mergeable: true })
+
+      expect(result[:triggers].map { |t| t[:type] }).to eq([ "demote_to_draft" ])
+      expect(result[:phase]).to eq("ready")
+    end
+  end
+
   describe "#dependencies_resolved?" do
     let(:pr_issue) do
       create(:issue, :pull_request,

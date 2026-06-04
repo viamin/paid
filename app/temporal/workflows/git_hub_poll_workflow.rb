@@ -109,6 +109,10 @@ module Workflows
         }, timeout: 60)
       when "mark_ready"
         handle_mark_ready(project_id, decision)
+      when "mark_draft"
+        run_activity(Activities::MarkPrDraftActivity,
+          { project_id: project_id, pr_number: decision[:pr_number],
+            issue_id: decision[:issue_id] }, timeout: 60)
       when "escalate"
         handle_escalate_decision(project_id, decision)
       when "dismiss_escalation"

@@ -219,6 +219,21 @@ RSpec.describe Automation::Strategies::AutoReview do
       )
     end
 
+    it "emits a mark_draft decision on demote_to_draft triggers" do
+      result = evaluate(scan: {
+        issue_id: pull_request.id,
+        pr_number: 42,
+        phase: "ready",
+        triggers: [ { type: "demote_to_draft" } ]
+      })
+
+      expect(result.to_h[:decisions].first).to include(
+        type: "mark_draft",
+        issue_id: pull_request.id,
+        pr_number: 42
+      )
+    end
+
     it "emits a merge decision on owner_approved triggers" do
       result = evaluate(scan: {
         issue_id: pull_request.id,

@@ -947,6 +947,34 @@ class GithubClient
     pr_result
   end
 
+  # Converts an open pull request back to a draft via GraphQL.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Pull request number
+  # @return [Hash] The response data (includes "isDraft")
+  def convert_pull_request_to_draft(repo, number)
+    node_id = pull_request_node_id!(repo, number)
+
+    query = <<~GRAPHQL
+      mutation($pullRequestId: ID!) {
+        convertPullRequestToDraft(input: { pullRequestId: $pullRequestId }) {
+          pullRequest { id isDraft }
+        }
+      }
+    GRAPHQL
+
+    response = graphql_request(query, pullRequestId: node_id)
+
+    if response["errors"].present?
+      raise ApiError.new(response["errors"].map { |e| e["message"] }.join(", "))
+    end
+
+    pr_result = response.dig("data", "convertPullRequestToDraft", "pullRequest")
+    raise ApiError.new("Unexpected response from convertPullRequestToDraft") unless pr_result
+
+    pr_result
+  end
+
   # Merges a pull request.
   #
   # @param repo [String] Repository in "owner/name" format

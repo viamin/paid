@@ -675,6 +675,13 @@ module Activities
 
       reviews = fetch_reviews(client, project, issue)
 
+      # A Paid-generated (agent-authored) PR that reached "ready" without any
+      # code review should not advertise itself as ready: demote it back to
+      # draft (removing the paid-ready label) so it is reviewed first.
+      if demote_unreviewed_agent_pr?(project, issue, reviews)
+        return demote_to_draft_trigger(issue)
+      end
+
       if auto_merge_eligible?(project, client, issue,
            pr_data: pr_data, checks: checks, reviews: reviews)
         return owner_approved_trigger(issue)
@@ -831,6 +838,31 @@ module Activities
         issue_id: issue.id,
         pr_number: issue.github_number,
         triggers: [ { type: "owner_approved", details: "Owner approval requirement satisfied" } ],
+        phase: "ready"
+      }
+    end
+
+    # True when a Paid-generated (agent-authored) PR has reached the "ready"
+    # phase but the configured review bot has not yet posted a code review.
+    # Such a PR should not sit in "ready" — it is demoted back to draft so it
+    # is reviewed first. Only applies when review is enabled and a requestable
+    # review bot exists (otherwise there is no review to wait for).
+    def demote_unreviewed_agent_pr?(project, issue, reviews)
+      return false unless paid_agent_pr_author?(project, issue.github_creator_login)
+      return false unless project.review_enabled?
+      return false if allowed_review_bot_logins(project).blank?
+
+      review_bot_review_status(reviews, allowed_bot_logins: allowed_review_bot_logins(project)) == :no_review
+    end
+
+    def demote_to_draft_trigger(issue)
+      triggers = [ { type: "demote_to_draft", details: "Agent PR reached ready with no code review" } ]
+      log_triggers(issue.project, issue, triggers)
+
+      {
+        issue_id: issue.id,
+        pr_number: issue.github_number,
+        triggers: triggers,
         phase: "ready"
       }
     end

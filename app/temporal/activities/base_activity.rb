@@ -176,6 +176,18 @@ module Activities
       )
     end
 
+    def remove_phase_label(client, project, issue_number, label)
+      client.remove_label_from_issue(project.full_name, issue_number, label)
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "pr_review.remove_label_failed",
+        project_id: project.id,
+        pr_number: issue_number,
+        label: label,
+        error: e.message
+      )
+    end
+
     def record_draft_review_round_if_needed(agent_run)
       return unless agent_run.count_toward_draft_review_round?
 

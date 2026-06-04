@@ -117,6 +117,11 @@ module Automation
           return decisions
         end
 
+        if trigger_types.include?("demote_to_draft")
+          decisions << Automation::Decision.mark_draft(issue_id: signals.issue_id, pr_number: signals.pr_number)
+          return decisions
+        end
+
         if trigger_types.include?("owner_approved")
           decisions << Automation::Decision.merge(issue_id: signals.issue_id, pr_number: signals.pr_number)
           return decisions
