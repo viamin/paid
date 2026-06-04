@@ -16,7 +16,10 @@ module Activities
       project = issue.project
       client = project.client
       phase_before = issue.pr_review_phase
-      issue.update!(pr_review_phase: "escalated")
+      issue.update!(
+        pr_review_phase: "escalated",
+        pr_escalation_reason: escalation_reason_key(input[:reason])
+      )
 
       # Escalation invalidates the prior "ready" claim. Strip the label
       # before applying paid-escalated so human triage queues and any
@@ -136,6 +139,15 @@ module Activities
       "the automatic PR failure limit " \
         "(#{limit} consecutive unsuccessful runs) " \
         "has been reached without meaningful progress and the PR requires human intervention"
+    end
+
+    def escalation_reason_key(reason)
+      if reason&.include?("consecutive provider/infrastructure failures")
+        return Issue::PR_ESCALATION_REASON_OPERATIONAL_FAILURES
+      end
+      return Issue::PR_ESCALATION_REASON_REVIEW_GOAL_RETRY_LIMIT if reason&.start_with?("Review-goal retry budget exhausted")
+
+      Issue::PR_ESCALATION_REASON_FAILURE_STREAK
     end
 
     def draft_originated?(issue, phase_before)

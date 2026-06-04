@@ -6869,6 +6869,38 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when an operationally escalated PR still has the label but the outage recovered" do
+      before do
+        issue = create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation", "paid-escalated" ],
+          pr_review_phase: "escalated",
+          pr_escalation_reason: "operational_failures",
+          paid_state: "completed")
+        create_stale_review_runs!(issue, statuses: %w[failed failed failed])
+        create(:agent_run, :completed,
+          project: project,
+          issue: issue,
+          source_pull_request_number: 42,
+          goal: "create_pr",
+          trigger_type: "automatic",
+          created_at: 1.minute.ago,
+          updated_at: 1.minute.ago,
+          started_at: 1.minute.ago,
+          completed_at: 1.minute.ago)
+        stub_github_for_pr
+      end
+
+      it "auto-dismisses escalation" do
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
+        expect(trigger[:triggers].first[:type]).to eq("dismiss_escalation")
+        expect(trigger[:triggers].first[:details]).to eq("Operational escalation auto-dismissed after failure signals recovered")
+      end
+    end
+
     context "when a restarted PR has signals" do
       before do
         create(:issue, :pull_request,

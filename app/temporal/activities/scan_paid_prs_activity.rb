@@ -384,7 +384,13 @@ module Activities
         end
       when "escalated"
         if escalation_dismissed?(issue)
-          dismiss_escalation_trigger(issue, draft: pr_data.draft == true)
+          dismissal_details = escalation_dismissal_details(issue, progress_state:) ||
+            if issue.has_label?(PAID_ESCALATED_LABEL)
+              "Operational escalation auto-dismissed after failure signals recovered"
+            else
+              "Owner dismissed escalation by removing paid-escalated"
+            end
+          dismiss_escalation_trigger(issue, draft: pr_data.draft == true, details: dismissal_details)
         elsif maybe_restart_draft(project, issue, pr_data)
           scan_draft_pr(project, client, issue, pr_data: pr_data)
         else
@@ -811,14 +817,14 @@ module Activities
       }
     end
 
-    def dismiss_escalation_trigger(issue, draft:)
+    def dismiss_escalation_trigger(issue, draft:, details:)
       log_triggers(issue.project, issue, [ { type: "dismiss_escalation" } ])
 
       {
-        focus: focus_for(issue.project, [ { type: "dismiss_escalation", details: "Owner dismissed escalation by removing paid-escalated" } ]),
+        focus: focus_for(issue.project, [ { type: "dismiss_escalation", details: details } ]),
         issue_id: issue.id,
         pr_number: issue.github_number,
-        triggers: [ { type: "dismiss_escalation", details: "Owner dismissed escalation by removing paid-escalated" } ],
+        triggers: [ { type: "dismiss_escalation", details: details } ],
         phase: "escalated",
         draft: draft == true,
         owner_reviewer_login: issue.project.owner_reviewer_login
@@ -927,6 +933,7 @@ module Activities
       reset_at = Time.current
       issue.update!(
         pr_review_phase: "restarted",
+        pr_escalation_reason: nil,
         draft_review_count: 0,
         pr_followup_count: 0,
         review_goal_retry_count: 0,
@@ -947,8 +954,21 @@ module Activities
       true
     end
 
+    def escalation_dismissal_details(issue, progress_state:)
+      return unless issue.escalated_phase?
+      return "Owner dismissed escalation by removing paid-escalated" unless issue.has_label?(PAID_ESCALATED_LABEL)
+      return unless issue.pr_escalation_reason == Issue::PR_ESCALATION_REASON_OPERATIONAL_FAILURES
+      return unless progress_state.consecutive_operational_failures.zero?
+
+      "Operational escalation auto-dismissed after failure signals recovered"
+    end
+
     def escalation_dismissed?(issue)
-      issue.escalated_phase? && !issue.has_label?(PAID_ESCALATED_LABEL)
+      return false unless issue.escalated_phase?
+      return true unless issue.has_label?(PAID_ESCALATED_LABEL)
+      return false unless issue.pr_escalation_reason == Issue::PR_ESCALATION_REASON_OPERATIONAL_FAILURES
+
+      pr_progress_state(issue.project, issue).consecutive_operational_failures.zero?
     end
 
     # Detect when a user marks a draft PR as ready on GitHub without going
