@@ -1186,7 +1186,11 @@ module Activities
         # exits. Some runners (e.g. OpenRouter) return a billing error as
         # the only stdout line with exit code 0. The agent never actually ran,
         # so treat this as a runner failure to trigger fallback/retry.
-        combined_output = [ stdout, stderr ].compact.join("\n")
+        #
+        # Redact verbatim tool/command output from structured (JSONL) runner
+        # output first so an agent that merely read or edited a file mentioning
+        # a trigger phrase is not misclassified as a provider failure.
+        combined_output = [ redact_tool_output_for_classification(runner, stdout), stderr ].compact.join("\n")
         sanitized_output = strip_prompt_echo(combined_output, prompt)
         # Rate-limit classification takes precedence over generic quota
         # failures because some providers use quota-shaped wording for
@@ -1219,7 +1223,10 @@ module Activities
         }
       end
 
-      combined_output = [ stderr, stdout ].compact.join("\n").strip
+      # Redact verbatim tool/command output before rate-limit/quota/auth
+      # classification (see redact_tool_output_for_classification). `output`
+      # keeps the raw text so the surfaced error message stays intact.
+      combined_output = [ stderr, redact_tool_output_for_classification(runner, stdout) ].compact.join("\n").strip
       output = (stderr.presence || stdout).to_s.strip
       rate_limit_output = strip_prompt_echo(combined_output, prompt)
 
@@ -1239,7 +1246,7 @@ module Activities
       # execution_started_at is nil if the timeout fires before execution
       # begins (e.g. during start!/callbacks); recent_timeout_output
       # short-circuits on blank.
-      timeout_output = recent_timeout_output(agent_run, since: execution_started_at, prompt: prompt)
+      timeout_output = recent_timeout_output(agent_run, since: execution_started_at, prompt: prompt, runner_key: runner)
       if timeout_rate_limit_error?(timeout_output, runner_key: runner)
         reset_at = rate_limit_reset_at(runner, timeout_output)
         raise RunnerRateLimitError.new("Rate limited by #{runner}", reset_at: reset_at)
@@ -1579,7 +1586,7 @@ module Activities
 
     include OutputSanitizer
 
-    def recent_timeout_output(agent_run, since:, prompt:)
+    def recent_timeout_output(agent_run, since:, prompt:, runner_key: nil)
       return "" if since.blank?
 
       chunks = agent_run.agent_run_logs
@@ -1599,8 +1606,14 @@ module Activities
         Set.new
       end
 
+      # Strip agent-authored content (command I/O, narration) once per chunk
+      # before pattern matching so a timed-out agent that read, edited, or
+      # discussed a file mentioning a trigger phrase is not reclassified as a
+      # rate limit. Resolve the codex check once rather than per chunk.
+      redact_agent_content = codex_runner?(runner_key)
       normalized_chunks = chunks.filter_map do |chunk|
-        stripped = strip_prompt_echo_with(chunk, prompt, normalized_prompt, prompt_lines).strip
+        prepared = redact_agent_content ? redact_codex_agent_authored_content(chunk) : chunk
+        stripped = strip_prompt_echo_with(prepared, prompt, normalized_prompt, prompt_lines).strip
         next if stripped.blank?
 
         stripped
@@ -1626,6 +1639,81 @@ module Activities
 
         line.rstrip
       end.join("\n").strip
+    end
+
+    # Returns true when the runner executes via the Codex harness provider.
+    # Codex streams its CLI transcript as JSONL on stdout, embedding the
+    # verbatim shell commands it runs and their output — including the
+    # contents of any file it reads or patches.
+    def codex_runner?(runner_key)
+      return false if runner_key.blank?
+
+      RunnerSupport.harness_runner_key_for(
+        RunnerSupport.runner_key_for_agent_type(runner_key)
+      ).to_sym == :codex
+    rescue AgentHarness::ConfigurationError, KeyError
+      false
+    end
+
+    # Strips agent-authored content from Codex JSONL output so only the
+    # provider's own error channels (explicit `error`/`turn.failed` events and
+    # stderr) drive rate-limit, quota, auth, and model-not-found classification.
+    #
+    # Without this, an agent that reads, edits, or merely talks about a file
+    # mentioning a trigger phrase (e.g. this file, which defines the
+    # rate-limit patterns) is misclassified as a provider failure. The two
+    # agent-authored vectors are blanked per Codex item type:
+    #   * command_execution -> `command` (the shell line, e.g. a grep query or
+    #     apply_patch heredoc) and `aggregated_output` (file/command output)
+    #   * agent_message      -> `text` (the agent's own narration)
+    # Error payloads, event structure, and non-JSON stderr lines are preserved.
+    #
+    # Only applied to Codex; other providers' output passes through unchanged
+    # (a nil/blank runner_key disables redaction for any other caller).
+    def redact_tool_output_for_classification(runner_key, text)
+      return text if text.blank?
+      return text unless codex_runner?(runner_key)
+
+      redact_codex_agent_authored_content(text)
+    end
+
+    def redact_codex_agent_authored_content(text)
+      text.each_line.map { |line| redact_codex_jsonl_line(line) }.join
+    end
+
+    # Codex item types whose fields carry agent-authored content (not provider
+    # errors), mapped to the string fields to blank on that item.
+    CODEX_AGENT_AUTHORED_FIELDS = {
+      "command_execution" => %w[command aggregated_output],
+      "agent_message" => %w[text]
+    }.freeze
+
+    def redact_codex_jsonl_line(line)
+      stripped = line.strip
+      return line if stripped.empty?
+
+      event = JSON.parse(stripped)
+      return line unless event.is_a?(Hash) || event.is_a?(Array)
+
+      blank_codex_agent_authored_fields!(event)
+      line.end_with?("\n") ? "#{JSON.generate(event)}\n" : JSON.generate(event)
+    rescue JSON::ParserError
+      line
+    end
+
+    # Walks the (possibly payload-wrapped) event tree and blanks the
+    # agent-authored fields for any Codex item it finds.
+    def blank_codex_agent_authored_fields!(node)
+      case node
+      when Hash
+        CODEX_AGENT_AUTHORED_FIELDS.fetch(node["type"], []).each do |field|
+          node[field] = "" if node[field].is_a?(String)
+        end
+        node.each_value { |value| blank_codex_agent_authored_fields!(value) }
+      when Array
+        node.each { |element| blank_codex_agent_authored_fields!(element) }
+      end
+      node
     end
 
     def rate_limit_reset_at(runner_key, output)
