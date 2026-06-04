@@ -3,8 +3,6 @@
 require "digest"
 require Rails.root.join("lib/runner_support").to_s
 
-agent_harness_version = Gem.loaded_specs.fetch("agent-harness").version
-
 # Backport Pi API-key runtime support that agent-harness 0.18.1 does not yet
 # expose consistently. Pi itself supports API keys via env vars or auth.json,
 # but its harness adapter still reports oauth-only auth semantics and does not
@@ -17,13 +15,19 @@ agent_harness_version = Gem.loaded_specs.fetch("agent-harness").version
 # - keep credentials off the command line (Pi supports --api-key, but that
 #   would leak raw secrets via process args/logging)
 module PaidAgentHarnessPiRuntimePatch
+  PI_AUTH_JSON_PATH = "/home/agent/.pi/agent/auth.json"
+
   # Derived lazily via a method so that Provider (an autoloaded model) is
   # guaranteed to be available regardless of initializer load order.
   def pi_api_key_env_vars = Provider::PI_API_PROVIDERS.values.map { |c| c[:env_var] }.freeze
 
-  def api_key_env_var_names = pi_api_key_env_vars
+  def api_key_env_var_names
+    merge_string_lists(super, pi_api_key_env_vars)
+  end
 
-  def subscription_unset_vars = pi_api_key_env_vars
+  def subscription_unset_vars
+    merge_string_lists(super, pi_api_key_env_vars)
+  end
 
   protected
 
@@ -32,6 +36,7 @@ module PaidAgentHarnessPiRuntimePatch
     runtime = options[:provider_runtime]
     auth_entry = runtime&.metadata&.dig("paid_pi_auth_entry")
     return base unless auth_entry.is_a?(Hash)
+    return base if preparation_writes_pi_auth_json?(base)
 
     provider = auth_entry["provider"].to_s.strip
     api_key = auth_entry["api_key"].to_s
@@ -47,7 +52,7 @@ module PaidAgentHarnessPiRuntimePatch
     pi_auth = AgentHarness::ExecutionPreparation.new(
       file_writes: [
         {
-          path: "/home/agent/.pi/agent/auth.json",
+          path: PI_AUTH_JSON_PATH,
           content: auth_json,
           mode: 0o600
         }
@@ -65,15 +70,30 @@ module PaidAgentHarnessPiRuntimePatch
 
     AgentHarness::ExecutionPreparation.new(file_writes: base.file_writes + extra.file_writes)
   end
+
+  def merge_string_lists(*lists)
+    lists
+      .compact
+      .flat_map { |list| Array(list) }
+      .uniq
+      .freeze
+  end
+
+  def preparation_writes_pi_auth_json?(preparation)
+    Array(preparation&.file_writes).any? { |write| write.path == PI_AUTH_JSON_PATH }
+  end
 end
 
-# Drop this patch once agent-harness natively materialises Pi API-key auth.
-# Adjust the version ceiling to whichever harness release ships that support.
-# TODO(#2077): remove when agent-harness >= 0.19.0 ships native Pi API-key support
-if agent_harness_version < Gem::Version.new("0.19.0")
-  AgentHarness::Providers::Pi.prepend(PaidAgentHarnessPiRuntimePatch) unless
-    AgentHarness::Providers::Pi < PaidAgentHarnessPiRuntimePatch
-end
+# Keep this patch loaded until agent-harness ships native Pi API-key auth.
+# This no longer uses a speculative version ceiling: 0.20.0 proved that turning
+# the patch off on an assumed release boundary can silently break every Pi
+# API-key runner. The overrides self-deactivate instead:
+# - env-var helpers union with upstream values once the gem adds them
+# - auth.json materialization skips itself when upstream already prepares that
+#   file for the request
+# TODO(#2077): remove once native Pi API-key support is confirmed upstream.
+AgentHarness::Providers::Pi.prepend(PaidAgentHarnessPiRuntimePatch) unless
+  AgentHarness::Providers::Pi < PaidAgentHarnessPiRuntimePatch
 
 # Route every explicit Claude MCP config through ExecutionPreparation so the file
 # is written inside the agent container at the same path passed to
