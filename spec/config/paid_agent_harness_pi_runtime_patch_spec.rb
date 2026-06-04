@@ -4,6 +4,27 @@ require "rails_helper"
 
 RSpec.describe PaidAgentHarnessPiRuntimePatch do
   let(:provider) { AgentHarness::Providers::Pi.new }
+  let(:base_provider_class) do
+    Class.new do
+      def initialize(preparation)
+        @preparation = preparation
+      end
+
+      protected
+
+      attr_reader :preparation
+
+      def build_execution_preparation(_options)
+        preparation
+      end
+    end
+  end
+  let(:patched_provider_class) do
+    Class.new(base_provider_class).tap do |klass|
+      klass.prepend(described_class)
+    end
+  end
+  let(:patched_provider) { patched_provider_class.new(upstream_preparation) }
   let(:provider_runtime) do
     AgentHarness::ProviderRuntime.new(
       metadata: {
@@ -34,19 +55,7 @@ RSpec.describe PaidAgentHarnessPiRuntimePatch do
   end
 
   it "does not duplicate auth.json when upstream already materializes it" do
-    upstream = upstream_preparation
-
-    provider.singleton_class.prepend(
-      Module.new do
-        protected
-
-        define_method(:build_execution_preparation) do |_options|
-          upstream
-        end
-      end
-    )
-
-    result = provider.send(:build_execution_preparation, provider_runtime: provider_runtime)
+    result = patched_provider.send(:build_execution_preparation, provider_runtime: provider_runtime)
 
     expect(result.file_writes.size).to eq(1)
     expect(result.file_writes.first.path).to eq(PaidAgentHarnessPiRuntimePatch::PI_AUTH_JSON_PATH)
@@ -54,7 +63,10 @@ RSpec.describe PaidAgentHarnessPiRuntimePatch do
   end
 
   it "materializes auth.json from provider runtime metadata when upstream does not" do
-    preparation = provider.send(:build_execution_preparation, provider_runtime: provider_runtime)
+    preparation = patched_provider_class.new(nil).send(
+      :build_execution_preparation,
+      provider_runtime: provider_runtime
+    )
 
     expect(preparation).to be_a(AgentHarness::ExecutionPreparation)
     expect(preparation.file_writes.size).to eq(1)

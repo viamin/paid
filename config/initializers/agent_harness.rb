@@ -3,8 +3,6 @@
 require "digest"
 require Rails.root.join("lib/runner_support").to_s
 
-agent_harness_version = Gem.loaded_specs.fetch("agent-harness").version
-
 # Backport Pi API-key runtime support that agent-harness 0.18.1 does not yet
 # expose consistently. Pi itself supports API keys via env vars or auth.json,
 # but its harness adapter still reports oauth-only auth semantics and does not
