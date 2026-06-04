@@ -234,4 +234,126 @@ RSpec.describe Activities::RunAgentActivity, :no_db do
       expect(timeout).to eq(described_class::DIRECT_OUTBOUND_PREFLIGHT_TIMEOUT_SECONDS)
     end
   end
+
+  describe "#redact_tool_output_for_classification" do
+    let(:activity) { described_class.new }
+
+    # A codex command_execution event whose aggregated_output is the verbatim
+    # contents of a source file that *defines* rate-limit trigger phrases.
+    let(:file_echo_event) do
+      JSON.generate(
+        "type" => "item.completed",
+        "item" => {
+          "id" => "item_1",
+          "type" => "command_execution",
+          "command" => "/bin/bash -lc \"sed -n '1,5p' run_agent_activity.rb\"",
+          "aggregated_output" => "/quota exceeded/i,\n/free tier limit reached/i,\n/too many requests/i",
+          "exit_code" => 0
+        }
+      )
+    end
+
+    it "blanks verbatim command output and the command string for codex" do
+      redacted = activity.send(:redact_tool_output_for_classification, "codex", file_echo_event)
+
+      parsed = JSON.parse(redacted)
+      expect(parsed.dig("item", "aggregated_output")).to eq("")
+      expect(parsed.dig("item", "command")).to eq("")
+      # Event structure (type, id, exit_code, status) is preserved.
+      expect(parsed["type"]).to eq("item.completed")
+      expect(parsed.dig("item", "type")).to eq("command_execution")
+      expect(parsed.dig("item", "exit_code")).to eq(0)
+    end
+
+    it "blanks the agent's own narration (agent_message text)" do
+      agent_message = JSON.generate(
+        "type" => "item.completed",
+        "item" => { "type" => "agent_message", "text" => "I will fix the rate limit detection." }
+      )
+
+      redacted = activity.send(:redact_tool_output_for_classification, "codex", agent_message)
+
+      expect(JSON.parse(redacted).dig("item", "text")).to eq("")
+    end
+
+    it "preserves explicit error payloads (the real provider signal)" do
+      error_event = JSON.generate(
+        "type" => "turn.failed",
+        "error" => { "message" => "429 Too Many Requests: rate limit exceeded" }
+      )
+
+      redacted = activity.send(:redact_tool_output_for_classification, "codex", error_event)
+
+      expect(redacted).to include("429 Too Many Requests: rate limit exceeded")
+    end
+
+    it "leaves non-JSON (plain stderr) lines untouched" do
+      stderr = "error: your access token could not be refreshed because 401 unauthorized"
+
+      expect(activity.send(:redact_tool_output_for_classification, "codex", stderr)).to eq(stderr)
+    end
+
+    it "returns output unchanged for non-codex runners" do
+      expect(activity.send(:redact_tool_output_for_classification, "claude", file_echo_event))
+        .to eq(file_echo_event)
+    end
+
+    it "returns blank input unchanged" do
+      expect(activity.send(:redact_tool_output_for_classification, "codex", "")).to eq("")
+    end
+  end
+
+  describe "rate-limit classification after tool-output redaction" do
+    let(:activity) { described_class.new }
+
+    # Reproduces the false positive: codex reads source files that define the
+    # rate-limit patterns, echoing them into command_execution.aggregated_output.
+    let(:file_echo_event) do
+      JSON.generate(
+        "type" => "item.completed",
+        "item" => {
+          "type" => "command_execution",
+          "command" => "/bin/bash -lc \"cat run_agent_activity.rb\"",
+          "aggregated_output" => "/quota exceeded/i, /free tier limit reached/i, /too many requests/i, /rate.?limit/i"
+        }
+      )
+    end
+
+    # The agent narrating its work on rate-limit code — caught by the broad
+    # exit-failure pattern /rate.?limit/i before redaction.
+    let(:prose_event) do
+      JSON.generate(
+        "type" => "item.completed",
+        "item" => { "type" => "agent_message", "text" => "Done — I refactored the rate limit detection and quota exceeded handling." }
+      )
+    end
+
+    it "does not classify echoed source as a timeout rate limit" do
+      redacted = activity.send(:redact_tool_output_for_classification, "codex", file_echo_event)
+
+      expect(activity.send(:timeout_rate_limit_error?, redacted, runner_key: "codex")).to be(false)
+    end
+
+    it "does not classify echoed source as an exit-failure rate limit" do
+      redacted = activity.send(:redact_tool_output_for_classification, "codex", file_echo_event)
+
+      expect(activity.send(:rate_limit_error?, redacted, runner_key: "codex")).to be(false)
+    end
+
+    it "does not classify the agent's own narration as an exit-failure rate limit" do
+      redacted = activity.send(:redact_tool_output_for_classification, "codex", prose_event)
+
+      expect(activity.send(:rate_limit_error?, redacted, runner_key: "codex")).to be(false)
+    end
+
+    it "still classifies a genuine codex rate-limit error event after redaction" do
+      real_error = JSON.generate(
+        "type" => "turn.failed",
+        "error" => { "message" => "429 status: too many requests" }
+      )
+      redacted = activity.send(:redact_tool_output_for_classification, "codex", real_error)
+
+      expect(activity.send(:rate_limit_error?, redacted, runner_key: "codex")).to be(true)
+    end
+  end
 end
