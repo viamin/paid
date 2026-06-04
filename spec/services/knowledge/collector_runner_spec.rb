@@ -203,6 +203,24 @@ RSpec.describe Knowledge::CollectorRunner do
         described_class.register("test_collector", test_collector_class)
       end
 
+      def register_lazy_skip_collector(skipped_exception)
+        lazy_skip_collector_class = Class.new(Knowledge::BaseCollector) do
+          define_method(:tool_version) { nil }
+
+          define_method(:collect) do
+            raise skipped_exception
+          end
+
+          define_method(:collector_type) do
+            "lazy_skip_collector"
+          end
+        end
+
+        described_class.reset_registry!
+        described_class.register("lazy_skip_collector", lazy_skip_collector_class)
+        described_class.register("test_collector", test_collector_class)
+      end
+
       it "marks the collector run as skipped with a reason" do
         result = described_class.call(project: project, commit_sha: commit_sha)
 
@@ -214,6 +232,26 @@ RSpec.describe Knowledge::CollectorRunner do
         expect(skipped_run.status).to eq("skipped")
         expect(skipped_run.error_message).to eq("maat binary not found")
         expect(skipped_run.artifacts_count).to eq(0)
+      end
+
+      it "rescues skips when SkipCollector must be resolved from the Knowledge namespace" do
+        skip_collector_class = Knowledge::SkipCollector
+        skipped_exception = skip_collector_class.new("maat binary not found")
+        register_lazy_skip_collector(skipped_exception)
+
+        hide_const("Knowledge::SkipCollector")
+        allow(Knowledge).to receive(:const_missing).and_wrap_original do |original, name|
+          name == :SkipCollector ? skip_collector_class : original.call(name)
+        end
+
+        result = described_class.call(project: project, commit_sha: commit_sha)
+
+        skipped_result = result[:results].find { |run| run[:collector_type] == "lazy_skip_collector" }
+        expect(skipped_result).to include(
+          status: "skipped",
+          reason: "maat binary not found",
+          preserve_existing_artifacts: false
+        )
       end
 
       it "does not block other collectors" do
