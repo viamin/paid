@@ -493,7 +493,7 @@ module Providers
 
     def clear_provider_state_if_healthy!
       provider_state_names.each do |provider_name|
-        effective_provider.user.runner_states.find_by(runner_name: provider_name)&.record_success!
+        effective_provider.user.runner_states.find_by(runner_name: provider_name)&.record_success!(half_open_success_threshold: 1)
       end
     end
 
