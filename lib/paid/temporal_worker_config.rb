@@ -34,6 +34,18 @@ module Paid
       validate_worker_mode!(worker_mode) == "both" ? 4 : 2
     end
 
+    # RunAgentActivity (a regular agent-queue activity) spawns a heartbeat
+    # worker thread that holds its own DB connection for the entire run —
+    # it streams agent output to the DB on every chunk, so the connection
+    # cannot be released mid-run without thrashing the pool or losing the
+    # per-connection tenant RLS context. That worker thread runs concurrently
+    # with the activity's main thread, so each agent activity slot consumes
+    # two connections, not one. Local/poll activities do not spawn this
+    # thread. Only the agent (non-local) pool is affected.
+    def agent_heartbeat_connections(worker_mode:, agent_activity_slots:)
+      %w[agent both].include?(validate_worker_mode!(worker_mode)) ? agent_activity_slots : 0
+    end
+
     def min_required_db_pool(worker_mode:, agent_activity_slots:, agent_local_activity_slots:,
                              poll_activity_slots:, poll_local_activity_slots:)
       selected_activity_slots(
@@ -42,7 +54,9 @@ module Paid
         agent_local_activity_slots: agent_local_activity_slots,
         poll_activity_slots: poll_activity_slots,
         poll_local_activity_slots: poll_local_activity_slots
-      ) + selected_pool_overhead(worker_mode: worker_mode)
+      ) +
+        agent_heartbeat_connections(worker_mode: worker_mode, agent_activity_slots: agent_activity_slots) +
+        selected_pool_overhead(worker_mode: worker_mode)
     end
   end
 end

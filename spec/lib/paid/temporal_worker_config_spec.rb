@@ -53,12 +53,30 @@ RSpec.describe Paid::TemporalWorkerConfig do
       }
     end
 
-    it "adds two connections of overhead for a single worker mode" do
-      expect(described_class.min_required_db_pool(worker_mode: "agent", **slots)).to eq(12)
+    it "budgets a second connection per agent activity plus overhead in agent mode" do
+      # selected (4 + 6) + heartbeat workers (4) + overhead (2)
+      expect(described_class.min_required_db_pool(worker_mode: "agent", **slots)).to eq(16)
     end
 
-    it "adds four connections of overhead when both worker sets run together" do
-      expect(described_class.min_required_db_pool(worker_mode: "both", **slots)).to eq(19)
+    it "budgets agent heartbeat connections and four overhead when both worker sets run together" do
+      # selected (4 + 6 + 3 + 2) + heartbeat workers (4) + overhead (4)
+      expect(described_class.min_required_db_pool(worker_mode: "both", **slots)).to eq(23)
+    end
+
+    it "does not budget heartbeat connections in poll mode (no agent activities)" do
+      # selected (3 + 2) + heartbeat workers (0) + overhead (2)
+      expect(described_class.min_required_db_pool(worker_mode: "poll", **slots)).to eq(7)
+    end
+  end
+
+  describe ".agent_heartbeat_connections" do
+    it "reserves one connection per agent activity slot in agent and both modes" do
+      expect(described_class.agent_heartbeat_connections(worker_mode: "agent", agent_activity_slots: 4)).to eq(4)
+      expect(described_class.agent_heartbeat_connections(worker_mode: "both", agent_activity_slots: 4)).to eq(4)
+    end
+
+    it "reserves none in poll mode" do
+      expect(described_class.agent_heartbeat_connections(worker_mode: "poll", agent_activity_slots: 4)).to eq(0)
     end
   end
 end

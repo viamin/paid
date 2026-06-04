@@ -30,6 +30,12 @@ services:
 
   postgres:
     image: postgres:16.14
+    # This single container is shared by Temporal (temporal/temporal_visibility),
+    # the app, the GoodJob worker, the temporal worker, and every active git
+    # worktree's databases. The default max_connections=100 is exhausted under
+    # that combined load; 200 gives headroom. Production sets max_connections at
+    # its own DB layer (see docs/WORKER_POOL_TUNING.md).
+    command: postgres -c max_connections=200
     restart: unless-stopped
     networks:
     - default
