@@ -1362,14 +1362,13 @@ RSpec.describe Activities::RunAgentActivity do
     expect(execute_calls.third.first[0..6]).to eq([ "env", "-u", "OPENAI_HEADER_X_AGENT_RUN_ID", "-u", "OPENAI_HEADER_X_PROXY_TOKEN", "opencode", "run" ])
     expect(execute_calls.second.second[:env]).to include("OPENAI_BASE_URL" => "https://openrouter.ai/api/v1")
     expect(execute_calls.third.second[:env]).to include("OPENAI_BASE_URL" => "https://openrouter.ai/api/v1")
-    expect(JSON.parse(execute_calls.second.second[:preparation].file_writes.first.content)).to include(
-      "provider" => { "openrouter" => {} },
-      "model" => "moonshotai/kimi-k2-0905"
-    )
-    expect(JSON.parse(execute_calls.third.second[:preparation].file_writes.first.content)).to include(
-      "provider" => { "openrouter" => {} },
-      "model" => "moonshotai/kimi-k2-0905"
-    )
+    second_config = JSON.parse(execute_calls.second.second[:preparation].file_writes.first.content)
+    third_config = JSON.parse(execute_calls.third.second[:preparation].file_writes.first.content)
+
+    expect(second_config).to include("model" => "moonshotai/kimi-k2-0905")
+    expect(second_config).not_to have_key("provider")
+    expect(third_config).to include("model" => "moonshotai/kimi-k2-0905")
+    expect(third_config).not_to have_key("provider")
   end
 
   def expect_resolved_model_attempts(agent_run, opencode_runner)
