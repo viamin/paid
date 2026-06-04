@@ -25,7 +25,7 @@ module RunnerSupport
 
   # Upper bound on how far in the future a parsed rate-limit reset is trusted.
   #
-  # WORKAROUND (remove when agent-harness reset parsing is fixed): the gem's
+  # WORKAROUND (remove when viamin/agent-harness#231 lands): the gem's
   # shared "resets <Mon> <day>" parser infers the year by month comparison
   # (`year += 1 if month < current_month`), so a reset like "resets Jan 15"
   # seen mid-year is read as ~10-11 months out. Codex emits these, and the

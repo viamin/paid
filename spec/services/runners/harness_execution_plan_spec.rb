@@ -5,6 +5,17 @@ require "securerandom"
 
 RSpec.describe Runners::HarnessExecutionPlan do
   describe ".for_runner_key", :no_db do
+    let(:configured_mcp_servers) do
+      [
+        {
+          name: "fs",
+          transport: "stdio",
+          command: "uvx",
+          args: [ "mcp-server-fs", "/workspace" ]
+        }
+      ]
+    end
+
     let(:copilot_plan_payload) do
       {
         command: %w[copilot --autopilot --max-autopilot-continues 50 --output-format json -p ping],
@@ -72,6 +83,32 @@ RSpec.describe Runners::HarnessExecutionPlan do
       expect(mcp_flag).to be_present
       expect(plan.command).not_to include("--mcp-config")
       expect(plan.command.last).to eq("Say hello")
+    end
+
+    it "materializes configured Claude MCP config at the same path passed on the command line" do
+      allow(AgentHarness).to receive(:provider_class).and_call_original
+      allow(AgentHarness).to receive(:build_config).and_call_original
+
+      plan = described_class.for_runner_key(
+        runner_key: "claude",
+        prompt: "Say hello",
+        options: { mcp_servers: configured_mcp_servers }
+      )
+
+      mcp_config_path = plan.command.find { |part| part.start_with?("--mcp-config=") }&.delete_prefix("--mcp-config=")
+      expected_content = JSON.generate(AgentHarness::McpConfigTranslator.for_provider(:claude, configured_mcp_servers))
+
+      expect(mcp_config_path).to be_present
+      expect(File.basename(mcp_config_path)).to start_with("agent_harness_claude_mcp_")
+      expect(mcp_config_path).not_to match(%r{/tmp/agent_harness_mcp_\d{8}-\d+-})
+      expect(plan.preparation).to be_a(AgentHarness::ExecutionPreparation)
+      expect(plan.preparation.file_writes).to include(
+        have_attributes(
+          path: mcp_config_path,
+          content: expected_content,
+          mode: 0o600
+        )
+      )
     end
 
     # Regression guard for the variadic --mcp-config bug (viamin/agent-harness#229,

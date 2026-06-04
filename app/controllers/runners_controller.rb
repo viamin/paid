@@ -123,7 +123,7 @@ class RunnersController < ApplicationController
       return
     end
 
-    result = resource_test_agent_service.call(resource_test_agent_arguments)
+    result = resource_test_agent_service.call(**resource_test_agent_arguments)
 
     render json: {
       success: result.success?,
