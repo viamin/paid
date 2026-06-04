@@ -14,6 +14,35 @@ RSpec.describe GithubClient do
     stub_const("GithubClient::RETRY_BACKOFF_FACTOR", 1)
   end
 
+  describe "HTTP cache configuration" do
+    let(:other_token) { "ghp_other_test_token_1234567890123456789012" }
+    let(:other_client) { described_class.new(token: other_token, health_endpoint: health_endpoint) }
+
+    it "uses JSON serialization for cached REST responses" do
+      expect(client.send(:http_cache_options)[:serializer]).to eq(JSON)
+    end
+
+    it "scopes REST cache keys by token digest" do
+      url = "https://api.github.com/user"
+      request_options = nil
+
+      cache_key = client.send(:http_cache_options)[:cache_key].call(url, request_options)
+      other_cache_key = other_client.send(:http_cache_options)[:cache_key].call(url, request_options)
+
+      expect(cache_key).to eq("github_http_cache:#{Digest::SHA256.hexdigest(token)}:#{url}")
+      expect(other_cache_key).to eq("github_http_cache:#{Digest::SHA256.hexdigest(other_token)}:#{url}")
+      expect(cache_key).not_to eq(other_cache_key)
+    end
+
+    it "adds HTTP caching only to the REST connection" do
+      rest_handlers = client.client.middleware.handlers.map(&:klass)
+      graphql_handlers = client.send(:graphql_connection).builder.handlers.map(&:klass)
+
+      expect(rest_handlers).to include(Faraday::HttpCache)
+      expect(graphql_handlers).not_to include(Faraday::HttpCache)
+    end
+  end
+
   describe "#validate_token" do
     context "when token is valid" do
       before do

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "octokit"
+require "digest"
 require "faraday/retry"
 require "faraday/http_cache"
 
@@ -1399,8 +1400,7 @@ class GithubClient
   def configure_middleware
     client.middleware = Faraday::RackBuilder.new do |builder|
       builder.use Faraday::HttpCache,
-        store: Rails.cache,
-        serializer: Marshal
+        **http_cache_options
       builder.use Faraday::Retry::Middleware,
         max: RETRY_MAX,
         interval: RETRY_INTERVAL,
@@ -1470,9 +1470,6 @@ class GithubClient
 
   def build_graphql_connection(with_retry:)
     Faraday.new(url: "https://api.github.com") do |f|
-      f.use Faraday::HttpCache,
-        store: Rails.cache,
-        serializer: Marshal
       f.request :json
       if with_retry
         f.request :retry,
@@ -1498,6 +1495,18 @@ class GithubClient
       f.response :raise_error
       f.adapter Faraday.default_adapter
     end
+  end
+
+  def http_cache_options
+    {
+      store: Rails.cache,
+      serializer: JSON,
+      cache_key: ->(url, _request_options) { "github_http_cache:#{cache_token_digest}:#{url}" }
+    }
+  end
+
+  def cache_token_digest
+    @cache_token_digest ||= Digest::SHA256.hexdigest(client.access_token.to_s)
   end
 
   def pull_request_node_id(repo, number)
