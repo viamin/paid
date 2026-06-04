@@ -8,6 +8,7 @@ module Activities
 
     PAID_ESCALATED_LABEL = "paid-escalated"
     COMMENT_MARKER = "<!-- paid:escalation-note -->"
+    OPERATIONAL_FAILURE_REASON_MATCHER = /provider\/infrastructure failures/i
 
     def execute(input)
       issue = Issue.find_by(id: input[:issue_id])
@@ -16,6 +17,12 @@ module Activities
       project = issue.project
       client = project.client
       phase_before = issue.pr_review_phase
+
+      unless escalation_still_applies?(project, issue, reason: input[:reason])
+        record_noop_decision(project, issue, reason: input[:reason], phase_before:)
+        return { updated: false }
+      end
+
       issue.update!(pr_review_phase: "escalated")
 
       # Escalation invalidates the prior "ready" claim. Strip the label
@@ -53,6 +60,55 @@ module Activities
     end
 
     private
+
+    def escalation_still_applies?(project, issue, reason:)
+      return true unless operational_failure_escalation_reason?(reason)
+
+      progress_state = PullRequests::ProgressState.call(project:, issue:)
+      operational_failure_breaker_holds?(progress_state)
+    end
+
+    def operational_failure_escalation_reason?(reason)
+      reason.to_s.match?(OPERATIONAL_FAILURE_REASON_MATCHER)
+    end
+
+    def operational_failure_breaker_holds?(progress_state)
+      progress_state.consecutive_operational_failures >= Activities::ScanPaidPrsActivity::MAX_CONSECUTIVE_OPERATIONAL_FAILURES &&
+        no_meaningful_progress_window_elapsed?(progress_state)
+    end
+
+    def no_meaningful_progress_window_elapsed?(progress_state)
+      progress_at = progress_state.last_meaningful_progress_at || progress_state.latest_unsuccessful_run_at
+      return false if progress_at.blank?
+
+      progress_at <= Activities::ScanPaidPrsActivity::NO_PROGRESS_ESCALATION_WINDOW.ago
+    end
+
+    def record_noop_decision(project, issue, reason:, phase_before:)
+      logger.info(
+        message: "pr_review.skip_stale_escalation",
+        issue_id: issue.id,
+        pr_number: issue.github_number,
+        reason: reason
+      )
+
+      OrchestrationDecision.record(
+        project: project,
+        issue: issue,
+        decision_point: "mark_escalated",
+        action: "escalate",
+        status: "noop",
+        signals: {
+          trigger: "escalate_to_owner",
+          reason: reason,
+          phase_before: phase_before
+        },
+        result: {
+          updated: false,
+          phase: issue.pr_review_phase
+        }
+      )
+    end
 
     def remove_ready_label(client, project, issue)
       label = MarkPrReadyActivity::PAID_READY_LABEL
