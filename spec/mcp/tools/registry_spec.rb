@@ -72,6 +72,24 @@ RSpec.describe Tools::Registry do
     end
   end
 
+  describe ".dispatch_read_only" do
+    it "rejects write tools even when the user is authorized to see them in the full registry" do
+      account = create(:account)
+      project = create(:project, account: account)
+      user = create(:user, :owner, account: account)
+      create(:project_membership, :member, user: user, project: project)
+
+      expect {
+        described_class.dispatch_read_only(
+          name: "trigger_agent_run",
+          arguments: {},
+          user: user,
+          session: build(:chat_session, account: account, created_by: user)
+        )
+      }.to raise_error(ArgumentError, "Unknown tool: trigger_agent_run")
+    end
+  end
+
   describe "write operation audit" do
     it "marks every known write tool as a write operation" do
       flagged_write_tool_names = described_class.all.select(&:write_operation?).map(&:tool_name)
