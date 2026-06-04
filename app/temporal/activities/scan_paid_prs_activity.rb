@@ -309,7 +309,7 @@ module Activities
     end
 
     def authorized_for_automation_scan?(project, issue)
-      return true if project.trusted_github_user?(issue.github_creator_login)
+      return true if project.trusted_github_author?(issue.github_creator_login)
       return true if trusted_user_added_label?(project, issue, project.automation_label_name)
 
       Rails.logger.warn(
@@ -324,9 +324,7 @@ module Activities
     end
 
     def trusted_creator_logins_for(project)
-      Array(project.allowed_github_usernames)
-        .filter_map { |login| login.to_s.downcase.presence }
-        .uniq
+      project.trusted_github_author_logins
     end
 
     def merged_issue?(issue)
