@@ -47,11 +47,11 @@ class PaidMcpServer
   end
 
   def tool_definitions
-    Tools::Registry.definitions_for(user:)
+    Tools::Registry.read_only_definitions_for(user:)
   end
 
   def call_tool(name:, arguments:)
-    Tools::Registry.dispatch(name:, arguments:, user:, session:)
+    Tools::Registry.dispatch_read_only(name:, arguments:, user:, session:)
   end
 
   class RateLimitExceeded < StandardError; end

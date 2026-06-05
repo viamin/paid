@@ -89,10 +89,48 @@ puts "Poll worker concurrency: workflows=#{poll_workflow_slots} activities=#{pol
      "workflow_polls=#{poll_workflow_task_polls}" unless worker_mode == "agent"
 
 if db_pool < min_required_pool
-  warn "WARNING: DB_POOL (#{db_pool}) is less than the recommended minimum " \
+  warn "WARNING: DB_POOL (#{db_pool}) is less than the required minimum " \
        "(#{min_required_pool}) for selected activity_slots=#{selected_activity_slots} " \
-       "in #{worker_mode} mode. " \
-       "Increase DB_POOL or reduce activity concurrency to avoid connection exhaustion."
+       "in #{worker_mode} mode (agent activities hold two connections each)."
+
+  # Auto-correct rather than booting under-provisioned: an undersized pool
+  # surfaces as "could not obtain a connection from the pool" mid-run, which
+  # fails live agent runs. Resizing the primary pool here is safe — worker
+  # threads have not started yet, so no connections are in flight. If the
+  # resize cannot be applied, refuse to boot rather than fail runs later.
+  resized = begin
+    db_config = ActiveRecord::Base.connection_db_config
+    resized_config = ActiveRecord::DatabaseConfigurations::HashConfig.new(
+      db_config.env_name, db_config.name, db_config.configuration_hash.merge(pool: min_required_pool)
+    )
+    # Replace the registry entry as well as the live pool. A bare
+    # establish_connection resizes the live pool but leaves
+    # ActiveRecord::Base.configurations stale at DB_POOL, which would silently
+    # revert the size on any later reconnect-by-name. Keep one source of truth.
+    configs = ActiveRecord::Base.configurations.configurations
+    configs.reject! { |c| c.env_name == db_config.env_name && c.name == db_config.name }
+    configs << resized_config
+    ActiveRecord::Base.establish_connection(resized_config)
+    # Verify against the live pool's actual capacity (db_config#pool is
+    # deprecated in Rails 8.1 in favour of #max_connections).
+    ActiveRecord::Base.connection_pool.size >= min_required_pool
+  rescue => error
+    warn "ERROR: failed to resize DB pool: #{error.class}: #{error.message}"
+    false
+  end
+
+  if resized
+    warn "Auto-corrected primary DB pool size: #{db_pool} -> #{min_required_pool}. " \
+         "Set DB_POOL >= #{min_required_pool} to make this explicit, or reduce " \
+         "TEMPORAL_ACTIVITY_SLOTS to need fewer connections. NOTE: this raises the " \
+         "connections this process opens — ensure the database server's max_connections " \
+         "covers the sum across all web/worker processes (see docs/WORKER_POOL_TUNING.md)."
+  else
+    warn "FATAL: DB_POOL (#{db_pool}) is below the required minimum (#{min_required_pool}) " \
+         "and the pool could not be resized automatically. Increase DB_POOL or reduce " \
+         "activity concurrency to avoid connection exhaustion."
+    exit 1
+  end
 end
 
 shutdown_cancellation, request_shutdown = Temporalio::Cancellation.new

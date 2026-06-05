@@ -1196,14 +1196,17 @@ class Runner < ApplicationRecord
       env["OPENAI_BASE_URL"] = api_config[:base_url]
     end
 
+    metadata_config = {}
+    unless provider_config.empty?
+      metadata_config["provider"] = { opencode_api_provider => provider_config }
+    end
+
     AgentHarness::ProviderRuntime.new(
       model: model_id,
       env: env,
       unset_env: %w[OPENAI_HEADER_X_AGENT_RUN_ID OPENAI_HEADER_X_PROXY_TOKEN],
       metadata: {
-        config: {
-          "provider" => { opencode_api_provider => provider_config }
-        }
+        config: metadata_config
       }
     )
   end
