@@ -309,7 +309,7 @@ module Activities
     end
 
     def authorized_for_automation_scan?(project, issue)
-      return true if project.trusted_github_user?(issue.github_creator_login)
+      return true if project.trusted_github_author?(issue.github_creator_login)
       return true if trusted_user_added_label?(project, issue, project.automation_label_name)
 
       Rails.logger.warn(
@@ -324,9 +324,7 @@ module Activities
     end
 
     def trusted_creator_logins_for(project)
-      Array(project.allowed_github_usernames)
-        .filter_map { |login| login.to_s.downcase.presence }
-        .uniq
+      project.trusted_github_author_logins
     end
 
     def merged_issue?(issue)
@@ -435,7 +433,7 @@ module Activities
     def scan_draft_pr(project, client, issue, pr_data: nil)
       check_rate_budget!(client)
 
-      if bot_user?(issue.github_creator_login)
+      if third_party_bot_author?(project, issue.github_creator_login)
         return scan_bot_authored_draft_pr(project, client, issue, pr_data: pr_data)
       end
 
@@ -663,7 +661,7 @@ module Activities
       mergeable = pr_data && pr_data[:mergeable]
       progress_state = pr_progress_state(project, issue)
 
-      if bot_user?(issue.github_creator_login)
+      if third_party_bot_author?(project, issue.github_creator_login)
         return scan_bot_authored_ready_pr(
           project,
           client,
@@ -749,7 +747,7 @@ module Activities
       if project.auto_merge_enabled? && pr_data.present?
         checks = fetch_check_runs(client, project, pr_data, issue: issue)
 
-        if bot_user?(issue.github_creator_login)
+        if third_party_bot_author?(project, issue.github_creator_login)
           if auto_merge_eligible_bot?(project, client, issue,
                checks: checks, mergeable: pr_data[:mergeable])
             return owner_approved_trigger(issue)
@@ -1014,10 +1012,10 @@ module Activities
     def scan_age_exceeds_ceiling?(project, issue)
       draft_or_restarted = issue.pr_review_phase.in?(%w[draft restarted])
       bot_ready_for_merge = issue.pr_review_phase == "ready" &&
-        bot_user?(issue.github_creator_login) &&
+        third_party_bot_author?(project, issue.github_creator_login) &&
         project.auto_merge_dependabot?
       human_auto_merge = issue.pr_review_phase.in?(%w[ready escalated]) &&
-        !bot_user?(issue.github_creator_login) &&
+        !third_party_bot_author?(project, issue.github_creator_login) &&
         project.auto_merge_mode == "all"
 
       return false unless draft_or_restarted || bot_ready_for_merge || human_auto_merge
@@ -2883,6 +2881,30 @@ module Activities
       return true if normalized.end_with?("[bot]", "-bot")
 
       KNOWN_BOT_PREFIXES.any? { |prefix| normalized.start_with?(prefix) }
+    end
+
+    # A PR authored by the project's own GitHub App agent bot (e.g.
+    # "paid-agents[bot]"). These are Paid-generated PRs, not third-party
+    # automation, so they must follow the full review + auto-merge path.
+    #
+    # Matches only the "[bot]" author login (github_author_login), never the
+    # bare app slug ("paid-agents") — the slug is a registerable human GitHub
+    # username and must not be treated as the project's agent. Mirrors the
+    # author-trust model in Project#trusted_github_author_logins.
+    def paid_agent_pr_author?(project, login)
+      return false if login.blank?
+
+      agent_login = project.github_author_login
+      agent_login.present? && login.casecmp?(agent_login)
+    end
+
+    # A PR authored by a third-party automation bot (Dependabot, Renovate,
+    # github-actions) whose PRs skip Paid's review/merge flow. Excludes the
+    # project's own agent bot — without this, app-backed projects whose agent
+    # authors PRs as "paid-agents[bot]" had those PRs routed through the
+    # review-skipping Dependabot path and never reviewed or auto-merged.
+    def third_party_bot_author?(project, login)
+      bot_user?(login) && !paid_agent_pr_author?(project, login)
     end
 
     def system_generated_comment?(body)

@@ -3,9 +3,7 @@
 class GithubInstallationsController < ApplicationController
   include AuditLogging
 
-  before_action :set_github_installation, only: [ :repositories, :show, :check_access ]
-  before_action :set_github_installation_for_migration, only: :migrate_projects
-  before_action :set_github_installation_for_token_migration, only: :migrate_from_token
+  before_action :set_github_installation, only: [ :repositories, :show, :check_access, :migrate_projects, :migrate_from_token ]
 
   # GET /github_installations/:id/repositories
   # Returns repositories available for project creation
@@ -31,7 +29,8 @@ class GithubInstallationsController < ApplicationController
     authorize @github_installation, :show?
 
     @projects_using_installation = @github_installation.projects.includes(:created_by).order(created_at: :desc)
-    @accessible_repos_count = @github_installation.accessible_repositories.count
+    @accessible_repos = Array(@github_installation.accessible_repositories).map(&:with_indifferent_access)
+    @accessible_repos_count = @accessible_repos.size
   end
 
   # GET /github_installations/:id/migrate
@@ -42,12 +41,9 @@ class GithubInstallationsController < ApplicationController
 
     @github_tokens = current_account.github_tokens.active.includes(:created_by, :projects).order(created_at: :desc)
     @projects = current_account.projects.where(github_token: @github_tokens).includes(:github_token).order(:name)
-    @installation_repos = normalized_repositories
 
-    # Check which repos are accessible
-    accessible_repo_ids = @installation_repos.map { |r| r["id"] }.to_set
     @project_access_status = @projects.each_with_object({}) do |project, hash|
-      hash[project.id] = accessible_repo_ids.include?(project.github_id)
+      hash[project.id] = @github_installation.covers_repository?(project.full_name)
     end
   end
 
@@ -80,8 +76,13 @@ class GithubInstallationsController < ApplicationController
       redirect_to @github_installation,
         notice: "Successfully migrated #{result.successful} project(s) to GitHub App"
     else
+      errors_summary = result.results
+        .reject(&:success?)
+        .map { |r| "#{r.project.full_name}: #{r.error}" }
+        .join("; ")
+      errors_summary = "#{errors_summary.truncate(800)}; and more" if errors_summary.length > 800
       redirect_to migrate_project_github_installation_path(@github_installation),
-        alert: "Migration completed with #{result.failed} failure(s). #{result.successful} succeeded."
+        alert: "Migration completed with #{result.failed} failure(s). #{result.successful} succeeded. Errors: #{errors_summary}"
     end
   end
 
@@ -115,14 +116,6 @@ class GithubInstallationsController < ApplicationController
 
   def set_github_installation
     @github_installation = policy_scope(GithubInstallation).find(params[:id])
-  end
-
-  def set_github_installation_for_migration
-    set_github_installation
-  end
-
-  def set_github_installation_for_token_migration
-    set_github_installation
   end
 
   def normalized_repositories
