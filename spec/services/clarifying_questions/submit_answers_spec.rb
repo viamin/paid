@@ -4,16 +4,16 @@ require "rails_helper"
 
 RSpec.describe ClarifyingQuestions::SubmitAnswers, :no_db do
   let(:github_client) { instance_double(GithubClient) }
-  let(:github_token) { double(client: github_client) }
   let(:project) do
     double(
-      github_token: github_token,
+      client: github_client,
       full_name: "paid/app"
     )
   end
   let(:issue) do
     double(
-      github_number: 1964
+      github_number: 1964,
+      needs_input?: false
     )
   end
 
@@ -125,7 +125,7 @@ RSpec.describe ClarifyingQuestions::SubmitAnswers, :no_db do
 
     context "when GitHub access is not configured" do
       before do
-        allow(project).to receive(:github_token).and_return(nil)
+        allow(project).to receive(:client).and_return(nil)
       end
 
       it "raises ArgumentError before attempting to post" do
@@ -138,6 +138,61 @@ RSpec.describe ClarifyingQuestions::SubmitAnswers, :no_db do
         }.to raise_error(ArgumentError, /GitHub access is not configured/)
 
         expect(github_client).not_to have_received(:add_comment)
+      end
+    end
+
+    context "when the issue is awaiting input" do
+      let(:issue) do
+        double(
+          github_number: 1964,
+          needs_input?: true,
+          labels: [ "paid-needs-input", "P2" ]
+        )
+      end
+
+      before do
+        allow(project).to receive(:enhance_issue_needs_input_label_name).and_return("paid-needs-input")
+        allow(github_client).to receive(:remove_label_from_issue)
+        allow(issue).to receive(:update!)
+      end
+
+      it "removes the needs-input label on GitHub after posting answers" do
+        described_class.call(
+          project: project,
+          issue: issue,
+          questions_and_answers: [ { question: "Q1?", answer: "A1" } ]
+        )
+
+        expect(github_client).to have_received(:remove_label_from_issue).with(
+          project.full_name, issue.github_number, "paid-needs-input"
+        )
+      end
+
+      it "resets paid_state and drops the label locally so the button disappears" do
+        described_class.call(
+          project: project,
+          issue: issue,
+          questions_and_answers: [ { question: "Q1?", answer: "A1" } ]
+        )
+
+        expect(issue).to have_received(:update!).with(
+          paid_state: "new", labels: [ "P2" ]
+        )
+      end
+
+      it "still clears state when GitHub label removal fails" do
+        allow(github_client).to receive(:remove_label_from_issue)
+          .and_raise(GithubClient::Error.new("boom"))
+
+        described_class.call(
+          project: project,
+          issue: issue,
+          questions_and_answers: [ { question: "Q1?", answer: "A1" } ]
+        )
+
+        expect(issue).to have_received(:update!).with(
+          paid_state: "new", labels: [ "P2" ]
+        )
       end
     end
   end
