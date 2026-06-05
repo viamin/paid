@@ -157,6 +157,23 @@ RSpec.describe Knowledge::RunnerExecutor do
         expect(state).to be_present
         expect(state.failure_count).to eq(1)
       end
+
+      it "decays prior failures using the configured circuit breaker timeout" do
+        user_setting.update!(circuit_breaker_timeout_seconds: 600)
+        # Stale count of 4; 400s elapsed is < one 600s decay window, so nothing
+        # ages out before the new failure increments to 5. With the default
+        # 300s window it would decay one window (4 >> 1 = 2) and land at 3.
+        user.runner_states.create!(runner_name: "claude", circuit_state: "closed",
+          failure_count: 4, last_failure_at: 400.seconds.ago)
+
+        executor = described_class.new(user_setting: user_setting, operation: :chat)
+        executor.execute do |runner|
+          raise AgentHarness::Error, "error" if runner == "claude"
+          "ok"
+        end
+
+        expect(user.runner_states.find_by(runner_name: "claude").failure_count).to eq(5)
+      end
     end
 
     context "with structured logging" do

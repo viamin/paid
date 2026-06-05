@@ -64,7 +64,10 @@ module Knowledge
 
     def record_failure(runner, _error)
       state = runner_state_for(runner)
-      state&.record_failure!(threshold: @user_setting.circuit_breaker_failure_threshold)
+      state&.record_failure!(
+        threshold: @user_setting.circuit_breaker_failure_threshold,
+        decay_window: @user_setting.circuit_breaker_timeout_seconds
+      )
     end
 
     def available_runners
