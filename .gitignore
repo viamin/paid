@@ -69,6 +69,9 @@ spec/.examples.txt
 # Ignore agent workspace directory (used for Docker container testing)
 /agent-workspace/
 
+# Local git worktrees (per-developer scratch checkouts; never tracked)
+/.worktrees/
+
 # Session-specific working memory (ephemeral, per-developer)
 WORKLOG.md
 
