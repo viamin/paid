@@ -18,7 +18,8 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
       id: 42,
       body: issue_body,
       github_number: 1964,
-      github_updated_at: 2.minutes.ago
+      github_updated_at: 2.minutes.ago,
+      needs_input?: false
     )
   end
   let(:comment_body) do
@@ -37,6 +38,7 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
   before do
     allow(github_client).to receive(:issue_comments).and_return([])
     allow(project).to receive(:trusted_github_user?) { |login| login == trusted_login }
+    allow(project).to receive(:paid_bot_author?).and_return(false)
   end
 
   describe ".call" do
@@ -243,6 +245,75 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
       end
     end
 
+    context "when the answers marker is authored by the project's GitHub App bot" do
+      let(:bot_login) { "paid-agents[bot]" }
+      let(:issue_body) do
+        <<~COMMENT
+          <!-- paid:enhance-issue -->
+
+          ## Clarifying questions
+          1. What is the expected behavior?
+        COMMENT
+      end
+
+      before do
+        allow(project).to receive(:paid_bot_author?) { |login| login == bot_login }
+
+        answers_comment = double(
+          body: <<~COMMENT,
+            <!-- paid:clarifying-answers -->
+
+            ## Clarifying question answers
+
+            **Q1: What is the expected behavior?**
+            **A1:** Use the wizard flow.
+          COMMENT
+          user: double(login: bot_login),
+          created_at: 1.minute.ago
+        )
+
+        allow(github_client).to receive(:issue_comments).and_return([ answers_comment ])
+      end
+
+      it "treats the questions as answered (the bot answer comment is honored)" do
+        expect(described_class.call(project: project, issue: issue)).to eq([])
+      end
+    end
+
+    context "when the questions have been answered" do
+      let(:issue_body) do
+        <<~COMMENT
+          <!-- paid:enhance-issue -->
+
+          ## Clarifying questions
+          1. What is the expected behavior?
+        COMMENT
+      end
+
+      before do
+        answers_comment = double(
+          body: <<~COMMENT,
+            <!-- paid:clarifying-answers -->
+
+            ## Clarifying question answers
+
+            **Q1: What is the expected behavior?**
+            **A1:** Use the wizard flow.
+          COMMENT
+          user: double(login: trusted_login),
+          created_at: 1.minute.ago
+        )
+        allow(github_client).to receive(:issue_comments).and_return([ answers_comment ])
+        allow(ClarifyingQuestions::IngestAnswers).to receive(:call).and_return(true)
+      end
+
+      it "self-heals the stale needs-input marker so the button disappears" do
+        expect(ClarifyingQuestions::ClearNeedsInput).to receive(:call).with(project: project, issue: issue)
+
+        expect(described_class.call(project: project, issue: issue)).to eq([])
+      end
+    end
+
     context "when no clarifying questions are available" do
       it "returns an empty array" do
         expect(described_class.call(project: project, issue: issue)).to eq([])
@@ -277,6 +348,8 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
       end
 
       it "logs and still returns an empty array" do
+        expect(ClarifyingQuestions::ClearNeedsInput).not_to receive(:call)
+
         expect(described_class.call(project: project, issue: issue)).to eq([])
 
         expect(logger).to have_received(:warn).with(
@@ -285,6 +358,37 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
             issue_id: 42
           )
         )
+      end
+    end
+
+    context "when answer ingestion returns nil (no qa pairs ingested)" do
+      before do
+        enhancement_comment = double(
+          body: comment_body,
+          user: double(login: trusted_login),
+          created_at: 2.minutes.ago
+        )
+        answers_comment = double(
+          body: <<~COMMENT,
+            <!-- paid:clarifying-answers -->
+
+            ## Clarifying question answers
+
+            **Q1: What is the expected behavior?**
+            **A1:** Use the wizard flow.
+          COMMENT
+          user: double(login: trusted_login),
+          created_at: 1.minute.ago
+        )
+
+        allow(github_client).to receive(:issue_comments).and_return([ enhancement_comment, answers_comment ])
+        allow(ClarifyingQuestions::IngestAnswers).to receive(:call).and_return(nil)
+      end
+
+      it "does not clear needs_input so the issue stays blocked" do
+        expect(ClarifyingQuestions::ClearNeedsInput).not_to receive(:call)
+
+        expect(described_class.call(project: project, issue: issue)).to eq([])
       end
     end
 

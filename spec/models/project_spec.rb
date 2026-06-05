@@ -689,6 +689,17 @@ RSpec.describe Project do
         expect(project.trusted_github_user?(bot_login)).to be false
       end
 
+      it "identifies the app bot as Paid's own author for marker re-admission" do
+        expect(project.paid_bot_author?(bot_login)).to be true
+        expect(project.paid_bot_author?(bot_login.upcase)).to be true
+      end
+
+      it "does not treat allowlisted humans or others as the Paid bot" do
+        expect(project.paid_bot_author?("viamin")).to be false
+        expect(project.paid_bot_author?("attacker")).to be false
+        expect(project.paid_bot_author?(nil)).to be false
+      end
+
       it "still trusts allowlisted humans for both comments and authorship" do
         expect(project.trusted_github_user?("viamin")).to be true
         expect(project.trusted_github_author?("viamin")).to be true
@@ -705,6 +716,10 @@ RSpec.describe Project do
       it "does not trust the bot as either author or commenter" do
         expect(project.trusted_github_author?(bot_login)).to be false
         expect(project.trusted_github_user?(bot_login)).to be false
+      end
+
+      it "has no Paid bot identity to re-admit (returns false)" do
+        expect(project.paid_bot_author?(bot_login)).to be false
       end
     end
   end
