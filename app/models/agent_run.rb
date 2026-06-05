@@ -1627,17 +1627,19 @@ class AgentRun < ApplicationRecord
     end
   end
 
-  def cancel!
+  def cancel!(error: nil)
     with_lock do
       reload
       if finished?
         false
       else
-        update!(
+        attributes = {
           status: "cancelled",
           completed_at: Time.current,
           duration_seconds: duration
-        )
+        }
+        attributes[:error_message] = error if error
+        update!(attributes)
       end
     end
   end
