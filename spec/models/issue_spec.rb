@@ -496,6 +496,68 @@ RSpec.describe Issue do
     end
   end
 
+  describe "cancelling orphaned queued runs when work is no longer needed" do
+    it "cancels an unclaimed queued run when the issue becomes completed" do
+      issue = create(:issue, paid_state: "in_progress", github_state: "open")
+      run = create(:agent_run, project: issue.project, issue: issue, goal: "create_pr",
+                              status: "queued", temporal_workflow_id: nil)
+
+      issue.update!(paid_state: "completed")
+
+      expect(run.reload.status).to eq("cancelled")
+      expect(run.error_message).to include("Issue resolved")
+    end
+
+    it "cancels an unclaimed queued run when the issue is closed on GitHub" do
+      issue = create(:issue, paid_state: "in_progress", github_state: "open")
+      run = create(:agent_run, project: issue.project, issue: issue, goal: "create_pr",
+                              status: "queued", temporal_workflow_id: nil)
+
+      issue.update!(github_state: "closed")
+
+      expect(run.reload.status).to eq("cancelled")
+    end
+
+    it "leaves claimed queued runs alone (a Temporal workflow owns them)" do
+      issue = create(:issue, paid_state: "in_progress", github_state: "open")
+      run = create(:agent_run, project: issue.project, issue: issue, goal: "create_pr",
+                              status: "queued", temporal_workflow_id: "workflow-123")
+
+      issue.update!(paid_state: "completed")
+
+      expect(run.reload.status).to eq("queued")
+    end
+
+    it "leaves running runs alone" do
+      issue = create(:issue, paid_state: "in_progress", github_state: "open")
+      run = create(:agent_run, :running, project: issue.project, issue: issue, goal: "create_pr")
+
+      issue.update!(paid_state: "completed")
+
+      expect(run.reload.status).to eq("running")
+    end
+
+    it "leaves review-goal runs alone (PR-scoped, not issue-scoped)" do
+      issue = create(:issue, paid_state: "in_progress", github_state: "open")
+      run = create(:agent_run, project: issue.project, issue: issue, goal: "review",
+                              source_pull_request_number: 42, status: "queued", temporal_workflow_id: nil)
+
+      issue.update!(paid_state: "completed")
+
+      expect(run.reload.status).to eq("queued")
+    end
+
+    it "does not touch queued runs on unrelated paid_state transitions" do
+      issue = create(:issue, paid_state: "new", github_state: "open")
+      run = create(:agent_run, project: issue.project, issue: issue, goal: "create_pr",
+                              status: "queued", temporal_workflow_id: nil)
+
+      issue.update!(paid_state: "in_progress")
+
+      expect(run.reload.status).to eq("queued")
+    end
+  end
+
   describe "instance methods" do
     describe "#github_url" do
       it "returns the GitHub issue URL for issues" do
