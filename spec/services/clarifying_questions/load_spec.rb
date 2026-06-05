@@ -304,6 +304,7 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
           created_at: 1.minute.ago
         )
         allow(github_client).to receive(:issue_comments).and_return([ answers_comment ])
+        allow(ClarifyingQuestions::IngestAnswers).to receive(:call).and_return(true)
       end
 
       it "self-heals the stale needs-input marker so the button disappears" do
@@ -347,6 +348,8 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
       end
 
       it "logs and still returns an empty array" do
+        expect(ClarifyingQuestions::ClearNeedsInput).not_to receive(:call)
+
         expect(described_class.call(project: project, issue: issue)).to eq([])
 
         expect(logger).to have_received(:warn).with(
@@ -355,6 +358,37 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
             issue_id: 42
           )
         )
+      end
+    end
+
+    context "when answer ingestion returns nil (no qa pairs ingested)" do
+      before do
+        enhancement_comment = double(
+          body: comment_body,
+          user: double(login: trusted_login),
+          created_at: 2.minutes.ago
+        )
+        answers_comment = double(
+          body: <<~COMMENT,
+            <!-- paid:clarifying-answers -->
+
+            ## Clarifying question answers
+
+            **Q1: What is the expected behavior?**
+            **A1:** Use the wizard flow.
+          COMMENT
+          user: double(login: trusted_login),
+          created_at: 1.minute.ago
+        )
+
+        allow(github_client).to receive(:issue_comments).and_return([ enhancement_comment, answers_comment ])
+        allow(ClarifyingQuestions::IngestAnswers).to receive(:call).and_return(nil)
+      end
+
+      it "does not clear needs_input so the issue stays blocked" do
+        expect(ClarifyingQuestions::ClearNeedsInput).not_to receive(:call)
+
+        expect(described_class.call(project: project, issue: issue)).to eq([])
       end
     end
 

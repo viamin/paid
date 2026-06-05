@@ -104,8 +104,8 @@ module ClarifyingQuestions
     # knowledge base and clear the issue's needs-input marker so the stale
     # "Answer Questions" button disappears. Returns [] (no pending questions).
     def reconcile_answered
-      ingest_answers
-      ClearNeedsInput.call(project: project, issue: issue)
+      ingested = ingest_answers
+      ClearNeedsInput.call(project: project, issue: issue) if ingested
       []
     end
 
