@@ -177,6 +177,22 @@ RSpec.describe RunnerState do
       expect(state.half_open_success_count).to eq(0)
       expect(state.half_open_failure_count).to eq(0)
     end
+
+    it "force_close immediately closes an open circuit for explicit health checks" do
+      state = create(:runner_state, :circuit_open, failure_count: 8, circuit_opened_at: 1.minute.ago,
+        last_failure_at: 1.minute.ago, rate_limited_until: 30.minutes.from_now)
+
+      state.record_success!(force_close: true)
+
+      state.reload
+      expect(state.circuit_state).to eq("closed")
+      expect(state.failure_count).to eq(0)
+      expect(state.circuit_opened_at).to be_nil
+      expect(state.rate_limited_until).to be_nil
+      expect(state.last_failure_at).to be_nil
+      expect(state.half_open_success_count).to eq(0)
+      expect(state.half_open_failure_count).to eq(0)
+    end
   end
 
   describe "#check_circuit_recovery!" do

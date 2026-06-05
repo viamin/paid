@@ -69,23 +69,29 @@ class RunnerState < ApplicationRecord
   end
 
   # Records a success and resets the circuit breaker.
-  def record_success!(half_open_success_threshold: DEFAULT_HALF_OPEN_SUCCESS_THRESHOLD)
+  #
+  # @param half_open_success_threshold [Integer] Consecutive half-open successes required to close the circuit.
+  # @param force_close [Boolean] When true (explicit operator/test health checks), immediately close the circuit
+  #   regardless of its current state instead of waiting on the recovery timeout or half-open success streak.
+  def record_success!(half_open_success_threshold: DEFAULT_HALF_OPEN_SUCCESS_THRESHOLD, force_close: false)
     with_lock do
-      return if circuit_open?
+      unless force_close
+        return if circuit_open?
 
-      if circuit_half_open?
-        new_half_open_success_count = half_open_success_count.to_i + 1
+        if circuit_half_open?
+          new_half_open_success_count = half_open_success_count.to_i + 1
 
-        if new_half_open_success_count < half_open_success_threshold
-          update!(
-            half_open_success_count: new_half_open_success_count,
-            half_open_failure_count: 0,
-            rate_limited_until: nil
-          )
+          if new_half_open_success_count < half_open_success_threshold
+            update!(
+              half_open_success_count: new_half_open_success_count,
+              half_open_failure_count: 0,
+              rate_limited_until: nil
+            )
+            return
+          end
+        elsif failure_count.zero? && rate_limited_until.blank?
           return
         end
-      elsif failure_count.zero? && rate_limited_until.blank?
-        return
       end
 
       update!(
