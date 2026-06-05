@@ -551,7 +551,19 @@ class Issue < ApplicationRecord
              "unclaimed queued run no longer needed"
 
     agent_runs.waiting.where.not(goal: "review").find_each do |run|
-      next unless run.cancel!(error: reason)
+      # Re-check under the row lock: AgentRun.claim_next_queued_run can claim
+      # this run (status still "queued", temporal_workflow_id -> CLAIMED_SENTINEL)
+      # in the window between the scope query and here. cancel! only guards on
+      # finished?, so without this check we would mark a just-claimed run
+      # cancelled while its workflow/container start up — the exact orphan this
+      # callback exists to prevent. Skip it; the normal lifecycle owns it now.
+      cancelled = run.with_lock do
+        next false unless run.status == "queued" && run.temporal_workflow_id.nil?
+
+        run.cancel!(error: reason)
+      end
+
+      next unless cancelled
 
       Rails.logger.info(
         message: "agent_run.cancelled_issue_resolved",

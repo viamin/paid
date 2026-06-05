@@ -528,6 +528,16 @@ RSpec.describe Issue do
       expect(run.reload.status).to eq("queued")
     end
 
+    it "leaves a run that was just claimed (sentinel workflow id) alone" do
+      issue = create(:issue, paid_state: "in_progress", github_state: "open")
+      run = create(:agent_run, project: issue.project, issue: issue, goal: "create_pr",
+                              status: "queued", temporal_workflow_id: AgentRun::CLAIMED_SENTINEL)
+
+      issue.update!(paid_state: "completed")
+
+      expect(run.reload.status).to eq("queued")
+    end
+
     it "leaves running runs alone" do
       issue = create(:issue, paid_state: "in_progress", github_state: "open")
       run = create(:agent_run, :running, project: issue.project, issue: issue, goal: "create_pr")
