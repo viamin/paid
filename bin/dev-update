@@ -354,9 +354,30 @@ stop_overmind() {
   fi
 }
 
+# Drop databases left behind by removed git worktrees. bin/setup creates a
+# worktree's databases via bin/ensure-worktree-databases but nothing reaps them
+# when the worktree goes away, so they accumulate and exhaust Postgres
+# connection slots. Best-effort: a prune failure must never abort an auto-update,
+# so it runs inside an `if` (which the ERR trap ignores) and only logs warnings.
+prune_worktree_databases() {
+  log "Pruning orphaned worktree databases..."
+  local output
+  if output="$(bin/prune-worktree-databases --force 2>&1)"; then
+    log_command_output "prune-worktree-databases" "$output"
+  else
+    log "Warning: prune-worktree-databases failed; continuing with update."
+    log_command_output "prune-worktree-databases" "$output"
+  fi
+}
+
 run_setup() {
   log "Running bin/setup --skip-server..."
-  STARTUP_CLEANUP_KILL_ALL="$STARTUP_CLEANUP_KILL_ALL" bin/setup --skip-server
+  local status=0
+  STARTUP_CLEANUP_KILL_ALL="$STARTUP_CLEANUP_KILL_ALL" bin/setup --skip-server || status=$?
+  # Mirror bin/setup's worktree-database creation by reaping orphans, but only
+  # after a clean setup — the DB is in a known-good state and Ruby is available.
+  [ "$status" -eq 0 ] && prune_worktree_databases
+  return "$status"
 }
 
 start_dev() {
