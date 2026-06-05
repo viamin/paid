@@ -951,7 +951,11 @@ module Activities
       threshold: user_settings.circuit_breaker_failure_threshold,
       half_open_failure_threshold: RunnerState::DEFAULT_HALF_OPEN_FAILURE_THRESHOLD)
       state = runner_state_for(user_settings, runner_state_name, runner_states)
-      state.record_failure!(threshold: threshold, half_open_failure_threshold: half_open_failure_threshold)
+      state.record_failure!(
+        threshold: threshold,
+        decay_window: user_settings.circuit_breaker_timeout_seconds,
+        half_open_failure_threshold: half_open_failure_threshold
+      )
     end
 
     def preflight_timeout_failure_threshold(user_settings)
