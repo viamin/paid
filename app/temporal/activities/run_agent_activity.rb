@@ -879,9 +879,9 @@ module Activities
       user_settings&.max_execution_seconds || agent_run.project.max_execution_seconds
     end
 
-    def effective_startup_timeout(agent_run:, heartbeat:, effective_idle_timeout:, effective_timeout:)
-      startup_base = if agent_run.create_pr_goal?
-        CREATE_PR_RUNNER_STARTUP_TIMEOUTS.fetch(agent_run.agent_type, DEFAULT_AGENT_STARTUP_TIMEOUT)
+    def effective_startup_timeout(runner_key:, heartbeat:, effective_idle_timeout:, effective_timeout:, create_pr_goal:)
+      startup_base = if create_pr_goal
+        CREATE_PR_RUNNER_STARTUP_TIMEOUTS.fetch(runner_key, DEFAULT_AGENT_STARTUP_TIMEOUT)
       else
         heartbeat.idle_timeout_for(effective_idle_timeout) ||
           effective_idle_timeout ||
@@ -1184,10 +1184,11 @@ module Activities
         user_settings&.create_pr_idle_timeout_seconds || DEFAULT_CREATE_PR_IDLE_TIMEOUT
       end
       startup_timeout = effective_startup_timeout(
-        agent_run: agent_run,
+        runner_key: runner,
         heartbeat: heartbeat,
         effective_idle_timeout: effective_idle_timeout,
-        effective_timeout: effective_timeout
+        effective_timeout: effective_timeout,
+        create_pr_goal: agent_run.create_pr_goal?
       )
 
       # Periodic heartbeats during container execution complement the
