@@ -754,6 +754,50 @@ RSpec.describe Runners::TestAgent do
       end
     end
 
+    context "when direct-outbound openrouter_free is tested" do
+      let(:api_key) { create(:runner_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret") }
+      let!(:free_model) { create(:llm_model, model_id: "deepseek/deepseek-v4-flash:free", provider: "deepseek", tier: "mid") }
+      let(:runner_record) do
+        create(
+          :runner,
+          user: user,
+          runner_key: "openrouter_free",
+          auth_type: "api_key",
+          provider_api_key: api_key,
+          enabled_for_agent_runs: false,
+          enabled_for_fallback: false,
+          tier_model_ids: LlmModel::TIERS.index_with { free_model.model_id }
+        ).tap do |runner|
+          runner.update!(tier_models: LlmModel::TIERS.index_with { { "model_id" => free_model.model_id, "provider_id" => runner.id } })
+        end
+      end
+
+      before do
+        allow(RunnerSupport).to receive_messages(supported_runner_key?: true,
+          container_executable_runner_key?: true, harness_runner_key_for: "opencode")
+        stub_container_smoke_test(
+          name: :opencode, status: "ok", message: "Smoke test passed", latency_ms: 30, error_category: nil, check: :smoke_test
+        )
+      end
+
+      it "passes the OpenRouter runtime (not the bare opencode default) to the harness check" do
+        described_class.call(runner: provider)
+
+        expect(AgentHarness).to have_received(:check_provider).with(
+          :opencode,
+          timeout: 60,
+          executor: an_instance_of(Containers::HarnessExecutor),
+          provider_runtime: have_attributes(
+            model: "deepseek/deepseek-v4-flash:free",
+            env: hash_including(
+              "OPENROUTER_API_KEY" => "sk-openrouter-secret",
+              "OPENAI_BASE_URL" => "https://openrouter.ai/api/v1"
+            )
+          )
+        )
+      end
+    end
+
     context "when the provider reports a rate limit via container smoke test" do
       let(:runner_record) { create(:runner, user: user, runner_key: "gemini", enabled_for_agent_runs: false, enabled_for_fallback: false) }
 

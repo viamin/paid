@@ -1510,9 +1510,10 @@ RSpec.describe Activities::RunAgentActivity do
       runner_key: "openrouter_free",
       auth_type: "api_key",
       provider_api_key: api_key,
-      tier_model_ids: LlmModel::TIERS.index_with { model },
-      tier_models: LlmModel::TIERS.index_with { { "model_id" => model, "provider_id" => 1 } }
-    )
+      tier_model_ids: LlmModel::TIERS.index_with { model }
+    ).tap do |runner|
+      runner.update!(tier_models: LlmModel::TIERS.index_with { { "model_id" => model, "provider_id" => runner.id } })
+    end
   end
 
   def build_openrouter_free_run(project:, model:, data_classification:)
