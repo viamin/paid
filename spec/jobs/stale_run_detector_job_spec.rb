@@ -643,5 +643,88 @@ RSpec.describe StaleRunDetectorJob do
         described_class.perform_now
       end
     end
+
+    context "with rate-limited runs due for recovery" do
+      let(:project) { create(:project) }
+
+      it "re-queues a rate-limited run whose recovery window has elapsed" do
+        run = create(:agent_run, :rate_limited, rate_limited_until: 1.minute.ago)
+
+        described_class.perform_now
+
+        run.reload
+        expect(run.status).to eq("queued")
+        expect(run.rate_limited_until).to be_nil
+        expect(run.stale_requeue_count).to eq(1)
+      end
+
+      it "does not touch a rate-limited run whose recovery window is in the future" do
+        run = create(:agent_run, :rate_limited, rate_limited_until: 5.minutes.from_now)
+
+        described_class.perform_now
+
+        expect(run.reload.status).to eq("rate_limited")
+      end
+
+      it "leaves the issue in_progress when re-queuing (does not arm re-enqueue)" do
+        issue = create(:issue, :in_progress, project: project)
+        create(:agent_run, :rate_limited, project: project, issue: issue, rate_limited_until: 1.minute.ago)
+
+        described_class.perform_now
+
+        expect(issue.reload.paid_state).to eq("in_progress")
+      end
+
+      it "terminally fails a rate-limited run that exhausts its requeue budget" do
+        issue = create(:issue, :in_progress, project: project)
+        run = create(:agent_run, :rate_limited, project: project, issue: issue,
+          rate_limited_until: 1.minute.ago,
+          stale_requeue_count: AgentRun::MAX_RATE_LIMITED_REQUEUES)
+
+        described_class.perform_now
+
+        expect(run.reload.status).to eq("failed")
+        expect(issue.reload.paid_state).to eq("failed")
+      end
+
+      it "restores the issue to completed (not failed) when an exhausted run is a review goal" do
+        issue = create(:issue, :in_progress, :pull_request, project: project)
+        run = create(:agent_run, :rate_limited, :review_goal, project: project, issue: issue,
+          rate_limited_until: 1.minute.ago,
+          stale_requeue_count: AgentRun::MAX_RATE_LIMITED_REQUEUES)
+
+        described_class.perform_now
+
+        expect(run.reload.status).to eq("failed")
+        expect(issue.reload.paid_state).to eq("completed")
+      end
+
+      it "does not let orphan recovery reset an issue whose run awaits a future recovery window" do
+        issue = create(:issue, :in_progress, project: project,
+          updated_at: (described_class::ORPHANED_IN_PROGRESS_AGE + 5.minutes).ago)
+        run = create(:agent_run, :rate_limited, project: project, issue: issue,
+          rate_limited_until: 30.minutes.from_now)
+
+        described_class.perform_now
+
+        # The run is still waiting; orphan recovery must NOT yank the issue to
+        # "new" (which would mint a duplicate, superseding run).
+        expect(issue.reload.paid_state).to eq("in_progress")
+        expect(run.reload.status).to eq("rate_limited")
+      end
+
+      it "fails the run when an active sibling already owns the issue" do
+        issue = create(:issue, :in_progress, project: project)
+        rate_limited = create(:agent_run, :rate_limited, project: project, issue: issue,
+          goal: "create_pr", rate_limited_until: 1.minute.ago)
+        # An active (queued) run already holds the unique active-issue slot.
+        create(:agent_run, :queued, project: project, issue: issue, goal: "create_pr")
+
+        described_class.perform_now
+
+        expect(rate_limited.reload.status).to eq("failed")
+        expect(rate_limited.error_message).to include("Superseded by another active run")
+      end
+    end
   end
 end

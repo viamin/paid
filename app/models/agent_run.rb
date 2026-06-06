@@ -112,6 +112,11 @@ class AgentRun < ApplicationRecord
   DEFAULT_MAX_TOKENS_PER_RUN = 10_000_000
   MAX_STALE_REQUEUES = 2
   MAX_STALE_SKIPS = 3
+  # Maximum times a run parked in "rate_limited" (runner unavailable / transient
+  # infra) may be re-queued in place before it is left terminally failed.
+  # Reuses the stale_requeue_count column. Higher than MAX_STALE_REQUEUES because
+  # runner-availability windows (rate limits, open circuits) are expected to clear.
+  MAX_RATE_LIMITED_REQUEUES = 5
   CLAIMED_SENTINEL = "claimed"
   SMOKE_TEST_CUSTOM_PROMPT = "smoke_test"
   STALE_CLAIMED_TIMEOUT = 15.minutes
@@ -294,6 +299,12 @@ class AgentRun < ApplicationRecord
   scope :auth_expired, -> { where(status: "auth_expired") }
   scope :paused, -> { where(status: "paused") }
   scope :rate_limited, -> { where(status: "rate_limited") }
+  # Rate-limited runs whose recovery window has elapsed and are therefore due to
+  # be re-queued in place. StaleRunDetectorJob reactivates these — without it,
+  # rate_limited is effectively terminal (no other code path re-queues it).
+  scope :rate_limited_due, ->(now = Time.current) {
+    rate_limited.where.not(rate_limited_until: nil).where(rate_limited_until: ..now)
+  }
   scope :active, -> { where(status: ACTIVE_STATUSES) }
   scope :capacity_inflight, -> { running.or(claimed) }
   scope :finished, -> { where(status: FINISHED_STATUSES) }
@@ -1706,6 +1717,15 @@ class AgentRun < ApplicationRecord
 
   def rate_limited?
     status == "rate_limited"
+  end
+
+  # True when the run is parked in "rate_limited" with a recovery time set,
+  # meaning it is awaiting an in-place re-queue (StaleRunDetectorJob) rather than
+  # being terminally failed. Callers use this to avoid arming issue-level
+  # re-enqueue (which would mint a duplicate, superseding run) while the existing
+  # run is simply waiting for a runner to free up.
+  def recoverable_rate_limited?
+    rate_limited? && rate_limited_until.present?
   end
 
   # Returns true when the container is retained for post-failure diagnostics.

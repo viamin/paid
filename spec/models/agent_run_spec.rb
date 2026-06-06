@@ -453,6 +453,16 @@ RSpec.describe AgentRun do
       end
     end
 
+    describe ".rate_limited_due" do
+      it "returns only rate_limited runs whose recovery window has elapsed" do
+        due = create(:agent_run, :rate_limited, rate_limited_until: 1.minute.ago)
+        create(:agent_run, :rate_limited, rate_limited_until: 5.minutes.from_now)
+        create(:agent_run, :rate_limited, rate_limited_until: nil)
+
+        expect(described_class.rate_limited_due).to contain_exactly(due)
+      end
+    end
+
     describe ".auth_expired" do
       it "returns only auth_expired runs" do
         auth_expired_run = create(:agent_run, :auth_expired)
@@ -1391,6 +1401,26 @@ RSpec.describe AgentRun do
         agent_run = build(:agent_run, :failed)
 
         expect(agent_run.rate_limited?).to be false
+      end
+    end
+
+    describe "#recoverable_rate_limited?" do
+      it "is true for a rate_limited run with a recovery time set" do
+        agent_run = build(:agent_run, :rate_limited, rate_limited_until: 2.minutes.from_now)
+
+        expect(agent_run.recoverable_rate_limited?).to be true
+      end
+
+      it "is false for a rate_limited run without a recovery time" do
+        agent_run = build(:agent_run, :rate_limited, rate_limited_until: nil)
+
+        expect(agent_run.recoverable_rate_limited?).to be false
+      end
+
+      it "is false for a failed run" do
+        agent_run = build(:agent_run, :failed)
+
+        expect(agent_run.recoverable_rate_limited?).to be false
       end
     end
 

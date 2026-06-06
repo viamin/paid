@@ -60,6 +60,7 @@ class StaleRunDetectorJob < ApplicationJob
     resolved = 0
     unclaimed = 0
     requeued = 0
+    reactivated = 0
     skipped = 0
     recovered_orphans = 0
 
@@ -107,6 +108,21 @@ class StaleRunDetectorJob < ApplicationJob
       )
     end
 
+    rate_limited_due_runs.find_each do |agent_run|
+      case recover_rate_limited_run(agent_run)
+      when :reactivated
+        reactivated += 1
+      when :exhausted
+        resolved += 1
+      end
+    rescue => e
+      Rails.logger.error(
+        message: "stale_run_detector.resolve_failed",
+        agent_run_id: agent_run.id,
+        error: e.message
+      )
+    end
+
     recovered_orphans = recover_orphaned_in_progress_issues
 
     duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - job_started_at) * 1000).round
@@ -115,12 +131,13 @@ class StaleRunDetectorJob < ApplicationJob
       resolved: resolved,
       unclaimed: unclaimed,
       requeued: requeued,
+      reactivated: reactivated,
       skipped: skipped,
       recovered_orphans: recovered_orphans,
       duration_ms: duration_ms
     )
 
-    ProcessRunQueueJob.perform_later if resolved > 0 || unclaimed > 0 || requeued > 0 || recovered_orphans > 0
+    ProcessRunQueueJob.perform_later if resolved > 0 || unclaimed > 0 || requeued > 0 || reactivated > 0 || recovered_orphans > 0
   end
 
   private
@@ -136,10 +153,22 @@ class StaleRunDetectorJob < ApplicationJob
       .where.not(issue_id: nil)
       .select(:issue_id)
 
+    # Issues with a rate-limited run awaiting in-place re-queue are NOT orphaned:
+    # recover_rate_limited_run reactivates them once their recovery window
+    # elapses. rate_limited is not in UNFINISHED_STATUSES, so without this guard
+    # an issue whose run is waiting out a multi-minute circuit-breaker window
+    # would be reset to "new" here and auto-pick would mint a duplicate,
+    # superseding run — the churn this change exists to prevent.
+    awaiting_recovery_issue_ids = AgentRun.rate_limited
+      .where.not(rate_limited_until: nil)
+      .where.not(issue_id: nil)
+      .select(:issue_id)
+
     count = 0
 
     Issue.where(paid_state: "in_progress")
       .where.not(id: active_issue_ids)
+      .where.not(id: awaiting_recovery_issue_ids)
       .where("updated_at < ?", ORPHANED_IN_PROGRESS_AGE.ago)
       .find_each do |issue|
       issue.with_lock do
@@ -171,6 +200,10 @@ class StaleRunDetectorJob < ApplicationJob
   def recoverable_orphaned_issue?(issue)
     return false unless issue.paid_state == "in_progress"
     return false if AgentRun.where(issue: issue, status: AgentRun::UNFINISHED_STATUSES).exists?
+    # A rate-limited run with a recovery time is awaiting in-place re-queue, not
+    # orphaned (defends against a sibling becoming due between the query and the
+    # locked re-check).
+    return false if AgentRun.rate_limited.where(issue: issue).where.not(rate_limited_until: nil).exists?
     return false if orphaned_enhance_issue_recheck?(issue)
 
     true
@@ -212,6 +245,109 @@ class StaleRunDetectorJob < ApplicationJob
   # Runs stuck in "paused" whose pause timestamp is before the threshold.
   def stale_paused_runs(threshold)
     AgentRun.paused.where("paused_at < ?", threshold)
+  end
+
+  # Runs parked in "rate_limited" (runner unavailable / transient infra) whose
+  # recovery window has elapsed. Nothing else re-queues these, so without this
+  # pass "rate_limited" is effectively terminal.
+  def rate_limited_due_runs
+    AgentRun.rate_limited_due
+  end
+
+  # True when another active (queued/running/paused) run already holds either of
+  # this run's unique slots. Mirrors both idx_agent_runs_unique_active_issue and
+  # idx_agent_runs_unique_active_pr — a run can carry both an issue_id and a
+  # source_pull_request_number, so check each present slot independently rather
+  # than only the first.
+  def active_sibling_exists?(agent_run)
+    scope = AgentRun.where(project_id: agent_run.project_id, goal: agent_run.goal,
+      status: AgentRun::UNFINISHED_STATUSES).where.not(id: agent_run.id)
+    return true if agent_run.issue_id && scope.where(issue_id: agent_run.issue_id).exists?
+    return true if agent_run.source_pull_request_number &&
+      scope.where(source_pull_request_number: agent_run.source_pull_request_number).exists?
+
+    false
+  end
+
+  # Re-queues a rate-limited run whose recovery window has passed, in place,
+  # without minting a new run (the existing run keeps the issue's active-run
+  # slot, so no superseding duplicate is created). The run has no live workflow
+  # or container at this point, so no cancellation/cleanup is required.
+  #
+  # Returns :reactivated when re-queued, :exhausted when the requeue budget is
+  # spent (left terminally failed so the problem surfaces), or :skip otherwise.
+  def recover_rate_limited_run(agent_run)
+    agent_run.with_lock do
+      agent_run.reload
+      return :skip unless agent_run.status == "rate_limited"
+      return :skip if agent_run.rate_limited_until.blank? || agent_run.rate_limited_until > Time.current
+
+      if agent_run.stale_requeue_count >= AgentRun::MAX_RATE_LIMITED_REQUEUES
+        agent_run.update!(
+          status: "failed",
+          completed_at: Time.current,
+          error_message: "Runner unavailable: retry limit reached (#{AgentRun::MAX_RATE_LIMITED_REQUEUES}); #{agent_run.error_message}".truncate(500),
+          duration_seconds: agent_run.duration
+        )
+        agent_run.log!("system",
+          "Rate-limited run retry limit reached (#{AgentRun::MAX_RATE_LIMITED_REQUEUES}), staying failed")
+        if (issue = agent_run.issue)
+          # Review-goal failures restore "completed" (the PR work succeeded; only
+          # the review follow-up failed) so auto-pick/PR scanning is not blocked —
+          # consistent with resolve_stale_run and MarkAgentRunFailedActivity.
+          target_state = agent_run.review_goal? ? "completed" : "failed"
+          issue.update!(paid_state: target_state) unless issue.paid_state == target_state
+        end
+        Rails.logger.warn(
+          message: "stale_run_detector.rate_limited_exhausted",
+          agent_run_id: agent_run.id,
+          project_id: agent_run.project_id,
+          stale_requeue_count: agent_run.stale_requeue_count
+        )
+        return :exhausted
+      end
+
+      # If another active run already owns this issue/PR slot
+      # (idx_agent_runs_unique_active_*), re-queuing would violate the unique
+      # index. Leave this run terminally failed; the active sibling carries the
+      # work. Check before updating — a constraint violation here would abort the
+      # surrounding with_lock transaction and prevent in-place recovery.
+      if active_sibling_exists?(agent_run)
+        agent_run.update!(
+          status: "failed",
+          completed_at: Time.current,
+          error_message: "Superseded by another active run during recovery".truncate(500),
+          duration_seconds: agent_run.duration
+        )
+        log_skip(agent_run, "active_sibling_exists")
+        return :skip
+      end
+
+      agent_run.update!(
+        status: "queued",
+        stale_requeue_count: agent_run.stale_requeue_count + 1,
+        stale_skip_count: 0,
+        started_at: nil,
+        completed_at: nil,
+        duration_seconds: nil,
+        rate_limited_until: nil,
+        temporal_workflow_id: nil,
+        temporal_run_id: nil,
+        service_environment: nil,
+        container_id: nil,
+        service_container_ids: []
+      )
+      agent_run.log!("system",
+        "Rate-limited run re-queued by stale run detector " \
+        "(attempt #{agent_run.stale_requeue_count}/#{AgentRun::MAX_RATE_LIMITED_REQUEUES})")
+      Rails.logger.info(
+        message: "stale_run_detector.reactivated_rate_limited_run",
+        agent_run_id: agent_run.id,
+        project_id: agent_run.project_id,
+        stale_requeue_count: agent_run.stale_requeue_count
+      )
+      :reactivated
+    end
   end
 
   # Attempts to unclaim a stale claimed queued run.

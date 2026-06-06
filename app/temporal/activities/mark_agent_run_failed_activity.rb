@@ -34,8 +34,21 @@ module Activities
       # marking it "failed" — the underlying PR work succeeded; only the
       # follow-up review run failed. Using "completed" keeps auto-pick
       # unblocked and lets the scanner re-evaluate the PR on the next cycle.
+      #
+      # Recoverable rate-limited runs (runner unavailable / transient infra,
+      # awaiting an in-place re-queue by StaleRunDetectorJob) keep the issue
+      # "in_progress": flipping it to "failed" would arm the auto-pick re-enqueue
+      # pump and mint a duplicate run that supersedes this one — the churn loop
+      # that caused hundreds of wasted runs per issue.
       if agent_run.issue && agent_run.status.in?(AgentRun::FAILURE_STATUSES)
-        target_state = agent_run.review_goal? ? "completed" : "failed"
+        target_state =
+          if agent_run.recoverable_rate_limited?
+            "in_progress"
+          elsif agent_run.review_goal?
+            "completed"
+          else
+            "failed"
+          end
         if agent_run.issue.paid_state != target_state
           agent_run.issue.update!(paid_state: target_state)
         end
