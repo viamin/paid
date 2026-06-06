@@ -35,6 +35,8 @@ module Runners
       )
     end
 
+    private
+
     def build_provider_routing(project)
       case data_classification_for(project)
       when "open", "internal"
@@ -47,8 +49,6 @@ module Runners
         { data_collection: "allow" }
       end
     end
-
-    private
 
     def data_classification_for(project)
       return DEFAULT_DATA_CLASSIFICATION unless project&.respond_to?(:data_classification)
