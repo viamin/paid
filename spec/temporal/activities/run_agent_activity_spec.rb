@@ -824,6 +824,21 @@ RSpec.describe Activities::RunAgentActivity do
       )
     end
 
+    it "raises instead of falling back to an unpinned runtime when no free model resolves for openrouter_free" do
+      api_key = create(:runner_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret")
+      free_model = create(:llm_model, model_id: "deepseek/deepseek-v4-flash:free", provider: "deepseek", tier: "mid")
+      run = build_openrouter_free_run(project: project, model: free_model, data_classification: "internal")
+      runner = create_openrouter_free_runner(user: user, api_key: api_key, model: free_model.model_id)
+
+      allow(Runners::ResolveTierModel).to receive(:call).and_return(
+        Runners::ResolveTierModel::Result.new(error: "no model configured")
+      )
+
+      expect do
+        activity.send(:selected_runner_runtime, runner, user, run)
+      end.to raise_error(Activities::RunAgentActivity::RunnerExecutionError, /no resolvable free model/)
+    end
+
     it "ignores Paid model selection when Codex subscription auth is referenced by bare runner key" do
       create(:provider, user: user, provider_key: "codex", auth_type: "subscription")
       create(:model_selection, agent_run: agent_run, llm_model: create(:llm_model, :openai, model_id: "gpt-4o", tier: "mid"))

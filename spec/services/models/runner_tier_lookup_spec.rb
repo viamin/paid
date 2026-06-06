@@ -36,6 +36,9 @@ module Models
 
       def by_provider(provider)
       end
+
+      def free
+      end
     end
 
     class Dummy
@@ -132,6 +135,21 @@ RSpec.describe Models::RunnerTierLookup, :no_db do
       allow(scope).to receive(:by_provider).with("minimax").and_return(minimax_scope)
 
       expect(dummy.compatible_scope(scope)).to eq(minimax_scope)
+    end
+
+    it "constrains openrouter_free runners to the free pricing tier" do
+      free_scope = instance_double(Models::RunnerTierLookupSpec::ActiveScopeLike)
+      runner = instance_double(
+        Models::RunnerTierLookupSpec::RunnerLike,
+        runner_key: "openrouter_free",
+        tier_model_ids: {},
+        direct_outbound_llm_model_provider: nil
+      )
+      dummy = lookup_host_class.new(instance_double(Models::RunnerTierLookupSpec::AgentRunLike, runner: runner))
+
+      allow(scope).to receive(:free).and_return(free_scope)
+
+      expect(dummy.compatible_scope(scope)).to eq(free_scope)
     end
   end
 end

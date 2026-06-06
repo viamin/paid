@@ -730,7 +730,15 @@ module Activities
 
       resolved_model = resolve_tier_model_for(runner_candidate, agent_run, user)
       model_id = resolved_model&.model_id
-      if runner_entry&.runner_key == "openrouter_free" && model_id.present?
+      if runner_entry&.runner_key == "openrouter_free"
+        # Fail loudly rather than fall through to an unpinned opencode runtime.
+        # Without a resolvable free model, HarnessExecutionPlan would plan a
+        # plain opencode run that silently leaves the openrouter_free contract.
+        if model_id.blank?
+          raise RunnerExecutionError,
+            "openrouter_free runner #{runner_entry.id} has no resolvable free model for this run"
+        end
+
         return runner_entry.openrouter_free_runner_runtime(project: agent_run&.project, model_id: model_id)
       end
 
