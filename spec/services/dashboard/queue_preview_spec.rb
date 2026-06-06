@@ -3,6 +3,14 @@
 require "rails_helper"
 
 RSpec.describe Dashboard::QueuePreview do
+  around do |example|
+    original_store = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    example.run
+  ensure
+    Rails.cache = original_store
+  end
+
   describe ".call" do
     it "assigns sequential positions from the visible snapshot order" do
       account = create(:account)
@@ -44,6 +52,24 @@ RSpec.describe Dashboard::QueuePreview do
 
       expect(run.instance_variable_defined?(:@source_pull_request_record)).to be(true)
       expect(run.source_pull_request_record).to eq(pull_request)
+    end
+
+    it "refreshes the cached snapshot after the dashboard version changes" do
+      account = create(:account)
+      user = create(:user, account: account)
+      project = create(:project, account: account, created_by: user, owner: "octo", repo: "alpha")
+
+      create(:agent_run, :queued, :manual, project:, created_at: 2.minutes.ago)
+      first = described_class.call(user:)
+
+      create(:agent_run, :queued, :manual, project:, created_at: 1.minute.ago)
+      cached = described_class.call(user:)
+      Dashboard::CacheVersion.bump(account, scope: Dashboard::CacheVersion::LISTS_SCOPE)
+      refreshed = described_class.call(user:)
+
+      expect(first.size).to eq(1)
+      expect(cached.size).to eq(1)
+      expect(refreshed.size).to eq(2)
     end
   end
 end
