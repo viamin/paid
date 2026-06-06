@@ -83,6 +83,23 @@ module Activities
     DEFAULT_REVIEW_GOAL_IDLE_TIMEOUT = 300  # 5 minutes without output = stuck
     DEFAULT_CREATE_PR_IDLE_TIMEOUT = 360   # 6 minutes without output = stuck
     DEFAULT_AGENT_STARTUP_TIMEOUT = 360    # 6 minutes without first output = stuck
+
+    # Per-runner startup timeouts for create_pr goals, tuned from observed data.
+    # Completed run p90s: claude_code 28.5m, codex 42.6m, kilocode 38.7m,
+    # opencode 48.2m, pi 48.2m. Startup timeout must be long enough for the
+    # runner to produce first output on complex tasks.
+    #
+    # Only applied for create_pr goals where the data supports longer windows.
+    # Other goals (review, issue) retain the original idle-timeout-based
+    # startup behavior since they have not shown the same timeout pathology.
+    CREATE_PR_RUNNER_STARTUP_TIMEOUTS = {
+      "claude_code" => 1800, # 30 min — p90 of completed is 28.5 min
+      "codex"       => 2700, # 45 min — p90 of completed is 42.6 min
+      "kilocode"    => 2400, # 40 min — p90 of completed is 38.7 min
+      "opencode"    => 3000, # 50 min — p90 of completed is 48.2 min
+      "pi"          => 3000  # 50 min — p90 of completed is 48.2 min
+    }.freeze
+
     PREFLIGHT_TIMEOUT_SECONDS = 10
     DIRECT_OUTBOUND_PREFLIGHT_TIMEOUT_SECONDS = 30
     PREFLIGHT_TIMEOUT_CIRCUIT_BREAKER_THRESHOLD = 3
@@ -862,11 +879,14 @@ module Activities
       user_settings&.max_execution_seconds || agent_run.project.max_execution_seconds
     end
 
-    def effective_startup_timeout(heartbeat:, effective_idle_timeout:, effective_timeout:)
-      startup_base =
+    def effective_startup_timeout(agent_run:, heartbeat:, effective_idle_timeout:, effective_timeout:)
+      startup_base = if agent_run.create_pr_goal?
+        CREATE_PR_RUNNER_STARTUP_TIMEOUTS.fetch(agent_run.agent_type, DEFAULT_AGENT_STARTUP_TIMEOUT)
+      else
         heartbeat.idle_timeout_for(effective_idle_timeout) ||
-        effective_idle_timeout ||
-        DEFAULT_AGENT_STARTUP_TIMEOUT
+          effective_idle_timeout ||
+          DEFAULT_AGENT_STARTUP_TIMEOUT
+      end
 
       [ startup_base, effective_timeout ].compact.min
     end
@@ -1164,6 +1184,7 @@ module Activities
         user_settings&.create_pr_idle_timeout_seconds || DEFAULT_CREATE_PR_IDLE_TIMEOUT
       end
       startup_timeout = effective_startup_timeout(
+        agent_run: agent_run,
         heartbeat: heartbeat,
         effective_idle_timeout: effective_idle_timeout,
         effective_timeout: effective_timeout

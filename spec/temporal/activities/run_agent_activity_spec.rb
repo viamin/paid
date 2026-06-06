@@ -2722,7 +2722,7 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.runners_attempted.first["diagnostics"]).to include(
           "timeout_type" => "idle",
           "effective_timeout_seconds" => 3600,
-          "startup_timeout_seconds" => 360,
+          "startup_timeout_seconds" => described_class::CREATE_PR_RUNNER_STARTUP_TIMEOUTS["claude_code"],
           "idle_timeout_seconds" => 360,
           "heartbeat_supported" => true
         )
@@ -3124,7 +3124,7 @@ expect(container_service).to receive(:execute).with(
     end
 
     context "when goal is create_pr" do
-      it "uses the default agent timeout with create_pr idle_timeout" do
+      it "uses the default agent timeout with runner-specific startup_timeout and create_pr idle_timeout" do
         project.update!(max_execution_seconds: 86_400)
         allow(container_service).to receive(:execute).and_return(exec_success)
         allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
@@ -3133,7 +3133,7 @@ expect(container_service).to receive(:execute).with(
           anything,
           hash_including(
             timeout: AGENT_TIMEOUT_DEFAULT,
-            startup_timeout: described_class::DEFAULT_AGENT_STARTUP_TIMEOUT,
+            startup_timeout: described_class::CREATE_PR_RUNNER_STARTUP_TIMEOUTS["claude_code"],
             idle_timeout: described_class::DEFAULT_CREATE_PR_IDLE_TIMEOUT
           )
         ).and_return(exec_success)
@@ -3187,7 +3187,7 @@ expect(container_service).to receive(:execute).with(
           anything,
           hash_including(
             timeout: AGENT_TIMEOUT_DEFAULT,
-            startup_timeout: described_class::DEFAULT_AGENT_STARTUP_TIMEOUT,
+            startup_timeout: described_class::CREATE_PR_RUNNER_STARTUP_TIMEOUTS["kilocode"],
             idle_timeout: described_class::DEFAULT_CREATE_PR_IDLE_TIMEOUT,
             heartbeat_path: "/tmp/paid-heartbeat-test/.paid-heartbeat"
           )
@@ -3206,7 +3206,7 @@ expect(container_service).to receive(:execute).with(
           anything,
           hash_including(
             timeout: AGENT_TIMEOUT_DEFAULT,
-            startup_timeout: described_class::DEFAULT_AGENT_STARTUP_TIMEOUT,
+            startup_timeout: described_class::CREATE_PR_RUNNER_STARTUP_TIMEOUTS["opencode"],
             idle_timeout: described_class::DEFAULT_CREATE_PR_IDLE_TIMEOUT,
             heartbeat_path: "/tmp/paid-heartbeat-test/.paid-heartbeat"
           )
@@ -3228,7 +3228,7 @@ expect(container_service).to receive(:execute).with(
           anything,
           hash_including(
             timeout: AGENT_TIMEOUT_DEFAULT,
-            startup_timeout: expected_idle,
+            startup_timeout: described_class::CREATE_PR_RUNNER_STARTUP_TIMEOUTS["codex"],
             idle_timeout: expected_idle,
             heartbeat_path: "/tmp/paid-heartbeat-test/.paid-heartbeat"
           )
@@ -3237,7 +3237,7 @@ expect(container_service).to receive(:execute).with(
         activity.execute(agent_run_id: agent_run.id)
       end
 
-      it "honors longer user-configured startup windows" do
+      it "uses runner-specific startup timeout regardless of user idle timeout" do
         agent_run.update!(agent_type: "codex")
         project.update!(max_execution_seconds: 86_400)
         user.settings.update!(create_pr_idle_timeout_seconds: 420)
@@ -3245,14 +3245,14 @@ expect(container_service).to receive(:execute).with(
         allow(container_service).to receive(:execute).and_return(exec_success)
         allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
 
-        expected_startup = 420 * Containers::HeartbeatSetup::COARSE_HEARTBEAT_IDLE_TIMEOUT_MULTIPLIER
+        expected_idle = 420 * Containers::HeartbeatSetup::COARSE_HEARTBEAT_IDLE_TIMEOUT_MULTIPLIER
 
         expect(container_service).to receive(:execute).with(
           anything,
           hash_including(
             timeout: AGENT_TIMEOUT_DEFAULT,
-            startup_timeout: expected_startup,
-            idle_timeout: expected_startup
+            startup_timeout: described_class::CREATE_PR_RUNNER_STARTUP_TIMEOUTS["codex"],
+            idle_timeout: expected_idle
           )
         ).and_return(exec_success)
 
@@ -3269,7 +3269,7 @@ expect(container_service).to receive(:execute).with(
           anything,
           hash_including(
             timeout: AGENT_TIMEOUT_DEFAULT,
-            startup_timeout: described_class::DEFAULT_AGENT_STARTUP_TIMEOUT,
+            startup_timeout: described_class::CREATE_PR_RUNNER_STARTUP_TIMEOUTS["claude_code"],
             idle_timeout: described_class::DEFAULT_CREATE_PR_IDLE_TIMEOUT,
             heartbeat_path: Containers::HeartbeatSetup::CONTAINER_HEARTBEAT_PATH
           )
