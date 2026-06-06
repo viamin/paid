@@ -11,13 +11,17 @@ module RunnerSupport
   #
   # NOTE: Inclusion here does NOT mean the runner's CLI is installed in the
   # agent Docker container. For container execution, see CONTAINER_EXECUTABLE_RUNNER_KEYS.
-  APP_RUNNER_KEYS = %w[claude cursor codex copilot aider gemini opencode kilocode pi].freeze
+  APP_RUNNER_KEYS = %w[claude cursor codex copilot aider gemini opencode openrouter_free kilocode pi].freeze
 
   # Runner keys whose CLIs are actually installed in the agent Docker container
   # and can execute repository-changing agent tasks. GitHub Copilot CLI is
   # included via its --autopilot mode which enables fully autonomous,
   # non-interactive agent execution.
-  CONTAINER_EXECUTABLE_RUNNER_KEYS = Set.new(%w[aider claude codex copilot cursor gemini kilocode opencode pi]).freeze
+  CONTAINER_EXECUTABLE_RUNNER_KEYS = Set.new(%w[aider claude codex copilot cursor gemini kilocode opencode openrouter_free pi]).freeze
+
+  APP_RUNNER_TO_HARNESS_KEY = {
+    "openrouter_free" => "opencode"
+  }.freeze
 
   # Upper bound on how far in the future a parsed rate-limit reset is trusted.
   #
@@ -51,7 +55,7 @@ module RunnerSupport
     @supported_runner_keys_set ||= begin
       registered = AgentHarness.providers
       APP_RUNNER_KEYS.each_with_object(Set.new) do |runner_key, set|
-        metadata = AgentHarness.provider_metadata(runner_key.to_sym)
+        metadata = AgentHarness.provider_metadata(harness_lookup_key_for(runner_key))
         canonical = metadata&.dig(:canonical_provider)
         set << runner_key if canonical && registered.include?(canonical)
       rescue AgentHarness::ConfigurationError, KeyError
@@ -86,7 +90,7 @@ module RunnerSupport
   end
 
   def harness_runner_key_for(runner_key)
-    metadata = AgentHarness.provider_metadata(runner_key.to_sym)
+    metadata = AgentHarness.provider_metadata(harness_lookup_key_for(runner_key))
     metadata.fetch(:canonical_provider).to_s
   rescue KeyError
     raise AgentHarness::ConfigurationError,
@@ -104,6 +108,11 @@ module RunnerSupport
 
     runner_key.to_s
   end
+
+  def harness_lookup_key_for(runner_key)
+    APP_RUNNER_TO_HARNESS_KEY.fetch(runner_key.to_s, runner_key.to_s).to_sym
+  end
+  private_class_method :harness_lookup_key_for
 
   def api_service_types
     API_SERVICE_TYPES
@@ -208,7 +217,8 @@ module RunnerSupport
     "cursor" => "anthropic",
     "codex" => "openai",
     "aider" => "anthropic",
-    "gemini" => "google"
+    "gemini" => "google",
+    "openrouter_free" => "openrouter"
   }.freeze
 
   # Reverse mapping: API service type → harness runner key.
@@ -217,7 +227,7 @@ module RunnerSupport
   # names are resolved via the registry at load time.
   API_SERVICE_TYPE_TO_HARNESS_KEY = RUNNER_API_SERVICE_TYPE
     .each_with_object({}) { |(runner_key, service_type), map| map[service_type] ||= runner_key }
-    .transform_values { |pk| AgentHarness.provider_metadata(pk.to_sym)[:canonical_provider].to_s }
+    .transform_values { |pk| AgentHarness.provider_metadata(harness_lookup_key_for(pk))[:canonical_provider].to_s }
     .freeze
 
   # Maps runner keys to their upstream proxy API key name (used by
@@ -273,6 +283,10 @@ module RunnerSupport
   # API. Keyed by runner_key, same pattern as SUBSCRIPTION_AUTH_UNSET_VARS.
   HARNESS_RUNTIME_UNSET_VARS = {
     "opencode" => %w[
+      OPENAI_HEADER_X_AGENT_RUN_ID
+      OPENAI_HEADER_X_PROXY_TOKEN
+    ].freeze,
+    "openrouter_free" => %w[
       OPENAI_HEADER_X_AGENT_RUN_ID
       OPENAI_HEADER_X_PROXY_TOKEN
     ].freeze

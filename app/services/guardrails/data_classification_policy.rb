@@ -76,7 +76,11 @@ module Guardrails
     end
 
     def openrouter_routed?
-      model&.catalog_source == "openrouter_sync"
+      # The openrouter_free runner always sends the request through OpenRouter
+      # with data_collection/zdr set (see Runners::FreeModelExecutionPlan),
+      # regardless of the selected model's catalog_source — so treat it as
+      # OpenRouter-routed even for plain DeepSeek/Qwen/etc rows.
+      runner_key == "openrouter_free" || model&.catalog_source == "openrouter_sync"
     end
 
     def runner_key

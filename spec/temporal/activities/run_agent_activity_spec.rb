@@ -806,6 +806,39 @@ RSpec.describe Activities::RunAgentActivity do
       expect(runtime).to have_attributes(model: "moonshotai/kimi-k2-0905", api_provider: nil)
     end
 
+    it "builds OpenRouter provider routing for openrouter_free runs from project classification" do
+      api_key = create(:runner_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret")
+      free_model = create(:llm_model, model_id: "deepseek/deepseek-v4-flash:free", provider: "deepseek", tier: "mid", pricing_tier: "free")
+      restricted_run = build_openrouter_free_run(project: project, model: free_model, data_classification: "restricted")
+      runner = create_openrouter_free_runner(user: user, api_key: api_key, model: free_model.model_id)
+
+      runtime = activity.send(:selected_runner_runtime, runner, user, restricted_run)
+
+      expect(runtime.model).to eq("deepseek/deepseek-v4-flash:free")
+      expect(runtime.env).to include(
+        "OPENROUTER_API_KEY" => "sk-openrouter-secret",
+        "OPENAI_BASE_URL" => "https://openrouter.ai/api/v1"
+      )
+      expect(runtime.metadata[:config]["provider"]).to eq(
+        { "openrouter" => { data_collection: "deny", zdr: true } }
+      )
+    end
+
+    it "raises instead of falling back to an unpinned runtime when no free model resolves for openrouter_free" do
+      api_key = create(:runner_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret")
+      free_model = create(:llm_model, model_id: "deepseek/deepseek-v4-flash:free", provider: "deepseek", tier: "mid", pricing_tier: "free")
+      run = build_openrouter_free_run(project: project, model: free_model, data_classification: "internal")
+      runner = create_openrouter_free_runner(user: user, api_key: api_key, model: free_model.model_id)
+
+      allow(Runners::ResolveTierModel).to receive(:call).and_return(
+        Runners::ResolveTierModel::Result.new(error: "no model configured")
+      )
+
+      expect do
+        activity.send(:selected_runner_runtime, runner, user, run)
+      end.to raise_error(Activities::RunAgentActivity::RunnerExecutionError, /no resolvable free model/)
+    end
+
     it "ignores Paid model selection when Codex subscription auth is referenced by bare runner key" do
       create(:provider, user: user, provider_key: "codex", auth_type: "subscription")
       create(:model_selection, agent_run: agent_run, llm_model: create(:llm_model, :openai, model_id: "gpt-4o", tier: "mid"))
@@ -1484,6 +1517,27 @@ RSpec.describe Activities::RunAgentActivity do
   end
 
   alias_method :create_opencode_provider_entry, :create_opencode_runner_entry
+
+  def create_openrouter_free_runner(user:, api_key:, model:)
+    create(
+      :runner,
+      user: user,
+      runner_key: "openrouter_free",
+      auth_type: "api_key",
+      provider_api_key: api_key,
+      tier_model_ids: LlmModel::TIERS.index_with { model }
+    ).tap do |runner|
+      runner.update!(tier_models: LlmModel::TIERS.index_with { { "model_id" => model, "provider_id" => runner.id } })
+    end
+  end
+
+  def build_openrouter_free_run(project:, model:, data_classification:)
+    run = create(:agent_run, :with_git_context, project: project, issue: create(:issue, project: project))
+    project_stub = Struct.new(:data_classification).new(data_classification)
+    selection_stub = Struct.new(:tier, :llm_model).new("mid", model)
+    allow(run).to receive_messages(project: project_stub, model_selection: selection_stub)
+    run
+  end
 
   def create_kilocode_runner_entry(user:, api_key:, name:, model:, api_provider:)
     create(
