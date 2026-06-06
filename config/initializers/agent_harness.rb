@@ -1,8 +1,7 @@
 # frozen_string_literal: true
 
+require "digest"
 require Rails.root.join("lib/runner_support").to_s
-
-agent_harness_version = Gem.loaded_specs.fetch("agent-harness").version
 
 # Backport Pi API-key runtime support that agent-harness 0.18.1 does not yet
 # expose consistently. Pi itself supports API keys via env vars or auth.json,
@@ -16,13 +15,19 @@ agent_harness_version = Gem.loaded_specs.fetch("agent-harness").version
 # - keep credentials off the command line (Pi supports --api-key, but that
 #   would leak raw secrets via process args/logging)
 module PaidAgentHarnessPiRuntimePatch
+  PI_AUTH_JSON_PATH = "/home/agent/.pi/agent/auth.json"
+
   # Derived lazily via a method so that Provider (an autoloaded model) is
   # guaranteed to be available regardless of initializer load order.
   def pi_api_key_env_vars = Provider::PI_API_PROVIDERS.values.map { |c| c[:env_var] }.freeze
 
-  def api_key_env_var_names = pi_api_key_env_vars
+  def api_key_env_var_names
+    merge_string_lists(super, pi_api_key_env_vars)
+  end
 
-  def subscription_unset_vars = pi_api_key_env_vars
+  def subscription_unset_vars
+    merge_string_lists(super, pi_api_key_env_vars)
+  end
 
   protected
 
@@ -31,6 +36,7 @@ module PaidAgentHarnessPiRuntimePatch
     runtime = options[:provider_runtime]
     auth_entry = runtime&.metadata&.dig("paid_pi_auth_entry")
     return base unless auth_entry.is_a?(Hash)
+    return base if preparation_writes_pi_auth_json?(base)
 
     provider = auth_entry["provider"].to_s.strip
     api_key = auth_entry["api_key"].to_s
@@ -46,7 +52,7 @@ module PaidAgentHarnessPiRuntimePatch
     pi_auth = AgentHarness::ExecutionPreparation.new(
       file_writes: [
         {
-          path: "/home/agent/.pi/agent/auth.json",
+          path: PI_AUTH_JSON_PATH,
           content: auth_json,
           mode: 0o600
         }
@@ -64,21 +70,45 @@ module PaidAgentHarnessPiRuntimePatch
 
     AgentHarness::ExecutionPreparation.new(file_writes: base.file_writes + extra.file_writes)
   end
+
+  def merge_string_lists(*lists)
+    lists
+      .compact
+      .flat_map { |list| Array(list) }
+      .uniq
+      .freeze
+  end
+
+  def preparation_writes_pi_auth_json?(preparation)
+    Array(preparation&.file_writes).any? { |write| write.path == PI_AUTH_JSON_PATH }
+  end
 end
 
-# Drop this patch once agent-harness natively materialises Pi API-key auth.
-# Adjust the version ceiling to whichever harness release ships that support.
-# TODO(#2077): remove when agent-harness >= 0.19.0 ships native Pi API-key support
-if agent_harness_version < Gem::Version.new("0.19.0")
-  AgentHarness::Providers::Pi.prepend(PaidAgentHarnessPiRuntimePatch) unless
-    AgentHarness::Providers::Pi < PaidAgentHarnessPiRuntimePatch
-end
+# Keep this patch loaded until agent-harness ships native Pi API-key auth.
+# This no longer uses a speculative version ceiling: 0.20.0 proved that turning
+# the patch off on an assumed release boundary can silently break every Pi
+# API-key runner. The overrides self-deactivate instead:
+# - env-var helpers union with upstream values once the gem adds them
+# - auth.json materialization skips itself when upstream already prepares that
+#   file for the request
+# TODO(#2077): remove once native Pi API-key support is confirmed upstream.
+AgentHarness::Providers::Pi.prepend(PaidAgentHarnessPiRuntimePatch) unless
+  AgentHarness::Providers::Pi < PaidAgentHarnessPiRuntimePatch
 
-# Suppress Claude CLI .mcp.json auto-discovery when Paid did not explicitly
-# configure any MCP servers. We pass an empty {"mcpServers": {}} config via
-# --mcp-config so the CLI emits only the requested JSON envelope.
-# TODO(#2365): remove when agent-harness >= 0.19.0 ships native MCP suppression
-module PaidAgentHarnessAnthropicMcpSuppressionPatch
+# Route every explicit Claude MCP config through ExecutionPreparation so the file
+# is written inside the agent container at the same path passed to
+# `--mcp-config=...`.
+#
+# This covers both:
+# - the empty-server suppression path, where Paid must pass {"mcpServers": {}}
+#   explicitly to disable Claude's .mcp.json auto-discovery
+# - the configured-server path, where agent-harness otherwise writes a host-side
+#   tempfile during plan construction and returns a path that does not exist
+#   inside the agent container
+#
+# Keep this patch in place until agent-harness materializes MCP config files for
+# all Anthropic execution paths via ExecutionPreparation (or equivalent).
+module PaidAgentHarnessAnthropicMcpConfigMaterializationPatch
   def send_message(prompt:, **options)
     super(prompt:, **with_explicit_empty_mcp_servers(options))
   end
@@ -91,23 +121,26 @@ module PaidAgentHarnessAnthropicMcpSuppressionPatch
 
   def build_command(prompt, options)
     command = super
-    return command unless suppress_mcp_autodiscovery?(options)
+    return command unless materialize_mcp_config?(options)
 
-    plan = empty_mcp_config_plan(options)
-    command[0...-1] + [ "--mcp-config", plan.fetch(:path), command.last ]
+    mcp_flag = "--mcp-config=#{mcp_config_plan(options).fetch(:path)}"
+    existing_mcp_flag = command.find { |part| part.to_s.start_with?("--mcp-config=") }
+    return command[0...-1] + [ mcp_flag, command.last ] unless existing_mcp_flag
+
+    command.map { |part| part == existing_mcp_flag ? mcp_flag : part }
   end
 
   def build_execution_preparation(options)
     preparation = super
-    return preparation unless suppress_mcp_autodiscovery?(options)
+    return preparation unless materialize_mcp_config?(options)
 
     merge_execution_preparations(
       preparation,
       AgentHarness::ExecutionPreparation.new(
         file_writes: [
           {
-            path: empty_mcp_config_plan(options).fetch(:path),
-            content: empty_mcp_config_plan(options).fetch(:content),
+            path: mcp_config_plan(options).fetch(:path),
+            content: mcp_config_plan(options).fetch(:content),
             mode: 0o600
           }
         ]
@@ -123,15 +156,21 @@ module PaidAgentHarnessAnthropicMcpSuppressionPatch
     options.merge(mcp_servers: [])
   end
 
-  def suppress_mcp_autodiscovery?(options)
-    options.key?(:mcp_servers) && Array(options[:mcp_servers]).empty?
+  def materialize_mcp_config?(options)
+    options.key?(:mcp_servers)
   end
 
-  def empty_mcp_config_plan(options)
-    options[:_paid_claude_empty_mcp_config] ||= {
-      path: File.join(Dir.tmpdir, "agent_harness_claude_mcp_#{SecureRandom.hex(8)}.json"),
-      content: JSON.generate(AgentHarness::McpConfigTranslator.for_provider(mcp_provider_key, []))
-    }
+  def mcp_config_plan(options)
+    options[:_paid_claude_mcp_config] ||= begin
+      content = JSON.generate(
+        AgentHarness::McpConfigTranslator.for_provider(mcp_provider_key, Array(options[:mcp_servers]))
+      )
+
+      {
+        path: File.join(Dir.tmpdir, "agent_harness_claude_mcp_#{Digest::SHA256.hexdigest(content).first(16)}.json"),
+        content: content
+      }
+    end
   end
 
   def merge_execution_preparations(base, extra)
@@ -142,10 +181,41 @@ module PaidAgentHarnessAnthropicMcpSuppressionPatch
   end
 end
 
-if agent_harness_version < Gem::Version.new("0.19.0")
-  AgentHarness::Providers::Anthropic.prepend(PaidAgentHarnessAnthropicMcpSuppressionPatch) unless
-    AgentHarness::Providers::Anthropic < PaidAgentHarnessAnthropicMcpSuppressionPatch
+AgentHarness::Providers::Anthropic.prepend(PaidAgentHarnessAnthropicMcpConfigMaterializationPatch) unless
+  AgentHarness::Providers::Anthropic < PaidAgentHarnessAnthropicMcpConfigMaterializationPatch
+
+# Force Claude's --mcp-config flag into the `--flag=value` form.
+#
+# The Claude CLI declares `--mcp-config <configs...>` as a *variadic* option, so
+# the space-separated form ("--mcp-config", path) that agent-harness emits right
+# before the positional prompt makes the CLI greedily consume the prompt as a
+# second config path:
+#
+#   claude ... --mcp-config /tmp/cfg.json "Reply with exactly OK."
+#   => Error: Invalid MCP configuration:
+#      MCP config file not found: /workspace/Reply with exactly OK.
+#
+# The `=value` form captures exactly one path and leaves the prompt as a clean
+# positional argument. This covers the with-servers path on 0.18.2 AND every
+# invocation on >= 0.19.0, where the gem always passes --mcp-config (the #225
+# suppression fix) but still with the buggy space-form (confirmed through v0.20.0).
+#
+# Intentionally NOT folded under the < 0.19.0 suppression gate above: that gate
+# drops exactly when the gem starts emitting this flag everywhere, which is when
+# the bug bites hardest. The guard below makes this a no-op once the gem emits a
+# single equals-form token, so it self-deactivates and is safe to leave in place.
+# TODO(#2435): remove once agent-harness ships the =value form (viamin/agent-harness#229).
+module PaidAgentHarnessAnthropicMcpConfigFlagFormPatch
+  def build_mcp_flags(mcp_servers, working_dir: nil)
+    flags = super
+    return flags unless flags.length == 2 && flags.first == "--mcp-config"
+
+    [ "--mcp-config=#{flags.last}" ]
+  end
 end
+
+AgentHarness::Providers::Anthropic.prepend(PaidAgentHarnessAnthropicMcpConfigFlagFormPatch) unless
+  AgentHarness::Providers::Anthropic < PaidAgentHarnessAnthropicMcpConfigFlagFormPatch
 
 # Backport embedding support until agent-harness ships a native public API.
 # Keep this version-gated and narrow so Paid can switch back to upstream
@@ -262,7 +332,7 @@ module PaidAgentHarnessEmbeddingPatch
   end
 end
 
-if agent_harness_version < Gem::Version.new("0.19.0") && !AgentHarness.respond_to?(:embed)
+unless AgentHarness.respond_to?(:embed)
   AgentHarness::OpenAICompatibleTransport.prepend(PaidAgentHarnessEmbeddingTransportPatch) unless
     AgentHarness::OpenAICompatibleTransport < PaidAgentHarnessEmbeddingTransportPatch
   AgentHarness.extend(PaidAgentHarnessEmbeddingPatch)

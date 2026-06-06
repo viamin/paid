@@ -536,6 +536,15 @@ class Runner < ApplicationRecord
     owner.runners.kept_only.for_chat.where(runner_key: executable_keys).ordered.first
   end
 
+  def self.first_configured_chat_enabled_for_owner(owner)
+    return unless owner
+
+    executable_keys = RunnerSupport.container_executable_runner_keys
+    owner.runners.kept_only.for_chat.where(runner_key: executable_keys).ordered.find do |runner|
+      runner.effective_api_secret.present?
+    end
+  end
+
   def self.display_name_for(runner_key)
     return "Unknown" if runner_key.blank?
     return "OpenRouter Free" if runner_key.to_s == "openrouter_free"
@@ -1191,14 +1200,17 @@ class Runner < ApplicationRecord
       env["OPENAI_BASE_URL"] = api_config[:base_url]
     end
 
+    metadata_config = {}
+    unless provider_config.empty?
+      metadata_config["provider"] = { opencode_api_provider => provider_config }
+    end
+
     AgentHarness::ProviderRuntime.new(
       model: model_id,
       env: env,
       unset_env: %w[OPENAI_HEADER_X_AGENT_RUN_ID OPENAI_HEADER_X_PROXY_TOKEN],
       metadata: {
-        config: {
-          "provider" => { opencode_api_provider => provider_config }
-        }
+        config: metadata_config
       }
     )
   end

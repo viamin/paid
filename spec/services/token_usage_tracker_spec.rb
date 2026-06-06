@@ -73,6 +73,8 @@ RSpec.describe TokenUsageTracker do
     end
 
     it "creates a per-request TokenUsage record" do
+      create(:llm_model, model_id: "claude-3-5-sonnet-20241022", pricing_tier: "paid")
+
       expect {
         described_class.track(
           tracked_run: agent_run,
@@ -91,6 +93,30 @@ RSpec.describe TokenUsageTracker do
       expect(usage.output_tokens).to eq(500)
       expect(usage.llm_model).to eq("claude-3-5-sonnet-20241022")
       expect(usage.request_type).to eq("agent")
+      expect(usage.metadata).to include("pricing_tier" => "paid")
+    end
+
+    it "preserves supplied metadata when the model cannot be resolved" do
+      described_class.track(
+        tracked_run: agent_run,
+        usage: {
+          tokens_input: 1000,
+          tokens_output: 500,
+          llm_model: "unknown-model",
+          request_type: "agent",
+          metadata: {
+            pricing_tier: "proxy-free",
+            provider_data_collection: nil,
+            source: "proxy"
+          }
+        }
+      )
+
+      expect(TokenUsage.last.metadata).to eq(
+        "pricing_tier" => "proxy-free",
+        "provider_data_collection" => nil,
+        "source" => "proxy"
+      )
     end
 
     it "updates cost budgets for the project" do

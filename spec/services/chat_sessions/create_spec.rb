@@ -72,6 +72,22 @@ RSpec.describe ChatSessions::Create do
       expect(session.runner).not_to eq(non_chat_runner)
     end
 
+    it "prefers a configured API-key runner when one is available" do
+      default_runner = user.runners.find_by!(runner_key: "claude")
+      api_key_record = create(:provider_api_key, user: user, api_key: "sk-openrouter-test", api_service_type: "openrouter")
+      configured_runner = create(:runner, :api_key,
+        user: user,
+        runner_key: "opencode",
+        provider_api_key: api_key_record,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2" } }
+      )
+
+      session = described_class.call(account: account, user: user)
+
+      expect(session.runner).to eq(configured_runner)
+      expect(session.runner).not_to eq(default_runner)
+    end
+
     it "accepts provider_id as a legacy alias for runner_id" do
       runner = create(:runner, user: user)
       session = described_class.call(

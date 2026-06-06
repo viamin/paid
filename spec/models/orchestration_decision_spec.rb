@@ -186,4 +186,29 @@ RSpec.describe OrchestrationDecision do
       expect(described_class.analytics_status_group("typo")).to eq("other")
     end
   end
+
+  describe ".record!" do
+    it "merges caller-provided context with built-in decision context" do
+      project = create(:project)
+
+      decision = described_class.record!(
+        project: project,
+        decision_point: "data_classification_policy",
+        action: "check_data_classification",
+        status: "noop",
+        context: {
+          data_classification: "restricted",
+          provider_data_collection: "deny"
+        },
+        signals: {},
+        result: {}
+      )
+
+      expect(decision.context).to include(
+        "decision_status" => "noop",
+        "data_classification" => "restricted",
+        "provider_data_collection" => "deny"
+      )
+    end
+  end
 end

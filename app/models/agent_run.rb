@@ -60,6 +60,16 @@ class AgentRun < ApplicationRecord
     "Provision::StartupTimeoutError",
     "Provision::IdleTimeoutError"
   ].freeze
+  # Infrastructure failures that occur before the LLM runner is reached.
+  # These should not count toward the operational failure escalation breaker
+  # because the agent never had a chance to work on the PR.
+  PRE_RUNNER_INFRA_KEYWORDS = [
+    "Failed to pull image",
+    "Failed to start service container",
+    "getaddrinfo",
+    "Temporary failure in name resolution",
+    "connection slots are reserved"
+  ].freeze
   PRE_MODEL_FAILURE_STATUSES = %w[failed no_output].freeze
 
   def self.quality_scoreable_sql
@@ -1321,10 +1331,24 @@ class AgentRun < ApplicationRecord
   def operational_failure?
     return false unless FAILURE_STATUSES.include?(status)
     return true if status.in?(%w[timeout auth_expired rate_limited])
+    return false if pre_runner_infra_failure?
 
     OPERATIONAL_FAILURE_KEYWORDS.any? do |keyword|
       error_message.to_s.downcase.include?(keyword.downcase)
     end
+  end
+
+  # Returns true when the run failed due to infrastructure issues before the
+  # LLM runner was ever reached (e.g., Docker pull failure, DNS resolution
+  # error). These should not count toward the operational failure escalation
+  # breaker since the agent never had a chance to work.
+  def pre_runner_infra_failure?
+    return false unless status == "failed"
+    return false if tokens_input.to_i > 0
+    return false if final_runner.present?
+
+    msg = error_message.to_s
+    PRE_RUNNER_INFRA_KEYWORDS.any? { |keyword| msg.downcase.include?(keyword.downcase) }
   end
 
   def infra_failure?
@@ -1603,17 +1627,19 @@ class AgentRun < ApplicationRecord
     end
   end
 
-  def cancel!
+  def cancel!(error: nil)
     with_lock do
       reload
       if finished?
         false
       else
-        update!(
+        attributes = {
           status: "cancelled",
           completed_at: Time.current,
           duration_seconds: duration
-        )
+        }
+        attributes[:error_message] = error if error
+        update!(attributes)
       end
     end
   end

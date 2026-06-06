@@ -87,11 +87,11 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
       end
     end
 
-    context "without a runner" do
+    context "without a runner but with a configured fallback" do
       it "falls back to the creator's configured API key runner" do
         chat_session = create(:chat_session, account: account, created_by: user)
         api_key_record = create(:provider_api_key, user: user, api_key: "sk-or-fallback", api_service_type: "openrouter")
-        create(:runner, :api_key,
+        fallback_runner = create(:runner, :api_key,
           user: user,
           runner_key: "opencode",
           provider_api_key: api_key_record,
@@ -101,7 +101,9 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
         client = described_class.call(chat_session: chat_session)
 
         expect(client).to be_a(described_class::HttpClient)
-        expect(client.model).to eq("gpt-4o")
+        expect(chat_session.reload.runner).to eq(fallback_runner)
+        expect(chat_session.model).to eq("moonshotai/kimi-k2")
+        expect(client.model).to eq("moonshotai/kimi-k2")
       end
     end
 
@@ -125,19 +127,61 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
         )
       end
     end
+
+    context "with an unconfigured runner and another configured chat runner" do
+      it "falls back to the configured runner and persists a compatible model on the session" do
+        unavailable_runner = user.runners.find_or_create_by!(runner_key: "claude", auth_type: "subscription")
+        api_key_record = create(:provider_api_key, user: user, api_key: "sk-openrouter-test", api_service_type: "openrouter")
+        fallback_runner = create(:runner, :api_key,
+          user: user,
+          runner_key: "opencode",
+          provider_api_key: api_key_record,
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2" } }
+        )
+        chat_session = create(:chat_session,
+          account: account,
+          created_by: user,
+          runner: unavailable_runner,
+          model: "claude-sonnet-4-20250514"
+        )
+
+        client = described_class.call(chat_session: chat_session)
+
+        expect(client).to be_a(described_class::HttpClient)
+        expect(chat_session.reload.runner).to eq(fallback_runner)
+        expect(chat_session.model).to eq("moonshotai/kimi-k2")
+        expect(client.model).to eq("moonshotai/kimi-k2")
+      end
+    end
+
+    context "without a runner and without a configured fallback" do
+      it "raises a setup error" do
+        chat_session = create(:chat_session, account: account, created_by: user)
+
+        expect {
+          described_class.call(chat_session: chat_session)
+        }.to raise_error(
+          ChatSessions::LlmClientConfigurationError,
+          "Chat requires a configured API-key runner. Add a chat-enabled runner with an API key and select it for this session."
+        )
+      end
+    end
   end
 
   describe described_class::HttpClient do
-    let(:transport) { instance_double(AgentHarness::TextTransport) }
-    let(:model) { "claude-sonnet-4-20250514" }
-    let(:client) { described_class.new(transport: transport, model: model, provider_type: :anthropic) }
-
-    let(:conversation) do
+    let(:tool_definitions) do
       [
-        { role: "system", content: "You are helpful." },
-        { role: "user", content: "Hello" },
-        { role: "assistant", content: "Hi there!" },
-        { role: "user", content: "How are you?" }
+        {
+          name: "search",
+          description: "Search the project",
+          inputSchema: {
+            type: "object",
+            properties: {
+              query: { type: "string" }
+            },
+            required: [ "query" ]
+          }
+        }
       ]
     end
 
@@ -151,85 +195,221 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
       )
     end
 
-    it "calls transport.chat with formatted messages" do
-      allow(transport).to receive(:chat).and_return(response)
-
-      result = client.call(conversation)
-
-      expect(transport).to have_received(:chat) do |**kwargs|
-        messages = kwargs[:messages]
-        expect(messages).to include({ role: "system", content: "You are helpful." })
-        expect(messages).to include({ role: "user", content: "How are you?" })
-        expect(kwargs[:model]).to eq(model)
-        expect(kwargs[:stream]).to be(false)
+    context "with an Anthropic transport" do
+      let(:transport) { instance_double(AgentHarness::TextTransport) }
+      let(:model) { "claude-sonnet-4-20250514" }
+      let(:client) { described_class.new(transport: transport, model: model, provider_type: :anthropic) }
+      let(:conversation) do
+        [
+          { role: "system", content: "You are helpful." },
+          { role: "user", content: "Find the issue" },
+          {
+            role: "assistant",
+            content: "Let me search.",
+            tool_calls: [ { id: "toolu_1", name: "search", arguments: { query: "issue" } } ]
+          },
+          { role: "tool", content: '{"results":[]}', tool_call_id: "toolu_1", tool_name: "search" },
+          { role: "user", content: "What did you find?" }
+        ]
       end
-      expect(result[:content]).to eq("I'm doing well!")
-      expect(result[:model]).to eq("claude-sonnet-4-20250514")
-      expect(result[:tokens_input]).to eq(20)
-      expect(result[:tokens_output]).to eq(10)
+      let(:expected_messages) do
+        [
+          { role: "system", content: "You are helpful." },
+          { role: "user", content: [ { type: "text", text: "Find the issue" } ] },
+          {
+            role: "assistant",
+            content: [
+              { type: "text", text: "Let me search." },
+              { type: "tool_use", id: "toolu_1", name: "search", input: { query: "issue" } }
+            ]
+          },
+          {
+            role: "user",
+            content: [ { type: "tool_result", tool_use_id: "toolu_1", content: '{"results":[]}' } ]
+          },
+          { role: "user", content: [ { type: "text", text: "What did you find?" } ] }
+        ]
+      end
+      let(:expected_tools) do
+        [
+          {
+            name: "search",
+            description: "Search the project",
+            input_schema: tool_definitions.first[:inputSchema]
+          }
+        ]
+      end
+
+      it "passes anthropic-formatted messages and tools to the transport" do
+        allow(transport).to receive(:chat).and_return(response)
+
+        result = client.call(conversation, tools: tool_definitions)
+
+        expect(transport).to have_received(:chat) do |**kwargs|
+          expect(kwargs[:messages]).to eq(expected_messages)
+          expect(kwargs[:tools]).to eq(expected_tools)
+          expect(kwargs[:model]).to eq(model)
+          expect(kwargs[:stream]).to be(false)
+        end
+
+        expect(result[:content]).to eq("I'm doing well!")
+        expect(result[:model]).to eq("claude-sonnet-4-20250514")
+        expect(result[:tokens_input]).to eq(20)
+        expect(result[:tokens_output]).to eq(10)
+      end
+
+      it "folds later system messages into the system prompt" do
+        allow(transport).to receive(:chat).and_return(response)
+
+        client.call([
+          { role: "system", content: "You are helpful." },
+          { role: "user", content: "Find the issue" },
+          { role: "system", content: "## Added Project Context: Paid" },
+          { role: "user", content: "What did you find?" }
+        ])
+
+        expect(transport).to have_received(:chat).with(
+          hash_including(
+            messages: [
+              { role: "system", content: "You are helpful.\n\n## Added Project Context: Paid" },
+              { role: "user", content: [ { type: "text", text: "Find the issue" } ] },
+              { role: "user", content: [ { type: "text", text: "What did you find?" } ] }
+            ]
+          )
+        )
+      end
+
+      it "streams text chunks through on_chunk callback" do
+        chunks_received = []
+
+        allow(transport).to receive(:chat) do |**_opts, &block|
+          block.call({ type: :text, content: "Hello" })
+          block.call({ type: :text, content: " world" })
+          block.call({ type: :usage, input_tokens: 10, output_tokens: 5 })
+          block.call({ type: :done })
+          response
+        end
+
+        client.call(conversation, on_chunk: ->(chunk) { chunks_received << chunk })
+
+        expect(chunks_received).to eq([ "Hello", " world" ])
+      end
+
+      it "returns nil tools when none are defined" do
+        allow(transport).to receive(:chat).and_return(response)
+
+        client.call(conversation, tools: [])
+
+        expect(transport).to have_received(:chat).with(hash_including(tools: nil))
+      end
+
+      it "passes tool_calls from response metadata" do
+        tool_response = instance_double(AgentHarness::Response,
+          output: "Let me search.",
+          model: "claude-sonnet-4-20250514",
+          input_tokens: 15,
+          output_tokens: 5,
+          metadata: { tool_calls: [ { id: "tc_1", name: "search", arguments: '{"q":"test"}' } ] }
+        )
+        allow(transport).to receive(:chat).and_return(tool_response)
+
+        result = client.call(conversation)
+
+        expect(result[:tool_calls]).to eq([ { id: "tc_1", name: "search", arguments: '{"q":"test"}' } ])
+      end
     end
 
-    it "streams text chunks through on_chunk callback" do
-      chunks_received = []
-
-      allow(transport).to receive(:chat) do |**opts, &block|
-        block.call({ type: :text, content: "Hello" })
-        block.call({ type: :text, content: " world" })
-        block.call({ type: :usage, input_tokens: 10, output_tokens: 5 })
-        block.call({ type: :done })
-        response
+    context "with an OpenAI-compatible transport" do
+      let(:transport) { instance_double(AgentHarness::OpenAICompatibleTransport) }
+      let(:model) { "gpt-4o" }
+      let(:client) { described_class.new(transport: transport, model: model, provider_type: :openai_compatible) }
+      let(:conversation) do
+        [
+          { role: "system", content: "You are helpful." },
+          { role: "user", content: "Find the issue" },
+          {
+            role: "assistant",
+            content: "Let me search.",
+            tool_calls: [ { id: "call_1", name: "search", arguments: { query: "issue" } } ]
+          },
+          { role: "tool", content: '{"results":[]}', tool_call_id: "call_1", tool_name: "search" },
+          { role: "assistant", content: nil },
+          { role: "user", content: "What did you find?" }
+        ]
+      end
+      let(:expected_messages) do
+        [
+          { role: "system", content: "You are helpful." },
+          { role: "user", content: "Find the issue" },
+          {
+            role: "assistant",
+            content: "Let me search.",
+            tool_calls: [
+              {
+                id: "call_1",
+                type: "function",
+                function: { name: "search", arguments: '{"query":"issue"}' }
+              }
+            ]
+          },
+          { role: "tool", content: '{"results":[]}', tool_call_id: "call_1" },
+          { role: "user", content: "What did you find?" }
+        ]
+      end
+      let(:expected_tools) do
+        [
+          {
+            type: "function",
+            function: {
+              name: "search",
+              description: "Search the project",
+              parameters: tool_definitions.first[:inputSchema]
+            }
+          }
+        ]
       end
 
-      client.call(conversation, on_chunk: ->(chunk) { chunks_received << chunk })
+      it "passes openai-formatted messages and tools to the transport" do
+        allow(transport).to receive(:chat).and_return(response)
 
-      expect(chunks_received).to eq([ "Hello", " world" ])
-    end
+        client.call(conversation, tools: tool_definitions)
 
-    it "filters out nil-content messages" do
-      conversation_with_nil = conversation + [ { role: "tool", content: nil } ]
-
-      allow(transport).to receive(:chat).and_return(response)
-
-      client.call(conversation_with_nil)
-
-      expect(transport).to have_received(:chat) do |**kwargs|
-        expect(kwargs[:messages].size).to eq(4)
-        expect(kwargs[:messages].map { |m| m[:content] }).to all(be_present)
+        expect(transport).to have_received(:chat) do |**kwargs|
+          expect(kwargs[:messages]).to eq(expected_messages)
+          expect(kwargs[:tools]).to eq(expected_tools)
+          expect(kwargs[:model]).to eq(model)
+          expect(kwargs[:stream]).to be(false)
+        end
       end
-    end
 
-    it "preserves tool_call_id and tool_name metadata in formatted messages" do
-      conversation_with_tools = conversation + [
-        { role: "assistant", content: "Let me search.", tool_call_id: "tc_1", tool_name: "search" },
-        { role: "tool", content: '{"results":[]}', tool_call_id: "tc_1", tool_name: "search" }
-      ]
+      it "folds later system messages into the system prompt" do
+        allow(transport).to receive(:chat).and_return(response)
 
-      allow(transport).to receive(:chat).and_return(response)
+        client.call([
+          { role: "system", content: "You are helpful." },
+          { role: "user", content: "Find the issue" },
+          { role: "system", content: "## Added Project Context: Paid" },
+          { role: "user", content: "What did you find?" }
+        ])
 
-      client.call(conversation_with_tools)
-
-      expect(transport).to have_received(:chat) do |**kwargs|
-        tool_msg = kwargs[:messages].find { |m| m[:tool_call_id] == "tc_1" && m[:role] == "assistant" }
-        expect(tool_msg).to include(tool_call_id: "tc_1", tool_name: "search", content: "Let me search.")
-
-        result_msg = kwargs[:messages].find { |m| m[:role] == "tool" }
-        expect(result_msg).to include(tool_call_id: "tc_1", tool_name: "search", content: '{"results":[]}')
+        expect(transport).to have_received(:chat).with(
+          hash_including(
+            messages: [
+              { role: "system", content: "You are helpful.\n\n## Added Project Context: Paid" },
+              { role: "user", content: "Find the issue" },
+              { role: "user", content: "What did you find?" }
+            ]
+          )
+        )
       end
-    end
 
-    it "passes tool_calls from response metadata" do
-      tool_response = instance_double(AgentHarness::Response,
-        output: "Let me search.",
-        model: "claude-sonnet-4-20250514",
-        input_tokens: 15,
-        output_tokens: 5,
-        metadata: { tool_calls: [ { id: "tc_1", name: "search", arguments: '{"q":"test"}' } ] }
-      )
-      allow(transport).to receive(:chat).and_return(tool_response)
+      it "returns nil tools when no definitions are provided" do
+        allow(transport).to receive(:chat).and_return(response)
 
-      result = client.call(conversation)
+        client.call(conversation, tools: nil)
 
-      expect(result[:tool_calls]).to eq([ { id: "tc_1", name: "search", arguments: '{"q":"test"}' } ])
+        expect(transport).to have_received(:chat).with(hash_including(tools: nil))
+      end
     end
   end
 end

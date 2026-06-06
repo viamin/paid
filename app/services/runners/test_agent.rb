@@ -493,7 +493,7 @@ module Runners
 
     def clear_runner_state_if_healthy!
       runner_state_names.each do |state_name|
-        runner.user.runner_states.find_by(runner_name: state_name)&.record_success!
+        runner.user.runner_states.find_by(runner_name: state_name)&.record_success!(force_close: true)
       end
     end
 

@@ -30,7 +30,7 @@ gem "devise"
 
 # Authorization [https://github.com/varvet/pundit]
 gem "pundit"
-gem "avo", "4.0.0.beta.40"
+gem "avo", "4.0.0.beta.41"
 
 # Soft-delete for low-volume reference records
 gem "discard"
@@ -61,7 +61,7 @@ gem "qdrant-ruby", require: false
 gem "aws-sdk-s3", require: false
 
 # Unified interface for AI agent CLIs [https://github.com/viamin/agent-harness]
-gem "agent-harness", "~> 0.18.2"
+gem "agent-harness", "~> 0.20.0"
 
 # Runtime model registry for canonical model metadata, pricing, and capabilities.
 gem "ruby_llm", "~> 1.15"

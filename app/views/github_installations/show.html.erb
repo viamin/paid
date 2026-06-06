@@ -13,7 +13,6 @@
       <% if policy(@github_installation).update? && @github_installation.active? %>
         <%= link_to "Migrate Projects", migrate_project_github_installation_path(@github_installation), class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
       <% end %>
-      <%= link_to "Browse Repositories", repositories_github_installation_path(@github_installation), class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
     </div>
   </div>
 
@@ -76,6 +75,47 @@
     <% else %>
       <div class="px-6 py-8 text-sm text-gray-500">
         No projects are using this installation yet.
+      </div>
+    <% end %>
+  </div>
+
+  <div class="mt-8 rounded-lg border border-gray-200 bg-white shadow-sm">
+    <div class="border-b border-gray-200 px-6 py-4">
+      <h2 class="text-lg font-semibold text-gray-900">Accessible Repositories</h2>
+    </div>
+
+    <% if @accessible_repos.any? %>
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Repository</th>
+              <th class="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Visibility</th>
+              <th class="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">Default Branch</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-200 bg-white">
+            <% @accessible_repos.each do |repo| %>
+              <tr>
+                <td class="px-6 py-4 text-sm font-medium text-gray-900">
+                  <%= link_to repo["full_name"], "https://github.com/#{repo["full_name"]}", target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-500" %>
+                </td>
+                <td class="px-6 py-4 text-sm text-gray-500">
+                  <% if repo["private"] %>
+                    <span class="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-600">Private</span>
+                  <% else %>
+                    <span class="inline-flex items-center rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700">Public</span>
+                  <% end %>
+                </td>
+                <td class="px-6 py-4 text-sm text-gray-500"><%= repo["default_branch"] %></td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    <% else %>
+      <div class="px-6 py-8 text-sm text-gray-500">
+        No repositories found. If repository selection is "all", any repository under <strong><%= @github_installation.account_login %></strong> is accessible.
       </div>
     <% end %>
   </div>

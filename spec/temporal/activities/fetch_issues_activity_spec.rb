@@ -13,7 +13,7 @@ RSpec.describe Activities::FetchIssuesActivity do
     allow(GithubClient).to receive(:new).and_return(github_client)
     allow(github_client).to receive_messages(
       issue_comments: [],
-      recent_issue_comments: [],
+      issue_comments_batch: {},
       "rate_limit_remaining!": 100,
       pull_requests: [],
       pull_request: OpenStruct.new(merged_at: nil, merged: false)
@@ -27,6 +27,14 @@ RSpec.describe Activities::FetchIssuesActivity do
       label = Array(opts[:labels]).first
       mapping.fetch(label, [])
     end
+  end
+
+  def build_comment(login:, body:, created_at:)
+    GithubClient::CommentNode.new(
+      created_at: created_at,
+      user: GithubClient::CommentAuthor.new(login: login),
+      body: body
+    )
   end
 
   def github_pr_issue(number)
@@ -1198,11 +1206,13 @@ RSpec.describe Activities::FetchIssuesActivity do
         dep_200 = create(:issue, project: project, github_number: 200, github_state: "open")
         dep_999 = create(:issue, project: project, github_number: 999, github_state: "open")
 
-        allow(github_client).to receive(:recent_issue_comments).and_return([
-          OpenStruct.new(user: OpenStruct.new(login: "viamin"), body: "Depends on #100", created_at: 2.hours.ago),
-          OpenStruct.new(user: OpenStruct.new(login: "attacker"), body: "Depends on #999", created_at: 1.hour.ago),
-          OpenStruct.new(user: OpenStruct.new(login: "trusted-dev"), body: "Depends on #200", created_at: 30.minutes.ago)
-        ])
+        allow(github_client).to receive(:issue_comments_batch).and_return(
+          70 => [
+            build_comment(login: "viamin", body: "Depends on #100", created_at: 2.hours.ago),
+            build_comment(login: "attacker", body: "Depends on #999", created_at: 1.hour.ago),
+            build_comment(login: "trusted-dev", body: "Depends on #200", created_at: 30.minutes.ago)
+          ]
+        )
 
         activity.execute(project_id: project.id)
 
@@ -1216,7 +1226,7 @@ RSpec.describe Activities::FetchIssuesActivity do
         create(:issue, project: project, github_number: 50, github_state: "open")
         github_issue.body = "Depends on #50"
 
-        allow(github_client).to receive(:recent_issue_comments)
+        allow(github_client).to receive(:issue_comments_batch)
           .and_raise(GithubClient::Error.new("API error"))
 
         activity.execute(project_id: project.id)
@@ -1229,7 +1239,7 @@ RSpec.describe Activities::FetchIssuesActivity do
         create(:issue, project: project, github_number: 50, github_state: "open")
         github_issue.body = "Depends on #50"
 
-        allow(github_client).to receive(:recent_issue_comments)
+        allow(github_client).to receive(:issue_comments_batch)
           .and_raise(GithubClient::RateLimitError.new(Time.current + 3600))
 
         expect {
@@ -1290,12 +1300,12 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
 
       it "fetches comments only for issues with changed github_updated_at" do
-        allow(github_client).to receive(:recent_issue_comments).and_return([])
+        allow(github_client).to receive(:issue_comments_batch).and_return({})
 
         activity.execute(project_id: project.id)
 
-        expect(github_client).to have_received(:recent_issue_comments).with(project.full_name, 80, pages: 2).once
-        expect(github_client).not_to have_received(:recent_issue_comments).with(project.full_name, 81, pages: 2)
+        expect(github_client).to have_received(:issue_comments_batch).with(project.full_name, [ 80 ]).once
+        expect(github_client).not_to have_received(:issue_comments_batch).with(project.full_name, [ 81 ])
       end
 
       it "fetches comments for new issues that have no previous github_updated_at" do
@@ -1312,23 +1322,23 @@ RSpec.describe Activities::FetchIssuesActivity do
           updated_at: Time.current
         )
         stub_issues_by_label(nil => [ changed_issue, unchanged_issue, new_issue ])
-        allow(github_client).to receive(:recent_issue_comments).and_return([])
+        allow(github_client).to receive(:issue_comments_batch).and_return({})
 
         activity.execute(project_id: project.id)
 
-        expect(github_client).to have_received(:recent_issue_comments).with(project.full_name, 80, pages: 2).once
-        expect(github_client).to have_received(:recent_issue_comments).with(project.full_name, 82, pages: 2).once
-        expect(github_client).not_to have_received(:recent_issue_comments).with(project.full_name, 81, pages: 2)
+        expect(github_client).to have_received(:issue_comments_batch).with(project.full_name, [ 80, 82 ]).once
+        expect(github_client).not_to have_received(:issue_comments_batch).with(project.full_name, [ 81 ])
       end
 
       it "fetches comments for all issues on first sync when no previous data exists" do
         Issue.where(project: project).destroy_all
-        allow(github_client).to receive(:recent_issue_comments).and_return([])
+        allow(github_client).to receive(:issue_comments_batch).and_return({})
 
         activity.execute(project_id: project.id)
 
-        expect(github_client).to have_received(:recent_issue_comments).with(project.full_name, 80, pages: 2).once
-        expect(github_client).to have_received(:recent_issue_comments).with(project.full_name, 81, pages: 2).once
+        expect(github_client).to have_received(:issue_comments_batch).with(
+          project.full_name, contain_exactly(80, 81)
+        ).once
       end
     end
 
@@ -1348,7 +1358,7 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
 
       it "retries parsing on the next sync even though github_updated_at is unchanged" do
-        allow(github_client).to receive(:recent_issue_comments).with(project.full_name, 85, pages: 2)
+        allow(github_client).to receive(:issue_comments_batch)
           .and_raise(GithubClient::Error.new("API error"))
 
         activity.execute(project_id: project.id)
@@ -1357,10 +1367,10 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(issue.relationships_parsed_at).to be_nil
 
         # Second sync — github_updated_at has NOT changed, but the fetch now succeeds
-        allow(github_client).to receive(:recent_issue_comments).with(project.full_name, 85, pages: 2).and_return([])
+        allow(github_client).to receive(:issue_comments_batch).and_return({})
         activity.execute(project_id: project.id)
 
-        expect(github_client).to have_received(:recent_issue_comments).with(project.full_name, 85, pages: 2).twice
+        expect(github_client).to have_received(:issue_comments_batch).with(project.full_name, [ 85 ]).twice
         expect(issue.reload.relationships_parsed_at).to be_present
       end
     end
@@ -1378,18 +1388,18 @@ RSpec.describe Activities::FetchIssuesActivity do
 
       before do
         stub_issues_by_label(nil => [ parsed_issue ])
-        allow(github_client).to receive(:recent_issue_comments).and_return([])
+        allow(github_client).to receive(:issue_comments_batch).and_return({})
       end
 
       it "re-parses issue relationships after allowed_github_usernames changes" do
         activity.execute(project_id: project.id)
-        expect(github_client).to have_received(:recent_issue_comments).with(project.full_name, 86, pages: 2).once
+        expect(github_client).to have_received(:issue_comments_batch).with(project.full_name, [ 86 ]).once
 
         project.update!(allowed_github_usernames: %w[viamin another-trusted])
 
         activity.execute(project_id: project.id)
 
-        expect(github_client).to have_received(:recent_issue_comments).with(project.full_name, 86, pages: 2).twice
+        expect(github_client).to have_received(:issue_comments_batch).with(project.full_name, [ 86 ]).twice
       end
     end
 
@@ -1429,9 +1439,8 @@ RSpec.describe Activities::FetchIssuesActivity do
       it "logs deferred work and picks it up on a later cycle" do
         activity.execute(project_id: project.id)
 
-        expect(github_client).to have_received(:recent_issue_comments).with(project.full_name, 88, pages: 2).once
-        expect(github_client).to have_received(:recent_issue_comments).with(project.full_name, 89, pages: 2).once
-        expect(github_client).not_to have_received(:recent_issue_comments).with(project.full_name, 87, pages: 2)
+        expect(github_client).to have_received(:issue_comments_batch).with(project.full_name, [ 88, 89 ]).once
+        expect(github_client).not_to have_received(:issue_comments_batch).with(project.full_name, [ 87 ])
         expect(project.issues.find_by!(github_number: 87).relationships_parsed_at).to be_nil
         expect(Rails.logger).to have_received(:info).with(
           hash_including(
@@ -1447,7 +1456,7 @@ RSpec.describe Activities::FetchIssuesActivity do
 
         activity.execute(project_id: project.id)
 
-        expect(github_client).to have_received(:recent_issue_comments).with(project.full_name, 87, pages: 2).once
+        expect(github_client).to have_received(:issue_comments_batch).with(project.full_name, [ 87 ]).once
         expect(project.issues.find_by!(github_number: 87).reload.relationships_parsed_at).to be_present
       end
     end
@@ -1513,9 +1522,11 @@ RSpec.describe Activities::FetchIssuesActivity do
         parent_issue.body = "Just a regular body"
         child_issue.body = "Just a regular body"
 
-        allow(github_client).to receive(:recent_issue_comments).with(project.full_name, 61, pages: 2).and_return([
-          OpenStruct.new(user: OpenStruct.new(login: "viamin"), body: "Part of #60", created_at: 1.hour.ago)
-        ])
+        allow(github_client).to receive(:issue_comments_batch).and_return(
+          61 => [
+            build_comment(login: "viamin", body: "Part of #60", created_at: 1.hour.ago)
+          ]
+        )
 
         activity.execute(project_id: project.id)
 
@@ -1531,9 +1542,11 @@ RSpec.describe Activities::FetchIssuesActivity do
         create_synced_issue_from_github(project, parent_issue, relationships_parsed_at: parent_issue.updated_at)
         create_synced_issue_from_github(project, child_issue)
 
-        allow(github_client).to receive(:recent_issue_comments).with(project.full_name, 61, pages: 2).and_return([
-          OpenStruct.new(user: OpenStruct.new(login: "viamin"), body: "Part of #60", created_at: 1.hour.ago)
-        ])
+        allow(github_client).to receive(:issue_comments_batch).and_return(
+          61 => [
+            build_comment(login: "viamin", body: "Part of #60", created_at: 1.hour.ago)
+          ]
+        )
         allow(Turbo::StreamsChannel).to receive(:broadcast_refresh_to)
 
         activity.execute(project_id: project.id)

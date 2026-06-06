@@ -32,6 +32,27 @@ RSpec.describe ChatSessions::SendMessage do
       end
     end.new
   end
+  let(:tool_definitions) do
+    [
+      {
+        name: "search",
+        description: "Search the project",
+        inputSchema: { type: "object", properties: { query: { type: "string" } } }
+      }
+    ]
+  end
+  let(:expected_assistant_tool_call_entry) do
+    {
+      content: "Let me search for that.",
+      tool_calls: [
+        {
+          id: "call_1",
+          name: "search",
+          arguments: { "query" => "test" }
+        }
+      ]
+    }
+  end
 
   describe ".call" do
     it "persists the user message" do
@@ -231,35 +252,75 @@ RSpec.describe ChatSessions::SendMessage do
       expect(chunks.length).to be > 1
     end
 
-    context "with tool calls in response" do
-      let(:tool_llm_response) do
-        {
-          content: "Let me search for that.",
-          tool_calls: [
-            { id: "call_1", name: "search", arguments: { query: "test" } }
-          ],
-          tokens_input: 100,
-          tokens_output: 50,
-          model: "gpt-4o"
-        }
-      end
-      let(:tool_llm_client) { instance_double(Proc, call: tool_llm_response) }
+    it "passes tool definitions when the llm client supports tools" do
+      tool_aware_client = Class.new do
+        attr_reader :seen_tools
 
-      it "persists tool call and result messages" do
+        def initialize(response)
+          @response = response
+        end
+
+        def call(_conversation, tools: nil)
+          @seen_tools = tools
+          @response
+        end
+      end.new(llm_response)
+      allow(Tools::Registry).to receive(:read_only_definitions_for).with(user: user).and_return(tool_definitions)
+
+      described_class.call(chat_session: chat_session, content: "Hello", llm_client: tool_aware_client)
+
+      expect(tool_aware_client.seen_tools).to eq(tool_definitions)
+    end
+
+    it "falls back when the llm client does not support tools" do
+      expect {
+        described_class.call(chat_session: chat_session, content: "Hello", llm_client: llm_client)
+      }.not_to raise_error
+    end
+
+    context "with tool calls in response" do
+      let(:tool_llm_client) { build_stateful_llm_client(successful_tool_llm_responses) }
+
+      before do
+        allow(Tools::Registry).to receive(:read_only_definitions_for).with(user: user).and_return(tool_definitions)
+        allow(Tools::Registry).to receive(:dispatch).and_return(successful_tool_dispatch_result)
+      end
+
+      it "persists assistant, tool call, tool result, and final assistant messages in order" do
         described_class.call(
           chat_session: chat_session, content: "Search for test", llm_client: tool_llm_client
         )
 
-        tool_call_msg = chat_session.messages.find_by(tool_name: "search", role: "assistant")
-        expect(tool_call_msg).to be_present
-        expect(tool_call_msg.tool_call_id).to eq("call_1")
-        expect(tool_call_msg.tool_arguments).to eq({ "query" => "test" })
+        expect(chat_session.messages.order(:created_at).pluck(:role, :content)).to eq([
+          [ "user", "Search for test" ],
+          [ "assistant", "Let me search for that." ],
+          [ "assistant", nil ],
+          [ "tool", successful_tool_dispatch_result.to_json ],
+          [ "assistant", "I found the matching results." ]
+        ])
+      end
 
-        tool_result_msg = chat_session.messages.find_by(role: "tool")
-        expect(tool_result_msg).to be_present
-        expect(tool_result_msg.tool_call_id).to eq("call_1")
-        expect(JSON.parse(tool_result_msg.content)).to eq({ "status" => "not_implemented" })
-        expect(tool_result_msg.tool_result).to eq({ "status" => "not_implemented" })
+      it "dispatches tools with parsed arguments, the session, and the session user" do
+        expect_dispatch_with_parsed_arguments
+      end
+
+      it "creates a single aggregate token usage row for the full turn" do
+        assistant_message = nil
+
+        expect {
+          assistant_message = described_class.call(
+            chat_session: chat_session, content: "Search for test", llm_client: tool_llm_client
+          )
+        }.to change(TokenUsage, :count).by(1)
+
+        usage = TokenUsage.last
+
+        expect(usage.chat_session).to eq(chat_session)
+        expect(usage.request_type).to eq("chat_message")
+        expect(usage.input_tokens).to eq(125)
+        expect(usage.output_tokens).to eq(65)
+        expect(assistant_message.tokens_input).to eq(125)
+        expect(assistant_message.tokens_output).to eq(65)
       end
 
       it "notifies tool messages so live threads can render them" do
@@ -272,7 +333,7 @@ RSpec.describe ChatSessions::SendMessage do
           on_message_persisted: ->(message, **) { roles << message.role }
         )
 
-        expect(roles).to eq(%w[user assistant assistant tool])
+        expect(roles).to eq(%w[user assistant assistant tool assistant])
       end
 
       it "replays persisted tool results in follow-up turns" do
@@ -282,14 +343,7 @@ RSpec.describe ChatSessions::SendMessage do
 
         follow_up_client = instance_double(Proc)
         allow(follow_up_client).to receive(:call) do |conversation|
-          tool_entry = conversation.find { |message| message[:role] == "tool" }
-
-          expect(tool_entry).to include(
-            content: { "status" => "not_implemented" },
-            tool_call_id: "call_1",
-            tool_name: "search"
-          )
-
+          expect_follow_up_tool_round_trip(conversation)
           llm_response
         end
 
@@ -298,5 +352,150 @@ RSpec.describe ChatSessions::SendMessage do
         expect(follow_up_client).to have_received(:call)
       end
     end
+
+    context "when tool dispatch fails" do
+      let(:tool_llm_client) do
+        build_stateful_llm_client([
+          tool_response(content: "Let me search for that.", tokens_input: 30, tokens_output: 10),
+          final_response(content: "The tool failed, but I recovered.", tokens_input: 20, tokens_output: 8)
+        ])
+      end
+
+      it "captures the structured tool error and continues the loop" do
+        allow(Tools::Registry).to receive(:read_only_definitions_for).with(user: user).and_return(tool_definitions)
+        allow(Tools::Registry).to receive(:dispatch).and_raise(StandardError, "boom")
+        allow(Rails.logger).to receive(:error)
+
+        result = described_class.call(
+          chat_session: chat_session, content: "Search for test", llm_client: tool_llm_client
+        )
+
+        tool_result_message = chat_session.messages.find_by!(role: "tool")
+
+        expect(result.content).to eq("The tool failed, but I recovered.")
+        expect(tool_result_message.tool_result).to eq(
+          {
+            "status" => "error",
+            "error" => "internal_error",
+            "message" => "boom"
+          }
+        )
+        expect(Rails.logger).to have_received(:error).with(
+          hash_including(message: "chat_tool_dispatch.failed", chat_session_id: chat_session.id, tool_name: "search")
+        )
+      end
+    end
+
+    context "when the model keeps requesting tools" do
+      let(:tool_loop_response) do
+        {
+          content: nil,
+          tool_calls: [
+            { id: "call_1", name: "search", arguments: { "query" => "test" } }
+          ],
+          tokens_input: 10,
+          tokens_output: 5,
+          model: "gpt-4o"
+        }
+      end
+      let(:tool_llm_client) do
+        build_stateful_llm_client(Array.new(described_class::MAX_TOOL_ITERATIONS, tool_loop_response))
+      end
+
+      it "caps the loop and persists a final user-visible note" do
+        allow(Tools::Registry).to receive(:read_only_definitions_for).with(user: user).and_return(tool_definitions)
+        allow(Tools::Registry).to receive(:dispatch).and_return({ "status" => "ok" })
+
+        result = described_class.call(
+          chat_session: chat_session, content: "Keep going", llm_client: tool_llm_client
+        )
+
+        expect(tool_llm_client.seen_conversations.length).to eq(described_class::MAX_TOOL_ITERATIONS)
+        expect(result.content).to include("maximum number of tool iterations")
+        expect(chat_session.messages.where(role: "tool").count).to eq(described_class::MAX_TOOL_ITERATIONS)
+      end
+    end
+  end
+
+  def expect_follow_up_tool_round_trip(conversation)
+    assistant_tool_call_entry = conversation.find do |message|
+      message[:role] == "assistant" && message[:tool_calls].present?
+    end
+    tool_entry = conversation.find { |message| message[:role] == "tool" }
+
+    expect(assistant_tool_call_entry).to include(expected_assistant_tool_call_entry)
+    expect(tool_entry).to include(
+      content: successful_tool_dispatch_result,
+      tool_call_id: "call_1",
+      tool_name: "search"
+    )
+  end
+
+  def build_stateful_llm_client(responses)
+    Class.new do
+      attr_reader :responses, :seen_conversations, :seen_tools
+
+      def initialize(responses)
+        @responses = responses
+        @seen_conversations = []
+      end
+
+      def call(conversation, tools: nil)
+        @seen_conversations << conversation.deep_dup
+        @seen_tools = tools
+        responses.fetch(seen_conversations.length - 1)
+      end
+    end.new(responses)
+  end
+
+  def successful_tool_llm_responses
+    [
+      tool_response(content: "Let me search for that.", tokens_input: 100, tokens_output: 50),
+      final_response(content: "I found the matching results.", tokens_input: 25, tokens_output: 15)
+    ]
+  end
+
+  def successful_tool_dispatch_result
+    { "status" => "ok", "results" => [ "match" ] }
+  end
+
+  def tool_response(content:, tokens_input:, tokens_output:, arguments: { "query" => "test" })
+    {
+      content: content,
+      tool_calls: [
+        { id: "call_1", name: "search", arguments: arguments }
+      ],
+      tokens_input: tokens_input,
+      tokens_output: tokens_output,
+      model: "gpt-4o"
+    }
+  end
+
+  def final_response(content:, tokens_input:, tokens_output:)
+    {
+      content: content,
+      tool_calls: [],
+      tokens_input: tokens_input,
+      tokens_output: tokens_output,
+      model: "gpt-4o"
+    }
+  end
+
+  def expect_dispatch_with_parsed_arguments
+    described_class.call(
+      chat_session: chat_session,
+      content: "Search for test",
+      llm_client: build_stateful_llm_client([
+        tool_response(content: "Let me search for that.", tokens_input: 100, tokens_output: 50, arguments: "{\"query\":\"test\"}"),
+        final_response(content: "Done.", tokens_input: 10, tokens_output: 5)
+      ])
+    )
+
+    expect(Tools::Registry).to have_received(:dispatch).with(
+      name: "search",
+      arguments: { "query" => "test" },
+      user: user,
+      session: chat_session
+    )
   end
 end

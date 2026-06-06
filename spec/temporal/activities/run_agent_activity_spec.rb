@@ -1380,14 +1380,13 @@ RSpec.describe Activities::RunAgentActivity do
     expect(execute_calls.third.first[0..6]).to eq([ "env", "-u", "OPENAI_HEADER_X_AGENT_RUN_ID", "-u", "OPENAI_HEADER_X_PROXY_TOKEN", "opencode", "run" ])
     expect(execute_calls.second.second[:env]).to include("OPENAI_BASE_URL" => "https://openrouter.ai/api/v1")
     expect(execute_calls.third.second[:env]).to include("OPENAI_BASE_URL" => "https://openrouter.ai/api/v1")
-    expect(JSON.parse(execute_calls.second.second[:preparation].file_writes.first.content)).to include(
-      "provider" => { "openrouter" => {} },
-      "model" => "moonshotai/kimi-k2-0905"
-    )
-    expect(JSON.parse(execute_calls.third.second[:preparation].file_writes.first.content)).to include(
-      "provider" => { "openrouter" => {} },
-      "model" => "moonshotai/kimi-k2-0905"
-    )
+    second_config = JSON.parse(execute_calls.second.second[:preparation].file_writes.first.content)
+    third_config = JSON.parse(execute_calls.third.second[:preparation].file_writes.first.content)
+
+    expect(second_config).to include("model" => "moonshotai/kimi-k2-0905")
+    expect(second_config).not_to have_key("provider")
+    expect(third_config).to include("model" => "moonshotai/kimi-k2-0905")
+    expect(third_config).not_to have_key("provider")
   end
 
   def expect_resolved_model_attempts(agent_run, opencode_runner)
@@ -4342,10 +4341,12 @@ expect(container_service).to receive(:execute).with(
           "url_servers" => []
         })
 
-        expect(container_service).to receive(:execute).with(
-          array_including("claude", "--mcp-config"),
-          hash_including(timeout: anything)
-        ).and_return(exec_success)
+        expect(container_service).to receive(:execute) do |command, options|
+          expect(command).to include("claude")
+          expect(command).to include(a_string_starting_with("--mcp-config="))
+          expect(command).not_to include("--mcp-config")
+          expect(options).to include(timeout: anything)
+        end.and_return(exec_success)
 
         activity.execute(agent_run_id: agent_run.id)
       end
@@ -4356,29 +4357,26 @@ expect(container_service).to receive(:execute).with(
           "url_servers" => [ { "name" => "pw", "transport" => "sse", "url" => "http://host:3000/sse" } ]
         })
 
-        expect(container_service).to receive(:execute).with(
-          array_including("claude", "--mcp-config"),
-          hash_including(timeout: anything)
-        ).and_return(exec_success)
+        expect(container_service).to receive(:execute) do |command, options|
+          expect(command).to include("claude")
+          expect(command).to include(a_string_starting_with("--mcp-config="))
+          expect(command).not_to include("--mcp-config")
+          expect(options).to include(timeout: anything)
+        end.and_return(exec_success)
 
         activity.execute(agent_run_id: agent_run.id)
       end
 
       it "passes an explicit empty MCP config when no servers are configured" do
         expect(container_service).to receive(:execute) do |command, options|
-          mcp_flag_index = command.index("--mcp-config")
+          # Variadic --mcp-config must use --flag=value so it does not swallow
+          # the trailing positional prompt.
+          mcp_flag = command.find { |part| part.to_s.start_with?("--mcp-config=") }
 
-          expect(command).to include("claude", "--mcp-config")
-          expect(mcp_flag_index).to be_present
+          expect(command).to include("claude")
+          expect(mcp_flag).to be_present
+          expect(command).not_to include("--mcp-config")
           expect(options).to include(timeout: anything)
-          expect(options[:preparation]).to be_a(AgentHarness::ExecutionPreparation)
-          expect(options[:preparation].file_writes).to include(
-            have_attributes(
-              path: command.fetch(mcp_flag_index + 1),
-              content: JSON.generate("mcpServers" => {}),
-              mode: 0o600
-            )
-          )
         end.and_return(exec_success)
 
         activity.execute(agent_run_id: agent_run.id)

@@ -6,6 +6,8 @@ FactoryBot.define do
     runner_name { "claude" }
     circuit_state { "closed" }
     failure_count { 0 }
+    half_open_success_count { 0 }
+    half_open_failure_count { 0 }
 
     trait :rate_limited do
       rate_limited_until { 1.hour.from_now }
@@ -21,6 +23,8 @@ FactoryBot.define do
       circuit_state { "half_open" }
       failure_count { 5 }
       circuit_opened_at { 10.minutes.ago }
+      half_open_success_count { 0 }
+      half_open_failure_count { 0 }
     end
   end
 end
