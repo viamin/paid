@@ -808,7 +808,7 @@ RSpec.describe Activities::RunAgentActivity do
 
     it "builds OpenRouter provider routing for openrouter_free runs from project classification" do
       api_key = create(:runner_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret")
-      free_model = create(:llm_model, model_id: "deepseek/deepseek-v4-flash:free", provider: "deepseek", tier: "mid")
+      free_model = create(:llm_model, model_id: "deepseek/deepseek-v4-flash:free", provider: "deepseek", tier: "mid", pricing_tier: "free")
       restricted_run = build_openrouter_free_run(project: project, model: free_model, data_classification: "restricted")
       runner = create_openrouter_free_runner(user: user, api_key: api_key, model: free_model.model_id)
 
@@ -826,7 +826,7 @@ RSpec.describe Activities::RunAgentActivity do
 
     it "raises instead of falling back to an unpinned runtime when no free model resolves for openrouter_free" do
       api_key = create(:runner_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret")
-      free_model = create(:llm_model, model_id: "deepseek/deepseek-v4-flash:free", provider: "deepseek", tier: "mid")
+      free_model = create(:llm_model, model_id: "deepseek/deepseek-v4-flash:free", provider: "deepseek", tier: "mid", pricing_tier: "free")
       run = build_openrouter_free_run(project: project, model: free_model, data_classification: "internal")
       runner = create_openrouter_free_runner(user: user, api_key: api_key, model: free_model.model_id)
 

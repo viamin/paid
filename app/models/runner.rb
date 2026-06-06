@@ -972,6 +972,14 @@ class Runner < ApplicationRecord
       model = LlmModel.find_by(model_id: model_id)
       if model.nil?
         errors.add(:tier_model_ids, "references unknown model #{model_id} for tier #{tier}")
+      elsif openrouter_free?
+        # openrouter_free routes only free-pricing models. Reject crafted
+        # updates that try to repoint it at paid OpenRouter models the runner
+        # must never run.
+        unless model.free?
+          errors.add(:tier_model_ids, "must reference free models for #{runner_key} (#{model_id} is not free)")
+          return
+        end
       elsif requires_direct_outbound?
         # Direct-outbound runners must use their configured model — reject
         # crafted updates that try to pin a different model_id. Skip when
@@ -1018,6 +1026,13 @@ class Runner < ApplicationRecord
       model_id = entry["model_id"]
       if !model_id.is_a?(String) || model_id.blank?
         errors.add(:tier_models, "tier #{tier} must include a non-blank model_id")
+      elsif openrouter_free?
+        # ResolveTierModel prefers persisted tier_models over the free
+        # defaults, so the free contract must also hold here.
+        model = LlmModel.find_by(model_id: model_id)
+        if model && !model.free?
+          errors.add(:tier_models, "tier #{tier} must reference a free model for #{runner_key} (#{model_id} is not free)")
+        end
       end
 
       provider_id = entry["provider_id"]
@@ -1174,6 +1189,10 @@ class Runner < ApplicationRecord
       api_key? &&
       PI_API_PROVIDER_KEYS.include?(pi_api_provider) &&
       pi_model_id.present?
+  end
+
+  def openrouter_free?
+    runner_key == "openrouter_free"
   end
 
   def openrouter_free_direct_outbound?

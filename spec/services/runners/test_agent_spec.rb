@@ -756,7 +756,7 @@ RSpec.describe Runners::TestAgent do
 
     context "when direct-outbound openrouter_free is tested" do
       let(:api_key) { create(:runner_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret") }
-      let!(:free_model) { create(:llm_model, model_id: "deepseek/deepseek-v4-flash:free", provider: "deepseek", tier: "mid") }
+      let!(:free_model) { create(:llm_model, model_id: "deepseek/deepseek-v4-flash:free", provider: "deepseek", tier: "mid", pricing_tier: "free") }
       let(:runner_record) do
         create(
           :runner,
