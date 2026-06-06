@@ -64,7 +64,7 @@ RSpec.describe Dashboard::QueuePreview do
 
       create(:agent_run, :queued, :manual, project:, created_at: 1.minute.ago)
       cached = described_class.call(user:)
-      Dashboard::CacheVersion.bump(account)
+      Dashboard::CacheVersion.bump(account, scope: Dashboard::CacheVersion::LISTS_SCOPE)
       refreshed = described_class.call(user:)
 
       expect(first.size).to eq(1)

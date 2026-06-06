@@ -29,7 +29,7 @@ module Dashboard
 
     def broadcast_live_stats
       Rails.cache.delete("dashboard/live_stats/#{account.id}")
-      Dashboard::CacheVersion.bump(account)
+      Dashboard::CacheVersion.bump(account, scope: Dashboard::CacheVersion::LISTS_SCOPE)
 
       Turbo::StreamsChannel.broadcast_update_to(
         stream_name,

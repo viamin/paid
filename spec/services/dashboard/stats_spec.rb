@@ -91,12 +91,23 @@ RSpec.describe Dashboard::Stats do
         create(:agent_run, :completed, project:, duration_seconds: 60)
 
         cached = described_class.call(account: account)
-        Dashboard::CacheVersion.bump(account)
+        Dashboard::CacheVersion.bump(account, scope: Dashboard::CacheVersion::STATS_SCOPE)
         refreshed = described_class.call(account: account)
 
         expect(first[:run_volume][:total]).to eq(0)
         expect(cached[:run_volume][:total]).to eq(0)
         expect(refreshed[:run_volume][:total]).to eq(1)
+      end
+
+      it "keeps cached stats warm when only the list cache version changes" do
+        first = described_class.call(account: account)
+        create(:agent_run, :completed, project:, duration_seconds: 60)
+
+        Dashboard::CacheVersion.bump(account, scope: Dashboard::CacheVersion::LISTS_SCOPE)
+        still_cached = described_class.call(account: account)
+
+        expect(first[:run_volume][:total]).to eq(0)
+        expect(still_cached[:run_volume][:total]).to eq(0)
       end
     end
 

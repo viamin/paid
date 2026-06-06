@@ -74,7 +74,7 @@ module Dashboard
         status_filter,
         goal_filter,
         requested_sections.join("-"),
-        Dashboard::CacheVersion.current(account)
+        Dashboard::CacheVersion.current(account, scope: Dashboard::CacheVersion::STATS_SCOPE)
       ].join("/")
     end
 

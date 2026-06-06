@@ -83,7 +83,7 @@ RSpec.describe Dashboard::RecentActivity do
 
       create(:agent_run, project: project, status: "completed", completed_at: 1.minute.ago, duration_seconds: 30)
       cached = described_class.call(account: account)
-      Dashboard::CacheVersion.bump(account)
+      Dashboard::CacheVersion.bump(account, scope: Dashboard::CacheVersion::LISTS_SCOPE)
       refreshed = described_class.call(account: account)
 
       expect(first.size).to eq(1)

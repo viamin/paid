@@ -3,17 +3,20 @@
 module Dashboard
   class CacheVersion
     VERSION_TTL = 30.days
+    LISTS_SCOPE = :lists
+    STATS_SCOPE = :stats
 
-    def self.current(account)
-      new(account:).current
+    def self.current(account, scope: LISTS_SCOPE)
+      new(account:, scope:).current
     end
 
-    def self.bump(account)
-      new(account:).bump
+    def self.bump(account, scope: LISTS_SCOPE)
+      new(account:, scope:).bump
     end
 
-    def initialize(account:)
+    def initialize(account:, scope:)
       @account = account
+      @scope = scope
     end
 
     def current
@@ -27,10 +30,10 @@ module Dashboard
 
     private
 
-    attr_reader :account
+    attr_reader :account, :scope
 
     def cache_key
-      "dashboard/version/#{account.id}"
+      "dashboard/version/#{account.id}/#{scope}"
     end
 
     def initial_version

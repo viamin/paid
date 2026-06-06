@@ -27,7 +27,8 @@ module Dashboard
 
     def invalidate_caches
       Rails.cache.delete("dashboard/live_stats/#{account.id}")
-      Dashboard::CacheVersion.bump(account)
+      Dashboard::CacheVersion.bump(account, scope: Dashboard::CacheVersion::LISTS_SCOPE)
+      Dashboard::CacheVersion.bump(account, scope: Dashboard::CacheVersion::STATS_SCOPE)
     end
 
     def broadcast_live_stats

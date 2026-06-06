@@ -29,7 +29,10 @@ RSpec.describe Dashboard::LiveBroadcaster do
     it "broadcasts live stats and active runs" do
       described_class.call(account: account, agent_run: agent_run)
 
-      expect(Dashboard::CacheVersion).to have_received(:bump).with(account)
+      expect(Dashboard::CacheVersion).to have_received(:bump).with(
+        account,
+        scope: Dashboard::CacheVersion::LISTS_SCOPE
+      )
       expect(Turbo::StreamsChannel).to have_received(:broadcast_update_to).with(
         [ account, :live_dashboard ],
         hash_including(target: "live-stats", partial: "dashboard/live_stats")
@@ -47,6 +50,15 @@ RSpec.describe Dashboard::LiveBroadcaster do
 
       expect(Rails.cache).not_to have_received(:delete_matched).with("dashboard/queue_preview/#{account.id}/*")
       expect(Rails.cache).not_to have_received(:delete_matched).with("dashboard/recent_activity/#{account.id}/*")
+    end
+
+    it "does not invalidate stats caches during live updates" do
+      described_class.call(account: account, agent_run: agent_run)
+
+      expect(Dashboard::CacheVersion).not_to have_received(:bump).with(
+        account,
+        scope: Dashboard::CacheVersion::STATS_SCOPE
+      )
     end
 
     it "preloads final runner records for active-run fallback rows" do

@@ -66,7 +66,7 @@ module Dashboard
     end
 
     def cache_key
-      "dashboard/recent_activity/#{account.id}/#{limit}/#{Dashboard::CacheVersion.current(account)}"
+      "dashboard/recent_activity/#{account.id}/#{limit}/#{Dashboard::CacheVersion.current(account, scope: Dashboard::CacheVersion::LISTS_SCOPE)}"
     end
   end
 end

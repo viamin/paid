@@ -22,7 +22,14 @@ RSpec.describe Dashboard::Broadcaster do
     it "bumps the dashboard cache version and refreshes live stats" do
       described_class.call(account: account)
 
-      expect(Dashboard::CacheVersion).to have_received(:bump).with(account)
+      expect(Dashboard::CacheVersion).to have_received(:bump).with(
+        account,
+        scope: Dashboard::CacheVersion::LISTS_SCOPE
+      )
+      expect(Dashboard::CacheVersion).to have_received(:bump).with(
+        account,
+        scope: Dashboard::CacheVersion::STATS_SCOPE
+      )
       expect(Turbo::StreamsChannel).to have_received(:broadcast_update_to).with(
         [ account, :live_dashboard ],
         hash_including(target: "live-stats", partial: "dashboard/live_stats")
