@@ -383,9 +383,35 @@ module Runners
     # behavior of RunAgentActivity.subscription_auth_command.
     def container_provider_runtime
       return kilocode_provider_runtime if kilocode_direct_outbound?
+      return openrouter_free_provider_runtime if openrouter_free_direct_outbound?
       return subscription_provider_runtime if subscription_provider_runtime?
 
       runner.agent_harness_runner_runtime
+    end
+
+    def openrouter_free_direct_outbound?
+      runner.runner_key == "openrouter_free" && runner.requires_direct_outbound?
+    end
+
+    # Builds the OpenRouter runtime for openrouter_free smoke tests.
+    #
+    # Unlike opencode (whose model lives in config), openrouter_free resolves
+    # its model through tier mappings, so mirror the live execution path
+    # (selected_runner_runtime) by resolving a model and passing the test
+    # project for data-collection routing.
+    def openrouter_free_provider_runtime
+      model_id = resolve_openrouter_free_model_id
+      raise MissingProjectContextError, "openrouter_free runner has no resolvable model" if model_id.blank?
+
+      runner.openrouter_free_runner_runtime(project: test_project, model_id: model_id)
+    end
+
+    def resolve_openrouter_free_model_id
+      LlmModel::TIERS.each do |tier|
+        result = Runners::ResolveTierModel.call(runner: runner, tier: tier, user: runner.user)
+        return result.model_id if result.success? && result.model_id.present?
+      end
+      nil
     end
 
     def subscription_provider_runtime?

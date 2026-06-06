@@ -20,6 +20,7 @@ function loadRunnerApiServiceType() {
     codex: "openai",
     aider: "anthropic",
     gemini: "google",
+    openrouter_free: "openrouter",
   }
 }
 
