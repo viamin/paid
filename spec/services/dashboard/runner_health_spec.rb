@@ -76,7 +76,7 @@ RSpec.describe Dashboard::RunnerHealth do
         runner_key: "openrouter_free",
         auth_type: "api_key",
         provider_api_key: api_key,
-        tier_model_ids: { "high" => free_model.model_id }
+        tier_model_ids: LlmModel::TIERS.index_with { free_model.model_id }
       )
       create(:runner_state, user: user, runner_name: "#{runner.state_key}:#{free_model.model_id}", rate_limited_until: 10.minutes.from_now)
 

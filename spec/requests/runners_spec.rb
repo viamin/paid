@@ -68,7 +68,7 @@ RSpec.describe "Runners" do
           runner_key: "openrouter_free",
           auth_type: "api_key",
           provider_api_key: api_key,
-          tier_model_ids: { "high" => free_model.model_id }
+          tier_model_ids: LlmModel::TIERS.index_with { free_model.model_id }
         )
 
         get runners_path
@@ -518,9 +518,9 @@ RSpec.describe "Runners" do
 
     it "creates an openrouter_free runner with default free tier mappings" do
       api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
-      create(:llm_model, model_id: "free-low", provider: "deepseek", tier: "low", pricing_tier: "free", capability_score: 4.0)
-      create(:llm_model, model_id: "free-mid", provider: "qwen", tier: "mid", pricing_tier: "free", capability_score: 6.0)
-      create(:llm_model, model_id: "free-high", provider: "moonshot", tier: "high", pricing_tier: "free", capability_score: 8.0)
+      create(:llm_model, model_id: "free-low", provider: "openrouter", tier: "low", pricing_tier: "free", capability_score: 4.0)
+      create(:llm_model, model_id: "free-mid", provider: "openrouter", tier: "mid", pricing_tier: "free", capability_score: 6.0)
+      create(:llm_model, model_id: "free-high", provider: "openrouter", tier: "high", pricing_tier: "free", capability_score: 8.0)
 
       post runners_path, params: {
         runner: {
