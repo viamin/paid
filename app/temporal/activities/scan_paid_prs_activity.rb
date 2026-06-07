@@ -1453,54 +1453,16 @@ module Activities
 
     # --- CI checks ---
 
-    # Skips the check_runs API call when a recent check_suite or check_run webhook
-    # delivered the same data within the poll interval window. GitHub sends both
-    # event types with full conclusion data when a suite/run completes.
-    def fetch_check_runs(client, project, pr_data, issue: nil)
+    def fetch_check_runs(client, project, pr_data)
       return [] unless pr_data
 
-      # Use provided issue or look it up by PR number.
-      issue ||= find_issue_for_pr(project, pr_data)
-      return client.check_runs_for_ref(project.full_name, pr_data.head.sha) unless issue
-
-      return client.check_runs_for_ref(project.full_name, pr_data.head.sha) unless webhook_fresh?(issue, project)
-
-      logger.debug(
-        message: "pr_scanner.check_runs_skipped_webhook_fresh",
-        project_id: project.id,
-        pr_number: issue.github_number
-      )
-      []
+      client.check_runs_for_ref(project.full_name, pr_data.head.sha)
     rescue GithubClient::Error => e
       logger.warn(
         message: "pr_scanner.ci_check_failed",
         project_id: project.id,
         error: e.message
       )
-      nil
-    end
-
-    # Returns true when a recent webhook delivered fresh data for the event
-    # type, making the corresponding API fetch redundant within the poll window.
-    def webhook_fresh?(issue, project, event_type)
-      return false unless issue && project
-      return false unless project.poll_interval_seconds.to_i > 0
-
-      case event_type
-      when :check_suite then issue.check_suite_webhook_at
-      when :check_run then issue.check_run_webhook_at
-      else return false
-      end && issue.webhook_fresh?(event_type, project.poll_interval_seconds)
-    rescue StandardError
-      false
-    end
-
-    def find_issue_for_pr(project, pr_data)
-      number = pr_data&.number || pr_data&.dig("number")
-      return nil unless number
-
-      project.issues.find_by(github_number: number, is_pull_request: true)
-    rescue StandardError
       nil
     end
 
@@ -1668,18 +1630,6 @@ module Activities
     # --- Review checks ---
 
     def fetch_unresolved_threads(client, project, issue)
-      # Skip when a recent issue_comment webhook delivered fresh data. GitHub
-      # sends issue_comment on both PR and issue comments, and new comments can
-      # resolve threads — the webhook gives us the same state without an API call.
-      if webhook_fresh?(issue, project, :issue_comment)
-        logger.debug(
-          message: "pr_scanner.threads_skipped_webhook_fresh",
-          project_id: project.id,
-          pr_number: issue.github_number
-        )
-        return []
-      end
-
       threads = client.review_threads(project.full_name, issue.github_number)
       threads.reject { |t| t[:is_resolved] }
     rescue GithubClient::Error => e
@@ -2381,15 +2331,13 @@ module Activities
       nil
     end
 
+    # Returns true when a recent webhook delivered fresh data for the event
+    # type, making the corresponding API fetch redundant within the poll window.
     def webhook_fresh?(issue, project, event_type)
       return false unless issue && project
       return false unless project.poll_interval_seconds.to_i > 0
 
-      case event_type
-      when :pull_request_review then issue.pull_request_review_webhook_at
-      when :issue_comment then issue.issue_comment_webhook_at
-      else return false
-      end && issue.webhook_fresh?(event_type, project.poll_interval_seconds)
+      issue.webhook_fresh?(event_type, project.poll_interval_seconds)
     rescue StandardError
       false
     end

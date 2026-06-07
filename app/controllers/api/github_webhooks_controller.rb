@@ -298,12 +298,13 @@ module Api
       issue = @project.issues.find_by(github_number: pr_number, is_pull_request: true)
       return unless issue
 
-      column = case event_type
-               when :pull_request_review then "pull_request_review_webhook_at"
-               when :pull_request then "pull_request_webhook_at"
-               when :issue_comment then "issue_comment_webhook_at"
-               else return
-               end
+      column =
+        case event_type
+        when :pull_request_review then "pull_request_review_webhook_at"
+        when :pull_request then "pull_request_webhook_at"
+        when :issue_comment then "issue_comment_webhook_at"
+        else return
+        end
 
       issue.update_column(column, Time.current)
     rescue StandardError => e

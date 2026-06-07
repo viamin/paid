@@ -469,14 +469,15 @@ class Issue < ApplicationRecord
   def webhook_fresh?(event_type, poll_interval_seconds)
     return false unless is_pull_request?
 
-    webhook_at = case event_type
-                 when :pull_request_review then pull_request_review_webhook_at
-                 when :pull_request then pull_request_webhook_at
-                 when :issue_comment then issue_comment_webhook_at
-                 when :check_suite then check_suite_webhook_at
-                 when :check_run then check_run_webhook_at
-                 else return false
-                 end
+    webhook_at =
+      case event_type
+      when :pull_request_review then pull_request_review_webhook_at
+      when :pull_request then pull_request_webhook_at
+      when :issue_comment then issue_comment_webhook_at
+      when :check_suite then check_suite_webhook_at
+      when :check_run then check_run_webhook_at
+      else return false
+      end
 
     return false if webhook_at.blank?
     return false if poll_interval_seconds.to_i <= 0
