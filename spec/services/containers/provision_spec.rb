@@ -3125,6 +3125,66 @@ RSpec.describe Containers::Provision do
     end
   end
 
+  describe "#watchdog_stop_container!" do
+    before { service.provision }
+
+    it "stops the container on the first attempt" do
+      allow(mock_container).to receive(:stop)
+      allow(service).to receive(:log_system)
+
+      result = service.send(:watchdog_stop_container!, mock_container)
+
+      expect(result).to be true
+      expect(mock_container).to have_received(:stop).once
+    end
+
+    it "retries and succeeds on the second attempt" do
+      call_count = 0
+      allow(mock_container).to receive(:stop) do
+        call_count += 1
+        raise Docker::Error::DockerError, "busy" if call_count == 1
+      end
+      allow(service).to receive(:log_system)
+
+      result = service.send(:watchdog_stop_container!, mock_container)
+
+      expect(result).to be true
+      expect(mock_container).to have_received(:stop).twice
+      expect(service).to have_received(:log_system).with(
+        "container.watchdog.stop_failed",
+        error: "busy",
+        attempt: 1,
+        max_attempts: described_class::WATCHDOG_STOP_ATTEMPTS
+      )
+    end
+
+    it "escalates to kill on the final attempt" do
+      allow(mock_container).to receive(:stop).and_raise(Docker::Error::DockerError, "busy")
+      allow(mock_container).to receive(:kill)
+      allow(service).to receive(:log_system)
+
+      result = service.send(:watchdog_stop_container!, mock_container)
+
+      expect(result).to be true
+      expect(mock_container).to have_received(:stop).twice
+      expect(mock_container).to have_received(:kill).once
+    end
+
+    it "logs stop_exhausted when all attempts fail" do
+      allow(mock_container).to receive(:stop).and_raise(Docker::Error::DockerError, "busy")
+      allow(mock_container).to receive(:kill).and_raise(Docker::Error::DockerError, "kill failed")
+      allow(service).to receive(:log_system)
+
+      result = service.send(:watchdog_stop_container!, mock_container)
+
+      expect(result).to be false
+      expect(service).to have_received(:log_system).with(
+        "container.watchdog.stop_exhausted",
+        message: "All #{described_class::WATCHDOG_STOP_ATTEMPTS} stop attempts failed"
+      )
+    end
+  end
+
   describe "#heartbeat_age_seconds" do
     let(:heartbeat_dir) { Dir.mktmpdir("heartbeat-age") }
     let(:heartbeat_path) { File.join(heartbeat_dir, "heartbeat") }

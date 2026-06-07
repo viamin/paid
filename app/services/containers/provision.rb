@@ -40,6 +40,10 @@ module Containers
     # transport error as a timeout. Kept small to avoid false reclassification.
     DOCKER_TIMEOUT_SKEW_TOLERANCE = 0.5
 
+    # Number of attempts the watchdog makes to stop a timed-out container.
+    # The final attempt escalates to SIGKILL via Docker::Container#kill.
+    WATCHDOG_STOP_ATTEMPTS = 3
+
     # Base error for all container service errors
     class Error < StandardError; end
 
@@ -2668,11 +2672,7 @@ module Containers
             # returned between releasing the mutex above and reaching here.
             break if ctx.mutex.synchronize { ctx.exec_completed_ref.call }
 
-            begin
-              backend.stop_container(ctx.container, timeout: 0)
-            rescue Docker::Error::DockerError => e
-              log_system("container.watchdog.stop_failed", error: e.message)
-            end
+            watchdog_stop_container!(ctx.container)
 
             break
           rescue => e
@@ -2690,6 +2690,31 @@ module Containers
     # Extracted as a method so tests can override with a shorter interval.
     def watchdog_poll_interval
       1
+    end
+
+    # Attempts to stop a container with retries, escalating to SIGKILL on
+    # the final attempt. Returns true if the container was stopped.
+    def watchdog_stop_container!(container)
+      WATCHDOG_STOP_ATTEMPTS.times do |attempt|
+        begin
+          if attempt < WATCHDOG_STOP_ATTEMPTS - 1
+            backend.stop_container(container, timeout: 0)
+          else
+            container.kill
+          end
+          return true
+        rescue Docker::Error::DockerError => e
+          log_system("container.watchdog.stop_failed",
+            error: e.message,
+            attempt: attempt + 1,
+            max_attempts: WATCHDOG_STOP_ATTEMPTS)
+          sleep(1) if attempt < WATCHDOG_STOP_ATTEMPTS - 1
+        end
+      end
+
+      log_system("container.watchdog.stop_exhausted",
+        message: "All #{WATCHDOG_STOP_ATTEMPTS} stop attempts failed")
+      false
     end
 
     def timeout_diagnostics(started_at, output_received, last_activity_at, heartbeat_path)
