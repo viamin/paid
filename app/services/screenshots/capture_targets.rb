@@ -66,6 +66,7 @@ module Screenshots
       onboarding: Target.new(slug: "onboarding", path_builder: "/onboarding", requires_auth: true),
       integrations: Target.new(slug: "integrations", path_builder: "/integrations", requires_auth: true),
       integrations_new: Target.new(slug: "integrations_new", path_builder: "/integrations/new", requires_auth: true),
+      free_models_catalog: Target.new(slug: "free_models_catalog", path_builder: "/free_models", requires_auth: true),
       integration_credentials: Target.new(slug: "integration_credentials", path_builder: "/integration_credentials", requires_auth: true),
       integration_credential_new: Target.new(slug: "integration_credential_new", path_builder: "/integration_credentials/new", requires_auth: true),
       integration_credential_show: Target.new(slug: "integration_credential_show", path_builder: ->(seed_data) { "/integration_credentials/#{seed_data.fetch(:integration_credential).id}" }, requires_auth: true),
@@ -226,6 +227,7 @@ module Screenshots
       "provider_api_keys_controller.rb" => %i[provider_api_keys provider_api_key_new provider_api_key_show provider_api_key_edit],
       "marketplace_entries_controller.rb" => %i[marketplace_entries marketplace_entry_new marketplace_entry_show marketplace_entry_edit],
       "integrations_controller.rb" => %i[integrations integrations_new],
+      "free_models_controller.rb" => [ :free_models_catalog ],
       "integration_credentials_controller.rb" => %i[integration_credentials integration_credential_new integration_credential_show],
       "github_installations_controller.rb" => %i[
         github_installations
@@ -372,6 +374,7 @@ module Screenshots
       when /\Ahome\// then [ :dashboard ]
       when /\Anotifications\// then [ :notifications ]
       when /\Aonboarding\// then [ :onboarding ]
+      when /\Afree_models\// then [ :free_models_catalog ]
       when /\Aintegrations\// then integrations_targets(relative_path.delete_prefix("integrations/"))
       when /\Aintegration_credentials\// then rest_resource_targets(relative_path, "integration_credentials", index: :integration_credentials, new: :integration_credential_new, show: :integration_credential_show, edit: :integration_credential_show)
       when /\Agithub_installations\// then github_installation_targets(relative_path.delete_prefix("github_installations/"))

@@ -6,7 +6,7 @@ RSpec.describe Tools::BaseTool do
   let(:account) { create(:account) }
   let(:user) { create(:user, :member, account: account) }
   let(:session) { create(:chat_session, account: account, created_by: user) }
-  let(:project) { create(:project, account: account) }
+  let!(:project) { create(:project, account: account) }
 
   before do
     stub_const("Tools::BaseToolAuthorizedSpecTool", Class.new(described_class) do

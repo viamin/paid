@@ -61,6 +61,22 @@ RSpec.describe "Runners" do
         expect(response.body).to include("Chat")
       end
 
+      it "shows the free models badge and section for an openrouter_free runner" do
+        free_model = create(:llm_model, model_id: "high-free", provider: "openrouter", tier: "high", pricing_tier: "free")
+        api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+        user.runners.create!(
+          runner_key: "openrouter_free",
+          auth_type: "api_key",
+          provider_api_key: api_key,
+          tier_model_ids: LlmModel::TIERS.index_with { free_model.model_id }
+        )
+
+        get runners_path
+
+        expect(response.body).to include("Open Catalog")
+        expect(response.body.scan("Free Models").size).to be >= 2
+      end
+
       it "renders collapsed auth instructions for every supported runner" do
         get runners_path
 
@@ -502,9 +518,9 @@ RSpec.describe "Runners" do
 
     it "creates an openrouter_free runner with default free tier mappings" do
       api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
-      create(:llm_model, model_id: "free-low", provider: "deepseek", tier: "low", pricing_tier: "free", capability_score: 4.0)
-      create(:llm_model, model_id: "free-mid", provider: "qwen", tier: "mid", pricing_tier: "free", capability_score: 6.0)
-      create(:llm_model, model_id: "free-high", provider: "moonshot", tier: "high", pricing_tier: "free", capability_score: 8.0)
+      create(:llm_model, model_id: "free-low", provider: "openrouter", tier: "low", pricing_tier: "free", capability_score: 4.0)
+      create(:llm_model, model_id: "free-mid", provider: "openrouter", tier: "mid", pricing_tier: "free", capability_score: 6.0)
+      create(:llm_model, model_id: "free-high", provider: "openrouter", tier: "high", pricing_tier: "free", capability_score: 8.0)
 
       post runners_path, params: {
         runner: {
@@ -617,6 +633,19 @@ RSpec.describe "Runners" do
       expect(response.body).to include('value="api_key"')
       expect(response.body).to include('id="runner_runner_key_api_key"')
       expect(response.body).to include('option value="aider"')
+    end
+
+    it "prefills openrouter_free setup from the catalog link" do
+      create(:provider_api_key, user: user, api_service_type: "openrouter", name: "OpenRouter")
+      create(:llm_model, model_id: "high-free", provider: "openrouter", tier: "high", pricing_tier: "free")
+      allow(RunnerSupport).to receive(:addable_runner_keys).and_return(%w[claude openrouter_free])
+
+      get new_runner_path(form_variant: "api_key", runner_key: "openrouter_free")
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("OpenRouter Free")
+      expect(response.body).to include('id="runner_runner_key_api_key"')
+      expect(response.body).to include("Tier Model Mapping")
     end
   end
 

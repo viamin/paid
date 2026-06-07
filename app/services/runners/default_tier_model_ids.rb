@@ -21,10 +21,10 @@ module Runners
     end
 
     def call
+      return tier_defaults_for_openrouter_free if @runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
+
       model_provider = RUNNER_KEY_TO_MODEL_PROVIDER[@runner_key]
       return {} if model_provider.blank? && !DIRECT_OUTBOUND_RUNNER_KEYS.include?(@runner_key)
-
-      return tier_defaults_for_openrouter_free if @runner_key == "openrouter_free"
 
       if model_provider
         tier_defaults_for_standard_provider(model_provider)
@@ -43,8 +43,10 @@ module Runners
     end
 
     def tier_defaults_for_openrouter_free
+      models = LlmModel.free.active.by_provider(Runner::OPENROUTER_FREE_MODEL_PROVIDER).by_capability.to_a.reject(&:below_quality_bar?)
+
       LlmModel::TIERS.each_with_object({}) do |tier, mapping|
-        model = LlmModel.active.free.by_tier(tier).by_capability.first
+        model = models.find { |entry| entry.tier == tier }
         mapping[tier] = model.model_id if model
       end
     end

@@ -42,7 +42,12 @@
             data-test-agent-csrf-token-value="<%= form_authenticity_token %>"
           >
             <td class="px-4 py-3 text-sm font-medium text-gray-900">
-              <%= runner.display_name %>
+              <div class="flex flex-wrap items-center gap-2">
+                <span><%= runner.display_name %></span>
+                <% if runner.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY %>
+                  <span class="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">Free Models</span>
+                <% end %>
+              </div>
             </td>
             <td class="px-4 py-3 text-sm text-gray-700">
               <% if runner.subscription? %>
@@ -110,6 +115,9 @@
                 <button data-test-agent-target="button" data-action="test-agent#test" type="button" class="font-medium text-emerald-600 hover:text-emerald-500">Test Agent</button>
                 <div data-test-agent-target="result"></div>
               </div>
+              <% if runner.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY %>
+                <%= link_to "Free Models", free_models_path, class: "ml-3 font-medium text-sky-600 hover:text-sky-500" %>
+              <% end %>
               <%= link_to "Edit", edit_runner_path(runner), class: "ml-3 font-medium text-indigo-600 hover:text-indigo-500" %>
               <%= button_to "Delete", runner_path(runner), method: :delete, class: "ml-3 inline text-red-600 hover:text-red-500", form: { class: "inline" } %>
             </td>
@@ -120,6 +128,21 @@
   </div>
 
   <%= render "usage_stats", usage_stats: @usage_stats, runners: @runners, runner_stats_by_id: @runner_stats_by_id %>
+
+  <% if @free_model_runners.any? %>
+    <div class="mt-8 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 class="text-base font-semibold text-emerald-950">Free Models</h2>
+          <p class="mt-1 text-sm text-emerald-900">Manage your OpenRouter free-model runner and review the synced catalog by tier.</p>
+        </div>
+        <div class="flex gap-3">
+          <%= link_to "Open Catalog", free_models_path, class: "rounded-md bg-white px-3 py-2 text-sm font-semibold text-emerald-900 shadow-sm ring-1 ring-inset ring-emerald-200 hover:bg-emerald-100" %>
+          <%= link_to "Edit Runner", edit_runner_path(@free_model_runners.first), class: "rounded-md bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500" %>
+        </div>
+      </div>
+    </div>
+  <% end %>
 
   <div class="mt-8">
     <%= render "settings",

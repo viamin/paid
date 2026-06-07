@@ -6,6 +6,7 @@ module Dashboard
 
     RunnerStatus = Struct.new(
       :runner,
+      :runner_key,
       :owner_name,
       :owner_email,
       :auth_type,
@@ -14,6 +15,7 @@ module Dashboard
       :available,
       :failure_count,
       :rate_limited_until,
+      :free_model_summary,
       keyword_init: true
     )
 
@@ -48,7 +50,7 @@ module Dashboard
     end
 
     def runner_rows
-      state_by_runner = runner_states.index_by(&:runner_name)
+      state_by_runner = direct_runner_states
 
       configured_runners.map do |runner|
         build_runner_status(runner, state_by_runner[runner.state_key])
@@ -64,11 +66,32 @@ module Dashboard
         .ordered
     end
 
-    def runner_states
-      @runner_states ||= RunnerState
+    def direct_runner_states
+      @direct_runner_states ||= RunnerState
         .joins(:user)
-        .where(users: { account_id: account.id }, runner_name: configured_runners.map(&:state_key))
-        .includes(:user)
+        .where(users: { account_id: account.id })
+        .where(runner_name: configured_runners.map(&:state_key))
+        .index_by(&:runner_name)
+    end
+
+    def free_model_states_by_prefix
+      @free_model_states_by_prefix ||= begin
+        prefixes = configured_runners
+          .select { |r| r.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY }
+          .map(&:state_key)
+
+        return {} if prefixes.empty?
+
+        like_sql = prefixes.map { |_| "runner_states.runner_name LIKE ?" }.join(" OR ")
+        like_values = prefixes.map { |p| "#{p}:%" }
+
+        states = RunnerState
+          .joins(:user)
+          .where(users: { account_id: account.id })
+          .where(like_sql, *like_values)
+
+        states.group_by { |state| prefixes.find { |p| state.runner_name.start_with?("#{p}:") } }
+      end
     end
 
     def build_runner_status(runner, state)
@@ -87,6 +110,7 @@ module Dashboard
 
       RunnerStatus.new(
         runner: runner.display_name,
+        runner_key: runner.runner_key,
         owner_name: runner.user.name.presence || runner.user.email,
         owner_email: runner.user.email,
         auth_type: runner.api_key? ? "API Key" : "Subscription",
@@ -94,7 +118,8 @@ module Dashboard
         status_label: status.to_s.humanize,
         available: status == :available,
         failure_count: state&.failure_count || 0,
-        rate_limited_until: state&.rate_limited_until
+        rate_limited_until: state&.rate_limited_until,
+        free_model_summary: free_model_summary_for(runner, status: status, state: state)
       )
     end
 
@@ -113,6 +138,31 @@ module Dashboard
 
     def cache_key
       "dashboard/runner_health/#{account.id}"
+    end
+
+    def free_model_summary_for(runner, status:, state:)
+      return unless runner.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
+
+      total = LlmModel.free.active.by_provider(Runner::OPENROUTER_FREE_MODEL_PROVIDER).count
+      return { available: 0, total: 0, rate_limited: 0, recovery_at: nil } if total.zero?
+
+      model_states = (free_model_states_by_prefix[runner.state_key] || [])
+        .select { |s| s.user_id == runner.user_id }
+      rate_limited_states = model_states.select(&:rate_limited?)
+      rate_limited = if rate_limited_states.any?
+        rate_limited_states.count
+      elsif status == :rate_limited
+        total
+      else
+        0
+      end
+
+      {
+        available: [ total - rate_limited, 0 ].max,
+        total: total,
+        rate_limited: rate_limited,
+        recovery_at: rate_limited_states.map(&:rate_limited_until).compact.min || state&.rate_limited_until
+      }
     end
 
     def self.default_circuit_breaker_timeout

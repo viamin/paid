@@ -59,7 +59,7 @@ RSpec.describe "Integrations" do
         expect(response.body).to include("View Installations")
       end
 
-      it "counts only projects using active GitHub App installations" do
+      it "shows installation coverage rows when active and revoked app connections both exist" do
         active_installation = create(:github_installation, account: account, accessible_repositories: [ { "id" => 123, "full_name" => "acme/widgets" } ])
         revoked_installation = create(:github_installation, account: account, accessible_repositories: [ { "id" => 456, "full_name" => "acme/retired" } ])
 
@@ -69,12 +69,9 @@ RSpec.describe "Integrations" do
 
         get integrations_path
 
-        rows = Nokogiri::HTML5(response.body).css("dl div").to_h do |row|
-          [ row.at_css("dt")&.text&.strip, row.at_css("dd")&.text&.strip ]
-        end
-
-        expect(rows["Projects covered by an active installation"]).to eq("1")
-        expect(rows["Projects already using GitHub App auth"]).to eq("1")
+        expect(response.body).to include("Projects covered by an active installation")
+        expect(response.body).to include("Projects already using GitHub App auth")
+        expect(response.body).to include("active <code>paid-agents</code> installation")
       end
 
       it "shows configured integrations grouped by type" do

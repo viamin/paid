@@ -73,6 +73,18 @@
                       <% if runner.status == :rate_limited && runner.rate_limited_until.present? %>
                         <p class="mt-1 text-xs text-gray-500">Resets <%= local_time(runner.rate_limited_until, format: :relative) %></p>
                       <% end %>
+                      <% if runner.free_model_summary.present? %>
+                        <p class="mt-1 text-xs text-gray-500">
+                          <%= runner.free_model_summary[:available] %> of <%= runner.free_model_summary[:total] %> free models available
+                          (<%= runner.free_model_summary[:rate_limited] %> rate-limited)
+                        </p>
+                        <% if runner.free_model_summary[:recovery_at].present? %>
+                          <p class="mt-1 text-xs text-gray-500">Estimated recovery <%= local_time(runner.free_model_summary[:recovery_at], format: :relative) %></p>
+                        <% end %>
+                        <% if runner.free_model_summary[:rate_limited].positive? %>
+                          <p class="mt-1 text-xs text-amber-700">Add OpenRouter credits to raise free-model limits.</p>
+                        <% end %>
+                      <% end %>
                     </td>
                     <td class="whitespace-nowrap px-3 py-2 text-right text-sm text-gray-900"><%= runner.failure_count %></td>
                   </tr>

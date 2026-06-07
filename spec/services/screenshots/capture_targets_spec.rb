@@ -218,6 +218,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to contain_exactly("service_container_new", "service_container_edit")
     end
 
+    it "maps free models catalog view to free_models_catalog target" do
+      targets = described_class.call(changed_files: [ "app/views/free_models/index.html.erb" ])
+
+      expect(targets.map(&:slug)).to eq([ "free_models_catalog" ])
+    end
+
     it "maps integrations new view to integrations_new target" do
       targets = described_class.call(changed_files: [ "app/views/integrations/new.html.erb" ])
 
