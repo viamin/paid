@@ -518,7 +518,7 @@ module Activities
       # Only fetch PR data and check runs if blocking review triggers aren't enough.
       if all_triggers.empty?
         pr_data ||= fetch_pr_data(client, project, issue)
-        checks = fetch_check_runs(client, project, pr_data, issue: issue)
+        checks = fetch_check_runs(client, project, pr_data)
         ci_triggers = ci_failure_triggers_with_retry(checks || [], client: client, project: project, issue: issue)
         all_triggers.concat(ci_triggers)
       end
@@ -642,7 +642,7 @@ module Activities
       pr_data ||= fetch_pr_data(client, project, issue)
       return :skipped if pr_data.nil?
 
-      checks = fetch_check_runs(client, project, pr_data, issue: issue)
+      checks = fetch_check_runs(client, project, pr_data)
       ci_triggers = ci_failure_triggers(checks || [])
 
       if ci_triggers.any?
@@ -662,7 +662,7 @@ module Activities
     def scan_ready_pr(project, client, issue, pr_data:)
       return :skipped if pr_data.nil?
 
-      checks = fetch_check_runs(client, project, pr_data, issue: issue)
+      checks = fetch_check_runs(client, project, pr_data)
       mergeable = pr_data && pr_data[:mergeable]
       progress_state = pr_progress_state(project, issue)
 
@@ -750,7 +750,7 @@ module Activities
 
       # Owner approval on an escalated PR unblocks auto-merge.
       if project.auto_merge_enabled? && pr_data.present?
-        checks = fetch_check_runs(client, project, pr_data, issue: issue)
+        checks = fetch_check_runs(client, project, pr_data)
 
         if third_party_bot_author?(project, issue.github_creator_login)
           if auto_merge_eligible_bot?(project, client, issue,
@@ -867,7 +867,7 @@ module Activities
       unresolved_threads: nil)
       last_run = last_completed_run(project, issue)
       pr_data ||= fetch_pr_data(client, project, issue)
-      checks ||= fetch_check_runs(client, project, pr_data, issue: issue)
+      checks ||= fetch_check_runs(client, project, pr_data)
       reviews ||= fetch_reviews(client, project, issue)
       unresolved_threads ||= fetch_unresolved_threads(client, project, issue)
 
@@ -1410,7 +1410,7 @@ module Activities
       pr_data = fetch_pr_data(client, project, issue)
       return nil if pr_data.nil?
 
-      checks = fetch_check_runs(client, project, pr_data, issue: issue)
+      checks = fetch_check_runs(client, project, pr_data)
       return nil if checks.nil? || checks_pending?(checks)
 
       score = all_checks_green?(checks) ? 1.0 : 0.0
@@ -1421,7 +1421,7 @@ module Activities
       pr_data = fetch_pr_data(client, project, issue)
       return nil if pr_data.nil?
 
-      checks = fetch_check_runs(client, project, pr_data, issue: issue)
+      checks = fetch_check_runs(client, project, pr_data)
       return nil if checks.nil?
 
       reviews = fetch_reviews(client, project, issue)
@@ -1459,7 +1459,7 @@ module Activities
       pr_data = fetch_pr_data(client, project, issue)
       return nil if pr_data.nil? || pr_data.mergeable.nil?
 
-      checks = fetch_check_runs(client, project, pr_data, issue: issue)
+      checks = fetch_check_runs(client, project, pr_data)
       return nil if checks.nil? || checks_pending?(checks)
 
       unresolved_threads = fetch_unresolved_threads(client, project, issue)
