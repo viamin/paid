@@ -10,6 +10,9 @@ class AgentRunCancellationJob < ApplicationJob
   retry_on Docker::Error::DockerError, wait: :polynomially_longer, attempts: 3
   discard_on ActiveRecord::RecordNotFound
 
+  # Notify only after Active Job retries are exhausted (matches retry_on attempts).
+  self.max_attempts = 5
+
   def perform(agent_run_id)
     agent_run = AgentRun.find(agent_run_id)
 

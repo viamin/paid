@@ -19,6 +19,9 @@ class DependencyBackfillJob < ApplicationJob
 
   retry_on GithubClient::RateLimitError, wait: :polynomially_longer, attempts: 3
 
+  # Notify only after Active Job retries are exhausted (matches retry_on attempts).
+  self.max_attempts = 3
+
   MAX_ISSUES_PER_JOB = 25
 
   def perform(project_id, issue_numbers)

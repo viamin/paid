@@ -102,6 +102,23 @@ RSpec.describe ExceptionNotification do
     end
   end
 
+  describe "retrying jobs align max_attempts with retry_on attempts" do
+    # Without this, jobs declaring retry_on would inherit the default
+    # max_attempts of 1 and could notify before Active Job exhausts retries.
+    {
+      AgentRunCancellationJob => 5,
+      AgentRunResourceJanitorJob => 3,
+      DependencyBackfillJob => 3,
+      EmbedChunksJob => 5,
+      GithubTokenValidationJob => 3,
+      QdrantCollectionCleanupJob => 5
+    }.each do |job_class, expected|
+      it "#{job_class} declares max_attempts == #{expected}" do
+        expect(job_class.max_attempts).to eq(expected)
+      end
+    end
+  end
+
   describe "ApplicationJob rescue_from with Paid::ExceptionNotifier" do
     let(:knowledge_job_class) do
       Class.new(ApplicationJob) do

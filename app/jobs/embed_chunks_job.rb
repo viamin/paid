@@ -6,6 +6,9 @@ class EmbedChunksJob < ApplicationJob
   retry_on Knowledge::Embeddings::EmbeddingError, wait: :polynomially_longer, attempts: 5
   retry_on QdrantClient::ConnectionError, wait: :polynomially_longer, attempts: 5
 
+  # Notify only after Active Job retries are exhausted (matches retry_on attempts).
+  self.max_attempts = 5
+
   def perform(project_id = nil)
     project = project_id ? Project.find(project_id) : nil
 

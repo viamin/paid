@@ -14,6 +14,9 @@ class GithubTokenValidationJob < ApplicationJob
   retry_on GithubClient::RateLimitError, wait: :polynomially_longer, attempts: 3
   discard_on ActiveRecord::RecordNotFound
 
+  # Notify only after Active Job retries are exhausted (matches retry_on attempts).
+  self.max_attempts = 3
+
   def perform(github_token_id)
     github_token = GithubToken.find(github_token_id)
     validate_token(github_token)
