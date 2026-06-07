@@ -965,7 +965,13 @@ module Activities
     end
 
     def escalation_dismissed?(issue)
-      issue.escalated_phase? && !issue.has_label?(PAID_ESCALATED_LABEL)
+      issue.escalated_phase? &&
+        !issue.has_label?(PAID_ESCALATED_LABEL) &&
+        !escalation_transition_pending?(issue)
+    end
+
+    def escalation_transition_pending?(issue)
+      issue.last_pr_scan_at.blank?
     end
 
     # Detect when a user marks a draft PR as ready on GitHub without going
