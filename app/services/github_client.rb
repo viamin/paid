@@ -1,7 +1,9 @@
 # frozen_string_literal: true
 
 require "octokit"
+require "digest"
 require "faraday/retry"
+require "faraday/http_cache"
 
 # GitHub API client wrapper with error handling and rate limit awareness.
 #
@@ -68,6 +70,7 @@ class GithubClient
   # @param health_endpoint [String] Stable health-state key for the auth principal
   # @param options [Hash] Additional Octokit client options
   def initialize(token:, health_endpoint: GithubHealthState::DEFAULT_ENDPOINT, **options)
+    @token = token
     @client = Octokit::Client.new(
       access_token: token,
       auto_paginate: false,
@@ -1397,6 +1400,8 @@ class GithubClient
 
   def configure_middleware
     client.middleware = Faraday::RackBuilder.new do |builder|
+      builder.use Faraday::HttpCache,
+        **http_cache_options
       builder.use Faraday::Retry::Middleware,
         max: RETRY_MAX,
         interval: RETRY_INTERVAL,
@@ -1491,6 +1496,18 @@ class GithubClient
       f.response :raise_error
       f.adapter Faraday.default_adapter
     end
+  end
+
+  def http_cache_options
+    {
+      store: TokenNamespacedStore.new(Rails.cache, cache_token_digest),
+      shared_cache: false,
+      serializer: JSON
+    }
+  end
+
+  def cache_token_digest
+    @cache_token_digest ||= Digest::SHA256.hexdigest(@token.to_s)
   end
 
   def pull_request_node_id(repo, number)
@@ -1611,5 +1628,30 @@ class GithubClient
       message: "github_client.health_state_record_failed",
       error: e.message
     )
+  end
+
+  class TokenNamespacedStore
+    def initialize(store, namespace)
+      @store = store
+      @namespace = namespace
+    end
+
+    def read(key)
+      @store.read(namespaced_key(key))
+    end
+
+    def write(key, value, **options)
+      @store.write(namespaced_key(key), value, **options)
+    end
+
+    def delete(key)
+      @store.delete(namespaced_key(key))
+    end
+
+    private
+
+    def namespaced_key(key)
+      "#{@namespace}:#{key}"
+    end
   end
 end

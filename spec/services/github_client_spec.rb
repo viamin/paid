@@ -14,6 +14,41 @@ RSpec.describe GithubClient do
     stub_const("GithubClient::RETRY_BACKOFF_FACTOR", 1)
   end
 
+  describe "HTTP cache configuration" do
+    let(:other_token) { "ghp_other_test_token_1234567890123456789012" }
+    let(:other_client) { described_class.new(token: other_token, health_endpoint: health_endpoint) }
+
+    it "uses JSON serialization for cached REST responses" do
+      expect(client.send(:http_cache_options)[:serializer]).to eq(JSON)
+    end
+
+    it "scopes REST cache store by token digest" do
+      store = client.send(:http_cache_options)[:store]
+      other_store = other_client.send(:http_cache_options)[:store]
+
+      expect(store).to be_a(GithubClient::TokenNamespacedStore)
+      expect(other_store).to be_a(GithubClient::TokenNamespacedStore)
+
+      underlying = ActiveSupport::Cache::MemoryStore.new
+      token_a = Digest::SHA256.hexdigest(token)
+      token_b = Digest::SHA256.hexdigest(other_token)
+      scoped_a = GithubClient::TokenNamespacedStore.new(underlying, token_a)
+      scoped_b = GithubClient::TokenNamespacedStore.new(underlying, token_b)
+
+      scoped_a.write("test_key", "value_a")
+      expect(scoped_a.read("test_key")).to eq("value_a")
+      expect(scoped_b.read("test_key")).to be_nil
+    end
+
+    it "adds HTTP caching only to the REST connection" do
+      rest_handlers = client.client.middleware.handlers.map(&:klass)
+      graphql_handlers = client.send(:graphql_connection).builder.handlers.map(&:klass)
+
+      expect(rest_handlers).to include(Faraday::HttpCache)
+      expect(graphql_handlers).not_to include(Faraday::HttpCache)
+    end
+  end
+
   describe "#validate_token" do
     context "when token is valid" do
       before do
