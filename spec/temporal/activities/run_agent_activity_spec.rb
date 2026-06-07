@@ -614,6 +614,21 @@ RSpec.describe Activities::RunAgentActivity do
       expect(prefix.count { |arg| arg == "--model" }).to eq(1)
     end
 
+    it "does not inject --model for non-claude subscription runners" do
+      llm_model = create(:llm_model, model_id: "copilot-model-1", provider: "github", tier: "mid")
+      create(:model_selection, agent_run: agent_run, llm_model: llm_model)
+      context = described_class::CommandContext.new(
+        runner_candidate: "copilot",
+        runner: "copilot",
+        user: nil
+      )
+
+      prefix = activity.send(:inject_runtime_model_flag,
+        %w[copilot --print], context, agent_run: agent_run)
+
+      expect(prefix).not_to include("--model")
+    end
+
     it "uses the runner's tier resolution even when the selected model is from another provider" do
       create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic", tier: "mid", capability_score: 9.0)
       llm_model = create(:llm_model, model_id: "gpt-5.4", provider: "openai", tier: "mid")

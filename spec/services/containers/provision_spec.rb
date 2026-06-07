@@ -3158,21 +3158,22 @@ RSpec.describe Containers::Provision do
       )
     end
 
-    it "escalates to kill on the final attempt" do
-      allow(mock_container).to receive(:stop).and_raise(Docker::Error::DockerError, "busy")
-      allow(mock_container).to receive(:kill)
+    it "retries all attempts via backend.stop_container" do
+      call_count = 0
+      allow(mock_container).to receive(:stop) do
+        call_count += 1
+        raise Docker::Error::DockerError, "busy" if call_count < described_class::WATCHDOG_STOP_ATTEMPTS
+      end
       allow(service).to receive(:log_system)
 
       result = service.send(:watchdog_stop_container!, mock_container)
 
       expect(result).to be true
-      expect(mock_container).to have_received(:stop).twice
-      expect(mock_container).to have_received(:kill).once
+      expect(mock_container).to have_received(:stop).exactly(described_class::WATCHDOG_STOP_ATTEMPTS).times
     end
 
     it "logs stop_exhausted when all attempts fail" do
       allow(mock_container).to receive(:stop).and_raise(Docker::Error::DockerError, "busy")
-      allow(mock_container).to receive(:kill).and_raise(Docker::Error::DockerError, "kill failed")
       allow(service).to receive(:log_system)
 
       result = service.send(:watchdog_stop_container!, mock_container)

@@ -2692,24 +2692,20 @@ module Containers
       1
     end
 
-    # Attempts to stop a container with retries, escalating to SIGKILL on
-    # the final attempt. Returns true if the container was stopped.
+    # Attempts to stop a container with retries. All attempts use the backend
+    # abstraction (not container.kill) so Swarm service references are resolved
+    # correctly. stop(timeout: 0) already sends SIGTERM then immediate SIGKILL.
+    # Returns true if the container was stopped.
     def watchdog_stop_container!(container)
       WATCHDOG_STOP_ATTEMPTS.times do |attempt|
-        begin
-          if attempt < WATCHDOG_STOP_ATTEMPTS - 1
-            backend.stop_container(container, timeout: 0)
-          else
-            container.kill
-          end
-          return true
-        rescue Docker::Error::DockerError => e
-          log_system("container.watchdog.stop_failed",
-            error: e.message,
-            attempt: attempt + 1,
-            max_attempts: WATCHDOG_STOP_ATTEMPTS)
-          sleep(1) if attempt < WATCHDOG_STOP_ATTEMPTS - 1
-        end
+        backend.stop_container(container, timeout: 0)
+        return true
+      rescue Docker::Error::DockerError => e
+        log_system("container.watchdog.stop_failed",
+          error: e.message,
+          attempt: attempt + 1,
+          max_attempts: WATCHDOG_STOP_ATTEMPTS)
+        sleep(1) if attempt < WATCHDOG_STOP_ATTEMPTS - 1
       end
 
       log_system("container.watchdog.stop_exhausted",
