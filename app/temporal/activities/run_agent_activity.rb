@@ -1132,7 +1132,7 @@ module Activities
         runner: runner,
         user: user_settings.user
       )
-      command = build_command(command_context, prompt)
+      command = build_command(command_context, prompt, agent_run: agent_run)
       command_env = command_env_for(command_context, prompt)
       command_preparation = command_preparation_for(command_context, prompt, agent_run: agent_run)
 
