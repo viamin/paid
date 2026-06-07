@@ -29,5 +29,17 @@ RSpec.describe Runners::DefaultTierModelIds do
     it "returns an empty hash for an unmapped provider_key" do
       expect(described_class.call(runner_key: "opencode")).to eq({})
     end
+
+    it "returns free-model mappings for openrouter_free" do
+      create(:llm_model, model_id: "free-low", provider: "openrouter", tier: "low", pricing_tier: "free", capability_score: 4.0)
+      create(:llm_model, model_id: "free-mid", provider: "openrouter", tier: "mid", pricing_tier: "free", capability_score: 6.0)
+      create(:llm_model, model_id: "free-high", provider: "openrouter", tier: "high", pricing_tier: "free", capability_score: 8.0)
+
+      expect(described_class.call(runner_key: "openrouter_free")).to eq(
+        "low" => "free-low",
+        "mid" => "free-mid",
+        "high" => "free-high"
+      )
+    end
   end
 end

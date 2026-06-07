@@ -65,22 +65,37 @@ RSpec.describe Tools::Registry do
       user = create(:user, :owner, account: account)
       create(:project_membership, :member, user: user, project: project)
 
-      definitions = described_class.read_only_definitions_for(user: user)
-      definition_names = definitions.map { |definition| definition[:name] }
-      expected_names = described_class.all.select { |klass|
-        klass.available_to?(user:) && !klass.write_operation?
-      }.map(&:tool_name)
+      all_definition_names = described_class.definitions_for(user: user).map { |definition| definition[:name] }
+      read_only_definition_names = described_class.read_only_definitions_for(user: user).map { |definition| definition[:name] }
 
-      expect(definition_names).to match_array(expected_names)
-      expect(definition_names & write_tool_names).to be_empty
+      expect(read_only_definition_names).to match_array(all_definition_names - write_tool_names)
+      expect(read_only_definition_names & write_tool_names).to be_empty
+    end
+  end
+
+  describe ".dispatch_read_only" do
+    it "rejects write tools even when the user is authorized to see them in the full registry" do
+      account = create(:account)
+      project = create(:project, account: account)
+      user = create(:user, :owner, account: account)
+      create(:project_membership, :member, user: user, project: project)
+
+      expect {
+        described_class.dispatch_read_only(
+          name: "trigger_agent_run",
+          arguments: {},
+          user: user,
+          session: build(:chat_session, account: account, created_by: user)
+        )
+      }.to raise_error(ArgumentError, "Unknown tool: trigger_agent_run")
     end
   end
 
   describe "write-operation audit" do
     it "flags the known write tools" do
-      flagged_write_tools = described_class.all.select(&:write_operation?).map(&:tool_name)
+      flagged_write_tool_names = described_class.all.select(&:write_operation?).map(&:tool_name)
 
-      expect(flagged_write_tools).to match_array(write_tool_names)
+      expect(flagged_write_tool_names).to match_array(write_tool_names)
     end
   end
 end

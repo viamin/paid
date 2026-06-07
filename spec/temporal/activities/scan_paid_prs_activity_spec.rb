@@ -95,6 +95,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
     allow(github_client).to receive_messages(rate_limit_remaining!: 100, check_run_log: "")
+    allow(github_client).to receive(:remove_label_from_issue)
     allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
   end
 
@@ -128,6 +129,45 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(selected_strategy).to have_received(:evaluate).with(
         have_attributes(project: project)
       )
+    end
+  end
+
+  describe "bot author classification" do
+    before do
+      allow(project).to receive(:github_author_login).and_return("paid-agents[bot]")
+    end
+
+    it "does not treat the project's own agent bot as a third-party bot" do
+      login = "paid-agents[bot]"
+
+      expect(activity.send(:bot_user?, login)).to be(true)
+      expect(activity.send(:paid_agent_pr_author?, project, login)).to be(true)
+      expect(activity.send(:third_party_bot_author?, project, login)).to be(false)
+    end
+
+    it "matches the agent bot login case-insensitively" do
+      expect(activity.send(:paid_agent_pr_author?, project, "Paid-Agents[bot]")).to be(true)
+    end
+
+    it "does not treat the bare app slug as the agent (it is a registerable human username)" do
+      expect(activity.send(:paid_agent_pr_author?, project, "paid-agents")).to be(false)
+    end
+
+    it "treats dependency-update bots as third-party bots" do
+      expect(activity.send(:third_party_bot_author?, project, "dependabot[bot]")).to be(true)
+      expect(activity.send(:paid_agent_pr_author?, project, "dependabot[bot]")).to be(false)
+    end
+
+    it "treats human authors as neither bot nor agent" do
+      expect(activity.send(:third_party_bot_author?, project, "viamin")).to be(false)
+      expect(activity.send(:paid_agent_pr_author?, project, "viamin")).to be(false)
+    end
+
+    it "treats every bot as third-party for PAT-backed projects (no app identity)" do
+      allow(project).to receive(:github_author_login).and_return(nil)
+
+      expect(activity.send(:paid_agent_pr_author?, project, "paid-agents[bot]")).to be(false)
+      expect(activity.send(:third_party_bot_author?, project, "dependabot[bot]")).to be(true)
     end
   end
 
@@ -6850,11 +6890,12 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when escalated PR no longer has the paid-escalated label" do
       before do
-        create(:issue, :pull_request,
+        issue = create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "escalated",
           paid_state: "completed")
+        issue.update_columns(last_pr_scan_at: 10.minutes.ago)
         stub_github_for_pr
       end
 
@@ -6877,6 +6918,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           pr_review_phase: "escalated",
           pr_escalation_reason: "operational_failures",
           paid_state: "completed")
+        issue.update_columns(last_pr_scan_at: 10.minutes.ago)
         create_stale_review_runs!(issue, statuses: %w[failed failed failed])
         create(:agent_run, :completed,
           project: project,
@@ -6898,6 +6940,26 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("dismiss_escalation")
         expect(trigger[:triggers].first[:details]).to eq("Operational escalation auto-dismissed after failure signals recovered")
+      end
+    end
+
+    context "when escalated phase was just updated before the label sync lands" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "escalated",
+          paid_state: "completed")
+        stub_github_for_pr
+      end
+
+      it "does not treat the transient mismatch as a dismissal" do
+        result = activity.execute(project_id: project.id)
+
+        dismiss_triggers = automation_scan_results(result).flat_map { |entry| entry[:triggers] }
+          .select { |trigger| trigger[:type] == "dismiss_escalation" }
+
+        expect(dismiss_triggers).to be_empty
       end
     end
 
@@ -8532,6 +8594,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     before do
       enable_paid_agent_review!(project)
       create_stale_review_runs!(dismissed_escalated_issue, statuses: %w[failed failed failed])
+      dismissed_escalated_issue.update_columns(last_pr_scan_at: 10.minutes.ago)
       dismissed_escalated_issue.update!(labels: dismissed_escalated_issue.labels - [ "paid-escalated" ])
       stub_github_for_pr(reviews: [])
     end
@@ -8921,6 +8984,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     before do
       enable_paid_agent_review!
       create_stale_review_runs!(escalated_retry_issue, statuses: %w[failed failed failed])
+      escalated_retry_issue.update_columns(last_pr_scan_at: 10.minutes.ago)
       stub_github_for_pr
     end
 
@@ -8972,11 +9036,12 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
   context "when an escalated draft PR has the escalation label removed" do
     before do
-      create(:issue, :pull_request,
+      issue = create(:issue, :pull_request,
         project: project, github_number: 42,
         labels: [ "paid-generated", "paid-automation" ],
         pr_review_phase: "escalated",
         paid_state: "completed")
+      issue.update_columns(last_pr_scan_at: 10.minutes.ago)
       stub_github_for_pr(draft: true)
     end
 

@@ -16,10 +16,6 @@ module Activities
       project = issue.project
       client = project.client
       phase_before = issue.pr_review_phase
-      issue.update!(
-        pr_review_phase: "escalated",
-        pr_escalation_reason: escalation_reason_key(input[:reason])
-      )
 
       # Escalation invalidates the prior "ready" claim. Strip the label
       # before applying paid-escalated so human triage queues and any
@@ -27,6 +23,11 @@ module Activities
       # labels coexist on the same PR.
       remove_ready_label(client, project, issue)
       add_phase_label(client, project, issue.github_number, PAID_ESCALATED_LABEL)
+      issue.update!(
+        pr_review_phase: "escalated",
+        pr_escalation_reason: escalation_reason_key(input[:reason]),
+        labels: escalated_labels(issue)
+      )
       post_escalation_comment(client, project, issue, input[:reason], phase_before:)
 
       logger.info(
@@ -69,6 +70,12 @@ module Activities
         pr_number: issue.github_number,
         error: e.message
       )
+    end
+
+    def escalated_labels(issue)
+      updated_labels = issue.labels - [ MarkPrReadyActivity::PAID_READY_LABEL ]
+      updated_labels << PAID_ESCALATED_LABEL unless updated_labels.include?(PAID_ESCALATED_LABEL)
+      updated_labels
     end
 
     # Best-effort dedupe: skips posting if COMMENT_MARKER is found in the most

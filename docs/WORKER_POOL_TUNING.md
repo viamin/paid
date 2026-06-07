@@ -82,16 +82,32 @@ one concurrent agent execution (container launch, monitoring, teardown). Activit
 are I/O-bound (waiting on Docker and LLM APIs), so more slots improve throughput
 linearly up to the database connection limit.
 
-**Key constraint**:
+**Key constraint** (each agent activity slot holds **two** connections — see below):
 
 - `TEMPORAL_WORKER_MODE=poll`:
   `DB_POOL >= TEMPORAL_POLL_ACTIVITY_SLOTS + TEMPORAL_POLL_LOCAL_ACTIVITY_SLOTS + 2`
 - `TEMPORAL_WORKER_MODE=agent`:
-  `DB_POOL >= TEMPORAL_ACTIVITY_SLOTS + TEMPORAL_LOCAL_ACTIVITY_SLOTS + 2`
+  `DB_POOL >= TEMPORAL_ACTIVITY_SLOTS + TEMPORAL_LOCAL_ACTIVITY_SLOTS + TEMPORAL_ACTIVITY_SLOTS + 2`
 - `TEMPORAL_WORKER_MODE=both`:
-  `DB_POOL >= (TEMPORAL_ACTIVITY_SLOTS + TEMPORAL_LOCAL_ACTIVITY_SLOTS + TEMPORAL_POLL_ACTIVITY_SLOTS + TEMPORAL_POLL_LOCAL_ACTIVITY_SLOTS) + 4`
+  `DB_POOL >= (TEMPORAL_ACTIVITY_SLOTS + TEMPORAL_LOCAL_ACTIVITY_SLOTS + TEMPORAL_POLL_ACTIVITY_SLOTS + TEMPORAL_POLL_LOCAL_ACTIVITY_SLOTS) + TEMPORAL_ACTIVITY_SLOTS + 4`
 
-The extra headroom covers heartbeat and polling threads for the selected worker set.
+The fixed `+2`/`+4` headroom covers the Temporal SDK's polling and internal threads
+for the selected worker set. The additional `TEMPORAL_ACTIVITY_SLOTS` term is separate:
+it accounts for `RunAgentActivity`'s heartbeat worker thread, which streams agent output
+to the database throughout the run and holds its own connection concurrently with the
+activity's main thread — so each in-flight agent run consumes two connections. `bin/temporal_worker` computes this
+minimum via `Paid::TemporalWorkerConfig.min_required_db_pool` and **auto-corrects the
+primary pool size at boot** if `DB_POOL` is below it (refusing to start only if the
+resize fails). Setting `DB_POOL` at or above the minimum avoids the boot-time resize.
+
+**Server-side ceiling**: `DB_POOL` governs one process's pool, but every process
+(web, GoodJob, each Temporal worker) opens its own connections against the *same*
+PostgreSQL server, which has its own `max_connections` cap. The sum of all process
+pools — plus Temporal's own server connections — must stay under `max_connections`,
+or runs fail with `remaining connection slots are reserved` / `too many clients`.
+The devcontainer raises this to 200 (`.devcontainer/compose.yaml`); **production must
+set `max_connections` at its own database layer** (managed-DB parameter group or
+`postgresql.conf`) — the devcontainer change does not affect it.
 
 ### Workflow Slots
 

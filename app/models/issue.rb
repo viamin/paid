@@ -72,6 +72,7 @@ class Issue < ApplicationRecord
   after_update_commit :broadcast_changed_sections
   after_update_commit :enqueue_newly_unblocked_dependents, if: :github_just_closed?
   after_update_commit :enqueue_self_if_became_auto_pick_eligible, if: :auto_pick_recheck_needed?
+  after_update_commit :cancel_orphaned_queued_runs, if: :work_no_longer_needed?
   after_commit :update_project_last_github_activity_at, on: [ :create, :update ]
 
   scope :by_paid_state, ->(state) { where(paid_state: state) }
@@ -152,7 +153,7 @@ class Issue < ApplicationRecord
   end
 
   def trusted?
-    project.trusted_github_user?(github_creator_login)
+    project.trusted_github_author?(github_creator_login)
   end
 
   def untrusted?
@@ -540,6 +541,57 @@ class Issue < ApplicationRecord
 
   def github_just_closed?
     saved_change_to_github_state? && github_state == "closed"
+  end
+
+  # An issue that just finished (paid_state -> completed) or was closed on
+  # GitHub will never need the agent runs still sitting unclaimed in its queue:
+  # those runs target work that is already done. Nothing else cancels them, so
+  # they leak as permanently "queued" rows (observed: create_pr runs stuck 17+
+  # days, each also holding a unique-active-run slot for its issue).
+  def work_no_longer_needed?
+    (saved_change_to_paid_state? && paid_state == "completed") || github_just_closed?
+  end
+
+  # Cancel only unclaimed runs (no Temporal workflow yet) — claimed/running
+  # runs are mid-flight and handled by the normal lifecycle. Reviews are
+  # PR-scoped rather than issue-scoped, so they keep their own retry/limit
+  # handling and are left alone.
+  def cancel_orphaned_queued_runs
+    reason = "Issue resolved (paid_state=#{paid_state}, github_state=#{github_state}); " \
+             "unclaimed queued run no longer needed"
+
+    agent_runs.waiting.where.not(goal: "review").find_each do |run|
+      # Re-check under the row lock: AgentRun.claim_next_queued_run can claim
+      # this run (status still "queued", temporal_workflow_id -> CLAIMED_SENTINEL)
+      # in the window between the scope query and here. cancel! only guards on
+      # finished?, so without this check we would mark a just-claimed run
+      # cancelled while its workflow/container start up — the exact orphan this
+      # callback exists to prevent. Skip it; the normal lifecycle owns it now.
+      cancelled = run.with_lock do
+        next false unless run.status == "queued" && run.temporal_workflow_id.nil?
+
+        run.cancel!(error: reason)
+      end
+
+      next unless cancelled
+
+      Rails.logger.info(
+        message: "agent_run.cancelled_issue_resolved",
+        issue_id: id,
+        issue_number: github_number,
+        project_id: project_id,
+        agent_run_id: run.id,
+        goal: run.goal,
+        paid_state: paid_state
+      )
+    rescue => e
+      Rails.logger.error(
+        message: "agent_run.cancel_orphaned_failed",
+        issue_id: id,
+        agent_run_id: run.id,
+        error: e.message
+      )
+    end
   end
 
   def enqueue_newly_unblocked_dependents

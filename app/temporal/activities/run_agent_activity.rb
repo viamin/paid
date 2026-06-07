@@ -83,6 +83,23 @@ module Activities
     DEFAULT_REVIEW_GOAL_IDLE_TIMEOUT = 300  # 5 minutes without output = stuck
     DEFAULT_CREATE_PR_IDLE_TIMEOUT = 360   # 6 minutes without output = stuck
     DEFAULT_AGENT_STARTUP_TIMEOUT = 360    # 6 minutes without first output = stuck
+
+    # Per-runner startup timeouts for create_pr goals, tuned from observed data.
+    # Completed run p90s: claude_code 28.5m, codex 42.6m, kilocode 38.7m,
+    # opencode 48.2m, pi 48.2m. Startup timeout must be long enough for the
+    # runner to produce first output on complex tasks.
+    #
+    # Only applied for create_pr goals where the data supports longer windows.
+    # Other goals (review, issue) retain the original idle-timeout-based
+    # startup behavior since they have not shown the same timeout pathology.
+    CREATE_PR_RUNNER_STARTUP_TIMEOUTS = {
+      "claude_code" => 1800, # 30 min — p90 of completed is 28.5 min
+      "codex"       => 2700, # 45 min — p90 of completed is 42.6 min
+      "kilocode"    => 2400, # 40 min — p90 of completed is 38.7 min
+      "opencode"    => 3000, # 50 min — p90 of completed is 48.2 min
+      "pi"          => 3000  # 50 min — p90 of completed is 48.2 min
+    }.freeze
+
     PREFLIGHT_TIMEOUT_SECONDS = 10
     DIRECT_OUTBOUND_PREFLIGHT_TIMEOUT_SECONDS = 30
     PREFLIGHT_TIMEOUT_CIRCUIT_BREAKER_THRESHOLD = 3
@@ -427,7 +444,8 @@ module Activities
               user_settings,
               runner_state_name,
               runner_states,
-              threshold: preflight_timeout_failure_threshold(user_settings)
+              threshold: preflight_timeout_failure_threshold(user_settings),
+              half_open_failure_threshold: 1
             )
             agent_run.record_runner_attempt(
               attempt_label,
@@ -729,6 +747,18 @@ module Activities
 
       resolved_model = resolve_tier_model_for(runner_candidate, agent_run, user)
       model_id = resolved_model&.model_id
+      if runner_entry&.runner_key == "openrouter_free"
+        # Fail loudly rather than fall through to an unpinned opencode runtime.
+        # Without a resolvable free model, HarnessExecutionPlan would plan a
+        # plain opencode run that silently leaves the openrouter_free contract.
+        if model_id.blank?
+          raise RunnerExecutionError,
+            "openrouter_free runner #{runner_entry.id} has no resolvable free model for this run"
+        end
+
+        return runner_entry.openrouter_free_runner_runtime(project: agent_run&.project, model_id: model_id)
+      end
+
       return configured_runtime if configured_runtime && model_id.blank?
       return nil if model_id.blank?
 
@@ -861,11 +891,14 @@ module Activities
       user_settings&.max_execution_seconds || agent_run.project.max_execution_seconds
     end
 
-    def effective_startup_timeout(heartbeat:, effective_idle_timeout:, effective_timeout:)
-      startup_base =
+    def effective_startup_timeout(runner_key:, heartbeat:, effective_idle_timeout:, effective_timeout:, create_pr_goal:)
+      startup_base = if create_pr_goal
+        CREATE_PR_RUNNER_STARTUP_TIMEOUTS.fetch(runner_key, DEFAULT_AGENT_STARTUP_TIMEOUT)
+      else
         heartbeat.idle_timeout_for(effective_idle_timeout) ||
-        effective_idle_timeout ||
-        DEFAULT_AGENT_STARTUP_TIMEOUT
+          effective_idle_timeout ||
+          DEFAULT_AGENT_STARTUP_TIMEOUT
+      end
 
       [ startup_base, effective_timeout ].compact.min
     end
@@ -946,9 +979,15 @@ module Activities
     end
 
     # Records a failed runner execution.
-    def record_runner_failure(user_settings, runner_state_name, runner_states, threshold: user_settings.circuit_breaker_failure_threshold)
+    def record_runner_failure(user_settings, runner_state_name, runner_states,
+      threshold: user_settings.circuit_breaker_failure_threshold,
+      half_open_failure_threshold: RunnerState::DEFAULT_HALF_OPEN_FAILURE_THRESHOLD)
       state = runner_state_for(user_settings, runner_state_name, runner_states)
-      state.record_failure!(threshold: threshold)
+      state.record_failure!(
+        threshold: threshold,
+        decay_window: user_settings.circuit_breaker_timeout_seconds,
+        half_open_failure_threshold: half_open_failure_threshold
+      )
     end
 
     def preflight_timeout_failure_threshold(user_settings)
@@ -1157,9 +1196,11 @@ module Activities
         user_settings&.create_pr_idle_timeout_seconds || DEFAULT_CREATE_PR_IDLE_TIMEOUT
       end
       startup_timeout = effective_startup_timeout(
+        runner_key: runner,
         heartbeat: heartbeat,
         effective_idle_timeout: effective_idle_timeout,
-        effective_timeout: effective_timeout
+        effective_timeout: effective_timeout,
+        create_pr_goal: agent_run.create_pr_goal?
       )
 
       # Periodic heartbeats during container execution complement the
@@ -1920,10 +1961,21 @@ module Activities
       tenant_account_id = Current.account&.id
 
       # Wrap the worker thread in Rails executor and ActiveRecord connection
-      # pool management. The executor handles autoloading/reloading and the
-      # with_connection block ensures the DB connection is checked out only
-      # for the duration of the work and returned to the pool afterward,
-      # preventing connection-pool exhaustion from long-running activities.
+      # pool management. The executor handles autoloading/reloading; the
+      # with_connection block scopes the worker thread's DB connection and
+      # returns it to the pool when the run finishes.
+      #
+      # NOTE: this connection is intentionally held for the full duration of
+      # the run, not just discrete writes. The wrapped work streams agent
+      # output to the DB on every chunk (Containers::Provision#log_output),
+      # so a tighter scope would either thrash the pool (checkout/checkin per
+      # chunk) or drop the per-connection tenant RLS context that
+      # TenantContext sets via `SET paid.current_account_id`. This worker
+      # thread therefore runs concurrently with the activity's main thread and
+      # consumes a second connection per in-flight run — accounted for in
+      # Paid::TemporalWorkerConfig#agent_heartbeat_connections when sizing the
+      # pool. Do not narrow this scope without also batching the streaming
+      # writes and re-applying tenant context across reconnects.
       worker = Thread.new do
         executor = Rails.application.executor if defined?(Rails) && Rails.respond_to?(:application) && Rails.application.respond_to?(:executor)
         work = proc { yield }
