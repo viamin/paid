@@ -1500,6 +1500,7 @@ class GithubClient
   def http_cache_options
     {
       store: Rails.cache,
+      shared_cache: false,
       serializer: JSON,
       cache_key: ->(url, _request_options) { "github_http_cache:#{cache_token_digest}:#{url}" }
     }
