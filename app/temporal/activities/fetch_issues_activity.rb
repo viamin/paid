@@ -10,6 +10,7 @@ module Activities
     DEFAULT_RELATIONSHIP_PARSE_ISSUE_LIMIT = 100
     DEFAULT_RELATIONSHIP_PARSE_BUDGET_SECONDS = 30
     ISSUE_RECONCILIATION_INTERVAL = 1.hour
+    PAID_ESCALATED_LABEL = "paid-escalated"
 
     def execute(input)
       project_id = input[:project_id]
@@ -767,6 +768,12 @@ module Activities
       count = stale_prs.count
       return 0 if count.zero?
 
+      # Snapshot escalated PRs before the bulk state change. A human resolving
+      # an escalation usually merges or closes the PR directly on GitHub, which
+      # lands here rather than in MergePullRequestActivity, so this is the main
+      # path that must clear the now-stale paid-escalated label.
+      escalated_stale = stale_prs.where(pr_review_phase: "escalated").to_a
+
       merged_numbers, unmerged_numbers, unknown_numbers = partition_by_merge_status(
         client, project.full_name, stale_prs.pluck(:github_number)
       )
@@ -786,6 +793,9 @@ module Activities
       end
 
       closed_numbers = merged_numbers.size + unmerged_numbers.size
+
+      closed_set = (merged_numbers + unmerged_numbers).to_set
+      clear_stale_escalation_labels(project, client, escalated_stale.select { |pr| closed_set.include?(pr.github_number) })
 
       logger.info(
         message: "github_sync.closed_stale_pull_requests",
@@ -824,6 +834,31 @@ module Activities
       end
 
       [ merged_numbers, unmerged_numbers, unknown_numbers ]
+    end
+
+    # Clears the paid-escalated label from PRs that left the open set while
+    # still escalated. Bounded to the escalated subset so it adds at most a
+    # handful of API calls per sweep. Best-effort per PR: a failure on one PR
+    # must not abort syncing the rest.
+    def clear_stale_escalation_labels(project, client, escalated_prs)
+      return if escalated_prs.empty?
+
+      escalated_prs.each do |issue|
+        next unless issue.has_label?(PAID_ESCALATED_LABEL)
+
+        begin
+          client.remove_label_from_issue(project.full_name, issue.github_number, PAID_ESCALATED_LABEL)
+        rescue GithubClient::Error => e
+          logger.warn(
+            message: "github_sync.remove_stale_escalation_label_failed",
+            project_id: project.id,
+            pr_number: issue.github_number,
+            error: e.message
+          )
+        end
+
+        issue.update_columns(labels: issue.labels - [ PAID_ESCALATED_LABEL ], updated_at: Time.current)
+      end
     end
 
     # Mirrors reconcile_open_pull_requests for issues. Fetches all open issue

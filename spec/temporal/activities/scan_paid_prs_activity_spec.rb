@@ -95,6 +95,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
     allow(github_client).to receive_messages(rate_limit_remaining!: 100, check_run_log: "")
+    allow(github_client).to receive(:remove_label_from_issue)
     allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
   end
 

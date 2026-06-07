@@ -1702,6 +1702,59 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(stale_pr.reload.pr_review_phase).to eq("merged")
       end
 
+      it "clears the paid-escalated label when an escalated PR is closed outside Paid" do
+        stale_pr = create(:issue, :pull_request, project: project, github_issue_id: 5000,
+                          github_number: 50, github_state: "open", pr_review_phase: "escalated",
+                          labels: [ "paid-generated", "paid-escalated" ])
+
+        allow(github_client).to receive_messages(pull_requests: [])
+        allow(github_client).to receive(:pull_request)
+          .with(project.full_name, stale_pr.github_number)
+          .and_return(OpenStruct.new(merged_at: 1.hour.ago, merged: true))
+        allow(github_client).to receive(:remove_label_from_issue)
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).to have_received(:remove_label_from_issue)
+          .with(project.full_name, stale_pr.github_number, "paid-escalated")
+        expect(stale_pr.reload.labels).not_to include("paid-escalated")
+        expect(stale_pr.reload.pr_review_phase).to eq("merged")
+      end
+
+      it "does not call the label API when stale-closing a non-escalated PR" do
+        stale_pr = create(:issue, :pull_request, project: project, github_issue_id: 5000,
+                          github_number: 50, github_state: "open", pr_review_phase: "ready",
+                          labels: [ "paid-generated" ])
+
+        allow(github_client).to receive_messages(pull_requests: [])
+        allow(github_client).to receive(:pull_request)
+          .with(project.full_name, stale_pr.github_number)
+          .and_return(OpenStruct.new(merged_at: 1.hour.ago, merged: true))
+        allow(github_client).to receive(:remove_label_from_issue)
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).not_to have_received(:remove_label_from_issue)
+      end
+
+      it "still closes the PR when clearing the escalation label fails" do
+        stale_pr = create(:issue, :pull_request, project: project, github_issue_id: 5000,
+                          github_number: 50, github_state: "open", pr_review_phase: "escalated",
+                          labels: [ "paid-generated", "paid-escalated" ])
+
+        allow(github_client).to receive_messages(pull_requests: [])
+        allow(github_client).to receive(:pull_request)
+          .with(project.full_name, stale_pr.github_number)
+          .and_return(OpenStruct.new(merged_at: 1.hour.ago, merged: true))
+        allow(github_client).to receive(:remove_label_from_issue)
+          .and_raise(GithubClient::Error, "boom")
+
+        activity.execute(project_id: project.id)
+
+        expect(stale_pr.reload.github_state).to eq("closed")
+        expect(stale_pr.reload.pr_review_phase).to eq("merged")
+      end
+
       it "leaves stale pull requests open when GitHub merge-status lookup fails" do
         stale_pr = create(:issue, :pull_request, project: project, github_issue_id: 5000,
                           github_number: 50, github_state: "open", pr_review_phase: "ready")
