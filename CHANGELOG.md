@@ -1,5 +1,73 @@
 # Changelog
 
+## [1.2.0](https://github.com/viamin/paid/compare/v1.1.0...v1.2.0) (2026-06-07)
+
+
+### Features
+
+* [P2] knowledge: ActiveRecord::RecordNotUnique ([#2420](https://github.com/viamin/paid/issues/2420)) ([7e92015](https://github.com/viamin/paid/commit/7e92015f1e80b5ed0b5d53a5ecb0598d4ad5d028))
+* Add exception_notification gem to Gemfile (RDR-039 T1) ([#2403](https://github.com/viamin/paid/issues/2403)) ([d7c4d41](https://github.com/viamin/paid/commit/d7c4d410edde533414b54e2789a5be34a1845a7a))
+* Add ISSUE_FILING_ALLOWLIST and gate IssueFiler (RDR-039 T4) ([#2402](https://github.com/viamin/paid/issues/2402)) ([1c2fcbc](https://github.com/viamin/paid/commit/1c2fcbc3528d4a7eb7f702e84fc02efcfccc9908))
+* **agent-runs:** exclude pre-runner infra failures from escalation and auto-retry ([#2470](https://github.com/viamin/paid/issues/2470)) ([ac1d8bc](https://github.com/viamin/paid/commit/ac1d8bc168449a4cb48723185a28b1ad46b82d7b))
+* **agent-runs:** per-runner startup timeout for create_pr goals ([#2522](https://github.com/viamin/paid/issues/2522)) ([663d7f4](https://github.com/viamin/paid/commit/663d7f4b92182d923bb53f6a8345bb4183e3fd7b))
+* Batch issue-comment fetches with GraphQL in FetchIssuesActivity relationship parsing ([#2437](https://github.com/viamin/paid/issues/2437)) ([c1c1cd2](https://github.com/viamin/paid/commit/c1c1cd2eed0e4259499c9582306abd4e79f7f2f2))
+* **chat:** add 'New Chat' button to start fresh chat session ([#2409](https://github.com/viamin/paid/issues/2409)) ([9cc5cad](https://github.com/viamin/paid/commit/9cc5cadef7fd62af81bbc41c7f0f5a54650cd8bd))
+* **chat:** add archive actions for page and popup chats ([#2421](https://github.com/viamin/paid/issues/2421)) ([7b20c2c](https://github.com/viamin/paid/commit/7b20c2c030d4e96a6f263e06f89a35827b6774aa))
+* **chat:** add contextual popup chat widget ([#2397](https://github.com/viamin/paid/issues/2397)) ([5840d7b](https://github.com/viamin/paid/commit/5840d7b4687482c8ae4561b50477b8828fb6c5fd))
+* **chat:** add multi-turn tool loop to send message ([#2489](https://github.com/viamin/paid/issues/2489)) ([ae6f170](https://github.com/viamin/paid/commit/ae6f170a47eb0757e1e534a4c85eece00c6bf6ff))
+* **chat:** add read-only tool-definition filter to Tools::Registry (RDR-028 chat-loop T1) ([#2453](https://github.com/viamin/paid/issues/2453)) ([1c05e64](https://github.com/viamin/paid/commit/1c05e64db4c4f97dc3980a29f3735709dc12a495))
+* **chat:** add read-only tool-definition filter to Tools::Registry (RDR-028 chat-loop T1) ([#2479](https://github.com/viamin/paid/issues/2479)) ([508e4cb](https://github.com/viamin/paid/commit/508e4cb0b8c0b12332cfa4167b45079254d66829))
+* **chat:** enforce "chat ≤ user" authorization invariant in tool framework ([#2374](https://github.com/viamin/paid/issues/2374)) ([0c17231](https://github.com/viamin/paid/commit/0c17231f6d580de424999a845a99e4160af998f7))
+* **chat:** expand tool surface to mirror UI admin/tenant surfaces ([#2387](https://github.com/viamin/paid/issues/2387)) ([3e95e0d](https://github.com/viamin/paid/commit/3e95e0df07739a52028dd1073a7dc2f47dc3d782))
+* **chat:** first-class source-code read tools (read_repo_file, list_repo_tree, grep_repo) ([#2386](https://github.com/viamin/paid/issues/2386)) ([d9f8792](https://github.com/viamin/paid/commit/d9f87921d42f7643a91e52bb21138fcf00cd087e))
+* **chat:** send tool schemas and format tool round-trips via AgentHarness::Conversation (RDR-028 chat-loop T2) ([#2452](https://github.com/viamin/paid/issues/2452)) ([335ffa1](https://github.com/viamin/paid/commit/335ffa1fcdffb961d6a07750c3220dd9dcf5349d))
+* **docs:** complete phase 7 roadmap status ([#2343](https://github.com/viamin/paid/issues/2343)) ([49a2b54](https://github.com/viamin/paid/commit/49a2b546201bcae840219452b651e44f6f5b401f))
+* **ecosystem:** Phase 8.3 — Marketplace & Ecosystem Expansion ([#2347](https://github.com/viamin/paid/issues/2347)) ([c77f24e](https://github.com/viamin/paid/commit/c77f24ed9264117666f63cd69cc4760ece0b15ee))
+* **exception-handler:** add per-fingerprint and per-account rate limits ([#2391](https://github.com/viamin/paid/issues/2391)) ([#2439](https://github.com/viamin/paid/issues/2439)) ([8c457ce](https://github.com/viamin/paid/commit/8c457ce12e339afbcbf85347d3906c7d3b2d208f))
+* **github:** pause agent runs while GitHub API is rate limited ([#2404](https://github.com/viamin/paid/issues/2404)) ([913f37b](https://github.com/viamin/paid/commit/913f37b25da411146c7f2af249390d4a901e809e))
+* Implement Paid::ExceptionNotifier custom notifier (RDR-039 T2) ([#2432](https://github.com/viamin/paid/issues/2432)) ([47dc6c7](https://github.com/viamin/paid/commit/47dc6c7a77b12edb640491690c7189643f82add7))
+* **integrations:** Add GitHub App installation instructions to integrations page ([#2414](https://github.com/viamin/paid/issues/2414)) ([094cf4e](https://github.com/viamin/paid/commit/094cf4ebe43d04aa2456be7c0e335936b95e0c28))
+* **operations:** Phase 8.2 — Enterprise Operations & Reliability ([#2346](https://github.com/viamin/paid/issues/2346)) ([6d45241](https://github.com/viamin/paid/commit/6d452418f38d3b8c2e6d5ee6b68b054162bc8867))
+* Phase 1: Data model for free models ([#2429](https://github.com/viamin/paid/issues/2429)) ([aed8d04](https://github.com/viamin/paid/commit/aed8d043b37d8bcbf6aeb7d9db026a667d9827a0))
+* Phase 3a: Register openrouter_free runner key and execution plan ([#2430](https://github.com/viamin/paid/issues/2430)) ([f00b88f](https://github.com/viamin/paid/commit/f00b88fb467d2d1fdd9551d7ef5f32e22e1e088e))
+* Phase 4: Data classification guardrails ([#2433](https://github.com/viamin/paid/issues/2433)) ([67d569d](https://github.com/viamin/paid/commit/67d569d1b6cbbab18c4806d73f1ffdb74d65d18c))
+* Phase 5: Free models catalog UI and onboarding ([#2434](https://github.com/viamin/paid/issues/2434)) ([40a4730](https://github.com/viamin/paid/commit/40a473009c41a2299fcc3dbe070d16e0dee8650c))
+* **platform:** Phase 8.1 — Managed Deployment Models ([#2345](https://github.com/viamin/paid/issues/2345)) ([d38ef6b](https://github.com/viamin/paid/commit/d38ef6bedf2bdd98f1a2cc3a419e4007bb9d4e3a))
+* **trust:** implicitly trust GitHub App bot as issue/PR author ([#2485](https://github.com/viamin/paid/issues/2485)) ([6b85efe](https://github.com/viamin/paid/commit/6b85efea10675da964784bca393e2abcec76c545))
+* **ui:** consolidate user/account menu items into email dropdown ([#2431](https://github.com/viamin/paid/issues/2431)) ([2f79c72](https://github.com/viamin/paid/commit/2f79c7237ab91c0d4da8e41fd3101ecfba9d551b))
+
+
+### Bug Fixes
+
+* **agent-harness:** keep Pi API-key auth.json patch active on 0.20.x ([#2456](https://github.com/viamin/paid/issues/2456)) ([1b4fe9c](https://github.com/viamin/paid/commit/1b4fe9cd9f24bcd994b41c8e32168282f7d45703))
+* **agent-runs:** add mobile spacing for trigger form ([#2426](https://github.com/viamin/paid/issues/2426)) ([0204be7](https://github.com/viamin/paid/commit/0204be71d3b639ccf776c39b97dd055cf4b4c6e0))
+* **agent-runs:** cancel orphaned queued runs when their issue is resolved ([#2504](https://github.com/viamin/paid/issues/2504)) ([741dede](https://github.com/viamin/paid/commit/741dedef959bbc184d5cf73153b82239398d4450))
+* **agent-runs:** Claude runs fail with 'MCP config file not found' — MCP config written to host, not the container ([#2454](https://github.com/viamin/paid/issues/2454)) ([98e21e8](https://github.com/viamin/paid/commit/98e21e85108cf26bd31ef727dc8d0947e29051fd))
+* **agent-runs:** handle Claude CLI streaming events in analyze_issue ([#2366](https://github.com/viamin/paid/issues/2366)) ([d759f7b](https://github.com/viamin/paid/commit/d759f7b1092221a22ca7fb84fd0763e4963b53d7))
+* **agent-runs:** recover rate-limited runs in place so create_pr stops churning ([#2517](https://github.com/viamin/paid/issues/2517)) ([d00d280](https://github.com/viamin/paid/commit/d00d280c7aa3c0688c7d84c8df158c63e3d3615a))
+* **agent-runs:** stop Claude --mcp-config from swallowing the prompt ([#2436](https://github.com/viamin/paid/issues/2436)) ([ee0ddda](https://github.com/viamin/paid/commit/ee0dddaef2f606691879a48ef719c5bc6cbf394f)), closes [#2435](https://github.com/viamin/paid/issues/2435) [#2364](https://github.com/viamin/paid/issues/2364)
+* **chat:** audit dangerous_mode: true fallback in BuildLlmClient when no runner is configured ([#2401](https://github.com/viamin/paid/issues/2401)) ([68a923d](https://github.com/viamin/paid/commit/68a923d3832578c077bf207b5e8a9fbf009b2380))
+* **chat:** remove help-oriented widget labels ([#2428](https://github.com/viamin/paid/issues/2428)) ([a55515d](https://github.com/viamin/paid/commit/a55515d50c1461cfdd77ffe60549002d8960a582))
+* **chat:** resume legacy chats with api runner fallback ([#2425](https://github.com/viamin/paid/issues/2425)) ([5f11f21](https://github.com/viamin/paid/commit/5f11f21e68bebadbe5ddac6da55418d492b800ce))
+* **chat:** sending a message can incorrectly fail with 'Claude is missing an API key' even when another chat-enabled provider is configured ([#2427](https://github.com/viamin/paid/issues/2427)) ([33c137d](https://github.com/viamin/paid/commit/33c137ddbd900c18caaf25c32f1fc6b901b3b2f0))
+* **circuit-breaker:** clear stale rate limit when circuit recovers to half_open ([#2467](https://github.com/viamin/paid/issues/2467)) ([a311b99](https://github.com/viamin/paid/commit/a311b99ff4b0ceea8f6a18cc6bcbc0ea32b01008))
+* **clarifying-questions:** make answer round-trip work for GitHub App projects ([#2496](https://github.com/viamin/paid/issues/2496)) ([e0adb2a](https://github.com/viamin/paid/commit/e0adb2abf87425c120fbd8f127a959fc3659765b))
+* Claude CLI auto-discovers .mcp.json from working directory, contaminating stdout ([#2419](https://github.com/viamin/paid/issues/2419)) ([d3b1671](https://github.com/viamin/paid/commit/d3b167146f5f1870de82267a929cb80c4d9bcb20))
+* **containers:** enforce startup timeout from an authoritative clock so it fires at ~startup_timeout ([#2502](https://github.com/viamin/paid/issues/2502)) ([#2509](https://github.com/viamin/paid/issues/2509)) ([3ab3a5a](https://github.com/viamin/paid/commit/3ab3a5a882e971222db2ac7f24f8dc9ff56cb421))
+* **containers:** tolerate both State shapes in collector cleanup ([#2468](https://github.com/viamin/paid/issues/2468)) ([ab4703a](https://github.com/viamin/paid/commit/ab4703ad8648400a57ab8f1a8fbccd37b0c58b6d))
+* Dashboard slow: delete_matched cache invalidation churns caches on every broadcast (prod table scans) ([#2483](https://github.com/viamin/paid/issues/2483)) ([ec18ed5](https://github.com/viamin/paid/commit/ec18ed5d55e7f53e1be55fbc40d807771a7c9a59))
+* **devcontainer:** stabilize tool installs for non-root setup ([#2501](https://github.com/viamin/paid/issues/2501)) ([1aef86d](https://github.com/viamin/paid/commit/1aef86d31be1a671395144866b7383e89d065811))
+* **github-app:** fix migration failures and improve GitHub App installation UX ([#2480](https://github.com/viamin/paid/issues/2480)) ([f0c3b94](https://github.com/viamin/paid/commit/f0c3b949291fc28075566c518a65046b6843b911))
+* **pr-review:** clear paid-escalated label when a PR leaves the escalated phase ([#2482](https://github.com/viamin/paid/issues/2482)) ([e02c10f](https://github.com/viamin/paid/commit/e02c10f66bcb03a82618bd6dabb68b9b6b715000))
+* **pr-review:** keep escalation phase and label aligned ([#2486](https://github.com/viamin/paid/issues/2486)) ([c63196f](https://github.com/viamin/paid/commit/c63196f22d18446dd1c84ade4fd0491e3a474877))
+* **projects:** remove redundant screenshot config section ([#2416](https://github.com/viamin/paid/issues/2416)) ([fdccff4](https://github.com/viamin/paid/commit/fdccff469b91959a82ee8a8aacc2a04489f1fe60))
+* Runner circuit breaker: failure_count never decays and half_open re-opens on a single failure (runners stuck unavailable) ([#2492](https://github.com/viamin/paid/issues/2492)) ([975947f](https://github.com/viamin/paid/commit/975947fc28955a26d3ff6a7818f93208db4dea0e))
+* **runners:** clamp implausible rate-limit reset times ([#2466](https://github.com/viamin/paid/issues/2466)) ([38d5df6](https://github.com/viamin/paid/commit/38d5df64bd95e85c5bc35e3f236251c6c3f2dc08))
+* **runners:** omit empty provider override from opencode.json for built-in providers ([#2475](https://github.com/viamin/paid/issues/2475)) ([dddbe0e](https://github.com/viamin/paid/commit/dddbe0ec71dca11aece7784dcde8755afec39074))
+* **runners:** splat kwargs in test_agent to fix ArgumentError on Ruby 3.4 ([#2457](https://github.com/viamin/paid/issues/2457)) ([ba87654](https://github.com/viamin/paid/commit/ba87654e7c2537b31e1d3586db7263678276a142))
+* **runners:** stop classifying codex's own transcript as a rate limit ([#2477](https://github.com/viamin/paid/issues/2477)) ([501b613](https://github.com/viamin/paid/commit/501b61315765f0220b080d4e974e43540da778a4))
+* **temporal:** size DB pool for agent heartbeat connections + auto-correct at boot ([#2484](https://github.com/viamin/paid/issues/2484)) ([084caa5](https://github.com/viamin/paid/commit/084caa5aeebfbae58cc4fcc104a3b09b88e6752e))
+
 ## [1.1.0](https://github.com/viamin/paid/compare/v1.0.0...v1.1.0) (2026-05-29)
 
 
