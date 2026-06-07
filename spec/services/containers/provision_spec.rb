@@ -2880,12 +2880,41 @@ RSpec.describe Containers::Provision do
         expect(container_stopped.true?).to be false
       end
 
-      it "suppresses startup timeout while heartbeat file is touched before any output" do
-        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
-          10.times do
-            FileUtils.touch(heartbeat_path)
-            sleep 0.05
+      it "does not suppress startup timeout when a fresh heartbeat has no real output (regression #2502)" do
+        # A heartbeat file kept continuously fresh while the agent produces NO
+        # stdout/stderr must NOT extend the startup window. The authoritative
+        # clock fires :startup at ~startup_timeout regardless of heartbeat
+        # freshness — previously this suppressed startup for up to the
+        # wall-clock cap, then mislabeled the kill as "within startup_timeout".
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
+          Timeout.timeout(5) do
+            until container_stopped.true?
+              FileUtils.touch(heartbeat_path)
+              sleep 0.01
+            end
           end
+          [ [], [], 137 ]
+        end
+
+        expect {
+          service.execute(
+            "waiting_on_llm",
+            timeout: 10,
+            startup_timeout: 0.2,
+            heartbeat_path: heartbeat_path
+          )
+        }.to raise_error(described_class::StartupTimeoutError) do |error|
+          # Fired from the authoritative clock near startup_timeout, nowhere
+          # near the 10s wall-clock cap.
+          expect(error.diagnostics[:elapsed_seconds]).to be < 1
+        end
+      end
+
+      it "does not fire startup when output arrives after a silent delay within startup_timeout" do
+        # Preserves the legitimate "silent MCP init then produces output" case:
+        # output before startup_timeout keeps the run alive.
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          sleep 0.2
           block.call(:stdout, "finally output\n") if block
           [ [ "finally output\n" ], [], 0 ]
         end
@@ -2893,7 +2922,7 @@ RSpec.describe Containers::Provision do
         result = service.execute(
           "waiting_on_llm",
           timeout: 10,
-          startup_timeout: 0.2,
+          startup_timeout: 1.0,
           heartbeat_path: heartbeat_path
         )
         expect(result).to be_success
@@ -3013,92 +3042,35 @@ RSpec.describe Containers::Provision do
       end
     end
 
-    context "with startup heartbeat thread" do
-      before do
-        allow(service).to receive(:startup_heartbeat_interval_seconds).and_return(0.01)
-      end
-
-      it "prevents startup timeout during silent MCP initialization by touching heartbeat_host_path" do
-        host_path = service.heartbeat_host_path
-        skip "startup heartbeat only active when heartbeat_host_path is set" unless host_path.present?
-
-        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
-          # Simulate ~0.4s silent startup (MCP init) before producing output.
-          # startup_timeout (1.0s) is long enough to cover the silent period,
-          # and the startup heartbeat keeps the idle timeout from firing.
-          sleep 0.4
-          block.call(:stdout, "finally started\n") if block
-          [ [ "finally started\n" ], [], 0 ]
+    context "with startup timeout enforced from the authoritative clock" do
+      it "labels a no-output run that also blew past wall-clock as startup, not wall-clock" do
+        # Defect #2 from issue #2502: :startup must take precedence so a no-output
+        # run is never mislabeled wall_clock. The long poll interval forces the
+        # first evaluation to happen after BOTH deadlines have elapsed, proving
+        # startup wins regardless of ordering.
+        allow(service).to receive(:watchdog_poll_interval).and_return(10)
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
+          sleep 0.25
+          [ [], [], 0 ]
         end
 
-        result = service.execute(
-          "claude_with_mcp",
-          timeout: 10,
-          startup_timeout: 1.0,
-          heartbeat_path: host_path
-        )
-        expect(result).to be_success
-        expect(container_stopped.true?).to be false
+        expect {
+          service.execute("hung_no_output", timeout: 0.2, startup_timeout: 0.1)
+        }.to raise_error(described_class::StartupTimeoutError)
       end
 
-      it "stops touching once first stdout is received, allowing idle timeout to apply normally" do
-        host_path = service.heartbeat_host_path
-        skip "startup heartbeat only active when heartbeat_host_path is set" unless host_path.present?
-
+      it "applies idle timeout normally once first output is received" do
+        # After real output, the run is no longer in the startup window; a
+        # subsequent stall trips the idle timeout (not startup).
         allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
           block.call(:stdout, "initial output\n") if block
-          # Simulate long idle after first output — idle timeout should fire
           Timeout.timeout(5) { sleep 0.01 until container_stopped.true? }
           [ [ "initial output\n" ], [], 137 ]
         end
 
         expect {
-          service.execute(
-            "claude_then_idle",
-            timeout: 10,
-            startup_timeout: 2,
-            idle_timeout: 0.1,
-            heartbeat_path: host_path
-          )
+          service.execute("then_idle", timeout: 10, startup_timeout: 2, idle_timeout: 0.1)
         }.to raise_error(described_class::IdleTimeoutError)
-      end
-
-      it "fires startup timeout after startup_timeout deadline elapses with no output" do
-        host_path = service.heartbeat_host_path
-        skip "startup heartbeat only active when heartbeat_host_path is set" unless host_path.present?
-
-        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &_block|
-          # Never produces output — simulates a completely hung MCP initialization.
-          Timeout.timeout(5) { sleep 0.01 until container_stopped.true? }
-          [ [], [], 137 ]
-        end
-
-        # When no output is received, the startup timeout fires promptly after
-        # the startup heartbeat deadline passes — no additional idle_timeout
-        # window is added.
-        expect {
-          service.execute(
-            "claude_mcp_hung",
-            timeout: 10,
-            startup_timeout: 0.2,
-            idle_timeout: 0.1,
-            heartbeat_path: host_path
-          )
-        }.to raise_error(described_class::StartupTimeoutError)
-      end
-
-      it "returns nil from start_startup_heartbeat when heartbeat_host_path is absent" do
-        allow(service).to receive(:heartbeat_host_path).and_return(nil)
-
-        result = service.send(
-          :start_startup_heartbeat,
-          Mutex.new,
-          -> { false },
-          -> { false },
-          1
-        )
-
-        expect(result).to be_nil
       end
     end
   end

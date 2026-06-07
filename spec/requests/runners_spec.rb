@@ -516,6 +516,30 @@ RSpec.describe "Runners" do
       expect(runner.opencode_model_id).to eq("moonshotai/kimi-k2-0905")
     end
 
+    it "creates an openrouter_free runner with default free tier mappings" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+      create(:llm_model, model_id: "free-low", provider: "deepseek", tier: "low", pricing_tier: "free", capability_score: 4.0)
+      create(:llm_model, model_id: "free-mid", provider: "qwen", tier: "mid", pricing_tier: "free", capability_score: 6.0)
+      create(:llm_model, model_id: "free-high", provider: "moonshot", tier: "high", pricing_tier: "free", capability_score: 8.0)
+
+      post runners_path, params: {
+        runner: {
+          runner_key: "openrouter_free",
+          auth_type: "api_key",
+          provider_api_key_id: api_key.id,
+          enabled_for_agent_runs: true,
+          enabled_for_fallback: true
+        }
+      }
+
+      expect(response).to redirect_to(runners_path)
+      expect(user.runners.find_by!(runner_key: "openrouter_free", auth_type: "api_key").tier_model_ids).to eq(
+        "low" => "free-low",
+        "mid" => "free-mid",
+        "high" => "free-high"
+      )
+    end
+
     it "rejects kilocode API-key providers without a model id" do
       api_key = create(:provider_api_key, user: user, api_service_type: "inception")
 

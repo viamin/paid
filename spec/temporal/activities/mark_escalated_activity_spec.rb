@@ -59,6 +59,12 @@ RSpec.describe Activities::MarkEscalatedActivity do
           .with(issue.project.full_name, issue.github_number, [ "paid-escalated" ])
       end
 
+      it "keeps the local labels aligned with the escalated phase" do
+        activity.execute(issue_id: issue.id)
+
+        expect(issue.reload.labels).to include("paid-escalated")
+      end
+
       it "posts an escalation comment" do
         activity.execute(issue_id: issue.id)
 
@@ -170,6 +176,12 @@ RSpec.describe Activities::MarkEscalatedActivity do
         expect(issue.reload.pr_review_phase).to eq("escalated")
       end
 
+      it "still keeps the local label aligned with the escalated phase" do
+        activity.execute(issue_id: issue.id)
+
+        expect(issue.reload.labels).to include("paid-escalated")
+      end
+
       it "still returns updated: true" do
         result = activity.execute(issue_id: issue.id)
 
@@ -225,6 +237,13 @@ RSpec.describe Activities::MarkEscalatedActivity do
 
         expect(github_client).to have_received(:remove_label_from_issue)
           .with(issue.project.full_name, issue.github_number, "paid-ready")
+      end
+
+      it "removes the paid-ready label locally when escalating" do
+        activity.execute(issue_id: issue.id)
+
+        expect(issue.reload.labels).to include("paid-escalated")
+        expect(issue.reload.labels).not_to include("paid-ready")
       end
 
       it "still adds paid-escalated even if removing paid-ready fails" do

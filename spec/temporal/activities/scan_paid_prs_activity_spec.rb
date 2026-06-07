@@ -95,6 +95,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
     allow(github_client).to receive_messages(rate_limit_remaining!: 100, check_run_log: "")
+    allow(github_client).to receive(:remove_label_from_issue)
     allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
   end
 
@@ -6889,11 +6890,12 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     context "when escalated PR no longer has the paid-escalated label" do
       before do
-        create(:issue, :pull_request,
+        issue = create(:issue, :pull_request,
           project: project, github_number: 42,
           labels: [ "paid-generated", "paid-automation" ],
           pr_review_phase: "escalated",
           paid_state: "completed")
+        issue.update_columns(last_pr_scan_at: 10.minutes.ago)
         stub_github_for_pr
       end
 
@@ -6905,6 +6907,26 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(trigger[:triggers].first[:type]).to eq("dismiss_escalation")
         expect(trigger[:phase]).to eq("escalated")
         expect(trigger[:draft]).to be(false)
+      end
+    end
+
+    context "when escalated phase was just updated before the label sync lands" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "escalated",
+          paid_state: "completed")
+        stub_github_for_pr
+      end
+
+      it "does not treat the transient mismatch as a dismissal" do
+        result = activity.execute(project_id: project.id)
+
+        dismiss_triggers = automation_scan_results(result).flat_map { |entry| entry[:triggers] }
+          .select { |trigger| trigger[:type] == "dismiss_escalation" }
+
+        expect(dismiss_triggers).to be_empty
       end
     end
 
@@ -8539,6 +8561,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     before do
       enable_paid_agent_review!(project)
       create_stale_review_runs!(dismissed_escalated_issue, statuses: %w[failed failed failed])
+      dismissed_escalated_issue.update_columns(last_pr_scan_at: 10.minutes.ago)
       dismissed_escalated_issue.update!(labels: dismissed_escalated_issue.labels - [ "paid-escalated" ])
       stub_github_for_pr(reviews: [])
     end
@@ -8928,6 +8951,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     before do
       enable_paid_agent_review!
       create_stale_review_runs!(escalated_retry_issue, statuses: %w[failed failed failed])
+      escalated_retry_issue.update_columns(last_pr_scan_at: 10.minutes.ago)
       stub_github_for_pr
     end
 
@@ -8979,11 +9003,12 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
   context "when an escalated draft PR has the escalation label removed" do
     before do
-      create(:issue, :pull_request,
+      issue = create(:issue, :pull_request,
         project: project, github_number: 42,
         labels: [ "paid-generated", "paid-automation" ],
         pr_review_phase: "escalated",
         paid_state: "completed")
+      issue.update_columns(last_pr_scan_at: 10.minutes.ago)
       stub_github_for_pr(draft: true)
     end
 

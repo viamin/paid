@@ -74,12 +74,8 @@ module ClarifyingQuestions
     def issue_comments
       @issue_comments ||= begin
         comments = @injected_comments || github_client.issue_comments(project.full_name, issue.github_number)
-        comments.select { |comment| trusted_comment?(comment) }
+        comments.select { |comment| CommentAdmission.admissible?(project: project, comment: comment) }
       end
-    end
-
-    def trusted_comment?(comment)
-      project.trusted_github_user?(comment.user&.login)
     end
 
     def parse_answers(body)

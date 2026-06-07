@@ -33,6 +33,10 @@ RSpec.describe RunnerSupport do
       expect(described_class::CONTAINER_EXECUTABLE_RUNNER_KEYS).to include("opencode")
     end
 
+    it "includes openrouter_free" do
+      expect(described_class::CONTAINER_EXECUTABLE_RUNNER_KEYS).to include("openrouter_free")
+    end
+
     it "includes copilot with autopilot mode support" do
       expect(described_class::CONTAINER_EXECUTABLE_RUNNER_KEYS).to include("copilot")
     end
@@ -66,6 +70,11 @@ RSpec.describe RunnerSupport do
     it "includes opencode when backed by the agent harness registry" do
       keys = described_class.container_executable_runner_keys
       expect(keys).to include("opencode")
+    end
+
+    it "includes openrouter_free when backed by the agent harness registry" do
+      keys = described_class.container_executable_runner_keys
+      expect(keys).to include("openrouter_free")
     end
 
     it "includes copilot when backed by the agent harness registry" do
@@ -103,6 +112,10 @@ RSpec.describe RunnerSupport do
 
     it "returns true for opencode" do
       expect(described_class.container_executable_runner_key?("opencode")).to be true
+    end
+
+    it "returns true for openrouter_free" do
+      expect(described_class.container_executable_runner_key?("openrouter_free")).to be true
     end
 
     it "returns true for copilot" do
@@ -159,6 +172,10 @@ RSpec.describe RunnerSupport do
 
     it "returns openai for codex" do
       expect(described_class.api_service_type_for("codex")).to eq("openai")
+    end
+
+    it "returns openrouter for openrouter_free" do
+      expect(described_class.api_service_type_for("openrouter_free")).to eq("openrouter")
     end
 
     it "returns google for gemini" do
@@ -428,6 +445,16 @@ RSpec.describe RunnerSupport do
 
       it "is addable as a container-executable runner" do
         expect(described_class.addable_runner_key?("pi")).to be true
+      end
+    end
+
+    describe "openrouter_free inclusion" do
+      it "is listed in APP_RUNNER_KEYS as a known runner" do
+        expect(described_class::APP_RUNNER_KEYS).to include("openrouter_free")
+      end
+
+      it "is addable as a container-executable runner" do
+        expect(described_class.addable_runner_key?("openrouter_free")).to be true
       end
     end
   end

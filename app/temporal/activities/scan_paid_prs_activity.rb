@@ -922,6 +922,7 @@ module Activities
     def maybe_restart_draft(project, issue, pr_data)
       return false unless pr_data&.draft
 
+      had_escalated_label = issue.has_label?(PAID_ESCALATED_LABEL)
       reset_at = Time.current
       issue.update!(
         pr_review_phase: "restarted",
@@ -930,9 +931,11 @@ module Activities
         review_goal_retry_count: 0,
         review_goal_retry_reset_at: reset_at,
         operational_failure_reset_at: reset_at,
-        ci_retry_requested_at: nil
+        ci_retry_requested_at: nil,
+        labels: issue.labels - [ PAID_ESCALATED_LABEL ]
       )
 
+      remove_escalated_label_from_github(project, issue) if had_escalated_label
       invalidate_pr_progress_state(issue)
 
       logger.info(
@@ -945,8 +948,30 @@ module Activities
       true
     end
 
+    # Strips the paid-escalated label on GitHub when a PR leaves the escalated
+    # phase via a draft restart. Without this, the label persists on GitHub and
+    # is re-synced into the local labels array, leaving the PR visually flagged
+    # as escalated even though automation has already resumed work on it.
+    # Best-effort: a removal failure must not abort the restart.
+    def remove_escalated_label_from_github(project, issue)
+      project.client.remove_label_from_issue(project.full_name, issue.github_number, PAID_ESCALATED_LABEL)
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "pr_scanner.remove_escalated_label_failed",
+        project_id: project.id,
+        pr_number: issue.github_number,
+        error: e.message
+      )
+    end
+
     def escalation_dismissed?(issue)
-      issue.escalated_phase? && !issue.has_label?(PAID_ESCALATED_LABEL)
+      issue.escalated_phase? &&
+        !issue.has_label?(PAID_ESCALATED_LABEL) &&
+        !escalation_transition_pending?(issue)
+    end
+
+    def escalation_transition_pending?(issue)
+      issue.last_pr_scan_at.blank?
     end
 
     # Detect when a user marks a draft PR as ready on GitHub without going
