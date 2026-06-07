@@ -910,9 +910,9 @@ RSpec.describe Runner do
     let(:api_key) { create(:provider_api_key, user: user, api_service_type: "openrouter") }
 
     it "seeds openrouter_free tier_model_ids from active free models" do
-      create(:llm_model, model_id: "free-low", provider: "deepseek", tier: "low", pricing_tier: "free", capability_score: 4.0)
-      create(:llm_model, model_id: "free-mid", provider: "qwen", tier: "mid", pricing_tier: "free", capability_score: 6.0)
-      create(:llm_model, model_id: "free-high", provider: "moonshot", tier: "high", pricing_tier: "free", capability_score: 8.0)
+      create(:llm_model, model_id: "free-low", provider: "openrouter", tier: "low", pricing_tier: "free", capability_score: 4.0)
+      create(:llm_model, model_id: "free-mid", provider: "openrouter", tier: "mid", pricing_tier: "free", capability_score: 6.0)
+      create(:llm_model, model_id: "free-high", provider: "openrouter", tier: "high", pricing_tier: "free", capability_score: 8.0)
 
       runner = create(
         :runner,
