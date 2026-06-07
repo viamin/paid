@@ -25,6 +25,7 @@ module Activities
       add_phase_label(client, project, issue.github_number, PAID_ESCALATED_LABEL)
       issue.update!(
         pr_review_phase: "escalated",
+        pr_escalation_reason: resolve_escalation_reason(input),
         labels: escalated_labels(issue)
       )
       post_escalation_comment(client, project, issue, input[:reason], phase_before:)
@@ -145,6 +146,31 @@ module Activities
       "the automatic PR failure limit " \
         "(#{limit} consecutive unsuccessful runs) " \
         "has been reached without meaningful progress and the PR requires human intervention"
+    end
+
+    # Resolves the durable, machine-readable escalation reason. Prefers the
+    # explicit key threaded through the escalation payload by the scanner, which
+    # classifies the cause from structured lifecycle signals rather than prose.
+    # Falls back to inferring the key from the human-facing reason text only for
+    # escalations enqueued before the key was threaded (older workflow histories
+    # carry the prose but no key).
+    def resolve_escalation_reason(input)
+      key = input[:reason_key]
+      return key if Issue::PR_ESCALATION_REASONS.include?(key)
+
+      infer_reason_key_from_text(input[:reason])
+    end
+
+    # Legacy fallback: infer the reason key by matching the human-facing reason
+    # text. Only used for in-flight escalations that predate explicit reason-key
+    # threading; new escalations always carry an explicit key.
+    def infer_reason_key_from_text(reason)
+      if reason&.include?("consecutive provider/infrastructure failures")
+        return Issue::PR_ESCALATION_REASON_OPERATIONAL_FAILURES
+      end
+      return Issue::PR_ESCALATION_REASON_REVIEW_GOAL_RETRY_LIMIT if reason&.start_with?("Review-goal retry budget exhausted")
+
+      Issue::PR_ESCALATION_REASON_FAILURE_STREAK
     end
 
     def draft_originated?(issue, phase_before)

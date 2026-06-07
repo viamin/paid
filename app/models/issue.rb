@@ -3,6 +3,14 @@
 class Issue < ApplicationRecord
   PAID_STATES = %w[new planning in_progress completed failed needs_input recommend_close analyzed].freeze
   PR_REVIEW_PHASES = %w[draft restarted ready merged escalated].freeze
+  PR_ESCALATION_REASONS = %w[
+    operational_failures
+    failure_streak
+    review_goal_retry_limit
+  ].freeze
+  PR_ESCALATION_REASON_OPERATIONAL_FAILURES = "operational_failures"
+  PR_ESCALATION_REASON_FAILURE_STREAK = "failure_streak"
+  PR_ESCALATION_REASON_REVIEW_GOAL_RETRY_LIMIT = "review_goal_retry_limit"
 
   # Constants for synthetic alert issues. Shared with
   # Activities::ScanSecurityAlertsActivity which creates these issues.
@@ -56,6 +64,7 @@ class Issue < ApplicationRecord
   before_validation { self.source ||= GITHUB_SOURCE }
   validates :source, presence: true, inclusion: { in: VALID_SOURCES }
   validates :pr_review_phase, inclusion: { in: PR_REVIEW_PHASES }, if: :is_pull_request?
+  validates :pr_escalation_reason, inclusion: { in: PR_ESCALATION_REASONS }, allow_nil: true
   validates :enhance_issue_rounds, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :parent_issue_belongs_to_same_project, if: -> { parent_issue.present? }
 
@@ -259,6 +268,7 @@ class Issue < ApplicationRecord
     attrs = {
       labels: labels - %w[paid-escalated paid-dismiss-escalation],
       pr_review_phase: draft ? "restarted" : "ready",
+      pr_escalation_reason: nil,
       ci_retry_requested_at: nil
     }
 

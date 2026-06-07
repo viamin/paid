@@ -306,7 +306,8 @@ module Automation
           issue_id: signals.issue_id,
           pr_number: signals.pr_number,
           owner_reviewer_login: signals.owner_reviewer_login,
-          reason: trigger[:details]
+          reason: trigger[:details],
+          reason_key: trigger[:reason_key] || trigger["reason_key"]
         )
       end
 

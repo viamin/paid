@@ -201,7 +201,7 @@ module Activities
         phase: lifecycle&.dig(:phase),
         draft: lifecycle&.dig(:draft),
         owner_reviewer_login: escalate.payload[:owner_reviewer_login],
-        triggers: [ { type: "escalate_to_owner", details: escalate.payload[:reason] } ]
+        triggers: [ { type: "escalate_to_owner", details: escalate.payload[:reason], reason_key: escalate.payload[:reason_key] } ]
       } if escalate
 
       return result if result.is_a?(Hash)
@@ -233,12 +233,12 @@ module Activities
       failure_limit = failure_streak_limit_reached?(project, issue, progress_state)
       retry_escalation = review_goal_retry_limit_requires_escalation?(project, issue, progress_state:)
 
-      reason = if op_breaker
-        operational_failure_reason
+      reason, reason_key = if op_breaker
+        [ operational_failure_reason, Issue::PR_ESCALATION_REASON_OPERATIONAL_FAILURES ]
       elsif no_progress_stuck && retry_escalation
-        review_goal_retry_escalation_reason(project, issue, progress_state:)
+        [ review_goal_retry_escalation_reason(project, issue, progress_state:), Issue::PR_ESCALATION_REASON_REVIEW_GOAL_RETRY_LIMIT ]
       elsif no_progress_stuck && failure_limit
-        failure_streak_reason(project, issue, progress_state)
+        [ failure_streak_reason(project, issue, progress_state), Issue::PR_ESCALATION_REASON_FAILURE_STREAK ]
       end
 
       {
@@ -252,6 +252,7 @@ module Activities
         review_goal_retry_limit_requires_escalation: retry_escalation,
         owner_reviewer_login: project.owner_reviewer_login,
         escalation_reason: reason,
+        escalation_reason_key: reason_key,
         consecutive_unsuccessful_automatic_runs: progress_state.consecutive_unsuccessful_automatic_runs,
         consecutive_operational_failures: progress_state.consecutive_operational_failures,
         last_meaningful_progress_at: progress_state.last_meaningful_progress_at,
@@ -382,7 +383,11 @@ module Activities
         end
       when "escalated"
         if escalation_dismissed?(issue)
-          dismiss_escalation_trigger(issue, draft: pr_data.draft == true)
+          # escalation_dismissed? and escalation_dismissal_details enforce the
+          # same conditions against the same memoized progress state, so the
+          # details lookup always returns a non-nil string here.
+          dismissal_details = escalation_dismissal_details(issue, progress_state:)
+          dismiss_escalation_trigger(issue, draft: pr_data.draft == true, details: dismissal_details)
         elsif maybe_restart_draft(project, issue, pr_data)
           scan_draft_pr(project, client, issue, pr_data: pr_data)
         else
@@ -795,28 +800,28 @@ module Activities
       }
     end
 
-    def escalate_trigger(issue, reason: "Draft review limit reached")
+    def escalate_trigger(issue, reason: "Draft review limit reached", reason_key: Issue::PR_ESCALATION_REASON_FAILURE_STREAK)
       log_triggers(issue.project, issue, [ { type: "escalate_to_owner" } ])
 
       {
         focus: focus_for(issue.project, [ { type: "escalate_to_owner", details: reason } ]),
         issue_id: issue.id,
         pr_number: issue.github_number,
-        triggers: [ { type: "escalate_to_owner", details: reason } ],
+        triggers: [ { type: "escalate_to_owner", details: reason, reason_key: reason_key } ],
         phase: issue.pr_review_phase,
         current_draft_review_count: issue.draft_review_count,
         owner_reviewer_login: issue.project.owner_reviewer_login
       }
     end
 
-    def dismiss_escalation_trigger(issue, draft:)
+    def dismiss_escalation_trigger(issue, draft:, details:)
       log_triggers(issue.project, issue, [ { type: "dismiss_escalation" } ])
 
       {
-        focus: focus_for(issue.project, [ { type: "dismiss_escalation", details: "Owner dismissed escalation by removing paid-escalated" } ]),
+        focus: focus_for(issue.project, [ { type: "dismiss_escalation", details: details } ]),
         issue_id: issue.id,
         pr_number: issue.github_number,
-        triggers: [ { type: "dismiss_escalation", details: "Owner dismissed escalation by removing paid-escalated" } ],
+        triggers: [ { type: "dismiss_escalation", details: details } ],
         phase: "escalated",
         draft: draft == true,
         owner_reviewer_login: issue.project.owner_reviewer_login
@@ -926,6 +931,7 @@ module Activities
       reset_at = Time.current
       issue.update!(
         pr_review_phase: "restarted",
+        pr_escalation_reason: nil,
         draft_review_count: 0,
         pr_followup_count: 0,
         review_goal_retry_count: 0,
@@ -948,6 +954,15 @@ module Activities
       true
     end
 
+    def escalation_dismissal_details(issue, progress_state:)
+      return unless issue.escalated_phase?
+      return "Owner dismissed escalation by removing paid-escalated" unless issue.has_label?(PAID_ESCALATED_LABEL)
+      return unless issue.pr_escalation_reason == Issue::PR_ESCALATION_REASON_OPERATIONAL_FAILURES
+      return unless progress_state.consecutive_operational_failures.zero?
+
+      "Operational escalation auto-dismissed after failure signals recovered"
+    end
+
     # Strips the paid-escalated label on GitHub when a PR leaves the escalated
     # phase via a draft restart. Without this, the label persists on GitHub and
     # is re-synced into the local labels array, leaving the PR visually flagged
@@ -965,9 +980,12 @@ module Activities
     end
 
     def escalation_dismissed?(issue)
-      issue.escalated_phase? &&
-        !issue.has_label?(PAID_ESCALATED_LABEL) &&
-        !escalation_transition_pending?(issue)
+      return false unless issue.escalated_phase?
+      return false if escalation_transition_pending?(issue)
+      return true unless issue.has_label?(PAID_ESCALATED_LABEL)
+      return false unless issue.pr_escalation_reason == Issue::PR_ESCALATION_REASON_OPERATIONAL_FAILURES
+
+      pr_progress_state(issue.project, issue).consecutive_operational_failures.zero?
     end
 
     def escalation_transition_pending?(issue)
