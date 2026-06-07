@@ -70,6 +70,7 @@ class GithubClient
   # @param health_endpoint [String] Stable health-state key for the auth principal
   # @param options [Hash] Additional Octokit client options
   def initialize(token:, health_endpoint: GithubHealthState::DEFAULT_ENDPOINT, **options)
+    @token = token
     @client = Octokit::Client.new(
       access_token: token,
       auto_paginate: false,
@@ -1506,7 +1507,7 @@ class GithubClient
   end
 
   def cache_token_digest
-    @cache_token_digest ||= Digest::SHA256.hexdigest(client.access_token.to_s)
+    @cache_token_digest ||= Digest::SHA256.hexdigest(@token.to_s)
   end
 
   def pull_request_node_id(repo, number)
