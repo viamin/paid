@@ -383,12 +383,10 @@ module Activities
         end
       when "escalated"
         if escalation_dismissed?(issue)
-          dismissal_details = escalation_dismissal_details(issue, progress_state:) ||
-            if issue.has_label?(PAID_ESCALATED_LABEL)
-              "Operational escalation auto-dismissed after failure signals recovered"
-            else
-              "Owner dismissed escalation by removing paid-escalated"
-            end
+          # escalation_dismissed? and escalation_dismissal_details enforce the
+          # same conditions against the same memoized progress state, so the
+          # details lookup always returns a non-nil string here.
+          dismissal_details = escalation_dismissal_details(issue, progress_state:)
           dismiss_escalation_trigger(issue, draft: pr_data.draft == true, details: dismissal_details)
         elsif maybe_restart_draft(project, issue, pr_data)
           scan_draft_pr(project, client, issue, pr_data: pr_data)
