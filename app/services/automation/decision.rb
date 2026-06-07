@@ -51,12 +51,13 @@ module Automation
         }.compact)
       end
 
-      def escalate(issue_id:, pr_number:, owner_reviewer_login: nil, reason: nil)
+      def escalate(issue_id:, pr_number:, owner_reviewer_login: nil, reason: nil, reason_key: nil)
         new(type: "escalate", payload: {
           issue_id: issue_id,
           pr_number: pr_number,
           owner_reviewer_login: owner_reviewer_login,
-          reason: reason
+          reason: reason,
+          reason_key: reason_key
         }.compact)
       end
 

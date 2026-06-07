@@ -767,6 +767,7 @@ RSpec.describe Issue do
         expect(issue).to have_received(:update!).with(
           hash_including(
             pr_review_phase: "ready",
+            pr_escalation_reason: nil,
             ci_retry_requested_at: nil
           )
         )
