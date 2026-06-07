@@ -201,7 +201,7 @@ module Activities
         phase: lifecycle&.dig(:phase),
         draft: lifecycle&.dig(:draft),
         owner_reviewer_login: escalate.payload[:owner_reviewer_login],
-        triggers: [ { type: "escalate_to_owner", details: escalate.payload[:reason] } ]
+        triggers: [ { type: "escalate_to_owner", details: escalate.payload[:reason], reason_key: escalate.payload[:reason_key] } ]
       } if escalate
 
       return result if result.is_a?(Hash)
@@ -233,12 +233,12 @@ module Activities
       failure_limit = failure_streak_limit_reached?(project, issue, progress_state)
       retry_escalation = review_goal_retry_limit_requires_escalation?(project, issue, progress_state:)
 
-      reason = if op_breaker
-        operational_failure_reason
+      reason, reason_key = if op_breaker
+        [ operational_failure_reason, Issue::PR_ESCALATION_REASON_OPERATIONAL_FAILURES ]
       elsif no_progress_stuck && retry_escalation
-        review_goal_retry_escalation_reason(project, issue, progress_state:)
+        [ review_goal_retry_escalation_reason(project, issue, progress_state:), Issue::PR_ESCALATION_REASON_REVIEW_GOAL_RETRY_LIMIT ]
       elsif no_progress_stuck && failure_limit
-        failure_streak_reason(project, issue, progress_state)
+        [ failure_streak_reason(project, issue, progress_state), Issue::PR_ESCALATION_REASON_FAILURE_STREAK ]
       end
 
       {
@@ -252,6 +252,7 @@ module Activities
         review_goal_retry_limit_requires_escalation: retry_escalation,
         owner_reviewer_login: project.owner_reviewer_login,
         escalation_reason: reason,
+        escalation_reason_key: reason_key,
         consecutive_unsuccessful_automatic_runs: progress_state.consecutive_unsuccessful_automatic_runs,
         consecutive_operational_failures: progress_state.consecutive_operational_failures,
         last_meaningful_progress_at: progress_state.last_meaningful_progress_at,
@@ -801,14 +802,14 @@ module Activities
       }
     end
 
-    def escalate_trigger(issue, reason: "Draft review limit reached")
+    def escalate_trigger(issue, reason: "Draft review limit reached", reason_key: Issue::PR_ESCALATION_REASON_FAILURE_STREAK)
       log_triggers(issue.project, issue, [ { type: "escalate_to_owner" } ])
 
       {
         focus: focus_for(issue.project, [ { type: "escalate_to_owner", details: reason } ]),
         issue_id: issue.id,
         pr_number: issue.github_number,
-        triggers: [ { type: "escalate_to_owner", details: reason } ],
+        triggers: [ { type: "escalate_to_owner", details: reason, reason_key: reason_key } ],
         phase: issue.pr_review_phase,
         current_draft_review_count: issue.draft_review_count,
         owner_reviewer_login: issue.project.owner_reviewer_login

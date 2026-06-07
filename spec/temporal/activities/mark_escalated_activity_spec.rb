@@ -76,6 +76,36 @@ RSpec.describe Activities::MarkEscalatedActivity do
         expect(issue.reload.pr_escalation_reason).to eq("review_goal_retry_limit")
       end
 
+      it "persists the explicit reason key when provided" do
+        activity.execute(
+          issue_id: issue.id,
+          reason_key: "operational_failures",
+          reason: "anything human-facing"
+        )
+
+        expect(issue.reload.pr_escalation_reason).to eq("operational_failures")
+      end
+
+      it "prefers the explicit reason key over the human-facing reason text" do
+        activity.execute(
+          issue_id: issue.id,
+          reason_key: "review_goal_retry_limit",
+          reason: "No meaningful progress for 3 hours after 3 consecutive provider/infrastructure failures"
+        )
+
+        expect(issue.reload.pr_escalation_reason).to eq("review_goal_retry_limit")
+      end
+
+      it "falls back to inferring from text when the reason key is unrecognized" do
+        activity.execute(
+          issue_id: issue.id,
+          reason_key: "bogus_key",
+          reason: "No meaningful progress for 3 hours after 3 consecutive provider/infrastructure failures"
+        )
+
+        expect(issue.reload.pr_escalation_reason).to eq("operational_failures")
+      end
+
       it "adds the paid-escalated label" do
         activity.execute(issue_id: issue.id)
 
