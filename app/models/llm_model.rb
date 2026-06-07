@@ -57,6 +57,19 @@ class LlmModel < ApplicationRecord
     pricing_tier == "free"
   end
 
+  def below_quality_bar?
+    ActiveModel::Type::Boolean.new.cast(metadata["below_quality_bar"])
+  end
+
+  def reasoning_supported?
+    ActiveModel::Type::Boolean.new.cast(metadata["supports_reasoning"]) ||
+      Array(metadata["supported_parameters"]).map(&:to_s).include?("reasoning")
+  end
+
+  def expired?
+    expires_at.present? && expires_at <= Time.current
+  end
+
   def self.default_for_task(category)
     active.by_category(category).by_capability.first || active.by_capability.first
   end

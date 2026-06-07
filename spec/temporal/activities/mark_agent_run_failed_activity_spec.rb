@@ -46,6 +46,20 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
       expect(issue.reload.paid_state).to eq("completed")
     end
 
+    it "keeps the issue in_progress for recoverable rate-limited runs" do
+      issue = create(:issue, :in_progress, project: project)
+      agent_run = create(:agent_run, :running, project: project, issue: issue)
+      # Runner exhaustion parks the run as rate_limited with a recovery time.
+      agent_run.rate_limit!(error: "All runners exhausted (will retry)", reset_at: 2.minutes.from_now)
+
+      activity.execute(agent_run_id: agent_run.id, error: "All runners exhausted (will retry)")
+
+      # Must NOT flip to "failed" — that arms the re-enqueue pump and mints a
+      # duplicate, superseding run while this one awaits in-place retry.
+      expect(issue.reload.paid_state).to eq("in_progress")
+      expect(agent_run.reload.status).to eq("rate_limited")
+    end
+
     it "does not overwrite timeout status but updates issue state" do
       issue = create(:issue, :in_progress, project: project)
       agent_run = create(:agent_run, :running, project: project, issue: issue)

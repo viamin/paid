@@ -462,7 +462,7 @@ module Workflows
 
     def handle_escalate_decision(project_id, decision)
       activity_input = if Temporalio::Workflow.patched("escalation-reason-payload-v1")
-        { issue_id: decision[:issue_id], reason: decision[:reason] }.compact
+        { issue_id: decision[:issue_id], reason: decision[:reason], reason_key: decision[:reason_key] }.compact
       else
         { issue_id: decision[:issue_id] }
       end
@@ -492,11 +492,13 @@ module Workflows
     end
 
     def handle_escalate_to_owner(project_id, pr_data)
+      escalate_trigger = (pr_data[:triggers] || []).find { |t| t[:type] == "escalate_to_owner" }
       handle_escalate_decision(project_id,
         issue_id: pr_data[:issue_id],
         pr_number: pr_data[:pr_number],
         owner_reviewer_login: pr_data[:owner_reviewer_login],
-        reason: (pr_data[:triggers] || []).find { |t| t[:type] == "escalate_to_owner" }&.dig(:details))
+        reason: escalate_trigger&.dig(:details),
+        reason_key: escalate_trigger&.dig(:reason_key))
     end
 
     def handle_dismiss_escalation(project_id, pr_data)

@@ -212,6 +212,7 @@ module Models
       model = selected[:model]
       runner = agent_run.runner
       return true unless model && runner
+      return model.free? if free_tier_constrained_runner?
       return true unless constrained_runner_selection?(runner)
 
       configured_model_id = runner.direct_outbound_model_id

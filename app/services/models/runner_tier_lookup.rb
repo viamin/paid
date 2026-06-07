@@ -14,6 +14,8 @@ module Models
     end
 
     def compatible_model_scope(scope)
+      return scope.free if free_tier_constrained_runner?
+
       model_provider = compatible_model_provider
       return scope unless model_provider.present?
 
@@ -26,6 +28,15 @@ module Models
 
       runner.direct_outbound_llm_model_provider.presence ||
         Runners::DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER[runner.runner_key.to_s]
+    end
+
+    # openrouter_free is constrained to free-pricing models rather than a single
+    # provider: it routes any active free model through OpenRouter, so selection
+    # must stay within the free tier to match what execution actually pins.
+    # Without this, selection treats the runner as unconstrained and can record
+    # a paid candidate that execution later swaps for the runner's free model.
+    def free_tier_constrained_runner?
+      agent_run.runner&.runner_key == "openrouter_free"
     end
 
     def excluded_model?(model, excluded)
