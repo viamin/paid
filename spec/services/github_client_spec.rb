@@ -22,16 +22,22 @@ RSpec.describe GithubClient do
       expect(client.send(:http_cache_options)[:serializer]).to eq(JSON)
     end
 
-    it "scopes REST cache keys by token digest" do
-      url = "https://api.github.com/user"
-      request_options = nil
+    it "scopes REST cache store by token digest" do
+      store = client.send(:http_cache_options)[:store]
+      other_store = other_client.send(:http_cache_options)[:store]
 
-      cache_key = client.send(:http_cache_options)[:cache_key].call(url, request_options)
-      other_cache_key = other_client.send(:http_cache_options)[:cache_key].call(url, request_options)
+      expect(store).to be_a(GithubClient::TokenNamespacedStore)
+      expect(other_store).to be_a(GithubClient::TokenNamespacedStore)
 
-      expect(cache_key).to eq("github_http_cache:#{Digest::SHA256.hexdigest(token)}:#{url}")
-      expect(other_cache_key).to eq("github_http_cache:#{Digest::SHA256.hexdigest(other_token)}:#{url}")
-      expect(cache_key).not_to eq(other_cache_key)
+      underlying = ActiveSupport::Cache::MemoryStore.new
+      token_a = Digest::SHA256.hexdigest(token)
+      token_b = Digest::SHA256.hexdigest(other_token)
+      scoped_a = GithubClient::TokenNamespacedStore.new(underlying, token_a)
+      scoped_b = GithubClient::TokenNamespacedStore.new(underlying, token_b)
+
+      scoped_a.write("test_key", "value_a")
+      expect(scoped_a.read("test_key")).to eq("value_a")
+      expect(scoped_b.read("test_key")).to be_nil
     end
 
     it "adds HTTP caching only to the REST connection" do

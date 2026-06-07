@@ -1499,10 +1499,9 @@ class GithubClient
 
   def http_cache_options
     {
-      store: Rails.cache,
+      store: TokenNamespacedStore.new(Rails.cache, cache_token_digest),
       shared_cache: false,
-      serializer: JSON,
-      cache_key: ->(url, _request_options) { "github_http_cache:#{cache_token_digest}:#{url}" }
+      serializer: JSON
     }
   end
 
@@ -1628,5 +1627,30 @@ class GithubClient
       message: "github_client.health_state_record_failed",
       error: e.message
     )
+  end
+
+  class TokenNamespacedStore
+    def initialize(store, namespace)
+      @store = store
+      @namespace = namespace
+    end
+
+    def read(key)
+      @store.read(namespaced_key(key))
+    end
+
+    def write(key, value, **options)
+      @store.write(namespaced_key(key), value, **options)
+    end
+
+    def delete(key)
+      @store.delete(namespaced_key(key))
+    end
+
+    private
+
+    def namespaced_key(key)
+      "#{@namespace}:#{key}"
+    end
   end
 end
