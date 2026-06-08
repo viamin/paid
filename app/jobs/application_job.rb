@@ -5,16 +5,7 @@ class ApplicationJob < ActiveJob::Base
   class_attribute :max_attempts, default: 1
 
   rescue_from(StandardError) do |exception|
-    if executions >= self.class.max_attempts && !is_a?(HandleExceptionJob)
-      Paid::ExceptionNotifier.new.call(
-        exception,
-        data: {
-          account: notification_account,
-          subsystem: self.class.notification_subsystem,
-          project_id: notification_project_id
-        }
-      )
-    end
+    notify_terminal_failure(exception) if executions >= self.class.max_attempts
     raise exception
   end
 
@@ -28,6 +19,25 @@ class ApplicationJob < ActiveJob::Base
 
   def notification_project_id
     nil
+  end
+
+  # Report a terminal job failure to the exception notifier. Used by the base
+  # rescue_from hook for non-retried errors, and by retry_on blocks when a retry
+  # policy is exhausted — retry_on registers a more specific handler that
+  # intercepts those errors before the base hook, so the final attempt must
+  # report explicitly (it then re-raises so the adapter still marks the job
+  # failed). HandleExceptionJob is skipped to avoid an infinite notify loop.
+  def notify_terminal_failure(exception)
+    return if is_a?(HandleExceptionJob)
+
+    Paid::ExceptionNotifier.new.call(
+      exception,
+      data: {
+        account: notification_account,
+        subsystem: self.class.notification_subsystem,
+        project_id: notification_project_id
+      }
+    )
   end
 
   private

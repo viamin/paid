@@ -110,4 +110,54 @@ RSpec.describe EnqueueKnowledgeCollectionJob do
       expect { described_class.new.perform(project.id) }.to raise_error(WorktreeService::Error)
     end
   end
+
+  describe "terminal retry notification" do
+    let(:notifier) { instance_double(Paid::ExceptionNotifier) }
+
+    before do
+      allow(Paid::ExceptionNotifier).to receive(:new).and_return(notifier)
+      allow(notifier).to receive(:call)
+    end
+
+    # retry_on intercepts these errors before ApplicationJob's rescue_from hook,
+    # so the exhausted final attempt must notify explicitly. Drive the per-
+    # exception retry counter to its limit so the next attempt is terminal.
+    it "notifies the exception notifier when WorktreeService::Error exhausts retries" do
+      allow(worktree_service).to receive(:ensure_cloned).and_raise(WorktreeService::Error, "not cloned")
+
+      job = described_class.new(project.id)
+      job.exception_executions = { "[WorktreeService::Error]" => 4 }
+
+      expect { job.perform_now }.to raise_error(WorktreeService::Error)
+      expect(notifier).to have_received(:call).with(
+        an_instance_of(WorktreeService::Error),
+        data: hash_including(subsystem: "knowledge", project_id: project.id)
+      )
+    end
+
+    it "notifies the exception notifier when Errno::ENOENT exhausts retries" do
+      allow(worktree_service).to receive(:ensure_cloned).and_raise(Errno::ENOENT, "missing")
+
+      job = described_class.new(project.id)
+      job.exception_executions = { "[Errno::ENOENT]" => 4 }
+
+      expect { job.perform_now }.to raise_error(Errno::ENOENT)
+      expect(notifier).to have_received(:call).with(
+        an_instance_of(Errno::ENOENT),
+        data: hash_including(subsystem: "knowledge", project_id: project.id)
+      )
+    end
+
+    it "does not notify while retries remain" do
+      allow(worktree_service).to receive(:ensure_cloned).and_raise(WorktreeService::Error, "not cloned")
+
+      job = described_class.new(project.id)
+      job.exception_executions = { "[WorktreeService::Error]" => 0 }
+
+      # Retries remain, so retry_on reschedules (the :test adapter records the
+      # retry without running it) instead of invoking the terminal block.
+      expect { job.perform_now }.not_to raise_error
+      expect(notifier).not_to have_received(:call)
+    end
+  end
 end

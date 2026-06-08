@@ -8,11 +8,16 @@ RSpec.describe ExceptionNotification do
   let(:account) { create(:account) }
   let(:project) { create(:project, account: account) }
 
+  # These specs drain the queue with perform_enqueued_jobs. Creating a project
+  # also enqueues EnqueueKnowledgeCollectionJob, which now files its own incident
+  # on terminal failure, so each block is scoped to only: HandleExceptionJob to
+  # keep the incident/IssueFiler assertions deterministic.
+
   describe "GoodJob terminal failure with allowlisted subsystem" do
     it "produces an ExceptionIncident with the correct subsystem" do
       allow(ExceptionHandler::IssueFiler).to receive(:call)
 
-      perform_enqueued_jobs do
+      perform_enqueued_jobs(only: HandleExceptionJob) do
         HandleExceptionJob.perform_later(
           account_id: account.id,
           exception_class: "RuntimeError",
@@ -35,7 +40,7 @@ RSpec.describe ExceptionNotification do
     it "files a GitHub issue when project context exists" do
       allow(ExceptionHandler::IssueFiler).to receive(:call)
 
-      perform_enqueued_jobs do
+      perform_enqueued_jobs(only: HandleExceptionJob) do
         HandleExceptionJob.perform_later(
           account_id: account.id,
           exception_class: "RuntimeError",
@@ -53,7 +58,7 @@ RSpec.describe ExceptionNotification do
     it "produces an ExceptionIncident with 'general' subsystem" do
       allow(ExceptionHandler::IssueFiler).to receive(:call)
 
-      perform_enqueued_jobs do
+      perform_enqueued_jobs(only: HandleExceptionJob) do
         HandleExceptionJob.perform_later(
           account_id: account.id,
           exception_class: "RuntimeError",
@@ -73,7 +78,7 @@ RSpec.describe ExceptionNotification do
     it "does NOT file a GitHub issue for 'general' subsystem" do
       allow(ExceptionHandler::IssueFiler).to receive(:call)
 
-      perform_enqueued_jobs do
+      perform_enqueued_jobs(only: HandleExceptionJob) do
         HandleExceptionJob.perform_later(
           account_id: account.id,
           exception_class: "RuntimeError",
