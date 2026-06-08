@@ -3,6 +3,15 @@
 require "rails_helper"
 
 RSpec.describe Dashboard::RecentActivity do
+  def create_activity_items(project:, timestamp:)
+    [
+      create(:agent_run, project: project, status: "completed", completed_at: timestamp),
+      create(:agent_run, project: project, status: "completed", completed_at: nil, created_at: timestamp),
+      create(:issue, :pull_request, project: project, pr_review_phase: "merged", github_updated_at: timestamp),
+      create(:quality_pause_event, :paused, project: project, created_at: timestamp)
+    ]
+  end
+
   around do |example|
     original_store = Rails.cache
     Rails.cache = ActiveSupport::Cache::MemoryStore.new
@@ -75,6 +84,16 @@ RSpec.describe Dashboard::RecentActivity do
 
       expect(described_class.call(account: account, limit: 5).size).to eq(5)
       expect(described_class.call(account: account).size).to eq(described_class::DEFAULT_LIMIT)
+    end
+
+    it "excludes stale activity outside the recent window" do
+      stale_items = create_activity_items(project:, timestamp: 15.days.ago)
+      fresh_items = create_activity_items(project:, timestamp: 1.hour.ago)
+
+      items = described_class.call(account: account)
+
+      expect(items).to match_array(fresh_items)
+      expect(items).not_to include(*stale_items)
     end
 
     it "refreshes the cached activity feed after the dashboard version changes" do
