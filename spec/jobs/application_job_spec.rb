@@ -92,6 +92,7 @@ RSpec.describe ApplicationJob do
       expect(notifier).to have_received(:call).with(
         an_instance_of(RuntimeError),
         data: {
+          account: nil,
           subsystem: "knowledge",
           project_id: nil
         }
@@ -118,6 +119,7 @@ RSpec.describe ApplicationJob do
       expect(notifier).to have_received(:call).with(
         an_instance_of(RuntimeError),
         data: {
+          account: nil,
           subsystem: "general",
           project_id: nil
         }
@@ -167,7 +169,7 @@ RSpec.describe ApplicationJob do
 
         expect(notifier).to have_received(:call).with(
           an_instance_of(RuntimeError),
-          data: { subsystem: "knowledge", project_id: project.id }
+          data: { account: nil, subsystem: "knowledge", project_id: project.id }
         )
       end
     end
