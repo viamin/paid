@@ -2091,17 +2091,16 @@ module Activities
         # TODO(#2525): Remove once agent-harness Anthropic#build_command reads provider_runtime.model
         prefix = inject_runtime_model_flag(plan.command[0..-2], command_context, agent_run: agent_run)
         api_key_auth_command(runner_entry, prefix, prompt)
-      elsif RunnerSupport.subscription_auth_unset_vars_for(
-        RunnerSupport.runner_key_for_agent_type(command_context.runner)
-      ).any?
-        normalized_runner = RunnerSupport.runner_key_for_agent_type(command_context.runner)
-        plan = harness_execution_plan_for(normalized_runner, prompt, user: command_context.user, agent_run: agent_run)
+      elsif RunnerSupport.subscription_auth_unset_vars_for(command_context.runner).any?
+        plan = harness_execution_plan_for(command_context.runner, prompt, user: command_context.user, agent_run: agent_run)
         # TODO(#2525): Remove once agent-harness Anthropic#build_command reads provider_runtime.model
         prefix = inject_runtime_model_flag(plan.command[0..-2], command_context, agent_run: agent_run)
-        subscription_auth_command(normalized_runner, prefix, prompt)
+        subscription_auth_command(command_context.runner, prefix, prompt)
       else
         plan = harness_execution_plan_for(command_context.runner, prompt, user: command_context.user, agent_run: agent_run)
-        plan.command
+        # TODO(#2525): Remove once agent-harness Anthropic#build_command reads provider_runtime.model
+        prefix = inject_runtime_model_flag(plan.command[0..-2], command_context, agent_run: agent_run)
+        prefix + [ plan.command.last ]
       end
     end
 
