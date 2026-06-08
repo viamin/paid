@@ -1132,7 +1132,7 @@ module Activities
         runner: runner,
         user: user_settings.user
       )
-      command = build_command(command_context, prompt)
+      command = build_command(command_context, prompt, agent_run: agent_run)
       command_env = command_env_for(command_context, prompt)
       command_preparation = command_preparation_for(command_context, prompt, agent_run: agent_run)
 
@@ -2088,13 +2088,19 @@ module Activities
         runner_entry.direct_outbound_exec_command(command_prefix: plan.command[0..-2], prompt: prompt)
       elsif runner_entry&.api_key?
         plan = harness_execution_plan_for(command_context.runner, prompt, user: command_context.user, agent_run: agent_run)
-        api_key_auth_command(runner_entry, plan.command[0..-2], prompt)
+        # TODO(#2525): Remove once agent-harness Anthropic#build_command reads provider_runtime.model
+        prefix = inject_runtime_model_flag(plan.command[0..-2], command_context, agent_run: agent_run)
+        api_key_auth_command(runner_entry, prefix, prompt)
       elsif RunnerSupport.subscription_auth_unset_vars_for(command_context.runner).any?
         plan = harness_execution_plan_for(command_context.runner, prompt, user: command_context.user, agent_run: agent_run)
-        subscription_auth_command(command_context.runner, plan.command[0..-2], prompt)
+        # TODO(#2525): Remove once agent-harness Anthropic#build_command reads provider_runtime.model
+        prefix = inject_runtime_model_flag(plan.command[0..-2], command_context, agent_run: agent_run)
+        subscription_auth_command(command_context.runner, prefix, prompt)
       else
         plan = harness_execution_plan_for(command_context.runner, prompt, user: command_context.user, agent_run: agent_run)
-        plan.command
+        # TODO(#2525): Remove once agent-harness Anthropic#build_command reads provider_runtime.model
+        prefix = inject_runtime_model_flag(plan.command[0..-2], command_context, agent_run: agent_run)
+        prefix + [ plan.command.last ]
       end
     end
 
@@ -2430,6 +2436,21 @@ module Activities
 
       script = "if [ \"$#{env_flag}\" = \"1\" ]; then env #{unset_str} #{base} \"$1\"; else #{base} \"$1\"; fi"
       [ "sh", "-c", script, "--", prompt ]
+    end
+
+    # Workaround: agent-harness Anthropic#build_command only reads
+    # @config.model, ignoring provider_runtime.model. Inject --model
+    # into the command prefix when the runtime resolved a tier model
+    # that the harness omitted.
+    # TODO(#2525): Remove once upstream reads provider_runtime.model
+    def inject_runtime_model_flag(command_prefix, command_context, agent_run: nil)
+      return command_prefix if command_prefix.include?("--model")
+      return command_prefix unless RunnerSupport.runner_key_for_agent_type(command_context.runner) == "claude"
+
+      runtime = selected_runner_runtime(command_context.runner_candidate, command_context.user, agent_run)
+      return command_prefix unless runtime&.model.present?
+
+      command_prefix + [ "--model", runtime.model ]
     end
 
     def api_key_auth_command(runner_entry, command_prefix, prompt)
