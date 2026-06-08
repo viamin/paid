@@ -49,6 +49,7 @@ class ProcessRunQueueJob < ApplicationJob
       skipped_ids = Set.new
       blocked_project_ids = Set.new
       blocked_user_ids = Set.new
+      started_priority_by_project = {}
       @user_capacity = {}  # { user_id => { active: count, max: limit } }
 
       loop do
@@ -65,6 +66,11 @@ class ProcessRunQueueJob < ApplicationJob
         )
 
         break unless next_run
+
+        if lower_priority_than_claimed_or_started_project_run?(next_run, started_priority_by_project)
+          blocked_project_ids.add(next_run.project_id)
+          next
+        end
 
         if (github_state = unavailable_github_state(next_run.project.github_health_endpoint))
           blocked_project_ids.add(next_run.project_id)
@@ -111,6 +117,7 @@ class ProcessRunQueueJob < ApplicationJob
           consecutive_failures = 0
           starts_count += 1
           record_started_run(user)
+          record_started_project_priority(next_run, started_priority_by_project)
           break if starts_count >= MAX_STARTS_PER_PERFORM
         else
           consecutive_failures += 1
@@ -158,6 +165,32 @@ class ProcessRunQueueJob < ApplicationJob
   def record_started_run(user)
     cap = @user_capacity[user.id]
     cap[:active] += 1 if cap
+  end
+
+  def record_started_project_priority(agent_run, started_priority_by_project)
+    priority = queue_priority_for(agent_run)
+    existing = started_priority_by_project[agent_run.project_id]
+    started_priority_by_project[agent_run.project_id] = priority if existing.nil? || priority < existing
+  end
+
+  def lower_priority_than_claimed_or_started_project_run?(agent_run, started_priority_by_project)
+    current_priority = queue_priority_for(agent_run)
+    started_priority = started_priority_by_project[agent_run.project_id]
+    return true if started_priority && current_priority > started_priority
+
+    AgentRun
+      .queued_with_priority
+      .where(project_id: agent_run.project_id)
+      .where.not(temporal_workflow_id: nil)
+      .where("#{AgentRun::QUEUE_PRIORITY_CASE_SQL} < ?", current_priority)
+      .exists?
+  end
+
+  def queue_priority_for(agent_run)
+    value = agent_run.read_attribute(:queue_priority)
+    return value.to_i unless value.nil?
+
+    AgentRun::QUEUE_PRIORITIES.keys.index(agent_run.queue_priority_tier) || AgentRun::QUEUE_PRIORITIES.size
   end
 
   def start_claimed_run(agent_run)
