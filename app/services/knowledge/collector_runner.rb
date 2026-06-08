@@ -96,7 +96,7 @@ module Knowledge
       collector_run.mark_completed!(count: count)
 
       { collector_type: collector_type, status: "completed", artifacts_count: count }
-    rescue SkipCollector => e
+    rescue Knowledge::SkipCollector => e
       if collector_run&.persisted?
         collector_run.mark_skipped!(
           reason: e.reason,
