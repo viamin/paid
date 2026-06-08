@@ -1022,6 +1022,7 @@ module Activities
       return false if issue.github_updated_at >= issue.last_pr_scan_at
       return false if recently_completed_run?(project, issue)
       return false if scan_age_exceeds_ceiling?(project, issue)
+      return false if webhook_activity_since_last_scan?(project, issue)
 
       logger.debug(
         message: "pr_scanner.skipped_unchanged",
@@ -1032,6 +1033,22 @@ module Activities
       )
 
       true
+    end
+
+    def webhook_activity_since_last_scan?(project, issue)
+      return false unless project.poll_interval_seconds.to_i > 0
+      return false unless issue.is_pull_request?
+
+      cutoff = issue.last_pr_scan_at
+      return false if cutoff.blank?
+
+      issue.pull_request_review_webhook_at.to_i > cutoff.to_i ||
+        issue.pull_request_webhook_at.to_i > cutoff.to_i ||
+        issue.issue_comment_webhook_at.to_i > cutoff.to_i ||
+        issue.check_suite_webhook_at.to_i > cutoff.to_i ||
+        issue.check_run_webhook_at.to_i > cutoff.to_i
+    rescue StandardError
+      false
     end
 
     # Draft/restarted PRs need a time-based rescan floor because they wait on
