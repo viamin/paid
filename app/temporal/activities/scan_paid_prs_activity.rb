@@ -2355,34 +2355,11 @@ module Activities
       end
     end
 
-    # Skips the reviews API call when a recent pull_request_review webhook
-    # delivered the same data within the poll interval window. GitHub sends
-    # pull_request_review with the full review object when a review is submitted.
     def fetch_reviews(client, project, issue)
-      if webhook_fresh?(issue, project, :pull_request_review)
-        logger.debug(
-          message: "pr_scanner.reviews_skipped_webhook_fresh",
-          project_id: project.id,
-          pr_number: issue.github_number
-        )
-        return []
-      end
-
       client.pull_request_reviews(project.full_name, issue.github_number)
     rescue GithubClient::Error => e
       log_signal_error("fetch_reviews", project, issue, e)
       nil
-    end
-
-    # Returns true when a recent webhook delivered fresh data for the event
-    # type, making the corresponding API fetch redundant within the poll window.
-    def webhook_fresh?(issue, project, event_type)
-      return false unless issue && project
-      return false unless project.poll_interval_seconds.to_i > 0
-
-      issue.webhook_fresh?(event_type, project.poll_interval_seconds)
-    rescue StandardError
-      false
     end
 
     def changes_requested_from_reviews(project, reviews, last_run)

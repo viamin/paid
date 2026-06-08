@@ -1146,6 +1146,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_04_205903) do
     t.jsonb "labels", default: [], null: false
     t.datetime "last_pr_scan_at"
     t.datetime "operational_failure_reset_at"
+    t.datetime "check_run_webhook_at", comment: "Timestamp of the most recent check_run webhook, used to skip redundant check_runs fetches"
+    t.datetime "check_suite_webhook_at", comment: "Timestamp of the most recent check_suite webhook, used to skip redundant check_runs fetches"
+    t.datetime "issue_comment_webhook_at", comment: "Timestamp of the most recent issue_comment webhook, used to skip redundant comment fetches"
+    t.datetime "pull_request_review_webhook_at", comment: "Timestamp of the most recent pull_request_review webhook, used to skip redundant review fetches"
+    t.datetime "pull_request_webhook_at", comment: "Timestamp of the most recent pull_request webhook, used to skip redundant PR data fetches"
     t.string "paid_state", default: "new", null: false
     t.bigint "parent_issue_id"
     t.string "pr_escalation_reason", comment: "Machine-readable cause for the current PR escalation so only operational outages can auto-dismiss."
