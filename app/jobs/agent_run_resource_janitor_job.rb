@@ -14,9 +14,6 @@ class AgentRunResourceJanitorJob < ApplicationJob
 
   retry_on Docker::Error::DockerError, wait: :polynomially_longer, attempts: 3
 
-  # Notify only after Active Job retries are exhausted (matches retry_on attempts).
-  self.max_attempts = 3
-
   VOLUME_PREFIX = "paid-workspace-"
 
   def perform(agent_run_id)

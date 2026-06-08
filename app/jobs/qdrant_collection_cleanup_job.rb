@@ -6,9 +6,6 @@ class QdrantCollectionCleanupJob < ApplicationJob
   queue_as :default
   retry_on QdrantClient::ConnectionError, wait: :polynomially_longer, attempts: 5
 
-  # Notify only after Active Job retries are exhausted (matches retry_on attempts).
-  self.max_attempts = 5
-
   def perform(project_id, account_id)
     # Build a minimal struct since the project record is already destroyed
     project_stub = ProjectStub.new(project_id, account_id)
