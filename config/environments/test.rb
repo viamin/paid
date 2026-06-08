@@ -18,6 +18,14 @@ Rails.application.configure do
   # While tests run files are not watched, reloading is not necessary.
   config.enable_reloading = false
 
+  # Disable Rails' built-in log rotation (shift_age/shift_size). The 8.1
+  # framework defaults enable rotation at 100 MB for local envs, but under
+  # parallel test workers the rotation lock contends across processes and
+  # fails ("log rotation inter-process lock failed ... test.log"), and once
+  # test.log is renamed to test.log.0 the recreation can leave it missing.
+  # Mirrors the same opt-out in config/environments/development.rb.
+  config.log_file_size = nil
+
   # Eager loading loads your entire application. When running a single test locally,
   # this is usually not necessary, and can slow down your test suite. However, it's
   # recommended that you enable it in continuous integration systems to ensure eager
