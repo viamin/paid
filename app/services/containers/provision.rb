@@ -1997,6 +1997,17 @@ module Containers
       mutant_license_key = ENV["MUTANT_LICENSE_KEY"].to_s
       env << "MUTANT_LICENSE_KEY=#{mutant_license_key}" if mutant_license_key.present?
 
+      # Set git committer identity globally via environment variables.
+      # This ensures git operations (rebase, commit, cherry-pick) never fail
+      # with "Committer identity unknown" regardless of local .git/config state.
+      git_identity = Github::BotIdentity.for_git
+      env.concat([
+        "GIT_AUTHOR_NAME=#{git_identity.name}",
+        "GIT_AUTHOR_EMAIL=#{git_identity.email}",
+        "GIT_COMMITTER_NAME=#{git_identity.name}",
+        "GIT_COMMITTER_EMAIL=#{git_identity.email}"
+      ])
+
       env
     end
 
