@@ -4,6 +4,23 @@ require "rails_helper"
 require "ostruct"
 
 RSpec.describe Activities::MarkEscalatedActivity do
+  def create_operational_failures!(issue, count: 3)
+    count.times do |i|
+      run_at = (Activities::ScanPaidPrsActivity::NO_PROGRESS_ESCALATION_WINDOW + i.minutes + 1.minute).ago
+
+      create(:agent_run, :failed,
+        project: issue.project,
+        issue: issue,
+        goal: "create_pr",
+        trigger_type: "automatic",
+        source_pull_request_number: issue.github_number,
+        error_message: "All providers exhausted: claude_code",
+        created_at: run_at,
+        started_at: run_at,
+        completed_at: run_at)
+    end
+  end
+
   let(:activity) { described_class.new }
   let(:github_client) { instance_double(GithubClient) }
 
@@ -59,6 +76,8 @@ RSpec.describe Activities::MarkEscalatedActivity do
       end
 
       it "stores operational escalation reasons separately" do
+        create_operational_failures!(issue)
+
         activity.execute(
           issue_id: issue.id,
           reason: "No meaningful progress for 3 hours after 3 consecutive provider/infrastructure failures"
@@ -77,6 +96,8 @@ RSpec.describe Activities::MarkEscalatedActivity do
       end
 
       it "persists the explicit reason key when provided" do
+        create_operational_failures!(issue)
+
         activity.execute(
           issue_id: issue.id,
           reason_key: "operational_failures",
@@ -97,6 +118,8 @@ RSpec.describe Activities::MarkEscalatedActivity do
       end
 
       it "falls back to inferring from text when the reason key is unrecognized" do
+        create_operational_failures!(issue)
+
         activity.execute(
           issue_id: issue.id,
           reason_key: "bogus_key",
@@ -210,6 +233,25 @@ RSpec.describe Activities::MarkEscalatedActivity do
         expect(event.decision_type).to eq("escalate")
         expect(event.context["decision_status"]).to eq("applied")
         expect(event.inputs).to include("reason" => "Draft review limit reached")
+      end
+
+      it "skips a stale operational-failure escalation after the reset marker clears the live breaker" do
+        issue.update!(pr_review_phase: "ready", operational_failure_reset_at: Time.current)
+        create_operational_failures!(issue)
+
+        reason = "No meaningful progress for 3 hours after 3 consecutive provider/infrastructure failures"
+
+        result = activity.execute(issue_id: issue.id, reason: reason)
+
+        expect(result).to eq(updated: false)
+        expect(issue.reload.pr_review_phase).to eq("ready")
+        expect(github_client).not_to have_received(:add_labels_to_issue)
+        expect(github_client).not_to have_received(:add_comment)
+
+        decision = OrchestrationDecision.last
+        expect(decision.decision_type).to eq("escalate")
+        expect(decision.context["decision_status"]).to eq("noop")
+        expect(decision.inputs).to include("reason" => reason)
       end
     end
 
