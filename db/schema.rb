@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_07_165431) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_08_210151) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1739,6 +1739,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_07_165431) do
     t.bigint "account_id", null: false
     t.boolean "active", default: true, null: false
     t.integer "agent_runs_count", default: 0, null: false, comment: "Counter cache for total agent runs"
+    t.boolean "allow_bot_authored_pr_auto_merge", default: false, null: false, comment: "When true, PRs authored by the project's own GitHub App bot may auto-merge without explicit owner approval"
     t.jsonb "allowed_github_usernames", default: [], null: false
     t.boolean "auto_add_labels_enabled", default: true, null: false
     t.boolean "auto_enhance_enabled", default: false, null: false
