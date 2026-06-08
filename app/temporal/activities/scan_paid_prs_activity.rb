@@ -201,7 +201,7 @@ module Activities
         phase: lifecycle&.dig(:phase),
         draft: lifecycle&.dig(:draft),
         owner_reviewer_login: escalate.payload[:owner_reviewer_login],
-        triggers: [ { type: "escalate_to_owner", details: escalate.payload[:reason] } ]
+        triggers: [ { type: "escalate_to_owner", details: escalate.payload[:reason], reason_key: escalate.payload[:reason_key] } ]
       } if escalate
 
       return result if result.is_a?(Hash)
@@ -233,12 +233,12 @@ module Activities
       failure_limit = failure_streak_limit_reached?(project, issue, progress_state)
       retry_escalation = review_goal_retry_limit_requires_escalation?(project, issue, progress_state:)
 
-      reason = if op_breaker
-        operational_failure_reason
+      reason, reason_key = if op_breaker
+        [ operational_failure_reason, Issue::PR_ESCALATION_REASON_OPERATIONAL_FAILURES ]
       elsif no_progress_stuck && retry_escalation
-        review_goal_retry_escalation_reason(project, issue, progress_state:)
+        [ review_goal_retry_escalation_reason(project, issue, progress_state:), Issue::PR_ESCALATION_REASON_REVIEW_GOAL_RETRY_LIMIT ]
       elsif no_progress_stuck && failure_limit
-        failure_streak_reason(project, issue, progress_state)
+        [ failure_streak_reason(project, issue, progress_state), Issue::PR_ESCALATION_REASON_FAILURE_STREAK ]
       end
 
       {
@@ -252,6 +252,7 @@ module Activities
         review_goal_retry_limit_requires_escalation: retry_escalation,
         owner_reviewer_login: project.owner_reviewer_login,
         escalation_reason: reason,
+        escalation_reason_key: reason_key,
         consecutive_unsuccessful_automatic_runs: progress_state.consecutive_unsuccessful_automatic_runs,
         consecutive_operational_failures: progress_state.consecutive_operational_failures,
         last_meaningful_progress_at: progress_state.last_meaningful_progress_at,
@@ -309,7 +310,7 @@ module Activities
     end
 
     def authorized_for_automation_scan?(project, issue)
-      return true if project.trusted_github_user?(issue.github_creator_login)
+      return true if project.trusted_github_author?(issue.github_creator_login)
       return true if trusted_user_added_label?(project, issue, project.automation_label_name)
 
       Rails.logger.warn(
@@ -324,9 +325,7 @@ module Activities
     end
 
     def trusted_creator_logins_for(project)
-      Array(project.allowed_github_usernames)
-        .filter_map { |login| login.to_s.downcase.presence }
-        .uniq
+      project.trusted_github_author_logins
     end
 
     def merged_issue?(issue)
@@ -384,7 +383,11 @@ module Activities
         end
       when "escalated"
         if escalation_dismissed?(issue)
-          dismiss_escalation_trigger(issue, draft: pr_data.draft == true)
+          # escalation_dismissed? and escalation_dismissal_details enforce the
+          # same conditions against the same memoized progress state, so the
+          # details lookup always returns a non-nil string here.
+          dismissal_details = escalation_dismissal_details(issue, progress_state:)
+          dismiss_escalation_trigger(issue, draft: pr_data.draft == true, details: dismissal_details)
         elsif maybe_restart_draft(project, issue, pr_data)
           scan_draft_pr(project, client, issue, pr_data: pr_data)
         else
@@ -435,7 +438,7 @@ module Activities
     def scan_draft_pr(project, client, issue, pr_data: nil)
       check_rate_budget!(client)
 
-      if bot_user?(issue.github_creator_login)
+      if third_party_bot_author?(project, issue.github_creator_login)
         return scan_bot_authored_draft_pr(project, client, issue, pr_data: pr_data)
       end
 
@@ -663,7 +666,7 @@ module Activities
       mergeable = pr_data && pr_data[:mergeable]
       progress_state = pr_progress_state(project, issue)
 
-      if bot_user?(issue.github_creator_login)
+      if third_party_bot_author?(project, issue.github_creator_login)
         return scan_bot_authored_ready_pr(
           project,
           client,
@@ -749,7 +752,7 @@ module Activities
       if project.auto_merge_enabled? && pr_data.present?
         checks = fetch_check_runs(client, project, pr_data)
 
-        if bot_user?(issue.github_creator_login)
+        if third_party_bot_author?(project, issue.github_creator_login)
           if auto_merge_eligible_bot?(project, client, issue,
                checks: checks, mergeable: pr_data[:mergeable])
             return owner_approved_trigger(issue)
@@ -797,28 +800,28 @@ module Activities
       }
     end
 
-    def escalate_trigger(issue, reason: "Draft review limit reached")
+    def escalate_trigger(issue, reason: "Draft review limit reached", reason_key: Issue::PR_ESCALATION_REASON_FAILURE_STREAK)
       log_triggers(issue.project, issue, [ { type: "escalate_to_owner" } ])
 
       {
         focus: focus_for(issue.project, [ { type: "escalate_to_owner", details: reason } ]),
         issue_id: issue.id,
         pr_number: issue.github_number,
-        triggers: [ { type: "escalate_to_owner", details: reason } ],
+        triggers: [ { type: "escalate_to_owner", details: reason, reason_key: reason_key } ],
         phase: issue.pr_review_phase,
         current_draft_review_count: issue.draft_review_count,
         owner_reviewer_login: issue.project.owner_reviewer_login
       }
     end
 
-    def dismiss_escalation_trigger(issue, draft:)
+    def dismiss_escalation_trigger(issue, draft:, details:)
       log_triggers(issue.project, issue, [ { type: "dismiss_escalation" } ])
 
       {
-        focus: focus_for(issue.project, [ { type: "dismiss_escalation", details: "Owner dismissed escalation by removing paid-escalated" } ]),
+        focus: focus_for(issue.project, [ { type: "dismiss_escalation", details: details } ]),
         issue_id: issue.id,
         pr_number: issue.github_number,
-        triggers: [ { type: "dismiss_escalation", details: "Owner dismissed escalation by removing paid-escalated" } ],
+        triggers: [ { type: "dismiss_escalation", details: details } ],
         phase: "escalated",
         draft: draft == true,
         owner_reviewer_login: issue.project.owner_reviewer_login
@@ -924,17 +927,21 @@ module Activities
     def maybe_restart_draft(project, issue, pr_data)
       return false unless pr_data&.draft
 
+      had_escalated_label = issue.has_label?(PAID_ESCALATED_LABEL)
       reset_at = Time.current
       issue.update!(
         pr_review_phase: "restarted",
+        pr_escalation_reason: nil,
         draft_review_count: 0,
         pr_followup_count: 0,
         review_goal_retry_count: 0,
         review_goal_retry_reset_at: reset_at,
         operational_failure_reset_at: reset_at,
-        ci_retry_requested_at: nil
+        ci_retry_requested_at: nil,
+        labels: issue.labels - [ PAID_ESCALATED_LABEL ]
       )
 
+      remove_escalated_label_from_github(project, issue) if had_escalated_label
       invalidate_pr_progress_state(issue)
 
       logger.info(
@@ -947,8 +954,42 @@ module Activities
       true
     end
 
+    def escalation_dismissal_details(issue, progress_state:)
+      return unless issue.escalated_phase?
+      return "Owner dismissed escalation by removing paid-escalated" unless issue.has_label?(PAID_ESCALATED_LABEL)
+      return unless issue.pr_escalation_reason == Issue::PR_ESCALATION_REASON_OPERATIONAL_FAILURES
+      return unless progress_state.consecutive_operational_failures.zero?
+
+      "Operational escalation auto-dismissed after failure signals recovered"
+    end
+
+    # Strips the paid-escalated label on GitHub when a PR leaves the escalated
+    # phase via a draft restart. Without this, the label persists on GitHub and
+    # is re-synced into the local labels array, leaving the PR visually flagged
+    # as escalated even though automation has already resumed work on it.
+    # Best-effort: a removal failure must not abort the restart.
+    def remove_escalated_label_from_github(project, issue)
+      project.client.remove_label_from_issue(project.full_name, issue.github_number, PAID_ESCALATED_LABEL)
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "pr_scanner.remove_escalated_label_failed",
+        project_id: project.id,
+        pr_number: issue.github_number,
+        error: e.message
+      )
+    end
+
     def escalation_dismissed?(issue)
-      issue.escalated_phase? && !issue.has_label?(PAID_ESCALATED_LABEL)
+      return false unless issue.escalated_phase?
+      return false if escalation_transition_pending?(issue)
+      return true unless issue.has_label?(PAID_ESCALATED_LABEL)
+      return false unless issue.pr_escalation_reason == Issue::PR_ESCALATION_REASON_OPERATIONAL_FAILURES
+
+      pr_progress_state(issue.project, issue).consecutive_operational_failures.zero?
+    end
+
+    def escalation_transition_pending?(issue)
+      issue.last_pr_scan_at.blank?
     end
 
     # Detect when a user marks a draft PR as ready on GitHub without going
@@ -1014,10 +1055,10 @@ module Activities
     def scan_age_exceeds_ceiling?(project, issue)
       draft_or_restarted = issue.pr_review_phase.in?(%w[draft restarted])
       bot_ready_for_merge = issue.pr_review_phase == "ready" &&
-        bot_user?(issue.github_creator_login) &&
+        third_party_bot_author?(project, issue.github_creator_login) &&
         project.auto_merge_dependabot?
       human_auto_merge = issue.pr_review_phase.in?(%w[ready escalated]) &&
-        !bot_user?(issue.github_creator_login) &&
+        !third_party_bot_author?(project, issue.github_creator_login) &&
         project.auto_merge_mode == "all"
 
       return false unless draft_or_restarted || bot_ready_for_merge || human_auto_merge
@@ -2808,6 +2849,30 @@ module Activities
       return true if normalized.end_with?("[bot]", "-bot")
 
       KNOWN_BOT_PREFIXES.any? { |prefix| normalized.start_with?(prefix) }
+    end
+
+    # A PR authored by the project's own GitHub App agent bot (e.g.
+    # "paid-agents[bot]"). These are Paid-generated PRs, not third-party
+    # automation, so they must follow the full review + auto-merge path.
+    #
+    # Matches only the "[bot]" author login (github_author_login), never the
+    # bare app slug ("paid-agents") — the slug is a registerable human GitHub
+    # username and must not be treated as the project's agent. Mirrors the
+    # author-trust model in Project#trusted_github_author_logins.
+    def paid_agent_pr_author?(project, login)
+      return false if login.blank?
+
+      agent_login = project.github_author_login
+      agent_login.present? && login.casecmp?(agent_login)
+    end
+
+    # A PR authored by a third-party automation bot (Dependabot, Renovate,
+    # github-actions) whose PRs skip Paid's review/merge flow. Excludes the
+    # project's own agent bot — without this, app-backed projects whose agent
+    # authors PRs as "paid-agents[bot]" had those PRs routed through the
+    # review-skipping Dependabot path and never reviewed or auto-merged.
+    def third_party_bot_author?(project, login)
+      bot_user?(login) && !paid_agent_pr_author?(project, login)
     end
 
     def system_generated_comment?(body)

@@ -65,6 +65,7 @@ RSpec.describe "Projects::ClarifyingQuestions" do
   describe "POST /projects/:project_id/issues/:issue_id/clarifying_questions" do
     before do
       allow(github_client).to receive(:add_comment).and_return(double(html_url: "https://github.com/test"))
+      allow(github_client).to receive(:remove_label_from_issue)
     end
 
     context "when all answers are provided" do
@@ -86,6 +87,23 @@ RSpec.describe "Projects::ClarifyingQuestions" do
         expect(response).to redirect_to(project_path(project))
         follow_redirect!
         expect(response.body).to include("Answers posted to GitHub issue")
+      end
+
+      it "clears the needs-input marker so the Answer Questions button disappears" do
+        needs_input_label = project.enhance_issue_needs_input_label_name
+
+        post project_issue_clarifying_questions_path(project, issue), params: {
+          questions: [ "What is the expected behavior?", "Should this be behind a flag?" ],
+          answers: [ "X is a feature", "Yes, by default" ]
+        }
+
+        expect(github_client).to have_received(:remove_label_from_issue).with(
+          project.full_name, issue.github_number, needs_input_label
+        )
+        issue.reload
+        expect(issue.paid_state).to eq("new")
+        expect(issue.needs_input?).to be false
+        expect(issue.labels).not_to include(needs_input_label)
       end
     end
 

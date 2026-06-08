@@ -15,6 +15,7 @@ module Activities
     activity_name "MergePullRequest"
 
     PAID_AUTO_MERGED_LABEL = "paid-auto-merged"
+    PAID_ESCALATED_LABEL = "paid-escalated"
     AUTO_MERGE_COMMENT = "This PR was automatically merged by paid's auto-merge feature."
 
     def execute(input)
@@ -44,7 +45,23 @@ module Activities
       provider = Automation::Providers::Resolver.repository_for(project)
       repo = project.full_name
 
-      pr_data = provider.fetch_pull_request(repo: repo, number: pr_number)
+      # Scoped to the pre-merge fetch (which lazily resolves the GitHub
+      # client): a missing/expired credential raises here, before
+      # attempt_merge's own rescue is reached. Without this the activity
+      # failed with no diagnostic trail. The rescue must NOT span the
+      # post-merge block below, or a provider error after a successful merge
+      # would report merged: false and re-scan an already-merged PR.
+      pr_data = begin
+        provider.fetch_pull_request(repo: repo, number: pr_number)
+      rescue Automation::Providers::RepositoryProvider::ProviderError => e
+        logger.warn(
+          message: "pr_review.merge_provider_error",
+          project_id: project.id,
+          pr_number: pr_number,
+          error: e.message
+        )
+        return { merged: false, error: e.message, pr_number: pr_number }
+      end
 
       merged = if pr_data.merged
         logger.info(
@@ -58,8 +75,12 @@ module Activities
       end
 
       if merged
-        issue.update!(pr_review_phase: "merged")
+        had_escalated_label = issue.has_label?(PAID_ESCALATED_LABEL)
+        issue.update!(pr_review_phase: "merged", labels: issue.labels - [ PAID_ESCALATED_LABEL ])
         IssueMergeSubscriptions::Deliver.call(issue: issue, event: :merged)
+        # A merge resolves any prior escalation; strip the stale label so the
+        # closed PR isn't left flagged as escalated.
+        remove_escalated_label(provider, project, repo, pr_number) if had_escalated_label
         # Only label and comment on PRs that this activity actually merged —
         # already-merged PRs may have been merged manually by a human.
         unless pr_data.merged
@@ -103,6 +124,17 @@ module Activities
     rescue Automation::Providers::RepositoryProvider::ProviderError => e
       logger.warn(
         message: "pr_review.add_label_failed",
+        project_id: project.id,
+        pr_number: pr_number,
+        error: e.message
+      )
+    end
+
+    def remove_escalated_label(provider, project, repo, pr_number)
+      provider.remove_label(repo: repo, number: pr_number, label: PAID_ESCALATED_LABEL)
+    rescue Automation::Providers::RepositoryProvider::ProviderError => e
+      logger.warn(
+        message: "pr_review.remove_escalated_label_failed",
         project_id: project.id,
         pr_number: pr_number,
         error: e.message

@@ -16,8 +16,9 @@ module ClarifyingQuestions
 
     def call
       validate_answers!
-      client = github_client
-      client.add_comment(project.full_name, issue.github_number, formatted_comment)
+      result = github_client.add_comment(project.full_name, issue.github_number, formatted_comment)
+      ClearNeedsInput.call(project: project, issue: issue)
+      result
     end
 
     private
@@ -50,7 +51,7 @@ module ClarifyingQuestions
     end
 
     def github_client
-      project.github_token&.client
+      project.client
     end
   end
 end

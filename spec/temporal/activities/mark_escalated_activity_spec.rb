@@ -6,6 +6,8 @@ require "ostruct"
 RSpec.describe Activities::MarkEscalatedActivity do
   def create_operational_failures!(issue, count: 3)
     count.times do |i|
+      run_at = (Activities::ScanPaidPrsActivity::NO_PROGRESS_ESCALATION_WINDOW + i.minutes + 1.minute).ago
+
       create(:agent_run, :failed,
         project: issue.project,
         issue: issue,
@@ -13,9 +15,9 @@ RSpec.describe Activities::MarkEscalatedActivity do
         trigger_type: "automatic",
         source_pull_request_number: issue.github_number,
         error_message: "All providers exhausted: claude_code",
-        created_at: (i + 1).minutes.ago,
-        started_at: (i + 1).minutes.ago,
-        completed_at: (i + 1).minutes.ago)
+        created_at: run_at,
+        started_at: run_at,
+        completed_at: run_at)
     end
   end
 
@@ -67,11 +69,77 @@ RSpec.describe Activities::MarkEscalatedActivity do
         expect(issue.reload.pr_review_phase).to eq("escalated")
       end
 
+      it "stores the default escalation reason as a failure streak" do
+        activity.execute(issue_id: issue.id)
+
+        expect(issue.reload.pr_escalation_reason).to eq("failure_streak")
+      end
+
+      it "stores operational escalation reasons separately" do
+        create_operational_failures!(issue)
+
+        activity.execute(
+          issue_id: issue.id,
+          reason: "No meaningful progress for 3 hours after 3 consecutive provider/infrastructure failures"
+        )
+
+        expect(issue.reload.pr_escalation_reason).to eq("operational_failures")
+      end
+
+      it "stores review-goal retry limit escalations separately" do
+        activity.execute(
+          issue_id: issue.id,
+          reason: "Review-goal retry budget exhausted with no meaningful progress for 3 hours (3 consecutive failures)"
+        )
+
+        expect(issue.reload.pr_escalation_reason).to eq("review_goal_retry_limit")
+      end
+
+      it "persists the explicit reason key when provided" do
+        create_operational_failures!(issue)
+
+        activity.execute(
+          issue_id: issue.id,
+          reason_key: "operational_failures",
+          reason: "anything human-facing"
+        )
+
+        expect(issue.reload.pr_escalation_reason).to eq("operational_failures")
+      end
+
+      it "prefers the explicit reason key over the human-facing reason text" do
+        activity.execute(
+          issue_id: issue.id,
+          reason_key: "review_goal_retry_limit",
+          reason: "No meaningful progress for 3 hours after 3 consecutive provider/infrastructure failures"
+        )
+
+        expect(issue.reload.pr_escalation_reason).to eq("review_goal_retry_limit")
+      end
+
+      it "falls back to inferring from text when the reason key is unrecognized" do
+        create_operational_failures!(issue)
+
+        activity.execute(
+          issue_id: issue.id,
+          reason_key: "bogus_key",
+          reason: "No meaningful progress for 3 hours after 3 consecutive provider/infrastructure failures"
+        )
+
+        expect(issue.reload.pr_escalation_reason).to eq("operational_failures")
+      end
+
       it "adds the paid-escalated label" do
         activity.execute(issue_id: issue.id)
 
         expect(github_client).to have_received(:add_labels_to_issue)
           .with(issue.project.full_name, issue.github_number, [ "paid-escalated" ])
+      end
+
+      it "keeps the local labels aligned with the escalated phase" do
+        activity.execute(issue_id: issue.id)
+
+        expect(issue.reload.labels).to include("paid-escalated")
       end
 
       it "posts an escalation comment" do
@@ -204,6 +272,12 @@ RSpec.describe Activities::MarkEscalatedActivity do
         expect(issue.reload.pr_review_phase).to eq("escalated")
       end
 
+      it "still keeps the local label aligned with the escalated phase" do
+        activity.execute(issue_id: issue.id)
+
+        expect(issue.reload.labels).to include("paid-escalated")
+      end
+
       it "still returns updated: true" do
         result = activity.execute(issue_id: issue.id)
 
@@ -259,6 +333,13 @@ RSpec.describe Activities::MarkEscalatedActivity do
 
         expect(github_client).to have_received(:remove_label_from_issue)
           .with(issue.project.full_name, issue.github_number, "paid-ready")
+      end
+
+      it "removes the paid-ready label locally when escalating" do
+        activity.execute(issue_id: issue.id)
+
+        expect(issue.reload.labels).to include("paid-escalated")
+        expect(issue.reload.labels).not_to include("paid-ready")
       end
 
       it "still adds paid-escalated even if removing paid-ready fails" do

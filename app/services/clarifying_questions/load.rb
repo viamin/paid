@@ -20,10 +20,7 @@ module ClarifyingQuestions
         return body_questions unless github_available?
 
         enhancement_comment = latest_enhancement_comment
-        if answered_after_latest_questions?(body_questions:, enhancement_comment:)
-          ingest_answers
-          return []
-        end
+        return reconcile_answered if answered_after_latest_questions?(body_questions:, enhancement_comment:)
 
         return body_questions
       end
@@ -31,10 +28,7 @@ module ClarifyingQuestions
       return [] unless github_available?
 
       enhancement_comment = latest_enhancement_comment
-      if answered_after_latest_questions?(body_questions:, enhancement_comment:)
-        ingest_answers
-        return []
-      end
+      return reconcile_answered if answered_after_latest_questions?(body_questions:, enhancement_comment:)
       return [] unless enhancement_comment
 
       Parse.call(comment_body: comment_body(enhancement_comment))
@@ -103,11 +97,16 @@ module ClarifyingQuestions
 
     def issue_comments
       @issue_comments ||= project.client.issue_comments(project.full_name, issue.github_number)
-        .select { |comment| trusted_comment?(comment) }
+        .select { |comment| CommentAdmission.admissible?(project: project, comment: comment) }
     end
 
-    def trusted_comment?(comment)
-      project.trusted_github_user?(comment.user&.login)
+    # The clarifying questions have been answered: ingest the answers into the
+    # knowledge base and clear the issue's needs-input marker so the stale
+    # "Answer Questions" button disappears. Returns [] (no pending questions).
+    def reconcile_answered
+      ingested = ingest_answers
+      ClearNeedsInput.call(project: project, issue: issue) if ingested
+      []
     end
 
     def ingest_answers

@@ -8,7 +8,6 @@ module Activities
 
     PAID_ESCALATED_LABEL = "paid-escalated"
     COMMENT_MARKER = "<!-- paid:escalation-note -->"
-    OPERATIONAL_FAILURE_REASON_MATCHER = /provider\/infrastructure failures/i
 
     def execute(input)
       issue = Issue.find_by(id: input[:issue_id])
@@ -18,12 +17,10 @@ module Activities
       client = project.client
       phase_before = issue.pr_review_phase
 
-      unless escalation_still_applies?(project, issue, reason: input[:reason])
+      unless escalation_still_applies?(project, issue, input:)
         record_noop_decision(project, issue, reason: input[:reason], phase_before:)
         return { updated: false }
       end
-
-      issue.update!(pr_review_phase: "escalated")
 
       # Escalation invalidates the prior "ready" claim. Strip the label
       # before applying paid-escalated so human triage queues and any
@@ -31,6 +28,11 @@ module Activities
       # labels coexist on the same PR.
       remove_ready_label(client, project, issue)
       add_phase_label(client, project, issue.github_number, PAID_ESCALATED_LABEL)
+      issue.update!(
+        pr_review_phase: "escalated",
+        pr_escalation_reason: resolve_escalation_reason(input),
+        labels: escalated_labels(issue)
+      )
       post_escalation_comment(client, project, issue, input[:reason], phase_before:)
 
       logger.info(
@@ -61,15 +63,11 @@ module Activities
 
     private
 
-    def escalation_still_applies?(project, issue, reason:)
-      return true unless operational_failure_escalation_reason?(reason)
+    def escalation_still_applies?(project, issue, input:)
+      return true unless resolve_escalation_reason(input) == Issue::PR_ESCALATION_REASON_OPERATIONAL_FAILURES
 
       progress_state = PullRequests::ProgressState.call(project:, issue:)
       operational_failure_breaker_holds?(progress_state)
-    end
-
-    def operational_failure_escalation_reason?(reason)
-      reason.to_s.match?(OPERATIONAL_FAILURE_REASON_MATCHER)
     end
 
     def operational_failure_breaker_holds?(progress_state)
@@ -122,6 +120,12 @@ module Activities
         pr_number: issue.github_number,
         error: e.message
       )
+    end
+
+    def escalated_labels(issue)
+      updated_labels = issue.labels - [ MarkPrReadyActivity::PAID_READY_LABEL ]
+      updated_labels << PAID_ESCALATED_LABEL unless updated_labels.include?(PAID_ESCALATED_LABEL)
+      updated_labels
     end
 
     # Best-effort dedupe: skips posting if COMMENT_MARKER is found in the most
@@ -192,6 +196,31 @@ module Activities
       "the automatic PR failure limit " \
         "(#{limit} consecutive unsuccessful runs) " \
         "has been reached without meaningful progress and the PR requires human intervention"
+    end
+
+    # Resolves the durable, machine-readable escalation reason. Prefers the
+    # explicit key threaded through the escalation payload by the scanner, which
+    # classifies the cause from structured lifecycle signals rather than prose.
+    # Falls back to inferring the key from the human-facing reason text only for
+    # escalations enqueued before the key was threaded (older workflow histories
+    # carry the prose but no key).
+    def resolve_escalation_reason(input)
+      key = input[:reason_key]
+      return key if Issue::PR_ESCALATION_REASONS.include?(key)
+
+      infer_reason_key_from_text(input[:reason])
+    end
+
+    # Legacy fallback: infer the reason key by matching the human-facing reason
+    # text. Only used for in-flight escalations that predate explicit reason-key
+    # threading; new escalations always carry an explicit key.
+    def infer_reason_key_from_text(reason)
+      if reason&.include?("consecutive provider/infrastructure failures")
+        return Issue::PR_ESCALATION_REASON_OPERATIONAL_FAILURES
+      end
+      return Issue::PR_ESCALATION_REASON_REVIEW_GOAL_RETRY_LIMIT if reason&.start_with?("Review-goal retry budget exhausted")
+
+      Issue::PR_ESCALATION_REASON_FAILURE_STREAK
     end
 
     def draft_originated?(issue, phase_before)
