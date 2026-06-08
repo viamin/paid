@@ -146,6 +146,32 @@ RSpec.describe ExceptionNotification do
       Current.account = nil
     end
 
+    it "resolves the tenant account when Current.account is unset (GoodJob worker case)" do
+      account = create(:account)
+      # Account is derived from tenant context (e.g. a project_id argument),
+      # not from an ambient Current.account, which is nil on a worker thread.
+      worker_job_class = Class.new(ApplicationJob) do
+        self.notification_subsystem = "knowledge"
+
+        define_method(:perform) { raise "worker failure" }
+        define_method(:tenant_account) { account }
+        private :tenant_account
+      end
+      stub_const("TestWorkerJob", worker_job_class)
+
+      job = worker_job_class.new
+      job.executions = 0
+
+      Current.account = nil
+      expect {
+        expect { job.perform_now }.to raise_error(RuntimeError)
+      }.to have_enqueued_job(HandleExceptionJob).with(
+        hash_including(account_id: account.id, exception_class: "RuntimeError")
+      )
+    ensure
+      Current.account = nil
+    end
+
     it "does not enqueue HandleExceptionJob on non-terminal failure" do
       job = knowledge_job_class.new
       job.executions = 0

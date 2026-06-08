@@ -9,6 +9,7 @@ class ApplicationJob < ActiveJob::Base
       Paid::ExceptionNotifier.new.call(
         exception,
         data: {
+          account: notification_account,
           subsystem: self.class.notification_subsystem,
           project_id: notification_project_id
         }
@@ -30,6 +31,18 @@ class ApplicationJob < ActiveJob::Base
   end
 
   private
+
+  # Resolve the tenant account for the notifier. The rescue_from handler runs
+  # in perform_now's rescue clause, after the with_tenant_context around_perform
+  # has already restored Current.account — so on a GoodJob worker thread it is
+  # nil by the time we notify. Re-resolve and pass it explicitly so terminal
+  # failures still produce incidents. Defensive: never let account lookup mask
+  # the original exception.
+  def notification_account
+    TenantContext.with_system_access { tenant_account }
+  rescue StandardError
+    nil
+  end
 
   def with_tenant_context(&block)
     account = TenantContext.with_system_access { tenant_account }
