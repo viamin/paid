@@ -2088,7 +2088,9 @@ module Activities
         runner_entry.direct_outbound_exec_command(command_prefix: plan.command[0..-2], prompt: prompt)
       elsif runner_entry&.api_key?
         plan = harness_execution_plan_for(command_context.runner, prompt, user: command_context.user, agent_run: agent_run)
-        api_key_auth_command(runner_entry, plan.command[0..-2], prompt)
+        # TODO(#2525): Remove once agent-harness Anthropic#build_command reads provider_runtime.model
+        prefix = inject_runtime_model_flag(plan.command[0..-2], command_context, agent_run: agent_run)
+        api_key_auth_command(runner_entry, prefix, prompt)
       elsif RunnerSupport.subscription_auth_unset_vars_for(
         RunnerSupport.runner_key_for_agent_type(command_context.runner)
       ).any?
