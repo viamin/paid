@@ -2441,7 +2441,7 @@ module Activities
     # TODO(#2525): Remove once upstream reads provider_runtime.model
     def inject_runtime_model_flag(command_prefix, command_context, agent_run: nil)
       return command_prefix if command_prefix.include?("--model")
-      return command_prefix unless command_context.runner == "claude"
+      return command_prefix unless RunnerSupport.runner_key_for_agent_type(command_context.runner) == "claude"
 
       runtime = selected_runner_runtime(command_context.runner_candidate, command_context.user, agent_run)
       return command_prefix unless runtime&.model.present?
