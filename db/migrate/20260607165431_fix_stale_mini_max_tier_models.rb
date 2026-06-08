@@ -1,22 +1,23 @@
 # frozen_string_literal: true
 
-# Runner and Provider are both backed by the "runners" table.
-# Rows 26 (Opencode MiniMax) and 27 (Pi MiniMax) have a stale
-# tier_models entry pointing to MiniMax-M2.7 instead of MiniMax-M3.
+# Some runners have a stale tier_models entry pointing to MiniMax-M2.7
+# while their config already specifies MiniMax-M3.  ResolveTierModel
+# checks tier_models first, so the stale value takes precedence.
+# This migration replaces MiniMax-M2.7 with MiniMax-M3 in tier_models
+# for every affected row, identified by data rather than fixed IDs.
 class FixStaleMiniMaxTierModels < ActiveRecord::Migration[8.1]
   STALE_MODEL = "MiniMax-M2.7"
   CORRECT_MODEL = "MiniMax-M3"
-  AFFECTED_IDS = [26, 27].freeze
 
   def up
     safety_assured do
-      AFFECTED_IDS.each do |id|
-        record = execute("SELECT tier_models FROM runners WHERE id = #{id}").first
-        next unless record
+      rows = execute(<<~SQL)
+        SELECT id FROM runners
+        WHERE tier_models::jsonb @> '{"mid": {"model_id": "#{STALE_MODEL}"}}'::jsonb
+      SQL
 
-        tier_models = JSON.parse(record["tier_models"] || "{}")
-        next unless tier_models.any? { |_, v| v.is_a?(Hash) && v["model_id"] == STALE_MODEL }
-
+      rows.each do |row|
+        id = row["id"]
         new_tier_models = %w[low mid high].each_with_object({}) do |tier, h|
           h[tier] = { "model_id" => CORRECT_MODEL, "provider_id" => id }
         end
