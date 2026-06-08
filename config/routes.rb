@@ -113,6 +113,9 @@ Rails.application.routes.draw do
     patch :settings, on: :collection
     post :test_agent, on: :member
   end
+  resources :free_models, only: :index, controller: "free_models" do
+    patch :project_preferences, on: :collection
+  end
 
   # Service container management
   resources :service_containers

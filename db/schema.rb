@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_05_31_204336) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_04_205903) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1148,6 +1148,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_31_204336) do
     t.datetime "operational_failure_reset_at"
     t.string "paid_state", default: "new", null: false
     t.bigint "parent_issue_id"
+    t.string "pr_escalation_reason", comment: "Machine-readable cause for the current PR escalation so only operational outages can auto-dismiss."
     t.integer "pr_followup_count", default: 0, null: false
     t.string "pr_review_phase", default: "draft", null: false
     t.bigint "project_id", null: false
@@ -2049,6 +2050,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_05_31_204336) do
     t.string "circuit_state", limit: 20, default: "closed", null: false
     t.datetime "created_at", null: false
     t.integer "failure_count", default: 0, null: false
+    t.integer "half_open_failure_count", default: 0, null: false, comment: "Consecutive failures observed while the circuit is half-open."
+    t.integer "half_open_success_count", default: 0, null: false, comment: "Consecutive successes observed while the circuit is half-open."
+    t.datetime "last_failure_at", comment: "Timestamp of the most recent runner failure used to decay stale circuit-breaker failures."
     t.datetime "rate_limited_until"
     t.string "runner_name", limit: 50, null: false
     t.datetime "updated_at", null: false

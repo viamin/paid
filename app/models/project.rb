@@ -474,6 +474,20 @@ class Project < ApplicationRecord
     trusted_github_author_logins.include?(login.downcase)
   end
 
+  # True when +login+ is this project's own GitHub App bot identity
+  # (e.g. "paid-agents[bot]"). Returns false for PAT-backed projects, which
+  # have no bot identity. Use ONLY to re-admit Paid's own structured marker
+  # comments (enhancement questions, clarifying answers) that Paid authored as
+  # the bot — never to trust arbitrary bot comments as human input, which is
+  # why #trusted_github_user? deliberately excludes the bot. The bot login is
+  # unspoofable: only Paid's GitHub App can author content as it.
+  def paid_bot_author?(login)
+    return false if login.blank?
+
+    bot_login = github_author_login
+    bot_login.present? && login.downcase == bot_login.downcase
+  end
+
   # Returns the effective token limit per agent run at the project/account level.
   # Resolution: project override → account default.
   # NOTE: For full resolution (including user settings and global default),

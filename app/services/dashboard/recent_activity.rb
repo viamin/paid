@@ -30,12 +30,29 @@ module Dashboard
     end
 
     def recent_agent_runs
+      completed_agent_runs + created_agent_runs
+    end
+
+    def completed_agent_runs
       AgentRun.joins(:project)
         .where(projects: { account_id: account.id })
         .finished
-        .where("COALESCE(agent_runs.completed_at, agent_runs.created_at) > ?", activity_cutoff)
+        .where.not(completed_at: nil)
+        .where("agent_runs.completed_at > ?", activity_cutoff)
         .includes(:project, :issue)
-        .order(Arel.sql("COALESCE(agent_runs.completed_at, agent_runs.created_at) DESC"))
+        .order(completed_at: :desc)
+        .limit(limit)
+        .to_a
+    end
+
+    def created_agent_runs
+      AgentRun.joins(:project)
+        .where(projects: { account_id: account.id })
+        .finished
+        .where(completed_at: nil)
+        .where("agent_runs.created_at > ?", activity_cutoff)
+        .includes(:project, :issue)
+        .order(created_at: :desc)
         .limit(limit)
         .to_a
     end
@@ -70,7 +87,7 @@ module Dashboard
     end
 
     def cache_key
-      "dashboard/recent_activity/#{account.id}/#{limit}"
+      "dashboard/recent_activity/#{account.id}/#{limit}/#{Dashboard::CacheVersion.current(account, scope: Dashboard::CacheVersion::LISTS_SCOPE)}"
     end
 
     def activity_cutoff

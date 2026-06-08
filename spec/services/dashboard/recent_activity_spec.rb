@@ -3,6 +3,23 @@
 require "rails_helper"
 
 RSpec.describe Dashboard::RecentActivity do
+  def create_activity_items(project:, timestamp:)
+    [
+      create(:agent_run, project: project, status: "completed", completed_at: timestamp),
+      create(:agent_run, project: project, status: "completed", completed_at: nil, created_at: timestamp),
+      create(:issue, :pull_request, project: project, pr_review_phase: "merged", github_updated_at: timestamp),
+      create(:quality_pause_event, :paused, project: project, created_at: timestamp)
+    ]
+  end
+
+  around do |example|
+    original_store = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    example.run
+  ensure
+    Rails.cache = original_store
+  end
+
   describe ".call" do
     let(:account) { create(:account) }
     let(:project) { create(:project, account: account) }
@@ -70,25 +87,27 @@ RSpec.describe Dashboard::RecentActivity do
     end
 
     it "excludes stale activity outside the recent window" do
-      stale_run = create(:agent_run, project: project, status: "completed",
-                                     completed_at: 15.days.ago)
-      stale_pr = create(:issue, :pull_request, project: project,
-                                              pr_review_phase: "merged",
-                                              github_updated_at: 15.days.ago)
-      stale_pause_event = create(:quality_pause_event, :paused, project: project,
-                                                                created_at: 15.days.ago)
-      fresh_run = create(:agent_run, project: project, status: "completed",
-                                     completed_at: 1.hour.ago)
-      fresh_pr = create(:issue, :pull_request, project: project,
-                                              pr_review_phase: "merged",
-                                              github_updated_at: 30.minutes.ago)
-      fresh_pause_event = create(:quality_pause_event, :paused, project: project,
-                                                                created_at: 10.minutes.ago)
+      stale_items = create_activity_items(project:, timestamp: 15.days.ago)
+      fresh_items = create_activity_items(project:, timestamp: 1.hour.ago)
 
       items = described_class.call(account: account)
 
-      expect(items).to contain_exactly(fresh_run, fresh_pr, fresh_pause_event)
-      expect(items).not_to include(stale_run, stale_pr, stale_pause_event)
+      expect(items).to match_array(fresh_items)
+      expect(items).not_to include(*stale_items)
+    end
+
+    it "refreshes the cached activity feed after the dashboard version changes" do
+      create(:agent_run, project: project, status: "completed", completed_at: 2.minutes.ago, duration_seconds: 30)
+      first = described_class.call(account: account)
+
+      create(:agent_run, project: project, status: "completed", completed_at: 1.minute.ago, duration_seconds: 30)
+      cached = described_class.call(account: account)
+      Dashboard::CacheVersion.bump(account, scope: Dashboard::CacheVersion::LISTS_SCOPE)
+      refreshed = described_class.call(account: account)
+
+      expect(first.size).to eq(1)
+      expect(cached.size).to eq(1)
+      expect(refreshed.size).to eq(2)
     end
   end
 end

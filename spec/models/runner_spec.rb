@@ -250,6 +250,28 @@ RSpec.describe Runner do
         expect(runner).not_to be_valid
         expect(runner.errors[:tier_model_ids].join).to include("must match the configured direct-outbound model")
       end
+
+      it "rejects crafted tier_model_ids that pin openrouter_free to a paid model" do
+        user = create(:user)
+        api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+        create(:llm_model, model_id: "free-mid", provider: "deepseek", tier: "mid", pricing_tier: "free")
+        paid_model = create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic", tier: "mid", pricing_tier: "paid")
+        runner = create(:runner, user: user, runner_key: "openrouter_free", auth_type: "api_key", provider_api_key: api_key)
+
+        runner.tier_model_ids = LlmModel::TIERS.index_with { paid_model.model_id }
+        expect(runner).not_to be_valid
+        expect(runner.errors[:tier_model_ids].join).to include("must reference free models")
+      end
+
+      it "accepts free tier_model_ids for openrouter_free" do
+        user = create(:user)
+        api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+        free_model = create(:llm_model, model_id: "free-mid", provider: "deepseek", tier: "mid", pricing_tier: "free")
+        runner = create(:runner, user: user, runner_key: "openrouter_free", auth_type: "api_key", provider_api_key: api_key)
+
+        runner.tier_model_ids = LlmModel::TIERS.index_with { free_model.model_id }
+        expect(runner).to be_valid
+      end
     end
 
     describe "tier_models" do
@@ -280,6 +302,18 @@ RSpec.describe Runner do
 
         expect(runner).not_to be_valid
         expect(runner.errors[:tier_models].join).to include("provider_id")
+      end
+
+      it "rejects paid tier_models entries for openrouter_free" do
+        user = create(:user)
+        api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+        create(:llm_model, model_id: "free-mid", provider: "deepseek", tier: "mid", pricing_tier: "free")
+        paid_model = create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic", tier: "mid", pricing_tier: "paid")
+        openrouter_free_runner = create(:runner, user: user, runner_key: "openrouter_free", auth_type: "api_key", provider_api_key: api_key)
+
+        openrouter_free_runner.tier_models = { mid: { model_id: paid_model.model_id, provider_id: openrouter_free_runner.id } }
+        expect(openrouter_free_runner).not_to be_valid
+        expect(openrouter_free_runner.errors[:tier_models].join).to include("must reference a free model")
       end
     end
 
@@ -874,6 +908,26 @@ RSpec.describe Runner do
     let(:account) { create(:account, slug: "sync-tier-#{SecureRandom.hex(6)}") }
     let(:user) { create(:user, account: account, email: "sync-tier-#{SecureRandom.hex(6)}@example.com") }
     let(:api_key) { create(:provider_api_key, user: user, api_service_type: "openrouter") }
+
+    it "seeds openrouter_free tier_model_ids from active free models" do
+      create(:llm_model, model_id: "free-low", provider: "openrouter", tier: "low", pricing_tier: "free", capability_score: 4.0)
+      create(:llm_model, model_id: "free-mid", provider: "openrouter", tier: "mid", pricing_tier: "free", capability_score: 6.0)
+      create(:llm_model, model_id: "free-high", provider: "openrouter", tier: "high", pricing_tier: "free", capability_score: 8.0)
+
+      runner = create(
+        :runner,
+        user: user,
+        runner_key: "openrouter_free",
+        auth_type: "api_key",
+        provider_api_key: api_key
+      )
+
+      expect(runner.tier_model_ids).to eq(
+        "low" => "free-low",
+        "mid" => "free-mid",
+        "high" => "free-high"
+      )
+    end
 
     it "clears stale tier_model_ids when runner no longer qualifies for direct-outbound" do
       runner = create(

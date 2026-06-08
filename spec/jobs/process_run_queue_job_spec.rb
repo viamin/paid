@@ -125,6 +125,42 @@ RSpec.describe ProcessRunQueueJob do
       expect(auto_continue.reload.status).to eq("queued")
     end
 
+    it "does not start lower-priority work from the same project after claiming a manual run" do
+      project = create(:project)
+      project.created_by.settings.update!(max_concurrent_runs: 2)
+      manual = create(:agent_run, :queued, :manual, project: project, goal: "review", source_pull_request_number: 42,
+        created_at: 2.minutes.ago)
+      p1_issue = create(:issue, project: project, labels: [ "P1" ])
+      p1_run = create(:agent_run, :queued, :automatic, project: project, issue: p1_issue, created_at: 1.minute.ago)
+
+      started_ids = []
+      allow(temporal_client).to receive(:start_workflow) do |_wf, input, **_opts|
+        started_ids << input[:agent_run_id]
+        workflow_handle
+      end
+
+      described_class.new.perform
+
+      expect(started_ids).to eq([ manual.id ])
+      expect(manual.reload.temporal_workflow_id).to be_present
+      expect(p1_run.reload.temporal_workflow_id).to be_nil
+    end
+
+    it "does not start lower-priority work while a manual run from the same project is claimed" do
+      project = create(:project)
+      project.created_by.settings.update!(max_concurrent_runs: 2)
+      create(:agent_run, :queued, :manual, project: project, goal: "review", source_pull_request_number: 42,
+        temporal_workflow_id: AgentRun::CLAIMED_SENTINEL)
+      p1_issue = create(:issue, project: project, labels: [ "P1" ])
+      p1_run = create(:agent_run, :queued, :automatic, project: project, issue: p1_issue)
+
+      expect(temporal_client).not_to receive(:start_workflow)
+
+      described_class.new.perform
+
+      expect(p1_run.reload.temporal_workflow_id).to be_nil
+    end
+
     it "marks run as failed and continues when workflow start fails" do
       failing_run = create(:agent_run, :queued, created_at: 2.minutes.ago)
       good_run = create(:agent_run, :queued, created_at: 1.minute.ago)

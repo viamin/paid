@@ -141,7 +141,8 @@ module Automation
             issue_id: signals.issue_id,
             pr_number: signals.pr_number,
             owner_reviewer_login: signals.owner_reviewer_login,
-            reason: reason
+            reason: reason,
+            reason_key: signals.escalation_reason_key
           )
         ])
       end
