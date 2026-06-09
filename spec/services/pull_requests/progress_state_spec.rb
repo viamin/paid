@@ -70,6 +70,7 @@ RSpec.describe PullRequests::ProgressState, :no_db do
       :base_commit_sha,
       :result_commit_sha,
       :operational_failure_flag,
+      :provider_unavailable_flag,
       keyword_init: true
     ) do
       def finished?
@@ -79,6 +80,10 @@ RSpec.describe PullRequests::ProgressState, :no_db do
       def operational_failure?
         operational_failure_flag
       end
+
+      def provider_unavailable?
+        provider_unavailable_flag
+      end
     end
   end
 
@@ -86,6 +91,7 @@ RSpec.describe PullRequests::ProgressState, :no_db do
   let(:issue) { issue_double }
 
   def build_run(goal:, status:, at:, review_posted_at: nil, operational_failure: false,
+    provider_unavailable: false,
     base_commit_sha: nil, result_commit_sha: nil, started_at: nil, trigger_type: "automatic")
     run_class.new(
       goal: goal,
@@ -98,7 +104,8 @@ RSpec.describe PullRequests::ProgressState, :no_db do
       review_posted_at: review_posted_at,
       base_commit_sha: base_commit_sha,
       result_commit_sha: result_commit_sha,
-      operational_failure_flag: operational_failure
+      operational_failure_flag: operational_failure,
+      provider_unavailable_flag: provider_unavailable
     )
   end
 
@@ -374,6 +381,55 @@ RSpec.describe PullRequests::ProgressState, :no_db do
 
     expect(result.consecutive_unsuccessful_automatic_runs).to eq(1)
     expect(result.consecutive_operational_failures).to eq(1)
+  end
+
+  it "tracks provider-transient outages within the operational failure streak" do
+    now = Time.zone.parse("2026-05-15 12:00:00")
+    runs = [
+      build_run(goal: "create_pr", status: "rate_limited", at: now,
+        operational_failure: true, provider_unavailable: true),
+      build_run(goal: "create_pr", status: "rate_limited", at: now - 5.minutes,
+        operational_failure: true, provider_unavailable: true),
+      build_run(goal: "create_pr", status: "rate_limited", at: now - 10.minutes,
+        operational_failure: true, provider_unavailable: true)
+    ]
+
+    result = described_class.call(project: project, issue: issue, runs: runs)
+
+    expect(result.consecutive_operational_failures).to eq(3)
+    expect(result.consecutive_provider_transient_outages).to eq(3)
+    expect(result.all_provider_transient_outages?).to be true
+  end
+
+  it "does not flag all_provider_transient_outages? when streak has a non-transient operational failure" do
+    now = Time.zone.parse("2026-05-15 12:00:00")
+    runs = [
+      build_run(goal: "create_pr", status: "rate_limited", at: now,
+        operational_failure: true, provider_unavailable: true),
+      build_run(goal: "create_pr", status: "timeout", at: now - 5.minutes,
+        operational_failure: true, provider_unavailable: false),
+      build_run(goal: "create_pr", status: "rate_limited", at: now - 10.minutes,
+        operational_failure: true, provider_unavailable: true)
+    ]
+
+    result = described_class.call(project: project, issue: issue, runs: runs)
+
+    expect(result.consecutive_operational_failures).to eq(3)
+    expect(result.consecutive_provider_transient_outages).to eq(2)
+    expect(result.all_provider_transient_outages?).to be false
+  end
+
+  it "reports zero consecutive_provider_transient_outages when no operational failures exist" do
+    now = Time.zone.parse("2026-05-15 12:00:00")
+    runs = [
+      build_run(goal: "create_pr", status: "failed", at: now, operational_failure: false)
+    ]
+
+    result = described_class.call(project: project, issue: issue, runs: runs)
+
+    expect(result.consecutive_operational_failures).to eq(0)
+    expect(result.consecutive_provider_transient_outages).to eq(0)
+    expect(result.all_provider_transient_outages?).to be false
   end
 
   it "stuck? uses latest_unsuccessful_run_at as fallback instead of epoch when no progress recorded" do
