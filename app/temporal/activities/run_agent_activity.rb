@@ -948,7 +948,49 @@ module Activities
       @rate_limit_fallbacks = load_rate_limit_fallbacks(user_settings.user)
       @inserted_rate_limit_fallbacks = Set.new
 
+      # Reorder based on per-issue provider failure history so that runners
+      # that have not yet been tried for this issue are preferred over ones
+      # that have already failed. This implements the "try-all" policy: all
+      # available providers get a chance before any single provider is retried.
+      runners = apply_issue_aware_runner_ordering(runners, agent_run, user_settings.user)
+
       runners
+    end
+
+    # Reorders runners based on per-issue failure history.
+    # Runners that have not yet failed for this issue are sorted before
+    # runners that have, using a stable sort to preserve the user's
+    # configured priority order within each tier.
+    #
+    # Only applies when the agent run is associated with an issue.
+    # Returns the original list unchanged when no issue-level failure
+    # history exists or the run is not issue-scoped.
+    def apply_issue_aware_runner_ordering(runners, agent_run, user)
+      return runners unless agent_run.issue_id.present?
+      return runners if runners.size <= 1
+
+      failure_counts = AgentRuns::IssueRunnerFailureHistory.call(agent_run: agent_run)
+      return runners if failure_counts.empty?
+
+      annotated = runners.each_with_index.map do |runner_candidate, idx|
+        key = canonical_runner_candidate(runner_candidate, user)
+        [ runner_candidate, failure_counts.fetch(key, 0), idx ]
+      end
+
+      reordered = annotated.sort_by { |_, count, idx| [ count, idx ] }.map(&:first)
+
+      if reordered != runners
+        logger.info(
+          message: "agent_execution.issue_aware_runner_reorder",
+          agent_run_id: agent_run.id,
+          issue_id: agent_run.issue_id,
+          original_order: runners.map { |r| canonical_runner_candidate(r, user) },
+          reordered_order: reordered.map { |r| canonical_runner_candidate(r, user) },
+          failure_counts: failure_counts
+        )
+      end
+
+      reordered
     end
 
     # Checks if a runner is currently unavailable (rate limited or circuit open).
