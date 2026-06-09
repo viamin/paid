@@ -2406,8 +2406,15 @@ module Activities
 
     def owner_approved_or_self_authored?(project, reviews, pr_data)
       return true if owner_is_pr_author?(project, pr_data)
+      return true if bot_author_auto_merge_allowed?(project, pr_data)
 
       owner_approved_from_reviews?(project, reviews)
+    end
+
+    def bot_author_auto_merge_allowed?(project, pr_data)
+      return false unless project.auto_merge_bot_authored?
+
+      paid_agent_pr_author?(project, pr_data&.user&.login)
     end
 
     def owner_approved_from_reviews?(project, reviews)

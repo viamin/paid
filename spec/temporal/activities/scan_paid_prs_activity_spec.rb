@@ -5750,6 +5750,90 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    # --- Bot-authored PR auto-merge setting ---
+
+    context "when allow_bot_authored_pr_auto_merge is disabled (default)" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          auto_merge_mode: "all",
+          allow_bot_authored_pr_auto_merge: false
+        )
+        allow(project).to receive(:github_author_login).and_return(Github::AppRegistry.bot_login)
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+        stub_github_for_pr(
+          author_login: Github::AppRegistry.bot_login,
+          reviews: default_clean_copilot_review
+        )
+      end
+
+      it "requires owner approval even for the project's agent bot" do
+        allow(Project).to receive(:find_by).with(id: project.id).and_return(project)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to eq([])
+      end
+    end
+
+    context "when allow_bot_authored_pr_auto_merge is enabled" do
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          auto_merge_mode: "all",
+          allow_bot_authored_pr_auto_merge: true
+        )
+        allow(project).to receive(:github_author_login).and_return(Github::AppRegistry.bot_login)
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          paid_state: "completed")
+      end
+
+      it "auto-merges agent bot PR without owner approval review" do
+        stub_github_for_pr(
+          author_login: Github::AppRegistry.bot_login,
+          reviews: default_clean_copilot_review
+        )
+        allow(Project).to receive(:find_by).with(id: project.id).and_return(project)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
+        expect(trigger[:triggers].first[:type]).to eq("owner_approved")
+      end
+
+      it "does not grant bypass to a third-party bot (Dependabot)" do
+        stub_github_for_pr(
+          author_login: "dependabot[bot]",
+          reviews: default_clean_copilot_review
+        )
+        allow(Project).to receive(:find_by).with(id: project.id).and_return(project)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to eq([])
+      end
+
+      it "does not grant bypass to an unrelated bot login" do
+        stub_github_for_pr(
+          author_login: "renovate[bot]",
+          reviews: default_clean_copilot_review
+        )
+        allow(Project).to receive(:find_by).with(id: project.id).and_return(project)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to eq([])
+      end
+    end
+
     # --- Stale review detection ---
 
     context "when owner approved but head commit is newer than approval" do
