@@ -109,5 +109,18 @@ RSpec.describe Runners::PreflightCheck do
         expect(result).to have_attributes(pass?: true)
       end
     end
+
+    describe "REASONS constant" do
+      it "is a frozen array of strings" do
+        expect(described_class::REASONS).to be_frozen
+        expect(described_class::REASONS).to all(be_a(String))
+      end
+
+      it "raises ArgumentError when an unknown reason is passed to failure" do
+        service = described_class.new(runner: nil, user: user)
+        expect { service.send(:failure, "not_a_real_reason") }
+          .to raise_error(ArgumentError, /unknown preflight reason/)
+      end
+    end
   end
 end

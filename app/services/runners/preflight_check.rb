@@ -39,6 +39,8 @@ module Runners
     attr_reader :runner, :user
 
     def failure(reason)
+      raise ArgumentError, "unknown preflight reason: #{reason.inspect}" unless REASONS.include?(reason)
+
       Result.new(pass?: false, reason: reason, runner_id: runner&.id)
     end
 
