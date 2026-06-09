@@ -111,20 +111,24 @@ module Activities
     #
     # Claude uses reliable per-tool heartbeats — effective idle timeout equals
     # the base value. Codex uses coarse heartbeats (3x multiplier applied by
-    # HeartbeatSetup), so the 15-min base yields a 45-min effective window.
-    # Other providers use upstream harness heartbeat integration.
+    # HeartbeatSetup), so the 15-min base yields a 45-min effective window on
+    # a first attempt and 67.5 min on a subsequent attempt (see
+    # RETRY_IDLE_TIMEOUT_MULTIPLIER). Other providers use upstream harness
+    # heartbeat integration.
     CREATE_PR_RUNNER_IDLE_TIMEOUTS = {
       "claude_code" => 600,  # 10 min — reliable per-tool heartbeat, effective 10 min
-      "codex"       => 900,  # 15 min base — coarse 3x multiplier, effective 45 min
+      "codex"       => 900,  # 15 min base — coarse 3x multiplier, effective 45 min (67.5 min on retry)
       "kilocode"    => 600,  # 10 min
       "opencode"    => 600,  # 10 min
       "pi"          => 600   # 10 min
     }.freeze
 
-    # Multiplier applied to the base idle timeout when a run has already been
-    # attempted (proven productive). Runs with prior output are granted 50%
-    # more idle tolerance to accommodate tasks with irregular output patterns.
-    PRODUCTIVE_RUN_IDLE_TIMEOUT_MULTIPLIER = 1.5
+    # Multiplier applied to the per-runner base idle timeout on a subsequent
+    # runner attempt, granting 50% more idle tolerance to accommodate tasks
+    # with irregular output patterns after the run has had a prior attempt.
+    # Only applies to the per-runner tuned defaults; explicit user custom
+    # values are honored verbatim with no escalation.
+    RETRY_IDLE_TIMEOUT_MULTIPLIER = 1.5
 
     # Legacy create_pr idle timeout defaults that indicate the user has not
     # explicitly customized the setting. Per-runner tuned constants take
@@ -939,10 +943,13 @@ module Activities
       [ startup_base, effective_timeout ].compact.min
     end
 
-    # Returns true when the run has already been attempted with a prior runner.
-    # Used to apply progressive idle timeout: runs that have had a prior attempt
-    # receive extra idle tolerance to accommodate tasks with irregular output.
-    def productive_run?(agent_run)
+    # Returns true when the run has had a prior runner attempt recorded in
+    # `runners_attempted`. Used to apply progressive idle timeout: runs on a
+    # subsequent attempt receive extra idle tolerance to accommodate tasks
+    # with irregular output patterns. Note this checks for any prior attempt,
+    # not for output presence — even a failed prior attempt will be present
+    # in `runners_attempted` (e.g. with `success: false, error_type: "error"`).
+    def subsequent_attempt?(agent_run)
       agent_run.runners_attempted.present?
     end
 
@@ -1283,12 +1290,16 @@ module Activities
         # Use per-runner tuned defaults unless the user has explicitly customized
         # the setting to a non-legacy value. Legacy defaults (300, 360) indicate
         # the user has not changed the setting and should receive the new defaults.
-        base_idle = if user_idle.nil? || LEGACY_CREATE_PR_IDLE_TIMEOUT_DEFAULTS.include?(user_idle)
-          per_runner_idle
+        # The retry multiplier only escalates the per-runner tuned defaults;
+        # explicit user customizations are honored verbatim so a user who set
+        # e.g. `create_pr_idle_timeout_seconds: 420` continues to get 420 on
+        # every attempt, with no silent opt-out.
+        if user_idle.nil? || LEGACY_CREATE_PR_IDLE_TIMEOUT_DEFAULTS.include?(user_idle)
+          base_idle = per_runner_idle
+          subsequent_attempt?(agent_run) ? (base_idle * RETRY_IDLE_TIMEOUT_MULTIPLIER).ceil : base_idle
         else
           user_idle
         end
-        productive_run?(agent_run) ? (base_idle * PRODUCTIVE_RUN_IDLE_TIMEOUT_MULTIPLIER).ceil : base_idle
       end
       startup_timeout = effective_startup_timeout(
         runner_key: runner,

@@ -3480,14 +3480,40 @@ expect(container_service).to receive(:execute).with(
         activity.execute(agent_run_id: agent_run.id)
       end
 
-      it "applies progressive idle timeout multiplier on subsequent runner attempts" do
+      it "honours explicit user idle timeout on subsequent attempts without applying the retry multiplier" do
+        agent_run.update!(agent_type: "codex")
+        project.update!(max_execution_seconds: 86_400)
+        user.settings.update!(create_pr_idle_timeout_seconds: 420)
+        agent_run.record_runner_attempt("codex", success: false, error_type: "error")
+        allow(activity).to receive(:run_harness_preflight!)
+        allow(container_service).to receive(:execute).and_return(exec_success)
+        allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
+
+        # Explicit user value (420) must be used verbatim — the retry multiplier
+        # only escalates the per-runner tuned default, not explicit user
+        # customizations.
+        expected_idle = 420 * Containers::HeartbeatSetup::COARSE_HEARTBEAT_IDLE_TIMEOUT_MULTIPLIER
+
+        expect(container_service).to receive(:execute).with(
+          anything,
+          hash_including(
+            timeout: AGENT_TIMEOUT_DEFAULT,
+            startup_timeout: described_class::CREATE_PR_RUNNER_STARTUP_TIMEOUTS["codex"],
+            idle_timeout: expected_idle
+          )
+        ).and_return(exec_success)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "applies the retry idle timeout multiplier on subsequent runner attempts" do
         project.update!(max_execution_seconds: 86_400)
         agent_run.record_runner_attempt("claude_code", success: false, error_type: "error")
         allow(container_service).to receive(:execute).and_return(exec_success)
         allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
 
         expected_idle = (described_class::CREATE_PR_RUNNER_IDLE_TIMEOUTS["claude_code"] *
-          described_class::PRODUCTIVE_RUN_IDLE_TIMEOUT_MULTIPLIER).ceil
+          described_class::RETRY_IDLE_TIMEOUT_MULTIPLIER).ceil
 
         expect(container_service).to receive(:execute).with(
           anything,
