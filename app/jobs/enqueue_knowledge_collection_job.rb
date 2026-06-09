@@ -4,7 +4,6 @@ class EnqueueKnowledgeCollectionJob < ApplicationJob
   queue_as :knowledge
 
   self.notification_subsystem = "knowledge"
-  self.max_attempts = 5
 
   discard_on ActiveRecord::RecordNotFound
 

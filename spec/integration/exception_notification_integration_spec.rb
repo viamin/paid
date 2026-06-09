@@ -102,8 +102,8 @@ RSpec.describe ExceptionNotification do
       expect(job.notification_project_id).to eq(42)
     end
 
-    it "sets max_attempts to match retry_on attempts" do
-      expect(EnqueueKnowledgeCollectionJob.max_attempts).to eq(5)
+    it "uses default max_attempts so rescue_from fires on first attempt for non-retried errors" do
+      expect(EnqueueKnowledgeCollectionJob.max_attempts).to eq(1)
     end
   end
 
