@@ -55,6 +55,12 @@ export default class extends Controller {
     case "message_created":
       this.handleMessageCreated(data)
       break
+    case "message_tool_call":
+      this.handleMessageToolCall(data)
+      break
+    case "message_tool_result":
+      this.handleMessageToolResult(data)
+      break
     case "message_start":
       this.handleMessageStart(data)
       break
@@ -165,6 +171,27 @@ export default class extends Controller {
     wrapper.append(article)
     this.messagesTarget.append(wrapper)
     return article
+  }
+
+  handleMessageToolCall(data) {
+    if (!data.html) return
+
+    const card = this.buildMessageElement(data.html)
+    if (!card) return
+
+    this.messagesTarget.append(card)
+    this.setStatus(`Running ${data.tool_name || "tool"}…`)
+    this.scrollToBottom()
+  }
+
+  handleMessageToolResult(data) {
+    if (!data.html) return
+
+    const card = this.buildMessageElement(data.html)
+    if (!card) return
+
+    this.messagesTarget.append(card)
+    this.scrollToBottom()
   }
 
   handleMessageCreated(data) {

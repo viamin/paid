@@ -15,7 +15,7 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
     allow(ChatSessions::BuildLlmClient).to receive(:call).and_return(llm_client)
   end
 
-  it "calls SendMessage and broadcasts events" do
+  it "broadcasts message_start before invoking SendMessage" do
     assistant_msg = create(:chat_message, :assistant, chat_session: chat_session,
       tokens_input: 20, tokens_output: 10)
 
@@ -28,7 +28,124 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
         stream_message_id: stream_message_id
       )
     }.to have_broadcasted_to(stream_name)
-      .with(hash_including(type: "message_complete", message_id: stream_message_id))
+      .with(hash_including(type: "message_start", message_id: stream_message_id))
+  end
+
+  it "calls SendMessage and broadcasts message_complete with aggregate tokens" do
+    assistant_msg = create(:chat_message, :assistant, chat_session: chat_session,
+      tokens_input: 20, tokens_output: 10)
+
+    allow(ChatSessions::SendMessage).to receive(:call).and_return(assistant_msg)
+
+    expect {
+      described_class.perform_now(
+        chat_session_id: chat_session.id,
+        content: "Hello",
+        stream_message_id: stream_message_id
+      )
+    }.to have_broadcasted_to(stream_name)
+      .with(hash_including(
+        type: "message_complete",
+        message_id: stream_message_id,
+        tokens: { input: 20, output: 10 }
+      ))
+  end
+
+  it "broadcasts message_tool_call for assistant messages with a tool name and nil content" do
+    tool_call_msg = create(:chat_message, chat_session: chat_session,
+      role: "assistant", content: nil,
+      tool_name: "list_projects", tool_call_id: "call_123",
+      tool_arguments: { "query" => "all" })
+
+    assistant_msg = create(:chat_message, :assistant, chat_session: chat_session,
+      tokens_input: 5, tokens_output: 3)
+
+    allow(ChatSessions::SendMessage).to receive(:call) do |**kwargs|
+      kwargs[:on_message_persisted]&.call(tool_call_msg)
+      assistant_msg
+    end
+
+    expect {
+      described_class.perform_now(
+        chat_session_id: chat_session.id,
+        content: "Use a tool",
+        stream_message_id: stream_message_id
+      )
+    }.to have_broadcasted_to(stream_name)
+      .with(hash_including(type: "message_tool_call", tool_name: "list_projects"))
+  end
+
+  it "broadcasts message_tool_result for tool-role messages" do
+    tool_result_msg = create(:chat_message, chat_session: chat_session,
+      role: "tool", content: '{"projects":[]}',
+      tool_name: "list_projects", tool_call_id: "call_123",
+      tool_result: { "projects" => [] })
+
+    assistant_msg = create(:chat_message, :assistant, chat_session: chat_session,
+      tokens_input: 5, tokens_output: 3)
+
+    allow(ChatSessions::SendMessage).to receive(:call) do |**kwargs|
+      kwargs[:on_message_persisted]&.call(tool_result_msg)
+      assistant_msg
+    end
+
+    expect {
+      described_class.perform_now(
+        chat_session_id: chat_session.id,
+        content: "Use a tool",
+        stream_message_id: stream_message_id
+      )
+    }.to have_broadcasted_to(stream_name)
+      .with(hash_including(type: "message_tool_result", tool_name: "list_projects"))
+  end
+
+  it "broadcasts message_created for regular user and assistant messages" do
+    user_msg = create(:chat_message, chat_session: chat_session, role: "user", content: "Hello")
+    assistant_msg = create(:chat_message, :assistant, chat_session: chat_session,
+      tokens_input: 10, tokens_output: 5)
+
+    allow(ChatSessions::SendMessage).to receive(:call) do |**kwargs|
+      kwargs[:on_message_persisted]&.call(user_msg)
+      kwargs[:on_message_persisted]&.call(assistant_msg, stream_message_id: stream_message_id)
+      assistant_msg
+    end
+
+    expect {
+      described_class.perform_now(
+        chat_session_id: chat_session.id,
+        content: "Hello",
+        stream_message_id: stream_message_id
+      )
+    }.to have_broadcasted_to(stream_name)
+      .with(hash_including(type: "message_created", role: "user"))
+      .and have_broadcasted_to(stream_name)
+      .with(hash_including(type: "message_created", role: "assistant"))
+  end
+
+  it "broadcasts message_complete even when a tool call fails" do
+    tool_result_msg = create(:chat_message, chat_session: chat_session,
+      role: "tool", content: '{"status":"error"}',
+      tool_name: "list_projects", tool_call_id: "call_err",
+      tool_result: { "status" => "error" })
+
+    assistant_msg = create(:chat_message, :assistant, chat_session: chat_session,
+      tokens_input: 5, tokens_output: 3)
+
+    allow(ChatSessions::SendMessage).to receive(:call) do |**kwargs|
+      kwargs[:on_message_persisted]&.call(tool_result_msg)
+      assistant_msg
+    end
+
+    expect {
+      described_class.perform_now(
+        chat_session_id: chat_session.id,
+        content: "Run tool",
+        stream_message_id: stream_message_id
+      )
+    }.to have_broadcasted_to(stream_name)
+      .with(hash_including(type: "message_tool_result"))
+      .and have_broadcasted_to(stream_name)
+      .with(hash_including(type: "message_complete"))
   end
 
   it "broadcasts error for argument errors" do
