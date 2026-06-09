@@ -2915,7 +2915,7 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.runners_attempted.first["diagnostics"]).to include(
           "timeout_type" => "idle",
           "effective_timeout_seconds" => 3600,
-          "startup_timeout_seconds" => described_class::CREATE_PR_RUNNER_STARTUP_TIMEOUTS["claude_code"],
+          "startup_timeout_seconds" => described_class::CREATE_PR_RUNNER_STARTUP_TIMEOUTS["claude"],
           "idle_timeout_seconds" => 360,
           "heartbeat_supported" => true
         )
@@ -3326,7 +3326,7 @@ expect(container_service).to receive(:execute).with(
           anything,
           hash_including(
             timeout: AGENT_TIMEOUT_DEFAULT,
-            startup_timeout: described_class::CREATE_PR_RUNNER_STARTUP_TIMEOUTS["claude_code"],
+            startup_timeout: described_class::CREATE_PR_RUNNER_STARTUP_TIMEOUTS["claude"],
             idle_timeout: described_class::DEFAULT_CREATE_PR_IDLE_TIMEOUT
           )
         ).and_return(exec_success)
@@ -3462,7 +3462,7 @@ expect(container_service).to receive(:execute).with(
           anything,
           hash_including(
             timeout: AGENT_TIMEOUT_DEFAULT,
-            startup_timeout: described_class::CREATE_PR_RUNNER_STARTUP_TIMEOUTS["claude_code"],
+            startup_timeout: described_class::CREATE_PR_RUNNER_STARTUP_TIMEOUTS["claude"],
             idle_timeout: described_class::DEFAULT_CREATE_PR_IDLE_TIMEOUT,
             heartbeat_path: Containers::HeartbeatSetup::CONTAINER_HEARTBEAT_PATH
           )
