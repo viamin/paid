@@ -8,7 +8,7 @@
 - **Status**: Draft
 - **Type**: Architecture
 - **Priority**: P1
-- **Related Issues**: (to be filed during planning)
+- **Related Issues**: viamin/paid#2371 (this amendment), viamin/paid#2367 (gem-source switch), viamin/paid#2368 (`--usage` cleanup), viamin/paid#2370 (customer UI)
 - **Related RDRs**:
   - [RDR-013](RDR-013-code-quality-backpressure.md) (Code Quality and Backpressure)
   - [RDR-009](RDR-009-prompt-evolution.md) (Prompt Evolution)
