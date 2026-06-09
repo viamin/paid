@@ -538,6 +538,24 @@ RSpec.describe ProcessRunQueueJob do
         expect(other_run.reload.status).to eq("queued")
         expect(other_run.reload.temporal_workflow_id).to be_present
       end
+
+      it "bulk-skips runs with the same failed runner without repeated preflight checks" do
+        stub_const("#{described_class}::MAX_ITERATIONS_PER_PERFORM", 5)
+
+        project = create(:project)
+        user = project.created_by
+        user.settings.update!(max_concurrent_runs: 10)
+        runner = user.runners.kept_only.find_by!(runner_key: "claude", auth_type: "subscription")
+        create(:runner_state, :circuit_open, user: user, runner_name: runner.state_key)
+
+        10.times { |i| create(:agent_run, :queued, project: project, runner: runner, created_at: (20 - i).minutes.ago) }
+
+        allow(Runners::PreflightCheck).to receive(:call).and_call_original
+
+        described_class.new.perform
+
+        expect(Runners::PreflightCheck).to have_received(:call).once
+      end
     end
   end
 end

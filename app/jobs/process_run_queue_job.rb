@@ -49,6 +49,7 @@ class ProcessRunQueueJob < ApplicationJob
       skipped_ids = Set.new
       blocked_project_ids = Set.new
       blocked_user_ids = Set.new
+      blocked_runner_ids = Set.new
       started_priority_by_project = {}
       @user_capacity = {}  # { user_id => { active: count, max: limit } }
 
@@ -98,10 +99,16 @@ class ProcessRunQueueJob < ApplicationJob
           next
         end
 
+        if next_run.runner_id && blocked_runner_ids.include?(next_run.runner_id)
+          skipped_ids.add(next_run.id)
+          next
+        end
+
         preflight_result = check_runner_preflight(next_run, user)
         if preflight_result && !preflight_result.pass?
           log_preflight_skip(next_run, preflight_result)
           skipped_ids.add(next_run.id)
+          blocked_runner_ids.add(next_run.runner_id) if next_run.runner_id
           next
         end
 
