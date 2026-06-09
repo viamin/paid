@@ -671,6 +671,15 @@ class AgentRun < ApplicationRecord
     capacity_inflight.where(project_id: project.id).count
   end
 
+  # Returns the count of active create_pr runs for the given account.
+  # Used to enforce the account-level create_pr concurrency cap.
+  def self.active_create_pr_count_for_account(account)
+    capacity_inflight
+      .joins(:project)
+      .where(projects: { account_id: account.id }, goal: "create_pr")
+      .count
+  end
+
   def self.stale_running_timeout(goal: nil)
     return default_stale_running_timeout if goal.blank?
 
@@ -1211,7 +1220,8 @@ class AgentRun < ApplicationRecord
   # Runs whose project belongs to an account with a paused scheduler are
   # excluded so a "pause all" toggle can hold new starts while still
   # accepting new queue entries from the project trigger button.
-  def self.peek_next_queued_run(exclude_ids: [], exclude_project_ids: [], exclude_user_ids: [])
+  def self.peek_next_queued_run(exclude_ids: [], exclude_project_ids: [], exclude_user_ids: [],
+    exclude_account_create_pr_ids: [])
     scope = unclaimed_with_priority
       .joins(project: :account)
       .where(accounts: { scheduler_paused_at: nil })
@@ -1220,6 +1230,12 @@ class AgentRun < ApplicationRecord
     scope = scope.where.not(id: exclude_ids) if exclude_ids.any?
     scope = scope.where.not(project_id: exclude_project_ids) if exclude_project_ids.any?
     scope = scope.where.not(project_owner: { user_id: exclude_user_ids }) if exclude_user_ids.any?
+    if exclude_account_create_pr_ids.any?
+      scope = scope.where(
+        "agent_runs.goal != 'create_pr' OR projects.account_id NOT IN (?)",
+        exclude_account_create_pr_ids
+      )
+    end
     next_queued_run_from(scope)
   end
 

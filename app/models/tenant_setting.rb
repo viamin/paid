@@ -19,6 +19,7 @@ class TenantSetting < ApplicationRecord
   DEFAULT_BUDGETS = BUDGET_TYPES.index_with { DEFAULT_BUDGET_TEMPLATE.deep_dup }.freeze
   DEFAULT_GUARDRAILS = {
     "max_concurrent_runs" => 10,
+    "max_concurrent_create_pr_runs" => 20,
     "max_tokens_per_run" => 10_000_000,
     "max_monthly_cost_cents" => nil
   }.freeze
@@ -156,6 +157,8 @@ class TenantSetting < ApplicationRecord
 
   validates :max_concurrent_runs,
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 100 }
+  validates :max_concurrent_create_pr_runs,
+    numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 1000 }
   validates :max_projects,
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: PG_INT_MAX }
   validates :max_users,
@@ -300,6 +303,10 @@ class TenantSetting < ApplicationRecord
 
   def cap_max_concurrent_runs(limit)
     [ limit, max_concurrent_runs ].compact.min
+  end
+
+  def cap_max_concurrent_create_pr_runs(limit)
+    [ limit, max_concurrent_create_pr_runs ].compact.min
   end
 
   def cap_max_tokens_per_run(limit)
