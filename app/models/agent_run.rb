@@ -71,6 +71,15 @@ class AgentRun < ApplicationRecord
     "connection slots are reserved"
   ].freeze
   PRE_MODEL_FAILURE_STATUSES = %w[failed no_output].freeze
+  # Keywords that identify a purely transient provider/infrastructure outage.
+  # These outages resolve on their own once capacity returns — no human can
+  # fix them. Runs matching these patterns are excluded from the operational-
+  # failure escalation breaker so that a temporary provider outage does not
+  # page a human reviewer who cannot help.
+  PROVIDER_UNAVAILABLE_KEYWORDS = [
+    "providers exhausted",
+    "runners exhausted"
+  ].freeze
 
   def self.quality_scoreable_sql
     excluded_status = arel_table[:status].not_in(QUALITY_EXCLUDED_STATUSES)
@@ -1347,6 +1356,22 @@ class AgentRun < ApplicationRecord
     OPERATIONAL_FAILURE_KEYWORDS.any? do |keyword|
       error_message.to_s.downcase.include?(keyword.downcase)
     end
+  end
+
+  # Returns true when this run failed due to a purely transient provider or
+  # infrastructure outage that will resolve on its own once capacity returns.
+  # Unlike other operational failures, these do not warrant human escalation
+  # because a human reviewer cannot fix them — automated retries will succeed
+  # after the provider recovers.
+  #
+  # Covers: runner rate limits / circuit-open / unavailable (rate_limited
+  # status) and provider/runner exhaustion errors in failed runs.
+  def provider_unavailable?
+    return true if status == "rate_limited"
+    return false unless operational_failure?
+
+    msg = error_message.to_s.downcase
+    PROVIDER_UNAVAILABLE_KEYWORDS.any? { |keyword| msg.include?(keyword.downcase) }
   end
 
   # Returns true when the run failed due to infrastructure issues before the
