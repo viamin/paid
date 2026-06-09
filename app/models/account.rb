@@ -110,6 +110,10 @@ class Account < ApplicationRecord
     tenant_setting&.cap_max_concurrent_runs(limit) || limit
   end
 
+  def tenant_max_concurrent_create_pr_runs
+    tenant_setting&.max_concurrent_create_pr_runs || TenantSetting::DEFAULT_GUARDRAILS.fetch("max_concurrent_create_pr_runs")
+  end
+
   def tenant_max_tokens_per_run(limit)
     tenant_setting&.cap_max_tokens_per_run(limit) || limit
   end

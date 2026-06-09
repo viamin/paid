@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_08_210151) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_09_014405) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2343,6 +2343,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_08_210151) do
     t.jsonb "features", default: {}, null: false
     t.jsonb "guardrails", default: {}, null: false
     t.jsonb "log_data"
+    t.integer "max_concurrent_create_pr_runs", default: 20, null: false, comment: "Account-level cap on concurrent create_pr agent runs to prevent success rate collapse at high concurrency"
     t.integer "max_concurrent_runs", default: 10, null: false
     t.integer "max_monthly_cost_cents"
     t.integer "max_projects", default: 50, null: false

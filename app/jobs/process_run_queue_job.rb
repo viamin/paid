@@ -49,8 +49,10 @@ class ProcessRunQueueJob < ApplicationJob
       skipped_ids = Set.new
       blocked_project_ids = Set.new
       blocked_user_ids = Set.new
+      blocked_account_create_pr_ids = Set.new
       started_priority_by_project = {}
-      @user_capacity = {}  # { user_id => { active: count, max: limit } }
+      @user_capacity = {}         # { user_id => { active: count, max: limit } }
+      @account_create_pr_cap = {} # { account_id => { active: count, max: limit } }
 
       loop do
         iterations += 1
@@ -62,7 +64,8 @@ class ProcessRunQueueJob < ApplicationJob
         next_run = AgentRun.peek_next_queued_run(
           exclude_ids: skipped_ids.to_a,
           exclude_project_ids: blocked_project_ids.to_a,
-          exclude_user_ids: blocked_user_ids.to_a
+          exclude_user_ids: blocked_user_ids.to_a,
+          exclude_account_create_pr_ids: blocked_account_create_pr_ids.to_a
         )
 
         break unless next_run
@@ -98,6 +101,13 @@ class ProcessRunQueueJob < ApplicationJob
           next
         end
 
+        if next_run.goal == "create_pr" && !account_has_create_pr_capacity?(next_run.project.account)
+          # Account has hit the create_pr concurrency cap. Block all create_pr
+          # runs for this account for the rest of this pass.
+          blocked_account_create_pr_ids.add(next_run.project.account_id)
+          next
+        end
+
         # User has capacity — now atomically claim the run.
         # claim_next_queued_run returns nil if another process claimed or
         # transitioned this run between peek and claim. Skip it and continue
@@ -117,6 +127,7 @@ class ProcessRunQueueJob < ApplicationJob
           consecutive_failures = 0
           starts_count += 1
           record_started_run(user)
+          record_started_create_pr_run(agent_run)
           record_started_project_priority(next_run, started_priority_by_project)
           break if starts_count >= MAX_STARTS_PER_PERFORM
         else
@@ -165,6 +176,23 @@ class ProcessRunQueueJob < ApplicationJob
   def record_started_run(user)
     cap = @user_capacity[user.id]
     cap[:active] += 1 if cap
+  end
+
+  # Updates the in-memory account create_pr capacity tracker after a run is started.
+  def record_started_create_pr_run(agent_run)
+    return unless agent_run.goal == "create_pr"
+
+    cap = @account_create_pr_cap[agent_run.project.account_id]
+    cap[:active] += 1 if cap
+  end
+
+  # Checks account-level create_pr capacity using an in-memory cache.
+  def account_has_create_pr_capacity?(account)
+    cap = @account_create_pr_cap[account.id] ||= {
+      active: AgentRun.active_create_pr_count_for_account(account),
+      max: account.tenant_max_concurrent_create_pr_runs
+    }
+    cap[:active] < cap[:max]
   end
 
   def record_started_project_priority(agent_run, started_priority_by_project)

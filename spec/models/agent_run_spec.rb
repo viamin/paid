@@ -1967,6 +1967,34 @@ RSpec.describe AgentRun do
     end
   end
 
+  describe ".active_create_pr_count_for_account" do
+    it "counts running and claimed create_pr runs for the account" do
+      account = create(:account)
+      user = create(:user, account: account)
+      project = create(:project, account: account, created_by: user)
+      other_account = create(:account)
+      other_user = create(:user, account: other_account)
+      other_project = create(:project, account: other_account, created_by: other_user)
+
+      create(:agent_run, :running, project: project, goal: "create_pr")
+      create(:agent_run, :queued, project: project, goal: "create_pr", temporal_workflow_id: "claimed")
+      create(:agent_run, :running, project: project, goal: "create_issue")
+      create(:agent_run, :completed, project: project, goal: "create_pr")
+      create(:agent_run, :running, project: other_project, goal: "create_pr")
+
+      expect(described_class.active_create_pr_count_for_account(account)).to eq(2)
+    end
+
+    it "returns zero when no active create_pr runs exist" do
+      account = create(:account)
+      user = create(:user, account: account)
+      project = create(:project, account: account, created_by: user)
+      create(:agent_run, :completed, project: project, goal: "create_pr")
+
+      expect(described_class.active_create_pr_count_for_account(account)).to eq(0)
+    end
+  end
+
   describe ".next_queued_run" do
     it "returns the oldest queued run when all have the same priority" do
       older = create(:agent_run, :queued, created_at: 2.minutes.ago)

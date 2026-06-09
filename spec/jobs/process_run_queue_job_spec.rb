@@ -457,5 +457,55 @@ RSpec.describe ProcessRunQueueJob do
 
       described_class.new.perform
     end
+
+    context "when account create_pr concurrency cap is configured" do
+      it "does not start create_pr runs when account is at the create_pr cap" do
+        project = create(:project)
+        create(:tenant_setting, account: project.account, max_concurrent_create_pr_runs: 2)
+
+        create(:agent_run, :running, project: project, goal: "create_pr")
+        create(:agent_run, :running, project: project, goal: "create_pr")
+        queued_run = create(:agent_run, :queued, project: project, goal: "create_pr")
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(queued_run.reload.status).to eq("queued")
+      end
+
+      it "still starts non-create_pr runs when create_pr cap is reached" do
+        project = create(:project)
+        create(:tenant_setting, account: project.account, max_concurrent_create_pr_runs: 1)
+
+        create(:agent_run, :running, project: project, goal: "create_pr")
+        create_pr_run = create(:agent_run, :queued, project: project, goal: "create_pr", created_at: 2.minutes.ago)
+        other_run = create(:agent_run, :queued, project: project, goal: "create_issue", created_at: 1.minute.ago)
+
+        expect(temporal_client).to receive(:start_workflow).once.and_return(workflow_handle)
+
+        described_class.new.perform
+
+        expect(create_pr_run.reload.status).to eq("queued")
+        expect(other_run.reload.temporal_workflow_id).to be_present
+      end
+
+      it "starts create_pr runs for accounts with available capacity" do
+        capped_project = create(:project)
+        create(:tenant_setting, account: capped_project.account, max_concurrent_create_pr_runs: 1)
+        create(:agent_run, :running, project: capped_project, goal: "create_pr")
+        capped_run = create(:agent_run, :queued, project: capped_project, goal: "create_pr", created_at: 2.minutes.ago)
+
+        open_project = create(:project)
+        open_run = create(:agent_run, :queued, project: open_project, goal: "create_pr", created_at: 1.minute.ago)
+
+        expect(temporal_client).to receive(:start_workflow).once.and_return(workflow_handle)
+
+        described_class.new.perform
+
+        expect(capped_run.reload.status).to eq("queued")
+        expect(open_run.reload.temporal_workflow_id).to be_present
+      end
+    end
   end
 end
