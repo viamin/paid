@@ -21,6 +21,7 @@ function loadRunnerApiServiceType() {
     aider: "anthropic",
     gemini: "google",
     openrouter_free: "openrouter",
+    openrouter_pareto: "openrouter",
   }
 }
 

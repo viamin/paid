@@ -11,16 +11,17 @@ module RunnerSupport
   #
   # NOTE: Inclusion here does NOT mean the runner's CLI is installed in the
   # agent Docker container. For container execution, see CONTAINER_EXECUTABLE_RUNNER_KEYS.
-  APP_RUNNER_KEYS = %w[claude cursor codex copilot aider gemini opencode openrouter_free kilocode pi].freeze
+  APP_RUNNER_KEYS = %w[claude cursor codex copilot aider gemini opencode openrouter_free openrouter_pareto kilocode pi].freeze
 
   # Runner keys whose CLIs are actually installed in the agent Docker container
   # and can execute repository-changing agent tasks. GitHub Copilot CLI is
   # included via its --autopilot mode which enables fully autonomous,
   # non-interactive agent execution.
-  CONTAINER_EXECUTABLE_RUNNER_KEYS = Set.new(%w[aider claude codex copilot cursor gemini kilocode opencode openrouter_free pi]).freeze
+  CONTAINER_EXECUTABLE_RUNNER_KEYS = Set.new(%w[aider claude codex copilot cursor gemini kilocode opencode openrouter_free openrouter_pareto pi]).freeze
 
   APP_RUNNER_TO_HARNESS_KEY = {
-    "openrouter_free" => "opencode"
+    "openrouter_free" => "opencode",
+    "openrouter_pareto" => "opencode"
   }.freeze
 
   # Upper bound on how far in the future a parsed rate-limit reset is trusted.
@@ -234,7 +235,8 @@ module RunnerSupport
     "codex" => "openai",
     "aider" => "anthropic",
     "gemini" => "google",
-    "openrouter_free" => "openrouter"
+    "openrouter_free" => "openrouter",
+    "openrouter_pareto" => "openrouter"
   }.freeze
 
   # Reverse mapping: API service type → harness runner key.
