@@ -1279,9 +1279,17 @@ module Activities
     # checks for infrastructure-class failures specifically. A run that
     # failed due to a code error won't trip this breaker because a retry
     # with different code changes might succeed.
+    #
+    # Exception: purely transient provider/infra outages (rate limits,
+    # circuit-open, provider exhaustion) are excluded from escalation even
+    # when they form the entire streak. A human reviewer cannot fix a
+    # temporary provider outage — automated retries will succeed once
+    # capacity returns. Only escalate when at least one failure in the
+    # streak is non-transient (e.g. auth expiry, task-level timeout).
     def operational_failure_breaker?(project, issue, progress_state = pr_progress_state(project, issue))
       return false if issue.escalated_phase?
       return false unless progress_state.consecutive_operational_failures >= MAX_CONSECUTIVE_OPERATIONAL_FAILURES
+      return false if progress_state.all_provider_transient_outages?
 
       no_meaningful_progress_window_elapsed?(progress_state)
     end

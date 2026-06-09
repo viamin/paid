@@ -870,6 +870,55 @@ RSpec.describe AgentRun do
       end
     end
 
+    describe "#provider_unavailable?" do
+      it "returns true for rate_limited status" do
+        agent_run = build(:agent_run, :rate_limited)
+
+        expect(agent_run.provider_unavailable?).to be true
+      end
+
+      it "returns true for failed status with providers exhausted error" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "All providers exhausted: claude_code, codex")
+
+        expect(agent_run.provider_unavailable?).to be true
+      end
+
+      it "returns true for failed status with runners exhausted error" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "All runners exhausted: no capacity available")
+
+        expect(agent_run.provider_unavailable?).to be true
+      end
+
+      it "returns false for timeout status (non-provider task timeout)" do
+        agent_run = build(:agent_run, :timeout,
+          error_message: "wall_clock_timeout: exceeded 30 minutes")
+
+        expect(agent_run.provider_unavailable?).to be false
+      end
+
+      it "returns false for auth_expired status" do
+        agent_run = build(:agent_run, :auth_expired)
+
+        expect(agent_run.provider_unavailable?).to be false
+      end
+
+      it "returns false for failed status with agent code error" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "Agent exited with code 1: compilation failed")
+
+        expect(agent_run.provider_unavailable?).to be false
+      end
+
+      it "returns false for failed status with worktree error" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "Branch fix/foo has an active worktree from agent run 1234")
+
+        expect(agent_run.provider_unavailable?).to be false
+      end
+    end
+
     describe "#pre_runner_infra_failure?" do
       it "returns true for Docker pull failure with zero tokens and no runner" do
         agent_run = build(:agent_run, :failed,

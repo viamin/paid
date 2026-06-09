@@ -72,6 +72,7 @@ module Activities
 
     def operational_failure_breaker_holds?(progress_state)
       progress_state.consecutive_operational_failures >= Activities::ScanPaidPrsActivity::MAX_CONSECUTIVE_OPERATIONAL_FAILURES &&
+        !progress_state.all_provider_transient_outages? &&
         no_meaningful_progress_window_elapsed?(progress_state)
     end
 

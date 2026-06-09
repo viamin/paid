@@ -20,12 +20,22 @@ module PullRequests
     Result = Data.define(
       :consecutive_unsuccessful_automatic_runs,
       :consecutive_operational_failures,
+      :consecutive_provider_transient_outages,
       :last_meaningful_progress_at,
       :latest_automatic_run_at,
       :latest_unsuccessful_run_at,
       :latest_unsuccessful_run_goal,
       :latest_unsuccessful_run_status
     ) do
+      # Returns true when every operational failure in the consecutive streak
+      # is a purely transient provider outage (rate limits, circuit-open,
+      # provider/runner exhaustion). These resolve on their own — no human
+      # intervention is needed, so the escalation breaker should not fire.
+      def all_provider_transient_outages?
+        consecutive_operational_failures > 0 &&
+          consecutive_provider_transient_outages >= consecutive_operational_failures
+      end
+
       def escalation_worthy?(limit:)
         limit.to_i.positive? && consecutive_unsuccessful_automatic_runs >= limit.to_i
       end
@@ -71,6 +81,7 @@ module PullRequests
       progress_at = explicit_reset_at
       failure_streak = 0
       operational_streak = nil
+      transient_in_op_streak = 0
       latest_failure = nil
       latest_automatic_run_at = nil
 
@@ -97,14 +108,17 @@ module PullRequests
 
         if operational_streak.nil?
           operational_streak = run.operational_failure? ? 1 : 0
+          transient_in_op_streak = (run.operational_failure? && run.provider_unavailable?) ? 1 : 0
         elsif operational_streak.positive? && run.operational_failure?
           operational_streak += 1
+          transient_in_op_streak += 1 if run.provider_unavailable?
         end
       end
 
       Result.new(
         consecutive_unsuccessful_automatic_runs: failure_streak,
         consecutive_operational_failures: operational_streak || 0,
+        consecutive_provider_transient_outages: transient_in_op_streak,
         last_meaningful_progress_at: progress_at,
         latest_automatic_run_at: latest_automatic_run_at,
         latest_unsuccessful_run_at: latest_failure && run_timestamp(latest_failure),
