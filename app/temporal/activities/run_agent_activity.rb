@@ -81,7 +81,9 @@ module Activities
     DEFAULT_ISSUE_GOAL_TIMEOUT = 600        # 10 minutes wall clock
     DEFAULT_ISSUE_GOAL_IDLE_TIMEOUT = 120   # 2 minutes without output = stuck
     DEFAULT_REVIEW_GOAL_IDLE_TIMEOUT = 300  # 5 minutes without output = stuck
-    DEFAULT_CREATE_PR_IDLE_TIMEOUT = 360   # 6 minutes without output = stuck
+    # Fallback idle timeout for create_pr with unknown runners; known runners
+    # use CREATE_PR_RUNNER_IDLE_TIMEOUTS instead.
+    DEFAULT_CREATE_PR_IDLE_TIMEOUT = 360   # 6 minutes without output = stuck (legacy fallback)
     DEFAULT_AGENT_STARTUP_TIMEOUT = 360    # 6 minutes without first output = stuck
 
     # Per-runner startup timeouts for create_pr goals, tuned from observed data.
@@ -101,6 +103,33 @@ module Activities
       "opencode"    => 3000, # 50 min — p90 of completed is 48.2 min
       "pi"          => 3000  # 50 min — p90 of completed is 48.2 min
     }.freeze
+
+    # Per-runner idle timeouts for create_pr goals, tuned from observed gap
+    # patterns in completed runs. 298 runs were terminated after an average of
+    # 31.8 minutes of productive work because the 6-minute default was too
+    # aggressive for complex tasks with irregular output bursts.
+    #
+    # Claude uses reliable per-tool heartbeats — effective idle timeout equals
+    # the base value. Codex uses coarse heartbeats (3x multiplier applied by
+    # HeartbeatSetup), so the 15-min base yields a 45-min effective window.
+    # Other providers use upstream harness heartbeat integration.
+    CREATE_PR_RUNNER_IDLE_TIMEOUTS = {
+      "claude_code" => 600,  # 10 min — reliable per-tool heartbeat, effective 10 min
+      "codex"       => 900,  # 15 min base — coarse 3x multiplier, effective 45 min
+      "kilocode"    => 600,  # 10 min
+      "opencode"    => 600,  # 10 min
+      "pi"          => 600   # 10 min
+    }.freeze
+
+    # Multiplier applied to the base idle timeout when a run has already been
+    # attempted (proven productive). Runs with prior output are granted 50%
+    # more idle tolerance to accommodate tasks with irregular output patterns.
+    PRODUCTIVE_RUN_IDLE_TIMEOUT_MULTIPLIER = 1.5
+
+    # Legacy create_pr idle timeout defaults that indicate the user has not
+    # explicitly customized the setting. Per-runner tuned constants take
+    # precedence over these legacy defaults to deliver improved behavior.
+    LEGACY_CREATE_PR_IDLE_TIMEOUT_DEFAULTS = [ 300, 360 ].freeze
 
     PREFLIGHT_TIMEOUT_SECONDS = 10
     DIRECT_OUTBOUND_PREFLIGHT_TIMEOUT_SECONDS = 30
@@ -910,6 +939,13 @@ module Activities
       [ startup_base, effective_timeout ].compact.min
     end
 
+    # Returns true when the run has already been attempted with a prior runner.
+    # Used to apply progressive idle timeout: runs that have had a prior attempt
+    # receive extra idle tolerance to accommodate tasks with irregular output.
+    def productive_run?(agent_run)
+      agent_run.runners_attempted.present?
+    end
+
     # Builds the ordered list of runners to attempt.
     # Uses fallback runners if enabled, otherwise just the agent's type.
     # Rate-limit fallback runners are tracked separately (via
@@ -1242,7 +1278,17 @@ module Activities
       elsif agent_run.review_goal?
         user_settings&.review_goal_idle_timeout_seconds || DEFAULT_REVIEW_GOAL_IDLE_TIMEOUT
       elsif agent_run.create_pr_goal?
-        user_settings&.create_pr_idle_timeout_seconds || DEFAULT_CREATE_PR_IDLE_TIMEOUT
+        per_runner_idle = CREATE_PR_RUNNER_IDLE_TIMEOUTS.fetch(runner, DEFAULT_CREATE_PR_IDLE_TIMEOUT)
+        user_idle = user_settings&.create_pr_idle_timeout_seconds
+        # Use per-runner tuned defaults unless the user has explicitly customized
+        # the setting to a non-legacy value. Legacy defaults (300, 360) indicate
+        # the user has not changed the setting and should receive the new defaults.
+        base_idle = if user_idle.nil? || LEGACY_CREATE_PR_IDLE_TIMEOUT_DEFAULTS.include?(user_idle)
+          per_runner_idle
+        else
+          user_idle
+        end
+        productive_run?(agent_run) ? (base_idle * PRODUCTIVE_RUN_IDLE_TIMEOUT_MULTIPLIER).ceil : base_idle
       end
       startup_timeout = effective_startup_timeout(
         runner_key: runner,
