@@ -8,13 +8,16 @@ RSpec.describe Activities::MarkEscalatedActivity do
     count.times do |i|
       run_at = (Activities::ScanPaidPrsActivity::NO_PROGRESS_ESCALATION_WINDOW + i.minutes + 1.minute).ago
 
+      # Use a non-transient operational failure (Clone failed) so the breaker
+      # recognizes these as escalation-worthy. "All providers exhausted" is
+      # a transient outage that no longer triggers escalation.
       create(:agent_run, :failed,
         project: issue.project,
         issue: issue,
         goal: "create_pr",
         trigger_type: "automatic",
         source_pull_request_number: issue.github_number,
-        error_message: "All providers exhausted: claude_code",
+        error_message: "Clone failed: could not resolve host api.github.com",
         created_at: run_at,
         started_at: run_at,
         completed_at: run_at)

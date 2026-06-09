@@ -1387,6 +1387,93 @@ RSpec.describe Activities::RunAgentActivity do
         expect(runners).to eq([])
       end
     end
+
+    context "with issue-aware provider switching" do
+      it "promotes untried runners ahead of previously failed runners" do
+        codex_runner = create(:runner, user: user, runner_key: "codex")
+        user.settings.update!(fallback_enabled: true, fallback_runners: [ codex_runner.routing_key ])
+
+        # Simulate a prior run for the same issue where claude_code failed
+        create(:agent_run, :failed, project: project, issue: issue, goal: "create_pr",
+          runners_attempted: [
+            { "runner" => "claude_code", "success" => false, "error_type" => "error" }
+          ])
+
+        runners = activity.send(:build_runner_order, agent_run, user.settings)
+
+        # codex (0 failures) should be promoted ahead of claude_code (1 failure)
+        expect(runners.first).to eq(codex_runner.routing_key)
+        expect(runners).to include("claude_code")
+      end
+
+      it "preserves original order when no prior failures exist" do
+        codex_runner = create(:runner, user: user, runner_key: "codex")
+        user.settings.update!(fallback_enabled: true, fallback_runners: [ codex_runner.routing_key ])
+
+        runners = activity.send(:build_runner_order, agent_run, user.settings)
+
+        # claude_code is the primary; no failures so original order is preserved
+        expect(runners.first).to eq("claude_code")
+        expect(runners.second).to eq(codex_runner.routing_key)
+      end
+
+      it "does not reorder when there is only one runner" do
+        user.settings.update!(fallback_enabled: false)
+
+        create(:agent_run, :failed, project: project, issue: issue, goal: "create_pr",
+          runners_attempted: [
+            { "runner" => "claude_code", "success" => false, "error_type" => "error" }
+          ])
+
+        runners = activity.send(:build_runner_order, agent_run, user.settings)
+
+        expect(runners.size).to eq(1)
+      end
+
+      it "does not reorder for runs without an issue" do
+        codex_runner = create(:runner, user: user, runner_key: "codex")
+        user.settings.update!(fallback_enabled: true, fallback_runners: [ codex_runner.routing_key ])
+
+        issueless_run = create(:agent_run, :with_custom_prompt, project: project, issue: nil,
+          container_id: "xyz789")
+        allow(AgentRun).to receive(:find).with(issueless_run.id).and_return(issueless_run)
+
+        create(:agent_run, :failed, project: project, issue: nil, goal: "create_pr",
+          custom_prompt: "some prompt",
+          runners_attempted: [
+            { "runner" => "claude_code", "success" => false, "error_type" => "error" }
+          ])
+
+        runners = activity.send(:build_runner_order, issueless_run, user.settings)
+
+        # No issue_id means no reordering — claude_code stays first
+        expect(runners.first).to eq("claude_code")
+      end
+
+      it "uses stable sort: runners with equal failure counts keep original order" do
+        codex_runner = create(:runner, user: user, runner_key: "codex")
+        aider_runner = create(:runner, user: user, runner_key: "aider")
+        user.settings.update!(
+          fallback_enabled: true,
+          fallback_runners: [ codex_runner.routing_key, aider_runner.routing_key ]
+        )
+
+        # Both claude_code and codex have failed once; aider is untried
+        create(:agent_run, :failed, project: project, issue: issue, goal: "create_pr",
+          runners_attempted: [
+            { "runner" => "claude_code", "success" => false, "error_type" => "error" },
+            { "runner" => "codex", "success" => false, "error_type" => "error" }
+          ])
+
+        runners = activity.send(:build_runner_order, agent_run, user.settings)
+
+        # aider (0 failures) should come first
+        expect(runners.first).to eq(aider_runner.routing_key)
+        # claude_code and codex (1 failure each) follow in their original order
+        expect(runners[1]).to eq("claude_code")
+        expect(runners[2]).to eq(codex_runner.routing_key)
+      end
+    end
   end
 
   def build_opencode_context(user, api_provider: "openrouter", model: "moonshotai/kimi-k2-0905", service_type: "openrouter", api_key: "sk-openrouter-secret")

@@ -13,6 +13,11 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
     chat_session = ChatSession.find(chat_session_id)
     stream_name = "chat_session:#{chat_session.id}"
 
+    ActionCable.server.broadcast(stream_name, {
+      type: "message_start",
+      message_id: stream_message_id
+    })
+
     llm_client = ChatSessions::BuildLlmClient.call(chat_session: chat_session)
 
     assistant_message = ChatSessions::SendMessage.call(
@@ -63,10 +68,19 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
   private
 
   def broadcast_persisted_message(stream_name, message, stream_message_id: nil)
+    event_type = if message.role == "tool"
+      "message_tool_result"
+    elsif message.role == "assistant" && message.tool_name.present? && message.content.nil?
+      "message_tool_call"
+    else
+      "message_created"
+    end
+
     ActionCable.server.broadcast(stream_name, {
-      type: "message_created",
+      type: event_type,
       message_id: message.id,
       role: message.role,
+      tool_name: message.tool_name,
       stream_message_id: stream_message_id,
       html: ApplicationController.render(
         partial: "chat_messages/message",
