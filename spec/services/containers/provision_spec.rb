@@ -612,6 +612,26 @@ RSpec.describe Containers::Provision do
         ENV["MUTANT_LICENSE_KEY"] = original_mutant_license_key
       end
 
+      it "sets git committer identity environment variables" do
+        bot_identity = Github::BotIdentity.new(
+          app_slug: "paid-agents",
+          name: "Paid Agent",
+          email: "agent@paid-agents.com"
+        )
+        allow(Github::BotIdentity).to receive(:for_git).and_return(bot_identity)
+
+        expect(Docker::Container).to receive(:create) do |config|
+          env = config["Env"]
+          expect(env).to include("GIT_AUTHOR_NAME=Paid Agent")
+          expect(env).to include("GIT_AUTHOR_EMAIL=agent@paid-agents.com")
+          expect(env).to include("GIT_COMMITTER_NAME=Paid Agent")
+          expect(env).to include("GIT_COMMITTER_EMAIL=agent@paid-agents.com")
+          mock_container
+        end
+
+        service.provision
+      end
+
       it "configures Google proxy environment variables" do
         expect(Docker::Container).to receive(:create) do |config|
           env = config["Env"]
