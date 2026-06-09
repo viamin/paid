@@ -49,6 +49,7 @@ class ProcessRunQueueJob < ApplicationJob
       skipped_ids = Set.new
       blocked_project_ids = Set.new
       blocked_user_ids = Set.new
+      blocked_runner_ids = Set.new
       started_priority_by_project = {}
       @user_capacity = {}  # { user_id => { active: count, max: limit } }
 
@@ -98,7 +99,20 @@ class ProcessRunQueueJob < ApplicationJob
           next
         end
 
-        # User has capacity — now atomically claim the run.
+        if next_run.runner_id && blocked_runner_ids.include?(next_run.runner_id)
+          skipped_ids.add(next_run.id)
+          next
+        end
+
+        preflight_result = check_runner_preflight(next_run, user)
+        if preflight_result && !preflight_result.pass?
+          log_preflight_skip(next_run, preflight_result)
+          skipped_ids.add(next_run.id)
+          blocked_runner_ids.add(next_run.runner_id) if next_run.runner_id
+          next
+        end
+
+        # User has capacity and runner passes preflight — now atomically claim the run.
         # claim_next_queued_run returns nil if another process claimed or
         # transitioned this run between peek and claim. Skip it and continue
         # processing the queue rather than stopping entirely.
@@ -138,6 +152,23 @@ class ProcessRunQueueJob < ApplicationJob
 
     state.check_circuit_recovery!
     state if state.unavailable?
+  end
+
+  def check_runner_preflight(agent_run, user)
+    runner = agent_run.runner
+    return nil unless runner
+
+    Runners::PreflightCheck.call(runner: runner, user: user)
+  end
+
+  def log_preflight_skip(agent_run, result)
+    Rails.logger.info(
+      message: "process_run_queue.preflight_skip",
+      agent_run_id: agent_run.id,
+      runner_id: result.runner_id,
+      reason: result.reason,
+      project_id: agent_run.project_id
+    )
   end
 
   def log_github_unavailable(state, project_id: nil)

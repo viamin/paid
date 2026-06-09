@@ -457,5 +457,105 @@ RSpec.describe ProcessRunQueueJob do
 
       described_class.new.perform
     end
+
+    context "when runner preflight fails" do
+      it "skips the run when the runner circuit is open" do
+        project = create(:project)
+        user = project.created_by
+        runner = user.runners.kept_only.find_by!(runner_key: "claude", auth_type: "subscription")
+        create(:runner_state, :circuit_open, user: user, runner_name: runner.state_key)
+        queued_run = create(:agent_run, :queued, project: project, runner: runner)
+        allow(Rails.logger).to receive(:info)
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(queued_run.reload.status).to eq("queued")
+        expect(Rails.logger).to have_received(:info).with(hash_including(
+          message: "process_run_queue.preflight_skip",
+          reason: "circuit_open"
+        ))
+      end
+
+      it "skips the run when the runner is rate limited" do
+        project = create(:project)
+        user = project.created_by
+        runner = user.runners.kept_only.find_by!(runner_key: "claude", auth_type: "subscription")
+        create(:runner_state, :rate_limited, user: user, runner_name: runner.state_key)
+        queued_run = create(:agent_run, :queued, project: project, runner: runner)
+        allow(Rails.logger).to receive(:info)
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(queued_run.reload.status).to eq("queued")
+        expect(Rails.logger).to have_received(:info).with(hash_including(
+          message: "process_run_queue.preflight_skip",
+          reason: "rate_limited"
+        ))
+      end
+
+      it "skips the run when an API-key runner has no secret" do
+        project = create(:project)
+        user = project.created_by
+        provider_api_key = create(:provider_api_key, user: user)
+        runner = create(:runner, user: user, runner_key: "cursor", auth_type: "api_key", provider_api_key: provider_api_key)
+        queued_run = create(:agent_run, :queued, project: project, runner: runner)
+        allow(Rails.logger).to receive(:info)
+
+        allow(Runners::PreflightCheck).to receive(:call)
+          .with(runner: runner, user: user)
+          .and_return(Runners::PreflightCheck::Result.new(pass?: false, reason: "missing_api_key", runner_id: runner.id))
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(queued_run.reload.status).to eq("queued")
+        expect(Rails.logger).to have_received(:info).with(hash_including(
+          message: "process_run_queue.preflight_skip",
+          reason: "missing_api_key"
+        ))
+      end
+
+      it "starts a run from another project when one runner fails preflight" do
+        blocked_project = create(:project)
+        blocked_user = blocked_project.created_by
+        blocked_runner = blocked_user.runners.kept_only.find_by!(runner_key: "claude", auth_type: "subscription")
+        create(:runner_state, :circuit_open, user: blocked_user, runner_name: blocked_runner.state_key)
+        blocked_run = create(:agent_run, :queued, project: blocked_project, runner: blocked_runner, created_at: 2.minutes.ago)
+
+        other_project = create(:project)
+        other_run = create(:agent_run, :queued, project: other_project, created_at: 1.minute.ago)
+
+        expect(temporal_client).to receive(:start_workflow).once.and_return(workflow_handle)
+
+        described_class.new.perform
+
+        expect(blocked_run.reload.status).to eq("queued")
+        expect(other_run.reload.status).to eq("queued")
+        expect(other_run.reload.temporal_workflow_id).to be_present
+      end
+
+      it "bulk-skips runs with the same failed runner without repeated preflight checks" do
+        stub_const("#{described_class}::MAX_ITERATIONS_PER_PERFORM", 5)
+
+        project = create(:project)
+        user = project.created_by
+        user.settings.update!(max_concurrent_runs: 10)
+        runner = user.runners.kept_only.find_by!(runner_key: "claude", auth_type: "subscription")
+        create(:runner_state, :circuit_open, user: user, runner_name: runner.state_key)
+
+        10.times { |i| create(:agent_run, :queued, project: project, runner: runner, created_at: (20 - i).minutes.ago) }
+
+        allow(Runners::PreflightCheck).to receive(:call).and_call_original
+
+        described_class.new.perform
+
+        expect(Runners::PreflightCheck).to have_received(:call).once
+      end
+    end
   end
 end
