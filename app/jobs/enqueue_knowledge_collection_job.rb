@@ -3,9 +3,24 @@
 class EnqueueKnowledgeCollectionJob < ApplicationJob
   queue_as :knowledge
 
+  self.notification_subsystem = "knowledge"
+
   discard_on ActiveRecord::RecordNotFound
-  retry_on WorktreeService::Error, wait: :polynomially_longer, attempts: 5
-  retry_on Errno::ENOENT, wait: :polynomially_longer, attempts: 5
+
+  # retry_on intercepts these errors before ApplicationJob's rescue_from hook, so
+  # notify explicitly when the final attempt is exhausted, then re-raise.
+  retry_on WorktreeService::Error, wait: :polynomially_longer, attempts: 5 do |job, error|
+    job.notify_terminal_failure(error)
+    raise error
+  end
+  retry_on Errno::ENOENT, wait: :polynomially_longer, attempts: 5 do |job, error|
+    job.notify_terminal_failure(error)
+    raise error
+  end
+
+  def notification_project_id
+    arguments.first
+  end
 
   def perform(project_id)
     project = Project.find(project_id)
