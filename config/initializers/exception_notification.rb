@@ -2,6 +2,8 @@
 
 return if Rails.env.test?
 
+require_relative "../../lib/paid/exception_notifier"
+
 ExceptionNotification.configure do |config|
   config.ignored_exceptions += %w[
     ActionController::RoutingError
