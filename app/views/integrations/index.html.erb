@@ -11,17 +11,22 @@
     </div>
   </div>
 
-  <div class="mt-8 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
-    <div class="border-b border-gray-200 bg-gray-50 px-6 py-5">
+  <details open class="mt-8 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm group">
+    <summary class="border-b border-gray-200 bg-gray-50 px-6 py-5 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
       <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <p class="text-sm font-semibold uppercase tracking-wide text-indigo-600">Recommended Setup</p>
-          <h2 class="mt-1 text-xl font-semibold text-gray-900">Install the <code>paid-agents</code> GitHub App</h2>
-          <p class="mt-2 max-w-3xl text-sm text-gray-600">
-            Use the GitHub App when you want Paid to open pull requests, push branches, sync issues, and act as <code><%= Github::AppRegistry.bot_login %></code> instead of a personal token owner.
-          </p>
+        <div class="flex items-start gap-3">
+          <svg class="mt-1 h-5 w-5 shrink-0 text-gray-400 transition-transform duration-200 group-open:rotate-90" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd" />
+          </svg>
+          <div>
+            <p class="text-sm font-semibold uppercase tracking-wide text-indigo-600">Recommended Setup</p>
+            <h2 class="mt-1 text-xl font-semibold text-gray-900">Install the <code>paid-agents</code> GitHub App</h2>
+            <p class="mt-2 max-w-3xl text-sm text-gray-600">
+              Use the GitHub App when you want Paid to open pull requests, push branches, sync issues, and act as <code><%= Github::AppRegistry.bot_login %></code> instead of a personal token owner.
+            </p>
+          </div>
         </div>
-        <div class="flex flex-col gap-3 sm:flex-row">
+        <div class="flex flex-col gap-3 sm:flex-row" onclick="event.stopPropagation()">
           <%= link_to "Install paid-agents", Github::AppRegistry.install_url,
             class: "inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500",
             target: "_blank", rel: "noopener noreferrer" %>
@@ -31,7 +36,7 @@
           <% end %>
         </div>
       </div>
-    </div>
+    </summary>
 
     <div class="grid gap-6 px-6 py-6 lg:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">
       <div class="space-y-6">
@@ -115,7 +120,7 @@
         <% end %>
       </div>
     </div>
-  </div>
+  </details>
 
   <% if @sections.any? %>
     <% @sections.each do |section| %>
