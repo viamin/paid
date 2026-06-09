@@ -759,6 +759,17 @@
               <% end %>
             </div>
 
+            <div class="flex items-start gap-3">
+              <%= form.check_box :allow_bot_authored_pr_auto_merge, class: "mt-0.5 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
+              <div>
+                <%= form.label :allow_bot_authored_pr_auto_merge, "Allow agent bot auto-merge without owner approval", class: "block text-sm font-medium leading-6 text-gray-900" %>
+                <p class="text-xs text-gray-500">
+                  When enabled, PRs authored by this project's GitHub App agent bot may auto-merge without an explicit owner approval review,
+                  as long as CI is green and all other gates pass. Only applies to this project's own agent bot — third-party bots (Dependabot, Renovate) are unaffected.
+                </p>
+              </div>
+            </div>
+
             <div>
               <%= form.label :auto_release_granularity, "Release PR Auto-Merge", class: "block text-sm font-medium leading-6 text-gray-900" %>
               <div class="mt-2 max-w-xs">

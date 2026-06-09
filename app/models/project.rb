@@ -766,6 +766,10 @@ class Project < ApplicationRecord
     auto_merge_mode.in?(%w[dependabot_only all])
   end
 
+  def auto_merge_bot_authored?
+    allow_bot_authored_pr_auto_merge?
+  end
+
   def effective_quality_gate_settings
     saved = quality_gate_settings
     saved = saved.is_a?(Hash) ? saved.deep_stringify_keys : {}
