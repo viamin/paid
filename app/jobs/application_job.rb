@@ -1,21 +1,58 @@
 # frozen_string_literal: true
 
 class ApplicationJob < ActiveJob::Base
+  class_attribute :notification_subsystem, default: "general"
+  class_attribute :max_attempts, default: 1
+
+  rescue_from(StandardError) do |exception|
+    notify_terminal_failure(exception) if executions >= self.class.max_attempts
+    raise exception
+  end
+
   around_perform do |job, block|
     Database::QueryMonitor.instrument("job", job_class: job.class.name) do
       block.call
     end
   end
 
-  # Automatically retry jobs that encountered a deadlock
-  # retry_on ActiveRecord::Deadlocked
-
-  # Most jobs are safe to ignore if the underlying records are no longer available
-  # discard_on ActiveJob::DeserializationError
-
   around_perform :with_tenant_context
 
+  def notification_project_id
+    nil
+  end
+
+  # Report a terminal job failure to the exception notifier. Used by the base
+  # rescue_from hook for non-retried errors, and by retry_on blocks when a retry
+  # policy is exhausted — retry_on registers a more specific handler that
+  # intercepts those errors before the base hook, so the final attempt must
+  # report explicitly (it then re-raises so the adapter still marks the job
+  # failed). HandleExceptionJob is skipped to avoid an infinite notify loop.
+  def notify_terminal_failure(exception)
+    return if is_a?(HandleExceptionJob)
+
+    Paid::ExceptionNotifier.new.call(
+      exception,
+      data: {
+        account: notification_account,
+        subsystem: self.class.notification_subsystem,
+        project_id: notification_project_id
+      }
+    )
+  end
+
   private
+
+  # Resolve the tenant account for the notifier. The rescue_from handler runs
+  # in perform_now's rescue clause, after the with_tenant_context around_perform
+  # has already restored Current.account — so on a GoodJob worker thread it is
+  # nil by the time we notify. Re-resolve and pass it explicitly so terminal
+  # failures still produce incidents. Defensive: never let account lookup mask
+  # the original exception.
+  def notification_account
+    TenantContext.with_system_access { tenant_account }
+  rescue StandardError
+    nil
+  end
 
   def with_tenant_context(&block)
     account = TenantContext.with_system_access { tenant_account }
