@@ -448,7 +448,7 @@ module Projects
         return
       end
 
-      token = (request.POST[:auth_token].presence || request.POST[:auth_code])&.strip
+      token = (request.POST["auth_token"].presence || request.POST["auth_code"])&.strip
       if token.blank?
         redirect_to project_agent_run_path(@project, @agent_run),
           alert: "Please provide an authentication token."
