@@ -1952,7 +1952,7 @@ class AgentRun < ApplicationRecord
   # @param error_type [String, nil] Type of error if failed (e.g., "rate_limited", "error")
   def record_runner_attempt(runner, success:, error_type: nil, error_message: nil, duration_seconds: nil,
                             diagnostics: nil, resolved_model_id: nil, resolved_provider_id: nil,
-                            resolution_source: nil)
+                            resolution_source: nil, output_chars: nil)
     attempt = {
       "runner" => runner,
       "success" => success,
@@ -1966,6 +1966,7 @@ class AgentRun < ApplicationRecord
     attempt["resolved_model_id"] = resolved_model_id if resolved_model_id.present?
     attempt["resolved_provider_id"] = resolved_provider_id if resolved_provider_id.present?
     attempt["resolution_source"] = resolution_source if resolution_source.present?
+    attempt["output_chars"] = output_chars if output_chars.present?
 
     self.runners_attempted = (runners_attempted || []) + [ attempt ]
     save!

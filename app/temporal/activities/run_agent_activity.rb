@@ -133,7 +133,7 @@ module Activities
     # Legacy create_pr idle timeout defaults that indicate the user has not
     # explicitly customized the setting. Per-runner tuned constants take
     # precedence over these legacy defaults to deliver improved behavior.
-    LEGACY_CREATE_PR_IDLE_TIMEOUT_DEFAULTS = [ 300, 360 ].freeze
+    LEGACY_CREATE_PR_IDLE_TIMEOUT_DEFAULTS = [ 360 ].freeze
 
     PREFLIGHT_TIMEOUT_SECONDS = 10
     DIRECT_OUTBOUND_PREFLIGHT_TIMEOUT_SECONDS = 30
@@ -304,6 +304,7 @@ module Activities
             heartbeat("runner_completed", runner)
             record_runner_success(user_settings, runner_state_name, runner_states)
             agent_run.record_runner_attempt(attempt_label, success: true, duration_seconds: attempt_duration,
+              output_chars: runner_result[:output_chars],
               **resolved_run_info)
             # Persist the routing key so multiple entries sharing the same
             # runner_key (e.g. several OpenCode API-key entries with
@@ -943,14 +944,14 @@ module Activities
       [ startup_base, effective_timeout ].compact.min
     end
 
-    # Returns true when the run has had a prior runner attempt recorded in
-    # `runners_attempted`. Used to apply progressive idle timeout: runs on a
-    # subsequent attempt receive extra idle tolerance to accommodate tasks
-    # with irregular output patterns. Note this checks for any prior attempt,
-    # not for output presence — even a failed prior attempt will be present
-    # in `runners_attempted` (e.g. with `success: false, error_type: "error"`).
+    # Returns true when the run has had a prior runner attempt that produced
+    # output (`output_chars > 0`). Used to apply progressive idle timeout:
+    # runs with prior output are treated as proven-productive and receive extra
+    # idle tolerance to accommodate tasks with irregular output patterns.
+    # Runs that cold-started and produced nothing do not receive the bonus,
+    # preserving fast failure for genuinely stalled runs.
     def subsequent_attempt?(agent_run)
-      agent_run.runners_attempted.present?
+      agent_run.runners_attempted.any? { |a| a["output_chars"].to_i > 0 }
     end
 
     # Builds the ordered list of runners to attempt.
@@ -1288,7 +1289,7 @@ module Activities
         per_runner_idle = CREATE_PR_RUNNER_IDLE_TIMEOUTS.fetch(runner, DEFAULT_CREATE_PR_IDLE_TIMEOUT)
         user_idle = user_settings&.create_pr_idle_timeout_seconds
         # Use per-runner tuned defaults unless the user has explicitly customized
-        # the setting to a non-legacy value. Legacy defaults (300, 360) indicate
+        # the setting to a non-legacy value. The legacy default (360) indicates
         # the user has not changed the setting and should receive the new defaults.
         # The retry multiplier only escalates the per-runner tuned defaults;
         # explicit user customizations are honored verbatim so a user who set
@@ -1361,11 +1362,13 @@ module Activities
         end
 
         output_present = stdout.present? || stderr.present?
+        output_chars = stdout.to_s.length + stderr.to_s.length
         track_harness_tokens(agent_run, runner_candidate, runner, user_settings.user, result, execution_started_at)
         agent_run.log!("system", "Agent execution succeeded with #{runner}")
         return {
           pre_agent_sha: pre_agent_sha,
           output_present: output_present,
+          output_chars: output_chars,
           review_threads_already_addressed: review_threads_already_addressed?(stdout: stdout, stderr: stderr, prompt: prompt)
         }
       end
