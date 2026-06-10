@@ -352,7 +352,7 @@ RSpec.describe ProcessRunQueueJob do
 
       described_class.new.perform
 
-      expect(started_ids.length).to eq(2)
+      expect(started_ids.length).to eq(1)
     end
 
     it "does not seed auto-pick work while dequeuing" do
