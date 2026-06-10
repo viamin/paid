@@ -28,8 +28,8 @@ module Models
         tier: "mid"
       },
       {
-        model_id: "claude-opus-4-6",
-        display_name: "Claude Opus 4.6",
+        model_id: "claude-opus-4-7",
+        display_name: "Claude Opus 4.7",
         provider: "anthropic",
         family: "claude-4",
         category: "coding",
@@ -60,35 +60,35 @@ module Models
         tier: "low"
       },
       {
-        model_id: "gpt-4o",
-        display_name: "GPT-4o",
+        model_id: "gpt-5.1",
+        display_name: "GPT-5.1",
         provider: "openai",
-        family: "gpt-4",
+        family: "gpt-5",
         category: "coding",
-        context_window: 128_000,
-        max_output_tokens: 16_384,
-        input_cost_per_million: 2.50,
+        context_window: 400_000,
+        max_output_tokens: 128_000,
+        input_cost_per_million: 1.25,
         output_cost_per_million: 10.0,
         supports_vision: true,
         supports_tools: true,
         supports_json_output: true,
-        capability_score: 8.5,
+        capability_score: 9.0,
         tier: "mid"
       },
       {
-        model_id: "gpt-4o-mini",
-        display_name: "GPT-4o Mini",
+        model_id: "gpt-5-mini",
+        display_name: "GPT-5 Mini",
         provider: "openai",
-        family: "gpt-4",
+        family: "gpt-5",
         category: "general",
-        context_window: 128_000,
-        max_output_tokens: 16_384,
-        input_cost_per_million: 0.15,
-        output_cost_per_million: 0.60,
+        context_window: 400_000,
+        max_output_tokens: 128_000,
+        input_cost_per_million: 0.25,
+        output_cost_per_million: 2.0,
         supports_vision: true,
         supports_tools: true,
         supports_json_output: true,
-        capability_score: 6.5,
+        capability_score: 7.0,
         tier: "low"
       },
       {
@@ -164,44 +164,7 @@ module Models
     end
 
     def registry_models_by_id
-      models = fetch_registry_models
-      return {} unless models
-
-      models.each_with_object({}) do |model, index|
-        next if model.id.blank?
-
-        index[model.id] ||= {}
-        index[model.id][normalized_provider(model.provider)] ||= model
-      end
-    end
-
-    def fetch_registry_models
-      require "ruby_llm"
-
-      RubyLLM.models.refresh!
-      models = Array(RubyLLM.models.all)
-      return models if models.any?
-
-      log_registry_fallback(reason: "empty_registry")
-      nil
-    rescue LoadError, StandardError => e
-      log_registry_fallback(
-        reason: "registry_unavailable",
-        error_class: e.class.name,
-        error_message: e.message
-      )
-      nil
-    end
-
-    def log_registry_fallback(reason:, error_class: nil, error_message: nil)
-      Rails.logger.warn(
-        message: "model_registry.registry_fallback",
-        registry: "ruby_llm",
-        reason: reason,
-        fallback: "known_models",
-        error_class: error_class,
-        error_message: error_message
-      )
+      RegistryModels.fetch.grouped_by_id
     end
 
     def normalized_provider(provider)
