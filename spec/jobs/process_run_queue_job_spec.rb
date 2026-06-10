@@ -312,6 +312,49 @@ RSpec.describe ProcessRunQueueJob do
       expect(queued_run.reload.status).to eq("queued")
     end
 
+    it "never exceeds per-user capacity even when starting multiple queued runs" do
+      project = create(:project)
+      user = project.created_by
+      user.settings.update!(max_concurrent_runs: 4)
+
+      runs = 6.times.map { |i| create(:agent_run, :queued, project: project, created_at: (6 - i).minutes.ago) }
+
+      started_ids = []
+      allow(temporal_client).to receive(:start_workflow) do |_wf, input, **_opts|
+        started_ids << input[:agent_run_id]
+        workflow_handle
+      end
+
+      described_class.new.perform
+
+      expect(started_ids.length).to eq(4)
+      runs.first(4).each { |r| expect(r.reload.temporal_workflow_id).to be_present }
+      runs.last(2).each { |r| expect(r.reload.temporal_workflow_id).to be_nil }
+    end
+
+    it "rechecks capacity from DB after each start and respects concurrent external starts" do
+      project = create(:project)
+      user = project.created_by
+      user.settings.update!(max_concurrent_runs: 2)
+
+      run1 = create(:agent_run, :queued, project: project, created_at: 3.minutes.ago)
+      _run2 = create(:agent_run, :queued, project: project, created_at: 2.minutes.ago)
+      _run3 = create(:agent_run, :queued, project: project, created_at: 1.minute.ago)
+
+      started_ids = []
+      allow(temporal_client).to receive(:start_workflow) do |_wf, input, **_opts|
+        started_ids << input[:agent_run_id]
+        if input[:agent_run_id] == run1.id
+          create(:agent_run, :running, project: project)
+        end
+        workflow_handle
+      end
+
+      described_class.new.perform
+
+      expect(started_ids.length).to eq(1)
+    end
+
     it "does not seed auto-pick work while dequeuing" do
       project = create(:project, auto_pick_enabled: true)
       create(:issue, project: project)

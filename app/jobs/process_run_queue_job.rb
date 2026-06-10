@@ -52,8 +52,6 @@ class ProcessRunQueueJob < ApplicationJob
       blocked_runner_ids = Set.new
       blocked_account_create_pr_ids = Set.new
       started_priority_by_project = {}
-      @user_capacity = {}         # { user_id => { active: count, max: limit } }
-      @account_create_pr_cap = {} # { account_id => { active: count, max: limit } }
 
       loop do
         iterations += 1
@@ -138,8 +136,6 @@ class ProcessRunQueueJob < ApplicationJob
         elsif result
           consecutive_failures = 0
           starts_count += 1
-          record_started_run(user)
-          record_started_create_pr_run(agent_run)
           record_started_project_priority(next_run, started_priority_by_project)
           break if starts_count >= MAX_STARTS_PER_PERFORM
         else
@@ -190,38 +186,12 @@ class ProcessRunQueueJob < ApplicationJob
     Rails.logger.info(payload)
   end
 
-  # Checks per-user capacity using an in-memory cache. The active count
-  # is fetched from the DB on first access per user, then updated
-  # in-memory as runs are started, avoiding repeated COUNT queries.
   def user_has_capacity?(user)
-    cap = @user_capacity[user.id] ||= {
-      active: AgentRun.active_count_for_user(user),
-      max: user.account.tenant_max_concurrent_runs(user.settings.max_concurrent_runs)
-    }
-    cap[:active] < cap[:max]
+    AgentRun.active_count_for_user(user) < user.account.tenant_max_concurrent_runs(user.settings.max_concurrent_runs)
   end
 
-  # Updates the in-memory capacity tracker after a run is started.
-  def record_started_run(user)
-    cap = @user_capacity[user.id]
-    cap[:active] += 1 if cap
-  end
-
-  # Updates the in-memory account create_pr capacity tracker after a run is started.
-  def record_started_create_pr_run(agent_run)
-    return unless agent_run.goal == "create_pr"
-
-    cap = @account_create_pr_cap[agent_run.project.account_id]
-    cap[:active] += 1 if cap
-  end
-
-  # Checks account-level create_pr capacity using an in-memory cache.
   def account_has_create_pr_capacity?(account)
-    cap = @account_create_pr_cap[account.id] ||= {
-      active: AgentRun.active_create_pr_count_for_account(account),
-      max: account.tenant_max_concurrent_create_pr_runs
-    }
-    cap[:active] < cap[:max]
+    AgentRun.active_create_pr_count_for_account(account) < account.tenant_max_concurrent_create_pr_runs
   end
 
   def record_started_project_priority(agent_run, started_priority_by_project)
