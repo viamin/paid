@@ -25,7 +25,7 @@ module Models
     CLI_VERSION_OUTDATED = :cli_version_outdated
 
     ANSI_ESCAPE = /\e\[[0-9;]*m/
-    MODEL_NOT_FOUND_PATTERNS = [ /ProviderModelNotFoundError/i, /Model not found:/i ].freeze
+    MODEL_NOT_FOUND_PATTERNS = Activities::RunAgentActivity::MODEL_NOT_FOUND_PATTERNS
     CLI_VERSION_PATTERN = /requires a newer version of/i
 
     def self.call(...)
