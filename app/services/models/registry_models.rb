@@ -64,8 +64,12 @@ module Models
       end
     end
 
-    def normalized_provider(provider)
+    def self.normalized_provider(provider)
       REGISTRY_PROVIDER_ALIASES.fetch(provider.to_s, provider.to_s)
+    end
+
+    def normalized_provider(provider)
+      self.class.normalized_provider(provider)
     end
 
     private

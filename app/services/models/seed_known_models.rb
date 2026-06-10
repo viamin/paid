@@ -4,9 +4,6 @@ module Models
   # Seeds LlmModel records from the RubyLLM registry, falling back to the
   # app snapshot for app-owned defaults and registry failures.
   class SeedKnownModels
-    REGISTRY_PROVIDER_ALIASES = {
-      "gemini" => "google"
-    }.freeze
     TOOL_CAPABILITIES = %w[function_calling tools].freeze
     JSON_OUTPUT_CAPABILITIES = %w[structured_output json_output].freeze
 
@@ -168,7 +165,7 @@ module Models
     end
 
     def normalized_provider(provider)
-      REGISTRY_PROVIDER_ALIASES.fetch(provider.to_s, provider.to_s)
+      RegistryModels.normalized_provider(provider)
     end
 
     def pricing_for(model, field)
