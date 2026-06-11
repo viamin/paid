@@ -70,7 +70,8 @@ class ModelHealthCheckJob < ApplicationJob
     repo_full_name = account.tenant_setting&.self_repo_full_name.presence || ENV["PAID_REPO_FULL_NAME"]
     return if repo_full_name.blank?
 
-    project = account.projects.detect { |candidate| candidate.full_name.casecmp?(repo_full_name) }
+    owner, repo = repo_full_name.split("/", 2)
+    project = account.projects.find_by("LOWER(owner) = ? AND LOWER(repo) = ?", owner&.downcase, repo&.downcase)
     return unless project&.github_credential_present?
 
     project
