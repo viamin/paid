@@ -96,12 +96,12 @@ RSpec.describe Models::FileModelHealthIssue do
     result = described_class.call(project: project, drift: drift_result, broken: broken_result, client: client)
 
     expect(result.action).to eq(:commented)
-    expect(client).to have_received(:add_comment).with("viamin/paid", 7, kind_of(String))
-    # Body is rewritten with the current fingerprint so the next run dedups
-    # instead of commenting again.
     new_fp = Digest::SHA256.hexdigest("drift-fp|broken-fp")
+    # Body update must land before the notification comment so that a transient
+    # comment-post failure doesn't leave a stale fingerprint (duplicate loop).
     expect(client).to have_received(:update_issue).with(
       "viamin/paid", 7, body: include("model-health-fingerprint: #{new_fp}")
-    )
+    ).ordered
+    expect(client).to have_received(:add_comment).with("viamin/paid", 7, kind_of(String)).ordered
   end
 end

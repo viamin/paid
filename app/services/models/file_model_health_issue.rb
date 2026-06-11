@@ -57,11 +57,12 @@ module Models
     end
 
     def comment_on(issue)
-      @client.add_comment(@project.full_name, issue.number, comment_body)
-      # Refresh the body so its fingerprint marker reflects the latest findings.
-      # Without this the marker stays pinned to the original finding set and
-      # every subsequent run re-detects a mismatch and comments again forever.
+      # Update the body (and its fingerprint marker) before posting the
+      # notification comment.  If the comment post fails after the body update
+      # succeeds, the next run sees the correct fingerprint and skips — no
+      # duplicate-comment loop.
       @client.update_issue(@project.full_name, issue.number, body: issue_body)
+      @client.add_comment(@project.full_name, issue.number, comment_body)
       log(:commented, issue_number: issue.number)
       Result.new(action: :commented, issue: issue)
     rescue GithubClient::Error => e
