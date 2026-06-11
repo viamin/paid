@@ -72,7 +72,6 @@ module Notifications
           indexed[progress_state_key(issue_id)] = PullRequests::ProgressState::Result.new(
             consecutive_unsuccessful_automatic_runs: entry[:consecutive_unsuccessful_automatic_runs] || entry["consecutive_unsuccessful_automatic_runs"] || 0,
             consecutive_operational_failures: entry[:consecutive_operational_failures] || entry["consecutive_operational_failures"] || 0,
-            consecutive_provider_transient_outages: entry[:consecutive_provider_transient_outages] || entry["consecutive_provider_transient_outages"] || 0,
             last_meaningful_progress_at: entry[:last_meaningful_progress_at] || entry["last_meaningful_progress_at"],
             latest_automatic_run_at: entry[:latest_automatic_run_at] || entry["latest_automatic_run_at"],
             latest_unsuccessful_run_at: entry[:latest_unsuccessful_run_at] || entry["latest_unsuccessful_run_at"],
