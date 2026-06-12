@@ -142,4 +142,39 @@ module DashboardHelper
         "ring-1 ring-inset ring-gray-300 hover:bg-gray-50 shadow-sm"
     end
   end
+
+  def chart_tooltip_after_body(data)
+    merged_counts = data[:merged_counts]
+    proc do |context|
+      raw_date = context[:label]
+      date = Date.parse(raw_date) rescue nil
+      return "" unless date
+
+      count = merged_counts[date] || 0
+      "Merged PRs: #{count}"
+    end
+  end
+
+  def chart_annotations(data)
+    annotations = {}
+    data[:outlier_annotations].each_with_index do |(date, count), _index|
+      annotations["outlier_#{date}"] = {
+        type: "line",
+        xMin: date.to_s,
+        xMax: date.to_s,
+        borderColor: "rgba(245, 158, 11, 0.3)",
+        borderWidth: 1,
+        borderDash: [ 4, 4 ],
+        label: {
+          display: true,
+          content: "#{count} outlier#{count > 1 ? "s" : ""}",
+          position: "start",
+          backgroundColor: "rgba(245, 158, 11, 0.8)",
+          color: "#fff",
+          font: { size: 10 }
+        }
+      }
+    end
+    annotations
+  end
 end
