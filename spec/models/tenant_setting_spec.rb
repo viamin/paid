@@ -220,7 +220,7 @@ RSpec.describe TenantSetting do
     it "validates integer keys are between 1 and 100" do
       setting = build(:tenant_setting, worker_settings: { "temporal_workflow_slots" => 0 })
       expect(setting).not_to be_valid
-      expect(setting.errors[:worker_settings]).to include(match(/must be an integer between 1 and 100/))
+      expect(setting.errors[:worker_settings]).to include(include('must be an integer between 1 and 100'))
     end
 
     it "validates integer keys do not exceed 100" do
@@ -231,7 +231,7 @@ RSpec.describe TenantSetting do
     it "validates good_job_queues format" do
       setting = build(:tenant_setting, worker_settings: { "good_job_queues" => "invalid" })
       expect(setting).not_to be_valid
-      expect(setting.errors[:worker_settings]).to include(match(/good_job_queues must match format/))
+      expect(setting.errors[:worker_settings]).to include(include('good_job_queues must match format'))
     end
 
     it "accepts valid good_job_queues" do
@@ -270,7 +270,7 @@ RSpec.describe TenantSetting do
     it "rejects invalid format" do
       setting = build(:tenant_setting, self_repo_full_name: "not-a-repo-format")
       expect(setting).not_to be_valid
-      expect(setting.errors[:self_repo_full_name]).to include(match(/must be in owner\/repo format/))
+      expect(setting.errors[:self_repo_full_name]).to include(include('must be in owner/repo format'))
     end
   end
 
@@ -341,10 +341,10 @@ RSpec.describe TenantSetting do
       }
 
       expect(setting).not_to be_valid
-      expect(setting.errors[:features]).to include(match(/deployment_assurance\.deployment_model/))
-      expect(setting.errors[:features]).to include(match(/deployment_assurance\.tenant_isolation/))
-      expect(setting.errors[:features]).to include(match(/deployment_assurance\.release_management\.upgrade_channel/))
-      expect(setting.errors[:features]).to include(match(/deployment_assurance\.release_management\.support_window_days/))
+      expect(setting.errors[:features]).to include(include('deployment_assurance.deployment_model'))
+      expect(setting.errors[:features]).to include(include('deployment_assurance.tenant_isolation'))
+      expect(setting.errors[:features]).to include(include('deployment_assurance.release_management.upgrade_channel'))
+      expect(setting.errors[:features]).to include(include('deployment_assurance.release_management.support_window_days'))
     end
   end
 

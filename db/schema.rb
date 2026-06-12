@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_12_054945) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_12_225831) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1788,6 +1788,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_12_054945) do
     t.boolean "open_source", default: false, null: false, comment: "Whether the project is open source (affects mutation test --usage flag)."
     t.string "owner", null: false
     t.string "owner_reviewer_login"
+    t.boolean "paused", default: false, null: false, comment: "When true, queued automatic agent runs for this project will not be started. Manual runs are unaffected."
     t.integer "plan_review_timeout_hours", default: 24, null: false, comment: "Maximum hours to wait for plan review approval before auto-approving."
     t.integer "poll_interval_seconds", default: 60, null: false
     t.jsonb "pr_action_labels", default: [], null: false

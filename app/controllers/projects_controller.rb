@@ -3,7 +3,7 @@
 class ProjectsController < ApplicationController
   include AuditLogging
 
-  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :toggle_auto_merge, :quality_resume, :detect_services, :detect_screenshot_settings, :commit_screenshot_config, :ensure_labels, :cleanup_stale_runs ]
+  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :toggle_auto_merge, :toggle_pause, :quality_resume, :detect_services, :detect_screenshot_settings, :commit_screenshot_config, :ensure_labels, :cleanup_stale_runs ]
   skip_after_action :verify_authorized, only: :index
 
   NULLS_LAST_SORT_ATTRIBUTES = %w[last_agent_run_at last_github_activity_at].freeze
@@ -195,6 +195,26 @@ class ProjectsController < ApplicationController
         render turbo_stream: turbo_stream.replace(
           ActionView::RecordIdentifier.dom_id(@project, :auto_merge_toggle),
           partial: "projects/auto_merge_toggle_index",
+          locals: { project: @project }
+        )
+      end
+      format.html { redirect_to @project }
+    end
+  end
+
+  def toggle_pause
+    authorize @project, :update?
+    if @project.paused?
+      @project.unpause!
+    else
+      @project.pause!
+    end
+
+    respond_to do |format|
+      format.turbo_stream do
+        render turbo_stream: turbo_stream.replace(
+          ActionView::RecordIdentifier.dom_id(@project, :pause_toggle),
+          partial: "projects/pause_toggle",
           locals: { project: @project }
         )
       end
