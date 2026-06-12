@@ -92,8 +92,10 @@ module Activities
     # Only applied for create_pr goals where the data supports longer windows.
     # Other goals (review, issue) retain the original idle-timeout-based
     # startup behavior since they have not shown the same timeout pathology.
+    # Keyed by canonical runner_key (matching Runner#runner_key / AGENT_TYPE_TO_RUNNER
+    # values) so lookups work for both primary and fallback runners without aliases.
     CREATE_PR_RUNNER_STARTUP_TIMEOUTS = {
-      "claude_code" => 1800, # 30 min — p90 of completed is 28.5 min
+      "claude"      => 1800, # 30 min — p90 of completed is 28.5 min
       "codex"       => 2700, # 45 min — p90 of completed is 42.6 min
       "kilocode"    => 2400, # 40 min — p90 of completed is 38.7 min
       "opencode"    => 3000, # 50 min — p90 of completed is 48.2 min
@@ -893,7 +895,7 @@ module Activities
 
     def effective_startup_timeout(runner_key:, heartbeat:, effective_idle_timeout:, effective_timeout:, create_pr_goal:)
       startup_base = if create_pr_goal
-        CREATE_PR_RUNNER_STARTUP_TIMEOUTS.fetch(runner_key, DEFAULT_AGENT_STARTUP_TIMEOUT)
+        CREATE_PR_RUNNER_STARTUP_TIMEOUTS.fetch(canonical_runner(runner_key), DEFAULT_AGENT_STARTUP_TIMEOUT)
       else
         heartbeat.idle_timeout_for(effective_idle_timeout) ||
           effective_idle_timeout ||
