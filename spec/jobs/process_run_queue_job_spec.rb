@@ -161,6 +161,97 @@ RSpec.describe ProcessRunQueueJob do
       expect(p1_run.reload.temporal_workflow_id).to be_nil
     end
 
+    it "does not start lower-priority work while higher-priority work from the same project is running" do
+      project = create(:project)
+      user = project.created_by
+      user.settings.update!(max_concurrent_runs: 10)
+
+      3.times do |i|
+        p1_issue = create(:issue, project: project, github_number: 100 + i, labels: [ "P1" ])
+        create(:agent_run, :running, project: project, trigger_type: "automatic", issue: p1_issue)
+      end
+      p2_issue = create(:issue, project: project, github_number: 200, labels: [ "P2" ])
+      p2_run = create(:agent_run, :queued, project: project, trigger_type: "automatic", issue: p2_issue)
+
+      expect(temporal_client).not_to receive(:start_workflow)
+
+      described_class.new.perform
+
+      expect(p2_run.reload.temporal_workflow_id).to be_nil
+    end
+
+    it "does not let paused or completed higher-priority work block lower-priority work" do
+      project = create(:project)
+      user = project.created_by
+      user.settings.update!(max_concurrent_runs: 10)
+
+      # A P1 blocked/paused (e.g. quality pause or awaiting input) and a P1
+      # whose run already finished (PR now sitting in review) are not in
+      # flight, so neither should preempt runnable lower-priority work.
+      paused_p1 = create(:issue, project: project, github_number: 1, labels: [ "P1" ])
+      create(:agent_run, :paused, project: project, trigger_type: "automatic", issue: paused_p1)
+      done_p1 = create(:issue, project: project, github_number: 2, labels: [ "P1" ])
+      create(:agent_run, :completed, project: project, trigger_type: "automatic", issue: done_p1)
+
+      p2_issue = create(:issue, project: project, github_number: 3, labels: [ "P2" ])
+      p2_run = create(:agent_run, :queued, project: project, trigger_type: "automatic", issue: p2_issue)
+
+      expect(temporal_client).to receive(:start_workflow).with(
+        Workflows::AgentExecutionWorkflow,
+        hash_including(agent_run_id: p2_run.id),
+        hash_including(task_queue: "paid-agent-tasks")
+      ).and_return(workflow_handle)
+
+      described_class.new.perform
+
+      expect(p2_run.reload.temporal_workflow_id).to be_present
+    end
+
+    it "lets a queued run start when only lower-priority work is in flight" do
+      project = create(:project)
+      user = project.created_by
+      user.settings.update!(max_concurrent_runs: 10)
+
+      # A lower-priority auto-pick run is in flight; it must not block higher-priority queued work.
+      create(:agent_run, :running, project: project, trigger_type: "automatic")
+      p2_issue = create(:issue, project: project, github_number: 200, labels: [ "P2" ])
+      p2_run = create(:agent_run, :queued, project: project, trigger_type: "automatic", issue: p2_issue)
+
+      expect(temporal_client).to receive(:start_workflow).with(
+        Workflows::AgentExecutionWorkflow,
+        hash_including(agent_run_id: p2_run.id),
+        hash_including(task_queue: "paid-agent-tasks")
+      ).and_return(workflow_handle)
+
+      described_class.new.perform
+
+      expect(p2_run.reload.temporal_workflow_id).to be_present
+    end
+
+    it "does not block equal-priority queued work (a running P1 allows another queued P1 to start)" do
+      project = create(:project)
+      user = project.created_by
+      user.settings.update!(max_concurrent_runs: 10)
+
+      # The guard blocks only STRICTLY higher-priority in-flight work (`<`), so
+      # a second P1 must still be allowed to start alongside a running P1 —
+      # otherwise a project could never run two same-tier items concurrently.
+      running_p1 = create(:issue, project: project, github_number: 10, labels: [ "P1" ])
+      create(:agent_run, :running, project: project, trigger_type: "automatic", issue: running_p1)
+      queued_p1 = create(:issue, project: project, github_number: 11, labels: [ "P1" ])
+      p1_run = create(:agent_run, :queued, project: project, trigger_type: "automatic", issue: queued_p1)
+
+      expect(temporal_client).to receive(:start_workflow).with(
+        Workflows::AgentExecutionWorkflow,
+        hash_including(agent_run_id: p1_run.id),
+        hash_including(task_queue: "paid-agent-tasks")
+      ).and_return(workflow_handle)
+
+      described_class.new.perform
+
+      expect(p1_run.reload.temporal_workflow_id).to be_present
+    end
+
     it "marks run as failed and continues when workflow start fails" do
       failing_run = create(:agent_run, :queued, created_at: 2.minutes.ago)
       good_run = create(:agent_run, :queued, created_at: 1.minute.ago)
