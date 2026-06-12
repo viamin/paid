@@ -130,11 +130,6 @@ module Activities
     # values are honored verbatim with no escalation.
     RETRY_IDLE_TIMEOUT_MULTIPLIER = 1.5
 
-    # Legacy create_pr idle timeout defaults that indicate the user has not
-    # explicitly customized the setting. Per-runner tuned constants take
-    # precedence over these legacy defaults to deliver improved behavior.
-    LEGACY_CREATE_PR_IDLE_TIMEOUT_DEFAULTS = [ 360 ].freeze
-
     PREFLIGHT_TIMEOUT_SECONDS = 10
     DIRECT_OUTBOUND_PREFLIGHT_TIMEOUT_SECONDS = 30
     PREFLIGHT_TIMEOUT_CIRCUIT_BREAKER_THRESHOLD = 3
@@ -447,6 +442,7 @@ module Activities
               error_type: "timeout",
               error_message: e.message,
               duration_seconds: attempt_duration,
+              output_chars: e.output_chars,
               diagnostics: e.diagnostics,
               **resolved_run_info
             )
@@ -678,11 +674,12 @@ module Activities
     class RunnerInfraExecutionError < RunnerExecutionError; end
     ProviderExecutionError = RunnerExecutionError
     class RunnerTimeoutError < StandardError
-      attr_reader :timeout_type, :diagnostics
+      attr_reader :timeout_type, :diagnostics, :output_chars
 
-      def initialize(message, timeout_type: nil, diagnostics: {})
+      def initialize(message, timeout_type: nil, diagnostics: {}, output_chars: 0)
         @timeout_type = timeout_type
         @diagnostics = diagnostics
+        @output_chars = output_chars
         super(message)
       end
     end
@@ -950,7 +947,7 @@ module Activities
     # idle tolerance to accommodate tasks with irregular output patterns.
     # Runs that cold-started and produced nothing do not receive the bonus,
     # preserving fast failure for genuinely stalled runs.
-    def subsequent_attempt?(agent_run)
+    def prior_attempt_with_output?(agent_run)
       agent_run.runners_attempted.any? { |a| a["output_chars"].to_i > 0 }
     end
 
@@ -1288,16 +1285,13 @@ module Activities
       elsif agent_run.create_pr_goal?
         per_runner_idle = CREATE_PR_RUNNER_IDLE_TIMEOUTS.fetch(runner, DEFAULT_CREATE_PR_IDLE_TIMEOUT)
         user_idle = user_settings&.create_pr_idle_timeout_seconds
-        # Use per-runner tuned defaults unless the user has explicitly customized
-        # the setting to a non-legacy value. The legacy default (360) indicates
-        # the user has not changed the setting and should receive the new defaults.
-        # The retry multiplier only escalates the per-runner tuned defaults;
-        # explicit user customizations are honored verbatim so a user who set
-        # e.g. `create_pr_idle_timeout_seconds: 420` continues to get 420 on
-        # every attempt, with no silent opt-out.
-        if user_idle.nil? || LEGACY_CREATE_PR_IDLE_TIMEOUT_DEFAULTS.include?(user_idle)
+        # nil means the user has not customized the setting; use per-runner
+        # tuned defaults with optional progressive escalation.
+        # Any non-nil value is an explicit user choice and is honored verbatim
+        # (no multiplier applied), including a deliberate 360 s selection.
+        if user_idle.nil?
           base_idle = per_runner_idle
-          subsequent_attempt?(agent_run) ? (base_idle * RETRY_IDLE_TIMEOUT_MULTIPLIER).ceil : base_idle
+          prior_attempt_with_output?(agent_run) ? (base_idle * RETRY_IDLE_TIMEOUT_MULTIPLIER).ceil : base_idle
         else
           user_idle
         end
@@ -1421,6 +1415,7 @@ module Activities
       raise RunnerTimeoutError.new(
         "#{timeout_type}_timeout: #{e.message}",
         timeout_type: timeout_type,
+        output_chars: timeout_output.length,
         diagnostics: timeout_attempt_diagnostics(
           timeout_error: e,
           timeout_type: timeout_type,

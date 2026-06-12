@@ -3458,7 +3458,7 @@ expect(container_service).to receive(:execute).with(
         activity.execute(agent_run_id: agent_run.id)
       end
 
-      it "uses explicit user idle timeout when customized to a non-legacy value" do
+      it "uses explicit user idle timeout when customized to a non-nil value" do
         agent_run.update!(agent_type: "codex")
         project.update!(max_execution_seconds: 86_400)
         user.settings.update!(create_pr_idle_timeout_seconds: 420)
@@ -3519,7 +3519,7 @@ expect(container_service).to receive(:execute).with(
           anything,
           hash_including(
             timeout: AGENT_TIMEOUT_DEFAULT,
-            startup_timeout: described_class::CREATE_PR_RUNNER_STARTUP_TIMEOUTS["claude_code"],
+            startup_timeout: described_class::CREATE_PR_RUNNER_STARTUP_TIMEOUTS["claude"],
             idle_timeout: expected_idle
           )
         ).and_return(exec_success)
@@ -3537,7 +3537,7 @@ expect(container_service).to receive(:execute).with(
           anything,
           hash_including(
             timeout: AGENT_TIMEOUT_DEFAULT,
-            startup_timeout: described_class::CREATE_PR_RUNNER_STARTUP_TIMEOUTS["claude_code"],
+            startup_timeout: described_class::CREATE_PR_RUNNER_STARTUP_TIMEOUTS["claude"],
             idle_timeout: described_class::CREATE_PR_RUNNER_IDLE_TIMEOUTS["claude_code"]
           )
         ).and_return(exec_success)

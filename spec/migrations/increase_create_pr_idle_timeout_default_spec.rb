@@ -2,6 +2,7 @@
 
 require "rails_helper"
 require Rails.root.join("db/migrate/20260514193654_increase_create_pr_idle_timeout_default")
+require Rails.root.join("db/migrate/20260612222959_make_create_pr_idle_timeout_seconds_nullable")
 
 RSpec.describe IncreaseCreatePrIdleTimeoutDefault, :aggregate_failures do
   self.use_transactional_tests = false
@@ -19,6 +20,10 @@ RSpec.describe IncreaseCreatePrIdleTimeoutDefault, :aggregate_failures do
     example.run
   ensure
     migration.migrate(:up)
+    # Re-apply the subsequent nullable migration so the column is left in the
+    # correct fully-migrated state (nil default, nullable) regardless of test
+    # execution order.
+    MakeCreatePrIdleTimeoutSecondsNullable.new.migrate(:up)
     UserSetting.reset_column_information
     truncate_migration_test_data
   end
