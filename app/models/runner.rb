@@ -166,6 +166,7 @@ class Runner < ApplicationRecord
   validate :tier_model_ids_must_be_valid
   validate :tier_models_must_be_valid
   validate :complexity_thresholds_must_be_valid
+  validate :no_progress_thresholds_must_be_valid
   validate :agent_co_author_trailer_is_single_line
 
   before_destroy :prevent_destroying_last_agent_run_runner
@@ -1117,6 +1118,31 @@ class Runner < ApplicationRecord
     return if effective_low_max < effective_mid_max
 
     errors.add(:complexity_thresholds, "low_max must be less than mid_max")
+  end
+
+  def no_progress_thresholds_must_be_valid
+    return if no_progress_thresholds.blank?
+
+    unless no_progress_thresholds.is_a?(Hash)
+      errors.add(:no_progress_thresholds, "must be a hash of threshold keys to positive integers")
+      return
+    end
+
+    invalid_keys = no_progress_thresholds.keys.map(&:to_s) - NO_PROGRESS_THRESHOLD_KEYS
+    if invalid_keys.any?
+      errors.add(:no_progress_thresholds, "contains unknown key(s): #{invalid_keys.join(', ')}")
+      return
+    end
+
+    NO_PROGRESS_THRESHOLD_KEYS.each do |key|
+      raw = no_progress_thresholds[key] || no_progress_thresholds[key.to_sym]
+      next if raw.nil?
+
+      value = Integer(raw, exception: false)
+      unless value&.positive?
+        errors.add(:no_progress_thresholds, "#{key} must be a positive integer")
+      end
+    end
   end
 
   def normalize_tier_models(value)
