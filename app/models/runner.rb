@@ -27,6 +27,12 @@ class Runner < ApplicationRecord
   # complexity <= low_max => "low", <= mid_max => "mid", else "high".
   DEFAULT_COMPLEXITY_THRESHOLDS = { "low_max" => 3, "mid_max" => 7 }.freeze
   COMPLEXITY_THRESHOLD_KEYS = %w[low_max mid_max].freeze
+  # Default thresholds for output-token-based no-progress early termination.
+  # A run is considered stuck when it has consumed >= min_input_tokens but
+  # produced < max_output_tokens. These can be overridden per-runner via
+  # the no_progress_thresholds column.
+  DEFAULT_NO_PROGRESS_THRESHOLDS = { "min_input_tokens" => 100_000, "max_output_tokens" => 100 }.freeze
+  NO_PROGRESS_THRESHOLD_KEYS = %w[min_input_tokens max_output_tokens].freeze
   # Upstream API providers supported by direct-outbound CLI tools (OpenCode,
   # KiloCode). Each entry maps a slug to its base URL and the ProviderApiKey
   # service type required for authentication.
@@ -160,6 +166,7 @@ class Runner < ApplicationRecord
   validate :tier_model_ids_must_be_valid
   validate :tier_models_must_be_valid
   validate :complexity_thresholds_must_be_valid
+  validate :no_progress_thresholds_must_be_valid
   validate :agent_co_author_trailer_is_single_line
 
   before_destroy :prevent_destroying_last_agent_run_runner
@@ -219,6 +226,15 @@ class Runner < ApplicationRecord
   def effective_complexity_thresholds
     stored = complexity_thresholds.is_a?(Hash) ? complexity_thresholds : {}
     DEFAULT_COMPLEXITY_THRESHOLDS.merge(stored.slice(*COMPLEXITY_THRESHOLD_KEYS))
+      .transform_values { |v| Integer(v, exception: false) || v }
+  end
+
+  # Returns a merged hash of no-progress thresholds (stored values overlaid on
+  # defaults) so callers can read concrete token limits without re-checking for
+  # missing keys. Integers are coerced so JSONB round-trips don't leak strings.
+  def effective_no_progress_thresholds
+    stored = no_progress_thresholds.is_a?(Hash) ? no_progress_thresholds : {}
+    DEFAULT_NO_PROGRESS_THRESHOLDS.merge(stored.slice(*NO_PROGRESS_THRESHOLD_KEYS))
       .transform_values { |v| Integer(v, exception: false) || v }
   end
 
@@ -1102,6 +1118,31 @@ class Runner < ApplicationRecord
     return if effective_low_max < effective_mid_max
 
     errors.add(:complexity_thresholds, "low_max must be less than mid_max")
+  end
+
+  def no_progress_thresholds_must_be_valid
+    return if no_progress_thresholds.blank?
+
+    unless no_progress_thresholds.is_a?(Hash)
+      errors.add(:no_progress_thresholds, "must be a hash of threshold keys to positive integers")
+      return
+    end
+
+    invalid_keys = no_progress_thresholds.keys.map(&:to_s) - NO_PROGRESS_THRESHOLD_KEYS
+    if invalid_keys.any?
+      errors.add(:no_progress_thresholds, "contains unknown key(s): #{invalid_keys.join(', ')}")
+      return
+    end
+
+    NO_PROGRESS_THRESHOLD_KEYS.each do |key|
+      raw = no_progress_thresholds[key] || no_progress_thresholds[key.to_sym]
+      next if raw.nil?
+
+      value = Integer(raw, exception: false)
+      unless value&.positive?
+        errors.add(:no_progress_thresholds, "#{key} must be a positive integer")
+      end
+    end
   end
 
   def normalize_tier_models(value)

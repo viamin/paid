@@ -66,6 +66,7 @@ class TokenUsageTracker
     #    run inside a transaction — a failure won't roll back recorded usage
     if enforce_guardrails && update_aggregates && tracked_run.is_a?(AgentRun)
       enforce_token_limit(tracked_run, hard_limit: resolved_hard_limit)
+      enforce_no_progress(tracked_run)
       enforce_hard_stop_budgets(tracked_run) if cost_cents.positive?
     end
 
@@ -285,6 +286,47 @@ class TokenUsageTracker
     )
   end
   private_class_method :enforce_token_limit
+
+  # Terminates runs that have consumed significant input tokens but produced
+  # near-zero output — a strong signal the run will never complete.
+  # Uses per-runner configurable thresholds (default: 100K input / 100 output).
+  def self.enforce_no_progress(agent_run)
+    return unless AgentRun.where(id: agent_run.id, status: "running").exists?
+
+    runner = agent_run.runner
+    thresholds = runner&.effective_no_progress_thresholds || Runner::DEFAULT_NO_PROGRESS_THRESHOLDS
+    min_input_tokens = thresholds["min_input_tokens"]
+    max_output_tokens = thresholds["max_output_tokens"]
+
+    tokens_input = agent_run.tokens_input
+    tokens_output = agent_run.tokens_output
+
+    return if tokens_input < min_input_tokens
+    return unless tokens_output < max_output_tokens
+
+    Rails.logger.warn(
+      message: "agent_execution.no_progress_detected",
+      agent_run_id: agent_run.id,
+      tokens_input: tokens_input,
+      tokens_output: tokens_output,
+      min_input_tokens: min_input_tokens,
+      max_output_tokens: max_output_tokens
+    )
+
+    Guardrails::ViolationHandler.call(
+      agent_run: agent_run,
+      violation_type: "no_progress",
+      details: "Run consumed #{tokens_input} input tokens but produced only #{tokens_output} output tokens " \
+               "(threshold: <#{max_output_tokens} output after >#{min_input_tokens} input)",
+      metrics: {
+        tokens_input: tokens_input,
+        tokens_output: tokens_output,
+        min_input_tokens: min_input_tokens,
+        max_output_tokens: max_output_tokens
+      }
+    )
+  end
+  private_class_method :enforce_no_progress
 
   # Checks hard_stop budgets after recording usage. If any budget is
   # exceeded, cancels the running agent to enforce the cost limit.
