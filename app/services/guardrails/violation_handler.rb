@@ -20,7 +20,7 @@ module Guardrails
 
     # Violation types where no human intervention is expected — the run should
     # transition directly to a terminal state instead of pausing.
-    TERMINAL_VIOLATION_TYPES = %w[time_limit token_limit cost_limit].freeze
+    TERMINAL_VIOLATION_TYPES = %w[time_limit token_limit cost_limit no_progress].freeze
 
     def self.call(...)
       new(...).call
@@ -133,6 +133,9 @@ module Guardrails
         "Execution time has exceeded the configured limit. The agent may need more time or the task may be too complex."
       when "anomaly"
         "Unusual behavior detected. Review agent metrics and output for unexpected patterns."
+      when "no_progress"
+        "The run consumed significant input tokens without producing meaningful output. " \
+          "Review agent configuration and check for prompt or context issues that prevent the agent from generating a response."
       end
     end
 

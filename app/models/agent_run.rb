@@ -115,7 +115,7 @@ class AgentRun < ApplicationRecord
     )
   end
   UNFINISHED_STATUSES = %w[queued running paused].freeze
-  GUARDRAIL_VIOLATION_TYPES = %w[loop_detected token_limit cost_limit time_limit anomaly].freeze
+  GUARDRAIL_VIOLATION_TYPES = %w[loop_detected token_limit cost_limit time_limit anomaly no_progress].freeze
   AUTO_PICK_BLOCKING_STATUSES = UNFINISHED_STATUSES
   TOKEN_LIMIT_STATUSES = %w[ok warning exceeded].freeze
   DEFAULT_MAX_TOKENS_PER_RUN = 10_000_000
@@ -1166,6 +1166,16 @@ class AgentRun < ApplicationRecord
         "#{PROJECT_ACTIVE_COUNT_EXPR_SQL} AS project_active_count",
         "COALESCE(user_active_counts.user_active_count, 0) AS user_active_count"
       )
+  }
+
+  # Scope over in-flight runs (running + claimed-queued) exposing the same
+  # queue_priority expression as queued_with_priority via QUEUE_LATERAL_JOIN.
+  # Used by the queue processor to keep a lower-priority run from starting
+  # while a higher-priority run for the same project is still in flight —
+  # whether merely claimed or already running. No fair-share CTEs are joined
+  # because callers filter on queue_priority alone (not the full QUEUE_ORDER).
+  scope :inflight_with_priority, -> {
+    capacity_inflight.joins(QUEUE_LATERAL_JOIN)
   }
 
   def self.project_active_counts_cte
