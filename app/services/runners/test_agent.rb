@@ -306,7 +306,7 @@ module Runners
           error_type: error_type,
           message: translated_message.presence || display_message
         )
-      elsif harness_error_type.present? && (!smoke_test_output_success?(output) || !smoke_test_output_success?(message))
+      elsif harness_error_type.present? && ((output.present? && !smoke_test_output_success?(output)) || !smoke_test_output_success?(message))
         translated_message = translate_and_extract_error(failure_message)
 
         Result.new(
