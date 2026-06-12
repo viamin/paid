@@ -103,6 +103,37 @@ RSpec.describe Runner do
       end
     end
 
+    describe "#effective_no_progress_thresholds" do
+      let(:runner) { build(:runner) }
+
+      it "returns the defaults when no overrides are stored" do
+        expect(runner.effective_no_progress_thresholds).to eq(
+          "min_input_tokens" => 100_000,
+          "max_output_tokens" => 100
+        )
+      end
+
+      it "overlays stored overrides on top of defaults" do
+        runner.no_progress_thresholds = { "min_input_tokens" => 200_000 }
+        expect(runner.effective_no_progress_thresholds).to eq(
+          "min_input_tokens" => 200_000,
+          "max_output_tokens" => 100
+        )
+      end
+
+      it "coerces string values from JSONB round-trips to integers" do
+        runner.no_progress_thresholds = { "min_input_tokens" => "50000", "max_output_tokens" => "20" }
+        result = runner.effective_no_progress_thresholds
+        expect(result["min_input_tokens"]).to eq(50_000)
+        expect(result["max_output_tokens"]).to eq(20)
+      end
+
+      it "ignores unrecognized keys" do
+        runner.no_progress_thresholds = { "min_input_tokens" => 50_000, "unknown_key" => 999 }
+        expect(runner.effective_no_progress_thresholds).not_to have_key("unknown_key")
+      end
+    end
+
     describe "tier_model_ids" do
       let(:runner) { build(:runner, runner_key: "cursor") }
 
