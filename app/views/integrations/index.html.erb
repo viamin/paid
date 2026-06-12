@@ -26,7 +26,7 @@
             </p>
           </div>
         </div>
-        <div class="flex flex-col gap-3 sm:flex-row" onclick="event.stopPropagation()">
+        <div class="flex flex-col gap-3 sm:flex-row" data-controller="stop-propagation" data-action="click->stop-propagation#stop">
           <%= link_to "Install paid-agents", Github::AppRegistry.install_url,
             class: "inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500",
             target: "_blank", rel: "noopener noreferrer" %>
