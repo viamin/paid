@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_09_014405) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_12_054945) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2075,6 +2075,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_09_014405) do
     t.bigint "integration_credential_id"
     t.jsonb "log_data"
     t.string "name", limit: 100, default: "", null: false
+    t.jsonb "no_progress_thresholds", default: {"min_input_tokens" => 100000, "max_output_tokens" => 100}, null: false, comment: "Per-runner thresholds for no-progress early termination. min_input_tokens: minimum input tokens consumed before checking; max_output_tokens: maximum output tokens that qualifies as no progress."
     t.bigint "provider_api_key_id"
     t.string "provider_key", limit: 50
     t.string "runner_key", limit: 50, null: false
