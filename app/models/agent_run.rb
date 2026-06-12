@@ -1237,6 +1237,7 @@ class AgentRun < ApplicationRecord
       .where(accounts: { scheduler_paused_at: nil })
       .where(projects: { scheduler_paused_at: nil })
       .where("agent_runs.trigger_type = 'manual' OR projects.quality_paused_at IS NULL")
+      .where("agent_runs.trigger_type = 'manual' OR projects.paused = FALSE")
     scope = scope.where.not(id: exclude_ids) if exclude_ids.any?
     scope = scope.where.not(project_id: exclude_project_ids) if exclude_project_ids.any?
     scope = scope.where.not(project_owner: { user_id: exclude_user_ids }) if exclude_user_ids.any?
@@ -1255,6 +1256,7 @@ class AgentRun < ApplicationRecord
       .where(accounts: { scheduler_paused_at: nil })
       .where(projects: { scheduler_paused_at: nil })
       .where("agent_runs.trigger_type = 'manual' OR projects.quality_paused_at IS NULL")
+      .where("agent_runs.trigger_type = 'manual' OR projects.paused = FALSE")
   end
 
   def self.next_queued_run_from(scope)

@@ -183,6 +183,7 @@ Rails.application.routes.draw do
   resources :projects do
     post :toggle_auto_pick, on: :member
     post :toggle_auto_merge, on: :member
+    post :toggle_pause, on: :member
     post :quality_resume, on: :member
     post :cleanup_stale_runs, on: :member
     post :detect_screenshot_settings, on: :member

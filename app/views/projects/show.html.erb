@@ -12,6 +12,29 @@
     <% end %>
   </div>
 
+  <% if @project.paused? %>
+    <div class="mb-4 rounded-md bg-yellow-50 p-4 ring-1 ring-inset ring-yellow-200" data-testid="project-paused-banner">
+      <div class="flex items-center justify-between">
+        <div class="flex">
+          <div class="flex-shrink-0">
+            <svg class="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+              <path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16ZM8 7a1 1 0 0 0-1 1v4a1 1 0 1 0 2 0V8a1 1 0 0 0-1-1Zm4 0a1 1 0 0 0-1 1v4a1 1 0 1 0 2 0V8a1 1 0 0 0-1-1Z" clip-rule="evenodd" />
+            </svg>
+          </div>
+          <div class="ml-3">
+            <h3 class="text-sm font-medium text-yellow-800">Project Paused</h3>
+            <p class="mt-1 text-sm text-yellow-700">Automatic agent runs are on hold. Manual runs are unaffected.</p>
+          </div>
+        </div>
+        <% if policy(@project).update? %>
+          <%= button_to "Resume", toggle_pause_project_path(@project), method: :post,
+            class: "ml-4 flex-shrink-0 rounded-md bg-yellow-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-yellow-500 cursor-pointer",
+            data: { turbo_confirm: "Resume automatic agent runs for this project?" } %>
+        <% end %>
+      </div>
+    </div>
+  <% end %>
+
   <% if @project.scheduler_paused? %>
     <div class="mb-4 rounded-md bg-red-50 p-4 ring-1 ring-inset ring-red-200" data-testid="scheduler-paused-banner">
       <div class="flex">
@@ -147,6 +170,7 @@
             </dd>
           </div>
         <% end %>
+        <%= render "projects/pause_toggle", project: @project %>
         <div class="px-4 py-4 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-6">
           <dt class="text-sm font-medium text-gray-500">Auto-Merge</dt>
           <dd class="mt-1 text-sm text-gray-900 sm:col-span-2 sm:mt-0">

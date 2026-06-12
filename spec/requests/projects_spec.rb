@@ -1744,6 +1744,59 @@ RSpec.describe "Projects" do
     end
   end
 
+  describe "POST /projects/:id/toggle_pause" do
+    context "when not authenticated" do
+      it "redirects to the sign in page" do
+        project = create(:project, account: account, github_token: github_token)
+        post toggle_pause_project_path(project)
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
+
+    context "when authenticated as owner" do
+      before { sign_in user }
+
+      it "pauses the project when currently unpaused" do
+        project = create(:project, account: account, github_token: github_token, paused: false)
+        post toggle_pause_project_path(project)
+        expect(project.reload.paused?).to be true
+      end
+
+      it "unpauses the project when currently paused" do
+        project = create(:project, account: account, github_token: github_token, paused: true)
+        post toggle_pause_project_path(project)
+        expect(project.reload.paused?).to be false
+      end
+
+      it "redirects to the project for HTML requests" do
+        project = create(:project, account: account, github_token: github_token)
+        post toggle_pause_project_path(project)
+        expect(response).to redirect_to(project_path(project))
+      end
+
+      it "responds with turbo_stream when requested" do
+        project = create(:project, account: account, github_token: github_token, paused: false)
+        post toggle_pause_project_path(project), headers: { "Accept" => "text/vnd.turbo-stream.html" }
+        expect(response.media_type).to eq("text/vnd.turbo-stream.html")
+        expect(response.body).to include("turbo-stream")
+        expect(response.body).to include("pause_toggle_project_#{project.id}")
+      end
+    end
+
+    context "when authenticated as viewer" do
+      let(:viewer_user) { create(:user, :viewer, account: account) }
+
+      before { sign_in viewer_user }
+
+      it "redirects with authorization error" do
+        project = create(:project, account: account, github_token: github_token)
+        post toggle_pause_project_path(project)
+        expect(response).to redirect_to(root_path)
+        expect(flash[:alert]).to include("not authorized")
+      end
+    end
+  end
+
   describe "POST /projects/:id/quality_resume" do
     context "when not authenticated" do
       it "redirects to the sign in page" do
