@@ -289,13 +289,13 @@ RSpec.describe Project do
       it "rejects unknown keys" do
         project = build(:project, priority_labels: { "P1" => "critical", "P9" => "ultra" })
         expect(project).not_to be_valid
-        expect(project.errors[:priority_labels].join).to match(/may only contain keys/)
+        expect(project.errors[:priority_labels].join).to include('may only contain keys')
       end
 
       it "rejects blank string values" do
         project = build(:project, priority_labels: { "P1" => "  " })
         expect(project).not_to be_valid
-        expect(project.errors[:priority_labels].join).to match(/non-blank string/)
+        expect(project.errors[:priority_labels].join).to include('non-blank string')
       end
 
       it "accepts valid hash" do

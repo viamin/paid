@@ -303,7 +303,7 @@ RSpec.describe Guardrails::ViolationHandler do
 
       expect(Notifications::Publish).to have_received(:call).with(
         hash_including(
-          title: match(/terminated by time limit guardrail/)
+          title: include('terminated by time limit guardrail')
         )
       )
     end
@@ -317,7 +317,7 @@ RSpec.describe Guardrails::ViolationHandler do
 
       expect(Notifications::Publish).to have_received(:call).with(
         hash_including(
-          title: match(/paused by loop detected guardrail/)
+          title: include('paused by loop detected guardrail')
         )
       )
     end
