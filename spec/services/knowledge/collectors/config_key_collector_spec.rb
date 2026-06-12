@@ -58,7 +58,7 @@ RSpec.describe Knowledge::Collectors::ConfigKeyCollector, :no_db do
       it "includes file path and line in metadata" do
         db_url = artifacts.find { |a| a[:identifier] == "DATABASE_URL" }
 
-        expect(db_url[:metadata][:file_path]).to match(/config_sample\.rb/)
+        expect(db_url[:metadata][:file_path]).to include('config_sample.rb')
         expect(db_url[:metadata][:line]).to be_a(Integer)
       end
 
