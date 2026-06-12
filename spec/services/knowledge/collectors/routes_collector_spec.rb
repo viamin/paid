@@ -216,7 +216,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
 
         expect { command_collector.collect }.to raise_error do |error|
           expect(error).to be_a(Knowledge::SkipCollector)
-          expect(error.reason).to match(/sqlite3 support/)
+          expect(error.reason).to include('sqlite3 support')
           expect(error.preserve_existing_artifacts?).to be(true)
         end
 
@@ -278,7 +278,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
 
         expect { command_collector.collect }.to raise_error do |error|
           expect(error).to be_a(Knowledge::SkipCollector)
-          expect(error.reason).to match(/sqlite3 support/)
+          expect(error.reason).to include('sqlite3 support')
           expect(error.preserve_existing_artifacts?).to be(true)
         end
 
@@ -351,7 +351,7 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
 
         expect { command_collector.collect }.to raise_error do |error|
           expect(error).to be_a(Knowledge::SkipCollector)
-          expect(error.reason).to match(/routes require database access during Rails boot/)
+          expect(error.reason).to include('routes require database access during Rails boot')
           expect(error.preserve_existing_artifacts?).to be(true)
         end
       end

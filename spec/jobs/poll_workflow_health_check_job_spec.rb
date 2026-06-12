@@ -101,7 +101,7 @@ RSpec.describe PollWorkflowHealthCheckJob do
 
       workflow_state = WorkflowState.find_by!(temporal_workflow_id: "github-poll-#{project.id}")
       expect(workflow_state.status).to eq("running")
-      expect(workflow_state.restart_reason).to match(/health check: stale RUNNING/)
+      expect(workflow_state.restart_reason).to include('health check: stale RUNNING')
     end
 
     it "uses per-project poll interval for staleness threshold" do

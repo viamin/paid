@@ -227,7 +227,7 @@ RSpec.describe Scaling::Orchestrators::EcsAdapter do
 
       expect(result).to be_a(Scaling::Orchestrators::Data::ResourceUpdateResult)
       expect(result.accepted).to be true
-      expect(result.message).to match(/already match/)
+      expect(result.message).to include('already match')
     end
 
     it "raises when the ECS service name does not match a container definition" do

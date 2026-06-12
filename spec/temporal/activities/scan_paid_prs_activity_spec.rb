@@ -6848,7 +6848,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(trigger_types).to include("review_goal_retry")
         expect(trigger_types).to include("paid_agent_review_pending")
         expect(trigger_types).not_to include("escalate_to_owner")
-        expect(pending_trigger[:details]).to match(/Retrying unsuccessful review-goal run/)
+        expect(pending_trigger[:details]).to include('Retrying unsuccessful review-goal run')
       end
     end
 
@@ -8427,7 +8427,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       trigger_types = trigger[:triggers].map { |t| t[:type] }
       expect(trigger_types).to include("paid_agent_review_pending")
       details = trigger[:triggers].find { |t| t[:type] == "paid_agent_review_pending" }[:details]
-      expect(details).to match(/Retrying unsuccessful review-goal run/)
+      expect(details).to include('Retrying unsuccessful review-goal run')
     end
 
     it "does not wedge the PR — trigger is emitted on every scan cycle" do
@@ -8575,7 +8575,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(trigger_types).to include("escalate_to_owner")
       expect(trigger_types).not_to include("paid_agent_review_pending")
       details = trigger[:triggers].find { |t| t[:type] == "escalate_to_owner" }[:details]
-      expect(details).to match(/Review-goal retry budget exhausted/)
+      expect(details).to include('Review-goal retry budget exhausted')
     end
 
     it "includes owner_reviewer_login for escalation handling" do

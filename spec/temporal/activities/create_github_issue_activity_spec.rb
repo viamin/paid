@@ -921,7 +921,7 @@ RSpec.describe Activities::CreateGithubIssueActivity do
         agent_run.log!("stdout", "# New feature\n\nImplement the feature.")
 
         expect(github_client).to receive(:create_issue) do |_repo, opts|
-          expect(opts[:body]).not_to match(/Blocked by/)
+          expect(opts[:body]).not_to include('Blocked by')
           issue_response
         end
 
@@ -934,7 +934,7 @@ RSpec.describe Activities::CreateGithubIssueActivity do
         agent_run.log!("stdout", "# New feature\n\nImplement the feature.")
 
         expect(github_client).to receive(:create_issue) do |_repo, opts|
-          expect(opts[:body]).not_to match(/Blocked by/)
+          expect(opts[:body]).not_to include('Blocked by')
           issue_response
         end
 

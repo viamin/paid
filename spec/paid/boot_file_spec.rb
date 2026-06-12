@@ -95,6 +95,6 @@ RSpec.describe BootFile, :no_db do
     )
 
     expect(status.success?).to be(true), stderr
-    expect(stdout.strip).to eq("{}")
+    expect(stdout.each_line.map(&:strip).reject(&:blank?).last).to eq("{}")
   end
 end

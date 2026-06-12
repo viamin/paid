@@ -138,7 +138,7 @@ RSpec.describe "Project interoperability" do
       }.not_to change(project.agent_runs, :count)
 
       expect(response).to have_http_status(:unprocessable_content)
-      expect(response.parsed_body.fetch("errors").first).to match(/ingest_external_runs is not permitted/)
+      expect(response.parsed_body.fetch("errors").first).to include('ingest_external_runs is not permitted')
     end
 
     it "rejects requests without a valid integration credential" do
@@ -259,7 +259,7 @@ RSpec.describe "Project interoperability" do
       }
 
       expect(response).to have_http_status(:unprocessable_content)
-      expect(response.parsed_body.fetch("errors").first).to match(/import_config is not permitted/)
+      expect(response.parsed_body.fetch("errors").first).to include('import_config is not permitted')
       expect(project.prompts.find_by(slug: "copilot.blocked")).to be_nil
     end
   end
@@ -323,7 +323,7 @@ RSpec.describe "Project interoperability" do
       }.not_to change(project.external_connector_events, :count)
 
       expect(response).to have_http_status(:unprocessable_content)
-      expect(response.parsed_body.fetch("errors").first).to match(/receive_connector_events is not permitted/)
+      expect(response.parsed_body.fetch("errors").first).to include('receive_connector_events is not permitted')
     end
 
     it "verifies Slack signatures from request headers without requiring a body field" do
@@ -408,7 +408,7 @@ RSpec.describe "Project interoperability" do
       }.not_to change(project.external_connector_events, :count)
 
       expect(response).to have_http_status(:unprocessable_content)
-      expect(response.parsed_body.fetch("errors").first).to match(/signature is required for slack/)
+      expect(response.parsed_body.fetch("errors").first).to include('signature is required for slack')
     end
 
     it "rejects stale Slack signatures" do
@@ -433,7 +433,7 @@ RSpec.describe "Project interoperability" do
       }.not_to change(project.external_connector_events, :count)
 
       expect(response).to have_http_status(:unprocessable_content)
-      expect(response.parsed_body.fetch("errors").first).to match(/signature verification failed for slack/)
+      expect(response.parsed_body.fetch("errors").first).to include('signature verification failed for slack')
     end
 
     it "accepts GitLab secret-token headers" do
@@ -514,7 +514,7 @@ RSpec.describe "Project interoperability" do
       }.not_to change(project.external_connector_events, :count)
 
       expect(response).to have_http_status(:unauthorized)
-      expect(response.parsed_body.fetch("errors").first).to match(/No active integration credential configured/)
+      expect(response.parsed_body.fetch("errors").first).to include('No active integration credential configured')
     end
 
     it "accepts ci_systems credentials for CI connector events" do
