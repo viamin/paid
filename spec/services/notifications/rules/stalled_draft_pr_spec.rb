@@ -17,6 +17,7 @@ RSpec.describe Notifications::Rules::StalledDraftPr do
       PullRequests::ProgressState::Result.new(
         consecutive_unsuccessful_automatic_runs: 3,
         consecutive_operational_failures: 0,
+        consecutive_provider_transient_outages: 0,
         last_meaningful_progress_at: nil,
         latest_automatic_run_at: nil,
         latest_unsuccessful_run_at: 4.hours.ago,
@@ -42,6 +43,7 @@ RSpec.describe Notifications::Rules::StalledDraftPr do
       PullRequests::ProgressState::Result.new(
         consecutive_unsuccessful_automatic_runs: 2,
         consecutive_operational_failures: 0,
+        consecutive_provider_transient_outages: 0,
         last_meaningful_progress_at: nil,
         latest_automatic_run_at: nil,
         latest_unsuccessful_run_at: 4.hours.ago,
