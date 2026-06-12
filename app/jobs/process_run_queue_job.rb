@@ -69,7 +69,7 @@ class ProcessRunQueueJob < ApplicationJob
 
         break unless next_run
 
-        if lower_priority_than_claimed_or_started_project_run?(next_run, started_priority_by_project)
+        if lower_priority_than_inflight_or_started_project_run?(next_run, started_priority_by_project)
           blocked_project_ids.add(next_run.project_id)
           next
         end
@@ -200,15 +200,19 @@ class ProcessRunQueueJob < ApplicationJob
     started_priority_by_project[agent_run.project_id] = priority if existing.nil? || priority < existing
   end
 
-  def lower_priority_than_claimed_or_started_project_run?(agent_run, started_priority_by_project)
+  # Blocks a queued run from starting when the same project still has
+  # higher-priority work in flight — whether already running or merely
+  # claimed-but-not-yet-started — or started higher-priority work earlier in
+  # this pass. This keeps priority strict within a project: e.g. a P2 must
+  # wait while any P1 for the project is running or queued-and-claimed.
+  def lower_priority_than_inflight_or_started_project_run?(agent_run, started_priority_by_project)
     current_priority = queue_priority_for(agent_run)
     started_priority = started_priority_by_project[agent_run.project_id]
     return true if started_priority && current_priority > started_priority
 
     AgentRun
-      .queued_with_priority
+      .inflight_with_priority
       .where(project_id: agent_run.project_id)
-      .where.not(temporal_workflow_id: nil)
       .where("#{AgentRun::QUEUE_PRIORITY_CASE_SQL} < ?", current_priority)
       .exists?
   end
