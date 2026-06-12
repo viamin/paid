@@ -54,49 +54,37 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
   it "broadcasts message_tool_call for assistant messages with a tool name and nil content" do
     tool_call_msg = create(:chat_message, chat_session: chat_session,
       role: "assistant", content: nil,
-      tool_name: "list_projects", tool_call_id: "call_123",
-      tool_arguments: { "query" => "all" })
-
-    assistant_msg = create(:chat_message, :assistant, chat_session: chat_session,
-      tokens_input: 5, tokens_output: 3)
-
+      tool_name: "list_projects", tool_call_id: "call_123", tool_arguments: { "query" => "all" })
+    assistant_msg = create(:chat_message, :assistant, chat_session: chat_session, tokens_input: 5, tokens_output: 3)
     allow(ChatSessions::SendMessage).to receive(:call) do |**kwargs|
       kwargs[:on_message_persisted]&.call(tool_call_msg)
       assistant_msg
     end
 
     expect {
-      described_class.perform_now(
-        chat_session_id: chat_session.id,
-        content: "Use a tool",
-        stream_message_id: stream_message_id
-      )
+      described_class.perform_now(chat_session_id: chat_session.id, content: "Use a tool",
+        stream_message_id: stream_message_id)
     }.to have_broadcasted_to(stream_name)
-      .with(hash_including(type: "message_tool_call", tool_name: "list_projects"))
+      .with(hash_including(type: "message_tool_call", tool_name: "list_projects",
+        tool_call_id: "call_123", tool_arguments: { "query" => "all" }))
   end
 
   it "broadcasts message_tool_result for tool-role messages" do
     tool_result_msg = create(:chat_message, chat_session: chat_session,
       role: "tool", content: '{"projects":[]}',
-      tool_name: "list_projects", tool_call_id: "call_123",
-      tool_result: { "projects" => [] })
-
-    assistant_msg = create(:chat_message, :assistant, chat_session: chat_session,
-      tokens_input: 5, tokens_output: 3)
-
+      tool_name: "list_projects", tool_call_id: "call_123", tool_result: { "projects" => [] })
+    assistant_msg = create(:chat_message, :assistant, chat_session: chat_session, tokens_input: 5, tokens_output: 3)
     allow(ChatSessions::SendMessage).to receive(:call) do |**kwargs|
       kwargs[:on_message_persisted]&.call(tool_result_msg)
       assistant_msg
     end
 
     expect {
-      described_class.perform_now(
-        chat_session_id: chat_session.id,
-        content: "Use a tool",
-        stream_message_id: stream_message_id
-      )
+      described_class.perform_now(chat_session_id: chat_session.id, content: "Use a tool",
+        stream_message_id: stream_message_id)
     }.to have_broadcasted_to(stream_name)
-      .with(hash_including(type: "message_tool_result", tool_name: "list_projects"))
+      .with(hash_including(type: "message_tool_result", tool_name: "list_projects",
+        tool_call_id: "call_123", tool_result: { "projects" => [] }))
   end
 
   it "broadcasts message_created for regular user and assistant messages" do
