@@ -470,6 +470,12 @@ class RunnersController < ApplicationController
       stats = @usage_stats[runner.routing_key] || @usage_stats[runner.runner_key]
       hash[runner.id] = stats
     end
+    @outcome_time_range = Runners::ProviderOutcomeStats::TIME_RANGES.include?(params[:outcome_time_range]) ?
+      params[:outcome_time_range] : "30d"
+    @provider_outcome_stats = Runners::ProviderOutcomeStats.call(
+      account: current_account,
+      time_range: @outcome_time_range
+    )
     @available_api_keys = current_user.provider_api_keys.ordered
     existing_subscription_keys = @runners.select(&:subscription?).map(&:runner_key)
     addable_keys = resource_addable_keys

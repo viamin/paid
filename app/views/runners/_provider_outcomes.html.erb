@@ -1,0 +1,74 @@
+<% if provider_outcome_stats.any? %>
+  <div class="mt-8">
+    <details class="rounded-lg border border-gray-200 bg-white shadow" open>
+      <summary class="cursor-pointer list-none px-4 py-3">
+        <div class="flex items-center justify-between">
+          <h2 class="text-base font-semibold text-gray-900">Provider Run Outcomes</h2>
+          <span class="text-xs text-gray-500">Click to collapse</span>
+        </div>
+      </summary>
+
+      <div class="border-t border-gray-200 px-4 py-3">
+        <%# Time range toggle %>
+        <div class="mb-4 flex items-center gap-2">
+          <span class="text-xs text-gray-500">Time range:</span>
+          <% [["7d", "7 days"], ["30d", "30 days"], ["cumulative", "All time"]].each do |value, label| %>
+            <%= link_to label,
+                runners_path(outcome_time_range: value),
+                class: [
+                  "rounded px-2 py-1 text-xs font-medium",
+                  outcome_time_range == value ?
+                    "bg-indigo-100 text-indigo-700" :
+                    "text-gray-500 hover:bg-gray-100"
+                ].join(" ") %>
+          <% end %>
+        </div>
+
+        <div class="space-y-6">
+          <% provider_outcome_stats.each do |entry| %>
+            <div class="rounded-md border border-gray-100 bg-gray-50 p-4">
+              <div class="mb-3 flex flex-wrap items-baseline gap-4">
+                <h3 class="text-sm font-semibold text-gray-900"><%= entry[:provider] %></h3>
+                <span class="text-xs text-gray-500">
+                  <%= number_with_delimiter(entry[:total_runs]) %> runs
+                </span>
+                <span class="text-xs font-medium <%= entry[:completion_rate] >= 50 ? "text-green-700" : entry[:completion_rate] >= 25 ? "text-amber-700" : "text-red-700" %>">
+                  <%= entry[:completion_rate] %>% completed
+                </span>
+                <span class="text-xs text-gray-500">
+                  (<%= number_with_delimiter(entry[:completed]) %> of <%= number_with_delimiter(entry[:total_runs]) %>)
+                </span>
+              </div>
+
+              <%# Status distribution bar %>
+              <% if entry[:total_runs] > 0 %>
+                <div class="mb-3 flex h-2 w-full overflow-hidden rounded-full bg-gray-200">
+                  <% Runners::ProviderOutcomeStats::TRACKED_STATUSES.each do |status| %>
+                    <% count = entry[:series].find { |s| s[:name] == Runners::ProviderOutcomeStats::STATUS_LABELS[status] }&.dig(:data)&.values&.sum || 0 %>
+                    <% pct = entry[:total_runs] > 0 ? (count.to_f / entry[:total_runs] * 100).round(1) : 0 %>
+                    <% next if pct.zero? %>
+                    <div class="h-full" style="width: <%= pct %>%; background-color: <%= Runners::ProviderOutcomeStats::STATUS_COLORS[status] %>;" title="<%= Runners::ProviderOutcomeStats::STATUS_LABELS[status] %>: <%= number_with_delimiter(count) %> (<%= pct %>%)"></div>
+                  <% end %>
+                </div>
+              <% end %>
+
+              <%# Stacked column chart %>
+              <%= column_chart entry[:series],
+                    id: "provider-outcomes-#{entry[:provider]}",
+                    stacked: true,
+                    height: "200px",
+                    colors: entry[:colors],
+                    library: {
+                      plugins: { legend: { display: true, position: "bottom", labels: { boxWidth: 10, font: { size: 11 } } } },
+                      scales: {
+                        x: { stacked: true, ticks: { maxTicksLimit: 10, font: { size: 10 } } },
+                        y: { stacked: true, ticks: { precision: 0, font: { size: 10 } } }
+                      }
+                    } %>
+            </div>
+          <% end %>
+        </div>
+      </div>
+    </details>
+  </div>
+<% end %>
