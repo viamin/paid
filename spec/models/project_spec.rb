@@ -2292,6 +2292,36 @@ RSpec.describe Project do
     end
   end
 
+  describe "#paused?" do
+    it "returns false by default" do
+      expect(build(:project).paused?).to be false
+    end
+
+    it "returns true when paused is set to true" do
+      expect(build(:project, paused: true).paused?).to be true
+    end
+  end
+
+  describe "#pause!" do
+    let(:project) { create(:project) }
+
+    it "sets paused to true" do
+      project.pause!
+
+      expect(project.reload.paused?).to be true
+    end
+  end
+
+  describe "#unpause!" do
+    let(:project) { create(:project, paused: true) }
+
+    it "sets paused to false" do
+      project.unpause!
+
+      expect(project.reload.paused?).to be false
+    end
+  end
+
   describe "auto-resume on token change" do
     let(:account) { create(:account) }
     let(:old_token) { create(:github_token, account: account) }
