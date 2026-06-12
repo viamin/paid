@@ -31,6 +31,7 @@ module Activities
             reason: reason
           )
 
+          record_dispatch_circuit_breaker_outcome(agent_run)
           ProcessRunQueueJob.perform_later
         end
 
@@ -46,6 +47,24 @@ module Activities
         skipped: agent_run.status == "cancelled",
         cancelled: agent_run.status == "cancelled"
       }
+    end
+
+    def record_dispatch_circuit_breaker_outcome(agent_run)
+      return unless agent_run.final_runner.present?
+      return unless agent_run.project&.account
+
+      ::AgentRuns::DispatchCircuitBreaker.record_outcome!(
+        account: agent_run.project.account,
+        runner_name: agent_run.final_runner,
+        success: true
+      )
+    rescue => e
+      logger.warn(
+        message: "dispatch_circuit_breaker.record_outcome_error",
+        agent_run_id: agent_run.id,
+        error_class: e.class.name,
+        error_message: e.message.to_s.truncate(200)
+      )
     end
   end
 end

@@ -61,6 +61,7 @@ module Activities
       )
 
       check_auth_failure(agent_run, error)
+      record_dispatch_circuit_breaker_outcome(agent_run, success: false)
 
       { agent_run_id: agent_run_id }
     end
@@ -86,6 +87,24 @@ module Activities
     rescue => e
       logger.warn(
         message: "github_token.auth_failure_check_error",
+        agent_run_id: agent_run.id,
+        error_class: e.class.name,
+        error_message: e.message.to_s.truncate(200)
+      )
+    end
+
+    def record_dispatch_circuit_breaker_outcome(agent_run, success:)
+      return unless agent_run.final_runner.present?
+      return unless agent_run.project&.account
+
+      ::AgentRuns::DispatchCircuitBreaker.record_outcome!(
+        account: agent_run.project.account,
+        runner_name: agent_run.final_runner,
+        success: success
+      )
+    rescue => e
+      logger.warn(
+        message: "dispatch_circuit_breaker.record_outcome_error",
         agent_run_id: agent_run.id,
         error_class: e.class.name,
         error_message: e.message.to_s.truncate(200)

@@ -45,7 +45,8 @@ module Dashboard
         rate_limited: runners.count { |runner| runner.status == :rate_limited },
         circuit_open: runners.count { |runner| runner.status == :circuit_open },
         recovering: runners.count { |runner| runner.status == :recovering },
-        healthy: runners.any? && runners.all?(&:available)
+        healthy: runners.any? && runners.all?(&:available),
+        dispatch_halted: dispatch_halted?
       }
     end
 
@@ -167,6 +168,19 @@ module Dashboard
 
     def self.default_circuit_breaker_timeout
       UserSetting.column_defaults["circuit_breaker_timeout_seconds"]
+    end
+
+    def dispatch_halted?
+      breaker = ::DispatchCircuitBreaker.for_account(account)
+      return nil unless breaker&.persisted?
+      return nil if breaker.circuit_closed?
+
+      breaker.check_recovery! if breaker.circuit_open?
+      {
+        state: breaker.circuit_state,
+        opened_at: breaker.circuit_opened_at,
+        metadata: breaker.trip_metadata
+      }
     end
   end
 end

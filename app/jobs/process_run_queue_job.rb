@@ -51,6 +51,7 @@ class ProcessRunQueueJob < ApplicationJob
       blocked_user_ids = Set.new
       blocked_runner_ids = Set.new
       blocked_account_create_pr_ids = Set.new
+      blocked_account_dispatch_ids = Set.new
       started_priority_by_project = {}
 
       loop do
@@ -110,6 +111,10 @@ class ProcessRunQueueJob < ApplicationJob
           log_preflight_skip(next_run, preflight_result)
           skipped_ids.add(next_run.id)
           blocked_runner_ids.add(next_run.runner_id) if next_run.runner_id
+          next
+        end
+
+        if dispatch_halted?(next_run, blocked_account_dispatch_ids)
           next
         end
 
@@ -192,6 +197,37 @@ class ProcessRunQueueJob < ApplicationJob
 
   def account_has_create_pr_capacity?(account)
     AgentRun.active_create_pr_count_for_account(account) < account.tenant_max_concurrent_create_pr_runs
+  end
+
+  def dispatch_halted?(agent_run, blocked_account_dispatch_ids)
+    account = agent_run.project.account
+    return false if blocked_account_dispatch_ids.include?(account.id)
+
+    breaker = ::DispatchCircuitBreaker.for_account(account)
+    unless breaker&.persisted? && breaker.circuit_state != "closed"
+      return false
+    end
+
+    breaker.check_recovery! if breaker.circuit_open?
+
+    if breaker.probe_allowed?
+      breaker.mark_probe_dispatched!
+      Rails.logger.info(
+        message: "process_run_queue.dispatch_probe",
+        agent_run_id: agent_run.id,
+        account_id: account.id
+      )
+      false
+    else
+      blocked_account_dispatch_ids.add(account.id)
+      Rails.logger.info(
+        message: "process_run_queue.dispatch_halted",
+        agent_run_id: agent_run.id,
+        account_id: account.id,
+        circuit_state: breaker.circuit_state
+      )
+      true
+    end
   end
 
   def record_started_project_priority(agent_run, started_priority_by_project)
