@@ -143,6 +143,65 @@ RSpec.describe "ChatMessages" do
         expect(body).to include("event: message_chunk")
         expect(body).to include("event: message_complete")
       end
+
+      it "emits message_tool_call event when a tool call message is persisted" do
+        assistant_msg = create(:chat_message, :assistant, chat_session: chat_session, tokens_input: 10, tokens_output: 5)
+        tool_call_msg = create(:chat_message, :tool_call, chat_session: chat_session,
+          tool_call_id: "call_abc", tool_name: "search", tool_arguments: { query: "test" })
+        stream_id = SecureRandom.uuid
+        allow(ChatSessions::BuildLlmClient).to receive(:call).and_return(instance_double(Proc))
+        allow(ChatSessions::SendMessage).to receive(:call) do |**args|
+          args[:on_message_persisted].call(tool_call_msg, stream_message_id: stream_id)
+          assistant_msg
+        end
+
+        post chat_session_chat_messages_path(chat_session),
+          params: { content: "Hello" }, headers: { "Accept" => "text/event-stream" }
+
+        data = JSON.parse(response.body.scan(/event: message_tool_call\ndata: (.+)\n/).flatten.first)
+        expect(data).to include("tool_name" => "search", "tool_call_id" => "call_abc",
+          "role" => "assistant", "stream_message_id" => stream_id)
+      end
+
+      it "emits message_tool_result event when a tool result message is persisted" do
+        assistant_msg = create(:chat_message, :assistant, chat_session: chat_session, tokens_input: 10, tokens_output: 5)
+        tool_result_msg = create(:chat_message, :tool, chat_session: chat_session,
+          tool_call_id: "call_abc", tool_name: "search", tool_result: { results: [ "item" ] })
+        stream_id = SecureRandom.uuid
+        allow(ChatSessions::BuildLlmClient).to receive(:call).and_return(instance_double(Proc))
+        allow(ChatSessions::SendMessage).to receive(:call) do |**args|
+          args[:on_message_persisted].call(tool_result_msg, stream_message_id: stream_id)
+          assistant_msg
+        end
+
+        post chat_session_chat_messages_path(chat_session),
+          params: { content: "Hello" }, headers: { "Accept" => "text/event-stream" }
+
+        data = JSON.parse(response.body.scan(/event: message_tool_result\ndata: (.+)\n/).flatten.first)
+        expect(data).to include("tool_name" => "search", "tool_call_id" => "call_abc",
+          "role" => "tool", "tool_result" => { "results" => [ "item" ] }, "stream_message_id" => stream_id)
+      end
+
+      it "does not emit tool events for regular user or assistant messages" do
+        assistant_msg = create(:chat_message, :assistant, chat_session: chat_session,
+          tokens_input: 10, tokens_output: 5)
+        user_msg = create(:chat_message, chat_session: chat_session)
+        llm_client = instance_double(Proc)
+        allow(ChatSessions::BuildLlmClient).to receive(:call).with(chat_session: chat_session).and_return(llm_client)
+        allow(ChatSessions::SendMessage).to receive(:call) do |**args|
+          args[:on_message_persisted].call(user_msg)
+          args[:on_message_persisted].call(assistant_msg)
+          assistant_msg
+        end
+
+        post chat_session_chat_messages_path(chat_session),
+          params: { content: "Hello" },
+          headers: { "Accept" => "text/event-stream" }
+
+        body = response.body
+        expect(body).not_to include("event: message_tool_call")
+        expect(body).not_to include("event: message_tool_result")
+      end
     end
   end
 end

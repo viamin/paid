@@ -81,6 +81,9 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       message_id: message.id,
       role: message.role,
       tool_name: message.tool_name,
+      tool_call_id: message.tool_call_id,
+      tool_arguments: message.tool_arguments,
+      tool_result: message.tool_result,
       stream_message_id: stream_message_id,
       html: ApplicationController.render(
         partial: "chat_messages/message",

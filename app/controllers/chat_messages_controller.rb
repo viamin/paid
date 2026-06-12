@@ -68,7 +68,8 @@ class ChatMessagesController < ApplicationController
         chat_session: @chat_session,
         content: params[:content],
         llm_client: llm_client,
-        on_chunk: ->(chunk) { write_sse_event("message_chunk", { message_id: message_id, content: chunk }) }
+        on_chunk: ->(chunk) { write_sse_event("message_chunk", { message_id: message_id, content: chunk }) },
+        on_message_persisted: ->(message, stream_message_id: nil) { write_sse_tool_event(message, stream_message_id: stream_message_id) }
       )
 
       write_sse_event("message_complete", {
@@ -119,6 +120,28 @@ class ChatMessagesController < ApplicationController
 
   def write_sse_event(event, data)
     response.stream.write("event: #{event}\ndata: #{data.to_json}\n\n")
+  end
+
+  def write_sse_tool_event(message, stream_message_id: nil)
+    event_type = if message.role == "tool"
+      "message_tool_result"
+    elsif message.role == "assistant" && message.tool_name.present? && message.content.nil?
+      "message_tool_call"
+    end
+
+    return unless event_type
+
+    # Payload mirrors the Cable channel shape (see ProcessMessageJob#broadcast_persisted_message),
+    # omitting `html` since SSE is an API channel and clients consume structured data directly.
+    write_sse_event(event_type, {
+      message_id: message.id,
+      role: message.role,
+      tool_name: message.tool_name,
+      tool_call_id: message.tool_call_id,
+      tool_arguments: message.tool_arguments,
+      tool_result: message.tool_result,
+      stream_message_id: stream_message_id
+    })
   end
 
   def with_chat_session_tenant_context(&)
