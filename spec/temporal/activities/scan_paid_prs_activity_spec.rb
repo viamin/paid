@@ -158,6 +158,14 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(activity.send(:paid_agent_pr_author?, project, "dependabot[bot]")).to be(false)
     end
 
+    it "only grants dependency-update trust bypass to exact bot authors" do
+      expect(activity.send(:dependency_update_bot_author?, "dependabot[bot]")).to be(true)
+      expect(activity.send(:dependency_update_bot_author?, "dependabot-preview[bot]")).to be(true)
+      expect(activity.send(:dependency_update_bot_author?, "renovate[bot]")).to be(true)
+      expect(activity.send(:dependency_update_bot_author?, "dependabot-maintainer")).to be(false)
+      expect(activity.send(:dependency_update_bot_author?, "renovate-helper")).to be(false)
+    end
+
     it "treats human authors as neither bot nor agent" do
       expect(activity.send(:third_party_bot_author?, project, "viamin")).to be(false)
       expect(activity.send(:paid_agent_pr_author?, project, "viamin")).to be(false)
@@ -4940,6 +4948,51 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(automation_scan_results(result).size).to eq(1)
         trigger = automation_scan_results(result).first
         expect(trigger[:triggers].map { |t| t[:type] }).to include("ci_failure")
+      end
+
+      it "triggers ci_failure even when the automation label was not added by a trusted user" do
+        expect(github_client).not_to receive(:issue_events)
+        stub_github_for_pr(
+          draft: true,
+          author_login: "dependabot[bot]",
+          checks: [ { name: "ci", conclusion: "failure" } ],
+          review_threads: [],
+          reviews: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result).size).to eq(1)
+        expect(automation_scan_results(result).first[:triggers].map { |t| t[:type] }).to include("ci_failure")
+      end
+
+      it "does not grant the dependency-update bypass to bot-name lookalikes" do
+        issue = Issue.find_by!(project: project, github_number: 42)
+        issue.update!(github_creator_login: "dependabot-maintainer")
+        allow(github_client).to receive(:issue_events)
+          .with(project.full_name, 42)
+          .and_return([])
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to be_empty
+      end
+
+      it "triggers merge-conflict follow-up before advancing to ready" do
+        project.update!(auto_fix_merge_conflicts: true)
+        stub_github_for_pr(
+          mergeable: false,
+          draft: true,
+          author_login: "dependabot[bot]",
+          checks: [ { name: "ci", conclusion: "success" } ],
+          review_threads: [],
+          reviews: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result).size).to eq(1)
+        expect(automation_scan_results(result).first[:triggers].map { |t| t[:type] }).to include("merge_conflicts")
       end
 
       it "does not request reviews even when review is enabled" do
