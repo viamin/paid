@@ -109,7 +109,7 @@ jobs:
         run: mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME" "$npm_config_cache" "$PLAYWRIGHT_BROWSERS_PATH"
 
       - name: Set up Ruby
-        uses: ruby/setup-ruby@12fd324f1d0b43274fdc8130f6980590a667c455
+        uses: ruby/setup-ruby@89f90524b88a01fe6e0b732220432cc6142926af
         with:
           ruby-version: .tool-versions
           bundler-cache: true
