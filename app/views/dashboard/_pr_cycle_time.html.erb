@@ -1,7 +1,8 @@
 <%= turbo_frame_tag "dashboard-pr-cycle-time" do %>
   <div class="overflow-hidden rounded-lg bg-white shadow"
     data-controller="pr-cycle-time"
-    data-pr-cycle-time-base-url-value="<%= dashboard_pr_cycle_time_path(time_range: time_range) %>">
+    data-pr-cycle-time-base-url-value="<%= dashboard_pr_cycle_time_path(time_range: time_range) %>"
+    data-pr-cycle-time-merged-counts-value="<%= data[:merged_counts].transform_keys(&:to_s).to_json %>">
     <div class="px-4 py-5 sm:p-6">
       <div class="flex items-start justify-between gap-4">
         <div>
@@ -51,12 +52,7 @@
               legend: "bottom",
               library: {
                 plugins: {
-                  legend: { display: true, position: "bottom" },
-                  tooltip: {
-                    callbacks: {
-                      afterBody: chart_tooltip_after_body(data)
-                    }
-                  }
+                  legend: { display: true, position: "bottom" }
                 },
                 scales: {
                   y: {

@@ -143,18 +143,6 @@ module DashboardHelper
     end
   end
 
-  def chart_tooltip_after_body(data)
-    merged_counts = data[:merged_counts]
-    proc do |context|
-      raw_date = context[:label]
-      date = Date.parse(raw_date) rescue nil
-      return "" unless date
-
-      count = merged_counts[date] || 0
-      "Merged PRs: #{count}"
-    end
-  end
-
   def chart_annotations(data)
     annotations = {}
     data[:outlier_annotations].each_with_index do |(date, count), _index|

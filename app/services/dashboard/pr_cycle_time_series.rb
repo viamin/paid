@@ -114,17 +114,19 @@ module Dashboard
       xs = valid.map { |v| v[:date].to_time.to_i.to_f }
       ys = valid.map { |v| (v[:avg] + v[:p50]) / 2.0 }
 
-      n = xs.size.to_f
-      sum_x = xs.sum
-      sum_y = ys.sum
-      sum_xy = xs.zip(ys).sum { |x, y| x * y }
-      sum_x2 = xs.sum { |x| x * x }
+      x_mean = xs.sum / xs.size.to_f
+      y_mean = ys.sum / ys.size.to_f
 
-      denom = n * sum_x2 - sum_x * sum_x
-      return if denom.zero?
+      xs_c = xs.map { |x| x - x_mean }
+      ys_c = ys.map { |y| y - y_mean }
 
-      slope = (n * sum_xy - sum_x * sum_y) / denom
-      intercept = (sum_y - slope * sum_x) / n
+      ss_xx = xs_c.sum { |x| x * x }
+      ss_xy = xs_c.zip(ys_c).sum { |x, y| x * y }
+
+      return if ss_xx.zero?
+
+      slope = ss_xy / ss_xx
+      intercept = y_mean - slope * x_mean
 
       date_range.each do |date|
         trend_data[date] = (slope * date.to_time.to_i + intercept).round(2)
@@ -134,7 +136,7 @@ module Dashboard
     def compute_date_range
       end_date = Time.zone.today
       start_date = case time_range
-      when "24h" then end_date
+      when "24h" then end_date - 1.day
       when "7d" then end_date - 6.days
       when "30d" then end_date - 29.days
       else end_date - (WINDOW_DAYS - 1).days
