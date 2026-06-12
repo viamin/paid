@@ -103,6 +103,81 @@ RSpec.describe Runner do
       end
     end
 
+    describe "#effective_no_progress_thresholds" do
+      let(:runner) { build(:runner) }
+
+      it "returns the defaults when no overrides are stored" do
+        expect(runner.effective_no_progress_thresholds).to eq(
+          "min_input_tokens" => 100_000,
+          "max_output_tokens" => 100
+        )
+      end
+
+      it "overlays stored overrides on top of defaults" do
+        runner.no_progress_thresholds = { "min_input_tokens" => 200_000 }
+        expect(runner.effective_no_progress_thresholds).to eq(
+          "min_input_tokens" => 200_000,
+          "max_output_tokens" => 100
+        )
+      end
+
+      it "coerces string values from JSONB round-trips to integers" do
+        runner.no_progress_thresholds = { "min_input_tokens" => "50000", "max_output_tokens" => "20" }
+        result = runner.effective_no_progress_thresholds
+        expect(result["min_input_tokens"]).to eq(50_000)
+        expect(result["max_output_tokens"]).to eq(20)
+      end
+
+      it "ignores unrecognized keys" do
+        runner.no_progress_thresholds = { "min_input_tokens" => 50_000, "unknown_key" => 999 }
+        expect(runner.effective_no_progress_thresholds).not_to have_key("unknown_key")
+      end
+    end
+
+    describe "no_progress_thresholds validation" do
+      let(:runner) { build(:runner, runner_key: "cursor") }
+
+      it "is valid when blank" do
+        runner.no_progress_thresholds = nil
+        expect(runner).to be_valid
+      end
+
+      it "accepts valid positive integer thresholds" do
+        runner.no_progress_thresholds = { "min_input_tokens" => 200_000, "max_output_tokens" => 50 }
+        expect(runner).to be_valid
+      end
+
+      it "rejects a non-hash value" do
+        runner.no_progress_thresholds = "off"
+        expect(runner).not_to be_valid
+        expect(runner.errors[:no_progress_thresholds].join).to include("must be a hash")
+      end
+
+      it "rejects unknown threshold keys" do
+        runner.no_progress_thresholds = { "unknown_key" => 100 }
+        expect(runner).not_to be_valid
+        expect(runner.errors[:no_progress_thresholds].join).to include("unknown key")
+      end
+
+      it "rejects non-integer values" do
+        runner.no_progress_thresholds = { "min_input_tokens" => "off" }
+        expect(runner).not_to be_valid
+        expect(runner.errors[:no_progress_thresholds].join).to include("positive integer")
+      end
+
+      it "rejects zero values" do
+        runner.no_progress_thresholds = { "min_input_tokens" => 0 }
+        expect(runner).not_to be_valid
+        expect(runner.errors[:no_progress_thresholds].join).to include("positive integer")
+      end
+
+      it "rejects negative values" do
+        runner.no_progress_thresholds = { "max_output_tokens" => -1 }
+        expect(runner).not_to be_valid
+        expect(runner.errors[:no_progress_thresholds].join).to include("positive integer")
+      end
+    end
+
     describe "tier_model_ids" do
       let(:runner) { build(:runner, runner_key: "cursor") }
 

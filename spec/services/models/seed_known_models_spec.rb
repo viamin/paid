@@ -29,13 +29,13 @@ RSpec.describe Models::SeedKnownModels do
     end
 
     it "uses registry metadata when a known model is present" do
-      registry_models.replace([ gpt_4o_registry_model ])
+      registry_models.replace([ gpt_registry_model ])
 
       described_class.call
 
-      model = LlmModel.find_by!(model_id: "gpt-4o")
-      expect(model.display_name).to eq("GPT-4o (Registry)")
-      expect(model.family).to eq("gpt-4.1")
+      model = LlmModel.find_by!(model_id: "gpt-5.1")
+      expect(model.display_name).to eq("GPT-5.1 (Registry)")
+      expect(model.family).to eq("gpt-5")
       expect(model.context_window).to eq(256_000)
       expect(model.max_output_tokens).to eq(32_768)
       expect(model.input_cost_per_million).to eq(9.99)
@@ -48,20 +48,20 @@ RSpec.describe Models::SeedKnownModels do
     it "preserves snapshot values when registry metadata is missing" do
       registry_models.replace([
         registry_model(
-          id: "gpt-4o",
-          name: "GPT-4o (Registry)",
+          id: "gpt-5.1",
+          name: "GPT-5.1 (Registry)",
           provider: "openai",
-          family: "gpt-4.1",
+          family: "gpt-5",
           pricing: {}
         )
       ])
 
       described_class.call
 
-      model = LlmModel.find_by!(model_id: "gpt-4o")
-      expect(model.display_name).to eq("GPT-4o (Registry)")
-      expect(model.family).to eq("gpt-4.1")
-      expect(model.input_cost_per_million).to eq(2.50)
+      model = LlmModel.find_by!(model_id: "gpt-5.1")
+      expect(model.display_name).to eq("GPT-5.1 (Registry)")
+      expect(model.family).to eq("gpt-5")
+      expect(model.input_cost_per_million).to eq(1.25)
       expect(model.output_cost_per_million).to eq(10.0)
     end
 
@@ -100,16 +100,16 @@ RSpec.describe Models::SeedKnownModels do
       described_class.call
 
       expect(LlmModel.find_by(model_id: "claude-haiku-4-5-20251001").tier).to eq("low")
-      expect(LlmModel.find_by(model_id: "gpt-4o-mini").tier).to eq("low")
+      expect(LlmModel.find_by(model_id: "gpt-5-mini").tier).to eq("low")
       expect(LlmModel.find_by(model_id: "claude-sonnet-4-6").tier).to eq("mid")
-      expect(LlmModel.find_by(model_id: "gpt-4o").tier).to eq("mid")
+      expect(LlmModel.find_by(model_id: "gpt-5.1").tier).to eq("mid")
       expect(LlmModel.find_by(model_id: "gemini-2.5-pro").tier).to eq("mid")
-      expect(LlmModel.find_by(model_id: "claude-opus-4-6").tier).to eq("high")
+      expect(LlmModel.find_by(model_id: "claude-opus-4-7").tier).to eq("high")
     end
 
     it "backfills tier on existing rows that lack it" do
       existing = LlmModel.create!(
-        model_id: "claude-opus-4-6",
+        model_id: "claude-opus-4-7",
         display_name: "Outdated",
         provider: "anthropic",
         category: "coding",
@@ -123,7 +123,7 @@ RSpec.describe Models::SeedKnownModels do
 
     it "does not overwrite an existing non-nil tier" do
       existing = LlmModel.create!(
-        model_id: "claude-opus-4-6",
+        model_id: "claude-opus-4-7",
         display_name: "Outdated",
         provider: "anthropic",
         category: "coding",
@@ -152,12 +152,12 @@ RSpec.describe Models::SeedKnownModels do
     )
   end
 
-  def gpt_4o_registry_model
+  def gpt_registry_model
     registry_model(
-      id: "gpt-4o",
-      name: "GPT-4o (Registry)",
+      id: "gpt-5.1",
+      name: "GPT-5.1 (Registry)",
       provider: "openai",
-      family: "gpt-4.1",
+      family: "gpt-5",
       context_window: 256_000,
       max_output_tokens: 32_768,
       capabilities: %w[function_calling structured_output],

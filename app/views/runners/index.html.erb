@@ -129,6 +129,10 @@
 
   <%= render "usage_stats", usage_stats: @usage_stats, runners: @runners, runner_stats_by_id: @runner_stats_by_id %>
 
+  <%= render "provider_outcomes",
+        provider_outcome_stats: @provider_outcome_stats,
+        outcome_time_range: @outcome_time_range %>
+
   <% if @free_model_runners.any? %>
     <div class="mt-8 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
       <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

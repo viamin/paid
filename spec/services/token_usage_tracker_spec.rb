@@ -402,6 +402,82 @@ RSpec.describe TokenUsageTracker do
     end
   end
 
+  describe "no-progress early termination" do
+    let(:runner) { create(:runner, user: project.created_by, no_progress_thresholds: { "min_input_tokens" => 1000, "max_output_tokens" => 10 }) }
+    let(:agent_run) { create(:agent_run, :running, project: project, runner: runner) }
+
+    before do
+      allow(AgentRuns::Cancel).to receive(:call)
+      allow(Notifications::Publish).to receive(:call)
+    end
+
+    it "terminates a running agent when input is high and output is near-zero" do
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 1000, tokens_output: 5 })
+
+      agent_run.reload
+      expect(agent_run.status).to eq("timeout")
+      expect(agent_run.guardrail_violation_type).to eq("no_progress")
+    end
+
+    it "does not terminate when output is above the threshold" do
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 1000, tokens_output: 10 })
+
+      expect(agent_run.reload.status).to eq("running")
+    end
+
+    it "does not terminate when input is below the minimum threshold" do
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 999, tokens_output: 0 })
+
+      expect(agent_run.reload.status).to eq("running")
+    end
+
+    it "does not terminate when enforce_guardrails is false" do
+      described_class.track(
+        tracked_run: agent_run,
+        usage: { tokens_input: 1000, tokens_output: 5 },
+        enforce_guardrails: false
+      )
+
+      expect(agent_run.reload.status).to eq("running")
+    end
+
+    it "does not terminate when update_aggregates is false" do
+      described_class.track(
+        tracked_run: agent_run,
+        usage: { tokens_input: 1000, tokens_output: 5 },
+        update_aggregates: false
+      )
+
+      expect(agent_run.reload.status).to eq("running")
+    end
+
+    it "uses default thresholds when agent_run has no runner" do
+      agent_run_without_runner = create(:agent_run, :running, project: project, runner: nil)
+
+      # Should not terminate: below default min_input_tokens (100_000)
+      described_class.track(tracked_run: agent_run_without_runner, usage: { tokens_input: 1000, tokens_output: 0 })
+
+      expect(agent_run_without_runner.reload.status).to eq("running")
+    end
+
+    it "respects per-runner threshold overrides" do
+      stricter_runner = create(:runner, user: project.created_by, no_progress_thresholds: { "min_input_tokens" => 500, "max_output_tokens" => 50 })
+      strict_run = create(:agent_run, :running, project: project, runner: stricter_runner)
+
+      described_class.track(tracked_run: strict_run, usage: { tokens_input: 500, tokens_output: 30 })
+
+      strict_run.reload
+      expect(strict_run.status).to eq("timeout")
+      expect(strict_run.guardrail_violation_type).to eq("no_progress")
+    end
+
+    it "cancels in-flight execution on no-progress termination" do
+      described_class.track(tracked_run: agent_run, usage: { tokens_input: 1000, tokens_output: 5 })
+
+      expect(AgentRuns::Cancel).to have_received(:call).with(agent_run: agent_run, skip_status_update: true)
+    end
+  end
+
   describe "knowledge run token limit checking" do
     before do
       project.update!(token_limit_warning_threshold: 80)
