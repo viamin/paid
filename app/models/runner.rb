@@ -32,8 +32,15 @@ class Runner < ApplicationRecord
   # service type required for authentication.
   # Each entry carries an adapter hint so config generators can distinguish
   # OpenAI-compatible endpoints from providers with a native SDK (Anthropic).
-  # The opencode_npm / kilocode_api keys default to the openai-compatible
-  # adapter and are overridden only for Anthropic.
+  # Key contracts consumed by opencode_runner_runtime / opencode_qualified_model:
+  #   - opencode_npm: drives BOTH SDK selection and base-URL routing. When it is
+  #     "@ai-sdk/anthropic", the base URL goes to ANTHROPIC_BASE_URL and "npm" is
+  #     injected into the provider config; otherwise the base URL goes to
+  #     OPENAI_BASE_URL. Defaults to the openai-compatible adapter.
+  #   - opencode_model_provider: names the provider-config block AND the model
+  #     prefix (e.g. "minimax/<model>"). Required for any @ai-sdk/anthropic entry.
+  #   - env_var: overrides the auto-derived "<SERVICE_TYPE>_API_KEY" name (MiniMax
+  #     authenticates via ANTHROPIC_API_KEY despite its "minimax" service type).
   DIRECT_OUTBOUND_API_PROVIDERS = {
     "openrouter" => { label: "OpenRouter", base_url: "https://openrouter.ai/api/v1", service_type: "openrouter",
                       opencode_model_provider: "openrouter" },
@@ -49,7 +56,8 @@ class Runner < ApplicationRecord
     "mistral" => { label: "Mistral", base_url: "https://api.mistral.ai/v1", service_type: "mistral",
                    opencode_model_provider: "mistral" },
     "minimax" => { label: "MiniMax", base_url: "https://api.minimax.io/anthropic/v1", service_type: "minimax",
-                   env_var: "ANTHROPIC_API_KEY", opencode_npm: "@ai-sdk/anthropic", kilocode_provider_id: "anthropic" },
+                   env_var: "ANTHROPIC_API_KEY", opencode_npm: "@ai-sdk/anthropic", kilocode_provider_id: "anthropic",
+                   opencode_model_provider: "minimax" },
     "xai" => { label: "xAI", base_url: "https://api.x.ai/v1", service_type: "xai",
                opencode_model_provider: "xai" },
     "zai" => { label: "z.ai", base_url: "https://api.z.ai/api/paas/v4", service_type: "zai",
@@ -1227,23 +1235,40 @@ class Runner < ApplicationRecord
     env = { env_var => effective_api_secret.to_s }
 
     # Providers using @ai-sdk/anthropic receive their base URL through the
-    # provider config (OPENAI_BASE_URL is only read by the OpenAI-compatible SDK).
+    # ANTHROPIC_BASE_URL env var and declare their SDK via the provider config
+    # "npm" field.  OpenCode 1.3.x rejects unrecognized keys like "baseURL" in
+    # provider configs, so the URL must go through the environment.
+    # OPENAI_BASE_URL is only read by the OpenAI-compatible SDK.
     provider_config = {}
-    if api_config[:opencode_npm] == "@ai-sdk/anthropic" && api_config[:base_url]
-      provider_config["baseURL"] = api_config[:base_url]
+    if api_config[:opencode_npm] == "@ai-sdk/anthropic"
+      provider_config["npm"] = api_config[:opencode_npm]
+      env["ANTHROPIC_BASE_URL"] = api_config[:base_url] if api_config[:base_url]
     elsif api_config[:base_url]
       env["OPENAI_BASE_URL"] = api_config[:base_url]
     end
 
     metadata_config = {}
     unless provider_config.empty?
-      metadata_config["provider"] = { opencode_api_provider => provider_config }
+      # provider_config is only populated for @ai-sdk/anthropic entries, which
+      # always declare opencode_model_provider. fetch (not ||) so a future entry
+      # that forgets it fails loudly instead of silently mislabeling the block.
+      provider_key = api_config.fetch(:opencode_model_provider)
+      metadata_config["provider"] = { provider_key => provider_config }
     end
 
     AgentHarness::ProviderRuntime.new(
       model: model_id,
       env: env,
-      unset_env: %w[OPENAI_HEADER_X_AGENT_RUN_ID OPENAI_HEADER_X_PROXY_TOKEN],
+      # Strip the Paid secrets-proxy headers that provision.rb seeds as baseline
+      # env. A direct-outbound runtime talks to the provider's own endpoint, so
+      # forwarding the per-run proxy token would leak it to a third party. The
+      # ANTHROPIC_* pair matters once ANTHROPIC_BASE_URL is redirected to a
+      # direct @ai-sdk/anthropic endpoint (e.g. MiniMax); OPENAI_* is the same
+      # concern for the OpenAI-compatible providers.
+      unset_env: %w[
+        OPENAI_HEADER_X_AGENT_RUN_ID OPENAI_HEADER_X_PROXY_TOKEN
+        ANTHROPIC_HEADER_X_AGENT_RUN_ID ANTHROPIC_HEADER_X_PROXY_TOKEN
+      ],
       metadata: {
         config: metadata_config
       }

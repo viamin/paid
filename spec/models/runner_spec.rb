@@ -1110,15 +1110,40 @@ RSpec.describe Runner do
 
       runtime = minimax_runner.agent_harness_runner_runtime
 
-      expect(runtime.model).to eq("MiniMax-M2.7")
-      expect(runtime.env).to include("ANTHROPIC_API_KEY" => "sk-minimax-secret")
+      expect(runtime.model).to eq("minimax/MiniMax-M2.7")
+      expect(runtime.env).to include(
+        "ANTHROPIC_API_KEY" => "sk-minimax-secret",
+        "ANTHROPIC_BASE_URL" => "https://api.minimax.io/anthropic/v1"
+      )
       expect(runtime.env).not_to have_key("OPENAI_BASE_URL")
       expect(runtime.metadata[:config]["provider"]).to eq(
-        { "minimax" => { "baseURL" => "https://api.minimax.io/anthropic/v1" } }
+        { "minimax" => { "npm" => "@ai-sdk/anthropic" } }
       )
+      # Paid proxy headers must be stripped so the per-run token never reaches MiniMax.
+      expect(runtime.unset_env).to include("ANTHROPIC_HEADER_X_AGENT_RUN_ID", "ANTHROPIC_HEADER_X_PROXY_TOKEN")
     end
 
-    it "leaves MiniMax highspeed models unqualified" do
+    it "configures the native Anthropic provider through the @ai-sdk/anthropic SDK" do
+      anthropic_key = create(:provider_api_key, user: user, api_service_type: "anthropic", api_key: "sk-ant-secret")
+      anthropic_runner = create(
+        :runner,
+        user: user,
+        runner_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: anthropic_key,
+        config: { "opencode" => { "api_provider" => "anthropic", "model" => "claude-sonnet-4-5" } }
+      )
+
+      runtime = anthropic_runner.agent_harness_runner_runtime
+
+      expect(runtime.model).to eq("anthropic/claude-sonnet-4-5")
+      expect(runtime.env).to include("ANTHROPIC_API_KEY" => "sk-ant-secret", "ANTHROPIC_BASE_URL" => "https://api.anthropic.com")
+      expect(runtime.env).not_to have_key("OPENAI_BASE_URL")
+      expect(runtime.metadata[:config]["provider"]).to eq({ "anthropic" => { "npm" => "@ai-sdk/anthropic" } })
+      expect(runtime.unset_env).to include("ANTHROPIC_HEADER_X_PROXY_TOKEN")
+    end
+
+    it "qualifies MiniMax highspeed models with the minimax provider prefix" do
       minimax_key = create(:provider_api_key, user: user, api_service_type: "minimax", api_key: "sk-minimax-hs")
       minimax_runner = create(
         :runner,
@@ -1131,11 +1156,14 @@ RSpec.describe Runner do
 
       runtime = minimax_runner.agent_harness_runner_runtime
 
-      expect(runtime.model).to eq("MiniMax-M2.7-highspeed")
-      expect(runtime.env).to include("ANTHROPIC_API_KEY" => "sk-minimax-hs")
+      expect(runtime.model).to eq("minimax/MiniMax-M2.7-highspeed")
+      expect(runtime.env).to include(
+        "ANTHROPIC_API_KEY" => "sk-minimax-hs",
+        "ANTHROPIC_BASE_URL" => "https://api.minimax.io/anthropic/v1"
+      )
       expect(runtime.env).not_to have_key("OPENAI_BASE_URL")
       expect(runtime.metadata[:config]["provider"]).to eq(
-        { "minimax" => { "baseURL" => "https://api.minimax.io/anthropic/v1" } }
+        { "minimax" => { "npm" => "@ai-sdk/anthropic" } }
       )
     end
 
