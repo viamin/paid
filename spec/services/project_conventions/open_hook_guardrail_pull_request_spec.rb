@@ -126,6 +126,9 @@ RSpec.describe ProjectConventions::OpenHookGuardrailPullRequest do
     Open3.capture3("git", "clone", origin_path.to_s, repo_path.to_s)
     Open3.capture3("git", "config", "user.name", "Spec User", chdir: repo_path.to_s)
     Open3.capture3("git", "config", "user.email", "spec@example.com", chdir: repo_path.to_s)
+    # Keep commits hermetic: never inherit host/global signing config (e.g. a
+    # gpg.ssh.program pointing at a binary that does not exist in this environment).
+    Open3.capture3("git", "config", "commit.gpgsign", "false", chdir: repo_path.to_s)
 
     files.each do |relative_path, content|
       path = repo_path.join(relative_path)
