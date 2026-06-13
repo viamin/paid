@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Wrapper script for herb that uses the Node.js package
+# If first argument is "lint", remove it and pass the rest to npx
+if [ "${1:-}" = "lint" ]; then
+  shift
+fi
+exec npx @herb-tools/linter "$@"

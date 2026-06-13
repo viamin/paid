@@ -146,18 +146,25 @@ if [ "$AUTOFIX" = true ]; then
 elif [ "$SAFE_AUTOFIX" = true ]; then
   HERB_ARGS="$HERB_ARGS --fix"
 fi
+
+# Check if herb is available in PATH (e.g., from a system installation or wrapper)
+HERB_CMD="bundle exec herb lint"
+if command -v herb >/dev/null 2>&1; then
+  HERB_CMD="herb lint"
+fi
+
 if [ "$FILE_FILTER" = true ]; then
   if [ -n "$erb_files" ]; then
     # The Ruby herb CLI delegates linting to the Node package at runtime.
     # shellcheck disable=SC2086
-    bundle exec herb lint $HERB_ARGS $erb_files
+    $HERB_CMD $HERB_ARGS $erb_files
   else
     echo "  No ERB files to lint."
   fi
 else
   # The Ruby herb CLI delegates linting to the Node package at runtime.
   # shellcheck disable=SC2086
-  bundle exec herb lint $HERB_ARGS app/views
+  $HERB_CMD $HERB_ARGS app/views
 fi
 
 echo "All lint checks passed."
