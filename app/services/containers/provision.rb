@@ -1065,11 +1065,19 @@ module Containers
       return unless File.file?(source_file)
 
       content = File.read(source_file)
-      sanitized = strip_codex_project_sections(content)
+      sanitized = sanitize_codex_host_config(content)
       write_container_file("/home/agent/.codex/config.toml", sanitized)
       log_system("container.codex_config_sanitized")
     rescue Docker::Error::DockerError, SystemCallError => e
       log_system("container.codex_config_sanitization_failed", error: e.message)
+    end
+
+    def sanitize_codex_host_config(toml)
+      sanitized = strip_codex_project_sections(toml)
+      sanitized = strip_codex_top_level_model_settings(sanitized)
+      model_id = codex_container_model_id
+
+      model_id.present? ? %(model = "#{toml_string_escape(model_id)}"\n#{sanitized}) : sanitized
     end
 
     def strip_codex_project_sections(toml)
@@ -1091,6 +1099,27 @@ module Containers
 
         false
       end.join
+    end
+
+    def strip_codex_top_level_model_settings(toml)
+      in_top_level = true
+      toml.lines.reject do |line|
+        in_top_level = false if line.match?(/\A\s*\[/)
+        in_top_level && line.match?(/\A\s*model(?:_reasoning_effort)?\s*=/)
+      end.join
+    end
+
+    def codex_container_model_id
+      tier = agent_run&.model_selection&.tier.presence ||
+        agent_run&.model_selection&.llm_model&.tier.presence ||
+        "mid"
+      defaults = Runners::DefaultTierModelIds.call(runner_key: "codex")
+
+      [ tier, "mid", "high", "low" ].uniq.filter_map { |candidate| defaults[candidate] }.first
+    end
+
+    def toml_string_escape(value)
+      JSON.generate(value.to_s)[1...-1]
     end
 
     # Appends the Codex notify hook to config.toml inside the container.

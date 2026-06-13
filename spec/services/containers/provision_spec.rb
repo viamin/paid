@@ -1351,9 +1351,11 @@ RSpec.describe Containers::Provision do
       let(:codex_config_dir) { Dir.mktmpdir("codex-config") }
 
       before do
+        create(:llm_model, :openai, model_id: "gpt-5.1", tier: "mid", capability_score: 9.0)
         File.write(File.join(codex_config_dir, "auth.json"), "{}")
         File.write(File.join(codex_config_dir, "config.toml"), <<~TOML)
           model = "gpt-5"
+          model_reasoning_effort = "medium"
 
           [projects."/workspaces/paid"]
           trust_level = "trusted"
@@ -1418,7 +1420,9 @@ RSpec.describe Containers::Provision do
             satisfy { |cmd|
               decoded = decoded_base64_content(cmd)
               cmd.include?("/home/agent/.codex/config.toml") &&
-                decoded.include?('model = "gpt-5"') &&
+                decoded.include?('model = "gpt-5.1"') &&
+                !decoded.include?('model = "gpt-5"') &&
+                !decoded.include?("model_reasoning_effort") &&
                 decoded.include?("[features]") &&
                 !decoded.include?("[projects")
             }
@@ -1462,8 +1466,9 @@ RSpec.describe Containers::Provision do
       let(:codex_local_dir) { Dir.mktmpdir("codex-local") }
 
       before do
+        create(:llm_model, :openai, model_id: "gpt-5.1", tier: "mid", capability_score: 9.0)
         File.write(File.join(codex_local_dir, "auth.json"), '{"refresh_token":"test-token"}')
-        File.write(File.join(codex_local_dir, "config.toml"), "model = \"gpt-5\"")
+        File.write(File.join(codex_local_dir, "config.toml"), "model = \"gpt-5\"\nmodel_reasoning_effort = \"medium\"")
 
         allow(ENV).to receive(:fetch).and_call_original
         allow(ENV).to receive(:[]).and_call_original
@@ -1513,7 +1518,9 @@ RSpec.describe Containers::Provision do
         expect(mock_container).to have_received(:exec).with(
           [ "sh", "-lc", satisfy { |cmd|
             cmd.include?("/home/agent/.codex/config.toml") &&
-              decoded_base64_content(cmd).include?('model = "gpt-5"')
+              decoded_base64_content(cmd).include?('model = "gpt-5.1"') &&
+              !decoded_base64_content(cmd).include?('model = "gpt-5"') &&
+              !decoded_base64_content(cmd).include?("model_reasoning_effort")
           } ],
           user: "agent"
         )
@@ -3293,6 +3300,37 @@ RSpec.describe Containers::Provision do
       result = service.send(:strip_codex_project_sections, toml)
 
       expect(result).to eq("model = \"gpt-5\"\n[features]\nmulti_agent = true\n")
+    end
+  end
+
+  describe "#sanitize_codex_host_config" do
+    let(:service) { described_class.new(agent_run: agent_run, project: project) }
+
+    it "replaces host model settings with an escaped Paid-selected Codex model" do
+      allow(service).to receive(:codex_container_model_id).and_return('gpt-"quoted"')
+
+      result = service.send(:sanitize_codex_host_config, <<~TOML)
+          model = "gpt-5.5"
+          model_reasoning_effort = "medium"
+        [features]
+        multi_agent = true
+      TOML
+
+      expect(result).to eq(<<~TOML)
+        model = "gpt-\\"quoted\\""
+        [features]
+        multi_agent = true
+      TOML
+    end
+
+    it "falls back to the active mid-tier Codex model when the run tier has no Codex default" do
+      create(:llm_model, :openai, model_id: "gpt-5.1", tier: "mid", capability_score: 9.0)
+      high_model = create(:llm_model, model_id: "claude-opus-test", provider: "anthropic", tier: "high")
+      create(:model_selection, agent_run: agent_run, llm_model: high_model, tier: "high")
+
+      result = service.send(:sanitize_codex_host_config, "model = \"gpt-5.5\"\n")
+
+      expect(result).to eq("model = \"gpt-5.1\"\n")
     end
   end
 end

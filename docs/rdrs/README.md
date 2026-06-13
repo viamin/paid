@@ -104,6 +104,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
 | [RDR-025](RDR-025-runner-quota-tracking.md) | Runner Quota Tracking and Quota-Aware Routing | Implemented | Medium |
+| [RDR-040](RDR-040-runner-model-compatibility-contracts.md) | Runner Model Compatibility Contracts | Draft | P1 |
 
 ### Semantic Understanding
 
