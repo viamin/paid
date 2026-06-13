@@ -4,6 +4,7 @@ module Dashboard
   class PrCycleTimeSeries
     DEFAULT_OUTLIER_CUTOFF_HOURS = 24
     WINDOW_DAYS = 90
+    CACHE_TTL = 45.seconds
 
     def self.call(...)
       new(...).call
@@ -17,20 +18,26 @@ module Dashboard
     end
 
     def call
-      rows = ActiveRecord::Base.connection.select_all(daily_cycle_time_sql).to_a
-      all_rows = ActiveRecord::Base.connection.select_all(all_daily_counts_sql).to_a
-      overall_p50 = fetch_overall_p50
-      date_range = compute_date_range
-      build_series(rows, all_rows, date_range, overall_p50)
+      Rails.cache.fetch(cache_key, expires_in: CACHE_TTL) { compute }
     end
 
     private
 
     attr_reader :account, :time_range, :outlier_cutoff_hours, :project_id
 
-    def build_series(filtered_rows, all_rows, date_range, overall_p50)
-      filtered_by_date = filtered_rows.index_by { |r| parse_date(r["merge_date"]) }
-      all_by_date = all_rows.index_by { |r| parse_date(r["merge_date"]) }
+    def compute
+      rows = ActiveRecord::Base.connection.select_all(combined_daily_sql).to_a
+      overall_p50 = fetch_overall_p50
+      date_range = compute_date_range
+      build_series(rows, date_range, overall_p50)
+    end
+
+    def cache_key
+      [ "dashboard/pr_cycle_time_series", account.id, time_range, outlier_cutoff_hours, project_id ]
+    end
+
+    def build_series(rows, date_range, overall_p50)
+      by_date = rows.index_by { |r| parse_date(r["merge_date"]) }
 
       avg_data = {}
       p50_data = {}
@@ -40,13 +47,12 @@ module Dashboard
       trend_points = []
 
       date_range.each do |date|
-        fr = filtered_by_date[date]
-        ar = all_by_date[date]
+        row = by_date[date]
+        count = row ? row["filtered_count"].to_i : 0
 
-        if fr
-          avg_h = fr["avg_hours"].to_f.round(2)
-          p50_h = fr["p50_hours"].to_f.round(2)
-          count = fr["filtered_count"].to_i
+        if count > 0
+          avg_h = row["avg_hours"].to_f.round(2)
+          p50_h = row["p50_hours"].to_f.round(2)
 
           avg_data[date] = avg_h
           p50_data[date] = p50_h
@@ -58,13 +64,9 @@ module Dashboard
           merged_counts[date] = 0
         end
 
-        if ar
-          total = ar["total_count"].to_i
-          filtered = filtered_by_date[date]&.fetch("filtered_count", 0).to_i
-          outliers_removed = total - filtered
-          if outliers_removed > 0
-            outlier_annotations[date] = outliers_removed
-          end
+        if row
+          outliers_removed = row["total_count"].to_i - count
+          outlier_annotations[date] = outliers_removed if outliers_removed > 0
         end
       end
 
@@ -78,19 +80,20 @@ module Dashboard
         ],
         outlier_annotations: outlier_annotations,
         merged_counts: merged_counts,
-        summary: build_summary(filtered_rows, overall_p50: overall_p50)
+        summary: build_summary(rows, overall_p50: overall_p50)
       }
     end
 
     def build_summary(rows, overall_p50:)
-      return empty_summary if rows.empty?
+      data_rows = rows.select { |r| r["filtered_count"].to_i > 0 }
+      return empty_summary if data_rows.empty?
 
-      total_merged = rows.sum { |r| r["filtered_count"].to_i }
+      total_merged = data_rows.sum { |r| r["filtered_count"].to_i }
 
       {
         total_merged: total_merged,
-        total_days: rows.size,
-        overall_avg_hours: rows.sum { |r| r["avg_hours"].to_f * r["filtered_count"].to_i }.fdiv(total_merged).round(2),
+        total_days: data_rows.size,
+        overall_avg_hours: data_rows.sum { |r| r["avg_hours"].to_f * r["filtered_count"].to_i }.fdiv(total_merged).round(2),
         overall_p50_hours: overall_p50.round(2)
       }
     end
@@ -155,38 +158,42 @@ module Dashboard
       (start_date..end_date).to_a
     end
 
-    def daily_cycle_time_sql
-      <<~SQL.squish
-        SELECT DATE(i.github_updated_at) AS merge_date,
-               AVG(EXTRACT(EPOCH FROM (i.github_updated_at - i.github_created_at)) / 3600.0)::numeric AS avg_hours,
-               percentile_cont(0.5) WITHIN GROUP (
-                 ORDER BY EXTRACT(EPOCH FROM (i.github_updated_at - i.github_created_at)) / 3600.0
-               ) AS p50_hours,
-               COUNT(*) AS filtered_count
-        FROM issues i
-        WHERE i.is_pull_request = true
-          AND i.pr_review_phase = 'merged'
-          AND i.project_id IN (#{project_ids_sql})
-          #{project_scope_filter}
-          #{time_filter}
-          AND EXTRACT(EPOCH FROM (i.github_updated_at - i.github_created_at)) / 3600.0 <= #{outlier_cutoff_hours}
-        GROUP BY DATE(i.github_updated_at)
-        ORDER BY merge_date
-      SQL
-    end
-
-    def all_daily_counts_sql
-      <<~SQL.squish
-        SELECT DATE(i.github_updated_at) AS merge_date,
-               COUNT(*) AS total_count
-        FROM issues i
-        WHERE i.is_pull_request = true
-          AND i.pr_review_phase = 'merged'
-          AND i.project_id IN (#{project_ids_sql})
-          #{project_scope_filter}
-          #{time_filter}
-        GROUP BY DATE(i.github_updated_at)
-        ORDER BY merge_date
+    def combined_daily_sql
+      # Use a CTE so the base table is scanned once; totals and filtered aggregations
+      # are then two separate aggregations over the CTE rather than two SQL round-trips.
+      <<~SQL
+        WITH base AS (
+          SELECT DATE(i.github_updated_at) AS merge_date,
+                 EXTRACT(EPOCH FROM (i.github_updated_at - i.github_created_at)) / 3600.0 AS cycle_hours
+          FROM issues i
+          WHERE i.is_pull_request = true
+            AND i.pr_review_phase = 'merged'
+            AND i.project_id IN (#{project_ids_sql})
+            #{project_scope_filter}
+            #{time_filter}
+        ),
+        totals AS (
+          SELECT merge_date, COUNT(*) AS total_count
+          FROM base
+          GROUP BY merge_date
+        ),
+        filtered AS (
+          SELECT merge_date,
+                 COUNT(*) AS filtered_count,
+                 AVG(cycle_hours)::numeric AS avg_hours,
+                 percentile_cont(0.5) WITHIN GROUP (ORDER BY cycle_hours) AS p50_hours
+          FROM base
+          WHERE cycle_hours <= #{outlier_cutoff_hours}
+          GROUP BY merge_date
+        )
+        SELECT t.merge_date,
+               t.total_count,
+               COALESCE(f.filtered_count, 0) AS filtered_count,
+               f.avg_hours,
+               f.p50_hours
+        FROM totals t
+        LEFT JOIN filtered f USING (merge_date)
+        ORDER BY t.merge_date
       SQL
     end
 

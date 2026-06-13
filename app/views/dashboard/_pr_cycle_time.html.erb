@@ -52,7 +52,8 @@
               legend: "bottom",
               library: {
                 plugins: {
-                  legend: { display: true, position: "bottom" }
+                  legend: { display: true, position: "bottom" },
+                  annotation: { annotations: chart_annotations(data) }
                 },
                 scales: {
                   y: {
@@ -63,8 +64,7 @@
                 elements: {
                   line: { tension: 0.3 },
                   point: { radius: 3, hoverRadius: 6 }
-                },
-                annotation: chart_annotations(data)
+                }
               } %>
         </div>
 
