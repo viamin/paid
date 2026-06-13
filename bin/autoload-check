@@ -9,20 +9,34 @@
 #
 # This script boots Rails in an instrumented mode that tracks when autoloaded
 # constants are first referenced. If any app/ constants are referenced during
-# boot (before after_initialize), they are pinned and won't reload in development.
+# the initializer phase (before the first to_prepare callback runs), they are
+# pinned and won't reload in development.
+#
+# Constants resolved inside to_prepare blocks are intentionally excluded:
+# the correct, reloadable pattern is to register/wire things in to_prepare,
+# so those constants re-resolve on each reload and are not "pinned".
 #
 # We use Zeitwerk's on_load callback to passively observe which constants the
 # autoloader resolves during boot, rather than probing with const_get (which
 # would trigger autoload itself and produce false positives).
 
 booted_constants = []
+in_to_prepare = false
 
 # Hook into Zeitwerk before Rails boots so we capture every autoload that
 # fires during the boot sequence.
 require_relative "../config/application"
 
 Rails.autoloaders.main.on_load do |cpath, _value, abspath|
-  booted_constants << [ cpath, abspath ]
+  booted_constants << [ cpath, abspath ] unless in_to_prepare
+end
+
+# Register a to_prepare callback BEFORE initialize! so it runs first (ahead of
+# all callbacks registered by config/initializers/*.rb, which are loaded during
+# initialize!). When it fires we know we've entered the to_prepare phase and
+# should stop recording — those refs are the correct reloadable pattern.
+Rails.application.config.to_prepare do
+  in_to_prepare = true
 end
 
 # Now finish booting (runs initializers, to_prepare, etc.)
@@ -36,7 +50,7 @@ app_root = Rails.root.to_s
 app_constants = booted_constants.select { |_, abspath| abspath&.start_with?("#{app_root}/app/") }
 
 if app_constants.any?
-  puts "The following autoloaded constants were loaded during boot:"
+  puts "The following autoloaded constants were loaded during boot (before to_prepare):"
   puts "(These may not reload correctly in development)"
   puts
   app_constants.sort_by(&:first).each do |cpath, abspath|
