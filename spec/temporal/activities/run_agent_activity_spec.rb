@@ -2944,7 +2944,7 @@ expect(container_service).to receive(:execute).with(
           "timeout_type" => "idle",
           "effective_timeout_seconds" => 3600,
           "startup_timeout_seconds" => described_class::CREATE_PR_RUNNER_STARTUP_TIMEOUTS["claude"],
-          "idle_timeout_seconds" => 360,
+          "idle_timeout_seconds" => described_class::CREATE_PR_RUNNER_IDLE_TIMEOUTS["claude_code"],
           "heartbeat_supported" => true
         )
       end
@@ -3345,7 +3345,7 @@ expect(container_service).to receive(:execute).with(
     end
 
     context "when goal is create_pr" do
-      it "uses the default agent timeout with runner-specific startup_timeout and create_pr idle_timeout" do
+      it "uses runner-specific idle timeout (claude_code) on first attempt" do
         project.update!(max_execution_seconds: 86_400)
         allow(container_service).to receive(:execute).and_return(exec_success)
         allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
@@ -3355,7 +3355,7 @@ expect(container_service).to receive(:execute).with(
           hash_including(
             timeout: AGENT_TIMEOUT_DEFAULT,
             startup_timeout: described_class::CREATE_PR_RUNNER_STARTUP_TIMEOUTS["claude"],
-            idle_timeout: described_class::DEFAULT_CREATE_PR_IDLE_TIMEOUT
+            idle_timeout: described_class::CREATE_PR_RUNNER_IDLE_TIMEOUTS["claude_code"]
           )
         ).and_return(exec_success)
 
@@ -3398,7 +3398,7 @@ expect(container_service).to receive(:execute).with(
         activity.execute(agent_run_id: agent_run.id)
       end
 
-      it "applies heartbeat-backed idle timeout to kilocode via upstream harness" do
+      it "applies runner-specific idle timeout to kilocode via upstream harness" do
         agent_run.update!(agent_type: "kilocode")
         project.update!(max_execution_seconds: 86_400)
         allow(container_service).to receive(:execute).and_return(exec_success)
@@ -3409,7 +3409,7 @@ expect(container_service).to receive(:execute).with(
           hash_including(
             timeout: AGENT_TIMEOUT_DEFAULT,
             startup_timeout: described_class::CREATE_PR_RUNNER_STARTUP_TIMEOUTS["kilocode"],
-            idle_timeout: described_class::DEFAULT_CREATE_PR_IDLE_TIMEOUT,
+            idle_timeout: described_class::CREATE_PR_RUNNER_IDLE_TIMEOUTS["kilocode"],
             heartbeat_path: "/tmp/paid-heartbeat-test/.paid-heartbeat"
           )
         ).and_return(exec_success)
@@ -3417,7 +3417,7 @@ expect(container_service).to receive(:execute).with(
         activity.execute(agent_run_id: agent_run.id)
       end
 
-      it "applies heartbeat-backed idle timeout to opencode via upstream harness" do
+      it "applies runner-specific idle timeout to opencode via upstream harness" do
         agent_run.update!(agent_type: "opencode")
         project.update!(max_execution_seconds: 86_400)
         allow(container_service).to receive(:execute).and_return(exec_success)
@@ -3428,7 +3428,7 @@ expect(container_service).to receive(:execute).with(
           hash_including(
             timeout: AGENT_TIMEOUT_DEFAULT,
             startup_timeout: described_class::CREATE_PR_RUNNER_STARTUP_TIMEOUTS["opencode"],
-            idle_timeout: described_class::DEFAULT_CREATE_PR_IDLE_TIMEOUT,
+            idle_timeout: described_class::CREATE_PR_RUNNER_IDLE_TIMEOUTS["opencode"],
             heartbeat_path: "/tmp/paid-heartbeat-test/.paid-heartbeat"
           )
         ).and_return(exec_success)
@@ -3436,14 +3436,14 @@ expect(container_service).to receive(:execute).with(
         activity.execute(agent_run_id: agent_run.id)
       end
 
-      it "applies extended idle timeout to codex for coarse heartbeat" do
+      it "applies extended idle timeout to codex using per-runner constant with coarse heartbeat multiplier" do
         agent_run.update!(agent_type: "codex")
         project.update!(max_execution_seconds: 86_400)
         allow(activity).to receive(:run_harness_preflight!)
         allow(container_service).to receive(:execute).and_return(exec_success)
         allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
 
-        expected_idle = described_class::DEFAULT_CREATE_PR_IDLE_TIMEOUT * Containers::HeartbeatSetup::COARSE_HEARTBEAT_IDLE_TIMEOUT_MULTIPLIER
+        expected_idle = described_class::CREATE_PR_RUNNER_IDLE_TIMEOUTS["codex"] * Containers::HeartbeatSetup::COARSE_HEARTBEAT_IDLE_TIMEOUT_MULTIPLIER
 
         expect(container_service).to receive(:execute).with(
           anything,
@@ -3458,7 +3458,7 @@ expect(container_service).to receive(:execute).with(
         activity.execute(agent_run_id: agent_run.id)
       end
 
-      it "uses runner-specific startup timeout regardless of user idle timeout" do
+      it "uses explicit user idle timeout when customized to a non-nil value" do
         agent_run.update!(agent_type: "codex")
         project.update!(max_execution_seconds: 86_400)
         user.settings.update!(create_pr_idle_timeout_seconds: 420)
@@ -3480,6 +3480,71 @@ expect(container_service).to receive(:execute).with(
         activity.execute(agent_run_id: agent_run.id)
       end
 
+      it "honours explicit user idle timeout on subsequent attempts without applying the retry multiplier" do
+        agent_run.update!(agent_type: "codex")
+        project.update!(max_execution_seconds: 86_400)
+        user.settings.update!(create_pr_idle_timeout_seconds: 420)
+        agent_run.record_runner_attempt("codex", success: false, error_type: "error")
+        allow(activity).to receive(:run_harness_preflight!)
+        allow(container_service).to receive(:execute).and_return(exec_success)
+        allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
+
+        # Explicit user value (420) must be used verbatim — the retry multiplier
+        # only escalates the per-runner tuned default, not explicit user
+        # customizations.
+        expected_idle = 420 * Containers::HeartbeatSetup::COARSE_HEARTBEAT_IDLE_TIMEOUT_MULTIPLIER
+
+        expect(container_service).to receive(:execute).with(
+          anything,
+          hash_including(
+            timeout: AGENT_TIMEOUT_DEFAULT,
+            startup_timeout: described_class::CREATE_PR_RUNNER_STARTUP_TIMEOUTS["codex"],
+            idle_timeout: expected_idle
+          )
+        ).and_return(exec_success)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "applies the retry idle timeout multiplier when a prior attempt produced output" do
+        project.update!(max_execution_seconds: 86_400)
+        agent_run.record_runner_attempt("claude_code", success: false, error_type: "error", output_chars: 4200)
+        allow(container_service).to receive(:execute).and_return(exec_success)
+        allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
+
+        expected_idle = (described_class::CREATE_PR_RUNNER_IDLE_TIMEOUTS["claude_code"] *
+          described_class::RETRY_IDLE_TIMEOUT_MULTIPLIER).ceil
+
+        expect(container_service).to receive(:execute).with(
+          anything,
+          hash_including(
+            timeout: AGENT_TIMEOUT_DEFAULT,
+            startup_timeout: described_class::CREATE_PR_RUNNER_STARTUP_TIMEOUTS["claude"],
+            idle_timeout: expected_idle
+          )
+        ).and_return(exec_success)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "does not apply the retry idle timeout multiplier when a prior attempt produced no output" do
+        project.update!(max_execution_seconds: 86_400)
+        agent_run.record_runner_attempt("claude_code", success: false, error_type: "error")
+        allow(container_service).to receive(:execute).and_return(exec_success)
+        allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
+
+        expect(container_service).to receive(:execute).with(
+          anything,
+          hash_including(
+            timeout: AGENT_TIMEOUT_DEFAULT,
+            startup_timeout: described_class::CREATE_PR_RUNNER_STARTUP_TIMEOUTS["claude"],
+            idle_timeout: described_class::CREATE_PR_RUNNER_IDLE_TIMEOUTS["claude_code"]
+          )
+        ).and_return(exec_success)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
       it "falls back to the container heartbeat path for volume-backed workspaces" do
         agent_run.update!(worktree_path: nil)
         project.update!(max_execution_seconds: 86_400)
@@ -3491,7 +3556,7 @@ expect(container_service).to receive(:execute).with(
           hash_including(
             timeout: AGENT_TIMEOUT_DEFAULT,
             startup_timeout: described_class::CREATE_PR_RUNNER_STARTUP_TIMEOUTS["claude"],
-            idle_timeout: described_class::DEFAULT_CREATE_PR_IDLE_TIMEOUT,
+            idle_timeout: described_class::CREATE_PR_RUNNER_IDLE_TIMEOUTS["claude_code"],
             heartbeat_path: Containers::HeartbeatSetup::CONTAINER_HEARTBEAT_PATH
           )
         ).and_return(exec_success)

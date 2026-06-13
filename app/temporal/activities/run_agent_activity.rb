@@ -81,7 +81,9 @@ module Activities
     DEFAULT_ISSUE_GOAL_TIMEOUT = 600        # 10 minutes wall clock
     DEFAULT_ISSUE_GOAL_IDLE_TIMEOUT = 120   # 2 minutes without output = stuck
     DEFAULT_REVIEW_GOAL_IDLE_TIMEOUT = 300  # 5 minutes without output = stuck
-    DEFAULT_CREATE_PR_IDLE_TIMEOUT = 360   # 6 minutes without output = stuck
+    # Fallback idle timeout for create_pr with unknown runners; known runners
+    # use CREATE_PR_RUNNER_IDLE_TIMEOUTS instead.
+    DEFAULT_CREATE_PR_IDLE_TIMEOUT = 360   # 6 minutes without output = stuck (legacy fallback)
     DEFAULT_AGENT_STARTUP_TIMEOUT = 360    # 6 minutes without first output = stuck
 
     # Per-runner startup timeouts for create_pr goals, tuned from observed data.
@@ -101,6 +103,32 @@ module Activities
       "opencode"    => 3000, # 50 min — p90 of completed is 48.2 min
       "pi"          => 3000  # 50 min — p90 of completed is 48.2 min
     }.freeze
+
+    # Per-runner idle timeouts for create_pr goals, tuned from observed gap
+    # patterns in completed runs. 298 runs were terminated after an average of
+    # 31.8 minutes of productive work because the 6-minute default was too
+    # aggressive for complex tasks with irregular output bursts.
+    #
+    # Claude uses reliable per-tool heartbeats — effective idle timeout equals
+    # the base value. Codex uses coarse heartbeats (3x multiplier applied by
+    # HeartbeatSetup), so the 15-min base yields a 45-min effective window on
+    # a first attempt and 67.5 min on a subsequent attempt (see
+    # RETRY_IDLE_TIMEOUT_MULTIPLIER). Other providers use upstream harness
+    # heartbeat integration.
+    CREATE_PR_RUNNER_IDLE_TIMEOUTS = {
+      "claude_code" => 600,  # 10 min — reliable per-tool heartbeat, effective 10 min
+      "codex"       => 900,  # 15 min base — coarse 3x multiplier, effective 45 min (67.5 min on retry)
+      "kilocode"    => 600,  # 10 min
+      "opencode"    => 600,  # 10 min
+      "pi"          => 600   # 10 min
+    }.freeze
+
+    # Multiplier applied to the per-runner base idle timeout on a subsequent
+    # runner attempt, granting 50% more idle tolerance to accommodate tasks
+    # with irregular output patterns after the run has had a prior attempt.
+    # Only applies to the per-runner tuned defaults; explicit user custom
+    # values are honored verbatim with no escalation.
+    RETRY_IDLE_TIMEOUT_MULTIPLIER = 1.5
 
     PREFLIGHT_TIMEOUT_SECONDS = 10
     DIRECT_OUTBOUND_PREFLIGHT_TIMEOUT_SECONDS = 30
@@ -271,6 +299,7 @@ module Activities
             heartbeat("runner_completed", runner)
             record_runner_success(user_settings, runner_state_name, runner_states)
             agent_run.record_runner_attempt(attempt_label, success: true, duration_seconds: attempt_duration,
+              output_chars: runner_result[:output_chars],
               **resolved_run_info)
             # Persist the routing key so multiple entries sharing the same
             # runner_key (e.g. several OpenCode API-key entries with
@@ -413,6 +442,7 @@ module Activities
               error_type: "timeout",
               error_message: e.message,
               duration_seconds: attempt_duration,
+              output_chars: e.output_chars,
               diagnostics: e.diagnostics,
               **resolved_run_info
             )
@@ -644,11 +674,12 @@ module Activities
     class RunnerInfraExecutionError < RunnerExecutionError; end
     ProviderExecutionError = RunnerExecutionError
     class RunnerTimeoutError < StandardError
-      attr_reader :timeout_type, :diagnostics
+      attr_reader :timeout_type, :diagnostics, :output_chars
 
-      def initialize(message, timeout_type: nil, diagnostics: {})
+      def initialize(message, timeout_type: nil, diagnostics: {}, output_chars: 0)
         @timeout_type = timeout_type
         @diagnostics = diagnostics
+        @output_chars = output_chars
         super(message)
       end
     end
@@ -908,6 +939,16 @@ module Activities
       end
 
       [ startup_base, effective_timeout ].compact.min
+    end
+
+    # Returns true when the run has had a prior runner attempt that produced
+    # output (`output_chars > 0`). Used to apply progressive idle timeout:
+    # runs with prior output are treated as proven-productive and receive extra
+    # idle tolerance to accommodate tasks with irregular output patterns.
+    # Runs that cold-started and produced nothing do not receive the bonus,
+    # preserving fast failure for genuinely stalled runs.
+    def prior_attempt_with_output?(agent_run)
+      agent_run.runners_attempted.any? { |a| a["output_chars"].to_i > 0 }
     end
 
     # Builds the ordered list of runners to attempt.
@@ -1242,7 +1283,18 @@ module Activities
       elsif agent_run.review_goal?
         user_settings&.review_goal_idle_timeout_seconds || DEFAULT_REVIEW_GOAL_IDLE_TIMEOUT
       elsif agent_run.create_pr_goal?
-        user_settings&.create_pr_idle_timeout_seconds || DEFAULT_CREATE_PR_IDLE_TIMEOUT
+        per_runner_idle = CREATE_PR_RUNNER_IDLE_TIMEOUTS.fetch(runner, DEFAULT_CREATE_PR_IDLE_TIMEOUT)
+        user_idle = user_settings&.create_pr_idle_timeout_seconds
+        # nil means the user has not customized the setting; use per-runner
+        # tuned defaults with optional progressive escalation.
+        # Any non-nil value is an explicit user choice and is honored verbatim
+        # (no multiplier applied), including a deliberate 360 s selection.
+        if user_idle.nil?
+          base_idle = per_runner_idle
+          prior_attempt_with_output?(agent_run) ? (base_idle * RETRY_IDLE_TIMEOUT_MULTIPLIER).ceil : base_idle
+        else
+          user_idle
+        end
       end
       startup_timeout = effective_startup_timeout(
         runner_key: runner,
@@ -1304,11 +1356,13 @@ module Activities
         end
 
         output_present = stdout.present? || stderr.present?
+        output_chars = stdout.to_s.length + stderr.to_s.length
         track_harness_tokens(agent_run, runner_candidate, runner, user_settings.user, result, execution_started_at)
         agent_run.log!("system", "Agent execution succeeded with #{runner}")
         return {
           pre_agent_sha: pre_agent_sha,
           output_present: output_present,
+          output_chars: output_chars,
           review_threads_already_addressed: review_threads_already_addressed?(stdout: stdout, stderr: stderr, prompt: prompt)
         }
       end
@@ -1361,6 +1415,7 @@ module Activities
       raise RunnerTimeoutError.new(
         "#{timeout_type}_timeout: #{e.message}",
         timeout_type: timeout_type,
+        output_chars: timeout_output.length,
         diagnostics: timeout_attempt_diagnostics(
           timeout_error: e,
           timeout_type: timeout_type,

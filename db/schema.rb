@@ -2425,7 +2425,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_12_225831) do
     t.integer "circuit_breaker_timeout_seconds", default: 300, null: false
     t.bigint "container_memory_bytes", default: 4294967296, null: false
     t.integer "container_timeout_seconds", default: 3600, null: false
-    t.integer "create_pr_idle_timeout_seconds", default: 360, null: false
+    t.integer "create_pr_idle_timeout_seconds"
     t.datetime "created_at", null: false
     t.string "default_agent_runner", default: "claude", null: false
     t.jsonb "default_agent_runners_by_goal", default: {}, null: false
