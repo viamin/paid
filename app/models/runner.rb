@@ -392,8 +392,12 @@ class Runner < ApplicationRecord
     model_id.start_with?("#{provider_id}/") ? model_id : "#{provider_id}/#{model_id}"
   end
 
-  def opencode_qualified_model
-    model_id = opencode_model_id
+  # Qualifies a model id with the runner's opencode provider prefix
+  # (e.g. "minimax/MiniMax-M3"). Defaults to the runner's configured model but
+  # accepts an explicit model_id so models resolved outside the runtime builder
+  # (tier resolution, escalation) get the same treatment. Idempotent: a value
+  # already prefixed with this provider is returned unchanged.
+  def opencode_qualified_model(model_id = opencode_model_id)
     return if model_id.blank?
 
     api_config = DIRECT_OUTBOUND_API_PROVIDERS.fetch(opencode_api_provider, DIRECT_OUTBOUND_API_PROVIDERS["openrouter"])
@@ -401,6 +405,26 @@ class Runner < ApplicationRecord
     return model_id if provider_id.blank? || model_id.start_with?("#{provider_id}/")
 
     "#{provider_id}/#{model_id}"
+  end
+
+  # Re-applies the runner's direct-outbound provider qualification to a model id
+  # resolved outside the runtime builder. Tier resolution returns the bare
+  # tier_model_ids value, which would otherwise overwrite configured_runtime's
+  # qualified model and ship an unqualified id to opencode. opencode parses a
+  # bare id as a provider with an empty model (e.g. "MiniMax-M3" ->
+  # provider="MiniMax-M3", model="") and raises ProviderModelNotFoundError, so a
+  # bare id needs the runner's "<provider>/<model>" form.
+  #
+  # A model id that already carries a "/" is left untouched: OpenRouter-routed
+  # ids are "<vendor>/<model>" slugs (e.g. "moonshotai/kimi-k2-0905") that
+  # opencode addresses directly — the bare slug is the form the execute path and
+  # the openrouter_free runtime ship today. No-op for runners that do not
+  # provider-qualify their models.
+  def qualified_model_for(model_id)
+    return model_id if model_id.blank? || model_id.include?("/")
+    return opencode_qualified_model(model_id) if runner_key == "opencode"
+
+    model_id
   end
 
   def kilocode_api_key_env_var
