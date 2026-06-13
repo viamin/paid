@@ -766,8 +766,13 @@ module Activities
 
       return AgentHarness::ProviderRuntime.new(model: model_id) unless configured_runtime
 
+      # Re-qualify the resolved tier model with the runner's provider prefix.
+      # resolve_tier_model_for returns the bare tier_model_ids value, which would
+      # otherwise overwrite configured_runtime's already-qualified model and ship
+      # an unqualified id (e.g. "MiniMax-M3") that opencode rejects with
+      # ProviderModelNotFoundError.
       AgentHarness::ProviderRuntime.new(
-        model: model_id,
+        model: runner_entry.qualified_model_for(model_id),
         api_provider: configured_runtime.api_provider,
         base_url: configured_runtime.base_url,
         env: configured_runtime.env,
