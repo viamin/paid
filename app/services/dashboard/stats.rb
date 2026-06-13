@@ -5,6 +5,16 @@ module Dashboard
     CACHE_TTL = 45.seconds
     DAILY_RUN_CHART_WINDOW_DAYS = 30
     DAILY_RUN_CHART_STATUSES = %w[failed completed].freeze
+    OUTCOME_CHART_STATUSES = %w[completed failed timeout no_output auth_expired rate_limited cancelled].freeze
+    OUTCOME_CHART_COLORS = {
+      "completed" => "#16a34a",
+      "failed" => "#dc2626",
+      "timeout" => "#f97316",
+      "no_output" => "#7c3aed",
+      "auth_expired" => "#2563eb",
+      "rate_limited" => "#ca8a04",
+      "cancelled" => "#6b7280"
+    }.freeze
     PHASE_BREAKDOWN_WINDOW = 30.days
     PHASE_BREAKDOWN_RUN_LIMIT = 500
 
@@ -13,14 +23,14 @@ module Dashboard
     VALID_GOALS = %w[all create_pr create_issue review].freeze
 
     SECTIONS = %i[
-      run_volume daily_run_status_chart duration_percentiles phase_breakdown cost_and_tokens
+      run_volume daily_run_status_chart daily_outcome_chart duration_percentiles phase_breakdown cost_and_tokens
       performance_by_outcome performance_by_goal
       runs_by_agent_type runs_by_runner runner_fallback_stats
       runs_by_project cost_by_project issue_completion
     ].freeze
 
     METRICS_SECTIONS = %i[
-      run_volume daily_run_status_chart cost_and_tokens duration_percentiles phase_breakdown
+      run_volume daily_run_status_chart daily_outcome_chart cost_and_tokens duration_percentiles phase_breakdown
       issue_completion cost_by_project runner_fallback_stats
       runs_by_runner runs_by_project
     ].freeze
@@ -169,6 +179,48 @@ module Dashboard
           data: date_range.index_with { |date| counts.fetch([ date, status ], 0) }
         }
       end
+    end
+
+    def daily_outcome_chart
+      start_date = (DAILY_RUN_CHART_WINDOW_DAYS - 1).days.ago.to_date
+      end_date = Time.zone.today
+      date_range = (start_date..end_date).to_a
+
+      counts = agent_runs
+        .where(goal: "create_pr")
+        .where.not(completed_at: nil)
+        .where(completed_at: start_date.beginning_of_day..end_date.end_of_day)
+        .where(status: OUTCOME_CHART_STATUSES)
+        .group(Arel.sql("DATE(agent_runs.completed_at)"), :status)
+        .count
+
+      series = OUTCOME_CHART_STATUSES.map do |status|
+        {
+          name: status.titleize,
+          data: date_range.index_with { |date| counts.fetch([ date, status ], 0) }
+        }
+      end
+
+      completion_rate = date_range.index_with do |date|
+        day_total = OUTCOME_CHART_STATUSES.sum { |s| counts.fetch([ date, s ], 0) }
+        completed = counts.fetch([ date, "completed" ], 0)
+        day_total.zero? ? nil : (completed.to_f / day_total * 100).round(1)
+      end
+
+      overall_by_status = OUTCOME_CHART_STATUSES.index_with do |status|
+        counts.sum { |(_, s), v| s == status ? v : 0 }
+      end
+      overall_total = overall_by_status.values.sum
+      overall_completed = overall_by_status.fetch("completed", 0)
+
+      {
+        series: series,
+        completion_rate: completion_rate,
+        overall_total: overall_total,
+        overall_completed: overall_completed,
+        overall_completion_rate: overall_total.zero? ? 0.0 : (overall_completed.to_f / overall_total * 100).round(1),
+        overall_by_status: overall_by_status
+      }
     end
 
     def cost_and_tokens

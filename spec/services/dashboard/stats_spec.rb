@@ -839,5 +839,126 @@ RSpec.describe Dashboard::Stats do
         expect(stats[:issue_completion][:merged_count]).to eq(0)
       end
     end
+
+    describe "#daily_outcome_chart" do
+      around do |example|
+        travel_to(Time.zone.local(2026, 5, 3, 12, 0, 0)) { example.run }
+      end
+
+      context "with no create_pr runs" do
+        it "returns zero totals and empty series" do
+          result = stats[:daily_outcome_chart]
+          expect(result[:overall_total]).to eq(0)
+          expect(result[:overall_completed]).to eq(0)
+          expect(result[:overall_completion_rate]).to eq(0.0)
+          expect(result[:series].map { |s| s[:name] }).to match_array(
+            Dashboard::Stats::OUTCOME_CHART_STATUSES.map(&:titleize)
+          )
+          expect(result[:series].all? { |s| s[:data].size == 30 }).to be(true)
+          expect(result[:series].flat_map { |s| s[:data].values }.uniq).to eq([ 0 ])
+        end
+      end
+
+      context "with create_pr runs of various statuses" do
+        before do
+          completed_at_2d_ago = 2.days.ago
+          completed_at_5d_ago = 5.days.ago
+
+          create(:agent_run, :completed, project: project, goal: "create_pr",
+            completed_at: completed_at_2d_ago)
+          create(:agent_run, :completed, project: project, goal: "create_pr",
+            completed_at: completed_at_2d_ago)
+          create(:agent_run, :failed, project: project, goal: "create_pr",
+            completed_at: completed_at_2d_ago)
+          create(:agent_run, :timeout, project: project, goal: "create_pr",
+            completed_at: completed_at_5d_ago)
+          # non-create_pr run should be excluded
+          create(:agent_run, :completed, project: project, goal: "create_issue",
+            completed_at: completed_at_2d_ago)
+        end
+
+        it "counts outcomes for create_pr goal only" do
+          result = stats[:daily_outcome_chart]
+          expect(result[:overall_total]).to eq(4)
+          expect(result[:overall_completed]).to eq(2)
+        end
+
+        it "calculates overall completion rate" do
+          result = stats[:daily_outcome_chart]
+          # 2 completed out of 4 total = 50.0%
+          expect(result[:overall_completion_rate]).to eq(50.0)
+        end
+
+        it "breaks down counts by status" do
+          result = stats[:daily_outcome_chart]
+          expect(result[:overall_by_status]["completed"]).to eq(2)
+          expect(result[:overall_by_status]["failed"]).to eq(1)
+          expect(result[:overall_by_status]["timeout"]).to eq(1)
+          expect(result[:overall_by_status]["no_output"]).to eq(0)
+        end
+
+        it "builds daily series with correct counts per day" do
+          result = stats[:daily_outcome_chart]
+          completed_series = result[:series].find { |s| s[:name] == "Completed" }
+          failed_series = result[:series].find { |s| s[:name] == "Failed" }
+          timeout_series = result[:series].find { |s| s[:name] == "Timeout" }
+
+          day_2d_ago = Date.new(2026, 5, 1)
+          day_5d_ago = Date.new(2026, 4, 28)
+
+          expect(completed_series[:data][day_2d_ago]).to eq(2)
+          expect(failed_series[:data][day_2d_ago]).to eq(1)
+          expect(timeout_series[:data][day_5d_ago]).to eq(1)
+          expect(timeout_series[:data][day_2d_ago]).to eq(0)
+        end
+
+        it "computes per-day completion rates" do
+          result = stats[:daily_outcome_chart]
+          day_2d_ago = Date.new(2026, 5, 1)
+          day_5d_ago = Date.new(2026, 4, 28)
+
+          # day 2d ago: 2 completed, 1 failed = 66.7%
+          expect(result[:completion_rate][day_2d_ago]).to eq(66.7)
+          # day 5d ago: 0 completed, 1 timeout = 0.0%
+          expect(result[:completion_rate][day_5d_ago]).to eq(0.0)
+        end
+
+        it "returns nil completion rate for days with no runs" do
+          result = stats[:daily_outcome_chart]
+          today = Date.new(2026, 5, 3)
+          expect(result[:completion_rate][today]).to be_nil
+        end
+
+        it "excludes runs without completed_at" do
+          create(:agent_run, :running, project: project, goal: "create_pr")
+          result = stats[:daily_outcome_chart]
+          expect(result[:overall_total]).to eq(4)
+        end
+
+        it "returns series for all expected statuses" do
+          result = stats[:daily_outcome_chart]
+          status_names = result[:series].map { |s| s[:name] }
+          expect(status_names).to eq(Dashboard::Stats::OUTCOME_CHART_STATUSES.map(&:titleize))
+        end
+      end
+
+      context "with create_pr runs from another account" do
+        let(:other_account) { create(:account) }
+        let(:other_project) { create(:project, account: other_account) }
+
+        before do
+          create(:agent_run, :completed, project: other_project, goal: "create_pr",
+            completed_at: 1.day.ago)
+          create(:agent_run, :completed, project: project, goal: "create_pr",
+            completed_at: 1.day.ago)
+        end
+
+        it "only includes runs from the specified account" do
+          result = stats[:daily_outcome_chart]
+          expect(result[:overall_total]).to eq(1)
+          expect(result[:overall_completed]).to eq(1)
+        end
+      end
+    end
   end
 end
