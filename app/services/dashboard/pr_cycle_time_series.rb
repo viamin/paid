@@ -19,15 +19,16 @@ module Dashboard
     def call
       rows = ActiveRecord::Base.connection.select_all(daily_cycle_time_sql).to_a
       all_rows = ActiveRecord::Base.connection.select_all(all_daily_counts_sql).to_a
+      overall_p50 = fetch_overall_p50
       date_range = compute_date_range
-      build_series(rows, all_rows, date_range)
+      build_series(rows, all_rows, date_range, overall_p50)
     end
 
     private
 
     attr_reader :account, :time_range, :outlier_cutoff_hours, :project_id
 
-    def build_series(filtered_rows, all_rows, date_range)
+    def build_series(filtered_rows, all_rows, date_range, overall_p50)
       filtered_by_date = filtered_rows.index_by { |r| parse_date(r["merge_date"]) }
       all_by_date = all_rows.index_by { |r| parse_date(r["merge_date"]) }
 
@@ -77,23 +78,20 @@ module Dashboard
         ],
         outlier_annotations: outlier_annotations,
         merged_counts: merged_counts,
-        summary: build_summary(filtered_rows)
+        summary: build_summary(filtered_rows, overall_p50: overall_p50)
       }
     end
 
-    def build_summary(rows)
+    def build_summary(rows, overall_p50:)
       return empty_summary if rows.empty?
 
       total_merged = rows.sum { |r| r["filtered_count"].to_i }
 
-      all_avgs = rows.map { |r| r["avg_hours"].to_f }
-      all_p50s = rows.map { |r| r["p50_hours"].to_f }
-
       {
         total_merged: total_merged,
         total_days: rows.size,
-        overall_avg_hours: (all_avgs.sum / all_avgs.size).round(2),
-        overall_p50_hours: median(all_p50s).round(2)
+        overall_avg_hours: rows.sum { |r| r["avg_hours"].to_f * r["filtered_count"].to_i }.fdiv(total_merged).round(2),
+        overall_p50_hours: overall_p50.round(2)
       }
     end
 
@@ -101,10 +99,23 @@ module Dashboard
       { total_merged: 0, total_days: 0, overall_avg_hours: 0.0, overall_p50_hours: 0.0 }
     end
 
-    def median(values)
-      sorted = values.sort
-      mid = sorted.size / 2
-      sorted.size.odd? ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2.0
+    def fetch_overall_p50
+      ActiveRecord::Base.connection.select_value(overall_p50_sql).to_f
+    end
+
+    def overall_p50_sql
+      <<~SQL.squish
+        SELECT percentile_cont(0.5) WITHIN GROUP (
+          ORDER BY EXTRACT(EPOCH FROM (i.github_updated_at - i.github_created_at)) / 3600.0
+        )
+        FROM issues i
+        WHERE i.is_pull_request = true
+          AND i.pr_review_phase = 'merged'
+          AND i.project_id IN (#{project_ids_sql})
+          #{project_scope_filter}
+          #{time_filter}
+          AND EXTRACT(EPOCH FROM (i.github_updated_at - i.github_created_at)) / 3600.0 <= #{outlier_cutoff_hours}
+      SQL
     end
 
     def compute_trend(points, date_range, trend_data)

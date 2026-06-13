@@ -31,6 +31,8 @@ export default class extends Controller {
 
     const chart = Chart.getChart(chartCanvas)
     if (!chart) {
+      this._tooltipRetries = (this._tooltipRetries || 0) + 1
+      if (this._tooltipRetries > 20) return
       setTimeout(() => this._installTooltipCallback(), 500)
       return
     }
