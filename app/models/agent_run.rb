@@ -115,7 +115,7 @@ class AgentRun < ApplicationRecord
     )
   end
   UNFINISHED_STATUSES = %w[queued running paused].freeze
-  GUARDRAIL_VIOLATION_TYPES = %w[loop_detected token_limit cost_limit time_limit anomaly].freeze
+  GUARDRAIL_VIOLATION_TYPES = %w[loop_detected token_limit cost_limit time_limit anomaly no_progress].freeze
   AUTO_PICK_BLOCKING_STATUSES = UNFINISHED_STATUSES
   TOKEN_LIMIT_STATUSES = %w[ok warning exceeded].freeze
   DEFAULT_MAX_TOKENS_PER_RUN = 10_000_000
@@ -1168,6 +1168,16 @@ class AgentRun < ApplicationRecord
       )
   }
 
+  # Scope over in-flight runs (running + claimed-queued) exposing the same
+  # queue_priority expression as queued_with_priority via QUEUE_LATERAL_JOIN.
+  # Used by the queue processor to keep a lower-priority run from starting
+  # while a higher-priority run for the same project is still in flight —
+  # whether merely claimed or already running. No fair-share CTEs are joined
+  # because callers filter on queue_priority alone (not the full QUEUE_ORDER).
+  scope :inflight_with_priority, -> {
+    capacity_inflight.joins(QUEUE_LATERAL_JOIN)
+  }
+
   def self.project_active_counts_cte
     capacity_inflight
       .select("project_id, COUNT(*) AS project_active_count")
@@ -1227,6 +1237,7 @@ class AgentRun < ApplicationRecord
       .where(accounts: { scheduler_paused_at: nil })
       .where(projects: { scheduler_paused_at: nil })
       .where("agent_runs.trigger_type = 'manual' OR projects.quality_paused_at IS NULL")
+      .where("agent_runs.trigger_type = 'manual' OR projects.paused = FALSE")
     scope = scope.where.not(id: exclude_ids) if exclude_ids.any?
     scope = scope.where.not(project_id: exclude_project_ids) if exclude_project_ids.any?
     scope = scope.where.not(project_owner: { user_id: exclude_user_ids }) if exclude_user_ids.any?
@@ -1245,6 +1256,7 @@ class AgentRun < ApplicationRecord
       .where(accounts: { scheduler_paused_at: nil })
       .where(projects: { scheduler_paused_at: nil })
       .where("agent_runs.trigger_type = 'manual' OR projects.quality_paused_at IS NULL")
+      .where("agent_runs.trigger_type = 'manual' OR projects.paused = FALSE")
   end
 
   def self.next_queued_run_from(scope)

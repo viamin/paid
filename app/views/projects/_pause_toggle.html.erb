@@ -1,0 +1,18 @@
+<%= tag.div id: dom_id(project, :pause_toggle), class: "border-t border-gray-200 px-5 py-3" do %>
+  <div class="flex items-center justify-between">
+    <div class="flex items-center">
+      <span class="text-sm font-medium text-gray-700">Project Pause</span>
+      <span class="ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium <%= project.paused? ? 'bg-yellow-100 text-yellow-700' : 'bg-gray-100 text-gray-600' %>">
+        <%= project.paused? ? "Paused" : "Running" %>
+      </span>
+    </div>
+    <% if policy(project).update? %>
+      <%= button_to toggle_pause_project_path(project), method: :post,
+        class: "group relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-indigo-600 focus:ring-offset-2 #{project.paused? ? 'bg-yellow-400' : 'bg-gray-200'}",
+        data: { turbo_confirm: project.paused? ? "Resume automatic agent runs for this project?" : "Pause automatic agent runs for this project? Manual runs will still work." } do %>
+        <span class="sr-only">Toggle project pause</span>
+        <span class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out <%= project.paused? ? 'translate-x-5' : 'translate-x-0' %>"></span>
+      <% end %>
+    <% end %>
+  </div>
+<% end %>

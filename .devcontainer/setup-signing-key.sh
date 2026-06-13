@@ -87,8 +87,10 @@ if ! output=$(gh ssh-key add "$KEY_PATH.pub" --type signing --title "$KEY_TITLE"
   exit 0
 fi
 
-# 4. Configure git to use the key for commit signing (repo-local to avoid
-#    contaminating the host .gitconfig which is bind-mounted into the container)
+# 4. Configure git to use the key for commit signing (repo-local so signing stays
+#    scoped to this repo. The host .gitconfig is mounted read-only and is not the
+#    container's global config — see setup-git-identity.sh — so signing never
+#    leaks to other repos or back to the host.)
 git config --local gpg.format ssh
 git config --local user.signingkey "$KEY_PATH"
 git config --local commit.gpgsign true

@@ -10,7 +10,11 @@ RSpec.describe InstallContractScripts, :no_db do
   subject(:install_wrapper_source) { Rails.root.join("scripts/install-from-contract.sh").read }
 
   def run_script(script_path, provider)
-    Open3.capture3({ "BUNDLE_PATH" => ENV["BUNDLE_PATH"].to_s }, "bundle", "exec", "ruby", script_path, provider, chdir: Rails.root.to_s)
+    # The subprocess inherits this process's environment (including bundler's
+    # BUNDLE_* config and .bundle/config via chdir), so no env needs to be
+    # forwarded explicitly. Passing BUNDLE_PATH manually previously coerced an
+    # unset value to "", which broke gem resolution in the child.
+    Open3.capture3("bundle", "exec", "ruby", script_path, provider, chdir: Rails.root.to_s)
   end
 
   it "keeps codex installs scriptless by default" do

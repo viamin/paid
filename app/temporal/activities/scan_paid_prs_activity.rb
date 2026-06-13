@@ -32,6 +32,11 @@ module Activities
     # a time ceiling, PRs waiting on those signals are skipped indefinitely.
     SCAN_STALENESS_MULTIPLIER = 3
     KNOWN_BOT_PREFIXES = %w[dependabot renovate github-actions].freeze
+    DEPENDENCY_UPDATE_BOT_AUTHORS = %w[
+      dependabot[bot]
+      dependabot-preview[bot]
+      renovate[bot]
+    ].freeze
     REVIEW_BOT_CLEAN_PATTERN = /generated no (?:new )?comments/i
     # Body-only review bots (currently Codex) signal "no findings" by posting
     # an *issue comment* — not a review — with text like
@@ -311,6 +316,7 @@ module Activities
 
     def authorized_for_automation_scan?(project, issue)
       return true if project.trusted_github_author?(issue.github_creator_login)
+      return true if dependency_update_bot_author?(issue.github_creator_login)
       return true if trusted_user_added_label?(project, issue, project.automation_label_name)
 
       Rails.logger.warn(
@@ -637,17 +643,20 @@ module Activities
     end
 
     # Bot-authored PRs (Dependabot, Renovate) skip review requirements.
-    # Only CI failures trigger auto-continue; green CI advances to ready.
+    # CI failures and merge conflicts trigger auto-continue; green CI advances
+    # to ready.
     def scan_bot_authored_draft_pr(project, client, issue, pr_data: nil)
       pr_data ||= fetch_pr_data(client, project, issue)
       return :skipped if pr_data.nil?
 
       checks = fetch_check_runs(client, project, pr_data)
       ci_triggers = ci_failure_triggers(checks || [])
+      conflict_triggers = check_merge_conflicts(project, pr_data)
+      triggers = ci_triggers + conflict_triggers
 
-      if ci_triggers.any?
-        log_triggers(project, issue, ci_triggers)
-        return draft_trigger_payload(issue, ci_triggers)
+      if triggers.any?
+        log_triggers(project, issue, triggers)
+        return draft_trigger_payload(issue, triggers)
       end
 
       if !checks.nil? && checks.any? && all_checks_green?(checks)
@@ -2888,6 +2897,12 @@ module Activities
     # review-skipping Dependabot path and never reviewed or auto-merged.
     def third_party_bot_author?(project, login)
       bot_user?(login) && !paid_agent_pr_author?(project, login)
+    end
+
+    def dependency_update_bot_author?(login)
+      return false if login.blank?
+
+      DEPENDENCY_UPDATE_BOT_AUTHORS.include?(login.downcase)
     end
 
     def system_generated_comment?(body)
