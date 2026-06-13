@@ -855,7 +855,35 @@ RSpec.describe Activities::RunAgentActivity do
 
       runtime = activity.send(:selected_runner_runtime, opencode_context.runner_candidate, user, agent_run)
 
+      # OpenRouter ids are "<vendor>/<model>" slugs that opencode addresses
+      # directly, so they pass through unchanged (matching the execute path and
+      # openrouter_free runtime) rather than gaining a redundant prefix.
       expect(runtime).to have_attributes(model: "moonshotai/kimi-k2-0905", api_provider: nil)
+    end
+
+    it "provider-qualifies the resolved tier model for opencode MiniMax direct-outbound runs" do
+      # Regression: the bare tier_model_ids value ("MiniMax-M3") overwrote the
+      # qualified configured model, so opencode received an unqualified id and
+      # raised ProviderModelNotFoundError (providerID="MiniMax-M3", modelID="").
+      opencode_context = build_opencode_context(
+        user, api_provider: "minimax", model: "MiniMax-M3", service_type: "minimax", api_key: "sk-minimax-secret"
+      )
+      create(:model_selection, agent_run: agent_run, llm_model: create(:llm_model, model_id: "minimax-selected", provider: "minimax"))
+
+      runtime = activity.send(:selected_runner_runtime, opencode_context.runner_candidate, user, agent_run)
+
+      expect(runtime.model).to eq("minimax/MiniMax-M3")
+    end
+
+    it "does not double-qualify an already-prefixed tier model" do
+      opencode_context = build_opencode_context(
+        user, api_provider: "minimax", model: "minimax/MiniMax-M3", service_type: "minimax", api_key: "sk-minimax-secret"
+      )
+      create(:model_selection, agent_run: agent_run, llm_model: create(:llm_model, model_id: "minimax-selected", provider: "minimax"))
+
+      runtime = activity.send(:selected_runner_runtime, opencode_context.runner_candidate, user, agent_run)
+
+      expect(runtime.model).to eq("minimax/MiniMax-M3")
     end
 
     it "builds OpenRouter provider routing for openrouter_free runs from project classification" do
