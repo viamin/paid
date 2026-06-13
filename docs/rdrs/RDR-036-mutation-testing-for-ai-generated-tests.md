@@ -485,11 +485,13 @@ For projects with a `mutation_test` requirement, a per-project nightly job runs 
 
 ### Phase 1: Paid Self-Quality (tier-1 only)
 
-1. Add `mutant-rspec` to `Gemfile` (test group), `bundle install`.
+1. Add `mutant` and `mutant-rspec` to `Gemfile` (test group) with a comment explaining the configurable source, `bundle install`. ✅ (viamin/paid#2367)
 2. Author `.mutant.yml` at repo root with tier-1 subjects.
 3. Iterate on tier-1 subjects until kill rate is 100%; any surviving mutation either gets a new test or the production code is deleted.
 4. Add `.github/workflows/mutation.yml` with the incremental PR job and nightly cron.
 5. Add a Make/Rake task `bin/mutation` for local incremental runs.
+
+**Gem-source switch (viamin/paid#2367)**: The switch between the upstream rubygems release (`mbj/mutant`, commercial) and the viamin fork (`viamin/mutant`, MIT) is controlled by the `BUNDLE_GEMFILE` environment variable. `Gemfile` (the default) pins the upstream release; `Gemfile.viamin` sources both gems from `https://github.com/viamin/mutant`. See `docs/MUTATION_TESTING.md` for local usage and the CI `mutation-viamin-parity` job for the automated parity signal. The default remains upstream until the blockers in `viamin/mutant#9`, `viamin/mutant#10`, `viamin/mutant#11`, and `viamin/mutant#12` land.
 
 Historical only after Amendment 1 (2026-05-29): ~~No mutant license key, secret, or credential entry is added to Paid for its own runs.~~ The current direction is to land the gem-source switch in `viamin/paid#2367`, then remove `--usage` handling in `viamin/paid#2368`.
 
