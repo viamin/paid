@@ -9,6 +9,20 @@ services:
 
     volumes:
     - ../../paid:/workspaces/paid:cached
+    # Agent CLI tool state lives in named volumes: container-local (never shared
+    # with the host) but persisted across container rebuilds. Auth is no longer
+    # bind-mounted from the host — the upstream browser-based login flows now
+    # work inside containers, so each tool authenticates into its own volume on
+    # first use. Removing a tool's auth is as simple as deleting its volume
+    # (`docker volume rm paid_agent-<tool>`).
+    - agent-claude:/home/vscode/.claude
+    - agent-codex:/home/vscode/.codex
+    - agent-opencode-config:/home/vscode/.config/opencode
+    - agent-opencode-data:/home/vscode/.local/share/opencode
+    - agent-copilot:/home/vscode/.copilot
+    - agent-kilocode:/home/vscode/.kilocode
+    - agent-aider:/home/vscode/.aider
+    - agent-cursor:/home/vscode/.cursor
 
     # Overrides default command so things don't shut down after the process ends.
     command: sleep infinity
@@ -95,3 +109,12 @@ services:
 
 volumes:
   postgres-data:
+  # Agent CLI tool state (see rails-app service volumes above).
+  agent-claude:
+  agent-codex:
+  agent-opencode-config:
+  agent-opencode-data:
+  agent-copilot:
+  agent-kilocode:
+  agent-aider:
+  agent-cursor:

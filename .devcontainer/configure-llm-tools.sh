@@ -1,9 +1,10 @@
 #!/bin/bash
 # Configure LLM CLI tools to run in auto-approve/dangerous mode inside devcontainer.
 # This script runs during postCreateCommand to set up container-specific wrappers
-# and configuration. Note: because devcontainers bind-mount host configuration
-# directories (e.g., ~/.claude, ~/.config), CLI state and configs written inside
-# the container may persist back to the host.
+# and configuration. Agent CLI tool state lives in named Docker volumes (see
+# compose.yaml), so config written here is container-local and persists across
+# rebuilds without touching the host. Only git/ssh/GitHub-CLI config is still
+# bind-mounted from the host.
 
 set -euo pipefail
 set -x
@@ -162,8 +163,9 @@ fi
 # KiloCode
 # ============================================================================
 
-# KiloCode reads config from ~/.config/kilo/ which is NOT bind-mounted from
-# the host (only ~/.kilocode is mounted), so writing here is container-local.
+# KiloCode reads config from ~/.config/kilo/, which is on the container's
+# writable layer (rebuilt each time); ~/.kilocode is a persisted named volume.
+# Either way this config stays container-local.
 echo "[DEBUG] Configuring KiloCode..."
 mkdir -p "$HOME/.config/kilo"
 # NOTE: the schema's string shortcut `"permission": "allow"` is semantically
@@ -201,19 +203,35 @@ EOF
 # OpenCode
 # ============================================================================
 
-# Only auth.json is bind-mounted from the host, so writing opencode.json here
-# stays container-local and won't affect the host's OpenCode installation.
+# ~/.config/opencode is a persisted named volume (container-local), so writing
+# opencode.json here won't affect any host OpenCode installation.
 echo "[DEBUG] Configuring OpenCode..."
 # Ensure ~/.config/opencode is owned by the devcontainer user and writable
 mkdir -p "$HOME/.config/opencode"
 sudo chown -R "${DEVCONTAINER_USER:-$USER}:${DEVCONTAINER_GROUP:-$(id -gn "${DEVCONTAINER_USER:-$USER}")}" "$HOME/.config/opencode"
 sudo chmod -R u+rwX "$HOME/.config/opencode"
-cat << 'EOF' > "$HOME/.config/opencode/opencode.json"
+# Assert auto-approve mode without clobbering the rest of opencode.json. Because
+# this dir is now a persisted volume, an unconditional overwrite would wipe both
+# user customizations and the Compound Engineering plugin's config on every
+# rebuild — so merge "permission": "allow" into any existing config (jq), and
+# only write a fresh file when jq is unavailable or no valid config exists yet.
+OPENCODE_CONFIG="$HOME/.config/opencode/opencode.json"
+if command -v jq >/dev/null 2>&1 && [ -s "$OPENCODE_CONFIG" ] && jq -e . "$OPENCODE_CONFIG" >/dev/null 2>&1; then
+  tmp_oc="$(mktemp)"
+  if jq '. + {permission: "allow"}' "$OPENCODE_CONFIG" > "$tmp_oc"; then
+    mv "$tmp_oc" "$OPENCODE_CONFIG"
+  else
+    rm -f "$tmp_oc"
+    echo "WARNING: failed to merge opencode.json; leaving existing file unchanged." >&2
+  fi
+else
+  cat << 'EOF' > "$OPENCODE_CONFIG"
 {
   "$schema": "https://opencode.ai/config.json",
   "permission": "allow"
 }
 EOF
+fi
 
 # ============================================================================
 # GitHub Copilot CLI, Cursor
@@ -236,5 +254,5 @@ echo "  - OpenCode: Auto-approve mode (permission=allow, container-specific conf
 echo "  - GitHub Copilot CLI: Config mounted from host (~/.copilot)"
 echo ""
 echo "WARNING: These tools will auto-approve all operations inside this container."
-echo "  Some tool state and configuration may be written back to host-mounted directories (e.g., ~/.claude)."
+echo "  Agent tool state is kept in container-local named volumes (not the host)."
 echo "  Use only in isolated/dev environments where this behavior is acceptable."
