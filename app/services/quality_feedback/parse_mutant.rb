@@ -46,17 +46,17 @@ module QualityFeedback
     end
 
     def alive_mutations(path)
-      data = YAML.safe_load_file(path, permitted_classes: [ Symbol, Time ], aliases: false) || {}
-      Array(data["alive_mutations"] || data[:alive_mutations])
+      data = YAML.safe_load_file(path, permitted_classes: [], aliases: false) || {}
+      Array(data["alive_mutations"])
     rescue Psych::Exception
       []
     end
 
     def build_error(mutation)
-      subject = mutation["subject"] || mutation[:subject]
-      subject_path = mutation["subject_path"] || mutation[:subject_path] || mutation["file"] || mutation[:file]
-      source_line = mutation["source_line"] || mutation[:source_line] || mutation["line"] || mutation[:line]
-      mutation_diff = mutation["mutation_diff"] || mutation[:mutation_diff] || mutation["diff"] || mutation[:diff]
+      subject = mutation["subject"]
+      subject_path = mutation["subject_path"]
+      source_line = mutation["source_line"]
+      mutation_diff = mutation["mutation_diff"]
 
       {
         file: subject_path.to_s,

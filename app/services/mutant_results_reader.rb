@@ -19,12 +19,11 @@ class MutantResultsReader
     result_path = latest_result_path
     return nil unless result_path
 
-    raw_data = YAML.safe_load_file(result_path, permitted_classes: [ Symbol, Time ], aliases: true)
+    raw_data = YAML.safe_load_file(result_path, permitted_classes: [], aliases: false)
     return nil unless raw_data.is_a?(Hash)
 
-    data = raw_data.deep_symbolize_keys
-    total_mutations = extract_count(data, :total_mutations, :mutations_total, :total)
-    killed_mutations = extract_count(data, :killed_mutations, :mutations_killed, :killed)
+    total_mutations = extract_count(raw_data, "total_mutations")
+    killed_mutations = extract_count(raw_data, "killed_mutations")
     return nil unless total_mutations && killed_mutations
 
     {
@@ -49,12 +48,10 @@ class MutantResultsReader
       .max_by { |path| File.mtime(path) }
   end
 
-  def extract_count(data, *keys)
-    [ data, data[:summary], data[:totals] ].compact.each do |source|
-      keys.each do |key|
-        value = source[key]
-        return value.to_i if value.is_a?(Numeric) || value.to_s.match?(/\A\d+\z/)
-      end
+  def extract_count(data, key)
+    [ data, data["summary"] ].compact.each do |source|
+      value = source[key]
+      return value.to_i if value.is_a?(Numeric) || value.to_s.match?(/\A\d+\z/)
     end
 
     nil
