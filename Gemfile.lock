@@ -702,6 +702,7 @@ DEPENDENCIES
   jsbundling-rails
   kamal
   logidze
+  mutant
   mutant-rspec
   octokit
   pagy (~> 43.5)
