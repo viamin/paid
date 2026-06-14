@@ -3619,6 +3619,48 @@ expect(container_service).to receive(:execute).with(
         )
       end
 
+      it "does not trip the circuit breaker when the container dies mid-execution" do
+        # "Container is not running" Docker errors from exec must be classified as
+        # RunnerInfraExecutionError so the per-runner circuit breaker is NOT tripped.
+        call_count = 0
+        allow(container_service).to receive(:execute) do |_cmd, **_opts|
+          call_count += 1
+          if call_count == 1
+            raise Containers::Provision::ExecutionError,
+              'Failed to restore prepared runtime state: {"message":"Container abc123 is not running"}'
+          end
+
+          exec_success
+        end
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:success]).to be true
+        expect(result[:final_runner]).to eq("cursor")
+
+        # The infra failure should NOT open the circuit breaker for claude
+        runner_state = user.runner_states.find_by(runner_name: "claude")
+        expect(runner_state&.circuit_state).not_to eq("open")
+
+        expect(agent_run.reload.runners_attempted).to contain_exactly(
+          hash_including("runner" => "claude_code", "success" => false, "error_type" => "error",
+            "error_message" => include("Container died during execution")),
+          hash_including("runner" => "cursor", "success" => true)
+        )
+      end
+
+      it "does not trip the circuit breaker when the container is dead before execution starts" do
+        allow(container_service).to receive_messages(container_running?: false, container: nil, execute: exec_success)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError)
+
+        # The infra failure should NOT open the circuit breaker for claude
+        runner_state = user.runner_states.find_by(runner_name: "claude")
+        expect(runner_state&.circuit_state).not_to eq("open")
+      end
+
       it "includes configured fallback-only runners even when saved fallback order is empty" do
         user.runners.find_by!(runner_key: "cursor").update!(
           enabled_for_agent_runs: false,
