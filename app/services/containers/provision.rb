@@ -872,10 +872,20 @@ module Containers
 
     # Runs a single preparation cleanup step, returning the error on failure
     # or nil on success.
+    #
+    # When the container has already stopped (e.g. OOM-killed mid-run), Docker
+    # raises an error whose message includes "is not running". There is nothing
+    # left to restore in a dead container, so we treat that case as a no-op
+    # rather than surfacing a terminal restore failure that would trip the
+    # runner circuit breaker.
     def run_preparation_cleanup_step(step_env, env:)
       run_preparation_script(cleanup_script, env: env, script_env: step_env)
       nil
     rescue Docker::Error::DockerError, ExecutionError => e
+      if e.message.match?(/is not running/i)
+        log_system("container.execute.preparation_cleanup_skipped_dead_container", error: e.message)
+        return nil
+      end
       log_system("container.execute.preparation_cleanup_failed", error: e.message)
       e
     end

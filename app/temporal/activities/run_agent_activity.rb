@@ -1207,7 +1207,7 @@ module Activities
 
       unless container_service.container_running?
         container_exit_info = container_exit_diagnostics(container_service)
-        raise RunnerExecutionError,
+        raise RunnerInfraExecutionError,
           "Container #{agent_run.container_id} is not running. #{container_exit_info}"
       end
 
@@ -1453,15 +1453,16 @@ module Activities
         reset_at: reset_at
       )
     rescue Containers::Provision::ExecutionError => e
-      message = "Docker exec error: #{e.message}"
       # A container that died mid-execution is infrastructure failure, not a
       # runner fault. Classify it as infra so it does not trip the per-runner
       # circuit breaker (which otherwise cascades into every later run skipping
       # this runner as "unavailable") and so the loop re-provisions a fresh
       # container for the next runner.
-      raise RunnerInfraExecutionError, message if container_not_running_error?(e.message)
+      if container_not_running_error?(e.message)
+        raise RunnerInfraExecutionError, "Container died during execution: #{e.message}"
+      end
 
-      raise RunnerExecutionError, message
+      raise RunnerExecutionError, "Docker exec error: #{e.message}"
     end
 
     def run_runner_preflight!(agent_run:, container_service:, command_context:, runner:, execution_env:)
