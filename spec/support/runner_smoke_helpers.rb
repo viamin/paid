@@ -90,7 +90,7 @@ module RunnerSmokeHelpers
       auth_type: "api_key",
       api_provider: "openrouter",
       model_env: "PAID_SMOKE_OPENCODE_OPENROUTER_MODEL",
-      default_model: "moonshotai/kimi-k2",
+      default_model: "moonshotai/kimi-k2-0905",
       label: "OpenCode with OpenRouter API key"
     ),
     "opencode-minimax" => Scenario.new(

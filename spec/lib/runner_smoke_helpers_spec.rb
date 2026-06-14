@@ -44,7 +44,7 @@ RSpec.describe RunnerSmokeHelpers do
   describe ".scenario_for" do
     it "includes the expected built-in default models for current enabled api-key scenarios" do
       expect(described_class.scenario_for("kilocode-zai").default_model).to eq("glm-5.1")
-      expect(described_class.scenario_for("opencode-openrouter").default_model).to eq("moonshotai/kimi-k2")
+      expect(described_class.scenario_for("opencode-openrouter").default_model).to eq("moonshotai/kimi-k2-0905")
       expect(described_class.scenario_for("kilocode-inception").default_model).to eq("mercury-2")
       expect(described_class.scenario_for("opencode-minimax").default_model).to eq("MiniMax-M2.7")
       expect(described_class.scenario_for("pi-deepseek").default_model).to eq("deepseek-chat")
@@ -69,7 +69,7 @@ RSpec.describe RunnerSmokeHelpers do
 
       runner = described_class.build_direct_outbound_runner!(user: user, scenario: scenario)
 
-      expect(runner.opencode_model_id).to eq("moonshotai/kimi-k2")
+      expect(runner.opencode_model_id).to eq("moonshotai/kimi-k2-0905")
     end
 
     it "builds Pi DeepSeek runners through the shared direct-outbound path" do
