@@ -1,25 +1,25 @@
 <dl class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
-  <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+  <%= link_to agent_runs_path(q: { status_eq: "running" }), class: "overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6 hover:shadow-md transition-shadow" do %>
     <dt class="truncate text-sm font-medium text-gray-500">Active Runs</dt>
     <dd class="mt-1 text-3xl font-semibold tracking-tight text-indigo-600"><%= stats[:active_runs] %></dd>
-  </div>
-  <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+  <% end %>
+  <%= link_to agent_runs_path(q: { status_eq: "queued" }), class: "overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6 hover:shadow-md transition-shadow" do %>
     <dt class="truncate text-sm font-medium text-gray-500">Queued</dt>
     <dd class="mt-1 text-3xl font-semibold tracking-tight text-amber-600"><%= stats[:queued_runs] %></dd>
-  </div>
-  <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+  <% end %>
+  <%= link_to agent_runs_path(q: { status_eq: "completed" }), class: "overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6 hover:shadow-md transition-shadow" do %>
     <dt class="truncate text-sm font-medium text-gray-500">Completed Today</dt>
     <dd class="mt-1 text-3xl font-semibold tracking-tight text-emerald-600"><%= stats[:completed_today] %></dd>
-  </div>
-  <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+  <% end %>
+  <%= link_to agent_runs_path(q: { status_eq: "failed" }), class: "overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6 hover:shadow-md transition-shadow" do %>
     <dt class="truncate text-sm font-medium text-gray-500">Failed Today</dt>
     <dd class="mt-1 text-3xl font-semibold tracking-tight <%= stats[:failed_today].positive? ? 'text-red-600' : 'text-gray-900' %>"><%= stats[:failed_today] %></dd>
-  </div>
+  <% end %>
   <% create_pr_active = stats[:active_create_pr_runs] || 0 %>
   <% create_pr_max = stats[:max_concurrent_create_pr_runs] || 20 %>
   <% create_pr_near_cap = create_pr_active >= (create_pr_max * 0.8).ceil %>
-  <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6">
+  <%= link_to agent_runs_path(q: { goal_eq: "create_pr", status_eq: "running" }), class: "overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6 hover:shadow-md transition-shadow" do %>
     <dt class="truncate text-sm font-medium text-gray-500">PR Runs (cap: <%= create_pr_max %>)</dt>
     <dd class="mt-1 text-3xl font-semibold tracking-tight <%= create_pr_near_cap ? 'text-amber-600' : 'text-gray-900' %>"><%= create_pr_active %></dd>
-  </div>
+  <% end %>
 </dl>
