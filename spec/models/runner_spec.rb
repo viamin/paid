@@ -560,6 +560,29 @@ RSpec.describe Runner do
       expect(runner.errors[:config]).to include("must include an OpenCode model id")
     end
 
+    it "rejects an invalid preflight_timeout_seconds for opencode api_key providers" do
+      api_key = create(:provider_api_key, user: runner.user, api_service_type: "openrouter")
+      runner.auth_type = "api_key"
+      runner.provider_api_key = api_key
+      runner.runner_key = "opencode"
+      runner.config = { "opencode" => { "api_provider" => "openrouter", "model" => "meta-llama/llama-4-maverick", "preflight_timeout_seconds" => "0" } }
+
+      expect(runner).not_to be_valid
+      expect(runner.errors[:config]).to include("must include an OpenCode preflight timeout of at least 1 second")
+    end
+
+    it "reads an optional preflight timeout override for opencode from config" do
+      api_key = create(:provider_api_key, user: runner.user, api_service_type: "openrouter")
+      runner.auth_type = "api_key"
+      runner.provider_api_key = api_key
+      runner.runner_key = "opencode"
+      runner.config = { "opencode" => { "api_provider" => "openrouter", "model" => "meta-llama/llama-4-maverick", "preflight_timeout_seconds" => "90" } }
+      runner.save!
+
+      expect(runner.opencode_preflight_timeout_seconds).to eq(90)
+      expect(runner.runner_preflight_timeout_seconds).to eq(90)
+    end
+
     describe "agent_co_author_trailer" do
       it "allows a normal single-line trailer" do
         runner.agent_co_author_trailer = "Co-Authored-By: Claude <noreply@anthropic.com>"
@@ -841,6 +864,14 @@ RSpec.describe Runner do
       )
 
       expect(runner.kilocode_preflight_timeout_seconds).to eq(45)
+    end
+
+    it "exposes the kilocode timeout via runner_preflight_timeout_seconds" do
+      runner.update!(
+        config: { "kilocode" => { "api_provider" => "anthropic", "model" => "claude-sonnet-4-20250514", "preflight_timeout_seconds" => "45" } }
+      )
+
+      expect(runner.runner_preflight_timeout_seconds).to eq(45)
     end
 
     it "uses the native zai-coding-plan runner id for z.ai coding plan backends" do
