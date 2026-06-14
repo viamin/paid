@@ -356,4 +356,19 @@ RSpec.describe Activities::RunAgentActivity, :no_db do
       expect(activity.send(:rate_limit_error?, redacted, runner_key: "codex")).to be(true)
     end
   end
+
+  describe "#container_not_running_error?" do
+    let(:activity) { described_class.new }
+
+    it "matches Docker container-death messages" do
+      expect(activity.send(:container_not_running_error?, "container abc123 is not running")).to be(true)
+      expect(activity.send(:container_not_running_error?, "Docker exec error: Failed to restore prepared runtime state: container abc is not running")).to be(true)
+      expect(activity.send(:container_not_running_error?, "No such container: abc")).to be(true)
+    end
+
+    it "does not match unrelated runner errors" do
+      expect(activity.send(:container_not_running_error?, "Agent exited with code 1: invalid model")).to be(false)
+      expect(activity.send(:container_not_running_error?, nil)).to be(false)
+    end
+  end
 end

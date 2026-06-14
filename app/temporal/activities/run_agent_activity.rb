@@ -133,6 +133,9 @@ module Activities
     PREFLIGHT_TIMEOUT_SECONDS = 10
     DIRECT_OUTBOUND_PREFLIGHT_TIMEOUT_SECONDS = 30
     PREFLIGHT_TIMEOUT_CIRCUIT_BREAKER_THRESHOLD = 3
+    # Matches Docker errors raised when a container has died, stopped, or been
+    # removed mid-run. These are infrastructure failures, not runner faults.
+    CONTAINER_NOT_RUNNING_PATTERN = /is not running|No such container/i
     # Backoff applied to a runner whose credit/quota is exhausted. Long
     # enough that we don't re-attempt every minute, short enough that a
     # top-up takes effect within the hour. Notification fires at the
@@ -531,6 +534,20 @@ module Activities
               error: e.message,
               duration_seconds: attempt_duration
             )
+
+            # A dead/unavailable container would poison the next runner too.
+            # Re-provision fresh infra before falling through; break when no
+            # fallback remains so the run fails cleanly without burning the
+            # remaining runners against a container that no longer exists.
+            if container_unavailable_for_fallback?(agent_run)
+              break unless recover_container_for_fallback!(
+                agent_run: agent_run,
+                runner: runner,
+                error_type: "error",
+                error_message: e.message,
+                fallback_remaining: runners[(index + 1)..].to_a
+              )
+            end
           rescue RunnerExecutionError => e
             last_error = "error"
             attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
@@ -1436,7 +1453,15 @@ module Activities
         reset_at: reset_at
       )
     rescue Containers::Provision::ExecutionError => e
-      raise RunnerExecutionError, "Docker exec error: #{e.message}"
+      message = "Docker exec error: #{e.message}"
+      # A container that died mid-execution is infrastructure failure, not a
+      # runner fault. Classify it as infra so it does not trip the per-runner
+      # circuit breaker (which otherwise cascades into every later run skipping
+      # this runner as "unavailable") and so the loop re-provisions a fresh
+      # container for the next runner.
+      raise RunnerInfraExecutionError, message if container_not_running_error?(e.message)
+
+      raise RunnerExecutionError, message
     end
 
     def run_runner_preflight!(agent_run:, container_service:, command_context:, runner:, execution_env:)
@@ -1538,11 +1563,14 @@ module Activities
         reset_at: reset_at
       )
     rescue Containers::Provision::ExecutionError => e
-      raise_preflight_failure!(
-        agent_run: agent_run,
-        runner: runner,
-        reason: "Docker exec error: #{e.message}"
-      )
+      reason = "Docker exec error: #{e.message}"
+      # A container that died during preflight is infrastructure failure — keep
+      # it off the per-runner circuit breaker and let the loop re-provision.
+      if container_not_running_error?(e.message)
+        raise_preflight_infra_failure!(agent_run: agent_run, runner: runner, reason: reason)
+      end
+
+      raise_preflight_failure!(agent_run: agent_run, runner: runner, reason: reason)
     end
 
     def run_harness_preflight!(agent_run:, harness_provider:, runner:, execution_env:)
@@ -1979,6 +2007,17 @@ module Activities
     def raise_preflight_timeout!(agent_run:, runner:, reason:)
       log_preflight_failure(agent_run: agent_run, runner: runner, reason: reason)
       raise PreflightTimeoutError, "Preflight check failed: #{reason}"
+    end
+
+    def raise_preflight_infra_failure!(agent_run:, runner:, reason:)
+      log_preflight_failure(agent_run: agent_run, runner: runner, reason: reason)
+      raise RunnerInfraExecutionError, "Preflight check failed: #{reason}"
+    end
+
+    # True when an error message indicates the container is gone (died, stopped,
+    # or was removed). Such failures are infrastructure, not runner faults.
+    def container_not_running_error?(message)
+      message.to_s.match?(CONTAINER_NOT_RUNNING_PATTERN)
     end
 
     # Treat credit/quota exhaustion as a rate-limit-equivalent: mark the
@@ -2793,7 +2832,7 @@ module Activities
     end
 
     def container_dead_after_exec_error?(agent_run, error)
-      return false unless error.message.match?(/container.*is not running/i)
+      return false unless container_not_running_error?(error.message)
       return false if agent_run.container_id.blank?
 
       container_service = reconnect_container(agent_run) rescue nil
