@@ -216,6 +216,9 @@ module Models
         capability_score: 9.6,
         tier: "high"
       },
+      # TODO(#2566): The Codex runner targets this model but hits cli_version_outdated
+      # on agent-harness 0.22.5. Bump Gemfile to the next agent-harness release that
+      # ships the updated Codex CLI pin before enabling the Codex runner for gpt-5.5.
       {
         model_id: "gpt-5.5",
         display_name: "GPT-5.5",
