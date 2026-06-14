@@ -280,22 +280,11 @@ module Models
         capability_score: 7.0,
         tier: "low"
       },
-      {
-        model_id: "gemini-live-2.5-flash",
-        display_name: "Gemini Live 2.5 Flash",
-        provider: "google",
-        family: "gemini-2",
-        category: "general",
-        context_window: 1_000_000,
-        max_output_tokens: 65_536,
-        input_cost_per_million: 0.50,
-        output_cost_per_million: 2.0,
-        supports_vision: true,
-        supports_tools: true,
-        supports_json_output: true,
-        capability_score: 7.8,
-        tier: "mid"
-      },
+      # gemini-live-2.5-flash is excluded: it is a Live API (WebSocket, real-time
+      # bidirectional streaming) model and is not accessible via the standard
+      # generateContent REST endpoint this catalog assumes. Cataloguing it would
+      # cause model selection to route agent runs there, which would fail at
+      # execution. Re-evaluate if Google exposes it on the standard REST surface.
       {
         model_id: "gemini-2.5-pro",
         display_name: "Gemini 2.5 Pro",
