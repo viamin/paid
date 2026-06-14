@@ -1190,7 +1190,7 @@ module Activities
 
       unless container_service.container_running?
         container_exit_info = container_exit_diagnostics(container_service)
-        raise RunnerExecutionError,
+        raise RunnerInfraExecutionError,
           "Container #{agent_run.container_id} is not running. #{container_exit_info}"
       end
 
@@ -1436,6 +1436,13 @@ module Activities
         reset_at: reset_at
       )
     rescue Containers::Provision::ExecutionError => e
+      # Container-death during exec (OOM-kill, Docker daemon eviction, etc.) surfaces
+      # as an "is not running" Docker error.  Classify it as an infra failure so the
+      # runner circuit breaker is NOT tripped — a dead container is an infrastructure
+      # event, not a sign that the runner itself is misconfigured.
+      if e.message.match?(/is not running/i)
+        raise RunnerInfraExecutionError, "Container died during execution: #{e.message}"
+      end
       raise RunnerExecutionError, "Docker exec error: #{e.message}"
     end
 
