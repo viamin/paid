@@ -208,10 +208,10 @@ RSpec.describe Activities::RunAgentActivity, :no_db do
   describe "#preflight_timeout_seconds_for" do
     let(:activity) { described_class.new }
 
-    it "prefers a configured kilocode timeout override on the runner entry" do
+    it "prefers a configured runner-specific timeout override on the runner entry" do
       runner_entry = instance_double(
         Runner,
-        kilocode_preflight_timeout_seconds: 45,
+        runner_preflight_timeout_seconds: 45,
         requires_direct_outbound?: true
       )
       allow(activity).to receive(:provider_entry_for).and_return(runner_entry)
@@ -224,7 +224,7 @@ RSpec.describe Activities::RunAgentActivity, :no_db do
     it "falls back to the direct-outbound default when no override is configured" do
       runner_entry = instance_double(
         Runner,
-        kilocode_preflight_timeout_seconds: nil,
+        runner_preflight_timeout_seconds: nil,
         requires_direct_outbound?: true
       )
       allow(activity).to receive(:provider_entry_for).and_return(runner_entry)

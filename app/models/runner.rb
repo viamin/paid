@@ -289,6 +289,22 @@ class Runner < ApplicationRecord
     opencode_config["model"].to_s.presence
   end
 
+  def opencode_preflight_timeout_seconds
+    return nil unless runner_key == "opencode"
+
+    Integer(opencode_config["preflight_timeout_seconds"], exception: false)
+  end
+
+  # Returns a runner-specific preflight timeout override when configured,
+  # covering all direct-outbound runner types.  Returns nil when no override
+  # is set, letting the caller fall back to the default direct-outbound budget.
+  def runner_preflight_timeout_seconds
+    case runner_key
+    when "kilocode" then kilocode_preflight_timeout_seconds
+    when "opencode" then opencode_preflight_timeout_seconds
+    end
+  end
+
   def kilocode_config
     config.is_a?(Hash) ? config.fetch("kilocode", {}) : {}
   end
@@ -991,6 +1007,11 @@ class Runner < ApplicationRecord
 
     if opencode_model_id.blank?
       errors.add(:config, "must include an OpenCode model id")
+    end
+
+    if opencode_config["preflight_timeout_seconds"].present? &&
+        (opencode_preflight_timeout_seconds.nil? || opencode_preflight_timeout_seconds < MIN_PREFLIGHT_TIMEOUT_SECONDS)
+      errors.add(:config, "must include an OpenCode preflight timeout of at least #{MIN_PREFLIGHT_TIMEOUT_SECONDS} second")
     end
   end
 
