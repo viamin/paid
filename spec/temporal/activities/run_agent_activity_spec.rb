@@ -1557,18 +1557,21 @@ RSpec.describe Activities::RunAgentActivity do
   end
 
   def expect_opencode_runtime_execute_calls(execute_calls)
-    expect(execute_calls.length).to eq(3)
-    expect(execute_calls.second.first[0..6]).to eq([ "env", "-u", "OPENAI_HEADER_X_AGENT_RUN_ID", "-u", "OPENAI_HEADER_X_PROXY_TOKEN", "opencode", "run" ])
+    # The primary runner preflight retries once on timeout before the fallback
+    # kicks in: call 1 + call 2 are both primary-runner preflight attempts.
+    # Calls 3 and 4 are the opencode preflight and main execution respectively.
+    expect(execute_calls.length).to eq(4)
     expect(execute_calls.third.first[0..6]).to eq([ "env", "-u", "OPENAI_HEADER_X_AGENT_RUN_ID", "-u", "OPENAI_HEADER_X_PROXY_TOKEN", "opencode", "run" ])
-    expect(execute_calls.second.second[:env]).to include("OPENAI_BASE_URL" => "https://openrouter.ai/api/v1")
+    expect(execute_calls.fourth.first[0..6]).to eq([ "env", "-u", "OPENAI_HEADER_X_AGENT_RUN_ID", "-u", "OPENAI_HEADER_X_PROXY_TOKEN", "opencode", "run" ])
     expect(execute_calls.third.second[:env]).to include("OPENAI_BASE_URL" => "https://openrouter.ai/api/v1")
-    second_config = JSON.parse(execute_calls.second.second[:preparation].file_writes.first.content)
+    expect(execute_calls.fourth.second[:env]).to include("OPENAI_BASE_URL" => "https://openrouter.ai/api/v1")
     third_config = JSON.parse(execute_calls.third.second[:preparation].file_writes.first.content)
+    fourth_config = JSON.parse(execute_calls.fourth.second[:preparation].file_writes.first.content)
 
-    expect(second_config).to include("model" => "moonshotai/kimi-k2-0905")
-    expect(second_config).not_to have_key("provider")
     expect(third_config).to include("model" => "moonshotai/kimi-k2-0905")
     expect(third_config).not_to have_key("provider")
+    expect(fourth_config).to include("model" => "moonshotai/kimi-k2-0905")
+    expect(fourth_config).not_to have_key("provider")
   end
 
   def expect_resolved_model_attempts(agent_run, opencode_runner)
@@ -2622,6 +2625,65 @@ expect(container_service).to receive(:execute).with(
         )
       end
 
+      it "retries the smoke execution once on timeout before raising PreflightTimeoutError" do
+        opencode_provider = create_opencode_provider_for(user)
+        timeout_error = Containers::Provision::TimeoutError.new("Command timed out after 60 seconds")
+        allow(container_service).to receive(:execute).and_raise(timeout_error)
+
+        expect {
+          run_direct_outbound_preflight(
+            activity: activity,
+            agent_run: agent_run,
+            container_service: container_service,
+            provider: opencode_provider,
+            user: user
+          )
+        }.to raise_error(described_class::PreflightTimeoutError, /timed out.*on both attempts/)
+
+        expect(container_service).to have_received(:execute).twice
+      end
+
+      it "succeeds if the smoke execution passes on the retry after a first timeout" do
+        opencode_provider = create_opencode_provider_for(user)
+        timeout_error = Containers::Provision::TimeoutError.new("Command timed out after 60 seconds")
+        call_count = 0
+        allow(container_service).to receive(:execute) do
+          call_count += 1
+          call_count == 1 ? raise(timeout_error) : exec_success
+        end
+
+        expect {
+          run_direct_outbound_preflight(
+            activity: activity,
+            agent_run: agent_run,
+            container_service: container_service,
+            provider: opencode_provider,
+            user: user
+          )
+        }.not_to raise_error
+
+        expect(container_service).to have_received(:execute).twice
+      end
+
+      it "uses a runner-specific preflight timeout override for opencode" do
+        opencode_provider = create_opencode_provider_for(user)
+        opencode_provider.update!(config: opencode_provider.config.merge("opencode" => opencode_provider.opencode_config.merge("preflight_timeout_seconds" => "90")))
+        allow(container_service).to receive(:execute).and_return(exec_success)
+
+        run_direct_outbound_preflight(
+          activity: activity,
+          agent_run: agent_run,
+          container_service: container_service,
+          provider: opencode_provider,
+          user: user
+        )
+
+        expect(container_service).to have_received(:execute).with(
+          %w[echo ok],
+          hash_including(timeout: 90, idle_timeout: 90)
+        )
+      end
+
       it "marks the runner rate-limited when preflight surfaces an insufficient credits error" do
         opencode_provider = create_opencode_provider_for(user)
         credit_error = Containers::Provision::Result.success(
@@ -3161,7 +3223,10 @@ expect(container_service).to receive(:execute).with(
           call_count += 1
           execute_calls << [ command, opts ]
 
-          call_count == 1 ? raise(Containers::Provision::TimeoutError, "execution timed out") : exec_success
+          # The preflight smoke retries once on timeout, so the first two calls
+          # (both preflight attempts for the primary runner) must time out to
+          # trip the circuit and trigger the fallback to the opencode runner.
+          call_count <= 2 ? raise(Containers::Provision::TimeoutError, "execution timed out") : exec_success
         end
 
         result = activity.execute(agent_run_id: agent_run.id)

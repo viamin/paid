@@ -131,7 +131,7 @@ module Activities
     RETRY_IDLE_TIMEOUT_MULTIPLIER = 1.5
 
     PREFLIGHT_TIMEOUT_SECONDS = 10
-    DIRECT_OUTBOUND_PREFLIGHT_TIMEOUT_SECONDS = 30
+    DIRECT_OUTBOUND_PREFLIGHT_TIMEOUT_SECONDS = 60
     PREFLIGHT_TIMEOUT_CIRCUIT_BREAKER_THRESHOLD = 3
     # Backoff applied to a runner whose credit/quota is exhausted. Long
     # enough that we don't re-attempt every minute, short enough that a
@@ -1479,14 +1479,34 @@ module Activities
       preparation = command_preparation_for(command_context, prompt, agent_run: agent_run)
       preflight_timeout = preflight_timeout_seconds_for(command_context.runner_candidate, command_context.user)
 
-      result = container_service.execute(
-        command,
-        timeout: preflight_timeout,
-        idle_timeout: preflight_timeout,
-        env: env,
-        preparation: preparation,
-        abort_patterns: aggregated_abort_patterns
-      )
+      smoke_attempt = 0
+      result = begin
+        smoke_attempt += 1
+        container_service.execute(
+          command,
+          timeout: preflight_timeout,
+          idle_timeout: preflight_timeout,
+          env: env,
+          preparation: preparation,
+          abort_patterns: aggregated_abort_patterns
+        )
+      rescue Containers::Provision::TimeoutError => e
+        if smoke_attempt < 2
+          logger.info(
+            message: "agent_execution.preflight_smoke_timeout_retry",
+            agent_run_id: agent_run.id,
+            runner: runner.to_s,
+            attempt: smoke_attempt,
+            preflight_timeout_seconds: preflight_timeout
+          )
+          retry
+        end
+        reason = "Runner smoke preflight timed out after #{preflight_timeout}s on both attempts"
+        reason += " after harness preflight passed" if harness_preflight_passed
+        reason += ". This points to the runner CLI path (container egress, proxy, auth wiring, or upstream API responsiveness). Original error: #{e.message}"
+        raise_preflight_timeout!(agent_run: agent_run, runner: runner, reason: reason)
+      end
+
       stdout = normalize_output_text(result[:stdout])
       stderr = normalize_output_text(result[:stderr])
       combined_output = [ stderr, stdout ].compact.join("\n").strip
@@ -1532,11 +1552,6 @@ module Activities
         "No output before exit code #{result[:exit_code]}. Check proxy configuration, auth, and network policy."
       end
       raise_preflight_failure!(agent_run: agent_run, runner: runner, reason: reason)
-    rescue Containers::Provision::TimeoutError => e
-      reason = "Runner smoke preflight timed out after #{preflight_timeout}s"
-      reason += " after harness preflight passed" if harness_preflight_passed
-      reason += ". This points to the runner CLI path (container egress, proxy, auth wiring, or upstream API responsiveness). Original error: #{e.message}"
-      raise_preflight_timeout!(agent_run: agent_run, runner: runner, reason: reason)
     rescue Containers::Provision::OutputAbortError => e
       reset_at = rate_limit_reset_at(runner, e.matched_output.to_s)
       log_preflight_failure(agent_run: agent_run, runner: runner, reason: e.matched_output.to_s.truncate(200))
@@ -1567,7 +1582,7 @@ module Activities
 
     def preflight_timeout_seconds_for(provider_candidate, user)
       provider_entry = provider_entry_for(provider_candidate, user)
-      configured_timeout = provider_entry&.kilocode_preflight_timeout_seconds
+      configured_timeout = provider_entry&.runner_preflight_timeout_seconds
       return configured_timeout if configured_timeout.present?
       return DIRECT_OUTBOUND_PREFLIGHT_TIMEOUT_SECONDS if provider_entry&.requires_direct_outbound?
 
