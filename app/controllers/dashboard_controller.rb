@@ -83,6 +83,18 @@ class DashboardController < ApplicationController
     render partial: "dashboard/queue_health", locals: { queue_depths: @queue_health.queue_depths, healthy: @queue_health.healthy? }
   end
 
+  def pr_cycle_time
+    @time_range = valid_time_range
+    cutoff = valid_outlier_cutoff
+    data = Dashboard::PrCycleTimeSeries.call(
+      account: current_account,
+      time_range: @time_range,
+      outlier_cutoff_hours: cutoff
+    )
+    render partial: "dashboard/pr_cycle_time",
+      locals: { data: data, time_range: @time_range, outlier_cutoff: cutoff }
+  end
+
   def cancel_run
     cancel_agent_run(@agent_run, redirect_path: dashboard_path)
   end
@@ -110,6 +122,11 @@ class DashboardController < ApplicationController
   def valid_goal_filter
     goal = params[:goal].to_s
     Dashboard::Stats::VALID_GOALS.include?(goal) ? goal : "all"
+  end
+
+  def valid_outlier_cutoff
+    cutoff = params[:outlier_cutoff].to_f
+    cutoff.positive? ? cutoff : Dashboard::PrCycleTimeSeries::DEFAULT_OUTLIER_CUTOFF_HOURS
   end
 
   def orchestration_decisions_scope
