@@ -56,6 +56,11 @@ module Models
         capability_score: 7.0,
         tier: "low"
       },
+      # claude-fable-5 is excluded: flagged in #2566 but Anthropic has not published
+      # pricing, context window, or capability details for this model. Add once the
+      # model is generally available and its specifications are confirmed.
+      # claude-opus-4-8 is excluded: flagged in #2566 but not yet generally available
+      # as of this writing. Add once Anthropic publishes this model's specifications.
       {
         model_id: "gpt-5.1",
         display_name: "GPT-5.1",
@@ -288,6 +293,10 @@ module Models
       # generateContent REST endpoint this catalog assumes. Cataloguing it would
       # cause model selection to route agent runs there, which would fail at
       # execution. Re-evaluate if Google exposes it on the standard REST surface.
+      # gemini-3.1-flash-lite and gemini-3.5-flash are excluded: flagged in #2566 but
+      # Google has not published stable pricing or availability for these Gemini 3.x
+      # models as of this writing. Add once they reach general availability and their
+      # specifications are confirmed.
       {
         model_id: "gemini-2.5-pro",
         display_name: "Gemini 2.5 Pro",
