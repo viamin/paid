@@ -181,20 +181,12 @@
                 discrete: true,
                 library: {
                   plugins: {
-                    legend: { display: false },
-                    tooltip: {
-                      callbacks: {
-                        label: "function(ctx) { return ctx.parsed.y != null ? ctx.parsed.y.toFixed(1) + '%' : 'No data'; }"
-                      }
-                    }
+                    legend: { display: false }
                   },
                   scales: {
                     y: {
                       beginAtZero: true,
-                      max: 100,
-                      ticks: {
-                        callback: "function(v) { return v + '%'; }"
-                      }
+                      max: 100
                     }
                   }
                 } %>
