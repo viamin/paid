@@ -72,6 +72,9 @@ module Dashboard
 
       compute_trend(trend_points, date_range, trend_data)
 
+      date_set = date_range.to_set
+      rows_in_range = rows.select { |r| date_set.include?(parse_date(r["merge_date"])) }
+
       {
         series: [
           { name: "Average", data: avg_data },
@@ -80,7 +83,7 @@ module Dashboard
         ],
         outlier_annotations: outlier_annotations,
         merged_counts: merged_counts,
-        summary: build_summary(rows, overall_p50: overall_p50)
+        summary: build_summary(rows_in_range, overall_p50: overall_p50)
       }
     end
 
@@ -151,8 +154,8 @@ module Dashboard
       end_date = Time.zone.today
       start_date = case time_range
       when "24h" then end_date - 1.day
-      when "7d" then end_date - 6.days
-      when "30d" then end_date - 29.days
+      when "7d" then end_date - 7.days
+      when "30d" then end_date - 30.days
       else end_date - (WINDOW_DAYS - 1).days
       end
       (start_date..end_date).to_a
@@ -205,15 +208,15 @@ module Dashboard
 
     def time_filter
       case time_range
-      when "24h" then "AND i.github_updated_at >= #{quoted_time(24.hours.ago)}"
-      when "7d" then "AND i.github_updated_at >= #{quoted_time(7.days.ago)}"
-      when "30d" then "AND i.github_updated_at >= #{quoted_time(30.days.ago)}"
+      when "24h" then "AND DATE(i.github_updated_at) >= #{quoted_date(Time.zone.today - 1.day)}"
+      when "7d" then "AND DATE(i.github_updated_at) >= #{quoted_date(Time.zone.today - 7.days)}"
+      when "30d" then "AND DATE(i.github_updated_at) >= #{quoted_date(Time.zone.today - 30.days)}"
       else ""
       end
     end
 
-    def quoted_time(time)
-      ActiveRecord::Base.connection.quote(time)
+    def quoted_date(date)
+      ActiveRecord::Base.connection.quote(date.to_s)
     end
 
     def parse_date(value)

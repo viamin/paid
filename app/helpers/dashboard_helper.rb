@@ -145,7 +145,7 @@ module DashboardHelper
 
   def chart_annotations(data)
     annotations = {}
-    data[:outlier_annotations].each_with_index do |(date, count), _index|
+    data[:outlier_annotations].each do |date, count|
       annotations["outlier_#{date}"] = {
         type: "line",
         xMin: date.to_s,
