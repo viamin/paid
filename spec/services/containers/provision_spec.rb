@@ -25,6 +25,20 @@ RSpec.describe Containers::Provision do
     preparation_class.new([ preparation_write ])
   end
 
+  def stub_exec_with_dead_container_cleanup(mock_container)
+    allow(mock_container).to receive(:exec) do |cmd, **_opts, &block|
+      script = cmd.is_a?(Array) ? cmd.last.to_s : cmd.to_s
+      if script.include?("printf '%s' \"$PAID_PREPARATION_B64\" | base64 -d > \"$PAID_PREPARATION_TARGET\"")
+        [ [], [], 0 ]
+      elsif script.include?("cat \"$PAID_PREPARATION_STATE_DIR/state\"")
+        raise Docker::Error::DockerError, '{"message":"Container abc123container is not running"}'
+      else
+        block.call(:stdout, "command output\n") if block
+        [ [ "command output\n" ], [], 0 ]
+      end
+    end
+  end
+
   def stub_exec_with_cleanup_failure(mock_container)
     allow(mock_container).to receive(:exec) do |cmd, **opts, &block|
       if cmd == [ "sh", "-c", "echo 'hello'" ]
@@ -1934,6 +1948,25 @@ RSpec.describe Containers::Provision do
           "system",
           "container.execute.invalidated_after_preparation_cleanup_failure",
           metadata: hash_including(container_id: "abc123container")
+        )
+      end
+
+      it "treats 'container is not running' Docker errors during preparation cleanup as a no-op" do
+        preparation = build_preparation
+        allow(agent_run).to receive(:log!)
+        stub_exec_with_dead_container_cleanup(mock_container)
+        allow(mock_container).to receive(:info).and_return({ "State" => { "Running" => true, "ExitCode" => 0 } })
+
+        result = service.execute("echo 'hello'", preparation: preparation)
+
+        expect(result).to be_success
+        expect(agent_run).to have_received(:log!).with(
+          "system",
+          "container.execute.preparation_cleanup_skipped_dead_container",
+          metadata: hash_including(error: /is not running/i)
+        )
+        expect(agent_run).not_to have_received(:log!).with(
+          "system", "container.execute.preparation_cleanup_failed", anything
         )
       end
     end
