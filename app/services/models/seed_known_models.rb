@@ -56,6 +56,11 @@ module Models
         capability_score: 7.0,
         tier: "low"
       },
+      # claude-fable-5 is excluded: flagged in #2566 but Anthropic has not published
+      # pricing, context window, or capability details for this model. Add once the
+      # model is generally available and its specifications are confirmed.
+      # claude-opus-4-8 is excluded: flagged in #2566 but not yet generally available
+      # as of this writing. Add once Anthropic publishes this model's specifications.
       {
         model_id: "gpt-5.1",
         display_name: "GPT-5.1",
@@ -73,6 +78,185 @@ module Models
         tier: "mid"
       },
       {
+        model_id: "gpt-5.2",
+        display_name: "GPT-5.2",
+        provider: "openai",
+        family: "gpt-5",
+        category: "coding",
+        context_window: 400_000,
+        max_output_tokens: 128_000,
+        input_cost_per_million: 1.25,
+        output_cost_per_million: 10.0,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 9.1,
+        tier: "mid"
+      },
+      {
+        model_id: "gpt-5.2-codex",
+        display_name: "GPT-5.2 Codex",
+        provider: "openai",
+        family: "gpt-5",
+        category: "coding",
+        context_window: 400_000,
+        max_output_tokens: 128_000,
+        input_cost_per_million: 2.50,
+        output_cost_per_million: 15.0,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 9.5,
+        tier: "high"
+      },
+      {
+        model_id: "gpt-5.2-pro",
+        display_name: "GPT-5.2 Pro",
+        provider: "openai",
+        family: "gpt-5",
+        category: "coding",
+        context_window: 400_000,
+        max_output_tokens: 128_000,
+        input_cost_per_million: 5.0,
+        output_cost_per_million: 20.0,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 9.5,
+        tier: "high"
+      },
+      {
+        model_id: "gpt-5.3-codex",
+        display_name: "GPT-5.3 Codex",
+        provider: "openai",
+        family: "gpt-5",
+        category: "coding",
+        context_window: 400_000,
+        max_output_tokens: 128_000,
+        input_cost_per_million: 3.0,
+        output_cost_per_million: 15.0,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 9.6,
+        tier: "high"
+      },
+      {
+        model_id: "gpt-5.3-codex-spark",
+        display_name: "GPT-5.3 Codex Spark",
+        provider: "openai",
+        family: "gpt-5",
+        category: "coding",
+        context_window: 400_000,
+        max_output_tokens: 128_000,
+        input_cost_per_million: 1.50,
+        output_cost_per_million: 8.0,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 8.8,
+        tier: "mid"
+      },
+      {
+        model_id: "gpt-5.4",
+        display_name: "GPT-5.4",
+        provider: "openai",
+        family: "gpt-5",
+        category: "coding",
+        context_window: 400_000,
+        max_output_tokens: 128_000,
+        input_cost_per_million: 1.25,
+        output_cost_per_million: 10.0,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 9.3,
+        tier: "mid"
+      },
+      {
+        model_id: "gpt-5.4-mini",
+        display_name: "GPT-5.4 Mini",
+        provider: "openai",
+        family: "gpt-5",
+        category: "general",
+        context_window: 400_000,
+        max_output_tokens: 128_000,
+        input_cost_per_million: 0.25,
+        output_cost_per_million: 2.0,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 7.3,
+        tier: "low"
+      },
+      {
+        model_id: "gpt-5.4-nano",
+        display_name: "GPT-5.4 Nano",
+        provider: "openai",
+        family: "gpt-5",
+        category: "general",
+        context_window: 400_000,
+        max_output_tokens: 65_536,
+        input_cost_per_million: 0.10,
+        output_cost_per_million: 0.50,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 6.8,
+        tier: "low"
+      },
+      {
+        model_id: "gpt-5.4-pro",
+        display_name: "GPT-5.4 Pro",
+        provider: "openai",
+        family: "gpt-5",
+        category: "coding",
+        context_window: 400_000,
+        max_output_tokens: 128_000,
+        input_cost_per_million: 5.0,
+        output_cost_per_million: 20.0,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 9.6,
+        tier: "high"
+      },
+      # TODO(#2566): The Codex runner targets this model but hits cli_version_outdated
+      # on agent-harness 0.22.5. Bump Gemfile to the next agent-harness release that
+      # ships the updated Codex CLI pin before enabling the Codex runner for gpt-5.5.
+      {
+        model_id: "gpt-5.5",
+        display_name: "GPT-5.5",
+        provider: "openai",
+        family: "gpt-5",
+        category: "coding",
+        context_window: 400_000,
+        max_output_tokens: 128_000,
+        input_cost_per_million: 2.50,
+        output_cost_per_million: 12.0,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 9.8,
+        tier: "high"
+      },
+      {
+        model_id: "gpt-5.5-pro",
+        display_name: "GPT-5.5 Pro",
+        provider: "openai",
+        family: "gpt-5",
+        category: "coding",
+        context_window: 400_000,
+        max_output_tokens: 128_000,
+        input_cost_per_million: 10.0,
+        output_cost_per_million: 30.0,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 10.0,
+        tier: "high"
+      },
+      {
         model_id: "gpt-5-mini",
         display_name: "GPT-5 Mini",
         provider: "openai",
@@ -88,6 +272,31 @@ module Models
         capability_score: 7.0,
         tier: "low"
       },
+      {
+        model_id: "gemini-2.5-flash-lite",
+        display_name: "Gemini 2.5 Flash Lite",
+        provider: "google",
+        family: "gemini-2",
+        category: "general",
+        context_window: 1_000_000,
+        max_output_tokens: 65_536,
+        input_cost_per_million: 0.10,
+        output_cost_per_million: 0.40,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 7.0,
+        tier: "low"
+      },
+      # gemini-live-2.5-flash is excluded: it is a Live API (WebSocket, real-time
+      # bidirectional streaming) model and is not accessible via the standard
+      # generateContent REST endpoint this catalog assumes. Cataloguing it would
+      # cause model selection to route agent runs there, which would fail at
+      # execution. Re-evaluate if Google exposes it on the standard REST surface.
+      # gemini-3.1-flash-lite and gemini-3.5-flash are excluded: flagged in #2566 but
+      # Google has not published stable pricing or availability for these Gemini 3.x
+      # models as of this writing. Add once they reach general availability and their
+      # specifications are confirmed.
       {
         model_id: "gemini-2.5-pro",
         display_name: "Gemini 2.5 Pro",
