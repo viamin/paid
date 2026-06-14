@@ -99,7 +99,7 @@ module Dashboard
       end
     end
 
-    def apply_time_range(scope)
+    def apply_time_range(scope, column: :created_at)
       return scope if time_range == "cumulative"
 
       cutoff = case time_range
@@ -107,7 +107,7 @@ module Dashboard
       when "7d" then 7.days.ago
       when "24h" then 24.hours.ago
       end
-      scope.where(created_at: cutoff..)
+      scope.where(column => cutoff..)
     end
 
     def run_volume
@@ -160,7 +160,7 @@ module Dashboard
         .where(status: "completed", goal: "create_pr")
         .where.not(duration_seconds: nil, completed_at: nil)
 
-      scope = apply_completed_at_time_range(scope)
+      scope = apply_time_range(scope, column: :completed_at)
 
       rows = scope
         .group(Arel.sql("DATE(agent_runs.completed_at)"))
@@ -597,34 +597,26 @@ module Dashboard
       ActiveRecord::Base.connection.select_one(sql)
     end
 
-    def apply_completed_at_time_range(scope)
-      return scope if time_range == "cumulative"
-
-      cutoff = case time_range
-      when "30d" then 30.days.ago
-      when "7d" then 7.days.ago
-      when "24h" then 24.hours.ago
-      end
-      scope.where(completed_at: cutoff..)
-    end
-
-    def linear_trend(data)
-      return {} if data.size < 2
-
-      keys = data.keys
-      values = data.values
+    def ols_slope(values)
       n = values.size
       sum_x = (0...n).sum
       sum_y = values.sum
       sum_xy = values.each_with_index.sum { |y, i| i * y }
       sum_x2 = (0...n).sum { |i| i * i }
       denom = (n * sum_x2 - sum_x * sum_x).to_f
-      return {} if denom.zero?
+      return nil if denom.zero?
 
-      slope = (n * sum_xy - sum_x * sum_y) / denom
-      intercept = (sum_y - slope * sum_x) / n
+      (n * sum_xy - sum_x * sum_y) / denom
+    end
 
-      keys.each_with_index.each_with_object({}) do |(key, i), result|
+    def linear_trend(data)
+      return {} if data.size < 2
+
+      slope = ols_slope(data.values)
+      return {} if slope.nil?
+
+      intercept = (data.values.sum - slope * (0...data.size).sum) / data.size.to_f
+      data.keys.each_with_index.each_with_object({}) do |(key, i), result|
         result[key] = [ (intercept + slope * i).round, 0 ].max
       end
     end
@@ -632,16 +624,7 @@ module Dashboard
     def trend_slope(data)
       return 0.0 if data.size < 2
 
-      values = data.values
-      n = values.size
-      sum_x = (0...n).sum
-      sum_y = values.sum
-      sum_xy = values.each_with_index.sum { |y, i| i * y }
-      sum_x2 = (0...n).sum { |i| i * i }
-      denom = (n * sum_x2 - sum_x * sum_x).to_f
-      return 0.0 if denom.zero?
-
-      ((n * sum_xy - sum_x * sum_y) / denom).round(1)
+      ols_slope(data.values)&.round(1) || 0.0
     end
 
     def trailing_count_sql(start_time, end_time)
