@@ -96,6 +96,12 @@ RSpec.describe Runners::ResolveTierModel do
           )
         )
       end
+
+      it "checks compatibility once per candidate" do
+        expect(Runners::ModelCompatibility).to receive(:call).once.and_call_original
+
+        described_class.call(runner: runner, tier: "mid", user: user)
+      end
     end
 
     context "when the runner tier mapping specifies a compatible model" do
@@ -111,6 +117,12 @@ RSpec.describe Runners::ResolveTierModel do
 
         expect(result).to be_success
         expect(result.model_id).to eq("gpt-5.4")
+      end
+
+      it "checks compatibility once per candidate" do
+        expect(Runners::ModelCompatibility).to receive(:call).once.and_call_original
+
+        described_class.call(runner: runner, tier: "mid", user: user)
       end
     end
   end

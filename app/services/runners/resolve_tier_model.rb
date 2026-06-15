@@ -17,11 +17,9 @@ module Runners
       runner_entry = runner.tier_models[tier]
       if runner_entry.present?
         model_id = runner_entry.fetch("model_id")
-        check_and_log_compatibility(model_id, source: "runner")
         compat = compatibility_for(model_id)
-        if compat.unsupported?
-          return failure_result(incompatibility_message(model_id, compat))
-        end
+        log_incompatibility_if_unsupported(compat, model_id: model_id, source: "runner")
+        return failure_result(incompatibility_message(model_id, compat)) if compat.unsupported?
 
         return success_result(runner_entry, source: "runner")
       end
@@ -29,11 +27,9 @@ module Runners
       provider_entry = provider&.tier_models&.dig(tier)
       if provider_entry.present?
         model_id = provider_entry.fetch("model_id")
-        check_and_log_compatibility(model_id, source: "provider")
         compat = compatibility_for(model_id)
-        if compat.unsupported?
-          return failure_result(incompatibility_message(model_id, compat))
-        end
+        log_incompatibility_if_unsupported(compat, model_id: model_id, source: "provider")
+        return failure_result(incompatibility_message(model_id, compat)) if compat.unsupported?
 
         return success_result(provider_entry, source: "provider")
       end
@@ -60,8 +56,7 @@ module Runners
       )
     end
 
-    def check_and_log_compatibility(model_id, source:)
-      compat = compatibility_for(model_id)
+    def log_incompatibility_if_unsupported(compat, model_id:, source:)
       return unless compat.unsupported?
 
       Rails.logger.warn(
