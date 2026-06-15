@@ -741,5 +741,58 @@ RSpec.describe ProcessRunQueueJob do
         expect(open_run.reload.temporal_workflow_id).to be_present
       end
     end
+
+    context "when the dispatch circuit breaker is open for an account" do
+      it "blocks all queued runs for that account in a single pass" do
+        account = create(:account)
+        project = create(:project, account: account)
+        create(:dispatch_circuit_breaker, :open, account: account)
+        runs = Array.new(3) { create(:agent_run, :queued, project: project) }
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(runs.map { |run| run.reload.status }).to all(eq("queued"))
+      end
+
+      it "does not starve other accounts when a halted account has a deep backlog" do
+        stub_const("#{described_class}::MAX_ITERATIONS_PER_PERFORM", 4)
+
+        halted_account = create(:account)
+        halted_project = create(:project, account: halted_account)
+        create(:dispatch_circuit_breaker, :open, account: halted_account)
+        # More halted-account runs than the iteration budget so only the peek
+        # exclusion (not in-memory skipping) lets the other account through.
+        Array.new(5) { |i| create(:agent_run, :queued, project: halted_project, created_at: (20 - i).minutes.ago) }
+
+        open_account = create(:account)
+        open_project = create(:project, account: open_account)
+        open_run = create(:agent_run, :queued, project: open_project, created_at: 1.minute.ago)
+
+        expect(temporal_client).to receive(:start_workflow).once.and_return(workflow_handle)
+
+        described_class.new.perform
+
+        expect(open_run.reload.temporal_workflow_id).to be_present
+      end
+    end
+
+    context "when the dispatch circuit breaker is half_open for an account" do
+      it "allows a single probe run and blocks the rest until the interval elapses" do
+        account = create(:account)
+        project = create(:project, account: account)
+        create(:dispatch_circuit_breaker, :half_open, account: account, last_probe_at: nil)
+        probe_run = create(:agent_run, :queued, project: project, created_at: 2.minutes.ago)
+        blocked_run = create(:agent_run, :queued, project: project, created_at: 1.minute.ago)
+
+        expect(temporal_client).to receive(:start_workflow).once.and_return(workflow_handle)
+
+        described_class.new.perform
+
+        expect(probe_run.reload.temporal_workflow_id).to be_present
+        expect(blocked_run.reload.status).to eq("queued")
+      end
+    end
   end
 end

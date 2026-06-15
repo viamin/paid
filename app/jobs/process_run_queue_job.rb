@@ -65,7 +65,8 @@ class ProcessRunQueueJob < ApplicationJob
           exclude_ids: skipped_ids.to_a,
           exclude_project_ids: blocked_project_ids.to_a,
           exclude_user_ids: blocked_user_ids.to_a,
-          exclude_account_create_pr_ids: blocked_account_create_pr_ids.to_a
+          exclude_account_create_pr_ids: blocked_account_create_pr_ids.to_a,
+          exclude_account_ids: blocked_account_dispatch_ids.to_a
         )
 
         break unless next_run
@@ -201,7 +202,10 @@ class ProcessRunQueueJob < ApplicationJob
 
   def dispatch_halted?(agent_run, blocked_account_dispatch_ids)
     account = agent_run.project.account
-    return false if blocked_account_dispatch_ids.include?(account.id)
+    # Once an account is halted in this pass, every remaining queued run for
+    # it must stay blocked — returning false here would let the next run bypass
+    # the breaker and dispatch after only a single run was skipped.
+    return true if blocked_account_dispatch_ids.include?(account.id)
 
     service = ::AgentRuns::DispatchCircuitBreaker.new(account)
     decision = service.probe_decision
