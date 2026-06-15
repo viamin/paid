@@ -20,15 +20,14 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
   def project_class
     @project_class ||= Struct.new(:id) do
       def auto_enhance_enabled? = false
+      def model_preferences
+        @model_preferences ||= {}
+      end
     end
   end
 
   def issue_class
     @issue_class ||= Struct.new(:id, :github_number)
-  end
-
-  def runner_class
-    @runner_class ||= Struct.new(:id, :runner_key)
   end
 
   def run_class
@@ -43,7 +42,6 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
   let(:issue_scope) { instance_double(ActiveRecord::Relation, exists?: true) }
   let(:create_pr_blocking_runs) { instance_double(ActiveRecord::Relation) }
   let(:analyze_issue_blocking_runs) { instance_double(ActiveRecord::Relation) }
-  let(:runner) { instance_double(runner_class, id: 5, runner_key: "claude") }
   let(:service) { described_class.new(issue, project: project) }
 
   before do
@@ -54,14 +52,14 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
     allow(eligible_scope).to receive(:where).with(id: issue.id).and_return(issue_scope)
     allow(service).to receive(:blocking_runs).with("create_pr").and_return(create_pr_blocking_runs)
     allow(service).to receive(:blocking_runs).with("analyze_issue").and_return(analyze_issue_blocking_runs)
-    allow(service).to receive(:resolve_runner).and_return(runner)
+    allow(project).to receive(:model_preferences).and_return({})
   end
 
   def build_run(id:, previously_new_record:)
     run_class.new(id, previously_new_record)
   end
 
-  it "creates a queued automatic auto-pick run for an eligible issue" do
+  it "creates a runnerless queued auto-pick run for an eligible issue" do
     run = build_run(id: 99, previously_new_record: true)
 
     allow(create_pr_blocking_runs).to receive(:find_or_create_by!) do |attrs, &block|
@@ -77,7 +75,9 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
     expect(create_pr_blocking_runs).to have_received(:find_or_create_by!).with(
       project: project, issue: issue, goal: "create_pr"
     )
-    expect(run.runner).to eq(runner)
+    # The run is enqueued runnerless — the queue processor late-binds
+    # a runnable runner at dequeue time (#2563).
+    expect(run.runner).to be_nil
     expect(run.agent_type).to eq("claude_code")
     expect(run.status).to eq("queued")
     expect(run.trigger_type).to eq("automatic")
@@ -87,17 +87,49 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
     )
   end
 
-  it "resolves the provider for analyze_issue when auto_enhance is enabled" do
+  it "uses analyze_issue as the seeded goal when auto_enhance is enabled" do
     allow(project).to receive(:auto_enhance_enabled?).and_return(true)
-    allow(service).to receive(:resolve_runner).with("analyze_issue").and_return(runner)
-    allow(analyze_issue_blocking_runs).to receive(:find_or_create_by!).and_return(
-      instance_double(run_class, id: 99, previously_new_record?: true)
-    )
+    run = build_run(id: 99, previously_new_record: true)
+    allow(analyze_issue_blocking_runs).to receive(:find_or_create_by!) do |attrs, &block|
+      expect(attrs).to eq(project: project, issue: issue, goal: "analyze_issue")
+      block.call(run)
+      run
+    end
     allow(Rails.logger).to receive(:info)
 
     service.call
 
-    expect(service).to have_received(:resolve_runner).with("analyze_issue")
+    expect(analyze_issue_blocking_runs).to have_received(:find_or_create_by!).with(
+      project: project, issue: issue, goal: "analyze_issue"
+    )
+  end
+
+  it "honors the project's preferred_agent_type as the intended agent_type" do
+    run = build_run(id: 99, previously_new_record: true)
+    allow(project).to receive(:model_preferences).and_return({ "preferred_agent_type" => "codex" })
+    allow(create_pr_blocking_runs).to receive(:find_or_create_by!) do |attrs, &block|
+      block.call(run)
+      run
+    end
+    allow(Rails.logger).to receive(:info)
+
+    service.call
+
+    expect(run.agent_type).to eq("codex")
+  end
+
+  it "ignores a project preferred_agent_type that is not a known agent_type" do
+    run = build_run(id: 99, previously_new_record: true)
+    allow(project).to receive(:model_preferences).and_return({ "preferred_agent_type" => "totally_made_up" })
+    allow(create_pr_blocking_runs).to receive(:find_or_create_by!) do |attrs, &block|
+      block.call(run)
+      run
+    end
+    allow(Rails.logger).to receive(:info)
+
+    service.call
+
+    expect(run.agent_type).to eq("claude_code")
   end
 
   it "returns nil when DefaultCandidateSource excludes the issue for paid_state reasons" do
@@ -146,53 +178,19 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
     expect { service.call }.to raise_error(ActiveRecord::RecordNotUnique)
   end
 
-  it "returns nil and warns when no runner can be resolved" do
-    allow(service).to receive(:resolve_runner).with("create_pr").and_return(nil)
-    allow(Rails.logger).to receive(:warn)
-
-    freeze_time do
-      expect {
-        result = service.call
-        expect(result).to be_nil
-      }.to have_enqueued_job(Issues::ReenqueueEligibleJob).with(issue.id, no_runner_retry_count: 1).at(30.seconds.from_now)
-    end
-
-    expect(Rails.logger).to have_received(:warn).with(
-      hash_including(
-        message: "enqueue_eligible.no_runner",
-        issue_id: issue.id,
-        project_id: project.id,
-        no_runner_retry_count: 0,
-        no_runner_retry_scheduled: true,
-        next_no_runner_retry_count: 1,
-        wait_seconds: 30,
-        retries_exhausted: false
-      )
+  it "does not schedule a no-runner retry when no runner can be resolved at enqueue time" do
+    # With the runner-agnostic queue (#2563), enqueue no longer
+    # requires a runnable runner — the run simply stays queued and
+    # the queue processor late-binds a healthy runner later. The
+    # enqueue side no longer schedules a no-runner retry.
+    allow(create_pr_blocking_runs).to receive(:find_or_create_by!).and_return(
+      instance_double(run_class, id: 1, previously_new_record?: true)
     )
-  end
-
-  it "does not schedule another retry after the no-runner retry cap" do
-    capped_service = described_class.new(
-      issue,
-      project: project,
-      no_runner_retry_count: Issues::ReenqueueEligibleJob::MAX_NO_RUNNER_RETRIES
-    )
-    allow(capped_service).to receive(:resolve_runner).with("create_pr").and_return(nil)
-    allow(Rails.logger).to receive(:warn)
+    allow(Rails.logger).to receive(:info)
 
     expect {
-      expect(capped_service.call).to be_nil
+      expect(service.call).not_to be_nil
     }.not_to have_enqueued_job(Issues::ReenqueueEligibleJob)
-
-    expect(Rails.logger).to have_received(:warn).with(
-      hash_including(
-        message: "enqueue_eligible.no_runner",
-        issue_id: issue.id,
-        no_runner_retry_count: Issues::ReenqueueEligibleJob::MAX_NO_RUNNER_RETRIES,
-        no_runner_retry_scheduled: false,
-        retries_exhausted: true
-      )
-    )
   end
 
   it "returns nil when the project-level auto-pick gate defers seeding" do

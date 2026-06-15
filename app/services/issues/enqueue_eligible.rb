@@ -25,16 +25,10 @@ module Issues
       end
 
       goal = seeded_goal
-      runner = resolve_runner(goal)
-      unless runner
-        retry_schedule = schedule_no_runner_retry
-        log_no_runner(retry_schedule)
-        return nil
-      end
+      intended_agent_type = intended_agent_type_for(goal)
 
       run = blocking_runs(goal).find_or_create_by!(project: project, issue: issue, goal: goal) do |agent_run|
-        agent_run.runner = runner
-        agent_run.agent_type = Runner.agent_type_for(runner.runner_key)
+        agent_run.agent_type = intended_agent_type
         agent_run.status = "queued"
         agent_run.trigger_type = "automatic"
         agent_run.auto_pick = true
@@ -73,9 +67,19 @@ module Issues
         .exists?
     end
 
-    def resolve_runner(goal)
-      runner_id, = AgentRuns::RunnerResolver.call(project: project, goal: goal)
-      Runner.kept_only.find_by(id: runner_id) if runner_id
+    # Returns the intended agent_type for the queued run. Honors the
+    # project's preferred_agent_type when set, then falls back to the
+    # first container-executable runner's agent_type, then to a stable
+    # default. The actual runner is bound at dequeue time by
+    # ProcessRunQueueJob, so a "no runner available" situation no longer
+    # blocks enqueue — the run simply stays queued until a healthy
+    # runner can be paired (#2563).
+    def intended_agent_type_for(_goal)
+      preferred = project.model_preferences["preferred_agent_type"]
+      return preferred if preferred.present? && AgentRun::AGENT_TYPES.include?(preferred)
+
+      first_key = RunnerSupport.container_executable_runner_keys.first
+      first_key ? Runner.agent_type_for(first_key) : "claude_code"
     end
 
     def seeded_goal
@@ -100,23 +104,6 @@ module Issues
 
     def log_project_deferred
       Rails.logger.info(log_context("enqueue_eligible.project_deferred"))
-    end
-
-    def schedule_no_runner_retry
-      Issues::ReenqueueEligibleJob.schedule_no_runner_retry(issue.id, no_runner_retry_count: no_runner_retry_count)
-    end
-
-    def log_no_runner(retry_schedule)
-      Rails.logger.warn(
-        log_context(
-          "enqueue_eligible.no_runner",
-          no_runner_retry_count: no_runner_retry_count,
-          no_runner_retry_scheduled: retry_schedule.present?,
-          next_no_runner_retry_count: retry_schedule&.fetch(:retry_count, nil),
-          wait_seconds: retry_schedule&.fetch(:wait, nil)&.to_i,
-          retries_exhausted: retry_schedule.blank?
-        )
-      )
     end
 
     def log_context(message, extra = {})

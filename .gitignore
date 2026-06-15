@@ -213,3 +213,4 @@ __pycache__/
 
 # Compound Engineering local config
 .compound-engineering/*.local.yaml
+.env.local

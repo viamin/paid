@@ -49,6 +49,12 @@ class ProcessRunQueueJob < ApplicationJob
       skipped_ids = Set.new
       blocked_project_ids = Set.new
       blocked_user_ids = Set.new
+      # Runner-agnostic queue (#2563): a runner id in this set means
+      # "do not pick this runner again on this pass", not "skip the
+      # run". For pinned runs the corresponding run is also added to
+      # +skipped_ids+ so it is not retried; for unbound runs the run
+      # stays queued and the resolver will pick a different runner next
+      # pass if one is healthy.
       blocked_runner_ids = Set.new
       blocked_account_create_pr_ids = Set.new
       blocked_account_dispatch_ids = Set.new
@@ -102,6 +108,21 @@ class ProcessRunQueueJob < ApplicationJob
           next
         end
 
+        # Late-bind a runner for runner-agnostic queued runs (#2563).
+        # Resolved/updated in place; the resolver is constrained to
+        # runnable runners, so a healthy alternative is always picked
+        # when one exists. If no runnable runner can be resolved the
+        # run stays queued and we move on to the next peek.
+        bound_for_this_iteration = false
+        if next_run.runner_unbound?
+          bound_runner = AgentRuns::BindRunner.call(agent_run: next_run)
+          unless bound_runner
+            log_no_runnable_runner(next_run)
+            next
+          end
+          bound_for_this_iteration = true
+        end
+
         if next_run.runner_id && blocked_runner_ids.include?(next_run.runner_id)
           skipped_ids.add(next_run.id)
           next
@@ -110,8 +131,19 @@ class ProcessRunQueueJob < ApplicationJob
         preflight_result = check_runner_preflight(next_run, user)
         if preflight_result && !preflight_result.pass?
           log_preflight_skip(next_run, preflight_result)
-          skipped_ids.add(next_run.id)
-          blocked_runner_ids.add(next_run.runner_id) if next_run.runner_id
+          blocked_runner_ids.add(preflight_result.runner_id) if preflight_result.runner_id
+          if bound_for_this_iteration
+            # Late-bound on this pass: clear the pin so the next pass
+            # re-resolves (a different healthy runner may be available
+            # by then). The run stays queued; the runner was just
+            # unhealthy, not the run.
+            next_run.update_columns(runner_id: nil)
+          else
+            # Pinned (manually assigned) runs are stuck to one
+            # runner — keep the run skipped for the rest of this pass
+            # and try again next tick.
+            skipped_ids.add(next_run.id)
+          end
           next
         end
 
@@ -195,6 +227,20 @@ class ProcessRunQueueJob < ApplicationJob
     }
     payload[:project_id] = project_id if project_id
     Rails.logger.info(payload)
+  end
+
+  # Late-binding could not resolve any runnable runner for the queued
+  # run. The run stays queued for a later pass — once a healthy runner
+  # is available, the resolver will pair it. This is the
+  # runner-agnostic-queue equivalent of the pre-#2563 "no runner
+  # available, schedule retry" path on the enqueue side.
+  def log_no_runnable_runner(agent_run)
+    Rails.logger.info(
+      message: "process_run_queue.no_runnable_runner",
+      agent_run_id: agent_run.id,
+      project_id: agent_run.project_id,
+      intended_agent_type: agent_run.agent_type
+    )
   end
 
   def user_has_capacity?(user)
