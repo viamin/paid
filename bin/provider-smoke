@@ -97,7 +97,6 @@ end
 
 env = {
   "RUN_PROVIDER_SMOKE" => "true",
-  "RUN_RUNNER_SMOKE" => "true",
   "COVERAGE" => "false",
   "PAID_SMOKE_ADHOC_RUNNER" => runner_key,
   "PAID_SMOKE_ADHOC_PROVIDER" => provider,
@@ -117,4 +116,4 @@ puts "Smoke-testing #{runner_key} / #{provider} / #{model}"
 puts "Running #{Shellwords.join(spec_command)}"
 
 success = system(env, *spec_command)
-exit($CHILD_STATUS.exitstatus || 1) unless success
+exit($CHILD_STATUS&.exitstatus || 1) unless success
