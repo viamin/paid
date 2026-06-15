@@ -85,7 +85,7 @@ GEM
     agent-harness (0.22.5)
       logger (>= 1.6, < 2.0)
     ast (2.4.3)
-    avo (4.0.0.beta.41)
+    avo (4.0.0.beta.51)
       actionview (>= 6.1)
       active_link_to
       activerecord (>= 6.1)
@@ -634,7 +634,7 @@ GEM
     uri (1.1.1)
     useragent (0.16.11)
     vernier (1.10.1)
-    view_component (4.11.0)
+    view_component (4.12.0)
       actionview (>= 7.1.0)
       activesupport (>= 7.1.0)
       concurrent-ruby (~> 1)
@@ -672,7 +672,7 @@ PLATFORMS
 
 DEPENDENCIES
   agent-harness (~> 0.22.5)
-  avo (= 4.0.0.beta.41)
+  avo (= 4.0.0.beta.51)
   aws-sdk-s3
   bootsnap
   brakeman
@@ -756,7 +756,7 @@ CHECKSUMS
   afm (1.0.0) sha256=5bd4d6f6241e7014ef090985ec6f4c3e9745f6de0828ddd58bc1efdd138f4545
   agent-harness (0.22.5) sha256=dd17bfae3640d0d0eebcf33c97033452c967586c324beb90b8cfb9729f1e0b81
   ast (2.4.3) sha256=954615157c1d6a382bc27d690d973195e79db7f55e9765ac7c481c60bdb4d383
-  avo (4.0.0.beta.41) sha256=3c0ebe1e4206c89098478dedade31a91e2441035d4cef8581ccef90b8d44126f
+  avo (4.0.0.beta.51) sha256=b60a2d9aa1d8836c03f1b66e63aa1e01d99409f1868b9bb23f15387ba5c9455b
   avo-icons (0.1.5) sha256=e9f03c268d52bb0dedf7530bfb0e968c2ef79bf9aa911c86b65364c16ae7ffc5
   aws-eventstream (1.4.0) sha256=116bf85c436200d1060811e6f5d2d40c88f65448f2125bc77ffce5121e6e183b
   aws-partitions (1.1259.0) sha256=1a61c53f85cee1e69e4ab7946c7350b2237d724acf589023715e7117c03c18c6
@@ -979,7 +979,7 @@ CHECKSUMS
   uri (1.1.1) sha256=379fa58d27ffb1387eaada68c749d1426738bd0f654d812fcc07e7568f5c57c6
   useragent (0.16.11) sha256=700e6413ad4bb954bb63547fa098dddf7b0ebe75b40cc6f93b8d54255b173844
   vernier (1.10.1) sha256=f2ab2e163b75ac3ef4e3173262d27d27da6219cf04b1b4a7171e4798114275ce
-  view_component (4.11.0) sha256=92df960575b8fa5e984522532df225ec333015a07a8105b3b1c200c655065517
+  view_component (4.12.0) sha256=b9a5979d1c43eba2aa21a06a86f661aab3990104855f2909ef7c3779acdcdcb4
   warden (1.2.9) sha256=46684f885d35a69dbb883deabf85a222c8e427a957804719e143005df7a1efd0
   web-console (4.3.0) sha256=e13b71301cdfc2093f155b5aa3a622db80b4672d1f2f713119cc7ec7ac6a6da4
   webmock (3.26.2) sha256=774556f2ea6371846cca68c01769b2eac0d134492d21f6d0ab5dd643965a4c90
