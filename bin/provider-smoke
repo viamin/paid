@@ -10,8 +10,8 @@ require_relative "../config/environment"
 require_relative "../spec/support/runner_smoke_helpers"
 
 # Runners that authenticate per-request with an api_provider + model pair (the
-# shape this tool builds). Mirrors Runner#requires_direct_outbound?, minus
-# openrouter_free, which resolves its model by tier rather than from an
+# shape this tool builds). Mirrors Runner#direct_outbound_capable_runner?,
+# minus openrouter_free, which resolves its model by tier rather than from an
 # explicit api_provider/model config and so cannot be smoke-tested this way.
 DIRECT_OUTBOUND_RUNNER_KEYS = %w[opencode kilocode pi].freeze
 
