@@ -62,10 +62,12 @@ gem "qdrant-ruby", require: false
 gem "aws-sdk-s3", require: false
 
 # Unified interface for AI agent CLIs [https://github.com/viamin/agent-harness]
-gem "agent-harness", "~> 0.22.4"
+# TODO(#2566): Bump past 0.22.5 once viamin/agent-harness releases the Codex CLI
+# pin update needed for gpt-5.5 (Codex runner hits cli_version_outdated on 0.22.5).
+gem "agent-harness", "~> 0.22.5"
 
 # Runtime model registry for canonical model metadata, pricing, and capabilities.
-gem "ruby_llm", "~> 1.15"
+gem "ruby_llm", "~> 1.16"
 
 # Code analysis tool for VCS mining (churn/hotspot analysis) [https://github.com/viamin/ruby-maat]
 # Defer loading — invoked as CLI binary, not via Ruby API.
@@ -131,6 +133,11 @@ group :test do
   gem "capybara"
   gem "cuprite"
   gem "fixture_kit"
+  # Mutation testing — two sources are supported during the viamin/mutant transition:
+  #   upstream (default): mbj/mutant commercial release from rubygems (current default).
+  #   viamin:             MIT-licensed fork via BUNDLE_GEMFILE=Gemfile.viamin.
+  # See docs/MUTATION_TESTING.md for how to switch and viamin/paid#2367 for context.
+  gem "mutant", require: false
   gem "mutant-rspec", require: false
   gem "rspec-github", "~> 3.0", require: false
   gem "test-prof"

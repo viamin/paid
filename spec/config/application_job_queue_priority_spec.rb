@@ -31,6 +31,7 @@ RSpec.describe ApplicationJob, :no_db do
         DockerOrphanCleanupJob
         GithubTokenHealthCheckJob
         KnowledgeAuditRetentionJob
+        ModelHealthCheckJob
         OrphanBranchReaperJob
         PollWorkflowHealthCheckJob
         PoolReplenishmentJob

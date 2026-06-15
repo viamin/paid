@@ -102,6 +102,12 @@ Rails.application.configure do
       class: "ModelsSyncJob",
       description: "Seed/update LlmModel records from known models list"
     },
+    model_health_check: {
+      cron: "0 5 * * *",
+      class: "ModelHealthCheckJob",
+      queue: "maintenance",
+      description: "Detect provider model catalog drift and broken runner models; file a self-repo issue"
+    },
     ab_test_analysis: {
       cron: "0 */4 * * *",
       class: "AbTestAnalysisCheckJob",

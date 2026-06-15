@@ -3,39 +3,45 @@
 require "rails_helper"
 
 RSpec.describe QualityFeedback::ParseMutant do
-  let(:alive_mutation_yaml) do
-    <<~YAML
-      alive_mutations:
-        - subject: Foo#bar
-          subject_path: app/models/foo.rb
-          source_line: 42
-          mutation_diff: return true -> return false
-    YAML
+  def fixture_worktree(name)
+    Rails.root.join("spec/fixtures/files/mutant/#{name}").to_s
   end
 
-  def write_mutant_result(dir, content)
-    results_dir = File.join(dir, ".mutant/results")
-    FileUtils.mkdir_p(results_dir)
-    File.write(File.join(results_dir, "run.yml"), content)
+  it "returns a passing result when alive_mutations is empty" do
+    result = described_class.call(worktree_path: fixture_worktree("worktree_zero_alive"))
+
+    expect(result).to be_a(QualityFeedbackService::CheckResult)
+    expect(result).to be_success
+    expect(result.errors).to be_empty
+    expect(result.warnings).to be_empty
   end
 
-  it "parses alive mutations into a CheckResult" do
-    Dir.mktmpdir("mutant-parse") do |dir|
-      write_mutant_result(dir, alive_mutation_yaml)
+  it "parses several alive mutations into errors" do
+    result = described_class.call(worktree_path: fixture_worktree("worktree_several_alive"))
 
-      result = described_class.call(worktree_path: dir)
+    expect(result).not_to be_success
+    expect(result.errors).to contain_exactly(
+      hash_including(file: "app/models/foo.rb", line: 42, rule: "alive_mutation", severity: "high"),
+      hash_including(file: "app/services/baz.rb", line: 17, rule: "alive_mutation", severity: "high"),
+      hash_including(file: "app/models/widget.rb", line: 8, rule: "alive_mutation", severity: "high")
+    )
+  end
 
-      expect(result).to be_a(QualityFeedbackService::CheckResult)
-      expect(result).not_to be_success
-      expect(result.errors).to contain_exactly(
-        hash_including(
-          file: "app/models/foo.rb",
-          line: 42,
-          rule: "alive_mutation",
-          severity: "high"
-        )
-      )
-    end
+  it "parses alive mutations and ignores errored mutations" do
+    result = described_class.call(worktree_path: fixture_worktree("worktree_with_errored"))
+
+    expect(result).not_to be_success
+    expect(result.errors).to contain_exactly(
+      hash_including(file: "app/models/foo.rb", line: 42, rule: "alive_mutation", severity: "high")
+    )
+  end
+
+  it "includes the mutation diff in the error message" do
+    result = described_class.call(worktree_path: fixture_worktree("worktree_several_alive"))
+
+    message = result.errors.first[:message]
+    expect(message).to include("Foo#bar")
+    expect(message).to include("return true -> return false")
   end
 
   it "returns a passing empty result when no mutant files exist" do

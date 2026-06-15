@@ -289,13 +289,13 @@ RSpec.describe Project do
       it "rejects unknown keys" do
         project = build(:project, priority_labels: { "P1" => "critical", "P9" => "ultra" })
         expect(project).not_to be_valid
-        expect(project.errors[:priority_labels].join).to match(/may only contain keys/)
+        expect(project.errors[:priority_labels].join).to include('may only contain keys')
       end
 
       it "rejects blank string values" do
         project = build(:project, priority_labels: { "P1" => "  " })
         expect(project).not_to be_valid
-        expect(project.errors[:priority_labels].join).to match(/non-blank string/)
+        expect(project.errors[:priority_labels].join).to include('non-blank string')
       end
 
       it "accepts valid hash" do
@@ -2289,6 +2289,36 @@ RSpec.describe Project do
       project.update!(scheduler_paused_at: nil)
 
       expect(project.scheduler_resume!).to be false
+    end
+  end
+
+  describe "#paused?" do
+    it "returns false by default" do
+      expect(build(:project).paused?).to be false
+    end
+
+    it "returns true when paused is set to true" do
+      expect(build(:project, paused: true).paused?).to be true
+    end
+  end
+
+  describe "#pause!" do
+    let(:project) { create(:project) }
+
+    it "sets paused to true" do
+      project.pause!
+
+      expect(project.reload.paused?).to be true
+    end
+  end
+
+  describe "#unpause!" do
+    let(:project) { create(:project, paused: true) }
+
+    it "sets paused to false" do
+      project.unpause!
+
+      expect(project.reload.paused?).to be false
     end
   end
 

@@ -915,6 +915,16 @@ class Project < ApplicationRecord
     scheduler_paused_at.present?
   end
 
+  # User-controlled pause toggle. When true, queued automatic runs are held;
+  # manual runs are unaffected. In-progress runs continue to completion.
+  def pause!
+    update!(paused: true)
+  end
+
+  def unpause!
+    update!(paused: false)
+  end
+
   def scheduler_pause!(reason:)
     with_lock do
       return false if scheduler_paused?

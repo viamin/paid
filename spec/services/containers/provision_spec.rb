@@ -25,6 +25,20 @@ RSpec.describe Containers::Provision do
     preparation_class.new([ preparation_write ])
   end
 
+  def stub_exec_with_dead_container_cleanup(mock_container)
+    allow(mock_container).to receive(:exec) do |cmd, **_opts, &block|
+      script = cmd.is_a?(Array) ? cmd.last.to_s : cmd.to_s
+      if script.include?("printf '%s' \"$PAID_PREPARATION_B64\" | base64 -d > \"$PAID_PREPARATION_TARGET\"")
+        [ [], [], 0 ]
+      elsif script.include?("cat \"$PAID_PREPARATION_STATE_DIR/state\"")
+        raise Docker::Error::DockerError, '{"message":"Container abc123container is not running"}'
+      else
+        block.call(:stdout, "command output\n") if block
+        [ [ "command output\n" ], [], 0 ]
+      end
+    end
+  end
+
   def stub_exec_with_cleanup_failure(mock_container)
     allow(mock_container).to receive(:exec) do |cmd, **opts, &block|
       if cmd == [ "sh", "-c", "echo 'hello'" ]
@@ -1351,9 +1365,11 @@ RSpec.describe Containers::Provision do
       let(:codex_config_dir) { Dir.mktmpdir("codex-config") }
 
       before do
+        create(:llm_model, :openai, model_id: "gpt-5.1", tier: "mid", capability_score: 9.0)
         File.write(File.join(codex_config_dir, "auth.json"), "{}")
         File.write(File.join(codex_config_dir, "config.toml"), <<~TOML)
           model = "gpt-5"
+          model_reasoning_effort = "medium"
 
           [projects."/workspaces/paid"]
           trust_level = "trusted"
@@ -1418,7 +1434,9 @@ RSpec.describe Containers::Provision do
             satisfy { |cmd|
               decoded = decoded_base64_content(cmd)
               cmd.include?("/home/agent/.codex/config.toml") &&
-                decoded.include?('model = "gpt-5"') &&
+                decoded.include?('model = "gpt-5.1"') &&
+                !decoded.include?('model = "gpt-5"') &&
+                !decoded.include?("model_reasoning_effort") &&
                 decoded.include?("[features]") &&
                 !decoded.include?("[projects")
             }
@@ -1462,8 +1480,9 @@ RSpec.describe Containers::Provision do
       let(:codex_local_dir) { Dir.mktmpdir("codex-local") }
 
       before do
+        create(:llm_model, :openai, model_id: "gpt-5.1", tier: "mid", capability_score: 9.0)
         File.write(File.join(codex_local_dir, "auth.json"), '{"refresh_token":"test-token"}')
-        File.write(File.join(codex_local_dir, "config.toml"), "model = \"gpt-5\"")
+        File.write(File.join(codex_local_dir, "config.toml"), "model = \"gpt-5\"\nmodel_reasoning_effort = \"medium\"")
 
         allow(ENV).to receive(:fetch).and_call_original
         allow(ENV).to receive(:[]).and_call_original
@@ -1513,7 +1532,9 @@ RSpec.describe Containers::Provision do
         expect(mock_container).to have_received(:exec).with(
           [ "sh", "-lc", satisfy { |cmd|
             cmd.include?("/home/agent/.codex/config.toml") &&
-              decoded_base64_content(cmd).include?('model = "gpt-5"')
+              decoded_base64_content(cmd).include?('model = "gpt-5.1"') &&
+              !decoded_base64_content(cmd).include?('model = "gpt-5"') &&
+              !decoded_base64_content(cmd).include?("model_reasoning_effort")
           } ],
           user: "agent"
         )
@@ -1927,6 +1948,25 @@ RSpec.describe Containers::Provision do
           "system",
           "container.execute.invalidated_after_preparation_cleanup_failure",
           metadata: hash_including(container_id: "abc123container")
+        )
+      end
+
+      it "treats 'container is not running' Docker errors during preparation cleanup as a no-op" do
+        preparation = build_preparation
+        allow(agent_run).to receive(:log!)
+        stub_exec_with_dead_container_cleanup(mock_container)
+        allow(mock_container).to receive(:info).and_return({ "State" => { "Running" => true, "ExitCode" => 0 } })
+
+        result = service.execute("echo 'hello'", preparation: preparation)
+
+        expect(result).to be_success
+        expect(agent_run).to have_received(:log!).with(
+          "system",
+          "container.execute.preparation_cleanup_skipped_dead_container",
+          metadata: hash_including(error: /is not running/i)
+        )
+        expect(agent_run).not_to have_received(:log!).with(
+          "system", "container.execute.preparation_cleanup_failed", anything
         )
       end
     end
@@ -3293,6 +3333,37 @@ RSpec.describe Containers::Provision do
       result = service.send(:strip_codex_project_sections, toml)
 
       expect(result).to eq("model = \"gpt-5\"\n[features]\nmulti_agent = true\n")
+    end
+  end
+
+  describe "#sanitize_codex_host_config" do
+    let(:service) { described_class.new(agent_run: agent_run, project: project) }
+
+    it "replaces host model settings with an escaped Paid-selected Codex model" do
+      allow(service).to receive(:codex_container_model_id).and_return('gpt-"quoted"')
+
+      result = service.send(:sanitize_codex_host_config, <<~TOML)
+          model = "gpt-5.5"
+          model_reasoning_effort = "medium"
+        [features]
+        multi_agent = true
+      TOML
+
+      expect(result).to eq(<<~TOML)
+        model = "gpt-\\"quoted\\""
+        [features]
+        multi_agent = true
+      TOML
+    end
+
+    it "falls back to the active mid-tier Codex model when the run tier has no Codex default" do
+      create(:llm_model, :openai, model_id: "gpt-5.1", tier: "mid", capability_score: 9.0)
+      high_model = create(:llm_model, model_id: "claude-opus-test", provider: "anthropic", tier: "high")
+      create(:model_selection, agent_run: agent_run, llm_model: high_model, tier: "high")
+
+      result = service.send(:sanitize_codex_host_config, "model = \"gpt-5.5\"\n")
+
+      expect(result).to eq("model = \"gpt-5.1\"\n")
     end
   end
 end

@@ -26,5 +26,15 @@ RSpec.describe MutantResultsReader do
         killed_mutations: 19
       )
     end
+
+    it "returns nil when the file lacks required summary fields" do
+      Dir.mktmpdir("mutant-reader") do |worktree_path|
+        results_dir = File.join(worktree_path, ".mutant/results")
+        FileUtils.mkdir_p(results_dir)
+        File.write(File.join(results_dir, "run.yml"), "alive_mutations: []\n")
+
+        expect(described_class.read(worktree_path)).to be_nil
+      end
+    end
   end
 end

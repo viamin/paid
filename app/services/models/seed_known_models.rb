@@ -4,9 +4,6 @@ module Models
   # Seeds LlmModel records from the RubyLLM registry, falling back to the
   # app snapshot for app-owned defaults and registry failures.
   class SeedKnownModels
-    REGISTRY_PROVIDER_ALIASES = {
-      "gemini" => "google"
-    }.freeze
     TOOL_CAPABILITIES = %w[function_calling tools].freeze
     JSON_OUTPUT_CAPABILITIES = %w[structured_output json_output].freeze
 
@@ -28,8 +25,8 @@ module Models
         tier: "mid"
       },
       {
-        model_id: "claude-opus-4-6",
-        display_name: "Claude Opus 4.6",
+        model_id: "claude-opus-4-7",
+        display_name: "Claude Opus 4.7",
         provider: "anthropic",
         family: "claude-4",
         category: "coding",
@@ -59,38 +56,247 @@ module Models
         capability_score: 7.0,
         tier: "low"
       },
+      # claude-fable-5 is excluded: flagged in #2566 but Anthropic has not published
+      # pricing, context window, or capability details for this model. Add once the
+      # model is generally available and its specifications are confirmed.
+      # claude-opus-4-8 is excluded: flagged in #2566 but not yet generally available
+      # as of this writing. Add once Anthropic publishes this model's specifications.
       {
-        model_id: "gpt-4o",
-        display_name: "GPT-4o",
+        model_id: "gpt-5.1",
+        display_name: "GPT-5.1",
         provider: "openai",
-        family: "gpt-4",
+        family: "gpt-5",
         category: "coding",
-        context_window: 128_000,
-        max_output_tokens: 16_384,
-        input_cost_per_million: 2.50,
+        context_window: 400_000,
+        max_output_tokens: 128_000,
+        input_cost_per_million: 1.25,
         output_cost_per_million: 10.0,
         supports_vision: true,
         supports_tools: true,
         supports_json_output: true,
-        capability_score: 8.5,
+        capability_score: 9.0,
         tier: "mid"
       },
       {
-        model_id: "gpt-4o-mini",
-        display_name: "GPT-4o Mini",
+        model_id: "gpt-5.2",
+        display_name: "GPT-5.2",
         provider: "openai",
-        family: "gpt-4",
-        category: "general",
-        context_window: 128_000,
-        max_output_tokens: 16_384,
-        input_cost_per_million: 0.15,
-        output_cost_per_million: 0.60,
+        family: "gpt-5",
+        category: "coding",
+        context_window: 400_000,
+        max_output_tokens: 128_000,
+        input_cost_per_million: 1.25,
+        output_cost_per_million: 10.0,
         supports_vision: true,
         supports_tools: true,
         supports_json_output: true,
-        capability_score: 6.5,
+        capability_score: 9.1,
+        tier: "mid"
+      },
+      {
+        model_id: "gpt-5.2-codex",
+        display_name: "GPT-5.2 Codex",
+        provider: "openai",
+        family: "gpt-5",
+        category: "coding",
+        context_window: 400_000,
+        max_output_tokens: 128_000,
+        input_cost_per_million: 2.50,
+        output_cost_per_million: 15.0,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 9.5,
+        tier: "high"
+      },
+      {
+        model_id: "gpt-5.2-pro",
+        display_name: "GPT-5.2 Pro",
+        provider: "openai",
+        family: "gpt-5",
+        category: "coding",
+        context_window: 400_000,
+        max_output_tokens: 128_000,
+        input_cost_per_million: 5.0,
+        output_cost_per_million: 20.0,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 9.5,
+        tier: "high"
+      },
+      {
+        model_id: "gpt-5.3-codex",
+        display_name: "GPT-5.3 Codex",
+        provider: "openai",
+        family: "gpt-5",
+        category: "coding",
+        context_window: 400_000,
+        max_output_tokens: 128_000,
+        input_cost_per_million: 3.0,
+        output_cost_per_million: 15.0,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 9.6,
+        tier: "high"
+      },
+      {
+        model_id: "gpt-5.3-codex-spark",
+        display_name: "GPT-5.3 Codex Spark",
+        provider: "openai",
+        family: "gpt-5",
+        category: "coding",
+        context_window: 400_000,
+        max_output_tokens: 128_000,
+        input_cost_per_million: 1.50,
+        output_cost_per_million: 8.0,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 8.8,
+        tier: "mid"
+      },
+      {
+        model_id: "gpt-5.4",
+        display_name: "GPT-5.4",
+        provider: "openai",
+        family: "gpt-5",
+        category: "coding",
+        context_window: 400_000,
+        max_output_tokens: 128_000,
+        input_cost_per_million: 1.25,
+        output_cost_per_million: 10.0,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 9.3,
+        tier: "mid"
+      },
+      {
+        model_id: "gpt-5.4-mini",
+        display_name: "GPT-5.4 Mini",
+        provider: "openai",
+        family: "gpt-5",
+        category: "general",
+        context_window: 400_000,
+        max_output_tokens: 128_000,
+        input_cost_per_million: 0.25,
+        output_cost_per_million: 2.0,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 7.3,
         tier: "low"
       },
+      {
+        model_id: "gpt-5.4-nano",
+        display_name: "GPT-5.4 Nano",
+        provider: "openai",
+        family: "gpt-5",
+        category: "general",
+        context_window: 400_000,
+        max_output_tokens: 65_536,
+        input_cost_per_million: 0.10,
+        output_cost_per_million: 0.50,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 6.8,
+        tier: "low"
+      },
+      {
+        model_id: "gpt-5.4-pro",
+        display_name: "GPT-5.4 Pro",
+        provider: "openai",
+        family: "gpt-5",
+        category: "coding",
+        context_window: 400_000,
+        max_output_tokens: 128_000,
+        input_cost_per_million: 5.0,
+        output_cost_per_million: 20.0,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 9.6,
+        tier: "high"
+      },
+      # TODO(#2566): The Codex runner targets this model but hits cli_version_outdated
+      # on agent-harness 0.22.5. Bump Gemfile to the next agent-harness release that
+      # ships the updated Codex CLI pin before enabling the Codex runner for gpt-5.5.
+      {
+        model_id: "gpt-5.5",
+        display_name: "GPT-5.5",
+        provider: "openai",
+        family: "gpt-5",
+        category: "coding",
+        context_window: 400_000,
+        max_output_tokens: 128_000,
+        input_cost_per_million: 2.50,
+        output_cost_per_million: 12.0,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 9.8,
+        tier: "high"
+      },
+      {
+        model_id: "gpt-5.5-pro",
+        display_name: "GPT-5.5 Pro",
+        provider: "openai",
+        family: "gpt-5",
+        category: "coding",
+        context_window: 400_000,
+        max_output_tokens: 128_000,
+        input_cost_per_million: 10.0,
+        output_cost_per_million: 30.0,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 10.0,
+        tier: "high"
+      },
+      {
+        model_id: "gpt-5-mini",
+        display_name: "GPT-5 Mini",
+        provider: "openai",
+        family: "gpt-5",
+        category: "general",
+        context_window: 400_000,
+        max_output_tokens: 128_000,
+        input_cost_per_million: 0.25,
+        output_cost_per_million: 2.0,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 7.0,
+        tier: "low"
+      },
+      {
+        model_id: "gemini-2.5-flash-lite",
+        display_name: "Gemini 2.5 Flash Lite",
+        provider: "google",
+        family: "gemini-2",
+        category: "general",
+        context_window: 1_000_000,
+        max_output_tokens: 65_536,
+        input_cost_per_million: 0.10,
+        output_cost_per_million: 0.40,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 7.0,
+        tier: "low"
+      },
+      # gemini-live-2.5-flash is excluded: it is a Live API (WebSocket, real-time
+      # bidirectional streaming) model and is not accessible via the standard
+      # generateContent REST endpoint this catalog assumes. Cataloguing it would
+      # cause model selection to route agent runs there, which would fail at
+      # execution. Re-evaluate if Google exposes it on the standard REST surface.
+      # gemini-3.1-flash-lite and gemini-3.5-flash are excluded: flagged in #2566 but
+      # Google has not published stable pricing or availability for these Gemini 3.x
+      # models as of this writing. Add once they reach general availability and their
+      # specifications are confirmed.
       {
         model_id: "gemini-2.5-pro",
         display_name: "Gemini 2.5 Pro",
@@ -164,48 +370,11 @@ module Models
     end
 
     def registry_models_by_id
-      models = fetch_registry_models
-      return {} unless models
-
-      models.each_with_object({}) do |model, index|
-        next if model.id.blank?
-
-        index[model.id] ||= {}
-        index[model.id][normalized_provider(model.provider)] ||= model
-      end
-    end
-
-    def fetch_registry_models
-      require "ruby_llm"
-
-      RubyLLM.models.refresh!
-      models = Array(RubyLLM.models.all)
-      return models if models.any?
-
-      log_registry_fallback(reason: "empty_registry")
-      nil
-    rescue LoadError, StandardError => e
-      log_registry_fallback(
-        reason: "registry_unavailable",
-        error_class: e.class.name,
-        error_message: e.message
-      )
-      nil
-    end
-
-    def log_registry_fallback(reason:, error_class: nil, error_message: nil)
-      Rails.logger.warn(
-        message: "model_registry.registry_fallback",
-        registry: "ruby_llm",
-        reason: reason,
-        fallback: "known_models",
-        error_class: error_class,
-        error_message: error_message
-      )
+      RegistryModels.fetch.grouped_by_id
     end
 
     def normalized_provider(provider)
-      REGISTRY_PROVIDER_ALIASES.fetch(provider.to_s, provider.to_s)
+      RegistryModels.normalized_provider(provider)
     end
 
     def pricing_for(model, field)

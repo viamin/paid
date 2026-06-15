@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_12_204153) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_12_225831) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1802,6 +1802,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_12_204153) do
     t.boolean "open_source", default: false, null: false, comment: "Whether the project is open source (affects mutation test --usage flag)."
     t.string "owner", null: false
     t.string "owner_reviewer_login"
+    t.boolean "paused", default: false, null: false, comment: "When true, queued automatic agent runs for this project will not be started. Manual runs are unaffected."
     t.integer "plan_review_timeout_hours", default: 24, null: false, comment: "Maximum hours to wait for plan review approval before auto-approving."
     t.integer "poll_interval_seconds", default: 60, null: false
     t.jsonb "pr_action_labels", default: [], null: false
@@ -2089,6 +2090,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_12_204153) do
     t.bigint "integration_credential_id"
     t.jsonb "log_data"
     t.string "name", limit: 100, default: "", null: false
+    t.jsonb "no_progress_thresholds", default: {"min_input_tokens" => 100000, "max_output_tokens" => 100}, null: false, comment: "Per-runner thresholds for no-progress early termination. min_input_tokens: minimum input tokens consumed before checking; max_output_tokens: maximum output tokens that qualifies as no progress."
     t.bigint "provider_api_key_id"
     t.string "provider_key", limit: 50
     t.string "runner_key", limit: 50, null: false
@@ -2437,7 +2439,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_12_204153) do
     t.integer "circuit_breaker_timeout_seconds", default: 300, null: false
     t.bigint "container_memory_bytes", default: 4294967296, null: false
     t.integer "container_timeout_seconds", default: 3600, null: false
-    t.integer "create_pr_idle_timeout_seconds", default: 360, null: false
+    t.integer "create_pr_idle_timeout_seconds"
     t.datetime "created_at", null: false
     t.string "default_agent_runner", default: "claude", null: false
     t.jsonb "default_agent_runners_by_goal", default: {}, null: false

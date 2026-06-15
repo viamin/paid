@@ -91,6 +91,9 @@ application.register("screenshot-config", ScreenshotConfigController)
 import SortableController from "./sortable_controller"
 application.register("sortable", SortableController)
 
+import StopPropagationController from "./stop_propagation_controller"
+application.register("stop-propagation", StopPropagationController)
+
 import TestAgentController from "./test_agent_controller"
 application.register("test-agent", TestAgentController)
 

@@ -855,7 +855,35 @@ RSpec.describe Activities::RunAgentActivity do
 
       runtime = activity.send(:selected_runner_runtime, opencode_context.runner_candidate, user, agent_run)
 
+      # OpenRouter ids are "<vendor>/<model>" slugs that opencode addresses
+      # directly, so they pass through unchanged (matching the execute path and
+      # openrouter_free runtime) rather than gaining a redundant prefix.
       expect(runtime).to have_attributes(model: "moonshotai/kimi-k2-0905", api_provider: nil)
+    end
+
+    it "provider-qualifies the resolved tier model for opencode MiniMax direct-outbound runs" do
+      # Regression: the bare tier_model_ids value ("MiniMax-M3") overwrote the
+      # qualified configured model, so opencode received an unqualified id and
+      # raised ProviderModelNotFoundError (providerID="MiniMax-M3", modelID="").
+      opencode_context = build_opencode_context(
+        user, api_provider: "minimax", model: "MiniMax-M3", service_type: "minimax", api_key: "sk-minimax-secret"
+      )
+      create(:model_selection, agent_run: agent_run, llm_model: create(:llm_model, model_id: "minimax-selected", provider: "minimax"))
+
+      runtime = activity.send(:selected_runner_runtime, opencode_context.runner_candidate, user, agent_run)
+
+      expect(runtime.model).to eq("minimax/MiniMax-M3")
+    end
+
+    it "does not double-qualify an already-prefixed tier model" do
+      opencode_context = build_opencode_context(
+        user, api_provider: "minimax", model: "minimax/MiniMax-M3", service_type: "minimax", api_key: "sk-minimax-secret"
+      )
+      create(:model_selection, agent_run: agent_run, llm_model: create(:llm_model, model_id: "minimax-selected", provider: "minimax"))
+
+      runtime = activity.send(:selected_runner_runtime, opencode_context.runner_candidate, user, agent_run)
+
+      expect(runtime.model).to eq("minimax/MiniMax-M3")
     end
 
     it "builds OpenRouter provider routing for openrouter_free runs from project classification" do
@@ -1529,18 +1557,21 @@ RSpec.describe Activities::RunAgentActivity do
   end
 
   def expect_opencode_runtime_execute_calls(execute_calls)
-    expect(execute_calls.length).to eq(3)
-    expect(execute_calls.second.first[0..6]).to eq([ "env", "-u", "OPENAI_HEADER_X_AGENT_RUN_ID", "-u", "OPENAI_HEADER_X_PROXY_TOKEN", "opencode", "run" ])
+    # The primary runner preflight retries once on timeout before the fallback
+    # kicks in: call 1 + call 2 are both primary-runner preflight attempts.
+    # Calls 3 and 4 are the opencode preflight and main execution respectively.
+    expect(execute_calls.length).to eq(4)
     expect(execute_calls.third.first[0..6]).to eq([ "env", "-u", "OPENAI_HEADER_X_AGENT_RUN_ID", "-u", "OPENAI_HEADER_X_PROXY_TOKEN", "opencode", "run" ])
-    expect(execute_calls.second.second[:env]).to include("OPENAI_BASE_URL" => "https://openrouter.ai/api/v1")
+    expect(execute_calls.fourth.first[0..6]).to eq([ "env", "-u", "OPENAI_HEADER_X_AGENT_RUN_ID", "-u", "OPENAI_HEADER_X_PROXY_TOKEN", "opencode", "run" ])
     expect(execute_calls.third.second[:env]).to include("OPENAI_BASE_URL" => "https://openrouter.ai/api/v1")
-    second_config = JSON.parse(execute_calls.second.second[:preparation].file_writes.first.content)
+    expect(execute_calls.fourth.second[:env]).to include("OPENAI_BASE_URL" => "https://openrouter.ai/api/v1")
     third_config = JSON.parse(execute_calls.third.second[:preparation].file_writes.first.content)
+    fourth_config = JSON.parse(execute_calls.fourth.second[:preparation].file_writes.first.content)
 
-    expect(second_config).to include("model" => "moonshotai/kimi-k2-0905")
-    expect(second_config).not_to have_key("provider")
     expect(third_config).to include("model" => "moonshotai/kimi-k2-0905")
     expect(third_config).not_to have_key("provider")
+    expect(fourth_config).to include("model" => "moonshotai/kimi-k2-0905")
+    expect(fourth_config).not_to have_key("provider")
   end
 
   def expect_resolved_model_attempts(agent_run, opencode_runner)
@@ -2594,6 +2625,65 @@ expect(container_service).to receive(:execute).with(
         )
       end
 
+      it "retries the smoke execution once on timeout before raising PreflightTimeoutError" do
+        opencode_provider = create_opencode_provider_for(user)
+        timeout_error = Containers::Provision::TimeoutError.new("Command timed out after 60 seconds")
+        allow(container_service).to receive(:execute).and_raise(timeout_error)
+
+        expect {
+          run_direct_outbound_preflight(
+            activity: activity,
+            agent_run: agent_run,
+            container_service: container_service,
+            provider: opencode_provider,
+            user: user
+          )
+        }.to raise_error(described_class::PreflightTimeoutError, /timed out.*on both attempts/)
+
+        expect(container_service).to have_received(:execute).twice
+      end
+
+      it "succeeds if the smoke execution passes on the retry after a first timeout" do
+        opencode_provider = create_opencode_provider_for(user)
+        timeout_error = Containers::Provision::TimeoutError.new("Command timed out after 60 seconds")
+        call_count = 0
+        allow(container_service).to receive(:execute) do
+          call_count += 1
+          call_count == 1 ? raise(timeout_error) : exec_success
+        end
+
+        expect {
+          run_direct_outbound_preflight(
+            activity: activity,
+            agent_run: agent_run,
+            container_service: container_service,
+            provider: opencode_provider,
+            user: user
+          )
+        }.not_to raise_error
+
+        expect(container_service).to have_received(:execute).twice
+      end
+
+      it "uses a runner-specific preflight timeout override for opencode" do
+        opencode_provider = create_opencode_provider_for(user)
+        opencode_provider.update!(config: opencode_provider.config.merge("opencode" => opencode_provider.opencode_config.merge("preflight_timeout_seconds" => "90")))
+        allow(container_service).to receive(:execute).and_return(exec_success)
+
+        run_direct_outbound_preflight(
+          activity: activity,
+          agent_run: agent_run,
+          container_service: container_service,
+          provider: opencode_provider,
+          user: user
+        )
+
+        expect(container_service).to have_received(:execute).with(
+          %w[echo ok],
+          hash_including(timeout: 90, idle_timeout: 90)
+        )
+      end
+
       it "marks the runner rate-limited when preflight surfaces an insufficient credits error" do
         opencode_provider = create_opencode_provider_for(user)
         credit_error = Containers::Provision::Result.success(
@@ -2916,7 +3006,7 @@ expect(container_service).to receive(:execute).with(
           "timeout_type" => "idle",
           "effective_timeout_seconds" => 3600,
           "startup_timeout_seconds" => described_class::CREATE_PR_RUNNER_STARTUP_TIMEOUTS["claude"],
-          "idle_timeout_seconds" => 360,
+          "idle_timeout_seconds" => described_class::CREATE_PR_RUNNER_IDLE_TIMEOUTS["claude_code"],
           "heartbeat_supported" => true
         )
       end
@@ -3133,7 +3223,10 @@ expect(container_service).to receive(:execute).with(
           call_count += 1
           execute_calls << [ command, opts ]
 
-          call_count == 1 ? raise(Containers::Provision::TimeoutError, "execution timed out") : exec_success
+          # The preflight smoke retries once on timeout, so the first two calls
+          # (both preflight attempts for the primary runner) must time out to
+          # trip the circuit and trigger the fallback to the opencode runner.
+          call_count <= 2 ? raise(Containers::Provision::TimeoutError, "execution timed out") : exec_success
         end
 
         result = activity.execute(agent_run_id: agent_run.id)
@@ -3317,7 +3410,7 @@ expect(container_service).to receive(:execute).with(
     end
 
     context "when goal is create_pr" do
-      it "uses the default agent timeout with runner-specific startup_timeout and create_pr idle_timeout" do
+      it "uses runner-specific idle timeout (claude_code) on first attempt" do
         project.update!(max_execution_seconds: 86_400)
         allow(container_service).to receive(:execute).and_return(exec_success)
         allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
@@ -3327,7 +3420,7 @@ expect(container_service).to receive(:execute).with(
           hash_including(
             timeout: AGENT_TIMEOUT_DEFAULT,
             startup_timeout: described_class::CREATE_PR_RUNNER_STARTUP_TIMEOUTS["claude"],
-            idle_timeout: described_class::DEFAULT_CREATE_PR_IDLE_TIMEOUT
+            idle_timeout: described_class::CREATE_PR_RUNNER_IDLE_TIMEOUTS["claude_code"]
           )
         ).and_return(exec_success)
 
@@ -3370,7 +3463,7 @@ expect(container_service).to receive(:execute).with(
         activity.execute(agent_run_id: agent_run.id)
       end
 
-      it "applies heartbeat-backed idle timeout to kilocode via upstream harness" do
+      it "applies runner-specific idle timeout to kilocode via upstream harness" do
         agent_run.update!(agent_type: "kilocode")
         project.update!(max_execution_seconds: 86_400)
         allow(container_service).to receive(:execute).and_return(exec_success)
@@ -3381,7 +3474,7 @@ expect(container_service).to receive(:execute).with(
           hash_including(
             timeout: AGENT_TIMEOUT_DEFAULT,
             startup_timeout: described_class::CREATE_PR_RUNNER_STARTUP_TIMEOUTS["kilocode"],
-            idle_timeout: described_class::DEFAULT_CREATE_PR_IDLE_TIMEOUT,
+            idle_timeout: described_class::CREATE_PR_RUNNER_IDLE_TIMEOUTS["kilocode"],
             heartbeat_path: "/tmp/paid-heartbeat-test/.paid-heartbeat"
           )
         ).and_return(exec_success)
@@ -3389,7 +3482,7 @@ expect(container_service).to receive(:execute).with(
         activity.execute(agent_run_id: agent_run.id)
       end
 
-      it "applies heartbeat-backed idle timeout to opencode via upstream harness" do
+      it "applies runner-specific idle timeout to opencode via upstream harness" do
         agent_run.update!(agent_type: "opencode")
         project.update!(max_execution_seconds: 86_400)
         allow(container_service).to receive(:execute).and_return(exec_success)
@@ -3400,7 +3493,7 @@ expect(container_service).to receive(:execute).with(
           hash_including(
             timeout: AGENT_TIMEOUT_DEFAULT,
             startup_timeout: described_class::CREATE_PR_RUNNER_STARTUP_TIMEOUTS["opencode"],
-            idle_timeout: described_class::DEFAULT_CREATE_PR_IDLE_TIMEOUT,
+            idle_timeout: described_class::CREATE_PR_RUNNER_IDLE_TIMEOUTS["opencode"],
             heartbeat_path: "/tmp/paid-heartbeat-test/.paid-heartbeat"
           )
         ).and_return(exec_success)
@@ -3408,14 +3501,14 @@ expect(container_service).to receive(:execute).with(
         activity.execute(agent_run_id: agent_run.id)
       end
 
-      it "applies extended idle timeout to codex for coarse heartbeat" do
+      it "applies extended idle timeout to codex using per-runner constant with coarse heartbeat multiplier" do
         agent_run.update!(agent_type: "codex")
         project.update!(max_execution_seconds: 86_400)
         allow(activity).to receive(:run_harness_preflight!)
         allow(container_service).to receive(:execute).and_return(exec_success)
         allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
 
-        expected_idle = described_class::DEFAULT_CREATE_PR_IDLE_TIMEOUT * Containers::HeartbeatSetup::COARSE_HEARTBEAT_IDLE_TIMEOUT_MULTIPLIER
+        expected_idle = described_class::CREATE_PR_RUNNER_IDLE_TIMEOUTS["codex"] * Containers::HeartbeatSetup::COARSE_HEARTBEAT_IDLE_TIMEOUT_MULTIPLIER
 
         expect(container_service).to receive(:execute).with(
           anything,
@@ -3430,7 +3523,7 @@ expect(container_service).to receive(:execute).with(
         activity.execute(agent_run_id: agent_run.id)
       end
 
-      it "uses runner-specific startup timeout regardless of user idle timeout" do
+      it "uses explicit user idle timeout when customized to a non-nil value" do
         agent_run.update!(agent_type: "codex")
         project.update!(max_execution_seconds: 86_400)
         user.settings.update!(create_pr_idle_timeout_seconds: 420)
@@ -3452,6 +3545,71 @@ expect(container_service).to receive(:execute).with(
         activity.execute(agent_run_id: agent_run.id)
       end
 
+      it "honours explicit user idle timeout on subsequent attempts without applying the retry multiplier" do
+        agent_run.update!(agent_type: "codex")
+        project.update!(max_execution_seconds: 86_400)
+        user.settings.update!(create_pr_idle_timeout_seconds: 420)
+        agent_run.record_runner_attempt("codex", success: false, error_type: "error")
+        allow(activity).to receive(:run_harness_preflight!)
+        allow(container_service).to receive(:execute).and_return(exec_success)
+        allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
+
+        # Explicit user value (420) must be used verbatim — the retry multiplier
+        # only escalates the per-runner tuned default, not explicit user
+        # customizations.
+        expected_idle = 420 * Containers::HeartbeatSetup::COARSE_HEARTBEAT_IDLE_TIMEOUT_MULTIPLIER
+
+        expect(container_service).to receive(:execute).with(
+          anything,
+          hash_including(
+            timeout: AGENT_TIMEOUT_DEFAULT,
+            startup_timeout: described_class::CREATE_PR_RUNNER_STARTUP_TIMEOUTS["codex"],
+            idle_timeout: expected_idle
+          )
+        ).and_return(exec_success)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "applies the retry idle timeout multiplier when a prior attempt produced output" do
+        project.update!(max_execution_seconds: 86_400)
+        agent_run.record_runner_attempt("claude_code", success: false, error_type: "error", output_chars: 4200)
+        allow(container_service).to receive(:execute).and_return(exec_success)
+        allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
+
+        expected_idle = (described_class::CREATE_PR_RUNNER_IDLE_TIMEOUTS["claude_code"] *
+          described_class::RETRY_IDLE_TIMEOUT_MULTIPLIER).ceil
+
+        expect(container_service).to receive(:execute).with(
+          anything,
+          hash_including(
+            timeout: AGENT_TIMEOUT_DEFAULT,
+            startup_timeout: described_class::CREATE_PR_RUNNER_STARTUP_TIMEOUTS["claude"],
+            idle_timeout: expected_idle
+          )
+        ).and_return(exec_success)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "does not apply the retry idle timeout multiplier when a prior attempt produced no output" do
+        project.update!(max_execution_seconds: 86_400)
+        agent_run.record_runner_attempt("claude_code", success: false, error_type: "error")
+        allow(container_service).to receive(:execute).and_return(exec_success)
+        allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
+
+        expect(container_service).to receive(:execute).with(
+          anything,
+          hash_including(
+            timeout: AGENT_TIMEOUT_DEFAULT,
+            startup_timeout: described_class::CREATE_PR_RUNNER_STARTUP_TIMEOUTS["claude"],
+            idle_timeout: described_class::CREATE_PR_RUNNER_IDLE_TIMEOUTS["claude_code"]
+          )
+        ).and_return(exec_success)
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
       it "falls back to the container heartbeat path for volume-backed workspaces" do
         agent_run.update!(worktree_path: nil)
         project.update!(max_execution_seconds: 86_400)
@@ -3463,7 +3621,7 @@ expect(container_service).to receive(:execute).with(
           hash_including(
             timeout: AGENT_TIMEOUT_DEFAULT,
             startup_timeout: described_class::CREATE_PR_RUNNER_STARTUP_TIMEOUTS["claude"],
-            idle_timeout: described_class::DEFAULT_CREATE_PR_IDLE_TIMEOUT,
+            idle_timeout: described_class::CREATE_PR_RUNNER_IDLE_TIMEOUTS["claude_code"],
             heartbeat_path: Containers::HeartbeatSetup::CONTAINER_HEARTBEAT_PATH
           )
         ).and_return(exec_success)
@@ -3524,6 +3682,48 @@ expect(container_service).to receive(:execute).with(
             "error_message" => include("Docker exec error")),
           hash_including("runner" => "cursor", "success" => true)
         )
+      end
+
+      it "does not trip the circuit breaker when the container dies mid-execution" do
+        # "Container is not running" Docker errors from exec must be classified as
+        # RunnerInfraExecutionError so the per-runner circuit breaker is NOT tripped.
+        call_count = 0
+        allow(container_service).to receive(:execute) do |_cmd, **_opts|
+          call_count += 1
+          if call_count == 1
+            raise Containers::Provision::ExecutionError,
+              'Failed to restore prepared runtime state: {"message":"Container abc123 is not running"}'
+          end
+
+          exec_success
+        end
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:success]).to be true
+        expect(result[:final_runner]).to eq("cursor")
+
+        # The infra failure should NOT open the circuit breaker for claude
+        runner_state = user.runner_states.find_by(runner_name: "claude")
+        expect(runner_state&.circuit_state).not_to eq("open")
+
+        expect(agent_run.reload.runners_attempted).to contain_exactly(
+          hash_including("runner" => "claude_code", "success" => false, "error_type" => "error",
+            "error_message" => include("Container died during execution")),
+          hash_including("runner" => "cursor", "success" => true)
+        )
+      end
+
+      it "does not trip the circuit breaker when the container is dead before execution starts" do
+        allow(container_service).to receive_messages(container_running?: false, container: nil, execute: exec_success)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError)
+
+        # The infra failure should NOT open the circuit breaker for claude
+        runner_state = user.runner_states.find_by(runner_name: "claude")
+        expect(runner_state&.circuit_state).not_to eq("open")
       end
 
       it "includes configured fallback-only runners even when saved fallback order is empty" do

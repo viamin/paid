@@ -27,6 +27,12 @@ class Runner < ApplicationRecord
   # complexity <= low_max => "low", <= mid_max => "mid", else "high".
   DEFAULT_COMPLEXITY_THRESHOLDS = { "low_max" => 3, "mid_max" => 7 }.freeze
   COMPLEXITY_THRESHOLD_KEYS = %w[low_max mid_max].freeze
+  # Default thresholds for output-token-based no-progress early termination.
+  # A run is considered stuck when it has consumed >= min_input_tokens but
+  # produced < max_output_tokens. These can be overridden per-runner via
+  # the no_progress_thresholds column.
+  DEFAULT_NO_PROGRESS_THRESHOLDS = { "min_input_tokens" => 100_000, "max_output_tokens" => 100 }.freeze
+  NO_PROGRESS_THRESHOLD_KEYS = %w[min_input_tokens max_output_tokens].freeze
   # Upstream API providers supported by direct-outbound CLI tools (OpenCode,
   # KiloCode). Each entry maps a slug to its base URL and the ProviderApiKey
   # service type required for authentication.
@@ -160,6 +166,7 @@ class Runner < ApplicationRecord
   validate :tier_model_ids_must_be_valid
   validate :tier_models_must_be_valid
   validate :complexity_thresholds_must_be_valid
+  validate :no_progress_thresholds_must_be_valid
   validate :agent_co_author_trailer_is_single_line
 
   before_destroy :prevent_destroying_last_agent_run_runner
@@ -222,6 +229,15 @@ class Runner < ApplicationRecord
       .transform_values { |v| Integer(v, exception: false) || v }
   end
 
+  # Returns a merged hash of no-progress thresholds (stored values overlaid on
+  # defaults) so callers can read concrete token limits without re-checking for
+  # missing keys. Integers are coerced so JSONB round-trips don't leak strings.
+  def effective_no_progress_thresholds
+    stored = no_progress_thresholds.is_a?(Hash) ? no_progress_thresholds : {}
+    DEFAULT_NO_PROGRESS_THRESHOLDS.merge(stored.slice(*NO_PROGRESS_THRESHOLD_KEYS))
+      .transform_values { |v| Integer(v, exception: false) || v }
+  end
+
   def routing_key
     persisted? ? "#{ROUTING_KEY_PREFIX}#{id}" : runner_key.to_s
   end
@@ -271,6 +287,22 @@ class Runner < ApplicationRecord
     return nil unless runner_key == "opencode"
 
     opencode_config["model"].to_s.presence
+  end
+
+  def opencode_preflight_timeout_seconds
+    return nil unless runner_key == "opencode"
+
+    Integer(opencode_config["preflight_timeout_seconds"], exception: false)
+  end
+
+  # Returns a runner-specific preflight timeout override when configured,
+  # covering all direct-outbound runner types.  Returns nil when no override
+  # is set, letting the caller fall back to the default direct-outbound budget.
+  def runner_preflight_timeout_seconds
+    case runner_key
+    when "kilocode" then kilocode_preflight_timeout_seconds
+    when "opencode" then opencode_preflight_timeout_seconds
+    end
   end
 
   def kilocode_config
@@ -392,8 +424,12 @@ class Runner < ApplicationRecord
     model_id.start_with?("#{provider_id}/") ? model_id : "#{provider_id}/#{model_id}"
   end
 
-  def opencode_qualified_model
-    model_id = opencode_model_id
+  # Qualifies a model id with the runner's opencode provider prefix
+  # (e.g. "minimax/MiniMax-M3"). Defaults to the runner's configured model but
+  # accepts an explicit model_id so models resolved outside the runtime builder
+  # (tier resolution, escalation) get the same treatment. Idempotent: a value
+  # already prefixed with this provider is returned unchanged.
+  def opencode_qualified_model(model_id = opencode_model_id)
     return if model_id.blank?
 
     api_config = DIRECT_OUTBOUND_API_PROVIDERS.fetch(opencode_api_provider, DIRECT_OUTBOUND_API_PROVIDERS["openrouter"])
@@ -401,6 +437,26 @@ class Runner < ApplicationRecord
     return model_id if provider_id.blank? || model_id.start_with?("#{provider_id}/")
 
     "#{provider_id}/#{model_id}"
+  end
+
+  # Re-applies the runner's direct-outbound provider qualification to a model id
+  # resolved outside the runtime builder. Tier resolution returns the bare
+  # tier_model_ids value, which would otherwise overwrite configured_runtime's
+  # qualified model and ship an unqualified id to opencode. opencode parses a
+  # bare id as a provider with an empty model (e.g. "MiniMax-M3" ->
+  # provider="MiniMax-M3", model="") and raises ProviderModelNotFoundError, so a
+  # bare id needs the runner's "<provider>/<model>" form.
+  #
+  # A model id that already carries a "/" is left untouched: OpenRouter-routed
+  # ids are "<vendor>/<model>" slugs (e.g. "moonshotai/kimi-k2-0905") that
+  # opencode addresses directly — the bare slug is the form the execute path and
+  # the openrouter_free runtime ship today. No-op for runners that do not
+  # provider-qualify their models.
+  def qualified_model_for(model_id)
+    return model_id if model_id.blank? || model_id.include?("/")
+    return opencode_qualified_model(model_id) if runner_key == "opencode"
+
+    model_id
   end
 
   def kilocode_api_key_env_var
@@ -952,6 +1008,11 @@ class Runner < ApplicationRecord
     if opencode_model_id.blank?
       errors.add(:config, "must include an OpenCode model id")
     end
+
+    if opencode_config["preflight_timeout_seconds"].present? &&
+        (opencode_preflight_timeout_seconds.nil? || opencode_preflight_timeout_seconds < MIN_PREFLIGHT_TIMEOUT_SECONDS)
+      errors.add(:config, "must include an OpenCode preflight timeout of at least #{MIN_PREFLIGHT_TIMEOUT_SECONDS} second")
+    end
   end
 
   def tier_model_ids_must_be_valid
@@ -1102,6 +1163,31 @@ class Runner < ApplicationRecord
     return if effective_low_max < effective_mid_max
 
     errors.add(:complexity_thresholds, "low_max must be less than mid_max")
+  end
+
+  def no_progress_thresholds_must_be_valid
+    return if no_progress_thresholds.blank?
+
+    unless no_progress_thresholds.is_a?(Hash)
+      errors.add(:no_progress_thresholds, "must be a hash of threshold keys to positive integers")
+      return
+    end
+
+    invalid_keys = no_progress_thresholds.keys.map(&:to_s) - NO_PROGRESS_THRESHOLD_KEYS
+    if invalid_keys.any?
+      errors.add(:no_progress_thresholds, "contains unknown key(s): #{invalid_keys.join(', ')}")
+      return
+    end
+
+    NO_PROGRESS_THRESHOLD_KEYS.each do |key|
+      raw = no_progress_thresholds[key] || no_progress_thresholds[key.to_sym]
+      next if raw.nil?
+
+      value = Integer(raw, exception: false)
+      unless value&.positive?
+        errors.add(:no_progress_thresholds, "#{key} must be a positive integer")
+      end
+    end
   end
 
   def normalize_tier_models(value)

@@ -115,7 +115,7 @@ class AgentRun < ApplicationRecord
     )
   end
   UNFINISHED_STATUSES = %w[queued running paused].freeze
-  GUARDRAIL_VIOLATION_TYPES = %w[loop_detected token_limit cost_limit time_limit anomaly].freeze
+  GUARDRAIL_VIOLATION_TYPES = %w[loop_detected token_limit cost_limit time_limit anomaly no_progress].freeze
   AUTO_PICK_BLOCKING_STATUSES = UNFINISHED_STATUSES
   TOKEN_LIMIT_STATUSES = %w[ok warning exceeded].freeze
   DEFAULT_MAX_TOKENS_PER_RUN = 10_000_000
@@ -1237,6 +1237,7 @@ class AgentRun < ApplicationRecord
       .where(accounts: { scheduler_paused_at: nil })
       .where(projects: { scheduler_paused_at: nil })
       .where("agent_runs.trigger_type = 'manual' OR projects.quality_paused_at IS NULL")
+      .where("agent_runs.trigger_type = 'manual' OR projects.paused = FALSE")
     scope = scope.where.not(id: exclude_ids) if exclude_ids.any?
     scope = scope.where.not(project_id: exclude_project_ids) if exclude_project_ids.any?
     scope = scope.where.not(project_owner: { user_id: exclude_user_ids }) if exclude_user_ids.any?
@@ -1255,6 +1256,7 @@ class AgentRun < ApplicationRecord
       .where(accounts: { scheduler_paused_at: nil })
       .where(projects: { scheduler_paused_at: nil })
       .where("agent_runs.trigger_type = 'manual' OR projects.quality_paused_at IS NULL")
+      .where("agent_runs.trigger_type = 'manual' OR projects.paused = FALSE")
   end
 
   def self.next_queued_run_from(scope)
@@ -1950,7 +1952,7 @@ class AgentRun < ApplicationRecord
   # @param error_type [String, nil] Type of error if failed (e.g., "rate_limited", "error")
   def record_runner_attempt(runner, success:, error_type: nil, error_message: nil, duration_seconds: nil,
                             diagnostics: nil, resolved_model_id: nil, resolved_provider_id: nil,
-                            resolution_source: nil)
+                            resolution_source: nil, output_chars: nil)
     attempt = {
       "runner" => runner,
       "success" => success,
@@ -1964,6 +1966,7 @@ class AgentRun < ApplicationRecord
     attempt["resolved_model_id"] = resolved_model_id if resolved_model_id.present?
     attempt["resolved_provider_id"] = resolved_provider_id if resolved_provider_id.present?
     attempt["resolution_source"] = resolution_source if resolution_source.present?
+    attempt["output_chars"] = output_chars if output_chars.present?
 
     self.runners_attempted = (runners_attempted || []) + [ attempt ]
     save!

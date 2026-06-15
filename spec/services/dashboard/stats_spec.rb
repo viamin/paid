@@ -839,5 +839,120 @@ RSpec.describe Dashboard::Stats do
         expect(stats[:issue_completion][:merged_count]).to eq(0)
       end
     end
+
+    describe "duration_trend_chart" do
+      subject(:chart) { described_class.call(account: account, only: %i[duration_trend_chart])[:duration_trend_chart] }
+
+      context "with no completed create_pr runs" do
+        it "returns empty series and zero slope" do
+          expect(chart[:series].all? { |s| s[:data].empty? }).to be(true)
+          expect(chart[:slope_seconds_per_day]).to eq(0.0)
+          expect(chart[:run_counts]).to be_empty
+        end
+      end
+
+      context "with completed create_pr runs on distinct days" do
+        around { |example| travel_to(Time.zone.local(2026, 5, 3, 12, 0, 0)) { example.run } }
+
+        before do
+          create(:agent_run, :completed, project: project, goal: "create_pr",
+            duration_seconds: 100,
+            completed_at: Time.zone.local(2026, 5, 1, 10, 0, 0))
+          create(:agent_run, :completed, project: project, goal: "create_pr",
+            duration_seconds: 200,
+            completed_at: Time.zone.local(2026, 5, 1, 14, 0, 0))
+          create(:agent_run, :completed, project: project, goal: "create_pr",
+            duration_seconds: 300,
+            completed_at: Time.zone.local(2026, 5, 2, 10, 0, 0))
+        end
+
+        it "groups runs by completed_at date" do
+          avg_series = chart[:series].find { |s| s[:name] == "Average" }
+          expect(avg_series[:data].keys).to contain_exactly("2026-05-01", "2026-05-02")
+        end
+
+        it "computes daily average correctly" do
+          avg_series = chart[:series].find { |s| s[:name] == "Average" }
+          expect(avg_series[:data]["2026-05-01"]).to eq(150)
+          expect(avg_series[:data]["2026-05-02"]).to eq(300)
+        end
+
+        it "computes daily p50 correctly" do
+          p50_series = chart[:series].find { |s| s[:name] == "Median (p50)" }
+          expect(p50_series[:data]["2026-05-01"]).to eq(150)
+          expect(p50_series[:data]["2026-05-02"]).to eq(300)
+        end
+
+        it "includes a trend series with data" do
+          trend_series = chart[:series].find { |s| s[:name] == "Trend" }
+          expect(trend_series[:data]).not_to be_empty
+        end
+
+        it "records run counts per day" do
+          expect(chart[:run_counts]["2026-05-01"]).to eq(2)
+          expect(chart[:run_counts]["2026-05-02"]).to eq(1)
+        end
+
+        it "returns a numeric slope" do
+          expect(chart[:slope_seconds_per_day]).to be_a(Numeric)
+        end
+      end
+
+      context "with non-create_pr runs" do
+        before do
+          create(:agent_run, :completed, project: project, goal: "create_issue",
+            duration_seconds: 999,
+            completed_at: Time.zone.local(2026, 5, 1, 10, 0, 0))
+          create(:agent_run, :completed, :review_goal, project: project,
+            duration_seconds: 888,
+            completed_at: Time.zone.local(2026, 5, 1, 10, 0, 0))
+        end
+
+        it "excludes non-create_pr runs" do
+          expect(chart[:series].all? { |s| s[:data].empty? }).to be(true)
+        end
+      end
+
+      context "with time range filter" do
+        around { |example| travel_to(Time.zone.local(2026, 5, 3, 12, 0, 0)) { example.run } }
+
+        before do
+          create(:agent_run, :completed, project: project, goal: "create_pr",
+            duration_seconds: 100,
+            completed_at: 2.days.ago)
+          create(:agent_run, :completed, project: project, goal: "create_pr",
+            duration_seconds: 200,
+            completed_at: 40.days.ago)
+        end
+
+        it "respects 7d filter by completed_at" do
+          result = described_class.call(account: account, time_range: "7d", only: %i[duration_trend_chart])
+          avg_data = result[:duration_trend_chart][:series].find { |s| s[:name] == "Average" }[:data]
+          expect(avg_data.size).to eq(1)
+          expect(avg_data.values.first).to eq(100)
+        end
+
+        it "includes older run under cumulative" do
+          result = described_class.call(account: account, time_range: "cumulative", only: %i[duration_trend_chart])
+          avg_data = result[:duration_trend_chart][:series].find { |s| s[:name] == "Average" }[:data]
+          expect(avg_data.size).to eq(2)
+        end
+      end
+
+      context "with runs from another account" do
+        let(:other_account) { create(:account) }
+        let(:other_project) { create(:project, account: other_account) }
+
+        before do
+          create(:agent_run, :completed, project: other_project, goal: "create_pr",
+            duration_seconds: 999,
+            completed_at: 1.day.ago)
+        end
+
+        it "excludes runs from other accounts" do
+          expect(chart[:series].all? { |s| s[:data].empty? }).to be(true)
+        end
+      end
+    end
   end
 end

@@ -112,7 +112,7 @@ RSpec.describe AgentRuns::Execute do
 
         expect(system_logs.pluck(:content)).to include(
           "Starting claude_code agent",
-          match(/Prompt:/)
+          include('Prompt:')
         )
         expect(stdout_logs.pluck(:content)).to include("Fixed the bug in auth.rb")
       end

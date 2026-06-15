@@ -95,6 +95,12 @@
         data-dashboard-frames-src="<%= dashboard_knowledge_stats_path %>">
         <div class="animate-pulse mt-8 rounded-lg bg-gray-100 h-24"></div>
       </turbo-frame>
+      <turbo-frame id="dashboard-pr-cycle-time"
+        data-dashboard-frames-target="frame"
+        data-dashboard-frames-src="<%= dashboard_pr_cycle_time_path(time_range: @time_range) %>"
+        class="mt-8 block">
+        <div class="animate-pulse rounded-lg bg-gray-100 h-64"></div>
+      </turbo-frame>
       <turbo-frame id="dashboard-decision-metrics"
         data-dashboard-frames-target="frame"
         data-dashboard-frames-src="<%= dashboard_decision_metrics_path(time_range: @time_range) %>"
