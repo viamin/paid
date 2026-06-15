@@ -180,7 +180,31 @@ module RunnerSmokeHelpers
     "claude-diagnostics" => CLAUDE_DIAGNOSTIC_SCENARIO_NAMES
   }.freeze
 
+  # Env var carrying the model id for an ad-hoc (bin/provider-smoke) run.
+  ADHOC_MODEL_ENV = "PAID_SMOKE_ADHOC_MODEL"
+
   module_function
+
+  # Builds a one-off direct-outbound Scenario from env vars instead of the
+  # fixed SCENARIOS matrix, so bin/provider-smoke can smoke-test an arbitrary
+  # provider/model pair (e.g. zai_coding / glm-5.2) before it is added to the
+  # model catalog. Returns nil when the required env vars are absent.
+  def adhoc_scenario_from_env
+    provider = ENV["PAID_SMOKE_ADHOC_PROVIDER"].to_s.strip.presence
+    model = ENV[ADHOC_MODEL_ENV].to_s.strip.presence
+    return nil if provider.blank? || model.blank?
+
+    runner_key = ENV["PAID_SMOKE_ADHOC_RUNNER"].to_s.strip.presence || "opencode"
+    Scenario.new(
+      name: "adhoc-#{runner_key}-#{provider}-#{model}",
+      runner_key: runner_key,
+      auth_type: "api_key",
+      api_provider: provider,
+      model_env: ADHOC_MODEL_ENV,
+      default_model: model,
+      label: "#{runner_key} with #{provider} model #{model} (ad-hoc)"
+    )
+  end
 
   def scenario_names_from_env
     configured = ENV["PAID_SMOKE_SCENARIOS"].to_s.split(",").map(&:strip).reject(&:blank?)

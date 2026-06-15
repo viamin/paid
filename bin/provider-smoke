@@ -1,0 +1,120 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "shellwords"
+
+ENV["BUNDLE_GEMFILE"] ||= File.expand_path("../Gemfile", __dir__)
+
+require "bundler/setup"
+require_relative "../config/environment"
+require_relative "../spec/support/runner_smoke_helpers"
+
+# Runners that authenticate per-request with an api_provider + model pair (the
+# shape this tool builds). Mirrors Runner#requires_direct_outbound?, minus
+# openrouter_free, which resolves its model by tier rather than from an
+# explicit api_provider/model config and so cannot be smoke-tested this way.
+DIRECT_OUTBOUND_RUNNER_KEYS = %w[opencode kilocode pi].freeze
+
+# Smoke-tests an arbitrary direct-outbound provider/model pair through the real
+# agent-harness smoke contract (in a container), so an unresolvable model id
+# (e.g. a brand-new z.ai model not yet in the bundled opencode catalog) fails
+# here with "Model not found" / ProviderModelNotFoundError instead of at live
+# agent-run time. Reuses Runners::TestAgent via the :provider_smoke spec.
+def usage
+  puts <<~USAGE
+    Usage:
+      bin/provider-smoke [-v|--diagnostic] <provider> <model> [runner_key]
+      bin/provider-smoke list
+
+    Examples:
+      bin/provider-smoke zai_coding glm-5.2
+      bin/provider-smoke -v zai_coding glm-5.2          # show actual model output
+      bin/provider-smoke minimax MiniMax-M2.7 opencode
+
+    Options:
+      -v, --diagnostic  Run a real prompt and echo the model's actual
+                        output/error. Passes on any clean response, so it
+                        distinguishes "model resolved but chatty" from
+                        "model not found". The default mode requires the
+                        model to reply with exactly "OK".
+
+    Defaults:
+      runner_key defaults to `opencode`. Supported: #{DIRECT_OUTBOUND_RUNNER_KEYS.join(", ")}.
+
+    Credentials:
+      Export the provider's API key env var first (or have a matching
+      provider/api key in the development DB). Per-provider env vars:
+  USAGE
+
+  Runner::DIRECT_OUTBOUND_API_PROVIDERS.each do |provider, config|
+    service_type = config[:service_type]
+    env_var = RunnerSmokeHelpers::SERVICE_TYPE_ENV_VARS[service_type]
+    puts "      #{provider.ljust(16)} #{env_var || '(no env var mapping)'}"
+  end
+end
+
+diagnostic = !(ARGV.delete("-v") || ARGV.delete("--diagnostic")).nil?
+
+command = ARGV.first
+
+if command.nil? || %w[--help -h help].include?(command)
+  usage
+  exit(command.nil? ? 1 : 0)
+end
+
+if command == "list"
+  usage
+  exit 0
+end
+
+provider, model, runner_key = ARGV
+runner_key ||= "opencode"
+
+if provider.nil? || model.nil?
+  warn "Both <provider> and <model> are required."
+  usage
+  exit 1
+end
+
+unless DIRECT_OUTBOUND_RUNNER_KEYS.include?(runner_key)
+  warn "Unsupported runner_key #{runner_key.inspect}. " \
+       "Supported: #{DIRECT_OUTBOUND_RUNNER_KEYS.join(', ')}."
+  exit 1
+end
+
+provider_config = Runner::DIRECT_OUTBOUND_API_PROVIDERS[provider]
+if provider_config.nil?
+  warn "Unknown provider #{provider.inspect}. Run `bin/provider-smoke list` for valid providers."
+  exit 1
+end
+
+service_type = provider_config[:service_type]
+env_var = RunnerSmokeHelpers::SERVICE_TYPE_ENV_VARS[service_type]
+if env_var && ENV[env_var].to_s.strip.empty?
+  warn "Note: #{env_var} is not set; the test will be skipped unless a matching " \
+       "provider/api key exists in the development DB."
+end
+
+env = {
+  "RUN_PROVIDER_SMOKE" => "true",
+  "RUN_RUNNER_SMOKE" => "true",
+  "COVERAGE" => "false",
+  "PAID_SMOKE_ADHOC_RUNNER" => runner_key,
+  "PAID_SMOKE_ADHOC_PROVIDER" => provider,
+  "PAID_SMOKE_ADHOC_DIAGNOSTIC" => diagnostic.to_s,
+  RunnerSmokeHelpers::ADHOC_MODEL_ENV => model
+}
+spec_command = [
+  "bundle", "exec", "rspec",
+  "--options", "/dev/null",
+  "--require", "spec_helper",
+  "--color",
+  "--format", "documentation",
+  "spec/services/runners/test_agent_adhoc_smoke_spec.rb"
+]
+
+puts "Smoke-testing #{runner_key} / #{provider} / #{model}"
+puts "Running #{Shellwords.join(spec_command)}"
+
+success = system(env, *spec_command)
+exit($CHILD_STATUS.exitstatus || 1) unless success
