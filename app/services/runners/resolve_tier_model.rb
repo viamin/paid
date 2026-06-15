@@ -15,10 +15,28 @@ module Runners
     def call
       provider = user&.provider_for(runner)
       runner_entry = runner.tier_models[tier]
-      return success_result(runner_entry, source: "runner") if runner_entry.present?
+      if runner_entry.present?
+        model_id = runner_entry.fetch("model_id")
+        check_and_log_compatibility(model_id, source: "runner")
+        compat = compatibility_for(model_id)
+        if compat.unsupported?
+          return failure_result(incompatibility_message(model_id, compat))
+        end
+
+        return success_result(runner_entry, source: "runner")
+      end
 
       provider_entry = provider&.tier_models&.dig(tier)
-      return success_result(provider_entry, source: "provider") if provider_entry.present?
+      if provider_entry.present?
+        model_id = provider_entry.fetch("model_id")
+        check_and_log_compatibility(model_id, source: "provider")
+        compat = compatibility_for(model_id)
+        if compat.unsupported?
+          return failure_result(incompatibility_message(model_id, compat))
+        end
+
+        return success_result(provider_entry, source: "provider")
+      end
 
       default_model_id = DefaultTierModelIds.call(runner_key: runner.runner_key)[tier]
       return failure_result("no model configured for #{runner.runner_key} at #{tier}") if default_model_id.blank?
@@ -33,6 +51,37 @@ module Runners
     private
 
     attr_reader :runner, :tier, :user
+
+    def compatibility_for(model_id)
+      ModelCompatibility.call(
+        runner_key: runner.runner_key,
+        model_id: model_id,
+        auth_type: runner.auth_type
+      )
+    end
+
+    def check_and_log_compatibility(model_id, source:)
+      compat = compatibility_for(model_id)
+      return unless compat.unsupported?
+
+      Rails.logger.warn(
+        message: "model_selection.incompatible_model_candidate",
+        runner_key: runner.runner_key,
+        runner_id: runner.id,
+        model_id: model_id,
+        auth_type: runner.auth_type,
+        tier: tier,
+        source: source,
+        incompatibility_type: compat.incompatibility_type,
+        reason: compat.reason,
+        replacement_model_id: compat.replacement_model_id
+      )
+    end
+
+    def incompatibility_message(model_id, compat)
+      base = "model '#{model_id}' is not compatible with runner '#{runner.runner_key}' at tier '#{tier}'"
+      compat.reason.present? ? "#{base}: #{compat.reason}" : base
+    end
 
     def success_result(entry, source:)
       Result.new(

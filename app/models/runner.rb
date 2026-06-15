@@ -164,7 +164,9 @@ class Runner < ApplicationRecord
   validate :pi_api_key_config_must_be_valid
   validate :openrouter_free_requires_api_key_auth
   validate :tier_model_ids_must_be_valid
+  validate :tier_model_ids_must_be_runner_compatible
   validate :tier_models_must_be_valid
+  validate :tier_models_must_be_runner_compatible
   validate :complexity_thresholds_must_be_valid
   validate :no_progress_thresholds_must_be_valid
   validate :agent_co_author_trailer_is_single_line
@@ -1163,6 +1165,58 @@ class Runner < ApplicationRecord
     return if effective_low_max < effective_mid_max
 
     errors.add(:complexity_thresholds, "low_max must be less than mid_max")
+  end
+
+  # Validate tier_model_ids entries against the runner compatibility contract.
+  # Rejects models that are known incompatible (e.g. CLI-version-gated) while
+  # treating unknown compatibility results as permissive to avoid false positives.
+  def tier_model_ids_must_be_runner_compatible
+    return if tier_model_ids.blank?
+    return unless tier_model_ids.is_a?(Hash)
+    return if requires_direct_outbound? || openrouter_free?
+
+    tier_model_ids.each do |tier, model_id|
+      next if model_id.blank?
+
+      result = Runners::ModelCompatibility.call(
+        runner_key: runner_key,
+        model_id: model_id,
+        auth_type: auth_type
+      )
+      next unless result.unsupported?
+
+      errors.add(
+        :tier_model_ids,
+        "model '#{model_id}' for tier '#{tier}' is not compatible with #{runner_key}: #{result.reason}"
+      )
+    end
+  end
+
+  # Validate tier_models entries against the runner compatibility contract.
+  def tier_models_must_be_runner_compatible
+    raw_tier_models = self[:tier_models]
+    return if raw_tier_models.blank?
+    return unless raw_tier_models.is_a?(Hash)
+    return if requires_direct_outbound? || openrouter_free?
+
+    tier_models.each do |tier, entry|
+      next unless entry.is_a?(Hash)
+
+      model_id = entry["model_id"]
+      next if model_id.blank?
+
+      result = Runners::ModelCompatibility.call(
+        runner_key: runner_key,
+        model_id: model_id,
+        auth_type: auth_type
+      )
+      next unless result.unsupported?
+
+      errors.add(
+        :tier_models,
+        "model '#{model_id}' for tier '#{tier}' is not compatible with #{runner_key}: #{result.reason}"
+      )
+    end
   end
 
   def no_progress_thresholds_must_be_valid
