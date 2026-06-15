@@ -133,9 +133,6 @@ module Activities
     PREFLIGHT_TIMEOUT_SECONDS = 10
     DIRECT_OUTBOUND_PREFLIGHT_TIMEOUT_SECONDS = 30
     PREFLIGHT_TIMEOUT_CIRCUIT_BREAKER_THRESHOLD = 3
-    # Matches Docker errors raised when a container has died, stopped, or been
-    # removed mid-run. These are infrastructure failures, not runner faults.
-    CONTAINER_NOT_RUNNING_PATTERN = /is not running|No such container/i
     # Backoff applied to a runner whose credit/quota is exhausted. Long
     # enough that we don't re-attempt every minute, short enough that a
     # top-up takes effect within the hour. Notification fires at the
@@ -2018,7 +2015,7 @@ module Activities
     # True when an error message indicates the container is gone (died, stopped,
     # or was removed). Such failures are infrastructure, not runner faults.
     def container_not_running_error?(message)
-      message.to_s.match?(CONTAINER_NOT_RUNNING_PATTERN)
+      message.to_s.match?(Containers::CONTAINER_NOT_RUNNING_PATTERN)
     end
 
     # Treat credit/quota exhaustion as a rate-limit-equivalent: mark the

@@ -851,7 +851,7 @@ module Containers
 
     def container_died_error?(error)
       message = error.respond_to?(:message) ? error.message : error.to_s
-      message.to_s.match?(/is not running|No such container/i)
+      message.to_s.match?(Containers::CONTAINER_NOT_RUNNING_PATTERN)
     end
 
     # Best-effort cleanup that never raises, for use in ensure blocks when

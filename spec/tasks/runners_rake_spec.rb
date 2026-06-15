@@ -25,7 +25,6 @@ RSpec.describe "runners:reset_backoff" do
 
   after { ENV.delete("DRY_RUN") }
 
-
   context "with DRY_RUN (default)" do
     it "reports counts without writing changes" do
       expect { task.invoke }.to output(/DRY RUN/).to_stdout
