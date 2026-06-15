@@ -66,7 +66,7 @@ module AgentRuns
         else
           breaker.record_half_open_failure!(agent_run_id: agent_run_id)
         end
-      elsif breaker.circuit_closed? && breaker.evaluation_due?
+      elsif breaker.circuit_closed?
         evaluate!
       end
     end
@@ -76,11 +76,16 @@ module AgentRuns
 
       breaker = breaker_record!
       return unless breaker.circuit_closed?
-      return unless breaker.evaluation_due?
+
+      # Atomically claim the evaluation slot under the row lock to avoid
+      # the burst-of-concurrent-completions case where many terminal runs
+      # all observe evaluation_due? == true and each issue their own
+      # provider_failure_stats scan. The first caller through claim_evaluation!
+      # gets to run the (relatively expensive) scan; subsequent callers
+      # short-circuit here.
+      return unless breaker.claim_evaluation!
 
       stats = provider_failure_stats
-      breaker.record_evaluation!
-
       return unless all_providers_failing?(stats)
 
       breaker.trip!(metadata: {

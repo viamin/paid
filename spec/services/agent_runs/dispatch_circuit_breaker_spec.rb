@@ -35,6 +35,23 @@ RSpec.describe AgentRuns::DispatchCircuitBreaker do
       enabled_for_agent_runs: true)
   end
 
+  def record_outcome_in_threads(thread_count, account:, run_id:)
+    mutex = Mutex.new
+    cv = ConditionVariable.new
+    ready = 0
+    threads = thread_count.times.map do
+      Thread.new do
+        mutex.synchronize do
+          ready += 1
+          cv.broadcast if ready == thread_count
+          cv.wait(mutex) until ready == thread_count
+        end
+        described_class.record_outcome!(account: account, success: false, agent_run_id: run_id)
+      end
+    end
+    threads.each(&:join)
+  end
+
   describe ".halted?" do
     it "returns false when no breaker exists" do
       expect(described_class.halted?(account)).to be false
@@ -288,6 +305,29 @@ RSpec.describe AgentRuns::DispatchCircuitBreaker do
       described_class.evaluate!(account)
 
       expect(breaker.reload.last_evaluated_at).to eq(first_evaluated_at)
+    end
+
+    it "serializes a burst of concurrent record_outcome! calls so only one runs the scan" do
+      # Reviewer-flagged race: many concurrent terminal completions can
+      # each read evaluation_due? == true and each issue their own
+      # provider_failure_stats scan. With claim_evaluation! gating the
+      # scan under a row lock, only the first caller should advance
+      # last_evaluated_at; the rest must short-circuit before the scan.
+      project = create(:project, account: account)
+      create_active_runner(account, runner_key: "claude_code")
+      15.times do
+        create(:agent_run, :failed, project: project, final_runner: "claude",
+          completed_at: 5.minutes.ago)
+      end
+
+      breaker = create(:dispatch_circuit_breaker, account: account, last_evaluated_at: 10.minutes.ago)
+      run = create(:agent_run)
+      record_outcome_in_threads(5, account: account, run_id: run.id)
+
+      # claim_evaluation! stamps last_evaluated_at exactly once under the
+      # row lock. Subsequent callers observe the fresh stamp and return
+      # false from claim_evaluation!, skipping the scan.
+      expect(breaker.reload.last_evaluated_at).to be_within(2.seconds).of(Time.current)
     end
   end
 

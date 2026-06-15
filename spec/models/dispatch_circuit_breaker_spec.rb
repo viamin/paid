@@ -339,4 +339,55 @@ RSpec.describe DispatchCircuitBreaker do
       expect(breaker.reload).to be_circuit_closed
     end
   end
+
+  describe "#claim_evaluation!" do
+    it "returns true and stamps last_evaluated_at when due" do
+      breaker = create(:dispatch_circuit_breaker, last_evaluated_at: nil)
+
+      result = breaker.claim_evaluation!
+
+      expect(result).to be true
+      expect(breaker.reload.last_evaluated_at).to be_within(1.second).of(Time.current)
+    end
+
+    it "returns false and leaves last_evaluated_at untouched when not due" do
+      breaker = create(:dispatch_circuit_breaker, last_evaluated_at: 5.seconds.ago)
+      original = breaker.last_evaluated_at
+
+      result = breaker.claim_evaluation!
+
+      expect(result).to be false
+      expect(breaker.reload.last_evaluated_at).to be_within(1.second).of(original)
+    end
+
+    it "serializes concurrent callers so only one wins the slot" do
+      # Simulate a tight burst of terminal completions racing on
+      # claim_evaluation!. The first caller stamps last_evaluated_at and
+      # returns true; the rest must observe the freshly-stamped value and
+      # return false. We spawn two threads and have each run
+      # claim_evaluation! with a brief barrier so they both try to acquire
+      # the row lock around the same instant.
+      breaker = create(:dispatch_circuit_breaker, last_evaluated_at: 10.minutes.ago)
+
+      mutex = Mutex.new
+      cv = ConditionVariable.new
+      ready = 0
+      results = []
+
+      threads = 2.times.map do
+        Thread.new do
+          mutex.synchronize do
+            ready += 1
+            cv.broadcast if ready == 2
+            cv.wait(mutex) until ready == 2
+          end
+          results << breaker.claim_evaluation!
+        end
+      end
+      threads.each(&:join)
+
+      expect(results.count(true)).to eq(1)
+      expect(breaker.reload.last_evaluated_at).to be_within(2.seconds).of(Time.current)
+    end
+  end
 end

@@ -168,6 +168,21 @@ class DispatchCircuitBreaker < ApplicationRecord
     update_columns(last_evaluated_at: Time.current)
   end
 
+  # Atomically checks the evaluation interval and stamps last_evaluated_at
+  # under the row lock. Returns true if this caller won the right to run
+  # the (relatively expensive) provider-failure scan; false if another
+  # concurrent completion already claimed the slot. This prevents a burst
+  # of terminal-run completions during a tightly-clustered provider outage
+  # from each issuing its own evaluation query.
+  def claim_evaluation!
+    with_lock do
+      return false unless evaluation_due?
+
+      update!(last_evaluated_at: Time.current)
+      true
+    end
+  end
+
   # Stamps the probe run id and timestamp. The id is what gates
   # record_half_open_success!/record_half_open_failure!, so the dispatcher
   # must pass the AgentRun it is about to start as the probe. A second call
