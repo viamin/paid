@@ -180,11 +180,61 @@ module RunnerSmokeHelpers
     "claude-diagnostics" => CLAUDE_DIAGNOSTIC_SCENARIO_NAMES
   }.freeze
 
+  # Env var carrying the model id for an ad-hoc (bin/provider-smoke) run.
+  ADHOC_MODEL_ENV = "PAID_SMOKE_ADHOC_MODEL"
+
   module_function
+
+  # Builds a one-off direct-outbound Scenario from env vars instead of the
+  # fixed SCENARIOS matrix, so bin/provider-smoke can smoke-test an arbitrary
+  # provider/model pair (e.g. zai_coding / glm-5.2) before it is added to the
+  # model catalog. Returns nil when the required env vars are absent.
+  def adhoc_scenario_from_env
+    provider = ENV["PAID_SMOKE_ADHOC_PROVIDER"].to_s.strip.presence
+    model = ENV[ADHOC_MODEL_ENV].to_s.strip.presence
+    return nil if provider.blank? || model.blank?
+
+    runner_key = ENV["PAID_SMOKE_ADHOC_RUNNER"].to_s.strip.presence || "opencode"
+    Scenario.new(
+      name: "adhoc-#{runner_key}-#{provider}-#{model}",
+      runner_key: runner_key,
+      auth_type: "api_key",
+      api_provider: provider,
+      model_env: ADHOC_MODEL_ENV,
+      default_model: model,
+      label: "#{runner_key} with #{provider} model #{model} (ad-hoc)"
+    )
+  end
 
   def scenario_names_from_env
     configured = ENV["PAID_SMOKE_SCENARIOS"].to_s.split(",").map(&:strip).reject(&:blank?)
     (configured.presence || [ "current-enabled" ]).flat_map { |name| expand_name(name) }
+  end
+
+  def provider_configs_for_runner(runner_key)
+    case runner_key.to_s
+    when "opencode", "kilocode"
+      Runner::DIRECT_OUTBOUND_API_PROVIDERS
+    when "pi"
+      Runner::PI_API_PROVIDERS
+    else
+      {}
+    end
+  end
+
+  def provider_config_for(runner_key:, api_provider:)
+    provider_configs_for_runner(runner_key)[api_provider.to_s]
+  end
+
+  def api_service_type_for(runner_key:, api_provider:)
+    provider_config_for(runner_key: runner_key, api_provider: api_provider)&.fetch(:service_type)
+  end
+
+  def api_key_env_var_for(runner_key:, api_provider:)
+    config = provider_config_for(runner_key: runner_key, api_provider: api_provider)
+    return if config.blank?
+
+    config[:env_var].presence || SERVICE_TYPE_ENV_VARS[config.fetch(:service_type)]
   end
 
   def scenarios_from_env
@@ -230,7 +280,7 @@ module RunnerSmokeHelpers
   end
 
   def build_direct_outbound_runner!(user:, scenario:)
-    service_type = Runner::DIRECT_OUTBOUND_API_PROVIDERS.dig(scenario.api_provider, :service_type)
+    service_type = api_service_type_for(runner_key: scenario.runner_key, api_provider: scenario.api_provider)
     if service_type.blank?
       raise ScenarioUnavailableError,
         "Unsupported #{scenario.runner_key} api provider #{scenario.api_provider.inspect} for #{scenario.label}"
@@ -244,10 +294,11 @@ module RunnerSmokeHelpers
       raise ScenarioUnavailableError, "Set #{scenario.model_env} to run #{scenario.label}"
     end
 
-    api_key = api_key_for_service_type(service_type, scenario: scenario, development_runner: dev_runner)
+    api_key_env_var = api_key_env_var_for(runner_key: scenario.runner_key, api_provider: scenario.api_provider)
+    api_key = api_key_for_env_var(api_key_env_var, development_runner: dev_runner)
     if api_key.blank?
       raise ScenarioUnavailableError,
-        "Set #{SERVICE_TYPE_ENV_VARS.fetch(service_type)} or create a matching provider/api key in the development DB to run #{scenario.label}"
+        "Set #{api_key_env_var} or create a matching provider/api key in the development DB to run #{scenario.label}"
     end
 
     provider_api_key = FactoryBot.create(
@@ -277,8 +328,9 @@ module RunnerSmokeHelpers
     runner
   end
 
-  def api_key_for_service_type(service_type, scenario:, development_runner: nil)
-    env_var = SERVICE_TYPE_ENV_VARS.fetch(service_type)
+  def api_key_for_env_var(env_var, development_runner: nil)
+    return development_runner&.fetch("api_key", nil).to_s.strip.presence if env_var.blank?
+
     ENV[env_var].to_s.strip.presence ||
       development_runner&.fetch("api_key", nil).to_s.strip.presence
   end
@@ -293,7 +345,7 @@ module RunnerSmokeHelpers
     @development_runner_info_cache ||= {}
     return @development_runner_info_cache[scenario.name] if @development_runner_info_cache.key?(scenario.name)
 
-    service_type = Runner::DIRECT_OUTBOUND_API_PROVIDERS.dig(scenario.api_provider, :service_type)
+    service_type = api_service_type_for(runner_key: scenario.runner_key, api_provider: scenario.api_provider)
     desired_model = ENV[scenario.model_env].to_s.strip.presence || scenario.default_model
     payload = {
       runner_key: scenario.runner_key,
@@ -417,7 +469,7 @@ module RunnerSmokeHelpers
       next false unless scenario.auth_type == config["auth_type"].to_s
       next true if scenario.subscription?
 
-      service_type = Runner::DIRECT_OUTBOUND_API_PROVIDERS.dig(scenario.api_provider, :service_type)
+      service_type = api_service_type_for(runner_key: scenario.runner_key, api_provider: scenario.api_provider)
       service_type == config["service_type"].to_s &&
         scenario.api_provider == config["api_provider"].to_s
     end&.name
