@@ -9,10 +9,13 @@ require "bundler/setup"
 require_relative "../config/environment"
 require_relative "../spec/support/runner_smoke_helpers"
 
-# Runners that authenticate per-request with an api_provider + model pair (the
-# shape this tool builds). Mirrors Runner#direct_outbound_capable_runner?,
-# minus openrouter_free, which resolves its model by tier rather than from an
-# explicit api_provider/model config and so cannot be smoke-tested this way.
+# Runners for which Runners::TestAgent#container_provider_runtime has
+# direct-outbound smoke plumbing (i.e. an api_provider + model pair resolves
+# to a real container call, not subscription auth or tier-based routing).
+# `aider` is excluded because TestAgent has no aider_direct_outbound? branch
+# despite having aider config plumbing; `openrouter_free` is excluded because
+# its model resolves by tier rather than from an explicit api_provider/model
+# config and so cannot be smoke-tested with an explicit provider/model pair.
 DIRECT_OUTBOUND_RUNNER_KEYS = %w[opencode kilocode pi].freeze
 
 # Smoke-tests an arbitrary direct-outbound provider/model pair through the real
