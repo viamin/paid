@@ -43,13 +43,16 @@ def usage
 
     Credentials:
       Export the provider's API key env var first (or have a matching
-      provider/api key in the development DB). Per-provider env vars:
+      provider/api key in the development DB). Supported providers by runner:
   USAGE
 
-  Runner::DIRECT_OUTBOUND_API_PROVIDERS.each do |provider, config|
-    service_type = config[:service_type]
-    env_var = RunnerSmokeHelpers::SERVICE_TYPE_ENV_VARS[service_type]
-    puts "      #{provider.ljust(16)} #{env_var || '(no env var mapping)'}"
+  DIRECT_OUTBOUND_RUNNER_KEYS.each do |runner_key|
+    puts "      #{runner_key}:"
+
+    RunnerSmokeHelpers.provider_configs_for_runner(runner_key).each_key do |provider|
+      env_var = RunnerSmokeHelpers.api_key_env_var_for(runner_key: runner_key, api_provider: provider)
+      puts "        #{provider.ljust(14)} #{env_var || '(no env var mapping)'}"
+    end
   end
 end
 
@@ -82,14 +85,14 @@ unless DIRECT_OUTBOUND_RUNNER_KEYS.include?(runner_key)
   exit 1
 end
 
-provider_config = Runner::DIRECT_OUTBOUND_API_PROVIDERS[provider]
+provider_config = RunnerSmokeHelpers.provider_config_for(runner_key: runner_key, api_provider: provider)
 if provider_config.nil?
-  warn "Unknown provider #{provider.inspect}. Run `bin/provider-smoke list` for valid providers."
+  valid_providers = RunnerSmokeHelpers.provider_configs_for_runner(runner_key).keys.join(", ")
+  warn "Unsupported provider #{provider.inspect} for #{runner_key}. Supported: #{valid_providers}."
   exit 1
 end
 
-service_type = provider_config[:service_type]
-env_var = RunnerSmokeHelpers::SERVICE_TYPE_ENV_VARS[service_type]
+env_var = RunnerSmokeHelpers.api_key_env_var_for(runner_key: runner_key, api_provider: provider)
 if env_var && ENV[env_var].to_s.strip.empty?
   warn "Note: #{env_var} is not set; the test will be skipped unless a matching " \
        "provider/api key exists in the development DB."
