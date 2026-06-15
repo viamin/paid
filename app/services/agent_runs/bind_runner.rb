@@ -60,22 +60,31 @@ module AgentRuns
 
     # When the user explicitly pinned a specific runner (manual trigger),
     # feed its id back into the resolver so it gets first pick if still
-    # runnable. For auto-pick the resolver's default selection path is
-    # already correct, so no extra hint is needed.
+    # runnable. For auto-pick (no explicit runner) do NOT pass the run's
+    # stored agent_type as a +requested_agent_type+: the resolver's
+    # +requested_selection+ short-circuits to +[nil, agent_type]+ whenever
+    # the agent type is statically container-executable, which would skip
+    # +project_preferred_agent_selection+ / +default_runner+ and leave the
+    # run pinned to no runner at all (it stays queued forever). The
+    # project's +preferred_agent_type+ is re-derived inside the resolver
+    # via +project_preferred_agent_selection+, so passing +[nil, nil]+ lets
+    # the real runner-selection paths run and return an actual runner id.
     def resolution_preferences
       if explicit_runner_preference.is_a?(Runner)
         [ explicit_runner_preference.id, agent_run.agent_type ]
       else
-        [ nil, agent_run.agent_type ]
+        [ nil, nil ]
       end
     end
 
-    # Resolver should only honor an explicit +requested_*+ when the
-    # caller already validated the user's intent. The agent_type column
-    # on a manual run is itself an explicit choice, so passing
-    # respect_requested: true is correct for both auto and manual paths.
+    # The resolver should only honor an explicit +requested_*+ selection
+    # when the caller actually carries one. A manual run that pinned a
+    # runner passes +respect_requested: true+ so the resolver honors it;
+    # auto-pick (no explicit runner) passes +false+ so the resolver uses
+    # its own preference/default selection instead of short-circuiting on
+    # the run's stored agent_type.
     def respect_explicit_request?
-      true
+      explicit_runner_preference.is_a?(Runner)
     end
 
     def apply_resolution!(runner, resolved_agent_type)

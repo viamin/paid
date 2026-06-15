@@ -108,27 +108,14 @@ module Issues
         project: @project,
         issue: issue,
         initiating_user: nil,
-        agent_type: intended_agent_type_for(goal),
+        agent_type: RunnerSupport.intended_agent_type(
+          preferred_agent_type: @project.model_preferences["preferred_agent_type"]
+        ),
         status: "queued",
         trigger_type: "automatic",
         auto_pick: true,
         goal: goal
       )
-    end
-
-    # Returns the intended agent_type for the queued run. Honors the
-    # project's preferred_agent_type when set, then falls back to the
-    # first container-executable runner's agent_type, then to a stable
-    # default. The actual runner is bound at dequeue time by
-    # ProcessRunQueueJob, so a "no runner available" situation no longer
-    # blocks enqueue — the run simply stays queued until a healthy
-    # runner can be paired (#2563).
-    def intended_agent_type_for(_goal)
-      preferred = @project.model_preferences["preferred_agent_type"]
-      return preferred if preferred.present? && AgentRun::AGENT_TYPES.include?(preferred)
-
-      first_key = RunnerSupport.container_executable_runner_keys.first
-      first_key ? Runner.agent_type_for(first_key) : "claude_code"
     end
   end
 end
