@@ -3,6 +3,7 @@
 module Containers
   LOCAL_BACKEND_KEY = :local
   REMOTE_BACKEND_KEY = :remote
+  CONTAINER_NOT_RUNNING_PATTERN = /is not running|No such container/i
 
   class << self
     def backend

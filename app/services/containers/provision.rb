@@ -811,6 +811,19 @@ module Containers
     end
 
     def cleanup_execution_preparation(cleanup_steps, env:)
+      # A stopped or removed container has no live filesystem to restore — its
+      # writable layer is ephemeral and about to be torn down. Restoring into a
+      # dead container only fails with "container is not running", masking the
+      # real cause of the container's death behind a misleading "Failed to
+      # restore prepared runtime state" terminal error. Skip the restore and
+      # invalidate so the run's real outcome (the exec result, or the
+      # container-death error from the exec path) stands.
+      unless container_running?
+        log_system("container.execute.preparation_cleanup_skipped_container_not_running", container_id: container&.id)
+        invalidate_container_after_preparation_cleanup_failure!
+        return
+      end
+
       cleanup_error = nil
 
       Array(cleanup_steps).reverse_each do |step_env|
@@ -821,8 +834,24 @@ module Containers
 
       return unless cleanup_error
 
+      # Capture whether the container died mid-restore before invalidating
+      # (invalidate stops the container, which would make a later liveness
+      # check always read false).
+      container_died = container_died_error?(cleanup_error) || !container_running?
+
       invalidate_container_after_preparation_cleanup_failure!
+
+      # Don't surface a terminal restore error for a container that died — that
+      # is infrastructure failure handled by the orchestration, not a genuine
+      # inability to restore real state.
+      return if container_died
+
       raise cleanup_execution_error(cleanup_error)
+    end
+
+    def container_died_error?(error)
+      message = error.respond_to?(:message) ? error.message : error.to_s
+      message.to_s.match?(Containers::CONTAINER_NOT_RUNNING_PATTERN)
     end
 
     # Best-effort cleanup that never raises, for use in ensure blocks when
@@ -1040,12 +1069,28 @@ module Containers
         env_key: "OPENAI_API_KEY",
         wire_api: "responses"
       )
-      content = "#{codex_notify_line}\n\n#{config_toml}"
+      # Pin a Paid-selected top-level model so the Codex CLI does not fall back
+      # to its built-in default (currently gpt-5.5), which the pinned CLI in the
+      # agent image rejects ("requires a newer version of Codex"). The proxy
+      # config has no model of its own, so without this the proxy auth path
+      # mirrors the host-config leak that seed_sanitized_codex_config! guards
+      # against on the subscription path. The model key must precede the
+      # [chatgpt] table to remain a top-level TOML key.
+      content = [ codex_notify_line, codex_model_config_line, config_toml ].compact.join("\n\n")
 
       write_container_file("/home/agent/.codex/config.toml", content)
       log_system("container.codex_config_seeded")
     rescue Docker::Error::DockerError => e
       log_system("container.codex_config_seed_failed", error: e.message)
+    end
+
+    # Returns a top-level `model = "..."` TOML line for the Paid-selected Codex
+    # model, or nil when no model id resolves (leaving the CLI default in place).
+    def codex_model_config_line
+      model_id = codex_container_model_id
+      return nil if model_id.blank?
+
+      %(model = "#{toml_string_escape(model_id)}")
     end
 
     def seed_codex_credentials!
@@ -1085,9 +1130,9 @@ module Containers
     def sanitize_codex_host_config(toml)
       sanitized = strip_codex_project_sections(toml)
       sanitized = strip_codex_top_level_model_settings(sanitized)
-      model_id = codex_container_model_id
+      model_line = codex_model_config_line
 
-      model_id.present? ? %(model = "#{toml_string_escape(model_id)}"\n#{sanitized}) : sanitized
+      model_line ? "#{model_line}\n#{sanitized}" : sanitized
     end
 
     def strip_codex_project_sections(toml)
