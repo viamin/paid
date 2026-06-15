@@ -214,7 +214,7 @@ class ProcessRunQueueJob < ApplicationJob
     when :dispatch
       false
     when :allow_probe
-      service.mark_probe_dispatched!
+      service.mark_probe_dispatched!(agent_run_id: agent_run.id)
       Rails.logger.info(
         message: "process_run_queue.dispatch_probe",
         agent_run_id: agent_run.id,

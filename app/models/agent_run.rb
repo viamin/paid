@@ -2490,6 +2490,12 @@ class AgentRun < ApplicationRecord
   # CompleteReviewGoalActivity, and other direct complete! paths — recording
   # here (instead of in a single activity) ensures half_open_success_count
   # is incremented for all of them so the breaker can recover.
+  #
+  # The agent_run_id is forwarded to the breaker so it can gate the
+  # half_open counter on whether the run that just finished was the
+  # explicit probe (set via mark_probe_dispatched!) or just a stale
+  # in-flight run from before the circuit opened. Stale completions
+  # must not affect half_open counters.
   def record_dispatch_circuit_breaker_outcome
     return unless final_runner.present?
     return unless project&.account
@@ -2500,8 +2506,8 @@ class AgentRun < ApplicationRecord
 
     ::AgentRuns::DispatchCircuitBreaker.record_outcome!(
       account: project.account,
-      runner_name: final_runner,
-      success: success
+      success: success,
+      agent_run_id: id
     )
   rescue => e
     Rails.logger.warn(

@@ -793,6 +793,19 @@ RSpec.describe ProcessRunQueueJob do
         expect(probe_run.reload.temporal_workflow_id).to be_present
         expect(blocked_run.reload.status).to eq("queued")
       end
+
+      it "stamps the dispatched probe run id on the breaker so only its outcome counts" do
+        account = create(:account)
+        project = create(:project, account: account)
+        breaker = create(:dispatch_circuit_breaker, :half_open, account: account, last_probe_at: nil)
+        probe_run = create(:agent_run, :queued, project: project, created_at: 2.minutes.ago)
+
+        allow(temporal_client).to receive(:start_workflow).and_return(workflow_handle)
+
+        described_class.new.perform
+
+        expect(breaker.reload.last_probe_run_id).to eq(probe_run.id)
+      end
     end
   end
 end

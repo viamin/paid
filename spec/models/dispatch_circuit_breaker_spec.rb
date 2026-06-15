@@ -86,6 +86,15 @@ RSpec.describe DispatchCircuitBreaker do
       expect(breaker.circuit_opened_at).to be_within(1.second).of(Time.current)
       expect(breaker.trip_metadata).to eq(metadata)
     end
+
+    it "clears any leftover last_probe_run_id from a prior half_open cycle" do
+      probe = create(:agent_run)
+      breaker = create(:dispatch_circuit_breaker, :open, last_probe_run_id: probe.id)
+
+      breaker.trip!
+
+      expect(breaker.reload.last_probe_run_id).to be_nil
+    end
   end
 
   describe "#check_recovery!" do
@@ -96,6 +105,16 @@ RSpec.describe DispatchCircuitBreaker do
 
       expect(result).to be true
       expect(breaker.reload).to be_circuit_half_open
+    end
+
+    it "clears any leftover last_probe_run_id so the new probe is the only tracked one" do
+      stale_probe = create(:agent_run)
+      breaker = create(:dispatch_circuit_breaker, :open,
+        circuit_opened_at: 10.minutes.ago, last_probe_run_id: stale_probe.id)
+
+      breaker.check_recovery!
+
+      expect(breaker.reload.last_probe_run_id).to be_nil
     end
 
     it "does not transition before timeout" do
@@ -118,39 +137,91 @@ RSpec.describe DispatchCircuitBreaker do
   end
 
   describe "#record_half_open_failure!" do
-    it "increments failure count" do
-      breaker = create(:dispatch_circuit_breaker, :half_open)
+    it "increments failure count for the tracked probe" do
+      probe = create(:agent_run)
+      breaker = create(:dispatch_circuit_breaker, :half_open, last_probe_run_id: probe.id)
 
-      breaker.record_half_open_failure!
+      breaker.record_half_open_failure!(agent_run_id: probe.id)
 
       expect(breaker.reload.half_open_failure_count).to eq(1)
     end
 
-    it "re-opens circuit when threshold reached" do
-      breaker = create(:dispatch_circuit_breaker, :half_open, half_open_failure_count: 1)
+    it "is a no-op for a stale in-flight run that is not the tracked probe" do
+      probe = create(:agent_run)
+      stale = create(:agent_run)
+      breaker = create(:dispatch_circuit_breaker, :half_open, last_probe_run_id: probe.id)
 
-      breaker.record_half_open_failure!
+      result = breaker.record_half_open_failure!(agent_run_id: stale.id)
+
+      expect(result).to eq(:stale)
+      expect(breaker.reload.half_open_failure_count).to eq(0)
+      expect(breaker).to be_circuit_half_open
+    end
+
+    it "is a no-op when no probe has been dispatched yet" do
+      breaker = create(:dispatch_circuit_breaker, :half_open)
+      run = create(:agent_run)
+
+      result = breaker.record_half_open_failure!(agent_run_id: run.id)
+
+      expect(result).to eq(:stale)
+      expect(breaker.reload.half_open_failure_count).to eq(0)
+    end
+
+    it "re-opens circuit when threshold reached" do
+      probe = create(:agent_run)
+      breaker = create(:dispatch_circuit_breaker, :half_open,
+        half_open_failure_count: 1, last_probe_run_id: probe.id)
+
+      breaker.record_half_open_failure!(agent_run_id: probe.id)
 
       expect(breaker.reload).to be_circuit_open
       expect(breaker.half_open_failure_count).to eq(0)
+      expect(breaker.last_probe_run_id).to be_nil
     end
   end
 
   describe "#record_half_open_success!" do
-    it "increments success count" do
-      breaker = create(:dispatch_circuit_breaker, :half_open)
+    it "increments success count for the tracked probe" do
+      probe = create(:agent_run)
+      breaker = create(:dispatch_circuit_breaker, :half_open, last_probe_run_id: probe.id)
 
-      breaker.record_half_open_success!
+      breaker.record_half_open_success!(agent_run_id: probe.id)
 
       expect(breaker.reload.half_open_success_count).to eq(1)
     end
 
-    it "closes circuit when threshold reached" do
-      breaker = create(:dispatch_circuit_breaker, :half_open, half_open_success_count: 1)
+    it "is a no-op for a stale in-flight run that is not the tracked probe" do
+      probe = create(:agent_run)
+      stale = create(:agent_run)
+      breaker = create(:dispatch_circuit_breaker, :half_open, last_probe_run_id: probe.id)
 
-      breaker.record_half_open_success!
+      result = breaker.record_half_open_success!(agent_run_id: stale.id)
+
+      expect(result).to eq(:stale)
+      expect(breaker.reload.half_open_success_count).to eq(0)
+      expect(breaker).to be_circuit_half_open
+    end
+
+    it "is a no-op when no probe has been dispatched yet" do
+      breaker = create(:dispatch_circuit_breaker, :half_open)
+      run = create(:agent_run)
+
+      result = breaker.record_half_open_success!(agent_run_id: run.id)
+
+      expect(result).to eq(:stale)
+      expect(breaker.reload.half_open_success_count).to eq(0)
+    end
+
+    it "closes circuit when threshold reached" do
+      probe = create(:agent_run)
+      breaker = create(:dispatch_circuit_breaker, :half_open,
+        half_open_success_count: 1, last_probe_run_id: probe.id)
+
+      breaker.record_half_open_success!(agent_run_id: probe.id)
 
       expect(breaker.reload).to be_circuit_closed
+      expect(breaker.last_probe_run_id).to be_nil
     end
   end
 
@@ -163,7 +234,30 @@ RSpec.describe DispatchCircuitBreaker do
       expect(breaker.reload).to be_circuit_closed
       expect(breaker.circuit_opened_at).to be_nil
       expect(breaker.last_probe_at).to be_nil
+      expect(breaker.last_probe_run_id).to be_nil
       expect(breaker.trip_metadata).to eq({})
+    end
+  end
+
+  describe "#mark_probe_dispatched!" do
+    it "stamps the agent_run_id and last_probe_at" do
+      probe = create(:agent_run)
+      breaker = create(:dispatch_circuit_breaker, :half_open)
+
+      breaker.mark_probe_dispatched!(agent_run_id: probe.id)
+
+      expect(breaker.reload.last_probe_run_id).to eq(probe.id)
+      expect(breaker.last_probe_at).to be_within(1.second).of(Time.current)
+    end
+
+    it "replaces a previously tracked probe when called with a new run" do
+      old_probe = create(:agent_run)
+      new_probe = create(:agent_run)
+      breaker = create(:dispatch_circuit_breaker, :half_open, last_probe_run_id: old_probe.id)
+
+      breaker.mark_probe_dispatched!(agent_run_id: new_probe.id)
+
+      expect(breaker.reload.last_probe_run_id).to eq(new_probe.id)
     end
   end
 

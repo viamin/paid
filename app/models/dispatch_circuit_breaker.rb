@@ -12,6 +12,7 @@ class DispatchCircuitBreaker < ApplicationRecord
   DEFAULT_EVALUATION_INTERVAL_MINUTES = 1
 
   belongs_to :account
+  belongs_to :last_probe_run, class_name: "AgentRun", optional: true
 
   validates :circuit_state, presence: true, inclusion: { in: CIRCUIT_STATES }
   validates :half_open_success_count,
@@ -59,6 +60,7 @@ class DispatchCircuitBreaker < ApplicationRecord
         circuit_opened_at: Time.current,
         half_open_success_count: 0,
         half_open_failure_count: 0,
+        last_probe_run_id: nil,
         trip_metadata: metadata
       )
 
@@ -70,15 +72,25 @@ class DispatchCircuitBreaker < ApplicationRecord
     end
   end
 
-  def record_half_open_failure!
+  # Records a half_open failure. The agent_run_id is the AgentRun that just
+  # completed; the breaker only counts it as a probe signal if it matches
+  # the run the dispatcher explicitly marked as the probe via
+  # mark_probe_dispatched!. Stale in-flight runs from before the circuit
+  # opened can complete during the half_open window — those must not
+  # increment half_open_failure_count or they can re-open the breaker
+  # without testing a fresh dispatch.
+  def record_half_open_failure!(agent_run_id:)
     with_lock do
+      return :stale unless circuit_half_open? && last_probe_run_id == agent_run_id
+
       new_count = half_open_failure_count + 1
       if new_count >= half_open_failure_threshold
         update!(
           circuit_state: "open",
           circuit_opened_at: Time.current,
           half_open_success_count: 0,
-          half_open_failure_count: 0
+          half_open_failure_count: 0,
+          last_probe_run_id: nil
         )
 
         Rails.logger.warn(
@@ -92,8 +104,13 @@ class DispatchCircuitBreaker < ApplicationRecord
     end
   end
 
-  def record_half_open_success!
+  # Records a half_open success. See #record_half_open_failure! for why the
+  # agent_run_id argument is required: a stale in-flight run completing
+  # successfully during half_open must not close the breaker.
+  def record_half_open_success!(agent_run_id:)
     with_lock do
+      return :stale unless circuit_half_open? && last_probe_run_id == agent_run_id
+
       new_count = half_open_success_count + 1
       if new_count >= half_open_success_threshold
         close!
@@ -112,7 +129,8 @@ class DispatchCircuitBreaker < ApplicationRecord
       update!(
         circuit_state: "half_open",
         half_open_success_count: 0,
-        half_open_failure_count: 0
+        half_open_failure_count: 0,
+        last_probe_run_id: nil
       )
 
       Rails.logger.info(
@@ -129,6 +147,7 @@ class DispatchCircuitBreaker < ApplicationRecord
         circuit_state: "closed",
         circuit_opened_at: nil,
         last_probe_at: nil,
+        last_probe_run_id: nil,
         half_open_success_count: 0,
         half_open_failure_count: 0,
         trip_metadata: {}
@@ -149,8 +168,14 @@ class DispatchCircuitBreaker < ApplicationRecord
     update_columns(last_evaluated_at: Time.current)
   end
 
-  def mark_probe_dispatched!
-    update!(last_probe_at: Time.current)
+  # Stamps the probe run id and timestamp. The id is what gates
+  # record_half_open_success!/record_half_open_failure!, so the dispatcher
+  # must pass the AgentRun it is about to start as the probe. A second call
+  # for the same id is a no-op timestamp-wise; for a different id the
+  # previous probe is considered abandoned (its outcome, if it ever lands,
+  # will be ignored) and the new run becomes the tracked probe.
+  def mark_probe_dispatched!(agent_run_id:)
+    update!(last_probe_at: Time.current, last_probe_run_id: agent_run_id)
   end
 
   def probe_allowed?

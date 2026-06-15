@@ -6,8 +6,8 @@ module AgentRuns
       new(account).halted?
     end
 
-    def self.record_outcome!(account:, runner_name:, success:)
-      new(account).record_outcome!(runner_name: runner_name, success: success)
+    def self.record_outcome!(account:, success:, agent_run_id:)
+      new(account).record_outcome!(success: success, agent_run_id: agent_run_id)
     end
 
     def self.evaluate!(account)
@@ -48,23 +48,23 @@ module AgentRuns
       breaker.probe_allowed? ? :allow_probe : :halt
     end
 
-    def mark_probe_dispatched!
+    def mark_probe_dispatched!(agent_run_id:)
       breaker = breaker_record
       return unless breaker&.persisted?
 
-      breaker.mark_probe_dispatched!
+      breaker.mark_probe_dispatched!(agent_run_id: agent_run_id)
     end
 
-    def record_outcome!(runner_name:, success:)
+    def record_outcome!(success:, agent_run_id:)
       return unless enabled?
 
       breaker = breaker_record!
 
       if breaker.circuit_half_open?
         if success
-          breaker.record_half_open_success!
+          breaker.record_half_open_success!(agent_run_id: agent_run_id)
         else
-          breaker.record_half_open_failure!
+          breaker.record_half_open_failure!(agent_run_id: agent_run_id)
         end
       elsif breaker.circuit_closed? && breaker.evaluation_due?
         evaluate!

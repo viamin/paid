@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_12_225831) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_15_060316) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -833,6 +833,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_12_225831) do
     t.integer "half_open_success_count", default: 0, null: false, comment: "Consecutive successes in half_open state"
     t.datetime "last_evaluated_at", comment: "When the circuit was last evaluated"
     t.datetime "last_probe_at", comment: "When the last probe run was dispatched during half_open"
+    t.bigint "last_probe_run_id", comment: "Agent run dispatched as the half_open probe; only this run's outcome counts toward the breaker's half_open counters so stale in-flight runs from before the circuit opened cannot close or re-open the breaker"
     t.jsonb "trip_metadata", default: {}, null: false, comment: "Failure statistics at the time the circuit was tripped"
     t.datetime "updated_at", null: false
     t.index ["account_id"], name: "index_dispatch_circuit_breakers_on_account_id", unique: true
@@ -2622,6 +2623,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_12_225831) do
   add_foreign_key "decomposition_decisions", "issues", on_delete: :cascade
   add_foreign_key "decomposition_decisions", "projects", on_delete: :cascade
   add_foreign_key "dispatch_circuit_breakers", "accounts"
+  add_foreign_key "dispatch_circuit_breakers", "agent_runs", column: "last_probe_run_id", on_delete: :nullify, validate: false
   add_foreign_key "exception_incidents", "accounts"
   add_foreign_key "exception_incidents", "projects"
   add_foreign_key "external_connector_events", "accounts"

@@ -12,10 +12,12 @@ RSpec.describe AgentRuns::DispatchCircuitBreaker do
   # looks up the owning Runner by id. So we configure each active Runner with
   # the canonical settings-level runner_key whose agent_type is used as
   # final_runner in the AgentRun records.
-  AGENT_TYPE_TO_RUNNER_KEY = {
-    "claude_code" => "claude",
-    "opencode" => "opencode"
-  }.freeze
+  let(:agent_type_to_runner_key) do
+    {
+      "claude_code" => "claude",
+      "opencode" => "opencode"
+    }.freeze
+  end
 
   def create_active_runner(account, runner_key:, auth_type: "subscription", user: nil)
     # User#ensure_default_runner auto-creates a default subscription runner
@@ -26,7 +28,7 @@ RSpec.describe AgentRuns::DispatchCircuitBreaker do
     # it's already enabled for agent runs and is what production accounts
     # start with. For any other runner_key, install a fresh subscription
     # runner on the user so it appears in the account's active runner set.
-    settings_runner_key = AGENT_TYPE_TO_RUNNER_KEY.fetch(runner_key, runner_key)
+    settings_runner_key = agent_type_to_runner_key.fetch(runner_key, runner_key)
     owner = user || create(:user, account: account)
     return owner.runners.kept_only.find_by!(runner_key: settings_runner_key) if settings_runner_key == Runner.default_runner_key
     create(:runner, user: owner, runner_key: settings_runner_key, auth_type: auth_type,
@@ -103,6 +105,10 @@ RSpec.describe AgentRuns::DispatchCircuitBreaker do
     it "does not count cancelled or retried runs toward failure rate" do
       project = create(:project, account: account)
       create_active_runner(account, runner_key: "claude_code")
+      # Lower min_runs so the 8 provider outcomes exceed the floor; the
+      # intent of this test is to verify cancelled/retried runs are
+      # excluded from the denominator, not to exercise the min_runs gate.
+      account.tenant_setting!.update!(agent_settings: { "dispatch_circuit_breaker_min_runs" => 5 })
       8.times do
         create(:agent_run, :failed, project: project, final_runner: "claude",
           completed_at: 5.minutes.ago)
@@ -288,27 +294,54 @@ RSpec.describe AgentRuns::DispatchCircuitBreaker do
   describe ".record_outcome!" do
     context "when circuit is half_open" do
       it "records success and closes when threshold reached" do
+        probe = create(:agent_run)
         breaker = create(:dispatch_circuit_breaker, :half_open, account: account,
-          half_open_success_count: 1)
+          half_open_success_count: 1, last_probe_run_id: probe.id)
 
-        described_class.record_outcome!(account: account, runner_name: "claude_code", success: true)
+        described_class.record_outcome!(account: account, success: true, agent_run_id: probe.id)
 
         expect(breaker.reload).to be_circuit_closed
       end
 
       it "records failure and re-opens when threshold reached" do
+        probe = create(:agent_run)
         breaker = create(:dispatch_circuit_breaker, :half_open, account: account,
-          half_open_failure_count: 1)
+          half_open_failure_count: 1, last_probe_run_id: probe.id)
 
-        described_class.record_outcome!(account: account, runner_name: "claude_code", success: false)
+        described_class.record_outcome!(account: account, success: false, agent_run_id: probe.id)
 
         expect(breaker.reload).to be_circuit_open
+      end
+
+      it "ignores a stale in-flight run that is not the tracked probe (success)" do
+        probe = create(:agent_run)
+        stale = create(:agent_run)
+        breaker = create(:dispatch_circuit_breaker, :half_open, account: account,
+          last_probe_run_id: probe.id, half_open_success_count: 0)
+
+        described_class.record_outcome!(account: account, success: true, agent_run_id: stale.id)
+
+        expect(breaker.reload.half_open_success_count).to eq(0)
+        expect(breaker).to be_circuit_half_open
+      end
+
+      it "ignores a stale in-flight run that is not the tracked probe (failure)" do
+        probe = create(:agent_run)
+        stale = create(:agent_run)
+        breaker = create(:dispatch_circuit_breaker, :half_open, account: account,
+          last_probe_run_id: probe.id, half_open_failure_count: 0)
+
+        described_class.record_outcome!(account: account, success: false, agent_run_id: stale.id)
+
+        expect(breaker.reload.half_open_failure_count).to eq(0)
+        expect(breaker).to be_circuit_half_open
       end
     end
 
     context "when circuit is closed" do
       it "evaluates whether to trip on failure" do
         breaker = create(:dispatch_circuit_breaker, account: account)
+        run = create(:agent_run)
         project = create(:project, account: account)
         create_active_runner(account, runner_key: "claude_code")
         15.times do
@@ -316,7 +349,7 @@ RSpec.describe AgentRuns::DispatchCircuitBreaker do
             completed_at: 5.minutes.ago)
         end
 
-        described_class.record_outcome!(account: account, runner_name: "claude", success: false)
+        described_class.record_outcome!(account: account, success: false, agent_run_id: run.id)
 
         expect(breaker.reload).to be_circuit_open
       end
@@ -324,6 +357,7 @@ RSpec.describe AgentRuns::DispatchCircuitBreaker do
       it "is debounced — does not re-evaluate within the interval" do
         breaker = create(:dispatch_circuit_breaker, account: account,
           last_evaluated_at: 10.seconds.ago)
+        run = create(:agent_run)
         project = create(:project, account: account)
         create_active_runner(account, runner_key: "claude_code")
         15.times do
@@ -331,7 +365,7 @@ RSpec.describe AgentRuns::DispatchCircuitBreaker do
             completed_at: 5.minutes.ago)
         end
 
-        described_class.record_outcome!(account: account, runner_name: "claude", success: false)
+        described_class.record_outcome!(account: account, success: false, agent_run_id: run.id)
 
         expect(breaker.reload).to be_circuit_closed
       end
