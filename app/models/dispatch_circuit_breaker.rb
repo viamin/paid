@@ -9,6 +9,7 @@ class DispatchCircuitBreaker < ApplicationRecord
   DEFAULT_PROBE_INTERVAL_MINUTES = 5
   DEFAULT_HALF_OPEN_SUCCESS_THRESHOLD = 2
   DEFAULT_HALF_OPEN_FAILURE_THRESHOLD = 2
+  DEFAULT_EVALUATION_INTERVAL_MINUTES = 1
 
   belongs_to :account
 
@@ -140,6 +141,14 @@ class DispatchCircuitBreaker < ApplicationRecord
     end
   end
 
+  def evaluation_due?
+    last_evaluated_at.nil? || last_evaluated_at < evaluation_interval_seconds.seconds.ago
+  end
+
+  def record_evaluation!
+    update_columns(last_evaluated_at: Time.current)
+  end
+
   def mark_probe_dispatched!
     update!(last_probe_at: Time.current)
   end
@@ -162,6 +171,12 @@ class DispatchCircuitBreaker < ApplicationRecord
     settings = account.tenant_setting
     (settings&.effective_agent_settings&.dig("dispatch_circuit_breaker_probe_interval_minutes") ||
       DEFAULT_PROBE_INTERVAL_MINUTES).to_i * 60
+  end
+
+  def evaluation_interval_seconds
+    settings = account.tenant_setting
+    (settings&.effective_agent_settings&.dig("dispatch_circuit_breaker_evaluation_interval_minutes") ||
+      DEFAULT_EVALUATION_INTERVAL_MINUTES).to_i * 60
   end
 
   def half_open_success_threshold

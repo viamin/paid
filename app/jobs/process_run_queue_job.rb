@@ -203,15 +203,14 @@ class ProcessRunQueueJob < ApplicationJob
     account = agent_run.project.account
     return false if blocked_account_dispatch_ids.include?(account.id)
 
-    breaker = ::DispatchCircuitBreaker.for_account(account)
-    unless breaker&.persisted? && breaker.circuit_state != "closed"
-      return false
-    end
+    service = ::AgentRuns::DispatchCircuitBreaker.new(account)
+    decision = service.probe_decision
 
-    breaker.check_recovery! if breaker.circuit_open?
-
-    if breaker.probe_allowed?
-      breaker.mark_probe_dispatched!
+    case decision
+    when :dispatch
+      false
+    when :allow_probe
+      service.mark_probe_dispatched!
       Rails.logger.info(
         message: "process_run_queue.dispatch_probe",
         agent_run_id: agent_run.id,
@@ -223,8 +222,7 @@ class ProcessRunQueueJob < ApplicationJob
       Rails.logger.info(
         message: "process_run_queue.dispatch_halted",
         agent_run_id: agent_run.id,
-        account_id: account.id,
-        circuit_state: breaker.circuit_state
+        account_id: account.id
       )
       true
     end

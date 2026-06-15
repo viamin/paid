@@ -210,4 +210,39 @@ RSpec.describe DispatchCircuitBreaker do
       expect(breaker).to be_halted
     end
   end
+
+  describe "#evaluation_due?" do
+    it "returns true when last_evaluated_at is nil" do
+      breaker = build(:dispatch_circuit_breaker, last_evaluated_at: nil)
+      expect(breaker).to be_evaluation_due
+    end
+
+    it "returns false when last_evaluated_at is within the evaluation interval" do
+      breaker = build(:dispatch_circuit_breaker, last_evaluated_at: 10.seconds.ago)
+      expect(breaker).not_to be_evaluation_due
+    end
+
+    it "returns true when last_evaluated_at is older than the evaluation interval" do
+      breaker = build(:dispatch_circuit_breaker, last_evaluated_at: 10.minutes.ago)
+      expect(breaker).to be_evaluation_due
+    end
+  end
+
+  describe "#record_evaluation!" do
+    it "stamps last_evaluated_at to the current time" do
+      breaker = create(:dispatch_circuit_breaker)
+
+      breaker.record_evaluation!
+
+      expect(breaker.reload.last_evaluated_at).to be_within(1.second).of(Time.current)
+    end
+
+    it "does not change circuit_state" do
+      breaker = create(:dispatch_circuit_breaker)
+
+      breaker.record_evaluation!
+
+      expect(breaker.reload).to be_circuit_closed
+    end
+  end
 end

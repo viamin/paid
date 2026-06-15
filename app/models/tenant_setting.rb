@@ -38,7 +38,8 @@ class TenantSetting < ApplicationRecord
     "dispatch_circuit_breaker_recovery_timeout_minutes" => 5,
     "dispatch_circuit_breaker_probe_interval_minutes" => 5,
     "dispatch_circuit_breaker_half_open_success_threshold" => 2,
-    "dispatch_circuit_breaker_half_open_failure_threshold" => 2
+    "dispatch_circuit_breaker_half_open_failure_threshold" => 2,
+    "dispatch_circuit_breaker_evaluation_interval_minutes" => 1
   }.freeze
   DEFAULT_DEPLOYMENT_ASSURANCE = {
     "deployment_model" => "managed_cloud",

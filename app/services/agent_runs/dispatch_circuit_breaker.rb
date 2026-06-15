@@ -14,18 +14,8 @@ module AgentRuns
       new(account).evaluate!
     end
 
-    def self.allow_probe?(account)
-      breaker = ::DispatchCircuitBreaker.for_account(account)
-      return false unless breaker&.persisted?
-      return false unless breaker.circuit_half_open?
-
-      breaker.check_recovery! if breaker.circuit_open?
-      breaker.probe_allowed?
-    end
-
-    def self.mark_probe_dispatched!(account)
-      breaker = ::DispatchCircuitBreaker.for_account(account)
-      breaker&.mark_probe_dispatched! if breaker&.persisted?
+    def self.probe_decision(account)
+      new(account).probe_decision
     end
 
     def initialize(account)
@@ -37,9 +27,32 @@ module AgentRuns
 
       breaker = breaker_record
       return false unless breaker&.persisted?
+      return false if breaker.circuit_closed?
 
       breaker.check_recovery! if breaker.circuit_open?
       breaker.halted?
+    end
+
+    # Returns a probe decision for the dispatch loop:
+    #   :allow_probe  — half_open and a probe run should be dispatched (and recorded as such)
+    #   :dispatch     — closed (no halt, dispatch normally)
+    #   :halt         — open/half_open with no probe allowed
+    def probe_decision
+      return :dispatch unless enabled?
+
+      breaker = breaker_record
+      return :dispatch unless breaker&.persisted?
+      return :dispatch if breaker.circuit_closed?
+
+      breaker.check_recovery! if breaker.circuit_open?
+      breaker.probe_allowed? ? :allow_probe : :halt
+    end
+
+    def mark_probe_dispatched!
+      breaker = breaker_record
+      return unless breaker&.persisted?
+
+      breaker.mark_probe_dispatched!
     end
 
     def record_outcome!(runner_name:, success:)
@@ -53,7 +66,7 @@ module AgentRuns
         else
           breaker.record_half_open_failure!
         end
-      elsif breaker.circuit_closed?
+      elsif breaker.circuit_closed? && breaker.evaluation_due?
         evaluate!
       end
     end
@@ -61,11 +74,14 @@ module AgentRuns
     def evaluate!
       return unless enabled?
 
-      stats = provider_failure_stats
-      return unless all_providers_failing?(stats)
-
       breaker = breaker_record!
-      return if breaker.circuit_open?
+      return unless breaker.circuit_closed?
+      return unless breaker.evaluation_due?
+
+      stats = provider_failure_stats
+      breaker.record_evaluation!
+
+      return unless all_providers_failing?(stats)
 
       breaker.trip!(metadata: {
         failure_rate: stats[:overall_failure_rate],
@@ -121,7 +137,9 @@ module AgentRuns
 
     def provider_failure_stats
       since = window_minutes.minutes.ago
-      failure_list = AgentRun::FAILURE_STATUSES.map { "'#{_1}'" }.join(", ")
+      failure_filter = AgentRun.sanitize_sql_array(
+        [ "status IN (?)", AgentRun::FAILURE_STATUSES ]
+      )
 
       runs = AgentRun.joins(:project)
         .where(projects: { account_id: account.id })
@@ -133,7 +151,7 @@ module AgentRuns
           <<~SQL.squish
             final_runner,
             COUNT(*) AS total_count,
-            COUNT(*) FILTER (WHERE status IN (#{failure_list})) AS failure_count
+            COUNT(*) FILTER (WHERE #{failure_filter}) AS failure_count
           SQL
         )
 
