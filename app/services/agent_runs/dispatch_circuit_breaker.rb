@@ -135,6 +135,8 @@ module AgentRuns
         ::DispatchCircuitBreaker::DEFAULT_MIN_RUNS).to_i
     end
 
+    PROVIDER_OUTCOME_STATUSES = (AgentRun::FAILURE_STATUSES + %w[completed no_output]).freeze
+
     def provider_failure_stats
       since = window_minutes.minutes.ago
       failure_filter = AgentRun.sanitize_sql_array(
@@ -145,7 +147,7 @@ module AgentRuns
         .where(projects: { account_id: account.id })
         .where.not(final_runner: [ nil, "" ])
         .where(completed_at: since..)
-        .where(status: AgentRun::FINISHED_STATUSES)
+        .where(status: PROVIDER_OUTCOME_STATUSES)
         .group(:final_runner)
         .select(
           <<~SQL.squish
@@ -155,7 +157,9 @@ module AgentRuns
           SQL
         )
 
-      providers = {}
+      active_runner_keys = active_runner_keys_for_account
+      runner_key_by_id = active_runner_keys_by_id
+      providers_by_runner_key = {}
       total_runs = 0
       total_failures = 0
 
@@ -165,7 +169,20 @@ module AgentRuns
         total_runs += total
         total_failures += failures
 
-        providers[run.final_runner] = {
+        runner_key = resolve_runner_key(run.final_runner, runner_key_by_id: runner_key_by_id,
+          active_runner_keys: active_runner_keys)
+        next if runner_key.blank?
+
+        existing = providers_by_runner_key[runner_key] || { total: 0, failures: 0 }
+        existing[:total] += total
+        existing[:failures] += failures
+        providers_by_runner_key[runner_key] = existing
+      end
+
+      providers = providers_by_runner_key.transform_values do |provider_stats|
+        total = provider_stats[:total]
+        failures = provider_stats[:failures]
+        {
           total: total,
           failures: failures,
           failure_rate: total > 0 ? failures.to_f / total : 0.0
@@ -174,6 +191,7 @@ module AgentRuns
 
       {
         providers: providers,
+        active_runner_keys: active_runner_keys,
         total_runs: total_runs,
         total_failures: total_failures,
         overall_failure_rate: total_runs > 0 ? total_failures.to_f / total_runs : 0.0
@@ -181,11 +199,57 @@ module AgentRuns
     end
 
     def all_providers_failing?(stats)
+      active_runner_keys = stats[:active_runner_keys] || []
+      return false if active_runner_keys.empty?
       return false if stats[:total_runs] < min_runs
-      return false if stats[:providers].empty?
 
-      stats[:providers].all? do |_runner, provider_stats|
+      observed_keys = stats[:providers].keys
+      return false unless active_runner_keys.all? { |key| observed_keys.include?(key) }
+
+      stats[:providers].all? do |runner_key, provider_stats|
+        next false unless active_runner_keys.include?(runner_key)
+
         provider_stats[:failure_rate] >= failure_rate_threshold
+      end
+    end
+
+    # The set of runner_keys currently enabled for agent runs across the
+    # account's users. Used to require evidence for every active provider
+    # before tripping the account-wide breaker.
+    def active_runner_keys_for_account
+      Runner.kept_only.for_agent_runs
+        .joins(:user)
+        .where(users: { account_id: account.id })
+        .distinct
+        .pluck(:runner_key)
+        .compact
+        .reject(&:blank?)
+        .uniq
+    end
+
+    def active_runner_keys_by_id
+      Runner.kept_only.for_agent_runs
+        .joins(:user)
+        .where(users: { account_id: account.id })
+        .pluck(:id, :runner_key)
+        .to_h
+    end
+
+    def resolve_runner_key(identifier, runner_key_by_id:, active_runner_keys:)
+      if Runner.routing_key?(identifier)
+        runner_key_by_id[Runner.id_from_routing_key(identifier)]
+      elsif active_runner_keys.include?(identifier)
+        identifier
+      else
+        # Legacy AgentRun.final_runner values may hold the agent_type
+        # (e.g. "claude_code") rather than a runner_key (e.g. "claude").
+        # Normalize through RunnerSupport so the breaker can still reason
+        # about which provider the run ultimately completed on.
+        normalized = RunnerSupport.runner_key_for_agent_type(identifier)
+        return nil if normalized == identifier
+        return nil unless active_runner_keys.include?(normalized)
+
+        normalized
       end
     end
   end

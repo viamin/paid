@@ -5,6 +5,34 @@ require "rails_helper"
 RSpec.describe AgentRuns::DispatchCircuitBreaker do
   let(:account) { create(:account) }
 
+  # The service keys providers by Runner#runner_key, but AgentRun#final_runner
+  # stores the agent_type (e.g. "claude_code"). Tests use that convention and
+  # the resolver normalizes legacy agent_type identifiers through
+  # RunnerSupport.runner_key_for_agent_type; for routing_key identifiers it
+  # looks up the owning Runner by id. So we configure each active Runner with
+  # the canonical settings-level runner_key whose agent_type is used as
+  # final_runner in the AgentRun records.
+  AGENT_TYPE_TO_RUNNER_KEY = {
+    "claude_code" => "claude",
+    "opencode" => "opencode"
+  }.freeze
+
+  def create_active_runner(account, runner_key:, auth_type: "subscription", user: nil)
+    # User#ensure_default_runner auto-creates a default subscription runner
+    # for every new user (in CI, "claude"). The model enforces uniqueness
+    # on (user_id, auth_type, runner_key) for kept subscription runners, so
+    # adding a second "claude" subscription to the same user is impossible.
+    # For the default runner_key, just reuse the auto-created runner —
+    # it's already enabled for agent runs and is what production accounts
+    # start with. For any other runner_key, install a fresh subscription
+    # runner on the user so it appears in the account's active runner set.
+    settings_runner_key = AGENT_TYPE_TO_RUNNER_KEY.fetch(runner_key, runner_key)
+    owner = user || create(:user, account: account)
+    return owner.runners.kept_only.find_by!(runner_key: settings_runner_key) if settings_runner_key == Runner.default_runner_key
+    create(:runner, user: owner, runner_key: settings_runner_key, auth_type: auth_type,
+      enabled_for_agent_runs: true)
+  end
+
   describe ".halted?" do
     it "returns false when no breaker exists" do
       expect(described_class.halted?(account)).to be false
@@ -39,8 +67,9 @@ RSpec.describe AgentRuns::DispatchCircuitBreaker do
 
     it "does not trip when fewer than min_runs" do
       project = create(:project, account: account)
+      create_active_runner(account, runner_key: "claude_code")
       5.times do
-        create(:agent_run, :failed, project: project, final_runner: "claude_code",
+        create(:agent_run, :failed, project: project, final_runner: "claude",
           completed_at: 5.minutes.ago)
       end
 
@@ -53,8 +82,10 @@ RSpec.describe AgentRuns::DispatchCircuitBreaker do
 
     it "does not trip when only some providers are failing" do
       project = create(:project, account: account)
+      create_active_runner(account, runner_key: "claude_code")
+      create_active_runner(account, runner_key: "opencode")
       10.times do
-        create(:agent_run, :failed, project: project, final_runner: "claude_code",
+        create(:agent_run, :failed, project: project, final_runner: "claude",
           completed_at: 5.minutes.ago)
       end
       10.times do
@@ -69,10 +100,61 @@ RSpec.describe AgentRuns::DispatchCircuitBreaker do
       expect(breaker).to be_circuit_closed
     end
 
-    it "trips when all providers exceed failure threshold" do
+    it "does not count cancelled or retried runs toward failure rate" do
       project = create(:project, account: account)
+      create_active_runner(account, runner_key: "claude_code")
+      8.times do
+        create(:agent_run, :failed, project: project, final_runner: "claude",
+          completed_at: 5.minutes.ago)
+      end
+      # cancelled and retried are not real provider outcomes and must not
+      # dilute the failure-rate denominator. With 8 fails / 8 provider outcomes
+      # the rate is 1.0 (above 0.8 threshold) and the breaker trips.
+      4.times do
+        create(:agent_run, :cancelled, project: project, final_runner: "claude",
+          completed_at: 5.minutes.ago)
+      end
+      4.times do
+        create(:agent_run, :retried, project: project, final_runner: "claude",
+          completed_at: 5.minutes.ago)
+      end
+
+      described_class.evaluate!(account)
+
+      breaker = DispatchCircuitBreaker.for_account(account)
+      expect(breaker).to be_circuit_open
+    end
+
+    it "does not trip when cancelled/retried runs would dilute failure rate" do
+      project = create(:project, account: account)
+      create_active_runner(account, runner_key: "claude_code")
+      # 8 fails + 12 completed → real failure rate 0.4, well below 0.8
+      8.times do
+        create(:agent_run, :failed, project: project, final_runner: "claude",
+          completed_at: 5.minutes.ago)
+      end
+      12.times do
+        create(:agent_run, :completed, project: project, final_runner: "claude",
+          completed_at: 5.minutes.ago)
+      end
+      # Adding non-provider outcomes must not push the rate above the threshold
+      5.times do
+        create(:agent_run, :cancelled, project: project, final_runner: "claude",
+          completed_at: 5.minutes.ago)
+      end
+
+      described_class.evaluate!(account)
+
+      breaker = DispatchCircuitBreaker.for_account(account)
+      expect(breaker).to be_circuit_closed
+    end
+
+    it "trips when all active providers exceed failure threshold" do
+      project = create(:project, account: account)
+      create_active_runner(account, runner_key: "claude_code")
+      create_active_runner(account, runner_key: "opencode")
       10.times do
-        create(:agent_run, :failed, project: project, final_runner: "claude_code",
+        create(:agent_run, :failed, project: project, final_runner: "claude",
           completed_at: 5.minutes.ago)
       end
       10.times do
@@ -88,6 +170,92 @@ RSpec.describe AgentRuns::DispatchCircuitBreaker do
       expect(breaker.trip_metadata["total_runs"]).to eq(20)
     end
 
+    it "trips using routing_key identifiers mapped back to runner_key" do
+      project = create(:project, account: account)
+      runner = create_active_runner(account, runner_key: "claude_code")
+      routing_key = runner.routing_key
+      12.times do
+        create(:agent_run, :failed, project: project, final_runner: routing_key,
+          completed_at: 5.minutes.ago)
+      end
+
+      described_class.evaluate!(account)
+
+      breaker = DispatchCircuitBreaker.for_account(account)
+      expect(breaker).to be_circuit_open
+    end
+
+    it "normalizes legacy agent_type final_runner values back to runner_key" do
+      project = create(:project, account: account)
+      create_active_runner(account, runner_key: "claude_code")
+      # "claude_code" is the agent_type, which RunnerSupport maps to "claude"
+      12.times do
+        create(:agent_run, :failed, project: project, final_runner: "claude_code",
+          completed_at: 5.minutes.ago)
+      end
+
+      described_class.evaluate!(account)
+
+      breaker = DispatchCircuitBreaker.for_account(account)
+      expect(breaker).to be_circuit_open
+    end
+
+    it "does not trip when an active provider has no recent traffic" do
+      project = create(:project, account: account)
+      create_active_runner(account, runner_key: "claude_code")
+      create_active_runner(account, runner_key: "opencode")
+      # Only claude has recent traffic and it's failing
+      12.times do
+        create(:agent_run, :failed, project: project, final_runner: "claude",
+          completed_at: 5.minutes.ago)
+      end
+
+      described_class.evaluate!(account)
+
+      breaker = DispatchCircuitBreaker.for_account(account)
+      expect(breaker).to be_persisted
+      expect(breaker).to be_circuit_closed
+    end
+
+    it "does not trip when account has no active runners" do
+      # Expose the "no active runners" code path by ensuring the account
+      # has zero `for_agent_runs` rows: don't create a project (which
+      # would auto-install a `created_by` user, and that user would
+      # auto-install a "claude" subscription runner). AgentRun records
+      # aren't required for this test — the breaker should short-circuit
+      # on the empty active_runner_keys set before querying runs.
+      20.times do
+        project = build_stubbed(:project, account: account)
+        build_stubbed(:agent_run, :failed, project: project, final_runner: "claude",
+          completed_at: 5.minutes.ago)
+      end
+
+      described_class.evaluate!(account)
+
+      breaker = DispatchCircuitBreaker.for_account(account)
+      expect(breaker).to be_persisted
+      expect(breaker).to be_circuit_closed
+    end
+
+    it "does not trip when final_runner is a routing_key for a runner outside the account" do
+      other_account = create(:account)
+      other_runner = create_active_runner(other_account, runner_key: "claude_code")
+      routing_key = other_runner.routing_key
+
+      project = create(:project, account: account)
+      create_active_runner(account, runner_key: "opencode")
+      12.times do
+        create(:agent_run, :failed, project: project, final_runner: routing_key,
+          completed_at: 5.minutes.ago)
+      end
+
+      described_class.evaluate!(account)
+
+      breaker = DispatchCircuitBreaker.for_account(account)
+      expect(breaker).to be_persisted
+      expect(breaker).to be_circuit_closed
+    end
+
     it "skips the query when circuit is already open" do
       breaker = create(:dispatch_circuit_breaker, :open, account: account)
       original_opened_at = breaker.circuit_opened_at
@@ -99,8 +267,9 @@ RSpec.describe AgentRuns::DispatchCircuitBreaker do
 
     it "is debounced by the last_evaluated_at interval" do
       project = create(:project, account: account)
+      create_active_runner(account, runner_key: "claude_code")
       15.times do
-        create(:agent_run, :failed, project: project, final_runner: "claude_code",
+        create(:agent_run, :failed, project: project, final_runner: "claude",
           completed_at: 5.minutes.ago)
       end
 
@@ -141,12 +310,13 @@ RSpec.describe AgentRuns::DispatchCircuitBreaker do
       it "evaluates whether to trip on failure" do
         breaker = create(:dispatch_circuit_breaker, account: account)
         project = create(:project, account: account)
+        create_active_runner(account, runner_key: "claude_code")
         15.times do
-          create(:agent_run, :failed, project: project, final_runner: "claude_code",
+          create(:agent_run, :failed, project: project, final_runner: "claude",
             completed_at: 5.minutes.ago)
         end
 
-        described_class.record_outcome!(account: account, runner_name: "claude_code", success: false)
+        described_class.record_outcome!(account: account, runner_name: "claude", success: false)
 
         expect(breaker.reload).to be_circuit_open
       end
@@ -155,12 +325,13 @@ RSpec.describe AgentRuns::DispatchCircuitBreaker do
         breaker = create(:dispatch_circuit_breaker, account: account,
           last_evaluated_at: 10.seconds.ago)
         project = create(:project, account: account)
+        create_active_runner(account, runner_key: "claude_code")
         15.times do
-          create(:agent_run, :failed, project: project, final_runner: "claude_code",
+          create(:agent_run, :failed, project: project, final_runner: "claude",
             completed_at: 5.minutes.ago)
         end
 
-        described_class.record_outcome!(account: account, runner_name: "claude_code", success: false)
+        described_class.record_outcome!(account: account, runner_name: "claude", success: false)
 
         expect(breaker.reload).to be_circuit_closed
       end
