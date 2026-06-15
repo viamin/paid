@@ -99,6 +99,58 @@ RSpec.describe RunnerSmokeHelpers do
       expect(runner.opencode_model_id).to eq("MiniMax-M2.7")
       expect(runner.provider_api_key.api_service_type).to eq("minimax")
     end
+
+    it "builds Pi Google runners with the Pi-specific provider config" do
+      pi_scenario = described_class::Scenario.new(
+        name: "pi-google",
+        runner_key: "pi",
+        auth_type: "api_key",
+        api_provider: "google",
+        model_env: "PAID_SMOKE_PI_GOOGLE_MODEL",
+        default_model: "gemini-2.5-pro",
+        label: "Pi with Google API key"
+      )
+      allow(described_class).to receive(:development_runner_info_for).with(pi_scenario).and_return(
+        { "api_key" => "sk-gemini-test" }
+      )
+
+      runner = described_class.build_direct_outbound_runner!(user: user, scenario: pi_scenario)
+
+      expect(runner.runner_key).to eq("pi")
+      expect(runner.pi_api_provider).to eq("google")
+      expect(runner.pi_model_id).to eq("gemini-2.5-pro")
+      expect(runner.provider_api_key.api_service_type).to eq("google")
+    end
+
+    it "rejects providers that are unsupported for the selected runner" do
+      pi_scenario = described_class::Scenario.new(
+        name: "pi-zai-coding",
+        runner_key: "pi",
+        auth_type: "api_key",
+        api_provider: "zai_coding",
+        model_env: "PAID_SMOKE_PI_ZAI_CODING_MODEL",
+        default_model: "glm-5.2",
+        label: "Pi with z.ai coding API key"
+      )
+
+      expect { described_class.build_direct_outbound_runner!(user: user, scenario: pi_scenario) }
+        .to raise_error(
+          RunnerSmokeHelpers::ScenarioUnavailableError,
+          /Unsupported pi api provider "zai_coding"/
+        )
+    end
+  end
+
+  describe ".api_key_env_var_for" do
+    it "uses the Pi provider override for Google Gemini" do
+      expect(described_class.api_key_env_var_for(runner_key: "pi", api_provider: "google"))
+        .to eq("GEMINI_API_KEY")
+    end
+
+    it "uses the direct-outbound provider override for MiniMax" do
+      expect(described_class.api_key_env_var_for(runner_key: "opencode", api_provider: "minimax"))
+        .to eq("ANTHROPIC_API_KEY")
+    end
   end
 
   describe ".current_enabled_scenario_names" do
