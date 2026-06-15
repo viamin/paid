@@ -67,5 +67,63 @@ RSpec.describe Runners::ResolveTierModel do
       expect(result).to be_failure
       expect(result.error).to eq("no model configured for #{runner_key} at high")
     end
+
+    context "when the runner tier mapping specifies a CLI-version-gated model" do
+      before do
+        runner.update_columns(tier_models: {
+          "mid" => { "model_id" => "gpt-5.5", "provider_id" => 99 }
+        })
+      end
+
+      it "fails and includes the incompatibility reason" do
+        result = described_class.call(runner: runner, tier: "mid", user: user)
+
+        expect(result).to be_failure
+        expect(result.error).to include("gpt-5.5")
+        expect(result.error).to include("not compatible")
+      end
+
+      it "logs the incompatibility with structured fields" do
+        allow(Rails.logger).to receive(:warn)
+        described_class.call(runner: runner, tier: "mid", user: user)
+
+        expect(Rails.logger).to have_received(:warn).with(
+          hash_including(
+            message: "model_selection.incompatible_model_candidate",
+            runner_key: "codex",
+            model_id: "gpt-5.5",
+            incompatibility_type: :cli_version_gated
+          )
+        )
+      end
+
+      it "checks compatibility once per candidate" do
+        expect(Runners::ModelCompatibility).to receive(:call).once.and_call_original
+
+        described_class.call(runner: runner, tier: "mid", user: user)
+      end
+    end
+
+    context "when the runner tier mapping specifies a compatible model" do
+      before do
+        runner.update_columns(tier_models: {
+          "mid" => { "model_id" => "gpt-5.4", "provider_id" => 99 }
+        })
+        create(:llm_model, :openai, model_id: "gpt-5.4")
+      end
+
+      it "returns success" do
+        result = described_class.call(runner: runner, tier: "mid", user: user)
+
+        expect(result).to be_success
+        expect(result.model_id).to eq("gpt-5.4")
+      end
+
+      it "checks compatibility once per candidate" do
+        expect(Runners::ModelCompatibility).to receive(:call).once.and_call_original
+
+        described_class.call(runner: runner, tier: "mid", user: user)
+      end
+    end
   end
 end
