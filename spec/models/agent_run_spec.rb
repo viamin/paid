@@ -3100,6 +3100,7 @@ RSpec.describe AgentRun do
 
       it "invalidates runner option caches when model-driven display names change" do
         project = create(:project)
+        create(:llm_model, model_id: "moonshotai/kimi-k2-0906", provider: "openrouter", tier: "mid")
         runner = create(
           :runner,
           user: project.effective_owner,

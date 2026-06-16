@@ -162,6 +162,7 @@ class Runner < ApplicationRecord
   validate :kilocode_api_key_config_must_be_valid
   validate :aider_api_key_config_must_be_valid
   validate :pi_api_key_config_must_be_valid
+  validate :direct_outbound_config_models_must_exist_in_catalog
   validate :openrouter_free_requires_api_key_auth
   validate :tier_model_ids_must_be_valid
   validate :tier_model_ids_must_be_runner_compatible
@@ -548,23 +549,14 @@ class Runner < ApplicationRecord
     model_id = direct_outbound_model_id
     raise ArgumentError, "No direct-outbound model configured" if model_id.blank?
 
-    provider_slug = direct_outbound_llm_model_provider || "unknown"
-    tier = DIRECT_OUTBOUND_MODEL_TIER_HINTS[model_id] || "mid"
+    model = find_direct_outbound_catalog_model(model_id)
+    raise ArgumentError, "Direct-outbound model #{model_id.inspect} is not present in the catalog" if model.blank?
 
-    model = LlmModel.find_or_create_by!(model_id: model_id) do |m|
-      m.display_name = direct_outbound_display_name(model_id)
-      m.provider = provider_slug
-      m.category = "coding"
-      m.tier = tier
-      m.active = true
-    end
     # Reactivate if an existing row was returned inactive — model selection
     # resolves via LlmModel.active so an inactive record would silently
     # fall back to the global pool.
-    model.update!(active: true, provider: provider_slug, tier: tier) unless model.active?
+    model.update!(active: true) unless model.active?
     model
-  rescue ActiveRecord::RecordNotUnique
-    LlmModel.find_by!(model_id: model_id)
   end
 
   # Returns the runner key that must always exist and remain enabled for
@@ -581,8 +573,15 @@ class Runner < ApplicationRecord
     return unless key
 
     relation = user.runners.kept_only
+    deadlock_retries = 0
 
     relation.find_or_create_by!(runner_key: key, auth_type: "subscription")
+  rescue ActiveRecord::Deadlocked
+    deadlock_retries += 1
+    raise if deadlock_retries > 3
+
+    sleep(0.01 * deadlock_retries)
+    retry
   rescue ActiveRecord::RecordNotUnique => e
     if primary_key_conflict?(e)
       connection.reset_pk_sequence!(table_name)
@@ -1317,6 +1316,24 @@ class Runner < ApplicationRecord
     end
   end
 
+  def direct_outbound_config_models_must_exist_in_catalog
+    return unless direct_outbound_capable_runner?
+
+    model_id = direct_outbound_model_id
+    return if model_id.blank?
+
+    model = find_direct_outbound_catalog_model(model_id)
+    if model.blank?
+      errors.add(:config, "must include a #{direct_outbound_runner_label} model id present in the model catalog")
+      return
+    end
+
+    expected_provider = direct_outbound_llm_model_provider
+    return if expected_provider.blank? || model.provider == expected_provider
+
+    errors.add(:config, "must include a #{direct_outbound_runner_label} model from the #{RunnerSupport.api_service_type_label(expected_provider)} catalog")
+  end
+
   def required_api_service_type
     return opencode_required_api_service_type if runner_key == "opencode"
     return kilocode_required_api_service_type if runner_key == "kilocode"
@@ -1363,6 +1380,40 @@ class Runner < ApplicationRecord
     runner_key == "openrouter_free" &&
       api_key? &&
       required_api_service_type == "openrouter"
+  end
+
+  def direct_outbound_runner_label
+    case runner_key
+    when "opencode" then "OpenCode"
+    when "kilocode" then "KiloCode"
+    when "aider" then "Aider"
+    when "pi" then "Pi"
+    else runner_key.to_s
+    end
+  end
+
+  def find_direct_outbound_catalog_model(model_id)
+    direct_outbound_catalog_model_id_candidates(model_id)
+      .lazy
+      .map { |candidate| LlmModel.find_by(model_id: candidate) }
+      .find(&:present?)
+  end
+
+  def direct_outbound_catalog_model_id_candidates(model_id)
+    candidates = [ model_id.to_s ]
+    provider_prefix = direct_outbound_catalog_provider_prefix
+
+    if provider_prefix.present? && model_id.start_with?("#{provider_prefix}/")
+      candidates << model_id.delete_prefix("#{provider_prefix}/")
+    end
+
+    candidates.uniq
+  end
+
+  def direct_outbound_catalog_provider_prefix
+    return DIRECT_OUTBOUND_API_PROVIDERS.dig(opencode_api_provider, :opencode_model_provider) if runner_key == "opencode"
+
+    direct_outbound_llm_model_provider
   end
 
   def opencode_runner_runtime
