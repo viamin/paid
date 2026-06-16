@@ -11,6 +11,7 @@ RSpec.describe ApplicationJob, :no_db do
         AutoReleaseEvaluationJob
         DependabotAutoMergeJob
         DiagnoseErrorJob
+        DispatchCircuitBreakerOutcomeJob
         FailureRecoveryDecisionJob
         GithubTokenValidationJob
         HandleExceptionJob
@@ -28,6 +29,7 @@ RSpec.describe ApplicationJob, :no_db do
         AgentRunResourceJanitorJob
         AuditEventRetentionJob
         DependencyBackfillJob
+        DispatchCircuitBreakerRecoveryJob
         DockerOrphanCleanupJob
         GithubTokenHealthCheckJob
         KnowledgeAuditRetentionJob
