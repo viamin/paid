@@ -6,8 +6,9 @@ module Issues
   #
   # Responsibilities kept here (orchestration):
   # - Running the pure-policy strategy and executing the resulting
-  #   decision — resolving a runnable runner and creating the queued
-  #   {AgentRun}.
+  #   decision — creating the queued {AgentRun} with the run's intended
+  #   agent_type, and leaving +runner_id+ nil so the queue processor can
+  #   late-bind a runnable runner at dequeue time (#2563).
   # - Race-safe handling of the +idx_agent_runs_unique_active_issue+
   #   unique index (returning the run created by a competing picker) and
   #   structured logging of the selection/dedup outcome.
@@ -17,11 +18,8 @@ module Issues
   # future work-item provider can plug in without changing this service.
   #
   # Returns the created (or existing) {AgentRun}, or +nil+ when no
-  # eligible issue is found, guards defer the pick, or no runnable
-  # runner can be resolved.
+  # eligible issue is found or the guards defer the pick.
   class AutoPick
-    NoRunnableRunnerError = Class.new(StandardError)
-
     PAID_READY_LABEL = "paid-ready"
 
     # Returns the Set of issue IDs from +displayed_issues+ that are
@@ -94,13 +92,6 @@ module Issues
         )
         nil
       end
-    rescue NoRunnableRunnerError => e
-      Rails.logger.warn(
-        message: "auto_pick.no_runnable_runner",
-        project_id: @project.id,
-        error: e.message
-      )
-      nil
     end
 
     private
@@ -113,25 +104,18 @@ module Issues
     end
 
     def create_agent_run(issue, goal: "create_pr")
-      runner = resolve_runner(goal)
-      raise NoRunnableRunnerError, "No runnable runner could be resolved for this project." unless runner
-
       AgentRun.create!(
         project: @project,
         issue: issue,
         initiating_user: nil,
-        runner: runner,
-        agent_type: Runner.agent_type_for(runner.runner_key),
+        agent_type: RunnerSupport.intended_agent_type(
+          preferred_agent_type: @project.model_preferences["preferred_agent_type"]
+        ),
         status: "queued",
         trigger_type: "automatic",
         auto_pick: true,
         goal: goal
       )
-    end
-
-    def resolve_runner(goal)
-      runner_id, = AgentRuns::RunnerResolver.call(project: @project, goal: goal)
-      Runner.kept_only.find_by(id: runner_id) if runner_id
     end
   end
 end

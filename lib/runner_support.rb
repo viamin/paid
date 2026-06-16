@@ -109,6 +109,22 @@ module RunnerSupport
     runner_key.to_s
   end
 
+  # Returns the intended agent_type for a queued run that has no pinned
+  # runner (Runner-agnostic queue; see #2563). Honors an explicit
+  # +preferred_agent_type+ (from the project's +model_preferences+) when it
+  # is a known agent type, then falls back to the first container-executable
+  # runner's agent_type, then to a stable default. Centralised so the
+  # auto-pick enqueue paths (Issues::AutoPick, Issues::EnqueueEligible) and
+  # the dequeue-time resolver can't drift on the fallback default or the
+  # preferred-type validation.
+  def intended_agent_type(preferred_agent_type: nil)
+    preferred = preferred_agent_type.to_s.presence
+    return preferred if preferred && AgentRun::AGENT_TYPES.include?(preferred)
+
+    first_key = container_executable_runner_keys.first
+    first_key ? agent_type_for(first_key) : "claude_code"
+  end
+
   def harness_lookup_key_for(runner_key)
     APP_RUNNER_TO_HARNESS_KEY.fetch(runner_key.to_s, runner_key.to_s).to_sym
   end
