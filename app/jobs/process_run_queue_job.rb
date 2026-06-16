@@ -115,9 +115,8 @@ class ProcessRunQueueJob < ApplicationJob
           next
         end
 
-        if dispatch_halted?(next_run, blocked_account_dispatch_ids)
-          next
-        end
+        dispatch_decision = dispatch_decision_for(next_run, blocked_account_dispatch_ids)
+        next if dispatch_decision == :halt
 
         if next_run.goal == "create_pr" && !account_has_create_pr_capacity?(next_run.project.account)
           blocked_account_create_pr_ids.add(next_run.project.account_id)
@@ -140,6 +139,12 @@ class ProcessRunQueueJob < ApplicationJob
           # skip capacity accounting and continue processing the queue.
           next
         elsif result
+          # Stamp the half-open probe only after the run was claimed and its
+          # workflow start is known to be proceeding. Stamping earlier would
+          # advance last_probe_at even when the probe never dispatched (lost
+          # claim or failed start), blocking every remaining queued run for
+          # the full probe interval with zero recovery signal.
+          mark_dispatched_probe(agent_run) if dispatch_decision == :allow_probe
           consecutive_failures = 0
           starts_count += 1
           record_started_project_priority(next_run, started_priority_by_project)
@@ -200,36 +205,47 @@ class ProcessRunQueueJob < ApplicationJob
     AgentRun.active_create_pr_count_for_account(account) < account.tenant_max_concurrent_create_pr_runs
   end
 
-  def dispatch_halted?(agent_run, blocked_account_dispatch_ids)
+  # Returns the dispatch circuit-breaker decision for the next queued run:
+  #   :dispatch    — breaker closed; dispatch normally
+  #   :allow_probe  — breaker half-open; this run is a probe candidate, to be
+  #                   recorded only once it has actually dispatched (see below)
+  #   :halt         — breaker open or recently probed; block the run
+  # The decision (rather than a boolean) is returned so the caller can stamp
+  # the probe after the run is claimed and started. Stamping earlier — inside
+  # this check — would advance last_probe_at even when the probe never
+  # dispatched, blocking recovery for the full probe interval.
+  def dispatch_decision_for(agent_run, blocked_account_dispatch_ids)
     account = agent_run.project.account
     # Once an account is halted in this pass, every remaining queued run for
-    # it must stay blocked — returning false here would let the next run bypass
-    # the breaker and dispatch after only a single run was skipped.
-    return true if blocked_account_dispatch_ids.include?(account.id)
+    # it must stay blocked — returning :dispatch here would let the next run
+    # bypass the breaker and dispatch after only a single run was skipped.
+    return :halt if blocked_account_dispatch_ids.include?(account.id)
 
-    service = ::AgentRuns::DispatchCircuitBreaker.new(account)
-    decision = service.probe_decision
+    decision = ::AgentRuns::DispatchCircuitBreaker.probe_decision(account)
 
-    case decision
-    when :dispatch
-      false
-    when :allow_probe
-      service.mark_probe_dispatched!(agent_run_id: agent_run.id)
-      Rails.logger.info(
-        message: "process_run_queue.dispatch_probe",
-        agent_run_id: agent_run.id,
-        account_id: account.id
-      )
-      false
-    else
+    if decision == :halt
       blocked_account_dispatch_ids.add(account.id)
       Rails.logger.info(
         message: "process_run_queue.dispatch_halted",
         agent_run_id: agent_run.id,
         account_id: account.id
       )
-      true
+    elsif decision == :allow_probe
+      Rails.logger.info(
+        message: "process_run_queue.dispatch_probe",
+        agent_run_id: agent_run.id,
+        account_id: account.id
+      )
     end
+    decision
+  end
+
+  # Records the half-open probe on the breaker only after the run was
+  # actually claimed and its workflow start is known to be proceeding.
+  def mark_dispatched_probe(agent_run)
+    ::AgentRuns::DispatchCircuitBreaker
+      .new(agent_run.project.account)
+      .mark_probe_dispatched!(agent_run_id: agent_run.id)
   end
 
   def record_started_project_priority(agent_run, started_priority_by_project)
