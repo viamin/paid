@@ -126,10 +126,17 @@ class DispatchCircuitBreaker < ApplicationRecord
       return false unless circuit_opened_at.present?
       return false unless circuit_opened_at + recovery_timeout_seconds.seconds <= Time.current
 
+      # Clearing last_probe_at matters here: a prior half_open probe leaves
+      # this timestamp behind, and if recovery_timeout_minutes is configured
+      # below probe_interval_minutes the breaker would reach half_open yet
+      # still report probe_allowed? == false until the stale probe interval
+      # elapsed — defeating the recovery-timeout setting. The recovery
+      # timeout itself is the cooldown for the next probe.
       update!(
         circuit_state: "half_open",
         half_open_success_count: 0,
         half_open_failure_count: 0,
+        last_probe_at: nil,
         last_probe_run_id: nil
       )
 

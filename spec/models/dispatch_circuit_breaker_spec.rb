@@ -107,14 +107,38 @@ RSpec.describe DispatchCircuitBreaker do
       expect(breaker.reload).to be_circuit_half_open
     end
 
-    it "clears any leftover last_probe_run_id so the new probe is the only tracked one" do
+    it "clears any leftover probe tracking so the new probe is the only tracked one" do
       stale_probe = create(:agent_run)
       breaker = create(:dispatch_circuit_breaker, :open,
-        circuit_opened_at: 10.minutes.ago, last_probe_run_id: stale_probe.id)
+        circuit_opened_at: 10.minutes.ago,
+        last_probe_at: 1.minute.ago,
+        last_probe_run_id: stale_probe.id)
 
       breaker.check_recovery!
 
-      expect(breaker.reload.last_probe_run_id).to be_nil
+      reloaded = breaker.reload
+      expect(reloaded).to be_circuit_half_open
+      expect(reloaded.last_probe_run_id).to be_nil
+      expect(reloaded.last_probe_at).to be_nil
+    end
+
+    it "allows a probe immediately after recovery even when recovery timeout is shorter than probe interval" do
+      # Regression: a prior half_open probe leaves last_probe_at behind. If
+      # recovery_timeout_minutes < probe_interval_minutes the breaker reached
+      # half_open but probe_allowed? stayed false until the stale probe
+      # interval elapsed, making the recovery-timeout setting ineffective.
+      account = create(:account)
+      create(:tenant_setting, account: account, agent_settings: {
+        "dispatch_circuit_breaker_recovery_timeout_minutes" => 1,
+        "dispatch_circuit_breaker_probe_interval_minutes" => 10
+      })
+      breaker = create(:dispatch_circuit_breaker, :open, account: account,
+        circuit_opened_at: 2.minutes.ago,
+        last_probe_at: 30.seconds.ago)
+
+      breaker.check_recovery!
+
+      expect(breaker.reload).to be_probe_allowed
     end
 
     it "does not transition before timeout" do
