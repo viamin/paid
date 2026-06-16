@@ -119,21 +119,72 @@ class GithubHealthState < ApplicationRecord
 
   # Records a GitHub rate-limit response and persists the reset time so
   # the queue scheduler will pause dispatching until the limit resets.
-  # Best-effort: callers should not let persistence errors mask the
-  # original rate-limit exception.
+  # Also captures the last-observed quota figures so they stay visible on
+  # the dashboard while the limit window is in effect. Best-effort:
+  # callers should not let persistence errors mask the original
+  # rate-limit exception.
   #
   # @param reset_at [Time, nil] When the rate limit resets. Defaults to 60 seconds from now.
-  def mark_rate_limited!(reset_at: nil)
+  # @param remaining [Integer, nil] Remaining requests reported by GitHub.
+  # @param limit [Integer, nil] Total hourly request limit reported by GitHub.
+  def mark_rate_limited!(reset_at: nil, remaining: nil, limit: nil)
     reset_at ||= 60.seconds.from_now
     with_lock do
-      update!(rate_limited_until: reset_at)
+      update!(
+        rate_limited_until: reset_at,
+        rate_limit_remaining: remaining,
+        rate_limit_limit: limit,
+        rate_limit_reset_at: reset_at,
+        rate_limit_observed_at: Time.current
+      )
 
       Rails.logger.warn(
         message: "github_health.rate_limited",
         endpoint: endpoint,
-        rate_limited_until: reset_at.iso8601
+        rate_limited_until: reset_at.iso8601,
+        rate_limit_remaining: remaining,
+        rate_limit_limit: limit
       )
     end
+  end
+
+  # Records the most recently observed GitHub rate-limit quota for this
+  # credential endpoint without treating it as an active limit. Called by
+  # periodic budget probes (e.g. CheckRateLimitActivity) once per poll
+  # cycle so per-installation and per-token usage stays observable on the
+  # dashboard between rate-limit events. Best-effort: persistence errors
+  # are logged and swallowed so a probe never masks the real API result.
+  #
+  # @param remaining [Integer, nil] Remaining requests reported by GitHub.
+  # @param limit [Integer, nil] Total hourly request limit reported by GitHub.
+  # @param reset_at [Time, nil] When the current quota window resets.
+  def record_rate_limit_usage!(remaining:, limit:, reset_at: nil)
+    with_lock do
+      update!(
+        rate_limit_remaining: remaining,
+        rate_limit_limit: limit,
+        rate_limit_reset_at: reset_at,
+        rate_limit_observed_at: Time.current
+      )
+    end
+  rescue => e
+    Rails.logger.warn(
+      message: "github_health.rate_limit_usage_record_failed",
+      endpoint: endpoint,
+      error: e.message
+    )
+  end
+
+  # Percentage (0–100) of the observed quota that has been consumed.
+  # Returns nil when no quota has been sampled or the limit is zero/unknown.
+  def rate_limit_usage_percent
+    return if rate_limit_limit.nil? || rate_limit_limit.zero?
+    return if rate_limit_remaining.nil?
+
+    used = rate_limit_limit - rate_limit_remaining
+    return 0.0 if used <= 0
+
+    (used.to_f / rate_limit_limit) * 100.0
   end
 
   # Transitions from open → half_open after the recovery timeout.

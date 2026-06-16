@@ -4,6 +4,12 @@ module Activities
   # Lightweight activity that checks the GitHub API rate limit remaining
   # for a project. Used by GitHubPollWorkflow to coordinate budget across
   # sequential activities and skip non-critical work when budget is low.
+  #
+  # Because projects resolve to either a GitHub App installation token
+  # (15,000/hr per installation) or a per-account PAT (5,000/hr shared
+  # across projects), this probe also records the observed quota against
+  # the project's credential-scoped health endpoint so per-installation
+  # usage stays observable on the dashboard between rate-limit events.
   class CheckRateLimitActivity < BaseActivity
     activity_name "CheckRateLimit"
 
@@ -20,6 +26,7 @@ module Activities
 
       client = project.client
       remaining = client.rate_limit_remaining
+      record_rate_limit_usage(project, client, remaining)
 
       low = remaining < threshold
 
@@ -28,7 +35,8 @@ module Activities
           message: "rate_limit.budget_low",
           project_id: project_id,
           remaining: remaining,
-          threshold: threshold
+          threshold: threshold,
+          auth_source: project.github_auth_source
         )
       end
 
@@ -37,6 +45,29 @@ module Activities
       raise Temporalio::Error::ApplicationError.new(
         e.message,
         type: "RateLimit"
+      )
+    end
+
+    private
+
+    # Best-effort: persist the sampled quota so the dashboard can show
+    # per-installation / per-token usage. Failures here must not mask the
+    # real probe result returned to the workflow.
+    def record_rate_limit_usage(project, client, remaining)
+      return if remaining.nil?
+
+      GithubHealthState.current(endpoint: project.github_health_endpoint)
+        .record_rate_limit_usage!(
+          remaining: remaining,
+          limit: client.rate_limit_limit,
+          reset_at: client.rate_limit_reset_at
+        )
+    rescue => e
+      logger.warn(
+        message: "rate_limit.usage_record_failed",
+        project_id: project.id,
+        auth_source: project.github_auth_source,
+        error: e.message
       )
     end
   end

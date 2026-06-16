@@ -433,5 +433,70 @@ RSpec.describe GithubHealthState do
 
       expect(described_class.github_available?).to be false
     end
+
+    it "captures the observed remaining/limit quota alongside the reset window" do
+      state = create(:github_health_state)
+      reset_at = 1.hour.from_now
+
+      state.mark_rate_limited!(reset_at: reset_at, remaining: 0, limit: 5000)
+
+      reloaded = state.reload
+      expect(reloaded.rate_limit_remaining).to eq(0)
+      expect(reloaded.rate_limit_limit).to eq(5000)
+      expect(reloaded.rate_limit_reset_at).to be_present
+      expect(reloaded.rate_limit_observed_at).to be_present
+    end
+  end
+
+  describe "#record_rate_limit_usage!" do
+    it "persists the observed remaining, limit, reset and observation time" do
+      state = create(:github_health_state)
+      reset_at = 1.hour.from_now
+
+      state.record_rate_limit_usage!(remaining: 4500, limit: 5000, reset_at: reset_at)
+
+      reloaded = state.reload
+      expect(reloaded.rate_limit_remaining).to eq(4500)
+      expect(reloaded.rate_limit_limit).to eq(5000)
+      expect(reloaded.rate_limit_reset_at).to be_within(1.second).of(reset_at)
+      expect(reloaded.rate_limit_observed_at).to be_present
+    end
+
+    it "does not set the rate-limited unavailable window (records usage, not an active limit)" do
+      state = create(:github_health_state)
+      state.record_rate_limit_usage!(remaining: 4500, limit: 5000, reset_at: 1.hour.from_now)
+
+      expect(state.reload.rate_limited_until).to be_nil
+      expect(described_class.github_available?(endpoint: state.endpoint)).to be true
+    end
+
+    it "swallows persistence errors so a probe never masks the real API result" do
+      state = create(:github_health_state)
+      allow(state).to receive(:update!).and_raise(ActiveRecord::ActiveRecordError, "boom")
+
+      expect { state.record_rate_limit_usage!(remaining: 1, limit: 2) }.not_to raise_error
+    end
+  end
+
+  describe "#rate_limit_usage_percent" do
+    it "returns the percentage of the quota consumed" do
+      state = build(:github_health_state, rate_limit_remaining: 2500, rate_limit_limit: 5000)
+      expect(state.rate_limit_usage_percent).to eq(50.0)
+    end
+
+    it "returns 0 when nothing has been consumed" do
+      state = build(:github_health_state, rate_limit_remaining: 5000, rate_limit_limit: 5000)
+      expect(state.rate_limit_usage_percent).to eq(0.0)
+    end
+
+    it "returns nil when no quota has been sampled" do
+      state = build(:github_health_state)
+      expect(state.rate_limit_usage_percent).to be_nil
+    end
+
+    it "returns nil when the limit is zero or unknown" do
+      state = build(:github_health_state, rate_limit_remaining: 0, rate_limit_limit: 0)
+      expect(state.rate_limit_usage_percent).to be_nil
+    end
   end
 end

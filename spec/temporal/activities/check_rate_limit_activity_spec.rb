@@ -11,6 +11,7 @@ RSpec.describe Activities::CheckRateLimitActivity do
     github_token = instance_double(GithubToken, client: client)
     allow(Project).to receive(:find_by).with(id: project.id).and_return(project)
     allow(project).to receive(:github_token).and_return(github_token)
+    allow(client).to receive_messages(rate_limit_limit: 5000, rate_limit_reset_at: 1.hour.from_now)
   end
 
   describe "#execute" do
@@ -67,6 +68,57 @@ RSpec.describe Activities::CheckRateLimitActivity do
       ))
 
       activity.execute(project_id: project.id)
+    end
+  end
+
+  describe "rate-limit usage recording" do
+    it "records observed quota for PAT-backed projects under the token endpoint" do
+      allow(project).to receive(:client).and_return(client)
+      reset_at = 1.hour.from_now
+      allow(client).to receive_messages(
+        rate_limit_remaining: 4500,
+        rate_limit_limit: 5000,
+        rate_limit_reset_at: reset_at
+      )
+
+      activity.execute(project_id: project.id)
+
+      state = GithubHealthState.find_by(endpoint: project.github_health_endpoint)
+      expect(state.rate_limit_remaining).to eq(4500)
+      expect(state.rate_limit_limit).to eq(5000)
+      expect(state.rate_limit_reset_at).to be_present
+      expect(state.rate_limit_observed_at).to be_present
+    end
+
+    it "records observed quota for App-backed projects under the installation endpoint" do
+      app_project = create(:project, :with_github_installation)
+      allow(Project).to receive(:find_by).with(id: app_project.id).and_return(app_project)
+      allow(app_project).to receive(:client).and_return(client)
+      allow(client).to receive_messages(
+        rate_limit_remaining: 12000,
+        rate_limit_limit: 15000,
+        rate_limit_reset_at: 1.hour.from_now
+      )
+
+      activity.execute(project_id: app_project.id)
+
+      endpoint = GithubHealthState.endpoint_for_github_installation(
+        app_project.github_installation.github_installation_id
+      )
+      state = GithubHealthState.find_by(endpoint: endpoint)
+      expect(state.rate_limit_remaining).to eq(12000)
+      expect(state.rate_limit_limit).to eq(15000)
+      expect(app_project.github_auth_source).to eq("app")
+    end
+
+    it "keeps recording best-effort and still returns the probe result when limit cannot be read" do
+      allow(project).to receive(:client).and_return(client)
+      allow(client).to receive(:rate_limit_remaining).and_return(500)
+      allow(client).to receive(:rate_limit_limit).and_raise(StandardError, "boom")
+
+      result = activity.execute(project_id: project.id)
+
+      expect(result).to eq(rate_limit_remaining: 500, rate_limit_low: false)
     end
   end
 end
