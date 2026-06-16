@@ -552,7 +552,23 @@ module Activities
               record_cleanup_cancelled_attempt(agent_run, attempt_label, runner, e, resolved_run_info: resolved_run_info)
               break
             end
-            record_runner_failure(user_settings, runner_state_name, runner_states)
+            if deterministic_runner_config_error?(e.message)
+              # Deterministic config errors (bad model id, unsupported CLI version) will
+              # fail identically on every retry. Do not trip the transient circuit breaker —
+              # opening it hides a misconfiguration behind a generic "unavailable" state and
+              # accelerates runner exhaustion. Log at error level so the misconfiguration is
+              # surfaced loudly; model-health drift (#2566) will alert from runners_attempted.
+              logger.error(
+                message: "agent_execution.deterministic_config_error",
+                runner: runner,
+                agent_run_id: agent_run.id,
+                error: e.message,
+                duration_seconds: attempt_duration
+              )
+            else
+              record_runner_failure(user_settings, runner_state_name, runner_states)
+              logger.warn(message: "agent_execution.runner_failed", runner: runner, agent_run_id: agent_run.id, error: e.message, duration_seconds: attempt_duration)
+            end
             agent_run.record_runner_attempt(
               attempt_label,
               success: false,
@@ -561,7 +577,6 @@ module Activities
               duration_seconds: attempt_duration,
               **resolved_run_info
             )
-            logger.warn(message: "agent_execution.runner_failed", runner: runner, agent_run_id: agent_run.id, error: e.message, duration_seconds: attempt_duration)
 
             if container_dead_after_exec_error?(agent_run, e)
               logger.error(
@@ -1716,12 +1731,28 @@ module Activities
       /Error:\s*Model not found:/i
     ].freeze
 
+    # Matches CLI version errors that indicate the configured model requires a
+    # newer version of the runner CLI — deterministic until the CLI is upgraded.
+    CLI_VERSION_OUTDATED_PATTERN = /requires a newer version of/i
+
     MODEL_NOT_FOUND_NOISE_LINE_PATTERNS = [
       %r{\A\s*at\s+.+\z},
       %r{\A\s*file://.+\z},
       %r{\A\s*/.+:\d+:\d+\)?\z},
       /\A\s*\^+\s*\z/
     ].freeze
+
+    # Returns true when the error message indicates a deterministic configuration
+    # error — a bad model id or an outdated CLI version — that will fail
+    # identically on every retry until the config is fixed. These errors should
+    # not trip the transient per-runner circuit breaker.
+    def deterministic_runner_config_error?(message)
+      return false if message.blank?
+
+      return true if CLI_VERSION_OUTDATED_PATTERN.match?(message)
+
+      MODEL_NOT_FOUND_PATTERNS.any? { |pattern| message.match?(pattern) }
+    end
 
     def runner_model_not_found_error?(output)
       return false if output.blank?
