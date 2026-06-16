@@ -2779,6 +2779,86 @@ expect(container_service).to receive(:execute).with(
         expect_all_runners_exhausted(activity: activity, agent_run: skipped_run)
       end
 
+      it "does not trip the circuit breaker for model-not-found (deterministic config) errors" do
+        runner = user.runners.find_by!(runner_key: "claude")
+        user.settings.update!(
+          fallback_enabled: false,
+          fallback_runners: [],
+          circuit_breaker_failure_threshold: 3
+        )
+        allow(activity).to receive(:run_agent_with_runner).and_raise(
+          described_class::RunnerExecutionError,
+          "Runner model not found error from claude: Error: Model not found: bad-model\nProviderModelNotFoundError"
+        )
+
+        3.times do
+          run = create_runner_backed_agent_run(project: project, runner: runner)
+          expect_all_runners_exhausted(activity: activity, agent_run: run)
+        end
+
+        state = user.runner_states.find_by(runner_name: runner.state_key)
+        expect(state).to be_nil.or(satisfy { |s| s.circuit_closed? })
+      end
+
+      it "does not trip the circuit breaker for cli-version-outdated (deterministic config) errors" do
+        runner = user.runners.find_by!(runner_key: "claude")
+        user.settings.update!(
+          fallback_enabled: false,
+          fallback_runners: [],
+          circuit_breaker_failure_threshold: 3
+        )
+        allow(activity).to receive(:run_agent_with_runner).and_raise(
+          described_class::RunnerExecutionError,
+          "Agent exited with code 1: The 'gpt-5.5' model requires a newer version of Codex CLI"
+        )
+
+        3.times do
+          run = create_runner_backed_agent_run(project: project, runner: runner)
+          expect_all_runners_exhausted(activity: activity, agent_run: run)
+        end
+
+        state = user.runner_states.find_by(runner_name: runner.state_key)
+        expect(state).to be_nil.or(satisfy { |s| s.circuit_closed? })
+      end
+
+      it "still records the attempt with error_type 'error' for deterministic config errors" do
+        runner = user.runners.find_by!(runner_key: "claude")
+        user.settings.update!(fallback_enabled: false, fallback_runners: [])
+        allow(activity).to receive(:run_agent_with_runner).and_raise(
+          described_class::RunnerExecutionError,
+          "Runner model not found error from claude: Error: Model not found: bad-model\nProviderModelNotFoundError"
+        )
+
+        run = create_runner_backed_agent_run(project: project, runner: runner)
+        expect_all_runners_exhausted(activity: activity, agent_run: run)
+
+        run.reload
+        attempt = run.runners_attempted.first
+        expect(attempt["error_type"]).to eq("error")
+        expect(attempt["error_message"]).to include("model not found error")
+      end
+
+      it "still trips the circuit breaker for transient execution errors" do
+        runner = user.runners.find_by!(runner_key: "claude")
+        user.settings.update!(
+          fallback_enabled: false,
+          fallback_runners: [],
+          circuit_breaker_failure_threshold: 3
+        )
+        allow(activity).to receive(:run_agent_with_runner).and_raise(
+          described_class::RunnerExecutionError,
+          "Agent exited with code 1: connection refused"
+        )
+
+        3.times do
+          run = create_runner_backed_agent_run(project: project, runner: runner)
+          expect_all_runners_exhausted(activity: activity, agent_run: run)
+        end
+
+        state = user.runner_states.find_by!(runner_name: runner.state_key)
+        expect(state).to be_circuit_open
+      end
+
       it "calls harness preflight_check with the main execution env and timeout" do
         harness_provider = instance_double(AgentHarness::Providers::Codex)
         allow(harness_provider).to receive(:preflight_check).and_return({ healthy: true })
