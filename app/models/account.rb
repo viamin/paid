@@ -50,6 +50,7 @@ class Account < ApplicationRecord
   has_many :orchestration_strategies, dependent: :destroy
   has_many :strategy_experiments, dependent: :destroy
   has_many :coordination_policies, dependent: :destroy
+  has_one :dispatch_circuit_breaker, dependent: :destroy
 
   validates :name, presence: true
   validates :plan, presence: true, inclusion: { in: PLANS }

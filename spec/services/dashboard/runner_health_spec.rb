@@ -90,5 +90,47 @@ RSpec.describe Dashboard::RunnerHealth do
       )
       expect(summary[:recovery_at]).to be_present
     end
+
+    describe "dispatch circuit breaker" do
+      it "returns nil when no breaker record exists for the account" do
+        stats = described_class.call(account: account)
+        expect(stats[:dispatch_halted]).to be_nil
+      end
+
+      it "returns nil when the breaker is closed" do
+        create(:dispatch_circuit_breaker, account: account)
+        stats = described_class.call(account: account)
+        expect(stats[:dispatch_halted]).to be_nil
+      end
+
+      it "returns the halt payload when the breaker is open" do
+        opened_at = 2.minutes.ago
+        create(:dispatch_circuit_breaker, :open, account: account,
+          circuit_opened_at: opened_at, trip_metadata: { "failure_rate" => 0.95 })
+
+        stats = described_class.call(account: account)
+
+        expect(stats[:dispatch_halted]).to include(
+          state: "open",
+          opened_at: be_within(1.second).of(opened_at)
+        )
+        expect(stats[:dispatch_halted][:metadata]).to include("failure_rate" => 0.95)
+      end
+
+      it "does not mutate the breaker when rendering the dashboard" do
+        # GET requests to the dashboard must not trigger the open -> half_open
+        # transition. That state change is owned by
+        # DispatchCircuitBreakerRecoveryJob; rendering the dashboard after
+        # the recovery timeout has elapsed should report the breaker as
+        # still open until the next cron tick advances it.
+        breaker = create(:dispatch_circuit_breaker, :open, account: account,
+          circuit_opened_at: 10.minutes.ago)
+
+        stats = described_class.call(account: account)
+
+        expect(stats[:dispatch_halted][:state]).to eq("open")
+        expect(breaker.reload).to be_circuit_open
+      end
+    end
   end
 end

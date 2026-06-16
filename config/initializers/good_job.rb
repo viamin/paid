@@ -225,6 +225,11 @@ Rails.application.configure do
       cron: "17 9 * * *",
       class: "ScheduledMutationSweepJob",
       description: "Run nightly full-suite mutation sweeps for opted-in Ruby projects"
+    },
+    dispatch_circuit_breaker_recovery: {
+      cron: "*/5 * * * *",
+      class: "DispatchCircuitBreakerRecoveryJob",
+      description: "Check open dispatch circuit breakers for recovery to half_open"
     }
   }
 end
