@@ -2496,6 +2496,10 @@ class AgentRun < ApplicationRecord
   # explicit probe (set via mark_probe_dispatched!) or just a stale
   # in-flight run from before the circuit opened. Stale completions
   # must not affect half_open counters.
+  #
+  # Runs in a background job so the activity's commit chain does not
+  # block on the (relatively expensive) provider-failure scan during
+  # the burst-of-terminal-completions case the breaker exists to handle.
   def record_dispatch_circuit_breaker_outcome
     return unless final_runner.present?
     return unless project&.account
@@ -2504,8 +2508,8 @@ class AgentRun < ApplicationRecord
     success = successful? || status == "no_output"
     return unless success || status.in?(FAILURE_STATUSES)
 
-    ::AgentRuns::DispatchCircuitBreaker.record_outcome!(
-      account: project.account,
+    DispatchCircuitBreakerOutcomeJob.perform_later(
+      account_id: project.account_id,
       success: success,
       agent_run_id: id
     )

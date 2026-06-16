@@ -7,13 +7,8 @@
         <p class="mt-1 text-sm text-gray-500">Live status for agent-run runners configured across this account.</p>
       </div>
       <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium <%= healthy && !dispatch_halted ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800' %>">
-        <%= if dispatch_halted
-          "Dispatch Halted"
-        elsif healthy
-          "Healthy"
-        else
-          "Degraded"
-        end %>
+        <% status_label = if dispatch_halted then "Dispatch Halted" elsif healthy then "Healthy" else "Degraded" end %>
+        <%= status_label %>
       </span>
     </div>
 

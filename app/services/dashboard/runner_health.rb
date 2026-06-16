@@ -175,7 +175,9 @@ module Dashboard
       return nil unless breaker&.persisted?
       return nil if breaker.circuit_closed?
 
-      breaker.check_recovery! if breaker.circuit_open?
+      # GET requests must not mutate circuit state. The open -> half_open
+      # transition is owned by DispatchCircuitBreakerRecoveryJob on a cron;
+      # this view only reads the current state.
       {
         state: breaker.circuit_state,
         opened_at: breaker.circuit_opened_at,
