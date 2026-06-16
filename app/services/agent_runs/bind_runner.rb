@@ -4,46 +4,48 @@ module AgentRuns
   # Resolves and binds a runnable runner to a queued run at dequeue time.
   #
   # Implements the late-binding half of the runner-agnostic queue redesign
-  # (#2563). Enqueue paths (Issues::EnqueueEligible, Issues::AutoPick, etc.)
-  # now create runs with +runner_id: nil+ and an intended +agent_type+;
+  # (#2563). Enqueue paths (Issues::AutoPick, Issues::EnqueueEligible, etc.)
+  # create runs with +runner_id: nil+ and an intended +agent_type+;
   # ProcessRunQueueJob calls this service just before claiming each run to
-  # pick a healthy runner over the runnable set, honoring any explicit
-  # preference the run carries.
+  # pick a healthy runner over the runnable set.
   #
-  # Failover policy:
-  # - Auto-pick runs (default): any healthy runner matching the intended
-  #   +agent_type+ is preferred; if none exists, any runnable runner is
-  #   acceptable (the project just wants a PR).
-  # - Manual runs that explicitly chose an agent_type: same-agent_type
-  #   failover is allowed, but switching to a different agent_type leaves
-  #   the run queued (do not silently switch on user-explicit intent).
+  # This service only ever handles runner-agnostic (auto-pick) queued runs.
+  # Manual runs are created with their runner already pinned
+  # (Projects::AgentRunsController#create_agent_run), so they reach
+  # ProcessRunQueueJob already bound (+runner_id.present?+) and never flow
+  # through here. A manual run whose pinned runner is unhealthy is skipped
+  # for the rest of the pass and stays queued — it is *not* silently
+  # re-routed to a different agent_type — which is how the "manual explicit
+  # choice is not switched" policy from #2563 is enforced.
+  #
+  # Failover policy for auto-pick: any healthy runner is acceptable (the
+  # project just wants a PR), so +agent_type+ is updated to whatever the
+  # resolver returns, including a different agent family. The
+  # +exclude_runner_ids+ set (runners that already failed preflight during
+  # the current dequeue pass) is threaded into the resolver so the run is
+  # never pinned back to a runner known-unhealthy this pass — it falls
+  # through to a healthy alternative instead.
   class BindRunner
     def self.call(...)
       new(...).call
     end
 
-    def initialize(agent_run:, explicit_runner_preference: nil, logger: nil)
+    def initialize(agent_run:, exclude_runner_ids: [], logger: nil)
       @agent_run = agent_run
-      @explicit_runner_preference = explicit_runner_preference
+      @exclude_runner_ids = Array(exclude_runner_ids)
       @logger = logger
     end
 
     # Returns the resolved Runner, or nil when no runnable runner can serve
-    # this run. When the resolver returns a different agent_type than the
-    # run's intended one, the run's +agent_type+ is updated in place to
-    # reflect the actual choice — but only when the resolver is allowed to
-    # change it (auto-pick, or manual without an explicit agent_type).
+    # this run. The run's +agent_type+ is updated in place to the agent type
+    # of the resolved runner (auto-pick accepts any healthy runner).
     def call
       return nil if agent_run.runner_id.present?
-
-      requested_runner_id, requested_agent_type = resolution_preferences
 
       resolved_runner_id, resolved_agent_type = AgentRuns::RunnerResolver.call(
         project: agent_run.project,
         goal: agent_run.goal,
-        requested_runner_id: requested_runner_id,
-        requested_agent_type: requested_agent_type,
-        respect_requested: respect_explicit_request?,
+        exclude_runner_ids: exclude_runner_ids,
         logger: logger
       )
 
@@ -56,36 +58,7 @@ module AgentRuns
 
     private
 
-    attr_reader :agent_run, :explicit_runner_preference, :logger
-
-    # When the user explicitly pinned a specific runner (manual trigger),
-    # feed its id back into the resolver so it gets first pick if still
-    # runnable. For auto-pick (no explicit runner) do NOT pass the run's
-    # stored agent_type as a +requested_agent_type+: the resolver's
-    # +requested_selection+ short-circuits to +[nil, agent_type]+ whenever
-    # the agent type is statically container-executable, which would skip
-    # +project_preferred_agent_selection+ / +default_runner+ and leave the
-    # run pinned to no runner at all (it stays queued forever). The
-    # project's +preferred_agent_type+ is re-derived inside the resolver
-    # via +project_preferred_agent_selection+, so passing +[nil, nil]+ lets
-    # the real runner-selection paths run and return an actual runner id.
-    def resolution_preferences
-      if explicit_runner_preference.is_a?(Runner)
-        [ explicit_runner_preference.id, agent_run.agent_type ]
-      else
-        [ nil, nil ]
-      end
-    end
-
-    # The resolver should only honor an explicit +requested_*+ selection
-    # when the caller actually carries one. A manual run that pinned a
-    # runner passes +respect_requested: true+ so the resolver honors it;
-    # auto-pick (no explicit runner) passes +false+ so the resolver uses
-    # its own preference/default selection instead of short-circuiting on
-    # the run's stored agent_type.
-    def respect_explicit_request?
-      explicit_runner_preference.is_a?(Runner)
-    end
+    attr_reader :agent_run, :exclude_runner_ids, :logger
 
     def apply_resolution!(runner, resolved_agent_type)
       target_agent_type = resolved_agent_type.presence ||
@@ -93,24 +66,9 @@ module AgentRuns
         agent_run.agent_type
 
       updates = { runner_id: runner.id }
-      updates[:agent_type] = target_agent_type if should_update_agent_type?(target_agent_type)
+      updates[:agent_type] = target_agent_type unless target_agent_type == agent_run.agent_type
 
       agent_run.update_columns(updates) if updates.any?
-    end
-
-    # Manual runs that explicitly chose an agent_type must keep that
-    # agent_type. Auto-pick (and manual without an explicit agent_type,
-    # which we model as auto-pick here) is free to accept whatever the
-    # resolver returned.
-    def should_update_agent_type?(target_agent_type)
-      return true if target_agent_type == agent_run.agent_type
-      return false if manual_explicit_agent_type?
-
-      true
-    end
-
-    def manual_explicit_agent_type?
-      agent_run.manual? && explicit_runner_preference.is_a?(Runner)
     end
   end
 end

@@ -109,13 +109,15 @@ class ProcessRunQueueJob < ApplicationJob
         end
 
         # Late-bind a runner for runner-agnostic queued runs (#2563).
-        # Resolved/updated in place; the resolver is constrained to
-        # runnable runners, so a healthy alternative is always picked
-        # when one exists. If no runnable runner can be resolved the
-        # run stays queued and we move on to the next peek.
+        # The resolver is constrained to runnable runners AND excludes any
+        # runner that already failed preflight during this pass
+        # (+blocked_runner_ids+), so a healthy alternative is picked when the
+        # preferred runner is rate-limited / circuit-open. If no runnable
+        # runner can be resolved the run stays queued and we move on to the
+        # next peek.
         bound_for_this_iteration = false
         if next_run.runner_unbound?
-          bound_runner = AgentRuns::BindRunner.call(agent_run: next_run)
+          bound_runner = AgentRuns::BindRunner.call(agent_run: next_run, exclude_runner_ids: blocked_runner_ids)
           unless bound_runner
             log_no_runnable_runner(next_run)
             next
@@ -124,7 +126,15 @@ class ProcessRunQueueJob < ApplicationJob
         end
 
         if next_run.runner_id && blocked_runner_ids.include?(next_run.runner_id)
-          skipped_ids.add(next_run.id)
+          if bound_for_this_iteration
+            # Defense in depth: a late-bound run should never resolve to a
+            # blocked runner (the resolver excludes them), but if it does,
+            # clear the pin so the next pass re-resolves rather than
+            # stranding the run on it.
+            next_run.update_columns(runner_id: nil)
+          else
+            skipped_ids.add(next_run.id)
+          end
           next
         end
 
