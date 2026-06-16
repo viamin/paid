@@ -476,6 +476,17 @@ RSpec.describe GithubHealthState do
 
       expect { state.record_rate_limit_usage!(remaining: 1, limit: 2) }.not_to raise_error
     end
+
+    it "is a no-op when limit is nil, preserving previously observed quota" do
+      state = create(:github_health_state, rate_limit_remaining: 4000, rate_limit_limit: 5000,
+        rate_limit_observed_at: 5.minutes.ago)
+
+      state.record_rate_limit_usage!(remaining: 0, limit: nil)
+
+      reloaded = state.reload
+      expect(reloaded.rate_limit_remaining).to eq(4000)
+      expect(reloaded.rate_limit_limit).to eq(5000)
+    end
   end
 
   describe "#rate_limit_usage_percent" do

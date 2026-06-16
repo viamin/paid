@@ -120,5 +120,27 @@ RSpec.describe Activities::CheckRateLimitActivity do
 
       expect(result).to eq(rate_limit_remaining: 500, rate_limit_low: false)
     end
+
+    it "does not overwrite previously recorded quota when a transport error makes remaining=0 and limit=nil" do
+      allow(project).to receive(:client).and_return(client)
+
+      # Seed a previously observed reading
+      state = GithubHealthState.current(endpoint: project.github_health_endpoint)
+      state.update!(rate_limit_remaining: 4000, rate_limit_limit: 5000, rate_limit_observed_at: 5.minutes.ago)
+
+      # Simulate transport/auth failure: rate_limit_remaining returns 0 (its rescue default)
+      # and rate_limit_limit returns nil (its rescue default) — both from Octokit::Error
+      allow(client).to receive_messages(rate_limit_remaining: 0, rate_limit_limit: nil, rate_limit_reset_at: nil)
+
+      result = activity.execute(project_id: project.id)
+
+      # Workflow result is unaffected
+      expect(result).to eq(rate_limit_remaining: 0, rate_limit_low: true)
+
+      # Previously observed quota must be preserved — not overwritten with the misleading 0/nil reading
+      state.reload
+      expect(state.rate_limit_remaining).to eq(4000)
+      expect(state.rate_limit_limit).to eq(5000)
+    end
   end
 end

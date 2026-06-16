@@ -155,10 +155,17 @@ class GithubHealthState < ApplicationRecord
   # dashboard between rate-limit events. Best-effort: persistence errors
   # are logged and swallowed so a probe never masks the real API result.
   #
+  # A nil +limit+ signals a transport or auth failure (GithubClient#rate_limit_limit
+  # returns nil on Octokit::Error). Skipping the update in that case preserves
+  # the previously observed quota on the dashboard rather than overwriting it
+  # with a misleading zero-remaining / nil-limit reading.
+  #
   # @param remaining [Integer, nil] Remaining requests reported by GitHub.
   # @param limit [Integer, nil] Total hourly request limit reported by GitHub.
   # @param reset_at [Time, nil] When the current quota window resets.
   def record_rate_limit_usage!(remaining:, limit:, reset_at: nil)
+    return if limit.nil?
+
     with_lock do
       update!(
         rate_limit_remaining: remaining,
