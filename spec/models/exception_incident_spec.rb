@@ -48,21 +48,30 @@ RSpec.describe ExceptionIncident do
     end
 
     describe ".filing_blocked" do
-      it "returns only notified incidents off the issue-filing allowlist" do
-        blocked = create(:exception_incident, account: account,
+      it "returns only notified incidents off the issue-filing allowlist with project context" do
+        blocked = create(:exception_incident, :with_project, account: account,
           subsystem: "github_sync", action_taken: "notified")
-        create(:exception_incident, account: account,
+        create(:exception_incident, :with_project, account: account,
           subsystem: "knowledge", action_taken: "notified") # on allowlist
-        create(:exception_incident, account: account,
+        create(:exception_incident, :with_project, account: account,
           subsystem: "github_sync", action_taken: "issue_filed") # off allowlist, already filed
-        create(:exception_incident, account: account,
+        create(:exception_incident, :with_project, account: account,
           subsystem: "general", action_taken: "logged") # off allowlist, transient
 
         expect(described_class.filing_blocked).to eq([ blocked ])
       end
 
+      it "excludes off-allowlist incidents without project context" do
+        # `file_or_update_issue` returns early when there is no project, before
+        # the allowlist is consulted, so such incidents were never blocked by it.
+        create(:exception_incident, account: account,
+          subsystem: "github_sync", action_taken: "notified")
+
+        expect(described_class.filing_blocked).to be_empty
+      end
+
       it "reflects live allowlist changes without caching" do
-        incident = create(:exception_incident, account: account,
+        incident = create(:exception_incident, :with_project, account: account,
           subsystem: "general", action_taken: "notified")
 
         expect(described_class.filing_blocked).to include(incident)

@@ -37,9 +37,12 @@ RSpec.describe "Exception incidents" do
     end
 
     it "filters to filing-blocked incidents when requested" do
-      create(:exception_incident, account: account,
+      create(:exception_incident, :with_project, account: account,
         subsystem: "general", action_taken: "notified",
         exception_class: "BlockedError")
+      create(:exception_incident, account: account,
+        subsystem: "general", action_taken: "notified",
+        exception_class: "ProjectlessError") # no project, so not filing-blocked
       create(:exception_incident, account: account,
         subsystem: "knowledge", action_taken: "issue_filed",
         exception_class: "FiledError")
@@ -48,6 +51,7 @@ RSpec.describe "Exception incidents" do
 
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("BlockedError")
+      expect(response.body).not_to include("ProjectlessError")
       expect(response.body).not_to include("FiledError")
     end
 
