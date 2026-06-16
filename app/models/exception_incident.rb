@@ -29,8 +29,23 @@ class ExceptionIncident < ApplicationRecord
   scope :by_severity, ->(severity) { where(severity: severity) }
   scope :recent, -> { order(last_occurred_at: :desc) }
 
+  # Incidents whose subsystem is not on the issue-filing allowlist. These are
+  # recorded and notified but never escalated to a GitHub issue — surfacing them
+  # lets maintainers decide whether to grow the allowlist. Reads the allowlist
+  # constant live so dashboard output tracks changes without caching.
+  scope :filing_blocked, -> {
+    where(action_taken: "notified")
+      .where.not(subsystem: ExceptionHandler::Classifier::ISSUE_FILING_ALLOWLIST)
+  }
+
   def resolved?
     status == "resolved"
+  end
+
+  # True when this incident's subsystem would be eligible for GitHub issue
+  # filing. Data-driven off the live allowlist constant (no caching).
+  def on_allowlist?
+    ExceptionHandler::Classifier::ISSUE_FILING_ALLOWLIST.include?(subsystem)
   end
 
   def record_occurrence!(new_context: {})

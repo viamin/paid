@@ -46,6 +46,32 @@ RSpec.describe ExceptionIncident do
         expect(described_class.for_subsystem("knowledge")).to eq([ knowledge ])
       end
     end
+
+    describe ".filing_blocked" do
+      it "returns only notified incidents off the issue-filing allowlist" do
+        blocked = create(:exception_incident, account: account,
+          subsystem: "github_sync", action_taken: "notified")
+        create(:exception_incident, account: account,
+          subsystem: "knowledge", action_taken: "notified") # on allowlist
+        create(:exception_incident, account: account,
+          subsystem: "github_sync", action_taken: "issue_filed") # off allowlist, already filed
+        create(:exception_incident, account: account,
+          subsystem: "general", action_taken: "logged") # off allowlist, transient
+
+        expect(described_class.filing_blocked).to eq([ blocked ])
+      end
+
+      it "reflects live allowlist changes without caching" do
+        incident = create(:exception_incident, account: account,
+          subsystem: "general", action_taken: "notified")
+
+        expect(described_class.filing_blocked).to include(incident)
+
+        stub_const("ExceptionHandler::Classifier::ISSUE_FILING_ALLOWLIST", %w[general])
+
+        expect(described_class.filing_blocked).not_to include(incident)
+      end
+    end
   end
 
   describe "#record_occurrence!" do
@@ -78,6 +104,26 @@ RSpec.describe ExceptionIncident do
 
     it "returns false for open incidents" do
       expect(build(:exception_incident)).not_to be_resolved
+    end
+  end
+
+  describe "#on_allowlist?" do
+    it "returns true for allowlisted subsystems" do
+      expect(build(:exception_incident, subsystem: "knowledge")).to be_on_allowlist
+    end
+
+    it "returns false for off-allowlist subsystems" do
+      expect(build(:exception_incident, subsystem: "general")).not_to be_on_allowlist
+    end
+
+    it "tracks live allowlist changes without caching" do
+      incident = build(:exception_incident, subsystem: "general")
+
+      expect(incident).not_to be_on_allowlist
+
+      stub_const("ExceptionHandler::Classifier::ISSUE_FILING_ALLOWLIST", %w[general])
+
+      expect(incident).to be_on_allowlist
     end
   end
 end
