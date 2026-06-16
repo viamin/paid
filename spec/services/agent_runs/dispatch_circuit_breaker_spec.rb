@@ -279,6 +279,39 @@ RSpec.describe AgentRuns::DispatchCircuitBreaker do
       expect(breaker).to be_circuit_closed
     end
 
+    it "does not count orphaned final_runner values toward min_runs" do
+      # The sole active provider has fewer than min_runs (10) attributable
+      # failures. Orphaned final_runner values — here a routing_key for a
+      # runner that belongs to another account and never resolves into this
+      # account's active set — must NOT inflate total_runs past the floor.
+      # Otherwise the breaker trips on fewer than min_runs real provider
+      # outcomes, exactly the bug the reviewer flagged.
+      other_account = create(:account)
+      other_runner = create_active_runner(other_account, runner_key: "claude_code")
+      routing_key = other_runner.routing_key
+
+      project = create(:project, account: account)
+      create_active_runner(account, runner_key: "claude_code")
+      # 5 attributable failures on the only active provider (below min_runs)
+      5.times do
+        create(:agent_run, :failed, project: project, final_runner: "claude",
+          completed_at: 5.minutes.ago)
+      end
+      # 5 orphaned outcomes that don't map to any active provider. Before the
+      # fix these pushed total_runs to 10 (== min_runs) and tripped the
+      # breaker on just 5 real outcomes.
+      5.times do
+        create(:agent_run, :failed, project: project, final_runner: routing_key,
+          completed_at: 5.minutes.ago)
+      end
+
+      described_class.evaluate!(account)
+
+      breaker = DispatchCircuitBreaker.for_account(account)
+      expect(breaker).to be_persisted
+      expect(breaker).to be_circuit_closed
+    end
+
     it "skips the query when circuit is already open" do
       breaker = create(:dispatch_circuit_breaker, :open, account: account)
       original_opened_at = breaker.circuit_opened_at

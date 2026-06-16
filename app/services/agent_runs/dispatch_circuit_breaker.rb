@@ -171,12 +171,18 @@ module AgentRuns
       runs.each do |run|
         total = run[:total_count].to_i
         failures = run[:failure_count].to_i
-        total_runs += total
-        total_failures += failures
 
         runner_key = resolve_runner_key(run.final_runner, runner_key_by_id: runner_key_by_id,
           active_runner_keys: active_runner_keys)
         next if runner_key.blank?
+
+        # Count runs toward totals only after confirming they map back to one
+        # of the account's active providers. Otherwise orphaned final_runner
+        # values (removed/foreign runners, legacy identifiers that don't
+        # resolve) would inflate total_runs and trip the breaker on fewer
+        # than min_runs attributable provider outcomes.
+        total_runs += total
+        total_failures += failures
 
         existing = providers_by_runner_key[runner_key] || { total: 0, failures: 0 }
         existing[:total] += total
