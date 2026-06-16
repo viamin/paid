@@ -1933,6 +1933,16 @@ class AgentRun < ApplicationRecord
 
   alias_method :effective_provider_record, :effective_runner_record
 
+  # True when this run was enqueued without a pinned runner, so the queue
+  # processor should resolve a runnable runner at dequeue time
+  # (Runner-agnostic queue; see #2563). Runs created through the
+  # runner-resolving enqueue paths pre-#2563 have a non-nil runner_id and
+  # are treated as pinned.
+  def runner_unbound?
+    runner_id.nil?
+  end
+  alias_method :provider_unbound?, :runner_unbound?
+
   def attempted_runners_by_routing_key
     owner = project&.effective_owner
     return {} unless owner
