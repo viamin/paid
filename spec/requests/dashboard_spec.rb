@@ -34,6 +34,28 @@ RSpec.describe "Dashboard" do
         expect(response.body).to include("Test Company")
       end
 
+      it "surfaces exception incidents from the dashboard header" do
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
+        link = doc.at_css("[data-testid='dashboard-exception-incidents-link']")
+
+        expect(link).to be_present
+        expect(link["href"]).to eq(exception_incidents_path)
+        expect(link.text.strip).to eq("Exception incidents")
+      end
+
+      it "includes exception incidents in the desktop navigation" do
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
+        desktop_nav_link = doc.at_css("nav [data-nav-section='exception_incidents']")
+
+        expect(desktop_nav_link).to be_present
+        expect(desktop_nav_link["href"]).to eq(exception_incidents_path)
+        expect(desktop_nav_link.text.strip).to eq("Exception incidents")
+      end
+
       it "includes settings in the mobile menu" do
         get dashboard_path
 
@@ -42,6 +64,17 @@ RSpec.describe "Dashboard" do
 
         expect(mobile_settings_link).to be_present
         expect(mobile_settings_link.text.strip).to eq("Settings")
+      end
+
+      it "includes exception incidents in the mobile menu" do
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
+        mobile_exception_link = doc.at_css("#mobile-menu [data-testid='mobile-exception-incidents-link']")
+
+        expect(mobile_exception_link).to be_present
+        expect(mobile_exception_link["href"]).to eq(exception_incidents_path)
+        expect(mobile_exception_link.text.strip).to eq("Exception incidents")
       end
 
       it "renders the user email dropdown in the desktop navbar" do

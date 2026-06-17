@@ -26,6 +26,7 @@ module Screenshots
       providers
       integrations
       notifications
+      exception_incidents
       service_containers
       mcp_server_definitions
       onboarding
@@ -63,6 +64,7 @@ module Screenshots
       unlock: Target.new(slug: "unlock", path_builder: "/users/unlock/new", requires_auth: false),
       dashboard: Target.new(slug: "dashboard", path_builder: "/dashboard", requires_auth: true),
       notifications: Target.new(slug: "notifications", path_builder: "/notifications", requires_auth: true),
+      exception_incidents: Target.new(slug: "exception_incidents", path_builder: "/exception_incidents", requires_auth: true),
       onboarding: Target.new(slug: "onboarding", path_builder: "/onboarding", requires_auth: true),
       integrations: Target.new(slug: "integrations", path_builder: "/integrations", requires_auth: true),
       integrations_new: Target.new(slug: "integrations_new", path_builder: "/integrations/new", requires_auth: true),
@@ -237,6 +239,7 @@ module Screenshots
       "github_tokens_controller.rb" => %i[github_tokens github_token_new github_token_show],
       "linear_tokens_controller.rb" => %i[linear_tokens linear_token_new linear_token_show],
       "notifications_controller.rb" => [ :notifications ],
+      "exception_incidents_controller.rb" => [ :exception_incidents ],
       "onboarding_controller.rb" => [ :onboarding ],
       "user_settings_controller.rb" => [ :user_settings ],
       "accounts_controller.rb" => [ :account ],

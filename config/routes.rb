@@ -133,6 +133,9 @@ Rails.application.routes.draw do
     end
   end
 
+  # Exception incidents (captured by the exception-handling pipeline)
+  resources :exception_incidents, only: [ :index ]
+
   # Prompt management
   resources :prompts do
     get :diff, on: :member
