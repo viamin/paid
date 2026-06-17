@@ -971,6 +971,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_19_140623) do
     t.string "account_login", comment: "GitHub org or user login that installed the App"
     t.datetime "created_at", null: false
     t.bigint "github_installation_id", null: false, comment: "GitHub installation ID from App install event"
+    t.datetime "repositories_synced_at", comment: "When accessible_repositories was last refreshed from the GitHub App installation API"
     t.string "repository_selection", comment: "all or selected"
     t.datetime "revoked_at", comment: "When the installation was uninstalled/deleted"
     t.datetime "suspended_at", comment: "When the installation was suspended by GitHub"
