@@ -575,20 +575,22 @@ class Runner < ApplicationRecord
     relation = user.runners.kept_only
     deadlock_retries = 0
 
-    relation.find_or_create_by!(runner_key: key, auth_type: "subscription")
-  rescue ActiveRecord::Deadlocked
-    deadlock_retries += 1
-    raise if deadlock_retries > 3
+    begin
+      relation.find_or_create_by!(runner_key: key, auth_type: "subscription")
+    rescue ActiveRecord::Deadlocked
+      deadlock_retries += 1
+      raise if deadlock_retries > 3
 
-    sleep(0.01 * deadlock_retries)
-    retry
-  rescue ActiveRecord::RecordNotUnique => e
-    if primary_key_conflict?(e)
-      connection.reset_pk_sequence!(table_name)
+      sleep(0.01 * deadlock_retries)
       retry
-    end
+    rescue ActiveRecord::RecordNotUnique => e
+      if primary_key_conflict?(e)
+        connection.reset_pk_sequence!(table_name)
+        retry
+      end
 
-    relation.find_by!(runner_key: key, auth_type: "subscription")
+      relation.find_by!(runner_key: key, auth_type: "subscription")
+    end
   end
 
   def self.first_enabled_for_owner(owner)
@@ -1324,14 +1326,14 @@ class Runner < ApplicationRecord
 
     model = find_direct_outbound_catalog_model(model_id)
     if model.blank?
-      errors.add(:config, "must include a #{direct_outbound_runner_label} model id present in the model catalog")
+      errors.add(:config, "#{direct_outbound_runner_label} model id not found in the catalog")
       return
     end
 
     expected_provider = direct_outbound_llm_model_provider
     return if expected_provider.blank? || model.provider == expected_provider
 
-    errors.add(:config, "must include a #{direct_outbound_runner_label} model from the #{RunnerSupport.api_service_type_label(expected_provider)} catalog")
+    errors.add(:config, "#{direct_outbound_runner_label} model belongs to the #{model.provider} catalog but expected #{RunnerSupport.api_service_type_label(expected_provider)}")
   end
 
   def required_api_service_type

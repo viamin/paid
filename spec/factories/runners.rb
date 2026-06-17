@@ -37,35 +37,7 @@ FactoryBot.define do
       model_id = config[model_key].to_s
       next if api_provider.blank? || model_id.blank?
 
-      known_models = {
-        [ "openrouter", "moonshotai/kimi-k2-0905" ] => "openrouter",
-        [ "openrouter", "moonshotai/kimi-k2.5" ] => "openrouter",
-        [ "openrouter", "moonshotai/kimi-k2" ] => "openrouter",
-        [ "openrouter", "moonshotai/kimi-k2-0906" ] => "openrouter",
-        [ "anthropic", "claude-sonnet-4-20250514" ] => "anthropic",
-        [ "anthropic", "claude-sonnet-4-5" ] => "anthropic",
-        [ "anthropic", "claude-3-7-sonnet" ] => "anthropic",
-        [ "anthropic", "anthropic/claude-opus-4" ] => "anthropic",
-        [ "openai", "gpt-4o" ] => "openai",
-        [ "openai", "gpt-5.5" ] => "openai",
-        [ "inception", "mercury-2" ] => "inception",
-        [ "deepseek", "deepseek-chat" ] => "deepseek",
-        [ "minimax", "MiniMax-M2.7" ] => "minimax",
-        [ "minimax", "MiniMax-M2.7-highspeed" ] => "minimax",
-        [ "zai_coding", "glm-5.1" ] => "zai_coding",
-        [ "zai", "glm-5.1" ] => "zai"
-      }
-
-      provider = known_models[[ api_provider, model_id ]]
-      next if provider.blank?
-
-      LlmModel.find_or_create_by!(model_id: model_id) do |model|
-        model.display_name = model_id.split("/").last.tr("_-", " ").split.map(&:capitalize).join(" ")
-        model.provider = provider
-        model.category = "coding"
-        model.tier = "mid"
-        model.active = true
-      end
+      KnownDirectOutboundModels.seed_catalog_model(api_provider: api_provider, model_id: model_id)
     end
   end
 end

@@ -674,7 +674,7 @@ RSpec.describe Runner do
       runner.config = { "opencode" => { "api_provider" => "minimax", "model" => "MiniMax-M3" } }
 
       expect(runner).not_to be_valid
-      expect(runner.errors[:config]).to include("must include a OpenCode model id present in the model catalog")
+      expect(runner.errors[:config]).to include("OpenCode model id not found in the catalog")
     end
 
     it "accepts a provider-qualified OpenCode model id when the catalog stores the canonical bare model id" do
