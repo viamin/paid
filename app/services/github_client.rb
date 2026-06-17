@@ -1324,6 +1324,22 @@ class GithubClient
     rate_limit_remaining < threshold
   end
 
+  # Reads the full rate-limit snapshot (remaining/limit/reset) in a single
+  # Octokit call. Use this when a caller needs all three figures together;
+  # calling the individual +rate_limit_remaining+ / +rate_limit_limit+ /
+  # +rate_limit_reset_at+ accessors each issues its own request because
+  # Octokit does not cache across calls. Tolerates transport errors so a
+  # failed probe never masks the result the caller is trying to surface.
+  #
+  # @return [Hash] { remaining: Integer, limit: Integer, reset_at: Time }.
+  #   All three values are nil when the underlying request failed.
+  def rate_limit_snapshot
+    rl = client.rate_limit
+    { remaining: rl.remaining, limit: rl.limit, reset_at: rl.resets_at }
+  rescue Octokit::Error
+    { remaining: nil, limit: nil, reset_at: nil }
+  end
+
   # Maps GraphQL ReactionContent enum values to REST API content strings.
   GRAPHQL_REACTION_MAP = {
     "THUMBS_UP" => "+1",
@@ -1628,16 +1644,6 @@ class GithubClient
       message: "github_client.rate_limit_record_failed",
       error: e.message
     )
-  end
-
-  # Reads the full rate-limit snapshot (remaining/limit/reset) from the
-  # underlying Octokit client, tolerating transport errors so a failed
-  # probe never masks the original rate-limit exception.
-  def rate_limit_snapshot
-    rl = client.rate_limit
-    { remaining: rl.remaining, limit: rl.limit, reset_at: rl.resets_at }
-  rescue Octokit::Error
-    { remaining: nil, limit: nil, reset_at: nil }
   end
 
   def record_github_health_success

@@ -25,8 +25,9 @@ module Activities
       return { rate_limit_remaining: 0, rate_limit_low: true, project_missing: true } unless project
 
       client = project.client
-      remaining = client.rate_limit_remaining
-      record_rate_limit_usage(project, client, remaining)
+      snapshot = client.rate_limit_snapshot
+      remaining = snapshot[:remaining]
+      record_rate_limit_usage(project, snapshot)
 
       low = remaining < threshold
 
@@ -53,14 +54,14 @@ module Activities
     # Best-effort: persist the sampled quota so the dashboard can show
     # per-installation / per-token usage. Failures here must not mask the
     # real probe result returned to the workflow.
-    def record_rate_limit_usage(project, client, remaining)
-      return if remaining.nil?
+    def record_rate_limit_usage(project, snapshot)
+      return if snapshot[:remaining].nil?
 
       GithubHealthState.current(endpoint: project.github_health_endpoint)
         .record_rate_limit_usage!(
-          remaining: remaining,
-          limit: client.rate_limit_limit,
-          reset_at: client.rate_limit_reset_at
+          remaining: snapshot[:remaining],
+          limit: snapshot[:limit],
+          reset_at: snapshot[:reset_at]
         )
     rescue => e
       logger.warn(
