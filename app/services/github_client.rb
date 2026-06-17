@@ -1305,12 +1305,39 @@ class GithubClient
     nil
   end
 
+  # Gets the total rate-limit allowance for the current credential.
+  # GitHub App installation tokens are limited per-installation (15,000/hr)
+  # while PATs are limited per-user (5,000/hr).
+  #
+  # @return [Integer, nil] Total hourly requests allowed, or nil if unavailable
+  def rate_limit_limit
+    client.rate_limit.limit
+  rescue Octokit::Error
+    nil
+  end
+
   # Checks if the rate limit is near exhaustion.
   #
   # @param threshold [Integer] Minimum remaining requests
   # @return [Boolean] true if remaining requests are below threshold
   def rate_limit_low?(threshold: 10)
     rate_limit_remaining < threshold
+  end
+
+  # Reads the full rate-limit snapshot (remaining/limit/reset) in a single
+  # Octokit call. Use this when a caller needs all three figures together;
+  # calling the individual +rate_limit_remaining+ / +rate_limit_limit+ /
+  # +rate_limit_reset_at+ accessors each issues its own request because
+  # Octokit does not cache across calls. Tolerates transport errors so a
+  # failed probe never masks the result the caller is trying to surface.
+  #
+  # @return [Hash] { remaining: Integer, limit: Integer, reset_at: Time }.
+  #   All three values are nil when the underlying request failed.
+  def rate_limit_snapshot
+    rl = client.rate_limit
+    { remaining: rl.remaining, limit: rl.limit, reset_at: rl.resets_at }
+  rescue Octokit::Error
+    { remaining: nil, limit: nil, reset_at: nil }
   end
 
   # Maps GraphQL ReactionContent enum values to REST API content strings.
@@ -1578,14 +1605,14 @@ class GithubClient
   rescue Octokit::NotFound => e
     raise NotFoundError, e.message
   rescue Octokit::TooManyRequests
-    reset_at = client.rate_limit.resets_at rescue nil
-    record_github_rate_limit(reset_at)
-    raise RateLimitError.new(reset_at)
+    snapshot = rate_limit_snapshot
+    record_github_rate_limit(snapshot[:reset_at], remaining: snapshot[:remaining], limit: snapshot[:limit])
+    raise RateLimitError.new(snapshot[:reset_at])
   rescue Octokit::Forbidden => e
     if e.message.include?("rate limit")
-      reset_at = client.rate_limit.resets_at rescue nil
-      record_github_rate_limit(reset_at)
-      raise RateLimitError.new(reset_at)
+      snapshot = rate_limit_snapshot
+      record_github_rate_limit(snapshot[:reset_at], remaining: snapshot[:remaining], limit: snapshot[:limit])
+      raise RateLimitError.new(snapshot[:reset_at])
     end
     raise ApiError.new(e.message, status: 403)
   rescue Octokit::ServerError => e
@@ -1609,8 +1636,9 @@ class GithubClient
     )
   end
 
-  def record_github_rate_limit(reset_at)
-    GithubHealthState.current(endpoint: health_endpoint).mark_rate_limited!(reset_at: reset_at)
+  def record_github_rate_limit(reset_at, remaining: nil, limit: nil)
+    GithubHealthState.current(endpoint: health_endpoint)
+      .mark_rate_limited!(reset_at: reset_at, remaining: remaining, limit: limit)
   rescue => e
     Rails.logger.warn(
       message: "github_client.rate_limit_record_failed",

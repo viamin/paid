@@ -179,6 +179,16 @@ RSpec.describe "Dashboard" do
         expect(doc.at_css("turbo-frame#dashboard-queue-health[src]")).not_to be_present
       end
 
+      it "wires the deferred github credential health turbo frame" do
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
+        frame = doc.at_css("turbo-frame#dashboard-github-health[data-dashboard-frames-src='#{dashboard_github_health_path}']")
+        expect(frame).to be_present
+        expect(frame["loading"]).to be_nil
+        expect(frame["src"]).to be_nil
+      end
+
       it "shows live metrics section with active runs" do
         create(:agent_run, project: project, status: "running", started_at: 5.minutes.ago)
         create(:agent_run, project: project, status: "completed", completed_at: 1.minute.ago, duration_seconds: 42)
@@ -752,6 +762,40 @@ RSpec.describe "Dashboard" do
 
       expect(response.body).to include("1 of 2 free models available")
       expect(response.body).to include("Add OpenRouter credits")
+    end
+  end
+
+  describe "GET /dashboard/github_health" do
+    let(:account) { create(:account) }
+    let(:user) { create(:user, account: account) }
+
+    before { sign_in user }
+
+    it "returns github credential health partial within a turbo frame" do
+      get dashboard_github_health_path
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("dashboard-github-health")
+      expect(response.body).to include("GitHub Credential Health")
+    end
+
+    it "renders per-installation rate-limit usage for app-backed projects" do
+      installation = create(:github_installation, account: account, account_login: "my-org")
+      create(:project, :with_github_installation, account: account, github_installation: installation)
+      create(
+        :github_health_state,
+        endpoint: GithubHealthState.endpoint_for_github_installation(installation.github_installation_id),
+        rate_limit_remaining: 3000,
+        rate_limit_limit: 15_000,
+        rate_limit_reset_at: 1.hour.from_now,
+        rate_limit_observed_at: 1.minute.ago
+      )
+
+      get dashboard_github_health_path
+
+      expect(response.body).to include("my-org")
+      expect(response.body).to include("App")
+      expect(response.body).to include("15,000/hr")
     end
   end
 

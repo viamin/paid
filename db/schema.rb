@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_15_060316) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_16_124105) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -956,6 +956,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_15_060316) do
     t.string "endpoint", limit: 50, default: "api", null: false
     t.integer "failure_count", default: 0, null: false
     t.text "last_error_message"
+    t.integer "rate_limit_limit"
+    t.datetime "rate_limit_observed_at", comment: "When the remaining/limit rate-limit figures were last sampled from the GitHub API for this credential endpoint."
+    t.integer "rate_limit_remaining"
+    t.datetime "rate_limit_reset_at"
     t.datetime "rate_limited_until", comment: "Timestamp at which the GitHub API rate limit is expected to reset. While this is in the future the endpoint is treated as unavailable so the queue scheduler pauses dispatching."
     t.datetime "updated_at", null: false
     t.index ["endpoint"], name: "index_github_health_states_on_endpoint", unique: true
