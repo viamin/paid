@@ -78,6 +78,63 @@ RSpec.describe Dashboard::GithubHealth do
       expect(stats[:healthy]).to be false
     end
 
+    it "flags suspended and revoked installations as inactive (not available)" do
+      suspended = create(:github_installation, :suspended, account: account, account_login: "suspended-org")
+      create(:github_installation, :revoked, account: account, account_login: "revoked-org")
+      create(
+        :github_health_state,
+        endpoint: GithubHealthState.endpoint_for_github_installation(suspended.github_installation_id),
+        rate_limit_remaining: 14_500,
+        rate_limit_limit: 15_000
+      )
+
+      stats = described_class.call(account: account)
+
+      expect(stats[:total]).to eq(2)
+      expect(stats[:inactive]).to eq(2)
+      expect(stats[:healthy]).to be false
+      statuses = stats[:credentials].index_by { |c| c.label }
+      expect(statuses["suspended-org (Organization)"].status).to eq(:suspended)
+      expect(statuses["suspended-org (Organization)"].available).to be false
+      expect(statuses["suspended-org (Organization)"].inactive).to be true
+      expect(statuses["revoked-org (Organization)"].status).to eq(:revoked)
+      expect(statuses["revoked-org (Organization)"].available).to be false
+    end
+
+    it "flags revoked and expired PATs as inactive (not available)" do
+      revoked = create(:github_token, :revoked, account: account, name: "Revoked PAT")
+      create(:github_token, :expired, account: account, name: "Expired PAT")
+      create(
+        :github_health_state,
+        endpoint: GithubHealthState.endpoint_for_github_token(revoked.id),
+        rate_limit_remaining: 4900,
+        rate_limit_limit: 5000
+      )
+
+      stats = described_class.call(account: account)
+
+      expect(stats[:total]).to eq(2)
+      expect(stats[:inactive]).to eq(2)
+      expect(stats[:healthy]).to be false
+      statuses = stats[:credentials].index_by { |c| c.label }
+      expect(statuses["Revoked PAT"].status).to eq(:revoked)
+      expect(statuses["Revoked PAT"].available).to be false
+      expect(statuses["Expired PAT"].status).to eq(:expired)
+      expect(statuses["Expired PAT"].available).to be false
+    end
+
+    it "reports an account unhealthy when one credential is inactive and the other is active" do
+      active = create(:github_installation, account: account, account_login: "active-org")
+      create(:project, :with_github_installation, account: account, github_installation: active)
+      create(:github_installation, :revoked, account: account, account_login: "dead-org")
+
+      stats = described_class.call(account: account)
+
+      expect(stats[:total]).to eq(2)
+      expect(stats[:inactive]).to eq(1)
+      expect(stats[:healthy]).to be false
+    end
+
     it "scopes credentials to the current account so quotas do not collide cross-account" do
       installation = create(:github_installation, account: account)
       create(:project, :with_github_installation, account: account, github_installation: installation)

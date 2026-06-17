@@ -16,6 +16,7 @@ module Dashboard
       :status,
       :status_label,
       :available,
+      :inactive,
       :rate_limit_remaining,
       :rate_limit_limit,
       :rate_limit_usage_percent,
@@ -52,8 +53,9 @@ module Dashboard
         pat_count: statuses.count { |status| status.auth_source == "pat" },
         rate_limited: statuses.count { |status| status.status == :rate_limited },
         circuit_open: statuses.count { |status| status.status == :circuit_open },
+        inactive: statuses.count { |status| inactive_status?(status.status) },
         has_github_credentials: statuses.any?,
-        healthy: statuses.none? { |status| status.status == :rate_limited || status.status == :circuit_open }
+        healthy: statuses.all?(&:available)
       }
     end
 
@@ -65,22 +67,36 @@ module Dashboard
     def installation_statuses(states)
       account.github_installations.map do |installation|
         endpoint = GithubHealthState.endpoint_for_github_installation(installation.github_installation_id)
-        build_status(label: installation_label(installation), auth_source: "app", endpoint: endpoint, state: states[endpoint])
+        build_status(
+          label: installation_label(installation),
+          auth_source: "app",
+          endpoint: endpoint,
+          state: states[endpoint],
+          inactive_status: inactive_installation_status(installation)
+        )
       end
     end
 
     def token_statuses(states)
       account.github_tokens.map do |token|
         endpoint = GithubHealthState.endpoint_for_github_token(token.id)
-        build_status(label: token.name, auth_source: "pat", endpoint: endpoint, state: states[endpoint])
+        build_status(
+          label: token.name,
+          auth_source: "pat",
+          endpoint: endpoint,
+          state: states[endpoint],
+          inactive_status: inactive_token_status(token)
+        )
       end
     end
 
-    def build_status(label:, auth_source:, endpoint:, state:)
+    def build_status(label:, auth_source:, endpoint:, state:, inactive_status:)
       state&.check_circuit_recovery!
 
       status =
-        if state&.rate_limited?
+        if inactive_status
+          inactive_status
+        elsif state&.rate_limited?
           :rate_limited
         elsif state&.circuit_open?
           :circuit_open
@@ -97,6 +113,7 @@ module Dashboard
         status: status,
         status_label: status.to_s.humanize,
         available: status == :available,
+        inactive: inactive_status?(status),
         rate_limit_remaining: state&.rate_limit_remaining,
         rate_limit_limit: state&.rate_limit_limit,
         rate_limit_usage_percent: state&.rate_limit_usage_percent,
@@ -105,6 +122,24 @@ module Dashboard
         failure_count: state&.failure_count || 0,
         last_observed_at: state&.rate_limit_observed_at
       )
+    end
+
+    def inactive_installation_status(installation)
+      return :suspended if installation.suspended?
+      return :revoked if installation.revoked?
+
+      nil
+    end
+
+    def inactive_token_status(token)
+      return :revoked if token.revoked?
+      return :expired if token.expired?
+
+      nil
+    end
+
+    def inactive_status?(status)
+      %i[suspended revoked expired].include?(status)
     end
 
     def installation_label(installation)

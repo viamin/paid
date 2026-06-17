@@ -12,7 +12,7 @@
     </div>
 
     <% if has_github_credentials %>
-      <dl class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <dl class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
         <div class="rounded-lg bg-gray-50 px-3 py-3">
           <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">App Installs</dt>
           <dd class="mt-1 text-2xl font-semibold text-gray-900"><%= app_count %></dd>
@@ -28,6 +28,10 @@
         <div class="rounded-lg bg-gray-50 px-3 py-3">
           <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Circuit Open</dt>
           <dd class="mt-1 text-2xl font-semibold text-red-600"><%= circuit_open %></dd>
+        </div>
+        <div class="rounded-lg bg-gray-50 px-3 py-3">
+          <dt class="text-xs font-medium uppercase tracking-wide text-gray-500">Inactive</dt>
+          <dd class="mt-1 text-2xl font-semibold text-gray-500"><%= inactive %></dd>
         </div>
       </dl>
 
@@ -61,6 +65,8 @@
                         "bg-red-100 text-red-700"
                       when :recovering
                         "bg-sky-100 text-sky-700"
+                      when :suspended, :revoked, :expired
+                        "bg-gray-100 text-gray-600"
                       else
                         "bg-green-100 text-green-700"
                       end %>
@@ -69,6 +75,8 @@
                       </span>
                       <% if credential.status == :rate_limited && credential.rate_limited_until.present? %>
                         <p class="mt-1 text-xs text-gray-500">Resets <%= local_time(credential.rate_limited_until, format: :relative) %></p>
+                      <% elsif credential.inactive %>
+                        <p class="mt-1 text-xs text-gray-500">No usable quota — remove or replace</p>
                       <% end %>
                     </td>
                     <td class="whitespace-nowrap px-3 py-2 text-right text-sm text-gray-900">
