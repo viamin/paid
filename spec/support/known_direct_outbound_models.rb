@@ -26,7 +26,7 @@ module KnownDirectOutboundModels
     [ "minimax", "MiniMax-M2.7" ] => "minimax",
     [ "minimax", "MiniMax-M2.7-highspeed" ] => "minimax",
     [ "zai_coding", "glm-5.1" ] => "zai_coding",
-    [ "zai", "glm-5.1" ] => "zai"
+    [ "zai", "glm-5.1-zai" ] => "zai"
   }.freeze
 
   module_function
