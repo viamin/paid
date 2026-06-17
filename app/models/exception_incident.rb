@@ -56,6 +56,15 @@ class ExceptionIncident < ApplicationRecord
     ExceptionHandler::Classifier::ISSUE_FILING_ALLOWLIST.include?(subsystem)
   end
 
+  # True when this incident was genuinely blocked from filing by the allowlist.
+  # Mirrors the `filing_blocked` scope predicate so view badges stay consistent
+  # with scope membership: projectless incidents are excluded because
+  # `file_or_update_issue` returns early before consulting the allowlist when
+  # there is no project context.
+  def filing_blocked?
+    action_taken == "notified" && project_id.present? && !on_allowlist?
+  end
+
   def record_occurrence!(new_context: {})
     now = Time.current
     updates = [

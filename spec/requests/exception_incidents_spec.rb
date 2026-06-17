@@ -13,7 +13,7 @@ RSpec.describe "Exception incidents" do
       create(:exception_incident, account: account,
         subsystem: "knowledge", action_taken: "issue_filed",
         exception_class: "KnowledgeError", message: "indexed a bad doc")
-      create(:exception_incident, account: account,
+      create(:exception_incident, :with_project, account: account,
         subsystem: "github_sync", action_taken: "notified",
         exception_class: "SyncError", message: "webhook delivery failed")
 
@@ -24,6 +24,19 @@ RSpec.describe "Exception incidents" do
       expect(response.body).to include("SyncError")
       expect(response.body).to include("On allowlist")
       expect(response.body).to include("Filing blocked")
+    end
+
+    it "does not label projectless off-allowlist incidents as filing-blocked" do
+      create(:exception_incident, account: account,
+        subsystem: "github_sync", action_taken: "notified",
+        exception_class: "ProjectlessSyncError", message: "no project context")
+
+      get exception_incidents_path
+
+      expect(response.body).to include("ProjectlessSyncError")
+      # "Filing blocked" appears once as the nav-tab link; the amber badge must not appear.
+      expect(response.body).not_to include("bg-amber-50")
+      expect(response.body).to include("No project")
     end
 
     it "scopes incidents to the current account" do
@@ -56,7 +69,7 @@ RSpec.describe "Exception incidents" do
     end
 
     it "reflects live allowlist changes in the dashboard without caching" do
-      create(:exception_incident, account: account,
+      create(:exception_incident, :with_project, account: account,
         subsystem: "github_sync", action_taken: "notified",
         exception_class: "SyncError")
 

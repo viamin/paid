@@ -135,4 +135,37 @@ RSpec.describe ExceptionIncident do
       expect(incident).to be_on_allowlist
     end
   end
+
+  describe "#filing_blocked?" do
+    let(:account) { create(:account) }
+    let(:project) { create(:project, account: account) }
+
+    it "returns true for off-allowlist notified incidents with project context" do
+      incident = create(:exception_incident, account: account, project: project,
+        subsystem: "github_sync", action_taken: "notified")
+
+      expect(incident).to be_filing_blocked
+    end
+
+    it "returns false for incidents without project context" do
+      incident = create(:exception_incident, account: account,
+        subsystem: "github_sync", action_taken: "notified")
+
+      expect(incident).not_to be_filing_blocked
+    end
+
+    it "returns false for on-allowlist incidents" do
+      incident = create(:exception_incident, account: account, project: project,
+        subsystem: "knowledge", action_taken: "notified")
+
+      expect(incident).not_to be_filing_blocked
+    end
+
+    it "returns false for off-allowlist incidents with a non-notified action" do
+      incident = create(:exception_incident, account: account, project: project,
+        subsystem: "github_sync", action_taken: "issue_filed")
+
+      expect(incident).not_to be_filing_blocked
+    end
+  end
 end
