@@ -11,20 +11,20 @@ RSpec.describe Activities::CheckRateLimitActivity do
     github_token = instance_double(GithubToken, client: client)
     allow(Project).to receive(:find_by).with(id: project.id).and_return(project)
     allow(project).to receive(:github_token).and_return(github_token)
-    allow(client).to receive_messages(rate_limit_limit: 5000, rate_limit_reset_at: 1.hour.from_now)
+    allow(client).to receive(:rate_limit_snapshot)
+      .and_return(remaining: 500, limit: 5000, reset_at: 1.hour.from_now)
   end
 
   describe "#execute" do
     it "returns rate limit remaining and low flag when budget is sufficient" do
-      allow(client).to receive(:rate_limit_remaining).and_return(500)
-
       result = activity.execute(project_id: project.id)
 
       expect(result).to eq(rate_limit_remaining: 500, rate_limit_low: false)
     end
 
     it "returns rate_limit_low true when remaining is below default threshold" do
-      allow(client).to receive(:rate_limit_remaining).and_return(50)
+      allow(client).to receive(:rate_limit_snapshot)
+        .and_return(remaining: 50, limit: 5000, reset_at: 1.hour.from_now)
 
       result = activity.execute(project_id: project.id)
 
@@ -32,7 +32,8 @@ RSpec.describe Activities::CheckRateLimitActivity do
     end
 
     it "uses custom threshold when provided" do
-      allow(client).to receive(:rate_limit_remaining).and_return(50)
+      allow(client).to receive(:rate_limit_snapshot)
+        .and_return(remaining: 50, limit: 5000, reset_at: 1.hour.from_now)
 
       result = activity.execute(project_id: project.id, threshold: 30)
 
@@ -48,7 +49,7 @@ RSpec.describe Activities::CheckRateLimitActivity do
     end
 
     it "re-raises RateLimitError as retryable Temporal error" do
-      allow(client).to receive(:rate_limit_remaining)
+      allow(client).to receive(:rate_limit_snapshot)
         .and_raise(GithubClient::RateLimitError.new)
 
       expect { activity.execute(project_id: project.id) }
@@ -58,7 +59,8 @@ RSpec.describe Activities::CheckRateLimitActivity do
     end
 
     it "logs a warning when rate limit is low" do
-      allow(client).to receive(:rate_limit_remaining).and_return(50)
+      allow(client).to receive(:rate_limit_snapshot)
+        .and_return(remaining: 50, limit: 5000, reset_at: 1.hour.from_now)
 
       expect(Rails.logger).to receive(:warn).with(hash_including(
         message: "rate_limit.budget_low",
@@ -75,11 +77,8 @@ RSpec.describe Activities::CheckRateLimitActivity do
     it "records observed quota for PAT-backed projects under the token endpoint" do
       allow(project).to receive(:client).and_return(client)
       reset_at = 1.hour.from_now
-      allow(client).to receive_messages(
-        rate_limit_remaining: 4500,
-        rate_limit_limit: 5000,
-        rate_limit_reset_at: reset_at
-      )
+      allow(client).to receive(:rate_limit_snapshot)
+        .and_return(remaining: 4500, limit: 5000, reset_at: reset_at)
 
       activity.execute(project_id: project.id)
 
@@ -94,11 +93,8 @@ RSpec.describe Activities::CheckRateLimitActivity do
       app_project = create(:project, :with_github_installation)
       allow(Project).to receive(:find_by).with(id: app_project.id).and_return(app_project)
       allow(app_project).to receive(:client).and_return(client)
-      allow(client).to receive_messages(
-        rate_limit_remaining: 12000,
-        rate_limit_limit: 15000,
-        rate_limit_reset_at: 1.hour.from_now
-      )
+      allow(client).to receive(:rate_limit_snapshot)
+        .and_return(remaining: 12000, limit: 15000, reset_at: 1.hour.from_now)
 
       activity.execute(project_id: app_project.id)
 
@@ -111,10 +107,9 @@ RSpec.describe Activities::CheckRateLimitActivity do
       expect(app_project.github_auth_source).to eq("app")
     end
 
-    it "keeps recording best-effort and still returns the probe result when limit cannot be read" do
+    it "keeps recording best-effort and still returns the probe result when recording fails" do
       allow(project).to receive(:client).and_return(client)
-      allow(client).to receive(:rate_limit_remaining).and_return(500)
-      allow(client).to receive(:rate_limit_limit).and_raise(StandardError, "boom")
+      allow(GithubHealthState).to receive(:current).and_raise(StandardError, "boom")
 
       result = activity.execute(project_id: project.id)
 
@@ -128,9 +123,9 @@ RSpec.describe Activities::CheckRateLimitActivity do
       state = GithubHealthState.current(endpoint: project.github_health_endpoint)
       state.update!(rate_limit_remaining: 4000, rate_limit_limit: 5000, rate_limit_observed_at: 5.minutes.ago)
 
-      # Simulate transport/auth failure: rate_limit_remaining returns 0 (its rescue default)
-      # and rate_limit_limit returns nil (its rescue default) — both from Octokit::Error
-      allow(client).to receive_messages(rate_limit_remaining: 0, rate_limit_limit: nil, rate_limit_reset_at: nil)
+      # Simulate transport/auth failure: snapshot returns 0 remaining and nil limit
+      allow(client).to receive(:rate_limit_snapshot)
+        .and_return(remaining: 0, limit: nil, reset_at: nil)
 
       result = activity.execute(project_id: project.id)
 

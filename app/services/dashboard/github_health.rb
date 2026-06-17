@@ -55,7 +55,7 @@ module Dashboard
         circuit_open: statuses.count { |status| status.status == :circuit_open },
         inactive: statuses.count { |status| inactive_status?(status.status) },
         has_github_credentials: statuses.any?,
-        healthy: statuses.all?(&:available)
+        healthy: statuses.any? && statuses.all?(&:available)
       }
     end
 

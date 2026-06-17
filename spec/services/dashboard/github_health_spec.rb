@@ -153,7 +153,7 @@ RSpec.describe Dashboard::GithubHealth do
     it "reports no credentials when the account has none configured" do
       stats = described_class.call(account: account)
 
-      expect(stats).to include(total: 0, has_github_credentials: false, healthy: true)
+      expect(stats).to include(total: 0, has_github_credentials: false, healthy: false)
     end
   end
 end
