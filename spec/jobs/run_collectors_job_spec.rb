@@ -129,4 +129,63 @@ RSpec.describe RunCollectorsJob do
       end
     end
   end
+
+  describe "exception notification (RDR-039)" do
+    include ActiveJob::TestHelper
+
+    before do
+      allow(Knowledge::ContainerizedRunner).to receive(:available?).and_return(false)
+    end
+
+    it "declares notification_subsystem as 'knowledge'" do
+      expect(described_class.notification_subsystem).to eq("knowledge")
+    end
+
+    it "returns the project_id from the first argument for incident attribution" do
+      expect(described_class.new(project.id, commit_sha).notification_project_id).to eq(project.id)
+    end
+
+    it "uses default max_attempts so the rescue_from hook fires on the first failure" do
+      expect(described_class.max_attempts).to eq(1)
+    end
+
+    context "when the runner raises a terminal failure" do
+      before do
+        allow(Knowledge::CollectorRunner).to receive(:call).and_raise(RuntimeError, "collector crashed")
+        allow(ExceptionHandler::IssueFiler).to receive(:call)
+      end
+
+      it "terminally fails the job (re-raises through the rescue_from hook)" do
+        expect {
+          described_class.perform_now(project.id, commit_sha)
+        }.to raise_error(RuntimeError, "collector crashed")
+      end
+
+      it "produces an ExceptionIncident with subsystem 'knowledge' and the correct project" do
+        expect {
+          described_class.perform_now(project.id, commit_sha)
+        }.to raise_error(RuntimeError)
+
+        # The ApplicationJob terminal-failure hook enqueued HandleExceptionJob;
+        # drain it so the ExceptionHandler pipeline records the incident.
+        perform_enqueued_jobs(only: HandleExceptionJob)
+
+        incident = ExceptionIncident.last
+        expect(incident).to have_attributes(
+          subsystem: "knowledge",
+          exception_class: "RuntimeError",
+          account: project.account,
+          project: project
+        )
+      end
+
+      it "enqueues exactly one HandleExceptionJob via the notifier (no manual duplicate)" do
+        expect {
+          expect {
+            described_class.perform_now(project.id, commit_sha)
+          }.to raise_error(RuntimeError)
+        }.to have_enqueued_job(HandleExceptionJob).exactly(:once)
+      end
+    end
+  end
 end

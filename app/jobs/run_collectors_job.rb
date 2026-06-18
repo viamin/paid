@@ -4,6 +4,8 @@ class RunCollectorsJob < ApplicationJob
   include GoodJob::ActiveJobExtensions::Concurrency
 
   queue_as :knowledge
+  self.notification_subsystem = "knowledge"
+
   discard_on ActiveRecord::RecordNotFound
 
   # Prevent duplicate enqueues for the same project+SHA when staleness detection
@@ -13,6 +15,10 @@ class RunCollectorsJob < ApplicationJob
     enqueue_limit: 1,
     key: -> { "run_collectors_#{arguments[0]}_#{arguments[1]}" }
   )
+
+  def notification_project_id
+    arguments.first
+  end
 
   def perform(project_id, commit_sha, branch: "main", committed_at: nil)
     project = Project.find(project_id)
@@ -37,7 +43,7 @@ class RunCollectorsJob < ApplicationJob
     update_knowledge_status(project, result)
   rescue ActiveRecord::RecordNotFound
     raise # Re-raise so discard_on can handle it above the StandardError rescue
-  rescue StandardError => e
+  rescue StandardError
     begin
       project&.update(knowledge_status: "failed") unless project&.knowledge_status == "failed"
       KnowledgeArtifact.bust_artifact_counts_cache(project.id) if project
@@ -48,7 +54,6 @@ class RunCollectorsJob < ApplicationJob
         error: update_error.message
       )
     end
-    report_exception(e, project)
     raise
   end
 
@@ -79,19 +84,5 @@ class RunCollectorsJob < ApplicationJob
   rescue StandardError => e
     Rails.logger.error(message: "knowledge.status_update_failed", project_id: project.id, error: e.message)
     raise
-  end
-
-  def report_exception(exception, project)
-    return unless project&.account
-
-    HandleExceptionJob.perform_later(
-      account_id: project.account_id,
-      exception_class: exception.class.name,
-      exception_message: exception.message,
-      exception_backtrace: exception.backtrace&.first(20),
-      context: { subsystem: "knowledge", project_id: project.id }
-    )
-  rescue StandardError => e
-    Rails.logger.warn(message: "knowledge.exception_report_failed", error: e.message)
   end
 end
