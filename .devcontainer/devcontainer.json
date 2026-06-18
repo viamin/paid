@@ -181,7 +181,7 @@
         },
         "terminal.integrated.scrollback": 10000,
         // Remote ports
-        "remote.autoForwardPorts": true,
+        "remote.autoForwardPorts": false,
         "remote.portsAttributes": {
           "3000": {
             "onAutoForward": "ignore"
