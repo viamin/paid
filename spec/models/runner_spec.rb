@@ -620,6 +620,7 @@ RSpec.describe Runner do
 
     it "requires kilocode preflight timeout overrides to be positive integers" do
       api_key = create(:provider_api_key, user: runner.user, api_service_type: "inception")
+      create(:llm_model, model_id: "glm-5.1", provider: "inception", tier: "mid")
       runner.auth_type = "api_key"
       runner.provider_api_key = api_key
       runner.runner_key = "kilocode"
@@ -642,6 +643,7 @@ RSpec.describe Runner do
 
     it "rejects an invalid preflight_timeout_seconds for opencode api_key providers" do
       api_key = create(:provider_api_key, user: runner.user, api_service_type: "openrouter")
+      create(:llm_model, model_id: "meta-llama/llama-4-maverick", provider: "openrouter", tier: "mid")
       runner.auth_type = "api_key"
       runner.provider_api_key = api_key
       runner.runner_key = "opencode"
@@ -653,6 +655,7 @@ RSpec.describe Runner do
 
     it "reads an optional preflight timeout override for opencode from config" do
       api_key = create(:provider_api_key, user: runner.user, api_service_type: "openrouter")
+      create(:llm_model, model_id: "meta-llama/llama-4-maverick", provider: "openrouter", tier: "mid")
       runner.auth_type = "api_key"
       runner.provider_api_key = api_key
       runner.runner_key = "opencode"
@@ -661,6 +664,42 @@ RSpec.describe Runner do
 
       expect(runner.opencode_preflight_timeout_seconds).to eq(90)
       expect(runner.runner_preflight_timeout_seconds).to eq(90)
+    end
+
+    it "rejects an OpenCode model id that is not present in the catalog" do
+      api_key = create(:provider_api_key, user: runner.user, api_service_type: "minimax")
+      runner.auth_type = "api_key"
+      runner.provider_api_key = api_key
+      runner.runner_key = "opencode"
+      runner.config = { "opencode" => { "api_provider" => "minimax", "model" => "MiniMax-M3" } }
+
+      expect(runner).not_to be_valid
+      expect(runner.errors[:config]).to include("OpenCode model id not found in the catalog")
+    end
+
+    it "accepts a provider-qualified OpenCode model id when the catalog stores the canonical bare model id" do
+      api_key = create(:provider_api_key, user: runner.user, api_service_type: "minimax")
+      create(:llm_model, model_id: "MiniMax-M3", provider: "minimax", tier: "mid")
+      runner.auth_type = "api_key"
+      runner.provider_api_key = api_key
+      runner.runner_key = "opencode"
+      runner.config = { "opencode" => { "api_provider" => "minimax", "model" => "minimax/MiniMax-M3" } }
+
+      expect(runner).to be_valid
+    end
+
+    it "uses the human-readable service-type label on both sides of the catalog-provider mismatch message" do
+      api_key = create(:provider_api_key, user: runner.user, api_service_type: "minimax")
+      create(:llm_model, model_id: "mercury-2", provider: "inception", tier: "mid")
+      runner.auth_type = "api_key"
+      runner.provider_api_key = api_key
+      runner.runner_key = "opencode"
+      runner.config = { "opencode" => { "api_provider" => "minimax", "model" => "mercury-2" } }
+
+      expect(runner).not_to be_valid
+      expect(runner.errors[:config].join).to include(
+        "OpenCode model belongs to the InceptionLabs catalog but expected MiniMax"
+      )
     end
 
     describe "agent_co_author_trailer" do
@@ -888,16 +927,6 @@ RSpec.describe Runner do
     let(:account) { create(:account, slug: "runner-kilocode-#{SecureRandom.hex(6)}") }
     let(:user) { create(:user, account: account, email: "runner-kilocode-#{SecureRandom.hex(6)}@example.com") }
     let(:api_key) { create(:provider_api_key, user: user, api_service_type: "anthropic") }
-    let(:runner) do
-      create(
-        :runner,
-        user: user,
-        runner_key: "kilocode",
-        auth_type: "api_key",
-        provider_api_key: api_key,
-        config: { "kilocode" => { "api_provider" => "anthropic", "model" => "claude-sonnet-4-20250514" } }
-      )
-    end
     let(:expected_kilocode_model_entry) do
       {
         "name" => "claude-sonnet-4-20250514",
@@ -911,6 +940,22 @@ RSpec.describe Runner do
         "id" => "glm-5.1",
         "tool_call" => true
       }
+    end
+    let(:runner) do
+      create(
+        :runner,
+        user: user,
+        runner_key: "kilocode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "kilocode" => { "api_provider" => "anthropic", "model" => "claude-sonnet-4-20250514" } }
+      )
+    end
+
+    before do
+      create(:llm_model, model_id: "claude-sonnet-4-20250514", provider: "anthropic", tier: "mid")
+      create(:llm_model, model_id: "anthropic/claude-opus-4", provider: "anthropic", tier: "high")
+      create(:llm_model, model_id: "glm-5.1", provider: "zai_coding", tier: "mid")
     end
 
     it "generates runner as a record with prefixed model" do
@@ -1116,6 +1161,7 @@ RSpec.describe Runner do
     end
 
     it "clears stale tier_model_ids when runner no longer qualifies for direct-outbound" do
+      create(:llm_model, model_id: "test-model-1", provider: "openrouter", tier: "mid")
       runner = create(
         :runner,
         user: user,
@@ -1134,6 +1180,7 @@ RSpec.describe Runner do
     end
 
     it "clears stale tier_model_ids when model is removed from config" do
+      create(:llm_model, model_id: "test-model-2", provider: "openrouter", tier: "mid")
       runner = create(
         :runner,
         user: user,
@@ -1153,6 +1200,7 @@ RSpec.describe Runner do
 
     it "clears stale tier_model_ids when the Pi model is removed from config" do
       minimax_key = create(:provider_api_key, user: user, api_service_type: "minimax")
+      create(:llm_model, model_id: "MiniMax-M2.7", provider: "minimax", tier: "mid")
       runner = create(
         :runner,
         user: user,
@@ -1171,6 +1219,7 @@ RSpec.describe Runner do
     end
 
     it "preserves tier_model_ids on unrelated attribute saves when config is unchanged" do
+      create(:llm_model, model_id: "test-model-3", provider: "openrouter", tier: "mid")
       runner = create(
         :runner,
         user: user,
@@ -1187,6 +1236,8 @@ RSpec.describe Runner do
     end
 
     it "updates tier_model_ids when the configured model changes" do
+      create(:llm_model, model_id: "test-model-old", provider: "openrouter", tier: "mid")
+      create(:llm_model, model_id: "test-model-new", provider: "openrouter", tier: "mid")
       runner = create(
         :runner,
         user: user,
@@ -1202,7 +1253,7 @@ RSpec.describe Runner do
     end
 
     it "reactivates an inactive LlmModel when reused for a direct-outbound runner" do
-      inactive_model = create(:llm_model, model_id: "inactive-test-model", provider: "zai", tier: "mid", active: false)
+      inactive_model = create(:llm_model, model_id: "inactive-test-model", provider: "openrouter", tier: "mid", active: false)
 
       runner = create(
         :runner,
@@ -1215,6 +1266,22 @@ RSpec.describe Runner do
 
       expect(inactive_model.reload).to be_active
       expect(runner.tier_model_ids.values.uniq).to eq([ "inactive-test-model" ])
+    end
+
+    it "normalizes provider-qualified OpenCode tier models back to the catalog model id" do
+      minimax_key = create(:provider_api_key, user: user, api_service_type: "minimax")
+      create(:llm_model, model_id: "MiniMax-M3", provider: "minimax", tier: "mid")
+
+      runner = create(
+        :runner,
+        user: user,
+        runner_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: minimax_key,
+        config: { "opencode" => { "api_provider" => "minimax", "model" => "minimax/MiniMax-M3" } }
+      )
+
+      expect(runner.tier_model_ids.values.uniq).to eq([ "MiniMax-M3" ])
     end
   end
 
@@ -1230,6 +1297,15 @@ RSpec.describe Runner do
         provider_api_key: api_key,
         config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } }
       )
+    end
+
+    before do
+      create(:llm_model, model_id: "moonshotai/kimi-k2-0905", provider: "openrouter", tier: "mid")
+      create(:llm_model, model_id: "glm-5.1", provider: "zai_coding", tier: "mid")
+      create(:llm_model, model_id: "glm-5.1-zai", provider: "zai", tier: "mid")
+      create(:llm_model, model_id: "MiniMax-M2.7", provider: "minimax", tier: "mid")
+      create(:llm_model, model_id: "MiniMax-M2.7-highspeed", provider: "minimax", tier: "mid")
+      create(:llm_model, model_id: "claude-sonnet-4-5", provider: "anthropic", tier: "mid")
     end
 
     it "builds runner runtime inputs instead of a local bootstrap wrapper" do
@@ -1275,12 +1351,12 @@ RSpec.describe Runner do
         runner_key: "opencode",
         auth_type: "api_key",
         provider_api_key: zai_key,
-        config: { "opencode" => { "api_provider" => "zai", "model" => "glm-5.1" } }
+        config: { "opencode" => { "api_provider" => "zai", "model" => "glm-5.1-zai" } }
       )
 
       runtime = zai_provider.agent_harness_runner_runtime
 
-      expect(runtime.model).to eq("zai/glm-5.1")
+      expect(runtime.model).to eq("zai/glm-5.1-zai")
     end
 
     it "configures MiniMax through the Anthropic SDK provider config" do
