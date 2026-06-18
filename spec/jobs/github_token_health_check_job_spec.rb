@@ -149,7 +149,7 @@ RSpec.describe GithubTokenHealthCheckJob do
         allow(Octokit::Client).to receive(:new).and_return(octokit_client)
         allow(octokit_client).to receive(:middleware=)
         allow(octokit_client).to receive(:user).and_raise(Octokit::TooManyRequests.new({}))
-        rate_limit = instance_double(Octokit::RateLimit, resets_at: Time.now + 3600)
+        rate_limit = instance_double(Octokit::RateLimit, resets_at: Time.now + 3600, remaining: 0, limit: 5000)
         allow(octokit_client).to receive(:rate_limit).and_return(rate_limit)
       end
 
