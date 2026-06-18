@@ -2797,7 +2797,7 @@ expect(container_service).to receive(:execute).with(
         end
 
         state = user.runner_states.find_by(runner_name: runner.state_key)
-        expect(state).to be_nil.or(satisfy { |s| s.circuit_closed? })
+        expect(state).to be_nil.or(satisfy(&:circuit_closed?))
       end
 
       it "does not trip the circuit breaker for cli-version-outdated (deterministic config) errors" do
@@ -2818,7 +2818,7 @@ expect(container_service).to receive(:execute).with(
         end
 
         state = user.runner_states.find_by(runner_name: runner.state_key)
-        expect(state).to be_nil.or(satisfy { |s| s.circuit_closed? })
+        expect(state).to be_nil.or(satisfy(&:circuit_closed?))
       end
 
       it "still records the attempt with error_type 'error' for deterministic config errors" do
