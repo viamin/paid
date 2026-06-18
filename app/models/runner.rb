@@ -1059,9 +1059,15 @@ class Runner < ApplicationRecord
         # overwrite tier_model_ids during save.
         next if will_save_change_to_config?
         configured = direct_outbound_model_id
-        if configured.present? && model_id != configured
-          errors.add(:tier_model_ids, "must match the configured direct-outbound model #{configured}")
-          return
+        if configured.present?
+          # The configured model may be provider-qualified (e.g.
+          # "minimax/MiniMax-M3") while the tier_model_ids value comes from the
+          # LlmModel catalog as the bare id ("MiniMax-M3"). Accept either form.
+          candidates = direct_outbound_catalog_model_id_candidates(configured)
+          unless candidates.include?(model_id)
+            errors.add(:tier_model_ids, "must match the configured direct-outbound model #{configured}")
+            return
+          end
         end
       elsif runner_key == OPENROUTER_FREE_RUNNER_KEY
         unless model.free? && model.provider == OPENROUTER_FREE_MODEL_PROVIDER
