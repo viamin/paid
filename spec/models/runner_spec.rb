@@ -688,6 +688,20 @@ RSpec.describe Runner do
       expect(runner).to be_valid
     end
 
+    it "uses the human-readable service-type label on both sides of the catalog-provider mismatch message" do
+      api_key = create(:provider_api_key, user: runner.user, api_service_type: "minimax")
+      create(:llm_model, model_id: "mercury-2", provider: "inception", tier: "mid")
+      runner.auth_type = "api_key"
+      runner.provider_api_key = api_key
+      runner.runner_key = "opencode"
+      runner.config = { "opencode" => { "api_provider" => "minimax", "model" => "mercury-2" } }
+
+      expect(runner).not_to be_valid
+      expect(runner.errors[:config].join).to include(
+        "OpenCode model belongs to the InceptionLabs catalog but expected MiniMax"
+      )
+    end
+
     describe "agent_co_author_trailer" do
       it "allows a normal single-line trailer" do
         runner.agent_co_author_trailer = "Co-Authored-By: Claude <noreply@anthropic.com>"

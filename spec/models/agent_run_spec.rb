@@ -3078,6 +3078,7 @@ RSpec.describe AgentRun do
 
       it "does not invalidate runner option caches for unrelated config changes" do
         project = create(:project)
+        create(:llm_model, model_id: "moonshotai/kimi-k2-0905", provider: "openrouter", tier: "mid")
         runner = create(
           :runner,
           user: project.effective_owner,
@@ -3100,6 +3101,7 @@ RSpec.describe AgentRun do
 
       it "invalidates runner option caches when model-driven display names change" do
         project = create(:project)
+        create(:llm_model, model_id: "moonshotai/kimi-k2-0905", provider: "openrouter", tier: "mid")
         create(:llm_model, model_id: "moonshotai/kimi-k2-0906", provider: "openrouter", tier: "mid")
         runner = create(
           :runner,

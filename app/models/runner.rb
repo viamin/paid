@@ -1322,7 +1322,7 @@ class Runner < ApplicationRecord
     expected_provider = direct_outbound_llm_model_provider
     return if expected_provider.blank? || model.provider == expected_provider
 
-    errors.add(:config, "#{direct_outbound_runner_label} model belongs to the #{model.provider} catalog but expected #{RunnerSupport.api_service_type_label(expected_provider)}")
+    errors.add(:config, "#{direct_outbound_runner_label} model belongs to the #{RunnerSupport.api_service_type_label(model.provider)} catalog but expected #{RunnerSupport.api_service_type_label(expected_provider)}")
   end
 
   def required_api_service_type

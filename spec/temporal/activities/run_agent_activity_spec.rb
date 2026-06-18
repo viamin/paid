@@ -1680,9 +1680,20 @@ RSpec.describe Activities::RunAgentActivity do
       enabled_for_agent_runs: true,
       config: { "opencode" => { "api_provider" => api_provider, "model" => model } }
     ).tap do |runner|
-      runner.update!(tier_models: LlmModel::TIERS.to_h do |tier|
-        [ tier, { "model_id" => model, "provider_id" => runner.id } ]
-      end)
+      $stderr.puts "[debug] Before update: tier_model_ids=#{runner.tier_model_ids.inspect}"
+      $stderr.puts "[debug] Will change config? #{runner.will_save_change_to_config?}"
+      $stderr.puts "[debug] requires_direct_outbound? #{runner.requires_direct_outbound?}"
+      $stderr.puts "[debug] direct_outbound_model_id #{runner.direct_outbound_model_id.inspect}"
+      begin
+        runner.update!(tier_models: LlmModel::TIERS.to_h do |tier|
+          [ tier, { "model_id" => model, "provider_id" => runner.id } ]
+        end)
+        $stderr.puts "[debug] After update OK"
+      rescue => e
+        $stderr.puts "[debug] After update FAILED: #{e.class}: #{e.message}"
+        $stderr.puts "[debug] Errors: #{runner.errors.full_messages.inspect}"
+        raise
+      end
     end
   end
 

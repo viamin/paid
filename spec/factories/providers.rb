@@ -21,22 +21,6 @@ FactoryBot.define do
       fallback_role { "rate_limit_fallback" }
     end
 
-    after(:build) do |provider|
-      config_key, api_provider_key, model_key = case provider.runner_key
-      when "opencode" then [ "opencode", "api_provider", "model" ]
-      when "kilocode" then [ "kilocode", "api_provider", "model" ]
-      when "pi" then [ "pi", "api_provider", "model" ]
-      else next
-      end
-
-      config = provider.config.is_a?(Hash) ? provider.config[config_key] : nil
-      next unless config.is_a?(Hash)
-
-      api_provider = config[api_provider_key].to_s
-      model_id = config[model_key].to_s
-      next if api_provider.blank? || model_id.blank?
-
-      KnownDirectOutboundModels.seed_catalog_model(api_provider: api_provider, model_id: model_id)
-    end
+    after(:build) { |provider| KnownDirectOutboundModels.seed_from_direct_outbound_config(provider) }
   end
 end
