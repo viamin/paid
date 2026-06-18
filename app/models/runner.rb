@@ -1373,11 +1373,15 @@ class Runner < ApplicationRecord
       required_api_service_type == "openrouter"
   end
 
+  # NOTE: Aider is intentionally absent — only direct_outbound_capable_runner?
+  # runners (kilocode/opencode/openrouter_free/pi) reach this method via
+  # direct_outbound_config_models_must_exist_in_catalog. If aider joins that
+  # set in the future, add the case branch back so the validation error names
+  # "Aider" instead of the raw runner_key.
   def direct_outbound_runner_label
     case runner_key
     when "opencode" then "OpenCode"
     when "kilocode" then "KiloCode"
-    when "aider" then "Aider"
     when "pi" then "Pi"
     else runner_key.to_s
     end
