@@ -93,7 +93,7 @@ RSpec.describe Dashboard::GithubHealth do
       expect(stats[:total]).to eq(2)
       expect(stats[:inactive]).to eq(2)
       expect(stats[:healthy]).to be false
-      statuses = stats[:credentials].index_by { |c| c.label }
+      statuses = stats[:credentials].index_by(&:label)
       expect(statuses["suspended-org (Organization)"].status).to eq(:suspended)
       expect(statuses["suspended-org (Organization)"].available).to be false
       expect(statuses["suspended-org (Organization)"].inactive).to be true
@@ -116,7 +116,7 @@ RSpec.describe Dashboard::GithubHealth do
       expect(stats[:total]).to eq(2)
       expect(stats[:inactive]).to eq(2)
       expect(stats[:healthy]).to be false
-      statuses = stats[:credentials].index_by { |c| c.label }
+      statuses = stats[:credentials].index_by(&:label)
       expect(statuses["Revoked PAT"].status).to eq(:revoked)
       expect(statuses["Revoked PAT"].available).to be false
       expect(statuses["Expired PAT"].status).to eq(:expired)
