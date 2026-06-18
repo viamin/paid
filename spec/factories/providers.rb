@@ -20,5 +20,7 @@ FactoryBot.define do
       provider_api_key
       fallback_role { "rate_limit_fallback" }
     end
+
+    after(:build) { |provider| KnownDirectOutboundModels.seed_from_direct_outbound_config(provider) }
   end
 end
