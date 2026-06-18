@@ -15,6 +15,7 @@ module KnownDirectOutboundModels
     [ "openrouter", "moonshotai/kimi-k2.5" ] => "openrouter",
     [ "openrouter", "moonshotai/kimi-k2" ] => "openrouter",
     [ "openrouter", "moonshotai/kimi-k2-0906" ] => "openrouter",
+    [ "openrouter", "anthropic/claude-opus-4.1" ] => "openrouter",
     [ "anthropic", "claude-sonnet-4-20250514" ] => "anthropic",
     [ "anthropic", "claude-sonnet-4-5" ] => "anthropic",
     [ "anthropic", "claude-3-7-sonnet" ] => "anthropic",
