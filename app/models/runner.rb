@@ -104,12 +104,6 @@ class Runner < ApplicationRecord
   PI_API_PROVIDER_KEYS = PI_API_PROVIDERS.keys.freeze
   PI_DEFAULT_API_PROVIDER = "deepseek"
 
-  DIRECT_OUTBOUND_MODEL_TIER_HINTS = {
-    "glm-5.1" => "high",
-    "glm-4.7" => "mid",
-    "glm-4.5-air" => "low"
-  }.freeze
-
   belongs_to :user
   belongs_to :provider_api_key, optional: true
   belongs_to :integration_credential, optional: true
@@ -777,11 +771,6 @@ class Runner < ApplicationRecord
     # so including it here would cause clear_stale_direct_outbound_tier_models
     # to erase its valid standard tier mappings on every save.
     %w[kilocode opencode openrouter_free pi].include?(runner_key)
-  end
-
-  def direct_outbound_display_name(model_id)
-    base = model_id.include?("/") ? model_id.split("/").last : model_id
-    base.tr("_-", " ").split.map(&:capitalize).join(" ")
   end
 
   def direct_outbound_api_key_env_var(api_provider)
