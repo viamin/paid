@@ -2654,6 +2654,8 @@ RSpec.describe "AgentRuns" do
   end
 
   def create_opencode_runner_entry(user:, api_key:, name:, model:, **attrs)
+    create(:llm_model, model_id: model, provider: "openrouter", tier: "mid") unless LlmModel.exists?(model_id: model)
+
     user.runners.create!(
       runner_key: "opencode",
       auth_type: "api_key",

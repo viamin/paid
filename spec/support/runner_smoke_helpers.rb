@@ -301,6 +301,8 @@ module RunnerSmokeHelpers
         "Set #{api_key_env_var} or create a matching provider/api key in the development DB to run #{scenario.label}"
     end
 
+    KnownDirectOutboundModels.seed_model(model_id: model_id, provider: service_type)
+
     provider_api_key = FactoryBot.create(
       :provider_api_key,
       user: user,
