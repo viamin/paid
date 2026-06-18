@@ -194,7 +194,7 @@ GEM
     exception_notification (5.0.1)
       actionmailer (>= 7.1, < 9)
       activesupport (>= 7.1, < 9)
-    excon (1.4.2)
+    excon (1.5.0)
       logger
     factory_bot (6.5.6)
       activesupport (>= 6.1.0)
@@ -802,7 +802,7 @@ CHECKSUMS
   et-orbi (1.4.0) sha256=6c7e3c90779821f9e3b324c5e96fda9767f72995d6ae435b96678a4f3e2de8bc
   event_stream_parser (1.0.0) sha256=a2683bab70126286f8184dc88f7968ffc4028f813161fb073ec90d171f7de3c8
   exception_notification (5.0.1) sha256=a9698c8d4670ec50f1714fd14a61a9f83da082d3b5535fd830baf3dc75ba28f9
-  excon (1.4.2) sha256=32d8d8eda619717d9b8043b4675e096fb5c2139b080e2ad3b267f88c545aaa35
+  excon (1.5.0) sha256=c503ad1d0123bc8ab2a062ff3789dc891ec368cb9e13765ab88a9c58c8bb6d50
   factory_bot (6.5.6) sha256=12beb373214dccc086a7a63763d6718c49769d5606f0501e0a4442676917e077
   factory_bot_rails (6.5.1) sha256=d3cc4851eae4dea8a665ec4a4516895045e710554d2b5ac9e68b94d351bc6d68
   faker (3.8.0) sha256=c147b308df73a90f27a4fc84f18d4c22ef0ad9c2a64b2b61c86fd0ca71753efc
