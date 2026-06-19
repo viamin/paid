@@ -225,6 +225,7 @@ class RunnersController < ApplicationController
   def load_runner_options
     addable_keys = resource_addable_keys
     existing_subscription_keys = resource_records.kept_only.subscription.pluck(:runner_key)
+    existing_api_key_keys = resource_records.kept_only.api_key.pluck(:runner_key)
     subscription_addable_keys = addable_keys.reject { |key| api_key_only_runner?(key) }
 
     # Subscription runners: only show keys not yet added
@@ -235,10 +236,19 @@ class RunnersController < ApplicationController
     end
 
     # API key runners: show all addable keys that have a compatible API key
+    # and are not already added by this user. openrouter_free is API-key
+    # only and must be hidden once the user already has one configured so
+    # the "Add Runner" CTA reflects reality.
     @available_api_keys = current_user.provider_api_keys.ordered
-    @api_key_runner_options = addable_keys.select do |key|
+    candidate_api_key_keys = addable_keys.select do |key|
       @available_api_keys.any? { |ak| compatible_api_key_for_runner?(api_key: ak, runner_key: key) }
     end
+    @api_key_runner_options =
+      if @runner&.persisted?
+        candidate_api_key_keys - (existing_api_key_keys - [ @runner.runner_key ])
+      else
+        candidate_api_key_keys - existing_api_key_keys
+      end
 
     # Combined for backward compat
     @runner_options = @subscription_runner_options
@@ -478,14 +488,16 @@ class RunnersController < ApplicationController
     )
     @available_api_keys = current_user.provider_api_keys.ordered
     existing_subscription_keys = @runners.select(&:subscription?).map(&:runner_key)
+    existing_runner_keys = @runners.map(&:runner_key)
     addable_keys = resource_addable_keys
     subscription_addable_keys = addable_keys.reject { |key| api_key_only_runner?(key) }
     api_key_compatible_addable_keys =
       addable_keys.select do |key|
         @available_api_keys.any? { |api_key| compatible_api_key_for_runner?(api_key: api_key, runner_key: key) }
       end
+    visible_api_key_keys = api_key_compatible_addable_keys.reject { |key| existing_runner_keys.include?(key) }
     @addable_runner_options = (
-      (subscription_addable_keys - existing_subscription_keys) + api_key_compatible_addable_keys
+      (subscription_addable_keys - existing_subscription_keys) + visible_api_key_keys
     ).uniq.presence || []
   end
 

@@ -28,6 +28,14 @@ module Knowledge
           return result
         rescue AgentHarness::RateLimitError => e
           record_rate_limit(runner, e)
+          if rotation_runner?(runner)
+            rotated_result = try_rotation(runner, e)
+            if rotated_result
+              result = yield(runner)
+              record_success(runner)
+              return result
+            end
+          end
           log_runner_failure(runner, "rate_limited", e)
           log_runner_switch(runner, runners[index + 1], "rate_limited", e)
           last_error = e
@@ -60,6 +68,10 @@ module Knowledge
       reset_at = error.respond_to?(:reset_time) ? error.reset_time : nil
       state = runner_state_for(runner)
       state&.mark_rate_limited!(reset_at: reset_at)
+
+      if (model_id = free_model_id_for(runner))
+        state&.mark_model_rate_limited!(model_id, reset_at: reset_at)
+      end
     end
 
     def record_failure(runner, _error)
@@ -83,12 +95,91 @@ module Knowledge
 
     def runner_state_for(runner)
       @runner_states ||= {}
-      @runner_states[runner] ||= @user_setting.user
-        .runner_states
-        .find_or_create_by!(runner_name: runner) { |s|
-          s.circuit_state = "closed"
-          s.failure_count = 0
-        }
+      @runner_states[runner] ||= begin
+        state_name = runner_state_name_for(runner)
+        @user_setting.user
+          .runner_states
+          .find_or_create_by!(runner_name: state_name) { |s|
+            s.circuit_state = "closed"
+            s.failure_count = 0
+          }
+      end
+    end
+
+    # Resolves the RunnerState key for the given runner identifier. Strings
+    # that map to a configured Runner record use that record's state_key so
+    # all state for one runner is grouped together (free-model rotation,
+    # circuit-breaker updates, etc.); bare strings like "claude" or "openai"
+    # use themselves so behavior matches the pre-existing callers.
+    def runner_state_name_for(runner)
+      record = rotation_runner_record(runner)
+      return record.state_key if record
+
+      runner.to_s
+    end
+
+    # Returns the openrouter_free Runner record for the current user when the
+    # runner-name passed in is openrouter_free and the user actually has one
+    # configured. The Runner record is what FreeModels::Rotation needs in
+    # order to update tier_model_ids and read the RunnerState.
+    def rotation_runner_record(runner_name)
+      return nil unless runner_name.to_s == Runner::OPENROUTER_FREE_RUNNER_KEY
+
+      user_runners = @user_setting.user.runners.kept_only
+      user_runners.find_by(runner_key: Runner::OPENROUTER_FREE_RUNNER_KEY)
+    end
+
+    def rotation_runner?(runner)
+      rotation_runner_record(runner).present?
+    end
+
+    def free_model_id_for(runner)
+      record = rotation_runner_record(runner)
+      return nil unless record
+
+      LlmModel::TIERS.each do |tier|
+        model_id = record.tier_model_ids&.dig(tier)
+        return model_id if model_id.present?
+      end
+
+      nil
+    end
+
+    # Attempts to rotate the openrouter_free runner to a new free model and,
+    # on success, records the rotation so the caller can retry with the same
+    # runner. Returns the rotation result on success and nil when no
+    # candidate is available (caller falls back to the next runner).
+    def try_rotation(runner, error)
+      record = rotation_runner_record(runner)
+      return nil unless record
+
+      result = FreeModels::Rotation.call(
+        runner: record,
+        current_model_id: extract_rate_limited_model_id(error),
+        user: @user_setting.user,
+        include_below_quality_bar: false
+      )
+
+      if result.rotated?
+        Rails.logger.info(
+          message: "knowledge.free_model_rotation",
+          operation: @operation.to_s,
+          runner: runner,
+          previous_model_id: result.previous_model_id,
+          new_model_id: result.model_id,
+          tier: result.tier,
+          knowledge_run_id: @knowledge_run&.id,
+          user_setting_id: @user_setting.id
+        )
+      end
+
+      result.rotated? ? result : nil
+    end
+
+    def extract_rate_limited_model_id(error)
+      return nil unless error.respond_to?(:model_id)
+
+      error.model_id.presence
     end
 
     def log_runner_failure(runner, reason, error)

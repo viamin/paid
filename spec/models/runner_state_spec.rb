@@ -287,4 +287,136 @@ RSpec.describe RunnerState do
     it { expect(build(:runner_state)).to be_circuit_closed }
     it { expect(build(:runner_state, :circuit_open)).not_to be_circuit_closed }
   end
+
+  describe "per-model rate-limit tracking" do
+    describe "#mark_model_rate_limited!" do
+      it "stores a per-model reset_at entry in metadata" do
+        state = create(:runner_state)
+        reset_at = 30.minutes.from_now
+
+        state.mark_model_rate_limited!("foo-model", reset_at: reset_at)
+
+        state.reload
+        stored = state.metadata.dig(RunnerState::RATE_LIMITED_MODELS_METADATA_KEY, "foo-model")
+        expect(Time.iso8601(stored)).to be_within(1.second).of(reset_at)
+      end
+
+      it "defaults to 60 seconds from now when no reset_at is given" do
+        state = create(:runner_state)
+
+        state.mark_model_rate_limited!("foo-model")
+
+        state.reload
+        stored = state.metadata.dig(RunnerState::RATE_LIMITED_MODELS_METADATA_KEY, "foo-model")
+        expect(Time.iso8601(stored)).to be_within(5.seconds).of(60.seconds.from_now)
+      end
+
+      it "is a no-op when the model id is blank" do
+        state = create(:runner_state)
+
+        state.mark_model_rate_limited!("")
+
+        state.reload
+        expect(state.metadata).to eq({})
+      end
+
+      it "preserves other metadata keys" do
+        state = create(:runner_state, metadata: { "other" => { "k" => 1 } })
+
+        state.mark_model_rate_limited!("foo-model")
+
+        state.reload
+        expect(state.metadata["other"]).to eq({ "k" => 1 })
+        expect(state.metadata[RunnerState::RATE_LIMITED_MODELS_METADATA_KEY]).to be_present
+      end
+    end
+
+    describe "#rate_limited_model_ids" do
+      it "returns the set of model ids with active windows" do
+        state = create(:runner_state,
+          metadata: { RunnerState::RATE_LIMITED_MODELS_METADATA_KEY => {
+            "fresh" => 5.minutes.from_now.iso8601,
+            "stale" => 5.minutes.ago.iso8601
+          } })
+
+        expect(state.rate_limited_model_ids).to eq(Set.new([ "fresh" ]))
+      end
+
+      it "drops entries with missing or unparseable reset_at" do
+        state = create(:runner_state,
+          metadata: { RunnerState::RATE_LIMITED_MODELS_METADATA_KEY => {
+            "no-reset" => nil,
+            "broken" => "not-iso",
+            "fresh" => 5.minutes.from_now.iso8601
+          } })
+
+        expect(state.rate_limited_model_ids).to eq(Set.new([ "fresh" ]))
+      end
+
+      it "returns an empty set when metadata is not a hash" do
+        state = create(:runner_state)
+        state.update_columns(metadata: "not-a-hash")
+
+        expect(state.rate_limited_model_ids).to eq(Set.new)
+      end
+    end
+
+    describe "#rate_limited_model?" do
+      it "returns true only for models with an active window" do
+        state = create(:runner_state,
+          metadata: { RunnerState::RATE_LIMITED_MODELS_METADATA_KEY => {
+            "active" => 5.minutes.from_now.iso8601,
+            "expired" => 5.minutes.ago.iso8601
+          } })
+
+        expect(state.rate_limited_model?("active")).to be true
+        expect(state.rate_limited_model?("expired")).to be false
+        expect(state.rate_limited_model?("missing")).to be false
+        expect(state.rate_limited_model?(nil)).to be false
+        expect(state.rate_limited_model?("")).to be false
+      end
+    end
+
+    describe "#clear_model_rate_limit!" do
+      it "removes a specific model id" do
+        state = create(:runner_state,
+          metadata: { RunnerState::RATE_LIMITED_MODELS_METADATA_KEY => {
+            "alpha" => 5.minutes.from_now.iso8601,
+            "beta" => 5.minutes.from_now.iso8601
+          } })
+
+        state.clear_model_rate_limit!("alpha")
+
+        state.reload
+        expect(state.rate_limited_model_ids).to eq(Set.new([ "beta" ]))
+      end
+
+      it "removes the entire rate_limited_models map when called without an id" do
+        state = create(:runner_state,
+          metadata: { RunnerState::RATE_LIMITED_MODELS_METADATA_KEY => {
+            "alpha" => 5.minutes.from_now.iso8601
+          } })
+
+        state.clear_model_rate_limit!
+
+        state.reload
+        expect(state.metadata).not_to have_key(RunnerState::RATE_LIMITED_MODELS_METADATA_KEY)
+      end
+    end
+
+    describe "integration with record_success!" do
+      it "resets per-model windows when the runner fully recovers" do
+        state = create(:runner_state, :circuit_open, failure_count: 8,
+          circuit_opened_at: 10.minutes.ago, last_failure_at: 1.minute.ago,
+          metadata: { RunnerState::RATE_LIMITED_MODELS_METADATA_KEY => {
+            "foo" => 5.minutes.from_now.iso8601
+          } })
+
+        state.record_success!(force_close: true)
+
+        state.reload
+        expect(state.metadata[RunnerState::RATE_LIMITED_MODELS_METADATA_KEY]).to eq({})
+      end
+    end
+  end
 end

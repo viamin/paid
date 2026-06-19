@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "set"
+
 class RunnerState < ApplicationRecord
   CIRCUIT_STATES = %w[closed open half_open].freeze
   DEFAULT_FAILURE_THRESHOLD = 5
@@ -34,6 +36,80 @@ class RunnerState < ApplicationRecord
   # Clears the rate limit for this runner.
   def clear_rate_limit!
     update!(rate_limited_until: nil)
+  end
+
+  # Per-model rate-limit tracking for runners that support model rotation
+  # (e.g. openrouter_free). The metadata jsonb column stores
+  # `rate_limited_models` as `{ "model_id" => "reset_at_iso8601" }`. Entries
+  # whose reset_at is in the past are pruned on read so rotation only sees
+  # currently active windows.
+  RATE_LIMITED_MODELS_METADATA_KEY = "rate_limited_models"
+
+  # Returns the set of model ids that currently have an active per-model
+  # rate-limit window. Stale entries (reset_at in the past) are dropped.
+  def rate_limited_model_ids
+    raw = metadata.is_a?(Hash) ? metadata[RATE_LIMITED_MODELS_METADATA_KEY] : nil
+    return Set.new unless raw.is_a?(Hash)
+
+    now = Time.current
+    raw.each_with_object(Set.new) do |(model_id, reset_at), set|
+      next if model_id.blank?
+      next unless reset_at.present?
+
+      parsed =
+        begin
+          Time.iso8601(reset_at.to_s)
+        rescue ArgumentError
+          nil
+        end
+      next if parsed.nil? || parsed <= now
+
+      set << model_id.to_s
+    end
+  end
+
+  # Returns true when the given model id has an active per-model rate-limit
+  # window on this runner.
+  def rate_limited_model?(model_id)
+    return false if model_id.blank?
+
+    rate_limited_model_ids.include?(model_id.to_s)
+  end
+
+  # Marks the given model as rate-limited on this runner until `reset_at`.
+  # Persists the per-model entry to metadata and also clears any stale
+  # entries whose reset windows have already expired.
+  #
+  # @param model_id [String] The model id to mark as rate-limited.
+  # @param reset_at [Time, nil] When the model's rate limit resets.
+  def mark_model_rate_limited!(model_id, reset_at: nil)
+    return if model_id.blank?
+
+    reset_at ||= 60.seconds.from_now
+    with_lock do
+      current = rate_limited_models_metadata
+      current[model_id.to_s] = reset_at.iso8601
+      update!(metadata: metadata.merge(RATE_LIMITED_MODELS_METADATA_KEY => current))
+    end
+  end
+
+  # Clears the per-model rate-limit window for the given model id. Pass nil
+  # to clear every per-model rate-limit entry (used when the runner succeeds
+  # and we want to forget all known model windows).
+  def clear_model_rate_limit!(model_id = nil)
+    with_lock do
+      if model_id.nil?
+        next_metadata = metadata.dup
+        next_metadata.delete(RATE_LIMITED_MODELS_METADATA_KEY)
+        update!(metadata: next_metadata)
+      else
+        current = rate_limited_models_metadata
+        return unless current.key?(model_id.to_s)
+
+        current.delete(model_id.to_s)
+        update!(metadata: metadata.merge(RATE_LIMITED_MODELS_METADATA_KEY => current))
+      end
+    end
   end
 
   # Records a failure and opens the circuit if threshold is reached.
@@ -101,7 +177,8 @@ class RunnerState < ApplicationRecord
         rate_limited_until: nil,
         last_failure_at: nil,
         half_open_success_count: 0,
-        half_open_failure_count: 0
+        half_open_failure_count: 0,
+        metadata: metadata.merge(RATE_LIMITED_MODELS_METADATA_KEY => {})
       )
     end
   end
@@ -156,6 +233,11 @@ class RunnerState < ApplicationRecord
   end
 
   private
+
+  def rate_limited_models_metadata
+    raw = metadata.is_a?(Hash) ? metadata[RATE_LIMITED_MODELS_METADATA_KEY] : nil
+    raw.is_a?(Hash) ? raw.dup : {}
+  end
 
   def decayed_failure_count(now:, decay_window:)
     return failure_count if last_failure_at.blank? || decay_window.to_i <= 0
