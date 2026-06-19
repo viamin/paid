@@ -173,14 +173,68 @@ module FreeModels
     end
 
     def apply_rotation!(tier:, model:)
+      snapshot_preferred_tier_model_ids
       next_tier_model_ids = (runner.tier_model_ids || {}).dup
       next_tier_model_ids[tier] = model.model_id
+      # Flag the save as a system rotation so the Runner before_save hook
+      # does not clear the snapshot we just recorded (see Runner model).
+      runner.rotating_tier_models = true
       runner.update!(tier_model_ids: next_tier_model_ids)
       # Per-model rate-limit windows are intentionally left intact here. They
       # are pruned of stale entries on read (RunnerState#rate_limited_model_ids)
       # and cleared wholesale only on a successful call (RunnerState#record_success!),
       # so wiping them now would let a just-rate-limited model be re-picked on
       # the next rotation.
+    end
+
+    # Snapshots the runner's current tier_model_ids as the recovery point
+    # before the first rotation overwrites it. Idempotent: subsequent
+    # rotations within the same rate-limit storm keep the ORIGINAL mapping
+    # so recovery restores the user's true preference, not a mid-rotation
+    # state. Ensures a RunnerState exists so the snapshot can be persisted
+    # even when the caller (e.g. a direct service invocation) has not yet
+    # created one.
+    def snapshot_preferred_tier_model_ids
+      return unless user
+
+      runner_state = user.runner_states.find_or_create_by!(runner_name: runner.state_key)
+      runner_state.record_preferred_tier_model_ids!(runner.tier_model_ids || {})
+    end
+
+    # Restores the runner's tier_model_ids from the saved recovery point and
+    # clears it. Called after the runner fully recovers (per-model rate-limit
+    # windows cleared) so the user's configured models are not permanently
+    # overridden by rotation. Returns true when a restore was performed.
+    # Validation failures (e.g. a snapshotted model was since deleted) are
+    # swallowed so recovery never breaks a healthy runner; the snapshot is
+    # still cleared so a stale mapping is not retried.
+    def self.restore_preferred!(runner:, user:)
+      return false unless runner.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
+      return false unless user
+
+      state = user.runner_states.find_by(runner_name: runner.state_key)
+      return false unless state
+
+      snapshot = state.preferred_tier_model_ids
+      state.clear_preferred_tier_model_ids!
+      return false unless snapshot.present?
+      return false if snapshot == runner.tier_model_ids
+
+      runner.rotating_tier_models = true
+      runner.update!(tier_model_ids: snapshot)
+      Rails.logger.info(
+        message: "free_models.rotation_restored",
+        runner_id: runner.id,
+        restored_tier_model_ids: snapshot
+      )
+      true
+    rescue ActiveRecord::RecordInvalid => e
+      Rails.logger.warn(
+        message: "free_models.rotation_restore_failed",
+        runner_id: runner.id,
+        error: e.message
+      )
+      false
     end
   end
 end

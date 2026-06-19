@@ -193,6 +193,26 @@ RSpec.describe RunnerState do
       expect(state.half_open_success_count).to eq(0)
       expect(state.half_open_failure_count).to eq(0)
     end
+
+    it "returns true when a full reset is performed" do
+      state = create(:runner_state, failure_count: 3, rate_limited_until: 30.minutes.from_now)
+      expect(state.record_success!).to be true
+    end
+
+    it "returns false when the open circuit blocks recovery" do
+      state = create(:runner_state, :circuit_open)
+      expect(state.record_success!).to be false
+    end
+
+    it "returns false when a half-open streak is incomplete" do
+      state = create(:runner_state, :circuit_half_open, failure_count: 4)
+      expect(state.record_success!(half_open_success_threshold: 2)).to be false
+    end
+
+    it "returns false when already healthy with no rate limit" do
+      state = create(:runner_state, failure_count: 0)
+      expect(state.record_success!).to be false
+    end
   end
 
   describe "#check_circuit_recovery!" do
@@ -416,6 +436,86 @@ RSpec.describe RunnerState do
 
         state.reload
         expect(state.metadata[RunnerState::RATE_LIMITED_MODELS_METADATA_KEY]).to eq({})
+      end
+    end
+  end
+
+  describe "preferred tier_model_ids recovery snapshot" do
+    describe "#preferred_tier_model_ids" do
+      it "returns the snapshotted mapping" do
+        state = create(:runner_state,
+          metadata: { RunnerState::PREFERRED_TIER_MODEL_IDS_METADATA_KEY => {
+            "high" => "model-a", "mid" => "model-b"
+          } })
+
+        expect(state.preferred_tier_model_ids).to eq("high" => "model-a", "mid" => "model-b")
+      end
+
+      it "returns nil when no snapshot exists" do
+        expect(create(:runner_state).preferred_tier_model_ids).to be_nil
+      end
+
+      it "returns nil when metadata is not a hash" do
+        state = create(:runner_state)
+        state.update_columns(metadata: "not-a-hash")
+
+        expect(state.preferred_tier_model_ids).to be_nil
+      end
+    end
+
+    describe "#record_preferred_tier_model_ids!" do
+      it "stores the mapping when none exists" do
+        state = create(:runner_state)
+
+        state.record_preferred_tier_model_ids!("high" => "model-a")
+
+        expect(state.reload.preferred_tier_model_ids).to eq("high" => "model-a")
+      end
+
+      it "does not overwrite an existing snapshot" do
+        state = create(:runner_state,
+          metadata: { RunnerState::PREFERRED_TIER_MODEL_IDS_METADATA_KEY => { "high" => "original" } })
+
+        state.record_preferred_tier_model_ids!("high" => "rotated")
+
+        expect(state.reload.preferred_tier_model_ids).to eq("high" => "original")
+      end
+
+      it "ignores blank tiers and model ids" do
+        state = create(:runner_state)
+
+        state.record_preferred_tier_model_ids!("high" => "model-a", "" => "x", "mid" => nil)
+
+        expect(state.reload.preferred_tier_model_ids).to eq("high" => "model-a")
+      end
+
+      it "preserves other metadata keys" do
+        state = create(:runner_state, metadata: { RunnerState::RATE_LIMITED_MODELS_METADATA_KEY => { "m" => 1.minute.from_now.iso8601 } })
+
+        state.record_preferred_tier_model_ids!("high" => "model-a")
+
+        reloaded = state.reload.metadata
+        expect(reloaded[RunnerState::PREFERRED_TIER_MODEL_IDS_METADATA_KEY]).to eq("high" => "model-a")
+        expect(reloaded[RunnerState::RATE_LIMITED_MODELS_METADATA_KEY]).to be_present
+      end
+    end
+
+    describe "#clear_preferred_tier_model_ids!" do
+      it "removes the snapshot key" do
+        state = create(:runner_state,
+          metadata: { RunnerState::PREFERRED_TIER_MODEL_IDS_METADATA_KEY => { "high" => "model-a" } })
+
+        state.clear_preferred_tier_model_ids!
+
+        expect(state.reload.preferred_tier_model_ids).to be_nil
+      end
+
+      it "is a no-op when no snapshot exists" do
+        state = create(:runner_state, metadata: { "other" => 1 })
+
+        state.clear_preferred_tier_model_ids!
+
+        expect(state.reload.metadata).to eq({ "other" => 1 })
       end
     end
   end

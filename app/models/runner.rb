@@ -110,6 +110,15 @@ class Runner < ApplicationRecord
 
   has_many :chat_sessions, dependent: :nullify
 
+  # Transient flag set by FreeModels::Rotation (and restore) when the
+  # tier_model_ids change originates from the system rather than the user.
+  # The before_save hook uses it to avoid clearing the rotation recovery
+  # snapshot during a rotation write.
+  attr_accessor :rotating_tier_models
+
+  def rotating_tier_models?
+    @rotating_tier_models == true
+  end
   scope :kept_only, -> { kept }
   scope :for_agent_runs, -> { where(enabled_for_agent_runs: true) }
   scope :for_chat, -> { where(enabled_for_chat: true) }
@@ -123,6 +132,7 @@ class Runner < ApplicationRecord
   before_validation :sync_provider_key_bridge
   before_validation :clear_stale_direct_outbound_tier_models
   before_save :sync_direct_outbound_tier_models
+  before_save :clear_free_model_rotation_snapshot, unless: :rotating_tier_models?
   before_discard :prevent_destroying_last_agent_run_runner
   before_discard :prevent_destroying_default_runner
   before_discard :clear_provider_api_key_reference
@@ -645,6 +655,16 @@ class Runner < ApplicationRecord
     RunnerSupport.addable_runner_key?(runner_key)
   end
 
+  # Returns true for runner keys that a user may only configure a single
+  # instance of. Such keys are hidden from the "Add Runner" UI once the user
+  # already has one, and free-model rotation is scoped to them. Today only
+  # the openrouter_free runner is single-instance; other api_key runners
+  # (opencode, kilocode, aider, pi) legitimately allow duplicates when their
+  # API key or name differs.
+  def self.single_instance_runner_key?(runner_key)
+    runner_key.to_s == OPENROUTER_FREE_RUNNER_KEY
+  end
+
   def self.harness_runner_key_for(runner_key)
     RunnerSupport.harness_runner_key_for(runner_key)
   end
@@ -763,6 +783,19 @@ class Runner < ApplicationRecord
     return if requires_direct_outbound? && direct_outbound_model_id.present?
 
     self.tier_model_ids = {}
+  end
+
+  # When the user explicitly changes tier_model_ids on an openrouter_free
+  # runner, drop any free-model rotation recovery snapshot so a later
+  # successful run does not revert their edit back to the pre-rotation
+  # mapping. System rotations set +rotating_tier_models+ to skip this.
+  def clear_free_model_rotation_snapshot
+    return unless runner_key == OPENROUTER_FREE_RUNNER_KEY
+    return unless will_save_change_to_tier_model_ids?
+    return unless user
+
+    state = user.runner_states.find_by(runner_name: state_key)
+    state&.clear_preferred_tier_model_ids!
   end
 
   def direct_outbound_capable_runner?

@@ -112,6 +112,62 @@ class RunnerState < ApplicationRecord
     end
   end
 
+  # Preferred tier_model_ids recovery point for free-model rotation. When the
+  # openrouter_free runner rotates away from the user's configured model to
+  # dodge a rate limit, the original mapping is snapshotted here so it can be
+  # restored once the rate-limit storm clears. Without this, repeated
+  # rotations would permanently drift tier_model_ids toward lower-capability
+  # models and silently override the user's preference.
+  PREFERRED_TIER_MODEL_IDS_METADATA_KEY = "preferred_tier_model_ids"
+
+  # Returns the snapshotted preferred tier_model_ids mapping, or nil when no
+  # recovery point exists.
+  def preferred_tier_model_ids
+    raw = metadata.is_a?(Hash) ? metadata[PREFERRED_TIER_MODEL_IDS_METADATA_KEY] : nil
+    return nil unless raw.is_a?(Hash)
+
+    snapshot = raw.each_with_object({}) do |(tier, model_id), result|
+      next if tier.blank? || model_id.blank?
+
+      result[tier.to_s] = model_id.to_s
+    end
+    snapshot.empty? ? nil : snapshot
+  end
+
+  # Snapshots the given tier_model_ids mapping as the recovery point, but
+  # only when no snapshot exists yet. This keeps the user's ORIGINAL
+  # configuration across multiple rotations within one rate-limit storm
+  # rather than overwriting it with an already-rotated state.
+  def record_preferred_tier_model_ids!(mapping)
+    return unless mapping.is_a?(Hash)
+    return if preferred_tier_model_ids.present?
+
+    snapshot = mapping.each_with_object({}) do |(tier, model_id), result|
+      next if tier.blank? || model_id.blank?
+
+      result[tier.to_s] = model_id.to_s
+    end
+    return if snapshot.empty?
+
+    with_lock do
+      return if preferred_tier_model_ids.present?
+
+      update!(metadata: metadata.merge(PREFERRED_TIER_MODEL_IDS_METADATA_KEY => snapshot))
+    end
+  end
+
+  # Removes the preferred tier_model_ids recovery point. Called after a
+  # successful restore so a later run does not revert to a stale snapshot.
+  def clear_preferred_tier_model_ids!
+    return unless metadata.is_a?(Hash) && metadata.key?(PREFERRED_TIER_MODEL_IDS_METADATA_KEY)
+
+    with_lock do
+      next_metadata = metadata.dup
+      next_metadata.delete(PREFERRED_TIER_MODEL_IDS_METADATA_KEY)
+      update!(metadata: next_metadata)
+    end
+  end
+
   # Records a failure and opens the circuit if threshold is reached.
   #
   # @param threshold [Integer] Number of failures before opening the circuit
@@ -149,10 +205,13 @@ class RunnerState < ApplicationRecord
   # @param half_open_success_threshold [Integer] Consecutive half-open successes required to close the circuit.
   # @param force_close [Boolean] When true (explicit operator/test health checks), immediately close the circuit
   #   regardless of its current state instead of waiting on the recovery timeout or half-open success streak.
+  # @return [Boolean] true when a full reset was performed (circuit closed, failure counts and rate-limit
+  #   windows cleared), false on early returns (circuit still open, half-open streak incomplete, or already healthy).
+  #   Callers use this to decide whether to clear secondary state such as the free-model rotation recovery point.
   def record_success!(half_open_success_threshold: DEFAULT_HALF_OPEN_SUCCESS_THRESHOLD, force_close: false)
     with_lock do
       unless force_close
-        return if circuit_open?
+        return false if circuit_open?
 
         if circuit_half_open?
           new_half_open_success_count = half_open_success_count.to_i + 1
@@ -163,10 +222,10 @@ class RunnerState < ApplicationRecord
               half_open_failure_count: 0,
               rate_limited_until: nil
             )
-            return
+            return false
           end
         elsif failure_count.zero? && rate_limited_until.blank?
-          return
+          return false
         end
       end
 
@@ -180,6 +239,7 @@ class RunnerState < ApplicationRecord
         half_open_failure_count: 0,
         metadata: metadata.merge(RATE_LIMITED_MODELS_METADATA_KEY => {})
       )
+      true
     end
   end
 

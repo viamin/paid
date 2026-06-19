@@ -259,7 +259,58 @@ RSpec.describe Knowledge::RunnerExecutor do
 
         expect(result).to eq("response from openrouter_free")
         expect(attempt).to eq(2)
+        # The rotated model succeeded and fully recovered the runner, so the
+        # original user-configured model is restored (no permanent drift).
+        expect(openrouter_runner.reload.tier_model_ids["high"]).to eq(free_model_high.model_id)
+      end
+
+      it "restores the original tier_model_ids after a successful rotated call" do
+        executor = described_class.new(user_setting: user_setting, operation: :chat)
+        attempt = 0
+
+        executor.execute do |runner|
+          attempt += 1
+          raise AgentHarness::RateLimitError, "rate limited" if attempt == 1
+
+          "ok"
+        end
+
+        runner_state = user.runner_states.find_by(runner_name: openrouter_runner.state_key)
+        # Recovery snapshot is cleared once restored so a later run does not
+        # revert a user's manual edit.
+        expect(runner_state.preferred_tier_model_ids).to be_nil
+        expect(openrouter_runner.reload.tier_model_ids).to eq(
+          "high" => free_model_high.model_id,
+          "mid" => free_model_mid.model_id,
+          "low" => free_model_mid.model_id
+        )
+      end
+
+      it "does not restore tier_model_ids when the runner does not fully recover" do
+        # An open circuit blocks the full reset in record_success!, so the
+        # rotated tier_model_ids must stay in place until recovery completes.
+        runner_state = user.runner_states.create!(
+          runner_name: openrouter_runner.state_key,
+          circuit_state: "open",
+          circuit_opened_at: 1.minute.ago,
+          failure_count: 5
+        )
+        runner_state.record_preferred_tier_model_ids!("high" => free_model_high.model_id)
+
+        executor = described_class.new(user_setting: user_setting, operation: :chat)
+        attempt = 0
+
+        executor.execute do |runner|
+          attempt += 1
+          raise AgentHarness::RateLimitError, "rate limited" if attempt == 1
+
+          "ok"
+        end
+
+        # Rotation still happened, but the open circuit prevented recovery, so
+        # the rotated model stays and the snapshot is preserved.
         expect(openrouter_runner.reload.tier_model_ids["high"]).to eq(free_model_high_alt.model_id)
+        expect(runner_state.reload.preferred_tier_model_ids).to eq("high" => free_model_high.model_id)
       end
 
       it "falls through to the next runner when the rotated model also rate-limits" do

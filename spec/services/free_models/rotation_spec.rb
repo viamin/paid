@@ -58,8 +58,11 @@ RSpec.describe FreeModels::Rotation do
 
     context "with candidates in the current tier" do
       let(:tier_model_ids) { { "high" => "high-current", "mid" => "mid-current", "low" => "low-current" } }
-      let!(:high_other) { free_model(tier: "high", capability_score: 8.0, model_id: "high-other") }
-      let!(:high_weak)  { free_model(tier: "high", capability_score: 6.0, model_id: "high-weak") }
+
+      before do
+        free_model(tier: "high", capability_score: 8.0, model_id: "high-other")
+        free_model(tier: "high", capability_score: 6.0, model_id: "high-weak")
+      end
 
       it "selects the next highest-capability model in the same tier" do
         result = described_class.call(runner: runner, current_model_id: "high-current",
@@ -75,11 +78,11 @@ RSpec.describe FreeModels::Rotation do
 
     context "when the current tier is exhausted and lower tiers remain" do
       let(:tier_model_ids) { { "high" => "high-current", "mid" => "mid-current", "low" => "low-current" } }
-      let!(:mid_other) { free_model(tier: "mid", capability_score: 5.5, model_id: "mid-other") }
-      let!(:mid_extra) { free_model(tier: "mid", capability_score: 5.0, model_id: "mid-extra") }
-      let!(:high_other) { free_model(tier: "high", capability_score: 9.0, model_id: "high-other") }
 
       before do
+        free_model(tier: "mid", capability_score: 5.5, model_id: "mid-other")
+        free_model(tier: "mid", capability_score: 5.0, model_id: "mid-extra")
+        free_model(tier: "high", capability_score: 9.0, model_id: "high-other")
         runner.user.runner_states.create!(runner_name: runner.state_key,
           metadata: { RunnerState::RATE_LIMITED_MODELS_METADATA_KEY => {
             "high-current" => 5.minutes.from_now.iso8601,
@@ -101,10 +104,10 @@ RSpec.describe FreeModels::Rotation do
 
     context "when every tier is exhausted" do
       let(:tier_model_ids) { { "high" => "high-current", "mid" => "mid-current", "low" => "low-current" } }
-      let!(:high_other) { free_model(tier: "high", capability_score: 8.0, model_id: "high-other") }
-      let!(:mid_other)  { free_model(tier: "mid", capability_score: 5.0, model_id: "mid-other") }
 
       before do
+        free_model(tier: "high", capability_score: 8.0, model_id: "high-other")
+        free_model(tier: "mid", capability_score: 5.0, model_id: "mid-other")
         runner.user.runner_states.create!(runner_name: runner.state_key,
           metadata: { RunnerState::RATE_LIMITED_MODELS_METADATA_KEY => {
             "high-current" => 5.minutes.from_now.iso8601,
@@ -126,12 +129,15 @@ RSpec.describe FreeModels::Rotation do
       end
     end
 
-    context "respecting user opt-outs" do
+    context "with project-level model exclusions" do
       let(:tier_model_ids) { { "high" => "high-current", "mid" => "mid-current", "low" => "low-current" } }
-      let!(:excluded_model) { free_model(tier: "high", capability_score: 8.0, model_id: "high-allowed") }
-      let!(:high_excluded_model) { free_model(tier: "high", capability_score: 8.5, model_id: "high-disallowed") }
       let(:project) { create(:project, account: user.account, created_by: user,
         model_preferences: { "excluded_free_model_ids" => [ "high-disallowed" ] }) }
+
+      before do
+        free_model(tier: "high", capability_score: 8.0, model_id: "high-allowed")
+        free_model(tier: "high", capability_score: 8.5, model_id: "high-disallowed")
+      end
 
       it "skips project-excluded models" do
         result = described_class.call(runner: runner, current_model_id: "high-current",
@@ -142,10 +148,10 @@ RSpec.describe FreeModels::Rotation do
       end
     end
 
-    context "respecting the quality bar" do
+    context "with below-quality-bar models" do
       let(:tier_model_ids) { { "high" => "high-current", "mid" => "mid-current", "low" => "low-current" } }
-      let!(:only_below_bar) { free_model(tier: "high", capability_score: 8.0, model_id: "high-only",
-        below_quality_bar: true) }
+
+      before { free_model(tier: "high", capability_score: 8.0, model_id: "high-only", below_quality_bar: true) }
 
       it "skips below_quality_bar models by default" do
         result = described_class.call(runner: runner, current_model_id: "high-current",
@@ -163,12 +169,14 @@ RSpec.describe FreeModels::Rotation do
       end
     end
 
-    context "skipping inactive models" do
+    context "with inactive candidate models" do
       let(:tier_model_ids) { { "high" => "high-current", "mid" => "mid-current", "low" => "low-current" } }
-      let!(:inactive) { free_model(tier: "high", capability_score: 9.0, model_id: "high-inactive") }
-      let!(:active)   { free_model(tier: "high", capability_score: 6.0, model_id: "high-active") }
 
-      before { inactive.update!(active: false) }
+      before do
+        inactive = free_model(tier: "high", capability_score: 9.0, model_id: "high-inactive")
+        free_model(tier: "high", capability_score: 6.0, model_id: "high-active")
+        inactive.update!(active: false)
+      end
 
       it "ignores inactive candidates" do
         result = described_class.call(runner: runner, current_model_id: "high-current",
@@ -180,10 +188,10 @@ RSpec.describe FreeModels::Rotation do
 
     context "when runner state marks a model rate-limited" do
       let(:tier_model_ids) { { "high" => "high-current", "mid" => "mid-current", "low" => "low-current" } }
-      let!(:blocked) { free_model(tier: "high", capability_score: 9.0, model_id: "high-blocked") }
-      let!(:available) { free_model(tier: "high", capability_score: 5.0, model_id: "high-available") }
 
       before do
+        free_model(tier: "high", capability_score: 9.0, model_id: "high-blocked")
+        free_model(tier: "high", capability_score: 5.0, model_id: "high-available")
         runner.user.runner_states.create!(runner_name: runner.state_key,
           metadata: { RunnerState::RATE_LIMITED_MODELS_METADATA_KEY => {
             "high-blocked" => 5.minutes.from_now.iso8601
@@ -195,6 +203,88 @@ RSpec.describe FreeModels::Rotation do
           user: user, current_tier: "high")
 
         expect(result.model_id).to eq("high-available")
+      end
+    end
+
+    describe "tier_model_ids recovery snapshot" do
+      let(:tier_model_ids) { { "high" => "high-current", "mid" => "mid-current", "low" => "low-current" } }
+
+      before { free_model(tier: "high", capability_score: 8.0, model_id: "high-other") }
+
+      def runner_state
+        user.runner_states.find_or_create_by!(runner_name: runner.state_key)
+      end
+
+      it "snapshots the original tier_model_ids before the first rotation" do
+        described_class.call(runner: runner, current_model_id: "high-current",
+          user: user, current_tier: "high")
+
+        expect(runner_state.preferred_tier_model_ids).to eq(
+          "high" => "high-current", "mid" => "mid-current", "low" => "low-current"
+        )
+      end
+
+      it "keeps the original snapshot across subsequent rotations" do
+        described_class.call(runner: runner, current_model_id: "high-current",
+          user: user, current_tier: "high")
+        # Second rotation away from the already-rotated model.
+        described_class.call(runner: runner, current_model_id: "high-other",
+          user: user, current_tier: "high")
+
+        expect(runner_state.preferred_tier_model_ids).to eq(
+          "high" => "high-current", "mid" => "mid-current", "low" => "low-current"
+        )
+      end
+    end
+
+    describe ".restore_preferred!" do
+      let(:tier_model_ids) { { "high" => "high-current", "mid" => "mid-current", "low" => "low-current" } }
+
+      before { free_model(tier: "high", capability_score: 8.0, model_id: "high-other") }
+
+      def runner_state
+        user.runner_states.find_or_create_by!(runner_name: runner.state_key)
+      end
+
+      it "restores the original tier_model_ids and clears the snapshot" do
+        described_class.call(runner: runner, current_model_id: "high-current",
+          user: user, current_tier: "high")
+        expect(runner.reload.tier_model_ids["high"]).to eq("high-other")
+
+        restored = described_class.restore_preferred!(runner: runner.reload, user: user)
+
+        expect(restored).to be true
+        expect(runner.reload.tier_model_ids).to eq(tier_model_ids)
+        expect(runner_state.preferred_tier_model_ids).to be_nil
+      end
+
+      it "returns false and is a no-op when no snapshot exists" do
+        restored = described_class.restore_preferred!(runner: runner, user: user)
+
+        expect(restored).to be false
+        expect(runner.reload.tier_model_ids).to eq(tier_model_ids)
+      end
+
+      it "returns false for non-openrouter_free runners" do
+        existing = user.runners.kept_only.find_by(runner_key: "claude")
+        subscription_runner = existing || user.runners.create!(runner_key: "claude", auth_type: "subscription")
+
+        expect(described_class.restore_preferred!(runner: subscription_runner, user: user)).to be false
+      end
+
+      it "is a graceful no-op when a snapshotted model was deleted since rotation" do
+        described_class.call(runner: runner, current_model_id: "high-current",
+          user: user, current_tier: "high")
+        # openrouter_free requires every tier mapped, so a snapshot referencing
+        # a now-deleted model cannot be restored; recovery must not break the
+        # healthy runner. The snapshot is still cleared so it is not retried.
+        LlmModel.find_by(model_id: "mid-current")&.destroy
+
+        restored = described_class.restore_preferred!(runner: runner.reload, user: user)
+
+        expect(restored).to be false
+        expect(runner.reload.tier_model_ids["high"]).to eq("high-other")
+        expect(runner_state.preferred_tier_model_ids).to be_nil
       end
     end
   end

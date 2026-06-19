@@ -66,7 +66,21 @@ module Knowledge
 
     def record_success(runner)
       @knowledge_run&.update!(final_runner: runner)
-      runner_state_for(runner)&.record_success!
+      state = runner_state_for(runner)
+      fully_recovered = state&.record_success!
+      restore_preferred_tier_model_ids(runner) if fully_recovered
+    end
+
+    # After a full recovery (per-model rate-limit windows cleared), restore
+    # the openrouter_free runner's original tier_model_ids from the rotation
+    # recovery snapshot so the user's configured models are not permanently
+    # overridden by a rate-limit-driven rotation. No-op for non-rotation
+    # runners or when no snapshot exists.
+    def restore_preferred_tier_model_ids(runner)
+      record = rotation_runner_record(runner)
+      return unless record
+
+      FreeModels::Rotation.restore_preferred!(runner: record, user: @user_setting.user)
     end
 
     def record_rate_limit(runner, error)
