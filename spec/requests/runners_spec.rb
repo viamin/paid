@@ -37,7 +37,14 @@ RSpec.describe "Runners" do
     context "when authenticated" do
       let(:opencode_api_key) { create(:provider_api_key, user: user, api_service_type: "openrouter") }
 
-      before { sign_in user }
+      before do
+        sign_in user
+        # Runner.direct_outbound_config_models_must_exist_in_catalog rejects direct-outbound
+        # API-key runners whose model id is not present in the LlmModel catalog, so seed the
+        # model ids used by direct user.runners.create! / post-runners-path calls in this spec.
+        KnownDirectOutboundModels.seed_model(model_id: "moonshotai/kimi-k2-0905", provider: "openrouter")
+        KnownDirectOutboundModels.seed_model(model_id: "glm-5.1", provider: "inception")
+      end
 
       it "renders index" do
         get runners_path
@@ -417,7 +424,14 @@ RSpec.describe "Runners" do
   end
 
   describe "POST /runners" do
-    before { sign_in user }
+    before do
+      sign_in user
+      # Runner.direct_outbound_config_models_must_exist_in_catalog rejects direct-outbound
+      # API-key runners whose model id is not present in the LlmModel catalog, so seed the
+      # model ids used by post-runners-path params in this spec.
+      KnownDirectOutboundModels.seed_model(model_id: "moonshotai/kimi-k2-0905", provider: "openrouter")
+      KnownDirectOutboundModels.seed_model(model_id: "glm-5.1", provider: "inception")
+    end
 
     it "creates a container-executable runner with agent runs enabled" do
       allow(RunnerSupport).to receive(:addable_runner_key?).and_call_original
@@ -650,7 +664,13 @@ RSpec.describe "Runners" do
   end
 
   describe "PATCH /runners/:id" do
-    before { sign_in user }
+    before do
+      sign_in user
+      # Runner.direct_outbound_config_models_must_exist_in_catalog rejects direct-outbound
+      # API-key runners whose model id is not present in the LlmModel catalog, so seed the
+      # model ids used by patch-runner-path params in this spec.
+      KnownDirectOutboundModels.seed_model(model_id: "moonshotai/kimi-k2-0905", provider: "openrouter")
+    end
 
     it "updates runner flags" do
       runner = user.runners.create!(runner_key: "cursor")

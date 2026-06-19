@@ -1,0 +1,82 @@
+<% content_for(:title) { "Exception incidents" } %>
+
+<div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <div>
+    <h1 class="text-2xl font-bold text-gray-900">Exception incidents</h1>
+    <p class="mt-1 text-sm text-gray-500">
+      Captured exceptions grouped by fingerprint. Incidents off the issue-filing allowlist are
+      recorded and notified but never escalated to a GitHub issue — growing the allowlist is a deliberate change.
+    </p>
+  </div>
+
+  <div class="mt-4 flex gap-2">
+    <%= link_to "All", exception_incidents_path, class: "rounded-md px-3 py-1.5 text-sm font-medium #{params[:filter].blank? ? 'bg-indigo-100 text-indigo-700' : 'text-gray-500 hover:text-gray-700'}" %>
+    <%= link_to "Filing blocked", exception_incidents_path(filter: "filing_blocked"), class: "rounded-md px-3 py-1.5 text-sm font-medium #{params[:filter] == 'filing_blocked' ? 'bg-indigo-100 text-indigo-700' : 'text-gray-500 hover:text-gray-700'}" %>
+  </div>
+
+  <div class="mt-6 overflow-hidden shadow ring-1 ring-black ring-opacity-5 sm:rounded-lg">
+    <div class="overflow-x-auto">
+    <table class="min-w-full divide-y divide-gray-300" style="min-width: 720px">
+      <thead class="bg-gray-50">
+        <tr>
+          <th scope="col" class="min-w-[8rem] py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">Subsystem</th>
+          <th scope="col" class="min-w-[9rem] px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Filing status</th>
+          <th scope="col" class="min-w-[18rem] px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Exception</th>
+          <th scope="col" class="min-w-[5rem] px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Severity</th>
+          <th scope="col" class="min-w-[6rem] px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Status</th>
+          <th scope="col" class="min-w-[6rem] px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Occurrences</th>
+          <th scope="col" class="min-w-[9rem] px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Last occurred</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-200 bg-white">
+        <% if @exception_incidents.any? %>
+          <% @exception_incidents.each do |incident| %>
+            <tr>
+              <td class="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6"><%= incident.subsystem %></td>
+              <td class="px-3 py-4 text-sm text-gray-500">
+                <% if incident.on_allowlist? %>
+                  <span class="inline-flex items-center rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-green-600/20">On allowlist</span>
+                <% elsif incident.filing_blocked? %>
+                  <span class="inline-flex items-center rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 ring-1 ring-amber-600/20">Filing blocked</span>
+                <% else %>
+                  <span class="inline-flex items-center rounded-md bg-gray-50 px-2 py-1 text-xs font-medium text-gray-600 ring-1 ring-gray-500/20">No project</span>
+                <% end %>
+              </td>
+              <td class="px-3 py-4 text-sm text-gray-500">
+                <span class="font-medium text-gray-900"><%= incident.exception_class %></span>
+                <span class="block text-gray-500"><%= truncate(incident.message, length: 120) %></span>
+              </td>
+              <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500"><%= incident.severity.upcase %></td>
+              <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500"><%= incident.status.capitalize %></td>
+              <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500"><%= incident.occurrence_count %></td>
+              <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500"><%= time_ago_in_words(incident.last_occurred_at) %> ago</td>
+            </tr>
+          <% end %>
+        <% else %>
+          <tr>
+            <td colspan="7" class="px-4 py-12 text-center text-sm text-gray-500">
+              No exception incidents found.
+            </td>
+          </tr>
+        <% end %>
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <% if @pagy.pages > 1 %>
+    <div class="mt-4 flex items-center justify-between">
+      <p class="text-sm text-gray-700">
+        Showing <span class="font-medium"><%= @pagy.from %></span> to <span class="font-medium"><%= @pagy.to %></span> of <span class="font-medium"><%= @pagy.count %></span> incidents
+      </p>
+      <nav class="flex gap-1">
+        <% if @pagy.previous %>
+          <%= link_to "Previous", exception_incidents_path(page: @pagy.previous, filter: params[:filter]), class: "rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50" %>
+        <% end %>
+        <% if @pagy.next %>
+          <%= link_to "Next", exception_incidents_path(page: @pagy.next, filter: params[:filter]), class: "rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50" %>
+        <% end %>
+      </nav>
+    </div>
+  <% end %>
+</div>

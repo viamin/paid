@@ -205,6 +205,7 @@ class AgentRun < ApplicationRecord
   after_commit :enqueue_container_metrics_collection, on: :update, if: :just_started_running?
   after_commit :enqueue_issue_goal_timeout_retry, on: :update, if: :just_timed_out_issue_goal?
   after_commit :enqueue_failure_recovery_decision, on: :update, if: :recovery_decision_required?
+  after_commit :record_dispatch_circuit_breaker_outcome, on: :update, if: :just_finished?
 
   validates :agent_type, presence: true, inclusion: { in: AGENT_TYPES }
   validates :status, presence: true, inclusion: { in: STATUSES }
@@ -413,7 +414,7 @@ class AgentRun < ApplicationRecord
   end
 
   def self.ransackable_attributes(auth_object = nil)
-    %w[status agent_type branch_name trigger_type goal duration_seconds tokens_input tokens_output tokens_total cost_cents created_at started_at effective_runner]
+    %w[status agent_type branch_name trigger_type goal duration_seconds tokens_input tokens_output tokens_total cost_cents created_at started_at completed_at temporal_workflow_id effective_runner]
   end
 
   def self.ransackable_associations(auth_object = nil)
@@ -1231,7 +1232,7 @@ class AgentRun < ApplicationRecord
   # excluded so a "pause all" toggle can hold new starts while still
   # accepting new queue entries from the project trigger button.
   def self.peek_next_queued_run(exclude_ids: [], exclude_project_ids: [], exclude_user_ids: [],
-    exclude_account_create_pr_ids: [])
+    exclude_account_create_pr_ids: [], exclude_account_ids: [])
     scope = unclaimed_with_priority
       .joins(project: :account)
       .where(accounts: { scheduler_paused_at: nil })
@@ -1241,6 +1242,7 @@ class AgentRun < ApplicationRecord
     scope = scope.where.not(id: exclude_ids) if exclude_ids.any?
     scope = scope.where.not(project_id: exclude_project_ids) if exclude_project_ids.any?
     scope = scope.where.not(project_owner: { user_id: exclude_user_ids }) if exclude_user_ids.any?
+    scope = scope.where.not(projects: { account_id: exclude_account_ids }) if exclude_account_ids.any?
     if exclude_account_create_pr_ids.any?
       scope = scope.where(
         "agent_runs.goal != 'create_pr' OR projects.account_id NOT IN (?)",
@@ -1931,6 +1933,16 @@ class AgentRun < ApplicationRecord
 
   alias_method :effective_provider_record, :effective_runner_record
 
+  # True when this run was enqueued without a pinned runner, so the queue
+  # processor should resolve a runnable runner at dequeue time
+  # (Runner-agnostic queue; see #2563). Runs created through the
+  # runner-resolving enqueue paths pre-#2563 have a non-nil runner_id and
+  # are treated as pinned.
+  def runner_unbound?
+    runner_id.nil?
+  end
+  alias_method :provider_unbound?, :runner_unbound?
+
   def attempted_runners_by_routing_key
     owner = project&.effective_owner
     return {} unless owner
@@ -2480,6 +2492,44 @@ class AgentRun < ApplicationRecord
 
   def enqueue_anomaly_detection
     AnomalyDetectionJob.perform_later(id)
+  end
+
+  # Records the dispatch circuit breaker outcome for every terminal run,
+  # regardless of which activity completed it. Successful half-open probes
+  # can finish through CreatePullRequestActivity, CompleteIssueGoalActivity,
+  # CompleteReviewGoalActivity, and other direct complete! paths — recording
+  # here (instead of in a single activity) ensures half_open_success_count
+  # is incremented for all of them so the breaker can recover.
+  #
+  # The agent_run_id is forwarded to the breaker so it can gate the
+  # half_open counter on whether the run that just finished was the
+  # explicit probe (set via mark_probe_dispatched!) or just a stale
+  # in-flight run from before the circuit opened. Stale completions
+  # must not affect half_open counters.
+  #
+  # Runs in a background job so the activity's commit chain does not
+  # block on the (relatively expensive) provider-failure scan during
+  # the burst-of-terminal-completions case the breaker exists to handle.
+  def record_dispatch_circuit_breaker_outcome
+    return unless final_runner.present?
+    return unless project&.account
+    # "completed"/"no_output" mean the provider ran fine; FAILURE_STATUSES
+    # mean it did not. "cancelled"/"retried" are not real provider outcomes.
+    success = successful? || status == "no_output"
+    return unless success || status.in?(FAILURE_STATUSES)
+
+    DispatchCircuitBreakerOutcomeJob.perform_later(
+      account_id: project.account_id,
+      success: success,
+      agent_run_id: id
+    )
+  rescue => e
+    Rails.logger.warn(
+      message: "dispatch_circuit_breaker.record_outcome_error",
+      agent_run_id: id,
+      error_class: e.class.name,
+      error_message: e.message.to_s.truncate(200)
+    )
   end
 
   def just_started_running?

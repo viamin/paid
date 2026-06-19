@@ -29,8 +29,40 @@ class ExceptionIncident < ApplicationRecord
   scope :by_severity, ->(severity) { where(severity: severity) }
   scope :recent, -> { order(last_occurred_at: :desc) }
 
+  # Incidents genuinely blocked from issue filing by the allowlist. These are
+  # recorded and notified but never escalated to a GitHub issue — surfacing them
+  # lets maintainers decide whether to grow the allowlist.
+  #
+  # Project context is required. `Handle#create_incident` initializes every
+  # actionable incident as `action_taken: "notified"`, and `file_or_update_issue`
+  # returns early whenever there is no project — before the allowlist is even
+  # consulted. An off-allowlist incident without a project was therefore never
+  # blocked by the allowlist, so including it would misreport it as a candidate
+  # for allowlist expansion. Reads the allowlist constant live so dashboard
+  # output tracks changes without caching.
+  scope :filing_blocked, -> {
+    where(action_taken: "notified")
+      .where.not(subsystem: ExceptionHandler::Classifier::ISSUE_FILING_ALLOWLIST)
+      .where.not(project_id: nil)
+  }
+
   def resolved?
     status == "resolved"
+  end
+
+  # True when this incident's subsystem would be eligible for GitHub issue
+  # filing. Data-driven off the live allowlist constant (no caching).
+  def on_allowlist?
+    ExceptionHandler::Classifier::ISSUE_FILING_ALLOWLIST.include?(subsystem)
+  end
+
+  # True when this incident was genuinely blocked from filing by the allowlist.
+  # Mirrors the `filing_blocked` scope predicate so view badges stay consistent
+  # with scope membership: projectless incidents are excluded because
+  # `file_or_update_issue` returns early before consulting the allowlist when
+  # there is no project context.
+  def filing_blocked?
+    action_taken == "notified" && project_id.present? && !on_allowlist?
   end
 
   def record_occurrence!(new_context: {})

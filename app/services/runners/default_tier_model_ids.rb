@@ -37,9 +37,28 @@ module Runners
 
     def tier_defaults_for_standard_provider(model_provider)
       LlmModel::TIERS.each_with_object({}) do |tier, mapping|
-        model = LlmModel.active.by_provider(model_provider).by_tier(tier).by_capability.first
+        model = LlmModel.active.by_provider(model_provider).by_tier(tier).by_capability
+          .find { |m| runner_model_compatible?(m.model_id) }
         mapping[tier] = model.model_id if model
       end
+    end
+
+    def runner_model_compatible?(model_id)
+      result = ModelCompatibility.call(
+        runner_key: @runner_key,
+        model_id: model_id,
+        auth_type: "api_key"
+      )
+      if result.unsupported?
+        Rails.logger.info(
+          message: "model_selection.default_model_filtered_incompatible",
+          runner_key: @runner_key,
+          model_id: model_id,
+          incompatibility_type: result.incompatibility_type,
+          reason: result.reason
+        )
+      end
+      !result.unsupported?
     end
 
     def tier_defaults_for_openrouter_free

@@ -277,6 +277,46 @@
     </div>
   </div>
 
+  <%# Duration Trend Chart %>
+  <div class="mt-8">
+    <h2 class="text-lg font-semibold text-gray-900">Duration Trend (PR Creation Runs)</h2>
+    <p class="mt-1 text-sm text-gray-500">Daily avg and median (p50) duration for completed PR creation runs.</p>
+    <% dtc = stats[:duration_trend_chart] %>
+    <% dtc_has_data = dtc[:series].any? { |s| s[:data].any? } %>
+    <% if dtc_has_data %>
+      <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+        <div class="px-4 py-5 sm:p-6">
+          <% slope = dtc[:slope_seconds_per_day] %>
+          <% if slope != 0.0 %>
+            <p class="mb-3 text-xs text-gray-500">
+              Trend: <span class="font-medium <%= slope > 0 ? 'text-red-600' : 'text-green-600' %>">
+                <%= slope > 0 ? "+" : "" %><%= slope %>s/day
+              </span>
+            </p>
+          <% end %>
+          <%= line_chart dtc[:series],
+              id: "duration-trend-chart",
+              height: "320px",
+              colors: ["#4f46e5", "#059669", "#94a3b8"],
+              xtitle: "Date",
+              ytitle: "Seconds",
+              library: {
+                plugins: {
+                  legend: { display: true, position: "bottom" }
+                },
+                scales: {
+                  y: { beginAtZero: true }
+                }
+              } %>
+        </div>
+      </div>
+    <% else %>
+      <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+        <div class="px-4 py-5 text-sm text-gray-500">No completed PR creation runs yet.</div>
+      </div>
+    <% end %>
+  </div>
+
   <%# Phase Breakdown %>
   <div class="mt-8">
     <h2 class="text-lg font-semibold text-gray-900">Run Phase Breakdown</h2>

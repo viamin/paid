@@ -741,5 +741,128 @@ RSpec.describe ProcessRunQueueJob do
         expect(open_run.reload.temporal_workflow_id).to be_present
       end
     end
+
+    context "when the dispatch circuit breaker is open for an account" do
+      it "blocks all queued runs for that account in a single pass" do
+        account = create(:account)
+        project = create(:project, account: account)
+        create(:dispatch_circuit_breaker, :open, account: account)
+        runs = Array.new(3) { create(:agent_run, :queued, project: project) }
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(runs.map { |run| run.reload.status }).to all(eq("queued"))
+      end
+
+      it "does not starve other accounts when a halted account has a deep backlog" do
+        stub_const("#{described_class}::MAX_ITERATIONS_PER_PERFORM", 4)
+
+        halted_account = create(:account)
+        halted_project = create(:project, account: halted_account)
+        create(:dispatch_circuit_breaker, :open, account: halted_account)
+        # More halted-account runs than the iteration budget so only the peek
+        # exclusion (not in-memory skipping) lets the other account through.
+        Array.new(5) { |i| create(:agent_run, :queued, project: halted_project, created_at: (20 - i).minutes.ago) }
+
+        open_account = create(:account)
+        open_project = create(:project, account: open_account)
+        open_run = create(:agent_run, :queued, project: open_project, created_at: 1.minute.ago)
+
+        expect(temporal_client).to receive(:start_workflow).once.and_return(workflow_handle)
+
+        described_class.new.perform
+
+        expect(open_run.reload.temporal_workflow_id).to be_present
+      end
+    end
+
+    context "when the dispatch circuit breaker is half_open for an account" do
+      it "allows a single probe run and blocks the rest until the interval elapses" do
+        account = create(:account)
+        project = create(:project, account: account)
+        create(:dispatch_circuit_breaker, :half_open, account: account, last_probe_at: nil)
+        probe_run = create(:agent_run, :queued, project: project, created_at: 2.minutes.ago)
+        blocked_run = create(:agent_run, :queued, project: project, created_at: 1.minute.ago)
+
+        expect(temporal_client).to receive(:start_workflow).once.and_return(workflow_handle)
+
+        described_class.new.perform
+
+        expect(probe_run.reload.temporal_workflow_id).to be_present
+        expect(blocked_run.reload.status).to eq("queued")
+      end
+
+      it "stamps the dispatched probe run id on the breaker so only its outcome counts" do
+        account = create(:account)
+        project = create(:project, account: account)
+        breaker = create(:dispatch_circuit_breaker, :half_open, account: account, last_probe_at: nil)
+        probe_run = create(:agent_run, :queued, project: project, created_at: 2.minutes.ago)
+
+        allow(temporal_client).to receive(:start_workflow).and_return(workflow_handle)
+
+        described_class.new.perform
+
+        expect(breaker.reload.last_probe_run_id).to eq(probe_run.id)
+      end
+
+      it "does not stamp the probe when the workflow start fails" do
+        account = create(:account)
+        project = create(:project, account: account)
+        breaker = create(:dispatch_circuit_breaker, :half_open, account: account, last_probe_at: nil)
+        probe_run = create(:agent_run, :queued, project: project, created_at: 2.minutes.ago)
+
+        allow(temporal_client).to receive(:start_workflow).and_raise(StandardError, "Connection refused")
+
+        described_class.new.perform
+
+        expect(probe_run.reload.status).to eq("failed")
+        # The probe never actually dispatched, so the breaker must stay
+        # probeable instead of blocking recovery for the probe interval.
+        expect(breaker.reload.last_probe_run_id).to be_nil
+        expect(breaker.reload.last_probe_at).to be_nil
+      end
+
+      it "does not stamp the probe when the claim is lost before dispatch" do
+        account = create(:account)
+        project = create(:project, account: account)
+        breaker = create(:dispatch_circuit_breaker, :half_open, account: account, last_probe_at: nil)
+        lost_run = create(:agent_run, :queued, project: project, created_at: 2.minutes.ago)
+
+        # Another process wins the claim between peek and claim.
+        allow(AgentRun).to receive(:claim_next_queued_run).and_return(nil)
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(lost_run.reload.status).to eq("queued")
+        expect(breaker.reload.last_probe_run_id).to be_nil
+        expect(breaker.reload.last_probe_at).to be_nil
+      end
+
+      it "keeps the breaker probeable so the next run retries when a probe start fails" do
+        account = create(:account)
+        project = create(:project, account: account)
+        breaker = create(:dispatch_circuit_breaker, :half_open, account: account, last_probe_at: nil)
+        failed_probe = create(:agent_run, :queued, project: project, created_at: 3.minutes.ago)
+        retry_run = create(:agent_run, :queued, project: project, created_at: 2.minutes.ago)
+
+        allow(temporal_client).to receive(:start_workflow) do |_wf, input, **_opts|
+          raise StandardError, "Connection refused" if input[:agent_run_id] == failed_probe.id
+
+          workflow_handle
+        end
+
+        described_class.new.perform
+
+        expect(failed_probe.reload.status).to eq("failed")
+        # The failed probe was not stamped, so the next run in the same pass
+        # is treated as a fresh probe and the breaker records it on dispatch.
+        expect(breaker.reload.last_probe_run_id).to eq(retry_run.id)
+        expect(retry_run.reload.temporal_workflow_id).to be_present
+      end
+    end
   end
 end

@@ -3078,6 +3078,7 @@ RSpec.describe AgentRun do
 
       it "does not invalidate runner option caches for unrelated config changes" do
         project = create(:project)
+        create(:llm_model, model_id: "moonshotai/kimi-k2-0905", provider: "openrouter", tier: "mid")
         runner = create(
           :runner,
           user: project.effective_owner,
@@ -3100,6 +3101,8 @@ RSpec.describe AgentRun do
 
       it "invalidates runner option caches when model-driven display names change" do
         project = create(:project)
+        create(:llm_model, model_id: "moonshotai/kimi-k2-0905", provider: "openrouter", tier: "mid")
+        create(:llm_model, model_id: "moonshotai/kimi-k2-0906", provider: "openrouter", tier: "mid")
         runner = create(
           :runner,
           user: project.effective_owner,
@@ -3899,6 +3902,63 @@ RSpec.describe AgentRun do
       expect {
         agent_run.update!(branch_name: "feature/test")
       }.not_to have_enqueued_job(FailureRecoveryDecisionJob)
+    end
+  end
+
+  describe "dispatch circuit breaker outcome callback" do
+    let(:project) { create(:project) }
+    let(:account) { project.account }
+
+    it "enqueues DispatchCircuitBreakerOutcomeJob with success on a completed transition" do
+      agent_run = create(:agent_run, :running, project: project, final_runner: "claude")
+
+      expect {
+        agent_run.complete!
+      }.to have_enqueued_job(DispatchCircuitBreakerOutcomeJob).with(
+        account_id: account.id,
+        success: true,
+        agent_run_id: agent_run.id
+      )
+    end
+
+    it "enqueues DispatchCircuitBreakerOutcomeJob with success on a no_output transition" do
+      agent_run = create(:agent_run, :running, project: project, final_runner: "claude")
+
+      expect {
+        agent_run.complete_no_output!(reason: "no_changes")
+      }.to have_enqueued_job(DispatchCircuitBreakerOutcomeJob).with(
+        account_id: account.id,
+        success: true,
+        agent_run_id: agent_run.id
+      )
+    end
+
+    it "enqueues DispatchCircuitBreakerOutcomeJob with failure on a failed transition" do
+      agent_run = create(:agent_run, :running, project: project, final_runner: "claude")
+
+      expect {
+        agent_run.fail!(error: "boom")
+      }.to have_enqueued_job(DispatchCircuitBreakerOutcomeJob).with(
+        account_id: account.id,
+        success: false,
+        agent_run_id: agent_run.id
+      )
+    end
+
+    it "does not enqueue when final_runner is blank" do
+      agent_run = create(:agent_run, :running, project: project, final_runner: nil)
+
+      expect {
+        agent_run.complete!
+      }.not_to have_enqueued_job(DispatchCircuitBreakerOutcomeJob)
+    end
+
+    it "does not enqueue for non-terminal status changes" do
+      agent_run = create(:agent_run, :running, project: project, final_runner: "claude")
+
+      expect {
+        agent_run.update!(branch_name: "feature/test")
+      }.not_to have_enqueued_job(DispatchCircuitBreakerOutcomeJob)
     end
   end
 

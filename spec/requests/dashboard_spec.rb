@@ -34,6 +34,28 @@ RSpec.describe "Dashboard" do
         expect(response.body).to include("Test Company")
       end
 
+      it "surfaces exception incidents from the dashboard header" do
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
+        link = doc.at_css("[data-testid='dashboard-exception-incidents-link']")
+
+        expect(link).to be_present
+        expect(link["href"]).to eq(exception_incidents_path)
+        expect(link.text.strip).to eq("Exception incidents")
+      end
+
+      it "includes exception incidents in the desktop navigation" do
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
+        desktop_nav_link = doc.at_css("nav [data-nav-section='exception_incidents']")
+
+        expect(desktop_nav_link).to be_present
+        expect(desktop_nav_link["href"]).to eq(exception_incidents_path)
+        expect(desktop_nav_link.text.strip).to eq("Exception incidents")
+      end
+
       it "includes settings in the mobile menu" do
         get dashboard_path
 
@@ -42,6 +64,17 @@ RSpec.describe "Dashboard" do
 
         expect(mobile_settings_link).to be_present
         expect(mobile_settings_link.text.strip).to eq("Settings")
+      end
+
+      it "includes exception incidents in the mobile menu" do
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
+        mobile_exception_link = doc.at_css("#mobile-menu [data-testid='mobile-exception-incidents-link']")
+
+        expect(mobile_exception_link).to be_present
+        expect(mobile_exception_link["href"]).to eq(exception_incidents_path)
+        expect(mobile_exception_link.text.strip).to eq("Exception incidents")
       end
 
       it "renders the user email dropdown in the desktop navbar" do
@@ -146,6 +179,16 @@ RSpec.describe "Dashboard" do
         expect(doc.at_css("turbo-frame#dashboard-queue-health[src]")).not_to be_present
       end
 
+      it "wires the deferred github credential health turbo frame" do
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
+        frame = doc.at_css("turbo-frame#dashboard-github-health[data-dashboard-frames-src='#{dashboard_github_health_path}']")
+        expect(frame).to be_present
+        expect(frame["loading"]).to be_nil
+        expect(frame["src"]).to be_nil
+      end
+
       it "shows live metrics section with active runs" do
         create(:agent_run, project: project, status: "running", started_at: 5.minutes.ago)
         create(:agent_run, project: project, status: "completed", completed_at: 1.minute.ago, duration_seconds: 42)
@@ -159,6 +202,36 @@ RSpec.describe "Dashboard" do
         expect(response.body).not_to include("Total Projects")
         expect(response.body).not_to include("Active Projects")
         expect(response.body).to include("Recent Activity")
+      end
+
+      it "links each live metrics tile to the matching filtered agent runs index" do
+        create(:agent_run, project: project, status: "running", started_at: 5.minutes.ago)
+        create(:agent_run, project: project, status: "queued")
+        create(:agent_run, project: project, status: "queued", temporal_workflow_id: "wf-claimed")
+        create(:agent_run, project: project, status: "completed", completed_at: 1.minute.ago)
+        create(:agent_run, project: project, status: "failed", completed_at: 1.minute.ago)
+        create(:agent_run, project: project, goal: "create_pr", status: "running", started_at: 1.minute.ago)
+
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
+        hrefs = doc.css("a").map { |a| a["href"].to_s }
+
+        expect(hrefs).to include(agent_runs_path(q: { status_eq: "running" }))
+        expect(hrefs).to include(agent_runs_path(q: { status_eq: "queued", temporal_workflow_id_null: true }))
+        expect(hrefs).to include(agent_runs_path(q: { status_eq: "completed", completed_at_gteq: Time.current.beginning_of_day.iso8601 }))
+        expect(hrefs).to include(agent_runs_path(q: { status_in: AgentRun::FAILURE_STATUSES, completed_at_gteq: Time.current.beginning_of_day.iso8601 }))
+        expect(hrefs).to include(agent_runs_path(q: { goal_eq: "create_pr", status_eq: "running" }))
+      end
+
+      it "does not include claimed queued runs when filtering by the Queued tile link" do
+        unclaimed = create(:agent_run, project: project, status: "queued")
+        claimed = create(:agent_run, project: project, status: "queued", temporal_workflow_id: "wf-1")
+
+        get agent_runs_path, params: { q: { status_eq: "queued", temporal_workflow_id_null: true } }
+
+        expect(response.body).to include(project_agent_run_path(project, unclaimed))
+        expect(response.body).not_to include(project_agent_run_path(project, claimed))
       end
 
       it "shows upcoming queue positions only for the signed-in user's projects" do
@@ -719,6 +792,40 @@ RSpec.describe "Dashboard" do
 
       expect(response.body).to include("1 of 2 free models available")
       expect(response.body).to include("Add OpenRouter credits")
+    end
+  end
+
+  describe "GET /dashboard/github_health" do
+    let(:account) { create(:account) }
+    let(:user) { create(:user, account: account) }
+
+    before { sign_in user }
+
+    it "returns github credential health partial within a turbo frame" do
+      get dashboard_github_health_path
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("dashboard-github-health")
+      expect(response.body).to include("GitHub Credential Health")
+    end
+
+    it "renders per-installation rate-limit usage for app-backed projects" do
+      installation = create(:github_installation, account: account, account_login: "my-org")
+      create(:project, :with_github_installation, account: account, github_installation: installation)
+      create(
+        :github_health_state,
+        endpoint: GithubHealthState.endpoint_for_github_installation(installation.github_installation_id),
+        rate_limit_remaining: 3000,
+        rate_limit_limit: 15_000,
+        rate_limit_reset_at: 1.hour.from_now,
+        rate_limit_observed_at: 1.minute.ago
+      )
+
+      get dashboard_github_health_path
+
+      expect(response.body).to include("my-org")
+      expect(response.body).to include("App")
+      expect(response.body).to include("15,000/hr")
     end
   end
 

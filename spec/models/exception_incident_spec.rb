@@ -46,6 +46,41 @@ RSpec.describe ExceptionIncident do
         expect(described_class.for_subsystem("knowledge")).to eq([ knowledge ])
       end
     end
+
+    describe ".filing_blocked" do
+      it "returns only notified incidents off the issue-filing allowlist with project context" do
+        blocked = create(:exception_incident, :with_project, account: account,
+          subsystem: "github_sync", action_taken: "notified")
+        create(:exception_incident, :with_project, account: account,
+          subsystem: "knowledge", action_taken: "notified") # on allowlist
+        create(:exception_incident, :with_project, account: account,
+          subsystem: "github_sync", action_taken: "issue_filed") # off allowlist, already filed
+        create(:exception_incident, :with_project, account: account,
+          subsystem: "general", action_taken: "logged") # off allowlist, transient
+
+        expect(described_class.filing_blocked).to eq([ blocked ])
+      end
+
+      it "excludes off-allowlist incidents without project context" do
+        # `file_or_update_issue` returns early when there is no project, before
+        # the allowlist is consulted, so such incidents were never blocked by it.
+        create(:exception_incident, account: account,
+          subsystem: "github_sync", action_taken: "notified")
+
+        expect(described_class.filing_blocked).to be_empty
+      end
+
+      it "reflects live allowlist changes without caching" do
+        incident = create(:exception_incident, :with_project, account: account,
+          subsystem: "general", action_taken: "notified")
+
+        expect(described_class.filing_blocked).to include(incident)
+
+        stub_const("ExceptionHandler::Classifier::ISSUE_FILING_ALLOWLIST", %w[general])
+
+        expect(described_class.filing_blocked).not_to include(incident)
+      end
+    end
   end
 
   describe "#record_occurrence!" do
@@ -78,6 +113,59 @@ RSpec.describe ExceptionIncident do
 
     it "returns false for open incidents" do
       expect(build(:exception_incident)).not_to be_resolved
+    end
+  end
+
+  describe "#on_allowlist?" do
+    it "returns true for allowlisted subsystems" do
+      expect(build(:exception_incident, subsystem: "knowledge")).to be_on_allowlist
+    end
+
+    it "returns false for off-allowlist subsystems" do
+      expect(build(:exception_incident, subsystem: "general")).not_to be_on_allowlist
+    end
+
+    it "tracks live allowlist changes without caching" do
+      incident = build(:exception_incident, subsystem: "general")
+
+      expect(incident).not_to be_on_allowlist
+
+      stub_const("ExceptionHandler::Classifier::ISSUE_FILING_ALLOWLIST", %w[general])
+
+      expect(incident).to be_on_allowlist
+    end
+  end
+
+  describe "#filing_blocked?" do
+    let(:account) { create(:account) }
+    let(:project) { create(:project, account: account) }
+
+    it "returns true for off-allowlist notified incidents with project context" do
+      incident = create(:exception_incident, account: account, project: project,
+        subsystem: "github_sync", action_taken: "notified")
+
+      expect(incident).to be_filing_blocked
+    end
+
+    it "returns false for incidents without project context" do
+      incident = create(:exception_incident, account: account,
+        subsystem: "github_sync", action_taken: "notified")
+
+      expect(incident).not_to be_filing_blocked
+    end
+
+    it "returns false for on-allowlist incidents" do
+      incident = create(:exception_incident, account: account, project: project,
+        subsystem: "knowledge", action_taken: "notified")
+
+      expect(incident).not_to be_filing_blocked
+    end
+
+    it "returns false for off-allowlist incidents with a non-notified action" do
+      incident = create(:exception_incident, account: account, project: project,
+        subsystem: "github_sync", action_taken: "issue_filed")
+
+      expect(incident).not_to be_filing_blocked
     end
   end
 end

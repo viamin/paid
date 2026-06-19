@@ -457,6 +457,27 @@ RSpec.describe Containers::Provision do
         )
       end
 
+      it "pins a Paid-selected top-level model so Codex does not default to an unsupported model" do
+        create(:llm_model, :openai, model_id: "gpt-5.1", tier: "mid", capability_score: 9.0)
+
+        service.provision
+
+        expect(mock_container).to have_received(:exec).with(
+          [
+            "sh",
+            "-lc",
+            satisfy { |cmd|
+              decoded = decoded_base64_content(cmd)
+              cmd.include?("/home/agent/.codex/config.toml") &&
+                decoded.include?('model = "gpt-5.1"') &&
+                decoded.include?("[chatgpt]") &&
+                decoded.index('model = "gpt-5.1"') < decoded.index("[chatgpt]")
+            }
+          ],
+          user: "agent"
+        )
+      end
+
       it "seeds Codex config with the current notify command shape" do
         service.provision
         notify_line = described_class.codex_notify_line
@@ -3364,6 +3385,64 @@ RSpec.describe Containers::Provision do
       result = service.send(:sanitize_codex_host_config, "model = \"gpt-5.5\"\n")
 
       expect(result).to eq("model = \"gpt-5.1\"\n")
+    end
+  end
+
+  describe "#codex_model_config_line" do
+    let(:service) { described_class.new(agent_run: agent_run, project: project) }
+
+    it "returns a top-level model line for the Paid-selected Codex model" do
+      create(:llm_model, :openai, model_id: "gpt-5.1", tier: "mid", capability_score: 9.0)
+
+      expect(service.send(:codex_model_config_line)).to eq('model = "gpt-5.1"')
+    end
+
+    it "escapes quotes in the model id" do
+      allow(service).to receive(:codex_container_model_id).and_return('gpt-"x"')
+
+      expect(service.send(:codex_model_config_line)).to eq('model = "gpt-\\"x\\""')
+    end
+
+    it "returns nil when no Codex model resolves so the CLI default is left in place" do
+      allow(service).to receive(:codex_container_model_id).and_return(nil)
+
+      expect(service.send(:codex_model_config_line)).to be_nil
+    end
+  end
+
+  describe "#cleanup_execution_preparation" do
+    let(:service) { described_class.new(agent_run: agent_run, project: project) }
+    let(:cleanup_steps) { [ { "PAID_PREPARATION_TARGET" => "/x", "PAID_PREPARATION_STATE_DIR" => "/x.state" } ] }
+
+    it "skips the restore and invalidates when the container is not running" do
+      allow(service).to receive(:container_running?).and_return(false)
+      allow(service).to receive(:invalidate_container_after_preparation_cleanup_failure!)
+
+      expect(service).not_to receive(:run_preparation_cleanup_step)
+
+      expect {
+        service.send(:cleanup_execution_preparation, cleanup_steps, env: {})
+      }.not_to raise_error
+      expect(service).to have_received(:invalidate_container_after_preparation_cleanup_failure!)
+    end
+
+    it "does not raise a terminal restore error when the container dies mid-restore" do
+      allow(service).to receive(:invalidate_container_after_preparation_cleanup_failure!)
+      allow(service).to receive_messages(container_running?: true, run_preparation_cleanup_step: Containers::Provision::ExecutionError.new("container abc is not running"))
+
+      expect {
+        service.send(:cleanup_execution_preparation, cleanup_steps, env: {})
+      }.not_to raise_error
+      expect(service).to have_received(:invalidate_container_after_preparation_cleanup_failure!)
+    end
+
+    it "raises for a genuine restore failure while the container is still running" do
+      allow(service).to receive(:invalidate_container_after_preparation_cleanup_failure!)
+      allow(service).to receive_messages(container_running?: true, run_preparation_cleanup_step: Containers::Provision::ExecutionError.new("missing runtime preparation backup"))
+
+      expect {
+        service.send(:cleanup_execution_preparation, cleanup_steps, env: {})
+      }.to raise_error(Containers::Provision::ExecutionError, /Failed to restore prepared runtime state/)
     end
   end
 end

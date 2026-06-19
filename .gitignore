@@ -204,6 +204,9 @@ __pycache__/
 # Paid heartbeat file (touched by agent CLI hooks during container execution)
 .paid-heartbeat
 
+# Claude Code plan files (local scratch; should not be committed)
+.claude/plans/
+
 # Database backups
 /backups/
 
@@ -213,3 +216,4 @@ __pycache__/
 
 # Compound Engineering local config
 .compound-engineering/*.local.yaml
+.env.local

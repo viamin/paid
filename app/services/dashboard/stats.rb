@@ -25,14 +25,14 @@ module Dashboard
     VALID_GOALS = %w[all create_pr create_issue review].freeze
 
     SECTIONS = %i[
-      run_volume daily_run_status_chart daily_outcome_chart duration_percentiles phase_breakdown cost_and_tokens
+      run_volume daily_run_status_chart daily_outcome_chart duration_percentiles duration_trend_chart phase_breakdown cost_and_tokens
       performance_by_outcome performance_by_goal
       runs_by_agent_type runs_by_runner runner_fallback_stats
       runs_by_project cost_by_project issue_completion
     ].freeze
 
     METRICS_SECTIONS = %i[
-      run_volume daily_run_status_chart daily_outcome_chart cost_and_tokens duration_percentiles phase_breakdown
+      run_volume daily_run_status_chart daily_outcome_chart cost_and_tokens duration_percentiles duration_trend_chart phase_breakdown
       issue_completion cost_by_project runner_fallback_stats
       runs_by_runner runs_by_project
     ].freeze
@@ -111,7 +111,7 @@ module Dashboard
       end
     end
 
-    def apply_time_range(scope)
+    def apply_time_range(scope, column: :created_at)
       return scope if time_range == "cumulative"
 
       cutoff = case time_range
@@ -119,7 +119,7 @@ module Dashboard
       when "7d" then 7.days.ago
       when "24h" then 24.hours.ago
       end
-      scope.where(created_at: cutoff..)
+      scope.where(column => cutoff..)
     end
 
     def run_volume
@@ -164,6 +164,48 @@ module Dashboard
         p75: result&.dig(1)&.to_i || 0,
         p90: result&.dig(2)&.to_i || 0,
         avg: result&.dig(3)&.to_i || 0
+      }
+    end
+
+    def duration_trend_chart
+      scope = agent_runs
+        .where(status: "completed", goal: "create_pr")
+        .where.not(duration_seconds: nil, completed_at: nil)
+
+      scope = apply_time_range(scope, column: :completed_at)
+
+      rows = scope
+        .group(Arel.sql("DATE(agent_runs.completed_at)"))
+        .order(Arel.sql("DATE(agent_runs.completed_at)"))
+        .pluck(
+          Arel.sql("DATE(agent_runs.completed_at)"),
+          Arel.sql("ROUND(AVG(duration_seconds))::integer"),
+          Arel.sql("ROUND(percentile_cont(0.5) WITHIN GROUP (ORDER BY duration_seconds))::integer"),
+          Arel.sql("COUNT(*)")
+        )
+
+      avg_data = {}
+      p50_data = {}
+      run_counts = {}
+
+      rows.each do |date, avg, p50, count|
+        key = date.to_s
+        avg_data[key] = avg.to_i
+        p50_data[key] = p50.to_i
+        run_counts[key] = count.to_i
+      end
+
+      trend_data = linear_trend(avg_data)
+      slope = trend_slope(avg_data)
+
+      {
+        series: [
+          { name: "Average", data: avg_data },
+          { name: "Median (p50)", data: p50_data },
+          { name: "Trend", data: trend_data }
+        ],
+        run_counts: run_counts,
+        slope_seconds_per_day: slope
       }
     end
 
@@ -637,6 +679,36 @@ module Dashboard
       SQL
 
       ActiveRecord::Base.connection.select_one(sql)
+    end
+
+    def ols_slope(values)
+      n = values.size
+      sum_x = (0...n).sum
+      sum_y = values.sum
+      sum_xy = values.each_with_index.sum { |y, i| i * y }
+      sum_x2 = (0...n).sum { |i| i * i }
+      denom = (n * sum_x2 - sum_x * sum_x).to_f
+      return nil if denom.zero?
+
+      (n * sum_xy - sum_x * sum_y) / denom
+    end
+
+    def linear_trend(data)
+      return {} if data.size < 2
+
+      slope = ols_slope(data.values)
+      return {} if slope.nil?
+
+      intercept = (data.values.sum - slope * (0...data.size).sum) / data.size.to_f
+      data.keys.each_with_index.each_with_object({}) do |(key, i), result|
+        result[key] = [ (intercept + slope * i).round, 0 ].max
+      end
+    end
+
+    def trend_slope(data)
+      return 0.0 if data.size < 2
+
+      ols_slope(data.values)&.round(1) || 0.0
     end
 
     def trailing_count_sql(start_time, end_time)

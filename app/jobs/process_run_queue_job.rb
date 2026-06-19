@@ -49,8 +49,15 @@ class ProcessRunQueueJob < ApplicationJob
       skipped_ids = Set.new
       blocked_project_ids = Set.new
       blocked_user_ids = Set.new
+      # Runner-agnostic queue (#2563): a runner id in this set means
+      # "do not pick this runner again on this pass", not "skip the
+      # run". For pinned runs the corresponding run is also added to
+      # +skipped_ids+ so it is not retried; for unbound runs the run
+      # stays queued and the resolver will pick a different runner next
+      # pass if one is healthy.
       blocked_runner_ids = Set.new
       blocked_account_create_pr_ids = Set.new
+      blocked_account_dispatch_ids = Set.new
       started_priority_by_project = {}
 
       loop do
@@ -64,7 +71,8 @@ class ProcessRunQueueJob < ApplicationJob
           exclude_ids: skipped_ids.to_a,
           exclude_project_ids: blocked_project_ids.to_a,
           exclude_user_ids: blocked_user_ids.to_a,
-          exclude_account_create_pr_ids: blocked_account_create_pr_ids.to_a
+          exclude_account_create_pr_ids: blocked_account_create_pr_ids.to_a,
+          exclude_account_ids: blocked_account_dispatch_ids.to_a
         )
 
         break unless next_run
@@ -100,18 +108,57 @@ class ProcessRunQueueJob < ApplicationJob
           next
         end
 
+        # Late-bind a runner for runner-agnostic queued runs (#2563).
+        # The resolver is constrained to runnable runners AND excludes any
+        # runner that already failed preflight during this pass
+        # (+blocked_runner_ids+), so a healthy alternative is picked when the
+        # preferred runner is rate-limited / circuit-open. If no runnable
+        # runner can be resolved the run stays queued and we move on to the
+        # next peek.
+        bound_for_this_iteration = false
+        if next_run.runner_unbound?
+          bound_runner = AgentRuns::BindRunner.call(agent_run: next_run, exclude_runner_ids: blocked_runner_ids)
+          unless bound_runner
+            log_no_runnable_runner(next_run)
+            next
+          end
+          bound_for_this_iteration = true
+        end
+
         if next_run.runner_id && blocked_runner_ids.include?(next_run.runner_id)
-          skipped_ids.add(next_run.id)
+          if bound_for_this_iteration
+            # Defense in depth: a late-bound run should never resolve to a
+            # blocked runner (the resolver excludes them), but if it does,
+            # clear the pin so the next pass re-resolves rather than
+            # stranding the run on it.
+            next_run.update_columns(runner_id: nil)
+          else
+            skipped_ids.add(next_run.id)
+          end
           next
         end
 
         preflight_result = check_runner_preflight(next_run, user)
         if preflight_result && !preflight_result.pass?
           log_preflight_skip(next_run, preflight_result)
-          skipped_ids.add(next_run.id)
-          blocked_runner_ids.add(next_run.runner_id) if next_run.runner_id
+          blocked_runner_ids.add(preflight_result.runner_id) if preflight_result.runner_id
+          if bound_for_this_iteration
+            # Late-bound on this pass: clear the pin so the next pass
+            # re-resolves (a different healthy runner may be available
+            # by then). The run stays queued; the runner was just
+            # unhealthy, not the run.
+            next_run.update_columns(runner_id: nil)
+          else
+            # Pinned (manually assigned) runs are stuck to one
+            # runner — keep the run skipped for the rest of this pass
+            # and try again next tick.
+            skipped_ids.add(next_run.id)
+          end
           next
         end
+
+        dispatch_decision = dispatch_decision_for(next_run, blocked_account_dispatch_ids)
+        next if dispatch_decision == :halt
 
         if next_run.goal == "create_pr" && !account_has_create_pr_capacity?(next_run.project.account)
           blocked_account_create_pr_ids.add(next_run.project.account_id)
@@ -134,6 +181,12 @@ class ProcessRunQueueJob < ApplicationJob
           # skip capacity accounting and continue processing the queue.
           next
         elsif result
+          # Stamp the half-open probe only after the run was claimed and its
+          # workflow start is known to be proceeding. Stamping earlier would
+          # advance last_probe_at even when the probe never dispatched (lost
+          # claim or failed start), blocking every remaining queued run for
+          # the full probe interval with zero recovery signal.
+          mark_dispatched_probe(agent_run) if dispatch_decision == :allow_probe
           consecutive_failures = 0
           starts_count += 1
           record_started_project_priority(next_run, started_priority_by_project)
@@ -186,12 +239,69 @@ class ProcessRunQueueJob < ApplicationJob
     Rails.logger.info(payload)
   end
 
+  # Late-binding could not resolve any runnable runner for the queued
+  # run. The run stays queued for a later pass — once a healthy runner
+  # is available, the resolver will pair it. This is the
+  # runner-agnostic-queue equivalent of the pre-#2563 "no runner
+  # available, schedule retry" path on the enqueue side.
+  def log_no_runnable_runner(agent_run)
+    Rails.logger.info(
+      message: "process_run_queue.no_runnable_runner",
+      agent_run_id: agent_run.id,
+      project_id: agent_run.project_id,
+      intended_agent_type: agent_run.agent_type
+    )
+  end
+
   def user_has_capacity?(user)
     AgentRun.active_count_for_user(user) < user.account.tenant_max_concurrent_runs(user.settings.max_concurrent_runs)
   end
 
   def account_has_create_pr_capacity?(account)
     AgentRun.active_create_pr_count_for_account(account) < account.tenant_max_concurrent_create_pr_runs
+  end
+
+  # Returns the dispatch circuit-breaker decision for the next queued run:
+  #   :dispatch    — breaker closed; dispatch normally
+  #   :allow_probe  — breaker half-open; this run is a probe candidate, to be
+  #                   recorded only once it has actually dispatched (see below)
+  #   :halt         — breaker open or recently probed; block the run
+  # The decision (rather than a boolean) is returned so the caller can stamp
+  # the probe after the run is claimed and started. Stamping earlier — inside
+  # this check — would advance last_probe_at even when the probe never
+  # dispatched, blocking recovery for the full probe interval.
+  def dispatch_decision_for(agent_run, blocked_account_dispatch_ids)
+    account = agent_run.project.account
+    # Once an account is halted in this pass, every remaining queued run for
+    # it must stay blocked — returning :dispatch here would let the next run
+    # bypass the breaker and dispatch after only a single run was skipped.
+    return :halt if blocked_account_dispatch_ids.include?(account.id)
+
+    decision = ::AgentRuns::DispatchCircuitBreaker.probe_decision(account)
+
+    if decision == :halt
+      blocked_account_dispatch_ids.add(account.id)
+      Rails.logger.info(
+        message: "process_run_queue.dispatch_halted",
+        agent_run_id: agent_run.id,
+        account_id: account.id
+      )
+    elsif decision == :allow_probe
+      Rails.logger.info(
+        message: "process_run_queue.dispatch_probe",
+        agent_run_id: agent_run.id,
+        account_id: account.id
+      )
+    end
+    decision
+  end
+
+  # Records the half-open probe on the breaker only after the run was
+  # actually claimed and its workflow start is known to be proceeding.
+  def mark_dispatched_probe(agent_run)
+    ::AgentRuns::DispatchCircuitBreaker
+      .new(agent_run.project.account)
+      .mark_probe_dispatched!(agent_run_id: agent_run.id)
   end
 
   def record_started_project_priority(agent_run, started_priority_by_project)

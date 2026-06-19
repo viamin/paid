@@ -83,6 +83,11 @@ class DashboardController < ApplicationController
     render partial: "dashboard/queue_health", locals: { queue_depths: @queue_health.queue_depths, healthy: @queue_health.healthy? }
   end
 
+  def github_health
+    @github_health = Dashboard::GithubHealth.call(account: current_account)
+    render partial: "dashboard/github_health", locals: @github_health
+  end
+
   def pr_cycle_time
     @time_range = valid_time_range
     cutoff = valid_outlier_cutoff

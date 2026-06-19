@@ -12,12 +12,19 @@ module AgentRuns
       project.effective_owner&.runners&.kept_only&.find_by(id: runner_id)
     end
 
-    def initialize(project:, goal:, requested_agent_type: nil, requested_runner_id: nil, respect_requested: true, logger: nil)
+    # +exclude_runner_ids+ (dequeue late-binding only) holds runner ids that
+    # already failed preflight during the current ProcessRunQueueJob pass.
+    # The resolver treats them as unavailable so a queued run is never pinned
+    # back to a runner known-unhealthy this pass; it falls through to a
+    # healthy alternative instead. Empty for all other callers.
+    def initialize(project:, goal:, requested_agent_type: nil, requested_runner_id: nil, respect_requested: true,
+                   exclude_runner_ids: [], logger: nil)
       @project = project
       @goal = goal
       @requested_agent_type = requested_agent_type
       @requested_runner_id = requested_runner_id
       @respect_requested = respect_requested
+      @exclude_runner_ids = Array(exclude_runner_ids)
       @logger = logger
     end
 
@@ -36,11 +43,24 @@ module AgentRuns
 
     private
 
-    attr_reader :project, :goal, :requested_agent_type, :requested_runner_id, :respect_requested, :logger
+    attr_reader :project, :goal, :requested_agent_type, :requested_runner_id, :respect_requested, :exclude_runner_ids, :logger
+
+    # True when this runner instance already failed preflight during the
+    # current dequeue pass and must not be re-selected.
+    def excluded?(runner)
+      runner.present? && exclude_runner_ids.include?(runner.id)
+    end
+
+    # Returns the first non-excluded candidate from the given runners.
+    def first_allowed(*candidates)
+      candidates.find { |runner| runner.present? && exclude_runner_ids.exclude?(runner.id) }
+    end
 
     def requested_selection
       runner = runner_for_id(requested_runner_id)
-      return [ runner.id, agent_type_for_runner_key(runner.runner_key) ] if runner && runner_runnable?(runner)
+      if runner && runner_runnable?(runner) && !excluded?(runner)
+        return [ runner.id, agent_type_for_runner_key(runner.runner_key) ]
+      end
       return [ nil, requested_agent_type ] if agent_type_runnable?(requested_agent_type)
 
       log_unrunnable_requested_runner if requested_runner_id.present? || requested_agent_type.present?
@@ -56,6 +76,10 @@ module AgentRuns
       return [ nil, agent_type ] unless owner
 
       runner = owner.runners.kept_only.find_by(runner_key: runner_key)
+      # Preferred runner failed preflight earlier this dequeue pass: fall
+      # through to default/fallback selection so a healthy alternative can
+      # serve the run instead of being pinned back to the unhealthy one.
+      return nil if runner && excluded?(runner)
       runner ? [ runner.id, agent_type ] : [ nil, agent_type ]
     end
 
@@ -68,11 +92,17 @@ module AgentRuns
       configured_runner = configured_runner_from_raw_settings(settings)
       base_runner = runnable_runner(selected_runner) || runnable_runner(configured_runner)
       fallback_runner = Runner.first_enabled_for_owner(owner) || Runner.ensure_default_for(owner)
-      account_managed_runner(base_runner, owner) ||
-        base_runner ||
-        account_managed_runner(configured_runner, owner) ||
-        account_managed_runner(fallback_runner, owner) ||
+
+      # Walk the preference chain in priority order but skip any candidate
+      # that failed preflight this dequeue pass, so the run lands on a
+      # healthy alternative rather than being re-pinned to a bad runner.
+      first_allowed(
+        account_managed_runner(base_runner, owner),
+        base_runner,
+        account_managed_runner(configured_runner, owner),
+        account_managed_runner(fallback_runner, owner),
         fallback_runner
+      ) || first_enabled_for_owner(owner)
     end
 
     def selected_runner_from_settings(settings, owner)
@@ -226,7 +256,9 @@ module AgentRuns
     def first_enabled_for_owner(owner)
       return unless owner
 
-      owner.runners.kept_only.for_agent_runs.where(runner_key: container_executable_runner_keys).ordered.first
+      scope = owner.runners.kept_only.for_agent_runs.where(runner_key: container_executable_runner_keys).ordered
+      scope = scope.where.not(id: exclude_runner_ids) if exclude_runner_ids.any?
+      scope.first
     end
 
     def ensure_default_for(owner)

@@ -26,7 +26,7 @@ module Models
 
     ANSI_ESCAPE = /\e\[[0-9;]*m/
     MODEL_NOT_FOUND_PATTERNS = Activities::RunAgentActivity::MODEL_NOT_FOUND_PATTERNS
-    CLI_VERSION_PATTERN = /requires a newer version of/i
+    CLI_VERSION_PATTERN = Activities::RunAgentActivity::CLI_VERSION_OUTDATED_PATTERN
 
     def self.call(...)
       new(...).call

@@ -30,7 +30,7 @@ gem "devise"
 
 # Authorization [https://github.com/varvet/pundit]
 gem "pundit"
-gem "avo", "4.0.0.beta.41"
+gem "avo", "4.0.0.beta.51"
 
 # Soft-delete for low-volume reference records
 gem "discard"
@@ -62,7 +62,7 @@ gem "qdrant-ruby", require: false
 gem "aws-sdk-s3", require: false
 
 # Unified interface for AI agent CLIs [https://github.com/viamin/agent-harness]
-# TODO(#2566): Bump past 0.22.5 once viamin/agent-harness releases the Codex CLI
+# TODO(#2603): Bump past 0.22.5 once viamin/agent-harness releases the Codex CLI
 # pin update needed for gpt-5.5 (Codex runner hits cli_version_outdated on 0.22.5).
 gem "agent-harness", "~> 0.22.5"
 

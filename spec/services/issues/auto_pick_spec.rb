@@ -675,18 +675,22 @@ RSpec.describe Issues::AutoPick do
       )
     end
 
-    it "returns nil and warns when no runnable runner can be resolved" do
+    it "creates a runnerless queued run; queue processor late-binds a runner (#2563)" do
+      # With the runner-agnostic queue redesign, enqueue no longer
+      # requires a runnable runner — a missing/disabled runner set
+      # simply leaves the queued run unbound and the queue processor
+      # late-binds a healthy runner at dequeue time. The run is
+      # created with the project fallback agent_type and no pinned
+      # runner.
       create(:issue, project: project)
-      allow(AgentRuns::RunnerResolver).to receive(:call).with(project: project, goal: "create_pr").and_return([ nil, nil ])
       allow(AgentRuns::UserSettingsResolver).to receive(:call).and_return(nil)
-      allow(Rails.logger).to receive(:warn)
+      allow(Rails.logger).to receive(:info)
 
       result = described_class.new(project).call
 
-      expect(result).to be_nil
-      expect(Rails.logger).to have_received(:warn).with(
-        hash_including(message: "auto_pick.no_runnable_runner", project_id: project.id)
-      )
+      expect(result).to be_a(AgentRun)
+      expect(result.runner_id).to be_nil
+      expect(result.agent_type).to eq("claude_code")
     end
 
     context "with concurrent auto-pick runs" do

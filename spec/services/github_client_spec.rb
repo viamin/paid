@@ -1967,7 +1967,7 @@ RSpec.describe GithubClient do
     it "marks the GitHub health state as rate limited so dispatching pauses" do
       reset_at = 30.minutes.from_now
       allow(client.client).to receive(:rate_limit)
-        .and_return(instance_double(Octokit::RateLimit, resets_at: reset_at))
+        .and_return(instance_double(Octokit::RateLimit, resets_at: reset_at, remaining: 0, limit: 5000))
 
       expect { client.repository(repo) }.to raise_error(GithubClient::RateLimitError)
 
@@ -1975,6 +1975,8 @@ RSpec.describe GithubClient do
       expect(state).to be_present
       expect(state.rate_limited_until).to be_within(1.second).of(reset_at)
       expect(state).to be_rate_limited
+      expect(state.rate_limit_remaining).to eq(0)
+      expect(state.rate_limit_limit).to eq(5000)
       expect(GithubHealthState.github_available?(endpoint: health_endpoint)).to be false
     end
 

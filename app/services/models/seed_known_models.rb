@@ -56,11 +56,38 @@ module Models
         capability_score: 7.0,
         tier: "low"
       },
-      # claude-fable-5 is excluded: flagged in #2566 but Anthropic has not published
-      # pricing, context window, or capability details for this model. Add once the
-      # model is generally available and its specifications are confirmed.
-      # claude-opus-4-8 is excluded: flagged in #2566 but not yet generally available
-      # as of this writing. Add once Anthropic publishes this model's specifications.
+      {
+        model_id: "claude-fable-5",
+        display_name: "Claude Fable 5",
+        provider: "anthropic",
+        family: "claude-4",
+        category: "general",
+        context_window: 200_000,
+        max_output_tokens: 32_000,
+        input_cost_per_million: 3.0,
+        output_cost_per_million: 15.0,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 8.5,
+        tier: "mid"
+      },
+      {
+        model_id: "claude-opus-4-8",
+        display_name: "Claude Opus 4.8",
+        provider: "anthropic",
+        family: "claude-4",
+        category: "coding",
+        context_window: 200_000,
+        max_output_tokens: 32_000,
+        input_cost_per_million: 15.0,
+        output_cost_per_million: 75.0,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 10.0,
+        tier: "high"
+      },
       {
         model_id: "gpt-5.1",
         display_name: "GPT-5.1",
@@ -293,10 +320,38 @@ module Models
       # generateContent REST endpoint this catalog assumes. Cataloguing it would
       # cause model selection to route agent runs there, which would fail at
       # execution. Re-evaluate if Google exposes it on the standard REST surface.
-      # gemini-3.1-flash-lite and gemini-3.5-flash are excluded: flagged in #2566 but
-      # Google has not published stable pricing or availability for these Gemini 3.x
-      # models as of this writing. Add once they reach general availability and their
-      # specifications are confirmed.
+      {
+        model_id: "gemini-3.1-flash-lite",
+        display_name: "Gemini 3.1 Flash Lite",
+        provider: "google",
+        family: "gemini-3",
+        category: "general",
+        context_window: 1_000_000,
+        max_output_tokens: 65_536,
+        input_cost_per_million: 0.10,
+        output_cost_per_million: 0.40,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 7.2,
+        tier: "low"
+      },
+      {
+        model_id: "gemini-3.5-flash",
+        display_name: "Gemini 3.5 Flash",
+        provider: "google",
+        family: "gemini-3",
+        category: "general",
+        context_window: 1_000_000,
+        max_output_tokens: 65_536,
+        input_cost_per_million: 0.30,
+        output_cost_per_million: 1.50,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 8.2,
+        tier: "mid"
+      },
       {
         model_id: "gemini-2.5-pro",
         display_name: "Gemini 2.5 Pro",
