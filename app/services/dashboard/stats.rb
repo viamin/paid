@@ -15,6 +15,7 @@ module Dashboard
       "rate_limited" => "#ca8a04",
       "cancelled" => "#6b7280"
     }.freeze
+    OUTCOME_CHART_CUMULATIVE_MAX_WINDOW_DAYS = 90
     PHASE_BREAKDOWN_WINDOW = 30.days
     PHASE_BREAKDOWN_RUN_LIMIT = 500
 
@@ -182,11 +183,11 @@ module Dashboard
     end
 
     def daily_outcome_chart
-      start_date = (DAILY_RUN_CHART_WINDOW_DAYS - 1).days.ago.to_date
       end_date = Time.zone.today
+      start_date = outcome_chart_start_date(end_date)
       date_range = (start_date..end_date).to_a
 
-      counts = agent_runs
+      counts = time_filtered_runs
         .where(goal: "create_pr")
         .where.not(completed_at: nil)
         .where(completed_at: start_date.beginning_of_day..end_date.end_of_day)
@@ -219,8 +220,32 @@ module Dashboard
         overall_total: overall_total,
         overall_completed: overall_completed,
         overall_completion_rate: overall_total.zero? ? 0.0 : (overall_completed.to_f / overall_total * 100).round(1),
-        overall_by_status: overall_by_status
+        overall_by_status: overall_by_status,
+        range_start: start_date,
+        range_end: end_date
       }
+    end
+
+    def outcome_chart_start_date(end_date)
+      case time_range
+      when "24h"
+        end_date
+      when "7d"
+        end_date - 6.days
+      when "30d"
+        end_date - (DAILY_RUN_CHART_WINDOW_DAYS - 1).days
+      else
+        earliest = time_filtered_runs
+          .where(goal: "create_pr")
+          .where.not(completed_at: nil)
+          .minimum(Arel.sql("DATE(agent_runs.completed_at)"))
+
+        if earliest.nil?
+          end_date - (DAILY_RUN_CHART_WINDOW_DAYS - 1).days
+        else
+          [ earliest.to_date, OUTCOME_CHART_CUMULATIVE_MAX_WINDOW_DAYS.days.ago.to_date ].max
+        end
+      end
     end
 
     def cost_and_tokens

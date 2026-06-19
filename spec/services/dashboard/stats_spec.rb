@@ -959,6 +959,50 @@ RSpec.describe Dashboard::Stats do
           expect(result[:overall_completed]).to eq(1)
         end
       end
+
+      context "with time_range filter" do
+        before do
+          create(:agent_run, :completed, project: project, goal: "create_pr",
+            created_at: 2.days.ago, completed_at: 2.days.ago)
+          create(:agent_run, :completed, project: project, goal: "create_pr",
+            created_at: 10.days.ago, completed_at: 10.days.ago)
+          create(:agent_run, :failed, project: project, goal: "create_pr",
+            created_at: 40.days.ago, completed_at: 40.days.ago)
+        end
+
+        it "returns a 30-day series for the 30d window" do
+          result = described_class.call(account: account, time_range: "30d")[:daily_outcome_chart]
+          expect(result[:range_end]).to eq(Date.new(2026, 5, 3))
+          expect(result[:range_end] - result[:range_start]).to eq(29)
+          expect(result[:overall_total]).to eq(2)
+        end
+
+        it "returns a 7-day series for the 7d window" do
+          result = described_class.call(account: account, time_range: "7d")[:daily_outcome_chart]
+          expect(result[:range_end] - result[:range_start]).to eq(6)
+          expect(result[:overall_total]).to eq(1)
+        end
+
+        it "returns a single-day series for the 24h window" do
+          result = described_class.call(account: account, time_range: "24h")[:daily_outcome_chart]
+          expect(result[:range_start]).to eq(result[:range_end])
+          expect(result[:overall_total]).to eq(0)
+        end
+
+        it "spans from earliest data to today for cumulative" do
+          result = stats[:daily_outcome_chart]
+          expect(result[:range_end]).to eq(Date.new(2026, 5, 3))
+          expect(result[:overall_total]).to eq(3)
+        end
+
+        it "caps the cumulative window at OUTCOME_CHART_CUMULATIVE_MAX_WINDOW_DAYS" do
+          create(:agent_run, :completed, project: project, goal: "create_pr",
+            created_at: 200.days.ago, completed_at: 200.days.ago)
+          result = stats[:daily_outcome_chart]
+          expected_start = Date.new(2026, 5, 3) - Dashboard::Stats::OUTCOME_CHART_CUMULATIVE_MAX_WINDOW_DAYS.days
+          expect(result[:range_start]).to eq(expected_start)
+        end
+      end
     end
   end
 end
