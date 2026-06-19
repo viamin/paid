@@ -940,6 +940,13 @@ RSpec.describe Dashboard::Stats do
           status_names = result[:series].map { |s| s[:name] }
           expect(status_names).to eq(Dashboard::Stats::OUTCOME_CHART_STATUSES.map(&:titleize))
         end
+
+        it "exposes colors aligned with the series order" do
+          result = stats[:daily_outcome_chart]
+          expected = Dashboard::Stats::OUTCOME_CHART_STATUSES.map { |s| Dashboard::Stats::OUTCOME_CHART_COLORS[s] }
+          expect(result[:colors]).to eq(expected)
+          expect(result[:colors].length).to eq(result[:series].length)
+        end
       end
 
       context "with create_pr runs from another account" do
@@ -1001,6 +1008,19 @@ RSpec.describe Dashboard::Stats do
           result = stats[:daily_outcome_chart]
           expected_start = Date.new(2026, 5, 3) - Dashboard::Stats::OUTCOME_CHART_CUMULATIVE_MAX_WINDOW_DAYS.days
           expect(result[:range_start]).to eq(expected_start)
+        end
+      end
+
+      context "when a run was created before the window but completed inside it" do
+        # The chart tracks when runs finished, so the window must be rooted on
+        # completed_at. A run created before the cutoff but completed inside the
+        # selected range must still be counted.
+        it "still counts the run for the 7d window" do
+          create(:agent_run, :completed, project: project, goal: "create_pr",
+            created_at: 10.days.ago, completed_at: 2.days.ago)
+          result = described_class.call(account: account, time_range: "7d")[:daily_outcome_chart]
+          expect(result[:overall_total]).to eq(1)
+          expect(result[:overall_completed]).to eq(1)
         end
       end
     end

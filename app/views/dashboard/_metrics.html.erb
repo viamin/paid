@@ -143,7 +143,7 @@
                 id: "daily-outcome-chart",
                 stacked: true,
                 height: "280px",
-                colors: Dashboard::Stats::OUTCOME_CHART_STATUSES.map { |s| Dashboard::Stats::OUTCOME_CHART_COLORS[s] },
+                colors: outcome_data[:colors],
                 xtitle: "Day",
                 ytitle: "Runs",
                 discrete: true,
@@ -195,12 +195,12 @@
 
           <%# Legend with overall distribution stats %>
           <div class="mt-4 flex flex-wrap gap-3 text-sm">
-            <% Dashboard::Stats::OUTCOME_CHART_STATUSES.each do |status| %>
-              <% count = outcome_data[:overall_by_status][status].to_i %>
+            <% outcome_data[:series].each_with_index do |series, index| %>
+              <% count = series[:data].values.sum %>
               <% next if count.zero? %>
               <div class="flex items-center gap-1.5">
-                <span class="h-3 w-3 rounded-full shrink-0" style="background-color: <%= Dashboard::Stats::OUTCOME_CHART_COLORS[status] %>"></span>
-                <span class="text-gray-600"><%= status.titleize %></span>
+                <span class="h-3 w-3 rounded-full shrink-0" style="background-color: <%= outcome_data[:colors][index] %>"></span>
+                <span class="text-gray-600"><%= series[:name] %></span>
                 <span class="font-semibold text-gray-900"><%= number_with_delimiter(count) %></span>
                 <span class="text-gray-400">(<%= ((count.to_f / outcome_data[:overall_total]) * 100).round(1) %>%)</span>
               </div>

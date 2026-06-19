@@ -230,7 +230,13 @@ module Dashboard
       start_date = outcome_chart_start_date(end_date)
       date_range = (start_date..end_date).to_a
 
-      counts = time_filtered_runs
+      # Root the window on completed_at (when runs finished) rather than
+      # created_at. time_filtered_runs applies an orthogonal created_at >= cutoff
+      # filter, which would drop runs created before the cutoff but completed
+      # inside it — silently understating totals and completion rate. The
+      # explicit completed_at range below already bounds the window, and
+      # agent_runs is already scoped to the account so tenant isolation holds.
+      counts = agent_runs
         .where(goal: "create_pr")
         .where.not(completed_at: nil)
         .where(completed_at: start_date.beginning_of_day..end_date.end_of_day)
@@ -260,6 +266,7 @@ module Dashboard
 
       {
         series: series,
+        colors: OUTCOME_CHART_STATUSES.map { |s| OUTCOME_CHART_COLORS[s] },
         completion_rate: completion_rate,
         overall_total: overall_total,
         overall_completed: overall_completed,
@@ -284,7 +291,7 @@ module Dashboard
         # empty history, while max() bounds the chart. The entire build_stats
         # result (including this value) is cached via #call, so this extra query
         # only runs once per CACHE_TTL rather than per request.
-        earliest = time_filtered_runs
+        earliest = agent_runs
           .where(goal: "create_pr")
           .where.not(completed_at: nil)
           .minimum(Arel.sql("DATE(agent_runs.completed_at)"))
