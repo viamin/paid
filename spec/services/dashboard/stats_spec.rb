@@ -949,6 +949,40 @@ RSpec.describe Dashboard::Stats do
         end
       end
 
+      context "with retried create_pr runs" do
+        # retry! flips an already-finished run to "retried" but leaves
+        # completed_at intact, so a retried failure still has a completion
+        # day. It must stay in the denominator (counted as non-completed) to
+        # match performance_by_goal and avoid inflating completion rate.
+        before do
+          create(:agent_run, :completed, project: project, goal: "create_pr",
+            completed_at: 2.days.ago)
+          create(:agent_run, :retried, project: project, goal: "create_pr",
+            completed_at: 2.days.ago)
+        end
+
+        it "includes retried runs in the total denominator" do
+          result = stats[:daily_outcome_chart]
+          expect(result[:overall_total]).to eq(2)
+          expect(result[:overall_completed]).to eq(1)
+          expect(result[:overall_by_status]["retried"]).to eq(1)
+        end
+
+        it "counts retried runs as non-completed for completion rate" do
+          result = stats[:daily_outcome_chart]
+          # 1 completed of 2 total (1 retried) = 50.0%, not 100.0%
+          expect(result[:overall_completion_rate]).to eq(50.0)
+        end
+
+        it "renders a Retried series and matching color" do
+          result = stats[:daily_outcome_chart]
+          names = result[:series].map { |s| s[:name] }
+          expect(names).to include("Retried")
+          retried_index = names.index("Retried")
+          expect(result[:colors][retried_index]).to eq(Dashboard::Stats::OUTCOME_CHART_COLORS["retried"])
+        end
+      end
+
       context "with create_pr runs from another account" do
         let(:other_account) { create(:account) }
         let(:other_project) { create(:project, account: other_account) }
