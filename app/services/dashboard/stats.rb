@@ -15,6 +15,7 @@ module Dashboard
       "rate_limited" => "#ca8a04",
       "cancelled" => "#6b7280"
     }.freeze
+    OUTCOME_CHART_WINDOW_DAYS = 30
     OUTCOME_CHART_CUMULATIVE_MAX_WINDOW_DAYS = 90
     PHASE_BREAKDOWN_WINDOW = 30.days
     PHASE_BREAKDOWN_RUN_LIMIT = 500
@@ -208,9 +209,10 @@ module Dashboard
         day_total.zero? ? nil : (completed.to_f / day_total * 100).round(1)
       end
 
-      overall_by_status = OUTCOME_CHART_STATUSES.index_with do |status|
-        counts.sum { |(_, s), v| s == status ? v : 0 }
+      totals_by_status = counts.each_with_object(Hash.new(0)) do |((_, s), v), h|
+        h[s] += v
       end
+      overall_by_status = OUTCOME_CHART_STATUSES.index_with { |s| totals_by_status.fetch(s, 0) }
       overall_total = overall_by_status.values.sum
       overall_completed = overall_by_status.fetch("completed", 0)
 
@@ -233,15 +235,20 @@ module Dashboard
       when "7d"
         end_date - 6.days
       when "30d"
-        end_date - (DAILY_RUN_CHART_WINDOW_DAYS - 1).days
+        end_date - (OUTCOME_CHART_WINDOW_DAYS - 1).days
       else
+        # Cumulative expands the window back to the earliest create_pr
+        # completion so brand-new accounts don't render the full max window as
+        # empty history, while max() bounds the chart. The entire build_stats
+        # result (including this value) is cached via #call, so this extra query
+        # only runs once per CACHE_TTL rather than per request.
         earliest = time_filtered_runs
           .where(goal: "create_pr")
           .where.not(completed_at: nil)
           .minimum(Arel.sql("DATE(agent_runs.completed_at)"))
 
         if earliest.nil?
-          end_date - (DAILY_RUN_CHART_WINDOW_DAYS - 1).days
+          end_date - (OUTCOME_CHART_WINDOW_DAYS - 1).days
         else
           [ earliest.to_date, OUTCOME_CHART_CUMULATIVE_MAX_WINDOW_DAYS.days.ago.to_date ].max
         end
