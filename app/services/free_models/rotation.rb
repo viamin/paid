@@ -62,7 +62,7 @@ module FreeModels
           runner_state: runner_state)
         next unless candidate
 
-        apply_rotation!(tier: tier, model: candidate, runner_state: runner_state)
+        apply_rotation!(tier: tier, model: candidate)
 
         return Result.new(
           rotated: true,
@@ -124,7 +124,14 @@ module FreeModels
     def resolved_current_tier
       return @current_tier.to_s if @current_tier.present?
 
-      configured_tiers.first
+      highest_configured_tier
+    end
+
+    # Highest configured tier (high -> mid -> low), independent of the
+    # storage/hash key order of tier_model_ids. Used as the starting point
+    # for walking tiers downward when the caller did not supply a tier.
+    def highest_configured_tier
+      (LlmModel::TIERS.reverse & configured_tiers).first || configured_tiers.first
     end
 
     def configured_tiers
@@ -165,20 +172,15 @@ module FreeModels
       user.runner_states.find_by(runner_name: runner.state_key)
     end
 
-    def apply_rotation!(tier:, model:, runner_state:)
+    def apply_rotation!(tier:, model:)
       next_tier_model_ids = (runner.tier_model_ids || {}).dup
       next_tier_model_ids[tier] = model.model_id
       runner.update!(tier_model_ids: next_tier_model_ids)
-      return unless runner_state
-
-      # Forget per-model rate-limit windows once we have rotated; the prior
-      # model's window has already been recorded and we want the runner
-      # state to reflect the new model cleanly.
-      runner_state.with_lock do
-        next_metadata = runner_state.metadata.is_a?(Hash) ? runner_state.metadata.dup : {}
-        next_metadata[RunnerState::RATE_LIMITED_MODELS_METADATA_KEY] = {}
-        runner_state.update!(metadata: next_metadata)
-      end
+      # Per-model rate-limit windows are intentionally left intact here. They
+      # are pruned of stale entries on read (RunnerState#rate_limited_model_ids)
+      # and cleared wholesale only on a successful call (RunnerState#record_success!),
+      # so wiping them now would let a just-rate-limited model be re-picked on
+      # the next rotation.
     end
   end
 end

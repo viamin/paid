@@ -21,6 +21,7 @@ module Knowledge
 
       runners.each_with_index do |runner, index|
         record_attempt(runner)
+        rotation_attempts = 0
 
         begin
           result = yield(runner)
@@ -28,13 +29,17 @@ module Knowledge
           return result
         rescue AgentHarness::RateLimitError => e
           record_rate_limit(runner, e)
-          if rotation_runner?(runner)
-            rotated_result = try_rotation(runner, e)
-            if rotated_result
-              result = yield(runner)
-              record_success(runner)
-              return result
-            end
+          # Rotate to the next free model and re-attempt the same runner at
+          # most once. `retry` re-enters this begin block, so a rate-limited
+          # rotated model (or any other AgentHarness::Error on the retry) is
+          # re-caught here instead of escaping execute: a second rate-limit
+          # fails the runner over to the next one in the chain. The single
+          # retry is bounded because free_model_id_for only records the
+          # highest-tier model as rate-limited, so an unbounded loop could
+          # ping-pong between lower-tier models that are never recorded.
+          if rotation_runner?(runner) && rotation_attempts.zero? && try_rotation(runner, e)
+            rotation_attempts += 1
+            retry
           end
           log_runner_failure(runner, "rate_limited", e)
           log_runner_switch(runner, runners[index + 1], "rate_limited", e)
@@ -133,11 +138,15 @@ module Knowledge
       rotation_runner_record(runner).present?
     end
 
+    # Best-effort guess at which model the openrouter_free runner was using
+    # when it rate-limited, used only when the error itself carries no model
+    # id. Knowledge calls lean on the high-tier model, so walk tiers from
+    # high down to low and return the first one the runner is configured for.
     def free_model_id_for(runner)
       record = rotation_runner_record(runner)
       return nil unless record
 
-      LlmModel::TIERS.each do |tier|
+      LlmModel::TIERS.reverse_each do |tier|
         model_id = record.tier_model_ids&.dig(tier)
         return model_id if model_id.present?
       end

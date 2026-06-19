@@ -220,9 +220,9 @@ RSpec.describe Knowledge::RunnerExecutor do
     end
 
     context "with openrouter_free rotation" do
-      let(:free_model_high) { create(:llm_model, :free, model_id: "free-high-current", tier: "high", capability_score: 7.0) }
-      let(:free_model_high_alt) { create(:llm_model, :free, model_id: "free-high-other", tier: "high", capability_score: 5.0) }
-      let(:free_model_mid) { create(:llm_model, :free, model_id: "free-mid", tier: "mid", capability_score: 4.0) }
+      let!(:free_model_high) { create(:llm_model, :free, model_id: "free-high-current", tier: "high", capability_score: 7.0) }
+      let!(:free_model_high_alt) { create(:llm_model, :free, model_id: "free-high-other", tier: "high", capability_score: 5.0) }
+      let!(:free_model_mid) { create(:llm_model, :free, model_id: "free-mid", tier: "mid", capability_score: 4.0) }
       let(:api_key) { create(:provider_api_key, user: user, api_service_type: "openrouter") }
       let(:openrouter_runner) do
         user.runners.create!(
@@ -260,6 +260,28 @@ RSpec.describe Knowledge::RunnerExecutor do
         expect(result).to eq("response from openrouter_free")
         expect(attempt).to eq(2)
         expect(openrouter_runner.reload.tier_model_ids["high"]).to eq(free_model_high_alt.model_id)
+      end
+
+      it "falls through to the next runner when the rotated model also rate-limits" do
+        executor = described_class.new(user_setting: user_setting, operation: :chat)
+        openrouter_attempts = 0
+
+        result = executor.execute do |runner|
+          if runner == Runner::OPENROUTER_FREE_RUNNER_KEY
+            openrouter_attempts += 1
+            raise AgentHarness::RateLimitError, "rate limited" if openrouter_attempts <= 2
+          end
+          "response from #{runner}"
+        end
+
+        # Both high-tier models were tried and rate-limited before rotation
+        # exhausted, so the runner fails over to the next one in the chain.
+        expect(result).to eq("response from openai")
+        expect(openrouter_attempts).to eq(2)
+        expect(openrouter_runner.reload.tier_model_ids["high"]).to eq(free_model_high_alt.model_id)
+
+        state = user.runner_states.find_by(runner_name: openrouter_runner.state_key)
+        expect(state.rate_limited_model_ids).to include(free_model_high.model_id, free_model_high_alt.model_id)
       end
 
       it "falls through to the next runner when rotation is exhausted" do
