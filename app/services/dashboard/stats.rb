@@ -5,6 +5,26 @@ module Dashboard
     CACHE_TTL = 45.seconds
     DAILY_RUN_CHART_WINDOW_DAYS = 30
     DAILY_RUN_CHART_STATUSES = %w[failed completed].freeze
+    # `retried` is a terminal state (AgentRun::FINISHED_STATUSES): retry!
+    # only flips an already-finished run's status to "retried" and leaves
+    # completed_at intact, so a retried failure still has a completion day.
+    # Including it keeps this chart's denominator aligned with
+    # performance_by_goal (which counts `retried` as non-completed via
+    # .finished) — dropping it would inflate the displayed completion rate
+    # and mask exactly the regressions the chart exists to surface.
+    OUTCOME_CHART_STATUSES = %w[completed failed timeout no_output auth_expired rate_limited cancelled retried].freeze
+    OUTCOME_CHART_COLORS = {
+      "completed" => "#16a34a",
+      "failed" => "#dc2626",
+      "timeout" => "#f97316",
+      "no_output" => "#7c3aed",
+      "auth_expired" => "#2563eb",
+      "rate_limited" => "#ca8a04",
+      "cancelled" => "#6b7280",
+      "retried" => "#64748b"
+    }.freeze
+    OUTCOME_CHART_WINDOW_DAYS = 30
+    OUTCOME_CHART_CUMULATIVE_MAX_WINDOW_DAYS = 90
     PHASE_BREAKDOWN_WINDOW = 30.days
     PHASE_BREAKDOWN_RUN_LIMIT = 500
 
@@ -13,14 +33,14 @@ module Dashboard
     VALID_GOALS = %w[all create_pr create_issue review].freeze
 
     SECTIONS = %i[
-      run_volume daily_run_status_chart duration_percentiles duration_trend_chart phase_breakdown cost_and_tokens
+      run_volume daily_run_status_chart daily_outcome_chart duration_percentiles duration_trend_chart phase_breakdown cost_and_tokens
       performance_by_outcome performance_by_goal
       runs_by_agent_type runs_by_runner runner_fallback_stats
       runs_by_project cost_by_project issue_completion
     ].freeze
 
     METRICS_SECTIONS = %i[
-      run_volume daily_run_status_chart cost_and_tokens duration_percentiles duration_trend_chart phase_breakdown
+      run_volume daily_run_status_chart daily_outcome_chart cost_and_tokens duration_percentiles duration_trend_chart phase_breakdown
       issue_completion cost_by_project runner_fallback_stats
       runs_by_runner runs_by_project
     ].freeze
@@ -210,6 +230,85 @@ module Dashboard
           name: status.titleize,
           data: date_range.index_with { |date| counts.fetch([ date, status ], 0) }
         }
+      end
+    end
+
+    def daily_outcome_chart
+      end_date = Time.zone.today
+      start_date = outcome_chart_start_date(end_date)
+      date_range = (start_date..end_date).to_a
+
+      # Root the window on completed_at (when runs finished) rather than
+      # created_at. time_filtered_runs applies an orthogonal created_at >= cutoff
+      # filter, which would drop runs created before the cutoff but completed
+      # inside it — silently understating totals and completion rate. The
+      # explicit completed_at range below already bounds the window, and
+      # agent_runs is already scoped to the account so tenant isolation holds.
+      counts = agent_runs
+        .where(goal: "create_pr")
+        .where.not(completed_at: nil)
+        .where(completed_at: start_date.beginning_of_day..end_date.end_of_day)
+        .where(status: OUTCOME_CHART_STATUSES)
+        .group(Arel.sql("DATE(agent_runs.completed_at)"), :status)
+        .count
+
+      series = OUTCOME_CHART_STATUSES.map do |status|
+        {
+          name: status.titleize,
+          data: date_range.index_with { |date| counts.fetch([ date, status ], 0) }
+        }
+      end
+
+      completion_rate = date_range.index_with do |date|
+        day_total = OUTCOME_CHART_STATUSES.sum { |s| counts.fetch([ date, s ], 0) }
+        completed = counts.fetch([ date, "completed" ], 0)
+        day_total.zero? ? nil : (completed.to_f / day_total * 100).round(1)
+      end
+
+      totals_by_status = counts.each_with_object(Hash.new(0)) do |((_, s), v), h|
+        h[s] += v
+      end
+      overall_by_status = OUTCOME_CHART_STATUSES.index_with { |s| totals_by_status.fetch(s, 0) }
+      overall_total = overall_by_status.values.sum
+      overall_completed = overall_by_status.fetch("completed", 0)
+
+      {
+        series: series,
+        colors: OUTCOME_CHART_STATUSES.map { |s| OUTCOME_CHART_COLORS[s] },
+        completion_rate: completion_rate,
+        overall_total: overall_total,
+        overall_completed: overall_completed,
+        overall_completion_rate: overall_total.zero? ? 0.0 : (overall_completed.to_f / overall_total * 100).round(1),
+        overall_by_status: overall_by_status,
+        range_start: start_date,
+        range_end: end_date
+      }
+    end
+
+    def outcome_chart_start_date(end_date)
+      case time_range
+      when "24h"
+        end_date
+      when "7d"
+        end_date - 6.days
+      when "30d"
+        end_date - (OUTCOME_CHART_WINDOW_DAYS - 1).days
+      else
+        # Cumulative expands the window back to the earliest create_pr
+        # completion so brand-new accounts don't render the full max window as
+        # empty history, while max() bounds the chart. The entire build_stats
+        # result (including this value) is cached via #call, so this extra query
+        # only runs once per CACHE_TTL rather than per request.
+        earliest = agent_runs
+          .where(goal: "create_pr")
+          .where.not(completed_at: nil)
+          .minimum(Arel.sql("DATE(agent_runs.completed_at)"))
+
+        if earliest.nil?
+          end_date - (OUTCOME_CHART_WINDOW_DAYS - 1).days
+        else
+          [ earliest.to_date, OUTCOME_CHART_CUMULATIVE_MAX_WINDOW_DAYS.days.ago.to_date ].max
+        end
       end
     end
 
