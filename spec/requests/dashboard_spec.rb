@@ -204,6 +204,36 @@ RSpec.describe "Dashboard" do
         expect(response.body).to include("Recent Activity")
       end
 
+      it "links each live metrics tile to the matching filtered agent runs index" do
+        create(:agent_run, project: project, status: "running", started_at: 5.minutes.ago)
+        create(:agent_run, project: project, status: "queued")
+        create(:agent_run, project: project, status: "queued", temporal_workflow_id: "wf-claimed")
+        create(:agent_run, project: project, status: "completed", completed_at: 1.minute.ago)
+        create(:agent_run, project: project, status: "failed", completed_at: 1.minute.ago)
+        create(:agent_run, project: project, goal: "create_pr", status: "running", started_at: 1.minute.ago)
+
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
+        hrefs = doc.css("a").map { |a| a["href"].to_s }
+
+        expect(hrefs).to include(agent_runs_path(q: { status_eq: "running" }))
+        expect(hrefs).to include(agent_runs_path(q: { status_eq: "queued", temporal_workflow_id_null: true }))
+        expect(hrefs).to include(agent_runs_path(q: { status_eq: "completed", completed_at_gteq: Time.current.beginning_of_day.iso8601 }))
+        expect(hrefs).to include(agent_runs_path(q: { status_in: AgentRun::FAILURE_STATUSES, completed_at_gteq: Time.current.beginning_of_day.iso8601 }))
+        expect(hrefs).to include(agent_runs_path(q: { goal_eq: "create_pr", status_eq: "running" }))
+      end
+
+      it "does not include claimed queued runs when filtering by the Queued tile link" do
+        unclaimed = create(:agent_run, project: project, status: "queued")
+        claimed = create(:agent_run, project: project, status: "queued", temporal_workflow_id: "wf-1")
+
+        get agent_runs_path, params: { q: { status_eq: "queued", temporal_workflow_id_null: true } }
+
+        expect(response.body).to include(project_agent_run_path(project, unclaimed))
+        expect(response.body).not_to include(project_agent_run_path(project, claimed))
+      end
+
       it "shows upcoming queue positions only for the signed-in user's projects" do
         owned_project = create(:project, account: account, created_by: user, owner: "visible-owner", repo: "visible-repo")
         other_user = create(:user, account: account)
