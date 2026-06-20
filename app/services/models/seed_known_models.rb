@@ -89,6 +89,22 @@ module Models
         tier: "high"
       },
       {
+        model_id: "claude-sonnet-4-7",
+        display_name: "Claude Sonnet 4.7",
+        provider: "anthropic",
+        family: "claude-4",
+        category: "coding",
+        context_window: 200_000,
+        max_output_tokens: 64_000,
+        input_cost_per_million: 3.0,
+        output_cost_per_million: 15.0,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 9.2,
+        tier: "mid"
+      },
+      {
         model_id: "gpt-5.1",
         display_name: "GPT-5.1",
         provider: "openai",
@@ -300,6 +316,22 @@ module Models
         tier: "low"
       },
       {
+        model_id: "gpt-5.6",
+        display_name: "GPT-5.6",
+        provider: "openai",
+        family: "gpt-5",
+        category: "coding",
+        context_window: 400_000,
+        max_output_tokens: 128_000,
+        input_cost_per_million: 1.25,
+        output_cost_per_million: 10.0,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 9.4,
+        tier: "mid"
+      },
+      {
         model_id: "gemini-2.5-flash-lite",
         display_name: "Gemini 2.5 Flash Lite",
         provider: "google",
@@ -320,6 +352,38 @@ module Models
       # generateContent REST endpoint this catalog assumes. Cataloguing it would
       # cause model selection to route agent runs there, which would fail at
       # execution. Re-evaluate if Google exposes it on the standard REST surface.
+      {
+        model_id: "gemini-2.5-pro",
+        display_name: "Gemini 2.5 Pro",
+        provider: "google",
+        family: "gemini-2",
+        category: "coding",
+        context_window: 1_000_000,
+        max_output_tokens: 65_536,
+        input_cost_per_million: 1.25,
+        output_cost_per_million: 10.0,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 8.0,
+        tier: "mid"
+      },
+      {
+        model_id: "gemini-3.0-flash",
+        display_name: "Gemini 3.0 Flash",
+        provider: "google",
+        family: "gemini-3",
+        category: "general",
+        context_window: 1_000_000,
+        max_output_tokens: 65_536,
+        input_cost_per_million: 0.15,
+        output_cost_per_million: 0.60,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 7.5,
+        tier: "low"
+      },
       {
         model_id: "gemini-3.1-flash-lite",
         display_name: "Gemini 3.1 Flash Lite",
@@ -353,20 +417,20 @@ module Models
         tier: "mid"
       },
       {
-        model_id: "gemini-2.5-pro",
-        display_name: "Gemini 2.5 Pro",
+        model_id: "gemini-3.5-pro",
+        display_name: "Gemini 3.5 Pro",
         provider: "google",
-        family: "gemini-2",
+        family: "gemini-3",
         category: "coding",
         context_window: 1_000_000,
         max_output_tokens: 65_536,
-        input_cost_per_million: 1.25,
-        output_cost_per_million: 10.0,
+        input_cost_per_million: 2.50,
+        output_cost_per_million: 15.0,
         supports_vision: true,
         supports_tools: true,
         supports_json_output: true,
-        capability_score: 8.0,
-        tier: "mid"
+        capability_score: 9.0,
+        tier: "high"
       }
     ].freeze
 
