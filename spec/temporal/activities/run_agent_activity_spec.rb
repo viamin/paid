@@ -3137,6 +3137,65 @@ expect(container_service).to receive(:execute).with(
       end
     end
 
+    context "when a runner execution failure kills the container before fallback (OOM / exit 137)" do
+      before do
+        user.runners.find_or_create_by!(runner_key: "cursor")
+        user.settings.update!(fallback_enabled: true, fallback_runners: [ "cursor" ])
+        allow(git_ops).to receive_messages(
+          head_sha: "pre_agent_sha_abc123",
+          commit_uncommitted_changes: false,
+          has_changes_since?: false
+        )
+        execute_calls = 0
+        allow(container_service).to receive(:execute) do
+          execute_calls += 1
+          if execute_calls == 1
+            # Simulate an OOM kill: Docker reports exit code 137 (SIGKILL) and
+            # the container is gone, so container_id is cleared. This surfaces as
+            # a RunnerExecutionError whose message does NOT match the docker
+            # "not running" pattern, so the dead container is only detectable via
+            # the blank container_id.
+            AgentRun.where(id: agent_run.id).update_all(container_id: nil)
+            Containers::Provision::Result.failure(
+              error: "exit 137",
+              stdout: "",
+              stderr: "> build · MiniMax-M3",
+              exit_code: 137
+            )
+          else
+            exec_success
+          end
+        end
+        allow(agent_run).to receive(:provision_container) { agent_run.update!(container_id: "reprovisioned-123") }
+        allow(Containers::Provision).to receive(:reconnect) do |agent_run:, container_id:|
+          raise "unexpected container id #{container_id}" unless [ "abc123", "reprovisioned-123" ].include?(container_id)
+
+          container_service
+        end
+      end
+
+      it "reprovisions the container and continues with the fallback runner instead of failing every runner" do
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        agent_run.reload
+        expect(result).to include(success: true, final_runner: "cursor")
+        expect(agent_run.runners_attempted).to contain_exactly(
+          hash_including("runner" => "claude_code", "success" => false, "error_type" => "error"),
+          hash_including("runner" => "cursor", "success" => true)
+        )
+        expect(agent_run.runners_attempted).not_to include(
+          hash_including("error_message" => a_string_matching(/No container provisioned/))
+        )
+        expect(agent_run.runner_switches).to eq(1)
+        expect(agent_run.container_id).to eq("reprovisioned-123")
+        expect(git_ops).to have_received(:clone_and_restore_branch).with(
+          branch_name: agent_run.branch_name,
+          base_commit_sha: agent_run.base_commit_sha,
+          pull_request_number: agent_run.source_pull_request_number
+        )
+      end
+    end
+
     context "when a timeout leaves a stale container id before fallback" do
       before do
         user.runners.find_or_create_by!(runner_key: "cursor")
