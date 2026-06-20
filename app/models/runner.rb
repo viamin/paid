@@ -119,6 +119,7 @@ class Runner < ApplicationRecord
   def rotating_tier_models?
     @rotating_tier_models == true
   end
+
   scope :kept_only, -> { kept }
   scope :for_agent_runs, -> { where(enabled_for_agent_runs: true) }
   scope :for_chat, -> { where(enabled_for_chat: true) }

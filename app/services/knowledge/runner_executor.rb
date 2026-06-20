@@ -126,11 +126,23 @@ module Knowledge
     # runner-name passed in is openrouter_free and the user actually has one
     # configured. The Runner record is what FreeModels::Rotation needs in
     # order to update tier_model_ids and read the RunnerState.
+    #
+    # Memoized per runner-name. In the retry path this is invoked several
+    # times for the same name (record_rate_limit -> free_model_id_for,
+    # rotation_runner?, try_rotation, then record_success ->
+    # restore_preferred_tier_model_ids), so caching avoids repeated find_by
+    # queries. Uses Hash#key? rather than ||= so nil results (non-openrouter
+    # names and missing-runner records) are cached too.
     def rotation_runner_record(runner_name)
-      return nil unless runner_name.to_s == Runner::OPENROUTER_FREE_RUNNER_KEY
+      @rotation_runner_records ||= {}
+      key = runner_name.to_s
+      return @rotation_runner_records[key] if @rotation_runner_records.key?(key)
 
-      user_runners = @user_setting.user.runners.kept_only
-      user_runners.find_by(runner_key: Runner::OPENROUTER_FREE_RUNNER_KEY)
+      @rotation_runner_records[key] =
+        if key == Runner::OPENROUTER_FREE_RUNNER_KEY
+          @user_setting.user.runners.kept_only
+            .find_by(runner_key: Runner::OPENROUTER_FREE_RUNNER_KEY)
+        end
     end
 
     def rotation_runner?(runner)
