@@ -12,6 +12,11 @@ class Issue < ApplicationRecord
   PR_ESCALATION_REASON_FAILURE_STREAK = "failure_streak"
   PR_ESCALATION_REASON_REVIEW_GOAL_RETRY_LIMIT = "review_goal_retry_limit"
 
+  # Default label mirrored to GitHub to surface an issue/PR's paused state.
+  # Adding the label in GitHub (or pausing from the UI) flips `paused`;
+  # removing it flips `paused` back. See Issues::PauseLabelSync.
+  PAUSED_LABEL = "paid-paused"
+
   # Constants for synthetic alert issues. Shared with
   # Activities::ScanSecurityAlertsActivity which creates these issues.
   GITHUB_SOURCE = "github"

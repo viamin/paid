@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_19_140623) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_20_170722) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1168,6 +1168,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_19_140623) do
     t.datetime "operational_failure_reset_at"
     t.string "paid_state", default: "new", null: false
     t.bigint "parent_issue_id"
+    t.boolean "paused", default: false, null: false
+    t.datetime "paused_at"
     t.string "pr_escalation_reason", comment: "Machine-readable cause for the current PR escalation so only operational outages can auto-dismiss."
     t.integer "pr_followup_count", default: 0, null: false
     t.string "pr_review_phase", default: "draft", null: false
