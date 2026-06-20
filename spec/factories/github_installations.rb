@@ -8,6 +8,7 @@ FactoryBot.define do
     target_type { "Organization" }
     repository_selection { "selected" }
     accessible_repositories { [ { "full_name" => "test-org/repo", "id" => 123 } ] }
+    repositories_synced_at { Time.current }
 
     trait :suspended do
       suspended_at { Time.current }
