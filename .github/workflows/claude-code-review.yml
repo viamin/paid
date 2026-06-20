@@ -79,7 +79,7 @@ jobs:
               ;;
             *)
               case "${AUTHOR_LOGIN}" in
-                "dependabot[bot]"|"renovate[bot]"|"github-actions[bot]")
+                "dependabot[bot]"|"renovate[bot]"|"github-actions[bot]"|"paid-agents[bot]")
                   echo "allowed=true" >> "$GITHUB_OUTPUT"
                   ;;
                 *)
@@ -150,7 +150,7 @@ jobs:
           # The action runs in a Docker container, so the Rails test database
           # must be addressed by the service hostname rather than localhost.
           prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.client_payload.pr_number }}'
-          allowed_bots: 'dependabot[bot]'
+          allowed_bots: "dependabot[bot],paid-agents[bot]"
 
       - name: Complete PR head check run
         if: always() && steps.pr.outputs.head_repo_fork != 'true' && steps.trust.outputs.allowed == 'true'

@@ -30,7 +30,7 @@ jobs:
     name: Detect ephemeral tests
     if: >-
       contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
-      || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]"]'), github.event.pull_request.user.login)
+      || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
     runs-on: ubuntu-latest
     outputs:
       has_tests: ${{ steps.check.outputs.has_tests }}
@@ -185,7 +185,7 @@ jobs:
       always()
       && (
         contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
-        || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]"]'), github.event.pull_request.user.login)
+        || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
       )
       && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
