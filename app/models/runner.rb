@@ -793,7 +793,10 @@ class Runner < ApplicationRecord
   # The snapshot lives on the RunnerState row keyed by the bare runner_key
   # (matching FreeModels::Rotation and Knowledge::RunnerExecutor), NOT the
   # routing-key state_key, so the lookup uses the same key that wrote it.
+  # Only relevant when editing an existing runner — creating a runner must
+  # not wipe a pre-existing recovery snapshot.
   def clear_free_model_rotation_snapshot
+    return if new_record?
     return unless runner_key == OPENROUTER_FREE_RUNNER_KEY
     return unless will_save_change_to_tier_model_ids?
     return unless user
