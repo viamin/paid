@@ -840,6 +840,225 @@ RSpec.describe Dashboard::Stats do
       end
     end
 
+    describe "#daily_outcome_chart" do
+      around do |example|
+        travel_to(Time.zone.local(2026, 5, 3, 12, 0, 0)) { example.run }
+      end
+
+      context "with no create_pr runs" do
+        it "returns zero totals and empty series" do
+          result = stats[:daily_outcome_chart]
+          expect(result[:overall_total]).to eq(0)
+          expect(result[:overall_completed]).to eq(0)
+          expect(result[:overall_completion_rate]).to eq(0.0)
+          expect(result[:series].map { |s| s[:name] }).to match_array(
+            Dashboard::Stats::OUTCOME_CHART_STATUSES.map(&:titleize)
+          )
+          expect(result[:series].all? { |s| s[:data].size == 30 }).to be(true)
+          expect(result[:series].flat_map { |s| s[:data].values }.uniq).to eq([ 0 ])
+        end
+      end
+
+      context "with create_pr runs of various statuses" do
+        before do
+          completed_at_2d_ago = 2.days.ago
+          completed_at_5d_ago = 5.days.ago
+
+          create(:agent_run, :completed, project: project, goal: "create_pr",
+            completed_at: completed_at_2d_ago)
+          create(:agent_run, :completed, project: project, goal: "create_pr",
+            completed_at: completed_at_2d_ago)
+          create(:agent_run, :failed, project: project, goal: "create_pr",
+            completed_at: completed_at_2d_ago)
+          create(:agent_run, :timeout, project: project, goal: "create_pr",
+            completed_at: completed_at_5d_ago)
+          # non-create_pr run should be excluded
+          create(:agent_run, :completed, project: project, goal: "create_issue",
+            completed_at: completed_at_2d_ago)
+        end
+
+        it "counts outcomes for create_pr goal only" do
+          result = stats[:daily_outcome_chart]
+          expect(result[:overall_total]).to eq(4)
+          expect(result[:overall_completed]).to eq(2)
+        end
+
+        it "calculates overall completion rate" do
+          result = stats[:daily_outcome_chart]
+          # 2 completed out of 4 total = 50.0%
+          expect(result[:overall_completion_rate]).to eq(50.0)
+        end
+
+        it "breaks down counts by status" do
+          result = stats[:daily_outcome_chart]
+          expect(result[:overall_by_status]["completed"]).to eq(2)
+          expect(result[:overall_by_status]["failed"]).to eq(1)
+          expect(result[:overall_by_status]["timeout"]).to eq(1)
+          expect(result[:overall_by_status]["no_output"]).to eq(0)
+        end
+
+        it "builds daily series with correct counts per day" do
+          result = stats[:daily_outcome_chart]
+          completed_series = result[:series].find { |s| s[:name] == "Completed" }
+          failed_series = result[:series].find { |s| s[:name] == "Failed" }
+          timeout_series = result[:series].find { |s| s[:name] == "Timeout" }
+
+          day_2d_ago = Date.new(2026, 5, 1)
+          day_5d_ago = Date.new(2026, 4, 28)
+
+          expect(completed_series[:data][day_2d_ago]).to eq(2)
+          expect(failed_series[:data][day_2d_ago]).to eq(1)
+          expect(timeout_series[:data][day_5d_ago]).to eq(1)
+          expect(timeout_series[:data][day_2d_ago]).to eq(0)
+        end
+
+        it "computes per-day completion rates" do
+          result = stats[:daily_outcome_chart]
+          day_2d_ago = Date.new(2026, 5, 1)
+          day_5d_ago = Date.new(2026, 4, 28)
+
+          # day 2d ago: 2 completed, 1 failed = 66.7%
+          expect(result[:completion_rate][day_2d_ago]).to eq(66.7)
+          # day 5d ago: 0 completed, 1 timeout = 0.0%
+          expect(result[:completion_rate][day_5d_ago]).to eq(0.0)
+        end
+
+        it "returns nil completion rate for days with no runs" do
+          result = stats[:daily_outcome_chart]
+          today = Date.new(2026, 5, 3)
+          expect(result[:completion_rate][today]).to be_nil
+        end
+
+        it "excludes runs without completed_at" do
+          create(:agent_run, :running, project: project, goal: "create_pr")
+          result = stats[:daily_outcome_chart]
+          expect(result[:overall_total]).to eq(4)
+        end
+
+        it "returns series for all expected statuses" do
+          result = stats[:daily_outcome_chart]
+          status_names = result[:series].map { |s| s[:name] }
+          expect(status_names).to eq(Dashboard::Stats::OUTCOME_CHART_STATUSES.map(&:titleize))
+        end
+
+        it "exposes colors aligned with the series order" do
+          result = stats[:daily_outcome_chart]
+          expected = Dashboard::Stats::OUTCOME_CHART_STATUSES.map { |s| Dashboard::Stats::OUTCOME_CHART_COLORS[s] }
+          expect(result[:colors]).to eq(expected)
+          expect(result[:colors].length).to eq(result[:series].length)
+        end
+      end
+
+      context "with retried create_pr runs" do
+        # retry! flips an already-finished run to "retried" but leaves
+        # completed_at intact, so a retried failure still has a completion
+        # day. It must stay in the denominator (counted as non-completed) to
+        # match performance_by_goal and avoid inflating completion rate.
+        before do
+          create(:agent_run, :completed, project: project, goal: "create_pr",
+            completed_at: 2.days.ago)
+          create(:agent_run, :retried, project: project, goal: "create_pr",
+            completed_at: 2.days.ago)
+        end
+
+        it "includes retried runs in the total denominator" do
+          result = stats[:daily_outcome_chart]
+          expect(result[:overall_total]).to eq(2)
+          expect(result[:overall_completed]).to eq(1)
+          expect(result[:overall_by_status]["retried"]).to eq(1)
+        end
+
+        it "counts retried runs as non-completed for completion rate" do
+          result = stats[:daily_outcome_chart]
+          # 1 completed of 2 total (1 retried) = 50.0%, not 100.0%
+          expect(result[:overall_completion_rate]).to eq(50.0)
+        end
+
+        it "renders a Retried series and matching color" do
+          result = stats[:daily_outcome_chart]
+          names = result[:series].map { |s| s[:name] }
+          expect(names).to include("Retried")
+          retried_index = names.index("Retried")
+          expect(result[:colors][retried_index]).to eq(Dashboard::Stats::OUTCOME_CHART_COLORS["retried"])
+        end
+      end
+
+      context "with create_pr runs from another account" do
+        let(:other_account) { create(:account) }
+        let(:other_project) { create(:project, account: other_account) }
+
+        before do
+          create(:agent_run, :completed, project: other_project, goal: "create_pr",
+            completed_at: 1.day.ago)
+          create(:agent_run, :completed, project: project, goal: "create_pr",
+            completed_at: 1.day.ago)
+        end
+
+        it "only includes runs from the specified account" do
+          result = stats[:daily_outcome_chart]
+          expect(result[:overall_total]).to eq(1)
+          expect(result[:overall_completed]).to eq(1)
+        end
+      end
+
+      context "with time_range filter" do
+        before do
+          create(:agent_run, :completed, project: project, goal: "create_pr",
+            created_at: 2.days.ago, completed_at: 2.days.ago)
+          create(:agent_run, :completed, project: project, goal: "create_pr",
+            created_at: 10.days.ago, completed_at: 10.days.ago)
+          create(:agent_run, :failed, project: project, goal: "create_pr",
+            created_at: 40.days.ago, completed_at: 40.days.ago)
+        end
+
+        it "returns a 30-day series for the 30d window" do
+          result = described_class.call(account: account, time_range: "30d")[:daily_outcome_chart]
+          expect(result[:range_end]).to eq(Date.new(2026, 5, 3))
+          expect(result[:range_end] - result[:range_start]).to eq(29)
+          expect(result[:overall_total]).to eq(2)
+        end
+
+        it "returns a 7-day series for the 7d window" do
+          result = described_class.call(account: account, time_range: "7d")[:daily_outcome_chart]
+          expect(result[:range_end] - result[:range_start]).to eq(6)
+          expect(result[:overall_total]).to eq(1)
+        end
+
+        it "returns a single-day series for the 24h window" do
+          result = described_class.call(account: account, time_range: "24h")[:daily_outcome_chart]
+          expect(result[:range_start]).to eq(result[:range_end])
+          expect(result[:overall_total]).to eq(0)
+        end
+
+        it "spans from earliest data to today for cumulative" do
+          result = stats[:daily_outcome_chart]
+          expect(result[:range_end]).to eq(Date.new(2026, 5, 3))
+          expect(result[:overall_total]).to eq(3)
+        end
+
+        it "caps the cumulative window at OUTCOME_CHART_CUMULATIVE_MAX_WINDOW_DAYS" do
+          create(:agent_run, :completed, project: project, goal: "create_pr",
+            created_at: 200.days.ago, completed_at: 200.days.ago)
+          result = stats[:daily_outcome_chart]
+          expected_start = Date.new(2026, 5, 3) - Dashboard::Stats::OUTCOME_CHART_CUMULATIVE_MAX_WINDOW_DAYS.days
+          expect(result[:range_start]).to eq(expected_start)
+        end
+      end
+
+      context "when a run was created before the window but completed inside it" do
+        # The chart tracks when runs finished, so the window must be rooted on
+        # completed_at. A run created before the cutoff but completed inside the
+        # selected range must still be counted.
+        it "still counts the run for the 7d window" do
+          create(:agent_run, :completed, project: project, goal: "create_pr",
+            created_at: 10.days.ago, completed_at: 2.days.ago)
+          result = described_class.call(account: account, time_range: "7d")[:daily_outcome_chart]
+          expect(result[:overall_total]).to eq(1)
+          expect(result[:overall_completed]).to eq(1)
+        end
+      end
+    end
+
     describe "duration_trend_chart" do
       subject(:chart) { described_class.call(account: account, only: %i[duration_trend_chart])[:duration_trend_chart] }
 

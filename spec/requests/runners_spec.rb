@@ -649,6 +649,68 @@ RSpec.describe "Runners" do
       expect(response.body).to include('option value="aider"')
     end
 
+    it "hides openrouter_free once the user already has one configured" do
+      create(:provider_api_key, user: user, api_service_type: "openrouter", name: "OpenRouter")
+      free_model = create(:llm_model, model_id: "free-low", provider: "openrouter", tier: "low", pricing_tier: "free")
+      user.runners.create!(
+        runner_key: "openrouter_free",
+        auth_type: "api_key",
+        provider_api_key: user.provider_api_keys.first,
+        tier_model_ids: LlmModel::TIERS.index_with { free_model.model_id }
+      )
+      allow(RunnerSupport).to receive(:addable_runner_keys).and_return(%w[claude openrouter_free aider])
+
+      get new_runner_path(form_variant: "api_key")
+
+      expect(response).to have_http_status(:ok)
+      # Single-instance runner is hidden once added...
+      expect(response.body).not_to include('option value="openrouter_free"')
+      # ...but other API-key runners remain available.
+      expect(response.body).to include('option value="aider"')
+    end
+
+    it "keeps offering duplicate-capable API-key runners after one is added" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter", name: "OpenRouter")
+      create(:llm_model, model_id: "moonshotai/kimi-k2-0905", provider: "openrouter", tier: "mid")
+      user.runners.create!(
+        runner_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { opencode: { api_provider: "openrouter", model: "moonshotai/kimi-k2-0905" } },
+        enabled_for_agent_runs: true,
+        enabled_for_fallback: true
+      )
+      allow(RunnerSupport).to receive(:addable_runner_keys).and_return(%w[claude opencode])
+
+      get new_runner_path(form_variant: "api_key")
+
+      expect(response).to have_http_status(:ok)
+      # opencode allows legitimate duplicates, so it must still appear even
+      # though the user already has one configured.
+      expect(response.body).to include('option value="opencode"')
+    end
+
+    it "keeps the index Add Runner CTA available while only the single-instance runner is hidden" do
+      create(:provider_api_key, user: user, api_service_type: "openrouter", name: "OpenRouter")
+      free_model = create(:llm_model, model_id: "free-low", provider: "openrouter", tier: "low", pricing_tier: "free")
+      user.runners.create!(
+        runner_key: "openrouter_free",
+        auth_type: "api_key",
+        provider_api_key: user.provider_api_keys.first,
+        tier_model_ids: LlmModel::TIERS.index_with { free_model.model_id }
+      )
+      # openrouter_free is hidden (single-instance, already added) but aider
+      # is a duplicate-capable API-key runner with a compatible key, so the
+      # "Add Runner" CTA must remain instead of showing "No More Runners Yet".
+      allow(RunnerSupport).to receive(:addable_runner_keys).and_return(%w[claude openrouter_free aider])
+
+      get runners_path
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Add Runner")
+      expect(response.body).not_to include("No More Runners Yet")
+    end
+
     it "prefills openrouter_free setup from the catalog link" do
       create(:provider_api_key, user: user, api_service_type: "openrouter", name: "OpenRouter")
       create(:llm_model, model_id: "high-free", provider: "openrouter", tier: "high", pricing_tier: "free")
