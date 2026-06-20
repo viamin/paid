@@ -193,6 +193,26 @@ RSpec.describe RunnerState do
       expect(state.half_open_success_count).to eq(0)
       expect(state.half_open_failure_count).to eq(0)
     end
+
+    it "returns true when a full reset is performed" do
+      state = create(:runner_state, failure_count: 3, rate_limited_until: 30.minutes.from_now)
+      expect(state.record_success!).to be true
+    end
+
+    it "returns false when the open circuit blocks recovery" do
+      state = create(:runner_state, :circuit_open)
+      expect(state.record_success!).to be false
+    end
+
+    it "returns false when a half-open streak is incomplete" do
+      state = create(:runner_state, :circuit_half_open, failure_count: 4)
+      expect(state.record_success!(half_open_success_threshold: 2)).to be false
+    end
+
+    it "returns false when already healthy with no rate limit" do
+      state = create(:runner_state, failure_count: 0)
+      expect(state.record_success!).to be false
+    end
   end
 
   describe "#check_circuit_recovery!" do
@@ -286,5 +306,217 @@ RSpec.describe RunnerState do
   describe "#circuit_closed?" do
     it { expect(build(:runner_state)).to be_circuit_closed }
     it { expect(build(:runner_state, :circuit_open)).not_to be_circuit_closed }
+  end
+
+  describe "per-model rate-limit tracking" do
+    describe "#mark_model_rate_limited!" do
+      it "stores a per-model reset_at entry in metadata" do
+        state = create(:runner_state)
+        reset_at = 30.minutes.from_now
+
+        state.mark_model_rate_limited!("foo-model", reset_at: reset_at)
+
+        state.reload
+        stored = state.metadata.dig(RunnerState::RATE_LIMITED_MODELS_METADATA_KEY, "foo-model")
+        expect(Time.iso8601(stored)).to be_within(1.second).of(reset_at)
+      end
+
+      it "defaults to 60 seconds from now when no reset_at is given" do
+        state = create(:runner_state)
+
+        state.mark_model_rate_limited!("foo-model")
+
+        state.reload
+        stored = state.metadata.dig(RunnerState::RATE_LIMITED_MODELS_METADATA_KEY, "foo-model")
+        expect(Time.iso8601(stored)).to be_within(5.seconds).of(60.seconds.from_now)
+      end
+
+      it "is a no-op when the model id is blank" do
+        state = create(:runner_state)
+
+        state.mark_model_rate_limited!("")
+
+        state.reload
+        expect(state.metadata).to eq({})
+      end
+
+      it "preserves other metadata keys" do
+        state = create(:runner_state, metadata: { "other" => { "k" => 1 } })
+
+        state.mark_model_rate_limited!("foo-model")
+
+        state.reload
+        expect(state.metadata["other"]).to eq({ "k" => 1 })
+        expect(state.metadata[RunnerState::RATE_LIMITED_MODELS_METADATA_KEY]).to be_present
+      end
+    end
+
+    describe "#rate_limited_model_ids" do
+      it "returns the set of model ids with active windows" do
+        state = create(:runner_state,
+          metadata: { RunnerState::RATE_LIMITED_MODELS_METADATA_KEY => {
+            "fresh" => 5.minutes.from_now.iso8601,
+            "stale" => 5.minutes.ago.iso8601
+          } })
+
+        expect(state.rate_limited_model_ids).to eq(Set.new([ "fresh" ]))
+      end
+
+      it "drops entries with missing or unparseable reset_at" do
+        state = create(:runner_state,
+          metadata: { RunnerState::RATE_LIMITED_MODELS_METADATA_KEY => {
+            "no-reset" => nil,
+            "broken" => "not-iso",
+            "fresh" => 5.minutes.from_now.iso8601
+          } })
+
+        expect(state.rate_limited_model_ids).to eq(Set.new([ "fresh" ]))
+      end
+
+      it "returns an empty set when metadata is not a hash" do
+        state = create(:runner_state)
+        state.update_columns(metadata: "not-a-hash")
+
+        expect(state.rate_limited_model_ids).to eq(Set.new)
+      end
+    end
+
+    describe "#rate_limited_model?" do
+      it "returns true only for models with an active window" do
+        state = create(:runner_state,
+          metadata: { RunnerState::RATE_LIMITED_MODELS_METADATA_KEY => {
+            "active" => 5.minutes.from_now.iso8601,
+            "expired" => 5.minutes.ago.iso8601
+          } })
+
+        expect(state.rate_limited_model?("active")).to be true
+        expect(state.rate_limited_model?("expired")).to be false
+        expect(state.rate_limited_model?("missing")).to be false
+        expect(state.rate_limited_model?(nil)).to be false
+        expect(state.rate_limited_model?("")).to be false
+      end
+    end
+
+    describe "#clear_model_rate_limit!" do
+      it "removes a specific model id" do
+        state = create(:runner_state,
+          metadata: { RunnerState::RATE_LIMITED_MODELS_METADATA_KEY => {
+            "alpha" => 5.minutes.from_now.iso8601,
+            "beta" => 5.minutes.from_now.iso8601
+          } })
+
+        state.clear_model_rate_limit!("alpha")
+
+        state.reload
+        expect(state.rate_limited_model_ids).to eq(Set.new([ "beta" ]))
+      end
+
+      it "removes the entire rate_limited_models map when called without an id" do
+        state = create(:runner_state,
+          metadata: { RunnerState::RATE_LIMITED_MODELS_METADATA_KEY => {
+            "alpha" => 5.minutes.from_now.iso8601
+          } })
+
+        state.clear_model_rate_limit!
+
+        state.reload
+        expect(state.metadata).not_to have_key(RunnerState::RATE_LIMITED_MODELS_METADATA_KEY)
+      end
+    end
+
+    describe "integration with record_success!" do
+      it "resets per-model windows when the runner fully recovers" do
+        state = create(:runner_state, :circuit_open, failure_count: 8,
+          circuit_opened_at: 10.minutes.ago, last_failure_at: 1.minute.ago,
+          metadata: { RunnerState::RATE_LIMITED_MODELS_METADATA_KEY => {
+            "foo" => 5.minutes.from_now.iso8601
+          } })
+
+        state.record_success!(force_close: true)
+
+        state.reload
+        expect(state.metadata[RunnerState::RATE_LIMITED_MODELS_METADATA_KEY]).to eq({})
+      end
+    end
+  end
+
+  describe "preferred tier_model_ids recovery snapshot" do
+    describe "#preferred_tier_model_ids" do
+      it "returns the snapshotted mapping" do
+        state = create(:runner_state,
+          metadata: { RunnerState::PREFERRED_TIER_MODEL_IDS_METADATA_KEY => {
+            "high" => "model-a", "mid" => "model-b"
+          } })
+
+        expect(state.preferred_tier_model_ids).to eq("high" => "model-a", "mid" => "model-b")
+      end
+
+      it "returns nil when no snapshot exists" do
+        expect(create(:runner_state).preferred_tier_model_ids).to be_nil
+      end
+
+      it "returns nil when metadata is not a hash" do
+        state = create(:runner_state)
+        state.update_columns(metadata: "not-a-hash")
+
+        expect(state.preferred_tier_model_ids).to be_nil
+      end
+    end
+
+    describe "#record_preferred_tier_model_ids!" do
+      it "stores the mapping when none exists" do
+        state = create(:runner_state)
+
+        state.record_preferred_tier_model_ids!("high" => "model-a")
+
+        expect(state.reload.preferred_tier_model_ids).to eq("high" => "model-a")
+      end
+
+      it "does not overwrite an existing snapshot" do
+        state = create(:runner_state,
+          metadata: { RunnerState::PREFERRED_TIER_MODEL_IDS_METADATA_KEY => { "high" => "original" } })
+
+        state.record_preferred_tier_model_ids!("high" => "rotated")
+
+        expect(state.reload.preferred_tier_model_ids).to eq("high" => "original")
+      end
+
+      it "ignores blank tiers and model ids" do
+        state = create(:runner_state)
+
+        state.record_preferred_tier_model_ids!("high" => "model-a", "" => "x", "mid" => nil)
+
+        expect(state.reload.preferred_tier_model_ids).to eq("high" => "model-a")
+      end
+
+      it "preserves other metadata keys" do
+        state = create(:runner_state, metadata: { RunnerState::RATE_LIMITED_MODELS_METADATA_KEY => { "m" => 1.minute.from_now.iso8601 } })
+
+        state.record_preferred_tier_model_ids!("high" => "model-a")
+
+        reloaded = state.reload.metadata
+        expect(reloaded[RunnerState::PREFERRED_TIER_MODEL_IDS_METADATA_KEY]).to eq("high" => "model-a")
+        expect(reloaded[RunnerState::RATE_LIMITED_MODELS_METADATA_KEY]).to be_present
+      end
+    end
+
+    describe "#clear_preferred_tier_model_ids!" do
+      it "removes the snapshot key" do
+        state = create(:runner_state,
+          metadata: { RunnerState::PREFERRED_TIER_MODEL_IDS_METADATA_KEY => { "high" => "model-a" } })
+
+        state.clear_preferred_tier_model_ids!
+
+        expect(state.reload.preferred_tier_model_ids).to be_nil
+      end
+
+      it "is a no-op when no snapshot exists" do
+        state = create(:runner_state, metadata: { "other" => 1 })
+
+        state.clear_preferred_tier_model_ids!
+
+        expect(state.reload.metadata).to eq({ "other" => 1 })
+      end
+    end
   end
 end

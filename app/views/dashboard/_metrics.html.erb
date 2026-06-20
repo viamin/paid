@@ -116,6 +116,101 @@
         </div>
       </div>
     </div>
+
+    <%# PR Creation Run Outcomes %>
+    <% outcome_data = stats[:daily_outcome_chart] %>
+    <% outcome_window_label = time_range_label(time_range) %>
+    <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+      <div class="px-4 py-5 sm:p-6">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <h3 class="text-sm font-medium text-gray-500">PR Creation Run Outcomes (<%= outcome_window_label %>)</h3>
+            <p class="mt-1 text-sm text-gray-500">Daily agent run outcomes for <code>create_pr</code> goal, grouped by completion status.</p>
+          </div>
+          <% if outcome_data[:overall_total] > 0 %>
+            <div class="shrink-0 text-right">
+              <span class="text-2xl font-semibold text-green-600"><%= outcome_data[:overall_completion_rate] %>%</span>
+              <p class="text-xs text-gray-500">overall completion rate</p>
+              <p class="text-xs text-gray-400"><%= number_with_delimiter(outcome_data[:overall_completed]) %> / <%= number_with_delimiter(outcome_data[:overall_total]) %> runs</p>
+            </div>
+          <% end %>
+        </div>
+
+        <% if outcome_data[:overall_total] > 0 %>
+          <%# Stacked column chart of outcomes per day %>
+          <div class="mt-4">
+            <%= column_chart outcome_data[:series],
+                id: "daily-outcome-chart",
+                stacked: true,
+                height: "280px",
+                colors: outcome_data[:colors],
+                xtitle: "Day",
+                ytitle: "Runs",
+                discrete: true,
+                thousands: ",",
+                library: {
+                  plugins: {
+                    legend: {
+                      display: true,
+                      position: "bottom"
+                    },
+                    tooltip: {
+                      mode: "index",
+                      intersect: false
+                    }
+                  },
+                  scales: {
+                    x: { stacked: true },
+                    y: {
+                      stacked: true,
+                      beginAtZero: true,
+                      ticks: { precision: 0 }
+                    }
+                  }
+                } %>
+          </div>
+
+          <%# Completion rate % line chart %>
+          <div class="mt-6">
+            <h4 class="text-xs font-medium text-gray-500 uppercase tracking-wider">Daily Completion Rate %</h4>
+            <%= line_chart outcome_data[:completion_rate],
+                id: "daily-completion-rate-chart",
+                height: "180px",
+                colors: ["#16a34a"],
+                xtitle: "Day",
+                ytitle: "Completion %",
+                discrete: true,
+                library: {
+                  plugins: {
+                    legend: { display: false }
+                  },
+                  scales: {
+                    y: {
+                      beginAtZero: true,
+                      max: 100
+                    }
+                  }
+                } %>
+          </div>
+
+          <%# Legend with overall distribution stats %>
+          <div class="mt-4 flex flex-wrap gap-3 text-sm">
+            <% outcome_data[:series].each_with_index do |series, index| %>
+              <% count = series[:data].values.sum %>
+              <% next if count.zero? %>
+              <div class="flex items-center gap-1.5">
+                <span class="h-3 w-3 rounded-full shrink-0" style="background-color: <%= outcome_data[:colors][index] %>"></span>
+                <span class="text-gray-600"><%= series[:name] %></span>
+                <span class="font-semibold text-gray-900"><%= number_with_delimiter(count) %></span>
+                <span class="text-gray-400">(<%= ((count.to_f / outcome_data[:overall_total]) * 100).round(1) %>%)</span>
+              </div>
+            <% end %>
+          </div>
+        <% else %>
+          <div class="mt-4 py-8 text-center text-sm text-gray-400">No <code>create_pr</code> runs with outcomes in <%= outcome_window_label.downcase %>.</div>
+        <% end %>
+      </div>
+    </div>
   </div>
 
   <%# Cost & Token Usage — hidden when all values are zero %>

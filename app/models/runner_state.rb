@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "set"
+
 class RunnerState < ApplicationRecord
   CIRCUIT_STATES = %w[closed open half_open].freeze
   DEFAULT_FAILURE_THRESHOLD = 5
@@ -34,6 +36,136 @@ class RunnerState < ApplicationRecord
   # Clears the rate limit for this runner.
   def clear_rate_limit!
     update!(rate_limited_until: nil)
+  end
+
+  # Per-model rate-limit tracking for runners that support model rotation
+  # (e.g. openrouter_free). The metadata jsonb column stores
+  # `rate_limited_models` as `{ "model_id" => "reset_at_iso8601" }`. Entries
+  # whose reset_at is in the past are pruned on read so rotation only sees
+  # currently active windows.
+  RATE_LIMITED_MODELS_METADATA_KEY = "rate_limited_models"
+
+  # Returns the set of model ids that currently have an active per-model
+  # rate-limit window. Stale entries (reset_at in the past) are dropped.
+  def rate_limited_model_ids
+    raw = metadata.is_a?(Hash) ? metadata[RATE_LIMITED_MODELS_METADATA_KEY] : nil
+    return Set.new unless raw.is_a?(Hash)
+
+    now = Time.current
+    raw.each_with_object(Set.new) do |(model_id, reset_at), set|
+      next if model_id.blank?
+      next unless reset_at.present?
+
+      parsed =
+        begin
+          Time.iso8601(reset_at.to_s)
+        rescue ArgumentError
+          nil
+        end
+      next if parsed.nil? || parsed <= now
+
+      set << model_id.to_s
+    end
+  end
+
+  # Returns true when the given model id has an active per-model rate-limit
+  # window on this runner.
+  def rate_limited_model?(model_id)
+    return false if model_id.blank?
+
+    rate_limited_model_ids.include?(model_id.to_s)
+  end
+
+  # Marks the given model as rate-limited on this runner until `reset_at`.
+  # Persists the per-model entry to metadata and also clears any stale
+  # entries whose reset windows have already expired.
+  #
+  # @param model_id [String] The model id to mark as rate-limited.
+  # @param reset_at [Time, nil] When the model's rate limit resets.
+  def mark_model_rate_limited!(model_id, reset_at: nil)
+    return if model_id.blank?
+
+    reset_at ||= 60.seconds.from_now
+    with_lock do
+      current = rate_limited_models_metadata
+      current[model_id.to_s] = reset_at.iso8601
+      update!(metadata: metadata.merge(RATE_LIMITED_MODELS_METADATA_KEY => current))
+    end
+  end
+
+  # Clears the per-model rate-limit window for the given model id. Pass nil
+  # to clear every per-model rate-limit entry (used when the runner succeeds
+  # and we want to forget all known model windows).
+  def clear_model_rate_limit!(model_id = nil)
+    with_lock do
+      if model_id.nil?
+        next_metadata = metadata.dup
+        next_metadata.delete(RATE_LIMITED_MODELS_METADATA_KEY)
+        update!(metadata: next_metadata)
+      else
+        current = rate_limited_models_metadata
+        return unless current.key?(model_id.to_s)
+
+        current.delete(model_id.to_s)
+        update!(metadata: metadata.merge(RATE_LIMITED_MODELS_METADATA_KEY => current))
+      end
+    end
+  end
+
+  # Preferred tier_model_ids recovery point for free-model rotation. When the
+  # openrouter_free runner rotates away from the user's configured model to
+  # dodge a rate limit, the original mapping is snapshotted here so it can be
+  # restored once the rate-limit storm clears. Without this, repeated
+  # rotations would permanently drift tier_model_ids toward lower-capability
+  # models and silently override the user's preference.
+  PREFERRED_TIER_MODEL_IDS_METADATA_KEY = "preferred_tier_model_ids"
+
+  # Returns the snapshotted preferred tier_model_ids mapping, or nil when no
+  # recovery point exists.
+  def preferred_tier_model_ids
+    raw = metadata.is_a?(Hash) ? metadata[PREFERRED_TIER_MODEL_IDS_METADATA_KEY] : nil
+    return nil unless raw.is_a?(Hash)
+
+    snapshot = raw.each_with_object({}) do |(tier, model_id), result|
+      next if tier.blank? || model_id.blank?
+
+      result[tier.to_s] = model_id.to_s
+    end
+    snapshot.empty? ? nil : snapshot
+  end
+
+  # Snapshots the given tier_model_ids mapping as the recovery point, but
+  # only when no snapshot exists yet. This keeps the user's ORIGINAL
+  # configuration across multiple rotations within one rate-limit storm
+  # rather than overwriting it with an already-rotated state.
+  def record_preferred_tier_model_ids!(mapping)
+    return unless mapping.is_a?(Hash)
+    return if preferred_tier_model_ids.present?
+
+    snapshot = mapping.each_with_object({}) do |(tier, model_id), result|
+      next if tier.blank? || model_id.blank?
+
+      result[tier.to_s] = model_id.to_s
+    end
+    return if snapshot.empty?
+
+    with_lock do
+      return if preferred_tier_model_ids.present?
+
+      update!(metadata: metadata.merge(PREFERRED_TIER_MODEL_IDS_METADATA_KEY => snapshot))
+    end
+  end
+
+  # Removes the preferred tier_model_ids recovery point. Called after a
+  # successful restore so a later run does not revert to a stale snapshot.
+  def clear_preferred_tier_model_ids!
+    return unless metadata.is_a?(Hash) && metadata.key?(PREFERRED_TIER_MODEL_IDS_METADATA_KEY)
+
+    with_lock do
+      next_metadata = metadata.dup
+      next_metadata.delete(PREFERRED_TIER_MODEL_IDS_METADATA_KEY)
+      update!(metadata: next_metadata)
+    end
   end
 
   # Records a failure and opens the circuit if threshold is reached.
@@ -73,10 +205,13 @@ class RunnerState < ApplicationRecord
   # @param half_open_success_threshold [Integer] Consecutive half-open successes required to close the circuit.
   # @param force_close [Boolean] When true (explicit operator/test health checks), immediately close the circuit
   #   regardless of its current state instead of waiting on the recovery timeout or half-open success streak.
+  # @return [Boolean] true when a full reset was performed (circuit closed, failure counts and rate-limit
+  #   windows cleared), false on early returns (circuit still open, half-open streak incomplete, or already healthy).
+  #   Callers use this to decide whether to clear secondary state such as the free-model rotation recovery point.
   def record_success!(half_open_success_threshold: DEFAULT_HALF_OPEN_SUCCESS_THRESHOLD, force_close: false)
     with_lock do
       unless force_close
-        return if circuit_open?
+        return false if circuit_open?
 
         if circuit_half_open?
           new_half_open_success_count = half_open_success_count.to_i + 1
@@ -87,10 +222,10 @@ class RunnerState < ApplicationRecord
               half_open_failure_count: 0,
               rate_limited_until: nil
             )
-            return
+            return false
           end
         elsif failure_count.zero? && rate_limited_until.blank?
-          return
+          return false
         end
       end
 
@@ -101,8 +236,10 @@ class RunnerState < ApplicationRecord
         rate_limited_until: nil,
         last_failure_at: nil,
         half_open_success_count: 0,
-        half_open_failure_count: 0
+        half_open_failure_count: 0,
+        metadata: metadata.merge(RATE_LIMITED_MODELS_METADATA_KEY => {})
       )
+      true
     end
   end
 
@@ -156,6 +293,11 @@ class RunnerState < ApplicationRecord
   end
 
   private
+
+  def rate_limited_models_metadata
+    raw = metadata.is_a?(Hash) ? metadata[RATE_LIMITED_MODELS_METADATA_KEY] : nil
+    raw.is_a?(Hash) ? raw.dup : {}
+  end
 
   def decayed_failure_count(now:, decay_window:)
     return failure_count if last_failure_at.blank? || decay_window.to_i <= 0
