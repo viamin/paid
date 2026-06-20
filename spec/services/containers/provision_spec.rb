@@ -2076,6 +2076,30 @@ RSpec.describe Containers::Provision do
       end
     end
 
+    context "when exit 137 occurs but the container is already gone" do
+      before do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stderr, "Killed\n") if block
+          [ [], [ "Killed\n" ], 137 ]
+        end
+        allow(mock_container).to receive(:refresh!).and_raise(Docker::Error::NotFoundError, "No such container")
+      end
+
+      it "degrades gracefully without claiming OOM when state cannot be read" do
+        allow(agent_run).to receive(:log!)
+
+        result = service.execute("opencode run 'Reply with exactly OK.'")
+
+        expect(result).to be_failure
+        expect(result[:oom_killed]).to be false
+        expect(result[:memory_limit_bytes]).to be_nil
+        expect(agent_run).to have_received(:log!).with("system", "container.execute.exit_state_unavailable",
+          metadata: hash_including(error: /No such container/))
+        expect(agent_run).to have_received(:log!).with("system", "container.execute.sigkill",
+          metadata: hash_including(exit_code: 137))
+      end
+    end
+
     context "when command output contains invalid UTF-8 bytes" do
       let(:invalid_chunk) { "bad \xFF output\n".b }
 
