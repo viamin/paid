@@ -135,6 +135,12 @@ module AgentRuns
       return unless credential.present?
       return if credential.provider_api_key? && !credential.provider_api_key.compatible_with?(base_runner.runner_key)
 
+      # Ensure the configured model exists in the LlmModel table before
+      # validation runs on the new runner record. Direct-outbound validations
+      # (direct_outbound_config_models_must_exist_in_catalog) reject model IDs
+      # not present in the catalog.
+      seed_account_managed_model(base_runner, credential)
+
       owner.runners.kept_only.find_or_create_by!(
         runner_key: base_runner.runner_key,
         auth_type: "api_key",
@@ -172,6 +178,27 @@ module AgentRuns
       return static if static.present?
 
       nil
+    end
+
+    def seed_account_managed_model(base_runner, credential)
+      return unless base_runner.runner_key == "pi"
+
+      config = account_managed_runner_config(base_runner, credential)
+      model_id = config.dig("pi", "model")
+      api_provider = config.dig("pi", "api_provider")
+      return if model_id.blank? || api_provider.blank?
+      return if LlmModel.exists?(model_id: model_id)
+
+      LlmModel.create!(
+        model_id: model_id,
+        display_name: model_id.to_s.tr("_-", " ").split.map(&:capitalize).join(" "),
+        provider: api_provider,
+        category: "coding",
+        tier: "mid",
+        active: true,
+        catalog_source: "manual",
+        pricing_tier: "paid"
+      )
     end
 
     def account_managed_runner_config(base_runner, credential)

@@ -85,7 +85,13 @@ module AgentRuns
       return unless credential.present?
       return if credential.provider_api_key? && !credential.provider_api_key.compatible_with?(base_provider.provider_key)
 
+      # Ensure the configured model exists in the LlmModel table before
+      # validation runs on the new provider record. Direct-outbound validations
+      # (direct_outbound_config_models_must_exist_in_catalog) reject model IDs
+      # not present in the catalog.
       provider_config = account_managed_provider_config(base_provider, credential)
+      seed_account_managed_model(base_provider, credential)
+
       owner.providers.kept_only.find_or_create_by!(
         provider_key: base_provider.provider_key,
         auth_type: "api_key",
