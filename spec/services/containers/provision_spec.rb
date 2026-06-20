@@ -2009,6 +2009,95 @@ RSpec.describe Containers::Provision do
         expect(result[:exit_code]).to eq(1)
         expect(result.error).to include("exited with code 1")
       end
+
+      it "does not inspect container state for ordinary non-zero exits" do
+        expect(mock_container).not_to receive(:refresh!)
+
+        result = service.execute("false")
+
+        expect(result[:oom_killed]).to be false
+      end
+    end
+
+    context "when the command is OOM-killed (exit 137)" do
+      before do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stderr, "Killed\n") if block
+          [ [], [ "Killed\n" ], 137 ]
+        end
+        allow(mock_container).to receive(:info).and_return(
+          "State" => { "Running" => false, "ExitCode" => 137, "OOMKilled" => true },
+          "HostConfig" => { "Memory" => 4 * 1024 * 1024 * 1024 }
+        )
+      end
+
+      it "detects the OOM kill and flags the result" do
+        result = service.execute("opencode run 'Reply with exactly OK.'")
+
+        expect(result).to be_failure
+        expect(result[:exit_code]).to eq(137)
+        expect(result[:oom_killed]).to be true
+        expect(result[:memory_limit_bytes]).to eq(4 * 1024 * 1024 * 1024)
+      end
+
+      it "logs the OOM kill distinctly with the memory limit" do
+        allow(agent_run).to receive(:log!)
+
+        service.execute("opencode run 'Reply with exactly OK.'")
+
+        expect(agent_run).to have_received(:log!).with("system", "container.execute.oom_killed",
+          metadata: hash_including(
+            exit_code: 137,
+            memory_limit_bytes: 4 * 1024 * 1024 * 1024,
+            container_running: false
+          ))
+      end
+    end
+
+    context "when exit 137 occurs but the container is not OOM-killed" do
+      before do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stderr, "Killed\n") if block
+          [ [], [ "Killed\n" ], 137 ]
+        end
+        allow(mock_container).to receive(:info).and_return(
+          "State" => { "Running" => true, "ExitCode" => 137, "OOMKilled" => false }
+        )
+      end
+
+      it "records a plain SIGKILL without claiming OOM" do
+        allow(agent_run).to receive(:log!)
+
+        result = service.execute("opencode run 'Reply with exactly OK.'")
+
+        expect(result[:oom_killed]).to be false
+        expect(agent_run).to have_received(:log!).with("system", "container.execute.sigkill",
+          metadata: hash_including(exit_code: 137))
+      end
+    end
+
+    context "when exit 137 occurs but the container is already gone" do
+      before do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block.call(:stderr, "Killed\n") if block
+          [ [], [ "Killed\n" ], 137 ]
+        end
+        allow(mock_container).to receive(:refresh!).and_raise(Docker::Error::NotFoundError, "No such container")
+      end
+
+      it "degrades gracefully without claiming OOM when state cannot be read" do
+        allow(agent_run).to receive(:log!)
+
+        result = service.execute("opencode run 'Reply with exactly OK.'")
+
+        expect(result).to be_failure
+        expect(result[:oom_killed]).to be false
+        expect(result[:memory_limit_bytes]).to be_nil
+        expect(agent_run).to have_received(:log!).with("system", "container.execute.exit_state_unavailable",
+          metadata: hash_including(error: /No such container/))
+        expect(agent_run).to have_received(:log!).with("system", "container.execute.sigkill",
+          metadata: hash_including(exit_code: 137))
+      end
     end
 
     context "when command output contains invalid UTF-8 bytes" do
