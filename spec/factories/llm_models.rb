@@ -37,5 +37,18 @@ FactoryBot.define do
     trait :planning do
       category { "planning" }
     end
+
+    trait :free do
+      provider { "openrouter" }
+      pricing_tier { "free" }
+      input_cost_per_million { 0 }
+      output_cost_per_million { 0 }
+      data_training_risk { "possible" }
+      category { "coding" }
+    end
+
+    trait :below_quality_bar do
+      metadata { { "below_quality_bar" => true } }
+    end
   end
 end

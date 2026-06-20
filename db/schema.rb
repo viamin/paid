@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_16_124105) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_19_140623) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2074,6 +2074,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_16_124105) do
     t.integer "half_open_failure_count", default: 0, null: false, comment: "Consecutive failures observed while the circuit is half-open."
     t.integer "half_open_success_count", default: 0, null: false, comment: "Consecutive successes observed while the circuit is half-open."
     t.datetime "last_failure_at", comment: "Timestamp of the most recent runner failure used to decay stale circuit-breaker failures."
+    t.jsonb "metadata", default: {}, null: false, comment: "Free-form metadata. Currently stores per-model rate-limit windows under the 'rate_limited_models' key so the openrouter_free runner can rotate past a rate-limited model without resetting the whole runner."
     t.datetime "rate_limited_until"
     t.string "runner_name", limit: 50, null: false
     t.datetime "updated_at", null: false

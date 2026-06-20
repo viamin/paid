@@ -1618,4 +1618,47 @@ RSpec.describe Runner do
       expect(persisted_runner.provider_api_key_id).to eq(api_key.id)
     end
   end
+
+  describe ".single_instance_runner_key?" do
+    it "returns true for the openrouter_free runner" do
+      expect(described_class.single_instance_runner_key?(Runner::OPENROUTER_FREE_RUNNER_KEY)).to be true
+    end
+
+    it "returns false for runners that allow duplicates" do
+      %w[opencode kilocode aider pi claude cursor].each do |key|
+        expect(described_class.single_instance_runner_key?(key)).to be false
+      end
+    end
+  end
+
+  describe "free-model rotation snapshot clearing" do
+    let(:user) { create(:user) }
+    let(:api_key) { create(:provider_api_key, user: user, api_service_type: "openrouter") }
+    let(:free_model) { create(:llm_model, :free, model_id: "free-orig", tier: "high", capability_score: 5.0) }
+    let(:runner) do
+      create(:runner, user: user, runner_key: Runner::OPENROUTER_FREE_RUNNER_KEY, auth_type: "api_key",
+        provider_api_key: api_key, tier_model_ids: LlmModel::TIERS.index_with { free_model.model_id })
+    end
+
+    it "clears the recovery snapshot when the user changes tier_model_ids" do
+      runner_state = user.runner_states.create!(runner_name: Runner::OPENROUTER_FREE_RUNNER_KEY)
+      runner_state.record_preferred_tier_model_ids!("high" => free_model.model_id)
+
+      other_free = create(:llm_model, :free, model_id: "free-other", tier: "high", capability_score: 6.0)
+      runner.update!(tier_model_ids: LlmModel::TIERS.index_with { other_free.model_id })
+
+      expect(runner_state.reload.preferred_tier_model_ids).to be_nil
+    end
+
+    it "does not clear the snapshot during a system rotation" do
+      runner_state = user.runner_states.create!(runner_name: Runner::OPENROUTER_FREE_RUNNER_KEY)
+      runner_state.record_preferred_tier_model_ids!("high" => free_model.model_id)
+
+      other_free = create(:llm_model, :free, model_id: "free-other", tier: "high", capability_score: 6.0)
+      runner.rotating_tier_models = true
+      runner.update!(tier_model_ids: LlmModel::TIERS.index_with { other_free.model_id })
+
+      expect(runner_state.reload.preferred_tier_model_ids).to eq("high" => free_model.model_id)
+    end
+  end
 end

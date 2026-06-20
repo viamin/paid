@@ -21,6 +21,7 @@ module Knowledge
 
       runners.each_with_index do |runner, index|
         record_attempt(runner)
+        rotation_attempts = 0
 
         begin
           result = yield(runner)
@@ -28,6 +29,18 @@ module Knowledge
           return result
         rescue AgentHarness::RateLimitError => e
           record_rate_limit(runner, e)
+          # Rotate to the next free model and re-attempt the same runner at
+          # most once. `retry` re-enters this begin block, so a rate-limited
+          # rotated model (or any other AgentHarness::Error on the retry) is
+          # re-caught here instead of escaping execute: a second rate-limit
+          # fails the runner over to the next one in the chain. The single
+          # retry is bounded because free_model_id_for only records the
+          # highest-tier model as rate-limited, so an unbounded loop could
+          # ping-pong between lower-tier models that are never recorded.
+          if rotation_runner?(runner) && rotation_attempts.zero? && try_rotation(runner, e)
+            rotation_attempts += 1
+            retry
+          end
           log_runner_failure(runner, "rate_limited", e)
           log_runner_switch(runner, runners[index + 1], "rate_limited", e)
           last_error = e
@@ -53,13 +66,31 @@ module Knowledge
 
     def record_success(runner)
       @knowledge_run&.update!(final_runner: runner)
-      runner_state_for(runner)&.record_success!
+      state = runner_state_for(runner)
+      fully_recovered = state&.record_success!
+      restore_preferred_tier_model_ids(runner) if fully_recovered
+    end
+
+    # After a full recovery (per-model rate-limit windows cleared), restore
+    # the openrouter_free runner's original tier_model_ids from the rotation
+    # recovery snapshot so the user's configured models are not permanently
+    # overridden by a rate-limit-driven rotation. No-op for non-rotation
+    # runners or when no snapshot exists.
+    def restore_preferred_tier_model_ids(runner)
+      record = rotation_runner_record(runner)
+      return unless record
+
+      FreeModels::Rotation.restore_preferred!(runner: record, user: @user_setting.user)
     end
 
     def record_rate_limit(runner, error)
       reset_at = error.respond_to?(:reset_time) ? error.reset_time : nil
       state = runner_state_for(runner)
       state&.mark_rate_limited!(reset_at: reset_at)
+
+      if (model_id = free_model_id_for(runner))
+        state&.mark_model_rate_limited!(model_id, reset_at: reset_at)
+      end
     end
 
     def record_failure(runner, _error)
@@ -85,10 +116,90 @@ module Knowledge
       @runner_states ||= {}
       @runner_states[runner] ||= @user_setting.user
         .runner_states
-        .find_or_create_by!(runner_name: runner) { |s|
+        .find_or_create_by!(runner_name: runner.to_s) { |s|
           s.circuit_state = "closed"
           s.failure_count = 0
         }
+    end
+
+    # Returns the openrouter_free Runner record for the current user when the
+    # runner-name passed in is openrouter_free and the user actually has one
+    # configured. The Runner record is what FreeModels::Rotation needs in
+    # order to update tier_model_ids and read the RunnerState.
+    #
+    # Memoized per runner-name. In the retry path this is invoked several
+    # times for the same name (record_rate_limit -> free_model_id_for,
+    # rotation_runner?, try_rotation, then record_success ->
+    # restore_preferred_tier_model_ids), so caching avoids repeated find_by
+    # queries. Uses Hash#key? rather than ||= so nil results (non-openrouter
+    # names and missing-runner records) are cached too.
+    def rotation_runner_record(runner_name)
+      @rotation_runner_records ||= {}
+      key = runner_name.to_s
+      return @rotation_runner_records[key] if @rotation_runner_records.key?(key)
+
+      @rotation_runner_records[key] =
+        if key == Runner::OPENROUTER_FREE_RUNNER_KEY
+          @user_setting.user.runners.kept_only
+            .find_by(runner_key: Runner::OPENROUTER_FREE_RUNNER_KEY)
+        end
+    end
+
+    def rotation_runner?(runner)
+      rotation_runner_record(runner).present?
+    end
+
+    # Best-effort guess at which model the openrouter_free runner was using
+    # when it rate-limited, used only when the error itself carries no model
+    # id. Knowledge calls lean on the high-tier model, so walk tiers from
+    # high down to low and return the first one the runner is configured for.
+    def free_model_id_for(runner)
+      record = rotation_runner_record(runner)
+      return nil unless record
+
+      LlmModel::TIERS.reverse_each do |tier|
+        model_id = record.tier_model_ids&.dig(tier)
+        return model_id if model_id.present?
+      end
+
+      nil
+    end
+
+    # Attempts to rotate the openrouter_free runner to a new free model and,
+    # on success, records the rotation so the caller can retry with the same
+    # runner. Returns the rotation result on success and nil when no
+    # candidate is available (caller falls back to the next runner).
+    def try_rotation(runner, error)
+      record = rotation_runner_record(runner)
+      return nil unless record
+
+      result = FreeModels::Rotation.call(
+        runner: record,
+        current_model_id: extract_rate_limited_model_id(error),
+        user: @user_setting.user,
+        include_below_quality_bar: false
+      )
+
+      if result.rotated?
+        Rails.logger.info(
+          message: "knowledge.free_model_rotation",
+          operation: @operation.to_s,
+          runner: runner,
+          previous_model_id: result.previous_model_id,
+          new_model_id: result.model_id,
+          tier: result.tier,
+          knowledge_run_id: @knowledge_run&.id,
+          user_setting_id: @user_setting.id
+        )
+      end
+
+      result.rotated? ? result : nil
+    end
+
+    def extract_rate_limited_model_id(error)
+      return nil unless error.respond_to?(:model_id)
+
+      error.model_id.presence
     end
 
     def log_runner_failure(runner, reason, error)
