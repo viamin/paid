@@ -3764,6 +3764,28 @@ expect(container_service).to receive(:execute).with(
         )
       end
 
+      it "annotates the runner error with the container OOM kill and memory limit" do
+        oom_failure = Containers::Provision::Result.failure(
+          error: "exit 137", stdout: "", stderr: "Killed",
+          exit_code: 137, oom_killed: true, memory_limit_bytes: 4 * 1024 * 1024 * 1024
+        )
+        call_count = 0
+        allow(container_service).to receive(:execute) do |_cmd, **_opts|
+          call_count += 1
+          call_count == 1 ? oom_failure : exec_success
+        end
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:success]).to be true
+        expect(agent_run.reload.runners_attempted).to include(
+          hash_including(
+            "runner" => "claude_code", "success" => false,
+            "error_message" => include("container OOM-killed; memory limit 4.0 GB")
+          )
+        )
+      end
+
       it "does not trip the circuit breaker when the container dies mid-execution" do
         # "Container is not running" Docker errors from exec must be classified as
         # RunnerInfraExecutionError so the per-runner circuit breaker is NOT tripped.
