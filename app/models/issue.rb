@@ -14,7 +14,7 @@ class Issue < ApplicationRecord
 
   # Default label mirrored to GitHub to surface an issue/PR's paused state.
   # Adding the label in GitHub (or pausing from the UI) flips `paused`;
-  # removing it flips `paused` back. See Issues::PauseLabelSync.
+  # removing it flips `paused` back.
   PAUSED_LABEL = "paid-paused"
 
   # Constants for synthetic alert issues. Shared with

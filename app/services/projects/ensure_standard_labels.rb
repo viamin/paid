@@ -10,10 +10,10 @@ module Projects
   # - automation_label_name (e.g. "paid-automation")
   # - enhance_issue_needs_input_label_name (e.g. "paid-needs-input")
   # - enhance_issue_enhanced_label_name    (e.g. "paid-enhanced")
-    #   - recommend_close                      (e.g. "paid-recommend-close"; overridable via
-    #                                         Project#label_for_stage("recommend_close"))
-    #   - paused                               (e.g. "paid-paused"; mirrors Issue#paused)
-    #   - Priority labels       (P1, P2, P3 by default)
+  # - recommend_close                      (e.g. "paid-recommend-close"; overridable via
+  #                                        Project#label_for_stage("recommend_close"))
+  # - paused                               (e.g. "paid-paused"; mirrors Issue#paused)
+  # - Priority labels          (P1, P2, P3 by default)
   #
   # @example
   #   result = Projects::EnsureStandardLabels.call(project: project)
@@ -120,6 +120,12 @@ module Projects
         name: recommend_close_name,
         color: LABEL_DEFINITIONS[:recommend_close][:color],
         description: LABEL_DEFINITIONS[:recommend_close][:description]
+      }
+
+      labels << {
+        name: Issue::PAUSED_LABEL,
+        color: LABEL_DEFINITIONS[:paused][:color],
+        description: LABEL_DEFINITIONS[:paused][:description]
       }
 
       project.effective_priority_labels.each do |tier, label_name|

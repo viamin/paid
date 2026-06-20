@@ -1169,7 +1169,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_20_170722) do
     t.string "paid_state", default: "new", null: false
     t.bigint "parent_issue_id"
     t.boolean "paused", default: false, null: false
-    t.datetime "paused_at"
+    t.datetime "paused_at", comment: "Sync epoch: records when the pause state last transitioned (from UI or GitHub) to resolve bidirectional sync ordering."
     t.string "pr_escalation_reason", comment: "Machine-readable cause for the current PR escalation so only operational outages can auto-dismiss."
     t.integer "pr_followup_count", default: 0, null: false
     t.string "pr_review_phase", default: "draft", null: false
