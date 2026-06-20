@@ -38,7 +38,7 @@ jobs:
     if: >-
       github.event_name != 'pull_request'
       || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
-      || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]"]'), github.event.pull_request.user.login)
+      || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
     runs-on: ubuntu-latest
     env:
       BUNDLE_FROZEN: "true"
@@ -150,7 +150,7 @@ jobs:
     if: >-
       github.event_name != 'pull_request'
       || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
-      || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]"]'), github.event.pull_request.user.login)
+      || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
     runs-on: ubuntu-24.04
     timeout-minutes: 45
 
@@ -264,7 +264,7 @@ jobs:
     if: >-
       github.event_name != 'pull_request'
       || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
-      || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]"]'), github.event.pull_request.user.login)
+      || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
     runs-on: ubuntu-latest
     env:
       BUNDLE_FROZEN: "true"
@@ -285,7 +285,7 @@ jobs:
     if: >-
       github.event_name != 'pull_request'
       || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
-      || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]"]'), github.event.pull_request.user.login)
+      || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
     runs-on: ubuntu-24.04
     timeout-minutes: 45
 
