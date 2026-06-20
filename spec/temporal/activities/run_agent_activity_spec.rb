@@ -3717,7 +3717,6 @@ expect(container_service).to receive(:execute).with(
         )
       end
 
-
       before do
         allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor aider])
         user.runners.find_or_create_by!(runner_key: "cursor")

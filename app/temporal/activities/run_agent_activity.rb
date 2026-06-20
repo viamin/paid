@@ -1580,7 +1580,9 @@ module Activities
       reason = if sanitized_output.present?
         "Agent exited with code #{result[:exit_code]}#{oom_annotation(result)}: #{sanitized_output.truncate(500)}"
       else
-        "No output before exit code #{result[:exit_code]}#{oom_annotation(result)}. Check proxy configuration, auth, and network policy."
+        base = "No output before exit code #{result[:exit_code]}."
+        oom = oom_annotation(result)
+        oom.present? ? "#{base}#{oom}" : "#{base} Check proxy configuration, auth, and network policy."
       end
       raise_preflight_failure!(agent_run: agent_run, runner: runner, reason: reason)
     rescue Containers::Provision::OutputAbortError => e
