@@ -414,7 +414,7 @@ class AgentRun < ApplicationRecord
   end
 
   def self.ransackable_attributes(auth_object = nil)
-    %w[status agent_type branch_name trigger_type goal duration_seconds tokens_input tokens_output tokens_total cost_cents created_at started_at effective_runner]
+    %w[status agent_type branch_name trigger_type goal duration_seconds tokens_input tokens_output tokens_total cost_cents created_at started_at completed_at temporal_workflow_id effective_runner]
   end
 
   def self.ransackable_associations(auth_object = nil)
