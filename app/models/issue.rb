@@ -80,6 +80,14 @@ class Issue < ApplicationRecord
   after_update_commit :cancel_orphaned_queued_runs, if: :work_no_longer_needed?
   after_commit :update_project_last_github_activity_at, on: [ :create, :update ]
 
+  # UI -> GitHub: whenever the local `paused` flag flips, mirror it onto the
+  # issue/PR by adding or removing the `paid-paused` label. `before_save`
+  # stamps the sync epoch (`paused_at`) so the GitHub -> App sync can reject
+  # stale reflections of our own (possibly failed) push. Best-effort: a GitHub
+  # failure is logged, and the next sync reconciles the label.
+  before_save :stamp_paused_at, if: :will_save_change_to_paused?
+  after_commit :sync_paused_label_to_github, if: :saved_change_to_paused?
+
   scope :by_paid_state, ->(state) { where(paid_state: state) }
   scope :root_issues, -> { where(parent_issue_id: nil) }
   scope :sub_issues_only, -> { where.not(parent_issue_id: nil) }
@@ -509,6 +517,36 @@ class Issue < ApplicationRecord
     return if parent_issue.project_id == project_id
 
     errors.add(:parent_issue, "must belong to the same project")
+  end
+
+  def stamp_paused_at
+    self.paused_at = Time.current
+  end
+
+  # Mirrors the new `paused` value onto GitHub by adding/removing the
+  # `paid-paused` label. No-op when there is no project client (e.g. a
+  # project without a configured GitHub credential); the next sync then
+  # reconciles the label from the GitHub side.
+  def sync_paused_label_to_github
+    return if destroyed?
+    return unless github_number
+
+    client = project&.client
+    return unless client
+
+    if paused
+      client.add_labels_to_issue(project.full_name, github_number, [ PAUSED_LABEL ])
+    else
+      client.remove_label_from_issue(project.full_name, github_number, PAUSED_LABEL)
+    end
+  rescue GithubClient::Error => e
+    Rails.logger.warn(
+      message: "github_sync.sync_paused_label_failed",
+      issue_id: id,
+      issue_number: github_number,
+      paused: paused,
+      error: e.message
+    )
   end
 
   # During bulk sync (e.g. FetchIssuesActivity), this fires per-issue, but the

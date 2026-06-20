@@ -1861,4 +1861,90 @@ RSpec.describe Issue do
       expect(result).to eq({})
     end
   end
+
+  describe "paused state sync (UI -> GitHub)" do
+    let(:project) { create(:project, owner: "owner", repo: "repo") }
+    let(:github_client) { instance_double(GithubClient) }
+
+    before do
+      allow(project).to receive(:client).and_return(github_client)
+      allow(github_client).to receive(:add_labels_to_issue)
+      allow(github_client).to receive(:remove_label_from_issue)
+    end
+
+    it "adds the paid-paused label when paused flips to true" do
+      issue = create(:issue, project: project, github_number: 42)
+
+      issue.update!(paused: true)
+
+      expect(github_client).to have_received(:add_labels_to_issue).with(
+        "owner/repo", 42, [ described_class::PAUSED_LABEL ]
+      )
+      expect(github_client).not_to have_received(:remove_label_from_issue)
+    end
+
+    it "removes the paid-paused label when paused flips back to false" do
+      issue = create(:issue, project: project, github_number: 42, paused: true)
+      allow(github_client).to receive(:add_labels_to_issue)
+
+      issue.update!(paused: false)
+
+      expect(github_client).to have_received(:remove_label_from_issue).with(
+        "owner/repo", 42, described_class::PAUSED_LABEL
+      )
+    end
+
+    it "stamps paused_at when the paused flag transitions" do
+      issue = create(:issue, project: project, paused: false)
+      allow(github_client).to receive(:add_labels_to_issue)
+
+      freeze_time do
+        issue.update!(paused: true)
+
+        expect(issue.reload.paused_at).to eq(Time.current)
+      end
+    end
+
+    it "does not stamp paused_at when paused is unchanged" do
+      issue = create(:issue, project: project, paused: false, paused_at: 2.days.ago)
+
+      issue.update!(title: "Updated title")
+
+      expect(issue.reload.paused_at).to be_within(1.second).of(2.days.ago)
+    end
+
+    it "does not push the label when paused is unchanged" do
+      issue = create(:issue, project: project, paused: false)
+
+      issue.update!(title: "Updated title")
+
+      expect(github_client).not_to have_received(:add_labels_to_issue)
+      expect(github_client).not_to have_received(:remove_label_from_issue)
+    end
+
+    it "is best-effort: logs and keeps the local change when the push fails" do
+      allow(github_client).to receive(:add_labels_to_issue)
+        .and_raise(GithubClient::Error.new("GitHub unavailable"))
+      allow(Rails.logger).to receive(:warn)
+
+      issue = create(:issue, project: project)
+
+      expect { issue.update!(paused: true) }.not_to raise_error
+
+      expect(issue.reload.paused).to be(true)
+      expect(Rails.logger).to have_received(:warn) do |payload|
+        expect(payload[:message]).to eq("github_sync.sync_paused_label_failed")
+      end
+    end
+
+    it "is a no-op when the project has no configured client" do
+      project_without_client = create(:project)
+      allow(project_without_client).to receive(:client).and_return(nil)
+
+      issue = create(:issue, project: project_without_client)
+
+      expect { issue.update!(paused: true) }.not_to raise_error
+      expect(issue.reload.paused).to be(true)
+    end
+  end
 end

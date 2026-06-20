@@ -54,6 +54,9 @@ module Activities
         needs_input_changed = detect_needs_input_label_removals(project, synced_issues)
         sync_changed ||= needs_input_changed
 
+        paused_changed = sync_paused_state(project, synced_issues)
+        sync_changed ||= paused_changed
+
         closed_count = close_stale_issues(project, github_issues, truncated: truncated, incremental: incremental)
         sync_changed ||= closed_count.positive?
 
@@ -444,6 +447,81 @@ module Activities
       end
 
       changed
+    end
+
+    # GitHub -> App: mirrors the presence/absence of the `paid-paused` label
+    # onto each issue's `paused` flag. Uses the resulting label state (not the
+    # transition) so add and remove are both covered. Closed issues are skipped
+    # so a paused flag survives a transient close/reopen.
+    #
+    # The `paused_at` epoch guards against clobbering a recent UI pause: if the
+    # issue is paused locally but the label is absent on GitHub, and our local
+    # transition (`paused_at`) is newer than what GitHub reflects
+    # (`github_updated_at`), the divergence stems from our own (possibly failed)
+    # label push rather than a GitHub-side removal — so re-push instead of
+    # unpausing. Updates go through `update_columns` to avoid re-triggering the
+    # Issue callback that would redundantly push a label that already matches.
+    def sync_paused_state(project, synced_issues)
+      open_issues = synced_issues.reject { |data| data[:github_state] == "closed" }
+      return false if open_issues.empty?
+
+      # Fetch the already-paused set once so the common case (no `paid-paused`
+      # label and not paused) needs no per-issue lookup at all.
+      currently_paused_ids = project.issues
+        .where(id: open_issues.map { |data| data[:id] }, paused: true)
+        .pluck(:id).to_set
+
+      changed = false
+
+      open_issues.each do |issue_data|
+        desired_paused = Array(issue_data[:labels]).include?(Issue::PAUSED_LABEL)
+        currently_paused = currently_paused_ids.include?(issue_data[:id])
+        next if currently_paused == desired_paused
+
+        issue = project.issues.find(issue_data[:id])
+
+        if currently_paused && !desired_paused && recent_local_pause?(issue)
+          re_push_paused_label(project, issue)
+          next
+        end
+
+        issue.update_columns(paused: desired_paused, paused_at: Time.current, updated_at: Time.current)
+        changed = true
+
+        logger.info(
+          message: "github_sync.paused_state_synced",
+          project_id: project.id,
+          issue_id: issue.id,
+          issue_number: issue.github_number,
+          paused: desired_paused
+        )
+      end
+
+      changed
+    end
+
+    def recent_local_pause?(issue)
+      issue.paused_at.present? &&
+        (issue.github_updated_at.nil? || issue.paused_at > issue.github_updated_at)
+    end
+
+    def re_push_paused_label(project, issue)
+      project.client&.add_labels_to_issue(project.full_name, issue.github_number, [ Issue::PAUSED_LABEL ])
+
+      logger.warn(
+        message: "github_sync.paused_label_repushed",
+        project_id: project.id,
+        issue_id: issue.id,
+        issue_number: issue.github_number
+      )
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "github_sync.paused_label_repush_failed",
+        project_id: project.id,
+        issue_id: issue.id,
+        issue_number: issue.github_number,
+        error: e.message
+      )
     end
 
     # Parses dependency and parent/child relationships from issue comments.
