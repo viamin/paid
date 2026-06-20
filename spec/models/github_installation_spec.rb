@@ -80,4 +80,62 @@ RSpec.describe GithubInstallation do
       expect(installation.covers_repository?("acme/widgets")).to be(false)
     end
   end
+
+  describe "#cached_repositories" do
+    it "returns fresh cached repositories without checking app credentials" do
+      installation = build(:github_installation, repositories_synced_at: 5.minutes.ago)
+
+      expect(Github::AppRegistry).not_to receive(:configured?)
+
+      expect(installation.cached_repositories).to eq(installation.accessible_repositories)
+    end
+
+    it "syncs stale repositories when app credentials are configured" do
+      installation = create(:github_installation, repositories_synced_at: nil)
+      repositories = [ { "id" => 456, "full_name" => "acme/refreshed" } ]
+
+      allow(Github::AppRegistry).to receive(:configured?).and_return(true)
+      allow(Github::InstallationRepositories).to receive(:fetch)
+        .with(installation_id: installation.github_installation_id)
+        .and_return(repositories)
+
+      expect(installation.cached_repositories).to eq(repositories)
+      expect(installation.reload.accessible_repositories).to eq(repositories)
+      expect(installation.repositories_synced_at).to be_present
+    end
+
+    it "falls back to cached repositories when a stale sync fails" do
+      installation = create(:github_installation, repositories_synced_at: nil)
+
+      allow(Github::AppRegistry).to receive(:configured?).and_return(true)
+      allow(Github::InstallationRepositories).to receive(:fetch)
+        .and_raise(Github::InstallationRepositories::Error, "timeout")
+
+      expect(installation.cached_repositories).to eq(installation.accessible_repositories)
+      expect(installation.reload.repositories_synced_at).to be_nil
+    end
+
+    it "does not retry a failed sync until the failure backoff expires" do
+      installation = create(:github_installation, repositories_synced_at: nil)
+
+      allow(Github::AppRegistry).to receive(:configured?).and_return(true)
+      allow(Github::InstallationRepositories).to receive(:fetch)
+        .and_raise(Github::InstallationRepositories::Error, "timeout")
+
+      with_memory_cache do
+        installation.cached_repositories
+        installation.cached_repositories
+      end
+
+      expect(Github::InstallationRepositories).to have_received(:fetch).once
+    end
+  end
+
+  def with_memory_cache
+    original_cache = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    yield
+  ensure
+    Rails.cache = original_cache
+  end
 end

@@ -26,6 +26,22 @@ RSpec.describe "GithubInstallations" do
 
       expect(response).to have_http_status(:ok)
     end
+
+    it "refreshes stale repository caches for the visible repository count" do
+      installation = create(
+        :github_installation,
+        account: account,
+        accessible_repositories: [ repository_cache_entry(123, "acme/first-page") ],
+        repositories_synced_at: nil
+      )
+      stub_installation_repository_sync(installation)
+
+      get github_installation_path(installation)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("acme/second-page")
+      expect(installation.reload.accessible_repositories.size).to eq(2)
+    end
   end
 
   describe "GET /github_installations/:id/repositories" do
@@ -69,6 +85,65 @@ RSpec.describe "GithubInstallations" do
       expect(response).to have_http_status(:ok)
       expect(response.parsed_body.map { |repo| repo.fetch("id") }).to eq([ 456 ])
     end
+
+    it "refreshes stale installation repository caches before rendering options" do
+      installation = create(
+        :github_installation,
+        account: account,
+        accessible_repositories: [ repository_cache_entry(123, "acme/first-page") ],
+        repositories_synced_at: nil
+      )
+
+      stub_installation_repository_sync(installation)
+
+      get repositories_github_installation_path(installation)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.map { |repo| repo.fetch("full_name") }).to eq([
+        "acme/first-page",
+        "acme/second-page"
+      ])
+      expect(installation.reload.accessible_repositories.size).to eq(2)
+      expect(installation.repositories_synced_at).to be_present
+    end
+
+    it "falls back to cached repositories when GitHub refresh fails" do
+      installation = create(
+        :github_installation,
+        account: account,
+        accessible_repositories: [ repository_cache_entry(123, "acme/cached") ],
+        repositories_synced_at: nil
+      )
+
+      stub_failed_installation_repository_sync(installation)
+
+      get repositories_github_installation_path(installation)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.map { |repo| repo.fetch("full_name") }).to eq([ "acme/cached" ])
+      expect(installation.reload.repositories_synced_at).to be_nil
+    end
+  end
+
+  def repository_cache_entry(id, full_name, default_branch: "main")
+    { "id" => id, "full_name" => full_name, "default_branch" => default_branch }
+  end
+
+  def stub_installation_repository_sync(installation)
+    allow(Github::AppRegistry).to receive(:configured?).and_return(true)
+    allow(Github::InstallationRepositories).to receive(:fetch)
+      .with(installation_id: installation.github_installation_id)
+      .and_return([
+        repository_cache_entry(123, "acme/first-page"),
+        repository_cache_entry(456, "acme/second-page", default_branch: "trunk")
+      ])
+  end
+
+  def stub_failed_installation_repository_sync(installation)
+    allow(Github::AppRegistry).to receive(:configured?).and_return(true)
+    allow(Github::InstallationRepositories).to receive(:fetch)
+      .with(installation_id: installation.github_installation_id)
+      .and_raise(Github::InstallationRepositories::Error, "timeout")
   end
 
   describe "GET /github_installations/:id/migrate" do

@@ -29,7 +29,7 @@ class GithubInstallationsController < ApplicationController
     authorize @github_installation, :show?
 
     @projects_using_installation = @github_installation.projects.includes(:created_by).order(created_at: :desc)
-    @accessible_repos = Array(@github_installation.accessible_repositories).map(&:with_indifferent_access)
+    @accessible_repos = Array(@github_installation.cached_repositories).map(&:with_indifferent_access)
     @accessible_repos_count = @accessible_repos.size
   end
 
@@ -119,7 +119,7 @@ class GithubInstallationsController < ApplicationController
   end
 
   def normalized_repositories
-    Array(@github_installation.accessible_repositories).filter_map do |repo|
+    Array(@github_installation.cached_repositories).filter_map do |repo|
       data = repo.with_indifferent_access
       full_name = data[:full_name].presence
       next if full_name.blank?
