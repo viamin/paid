@@ -114,27 +114,12 @@ module Knowledge
 
     def runner_state_for(runner)
       @runner_states ||= {}
-      @runner_states[runner] ||= begin
-        state_name = runner_state_name_for(runner)
-        @user_setting.user
-          .runner_states
-          .find_or_create_by!(runner_name: state_name) { |s|
-            s.circuit_state = "closed"
-            s.failure_count = 0
-          }
-      end
-    end
-
-    # Resolves the RunnerState key for the given runner identifier. Strings
-    # that map to a configured Runner record use that record's state_key so
-    # all state for one runner is grouped together (free-model rotation,
-    # circuit-breaker updates, etc.); bare strings like "claude" or "openai"
-    # use themselves so behavior matches the pre-existing callers.
-    def runner_state_name_for(runner)
-      record = rotation_runner_record(runner)
-      return record.state_key if record
-
-      runner.to_s
+      @runner_states[runner] ||= @user_setting.user
+        .runner_states
+        .find_or_create_by!(runner_name: runner.to_s) { |s|
+          s.circuit_state = "closed"
+          s.failure_count = 0
+        }
     end
 
     # Returns the openrouter_free Runner record for the current user when the

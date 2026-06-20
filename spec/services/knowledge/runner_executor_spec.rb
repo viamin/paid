@@ -275,7 +275,7 @@ RSpec.describe Knowledge::RunnerExecutor do
           "ok"
         end
 
-        runner_state = user.runner_states.find_by(runner_name: openrouter_runner.state_key)
+        runner_state = user.runner_states.find_by(runner_name: Runner::OPENROUTER_FREE_RUNNER_KEY)
         # Recovery snapshot is cleared once restored so a later run does not
         # revert a user's manual edit.
         expect(runner_state.preferred_tier_model_ids).to be_nil
@@ -290,7 +290,7 @@ RSpec.describe Knowledge::RunnerExecutor do
         # An open circuit blocks the full reset in record_success!, so the
         # rotated tier_model_ids must stay in place until recovery completes.
         runner_state = user.runner_states.create!(
-          runner_name: openrouter_runner.state_key,
+          runner_name: Runner::OPENROUTER_FREE_RUNNER_KEY,
           circuit_state: "open",
           circuit_opened_at: 1.minute.ago,
           failure_count: 5
@@ -331,7 +331,7 @@ RSpec.describe Knowledge::RunnerExecutor do
         expect(openrouter_attempts).to eq(2)
         expect(openrouter_runner.reload.tier_model_ids["high"]).to eq(free_model_high_alt.model_id)
 
-        state = user.runner_states.find_by(runner_name: openrouter_runner.state_key)
+        state = user.runner_states.find_by(runner_name: Runner::OPENROUTER_FREE_RUNNER_KEY)
         expect(state.rate_limited_model_ids).to include(free_model_high.model_id, free_model_high_alt.model_id)
       end
 
@@ -359,10 +359,35 @@ RSpec.describe Knowledge::RunnerExecutor do
           "ok"
         end
 
-        state = user.runner_states.find_by(runner_name: openrouter_runner.state_key)
+        state = user.runner_states.find_by(runner_name: Runner::OPENROUTER_FREE_RUNNER_KEY)
         expect(state).to be_present
         expect(state.rate_limited_model_ids).to include(free_model_high.model_id)
         expect(state.rate_limited_until).to be_present
+      end
+
+      it "preserves pre-existing RunnerState keyed by the bare runner_key (no orphaned rows)" do
+        # The Knowledge subsystem (RunnerSelector + RunnerExecutor) has always
+        # keyed the openrouter_free RunnerState by the bare "openrouter_free"
+        # string, never the "runner:<id>" routing key. A failure recorded by
+        # the executor must land on the SAME bare-keyed row so an open circuit
+        # or accumulated failure_count is not silently reset across upgrades.
+        prior_state = user.runner_states.create!(
+          runner_name: Runner::OPENROUTER_FREE_RUNNER_KEY,
+          circuit_state: "closed",
+          failure_count: 2
+        )
+
+        executor = described_class.new(user_setting: user_setting, operation: :chat)
+
+        executor.execute do |runner|
+          raise AgentHarness::Error, "error" if runner == Runner::OPENROUTER_FREE_RUNNER_KEY
+          "ok"
+        end
+
+        expect(prior_state.reload.failure_count).to eq(3)
+        # No routing-key row must be created — state stays on the bare key.
+        expect(user.runner_states.where.not(runner_name: Runner::OPENROUTER_FREE_RUNNER_KEY)
+          .where(runner_name: openrouter_runner.state_key)).not_to exist
       end
     end
   end

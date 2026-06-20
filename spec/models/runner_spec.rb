@@ -1641,7 +1641,7 @@ RSpec.describe Runner do
     end
 
     it "clears the recovery snapshot when the user changes tier_model_ids" do
-      runner_state = user.runner_states.create!(runner_name: runner.state_key)
+      runner_state = user.runner_states.create!(runner_name: Runner::OPENROUTER_FREE_RUNNER_KEY)
       runner_state.record_preferred_tier_model_ids!("high" => free_model.model_id)
 
       other_free = create(:llm_model, :free, model_id: "free-other", tier: "high", capability_score: 6.0)
@@ -1651,7 +1651,7 @@ RSpec.describe Runner do
     end
 
     it "does not clear the snapshot during a system rotation" do
-      runner_state = user.runner_states.create!(runner_name: runner.state_key)
+      runner_state = user.runner_states.create!(runner_name: Runner::OPENROUTER_FREE_RUNNER_KEY)
       runner_state.record_preferred_tier_model_ids!("high" => free_model.model_id)
 
       other_free = create(:llm_model, :free, model_id: "free-other", tier: "high", capability_score: 6.0)

@@ -83,7 +83,7 @@ RSpec.describe FreeModels::Rotation do
         free_model(tier: "mid", capability_score: 5.5, model_id: "mid-other")
         free_model(tier: "mid", capability_score: 5.0, model_id: "mid-extra")
         free_model(tier: "high", capability_score: 9.0, model_id: "high-other")
-        runner.user.runner_states.create!(runner_name: runner.state_key,
+        runner.user.runner_states.create!(runner_name: Runner::OPENROUTER_FREE_RUNNER_KEY,
           metadata: { RunnerState::RATE_LIMITED_MODELS_METADATA_KEY => {
             "high-current" => 5.minutes.from_now.iso8601,
             "high-other" => 5.minutes.from_now.iso8601
@@ -108,7 +108,7 @@ RSpec.describe FreeModels::Rotation do
       before do
         free_model(tier: "high", capability_score: 8.0, model_id: "high-other")
         free_model(tier: "mid", capability_score: 5.0, model_id: "mid-other")
-        runner.user.runner_states.create!(runner_name: runner.state_key,
+        runner.user.runner_states.create!(runner_name: Runner::OPENROUTER_FREE_RUNNER_KEY,
           metadata: { RunnerState::RATE_LIMITED_MODELS_METADATA_KEY => {
             "high-current" => 5.minutes.from_now.iso8601,
             "high-other" => 5.minutes.from_now.iso8601,
@@ -192,7 +192,7 @@ RSpec.describe FreeModels::Rotation do
       before do
         free_model(tier: "high", capability_score: 9.0, model_id: "high-blocked")
         free_model(tier: "high", capability_score: 5.0, model_id: "high-available")
-        runner.user.runner_states.create!(runner_name: runner.state_key,
+        runner.user.runner_states.create!(runner_name: Runner::OPENROUTER_FREE_RUNNER_KEY,
           metadata: { RunnerState::RATE_LIMITED_MODELS_METADATA_KEY => {
             "high-blocked" => 5.minutes.from_now.iso8601
           } })
@@ -212,7 +212,7 @@ RSpec.describe FreeModels::Rotation do
       before { free_model(tier: "high", capability_score: 8.0, model_id: "high-other") }
 
       def runner_state
-        user.runner_states.find_or_create_by!(runner_name: runner.state_key)
+        user.runner_states.find_or_create_by!(runner_name: Runner::OPENROUTER_FREE_RUNNER_KEY)
       end
 
       it "snapshots the original tier_model_ids before the first rotation" do
@@ -235,6 +235,20 @@ RSpec.describe FreeModels::Rotation do
           "high" => "high-current", "mid" => "mid-current", "low" => "low-current"
         )
       end
+
+      it "resets the rotating_tier_models flag so a later user save clears the snapshot" do
+        described_class.call(runner: runner, current_model_id: "high-current",
+          user: user, current_tier: "high")
+        expect(runner.rotating_tier_models?).to be false
+
+        # A subsequent user-initiated tier_model_ids change on the SAME
+        # in-memory runner must clear the recovery snapshot. If the rotation
+        # flag leaked truthy, this save would skip clear_free_model_rotation_snapshot
+        # and leave a stale snapshot that a later recovery could revert.
+        runner.update!(tier_model_ids: runner.tier_model_ids.merge("mid" => "high-other"))
+
+        expect(runner_state.preferred_tier_model_ids).to be_nil
+      end
     end
 
     describe ".restore_preferred!" do
@@ -243,7 +257,7 @@ RSpec.describe FreeModels::Rotation do
       before { free_model(tier: "high", capability_score: 8.0, model_id: "high-other") }
 
       def runner_state
-        user.runner_states.find_or_create_by!(runner_name: runner.state_key)
+        user.runner_states.find_or_create_by!(runner_name: Runner::OPENROUTER_FREE_RUNNER_KEY)
       end
 
       it "restores the original tier_model_ids and clears the snapshot" do
@@ -256,6 +270,15 @@ RSpec.describe FreeModels::Rotation do
         expect(restored).to be true
         expect(runner.reload.tier_model_ids).to eq(tier_model_ids)
         expect(runner_state.preferred_tier_model_ids).to be_nil
+      end
+
+      it "resets the rotating_tier_models flag after restoring" do
+        described_class.call(runner: runner, current_model_id: "high-current",
+          user: user, current_tier: "high")
+
+        described_class.restore_preferred!(runner: runner.reload, user: user)
+
+        expect(runner.rotating_tier_models?).to be false
       end
 
       it "returns false and is a no-op when no snapshot exists" do

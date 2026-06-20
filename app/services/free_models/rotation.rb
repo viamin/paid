@@ -85,6 +85,18 @@ module FreeModels
       runner&.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
     end
 
+    # RunnerState rows for the openrouter_free runner are keyed by the bare
+    # runner_key string ("openrouter_free"), NOT the Runner#state_key
+    # routing key ("runner:<id>"). The Knowledge subsystem (RunnerSelector +
+    # RunnerExecutor) selects and records state against this bare identifier
+    # because UserSetting stores kb_chat_runner/kb_embedding_runner as the
+    # bare runner_key. Keying here by runner_key keeps rotation state on the
+    # same row the executor writes per-model rate limits to, and preserves
+    # any pre-existing circuit-breaker/rate-limit state across the upgrade.
+    def runner_state_name
+      Runner::OPENROUTER_FREE_RUNNER_KEY
+    end
+
     def exhausted_result(previous_model_id: nil)
       Result.new(
         rotated: false,
@@ -169,7 +181,7 @@ module FreeModels
     def find_runner_state
       return nil unless user
 
-      user.runner_states.find_by(runner_name: runner.state_key)
+      user.runner_states.find_by(runner_name: runner_state_name)
     end
 
     def apply_rotation!(tier:, model:)
@@ -178,6 +190,8 @@ module FreeModels
       next_tier_model_ids[tier] = model.model_id
       # Flag the save as a system rotation so the Runner before_save hook
       # does not clear the snapshot we just recorded (see Runner model).
+      # Reset in an ensure so a later save on the same in-memory instance is
+      # not silently treated as a rotation (which would skip snapshot clearing).
       runner.rotating_tier_models = true
       runner.update!(tier_model_ids: next_tier_model_ids)
       # Per-model rate-limit windows are intentionally left intact here. They
@@ -185,6 +199,8 @@ module FreeModels
       # and cleared wholesale only on a successful call (RunnerState#record_success!),
       # so wiping them now would let a just-rate-limited model be re-picked on
       # the next rotation.
+    ensure
+      runner.rotating_tier_models = false
     end
 
     # Snapshots the runner's current tier_model_ids as the recovery point
@@ -197,7 +213,7 @@ module FreeModels
     def snapshot_preferred_tier_model_ids
       return unless user
 
-      runner_state = user.runner_states.find_or_create_by!(runner_name: runner.state_key)
+      runner_state = user.runner_states.find_or_create_by!(runner_name: runner_state_name)
       runner_state.record_preferred_tier_model_ids!(runner.tier_model_ids || {})
     end
 
@@ -212,7 +228,7 @@ module FreeModels
       return false unless runner.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
       return false unless user
 
-      state = user.runner_states.find_by(runner_name: runner.state_key)
+      state = user.runner_states.find_by(runner_name: Runner::OPENROUTER_FREE_RUNNER_KEY)
       return false unless state
 
       snapshot = state.preferred_tier_model_ids
@@ -220,6 +236,10 @@ module FreeModels
       return false unless snapshot.present?
       return false if snapshot == runner.tier_model_ids
 
+      # Flag the save as a system restore so the Runner before_save hook
+      # does not treat the restored tier_model_ids as a user edit. Reset in
+      # an ensure so a later save on the same in-memory instance is not
+      # silently treated as a rotation (which would skip snapshot clearing).
       runner.rotating_tier_models = true
       runner.update!(tier_model_ids: snapshot)
       Rails.logger.info(
@@ -235,6 +255,8 @@ module FreeModels
         error: e.message
       )
       false
+    ensure
+      runner.rotating_tier_models = false if runner
     end
   end
 end

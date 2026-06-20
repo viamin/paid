@@ -789,12 +789,15 @@ class Runner < ApplicationRecord
   # runner, drop any free-model rotation recovery snapshot so a later
   # successful run does not revert their edit back to the pre-rotation
   # mapping. System rotations set +rotating_tier_models+ to skip this.
+  # The snapshot lives on the RunnerState row keyed by the bare runner_key
+  # (matching FreeModels::Rotation and Knowledge::RunnerExecutor), NOT the
+  # routing-key state_key, so the lookup uses the same key that wrote it.
   def clear_free_model_rotation_snapshot
     return unless runner_key == OPENROUTER_FREE_RUNNER_KEY
     return unless will_save_change_to_tier_model_ids?
     return unless user
 
-    state = user.runner_states.find_by(runner_name: state_key)
+    state = user.runner_states.find_by(runner_name: OPENROUTER_FREE_RUNNER_KEY)
     state&.clear_preferred_tier_model_ids!
   end
 
