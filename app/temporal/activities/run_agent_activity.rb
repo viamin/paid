@@ -1414,7 +1414,7 @@ module Activities
       end
 
       # Other execution error
-      raise RunnerExecutionError, "Agent exited with code #{result[:exit_code]}: #{output.truncate(500)}"
+      raise RunnerExecutionError, "Agent exited with code #{result[:exit_code]}#{oom_annotation(result)}: #{output.truncate(500)}"
     rescue Containers::Provision::TimeoutError => e
       # execution_started_at is nil if the timeout fires before execution
       # begins (e.g. during start!/callbacks); recent_timeout_output
@@ -1578,9 +1578,9 @@ module Activities
       end
 
       reason = if sanitized_output.present?
-        "Agent exited with code #{result[:exit_code]}: #{sanitized_output.truncate(500)}"
+        "Agent exited with code #{result[:exit_code]}#{oom_annotation(result)}: #{sanitized_output.truncate(500)}"
       else
-        "No output before exit code #{result[:exit_code]}. Check proxy configuration, auth, and network policy."
+        "No output before exit code #{result[:exit_code]}#{oom_annotation(result)}. Check proxy configuration, auth, and network policy."
       end
       raise_preflight_failure!(agent_run: agent_run, runner: runner, reason: reason)
     rescue Containers::Provision::OutputAbortError => e
@@ -2041,6 +2041,20 @@ module Activities
         agent_run_id: agent_run.id,
         reason: reason
       )
+    end
+
+    # Surfaces a container OOM kill inline in the runner error so the run's
+    # error_message explains a bare exit 137 (cgroup memory limit exceeded)
+    # instead of leaving it cryptic. Returns "" for non-OOM results.
+    def oom_annotation(result)
+      return "" unless result.respond_to?(:[]) && result[:oom_killed]
+
+      limit = result[:memory_limit_bytes].to_i
+      if limit.positive?
+        " (container OOM-killed; memory limit #{(limit / 1024.0**3).round(1)} GB)"
+      else
+        " (container OOM-killed)"
+      end
     end
 
     def raise_preflight_failure!(agent_run:, runner:, reason:)

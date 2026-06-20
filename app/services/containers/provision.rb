@@ -556,11 +556,30 @@ module Containers
         if exit_code == 0
           Result.success(stdout: stdout, stderr: stderr, exit_code: exit_code)
         else
+          # Exit 137 (128 + SIGKILL) on a clean completion almost always means
+          # the cgroup OOM killer fired — the container's memory limit (swap is
+          # disabled) was exceeded. Inspect the container state so an OOM is
+          # recorded distinctly instead of being indistinguishable from an
+          # ordinary non-zero exit. Scoped to 137 so routine non-zero probe
+          # exits (git rev-parse -> 128, test -f -> 1) do not pay for an extra
+          # Docker inspect.
+          oom = exit_code == 137 ? oom_exit_diagnostics : {}
+          if oom[:oom_killed]
+            log_system("container.execute.oom_killed",
+              exit_code: exit_code, duration_ms: elapsed_ms,
+              memory_limit_bytes: oom[:memory_limit_bytes], container_running: oom[:container_running])
+          elsif exit_code == 137
+            log_system("container.execute.sigkill",
+              exit_code: exit_code, duration_ms: elapsed_ms,
+              memory_limit_bytes: oom[:memory_limit_bytes], container_running: oom[:container_running])
+          end
           Result.failure(
             error: "Command exited with code #{exit_code}",
             stdout: stdout,
             stderr: stderr,
-            exit_code: exit_code
+            exit_code: exit_code,
+            oom_killed: oom[:oom_killed] || false,
+            memory_limit_bytes: oom[:memory_limit_bytes]
           )
         end
       rescue OutputAbortError
@@ -725,6 +744,27 @@ module Containers
       container.info["State"]["Running"] == true
     rescue Docker::Error::DockerError
       false
+    end
+
+    # Inspects the container's post-exec state after an exit-137 (SIGKILL) to
+    # determine whether the cgroup OOM killer fired. Docker only sets
+    # State.OOMKilled when the kernel OOM killer killed the container, so it is
+    # the authoritative signal; a bare 137 is otherwise ambiguous. Best-effort —
+    # returns {} when the container is already gone.
+    def oom_exit_diagnostics
+      return {} unless container
+
+      container.refresh!
+      info = container.info || {}
+      state = info["State"] || {}
+      {
+        oom_killed: state["OOMKilled"] == true,
+        container_running: state["Running"],
+        memory_limit_bytes: info.dig("HostConfig", "Memory")
+      }
+    rescue Docker::Error::DockerError => e
+      log_system("container.execute.exit_state_unavailable", error: e.message)
+      {}
     end
 
     def heartbeat_host_path

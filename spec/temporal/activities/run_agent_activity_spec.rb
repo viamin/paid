@@ -3717,6 +3717,7 @@ expect(container_service).to receive(:execute).with(
         )
       end
 
+
       before do
         allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor aider])
         user.runners.find_or_create_by!(runner_key: "cursor")
@@ -3761,6 +3762,28 @@ expect(container_service).to receive(:execute).with(
           hash_including("runner" => "claude_code", "success" => false, "error_type" => "error",
             "error_message" => include("Docker exec error")),
           hash_including("runner" => "cursor", "success" => true)
+        )
+      end
+
+      it "annotates the runner error with the container OOM kill and memory limit" do
+        oom_failure = Containers::Provision::Result.failure(
+          error: "exit 137", stdout: "", stderr: "Killed",
+          exit_code: 137, oom_killed: true, memory_limit_bytes: 4 * 1024 * 1024 * 1024
+        )
+        call_count = 0
+        allow(container_service).to receive(:execute) do |_cmd, **_opts|
+          call_count += 1
+          call_count == 1 ? oom_failure : exec_success
+        end
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:success]).to be true
+        expect(agent_run.reload.runners_attempted).to include(
+          hash_including(
+            "runner" => "claude_code", "success" => false,
+            "error_message" => include("container OOM-killed; memory limit 4.0 GB")
+          )
         )
       end
 
