@@ -28,7 +28,7 @@ jobs:
       && (
         (github.event_name != 'pull_request' && github.event_name != 'pull_request_target')
         || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
-        || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]"]'), github.event.pull_request.user.login)
+        || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
       )
     runs-on: ubuntu-latest
     permissions:
@@ -84,7 +84,7 @@ jobs:
       && (
         (github.event_name != 'pull_request' && github.event_name != 'pull_request_target')
         || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
-        || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]"]'), github.event.pull_request.user.login)
+        || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
       )
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -250,7 +250,7 @@ jobs:
       github.event.action == 'closed'
       && (
         contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
-        || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]"]'), github.event.pull_request.user.login)
+        || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
       )
       && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
