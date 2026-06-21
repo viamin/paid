@@ -11,8 +11,9 @@ module Projects
   # - enhance_issue_needs_input_label_name (e.g. "paid-needs-input")
   # - enhance_issue_enhanced_label_name    (e.g. "paid-enhanced")
   # - recommend_close                      (e.g. "paid-recommend-close"; overridable via
-  #                                         Project#label_for_stage("recommend_close"))
-  # - Priority labels       (P1, P2, P3 by default)
+  #                                        Project#label_for_stage("recommend_close"))
+  # - paused                               (e.g. "paid-paused"; mirrors Issue#paused)
+  # - Priority labels          (P1, P2, P3 by default)
   #
   # @example
   #   result = Projects::EnsureStandardLabels.call(project: project)
@@ -27,6 +28,7 @@ module Projects
       enhance_issue_needs_input: { color: "d876e3", description: "Paid needs answers before enhancing this issue again" },
       enhance_issue_enhanced: { color: "0e8a16", description: "Paid has added implementation context to this issue" },
       recommend_close: { color: "fbca04", description: "Paid ran but produced no PR — human review needed" },
+      paused: { color: "5319e7", description: "Paused in Paid — excluded from issue auto-pick" },
       priority: {
         "P1" => { color: "d93f0b", description: "High priority" },
         "P2" => { color: "ff9800", description: "Medium priority" },
@@ -118,6 +120,12 @@ module Projects
         name: recommend_close_name,
         color: LABEL_DEFINITIONS[:recommend_close][:color],
         description: LABEL_DEFINITIONS[:recommend_close][:description]
+      }
+
+      labels << {
+        name: Issue::PAUSED_LABEL,
+        color: LABEL_DEFINITIONS[:paused][:color],
+        description: LABEL_DEFINITIONS[:paused][:description]
       }
 
       project.effective_priority_labels.each do |tier, label_name|

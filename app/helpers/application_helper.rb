@@ -192,6 +192,21 @@ module ApplicationHelper
     )
   end
 
+  # Confirmation copy for the pause toggle. Issue auto-pick is gated by
+  # `paused`, but PR review/escalation automation is not yet gated (see the
+  # AddPausedToIssues migration comment), so the PR copy must not promise that
+  # automation will stop.
+  def issue_pause_confirm_message(issue)
+    kind = issue.is_pull_request? ? "PR" : "issue"
+    number = issue.github_number
+    label = Issue::PAUSED_LABEL
+    if issue.is_pull_request?
+      "Pause #{kind} ##{number}? Adds a #{label} label on GitHub. PR review automation is not yet gated by pause."
+    else
+      "Pause #{kind} ##{number}? Automation will skip it and a #{label} label is added on GitHub."
+    end
+  end
+
   def issue_lifecycle_legend_tooltip
     legend = ISSUE_LIFECYCLE_DISPLAY.map { |_key, display| "#{display[:emoji]} = #{display[:label]}" }.join("  ·  ")
     tag.span(
