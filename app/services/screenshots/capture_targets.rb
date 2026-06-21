@@ -286,6 +286,7 @@ module Screenshots
       "projects/connector_events_controller.rb" => [ :project_edit ],
       "projects/external_agent_runs_controller.rb" => [ :project_agent_runs ],
       "projects/issue_merge_subscriptions_controller.rb" => [ :project_show ],
+      "projects/issues_controller.rb" => [ :project_show ],
       "projects/interop_settings_controller.rb" => [ :project_edit ],
       "projects/interoperability_imports_controller.rb" => [ :project_edit ],
       "projects/pr_templates_controller.rb" => [ :project_edit ],
@@ -521,6 +522,7 @@ module Screenshots
       _issues _issue _pull_requests _pull_request _knowledge _stats
       _quality_summary _cost_snapshot _agent_runs _agent_run
       _recent_merged_pull_requests _issue_merge_subscription
+      _issue_pause_toggle
     ].freeze
 
     def projects_targets(leaf)
