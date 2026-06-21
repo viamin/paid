@@ -810,6 +810,52 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
     end
 
+    context "when a local unpause is newer than the GitHub reflection" do
+      # The user unpaused from the UI but the label-removal push to GitHub failed.
+      # GitHub still has the label, so desired_paused=true, but the local state
+      # is paused=false with a recent paused_at — the epoch guard should retry
+      # the removal rather than silently re-pausing the issue.
+      let!(:issue) do
+        create(:issue, project: project, github_issue_id: 9404, github_number: 97,
+               labels: [ "paid-build", Issue::PAUSED_LABEL ])
+      end
+
+      let(:github_issue) do
+        OpenStruct.new(
+          id: 9404, number: 97, title: "Unpaused issue", body: "Body", state: "open",
+          labels: [ OpenStruct.new(name: "paid-build"), OpenStruct.new(name: Issue::PAUSED_LABEL) ],
+          pull_request: nil, user: OpenStruct.new(login: "viamin"),
+          created_at: 2.days.ago, updated_at: 1.hour.ago
+        )
+      end
+
+      before do
+        # Local unpause happened after GitHub last updated the issue, so the
+        # still-present label reflects our own (failed) removal, not a user add.
+        issue.update_columns(paused: false, paused_at: 5.minutes.ago)
+        stub_issues_by_label(nil => [ github_issue ])
+        allow(github_client).to receive(:remove_label_from_issue)
+      end
+
+      it "re-removes the label instead of clobbering the local unpause" do
+        activity.execute(project_id: project.id)
+
+        expect(github_client).to have_received(:remove_label_from_issue).with(
+          project.full_name, 97, Issue::PAUSED_LABEL
+        )
+        expect(issue.reload.paused).to be(false)
+      end
+
+      it "keeps paused false when the re-removal fails" do
+        allow(github_client).to receive(:remove_label_from_issue)
+          .and_raise(GithubClient::Error.new("GitHub unavailable"))
+
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload.paused).to be(false)
+      end
+    end
+
     context "when rate limited" do
       before do
         allow(github_client).to receive(:issues).and_raise(

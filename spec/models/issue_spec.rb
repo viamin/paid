@@ -1938,10 +1938,13 @@ RSpec.describe Issue do
     end
 
     it "is a no-op when the project has no configured client" do
-      project_without_client = create(:project)
-      allow(project_without_client).to receive(:client).and_return(nil)
+      # Override the before-block stub so client returns nil. The after_commit
+      # callback accesses `project` via the cached belongs_to association, which
+      # is the same Ruby object as the shared `project` let variable, so this
+      # stub takes effect correctly.
+      allow(project).to receive(:client).and_return(nil)
 
-      issue = create(:issue, project: project_without_client)
+      issue = create(:issue, project: project)
 
       expect { issue.update!(paused: true) }.not_to raise_error
       expect(issue.reload.paused).to be(true)

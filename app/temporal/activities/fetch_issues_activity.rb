@@ -489,6 +489,11 @@ module Activities
           next
         end
 
+        if !currently_paused && desired_paused && recent_local_pause?(issue)
+          re_remove_paused_label(project, issue)
+          next
+        end
+
         issue.update_columns(paused: desired_paused, paused_at: Time.current, updated_at: Time.current)
         changed = true
 
@@ -521,6 +526,25 @@ module Activities
     rescue GithubClient::Error => e
       logger.warn(
         message: "github_sync.paused_label_repush_failed",
+        project_id: project.id,
+        issue_id: issue.id,
+        issue_number: issue.github_number,
+        error: e.message
+      )
+    end
+
+    def re_remove_paused_label(project, issue)
+      project.client&.remove_label_from_issue(project.full_name, issue.github_number, Issue::PAUSED_LABEL)
+
+      logger.info(
+        message: "github_sync.paused_label_reremoved",
+        project_id: project.id,
+        issue_id: issue.id,
+        issue_number: issue.github_number
+      )
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "github_sync.paused_label_reremove_failed",
         project_id: project.id,
         issue_id: issue.id,
         issue_number: issue.github_number,
