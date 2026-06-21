@@ -296,6 +296,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to eq([ "project_show" ])
     end
 
+    it "maps the issue pause toggle partial to the project_show target" do
+      targets = described_class.call(changed_files: [ "app/views/projects/_issue_pause_toggle.html.erb" ])
+
+      expect(targets.map(&:slug)).to eq([ "project_show" ])
+    end
+
     it "maps the account administration view to the account page target" do
       targets = described_class.call(changed_files: [ "app/views/accounts/show.html.erb" ])
 
@@ -338,6 +344,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       targets = described_class.call(changed_files: [ "app/controllers/projects/service_containers_controller.rb" ])
 
       expect(targets.map(&:slug)).to eq([ "project_edit" ])
+    end
+
+    it "maps the issues toggle_pause controller to the project_show target" do
+      targets = described_class.call(changed_files: [ "app/controllers/projects/issues_controller.rb" ])
+
+      expect(targets.map(&:slug)).to eq([ "project_show" ])
     end
 
     it "maps convention settings controller to the convention settings page" do

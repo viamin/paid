@@ -232,7 +232,10 @@ Rails.application.routes.draw do
       controller: "projects/pr_templates"
     resources :project_service_containers, only: [ :create, :destroy ], controller: "projects/service_containers"
     resources :project_mcp_servers, only: [ :create, :destroy ], controller: "projects/mcp_servers"
-    resources :issues, only: [] do
+    resources :issues, only: [], controller: "projects/issues" do
+      member do
+        post :toggle_pause
+      end
       resource :merge_subscription, only: [ :show, :create, :destroy ],
         controller: "projects/issue_merge_subscriptions"
       resource :clarifying_questions, only: [ :show, :create ],
