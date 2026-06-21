@@ -461,6 +461,10 @@ module Activities
     # label push rather than a GitHub-side removal — so re-push instead of
     # unpausing. Updates go through `update_columns` to avoid re-triggering the
     # Issue callback that would redundantly push a label that already matches.
+    # NOTE: Coverage gap — incremental syncs only visit issues whose
+    # `github_updated_at` advanced since `last_issue_sync_at`. A label-only
+    # change that does not bump the issue's `updated_at` timestamp on GitHub
+    # (e.g. due to clock skew) may be missed until the next full sync.
     def sync_paused_state(project, synced_issues)
       open_issues = synced_issues.reject { |data| data[:github_state] == "closed" }
       return false if open_issues.empty?
@@ -508,7 +512,7 @@ module Activities
     def re_push_paused_label(project, issue)
       project.client&.add_labels_to_issue(project.full_name, issue.github_number, [ Issue::PAUSED_LABEL ])
 
-      logger.warn(
+      logger.info(
         message: "github_sync.paused_label_repushed",
         project_id: project.id,
         issue_id: issue.id,

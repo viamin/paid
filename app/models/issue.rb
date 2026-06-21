@@ -132,7 +132,7 @@ class Issue < ApplicationRecord
       .where(issues: { project_id: project.id })
       .select(:issue_id)
 
-    where(project: project, github_state: "open", is_pull_request: false)
+    where(project: project, github_state: "open", is_pull_request: false, paused: false)
       .where.not(id: blocked_by_local_open)
       .where.not(id: blocked_by_local_deployment_pending)
       .where.not(id: blocked_by_external)
