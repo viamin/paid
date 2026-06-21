@@ -542,6 +542,8 @@ module Activities
         issue_id: issue.id,
         issue_number: issue.github_number
       )
+    rescue GithubClient::NotFoundError
+      # label was already absent — desired state achieved, no action needed
     rescue GithubClient::Error => e
       logger.warn(
         message: "github_sync.paused_label_reremove_failed",

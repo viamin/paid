@@ -1937,6 +1937,20 @@ RSpec.describe Issue do
       end
     end
 
+    it "silently succeeds when unpausing and the label is already absent (404)" do
+      allow(github_client).to receive(:remove_label_from_issue)
+        .and_raise(GithubClient::NotFoundError.new("Label not found"))
+      allow(Rails.logger).to receive(:warn)
+
+      issue = create(:issue, project: project, github_number: 42, paused: true)
+
+      expect { issue.update!(paused: false) }.not_to raise_error
+
+      expect(issue.reload.paused).to be(false)
+      expect(Rails.logger).not_to have_received(:warn)
+    end
+
+
     it "is a no-op when the project has no configured client" do
       # Override the before-block stub so client returns nil. The after_commit
       # callback accesses `project` via the cached belongs_to association, which

@@ -539,6 +539,10 @@ class Issue < ApplicationRecord
     else
       client.remove_label_from_issue(project.full_name, github_number, PAUSED_LABEL)
     end
+  rescue GithubClient::NotFoundError
+    # Removing a label that is already absent — desired state achieved.
+    # Only suppress when unpausing; a 404 on add_labels_to_issue is unexpected.
+    raise if paused
   rescue GithubClient::Error => e
     Rails.logger.warn(
       message: "github_sync.sync_paused_label_failed",

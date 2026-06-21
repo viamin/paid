@@ -854,6 +854,15 @@ RSpec.describe Activities::FetchIssuesActivity do
 
         expect(issue.reload.paused).to be(false)
       end
+
+      it "silently succeeds when the label is already absent on GitHub (404)" do
+        allow(github_client).to receive(:remove_label_from_issue)
+          .and_raise(GithubClient::NotFoundError.new("Label not found"))
+
+        expect { activity.execute(project_id: project.id) }.not_to raise_error
+
+        expect(issue.reload.paused).to be(false)
+      end
     end
 
     context "when rate limited" do
