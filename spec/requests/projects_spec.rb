@@ -1797,6 +1797,130 @@ RSpec.describe "Projects" do
     end
   end
 
+  describe "POST /projects/:project_id/issues/:id/toggle_pause" do
+    let(:project) { create(:project, account: account, github_token: github_token) }
+
+    def stub_github_client
+      github_client = instance_double(GithubClient)
+      allow(GithubClient).to receive(:new).and_return(github_client)
+      allow(github_client).to receive(:add_labels_to_issue)
+      allow(github_client).to receive(:remove_label_from_issue)
+      github_client
+    end
+
+    context "when not authenticated" do
+      it "redirects to the sign in page" do
+        issue = create(:issue, project: project)
+        post toggle_pause_project_issue_path(project, issue)
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
+
+    context "when authenticated as owner" do
+      before { sign_in user }
+
+      it "pauses the issue when currently unpaused" do
+        stub_github_client
+        issue = create(:issue, project: project, paused: false)
+
+        post toggle_pause_project_issue_path(project, issue)
+
+        expect(issue.reload.paused).to be true
+      end
+
+      it "pushes the paid-paused label to GitHub (App -> GitHub direction)" do
+        github_client = stub_github_client
+        issue = create(:issue, project: project, github_number: 42, paused: false)
+
+        post toggle_pause_project_issue_path(project, issue)
+
+        expect(github_client).to have_received(:add_labels_to_issue).with(
+          project.full_name, 42, [ Issue::PAUSED_LABEL ]
+        )
+      end
+
+      it "removes the paid-paused label when unpausing" do
+        github_client = stub_github_client
+        issue = create(:issue, project: project, github_number: 43, paused: true)
+
+        post toggle_pause_project_issue_path(project, issue)
+
+        expect(github_client).to have_received(:remove_label_from_issue).with(
+          project.full_name, 43, Issue::PAUSED_LABEL
+        )
+        expect(issue.reload.paused).to be false
+      end
+
+      it "stamps the sync epoch when pausing from the UI" do
+        stub_github_client
+        issue = create(:issue, project: project, paused: false)
+
+        freeze_time do
+          post toggle_pause_project_issue_path(project, issue)
+          expect(issue.reload.paused_at).to eq(Time.current)
+        end
+      end
+
+      it "works for pull requests as well as issues" do
+        stub_github_client
+        pr = create(:issue, :pull_request, project: project, paused: false)
+
+        post toggle_pause_project_issue_path(project, pr)
+
+        expect(pr.reload.paused).to be true
+      end
+
+      it "redirects to the project for HTML requests" do
+        stub_github_client
+        issue = create(:issue, project: project)
+
+        post toggle_pause_project_issue_path(project, issue)
+
+        expect(response).to redirect_to(project_path(project, anchor: "issue_#{issue.id}"))
+      end
+
+      it "responds with turbo_stream when requested" do
+        stub_github_client
+        issue = create(:issue, project: project, paused: false)
+
+        post toggle_pause_project_issue_path(project, issue),
+          headers: { "Accept" => "text/vnd.turbo-stream.html" }
+
+        expect(response.media_type).to eq("text/vnd.turbo-stream.html")
+        expect(response.body).to include("turbo-stream")
+        expect(response.body).to include("pause_toggle_issue_#{issue.id}")
+        expect(response.body).to include("Resume")
+      end
+
+      it "does not toggle issues belonging to other projects" do
+        stub_github_client
+        other_project = create(:project, account: account, github_token: github_token)
+        issue = create(:issue, project: other_project, paused: false)
+
+        post toggle_pause_project_issue_path(project, issue)
+
+        expect(response).to have_http_status(:not_found)
+        expect(issue.reload.paused).to be false
+      end
+    end
+
+    context "when authenticated as viewer" do
+      let(:viewer_user) { create(:user, :viewer, account: account) }
+
+      before { sign_in viewer_user }
+
+      it "redirects with authorization error" do
+        stub_github_client
+        issue = create(:issue, project: project)
+
+        post toggle_pause_project_issue_path(project, issue)
+
+        expect(response).to redirect_to(root_path)
+        expect(flash[:alert]).to include("not authorized")
+      end
+    end
+  end
+
   describe "POST /projects/:id/quality_resume" do
     context "when not authenticated" do
       it "redirects to the sign in page" do

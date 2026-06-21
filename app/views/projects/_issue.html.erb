@@ -29,6 +29,7 @@
   </div>
   <div class="ml-4 flex flex-shrink-0 items-center space-x-2">
     <%= issue_lifecycle_badge(local_assigns.fetch(:lifecycle_status, :eligible)) %>
+    <%= render "projects/issue_pause_toggle", issue: issue, project: project %>
     <% if issue.source == Issue::GITHUB_SOURCE %>
       <% subscription_locals = { issue: issue, project: project } %>
       <% if local_assigns.key?(:merge_notification_issue_ids) %>
