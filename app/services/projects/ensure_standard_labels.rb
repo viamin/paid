@@ -28,7 +28,7 @@ module Projects
       enhance_issue_needs_input: { color: "d876e3", description: "Paid needs answers before enhancing this issue again" },
       enhance_issue_enhanced: { color: "0e8a16", description: "Paid has added implementation context to this issue" },
       recommend_close: { color: "fbca04", description: "Paid ran but produced no PR — human review needed" },
-      paused: { color: "5319e7", description: "Paused in Paid — automation will not pick this up" },
+      paused: { color: "5319e7", description: "Paused in Paid — excluded from issue auto-pick" },
       priority: {
         "P1" => { color: "d93f0b", description: "High priority" },
         "P2" => { color: "ff9800", description: "Medium priority" },

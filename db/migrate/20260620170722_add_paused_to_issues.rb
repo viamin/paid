@@ -7,7 +7,7 @@ class AddPausedToIssues < ActiveRecord::Migration[8.1]
     # state last transitioned (from either the UI or GitHub) so the
     # bidirectional sync can reject stale/out-of-order events.
     add_column :issues, :paused, :boolean, default: false, null: false,
-      comment: "When true, automation will not pick up this issue/PR. Mirrors the paid-paused GitHub label."
+      comment: "When true, mirrors the paid-paused GitHub label and excludes the issue from auto-pick. PR review/escalation automation is not yet gated by this flag."
     add_column :issues, :paused_at, :datetime, comment: "Sync epoch: records when the pause state last transitioned (from UI or GitHub) to resolve bidirectional sync ordering."
   end
 end

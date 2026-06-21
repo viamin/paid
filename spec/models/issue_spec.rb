@@ -1963,5 +1963,16 @@ RSpec.describe Issue do
       expect { issue.update!(paused: true) }.not_to raise_error
       expect(issue.reload.paused).to be(true)
     end
+
+    it "does not push a label for synthetic code-scanning issues (no backing GitHub issue)" do
+      issue = create(:issue, project: project,
+        source: described_class::SYNTHETIC_CODE_SCANNING_SOURCE,
+        github_number: 200_000_010)
+
+      issue.update!(paused: true)
+
+      expect(github_client).not_to have_received(:add_labels_to_issue)
+      expect(issue.reload.paused).to be(true)
+    end
   end
 end

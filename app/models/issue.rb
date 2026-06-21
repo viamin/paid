@@ -526,10 +526,14 @@ class Issue < ApplicationRecord
   # Mirrors the new `paused` value onto GitHub by adding/removing the
   # `paid-paused` label. No-op when there is no project client (e.g. a
   # project without a configured GitHub credential); the next sync then
-  # reconciles the label from the GitHub side.
+  # reconciles the label from the GitHub side. Also a no-op for synthetic
+  # issues (code-scanning/Dependabot alerts): those have a synthetic
+  # github_number with no backing GitHub issue, so pushing a label would
+  # 404. The local `paused` flag still excludes them from auto-pick.
   def sync_paused_label_to_github
     return if destroyed?
     return unless github_number
+    return unless source == GITHUB_SOURCE
 
     client = project&.client
     return unless client

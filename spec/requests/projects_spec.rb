@@ -1870,6 +1870,20 @@ RSpec.describe "Projects" do
         expect(pr.reload.paused).to be true
       end
 
+      it "does not 500 when pausing a synthetic code-scanning issue (no GitHub backing)" do
+        github_client = stub_github_client
+        issue = create(:issue, project: project,
+          source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE,
+          github_number: 200_000_010,
+          paused: false)
+
+        post toggle_pause_project_issue_path(project, issue)
+
+        expect(response).to redirect_to(project_path(project, anchor: "issue_#{issue.id}"))
+        expect(issue.reload.paused).to be true
+        expect(github_client).not_to have_received(:add_labels_to_issue)
+      end
+
       it "redirects to the project for HTML requests" do
         stub_github_client
         issue = create(:issue, project: project)

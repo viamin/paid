@@ -1168,7 +1168,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_21_003413) do
     t.datetime "operational_failure_reset_at"
     t.string "paid_state", default: "new", null: false
     t.bigint "parent_issue_id"
-    t.boolean "paused", default: false, null: false, comment: "When true, automation will not pick up this issue/PR. Mirrors the paid-paused GitHub label."
+    t.boolean "paused", default: false, null: false, comment: "When true, mirrors the paid-paused GitHub label and excludes the issue from auto-pick. PR review/escalation automation is not yet gated by this flag."
     t.datetime "paused_at", comment: "Sync epoch: records when the pause state last transitioned (from UI or GitHub) to resolve bidirectional sync ordering."
     t.string "pr_escalation_reason", comment: "Machine-readable cause for the current PR escalation so only operational outages can auto-dismiss."
     t.integer "pr_followup_count", default: 0, null: false
