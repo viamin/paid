@@ -382,16 +382,29 @@ module Models
         model = LlmModel.find_or_initialize_by(model_id: snapshot_attrs[:model_id])
         model.assign_attributes(merged_attributes(snapshot_attrs, registry_models))
         model.tier ||= snapshot_attrs[:tier]
+        model.active = true
         model.save!
         synced += 1
       end
 
+      retired = retire_stale_seeded_models
+
       TokenUsageTracker.clear_model_cache!
-      Rails.logger.info(message: "model_registry.seed_completed", models_synced: synced)
+      Rails.logger.info(message: "model_registry.seed_completed", models_synced: synced, models_retired: retired)
       synced
     end
 
     private
+
+    def retire_stale_seeded_models
+      desired_ids = KNOWN_MODELS.filter_map { |attrs| attrs[:model_id] }
+      retired = 0
+      LlmModel.where(catalog_source: "seeded").where.not(model_id: desired_ids).active.find_each do |model|
+        model.update!(active: false)
+        retired += 1
+      end
+      retired
+    end
 
     def merged_attributes(snapshot_attrs, registry_models)
       snapshot_attrs.except(:tier).merge(registry_attributes_for(snapshot_attrs, registry_models).compact)

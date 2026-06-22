@@ -134,6 +134,51 @@ RSpec.describe Models::SeedKnownModels do
 
       expect(existing.reload.tier).to eq("mid")
     end
+
+    it "retires seeded catalog rows that have dropped out of KNOWN_MODELS" do
+      stale = LlmModel.create!(
+        model_id: "claude-sonnet-4-7",
+        display_name: "Claude Sonnet 4.7",
+        provider: "anthropic",
+        category: "coding",
+        catalog_source: "seeded",
+        active: true
+      )
+
+      described_class.call
+
+      expect(stale.reload.active).to be(false)
+    end
+
+    it "leaves manually managed catalog rows active when they fall outside KNOWN_MODELS" do
+      manual = LlmModel.create!(
+        model_id: "custom-internal-model",
+        display_name: "Custom",
+        provider: "openai",
+        category: "coding",
+        catalog_source: "manual",
+        active: true
+      )
+
+      described_class.call
+
+      expect(manual.reload.active).to be(true)
+    end
+
+    it "reactivates seeded rows that are back in KNOWN_MODELS" do
+      model = LlmModel.create!(
+        model_id: "gpt-5.1",
+        display_name: "GPT-5.1",
+        provider: "openai",
+        category: "coding",
+        catalog_source: "seeded",
+        active: false
+      )
+
+      described_class.call
+
+      expect(model.reload.active).to be(true)
+    end
   end
 
   def registry_model(id:, name: id, provider:, family: "test-family", context_window: 123_456,
