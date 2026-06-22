@@ -688,6 +688,183 @@ RSpec.describe Activities::FetchIssuesActivity do
       end
     end
 
+    context "when the paid-paused label is added on GitHub" do
+      let!(:issue) do
+        create(:issue, project: project, github_issue_id: 9401, github_number: 94,
+               labels: [ "paid-build" ])
+      end
+
+      let(:github_issue) do
+        OpenStruct.new(
+          id: 9401, number: 94, title: "Paused issue", body: "Body", state: "open",
+          labels: [ OpenStruct.new(name: "paid-build"), OpenStruct.new(name: Issue::PAUSED_LABEL) ],
+          pull_request: nil, user: OpenStruct.new(login: "viamin"),
+          created_at: 2.days.ago, updated_at: 5.minutes.ago
+        )
+      end
+
+      before do
+        stub_issues_by_label(nil => [ github_issue ])
+      end
+
+      it "sets paused to true and stamps the sync epoch" do
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload.paused).to be(true)
+        expect(issue.reload.paused_at).not_to be_nil
+      end
+
+      it "does not redundantly push the label (it already matches GitHub)" do
+        allow(github_client).to receive(:add_labels_to_issue)
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).not_to have_received(:add_labels_to_issue)
+      end
+
+      it "leaves paused untouched when it already matches" do
+        issue.update_columns(paused: true, paused_at: 1.hour.ago)
+
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload.paused).to be(true)
+      end
+
+      it "does not sync paused state for closed issues" do
+        github_issue.state = "closed"
+
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload.paused).to be(false)
+      end
+    end
+
+    context "when the paid-paused label is removed on GitHub" do
+      let!(:issue) do
+        create(:issue, project: project, github_issue_id: 9402, github_number: 95,
+               labels: [ "paid-build", Issue::PAUSED_LABEL ])
+      end
+
+      let(:github_issue) do
+        OpenStruct.new(
+          id: 9402, number: 95, title: "Unpaused issue", body: "Body", state: "open",
+          labels: [ OpenStruct.new(name: "paid-build") ],
+          pull_request: nil, user: OpenStruct.new(login: "viamin"),
+          created_at: 2.days.ago, updated_at: 5.minutes.ago
+        )
+      end
+
+      before do
+        # Set up a paused state that predates the GitHub update so the epoch
+        # guard does not treat this as a failed local push.
+        issue.update_columns(paused: true, paused_at: 5.hours.ago)
+        stub_issues_by_label(nil => [ github_issue ])
+      end
+
+      it "sets paused to false when the label is gone" do
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload.paused).to be(false)
+      end
+    end
+
+    context "when a local pause is newer than the GitHub reflection" do
+      let!(:issue) do
+        create(:issue, project: project, github_issue_id: 9403, github_number: 96,
+               labels: [ "paid-build", Issue::PAUSED_LABEL ])
+      end
+
+      let(:github_issue) do
+        OpenStruct.new(
+          id: 9403, number: 96, title: "Paused issue", body: "Body", state: "open",
+          labels: [ OpenStruct.new(name: "paid-build") ],
+          pull_request: nil, user: OpenStruct.new(login: "viamin"),
+          created_at: 2.days.ago, updated_at: 1.hour.ago
+        )
+      end
+
+      before do
+        # Local pause happened after GitHub last updated the issue, so the
+        # missing label reflects our own (failed) push, not a user removal.
+        issue.update_columns(paused: true, paused_at: 5.minutes.ago)
+        stub_issues_by_label(nil => [ github_issue ])
+        allow(github_client).to receive(:add_labels_to_issue)
+      end
+
+      it "re-pushes the label instead of clobbering the local pause" do
+        activity.execute(project_id: project.id)
+
+        expect(github_client).to have_received(:add_labels_to_issue).with(
+          project.full_name, 96, [ Issue::PAUSED_LABEL ]
+        )
+        expect(issue.reload.paused).to be(true)
+      end
+
+      it "keeps paused true when the re-push fails" do
+        allow(github_client).to receive(:add_labels_to_issue)
+          .and_raise(GithubClient::Error.new("GitHub unavailable"))
+
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload.paused).to be(true)
+      end
+    end
+
+    context "when a local unpause is newer than the GitHub reflection" do
+      # The user unpaused from the UI but the label-removal push to GitHub failed.
+      # GitHub still has the label, so desired_paused=true, but the local state
+      # is paused=false with a recent paused_at — the epoch guard should retry
+      # the removal rather than silently re-pausing the issue.
+      let!(:issue) do
+        create(:issue, project: project, github_issue_id: 9404, github_number: 97,
+               labels: [ "paid-build", Issue::PAUSED_LABEL ])
+      end
+
+      let(:github_issue) do
+        OpenStruct.new(
+          id: 9404, number: 97, title: "Unpaused issue", body: "Body", state: "open",
+          labels: [ OpenStruct.new(name: "paid-build"), OpenStruct.new(name: Issue::PAUSED_LABEL) ],
+          pull_request: nil, user: OpenStruct.new(login: "viamin"),
+          created_at: 2.days.ago, updated_at: 1.hour.ago
+        )
+      end
+
+      before do
+        # Local unpause happened after GitHub last updated the issue, so the
+        # still-present label reflects our own (failed) removal, not a user add.
+        issue.update_columns(paused: false, paused_at: 5.minutes.ago)
+        stub_issues_by_label(nil => [ github_issue ])
+        allow(github_client).to receive(:remove_label_from_issue)
+      end
+
+      it "re-removes the label instead of clobbering the local unpause" do
+        activity.execute(project_id: project.id)
+
+        expect(github_client).to have_received(:remove_label_from_issue).with(
+          project.full_name, 97, Issue::PAUSED_LABEL
+        )
+        expect(issue.reload.paused).to be(false)
+      end
+
+      it "keeps paused false when the re-removal fails" do
+        allow(github_client).to receive(:remove_label_from_issue)
+          .and_raise(GithubClient::Error.new("GitHub unavailable"))
+
+        activity.execute(project_id: project.id)
+
+        expect(issue.reload.paused).to be(false)
+      end
+
+      it "silently succeeds when the label is already absent on GitHub (404)" do
+        allow(github_client).to receive(:remove_label_from_issue)
+          .and_raise(GithubClient::NotFoundError.new("Label not found"))
+
+        expect { activity.execute(project_id: project.id) }.not_to raise_error
+
+        expect(issue.reload.paused).to be(false)
+      end
+    end
+
     context "when rate limited" do
       before do
         allow(github_client).to receive(:issues).and_raise(

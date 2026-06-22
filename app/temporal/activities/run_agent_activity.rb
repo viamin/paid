@@ -578,14 +578,25 @@ module Activities
               **resolved_run_info
             )
 
-            if container_dead_after_exec_error?(agent_run, e)
-              logger.error(
-                message: "agent_execution.container_dead_breaking_runner_loop",
-                agent_run_id: agent_run.id,
-                container_id: agent_run.container_id,
-                error: e.message
+            # A dead/missing container would poison every remaining runner with
+            # "No container provisioned". This happens when the failure killed the
+            # container outright — e.g. an OOM kill during preflight, which Docker
+            # surfaces as exit code 137 (SIGKILL) rather than a "not running" exec
+            # error, so the message-based dead-container heuristic does not catch
+            # it. Re-provision fresh infra before falling through; break when the
+            # reprovision fails so the run fails cleanly instead of burning the
+            # remaining runners against a container that no longer exists. Only
+            # bother when a fallback actually remains — otherwise the loop is
+            # about to end and the live container is left for normal cleanup.
+            fallback_remaining = runners[(index + 1)..].to_a
+            if fallback_remaining.any? && container_unavailable_for_fallback?(agent_run)
+              break unless recover_container_for_fallback!(
+                agent_run: agent_run,
+                runner: runner,
+                error_type: "error",
+                error_message: e.message,
+                fallback_remaining: fallback_remaining
               )
-              break
             end
           end
 
@@ -2889,16 +2900,6 @@ module Activities
         reprovision_error: e.message
       )
       false
-    end
-
-    def container_dead_after_exec_error?(agent_run, error)
-      return false unless container_not_running_error?(error.message)
-      return false if agent_run.container_id.blank?
-
-      container_service = reconnect_container(agent_run) rescue nil
-      return false unless container_service
-
-      !container_service.container_running?
     end
 
     def container_unavailable_for_fallback?(agent_run)

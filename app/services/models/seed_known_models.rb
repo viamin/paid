@@ -321,6 +321,22 @@ module Models
       # cause model selection to route agent runs there, which would fail at
       # execution. Re-evaluate if Google exposes it on the standard REST surface.
       {
+        model_id: "gemini-2.5-pro",
+        display_name: "Gemini 2.5 Pro",
+        provider: "google",
+        family: "gemini-2",
+        category: "coding",
+        context_window: 1_000_000,
+        max_output_tokens: 65_536,
+        input_cost_per_million: 1.25,
+        output_cost_per_million: 10.0,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 8.0,
+        tier: "mid"
+      },
+      {
         model_id: "gemini-3.1-flash-lite",
         display_name: "Gemini 3.1 Flash Lite",
         provider: "google",
@@ -350,22 +366,6 @@ module Models
         supports_tools: true,
         supports_json_output: true,
         capability_score: 8.2,
-        tier: "mid"
-      },
-      {
-        model_id: "gemini-2.5-pro",
-        display_name: "Gemini 2.5 Pro",
-        provider: "google",
-        family: "gemini-2",
-        category: "coding",
-        context_window: 1_000_000,
-        max_output_tokens: 65_536,
-        input_cost_per_million: 1.25,
-        output_cost_per_million: 10.0,
-        supports_vision: true,
-        supports_tools: true,
-        supports_json_output: true,
-        capability_score: 8.0,
         tier: "mid"
       }
     ].freeze

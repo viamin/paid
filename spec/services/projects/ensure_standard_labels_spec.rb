@@ -47,7 +47,7 @@ RSpec.describe Projects::EnsureStandardLabels do
         result = described_class.call(project: project)
 
         expect(result.created).to contain_exactly("paid-generated", "paid-automation",
-          "paid-needs-input", "paid-enhanced", "paid-recommend-close",
+          "paid-needs-input", "paid-enhanced", "paid-recommend-close", "paid-paused",
           "P1", "P2", "P3")
         expect(result.existing).to be_empty
         expect(result.divergent).to be_empty
@@ -63,6 +63,7 @@ RSpec.describe Projects::EnsureStandardLabels do
           "paid-needs-input" => { color: "d876e3", description: "Paid needs answers before enhancing this issue again" },
           "paid-enhanced" => { color: "0e8a16", description: "Paid has added implementation context to this issue" },
           "paid-recommend-close" => { color: "fbca04", description: "Paid ran but produced no PR — human review needed" },
+          "paid-paused" => { color: "5319e7", description: "Paused in Paid — excluded from issue auto-pick" },
           "P1" => { color: "d93f0b", description: "High priority" },
           "P2" => { color: "ff9800", description: "Medium priority" },
           "P3" => { color: "fbca04", description: "Low priority" }
@@ -84,6 +85,7 @@ RSpec.describe Projects::EnsureStandardLabels do
           make_label("paid-needs-input", color: "d876e3", description: "Paid needs answers before enhancing this issue again"),
           make_label("paid-enhanced", color: "0e8a16", description: "Paid has added implementation context to this issue"),
           make_label("paid-recommend-close", color: "fbca04", description: "Paid ran but produced no PR — human review needed"),
+          make_label("paid-paused", color: "5319e7", description: "Paused in Paid — excluded from issue auto-pick"),
           make_label("P1", color: "d93f0b", description: "High priority"),
           make_label("P2", color: "ff9800", description: "Medium priority"),
           make_label("P3", color: "fbca04", description: "Low priority")
@@ -95,7 +97,7 @@ RSpec.describe Projects::EnsureStandardLabels do
 
         expect(result.created).to be_empty
         expect(result.existing).to contain_exactly("paid-generated", "paid-automation",
-          "paid-needs-input", "paid-enhanced", "paid-recommend-close",
+          "paid-needs-input", "paid-enhanced", "paid-recommend-close", "paid-paused",
           "P1", "P2", "P3")
         expect(result.divergent).to be_empty
         expect(result.errors).to be_empty
@@ -110,6 +112,7 @@ RSpec.describe Projects::EnsureStandardLabels do
           make_label("paid-needs-input", color: "d876e3", description: "Paid needs answers before enhancing this issue again"),
           make_label("paid-enhanced", color: "0e8a16", description: "Paid has added implementation context to this issue"),
           make_label("paid-recommend-close", color: "fbca04", description: "Paid ran but produced no PR — human review needed"),
+          make_label("paid-paused", color: "5319e7", description: "Paused in Paid — excluded from issue auto-pick"),
           make_label("P1", color: "000000", description: "High priority"),
           make_label("P2", color: "ff9800", description: "Medium priority"),
           make_label("P3", color: "fbca04", description: "Low priority")
@@ -137,7 +140,7 @@ RSpec.describe Projects::EnsureStandardLabels do
       it "records permission errors for each label" do
         result = described_class.call(project: project)
 
-        expect(result.errors.size).to eq(8)
+        expect(result.errors.size).to eq(9)
         result.errors.each do |err|
           expect(err[:error]).to include("Insufficient permissions")
         end
@@ -211,6 +214,7 @@ RSpec.describe Projects::EnsureStandardLabels do
           make_label("PAID-NEEDS-INPUT", color: "d876e3", description: "Paid needs answers before enhancing this issue again"),
           make_label("PAID-ENHANCED", color: "0e8a16", description: "Paid has added implementation context to this issue"),
           make_label("PAID-RECOMMEND-CLOSE", color: "fbca04", description: "Paid ran but produced no PR — human review needed"),
+          make_label("PAID-PAUSED", color: "5319e7", description: "Paused in Paid — excluded from issue auto-pick"),
           make_label("p1", color: "d93f0b", description: "High priority"),
           make_label("p2", color: "ff9800", description: "Medium priority"),
           make_label("p3", color: "fbca04", description: "Low priority")
@@ -221,7 +225,7 @@ RSpec.describe Projects::EnsureStandardLabels do
         result = described_class.call(project: project)
 
         expect(result.created).to be_empty
-        expect(result.existing.size).to eq(8)
+        expect(result.existing.size).to eq(9)
       end
     end
 
