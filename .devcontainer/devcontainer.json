@@ -66,12 +66,10 @@
     // GitHub CLI Extensions - Share extensions between host and container
     "source=${localEnv:HOME}/.local/share/gh,target=/home/vscode/.local/share/gh,type=bind,consistency=cached"
   ],
-  // Use 'forwardPorts' to make a list of ports inside the container available locally.
-  // Note: If you need to expose port 3000, prefer using compose.yaml `ports` instead of
-  // forwardPorts, because forwardPorts binds to 127.0.0.1 which blocks Tailscale tunnel access.
-  "forwardPorts": [
-    8080
-  ],
+  // Host-accessible app ports are published in compose.yaml instead of
+  // forwardPorts because forwardPorts binds to 127.0.0.1, which blocks
+  // Tailscale tunnel access and would bypass the local port overrides in
+  // .devcontainer/.env.
   // Configure tool-specific properties.
   // "customizations": {},
   // Uncomment to connect as root instead. More info: https://containers.dev/implementors/json_reference/#remoteUser.
@@ -184,6 +182,9 @@
         "remote.autoForwardPorts": false,
         "remote.portsAttributes": {
           "3000": {
+            "onAutoForward": "ignore"
+          },
+          "5000": {
             "onAutoForward": "ignore"
           },
           "*": {

@@ -30,12 +30,16 @@ services:
     # Use a non-root user for all processes.
     user: vscode
 
-    # Expose port 3000 for external access (e.g., Tailscale)
+    # Expose Rails for external access (e.g., Tailscale).
+    # Override the app/host port in .devcontainer/.env.
     ports:
-    - "3000:3000"
+    - "${PAID_WEB_PORT:-3000}:${PAID_WEB_PORT:-3000}"
+    environment:
+      PORT: "${PAID_WEB_PORT:-3000}"
+      PAID_PROXY_PORT: "${PAID_WEB_PORT:-3000}"
+      PAID_WEB_PORT: "${PAID_WEB_PORT:-3000}"
+      PAID_TEMPORAL_UI_PORT: "${PAID_TEMPORAL_UI_PORT:-8080}"
 
-    # Use "forwardPorts" in **devcontainer.json** to forward an app port locally.
-    # (Adding the "ports" property to this file will not forward from a Codespace.)
     depends_on:
       postgres:
         condition: service_healthy
@@ -101,9 +105,9 @@ services:
         condition: service_healthy
     environment:
       - TEMPORAL_ADDRESS=temporal:7233
-      - TEMPORAL_CORS_ORIGINS=http://localhost:3000
+      - TEMPORAL_CORS_ORIGINS=http://localhost:${PAID_WEB_PORT:-3000}
     ports:
-    - "8080:8080"
+    - "${PAID_TEMPORAL_UI_PORT:-8080}:8080"
     networks:
     - default
 
