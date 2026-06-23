@@ -20,6 +20,12 @@ class GithubInstallation < ApplicationRecord
     suspended_at.nil? && revoked_at.nil?
   end
 
+  def display_name
+    return "#{account_login} (#{github_installation_id})" if account_login.present?
+
+    "Installation #{github_installation_id}"
+  end
+
   def suspended?
     suspended_at.present?
   end

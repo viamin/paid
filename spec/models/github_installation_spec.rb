@@ -55,6 +55,26 @@ RSpec.describe GithubInstallation do
     end
   end
 
+  describe "#display_name" do
+    it "includes the account login and installation id" do
+      install = build(:github_installation, account_login: "acme", github_installation_id: 12345)
+
+      expect(install.display_name).to eq("acme (12345)")
+    end
+
+    it "falls back to the installation id when the login is missing" do
+      install = build(:github_installation, account_login: nil, github_installation_id: 12345)
+
+      expect(install.display_name).to eq("Installation 12345")
+    end
+
+    it "falls back to the installation id when the login is blank" do
+      install = build(:github_installation, account_login: "", github_installation_id: 12345)
+
+      expect(install.display_name).to eq("Installation 12345")
+    end
+  end
+
   describe "#covers_repository?" do
     it "returns true when the repository is explicitly accessible" do
       installation = build(:github_installation, accessible_repositories: [ { "full_name" => "acme/widgets" } ])
