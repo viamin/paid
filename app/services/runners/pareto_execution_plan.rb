@@ -6,7 +6,7 @@ module Runners
 
     DEFAULT_DATA_CLASSIFICATION = "internal"
     OPENROUTER_PROVIDER_KEY = "openrouter"
-    PARETO_MODEL_ID = "openrouter/pareto"
+    PARETO_MODEL_ID = "openrouter/pareto-code"
 
     def self.call(...)
       new(...).call

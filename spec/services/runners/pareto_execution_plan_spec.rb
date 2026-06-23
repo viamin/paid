@@ -22,7 +22,7 @@ RSpec.describe Runners::ParetoExecutionPlan do
       result = described_class.call(runner: runner, project: project)
 
       expect(result.config).to eq(
-        model: "openrouter/pareto",
+        model: "openrouter/pareto-code",
         base_url: "https://openrouter.ai/api/v1",
         api_key_env: "OPENROUTER_API_KEY",
         provider_routing: { data_collection: "allow" }
