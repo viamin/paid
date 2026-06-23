@@ -137,6 +137,48 @@ RSpec.describe "Api::GitCredentials" do
       end
     end
 
+    context "with git push PAT fallback configured (app-backed project)" do
+      let(:project) { create(:project, :with_github_installation) }
+      let(:fallback_token) { create(:github_token, :with_workflow_scope, account: project.account) }
+
+      before do
+        project.update!(git_push_pat_fallback_enabled: true, git_push_fallback_token: fallback_token)
+      end
+
+      context "when the run is flagged for a permission retry" do
+        let(:agent_run) { create(:agent_run, :running, project: project, git_credential_fallback_active: true) }
+
+        it "serves the fallback PAT without minting an App token" do
+          allow(Github::AppInstallation).to receive(:token_for)
+
+          get "/api/proxy/git-credentials", headers: valid_headers
+
+          expect(Github::AppInstallation).not_to have_received(:token_for)
+          expect(response).to have_http_status(:ok)
+          lines = response.body.strip.split("\n").map(&:strip)
+          expect(lines).to include("password=#{fallback_token.token}")
+        end
+
+        it "touches last_used_at on the fallback token" do
+          expect { get "/api/proxy/git-credentials", headers: valid_headers }
+            .to change { fallback_token.reload.last_used_at }
+        end
+      end
+
+      context "when the run is not flagged" do
+        before { allow(Github::AppInstallation).to receive(:token_for).and_return("ghs_app_token") }
+
+        it "serves the App installation token, not the fallback PAT" do
+          get "/api/proxy/git-credentials", headers: valid_headers
+
+          expect(response).to have_http_status(:ok)
+          lines = response.body.strip.split("\n").map(&:strip)
+          expect(lines).to include("password=ghs_app_token")
+          expect(lines).not_to include("password=#{fallback_token.token}")
+        end
+      end
+    end
+
     context "with a projectless chat session" do
       let(:chat_session) { create(:chat_session, account: project.account, project: nil) }
 

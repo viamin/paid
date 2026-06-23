@@ -154,6 +154,11 @@ class Project < ApplicationRecord
 
   belongs_to :github_token, counter_cache: true, optional: true
   belongs_to :github_installation, optional: true
+  # Optional PAT used as the git push/fetch credential for app-backed projects
+  # when the App installation can't perform the push (e.g. lacks the workflows
+  # permission). Distinct from +github_token+ — it is never the project's
+  # primary credential and is exempt from +exactly_one_github_credential+.
+  belongs_to :git_push_fallback_token, class_name: "GithubToken", optional: true
   belongs_to :created_by, class_name: "User", optional: true
 
   has_many :project_memberships, dependent: :destroy
@@ -211,6 +216,7 @@ class Project < ApplicationRecord
 
   before_validation :normalize_priority_labels
   before_validation :normalize_interop_settings
+  before_validation :reset_git_push_pat_fallback_unless_app_backed
   after_update_commit :invalidate_relationship_parsing_on_trust_change
 
   validates :name, presence: true
@@ -248,6 +254,8 @@ class Project < ApplicationRecord
   validate :github_token_is_active, if: -> { github_token.present? && github_token_id_changed? }
   validate :github_installation_belongs_to_same_account, if: -> { github_installation.present? }
   validate :github_installation_is_active, if: -> { github_installation.present? && github_installation_id_changed? }
+  validate :git_push_fallback_token_valid, if: -> { git_push_fallback_token_id.present? }
+  validate :git_push_pat_fallback_requires_token, if: -> { git_push_pat_fallback_enabled? }
   validate :created_by_belongs_to_same_account, if: -> { created_by.present? }
   validate :review_settings_valid
   validate :screenshot_settings_valid
@@ -969,6 +977,27 @@ class Project < ApplicationRecord
     end
   end
 
+  # True when this app-backed project is configured to retry a git push with
+  # its fallback PAT after the App installation token is rejected for a missing
+  # permission (e.g. a push touching .github/workflows/). This is the opt-in
+  # gate only — the App remains the default credential for every operation; the
+  # PAT is used solely for the failing retry (see Containers::GitOperations and
+  # WorktreeService). We trust the configured setting rather than inspecting the
+  # PAT's scopes, because fine-grained PATs do not report classic OAuth scopes.
+  def git_push_pat_fallback_configured?
+    return false unless github_installation_id.present? || github_installation.present?
+    return false unless git_push_pat_fallback_enabled?
+    return false unless git_push_fallback_token.present?
+
+    credential_active?(git_push_fallback_token)
+  end
+
+  # The fallback PAT credential string, or nil when fallback is not configured.
+  # Callers use this only on a permission-rejected push retry.
+  def git_push_fallback_credential
+    git_push_fallback_token.token if git_push_pat_fallback_configured?
+  end
+
   # Returns a GithubClient authenticated via the project's GitHub credential
   # (installation token for app-backed projects, PAT for token-backed projects).
   def client
@@ -1226,6 +1255,33 @@ class Project < ApplicationRecord
     return if github_installation.account_id == account_id
 
     errors.add(:github_installation, "must belong to the same account")
+  end
+
+  # Validates the selected fallback token exists and is in this account. Checking
+  # by id (not the loaded association) also rejects a non-existent id from a
+  # crafted request, which would otherwise pass to a raw foreign-key violation.
+  def git_push_fallback_token_valid
+    return if git_push_fallback_token&.account_id == account_id
+
+    errors.add(:git_push_fallback_token, "must belong to the same account")
+  end
+
+  # Enabling the fallback is meaningless without a PAT to fall back to.
+  def git_push_pat_fallback_requires_token
+    return if git_push_fallback_token_id.present?
+
+    errors.add(:git_push_fallback_token, "must be selected to enable PAT push fallback")
+  end
+
+  # The fallback PAT only makes sense for app-backed projects. Rather than
+  # rejecting a project that is switched to PAT auth while a fallback lingers
+  # (a dead-end the user can't escape from the PAT settings panel), drop the
+  # now-meaningless fallback so the switch saves cleanly.
+  def reset_git_push_pat_fallback_unless_app_backed
+    return if github_installation_id.present? || github_installation.present?
+
+    self.git_push_pat_fallback_enabled = false
+    self.git_push_fallback_token_id = nil
   end
 
   def github_installation_is_active

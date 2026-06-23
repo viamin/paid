@@ -6,6 +6,18 @@ RSpec.describe GithubToken do
   describe "associations" do
     it { is_expected.to belong_to(:account) }
     it { is_expected.to belong_to(:created_by).class_name("User").optional }
+    it { is_expected.to have_many(:projects).dependent(:restrict_with_error) }
+
+    it "blocks a hard destroy while referenced as a project's git-push fallback" do
+      account = create(:account)
+      token = create(:github_token, account: account)
+      create(:project, :with_github_installation, account: account, git_push_pat_fallback_enabled: true,
+        git_push_fallback_token: token)
+
+      expect(token.destroy).to be(false)
+      expect(token.errors[:base]).to be_present
+      expect(described_class.exists?(token.id)).to be(true)
+    end
   end
 
   describe "validations" do

@@ -21,13 +21,27 @@ module Api
         return
       end
 
-      token = project.github_credential
+      # The App installation token is the default for every operation. The
+      # fallback PAT is served only while the run is flagged for a permission
+      # retry (set transiently by Containers::GitOperations around a push the
+      # App token was rejected for, e.g. one touching .github/workflows/).
+      token = fallback_credential_for(project)
+      if token
+        project.git_push_fallback_token.touch_last_used!
+        Rails.logger.info(
+          message: "git_credentials.app_installation_pat_fallback",
+          project_id: project.id,
+          git_push_fallback_token_id: project.git_push_fallback_token_id
+        )
+      else
+        token = project.github_credential
+        project.github_token&.touch_last_used!
+      end
+
       unless token
         render json: { error: github_credential_unavailable_message(project) }, status: :forbidden
         return
       end
-
-      project.github_token&.touch_last_used!
 
       render plain: credential_response(token), content_type: "text/plain"
     rescue Github::AppInstallation::ConfigurationError => e
@@ -39,6 +53,17 @@ module Api
     end
 
     private
+
+    # Returns the project's fallback PAT credential when the authenticated
+    # agent run is currently flagged for a permission-rejected push retry and
+    # the project has the fallback configured; otherwise nil.
+    def fallback_credential_for(project)
+      run = @authenticated_run
+      return unless run.respond_to?(:git_credential_fallback_active?)
+      return unless run.git_credential_fallback_active?
+
+      project.git_push_fallback_credential
+    end
 
     def credential_response(token)
       <<~CREDENTIALS
