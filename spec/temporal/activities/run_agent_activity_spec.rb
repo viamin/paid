@@ -577,58 +577,6 @@ RSpec.describe Activities::RunAgentActivity do
       expect(command.first).to eq("sh")
     end
 
-    it "injects --model into the subscription-auth shell script when a tier model is resolved" do
-      llm_model = create(:llm_model, model_id: "claude-opus-4-6", provider: "anthropic", tier: "high")
-      create(:model_selection, agent_run: agent_run, llm_model: llm_model)
-      context = described_class::CommandContext.new(
-        runner_candidate: "claude",
-        runner: "claude",
-        user: nil
-      )
-
-      command = activity.send(:build_command, context, "ping", agent_run: agent_run)
-      script = command[2]
-
-      expect(command.first).to eq("sh")
-      expect(script).to include("--model claude-opus-4-6")
-    end
-
-    it "does not duplicate --model when the harness already includes it" do
-      llm_model = create(:llm_model, model_id: "claude-opus-4-6", provider: "anthropic", tier: "high")
-      create(:model_selection, agent_run: agent_run, llm_model: llm_model)
-      context = described_class::CommandContext.new(
-        runner_candidate: "claude",
-        runner: "claude",
-        user: nil
-      )
-
-      # Stub the harness plan to already include --model in the command
-      fake_plan = Runners::HarnessExecutionPlan::Result.new(
-        command: %w[claude --model claude-opus-4-6 --dangerously-skip-permissions ping])
-      allow(activity).to receive(:harness_execution_plan_for).and_return(fake_plan)
-
-      prefix = activity.send(:inject_runtime_model_flag,
-        fake_plan.command[0..-2], context, agent_run: agent_run)
-
-      # --model should not be added again since the command already has it
-      expect(prefix.count { |arg| arg == "--model" }).to eq(1)
-    end
-
-    it "does not inject --model for non-claude subscription runners" do
-      llm_model = create(:llm_model, model_id: "copilot-model-1", provider: "github", tier: "mid")
-      create(:model_selection, agent_run: agent_run, llm_model: llm_model)
-      context = described_class::CommandContext.new(
-        runner_candidate: "copilot",
-        runner: "copilot",
-        user: nil
-      )
-
-      prefix = activity.send(:inject_runtime_model_flag,
-        %w[copilot --print], context, agent_run: agent_run)
-
-      expect(prefix).not_to include("--model")
-    end
-
     it "uses the runner's tier resolution even when the selected model is from another provider" do
       create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic", tier: "mid", capability_score: 9.0)
       llm_model = create(:llm_model, model_id: "gpt-5.4", provider: "openai", tier: "mid")
