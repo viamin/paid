@@ -100,6 +100,15 @@ FactoryBot.define do
       rate_limited_until { 2.hours.from_now }
     end
 
+    trait :token_budget_exceeded do
+      status { "token_budget_exceeded" }
+      started_at { 10.minutes.ago }
+      completed_at { Time.current }
+      duration_seconds { 600 }
+      error_message { "guardrail: token_budget — Run exceeded its per-run input token budget" }
+      guardrail_violation_type { "token_budget" }
+    end
+
     trait :with_temporal do
       temporal_workflow_id { "workflow-#{SecureRandom.uuid}" }
       temporal_run_id { "run-#{SecureRandom.uuid}" }

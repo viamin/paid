@@ -63,6 +63,7 @@ module Coordination
     def classify_by_status
       case current_status
       when "timeout" then "timeout"
+      when "token_budget_exceeded" then "token_budget"
       when "rate_limited" then "rate_limit"
       when "auth_expired" then "auth_failure"
       end
