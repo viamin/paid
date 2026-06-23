@@ -235,6 +235,9 @@ class Project < ApplicationRecord
   validates :enhance_issue_enhanced_label_name, presence: true
   validates :max_enhance_issue_reevaluation_rounds,
     numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  validates :max_issue_runner_failures,
+    numericality: { only_integer: true, greater_than: 0, less_than_or_equal_to: 1000 },
+    allow_nil: true
 
   validates :code_scanning_interval_hours, numericality: { greater_than_or_equal_to: 24 }
   validates :plan_review_timeout_hours,
@@ -502,6 +505,19 @@ class Project < ApplicationRecord
   # use AgentRun#effective_max_tokens_per_run instead.
   def project_level_max_tokens_per_run
     account.tenant_max_tokens_per_run(max_tokens_per_run || account.default_max_tokens_per_run)
+  end
+
+  # Returns the effective per-issue per-provider retry cap for this project.
+  # Resolution: project override → account-level agent setting → constant
+  # default (Issue::DEFAULT_MAX_RUNNER_FAILURES). After a single provider fails
+  # this many times for one issue, it is excluded from scheduling for that issue.
+  def effective_max_issue_runner_failures
+    return max_issue_runner_failures if max_issue_runner_failures.present?
+
+    account_cap = account&.tenant_setting&.effective_agent_settings&.dig("max_issue_runner_failures")
+    return account_cap.to_i if account_cap.present?
+
+    Issue::DEFAULT_MAX_RUNNER_FAILURES
   end
 
   # Returns the absolute token count at which a warning should be emitted.

@@ -31,6 +31,11 @@ class TenantSetting < ApplicationRecord
   DEFAULT_AGENT_SETTINGS = {
     "default_goal" => "create_pr",
     "auto_continue" => true,
+    # Per-issue per-provider retry cap (default 10). After a provider fails
+    # this many times for a single issue it is excluded from scheduling for
+    # that issue. Keep in sync with Issue::DEFAULT_MAX_RUNNER_FAILURES, the
+    # final fallback used when no account or project override is configured.
+    "max_issue_runner_failures" => 10,
     "dispatch_circuit_breaker_enabled" => true,
     "dispatch_circuit_breaker_failure_rate_threshold" => 0.8,
     "dispatch_circuit_breaker_window_minutes" => 15,
@@ -413,9 +418,14 @@ class TenantSetting < ApplicationRecord
     return unless agent_settings.is_a?(Hash)
 
     goal = agent_settings["default_goal"].presence
-    return if goal.blank? || AgentRun::GOALS.include?(goal)
+    errors.add(:agent_settings, "default_goal is unsupported") if goal.present? && !AgentRun::GOALS.include?(goal)
 
-    errors.add(:agent_settings, "default_goal is unsupported")
+    cap = agent_settings["max_issue_runner_failures"]
+    return if cap.blank?
+
+    unless cap.is_a?(Integer) && cap >= 1 && cap <= 1000
+      errors.add(:agent_settings, "max_issue_runner_failures must be an integer between 1 and 1000")
+    end
   end
 
   def validate_worker_settings
