@@ -211,10 +211,7 @@ class WorktreeService
       raise WorktreeError, "Cannot push branch: worktree_path is blank for AgentRun##{agent_run.id}"
     end
 
-    run_git(
-      "push", "origin", agent_run.branch_name,
-      chdir: agent_run.worktree_path
-    )
+    push_branch_to_remote(agent_run)
 
     result_sha = run_git("rev-parse", "HEAD", chdir: agent_run.worktree_path).strip
     agent_run.update!(result_commit_sha: result_sha)
@@ -380,8 +377,37 @@ class WorktreeService
     true
   end
 
+  # Pushes via the App-authenticated origin by default. If the App installation
+  # token is rejected for a missing permission and the project opted into PAT
+  # push fallback, retries that one push against the fallback PAT URL.
+  def push_branch_to_remote(agent_run)
+    run_git("push", "origin", agent_run.branch_name, chdir: agent_run.worktree_path)
+  rescue Error => e
+    raise unless app_permission_rejection?(e.message) && project.git_push_pat_fallback_configured?
+
+    Rails.logger.info(
+      message: "worktree_service.pat_push_fallback_retry",
+      agent_run_id: agent_run.id,
+      project_id: project.id
+    )
+    run_git("push", fallback_push_url, agent_run.branch_name, chdir: agent_run.worktree_path)
+  end
+
   def authenticated_clone_url
     "https://x-access-token:#{project.github_credential}@github.com/#{project.full_name}.git"
+  end
+
+  # Push URL that authenticates with the project's fallback PAT instead of the
+  # App installation token. Used only to retry a push the App token was rejected
+  # for (see #push_branch). The PAT is redacted from logs by #redact_credentials.
+  def fallback_push_url
+    "https://x-access-token:#{project.git_push_fallback_credential}@github.com/#{project.full_name}.git"
+  end
+
+  # True when a push failed because the GitHub App installation token lacks a
+  # permission the operation needs (e.g. a change under .github/workflows/).
+  def app_permission_rejection?(message)
+    message.to_s.include?("refusing to allow a GitHub App")
   end
 
   def run_git(*args, chdir: nil, raise_on_error: true)

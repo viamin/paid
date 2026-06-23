@@ -22,6 +22,10 @@ FactoryBot.define do
       validation_error { "Token is invalid or has been revoked" }
     end
 
+    trait :with_workflow_scope do
+      scopes { [ "repo", "read:org", "workflow" ] }
+    end
+
     trait :fine_grained do
       token { "github_pat_#{SecureRandom.alphanumeric(22)}_#{SecureRandom.alphanumeric(40)}" }
     end

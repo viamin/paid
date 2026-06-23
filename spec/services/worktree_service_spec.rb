@@ -503,6 +503,51 @@ RSpec.describe WorktreeService do
 
       expect(service.push_branch(agent_run)).to eq(result_sha)
     end
+
+    context "when the App push is rejected for a missing permission" do
+      # Method (not a `let`) to stay within RSpec/MultipleMemoizedHelpers.
+      def permission_error
+        described_class::Error.new(
+          "Git command failed: git push origin paid/test-branch\n " \
+          "! [remote rejected] paid/test-branch (refusing to allow a GitHub App to create " \
+          "or update workflow `.github/workflows/mutation.yml` without `workflows` permission)"
+        )
+      end
+
+      context "when PAT push fallback is configured" do
+        let(:project) { create(:project, :with_github_installation) }
+
+        before do
+          fallback_token = create(:github_token, :with_workflow_scope, account: project.account)
+          project.update!(git_push_pat_fallback_enabled: true, git_push_fallback_token: fallback_token)
+        end
+
+        it "retries the push against the fallback PAT URL and returns the SHA" do
+          fallback_url = "https://x-access-token:#{project.git_push_fallback_token.token}@github.com/#{project.full_name}.git"
+          allow(service).to receive(:run_git)
+            .with("push", "origin", "paid/test-branch", chdir: worktree_dir)
+            .and_raise(permission_error)
+          expect(service).to receive(:run_git)
+            .with("push", fallback_url, "paid/test-branch", chdir: worktree_dir)
+          allow(service).to receive(:run_git)
+            .with("rev-parse", "HEAD", chdir: worktree_dir)
+            .and_return("#{result_sha}\n")
+
+          expect(service.push_branch(agent_run)).to eq(result_sha)
+        end
+      end
+
+      context "when PAT push fallback is not configured" do
+        it "does not retry and re-raises the error" do
+          allow(service).to receive(:run_git)
+            .with("push", "origin", "paid/test-branch", chdir: worktree_dir)
+            .and_raise(permission_error)
+
+          expect { service.push_branch(agent_run) }
+            .to raise_error(described_class::Error, /refusing to allow a GitHub App/)
+        end
+      end
+    end
   end
 
   describe "#cleanup_stale_worktrees" do

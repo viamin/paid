@@ -327,12 +327,20 @@ module Containers
     def push_branch
       validate_branch_name!
 
-      result =
-        if agent_run.existing_pr?
-          push_existing_pr_branch
-        else
-          push_new_branch
-        end
+      # Defensive: a prior attempt hard-killed mid-retry could leave the flag
+      # set, which would route this first push to the PAT. Clear it so the App
+      # token is always tried first. Only writes when actually stale.
+      clear_stale_fallback_flag
+
+      result = push_to_origin
+
+      # The App installation token is the default. If GitHub rejected the push
+      # for a permission the App lacks (e.g. a change under .github/workflows/)
+      # and the project opted into PAT push fallback, retry that one push with
+      # the fallback PAT — scoped to the failing operation only.
+      if result.failure? && app_permission_rejection?(result) && pat_push_fallback_configured?
+        result = push_with_fallback_credential
+      end
 
       raise PushError, "Push failed: #{error_with_stderr(result)}" if result.failure?
 
@@ -676,6 +684,49 @@ module Containers
       execute_git("rebase", "--abort")
     rescue Error
       # Best effort — abort may fail if rebase state is already gone
+    end
+
+    def push_to_origin
+      if agent_run.existing_pr?
+        push_existing_pr_branch
+      else
+        push_new_branch
+      end
+    end
+
+    # Re-runs the push with the run flagged so the git-credentials proxy serves
+    # the project's fallback PAT (instead of the App installation token) for the
+    # duration of this retry. The push runs after the agent has exited, so the
+    # flag window covers only this system push. The flag is always cleared.
+    def push_with_fallback_credential
+      Rails.logger.info(
+        message: "container_git.pat_push_fallback_retry",
+        agent_run_id: agent_run.id,
+        project_id: agent_run.project_id
+      )
+      agent_run.update_columns(git_credential_fallback_active: true)
+      push_to_origin
+    ensure
+      agent_run.update_columns(git_credential_fallback_active: false)
+    end
+
+    def pat_push_fallback_configured?
+      agent_run.project.git_push_pat_fallback_configured?
+    end
+
+    def clear_stale_fallback_flag
+      return unless agent_run.git_credential_fallback_active?
+
+      agent_run.update_columns(git_credential_fallback_active: false)
+    end
+
+    # True when the push was rejected because the authenticating GitHub App
+    # installation token lacks a permission the operation needs (the PAT may
+    # have it). GitHub phrases this as "refusing to allow a GitHub App ...".
+    def app_permission_rejection?(result)
+      [ result[:stdout], result[:stderr] ].compact.any? do |output|
+        output.include?("refusing to allow a GitHub App")
+      end
     end
 
     def push_new_branch

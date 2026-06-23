@@ -17,6 +17,13 @@ class GithubToken < ApplicationRecord
   belongs_to :created_by, class_name: "User", optional: true
 
   has_many :projects, dependent: :restrict_with_error
+  # Projects that reference this token only as their git-push fallback (not as
+  # their primary credential). Restrict destroy so a hard-delete fails with a
+  # model error instead of a raw foreign-key violation; the normal UI path
+  # revokes (soft-deletes), which a fallback's active? check already neutralizes.
+  has_many :git_push_fallback_projects, class_name: "Project",
+    foreign_key: :git_push_fallback_token_id, inverse_of: :git_push_fallback_token,
+    dependent: :restrict_with_error
 
   encrypts :token
 

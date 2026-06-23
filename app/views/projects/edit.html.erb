@@ -221,6 +221,39 @@
                   </div>
                 </div>
               <% end %>
+
+              <div class="mt-4 rounded-md border border-gray-200 p-4">
+                <div class="flex items-start gap-3">
+                  <div class="flex h-6 items-center">
+                    <%= form.check_box :git_push_pat_fallback_enabled,
+                      class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
+                  </div>
+                  <div class="text-sm leading-6">
+                    <%= form.label :git_push_pat_fallback_enabled, "Use a PAT fallback for git pushes",
+                      class: "font-medium text-gray-900" %>
+                    <p class="text-gray-500">
+                      The App is used for everything by default. If a push is rejected because the App
+                      lacks a permission it needs — for example a change under
+                      <code>.github/workflows/</code>, which requires the <code>workflows</code> permission —
+                      that single push is retried with the selected token instead. The token must have the
+                      needed permission; fine-grained tokens don't report their scopes, so this is trusted
+                      rather than verified.
+                    </p>
+                  </div>
+                </div>
+
+                <div class="mt-3">
+                  <%= form.label :git_push_fallback_token_id, "Fallback token",
+                    class: "block text-sm font-medium leading-6 text-gray-900" %>
+                  <div class="mt-2">
+                    <%= form.select :git_push_fallback_token_id,
+                        options_from_collection_for_select(@github_tokens, :id, :name, @project.git_push_fallback_token_id),
+                        { include_blank: true },
+                        class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+                  </div>
+                  <p class="mt-1 text-xs text-gray-500">Required when the fallback is enabled. Must have access to this repository and the permissions the App is missing.</p>
+                </div>
+              </div>
             </div>
 
             <div class="<%= [ "mt-4", ("hidden" unless @github_auth_source == "pat") ].compact.join(" ") %>" data-project-settings-form-target="patPanel">
