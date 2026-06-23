@@ -14,7 +14,7 @@ class AgentRun < ApplicationRecord
     [ %r{x-access-token:[^@/\s]+@github\.com}, "x-access-token:[REDACTED]@github.com" ],
     [ /(Bearer\s)[A-Za-z0-9\-._~+\/]+=*/i, "\\1[REDACTED]" ]
   ].freeze
-  STATUSES = %w[queued running paused completed no_output failed cancelled timeout retried auth_expired rate_limited].freeze
+  STATUSES = %w[queued running paused completed no_output failed cancelled timeout token_budget_exceeded retried auth_expired rate_limited].freeze
   AGENT_TYPES = %w[claude_code cursor codex copilot aider gemini opencode kilocode pi api devin factory internal_agent].freeze
   FOCUSES = %w[general ci_fix review_feedback merge_conflict conversation issue_implementation label_action].freeze
   # analyze_issue is automation-only (triggered via Automation::Decision), not exposed in the manual run form.
@@ -22,10 +22,10 @@ class AgentRun < ApplicationRecord
   TRIGGER_TYPES = %w[manual automatic].freeze
   EXECUTION_ORIGINS = %w[paid_native external].freeze
   ACTIVE_STATUSES = %w[running].freeze
-  FINISHED_STATUSES = %w[completed no_output failed cancelled timeout retried auth_expired rate_limited].freeze
-  FAILURE_STATUSES = %w[failed timeout auth_expired rate_limited].freeze
+  FINISHED_STATUSES = %w[completed no_output failed cancelled timeout token_budget_exceeded retried auth_expired rate_limited].freeze
+  FAILURE_STATUSES = %w[failed timeout token_budget_exceeded auth_expired rate_limited].freeze
   TERMINAL_FAILURE_STATUSES = (FAILURE_STATUSES + %w[cancelled]).freeze
-  QUALITY_EXCLUDED_STATUSES = %w[timeout auth_expired rate_limited].freeze
+  QUALITY_EXCLUDED_STATUSES = %w[timeout token_budget_exceeded auth_expired rate_limited].freeze
   STDOUT_TAIL_LINES = 500
 
   OPERATIONAL_FAILURE_KEYWORDS = [
@@ -115,7 +115,7 @@ class AgentRun < ApplicationRecord
     )
   end
   UNFINISHED_STATUSES = %w[queued running paused].freeze
-  GUARDRAIL_VIOLATION_TYPES = %w[loop_detected token_limit cost_limit time_limit anomaly no_progress].freeze
+  GUARDRAIL_VIOLATION_TYPES = %w[loop_detected token_limit cost_limit time_limit anomaly no_progress token_budget].freeze
   AUTO_PICK_BLOCKING_STATUSES = UNFINISHED_STATUSES
   TOKEN_LIMIT_STATUSES = %w[ok warning exceeded].freeze
   DEFAULT_MAX_TOKENS_PER_RUN = 10_000_000
@@ -1380,7 +1380,7 @@ class AgentRun < ApplicationRecord
   # to be code-level failures where a retry might help.
   def operational_failure?
     return false unless FAILURE_STATUSES.include?(status)
-    return true if status.in?(%w[timeout auth_expired rate_limited])
+    return true if status.in?(%w[timeout token_budget_exceeded auth_expired rate_limited])
     return false if pre_runner_infra_failure?
 
     OPERATIONAL_FAILURE_KEYWORDS.any? do |keyword|
@@ -1450,6 +1450,10 @@ class AgentRun < ApplicationRecord
     token_limit_status == "warning"
   end
 
+  def token_budget_exceeded?
+    status == "token_budget_exceeded"
+  end
+
   # Resolves the effective max tokens per run for this agent run using the
   # full resolution chain: project override → user settings → account default
   # → global default, capped by the tenant guardrail. Memoized per AgentRun
@@ -1472,6 +1476,30 @@ class AgentRun < ApplicationRecord
 
     @effective_max_execution_seconds =
       explicit_user_max_execution_seconds || project.max_execution_seconds
+  end
+
+  # Per-run input-token budget. When input tokens exceed this *and* output
+  # stays below #effective_token_budget_progress_floor, the run is terminated
+  # early as "token_budget_exceeded" rather than burning through the full prompt.
+  # Resolution: project override → provider (runner) threshold → global default.
+  # See issue #2511.
+  def effective_token_budget
+    return @effective_token_budget if defined?(@effective_token_budget)
+
+    @effective_token_budget =
+      project.token_budget_max_input_tokens ||
+      runner&.effective_no_progress_thresholds&.dig("min_input_tokens") ||
+      Runner::DEFAULT_NO_PROGRESS_THRESHOLDS.fetch("min_input_tokens")
+  end
+
+  # Output-token floor below which a run is considered "not making progress".
+  # A run at/above this floor is never terminated for budget exhaustion.
+  def effective_token_budget_progress_floor
+    return @effective_token_budget_progress_floor if defined?(@effective_token_budget_progress_floor)
+
+    @effective_token_budget_progress_floor =
+      runner&.effective_no_progress_thresholds&.dig("max_output_tokens") ||
+      Runner::DEFAULT_NO_PROGRESS_THRESHOLDS.fetch("max_output_tokens")
   end
 
   # Returns the fraction of the token limit consumed (0.0–1.0+).
@@ -1710,14 +1738,17 @@ class AgentRun < ApplicationRecord
     end
   end
 
-  def timeout!(error: nil, guardrail_violation_type: nil, guardrail_context: nil)
+  # Terminates the run as a terminal state. Defaults to "timeout" but accepts a
+  # distinct `status:` (e.g. "token_budget_exceeded") so guardrail terminations
+  # remain distinguishable in metrics from generic timeouts.
+  def timeout!(error: nil, status: "timeout", guardrail_violation_type: nil, guardrail_context: nil)
     with_lock do
       reload
       if finished?
         false
       else
         attributes = {
-          status: "timeout",
+          status: status,
           completed_at: Time.current,
           error_message: error,
           duration_seconds: duration

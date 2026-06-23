@@ -372,6 +372,16 @@
       Total tokens used: <strong><%= number_with_delimiter(agent_run.total_tokens) %></strong>.
     </p>
   </div>
+<% elsif agent_run.token_budget_exceeded? %>
+  <div class="mt-6 rounded-lg border border-rose-200 bg-rose-50 p-4 dark:border-rose-800 dark:bg-rose-900/30">
+    <h2 class="text-sm font-semibold text-rose-800 dark:text-rose-200">Token Budget Exceeded</h2>
+    <p class="mt-1 text-sm text-rose-700 dark:text-rose-300">
+      This agent run was terminated after exceeding its per-run input token budget
+      of <%= number_with_delimiter(agent_run.effective_token_budget) %> input tokens without producing meaningful output.
+      Input tokens used: <strong><%= number_with_delimiter(agent_run.tokens_input) %></strong>,
+      output tokens: <strong><%= number_with_delimiter(agent_run.tokens_output) %></strong>.
+    </p>
+  </div>
 <% elsif agent_run.status == "timeout" %>
   <div class="mt-6 rounded-lg border border-yellow-200 bg-yellow-50 p-4 dark:border-yellow-800 dark:bg-yellow-900/30">
     <h2 class="text-sm font-semibold text-yellow-800 dark:text-yellow-200">Execution Timed Out</h2>

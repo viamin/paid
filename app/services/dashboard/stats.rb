@@ -12,11 +12,12 @@ module Dashboard
     # performance_by_goal (which counts `retried` as non-completed via
     # .finished) — dropping it would inflate the displayed completion rate
     # and mask exactly the regressions the chart exists to surface.
-    OUTCOME_CHART_STATUSES = %w[completed failed timeout no_output auth_expired rate_limited cancelled retried].freeze
+    OUTCOME_CHART_STATUSES = %w[completed failed timeout token_budget_exceeded no_output auth_expired rate_limited cancelled retried].freeze
     OUTCOME_CHART_COLORS = {
       "completed" => "#16a34a",
       "failed" => "#dc2626",
       "timeout" => "#f97316",
+      "token_budget_exceeded" => "#e11d48",
       "no_output" => "#7c3aed",
       "auth_expired" => "#2563eb",
       "rate_limited" => "#ca8a04",

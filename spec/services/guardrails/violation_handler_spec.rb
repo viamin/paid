@@ -77,6 +77,23 @@ RSpec.describe Guardrails::ViolationHandler do
       expect(agent_run.error_message).to include("guardrail: time_limit")
     end
 
+    it "terminates the agent run with a distinct status on token budget violation" do
+      result = described_class.call(
+        agent_run: agent_run,
+        violation_type: "token_budget",
+        details: "Run consumed 250000 input tokens (budget: 200000) without producing output",
+        metrics: { token_budget: 200_000, tokens_input: 250_000 }
+      )
+
+      expect(result.paused?).to be false
+      expect(result.violation_type).to eq("token_budget")
+      expect(agent_run.reload.status).to eq("token_budget_exceeded")
+      expect(agent_run.guardrail_violation_type).to eq("token_budget")
+      expect(agent_run.completed_at).to be_present
+      expect(agent_run.error_message).to include("guardrail: token_budget")
+      expect(agent_run.guardrail_context["recommended_action"]).to be_present
+    end
+
     it "pauses the agent run on anomaly detection" do
       result = described_class.call(
         agent_run: agent_run,
