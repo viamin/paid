@@ -1,13 +1,31 @@
 <% tool_title = message.role == "tool" ? "Tool Result" : "Tool Call" %>
 <% payload = message.role == "tool" ? (message.tool_result || message.content) : message.tool_arguments %>
-<details class="rounded-lg border border-blue-200 bg-white" <% if message.role == "tool" %>open<% end %>>
+<details class="rounded-lg border border-blue-200 bg-white <%= "ring-2 ring-amber-300" if message.pending_confirmation? %>" <% if message.role == "tool" || message.resolved_tool_confirmation? %>open<% end %>>
   <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-gray-800">
     <span><%= tool_title %>: <%= message.tool_name.presence || "Unknown tool" %></span>
-    <span class="inline-flex items-center rounded-md bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700">
-      <%= message.role == "tool" ? "result" : "args" %>
+    <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium <%= chat_tool_status_classes(message) %>">
+      <%= chat_tool_status_label(message) %>
     </span>
   </summary>
   <div class="border-t border-blue-100 px-4 py-3">
     <pre class="overflow-x-auto whitespace-pre-wrap break-words rounded-lg bg-gray-900 p-4 text-xs leading-6 text-gray-100"><%= pretty_chat_tool_payload(payload) %></pre>
+
+    <% if message.pending_confirmation? %>
+      <div class="mt-3 flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2">
+        <span class="text-xs font-medium text-amber-800">Assistant wants to run this action. Approve it?</span>
+        <div class="ml-auto flex gap-2">
+          <button type="button"
+                  class="rounded-md bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700"
+                  data-action="click->chat#approveToolCall">
+            Approve
+          </button>
+          <button type="button"
+                  class="rounded-md bg-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-300"
+                  data-action="click->chat#denyToolCall">
+            Deny
+          </button>
+        </div>
+      </div>
+    <% end %>
   </div>
 </details>

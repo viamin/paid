@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-class ChatSessions::ProcessMessageJob < ApplicationJob
+class ChatSessions::ResolveToolCallJob < ApplicationJob
   queue_as :default
 
   discard_on ActiveRecord::RecordNotFound do |job, error|
@@ -9,8 +9,9 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
     job.send(:broadcast_error, chat_session_id, stream_message_id, "Session no longer exists") if chat_session_id
   end
 
-  def perform(chat_session_id:, content:, stream_message_id:)
+  def perform(chat_session_id:, message_id:, decision:, stream_message_id:)
     chat_session = ChatSession.find(chat_session_id)
+    tool_call_message = chat_session.messages.find(message_id)
     stream_name = "chat_session:#{chat_session.id}"
 
     ActionCable.server.broadcast(stream_name, {
@@ -20,11 +21,15 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
 
     llm_client = ChatSessions::BuildLlmClient.call(chat_session: chat_session)
 
-    assistant_message = ChatSessions::SendMessage.call(
+    assistant_message = ChatSessions::ResolveToolCall.call(
       chat_session: chat_session,
-      content: content,
+      tool_call_message: tool_call_message,
+      decision: decision,
       stream_message_id: stream_message_id,
       llm_client: llm_client,
+      on_tool_call_resolved: ->(message) {
+        broadcast_tool_call_resolved(stream_name, message)
+      },
       on_message_persisted: ->(message, stream_message_id: nil) {
         broadcast_persisted_message(stream_name, message, stream_message_id: stream_message_id)
       },
@@ -41,8 +46,8 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       type: "message_complete",
       message_id: stream_message_id,
       tokens: {
-        input: assistant_message.tokens_input,
-        output: assistant_message.tokens_output
+        input: assistant_message&.tokens_input,
+        output: assistant_message&.tokens_output
       }
     })
   rescue ArgumentError => e
@@ -57,7 +62,7 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
     raise
   rescue StandardError => e
     Rails.logger.error(
-      message: "chat_process_message_job.failed",
+      message: "chat_resolve_tool_call_job.failed",
       chat_session_id: chat_session_id,
       error_class: e.class.name,
       error: e.message
@@ -66,6 +71,22 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
   end
 
   private
+
+  def broadcast_tool_call_resolved(stream_name, message)
+    ActionCable.server.broadcast(stream_name, {
+      type: "message_tool_resolved",
+      message_id: message.id,
+      role: message.role,
+      tool_status: message.tool_status,
+      tool_name: message.tool_name,
+      tool_call_id: message.tool_call_id,
+      tool_arguments: message.tool_arguments,
+      html: ApplicationController.render(
+        partial: "chat_messages/message",
+        locals: { message: message }
+      )
+    })
+  end
 
   def broadcast_persisted_message(stream_name, message, stream_message_id: nil)
     event_type = if message.role == "tool"
@@ -99,11 +120,5 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       message_id: stream_message_id,
       message: error_message
     })
-  end
-
-  def tenant_account
-    TenantContext.with_system_access do
-      ChatSession.find_by(id: arguments.first&.dig(:chat_session_id))&.account
-    end
   end
 end

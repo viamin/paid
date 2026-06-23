@@ -2,6 +2,7 @@
 
 class ChatMessage < ApplicationRecord
   ROLES = %w[system user assistant tool].freeze
+  TOOL_STATUSES = %w[pending approved denied].freeze
 
   before_validation :set_external_id, on: :create
 
@@ -9,10 +10,20 @@ class ChatMessage < ApplicationRecord
 
   validates :role, inclusion: { in: ROLES }
   validates :content, presence: true, unless: -> { tool_result_message? || tool_name.present? }
+  validates :tool_status, inclusion: { in: TOOL_STATUSES }, allow_nil: true
   validates :external_id, uniqueness: true
 
   scope :chronological, -> { order(created_at: :asc) }
   scope :for_conversation, -> { where(role: %w[user assistant tool]).chronological }
+  scope :pending_tool_confirmations, -> { where.not(tool_status: nil).where(tool_status: "pending") }
+
+  def pending_confirmation?
+    tool_status == "pending"
+  end
+
+  def resolved_tool_confirmation?
+    tool_status == "approved" || tool_status == "denied"
+  end
 
   private
 

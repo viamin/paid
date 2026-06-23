@@ -9,7 +9,7 @@ class ChatMessagesController < ApplicationController
   rate_limit to: ChatMessages::RateLimit::MAX_REQUESTS, within: ChatMessages::RateLimit::PERIOD,
     by: -> { ChatMessages::RateLimit.identifier(user_id: current_user&.id, chat_session_id: params[:chat_session_id]) },
     with: -> { render json: { error: "Rate limit exceeded" }, status: :too_many_requests },
-    only: :create
+    only: %i[create resolve]
 
   def index
     messages = policy_scope(ChatMessage)
@@ -40,6 +40,23 @@ class ChatMessagesController < ApplicationController
       stream_sse_response
     else
       json_response
+    end
+  end
+
+  def resolve
+    tool_call_message = @chat_session.messages.find(params[:id])
+    authorize tool_call_message, :resolve?, policy_class: ChatMessagePolicy
+
+    decision = params[:decision].to_s
+    unless %w[approve deny].include?(decision)
+      render json: { error: "decision must be approve or deny" }, status: :unprocessable_content
+      return
+    end
+
+    if sse_requested?
+      stream_resolve_response(tool_call_message, decision)
+    else
+      json_resolve_response(tool_call_message, decision)
     end
   end
 
@@ -126,7 +143,7 @@ class ChatMessagesController < ApplicationController
     event_type = if message.role == "tool"
       "message_tool_result"
     elsif message.role == "assistant" && message.tool_name.present? && message.content.nil?
-      "message_tool_call"
+      message.pending_confirmation? ? "message_tool_confirmation" : "message_tool_call"
     end
 
     return unless event_type
@@ -140,8 +157,84 @@ class ChatMessagesController < ApplicationController
       tool_call_id: message.tool_call_id,
       tool_arguments: message.tool_arguments,
       tool_result: message.tool_result,
+      tool_status: message.tool_status,
       stream_message_id: stream_message_id
     })
+  end
+
+  def stream_resolve_response(tool_call_message, decision)
+    with_chat_session_tenant_context do
+      response.headers["Content-Type"] = "text/event-stream"
+      response.headers["Cache-Control"] = "no-cache"
+      response.headers["X-Accel-Buffering"] = "no"
+
+      message_id = SecureRandom.uuid
+      llm_client = ChatSessions::BuildLlmClient.call(chat_session: @chat_session)
+
+      write_sse_event("message_start", { message_id: message_id })
+
+      assistant_message = ChatSessions::ResolveToolCall.call(
+        chat_session: @chat_session,
+        tool_call_message: tool_call_message,
+        decision: decision,
+        llm_client: llm_client,
+        on_chunk: ->(chunk) { write_sse_event("message_chunk", { message_id: message_id, content: chunk }) },
+        on_tool_call_resolved: ->(message) {
+          write_sse_event("message_tool_resolved", {
+            message_id: message.id,
+            tool_status: message.tool_status,
+            tool_name: message.tool_name,
+            tool_call_id: message.tool_call_id
+          })
+        },
+        on_message_persisted: ->(message, stream_message_id: nil) { write_sse_tool_event(message, stream_message_id: stream_message_id) }
+      )
+
+      write_sse_event("message_complete", {
+        message_id: message_id,
+        tokens: {
+          input: assistant_message&.tokens_input,
+          output: assistant_message&.tokens_output
+        }
+      })
+    end
+  rescue IOError
+    # Client disconnected — nothing to send
+  rescue NotImplementedError => e
+    write_sse_event("error", { message: e.message }) rescue IOError
+  rescue ChatSessions::LlmClientConfigurationError => e
+    write_sse_event("error", { message: e.message }) rescue IOError
+  rescue ArgumentError => e
+    write_sse_event("error", { message: e.message }) rescue IOError
+  rescue StandardError => e
+    Rails.logger.error(message: "chat_messages.resolve_stream_failed", session_id: @chat_session.id, error: e.message)
+    write_sse_event("error", { message: "An unexpected error occurred" }) rescue IOError
+  ensure
+    response.stream.close
+  end
+
+  def json_resolve_response(tool_call_message, decision)
+    assistant_message = with_chat_session_tenant_context do
+      llm_client = ChatSessions::BuildLlmClient.call(chat_session: @chat_session)
+
+      ChatSessions::ResolveToolCall.call(
+        chat_session: @chat_session,
+        tool_call_message: tool_call_message,
+        decision: decision,
+        llm_client: llm_client
+      )
+    end
+
+    render json: resolve_response_payload(assistant_message), status: :ok
+  rescue NotImplementedError => e
+    render json: { error: e.message }, status: :service_unavailable
+  rescue ChatSessions::LlmClientConfigurationError => e
+    render json: { error: e.message }, status: :service_unavailable
+  rescue ArgumentError => e
+    render json: { error: e.message }, status: :unprocessable_content
+  rescue StandardError => e
+    Rails.logger.error(message: "chat_messages.resolve_failed", session_id: @chat_session.id, error: e.message)
+    render json: { error: "An unexpected error occurred" }, status: :internal_server_error
   end
 
   def with_chat_session_tenant_context(&)
@@ -162,9 +255,16 @@ class ChatMessagesController < ApplicationController
       tool_name: message.tool_name,
       tool_arguments: message.tool_arguments,
       tool_result: message.tool_result,
+      tool_status: message.tool_status,
       tokens_input: message.tokens_input,
       tokens_output: message.tokens_output,
       created_at: message.created_at
     }
+  end
+
+  def resolve_response_payload(assistant_message)
+    return { status: "paused" } unless assistant_message
+
+    message_json(assistant_message)
   end
 end
