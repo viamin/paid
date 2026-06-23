@@ -6,7 +6,7 @@ RSpec.describe ChatSessions::ResolveToolCall do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
   let(:chat_session) { create(:chat_session, account: account, created_by: user) }
-  let(:tool_definitions) { [{ name: "trigger_agent_run", description: "x", inputSchema: { type: "object" } }] }
+  let(:tool_definitions) { [ { name: "trigger_agent_run", description: "x", inputSchema: { type: "object" } } ] }
   let(:dispatch_result) { { "id" => 99, "status" => "queued" } }
   let(:final_response) do
     { content: "Done.", tool_calls: [], tokens_input: 12, tokens_output: 6, model: "gpt-4o" }
@@ -143,6 +143,64 @@ RSpec.describe ChatSessions::ResolveToolCall do
           decision: :maybe, llm_client: llm_client
         )
       }.to raise_error(ArgumentError, /approve or deny/)
+    end
+  end
+
+  describe "concurrent resolution safety" do
+    before { allow(Tools::Registry).to receive(:dispatch).and_return(dispatch_result) }
+
+    it "rejects a second resolution of the same tool call so the tool cannot run twice" do
+      described_class.call(
+        chat_session: chat_session, tool_call_message: tool_call_message,
+        decision: :approve, llm_client: llm_client
+      )
+
+      expect {
+        described_class.call(
+          chat_session: chat_session, tool_call_message: tool_call_message,
+          decision: :approve, llm_client: llm_client
+        )
+      }.to raise_error(ArgumentError, /not awaiting confirmation/)
+
+      expect(Tools::Registry).to have_received(:dispatch).once
+    end
+  end
+
+  describe "several pending tool calls" do
+    let(:second_tool_call_message) do
+      create(:chat_message,
+        chat_session: chat_session,
+        role: "assistant",
+        content: nil,
+        tool_name: "cancel_agent_run",
+        tool_call_id: "call_2",
+        tool_arguments: { "agent_run_id" => 5 },
+        tool_status: "pending")
+    end
+
+    before do
+      second_tool_call_message
+      allow(Tools::Registry).to receive(:dispatch).and_return(dispatch_result)
+    end
+
+    it "does not resume the loop until the last pending tool call is resolved" do
+      result = described_class.call(
+        chat_session: chat_session, tool_call_message: tool_call_message,
+        decision: :approve, llm_client: llm_client
+      )
+
+      expect(result).to be_nil
+      expect(llm_client.seen_conversations).to be_empty
+
+      result = described_class.call(
+        chat_session: chat_session, tool_call_message: second_tool_call_message,
+        decision: :deny, llm_client: llm_client
+      )
+
+      expect(result).to be_present
+      expect(llm_client.seen_conversations).to be_one
+      expect(tool_call_message.reload.tool_status).to eq("approved")
+      expect(second_tool_call_message.reload.tool_status).to eq("denied")
     end
   end
 end

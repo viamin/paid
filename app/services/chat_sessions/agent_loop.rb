@@ -62,10 +62,7 @@ module ChatSessions
         end
 
         response[:tool_calls].each do |tool_call|
-          persist_tool_call_message(tool_call)
-
-          tool_result = dispatch_tool(name: tool_call[:name], arguments: parse_tool_arguments(tool_call))
-          persist_tool_result_message(tool_call, tool_result)
+          tool_result = process_tool_call(tool_call)
 
           conversation << {
             role: "tool",
@@ -86,13 +83,34 @@ module ChatSessions
       stamp_aggregate_tokens(final_assistant_message, aggregate_tokens, last_response_model)
     end
 
-    # When the model requests a write tool, persist the request as a pending
-    # confirmation and stop the loop so a human can approve or deny it.
+    # When the model requests one or more write tools in a batch, run the
+    # read-only calls in that same batch immediately (so their results are not
+    # lost) and surface *every* write tool as a pending confirmation, then stop
+    # the loop so a human can approve or deny each. Resolving one write tool at a
+    # time is safe because `ResolveToolCall` only resumes the loop once the last
+    # pending confirmation is settled — the rebuilt conversation never contains an
+    # unanswered tool call. See RDR-028.
     def pause_for_confirmation(tool_calls, aggregate_tokens:, model:)
-      pending_tool_call = tool_calls.find { |tool_call| Tools::Registry.write_tool?(tool_call[:name]) }
-      persist_pending_tool_call_message(pending_tool_call)
+      write_calls, read_only_calls = tool_calls.partition do |tool_call|
+        Tools::Registry.write_tool?(tool_call[:name])
+      end
+
+      read_only_calls.each { |tool_call| process_tool_call(tool_call) }
+      write_calls.each { |tool_call| persist_pending_tool_call_message(tool_call) }
+
       stamp_aggregate_tokens(nil, aggregate_tokens, model)
       nil
+    end
+
+    # Executes a single tool call: persists the request row, dispatches the tool,
+    # and persists the result. Shared by the inline (read-only) path and the
+    # read-only portion of a mixed batch that pauses for write confirmation.
+    def process_tool_call(tool_call)
+      persist_tool_call_message(tool_call)
+
+      tool_result = dispatch_tool(name: tool_call[:name], arguments: parse_tool_arguments(tool_call))
+      persist_tool_result_message(tool_call, tool_result)
+      tool_result
     end
 
     def pending_write_tool?(tool_calls)

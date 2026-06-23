@@ -7,6 +7,11 @@ module ChatSessions
   # +{ status: "denied" }+ result is fed back so the model can adjust. Both
   # outcomes persist, so the confirmation survives reconnects and idle-reaper
   # boundaries.
+  #
+  # When several write tools are pending at once (a multi-tool batch), each is
+  # resolved independently; the agent loop only resumes once the *last* pending
+  # confirmation is settled, so the rebuilt conversation never exposes an
+  # unanswered tool call to the model.
   class ResolveToolCall
     include ToolDispatch
 
@@ -33,23 +38,38 @@ module ChatSessions
     end
 
     def call
-      validate!
-
+      validate_decision!
+      claim_resolution!
       resolve_pending_tool_call!
       update_session_activity
-      resume_loop
+      resume_loop_unless_other_pending
     end
 
     private
 
-    def validate!
-      raise ArgumentError, "Tool call is not awaiting confirmation" unless tool_call_message.pending_confirmation?
+    def validate_decision!
       raise ArgumentError, "decision must be approve or deny" unless DECISIONS.include?(decision)
+    end
+
+    # Atomically transition this tool call from +pending+ to its decision status
+    # via a database compare-and-swap, so only one concurrent resolver wins a
+    # race (double-click, two browser tabs, channel + HTTP endpoint). The claim
+    # happens *before* the tool is dispatched, so the losing caller raises
+    # before producing any side effects — a write tool can never run twice for a
+    # single request.
+    def claim_resolution!
+      rows = chat_session.messages
+        .where(id: tool_call_message.id, tool_status: "pending")
+        .update_all(tool_status: decision_status)
+
+      raise ArgumentError, "Tool call is not awaiting confirmation" if rows.zero?
+
+      tool_call_message.reload
+      on_tool_call_resolved&.call(tool_call_message)
     end
 
     def resolve_pending_tool_call!
       approve? ? approve_tool_call! : deny_tool_call!
-      mark_resolved!
     end
 
     def approve_tool_call!
@@ -59,11 +79,6 @@ module ChatSessions
 
     def deny_tool_call!
       persist_tool_result(DENIED_RESULT)
-    end
-
-    def mark_resolved!
-      tool_call_message.update!(tool_status: decision_status)
-      on_tool_call_resolved&.call(tool_call_message)
     end
 
     def decision_status
@@ -92,6 +107,16 @@ module ChatSessions
 
       on_message_persisted&.call(message)
       message
+    end
+
+    def resume_loop_unless_other_pending
+      return nil if other_pending_confirmations?
+
+      resume_loop
+    end
+
+    def other_pending_confirmations?
+      chat_session.messages.pending_tool_confirmations.exists?
     end
 
     def resume_loop

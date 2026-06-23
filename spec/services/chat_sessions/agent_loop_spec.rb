@@ -76,7 +76,7 @@ RSpec.describe ChatSessions::AgentLoop do
         expect(notified).to include([ "assistant", "pending" ])
       end
 
-      it "only surfaces the first write tool when several are requested at once" do
+      it "surfaces every write tool in the batch as its own pending confirmation" do
         multi_client = Class.new do
           def call(_conversation, tools: nil)
             {
@@ -92,7 +92,35 @@ RSpec.describe ChatSessions::AgentLoop do
 
         described_class.new(chat_session: chat_session, llm_client: multi_client).run
 
-        expect(chat_session.messages.where(tool_status: "pending").count).to eq(1)
+        pending = chat_session.messages.where(tool_status: "pending")
+        expect(pending.count).to eq(2)
+        expect(pending.pluck(:tool_call_id)).to contain_exactly("a", "b")
+      end
+
+      it "runs read-only tools immediately when mixed with a write tool in one batch" do
+        allow(Tools::Registry).to receive(:dispatch).and_return({ "status" => "ok" })
+        mixed_client = Class.new do
+          def call(_conversation, tools: nil)
+            {
+              content: "Looking, then acting.",
+              tool_calls: [
+                { id: "read", name: "search", arguments: { "q" => "x" } },
+                { id: "write", name: "trigger_agent_run", arguments: {} }
+              ],
+              tokens_input: 5, tokens_output: 5, model: "gpt-4o"
+            }
+          end
+        end.new
+
+        described_class.new(chat_session: chat_session, llm_client: mixed_client).run
+
+        expect(Tools::Registry).to have_received(:dispatch).once
+
+        read_result = chat_session.messages.find_by(role: "tool", tool_call_id: "read")
+        expect(read_result).to be_present
+        expect(read_result.tool_result).to eq({ "status" => "ok" })
+
+        expect(chat_session.messages.find_by(tool_call_id: "write", tool_status: "pending")).to be_present
       end
     end
 
