@@ -51,7 +51,8 @@ module AgentRuns
       return false unless enforceable?
       return false if runner_key.blank?
 
-      failure_counts.fetch(runner_key.to_s, 0) >= cap
+      canonical = Activities::RunAgentActivity::AGENT_TYPE_TO_RUNNER.fetch(runner_key.to_s, runner_key.to_s)
+      failure_counts.fetch(canonical, 0) >= cap
     end
 
     private

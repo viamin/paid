@@ -690,7 +690,8 @@ module Activities
           runner_list = runners.any? ? runner_attempt_labels(runners, agent_run, user_settings.user).join(", ") : "none"
           failure_error = if @issue_runner_retry_cap_exhausted
             cap = agent_run.project.effective_max_issue_runner_failures
-            "Issue abandoned: every available runner reached the per-issue retry cap (#{cap}). #{runner_list}"
+            capped_list = @issue_runner_retry_capped_keys&.join(", ") || "unknown"
+            "Issue abandoned: every available runner reached the per-issue retry cap (#{cap}). Capped providers: #{capped_list}"
           else
             "All runners exhausted: #{runner_list}"
           end
@@ -1143,6 +1144,7 @@ module Activities
 
       if filtered.empty?
         @issue_runner_retry_cap_exhausted = true
+        @issue_runner_retry_capped_keys = capped.to_a.sort
         abandon_issue_due_to_retry_cap(agent_run, capped, cap)
       elsif filtered != runners
         logger.info(
