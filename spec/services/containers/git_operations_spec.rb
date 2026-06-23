@@ -511,6 +511,75 @@ RSpec.describe Containers::GitOperations do
       expect(agent_run.worktree.reload).to be_pushed
     end
 
+    context "when the App push is rejected for a missing permission" do
+      # Methods (not `let`s) to stay within RSpec/MultipleMemoizedHelpers.
+      def push_command
+        [ "git", "push", "--no-verify", "origin", "paid/test-branch" ]
+      end
+
+      def permission_rejection
+        Containers::Provision::Result.failure(
+          error: "Command exited with code 1",
+          stdout: "",
+          stderr: " ! [remote rejected] paid/test-branch -> paid/test-branch " \
+                  "(refusing to allow a GitHub App to create or update workflow " \
+                  "`.github/workflows/mutation.yml` without `workflows` permission)",
+          exit_code: 1
+        )
+      end
+
+      context "when PAT push fallback is configured" do
+        let(:project) { create(:project, :with_github_installation) }
+
+        before do
+          fallback_token = create(:github_token, :with_workflow_scope, account: project.account)
+          project.update!(git_push_pat_fallback_enabled: true, git_push_fallback_token: fallback_token)
+        end
+
+        it "retries the push once and returns the SHA, leaving the flag cleared" do
+          allow(container_service).to receive(:execute)
+            .with(push_command, timeout: 60, stream: false, env: described_class::NETWORK_GIT_ENV)
+            .and_return(permission_rejection, success_result)
+
+          expect(git_ops.push_branch).to eq(head_sha)
+          expect(agent_run.reload.git_credential_fallback_active).to be(false)
+        end
+
+        it "flags the run only while retrying, so the proxy serves the PAT for that push" do
+          flag_states = []
+          allow(container_service).to receive(:execute)
+            .with(push_command, timeout: 60, stream: false, env: described_class::NETWORK_GIT_ENV) do
+              flag_states << agent_run.reload.git_credential_fallback_active
+              flag_states.size == 1 ? permission_rejection : success_result
+            end
+
+          git_ops.push_branch
+
+          expect(flag_states).to eq([ false, true ])
+        end
+
+        it "raises PushError and clears the flag when the retry also fails" do
+          allow(container_service).to receive(:execute)
+            .with(push_command, timeout: 60, stream: false, env: described_class::NETWORK_GIT_ENV)
+            .and_return(permission_rejection, permission_rejection)
+
+          expect { git_ops.push_branch }.to raise_error(described_class::PushError)
+          expect(agent_run.reload.git_credential_fallback_active).to be(false)
+        end
+      end
+
+      context "when PAT push fallback is not configured" do
+        it "does not retry and raises PushError" do
+          expect(container_service).to receive(:execute)
+            .with(push_command, timeout: 60, stream: false, env: described_class::NETWORK_GIT_ENV)
+            .once
+            .and_return(permission_rejection)
+
+          expect { git_ops.push_branch }.to raise_error(described_class::PushError)
+        end
+      end
+    end
+
     it "uses --force-with-lease for existing PR branches" do
       agent_run.update!(source_pull_request_number: 42)
 
