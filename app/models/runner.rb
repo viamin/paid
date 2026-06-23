@@ -1550,31 +1550,21 @@ class Runner < ApplicationRecord
   end
 
   def openrouter_free_runner_runtime(project:, model_id:)
-    plan = Runners::FreeModelExecutionPlan.call(runner: self, model_id: model_id, project: project)
-    config = plan.config
-
-    AgentHarness::ProviderRuntime.new(
-      model: config.fetch(:model),
-      env: {
-        config.fetch(:api_key_env) => effective_api_secret.to_s,
-        "OPENAI_BASE_URL" => config.fetch(:base_url)
-      },
-      unset_env: %w[OPENAI_HEADER_X_AGENT_RUN_ID OPENAI_HEADER_X_PROXY_TOKEN],
-      metadata: {
-        config: {
-          "provider" => {
-            "openrouter" => config.fetch(:provider_routing)
-          }
-        }
-      }
-    )
+    config = Runners::FreeModelExecutionPlan.call(runner: self, model_id: model_id, project: project).config
+    openrouter_provider_runtime(config)
   end
   public :openrouter_free_runner_runtime
 
   def openrouter_pareto_runner_runtime(project:)
-    plan = Runners::ParetoExecutionPlan.call(runner: self, project: project)
-    config = plan.config
+    config = Runners::ParetoExecutionPlan.call(runner: self, project: project).config
+    openrouter_provider_runtime(config)
+  end
+  public :openrouter_pareto_runner_runtime
 
+  # Shared builder for OpenRouter-backed runners (free-model and Pareto). Both
+  # resolve their config via an execution plan and translate it into the same
+  # AgentHarness runtime, so the provider routing/metadata shape stays in sync.
+  def openrouter_provider_runtime(config)
     AgentHarness::ProviderRuntime.new(
       model: config.fetch(:model),
       env: {
@@ -1591,5 +1581,5 @@ class Runner < ApplicationRecord
       }
     )
   end
-  public :openrouter_pareto_runner_runtime
+  private :openrouter_provider_runtime
 end
