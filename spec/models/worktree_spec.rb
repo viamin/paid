@@ -75,6 +75,13 @@ RSpec.describe Worktree do
         expect(described_class.orphaned).to include(orphan)
       end
 
+      it "includes worktrees for any finished agent run (e.g. token_budget_exceeded)" do
+        budget_run = create(:agent_run, :token_budget_exceeded, project: project)
+        orphan = create(:worktree, project: project, agent_run: budget_run)
+
+        expect(described_class.orphaned).to include(orphan)
+      end
+
       it "includes worktrees without agent runs" do
         orphan = create(:worktree, :without_agent_run, project: project)
 
