@@ -740,10 +740,13 @@ class Issue < ApplicationRecord
     statuses.take_while { |status| (AgentRun::FAILURE_STATUSES + %w[no_output]).include?(status) }.count
   end
 
+  public
+
   # An issue is abandoned for retry-cap purposes once every available provider
   # has hit the per-issue per-provider retry cap. Abandoned issues are excluded
-  # from auto-pick (see DefaultCandidateSource) until the abandonment is cleared
-  # — for example by a successful run on any provider.
+  # from auto-pick (see DefaultCandidateSource) until the abandonment is cleared.
+  # Clearing the flag does NOT reset per-provider failure counts — see
+  # {#clear_runner_retry_abandonment!} for the full semantics.
   def runner_retry_abandoned?
     runner_retry_abandoned_at.present?
   end
@@ -768,9 +771,11 @@ class Issue < ApplicationRecord
     )
   end
 
-  # Clears retry-cap abandonment so the issue becomes auto-pickable again.
-  # Called when a run for the issue succeeds — once any provider makes progress,
-  # the cap-based exclusion no longer applies.
+  # Clears the abandonment flag so a successful manual run can re-enter auto-pick.
+  # NOTE: this does NOT reset per-provider failure counts (IssueRunnerFailureHistory
+  # is a windowed total), so if all providers are still over the cap the issue will
+  # be re-capped and re-abandoned on the next dispatch until failures age out of
+  # the 50-run window. A success does not by itself restore capped providers.
   def clear_runner_retry_abandonment!(reason: "Cleared after a successful run")
     return unless runner_retry_abandoned_at.present?
 

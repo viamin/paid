@@ -307,9 +307,12 @@ module Activities
             # different models) remain distinguishable in UI and retry logic.
             agent_run.update!(final_runner: attempt_label)
 
-            # A successful attempt made progress on the issue, so any prior
-            # retry-cap abandonment no longer applies — clear it so the issue
-            # stays auto-pickable if it needs further work.
+            # A successful attempt made progress on the issue. Clear any prior
+            # retry-cap abandonment so the issue is auto-pickable again. NOTE:
+            # clearing does not reset per-provider failure counts (the cap is
+            # a windowed total), so if all providers are still over the cap the
+            # issue will be re-capped and re-abandoned on the next dispatch
+            # until those failures age out of the inspection window.
             clear_issue_runner_retry_abandonment(agent_run)
 
             # Skip git post-processing for goals that don't clone a repo.
@@ -1114,8 +1117,10 @@ module Activities
     #
     # Manual runs (auto_pick == false) intentionally bypass the cap: an explicit
     # user-triggered run is an override and may target a capped provider on
-    # purpose. Abandonment is also cleared on success elsewhere so a manual
-    # override that succeeds un-abandons the issue.
+    # purpose. Abandonment is also cleared on success elsewhere, so a manual
+    # override that succeeds clears the abandonment flag for subsequent auto-pick.
+    # Note that clearing the flag does not reset per-provider failure counts —
+    # see Issue#clear_runner_retry_abandonment! for the full semantics.
     def apply_issue_runner_retry_cap(runners, agent_run, user)
       return runners unless retry_cap_applicable?(agent_run)
       return runners if runners.empty?

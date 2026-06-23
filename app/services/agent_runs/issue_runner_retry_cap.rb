@@ -3,19 +3,16 @@
 module AgentRuns
   # Enforces the per-issue per-provider retry cap (#2513).
   #
-  # After a single provider fails {DEFAULT_CAP} times for one issue (across prior
-  # runs, counting only real execution failures — error/timeout/infinite_loop/
-  # preflight_timeout), it is excluded from scheduling for that issue so the
-  # remaining providers get a chance instead of burning more retries on a provider
-  # that keeps failing. When every available provider has hit the cap the issue is
-  # abandoned entirely (see Issue#abandon_due_to_runner_retry_cap!).
+  # After a single provider fails the configured cap times for one issue (across
+  # prior runs, counting only real execution failures — error/timeout/
+  # infinite_loop/preflight_timeout), it is excluded from scheduling for that
+  # issue so the remaining providers get a chance instead of burning more retries
+  # on a provider that keeps failing. When every available provider has hit the
+  # cap the issue is abandoned entirely (see Issue#abandon_due_to_runner_retry_cap!).
   #
   # Failure counts are derived from {IssueRunnerFailureHistory} and are goal-scoped,
   # so a create_pr cap is independent of analyze_issue retries for the same issue.
   class IssueRunnerRetryCap
-    # Default cap (also mirrored in TenantSetting::DEFAULT_AGENT_SETTINGS).
-    DEFAULT_CAP = 10
-
     # Larger inspection window than the ordering history so a provider that has
     # steadily failed across many runs still trips the cap even when other
     # providers' failures would otherwise scroll it out of a smaller window.
