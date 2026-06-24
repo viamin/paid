@@ -1887,9 +1887,9 @@ module Containers
       tmpfs = {}
       tmpfs[HEARTBEAT_MOUNT_POINT] = "size=#{1024 * 1024},mode=0777" unless heartbeat_dir_host
 
-      # /tmp must be `exec` because every coding/review/rebase prompt has the
-      # agent run `bundle install` as step 1, and review-goal runs additionally
-      # set BUNDLE_PATH=/tmp/bundle. Bundler builds native gem extensions in
+      # /tmp must be `exec` because agent containers default Bundler to
+      # /tmp/bundle and the coding/review/rebase flows all run `bundle install`
+      # early in execution. Bundler builds native gem extensions in
       # the gem path; mkmf's try_link verifies the produced binary with
       # File.executable?, which returns false on a noexec mount — producing
       # a misleading "compiler failed to generate an executable file" error
@@ -2082,7 +2082,9 @@ module Containers
         "GITHUB_API_URL=#{proxy_base}/api/proxy/github",
         "KNOWLEDGE_SEARCH_URL=#{proxy_base}/api/proxy/knowledge/search",
         "PROJECT_ID=#{project.id}",
-        "HOME=/home/agent"
+        "HOME=/home/agent",
+        "BUNDLE_PATH=/tmp/bundle",
+        "BUNDLE_APP_CONFIG=/tmp/bundle-config"
       ]
 
       env.concat(run_scoped_environment(proxy_base)) if agent_run.present?

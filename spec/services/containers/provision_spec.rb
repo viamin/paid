@@ -410,8 +410,8 @@ RSpec.describe Containers::Provision do
       # mkmf's File.executable? check fail when bundle install builds native
       # gem extensions in /tmp — surfacing as a misleading "compiler failed
       # to generate an executable file" error (e.g. bigdecimal extconf).
-      # Coding/review/rebase prompts all run bundle install as step 1, and
-      # review-goal runs additionally set BUNDLE_PATH=/tmp/bundle.
+      # Agent containers default Bundler to /tmp/bundle and the
+      # coding/review/rebase flows all run bundle install early.
       it "mounts /tmp tmpfs with exec so bundle install can build native gems" do
         expect(Docker::Container).to receive(:create) do |config|
           tmp_options = config.dig("HostConfig", "Tmpfs", "/tmp")
@@ -627,6 +627,17 @@ RSpec.describe Containers::Provision do
             "PAID_CLAUDE_SUBSCRIPTION_AUTH=0", "PAID_CODEX_SUBSCRIPTION_AUTH=0",
             "PAID_GEMINI_SUBSCRIPTION_AUTH=0", "PAID_COPILOT_SUBSCRIPTION_AUTH=0"
           )
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "sets writable Bundler paths for all agent containers" do
+        expect(Docker::Container).to receive(:create) do |config|
+          env = config["Env"]
+          expect(env).to include("BUNDLE_PATH=/tmp/bundle")
+          expect(env).to include("BUNDLE_APP_CONFIG=/tmp/bundle-config")
           mock_container
         end
 
