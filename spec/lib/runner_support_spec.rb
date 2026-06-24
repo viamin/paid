@@ -364,6 +364,7 @@ RSpec.describe RunnerSupport do
           "kilocode" => "kilo",
           "opencode" => "opencode",
           "openrouter_free" => "opencode",
+          "openrouter_pareto" => "opencode",
           "pi" => "pi"
         }
 
@@ -455,6 +456,16 @@ RSpec.describe RunnerSupport do
 
       it "is addable as a container-executable runner" do
         expect(described_class.addable_runner_key?("openrouter_free")).to be true
+      end
+    end
+
+    describe "openrouter_pareto inclusion" do
+      it "is listed in APP_RUNNER_KEYS as a known runner" do
+        expect(described_class::APP_RUNNER_KEYS).to include("openrouter_pareto")
+      end
+
+      it "is addable as a container-executable runner" do
+        expect(described_class.addable_runner_key?("openrouter_pareto")).to be true
       end
     end
   end

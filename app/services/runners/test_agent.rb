@@ -384,6 +384,7 @@ module Runners
     def container_provider_runtime
       return kilocode_provider_runtime if kilocode_direct_outbound?
       return openrouter_free_provider_runtime if openrouter_free_direct_outbound?
+      return openrouter_pareto_provider_runtime if openrouter_pareto_direct_outbound?
       return subscription_provider_runtime if subscription_provider_runtime?
 
       runner.agent_harness_runner_runtime
@@ -412,6 +413,18 @@ module Runners
         return result.model_id if result.success? && result.model_id.present?
       end
       nil
+    end
+
+    def openrouter_pareto_direct_outbound?
+      runner.runner_key == "openrouter_pareto" && runner.requires_direct_outbound?
+    end
+
+    # Builds the OpenRouter Pareto runtime for smoke tests.
+    #
+    # The Pareto router selects models dynamically, so no tier model resolution
+    # is needed — pass the test project for data-collection routing.
+    def openrouter_pareto_provider_runtime
+      runner.openrouter_pareto_runner_runtime(project: test_project)
     end
 
     def subscription_provider_runtime?
