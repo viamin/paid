@@ -1975,4 +1975,135 @@ RSpec.describe Issue do
       expect(issue.reload.paused).to be(true)
     end
   end
+
+  describe "#runner_retry_abandoned?" do
+    it "returns false when runner_retry_abandoned_at is nil" do
+      issue = build(:issue, runner_retry_abandoned_at: nil)
+
+      expect(issue.runner_retry_abandoned?).to be(false)
+    end
+
+    it "returns true when runner_retry_abandoned_at is present" do
+      issue = build(:issue, runner_retry_abandoned_at: Time.current)
+
+      expect(issue.runner_retry_abandoned?).to be(true)
+    end
+  end
+
+  describe "#abandon_due_to_runner_retry_cap!" do
+    let(:project) { create(:project) }
+    let(:issue) { create(:issue, project: project) }
+
+    it "stamps the abandonment timestamp and reason" do
+      freeze_time = Time.zone.local(2026, 6, 1, 12, 0, 0)
+      travel_to(freeze_time) do
+        issue.abandon_due_to_runner_retry_cap!(
+          reason: "all capped",
+          cap: 10,
+          runner_keys: [ "claude", "codex" ]
+        )
+
+        issue.reload
+        expect(issue.runner_retry_abandoned_at).to eq(freeze_time)
+        expect(issue.runner_retry_abandon_reason).to eq("all capped")
+      end
+    end
+
+    it "is idempotent when the issue is already abandoned" do
+      original_time = 1.hour.ago
+      issue.update!(runner_retry_abandoned_at: original_time, runner_retry_abandon_reason: "first")
+
+      issue.abandon_due_to_runner_retry_cap!(
+        reason: "second",
+        cap: 10,
+        runner_keys: [ "claude" ]
+      )
+
+      issue.reload
+      expect(issue.runner_retry_abandoned_at).to be_within(1.second).of(original_time)
+      expect(issue.runner_retry_abandon_reason).to eq("first")
+    end
+
+    it "emits a structured log event" do
+      allow(Rails.logger).to receive(:info)
+
+      issue.abandon_due_to_runner_retry_cap!(
+        reason: "all capped",
+        cap: 10,
+        runner_keys: [ "claude", "codex" ]
+      )
+
+      expect(Rails.logger).to have_received(:info).with(
+        hash_including(
+          message: "issue.runner_retry_abandoned",
+          component: "agent_execution",
+          issue_id: issue.id,
+          project_id: project.id,
+          retry_cap: 10,
+          runner_keys: [ "claude", "codex" ],
+          reason: "all capped"
+        )
+      )
+    end
+  end
+
+  describe "#clear_runner_retry_abandonment!" do
+    let(:project) { create(:project) }
+    let(:issue) do
+      create(:issue, project: project,
+        runner_retry_abandoned_at: 1.hour.ago,
+        runner_retry_abandon_reason: "all capped")
+    end
+
+    it "clears the abandonment flag and reason" do
+      issue.clear_runner_retry_abandonment!
+
+      issue.reload
+      expect(issue.runner_retry_abandoned_at).to be_nil
+      expect(issue.runner_retry_abandon_reason).to be_nil
+      expect(issue.runner_retry_abandoned?).to be(false)
+    end
+
+    it "is a no-op when the issue is not abandoned" do
+      active = create(:issue, project: project)
+
+      expect { active.clear_runner_retry_abandonment! }.not_to change { active.attributes }
+    end
+
+    it "emits a structured log event" do
+      allow(Rails.logger).to receive(:info)
+
+      issue.clear_runner_retry_abandonment!(reason: "manual override succeeded")
+
+      expect(Rails.logger).to have_received(:info).with(
+        hash_including(
+          message: "issue.runner_retry_abandonment_cleared",
+          component: "agent_execution",
+          issue_id: issue.id,
+          project_id: project.id,
+          reason: "manual override succeeded"
+        )
+      )
+    end
+
+    it "does not reset per-provider failure counts (windowed basis is preserved)" do
+      # The cap is enforced via IssueRunnerFailureHistory (a 50-run windowed
+      # total); clearing the abandonment flag is a UI/auto-pick signal, not
+      # a reset of failure counts. A subsequent auto-pick will re-trip the
+      # cap and re-abandon the issue if all providers are still over it.
+      record_run = ->(runner_key, error_type: "error") {
+        create(:agent_run, :failed, project: project, issue: issue, goal: "create_pr",
+          runners_attempted: [ { "runner" => runner_key, "success" => false, "error_type" => error_type } ])
+      }
+      10.times { record_run.call("claude_code") }
+
+      issue.clear_runner_retry_abandonment!
+
+      # The cap is still enforced against the same windowed failure history.
+      capped = AgentRuns::IssueRunnerRetryCap.capped_runner_keys(
+        project: project, issue: issue, goal: "create_pr", cap: 10
+      )
+      expect(capped).to contain_exactly("claude")
+    end
+  end
 end

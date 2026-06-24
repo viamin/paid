@@ -400,6 +400,7 @@ class ProjectsController < ApplicationController
       :knowledge_evolution_enabled,
       :auto_release_granularity,
       :plan_review_timeout_hours,
+      :max_issue_runner_failures,
       auto_pick_skip_labels: [],
       allowed_github_usernames: [],
       priority_labels: Project::PRIORITY_TIERS)

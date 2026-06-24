@@ -4,7 +4,8 @@ module AgentRuns
   # Computes per-runner failure counts from previous agent runs for the same issue.
   # Used by RunAgentActivity to implement issue-aware provider switching: providers
   # that have already failed for a given issue are deprioritized so that untried
-  # providers are attempted first.
+  # providers are attempted first. Also used by {IssueRunnerRetryCap} to decide
+  # when a provider has exhausted its per-issue retry budget.
   #
   # Only actual execution failures (error, timeout, infinite_loop, preflight_timeout)
   # are counted. Rate limits, skipped runners, and externally-cancelled runs are
@@ -17,19 +18,47 @@ module AgentRuns
     # with hundreds of retry attempts.
     MAX_PRIOR_RUNS = 20
 
-    def self.call(...)
-      new(...).call
+    class << self
+      # Counts failures keyed off an existing agent run (its issue/project/goal),
+      # excluding the run itself.
+      def call(agent_run:, max_prior_runs: MAX_PRIOR_RUNS)
+        new(
+          project_id: agent_run.project_id,
+          issue_id: agent_run.issue_id,
+          goal: agent_run.goal,
+          exclude_run_id: agent_run.id,
+          max_prior_runs: max_prior_runs
+        ).call
+      end
+
+      # Counts failures keyed off an issue directly, without an agent run. Used by
+      # the retry-cap and auto-pick eligibility checks which operate on the issue
+      # rather than an in-flight run. +exclude_run_id+ optionally omits a run
+      # (e.g. the run currently being dispatched).
+      def for_issue(project:, issue:, goal:, exclude_run_id: nil, max_prior_runs: MAX_PRIOR_RUNS)
+        new(
+          project_id: project.is_a?(ApplicationRecord) ? project.id : project,
+          issue_id: issue.is_a?(ApplicationRecord) ? issue.id : issue,
+          goal: goal,
+          exclude_run_id: exclude_run_id,
+          max_prior_runs: max_prior_runs
+        ).call
+      end
     end
 
-    def initialize(agent_run:)
-      @agent_run = agent_run
+    def initialize(project_id:, issue_id:, goal:, exclude_run_id: nil, max_prior_runs: MAX_PRIOR_RUNS)
+      @project_id = project_id
+      @issue_id = issue_id
+      @goal = goal
+      @exclude_run_id = exclude_run_id
+      @max_prior_runs = max_prior_runs
     end
 
     # Returns a hash of { canonical_runner_key => failure_count } from all prior
     # failed runs for the same issue/project/goal combination.
     # Canonical runner keys are normalized (e.g. "claude_code" -> "claude").
     def call
-      return {} unless agent_run.issue_id
+      return {} unless issue_id
 
       runs = prior_runs
       return {} if runs.empty?
@@ -52,15 +81,14 @@ module AgentRuns
 
     private
 
-    attr_reader :agent_run
+    attr_reader :project_id, :issue_id, :goal, :exclude_run_id, :max_prior_runs
 
     def prior_runs
-      AgentRun
-        .where(project_id: agent_run.project_id, issue_id: agent_run.issue_id, goal: agent_run.goal)
-        .where.not(id: agent_run.id)
+      scope = AgentRun
+        .where(project_id: project_id, issue_id: issue_id, goal: goal)
         .where("runners_attempted != '[]'::jsonb")
-        .order(created_at: :desc)
-        .limit(MAX_PRIOR_RUNS)
+      scope = scope.where.not(id: exclude_run_id) if exclude_run_id
+      scope.order(created_at: :desc).limit(max_prior_runs)
     end
 
     # Builds a map from routing key -> canonical runner_key for all routing-key-style

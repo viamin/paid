@@ -12,6 +12,12 @@ class Issue < ApplicationRecord
   PR_ESCALATION_REASON_FAILURE_STREAK = "failure_streak"
   PR_ESCALATION_REASON_REVIEW_GOAL_RETRY_LIMIT = "review_goal_retry_limit"
 
+  # Default per-issue per-provider retry cap: after a single provider fails this
+  # many times for one issue, it is excluded from scheduling for that issue. Used
+  # as the final fallback when no account-level or project-level override is set.
+  # Keep in sync with the TenantSetting::DEFAULT_AGENT_SETTINGS default.
+  DEFAULT_MAX_RUNNER_FAILURES = 10
+
   # Default label mirrored to GitHub to surface an issue/PR's paused state.
   # Adding the label in GitHub (or pausing from the UI) flips `paused`;
   # removing it flips `paused` back.
@@ -732,5 +738,56 @@ class Issue < ApplicationRecord
       .pluck(:status)
 
     statuses.take_while { |status| (AgentRun::FAILURE_STATUSES + %w[no_output]).include?(status) }.count
+  end
+
+  public
+
+  # An issue is abandoned for retry-cap purposes once every available provider
+  # has hit the per-issue per-provider retry cap. Abandoned issues are excluded
+  # from auto-pick (see DefaultCandidateSource) until the abandonment is cleared.
+  # Clearing the flag does NOT reset per-provider failure counts — see
+  # {#clear_runner_retry_abandonment!} for the full semantics.
+  def runner_retry_abandoned?
+    runner_retry_abandoned_at.present?
+  end
+
+  # Marks the issue as abandoned due to the retry cap. Idempotent: a no-op when
+  # the issue is already abandoned. Emits a structured log event so monitoring
+  # can track how many issues are abandoned due to the retry cap.
+  def abandon_due_to_runner_retry_cap!(reason:, cap:, runner_keys:)
+    return if runner_retry_abandoned_at.present?
+
+    update!(runner_retry_abandoned_at: Time.current, runner_retry_abandon_reason: reason)
+
+    Rails.logger.info(
+      message: "issue.runner_retry_abandoned",
+      component: "agent_execution",
+      issue_id: id,
+      project_id: project_id,
+      issue_number: github_number,
+      retry_cap: cap,
+      runner_keys: Array(runner_keys),
+      reason: reason
+    )
+  end
+
+  # Clears the abandonment flag so a successful manual run can re-enter auto-pick.
+  # NOTE: this does NOT reset per-provider failure counts (IssueRunnerFailureHistory
+  # is a windowed total), so if all providers are still over the cap the issue will
+  # be re-capped and re-abandoned on the next dispatch until failures age out of
+  # the 50-run window. A success does not by itself restore capped providers.
+  def clear_runner_retry_abandonment!(reason: "Cleared after a successful run")
+    return unless runner_retry_abandoned_at.present?
+
+    update!(runner_retry_abandoned_at: nil, runner_retry_abandon_reason: nil)
+
+    Rails.logger.info(
+      message: "issue.runner_retry_abandonment_cleared",
+      component: "agent_execution",
+      issue_id: id,
+      project_id: project_id,
+      issue_number: github_number,
+      reason: reason
+    )
   end
 end

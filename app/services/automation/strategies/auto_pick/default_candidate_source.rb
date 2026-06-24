@@ -202,6 +202,10 @@ module Automation
               .where.not(id: blocking_issue_ids)
               .where(source: [ Issue::GITHUB_SOURCE, Issue::SYNTHETIC_CODE_SCANNING_SOURCE ])
               .where.not(id: Issue.open_pull_request_parent_issue_ids(project: project).distinct)
+              # Issues abandoned because every available provider hit the per-issue
+              # retry cap (#2513) are not auto-pickable until the abandonment is
+              # cleared (e.g. by a successful run).
+              .where(runner_retry_abandoned_at: nil)
 
             trusted_usernames = project.trusted_github_author_logins.presence
             if trusted_usernames
