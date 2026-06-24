@@ -220,5 +220,94 @@ RSpec.describe Activities::MarkAgentRunFailedActivity do
       expect(agent_run.reload.status).to eq("failed")
       expect(issue.reload.paid_state).to eq("completed")
     end
+
+    context "with a GitHub App push-permission rejection" do
+      let(:client) { instance_double(GithubClient) }
+
+      let(:rejection_error) do
+        "Push failed: Command exited with code 1 — ! [remote rejected] " \
+          "paid/2368-branch -> paid/2368-branch (refusing to allow a GitHub App " \
+          "to create or update workflow `.github/workflows/mutation.yml` without " \
+          "`workflows` permission)"
+      end
+
+      before do
+        allow(GithubClient).to receive(:new).and_return(client)
+        allow(client).to receive(:recent_issue_comments).and_return([])
+        allow(client).to receive(:add_comment)
+      end
+
+      it "abandons the issue so it is not re-picked into an infinite loop" do
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue, goal: "create_pr")
+
+        activity.execute(agent_run_id: agent_run.id, error: rejection_error)
+
+        expect(agent_run.reload.status).to eq("failed")
+        issue.reload
+        expect(issue.paid_state).to eq("failed")
+        expect(issue.runner_retry_abandoned?).to be(true)
+        expect(issue.push_permission_abandoned?).to be(true)
+      end
+
+      it "excludes the issue from the auto-pick candidate source" do
+        project.update!(auto_pick_enabled: true)
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue, goal: "create_pr")
+
+        activity.execute(agent_run_id: agent_run.id, error: rejection_error)
+
+        eligible = Automation::Strategies::AutoPick::DefaultCandidateSource
+          .eligible_scope(project).where(id: issue.id).exists?
+        expect(eligible).to be(false)
+      end
+
+      it "posts a comment explaining the actionable cause" do
+        issue = create(:issue, :in_progress, project: project, github_number: 2368)
+        agent_run = create(:agent_run, :running, project: project, issue: issue, goal: "create_pr")
+
+        activity.execute(agent_run_id: agent_run.id, error: rejection_error)
+
+        expect(client).to have_received(:add_comment) do |_repo, number, body|
+          expect(number).to eq(2368)
+          expect(body).to include("Push blocked: missing GitHub App permission")
+          expect(body).to include("workflows")
+        end
+      end
+
+      it "does not post a duplicate comment when one already exists" do
+        existing = double(body: "<!-- paid: push-permission-rejection --> earlier")
+        allow(client).to receive(:recent_issue_comments).and_return([ existing ])
+        issue = create(:issue, :in_progress, project: project, github_number: 2368)
+        agent_run = create(:agent_run, :running, project: project, issue: issue, goal: "create_pr")
+
+        activity.execute(agent_run_id: agent_run.id, error: rejection_error)
+
+        expect(client).not_to have_received(:add_comment)
+        expect(issue.reload.push_permission_abandoned?).to be(true)
+      end
+
+      it "does not abandon review-goal runs (they don't loop)" do
+        issue = create(:issue, :in_progress, :pull_request, project: project)
+        agent_run = create(:agent_run, :running, :review_goal, project: project, issue: issue)
+
+        activity.execute(agent_run_id: agent_run.id, error: rejection_error)
+
+        expect(issue.reload.paid_state).to eq("completed")
+        expect(issue.push_permission_abandoned?).to be(false)
+      end
+
+      it "still marks the run failed and keeps bookkeeping intact when comment posting fails" do
+        allow(client).to receive(:add_comment).and_raise(GithubClient::Error, "API error")
+        issue = create(:issue, :in_progress, project: project)
+        agent_run = create(:agent_run, :running, project: project, issue: issue, goal: "create_pr")
+
+        result = activity.execute(agent_run_id: agent_run.id, error: rejection_error)
+
+        expect(result).to eq({ agent_run_id: agent_run.id })
+        expect(agent_run.reload.status).to eq("failed")
+        expect(issue.reload.push_permission_abandoned?).to be(true)
+      end
+    end
   end
 end
