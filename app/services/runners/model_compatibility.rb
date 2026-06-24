@@ -7,11 +7,6 @@ module Runners
   # actually execute on the installed runner CLI. This is the single integration
   # point for compatibility facts sourced from agent-harness.
   #
-  # When viamin/agent-harness#259 lands and exposes a structured compatibility
-  # API such as `AgentHarness.provider(key).model_compatibility(...)`, this
-  # service will delegate to it. Until then, known constraints are encoded as
-  # static contracts here.
-  #
   # Callers should treat +supported: nil+ (unknown) as permissive — do not
   # reject a model merely because compatibility cannot be asserted statically.
   class ModelCompatibility
@@ -37,12 +32,9 @@ module Runners
       subscription_only
     ].freeze
 
-    # Models that the current Codex CLI pin (agent-harness 0.22.5) cannot
-    # execute regardless of auth type. These require a newer Codex CLI.
-    # When the Gemfile bumps agent-harness past the release that ships a
-    # compatible Codex CLI, remove the relevant entry here and rely on the
-    # harness compatibility API instead.
-    # See: TODO(#2566) in Gemfile and seed_known_models.rb.
+    # Legacy fallback only used if agent-harness is too old to expose its
+    # compatibility contract. Once Paid only supports harness versions with the
+    # contract, this can be removed.
     CODEX_CLI_VERSION_GATED_MODELS = %w[
       gpt-5.5
       gpt-5.5-pro
@@ -59,13 +51,6 @@ module Runners
     end
 
     def call
-      # Delegate to agent-harness when it exposes the compatibility API
-      # (viamin/agent-harness#259). The guard is safe to remove once the
-      # harness version in Gemfile.lock includes model_compatibility.
-      if harness_provider_supports_compat_api?
-        return harness_compat_result
-      end
-
       internal_compat_check
     end
 
@@ -78,23 +63,24 @@ module Runners
     # ---------------------------------------------------------------------------
 
     def harness_provider_supports_compat_api?
-      klass = AgentHarness.provider_class(harness_key)
-      klass.respond_to?(:model_compatibility)
-    rescue AgentHarness::ConfigurationError, NameError, KeyError
+      AgentHarness.respond_to?(:model_compatibility)
+    rescue NameError
       false
     end
 
     def harness_compat_result
-      klass = AgentHarness.provider_class(harness_key)
-      raw = klass.model_compatibility(
+      raw = AgentHarness.model_compatibility(
+        runner: harness_key,
         model_id: model_id,
-        auth_type: auth_type.to_sym
+        auth_mode: auth_type_symbol,
+        cli_version: harness_cli_version
       )
+
       Result.new(
-        supported: raw[:supported],
-        reason: raw[:reason],
-        incompatibility_type: raw[:incompatibility_type]&.to_sym,
-        replacement_model_id: raw[:replacement_model_id],
+        supported: raw.supported,
+        reason: human_reason_for(raw),
+        incompatibility_type: incompatibility_type_for(raw),
+        replacement_model_id: raw.fallback_model_id,
         source: "agent_harness"
       )
     rescue => e
@@ -112,17 +98,70 @@ module Runners
       RunnerSupport.harness_runner_key_for(runner_key).to_sym
     end
 
+    def auth_type_symbol
+      auth_type.presence&.to_sym
+    end
+
+    def harness_cli_version
+      AgentHarness.provider_metadata(harness_key)
+        .dig(:runtime, :installation, :resolved_version)
+    rescue AgentHarness::ConfigurationError, KeyError
+      nil
+    end
+
+    def incompatibility_type_for(raw)
+      return :cli_version_gated if raw.reason == AgentHarness::ModelCompatibility::UNSUPPORTED_CLI_VERSION_REASON
+      return :auth_unknown if raw.reason == AgentHarness::ModelCompatibility::UNSUPPORTED_AUTH_MODE_REASON
+
+      nil
+    end
+
+    def human_reason_for(raw)
+      case raw.reason
+      when AgentHarness::ModelCompatibility::UNSUPPORTED_CLI_VERSION_REASON
+        requirement = raw.cli_version_requirement || raw.minimum_cli_version
+        "'#{model_id}' requires Codex CLI #{requirement}"
+      when AgentHarness::ModelCompatibility::UNSUPPORTED_AUTH_MODE_REASON
+        "'#{model_id}' does not support auth mode '#{auth_type}' for #{runner_key}"
+      else
+        nil
+      end
+    end
+
     # ---------------------------------------------------------------------------
     # Internal static contracts
     # ---------------------------------------------------------------------------
 
     def internal_compat_check
+      catalog_result = catalog_provider_check
+      return catalog_result if catalog_result
+
+      return harness_compat_result if harness_provider_supports_compat_api?
+
       case runner_key
       when "codex"
         codex_check
       else
         standard_provider_check
       end
+    end
+
+    def catalog_provider_check
+      expected_provider = Runners::DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER[runner_key]
+      return if expected_provider.blank?
+
+      model = LlmModel.find_by(model_id: model_id)
+      return if model.blank?
+
+      return if model.provider == expected_provider
+
+      Result.new(
+        supported: false,
+        reason: "'#{model_id}' belongs to provider '#{model.provider}', not '#{expected_provider}' (required for #{runner_key})",
+        incompatibility_type: :provider_mismatch,
+        replacement_model_id: nil,
+        source: "paid_catalog"
+      )
     end
 
     def codex_check
@@ -133,19 +172,6 @@ module Runners
           incompatibility_type: :cli_version_gated,
           replacement_model_id: nil,
           source: "paid_static_contract"
-        )
-      end
-
-      model = LlmModel.find_by(model_id: model_id)
-
-      # Any model that isn't OpenAI-provider is clearly wrong for Codex.
-      if model && model.provider != "openai"
-        return Result.new(
-          supported: false,
-          reason: "'#{model_id}' belongs to provider '#{model.provider}', not 'openai' (required for Codex)",
-          incompatibility_type: :provider_mismatch,
-          replacement_model_id: nil,
-          source: "paid_catalog"
         )
       end
 
@@ -163,16 +189,6 @@ module Runners
 
       model = LlmModel.find_by(model_id: model_id)
       return unknown_result("paid_catalog") if model.blank?
-
-      if model.provider != expected_provider
-        return Result.new(
-          supported: false,
-          reason: "'#{model_id}' belongs to provider '#{model.provider}', not '#{expected_provider}' (required for #{runner_key})",
-          incompatibility_type: :provider_mismatch,
-          replacement_model_id: nil,
-          source: "paid_catalog"
-        )
-      end
 
       unknown_result("paid_catalog")
     end

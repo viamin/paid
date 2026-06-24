@@ -62,8 +62,6 @@ gem "qdrant-ruby", require: false
 gem "aws-sdk-s3", require: false
 
 # Unified interface for AI agent CLIs [https://github.com/viamin/agent-harness]
-# TODO(#2603): Bump past 0.22.5 once viamin/agent-harness releases the Codex CLI
-# pin update needed for gpt-5.5 (Codex runner hits cli_version_outdated on 0.22.5).
 gem "agent-harness", "~> 0.23.0"
 
 # Runtime model registry for canonical model metadata, pricing, and capabilities.
