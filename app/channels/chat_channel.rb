@@ -41,6 +41,32 @@ class ChatChannel < ApplicationCable::Channel
     transmit_event("error", { message: "An unexpected error occurred" })
   end
 
+  def resolve_tool_call(data)
+    return unless @chat_session
+
+    TenantContext.with(current_user.account) do
+      decision = data["decision"].to_s
+      message = @chat_session.messages.find_by(id: data["message_id"])
+      return transmit_event("error", { message: "Pending tool call not found" }) unless message
+      return transmit_event("error", { message: "You are not authorized to resolve tool calls" }) unless authorized_to_resolve?(message)
+      return transmit_event("error", { message: "decision must be approve or deny" }) unless %w[approve deny].include?(decision)
+      return transmit_event("error", { message: "Rate limit exceeded" }) if rate_limited?
+
+      stream_message_id = SecureRandom.uuid
+      broadcast_event("message_start", { message_id: stream_message_id })
+
+      ChatSessions::ResolveToolCallJob.perform_later(
+        chat_session_id: @chat_session.id,
+        message_id: message.id,
+        decision: decision,
+        stream_message_id: stream_message_id
+      )
+    end
+  rescue StandardError => e
+    Rails.logger.error(message: "chat_channel.resolve_tool_call_failed", session_id: @chat_session&.id, error: e.message)
+    transmit_event("error", { message: "An unexpected error occurred" })
+  end
+
   private
 
   def find_session
@@ -56,6 +82,10 @@ class ChatChannel < ApplicationCable::Channel
 
   def authorized_to_send_messages?
     ChatMessagePolicy.new(current_user, ChatMessage.new(chat_session: @chat_session)).create?
+  end
+
+  def authorized_to_resolve?(message)
+    ChatMessagePolicy.new(current_user, message).resolve?
   end
 
   def rate_limited?

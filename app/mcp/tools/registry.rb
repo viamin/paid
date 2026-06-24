@@ -64,6 +64,18 @@ module Tools
         definitions_for_classes(read_only_tool_classes_for(user:))
       end
 
+      # Tools advertised to the chat agent loop. Includes write tools so the
+      # model can *propose* them, but strips the per-tool `confirmed` argument
+      # so confirmation always originates from the human approver, never the
+      # model itself. See RDR-028.
+      def chat_definitions_for(user:)
+        available_tool_classes_for(user:).map { |klass| chat_definition_for(klass) }
+      end
+
+      def write_tool?(name)
+        find(name)&.write_operation? ? true : false
+      end
+
       def all
         tool_hash.values
       end
@@ -91,6 +103,20 @@ module Tools
 
       def definitions_for_classes(tool_classes)
         tool_classes.map(&:definition)
+      end
+
+      def chat_definition_for(klass)
+        return klass.definition unless klass.write_operation?
+
+        definition = klass.definition
+        schema = definition[:inputSchema]
+        return definition unless schema.is_a?(Hash)
+
+        stripped_schema = schema.deep_dup
+        stripped_schema[:properties]&.delete(:confirmed)
+        stripped_schema[:required] = Array(stripped_schema[:required]).reject { |field| field.to_s == "confirmed" }
+
+        definition.merge(inputSchema: stripped_schema)
       end
     end
   end
