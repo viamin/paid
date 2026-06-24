@@ -1305,7 +1305,15 @@ RSpec.describe Runner do
       create(:llm_model, model_id: "glm-5.1-zai", provider: "zai", tier: "mid")
       create(:llm_model, model_id: "MiniMax-M2.7", provider: "minimax", tier: "mid")
       create(:llm_model, model_id: "MiniMax-M2.7-highspeed", provider: "minimax", tier: "mid")
+      create(:llm_model, model_id: "MiniMax-M3", provider: "minimax", tier: "high")
       create(:llm_model, model_id: "claude-sonnet-4-5", provider: "anthropic", tier: "mid")
+    end
+
+    def expected_minimax_provider(model_id)
+      { "minimax" => {
+        "npm" => "@ai-sdk/anthropic",
+        "models" => { model_id => { "name" => model_id } }
+      } }
     end
 
     it "builds runner runtime inputs instead of a local bootstrap wrapper" do
@@ -1378,9 +1386,7 @@ RSpec.describe Runner do
         "ANTHROPIC_BASE_URL" => "https://api.minimax.io/anthropic/v1"
       )
       expect(runtime.env).not_to have_key("OPENAI_BASE_URL")
-      expect(runtime.metadata[:config]["provider"]).to eq(
-        { "minimax" => { "npm" => "@ai-sdk/anthropic" } }
-      )
+      expect(runtime.metadata[:config]["provider"]).to eq(expected_minimax_provider("MiniMax-M2.7"))
       # Paid proxy headers must be stripped so the per-run token never reaches MiniMax.
       expect(runtime.unset_env).to include("ANTHROPIC_HEADER_X_AGENT_RUN_ID", "ANTHROPIC_HEADER_X_PROXY_TOKEN")
     end
@@ -1424,9 +1430,26 @@ RSpec.describe Runner do
         "ANTHROPIC_BASE_URL" => "https://api.minimax.io/anthropic/v1"
       )
       expect(runtime.env).not_to have_key("OPENAI_BASE_URL")
-      expect(runtime.metadata[:config]["provider"]).to eq(
-        { "minimax" => { "npm" => "@ai-sdk/anthropic" } }
+      expect(runtime.metadata[:config]["provider"]).to eq(expected_minimax_provider("MiniMax-M2.7-highspeed"))
+    end
+
+    it "declares newly released MiniMax models so opencode accepts them" do
+      minimax_key = create(:provider_api_key, user: user, api_service_type: "minimax", api_key: "sk-minimax-secret")
+      minimax_runner = create(
+        :runner,
+        user: user,
+        runner_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: minimax_key,
+        config: { "opencode" => { "api_provider" => "minimax", "model" => "MiniMax-M3" } }
       )
+
+      runtime = minimax_runner.agent_harness_runner_runtime
+
+      # The bare model id is the opencode config models key; the runtime model
+      # string carries the provider prefix opencode parses into getModel.
+      expect(runtime.model).to eq("minimax/MiniMax-M3")
+      expect(runtime.metadata[:config]["provider"]).to eq(expected_minimax_provider("MiniMax-M3"))
     end
 
     it "does not enable direct outbound when the OpenCode model id is missing" do

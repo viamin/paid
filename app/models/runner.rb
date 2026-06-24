@@ -1504,6 +1504,17 @@ class Runner < ApplicationRecord
     if api_config[:opencode_npm] == "@ai-sdk/anthropic"
       provider_config["npm"] = api_config[:opencode_npm]
       env["ANTHROPIC_BASE_URL"] = api_config[:base_url] if api_config[:base_url]
+
+      # Custom Anthropic-compatible endpoints (e.g. MiniMax) serve model ids the
+      # @ai-sdk/anthropic SDK does not ship, so opencode's getModel rejects them
+      # with ProviderModelNotFoundError before the request reaches the provider
+      # — most visibly for newly released models (e.g. MiniMax-M3). Declare the
+      # configured model so opencode registers and accepts it. Native Anthropic
+      # is excluded: the SDK already ships its Claude models.
+      if custom_anthropic_endpoint?(api_config)
+        models = opencode_custom_provider_models
+        provider_config["models"] = models if models
+      end
     elsif api_config[:base_url]
       env["OPENAI_BASE_URL"] = api_config[:base_url]
     end
@@ -1534,6 +1545,32 @@ class Runner < ApplicationRecord
         config: metadata_config
       }
     )
+  end
+
+  # True for Anthropic-SDK providers that are NOT the native Anthropic endpoint
+  # (e.g. MiniMax). Their custom model ids are unknown to @ai-sdk/anthropic and
+  # must be declared in the opencode provider config so opencode accepts them.
+  def custom_anthropic_endpoint?(api_config)
+    api_config[:opencode_npm] == "@ai-sdk/anthropic" &&
+      api_config[:opencode_model_provider].to_s != "anthropic"
+  end
+
+  # opencode model declaration keyed by the bare model id — the segment after
+  # the provider prefix in "<provider>/<model>", matching how opencode parses
+  # the runtime model string. Returns nil when no model is configured.
+  def opencode_custom_provider_models
+    bare_id = opencode_bare_model_id
+    return if bare_id.blank?
+
+    { bare_id => { "name" => bare_id } }
+  end
+
+  def opencode_bare_model_id
+    qualified = opencode_qualified_model.to_s
+    prefix = DIRECT_OUTBOUND_API_PROVIDERS.dig(opencode_api_provider, :opencode_model_provider).to_s
+    return qualified if prefix.blank? || !qualified.start_with?("#{prefix}/")
+
+    qualified.delete_prefix("#{prefix}/")
   end
 
   def pi_runner_runtime
