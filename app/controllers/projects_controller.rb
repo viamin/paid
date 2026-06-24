@@ -386,7 +386,8 @@ class ProjectsController < ApplicationController
   end
 
   def project_params
-    params.require(:project).permit(:github_auth_source, :github_token_id, :github_installation_id, :owner, :repo, :name, :active,
+    params.require(:project).permit(:github_auth_source, :github_token_id, :github_installation_id,
+      :git_push_pat_fallback_enabled, :git_push_fallback_token_id, :owner, :repo, :name, :active,
       :poll_interval_seconds, :max_execution_seconds, :github_id, :default_branch,
       :owner_reviewer_login, :merge_method, :max_draft_review_rounds, :auto_pick_enabled, :auto_merge_mode,
       :allow_bot_authored_pr_auto_merge, :auto_fix_merge_conflicts, :auto_scan_security,
@@ -399,6 +400,7 @@ class ProjectsController < ApplicationController
       :knowledge_evolution_enabled,
       :auto_release_granularity,
       :plan_review_timeout_hours,
+      :max_issue_runner_failures,
       auto_pick_skip_labels: [],
       allowed_github_usernames: [],
       priority_labels: Project::PRIORITY_TIERS)

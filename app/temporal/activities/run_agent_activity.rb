@@ -190,6 +190,8 @@ module Activities
         end
 
         user_settings = resolve_user_settings(agent_run)
+        @issue_runner_retry_cap_exhausted = false
+        @issue_runner_retry_capped_keys = nil
         runners = build_runner_order(agent_run, user_settings)
         requested_tier = requested_tier_for(agent_run)
         if requested_tier.present? && runners.empty?
@@ -305,6 +307,14 @@ module Activities
             # runner_key (e.g. several OpenCode API-key entries with
             # different models) remain distinguishable in UI and retry logic.
             agent_run.update!(final_runner: attempt_label)
+
+            # A successful attempt made progress on the issue. Clear any prior
+            # retry-cap abandonment so the issue is auto-pickable again. NOTE:
+            # clearing does not reset per-provider failure counts (the cap is
+            # a windowed total), so if all providers are still over the cap the
+            # issue will be re-capped and re-abandoned on the next dispatch
+            # until those failures age out of the inspection window.
+            clear_issue_runner_retry_abandonment(agent_run)
 
             # Skip git post-processing for goals that don't clone a repo.
             # These runs only interact via the GitHub API proxy — no git repo exists.
@@ -679,7 +689,19 @@ module Activities
           )
         elsif !agent_run.finished?
           runner_list = runners.any? ? runner_attempt_labels(runners, agent_run, user_settings.user).join(", ") : "none"
-          agent_run.fail!(error: "All runners exhausted: #{runner_list}")
+          failure_error = if @issue_runner_retry_cap_exhausted
+            cap = agent_run.project.effective_max_issue_runner_failures
+            capped_list = @issue_runner_retry_capped_keys&.join(", ") || "unknown"
+            "Issue abandoned: every available runner reached the per-issue retry cap (#{cap}). Capped providers: #{capped_list}"
+          else
+            "All runners exhausted: #{runner_list}"
+          end
+          agent_run.fail!(error: failure_error)
+        end
+
+        if @issue_runner_retry_cap_exhausted
+          error_type = "IssueRunnerRetryCapExhausted"
+          error_message = "All available runners reached the per-issue retry cap"
         end
 
         raise Temporalio::Error::ApplicationError.new(
@@ -1037,10 +1059,17 @@ module Activities
       @inserted_rate_limit_fallbacks = Set.new
 
       # Reorder based on per-issue provider failure history so that runners
-      # that have not yet been tried for this issue are preferred over ones
-      # that have already failed. This implements the "try-all" policy: all
-      # available providers get a chance before any single provider is retried.
+      # that have not yet failed for this issue are preferred over ones
+      # that have. This implements the "try-all" policy: all available providers
+      # get a chance before any single provider is retried.
       runners = apply_issue_aware_runner_ordering(runners, agent_run, user_settings.user)
+
+      # Enforce the per-issue per-provider retry cap (#2513): providers that have
+      # already failed the configured cap for this issue are excluded so the
+      # remaining providers are tried instead. When every available provider is
+      # capped the issue is abandoned and the (now empty) runner list fails the
+      # run cleanly.
+      runners = apply_issue_runner_retry_cap(runners, agent_run, user_settings.user)
 
       runners
     end
@@ -1079,6 +1108,95 @@ module Activities
       end
 
       reordered
+    end
+
+    # Enforces the per-issue per-provider retry cap (#2513) for auto-pick,
+    # issue-scoped runs. Providers whose canonical key has reached the
+    # configured cap for this issue are removed from the candidate list so the
+    # remaining providers are attempted first. When filtering removes every
+    # candidate (every available provider is capped) the issue is marked
+    # abandoned — the empty list then fails the run cleanly downstream.
+    #
+    # Manual runs (auto_pick == false) intentionally bypass the cap: an explicit
+    # user-triggered run is an override and may target a capped provider on
+    # purpose. Abandonment is also cleared on success elsewhere, so a manual
+    # override that succeeds clears the abandonment flag for subsequent auto-pick.
+    # Note that clearing the flag does not reset per-provider failure counts —
+    # see Issue#clear_runner_retry_abandonment! for the full semantics.
+    def apply_issue_runner_retry_cap(runners, agent_run, user)
+      return runners unless retry_cap_applicable?(agent_run)
+      return runners if runners.empty?
+
+      cap = agent_run.project.effective_max_issue_runner_failures
+      return runners unless cap.present? && cap.positive?
+
+      capped = AgentRuns::IssueRunnerRetryCap.capped_runner_keys(
+        project: agent_run.project,
+        issue: agent_run.issue,
+        goal: agent_run.goal,
+        cap: cap,
+        exclude_run_id: agent_run.id
+      )
+      return runners if capped.empty?
+
+      filtered = runners.reject do |runner_candidate|
+        capped.include?(canonical_runner_candidate(runner_candidate, user))
+      end
+
+      if filtered.empty?
+        @issue_runner_retry_cap_exhausted = true
+        @issue_runner_retry_capped_keys = capped.to_a.sort
+        abandon_issue_due_to_retry_cap(agent_run, capped, cap)
+      elsif filtered != runners
+        logger.info(
+          message: "agent_execution.issue_runner_retry_cap_filtered",
+          agent_run_id: agent_run.id,
+          issue_id: agent_run.issue_id,
+          retry_cap: cap,
+          capped_runners: capped.to_a.sort,
+          remaining_runners: filtered.map { |r| canonical_runner_candidate(r, user) }
+        )
+      end
+
+      filtered
+    end
+
+    # The retry cap only governs automated scheduling of issue-scoped work goals
+    # (create_pr / analyze_issue). Manual runs and non-issue goals are unaffected.
+    def retry_cap_applicable?(agent_run)
+      agent_run.auto_pick? &&
+        agent_run.issue_id.present? &&
+        agent_run.goal.in?(%w[create_pr analyze_issue])
+    end
+
+    def abandon_issue_due_to_retry_cap(agent_run, capped_keys, cap)
+      issue = agent_run.issue
+      return unless issue
+
+      reason = "All available runners reached the per-issue retry cap (#{cap}) after " \
+               "repeated failures and were excluded: #{capped_keys.to_a.sort.join(', ')}."
+      issue.abandon_due_to_runner_retry_cap!(reason: reason, cap: cap, runner_keys: capped_keys.to_a)
+    rescue => e
+      logger.error(
+        message: "agent_execution.runner_retry_abandon_failed",
+        agent_run_id: agent_run.id,
+        issue_id: issue&.id,
+        error: e.message
+      )
+    end
+
+    def clear_issue_runner_retry_abandonment(agent_run)
+      issue = agent_run.issue
+      return unless issue&.runner_retry_abandoned?
+
+      issue.clear_runner_retry_abandonment!
+    rescue => e
+      logger.error(
+        message: "agent_execution.runner_retry_abandonment_clear_failed",
+        agent_run_id: agent_run.id,
+        issue_id: issue&.id,
+        error: e.message
+      )
     end
 
     # Checks if a runner is currently unavailable (rate limited or circuit open).
@@ -2302,19 +2420,13 @@ module Activities
         runner_entry.direct_outbound_exec_command(command_prefix: plan.command[0..-2], prompt: prompt)
       elsif runner_entry&.api_key?
         plan = harness_execution_plan_for(command_context.runner, prompt, user: command_context.user, agent_run: agent_run)
-        # TODO(#2525): Remove once agent-harness Anthropic#build_command reads provider_runtime.model
-        prefix = inject_runtime_model_flag(plan.command[0..-2], command_context, agent_run: agent_run)
-        api_key_auth_command(runner_entry, prefix, prompt)
+        api_key_auth_command(runner_entry, plan.command[0..-2], prompt)
       elsif RunnerSupport.subscription_auth_unset_vars_for(command_context.runner).any?
         plan = harness_execution_plan_for(command_context.runner, prompt, user: command_context.user, agent_run: agent_run)
-        # TODO(#2525): Remove once agent-harness Anthropic#build_command reads provider_runtime.model
-        prefix = inject_runtime_model_flag(plan.command[0..-2], command_context, agent_run: agent_run)
-        subscription_auth_command(command_context.runner, prefix, prompt)
+        subscription_auth_command(command_context.runner, plan.command[0..-2], prompt)
       else
         plan = harness_execution_plan_for(command_context.runner, prompt, user: command_context.user, agent_run: agent_run)
-        # TODO(#2525): Remove once agent-harness Anthropic#build_command reads provider_runtime.model
-        prefix = inject_runtime_model_flag(plan.command[0..-2], command_context, agent_run: agent_run)
-        prefix + [ plan.command.last ]
+        plan.command[0..-2] + [ plan.command.last ]
       end
     end
 
@@ -2650,21 +2762,6 @@ module Activities
 
       script = "if [ \"$#{env_flag}\" = \"1\" ]; then env #{unset_str} #{base} \"$1\"; else #{base} \"$1\"; fi"
       [ "sh", "-c", script, "--", prompt ]
-    end
-
-    # Workaround: agent-harness Anthropic#build_command only reads
-    # @config.model, ignoring provider_runtime.model. Inject --model
-    # into the command prefix when the runtime resolved a tier model
-    # that the harness omitted.
-    # TODO(#2525): Remove once upstream reads provider_runtime.model
-    def inject_runtime_model_flag(command_prefix, command_context, agent_run: nil)
-      return command_prefix if command_prefix.include?("--model")
-      return command_prefix unless RunnerSupport.runner_key_for_agent_type(command_context.runner) == "claude"
-
-      runtime = selected_runner_runtime(command_context.runner_candidate, command_context.user, agent_run)
-      return command_prefix unless runtime&.model.present?
-
-      command_prefix + [ "--model", runtime.model ]
     end
 
     def api_key_auth_command(runner_entry, command_prefix, prompt)

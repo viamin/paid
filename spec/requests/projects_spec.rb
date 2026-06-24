@@ -336,6 +336,20 @@ RSpec.describe "Projects" do
         expect(response.body).to include('data-repository-selector-target="installationSelect"')
         expect(response.body).to include("change-&gt;repository-selector#installationChanged")
       end
+
+      it "shows a human-friendly label for each installation" do
+        installation = create(:github_installation, account: account,
+          account_login: "acme", github_installation_id: 12345)
+
+        get new_project_path
+
+        document = Nokogiri::HTML(response.body)
+        select = document.at_css(%(select[data-repository-selector-target="installationSelect"]))
+        option = select.at_css(%(option[value="#{installation.id}"]))
+
+        expect(option).to be_present
+        expect(option.text).to eq("acme (12345)")
+      end
     end
   end
 
