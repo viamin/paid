@@ -98,7 +98,7 @@ module ChatSessions
       read_only_calls.each { |tool_call| process_tool_call(tool_call) }
       write_calls.each { |tool_call| persist_pending_tool_call_message(tool_call) }
 
-      stamp_aggregate_tokens(nil, aggregate_tokens, model)
+      record_token_usage(aggregate_tokens[:input], aggregate_tokens[:output], model:)
       nil
     end
 
@@ -282,11 +282,20 @@ module ChatSessions
     end
 
     def finalize_token_usage(assistant_message)
-      return unless assistant_message.tokens_input.to_i.positive? || assistant_message.tokens_output.to_i.positive?
+      record_token_usage(
+        assistant_message.tokens_input.to_i,
+        assistant_message.tokens_output.to_i,
+        model: assistant_message.model
+      )
+    end
 
-      input_tokens = assistant_message.tokens_input.to_i
-      output_tokens = assistant_message.tokens_output.to_i
-      cost_cents = TokenUsageTracker.calculate_cost(input_tokens, output_tokens, llm_model: assistant_message.model)
+    # Persists a TokenUsage/cost row for the turn. Shared by the normal path
+    # (via `finalize_token_usage`) and the write-tool pause path so the LLM
+    # turn that *requested* a confirmation is never lost from cost tracking.
+    def record_token_usage(input_tokens, output_tokens, model:)
+      return unless input_tokens.to_i.positive? || output_tokens.to_i.positive?
+
+      cost_cents = TokenUsageTracker.calculate_cost(input_tokens, output_tokens, llm_model: model)
 
       TenantContext.with_system_access do
         TokenUsage.create!(
@@ -294,7 +303,7 @@ module ChatSessions
           input_tokens: input_tokens,
           output_tokens: output_tokens,
           cost_cents: cost_cents,
-          llm_model: assistant_message.model,
+          llm_model: model,
           request_type: "chat_message"
         )
       end

@@ -218,6 +218,19 @@ RSpec.describe "ChatMessages" do
 
         data = JSON.parse(response.body.scan(/event: message_tool_confirmation\ndata: (.+)\n/).flatten.first)
         expect(data).to include("tool_name" => "trigger_agent_run", "tool_status" => "pending")
+
+        # A paused turn returns nil; it must not surface as a spurious error.
+        expect(response.body).not_to include("event: error")
+      end
+
+      it "returns a paused status when the first turn pauses for a write tool" do
+        allow(ChatSessions::BuildLlmClient).to receive(:call).and_return(instance_double(Proc))
+        allow(ChatSessions::SendMessage).to receive(:call).and_return(nil)
+
+        post chat_session_chat_messages_path(chat_session), params: { content: "Run it" }
+
+        expect(response).to have_http_status(:created)
+        expect(response.parsed_body).to eq("status" => "paused")
       end
     end
   end

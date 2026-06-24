@@ -76,6 +76,19 @@ RSpec.describe ChatSessions::AgentLoop do
         expect(notified).to include([ "assistant", "pending" ])
       end
 
+      it "persists token usage for the paused turn so the cost is not lost" do
+        expect {
+          described_class.new(chat_session: chat_session, llm_client: llm_client).run
+        }.to change { chat_session.token_usages.for_chat.count }.by(1)
+
+        expect(chat_session.token_usages.for_chat.last).to have_attributes(
+          input_tokens: 50,
+          output_tokens: 20,
+          llm_model: "gpt-4o",
+          request_type: "chat_message"
+        )
+      end
+
       it "surfaces every write tool in the batch as its own pending confirmation" do
         multi_client = Class.new do
           def call(_conversation, tools: nil)

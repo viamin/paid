@@ -41,8 +41,8 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       type: "message_complete",
       message_id: stream_message_id,
       tokens: {
-        input: assistant_message.tokens_input,
-        output: assistant_message.tokens_output
+        input: assistant_message&.tokens_input,
+        output: assistant_message&.tokens_output
       }
     })
   rescue ArgumentError => e

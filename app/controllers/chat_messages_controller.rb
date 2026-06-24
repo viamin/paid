@@ -92,8 +92,8 @@ class ChatMessagesController < ApplicationController
       write_sse_event("message_complete", {
         message_id: message_id,
         tokens: {
-          input: assistant_message.tokens_input,
-          output: assistant_message.tokens_output
+          input: assistant_message&.tokens_input,
+          output: assistant_message&.tokens_output
         }
       })
     end
@@ -123,7 +123,7 @@ class ChatMessagesController < ApplicationController
       )
     end
 
-    render json: message_json(assistant_message), status: :created
+      render json: assistant_response_payload(assistant_message), status: :created
   rescue NotImplementedError => e
     render json: { error: e.message }, status: :service_unavailable
   rescue ChatSessions::LlmClientConfigurationError => e
@@ -225,7 +225,7 @@ class ChatMessagesController < ApplicationController
       )
     end
 
-    render json: resolve_response_payload(assistant_message), status: :ok
+    render json: assistant_response_payload(assistant_message), status: :ok
   rescue NotImplementedError => e
     render json: { error: e.message }, status: :service_unavailable
   rescue ChatSessions::LlmClientConfigurationError => e
@@ -262,7 +262,11 @@ class ChatMessagesController < ApplicationController
     }
   end
 
-  def resolve_response_payload(assistant_message)
+  # Returns the persisted assistant message, or a `{ status: "paused" }`
+  # payload when the turn paused for a write-tool confirmation (write tools
+  # pause the loop and return +nil+ — see ChatSessions::AgentLoop). Shared by
+  # the create and resolve JSON paths.
+  def assistant_response_payload(assistant_message)
     return { status: "paused" } unless assistant_message
 
     message_json(assistant_message)
