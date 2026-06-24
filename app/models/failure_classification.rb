@@ -4,6 +4,7 @@ class FailureClassification < ApplicationRecord
   FAILURE_CATEGORIES = %w[
     runner_error
     timeout
+    token_budget
     auth_failure
     rate_limit
     container_error

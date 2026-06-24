@@ -246,6 +246,9 @@ class Project < ApplicationRecord
   validates :max_tokens_per_run,
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 2_147_483_647 },
     allow_nil: true
+  validates :token_budget_max_input_tokens,
+    numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 2_147_483_647 },
+    allow_nil: true
   validates :token_limit_warning_threshold,
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 100 }
   validates :max_execution_seconds, numericality: { only_integer: true, greater_than_or_equal_to: 60, less_than_or_equal_to: 86_400 }

@@ -21,6 +21,7 @@ const FINISHED_STATUSES = [
   "failed",
   "cancelled",
   "timeout",
+  "token_budget_exceeded",
   "retried",
   "auth_expired",
   "rate_limited",

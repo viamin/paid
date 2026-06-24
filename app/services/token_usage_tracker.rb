@@ -66,7 +66,7 @@ class TokenUsageTracker
     #    run inside a transaction — a failure won't roll back recorded usage
     if enforce_guardrails && update_aggregates && tracked_run.is_a?(AgentRun)
       enforce_token_limit(tracked_run, hard_limit: resolved_hard_limit)
-      enforce_no_progress(tracked_run)
+      enforce_token_budget(tracked_run)
       enforce_hard_stop_budgets(tracked_run) if cost_cents.positive?
     end
 
@@ -287,46 +287,49 @@ class TokenUsageTracker
   end
   private_class_method :enforce_token_limit
 
-  # Terminates runs that have consumed significant input tokens but produced
-  # near-zero output — a strong signal the run will never complete.
-  # Uses per-runner configurable thresholds (default: 100K input / 100 output).
-  def self.enforce_no_progress(agent_run)
+  # Enforces the per-run input-token budget (#2511). Terminates runs that have
+  # consumed input tokens beyond their budget while producing near-zero output —
+  # a strong signal the run will never complete. Runs that are making progress
+  # (output at/above the progress floor) are never terminated.
+  #
+  # The budget resolves per run: project override → provider (runner) threshold
+  # → global default. Termination produces a distinct "token_budget_exceeded"
+  # status so it is measurable apart from generic failures.
+  def self.enforce_token_budget(agent_run)
     return unless AgentRun.where(id: agent_run.id, status: "running").exists?
 
-    runner = agent_run.runner
-    thresholds = runner&.effective_no_progress_thresholds || Runner::DEFAULT_NO_PROGRESS_THRESHOLDS
-    min_input_tokens = thresholds["min_input_tokens"]
-    max_output_tokens = thresholds["max_output_tokens"]
+    budget = agent_run.effective_token_budget
+    progress_floor = agent_run.effective_token_budget_progress_floor
 
     tokens_input = agent_run.tokens_input
     tokens_output = agent_run.tokens_output
 
-    return if tokens_input < min_input_tokens
-    return unless tokens_output < max_output_tokens
+    return if tokens_input < budget
+    return unless tokens_output < progress_floor
 
     Rails.logger.warn(
-      message: "agent_execution.no_progress_detected",
+      message: "agent_execution.token_budget_exceeded",
       agent_run_id: agent_run.id,
       tokens_input: tokens_input,
       tokens_output: tokens_output,
-      min_input_tokens: min_input_tokens,
-      max_output_tokens: max_output_tokens
+      token_budget: budget,
+      progress_floor: progress_floor
     )
 
     Guardrails::ViolationHandler.call(
       agent_run: agent_run,
-      violation_type: "no_progress",
-      details: "Run consumed #{tokens_input} input tokens but produced only #{tokens_output} output tokens " \
-               "(threshold: <#{max_output_tokens} output after >#{min_input_tokens} input)",
+      violation_type: "token_budget",
+      details: "Run consumed #{tokens_input} input tokens (budget: #{budget}) but produced only " \
+               "#{tokens_output} output tokens (progress floor: #{progress_floor}).",
       metrics: {
         tokens_input: tokens_input,
         tokens_output: tokens_output,
-        min_input_tokens: min_input_tokens,
-        max_output_tokens: max_output_tokens
+        token_budget: budget,
+        progress_floor: progress_floor
       }
     )
   end
-  private_class_method :enforce_no_progress
+  private_class_method :enforce_token_budget
 
   # Checks hard_stop budgets after recording usage. If any budget is
   # exceeded, cancels the running agent to enforce the cost limit.

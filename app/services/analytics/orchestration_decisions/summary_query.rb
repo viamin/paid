@@ -13,7 +13,7 @@ module Analytics
             status_count("failed").as("failed_count"),
             "COUNT(DISTINCT orchestration_decisions.agent_run_id) AS linked_agent_run_count",
             "COUNT(DISTINCT agent_runs.id) FILTER (WHERE agent_runs.status = 'completed') AS completed_run_count",
-            "COUNT(DISTINCT agent_runs.id) FILTER (WHERE agent_runs.status IN ('failed', 'timeout', 'auth_expired', 'rate_limited', 'cancelled')) AS failed_run_count",
+            "COUNT(DISTINCT agent_runs.id) FILTER (WHERE agent_runs.status IN ('failed', 'timeout', 'token_budget_exceeded', 'auth_expired', 'rate_limited', 'cancelled')) AS failed_run_count",
             "COUNT(DISTINCT orchestration_decisions.project_id) AS project_count",
             "COUNT(DISTINCT orchestration_decisions.actor) AS actor_count"
           )

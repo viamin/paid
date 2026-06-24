@@ -18,7 +18,7 @@ class Worktree < ApplicationRecord
     active.left_joins(:agent_run)
       .where(
         "agent_runs.status IN (?) OR agent_runs.id IS NULL OR worktrees.created_at < ?",
-        %w[completed failed cancelled timeout],
+        AgentRun::FINISHED_STATUSES,
         24.hours.ago
       )
   }
