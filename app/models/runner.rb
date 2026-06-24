@@ -27,10 +27,12 @@ class Runner < ApplicationRecord
   # complexity <= low_max => "low", <= mid_max => "mid", else "high".
   DEFAULT_COMPLEXITY_THRESHOLDS = { "low_max" => 3, "mid_max" => 7 }.freeze
   COMPLEXITY_THRESHOLD_KEYS = %w[low_max mid_max].freeze
-  # Default thresholds for output-token-based no-progress early termination.
-  # A run is considered stuck when it has consumed >= min_input_tokens but
-  # produced < max_output_tokens. These can be overridden per-runner via
-  # the no_progress_thresholds column.
+  # Per-provider defaults for the per-run input-token budget (#2511).
+  # `min_input_tokens` is the input-token budget; `max_output_tokens` is the
+  # output-token progress floor. A run is terminated as token_budget_exceeded
+  # when it consumes >= min_input_tokens while producing < max_output_tokens.
+  # These can be overridden per-runner via the no_progress_thresholds column,
+  # and per-project via projects.token_budget_max_input_tokens.
   DEFAULT_NO_PROGRESS_THRESHOLDS = { "min_input_tokens" => 100_000, "max_output_tokens" => 100 }.freeze
   NO_PROGRESS_THRESHOLD_KEYS = %w[min_input_tokens max_output_tokens].freeze
   # Upstream API providers supported by direct-outbound CLI tools (OpenCode,

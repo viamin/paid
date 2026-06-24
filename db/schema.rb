@@ -1835,6 +1835,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_23_131744) do
     t.jsonb "screenshot_settings", default: {}, null: false, comment: "Project-level defaults and overrides for repository screenshot capture config"
     t.jsonb "screenshot_status", default: {}, null: false, comment: "Latest screenshot capture status shown in project settings."
     t.jsonb "security_alert_types", default: ["code_scanning"], null: false
+    t.integer "token_budget_max_input_tokens", comment: "Per-run input token budget; runs exceeding it without output are terminated early (nil = defer to provider/global default)"
     t.integer "token_limit_warning_threshold", default: 80, null: false
     t.bigint "total_cost_cents", default: 0, null: false
     t.bigint "total_tokens_used", default: 0, null: false

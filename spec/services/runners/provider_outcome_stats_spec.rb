@@ -160,6 +160,29 @@ RSpec.describe Runners::ProviderOutcomeStats do
       end
     end
 
+    context "with token_budget_exceeded runs" do
+      before do
+        travel_to 3.days.ago do
+          create(:agent_run, :completed, project: project, agent_type: "codex")
+          create(:agent_run, :token_budget_exceeded, project: project, agent_type: "codex")
+        end
+      end
+
+      it "counts token_budget_exceeded runs toward the provider total" do
+        codex_entry = stats.find { |e| e[:provider] == "codex" }
+        expect(codex_entry[:total_runs]).to eq(2)
+        expect(codex_entry[:completed]).to eq(1)
+        expect(codex_entry[:completion_rate]).to eq(50.0)
+      end
+
+      it "exposes a series and color for token_budget_exceeded" do
+        codex_entry = stats.find { |e| e[:provider] == "codex" }
+        budget_series = codex_entry[:series].find { |s| s[:name] == "Token Budget Exceeded" }
+        expect(budget_series[:data].values.sum).to eq(1)
+        expect(codex_entry[:colors]).to include("#e11d48")
+      end
+    end
+
     context "with cached results" do
       around do |example|
         original_cache = Rails.cache

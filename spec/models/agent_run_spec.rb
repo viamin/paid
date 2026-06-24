@@ -809,6 +809,12 @@ RSpec.describe AgentRun do
         expect(agent_run.operational_failure?).to be true
       end
 
+      it "returns true for token_budget_exceeded status" do
+        agent_run = build(:agent_run, status: "token_budget_exceeded")
+
+        expect(agent_run.operational_failure?).to be true
+      end
+
       it "returns true for failed status with runner exhaustion error" do
         agent_run = build(:agent_run, :failed,
           error_message: "All providers exhausted: claude_code, codex")
@@ -1145,6 +1151,54 @@ RSpec.describe AgentRun do
         agent_run = build(:agent_run, project: project)
 
         expect(agent_run.effective_max_tokens_per_run).to eq(100_000)
+      end
+    end
+
+    describe "#effective_token_budget" do
+      it "uses the project-level budget override when set" do
+        project = create(:project, token_budget_max_input_tokens: 250_000)
+        agent_run = build(:agent_run, project: project)
+
+        expect(agent_run.effective_token_budget).to eq(250_000)
+      end
+
+      it "falls back to the provider (runner) threshold when no project override is set" do
+        project = create(:project)
+        runner = create(:runner, user: project.created_by, no_progress_thresholds: { "min_input_tokens" => 50_000, "max_output_tokens" => 25 })
+        agent_run = build(:agent_run, project: project, runner: runner)
+
+        expect(agent_run.effective_token_budget).to eq(50_000)
+        expect(agent_run.effective_token_budget_progress_floor).to eq(25)
+      end
+
+      it "falls back to the global default when neither project nor runner is configured" do
+        project = create(:project)
+        agent_run = build(:agent_run, project: project, runner: nil)
+
+        expect(agent_run.effective_token_budget).to eq(Runner::DEFAULT_NO_PROGRESS_THRESHOLDS.fetch("min_input_tokens"))
+        expect(agent_run.effective_token_budget_progress_floor).to eq(Runner::DEFAULT_NO_PROGRESS_THRESHOLDS.fetch("max_output_tokens"))
+      end
+
+      it "prefers the project budget over the runner threshold" do
+        project = create(:project, token_budget_max_input_tokens: 300_000)
+        runner = create(:runner, user: project.created_by, no_progress_thresholds: { "min_input_tokens" => 50_000 })
+        agent_run = build(:agent_run, project: project, runner: runner)
+
+        expect(agent_run.effective_token_budget).to eq(300_000)
+      end
+    end
+
+    describe "#token_budget_exceeded?" do
+      it "returns true when the status is token_budget_exceeded" do
+        agent_run = build(:agent_run, status: "token_budget_exceeded")
+
+        expect(agent_run).to be_token_budget_exceeded
+      end
+
+      it "returns false for other statuses" do
+        agent_run = build(:agent_run, status: "running")
+
+        expect(agent_run).not_to be_token_budget_exceeded
       end
     end
 
@@ -2623,7 +2677,7 @@ RSpec.describe AgentRun do
 
   describe "constants" do
     it "defines valid STATUSES" do
-      expect(described_class::STATUSES).to eq(%w[queued running paused completed no_output failed cancelled timeout retried auth_expired rate_limited])
+      expect(described_class::STATUSES).to eq(%w[queued running paused completed no_output failed cancelled timeout token_budget_exceeded retried auth_expired rate_limited])
     end
 
     it "counts running and claimed queued runs in capacity_inflight scope" do

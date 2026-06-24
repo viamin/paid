@@ -402,7 +402,7 @@ RSpec.describe TokenUsageTracker do
     end
   end
 
-  describe "no-progress early termination" do
+  describe "per-run token budget early termination" do
     let(:runner) { create(:runner, user: project.created_by, no_progress_thresholds: { "min_input_tokens" => 1000, "max_output_tokens" => 10 }) }
     let(:agent_run) { create(:agent_run, :running, project: project, runner: runner) }
 
@@ -411,21 +411,21 @@ RSpec.describe TokenUsageTracker do
       allow(Notifications::Publish).to receive(:call)
     end
 
-    it "terminates a running agent when input is high and output is near-zero" do
+    it "terminates a running agent with a distinct status when input is high and output is near-zero" do
       described_class.track(tracked_run: agent_run, usage: { tokens_input: 1000, tokens_output: 5 })
 
       agent_run.reload
-      expect(agent_run.status).to eq("timeout")
-      expect(agent_run.guardrail_violation_type).to eq("no_progress")
+      expect(agent_run.status).to eq("token_budget_exceeded")
+      expect(agent_run.guardrail_violation_type).to eq("token_budget")
     end
 
-    it "does not terminate when output is above the threshold" do
+    it "does not terminate when output is at or above the progress floor" do
       described_class.track(tracked_run: agent_run, usage: { tokens_input: 1000, tokens_output: 10 })
 
       expect(agent_run.reload.status).to eq("running")
     end
 
-    it "does not terminate when input is below the minimum threshold" do
+    it "does not terminate when input is below the budget" do
       described_class.track(tracked_run: agent_run, usage: { tokens_input: 999, tokens_output: 0 })
 
       expect(agent_run.reload.status).to eq("running")
@@ -460,18 +460,35 @@ RSpec.describe TokenUsageTracker do
       expect(agent_run_without_runner.reload.status).to eq("running")
     end
 
-    it "respects per-runner threshold overrides" do
+    it "respects per-provider (runner) threshold overrides" do
       stricter_runner = create(:runner, user: project.created_by, no_progress_thresholds: { "min_input_tokens" => 500, "max_output_tokens" => 50 })
       strict_run = create(:agent_run, :running, project: project, runner: stricter_runner)
 
       described_class.track(tracked_run: strict_run, usage: { tokens_input: 500, tokens_output: 30 })
 
       strict_run.reload
-      expect(strict_run.status).to eq("timeout")
-      expect(strict_run.guardrail_violation_type).to eq("no_progress")
+      expect(strict_run.status).to eq("token_budget_exceeded")
+      expect(strict_run.guardrail_violation_type).to eq("token_budget")
     end
 
-    it "cancels in-flight execution on no-progress termination" do
+    it "uses the project-level budget override in preference to the provider threshold" do
+      project.update!(token_budget_max_input_tokens: 2000)
+      run = create(:agent_run, :running, project: project, runner: runner)
+
+      # Below the project budget (2000) → not terminated even though it is at
+      # the provider threshold (1000).
+      described_class.track(tracked_run: run, usage: { tokens_input: 1000, tokens_output: 0 })
+
+      expect(run.reload.status).to eq("running")
+
+      # Exceed the project budget → terminated.
+      described_class.track(tracked_run: run, usage: { tokens_input: 1500, tokens_output: 0 })
+
+      run.reload
+      expect(run.status).to eq("token_budget_exceeded")
+    end
+
+    it "cancels in-flight execution on budget termination" do
       described_class.track(tracked_run: agent_run, usage: { tokens_input: 1000, tokens_output: 5 })
 
       expect(AgentRuns::Cancel).to have_received(:call).with(agent_run: agent_run, skip_status_update: true)

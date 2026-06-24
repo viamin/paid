@@ -6,7 +6,7 @@ module Runners
     TIME_RANGES = %w[cumulative 30d 7d].freeze
 
     # Finished statuses tracked in the outcomes chart (ordered for display)
-    TRACKED_STATUSES = %w[completed no_output failed timeout auth_expired rate_limited cancelled].freeze
+    TRACKED_STATUSES = %w[completed no_output failed timeout token_budget_exceeded auth_expired rate_limited cancelled].freeze
 
     # Colors aligned with the issue spec and application_helper AGENT_RUN_STATUS_STYLES
     STATUS_COLORS = {
@@ -14,6 +14,7 @@ module Runners
       "no_output" => "#7c3aed",
       "failed" => "#dc2626",
       "timeout" => "#ea580c",
+      "token_budget_exceeded" => "#e11d48",
       "auth_expired" => "#2563eb",
       "rate_limited" => "#ca8a04",
       "cancelled" => "#6b7280"
@@ -24,6 +25,7 @@ module Runners
       "no_output" => "No Output",
       "failed" => "Failed",
       "timeout" => "Timeout",
+      "token_budget_exceeded" => "Token Budget Exceeded",
       "auth_expired" => "Auth Expired",
       "rate_limited" => "Rate Limited",
       "cancelled" => "Cancelled"

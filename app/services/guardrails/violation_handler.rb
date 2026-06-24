@@ -20,7 +20,14 @@ module Guardrails
 
     # Violation types where no human intervention is expected — the run should
     # transition directly to a terminal state instead of pausing.
-    TERMINAL_VIOLATION_TYPES = %w[time_limit token_limit cost_limit no_progress].freeze
+    TERMINAL_VIOLATION_TYPES = %w[time_limit token_limit cost_limit no_progress token_budget].freeze
+
+    # Maps a terminal violation type to the run status it should produce.
+    # Most guardrails reuse the generic "timeout" status; token_budget gets a
+    # dedicated status so budget terminations are distinguishable in metrics.
+    TERMINAL_STATUS_FOR = {
+      "token_budget" => "token_budget_exceeded"
+    }.freeze
 
     def self.call(...)
       new(...).call
@@ -55,6 +62,7 @@ module Guardrails
       context = build_violation_context
       timed_out = agent_run.timeout!(
         error: "guardrail: #{violation_type} — #{details}",
+        status: terminal_status,
         guardrail_violation_type: violation_type,
         guardrail_context: context
       )
@@ -67,6 +75,10 @@ module Guardrails
       safe_publish_notification(context)
 
       Result.new(paused: false, violation_type: violation_type, context: context)
+    end
+
+    def terminal_status
+      TERMINAL_STATUS_FOR[violation_type] || "timeout"
     end
 
     def handle_pausable_violation
@@ -136,6 +148,9 @@ module Guardrails
       when "no_progress"
         "The run consumed significant input tokens without producing meaningful output. " \
           "Review agent configuration and check for prompt or context issues that prevent the agent from generating a response."
+      when "token_budget"
+        "The run exceeded its per-run input token budget without producing meaningful output. " \
+          "Review the project/provider token budget and check for prompt or context issues that prevent the agent from generating a response."
       end
     end
 
