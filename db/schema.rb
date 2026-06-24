@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_23_054016) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_23_071717) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1178,6 +1178,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_23_054016) do
     t.datetime "relationships_parsed_at"
     t.integer "review_goal_retry_count", default: 0, null: false
     t.datetime "review_goal_retry_reset_at"
+    t.text "runner_retry_abandon_reason", comment: "Human-readable reason the issue was abandoned due to the retry cap."
+    t.datetime "runner_retry_abandoned_at", comment: "When non-null, the issue was abandoned because every available provider reached the per-issue retry cap. Excluded from auto-pick until cleared (e.g. by a successful run)."
     t.string "source", default: "github", null: false
     t.string "title", limit: 1000, null: false
     t.datetime "updated_at", null: false
@@ -1806,6 +1808,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_23_054016) do
     t.integer "max_draft_review_rounds", default: 10, null: false
     t.integer "max_enhance_issue_reevaluation_rounds", default: 3, null: false
     t.integer "max_execution_seconds", default: 3600, null: false
+    t.integer "max_issue_runner_failures", comment: "Per-project override for the per-issue per-provider retry cap. When nil, the account-level agent setting (default 10) applies. After a provider fails this many times for a single issue it is excluded from scheduling for that issue."
     t.integer "max_pr_followup_runs", default: 8, null: false
     t.integer "max_tokens_per_run"
     t.string "merge_method", default: "squash", null: false
