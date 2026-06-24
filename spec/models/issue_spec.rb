@@ -2106,4 +2106,81 @@ RSpec.describe Issue do
       expect(capped).to contain_exactly("claude")
     end
   end
+
+  describe "#abandon_due_to_push_permission_rejection!" do
+    let(:project) { create(:project) }
+    let(:issue) { create(:issue, project: project) }
+
+    it "stamps the abandonment timestamp and a push-prefixed reason" do
+      freeze_time = Time.zone.local(2026, 6, 1, 12, 0, 0)
+      travel_to(freeze_time) do
+        issue.abandon_due_to_push_permission_rejection!(reason: "App lacks workflows permission")
+
+        issue.reload
+        expect(issue.runner_retry_abandoned_at).to eq(freeze_time)
+        expect(issue.runner_retry_abandon_reason).to eq("Push rejected: App lacks workflows permission")
+      end
+    end
+
+    it "marks the issue as push-permission abandoned" do
+      issue.abandon_due_to_push_permission_rejection!(reason: "App lacks workflows permission")
+
+      issue.reload
+      expect(issue.push_permission_abandoned?).to be(true)
+      expect(issue.runner_retry_abandoned?).to be(true)
+    end
+
+    it "is idempotent when the issue is already abandoned" do
+      original_time = 1.hour.ago
+      issue.update!(runner_retry_abandoned_at: original_time, runner_retry_abandon_reason: "Push rejected: first")
+
+      issue.abandon_due_to_push_permission_rejection!(reason: "second")
+
+      issue.reload
+      expect(issue.runner_retry_abandoned_at).to be_within(1.second).of(original_time)
+      expect(issue.runner_retry_abandon_reason).to eq("Push rejected: first")
+    end
+
+    it "does not clobber a retry-cap abandonment reason" do
+      issue.update!(runner_retry_abandoned_at: 1.hour.ago, runner_retry_abandon_reason: "all capped")
+
+      issue.abandon_due_to_push_permission_rejection!(reason: "App lacks workflows permission")
+
+      issue.reload
+      expect(issue.runner_retry_abandon_reason).to eq("all capped")
+      expect(issue.push_permission_abandoned?).to be(false)
+    end
+
+    it "is cleared by a successful run (clear_runner_retry_abandonment!) so the issue re-enters auto-pick" do
+      issue.abandon_due_to_push_permission_rejection!(reason: "App lacks workflows permission")
+
+      issue.clear_runner_retry_abandonment!
+
+      issue.reload
+      expect(issue.runner_retry_abandoned?).to be(false)
+      expect(issue.push_permission_abandoned?).to be(false)
+    end
+  end
+
+  describe "#push_permission_abandoned?" do
+    it "returns true for a push-prefixed abandonment reason" do
+      issue = build(:issue, runner_retry_abandoned_at: Time.current,
+        runner_retry_abandon_reason: "Push rejected: missing workflows permission")
+
+      expect(issue.push_permission_abandoned?).to be(true)
+    end
+
+    it "returns false for a retry-cap abandonment reason" do
+      issue = build(:issue, runner_retry_abandoned_at: Time.current,
+        runner_retry_abandon_reason: "all capped")
+
+      expect(issue.push_permission_abandoned?).to be(false)
+    end
+
+    it "returns false when not abandoned" do
+      issue = build(:issue, runner_retry_abandoned_at: nil)
+
+      expect(issue.push_permission_abandoned?).to be(false)
+    end
+  end
 end
