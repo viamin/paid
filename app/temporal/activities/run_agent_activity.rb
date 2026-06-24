@@ -190,6 +190,8 @@ module Activities
         end
 
         user_settings = resolve_user_settings(agent_run)
+        @issue_runner_retry_cap_exhausted = false
+        @issue_runner_retry_capped_keys = nil
         runners = build_runner_order(agent_run, user_settings)
         requested_tier = requested_tier_for(agent_run)
         if requested_tier.present? && runners.empty?
@@ -211,7 +213,6 @@ module Activities
         rate_limit_reset_at = nil
         skipped_rate_limited_count = 0
         skipped_circuit_open_count = 0
-        @issue_runner_retry_cap_exhausted = false
 
         max_execution_seconds = resolve_max_execution_seconds(agent_run, user_settings)
 
