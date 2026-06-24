@@ -8,6 +8,7 @@ RSpec.describe Project do
     it { is_expected.to belong_to(:account) }
     it { is_expected.to belong_to(:github_token).optional }
     it { is_expected.to belong_to(:github_installation).optional }
+    it { is_expected.to belong_to(:git_push_fallback_token).class_name("GithubToken").optional }
     it { is_expected.to belong_to(:created_by).class_name("User").optional }
     it { is_expected.to have_many(:project_memberships).dependent(:destroy) }
     it { is_expected.to have_many(:members).through(:project_memberships).source(:user) }
@@ -74,6 +75,61 @@ RSpec.describe Project do
 
         expect(project).not_to be_valid
         expect(project.errors[:github_token]).to include("must belong to the same account")
+      end
+    end
+
+    describe "git_push_fallback_token validation" do
+      it "allows a fallback token from the same account on an app-backed project" do
+        account = create(:account)
+        fallback = create(:github_token, :with_workflow_scope, account: account)
+        project = build(:project, :with_github_installation, account: account, git_push_fallback_token: fallback)
+
+        expect(project).to be_valid
+      end
+
+      it "rejects a fallback token from a different account" do
+        account = create(:account)
+        fallback = create(:github_token, account: create(:account))
+        project = build(:project, :with_github_installation, account: account, git_push_fallback_token: fallback)
+
+        expect(project).not_to be_valid
+        expect(project.errors[:git_push_fallback_token]).to include("must belong to the same account")
+      end
+
+      it "clears the fallback config when the project is not app-backed (no dead-end on auth switch)" do
+        account = create(:account)
+        fallback = create(:github_token, account: account)
+        project = build(:project, account: account, git_push_pat_fallback_enabled: true, git_push_fallback_token: fallback)
+
+        expect(project).to be_valid
+        expect(project.git_push_fallback_token_id).to be_nil
+        expect(project.git_push_pat_fallback_enabled).to be(false)
+      end
+
+      it "rejects a non-existent fallback token id on an app-backed project" do
+        account = create(:account)
+        project = build(:project, :with_github_installation, account: account)
+        project.git_push_fallback_token_id = 0
+
+        expect(project).not_to be_valid
+        expect(project.errors[:git_push_fallback_token]).to include("must belong to the same account")
+      end
+
+      it "rejects enabling the fallback without selecting a token" do
+        account = create(:account)
+        project = build(:project, :with_github_installation, account: account, git_push_pat_fallback_enabled: true)
+
+        expect(project).not_to be_valid
+        expect(project.errors[:git_push_fallback_token]).to include("must be selected to enable PAT push fallback")
+      end
+
+      it "allows enabling the fallback with a same-account token on an app-backed project" do
+        account = create(:account)
+        fallback = create(:github_token, account: account)
+        project = build(:project, :with_github_installation, account: account,
+          git_push_pat_fallback_enabled: true, git_push_fallback_token: fallback)
+
+        expect(project).to be_valid
       end
     end
 
@@ -996,6 +1052,67 @@ RSpec.describe Project do
         install = build(:github_installation, github_installation_id: 42, revoked_at: Time.current)
         project = build(:project, :with_github_installation, github_installation: install)
         expect(project.github_credential).to be_nil
+      end
+    end
+
+    describe "#git_push_pat_fallback_configured? and #git_push_fallback_credential" do
+      def app_backed_project(account, **attrs)
+        build(:project, :with_github_installation, account: account, **attrs)
+      end
+
+      it "is configured when enabled with an active fallback token on an app-backed project" do
+        account = create(:account)
+        fallback = create(:github_token, account: account)
+        project = app_backed_project(account, git_push_pat_fallback_enabled: true, git_push_fallback_token: fallback)
+
+        expect(project.git_push_pat_fallback_configured?).to be(true)
+        expect(project.git_push_fallback_credential).to eq(fallback.token)
+      end
+
+      it "is not configured when the setting is disabled, even with a token attached" do
+        account = create(:account)
+        fallback = create(:github_token, account: account)
+        project = app_backed_project(account, git_push_pat_fallback_enabled: false, git_push_fallback_token: fallback)
+
+        expect(project.git_push_pat_fallback_configured?).to be(false)
+        expect(project.git_push_fallback_credential).to be_nil
+      end
+
+      it "is not configured when the fallback token is revoked" do
+        account = create(:account)
+        fallback = create(:github_token, :revoked, account: account)
+        project = app_backed_project(account, git_push_pat_fallback_enabled: true, git_push_fallback_token: fallback)
+
+        expect(project.git_push_pat_fallback_configured?).to be(false)
+        expect(project.git_push_fallback_credential).to be_nil
+      end
+
+      it "does not depend on the token's reported scopes (fine-grained tokens report none)" do
+        account = create(:account)
+        fallback = create(:github_token, account: account, scopes: [])
+        project = app_backed_project(account, git_push_pat_fallback_enabled: true, git_push_fallback_token: fallback)
+
+        expect(project.git_push_pat_fallback_configured?).to be(true)
+      end
+
+      it "is not configured for token-backed projects (no App installation)" do
+        account = create(:account)
+        fallback = create(:github_token, account: account)
+        project = build(:project, account: account, github_token: create(:github_token, account: account),
+          git_push_pat_fallback_enabled: true, git_push_fallback_token: fallback)
+
+        expect(project.git_push_pat_fallback_configured?).to be(false)
+      end
+
+      it "never mints an App installation token (it is a push-only fallback)" do
+        account = create(:account)
+        fallback = create(:github_token, account: account)
+        project = app_backed_project(account, git_push_pat_fallback_enabled: true, git_push_fallback_token: fallback)
+        allow(Github::AppInstallation).to receive(:token_for)
+
+        project.git_push_fallback_credential
+
+        expect(Github::AppInstallation).not_to have_received(:token_for)
       end
     end
 

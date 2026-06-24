@@ -8,6 +8,12 @@
             rel: "noopener noreferrer",
             class: "flex-shrink-0 text-sm font-medium text-indigo-600 hover:text-indigo-900" %>
       <span class="truncate text-sm text-gray-900"><%= issue.title %></span>
+      <% if issue.runner_retry_abandoned? %>
+        <span class="inline-flex items-center rounded-md bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-600/20"
+              title="<%= issue.runner_retry_abandon_reason %>">
+          Retry Cap Reached
+        </span>
+      <% end %>
       <% if paused_run.present? %>
         <span class="inline-flex items-center rounded-full bg-yellow-100 px-2 py-0.5 text-xs font-medium text-yellow-800">
           Paused by <%= guardrail_violation_label_for(paused_run).downcase %>

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_23_091455) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_23_131744) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -232,6 +232,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_23_091455) do
     t.string "external_source_key", comment: "External system that executed the run, such as github_copilot, cursor, devin, factory, or internal_agent_workflows."
     t.string "final_runner", limit: 50
     t.string "focus", limit: 50, default: "general", null: false, comment: "Focused run intent derived from the highest-priority PR trigger or assigned workflow context."
+    t.boolean "git_credential_fallback_active", default: false, null: false, comment: "Transient flag set by Containers::GitOperations only while retrying a push with the project's git_push_fallback_token PAT. The git-credentials proxy serves the fallback PAT (instead of the App installation token) while this is true, then it is cleared. Not part of run history/state."
     t.string "goal", limit: 50, default: "create_pr", null: false
     t.jsonb "guardrail_context"
     t.string "guardrail_violation_type", limit: 50
@@ -408,11 +409,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_23_091455) do
     t.string "tool_call_id"
     t.string "tool_name"
     t.jsonb "tool_result"
+    t.string "tool_status", comment: "Confirmation state for write tool calls: pending, approved, or denied"
     t.datetime "updated_at", null: false
     t.index ["chat_session_id", "created_at"], name: "index_chat_messages_on_chat_session_id_and_created_at"
     t.index ["chat_session_id"], name: "index_chat_messages_on_chat_session_id"
     t.index ["external_id"], name: "index_chat_messages_on_external_id", unique: true
     t.index ["role"], name: "index_chat_messages_on_role"
+    t.index ["tool_status"], name: "index_chat_messages_on_tool_status", where: "((tool_status)::text = 'pending'::text)"
   end
 
   create_table "chat_session_projects", force: :cascade do |t|
@@ -1177,6 +1180,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_23_091455) do
     t.datetime "relationships_parsed_at"
     t.integer "review_goal_retry_count", default: 0, null: false
     t.datetime "review_goal_retry_reset_at"
+    t.text "runner_retry_abandon_reason", comment: "Human-readable reason the issue was abandoned due to the retry cap."
+    t.datetime "runner_retry_abandoned_at", comment: "When non-null, the issue was abandoned because every available provider reached the per-issue retry cap. Excluded from auto-pick until cleared (e.g. by a successful run)."
     t.string "source", default: "github", null: false
     t.string "title", limit: 1000, null: false
     t.datetime "updated_at", null: false
@@ -1785,6 +1790,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_23_091455) do
     t.string "enhance_issue_needs_input_label_name", default: "paid-needs-input", null: false
     t.jsonb "fitness_settings", default: {}, null: false
     t.string "generated_label_name", default: "paid-generated", null: false
+    t.bigint "git_push_fallback_token_id", comment: "Optional PAT (selected in project settings) used as the git push credential when git_push_pat_fallback_enabled is set and the GitHub App installation token is rejected for a missing permission (e.g. a push under .github/workflows/). The App stays the default for all other operations."
+    t.boolean "git_push_pat_fallback_enabled", default: false, null: false, comment: "When true, an app-backed project retries a git push with its git_push_fallback_token PAT if the GitHub App installation token is rejected for a missing permission (e.g. a push touching .github/workflows/). Opt-in; the App remains the default credential for every other operation."
     t.bigint "github_id", null: false
     t.bigint "github_installation_id", comment: "GitHub App installation for repo auth; mutually exclusive with github_token_id"
     t.bigint "github_token_id"
@@ -1803,6 +1810,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_23_091455) do
     t.integer "max_draft_review_rounds", default: 10, null: false
     t.integer "max_enhance_issue_reevaluation_rounds", default: 3, null: false
     t.integer "max_execution_seconds", default: 3600, null: false
+    t.integer "max_issue_runner_failures", comment: "Per-project override for the per-issue per-provider retry cap. When nil, the account-level agent setting (default 10) applies. After a provider fails this many times for a single issue it is excluded from scheduling for that issue."
     t.integer "max_pr_followup_runs", default: 8, null: false
     t.integer "max_tokens_per_run"
     t.string "merge_method", default: "squash", null: false
@@ -1840,6 +1848,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_23_091455) do
     t.index ["account_id", "last_github_activity_at"], name: "index_projects_on_account_id_and_last_github_activity_at"
     t.index ["account_id"], name: "index_projects_on_account_id"
     t.index ["created_by_id"], name: "index_projects_on_created_by_id"
+    t.index ["git_push_fallback_token_id"], name: "index_projects_on_git_push_fallback_token_id"
     t.index ["github_installation_id"], name: "index_projects_on_github_installation_id"
     t.index ["github_token_id"], name: "index_projects_on_github_token_id"
     t.index ["owner", "repo"], name: "index_projects_on_owner_and_repo"
@@ -2706,6 +2715,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_23_091455) do
   add_foreign_key "projects", "accounts"
   add_foreign_key "projects", "github_installations", validate: false
   add_foreign_key "projects", "github_tokens"
+  add_foreign_key "projects", "github_tokens", column: "git_push_fallback_token_id", validate: false
   add_foreign_key "projects", "users", column: "created_by_id"
   add_foreign_key "prompt_versions", "prompt_versions", column: "parent_version_id", on_delete: :nullify
   add_foreign_key "prompt_versions", "prompts", on_delete: :cascade

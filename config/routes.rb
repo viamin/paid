@@ -311,7 +311,11 @@ Rails.application.routes.draw do
     member do
       get :older_messages
     end
-    resources :chat_messages, path: "messages", only: %i[index create]
+    resources :chat_messages, path: "messages", only: %i[index create] do
+      member do
+        post :resolve
+      end
+    end
   end
 
   authenticate :user, ->(user) { user.operator? } do

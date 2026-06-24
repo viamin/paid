@@ -9,6 +9,10 @@ class ChatMessagePolicy < ApplicationPolicy
     has_any_account_role?(:owner, :admin, :member)
   end
 
+  def resolve?
+    create?
+  end
+
   class Scope < ApplicationPolicy::Scope
     def resolve
       raise Pundit::NotAuthorizedError, "must be logged in" unless user

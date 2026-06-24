@@ -123,6 +123,25 @@ module ChatSessionsHelper
     value
   end
 
+  CHAT_TOOL_STATUS_BADGES = {
+    "pending" => "bg-amber-100 text-amber-800",
+    "approved" => "bg-green-100 text-green-700",
+    "denied" => "bg-red-100 text-red-700"
+  }.freeze
+
+  def chat_tool_status_label(message)
+    case message.tool_status
+    when "pending" then "pending approval"
+    when "approved" then "approved"
+    when "denied" then "denied"
+    else message.role == "tool" ? "result" : "args"
+    end
+  end
+
+  def chat_tool_status_classes(message)
+    CHAT_TOOL_STATUS_BADGES.fetch(message.tool_status, message.role == "tool" ? "bg-blue-100 text-blue-700" : "bg-blue-100 text-blue-700")
+  end
+
   def pretty_chat_tool_payload(value)
     payload = chat_tool_payload(value)
     return payload if payload.is_a?(String)

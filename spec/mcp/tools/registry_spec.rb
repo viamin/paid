@@ -73,6 +73,42 @@ RSpec.describe Tools::Registry do
     end
   end
 
+  describe ".chat_definitions_for" do
+    let(:account) { create(:account) }
+    let(:project) { create(:project, account: account) }
+    let(:user) { create(:user, :owner, account: account) }
+
+    before { create(:project_membership, :member, user: user, project: project) }
+
+    it "advertises write tools so the chat agent can propose them" do
+      names = described_class.chat_definitions_for(user: user).map { |definition| definition[:name] }
+
+      expect(names).to include("trigger_agent_run", "cancel_agent_run", "update_user_settings")
+    end
+
+    it "strips the confirmed argument from write-tool schemas so the model cannot self-confirm" do
+      trigger_definition = described_class.chat_definitions_for(user: user).find { |definition| definition[:name] == "trigger_agent_run" }
+      schema = trigger_definition[:inputSchema]
+
+      expect(schema[:properties]).not_to have_key(:confirmed)
+      expect(schema[:required]).not_to include("confirmed")
+    end
+
+    it "leaves read-only tool schemas untouched" do
+      get_project = described_class.chat_definitions_for(user: user).find { |definition| definition[:name] == "get_project" }
+
+      expect(get_project[:inputSchema]).to eq(Tools::GetProject.definition[:inputSchema])
+    end
+  end
+
+  describe ".write_tool?" do
+    it "returns true for known write tools and false otherwise" do
+      expect(described_class.write_tool?("trigger_agent_run")).to be(true)
+      expect(described_class.write_tool?("get_project")).to be(false)
+      expect(described_class.write_tool?("does_not_exist")).to be(false)
+    end
+  end
+
   describe ".dispatch_read_only" do
     it "rejects write tools even when the user is authorized to see them in the full registry" do
       account = create(:account)
