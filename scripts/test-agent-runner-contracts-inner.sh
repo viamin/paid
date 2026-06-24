@@ -42,6 +42,7 @@ RUNNER_CLI_BINARY=(
     [kilocode]=kilo
     [opencode]=opencode
     [openrouter_free]=opencode
+    [openrouter_pareto]=opencode
     [pi]=pi
 )
 

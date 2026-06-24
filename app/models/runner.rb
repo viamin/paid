@@ -11,6 +11,7 @@ class Runner < ApplicationRecord
 
   OPENROUTER_FREE_RUNNER_KEY = "openrouter_free"
   OPENROUTER_FREE_MODEL_PROVIDER = "openrouter"
+  OPENROUTER_PARETO_RUNNER_KEY = "openrouter_pareto"
 
   LEGACY_PROVIDER_ATTRIBUTE_BRIDGES = {
     "provider_key" => "runner_key"
@@ -171,6 +172,7 @@ class Runner < ApplicationRecord
   validate :pi_api_key_config_must_be_valid
   validate :direct_outbound_config_models_must_exist_in_catalog
   validate :openrouter_free_requires_api_key_auth
+  validate :openrouter_pareto_requires_api_key_auth
   validate :tier_model_ids_must_be_valid
   validate :tier_model_ids_must_be_runner_compatible
   validate :tier_models_must_be_valid
@@ -393,7 +395,7 @@ class Runner < ApplicationRecord
   # (aider_config, aider_api_provider, aider_model_id) exists as prep work;
   # add aider_direct_outbound? here once the runtime path is implemented.
   def requires_direct_outbound?
-    opencode_direct_outbound? || kilocode_direct_outbound? || pi_direct_outbound? || openrouter_free_direct_outbound?
+    opencode_direct_outbound? || kilocode_direct_outbound? || pi_direct_outbound? || openrouter_free_direct_outbound? || openrouter_pareto_direct_outbound?
   end
 
   def opencode_required_api_service_type
@@ -513,7 +515,7 @@ class Runner < ApplicationRecord
   end
 
   def agent_harness_runtime?
-    opencode_agent_harness_runtime? || copilot_agent_harness_runtime? || pi_agent_harness_runtime? || openrouter_free_agent_harness_runtime?
+    opencode_agent_harness_runtime? || copilot_agent_harness_runtime? || pi_agent_harness_runtime? || openrouter_free_agent_harness_runtime? || openrouter_pareto_agent_harness_runtime?
   end
 
   def opencode_agent_harness_runtime?
@@ -532,6 +534,10 @@ class Runner < ApplicationRecord
 
   def openrouter_free_agent_harness_runtime?
     openrouter_free_direct_outbound?
+  end
+
+  def openrouter_pareto_agent_harness_runtime?
+    openrouter_pareto_direct_outbound?
   end
 
   def direct_outbound_model_id
@@ -626,6 +632,7 @@ class Runner < ApplicationRecord
   def self.display_name_for(runner_key)
     return "Unknown" if runner_key.blank?
     return "OpenRouter Free" if runner_key.to_s == OPENROUTER_FREE_RUNNER_KEY
+    return "OpenRouter Pareto" if runner_key.to_s == OPENROUTER_PARETO_RUNNER_KEY
 
     provider = AgentHarness.provider(RunnerSupport.harness_runner_key_for(runner_key).to_sym)
 
@@ -770,6 +777,9 @@ class Runner < ApplicationRecord
       self.tier_model_ids = default_tier_model_ids if default_tier_model_ids.present?
       return
     end
+    # openrouter_pareto selects models dynamically via the Pareto router; no tier
+    # model IDs are needed or managed by the app.
+    return if runner_key == OPENROUTER_PARETO_RUNNER_KEY
 
     return unless requires_direct_outbound?
     return unless direct_outbound_model_id.present?
@@ -781,7 +791,7 @@ class Runner < ApplicationRecord
 
   def clear_stale_direct_outbound_tier_models
     return unless tier_model_ids.present?
-    return if runner_key == "openrouter_free"
+    return if runner_key == "openrouter_free" || runner_key == OPENROUTER_PARETO_RUNNER_KEY
     return unless direct_outbound_capable_runner?
     return if requires_direct_outbound? && direct_outbound_model_id.present?
 
@@ -812,7 +822,7 @@ class Runner < ApplicationRecord
     # Anthropic runner in DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER,
     # so including it here would cause clear_stale_direct_outbound_tier_models
     # to erase its valid standard tier mappings on every save.
-    %w[kilocode opencode openrouter_free pi].include?(runner_key)
+    %w[kilocode opencode openrouter_free openrouter_pareto pi].include?(runner_key)
   end
 
   def direct_outbound_api_key_env_var(api_provider)
@@ -1029,6 +1039,13 @@ class Runner < ApplicationRecord
     return if api_key?
 
     errors.add(:auth_type, "must be API key for OpenRouter Free")
+  end
+
+  def openrouter_pareto_requires_api_key_auth
+    return unless runner_key == OPENROUTER_PARETO_RUNNER_KEY
+    return if api_key?
+
+    errors.add(:auth_type, "must be API key for OpenRouter Pareto")
   end
 
   def opencode_api_key_config_must_be_valid
@@ -1421,6 +1438,16 @@ class Runner < ApplicationRecord
       required_api_service_type == "openrouter"
   end
 
+  def openrouter_pareto?
+    runner_key == "openrouter_pareto"
+  end
+
+  def openrouter_pareto_direct_outbound?
+    runner_key == "openrouter_pareto" &&
+      api_key? &&
+      required_api_service_type == "openrouter"
+  end
+
   # NOTE: Aider is intentionally absent — only direct_outbound_capable_runner?
   # runners (kilocode/opencode/openrouter_free/pi) reach this method via
   # direct_outbound_config_models_must_exist_in_catalog. If aider joins that
@@ -1523,9 +1550,21 @@ class Runner < ApplicationRecord
   end
 
   def openrouter_free_runner_runtime(project:, model_id:)
-    plan = Runners::FreeModelExecutionPlan.call(runner: self, model_id: model_id, project: project)
-    config = plan.config
+    config = Runners::FreeModelExecutionPlan.call(runner: self, model_id: model_id, project: project).config
+    openrouter_provider_runtime(config)
+  end
+  public :openrouter_free_runner_runtime
 
+  def openrouter_pareto_runner_runtime(project:)
+    config = Runners::ParetoExecutionPlan.call(runner: self, project: project).config
+    openrouter_provider_runtime(config)
+  end
+  public :openrouter_pareto_runner_runtime
+
+  # Shared builder for OpenRouter-backed runners (free-model and Pareto). Both
+  # resolve their config via an execution plan and translate it into the same
+  # AgentHarness runtime, so the provider routing/metadata shape stays in sync.
+  def openrouter_provider_runtime(config)
     AgentHarness::ProviderRuntime.new(
       model: config.fetch(:model),
       env: {
@@ -1542,5 +1581,5 @@ class Runner < ApplicationRecord
       }
     )
   end
-  public :openrouter_free_runner_runtime
+  private :openrouter_provider_runtime
 end

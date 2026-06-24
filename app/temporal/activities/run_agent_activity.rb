@@ -854,6 +854,12 @@ module Activities
         return runner_entry.openrouter_free_runner_runtime(project: agent_run&.project, model_id: model_id)
       end
 
+      if runner_entry&.runner_key == "openrouter_pareto"
+        # The Pareto router selects models dynamically; no tier model resolution
+        # is needed — route the request directly through the Pareto router.
+        return runner_entry.openrouter_pareto_runner_runtime(project: agent_run&.project)
+      end
+
       return configured_runtime if configured_runtime && model_id.blank?
       return nil if model_id.blank?
 
