@@ -51,6 +51,50 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
       ))
   end
 
+  it "broadcasts message_complete with nil tokens when a write tool pauses" do
+    pending_msg = create(:chat_message, chat_session: chat_session,
+      role: "assistant", content: nil,
+      tool_name: "trigger_agent_run", tool_call_id: "call_pause",
+      tool_arguments: { "project_id" => 1 }, tool_status: "pending")
+
+    allow(ChatSessions::SendMessage).to receive(:call) do |**kwargs|
+      kwargs[:on_message_persisted]&.call(pending_msg)
+      nil
+    end
+
+    expect {
+      described_class.perform_now(
+        chat_session_id: chat_session.id,
+        content: "Run it",
+        stream_message_id: stream_message_id
+      )
+    }.to have_broadcasted_to(stream_name)
+      .with(hash_including(type: "message_tool_confirmation", tool_name: "trigger_agent_run"))
+      .and have_broadcasted_to(stream_name)
+      .with(hash_including(type: "message_complete", message_id: stream_message_id,
+        tokens: { input: nil, output: nil }))
+  end
+
+  it "does not broadcast an error when a write tool pauses" do
+    pending_msg = create(:chat_message, chat_session: chat_session,
+      role: "assistant", content: nil,
+      tool_name: "trigger_agent_run", tool_call_id: "call_pause",
+      tool_arguments: { "project_id" => 1 }, tool_status: "pending")
+
+    allow(ChatSessions::SendMessage).to receive(:call) do |**kwargs|
+      kwargs[:on_message_persisted]&.call(pending_msg)
+      nil
+    end
+
+    expect {
+      described_class.perform_now(
+        chat_session_id: chat_session.id,
+        content: "Run it",
+        stream_message_id: stream_message_id
+      )
+    }.not_to have_broadcasted_to(stream_name).with(hash_including(type: "error"))
+  end
+
   it "broadcasts message_tool_call for assistant messages with a tool name and nil content" do
     tool_call_msg = create(:chat_message, chat_session: chat_session,
       role: "assistant", content: nil,

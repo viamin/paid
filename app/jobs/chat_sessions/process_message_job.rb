@@ -41,8 +41,8 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       type: "message_complete",
       message_id: stream_message_id,
       tokens: {
-        input: assistant_message.tokens_input,
-        output: assistant_message.tokens_output
+        input: assistant_message&.tokens_input,
+        output: assistant_message&.tokens_output
       }
     })
   rescue ArgumentError => e
@@ -71,7 +71,7 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
     event_type = if message.role == "tool"
       "message_tool_result"
     elsif message.role == "assistant" && message.tool_name.present? && message.content.nil?
-      "message_tool_call"
+      message.pending_confirmation? ? "message_tool_confirmation" : "message_tool_call"
     else
       "message_created"
     end

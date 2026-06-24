@@ -61,6 +61,12 @@ export default class extends Controller {
     case "message_tool_result":
       this.handleMessageToolResult(data)
       break
+    case "message_tool_confirmation":
+      this.handleMessageToolConfirmation(data)
+      break
+    case "message_tool_resolved":
+      this.handleMessageToolResolved(data)
+      break
     case "message_start":
       this.handleMessageStart(data)
       break
@@ -194,6 +200,54 @@ export default class extends Controller {
     this.scrollToBottom()
   }
 
+  handleMessageToolConfirmation(data) {
+    if (data.html) {
+      const card = this.buildMessageElement(data.html)
+      if (card) {
+        this.messagesTarget.append(card)
+        this.scrollToBottom()
+      }
+    }
+
+    this.streaming = false
+    this.currentStreamId = null
+    this.setBusy(false)
+    this.toggleTyping(false)
+    this.setStatus(`Waiting for approval to run ${data.tool_name || "tool"}…`)
+  }
+
+  handleMessageToolResolved(data) {
+    if (!data.html) return
+
+    const card = this.buildMessageElement(data.html)
+    if (!card) return
+
+    const existing = this.messageElementById(data.message_id)
+    if (existing) {
+      existing.closest("div")?.replaceWith(card)
+    } else {
+      this.messagesTarget.append(card)
+    }
+    this.scrollToBottom()
+  }
+
+  approveToolCall(event) {
+    this.resolveToolCall(event, "approve")
+  }
+
+  denyToolCall(event) {
+    this.resolveToolCall(event, "deny")
+  }
+
+  resolveToolCall(event, decision) {
+    const messageId = this.messageIdFor(event.target)
+    if (!messageId) return
+
+    this.setBusy(true)
+    this.setStatus("Resolving confirmation…")
+    this.subscription.perform("resolve_tool_call", { message_id: messageId, decision })
+  }
+
   handleMessageCreated(data) {
     if (!data.html) return
 
@@ -229,6 +283,15 @@ export default class extends Controller {
     if (contentTarget?.dataset.rawContent) return
 
     pendingMessage.closest("div")?.remove()
+  }
+
+  messageElementById(messageId) {
+    return this.messagesTarget.querySelector(`article[data-message-id="${messageId}"]`)
+  }
+
+  messageIdFor(element) {
+    const container = element.closest("[data-message-id]")
+    return container?.dataset.messageId
   }
 
   messageControllerFor(element) {

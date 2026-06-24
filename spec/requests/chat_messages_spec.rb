@@ -202,6 +202,112 @@ RSpec.describe "ChatMessages" do
         expect(body).not_to include("event: message_tool_call")
         expect(body).not_to include("event: message_tool_result")
       end
+
+      it "emits message_tool_confirmation for a pending write tool call" do
+        pending_msg = create(:chat_message, :tool_call, chat_session: chat_session,
+          tool_call_id: "call_xyz", tool_name: "trigger_agent_run",
+          tool_arguments: { "project_id" => 1 }, tool_status: "pending")
+        allow(ChatSessions::BuildLlmClient).to receive(:call).and_return(instance_double(Proc))
+        allow(ChatSessions::SendMessage).to receive(:call) do |**args|
+          args[:on_message_persisted].call(pending_msg)
+          nil
+        end
+
+        post chat_session_chat_messages_path(chat_session),
+          params: { content: "Run it" }, headers: { "Accept" => "text/event-stream" }
+
+        data = JSON.parse(response.body.scan(/event: message_tool_confirmation\ndata: (.+)\n/).flatten.first)
+        expect(data).to include("tool_name" => "trigger_agent_run", "tool_status" => "pending")
+
+        # A paused turn returns nil; it must not surface as a spurious error.
+        expect(response.body).not_to include("event: error")
+      end
+
+      it "returns a paused status when the first turn pauses for a write tool" do
+        allow(ChatSessions::BuildLlmClient).to receive(:call).and_return(instance_double(Proc))
+        allow(ChatSessions::SendMessage).to receive(:call).and_return(nil)
+
+        post chat_session_chat_messages_path(chat_session), params: { content: "Run it" }
+
+        expect(response).to have_http_status(:created)
+        expect(response.parsed_body).to eq("status" => "paused")
+      end
+    end
+  end
+
+  describe "POST /chat/:chat_session_id/messages/:id/resolve" do
+    let(:pending_message) do
+      create(:chat_message, :tool_call, chat_session: chat_session,
+        tool_call_id: "call_xyz", tool_name: "update_user_settings",
+        tool_arguments: { "settings" => {} }, tool_status: "pending")
+    end
+
+    context "when not authenticated" do
+      it "redirects to the sign in page" do
+        post resolve_chat_session_chat_message_path(chat_session, pending_message),
+          params: { decision: "approve" }
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
+
+    context "when authenticated with JSON response" do
+      before { sign_in user }
+
+      it "resolves an approved tool call and returns the resumed assistant message" do
+        assistant_msg = create(:chat_message, :assistant, chat_session: chat_session, content: "Done.")
+        allow(ChatSessions::BuildLlmClient).to receive(:call).and_return(instance_double(Proc))
+        allow(ChatSessions::ResolveToolCall).to receive(:call).and_return(assistant_msg)
+
+        post resolve_chat_session_chat_message_path(chat_session, pending_message),
+          params: { decision: "approve" }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.parsed_body["content"]).to eq("Done.")
+        expect(ChatSessions::ResolveToolCall).to have_received(:call).with(
+          hash_including(decision: "approve", tool_call_message: pending_message)
+        )
+      end
+
+      it "returns a paused status when the resumed loop awaits another confirmation" do
+        allow(ChatSessions::BuildLlmClient).to receive(:call).and_return(instance_double(Proc))
+        allow(ChatSessions::ResolveToolCall).to receive(:call).and_return(nil)
+
+        post resolve_chat_session_chat_message_path(chat_session, pending_message),
+          params: { decision: "deny" }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.parsed_body).to eq("status" => "paused")
+      end
+
+      it "rejects an invalid decision" do
+        post resolve_chat_session_chat_message_path(chat_session, pending_message),
+          params: { decision: "maybe" }
+
+        expect(response).to have_http_status(:unprocessable_content)
+      end
+    end
+
+    context "when authenticated with SSE response" do
+      before { sign_in user }
+
+      it "emits a message_tool_resolved event and the resumed stream" do
+        assistant_msg = create(:chat_message, :assistant, chat_session: chat_session, tokens_input: 10, tokens_output: 5)
+        allow(ChatSessions::BuildLlmClient).to receive(:call).and_return(instance_double(Proc))
+        allow(ChatSessions::ResolveToolCall).to receive(:call) do |**args|
+          args[:on_tool_call_resolved].call(pending_message)
+          args[:on_chunk]&.call("Done.")
+          assistant_msg
+        end
+
+        post resolve_chat_session_chat_message_path(chat_session, pending_message),
+          params: { decision: "approve" }, headers: { "Accept" => "text/event-stream" }
+
+        expect(response).to have_http_status(:ok)
+        body = response.body
+        expect(body).to include("event: message_tool_resolved")
+        expect(body).to include("event: message_chunk")
+        expect(body).to include("event: message_complete")
+      end
     end
   end
 end
