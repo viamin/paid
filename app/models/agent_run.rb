@@ -80,6 +80,15 @@ class AgentRun < ApplicationRecord
     "providers exhausted",
     "runners exhausted"
   ].freeze
+  # GitHub rejects a push under .github/workflows/ (or any operation needing a
+  # permission the App lacks) with a permanent error: "refusing to allow a
+  # GitHub App ... without `workflows` permission". It fails identically on
+  # every retry until the App's permissions change, so callers must treat these
+  # as terminal and stop re-enqueuing the issue (see MarkAgentRunFailedActivity).
+  PUSH_PERMISSION_REJECTION_KEYWORDS = [
+    "refusing to allow a GitHub App to create or update",
+    "without `workflows` permission"
+  ].freeze
 
   def self.quality_scoreable_sql
     excluded_status = arel_table[:status].not_in(QUALITY_EXCLUDED_STATUSES)
@@ -1423,6 +1432,19 @@ class AgentRun < ApplicationRecord
 
     msg = error_message.to_s
     INFRA_FAILURE_KEYWORDS.any? { |keyword| msg.downcase.include?(keyword.downcase) }
+  end
+
+  # Returns true when the run failed because GitHub rejected a push for a
+  # permission the authenticating GitHub App installation token lacks (most
+  # commonly a change under .github/workflows/ that needs the workflows
+  # permission). Such a rejection is permanent — it fails identically on every
+  # retry until the App's permissions change or a PAT push fallback is enabled —
+  # so callers treat it as terminal and stop re-enqueuing the issue.
+  def push_permission_rejection?
+    return false unless status == "failed"
+
+    msg = error_message.to_s
+    PUSH_PERMISSION_REJECTION_KEYWORDS.any? { |keyword| msg.include?(keyword) }
   end
 
   def total_tokens

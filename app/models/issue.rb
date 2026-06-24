@@ -790,4 +790,39 @@ class Issue < ApplicationRecord
       reason: reason
     )
   end
+
+  # Prefix used to distinguish a terminal push-permission abandonment from a
+  # retry-cap abandonment in the free-text +runner_retry_abandon_reason+ field.
+  PUSH_PERMISSION_ABANDON_PREFIX = "Push rejected:".freeze
+
+  # True when this issue was parked from auto-pick because a push was rejected
+  # for a permission the GitHub App installation token lacks (e.g. a change
+  # under .github/workflows/ needing the workflows permission). Distinct from
+  # +runner_retry_abandoned?+ (every-runner-capped) for UI surfacing, but
+  # shares the same "not auto-pickable until cleared" gate.
+  def push_permission_abandoned?
+    runner_retry_abandoned? &&
+      runner_retry_abandon_reason.to_s.start_with?(PUSH_PERMISSION_ABANDON_PREFIX)
+  end
+
+  # Parks the issue from auto-pick after a terminal push-permission rejection.
+  # A GitHub App lacking the needed permission fails identically on every retry,
+  # so re-enqueuing only wastes runs. Reuses the runner_retry_abandoned_at gate
+  # (already filtered out of auto-pick and cleared on a successful manual run).
+  # Idempotent: a no-op when the issue is already abandoned.
+  def abandon_due_to_push_permission_rejection!(reason:)
+    reason = "#{PUSH_PERMISSION_ABANDON_PREFIX} #{reason}" unless reason.to_s.start_with?(PUSH_PERMISSION_ABANDON_PREFIX)
+    return if runner_retry_abandoned_at.present?
+
+    update!(runner_retry_abandoned_at: Time.current, runner_retry_abandon_reason: reason)
+
+    Rails.logger.info(
+      message: "issue.push_permission_abandoned",
+      component: "github_integration",
+      issue_id: id,
+      project_id: project_id,
+      issue_number: github_number,
+      reason: reason
+    )
+  end
 end

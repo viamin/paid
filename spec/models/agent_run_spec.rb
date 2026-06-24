@@ -983,6 +983,41 @@ RSpec.describe AgentRun do
       end
     end
 
+    describe "#push_permission_rejection?" do
+      let(:rejection_error) do
+        "Push failed: Command exited with code 1 — ! [remote rejected] " \
+          "paid/2368-branch -> paid/2368-branch (refusing to allow a GitHub App " \
+          "to create or update workflow `.github/workflows/mutation.yml` without " \
+          "`workflows` permission)"
+      end
+
+      it "returns true for a workflows permission push rejection" do
+        agent_run = build(:agent_run, :failed, error_message: rejection_error)
+
+        expect(agent_run.push_permission_rejection?).to be true
+      end
+
+      it "returns true for the without `workflows` permission phrase alone" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "Push failed: rejected without `workflows` permission")
+
+        expect(agent_run.push_permission_rejection?).to be true
+      end
+
+      it "returns false for a generic push failure" do
+        agent_run = build(:agent_run, :failed,
+          error_message: "Push failed: non-fast-forward update")
+
+        expect(agent_run.push_permission_rejection?).to be false
+      end
+
+      it "returns false for a non-failed status" do
+        agent_run = build(:agent_run, :completed, error_message: rejection_error)
+
+        expect(agent_run.push_permission_rejection?).to be false
+      end
+    end
+
     describe "#operational_failure? excludes pre-runner infra failures" do
       it "returns false for Docker pull failure (pre-runner infra)" do
         agent_run = build(:agent_run, :failed,
