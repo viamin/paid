@@ -90,6 +90,23 @@ RSpec.describe OrphanBranchReaperJob do
         .with(project.full_name, "heads/paid/100-feature-abc123")
     end
 
+    it "deletes a remote branch for a token_budget_exceeded run with no PR" do
+      create(:agent_run, :token_budget_exceeded,
+        project: project,
+        branch_name: "paid/265-budget-branch-7c9e2a",
+        pull_request_url: nil,
+        updated_at: 2.hours.ago)
+
+      stub_branch_exists("paid/265-budget-branch-7c9e2a")
+      stub_no_open_prs("paid/265-budget-branch-7c9e2a")
+      allow(github_client).to receive(:delete_ref)
+
+      job.perform
+
+      expect(github_client).to have_received(:delete_ref)
+        .with(project.full_name, "heads/paid/265-budget-branch-7c9e2a")
+    end
+
     it "skips runs whose branch has an open PR" do
       create(:agent_run, :timeout,
         project: project,

@@ -28,7 +28,7 @@ class OrphanBranchReaperJob < ApplicationJob
   # Only inspect runs from the last 30 days to keep the query bounded.
   CANDIDATE_WINDOW = 30.days
 
-  REAPABLE_STATUSES = %w[retried timeout failed].freeze
+  REAPABLE_STATUSES = %w[retried timeout token_budget_exceeded failed].freeze
 
   def perform
     job_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
