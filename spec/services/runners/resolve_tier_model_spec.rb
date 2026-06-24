@@ -68,33 +68,18 @@ RSpec.describe Runners::ResolveTierModel do
       expect(result.error).to eq("no model configured for #{runner_key} at high")
     end
 
-    context "when the runner tier mapping specifies a CLI-version-gated model" do
+    context "when the runner tier mapping specifies a gpt-5.5 model" do
       before do
         runner.update_columns(tier_models: {
           "mid" => { "model_id" => "gpt-5.5", "provider_id" => 99 }
         })
       end
 
-      it "fails and includes the incompatibility reason" do
+      it "returns success with the runner mapping" do
         result = described_class.call(runner: runner, tier: "mid", user: user)
 
-        expect(result).to be_failure
-        expect(result.error).to include("gpt-5.5")
-        expect(result.error).to include("not compatible")
-      end
-
-      it "logs the incompatibility with structured fields" do
-        allow(Rails.logger).to receive(:warn)
-        described_class.call(runner: runner, tier: "mid", user: user)
-
-        expect(Rails.logger).to have_received(:warn).with(
-          hash_including(
-            message: "model_selection.incompatible_model_candidate",
-            runner_key: "codex",
-            model_id: "gpt-5.5",
-            incompatibility_type: :cli_version_gated
-          )
-        )
+        expect(result).to be_success
+        expect(result.model_id).to eq("gpt-5.5")
       end
 
       it "checks compatibility once per candidate" do

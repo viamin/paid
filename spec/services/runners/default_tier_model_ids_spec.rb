@@ -42,17 +42,15 @@ RSpec.describe Runners::DefaultTierModelIds do
       )
     end
 
-    context "when the highest-capability model is CLI-version-gated for the runner" do
+    context "when the highest-capability model is supported by the updated Codex CLI" do
       before do
-        # gpt-5.5 is in CODEX_CLI_VERSION_GATED_MODELS — it should be skipped.
         create(:llm_model, model_id: "gpt-5.5", provider: "openai", tier: "high", capability_score: 9.9)
         create(:llm_model, model_id: "gpt-5.4", provider: "openai", tier: "high", capability_score: 9.6)
       end
 
-      it "skips incompatible models and returns the next compatible one" do
+      it "prefers the highest-capability compatible model" do
         result = described_class.call(runner_key: "codex")
-        expect(result["high"]).to eq("gpt-5.4")
-        expect(result["high"]).not_to eq("gpt-5.5")
+        expect(result["high"]).to eq("gpt-5.5")
       end
     end
 

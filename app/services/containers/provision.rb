@@ -1110,12 +1110,11 @@ module Containers
         wire_api: "responses"
       )
       # Pin a Paid-selected top-level model so the Codex CLI does not fall back
-      # to its built-in default (currently gpt-5.5), which the pinned CLI in the
-      # agent image rejects ("requires a newer version of Codex"). The proxy
-      # config has no model of its own, so without this the proxy auth path
-      # mirrors the host-config leak that seed_sanitized_codex_config! guards
-      # against on the subscription path. The model key must precede the
-      # [chatgpt] table to remain a top-level TOML key.
+      # to its built-in default. The proxy config has no model of its own, so
+      # without this the proxy auth path mirrors the host-config leak that
+      # seed_sanitized_codex_config! guards against on the subscription path.
+      # The model key must precede the [chatgpt] table to remain a top-level
+      # TOML key.
       content = [ codex_notify_line, codex_model_config_line, config_toml ].compact.join("\n\n")
 
       write_container_file("/home/agent/.codex/config.toml", content)

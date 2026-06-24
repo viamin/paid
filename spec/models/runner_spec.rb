@@ -392,9 +392,10 @@ RSpec.describe Runner do
       end
 
       context "when runner compatibility validation is applied" do
-        it "rejects CLI-version-gated models in tier_models for codex" do
+        it "accepts gpt-5.5 in tier_models for codex with the updated CLI pin" do
           user = create(:user)
           api_key = create(:provider_api_key, user: user, api_service_type: "openai")
+          create(:llm_model, :openai, model_id: "gpt-5.5")
           runner = build(
             :runner, :api_key,
             user: user,
@@ -403,9 +404,7 @@ RSpec.describe Runner do
             tier_models: { "mid" => { "model_id" => "gpt-5.5", "provider_id" => 1 } }
           )
 
-          expect(runner).not_to be_valid
-          expect(runner.errors[:tier_models].join).to include("gpt-5.5")
-          expect(runner.errors[:tier_models].join).to include("not compatible")
+          expect(runner).to be_valid
         end
 
         it "accepts compatible models in tier_models for codex" do
@@ -435,7 +434,7 @@ RSpec.describe Runner do
     end
 
     describe "tier_model_ids runner compatibility" do
-      it "rejects CLI-version-gated models in tier_model_ids for codex" do
+      it "accepts gpt-5.5 in tier_model_ids for codex with the updated CLI pin" do
         user = create(:user)
         api_key = create(:provider_api_key, user: user, api_service_type: "openai")
         create(:llm_model, :openai, model_id: "gpt-5.5")
@@ -447,9 +446,7 @@ RSpec.describe Runner do
           tier_model_ids: { "high" => "gpt-5.5" }
         )
 
-        expect(runner).not_to be_valid
-        expect(runner.errors[:tier_model_ids].join).to include("gpt-5.5")
-        expect(runner.errors[:tier_model_ids].join).to include("not compatible")
+        expect(runner).to be_valid
       end
 
       it "skips compatibility check for direct-outbound runners" do

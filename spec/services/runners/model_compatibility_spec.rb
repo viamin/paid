@@ -13,34 +13,28 @@ RSpec.describe Runners::ModelCompatibility do
       let(:model_id) { "gpt-5.5" }
       let(:auth_type) { "subscription" }
 
-      # Simulates a future agent-harness version that exposes model_compatibility
-      # (viamin/agent-harness#259). The stub module is used because the installed
-      # version does not yet implement this class method.
-      let(:harness_klass) do
-        Module.new do
-          def self.respond_to?(method, *) # rubocop:disable Style/MethodMissingSuper
-            method == :model_compatibility || super
-          end
-
-          def self.model_compatibility(model_id:, auth_type:)
-            {
-              supported: false,
-              reason: "requires newer CLI",
-              incompatibility_type: :cli_version_gated,
-              replacement_model_id: nil
-            }
-          end
-        end
+      let(:harness_result) do
+        AgentHarness::ModelCompatibility::Result.new(
+          runner: :codex,
+          model_id: "gpt-5.5",
+          auth_mode: :subscription,
+          supported: false,
+          reason: AgentHarness::ModelCompatibility::UNSUPPORTED_CLI_VERSION_REASON,
+          minimum_cli_version: "0.116.0",
+          cli_version_requirement: ">= 0.116.0",
+          fallback_model_id: "gpt-5-codex",
+          source: :static_contract
+        )
       end
 
       before do
-        allow(AgentHarness).to receive(:provider_class).with(:codex).and_return(harness_klass)
+        allow(AgentHarness).to receive(:model_compatibility).and_return(harness_result)
       end
 
       it "delegates to agent-harness and returns its result" do
         expect(result).to have_attributes(
           supported: false,
-          reason: "requires newer CLI",
+          reason: "'gpt-5.5' requires Codex CLI >= 0.116.0",
           incompatibility_type: :cli_version_gated,
           source: "agent_harness"
         )
@@ -55,27 +49,27 @@ RSpec.describe Runners::ModelCompatibility do
       context "with CLI-version-gated model (gpt-5.5)" do
         let(:model_id) { "gpt-5.5" }
 
-        it "returns unsupported with cli_version_gated type" do
+        it "returns supported with the current Codex CLI contract" do
           expect(result).to have_attributes(
-            supported: false,
-            incompatibility_type: :cli_version_gated,
-            source: "paid_static_contract"
+            supported: true,
+            incompatibility_type: nil,
+            source: "agent_harness"
           )
-          expect(result.reason).to include("gpt-5.5")
-          expect(result.reason).to include("newer version of the Codex CLI")
-          expect(result).to be_unsupported
+          expect(result.reason).to be_nil
+          expect(result).to be_supported
         end
       end
 
       context "with CLI-version-gated model (gpt-5.5-pro)" do
         let(:model_id) { "gpt-5.5-pro" }
 
-        it "returns unsupported with cli_version_gated type" do
+        it "returns unknown because agent-harness does not advertise it yet" do
           expect(result).to have_attributes(
-            supported: false,
-            incompatibility_type: :cli_version_gated
+            supported: nil,
+            incompatibility_type: nil,
+            source: "agent_harness"
           )
-          expect(result).to be_unsupported
+          expect(result).to be_unknown
         end
       end
 
@@ -107,7 +101,7 @@ RSpec.describe Runners::ModelCompatibility do
 
         it "returns unknown (not unsupported) — subscription entitlements vary" do
           expect(result).to be_unknown
-          expect(result.source).to eq("paid_static_contract")
+          expect(result.source).to eq("agent_harness")
         end
       end
 
@@ -128,9 +122,9 @@ RSpec.describe Runners::ModelCompatibility do
         let(:model_id) { "gpt-5.5" }
         let(:auth_type) { "api_key" }
 
-        it "still returns unsupported — CLI version gate applies regardless of auth" do
-          expect(result).to be_unsupported
-          expect(result.incompatibility_type).to eq(:cli_version_gated)
+        it "returns supported with the updated Codex CLI pin" do
+          expect(result).to be_supported
+          expect(result.incompatibility_type).to be_nil
         end
       end
     end
@@ -148,7 +142,7 @@ RSpec.describe Runners::ModelCompatibility do
 
         it "returns unknown — subscription entitlements are not statically checkable" do
           expect(result).to be_unknown
-          expect(result.source).to eq("paid_catalog")
+          expect(result.source).to eq("agent_harness")
         end
       end
 
@@ -175,7 +169,7 @@ RSpec.describe Runners::ModelCompatibility do
 
         it "returns unknown" do
           expect(result).to be_unknown
-          expect(result.source).to eq("paid_catalog")
+          expect(result.source).to eq("agent_harness")
         end
       end
     end
@@ -217,7 +211,7 @@ RSpec.describe Runners::ModelCompatibility do
 
       it "returns unknown — direct-outbound compatibility is determined by runner config" do
         expect(result).to be_unknown
-        expect(result.source).to eq("paid_static_contract")
+        expect(result.source).to eq("agent_harness")
       end
     end
 
