@@ -446,6 +446,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
         agent_run.log!("stdout", "Added OAuth middleware")
         allow(AgentHarness).to receive(:send_message)
           .and_return(instance_double(AgentHarness::Response, success?: true, output: llm_description))
+        allow(Llm::TextMode).to receive(:options).and_return({})
 
         activity.execute(agent_run_id: agent_run.id)
 
