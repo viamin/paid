@@ -45,6 +45,26 @@ RSpec.describe AdjustDefaultAgentRunTimeouts, :aggregate_failures do
     expect(default_for(:projects, :max_execution_seconds)).to eq(7200)
   end
 
+  it "reverts untouched backfilled rows and restores legacy defaults on down without clobbering explicit values" do
+    untouched_setting = create(:user_setting, agent_timeout_seconds: 5400)
+    explicit_5400_setting = create(:user_setting, agent_timeout_seconds: 5400)
+    explicit_5400_setting.update!(default_poll_interval_seconds: 120)
+    untouched_project = create(:project, max_execution_seconds: 7200)
+    explicit_7200_project = create(:project, max_execution_seconds: 7200)
+    explicit_7200_project.update!(poll_interval_seconds: 120)
+
+    migration.migrate(:down)
+    UserSetting.reset_column_information
+    Project.reset_column_information
+
+    expect(untouched_setting.reload.agent_timeout_seconds).to eq(3600)
+    expect(explicit_5400_setting.reload.agent_timeout_seconds).to eq(5400)
+    expect(untouched_project.reload.max_execution_seconds).to eq(3600)
+    expect(explicit_7200_project.reload.max_execution_seconds).to eq(7200)
+    expect(default_for(:user_settings, :agent_timeout_seconds)).to eq(3600)
+    expect(default_for(:projects, :max_execution_seconds)).to eq(3600)
+  end
+
   private
 
   def default_for(table_name, column_name)
