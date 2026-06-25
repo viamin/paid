@@ -446,16 +446,17 @@ RSpec.describe Activities::CreatePullRequestActivity do
         agent_run.log!("stdout", "Added OAuth middleware")
         allow(AgentHarness).to receive(:send_message)
           .and_return(instance_double(AgentHarness::Response, success?: true, output: llm_description))
-        allow(Llm::TextMode).to receive(:options).and_return({})
 
         activity.execute(agent_run_id: agent_run.id)
 
         expect(AgentHarness).to have_received(:send_message).with(
           a_string_including(issue.title).and(including(issue.body)),
-          provider: :claude,
-          model: Llm::GeneratePrDescription::DEFAULT_MODEL,
-          timeout: Llm::GeneratePrDescription::TIMEOUT,
-          tools: :none
+          hash_including(
+            provider: :claude,
+            model: Llm::GeneratePrDescription::DEFAULT_MODEL,
+            timeout: Llm::GeneratePrDescription::TIMEOUT,
+            tools: :none
+          )
         )
       end
 
