@@ -1,12 +1,14 @@
-fix: harden paid-paused sync for synthetic issues and scope PR copy
+fix(models): drop fabricated MiniMax-M3 pricing from seeded catalog
 
-Address review feedback on #2636:
+minimax is a custom Anthropic-compatible endpoint that is excluded from
+Models::DetectCatalogDrift, so the RubyLLM registry never backfills this
+KNOWN_MODELS row (unlike the native anthropic/openai/google entries). The
+guessed input/output cost values therefore persisted verbatim into cost
+tracking/billing. Leave pricing nil until confirmed against MiniMax's
+published pricing, and document that the row exists for catalog
+completeness (so direct-outbound minimax runners pass validation) rather
+than to fix the runtime model_not_found — opencode registers the model via
+Runner#opencode_custom_provider_models and provider-qualifies the resolved
+tier model via Runner#qualified_model_for.
 
-- Skip the GitHub label push for synthetic code-scanning/Dependabot
-  issues (no backing GitHub issue), so pausing them no longer 404s into
-  a 500. The local paused flag still excludes them from auto-pick.
-- Scope the "automation will not pick this up" promise to issues, since
-  paused only gates issue auto-pick today (PR review/escalation gating
-  is a tracked follow-up). Updated the column comment + schema, the
-  paid-paused GitHub label description, and the pause-toggle confirm
-  and tooltip copy so PRs are not promised automation will stop.
+Addresses review threads on #2667.
