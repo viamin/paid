@@ -121,12 +121,10 @@ module Activities
       { content: "", sections: [], total_tokens: 0 }
     end
 
-    CLI_STREAMING_EVENT_PREFIX = '{"type":"session.'
-
     def call_llm(agent_run, prompt)
       chat_providers(agent_run.project).each do |provider|
         response = AgentHarness.send_message(prompt, **llm_options(provider))
-        next if response_failed_or_cli_leak?(response, agent_run, provider)
+        next if response_failed?(response, agent_run, provider)
 
         return response
       rescue AgentHarness::Error => e
@@ -146,30 +144,11 @@ module Activities
       )
     end
 
-    def response_failed_or_cli_leak?(response, agent_run, provider)
-      if response.respond_to?(:success?) && !response.success?
-        log_failed_response(agent_run, provider, response)
-        return true
-      end
+    def response_failed?(response, agent_run, provider)
+      return false unless response.respond_to?(:success?) && !response.success?
 
-      output = response.respond_to?(:output) ? response.output.to_s : ""
-      if cli_streaming_only?(output)
-        logger.warn(
-          message: "agent_execution.analyze_issue_cli_streaming_leak",
-          agent_run_id: agent_run.id,
-          provider: provider,
-          output_prefix: output.truncate(200)
-        )
-        agent_run.log!("stderr", "LLM returned CLI streaming event instead of analysis: #{output.truncate(500)}")
-        return true
-      end
-
-      false
-    end
-
-    def cli_streaming_only?(output)
-      return false unless output.start_with?(CLI_STREAMING_EVENT_PREFIX)
-      !output.include?('"result"')
+      log_failed_response(agent_run, provider, response)
+      true
     end
 
     def chat_providers(project)
@@ -296,24 +275,6 @@ module Activities
     def extract_analysis_json(output)
       stripped = strip_json_fence(output)
       JSON.parse(stripped, symbolize_names: true)
-    rescue JSON::ParserError
-      result_payload = extract_result_from_jsonl(output)
-      raise JSON::ParserError, "no valid analysis JSON found" unless result_payload
-
-      JSON.parse(result_payload, symbolize_names: true)
-    end
-
-    def extract_result_from_jsonl(output)
-      output.each_line do |line|
-        next unless line.lstrip.start_with?("{")
-        parsed = JSON.parse(line, symbolize_names: true)
-        if parsed.is_a?(Hash) && parsed[:type] == "result" && parsed[:result].is_a?(String)
-          return parsed[:result]
-        end
-      rescue JSON::ParserError
-        next
-      end
-      nil
     end
 
     def strip_json_fence(output)
