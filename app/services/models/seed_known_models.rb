@@ -364,22 +364,6 @@ module Models
         supports_json_output: true,
         capability_score: 8.2,
         tier: "mid"
-      },
-      {
-        model_id: "MiniMax-M3",
-        display_name: "MiniMax M3",
-        provider: "minimax",
-        family: "MiniMax",
-        category: "coding",
-        context_window: 200_000,
-        max_output_tokens: 32_000,
-        input_cost_per_million: 1.0,
-        output_cost_per_million: 4.0,
-        supports_vision: false,
-        supports_tools: true,
-        supports_json_output: true,
-        capability_score: 8.5,
-        tier: "mid"
       }
     ].freeze
 
