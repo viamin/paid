@@ -96,7 +96,7 @@ module OrchestrationStrategies
     #   - Workflows::FeatureOrchestrationWorkflow::DEFAULT_TIMEOUT_SECONDS (line 24)
     def execution_timeouts
       {
-        "agent_timeout_default_seconds" => 3600,
+        "agent_timeout_default_seconds" => 5400,
         "issue_goal_timeout_seconds" => 600,
         "issue_goal_idle_timeout_seconds" => 120,
         "review_goal_idle_timeout_seconds" => 300,

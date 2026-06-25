@@ -7,7 +7,7 @@ FactoryBot.define do
     default_poll_interval_seconds { 60 }
     github_token_cache_ttl_minutes { 60 }
     token_validation_stale_minutes { 2 }
-    agent_timeout_seconds { 3600 }
+    agent_timeout_seconds { 5400 }
     marketplace_auto_attach_enabled { false }
     default_agent_runner { "claude" }
     container_memory_bytes { 4 * 1024 * 1024 * 1024 }
