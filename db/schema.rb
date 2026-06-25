@@ -931,6 +931,27 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_25_062207) do
     t.index ["feature_key", "key", "value"], name: "index_flipper_gates_on_feature_key_and_key_and_value", unique: true
   end
 
+  create_table "github_app_installations", comment: "GitHub App installations for org/repo access without PATs", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "app_id", null: false, comment: "GitHub App ID used for this installation"
+    t.string "app_slug", null: false, comment: "GitHub App slug for display and bot identity"
+    t.datetime "created_at", null: false
+    t.bigint "installation_id", null: false, comment: "GitHub installation ID from the App installation event"
+    t.bigint "installed_by_id"
+    t.jsonb "metadata", default: {}, null: false, comment: "Additional installation metadata from GitHub"
+    t.jsonb "repositories", default: [], null: false, comment: "Cached list of installed repository metadata"
+    t.datetime "repositories_synced_at", comment: "Last time the repository list was synced from GitHub"
+    t.string "repository_selection", default: "selected", null: false, comment: "GitHub installation repository_selection: all or selected"
+    t.datetime "revoked_at", comment: "When the installation was revoked or uninstalled"
+    t.string "status", default: "active", null: false, comment: "Installation status: active, suspended, uninstalled"
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "installation_id"], name: "idx_on_account_id_installation_id_effaccd2e5", unique: true
+    t.index ["account_id"], name: "index_github_app_installations_on_account_id"
+    t.index ["installation_id"], name: "index_github_app_installations_on_installation_id", unique: true
+    t.index ["installed_by_id"], name: "index_github_app_installations_on_installed_by_id"
+    t.index ["status"], name: "index_github_app_installations_on_status"
+  end
+
   create_table "github_health_states", force: :cascade do |t|
     t.datetime "circuit_opened_at"
     t.string "circuit_state", limit: 20, default: "closed", null: false
@@ -938,7 +959,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_25_062207) do
     t.string "endpoint", limit: 50, default: "api", null: false
     t.integer "failure_count", default: 0, null: false
     t.text "last_error_message"
-    t.integer "rate_limit_limit", comment: "Total hourly request cap reported by GitHub for this credential (5,000 for PATs, 15,000 for App installations)."
+    t.integer "rate_limit_limit"
     t.datetime "rate_limit_observed_at", comment: "When the remaining/limit rate-limit figures were last sampled from the GitHub API for this credential endpoint."
     t.integer "rate_limit_remaining"
     t.datetime "rate_limit_reset_at"
@@ -2416,6 +2437,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_25_062207) do
     t.index ["uuid"], name: "index_tracker_configurations_on_uuid", unique: true
   end
 
+  create_table "user_identities", comment: "Links users to external identity providers (SSO/OIDC/SAML)", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.jsonb "auth_data", default: {}, null: false, comment: "Raw auth data from provider (serialized for audit trail)"
+    t.datetime "created_at", null: false
+    t.string "provider", null: false, comment: "Identity provider name: saml, oidc, github, etc."
+    t.string "uid", null: false, comment: "External user identifier from the IdP"
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index ["account_id"], name: "index_user_identities_on_account_id"
+    t.index ["provider", "uid"], name: "index_user_identities_on_provider_and_uid", unique: true
+    t.index ["user_id", "provider"], name: "index_user_identities_on_user_id_and_provider", unique: true
+    t.index ["user_id"], name: "index_user_identities_on_user_id"
+  end
+
   create_table "user_settings", force: :cascade do |t|
     t.integer "agent_timeout_seconds", default: 5400, null: false
     t.jsonb "allowed_service_images", default: ["postgres:16.13", "redis:7-alpine", "selenium/standalone-chromium:latest"]
@@ -2745,26 +2780,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_25_062207) do
   add_foreign_key "workflow_states", "projects"
   add_foreign_key "worktrees", "agent_runs", on_delete: :nullify
   add_foreign_key "worktrees", "projects", on_delete: :cascade
-
-  create_function :paid_current_account_id, sql_definition: <<-'SQL'
-      CREATE OR REPLACE FUNCTION public.paid_current_account_id()
-       RETURNS bigint
-       LANGUAGE sql
-       STABLE
-      AS $function$
-        SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
-      $function$
-  SQL
-
-  create_function :paid_tenant_bypass, sql_definition: <<-'SQL'
-      CREATE OR REPLACE FUNCTION public.paid_tenant_bypass()
-       RETURNS boolean
-       LANGUAGE sql
-       STABLE
-      AS $function$
-        SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
-      $function$
-  SQL
 
   create_function :logidze_capture_exception, sql_definition: <<-'SQL'
       CREATE OR REPLACE FUNCTION public.logidze_capture_exception(error_data jsonb)
@@ -3501,6 +3516,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_25_062207) do
       $function$
   SQL
 
+  create_function :paid_current_account_id, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.paid_current_account_id()
+       RETURNS bigint
+       LANGUAGE sql
+       STABLE
+      AS $function$
+        SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
+      $function$
+  SQL
+
+  create_function :paid_tenant_bypass, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.paid_tenant_bypass()
+       RETURNS boolean
+       LANGUAGE sql
+       STABLE
+      AS $function$
+        SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
+      $function$
+  SQL
+
   create_function :validate_orchestration_decision_strategy_version_scope, sql_definition: <<-'SQL'
       CREATE OR REPLACE FUNCTION public.validate_orchestration_decision_strategy_version_scope()
        RETURNS trigger
@@ -3617,16 +3652,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_25_062207) do
       CREATE TRIGGER logidze_on_provider_api_keys BEFORE INSERT OR UPDATE ON public.provider_api_keys FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{api_key}')
   SQL
 
-  create_trigger :logidze_on_providers, sql_definition: <<-SQL
-      CREATE TRIGGER logidze_on_providers BEFORE INSERT OR UPDATE ON public.runners FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
-  SQL
-
   create_trigger :logidze_on_quality_gate_thresholds, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_quality_gate_thresholds BEFORE INSERT OR UPDATE ON public.quality_gate_thresholds FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
   create_trigger :logidze_on_quality_thresholds, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_quality_thresholds BEFORE INSERT OR UPDATE ON public.quality_thresholds FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :logidze_on_providers, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_providers BEFORE INSERT OR UPDATE ON public.runners FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
   create_trigger :logidze_on_service_containers, sql_definition: <<-SQL

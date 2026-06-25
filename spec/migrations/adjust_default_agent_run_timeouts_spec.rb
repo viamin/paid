@@ -21,7 +21,7 @@ RSpec.describe AdjustDefaultAgentRunTimeouts, :aggregate_failures do
     truncate_migration_test_data
   end
 
-  it "updates untouched defaults without clobbering explicit 3600-second user preferences" do
+  it "updates untouched defaults without clobbering explicit 3600-second user or project preferences" do
     migration.migrate(:down)
     UserSetting.reset_column_information
     Project.reset_column_information
@@ -30,6 +30,8 @@ RSpec.describe AdjustDefaultAgentRunTimeouts, :aggregate_failures do
     explicit_3600_setting = create(:user_setting, agent_timeout_seconds: 3600)
     explicit_3600_setting.update!(default_poll_interval_seconds: 120)
     project_default = create(:project, max_execution_seconds: 3600)
+    explicit_3600_project = create(:project, max_execution_seconds: 3600)
+    explicit_3600_project.update!(poll_interval_seconds: 120)
 
     migration.migrate(:up)
     UserSetting.reset_column_information
@@ -38,6 +40,7 @@ RSpec.describe AdjustDefaultAgentRunTimeouts, :aggregate_failures do
     expect(untouched_setting.reload.agent_timeout_seconds).to eq(5400)
     expect(explicit_3600_setting.reload.agent_timeout_seconds).to eq(3600)
     expect(project_default.reload.max_execution_seconds).to eq(7200)
+    expect(explicit_3600_project.reload.max_execution_seconds).to eq(3600)
     expect(default_for(:user_settings, :agent_timeout_seconds)).to eq(5400)
     expect(default_for(:projects, :max_execution_seconds)).to eq(7200)
   end

@@ -20,6 +20,7 @@ class AdjustDefaultAgentRunTimeouts < ActiveRecord::Migration[8.1]
       .where("updated_at = created_at")
       .update_all(agent_timeout_seconds: NEW_AGENT_TIMEOUT_SECONDS) # rubocop:disable Rails/SkipsModelValidations
     MigrationProject.where(max_execution_seconds: 3600)
+      .where("updated_at = created_at")
       .update_all(max_execution_seconds: NEW_MAX_EXECUTION_SECONDS) # rubocop:disable Rails/SkipsModelValidations
   end
 
@@ -28,6 +29,7 @@ class AdjustDefaultAgentRunTimeouts < ActiveRecord::Migration[8.1]
       .where("updated_at = created_at")
       .update_all(agent_timeout_seconds: 3600) # rubocop:disable Rails/SkipsModelValidations
     MigrationProject.where(max_execution_seconds: NEW_MAX_EXECUTION_SECONDS)
+      .where("updated_at = created_at")
       .update_all(max_execution_seconds: 3600) # rubocop:disable Rails/SkipsModelValidations
 
     change_column_default :user_settings, :agent_timeout_seconds, from: NEW_AGENT_TIMEOUT_SECONDS, to: 3600
