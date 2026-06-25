@@ -518,7 +518,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     let(:input) { { project_id: 1, issue_id: 1, goal: "create_pr" } }
 
     before do
-      allow(Rails.application.config.x).to receive(:agent_timeout).and_return(3600)
+      allow(Rails.application.config.x).to receive(:agent_timeout).and_return(AGENT_TIMEOUT_DEFAULT)
       allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: true)
     end
 
@@ -527,7 +527,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
         case activity_class.name
         when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, runner_attempt_count: 3 }
         when "Activities::RunAgentActivity"
-          expect(opts[:start_to_close_timeout]).to eq(11_100) # (3600 * 3 attempts) + 300
+          expect(opts[:start_to_close_timeout]).to eq(16_500) # (5400 * 3 attempts) + 300
           { success: true, has_changes: false }
         when "Activities::MarkAgentRunCompleteActivity" then {}
         else {}
@@ -543,7 +543,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
         when "Activities::CreateAgentRunActivity"
           { agent_run_id: 42, runner_attempt_count: 2 }
         when "Activities::RunAgentActivity"
-          expect(opts[:start_to_close_timeout]).to eq(7500) # (3600 * 2 attempts) + 300
+          expect(opts[:start_to_close_timeout]).to eq(11_100) # (5400 * 2 attempts) + 300
           { success: true, has_changes: false }
         when "Activities::MarkAgentRunCompleteActivity" then {}
         else {}

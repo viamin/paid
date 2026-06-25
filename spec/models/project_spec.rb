@@ -35,9 +35,9 @@ RSpec.describe Project do
     it { is_expected.to validate_numericality_of(:max_execution_seconds).only_integer.is_greater_than_or_equal_to(60).is_less_than_or_equal_to(86_400) }
     it { is_expected.to validate_inclusion_of(:data_classification).in_array(described_class::DATA_CLASSIFICATIONS) }
 
-    it "defaults max_execution_seconds to 3600" do
+    it "defaults max_execution_seconds to 7200" do
       project = build(:project)
-      expect(project.max_execution_seconds).to eq(3600)
+      expect(project.max_execution_seconds).to eq(7200)
     end
 
     it "defaults data_classification to internal" do

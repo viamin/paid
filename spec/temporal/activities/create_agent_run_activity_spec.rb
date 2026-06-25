@@ -77,7 +77,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
     it "returns default max_execution_seconds when not customized" do
       result = activity.execute(project_id: project.id, issue_id: issue.id)
 
-      expect(result[:max_execution_seconds]).to eq(3600)
+      expect(result[:max_execution_seconds]).to eq(7200)
     end
 
     it "returns the user override for max_execution_seconds when set" do

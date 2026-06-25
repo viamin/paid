@@ -1550,7 +1550,7 @@ RSpec.describe Activities::RunAgentActivity do
         "diagnostics" => hash_including(
           "timeout_type" => "wall_clock",
           "elapsed_seconds" => 901.2,
-          "effective_timeout_seconds" => 3600
+          "effective_timeout_seconds" => AGENT_TIMEOUT_DEFAULT
         )
       ),
       hash_including("runner" => "cursor", "success" => true)
@@ -3032,7 +3032,7 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.error_message).to include("idle_timeout")
         expect(agent_run.runners_attempted.first["diagnostics"]).to include(
           "timeout_type" => "idle",
-          "effective_timeout_seconds" => 3600,
+          "effective_timeout_seconds" => AGENT_TIMEOUT_DEFAULT,
           "startup_timeout_seconds" => described_class::CREATE_PR_RUNNER_STARTUP_TIMEOUTS["claude"],
           "idle_timeout_seconds" => described_class::CREATE_PR_RUNNER_IDLE_TIMEOUTS["claude_code"],
           "heartbeat_supported" => true

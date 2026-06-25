@@ -43,7 +43,7 @@ RSpec.describe OrchestrationStrategies::Defaults do
     subject(:config) { described_class.execution_timeouts }
 
     it "preserves the agent timeout default" do
-      expect(config["agent_timeout_default_seconds"]).to eq(3600)
+      expect(config["agent_timeout_default_seconds"]).to eq(5400)
     end
 
     it "preserves issue goal timeout" do

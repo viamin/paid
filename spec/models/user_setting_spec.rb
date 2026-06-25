@@ -427,7 +427,7 @@ RSpec.describe UserSetting do
     end
 
     it "sets default agent execution values" do
-      expect(setting.agent_timeout_seconds).to eq(3600)
+      expect(setting.agent_timeout_seconds).to eq(5400)
       expect(setting.default_agent_runner).to eq(user.runners.find_by!(runner_key: "claude").routing_key)
     end
 
