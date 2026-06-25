@@ -14,12 +14,26 @@ module Models
     end
 
     def compatible_model_scope(scope)
-      return scope.free if free_tier_constrained_runner?
+      scoped = if free_tier_constrained_runner?
+        scope.free
+      else
+        model_provider = compatible_model_provider
+        model_provider.present? ? scope.by_provider(model_provider) : scope
+      end
+      apply_project_llm_provider_routing(scoped)
+    end
 
-      model_provider = compatible_model_provider
-      return scope unless model_provider.present?
+    # Narrows a model scope to the LLM providers the project permits via its
+    # per-project allowlist/blocklist (model_preferences["llm_providers"]).
+    # Returns the scope unchanged when the project has no restriction.
+    def apply_project_llm_provider_routing(scope)
+      project = agent_run.project
+      return scope unless project.llm_provider_routing_restricted?
 
-      scope.by_provider(model_provider)
+      allowlist = project.llm_provider_allowlist
+      return scope.where(provider: allowlist) if allowlist.any?
+
+      scope.where.not(provider: project.llm_provider_blocklist)
     end
 
     def compatible_model_provider
