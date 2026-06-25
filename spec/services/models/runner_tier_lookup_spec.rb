@@ -5,10 +5,11 @@ require "rails_helper"
 module Models
   module RunnerTierLookupSpec
     class AgentRunLike
-      attr_reader :runner
+      attr_reader :runner, :project
 
-      def initialize(runner:)
+      def initialize(runner:, project: nil)
         @runner = runner
+        @project = project
       end
     end
 
@@ -30,6 +31,20 @@ module Models
       end
     end
 
+    class ProjectLike
+      attr_reader :llm_provider_allowlist, :llm_provider_blocklist
+
+      def initialize(restricted: false, allowlist: [], blocklist: [])
+        @llm_provider_allowlist = allowlist
+        @llm_provider_blocklist = blocklist
+        @restricted = restricted
+      end
+
+      def llm_provider_routing_restricted?
+        @restricted
+      end
+    end
+
     class ActiveScopeLike
       def find_by(model_id:)
       end
@@ -38,6 +53,14 @@ module Models
       end
 
       def free
+      end
+
+      def where(*)
+        self
+      end
+
+      def not(*)
+        self
       end
     end
 
@@ -115,9 +138,11 @@ RSpec.describe Models::RunnerTierLookup, :no_db do
 
   describe "#compatible_scope" do
     let(:scope) { instance_double(Models::RunnerTierLookupSpec::ActiveScopeLike) }
+    let(:unrestricted_project) { Models::RunnerTierLookupSpec::ProjectLike.new }
 
     it "returns the original scope when no runner is attached" do
-      dummy = lookup_host_class.new(instance_double(Models::RunnerTierLookupSpec::AgentRunLike, runner: nil))
+      dummy = lookup_host_class.new(instance_double(Models::RunnerTierLookupSpec::AgentRunLike,
+        runner: nil, project: unrestricted_project))
 
       expect(dummy.compatible_scope(scope)).to eq(scope)
     end
@@ -130,7 +155,8 @@ RSpec.describe Models::RunnerTierLookup, :no_db do
         tier_model_ids: {},
         direct_outbound_llm_model_provider: "minimax"
       )
-      dummy = lookup_host_class.new(instance_double(Models::RunnerTierLookupSpec::AgentRunLike, runner: runner))
+      dummy = lookup_host_class.new(instance_double(Models::RunnerTierLookupSpec::AgentRunLike,
+        runner: runner, project: unrestricted_project))
 
       allow(scope).to receive(:by_provider).with("minimax").and_return(minimax_scope)
 
@@ -145,11 +171,40 @@ RSpec.describe Models::RunnerTierLookup, :no_db do
         tier_model_ids: {},
         direct_outbound_llm_model_provider: nil
       )
-      dummy = lookup_host_class.new(instance_double(Models::RunnerTierLookupSpec::AgentRunLike, runner: runner))
+      dummy = lookup_host_class.new(instance_double(Models::RunnerTierLookupSpec::AgentRunLike,
+        runner: runner, project: unrestricted_project))
 
       allow(scope).to receive(:free).and_return(free_scope)
 
       expect(dummy.compatible_scope(scope)).to eq(free_scope)
+    end
+
+    it "narrows the scope to allowlisted providers when the project restricts routing" do
+      allowlist_project = Models::RunnerTierLookupSpec::ProjectLike.new(
+        restricted: true, allowlist: %w[anthropic]
+      )
+      dummy = lookup_host_class.new(instance_double(Models::RunnerTierLookupSpec::AgentRunLike,
+        runner: nil, project: allowlist_project))
+      routed_scope = instance_double(Models::RunnerTierLookupSpec::ActiveScopeLike)
+
+      allow(scope).to receive(:where).with(provider: %w[anthropic]).and_return(routed_scope)
+
+      expect(dummy.compatible_scope(scope)).to eq(routed_scope)
+    end
+
+    it "excludes blocklisted providers when the project restricts routing" do
+      blocklist_project = Models::RunnerTierLookupSpec::ProjectLike.new(
+        restricted: true, blocklist: %w[openai]
+      )
+      dummy = lookup_host_class.new(instance_double(Models::RunnerTierLookupSpec::AgentRunLike,
+        runner: nil, project: blocklist_project))
+      routed_scope = instance_double(Models::RunnerTierLookupSpec::ActiveScopeLike)
+      negated_scope = instance_double(Models::RunnerTierLookupSpec::ActiveScopeLike)
+
+      allow(scope).to receive(:where).with(no_args).and_return(negated_scope)
+      allow(negated_scope).to receive(:not).with(provider: %w[openai]).and_return(routed_scope)
+
+      expect(dummy.compatible_scope(scope)).to eq(routed_scope)
     end
   end
 end

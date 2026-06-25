@@ -380,6 +380,44 @@ Rules-based fallback:
 3. If similar past task → model that succeeded before
 4. Default → configured default model
 
+#### Per-Project LLM Provider Routing
+
+A project can restrict which upstream LLM providers may serve its runs, stored
+under `projects.model_preferences["llm_providers"]`:
+
+```json
+{
+  "llm_providers": {
+    "allowlist": ["anthropic"]
+  }
+}
+```
+
+or
+
+```json
+{
+  "llm_providers": {
+    "blocklist": ["openai", "google"]
+  }
+}
+```
+
+- **Allowlist mode**: only the listed providers are available; all others are blocked.
+- **Blocklist mode**: all providers are available except those explicitly listed.
+- Allowlist and blocklist are mutually exclusive — specifying both is a
+  validation error.
+- Provider identifiers are the upstream LLM services from the API service-type
+  catalog (e.g. `anthropic`, `openai`, `google`, `mistral`, `deepseek`), exposed
+  via `Project.supported_llm_provider_keys`.
+
+Enforcement is applied at model-selection time (`Models::Select` / the shared
+`Models::RunnerTierLookup` scope): blocked providers are excluded from candidate
+selection, an explicit override (`required_model_id`) targeting a blocked provider
+is rejected, and the no-selection decision records a clear reason. Restrictions
+are scoped to the project only — global/user-level provider configuration is
+unaffected.
+
 ## Data Flow Examples
 
 ### Example 1: Issue to PR

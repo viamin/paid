@@ -749,5 +749,121 @@ RSpec.describe Models::Select do
         )
       end
     end
+
+    context "with an LLM provider blocklist" do
+      let!(:anthropic_model) { create(:llm_model, model_id: "anthropic-mid", provider: "anthropic", tier: "mid", capability_score: 8.0) }
+      let!(:openai_model) { create(:llm_model, :openai, model_id: "gpt-4o", tier: "mid", capability_score: 9.0) }
+
+      before do
+        # Force every complexity into the "mid" tier so both candidates are in
+        # the same selection bucket (openai ranks higher by capability).
+        project.update!(model_preferences: {
+          "complexity_thresholds" => { "low_max" => 0, "mid_max" => 10 },
+          "llm_providers" => { "blocklist" => [ "openai" ] }
+        })
+      end
+
+      it "excludes blocklisted providers from automatic selection" do
+        selection = described_class.call(agent_run: agent_run)
+
+        expect(selection).to be_a(ModelSelection)
+        expect(selection.llm_model).to eq(anthropic_model)
+        expect(selection.llm_model.provider).to eq("anthropic")
+      end
+
+      it "blocks a required model from a blocklisted provider with a clear reason" do
+        project.update!(model_preferences: {
+          "complexity_thresholds" => { "low_max" => 0, "mid_max" => 10 },
+          "required_model_id" => openai_model.model_id,
+          "llm_providers" => { "blocklist" => [ "openai" ] }
+        })
+
+        expect(described_class.call(agent_run: agent_run)).to be_nil
+        expect(agent_run.model_selection).to be_nil
+
+        log = agent_run.agent_run_logs.where(log_type: "system").order(:id).last
+        expect(log.metadata).to include("outcome" => "no_selection")
+        expect(log.content).to include("not permitted")
+        expect(log.content).to include("openai")
+        expect(log.metadata["reason"]).to include("blocklist")
+        expect(log.metadata["reason"]).to include("openai")
+      end
+
+      it "persists the decision reason on the orchestration decision" do
+        project.update!(model_preferences: {
+          "required_model_id" => openai_model.model_id,
+          "llm_providers" => { "blocklist" => [ "openai" ] }
+        })
+
+        described_class.call(agent_run: agent_run)
+
+        decision = agent_run.orchestration_decisions.order(:id).last
+        expect(decision.outputs["reason"]).to include("not permitted")
+        expect(decision.outputs["reason"]).to include("openai")
+      end
+    end
+
+    context "with an LLM provider allowlist" do
+      let!(:anthropic_model) { create(:llm_model, model_id: "anthropic-mid", provider: "anthropic", tier: "mid", capability_score: 8.0) }
+      let!(:openai_model) { create(:llm_model, :openai, model_id: "gpt-4o", tier: "mid", capability_score: 9.0) }
+
+      before do
+        project.update!(model_preferences: {
+          "complexity_thresholds" => { "low_max" => 0, "mid_max" => 10 },
+          "llm_providers" => { "allowlist" => [ "anthropic" ] }
+        })
+      end
+
+      it "restricts automatic selection to allowlisted providers" do
+        selection = described_class.call(agent_run: agent_run)
+
+        expect(selection).to be_a(ModelSelection)
+        expect(selection.llm_model).to eq(anthropic_model)
+        expect(selection.llm_model.provider).to eq("anthropic")
+      end
+
+      it "selects a required model from an allowlisted provider" do
+        project.update!(model_preferences: {
+          "required_model_id" => anthropic_model.model_id,
+          "llm_providers" => { "allowlist" => [ "anthropic" ] }
+        })
+
+        selection = described_class.call(agent_run: agent_run)
+
+        expect(selection).to be_a(ModelSelection)
+        expect(selection.llm_model).to eq(anthropic_model)
+      end
+
+      it "blocks a required model from a non-allowlisted provider with a clear reason" do
+        project.update!(model_preferences: {
+          "required_model_id" => openai_model.model_id,
+          "llm_providers" => { "allowlist" => [ "anthropic" ] }
+        })
+
+        expect(described_class.call(agent_run: agent_run)).to be_nil
+
+        log = agent_run.agent_run_logs.where(log_type: "system").order(:id).last
+        expect(log.content).to include("not permitted")
+        expect(log.content).to include("openai")
+        expect(log.metadata["reason"]).to include("allowlist")
+      end
+    end
+
+    context "when preferred models span blocked and allowed providers" do
+      let!(:anthropic_model) { create(:llm_model, model_id: "anthropic-pref", provider: "anthropic", tier: "mid") }
+      let!(:openai_model) { create(:llm_model, :openai, model_id: "gpt-pref", tier: "mid") }
+
+      it "skips blocked providers and selects the next allowed preferred model" do
+        project.update!(model_preferences: {
+          "preferred_model_ids" => [ openai_model.model_id, anthropic_model.model_id ],
+          "llm_providers" => { "blocklist" => [ "openai" ] }
+        })
+
+        selection = described_class.call(agent_run: agent_run)
+
+        expect(selection.llm_model).to eq(anthropic_model)
+        expect(selection.selector_type).to eq("override")
+      end
+    end
   end
 end

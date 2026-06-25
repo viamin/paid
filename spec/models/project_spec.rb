@@ -188,6 +188,141 @@ RSpec.describe Project do
         expect(project.errors[:interop_settings].join).to include("unknown entries")
       end
     end
+
+    describe "LLM provider routing validation" do
+      it "accepts an allowlist of supported provider keys" do
+        project = build(:project, model_preferences: { "llm_providers" => { "allowlist" => [ "anthropic" ] } })
+
+        expect(project).to be_valid
+      end
+
+      it "accepts a blocklist of supported provider keys" do
+        project = build(:project, model_preferences: { "llm_providers" => { "blocklist" => [ "openai", "google" ] } })
+
+        expect(project).to be_valid
+      end
+
+      it "rejects specifying both allowlist and blocklist" do
+        project = build(:project, model_preferences: {
+          "llm_providers" => { "allowlist" => [ "anthropic" ], "blocklist" => [ "openai" ] }
+        })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:model_preferences].join).to include("mutually exclusive")
+      end
+
+      it "rejects unknown provider identifiers in the allowlist" do
+        project = build(:project, model_preferences: { "llm_providers" => { "allowlist" => [ "bogus" ] } })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:model_preferences].join).to include("unknown provider")
+      end
+
+      it "rejects an allowlist that is not an array" do
+        project = build(:project, model_preferences: { "llm_providers" => { "allowlist" => "anthropic" } })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:model_preferences].join).to include("must be an array")
+      end
+
+      it "rejects a non-object llm_providers value" do
+        project = build(:project, model_preferences: { "llm_providers" => [ "anthropic" ] })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:model_preferences].join).to include("must be a JSON object")
+      end
+
+      it "normalizes, dedupes, and sorts the configured lists before validation" do
+        project = build(:project, model_preferences: {
+          "llm_providers" => { "allowlist" => [ "Google", "anthropic ", "google" ] }
+        })
+
+        project.valid?
+
+        expect(project.model_preferences["llm_providers"]["allowlist"]).to eq(%w[anthropic google])
+      end
+
+      it "treats empty lists as no restriction and remains valid" do
+        project = build(:project, model_preferences: { "llm_providers" => { "allowlist" => [], "blocklist" => [] } })
+
+        expect(project).to be_valid
+        expect(project.llm_provider_routing_restricted?).to be(false)
+      end
+
+      it "does not affect projects without llm_providers configuration" do
+        project = build(:project, model_preferences: { "required_model_id" => "claude-sonnet-4-6" })
+
+        expect(project).to be_valid
+        expect(project.llm_provider_routing_restricted?).to be(false)
+      end
+    end
+  end
+
+  describe "LLM provider allowlist/blocklist" do
+    describe "#llm_provider_routing" do
+      it "returns empty lists when no routing is configured" do
+        project = build(:project)
+
+        expect(project.llm_provider_routing).to eq("allowlist" => [], "blocklist" => [])
+      end
+
+      it "reads the configured allowlist and blocklist" do
+        project = build(:project, model_preferences: { "llm_providers" => { "blocklist" => [ "openai" ] } })
+
+        expect(project.llm_provider_allowlist).to eq([])
+        expect(project.llm_provider_blocklist).to eq(%w[openai])
+      end
+
+      it "coerces non-string entries to strings" do
+        project = build(:project, model_preferences: { "llm_providers" => { "allowlist" => [ :anthropic ] } })
+
+        expect(project.llm_provider_allowlist).to eq(%w[anthropic])
+      end
+    end
+
+    describe "#llm_provider_routing_mode" do
+      it "returns nil when unrestricted" do
+        expect(build(:project).llm_provider_routing_mode).to be_nil
+      end
+
+      it "returns allowlist/blocklist mode" do
+        allowlist_project = build(:project, model_preferences: { "llm_providers" => { "allowlist" => [ "anthropic" ] } })
+        blocklist_project = build(:project, model_preferences: { "llm_providers" => { "blocklist" => [ "openai" ] } })
+
+        expect(allowlist_project.llm_provider_routing_mode).to eq("allowlist")
+        expect(blocklist_project.llm_provider_routing_mode).to eq("blocklist")
+      end
+    end
+
+    describe "#llm_provider_allowed?" do
+      it "permits every provider when unrestricted" do
+        project = build(:project)
+
+        expect(project.llm_provider_allowed?("anthropic")).to be(true)
+        expect(project.llm_provider_allowed?("openai")).to be(true)
+        expect(project.llm_provider_allowed?(nil)).to be(true)
+      end
+
+      it "only permits allowlisted providers" do
+        project = build(:project, model_preferences: { "llm_providers" => { "allowlist" => [ "anthropic" ] } })
+
+        expect(project.llm_provider_allowed?("anthropic")).to be(true)
+        expect(project.llm_provider_allowed?("openai")).to be(false)
+        expect(project.llm_provider_blocked?("openai")).to be(true)
+      end
+
+      it "blocks only blocklisted providers" do
+        project = build(:project, model_preferences: { "llm_providers" => { "blocklist" => [ "openai", "google" ] } })
+
+        expect(project.llm_provider_allowed?("anthropic")).to be(true)
+        expect(project.llm_provider_blocked?("openai")).to be(true)
+        expect(project.llm_provider_blocked?("google")).to be(true)
+      end
+
+      it "validates against the supported provider key catalog" do
+        expect(described_class.supported_llm_provider_keys).to include("anthropic", "openai", "google")
+      end
+    end
   end
 
   describe "scopes" do

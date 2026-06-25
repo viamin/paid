@@ -26,8 +26,9 @@ module Models
 
       selected = select_model
       duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000).round
-      unless selected && compatible_selection?(selected)
-        persist_decision_log(outcome: "no_selection", duration_ms: duration_ms, selected: selected)
+      block_reason = llm_provider_block_reason(selected)
+      unless selected && compatible_selection?(selected) && block_reason.nil?
+        persist_decision_log(outcome: "no_selection", duration_ms: duration_ms, selected: selected, no_selection_reason: block_reason)
         return nil
       end
 
@@ -103,7 +104,7 @@ module Models
 
       excluded = project.model_preferences["excluded_model_ids"]
       runner_model = runner_tier_model(tier)
-      runner_model = nil if runner_model && excluded_model?(runner_model, excluded)
+      runner_model = nil if runner_model && disallowed_model?(runner_model, excluded)
       scope = LlmModel.active.by_tier(tier).by_capability
       scope = compatible_model_scope(scope)
       scope = scope.where.not(model_id: excluded) if excluded.present?
@@ -124,9 +125,13 @@ module Models
       preferred_ids = project.model_preferences["preferred_model_ids"]
       return nil unless preferred_ids.is_a?(Array) && preferred_ids.any?
 
-      # Respect preference list ordering: select the first active model in the provided order
+      # Respect preference list ordering: select the first active, project-permitted
+      # model in the provided order (skip models whose provider the project blocks).
       models_by_id = LlmModel.active.where(model_id: preferred_ids).index_by(&:model_id)
-      model = preferred_ids.map { |id| models_by_id[id] }.compact.first
+      model = preferred_ids
+        .map { |id| models_by_id[id] }
+        .compact
+        .find { |candidate| project.llm_provider_allowed?(candidate.provider) }
       return nil unless model
 
       override_result(model, "Project preferred model: #{model.display_name}")
@@ -138,6 +143,7 @@ module Models
 
       model = LlmModel.active.find_by(model_id: model_id)
       return nil unless model
+      return nil if project.llm_provider_blocked?(model.provider)
 
       override_result(model, "Tenant preferred model: #{model.display_name}")
     end
@@ -230,6 +236,27 @@ module Models
         (runner.runner_key == "pi" && runner.api_key? && runner.pi_required_api_service_type.present?)
     end
 
+    # A model is disallowed when the project excluded it by id or when its LLM
+    # provider is blocked by the project's per-provider allowlist/blocklist.
+    def disallowed_model?(model, excluded)
+      excluded_model?(model, excluded) || agent_run.project.llm_provider_blocked?(model.provider)
+    end
+
+    # Returns a clear, human-readable reason when the selected model's LLM
+    # provider is not permitted for the project, or nil when it is allowed /
+    # no model was selected. Surfaced as the no-selection decision reason.
+    def llm_provider_block_reason(selected)
+      model = selected&.dig(:model)
+      return nil unless model
+
+      project = agent_run.project
+      return nil unless project.llm_provider_blocked?(model.provider)
+
+      mode = project.llm_provider_routing_mode
+      "LLM provider '#{model.provider}' is not permitted for this project " \
+        "(#{mode} restriction)"
+    end
+
     def normalize_candidate(candidate, rank:, selected_model_id:)
       if candidate.is_a?(LlmModel)
         serialize_model_candidate(candidate, rank: rank, selected: candidate.model_id == selected_model_id)
@@ -268,7 +295,7 @@ module Models
       }.compact
     end
 
-    def persist_decision_log(outcome:, duration_ms:, selected: nil, policy_result: nil, final_tier: nil, escalation: nil, selection: nil, candidates: nil, error: nil)
+    def persist_decision_log(outcome:, duration_ms:, selected: nil, policy_result: nil, final_tier: nil, escalation: nil, selection: nil, candidates: nil, error: nil, no_selection_reason: nil)
       selection_payload = selection_payload(
         selected: selected,
         selection: selection,
@@ -285,7 +312,8 @@ module Models
         policy_result: policy_result,
         selection_payload: selection_payload,
         inputs_payload: inputs_payload,
-        error: error
+        error: error,
+        no_selection_reason: no_selection_reason
       )
       persist_agent_run_decision_log(
         outcome: outcome,
@@ -293,18 +321,20 @@ module Models
         selected: selected,
         selection_payload: selection_payload,
         inputs_payload: inputs_payload,
-        error: error
+        error: error,
+        no_selection_reason: no_selection_reason
       )
     end
 
-    def persist_agent_run_decision_log(outcome:, duration_ms:, selected:, selection_payload:, inputs_payload:, error:)
+    def persist_agent_run_decision_log(outcome:, duration_ms:, selected:, selection_payload:, inputs_payload:, error:, no_selection_reason: nil)
       agent_run.agent_run_logs.create!(
         log_type: "system",
-        content: decision_log_content(outcome: outcome, selected: selected, error: error),
+        content: decision_log_content(outcome: outcome, selected: selected, error: error, no_selection_reason: no_selection_reason),
         metadata: {
           type: DECISION_LOG_TYPE,
           outcome: outcome,
           duration_ms: duration_ms,
+          reason: no_selection_reason,
           selection: selection_payload,
           inputs: inputs_payload,
           error: error_payload(error)
@@ -319,7 +349,7 @@ module Models
       )
     end
 
-    def persist_orchestration_decision_safely(outcome:, duration_ms:, selected:, policy_result:, selection_payload:, inputs_payload:, error:)
+    def persist_orchestration_decision_safely(outcome:, duration_ms:, selected:, policy_result:, selection_payload:, inputs_payload:, error:, no_selection_reason: nil)
       persist_orchestration_decision(
         outcome: outcome,
         duration_ms: duration_ms,
@@ -327,7 +357,8 @@ module Models
         policy_result: policy_result,
         selection_payload: selection_payload,
         inputs_payload: inputs_payload,
-        error: error
+        error: error,
+        no_selection_reason: no_selection_reason
       )
     rescue => log_error
       Rails.logger.warn(
@@ -338,12 +369,12 @@ module Models
       )
     end
 
-    def decision_log_content(outcome:, selected:, error:)
+    def decision_log_content(outcome:, selected:, error:, no_selection_reason: nil)
       case outcome
       when "selected"
         "Agent selection succeeded via #{selected[:selector_type]} for #{selected[:model].model_id}"
       when "no_selection"
-        "Agent selection found no eligible models"
+        no_selection_reason || "Agent selection found no eligible models"
       else
         "Agent selection failed: #{error.class}: #{error.message}"
       end
@@ -439,7 +470,7 @@ module Models
       }
     end
 
-    def persist_orchestration_decision(outcome:, duration_ms:, selected:, policy_result:, selection_payload:, inputs_payload:, error:)
+    def persist_orchestration_decision(outcome:, duration_ms:, selected:, policy_result:, selection_payload:, inputs_payload:, error:, no_selection_reason: nil)
       OrchestrationDecision.record(
         project: agent_run.project,
         issue: agent_run.issue,
@@ -453,6 +484,7 @@ module Models
         ),
         result: {
           "outcome" => outcome,
+          "reason" => no_selection_reason,
           "selection" => selection_payload,
           "error" => error_payload(error)
         }.compact

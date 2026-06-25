@@ -116,6 +116,13 @@ class Project < ApplicationRecord
     }.freeze
   end
 
+  # Valid LLM provider identifiers usable in a project's allowlist/blocklist.
+  # These are the upstream LLM services a model can run on (e.g. "anthropic",
+  # "openai", "google"), drawn from the API service-type catalog.
+  def self.supported_llm_provider_keys
+    ProviderSupport::API_SERVICE_TYPES.keys.freeze
+  end
+
   AUTOMATION_SETTINGS = [
     { label: "Auto-Add Labels", attribute: :auto_add_labels_enabled,
      description: "Automatically add the generated label to PRs and issues created by Paid." }.freeze,
@@ -216,6 +223,7 @@ class Project < ApplicationRecord
 
   before_validation :normalize_priority_labels
   before_validation :normalize_interop_settings
+  before_validation :normalize_llm_provider_routing
   before_validation :reset_git_push_pat_fallback_unless_app_backed
   after_update_commit :invalidate_relationship_parsing_on_trust_change
 
@@ -267,6 +275,7 @@ class Project < ApplicationRecord
   validate :screenshot_settings_valid
   validate :priority_labels_valid
   validate :interop_settings_valid
+  validate :llm_provider_routing_valid
 
   scope :active, -> { where(active: true) }
   scope :inactive, -> { where(active: false) }
@@ -566,6 +575,59 @@ class Project < ApplicationRecord
 
     stored = interop_settings.is_a?(Hash) ? interop_settings.deep_stringify_keys : {}
     @effective_interop_settings = self.class.default_interop_settings.deep_merge(stored)
+  end
+
+  # Per-project LLM provider allowlist/blocklist, stored under
+  # +model_preferences["llm_providers"]+ as:
+  #   { "allowlist" => [ "anthropic" ], "blocklist" => [] }
+  # Only one of allowlist/blocklist may be populated (mutually exclusive).
+  # Provider identifiers are upstream LLM services (see supported_llm_provider_keys).
+  def llm_provider_routing
+    stored = model_preferences.is_a?(Hash) ? model_preferences["llm_providers"] : nil
+    stored = stored.is_a?(Hash) ? stored.deep_stringify_keys : {}
+
+    {
+      "allowlist" => Array(stored["allowlist"]).map(&:to_s),
+      "blocklist" => Array(stored["blocklist"]).map(&:to_s)
+    }
+  end
+
+  def llm_provider_allowlist
+    llm_provider_routing["allowlist"]
+  end
+
+  def llm_provider_blocklist
+    llm_provider_routing["blocklist"]
+  end
+
+  def llm_provider_routing_restricted?
+    llm_provider_allowlist.any? || llm_provider_blocklist.any?
+  end
+
+  # Active restriction mode: "allowlist", "blocklist", or nil when unrestricted.
+  def llm_provider_routing_mode
+    return "allowlist" if llm_provider_allowlist.any?
+    return "blocklist" if llm_provider_blocklist.any?
+
+    nil
+  end
+
+  # True when +provider+ (an upstream LLM service identifier such as
+  # "anthropic") is permitted for this project. With no restriction configured
+  # every provider is allowed.
+  def llm_provider_allowed?(provider)
+    return true if provider.blank?
+    return true unless llm_provider_routing_restricted?
+
+    key = provider.to_s
+    allowlist = llm_provider_allowlist
+    return allowlist.include?(key) if allowlist.any?
+
+    !llm_provider_blocklist.include?(key)
+  end
+
+  def llm_provider_blocked?(provider)
+    !llm_provider_allowed?(provider)
   end
 
   def adoption_mode
@@ -1451,6 +1513,65 @@ class Project < ApplicationRecord
     end
 
     self.interop_settings = normalized
+  end
+
+  def normalize_llm_provider_routing
+    return unless model_preferences.is_a?(Hash)
+
+    normalized = model_preferences.deep_stringify_keys
+    raw = normalized["llm_providers"]
+    return if raw.nil?
+    return unless raw.is_a?(Hash)
+
+    routing = raw.deep_stringify_keys
+    routing["allowlist"] = normalize_llm_provider_list(routing["allowlist"]) if routing["allowlist"].is_a?(Array)
+    routing["blocklist"] = normalize_llm_provider_list(routing["blocklist"]) if routing["blocklist"].is_a?(Array)
+    normalized["llm_providers"] = routing
+    self.model_preferences = normalized
+  end
+
+  def normalize_llm_provider_list(value)
+    value.map { |entry| entry.to_s.strip.downcase }.reject(&:blank?).uniq.sort
+  end
+
+  def llm_provider_routing_valid
+    return unless model_preferences.is_a?(Hash)
+
+    raw = model_preferences["llm_providers"]
+    return if raw.nil?
+
+    unless raw.is_a?(Hash)
+      errors.add(:model_preferences, "llm_providers must be a JSON object")
+      return
+    end
+
+    normalized = raw.deep_stringify_keys
+    valid_keys = self.class.supported_llm_provider_keys
+
+    %w[allowlist blocklist].each do |list_name|
+      value = normalized[list_name]
+      next if value.nil?
+
+      unless value.is_a?(Array)
+        errors.add(:model_preferences, "llm_providers.#{list_name} must be an array of provider identifiers")
+        next
+      end
+
+      entries = value.map { |entry| entry.to_s.strip }.reject(&:blank?)
+      unknown = entries - valid_keys
+      next if unknown.empty?
+
+      errors.add(:model_preferences, "llm_providers.#{list_name} contains unknown provider: #{unknown.join(', ')}")
+    end
+
+    allowlist_set = normalized["allowlist"].is_a?(Array) && normalized["allowlist"].any?
+    blocklist_set = normalized["blocklist"].is_a?(Array) && normalized["blocklist"].any?
+    return unless allowlist_set && blocklist_set
+
+    errors.add(
+      :model_preferences,
+      "llm_providers allowlist and blocklist are mutually exclusive \u2014 specify only one"
+    )
   end
 
   def validate_review_methods_config(normalized)
