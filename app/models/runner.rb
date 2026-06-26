@@ -135,6 +135,11 @@ class Runner < ApplicationRecord
   before_validation :normalize_agent_co_author_trailer
   before_validation :sync_provider_key_bridge
   before_validation :clear_stale_direct_outbound_tier_models
+  # Declared before :sync_direct_outbound_tier_models so it runs first: a
+  # newly upserted manual catalog row is in place when
+  # sync_direct_outbound_tier_models calls ensure_direct_outbound_llm_model!
+  # (#2669). Rails invokes callbacks in registration order.
+  before_save :ensure_direct_outbound_catalog_model
   before_save :sync_direct_outbound_tier_models
   before_save :clear_free_model_rotation_snapshot, unless: :rotating_tier_models?
   before_discard :prevent_destroying_last_agent_run_runner
@@ -789,6 +794,30 @@ class Runner < ApplicationRecord
     self.tier_model_ids = LlmModel::TIERS.each_with_object({}) { |t, h| h[t] = model.model_id }
   end
 
+  # Side-effect callback for the direct-outbound catalog validation: when the
+  # configured (api_provider, model_id) is not in the seeded/synced catalog yet
+  # (e.g. a newly released model like glm-5.2 — #2669), upsert a
+  # catalog_source: "manual" row so this save can proceed and the later
+  # `sync_direct_outbound_tier_models` / `ensure_direct_outbound_llm_model!`
+  # chain can resolve the same id.
+  #
+  # Kept out of the validation method so `runner.valid?` / `runner.invalid?`
+  # remain idempotent (Rails validations are conventionally read-only). The
+  # nightly Models::SeedKnownModels retire pass leaves manual rows alone.
+  def ensure_direct_outbound_catalog_model
+    return unless direct_outbound_capable_runner?
+
+    model_id = direct_outbound_model_id
+    return if model_id.blank?
+
+    expected_provider = direct_outbound_llm_model_provider
+    return if expected_provider.blank?
+
+    return if find_direct_outbound_catalog_model(model_id).present?
+
+    upsert_direct_outbound_manual_llm_model(model_id, expected_provider)
+  end
+
   def clear_stale_direct_outbound_tier_models
     return unless tier_model_ids.present?
     return if runner_key == "openrouter_free" || runner_key == OPENROUTER_PARETO_RUNNER_KEY
@@ -1381,7 +1410,12 @@ class Runner < ApplicationRecord
     expected_provider = direct_outbound_llm_model_provider
     return if expected_provider.blank?
 
-    model = find_direct_outbound_catalog_model(model_id) || upsert_direct_outbound_manual_llm_model(model_id, expected_provider)
+    model = find_direct_outbound_catalog_model(model_id)
+    # Unknown model ids are allowed here; the before_save callback
+    # `ensure_direct_outbound_catalog_model` upserts a `catalog_source: "manual"`
+    # row so the save proceeds and `sync_direct_outbound_tier_models` /
+    # `ensure_direct_outbound_llm_model!` can resolve it (#2669).
+    return if model.blank?
 
     return if model.provider == expected_provider
 

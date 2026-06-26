@@ -671,6 +671,9 @@ RSpec.describe Runner do
       runner.config = { "opencode" => { "api_provider" => "minimax", "model" => "MiniMax-M3" } }
 
       expect(runner).to be_valid
+      expect(LlmModel.find_by(model_id: "MiniMax-M3")).to be_nil
+
+      runner.save!
 
       model = LlmModel.find_by(model_id: "MiniMax-M3")
       expect(model).to have_attributes(
@@ -689,6 +692,9 @@ RSpec.describe Runner do
       runner.config = { "opencode" => { "api_provider" => "minimax", "model" => "minimax/MiniMax-M4" } }
 
       expect(runner).to be_valid
+      expect(LlmModel.find_by(model_id: "MiniMax-M4")).to be_nil
+
+      runner.save!
 
       expect(LlmModel.find_by(model_id: "MiniMax-M4")).to have_attributes(
         provider: "minimax",
