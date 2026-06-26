@@ -103,6 +103,8 @@ RSpec.describe Models::SeedKnownModels do
       expect(LlmModel.find_by(model_id: "gpt-5-mini").tier).to eq("low")
       expect(LlmModel.find_by(model_id: "claude-sonnet-4-6").tier).to eq("mid")
       expect(LlmModel.find_by(model_id: "gpt-5.1").tier).to eq("mid")
+      expect(LlmModel.find_by(model_id: "glm-5.2").provider).to eq("zai_coding")
+      expect(LlmModel.find_by(model_id: "glm-5.2").tier).to eq("mid")
       expect(LlmModel.find_by(model_id: "gemini-2.5-pro").tier).to eq("mid")
       expect(LlmModel.find_by(model_id: "claude-opus-4-7").tier).to eq("high")
     end

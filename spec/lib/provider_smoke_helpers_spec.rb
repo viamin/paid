@@ -43,7 +43,7 @@ RSpec.describe ProviderSmokeHelpers do
 
   describe ".scenario_for" do
     it "includes the expected built-in default models for current enabled api-key scenarios" do
-      expect(described_class.scenario_for("kilocode-zai").default_model).to eq("glm-5.1")
+      expect(described_class.scenario_for("kilocode-zai").default_model).to eq("glm-5.2")
       expect(described_class.scenario_for("opencode-openrouter").default_model).to eq("moonshotai/kimi-k2-0905")
       expect(described_class.scenario_for("kilocode-inception").default_model).to eq("mercury-2")
       expect(described_class.scenario_for("opencode-minimax").default_model).to eq("MiniMax-M2.7")

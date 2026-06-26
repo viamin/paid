@@ -109,7 +109,7 @@ module RunnerSmokeHelpers
       auth_type: "api_key",
       api_provider: "zai_coding",
       model_env: "PAID_SMOKE_KILOCODE_ZAI_MODEL",
-      default_model: "glm-5.1",
+      default_model: "glm-5.2",
       label: "KiloCode with z.ai API key"
     ),
     "kilocode-inception" => Scenario.new(

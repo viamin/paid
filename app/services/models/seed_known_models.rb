@@ -297,6 +297,22 @@ module Models
         tier: "low"
       },
       {
+        model_id: "glm-5.2",
+        display_name: "GLM-5.2",
+        provider: "zai_coding",
+        family: "glm-5",
+        category: "coding",
+        context_window: 1_000_000,
+        max_output_tokens: 128_000,
+        input_cost_per_million: 1.4,
+        output_cost_per_million: 4.4,
+        supports_vision: false,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 8.9,
+        tier: "mid"
+      },
+      {
         model_id: "gemini-2.5-flash-lite",
         display_name: "Gemini 2.5 Flash Lite",
         provider: "google",
