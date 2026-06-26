@@ -33,7 +33,7 @@ dev_supervisor_prepare_logging() {
   touch "$(dev_supervisor_tmux_log)" "$(dev_supervisor_overmind_log)"
 }
 
-dev_supervisor_run_overmind() {
+dev_supervisor_run_clean() {
   env \
     -u BUNDLE_BIN_PATH \
     -u BUNDLE_GEMFILE \
@@ -43,6 +43,10 @@ dev_supervisor_run_overmind() {
     -u RUBYOPT \
     -u RUBYGEMS_GEMDEPS \
     "$@"
+}
+
+dev_supervisor_run_overmind() {
+  dev_supervisor_run_clean "$@"
 }
 
 dev_supervisor_overmind_status_output() {

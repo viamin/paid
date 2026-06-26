@@ -41,6 +41,7 @@ STOPPED_OVERMIND=0
 OVERMIND_STOP_POLL_COUNT="${DEV_UPDATE_OVERMIND_STOP_POLL_COUNT:-10}"
 OVERMIND_START_POLL_COUNT="${DEV_UPDATE_OVERMIND_START_POLL_COUNT:-15}"
 OVERMIND_POLL_INTERVAL="${DEV_UPDATE_OVERMIND_POLL_INTERVAL:-1}"
+OVERMIND_HEALTHY_CONFIRM_COUNT="${DEV_UPDATE_OVERMIND_HEALTHY_CONFIRM_COUNT:-2}"
 STARTUP_CLEANUP_KILL_ALL="${DEV_UPDATE_STARTUP_CLEANUP_KILL_ALL:-}"
 STASHED_CHANGES=0
 FAILURE_LOCK_FILE="${APP_ROOT}/tmp/dev-update-failure.lock"
@@ -240,6 +241,25 @@ overmind_running() {
   overmind_available && dev_supervisor_run_overmind overmind status &>/dev/null
 }
 
+overmind_healthy() {
+  overmind_available || return 1
+
+  local status_output
+  if ! status_output="$(dev_supervisor_overmind_status_output)"; then
+    return 1
+  fi
+
+  if dev_supervisor_overmind_has_dead_processes "$status_output"; then
+    return 1
+  fi
+
+  if dev_supervisor_tmux_has_dead_panes; then
+    return 1
+  fi
+
+  return 0
+}
+
 remove_stale_overmind_socket() {
   if [ -S "$OVERMIND_SOCKET" ] && ! overmind_running; then
     log "Removing stale Overmind socket..."
@@ -373,39 +393,24 @@ prune_worktree_databases() {
 run_setup() {
   log "Running bin/setup --skip-server..."
   local status=0
-  STARTUP_CLEANUP_KILL_ALL="$STARTUP_CLEANUP_KILL_ALL" bin/setup --skip-server || status=$?
+  STARTUP_CLEANUP_KILL_ALL="$STARTUP_CLEANUP_KILL_ALL" \
+    dev_supervisor_run_clean bin/setup --skip-server || status=$?
   # Mirror bin/setup's worktree-database creation by reaping orphans, but only
   # after a clean setup — the DB is in a known-good state and Ruby is available.
   [ "$status" -eq 0 ] && prune_worktree_databases
   return "$status"
 }
 
-start_dev() {
-  mkdir -p "$(dirname "$START_DEV_LOG")"
-  remove_stale_overmind_socket
-  dev_supervisor_cleanup_stale_tmux_sockets
-
-  if overmind_running; then
-    log "Overmind is already running, restarting processes."
-    local restart_output
-    restart_output="$(dev_supervisor_run_overmind overmind restart 2>&1)"
-    log_command_output "overmind restart" "$restart_output"
-    log "Overmind process restart requested."
-    return 0
-  fi
-
-  log "Starting dev environment..."
-  log "Streaming detached bin/dev output to $START_DEV_LOG"
-  dev_supervisor_snapshot_state "dev-update-before-start"
-  # Start bin/dev detached so this script can exit cleanly.
-  # Unset PORT so bin/dev applies its own default (3000) instead of
-  # inheriting a per-process port assigned by the previous Overmind session.
-  env -u PORT STARTUP_CLEANUP_KILL_ALL="$STARTUP_CLEANUP_KILL_ALL" nohup bin/dev >>"$START_DEV_LOG" 2>&1 &
-  disown
-  log "Dev environment start command launched (PID $!)."
-
+wait_for_overmind_health() {
+  local healthy_polls=0
   for ((i = 0; i < OVERMIND_START_POLL_COUNT; i += 1)); do
-    if overmind_running; then
+    if overmind_healthy; then
+      healthy_polls=$((healthy_polls + 1))
+    else
+      healthy_polls=0
+    fi
+
+    if [ "$healthy_polls" -ge "$OVERMIND_HEALTHY_CONFIRM_COUNT" ]; then
       log "Overmind is healthy after restart."
       return 0
     fi
@@ -424,8 +429,38 @@ start_dev() {
   return 1
 }
 
+start_dev() {
+  mkdir -p "$(dirname "$START_DEV_LOG")"
+  remove_stale_overmind_socket
+  dev_supervisor_cleanup_stale_tmux_sockets
+
+  if overmind_running; then
+    log "Overmind is already running, restarting processes."
+    local restart_output
+    restart_output="$(dev_supervisor_run_overmind overmind restart 2>&1)"
+    log_command_output "overmind restart" "$restart_output"
+    log "Overmind process restart requested."
+    wait_for_overmind_health
+    return $?
+  fi
+
+  log "Starting dev environment..."
+  log "Streaming detached bin/dev output to $START_DEV_LOG"
+  dev_supervisor_snapshot_state "dev-update-before-start"
+  # Start bin/dev detached so this script can exit cleanly.
+  # Unset PORT so bin/dev applies its own default (3000) instead of
+  # inheriting a per-process port assigned by the previous Overmind session.
+  dev_supervisor_run_clean env -u PORT -u TMUX \
+    STARTUP_CLEANUP_KILL_ALL="$STARTUP_CLEANUP_KILL_ALL" \
+    nohup bin/dev >>"$START_DEV_LOG" 2>&1 &
+  disown
+  log "Dev environment start command launched (PID $!)."
+
+  wait_for_overmind_health
+}
+
 recover_dev_if_needed() {
-  if [ "$STOPPED_OVERMIND" -eq 1 ] && ! overmind_running; then
+  if [ "$STOPPED_OVERMIND" -eq 1 ] && ! overmind_healthy; then
     log "Attempting recovery start because Overmind was stopped during this update."
     if start_dev; then
       log "Recovery start succeeded."
