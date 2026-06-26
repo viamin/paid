@@ -1298,8 +1298,6 @@ module Containers
           true
         elif ! grep -Eq "^[[:space:]]*gem[[:space:]]+['\\\"]mutant-(rspec|minitest)['\\\"]" Gemfile 2>/dev/null; then
           true
-        elif echo "#{mutation_command}" | grep -q -- "--usage commercial" && [ -z "${MUTANT_LICENSE_KEY:-}" ]; then
-          true
         elif command -v #{mutation_command.split.first} >/dev/null 2>&1; then
           echo "Running #{mutation_command}..."
           #{mutation_command} || exit 1

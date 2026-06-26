@@ -2119,9 +2119,6 @@ module Containers
         env.concat(agent_run.service_environment.map { |k, v| "#{k}=#{v}" })
       end
 
-      mutant_license_key = ENV["MUTANT_LICENSE_KEY"].to_s
-      env << "MUTANT_LICENSE_KEY=#{mutant_license_key}" if mutant_license_key.present?
-
       # Set git committer identity globally via environment variables.
       # This ensures git operations (rebase, commit, cherry-pick) never fail
       # with "Committer identity unknown" regardless of local .git/config state.

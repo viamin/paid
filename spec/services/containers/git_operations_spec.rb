@@ -1865,11 +1865,10 @@ RSpec.describe Containers::GitOperations do
       git_ops.install_git_hooks(
         lint_command: "bundle exec rubocop",
         test_command: "bundle exec rspec",
-        mutation_command: "bundle exec mutant run --usage commercial"
+        mutation_command: "bundle exec mutant run"
       )
 
       expect(pre_commit_script).to include("grep -Eq")
-      expect(pre_commit_script).to include("MUTANT_LICENSE_KEY")
     end
 
     it "does not raise when hook installation fails with exception" do
@@ -1929,7 +1928,7 @@ RSpec.describe Containers::GitOperations do
           git_ops.install_git_hooks(
             lint_command: "bundle exec rubocop",
             test_command: "bundle exec rspec",
-            mutation_command: "bundle exec mutant run --usage opensource --since HEAD~1 --use rspec --jobs 1"
+            mutation_command: "bundle exec mutant run --since HEAD~1 --use rspec --jobs 1"
           )
         end.not_to raise_error
       end

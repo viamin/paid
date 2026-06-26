@@ -3,14 +3,6 @@
     <div>
       <h3 class="text-sm font-medium text-gray-900"><%= requirement.name %></h3>
       <p class="mt-1 text-xs text-gray-500">Type: <%= requirement.check_type %></p>
-      <% if requirement.check_type == "mutation_test" && !project.open_source? %>
-        <div class="mt-2 rounded-md border border-amber-200 bg-amber-50 p-3">
-          <p class="text-sm text-amber-800">
-            This project is marked commercial &mdash; mutant requires a paid license at $30/dev/month or $250/dev/year.
-            Provide <code class="bg-amber-100 px-1 rounded">MUTANT_LICENSE_KEY</code> as a project env var.
-          </p>
-        </div>
-      <% end %>
     </div>
     <div class="flex items-center gap-x-2">
       <% if requirement.enabled? %>

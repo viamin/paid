@@ -7,7 +7,6 @@ module Containers
     extend ActiveSupport::Concern
 
     DB_DEPENDENT_TEST_LANGUAGES = %w[ruby].freeze
-    MUTANT_LICENSE_WARNING_TTL = 24.hours
 
     def install_quality_hooks(git_ops, agent_run)
       language = detect_language(agent_run.project)
@@ -48,38 +47,14 @@ module Containers
       return unless language == "ruby"
 
       requirement = resolve_mutation_requirement(project, user, language)
-      return unless requirement
-
-      warn_once_when_mutant_license_missing(project, requirement.command)
-      requirement.command
+      requirement&.command
     end
 
     def resolve_scheduled_mutation_command(project, user, language)
       requirement = resolve_mutation_requirement(project, user, language)
       return unless requirement
 
-      warn_once_when_mutant_license_missing(project, requirement.command)
       scheduled_mutation_command(requirement.command)
-    end
-
-    def warn_once_when_mutant_license_missing(project, command)
-      return unless command.to_s.include?("--usage commercial")
-      return if forwarded_mutant_license_key_present?
-      return unless Rails.cache.write(mutant_license_warning_cache_key(project.id), true, expires_in: MUTANT_LICENSE_WARNING_TTL, unless_exist: true)
-
-      Rails.logger.warn(
-        message: "quality_hooks.mutant_license_missing",
-        project_id: project.id,
-        project: project.full_name
-      )
-    end
-
-    def forwarded_mutant_license_key_present?
-      ENV["MUTANT_LICENSE_KEY"].present?
-    end
-
-    def mutant_license_warning_cache_key(project_id)
-      "quality_hooks/mutant_license_missing/#{project_id}"
     end
 
     private
