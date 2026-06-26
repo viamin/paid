@@ -72,7 +72,7 @@ jobs:
         run: |
           mkdir -p tmp
           set +e
-          bundle exec mutant run --usage opensource --since origin/${{ github.base_ref }} 2>&1 | tee "$MUTANT_OUTPUT_FILE"
+          bundle exec mutant run --since origin/${{ github.base_ref }} 2>&1 | tee "$MUTANT_OUTPUT_FILE"
           status=${PIPESTATUS[0]}
           {
             echo "## Incremental Mutation"
@@ -130,7 +130,7 @@ jobs:
         run: |
           mkdir -p tmp
           set +e
-          bundle exec mutant run --usage opensource 2>&1 | tee "$MUTANT_OUTPUT_FILE"
+          bundle exec mutant run 2>&1 | tee "$MUTANT_OUTPUT_FILE"
           status=${PIPESTATUS[0]}
           {
             echo "## Nightly Mutation Sweep"

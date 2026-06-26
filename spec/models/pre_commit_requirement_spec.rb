@@ -10,20 +10,9 @@ RSpec.describe PreCommitRequirement do
   end
 
   describe ".mutation_test_default_command" do
-    let(:account) { create(:account) }
-
-    it "returns opensource usage for open source projects" do
-      project = create(:project, account: account, open_source: true)
-
-      expect(described_class.mutation_test_default_command(project))
-        .to eq("bundle exec mutant run --usage opensource --since HEAD~1 --use rspec --jobs 1")
-    end
-
-    it "returns commercial usage for non-open source projects" do
-      project = create(:project, account: account, open_source: false)
-
-      expect(described_class.mutation_test_default_command(project))
-        .to eq("bundle exec mutant run --usage commercial --since HEAD~1 --use rspec --jobs 1")
+    it "returns the default mutation test command" do
+      expect(described_class.mutation_test_default_command)
+        .to eq("bundle exec mutant run --since HEAD~1 --use rspec --jobs 1")
     end
   end
 
