@@ -67,18 +67,15 @@ RSpec.describe Activities::TriggerDevEnvironmentUpdateActivity do
         it "spawns the dev-update script with --lightweight" do
           activity.execute(project_id: project.id, pr_number: 42)
 
-          log_path = Rails.root.join("log", "dev-update", "dev-update.log").to_s
           expect(Process).to have_received(:spawn).with(
-            hash_including(
-              "DEV_UPDATE_TRIGGER_SOURCE" => "Activities::TriggerDevEnvironmentUpdateActivity",
-              "DEV_UPDATE_TRIGGER_MODE" => "lightweight",
-              "DEV_UPDATE_PROJECT_ID" => project.id.to_s,
-              "DEV_UPDATE_PR_NUMBER" => "42",
-              "DEV_UPDATE_CHANGED_FILES" => "app/models/user.rb\napp/controllers/projects_controller.rb",
-              "DEV_UPDATE_RESTART_TRIGGER_FILES" => ""
+            expected_spawn_env(
+              mode: "lightweight",
+              changed_files: "app/models/user.rb\napp/controllers/projects_controller.rb",
+              restart_trigger_files: "",
+              project_id: project.id
             ),
             "setsid", /bin\/dev-update/, "--lightweight",
-            hash_including(out: [ log_path, "a" ], err: [ log_path, "a" ])
+            hash_including(out: [ dev_update_log_path, "a" ], err: [ dev_update_log_path, "a" ])
           )
           expect(Process).to have_received(:detach).with(12345)
         end
@@ -100,18 +97,15 @@ RSpec.describe Activities::TriggerDevEnvironmentUpdateActivity do
         it "spawns the dev-update script with --full" do
           activity.execute(project_id: project.id, pr_number: 42)
 
-          log_path = Rails.root.join("log", "dev-update", "dev-update.log").to_s
           expect(Process).to have_received(:spawn).with(
-            hash_including(
-              "DEV_UPDATE_TRIGGER_SOURCE" => "Activities::TriggerDevEnvironmentUpdateActivity",
-              "DEV_UPDATE_TRIGGER_MODE" => "full",
-              "DEV_UPDATE_PROJECT_ID" => project.id.to_s,
-              "DEV_UPDATE_PR_NUMBER" => "42",
-              "DEV_UPDATE_CHANGED_FILES" => "app/temporal/activities/new_activity.rb\napp/models/user.rb",
-              "DEV_UPDATE_RESTART_TRIGGER_FILES" => "app/temporal/activities/new_activity.rb"
+            expected_spawn_env(
+              mode: "full",
+              changed_files: "app/temporal/activities/new_activity.rb\napp/models/user.rb",
+              restart_trigger_files: "app/temporal/activities/new_activity.rb",
+              project_id: project.id
             ),
             "setsid", /bin\/dev-update/, "--full",
-            hash_including(out: [ log_path, "a" ], err: [ log_path, "a" ])
+            hash_including(out: [ dev_update_log_path, "a" ], err: [ dev_update_log_path, "a" ])
           )
         end
       end
@@ -291,5 +285,27 @@ RSpec.describe Activities::TriggerDevEnvironmentUpdateActivity do
         end
       end
     end
+  end
+
+  def dev_update_log_path
+    Rails.root.join("log", "dev-update", "dev-update.log").to_s
+  end
+
+  def expected_spawn_env(mode:, changed_files:, restart_trigger_files:, project_id:)
+    hash_including(
+      "BUNDLE_BIN_PATH" => nil,
+      "BUNDLE_GEMFILE" => nil,
+      "BUNDLER_SETUP" => nil,
+      "BUNDLER_VERSION" => nil,
+      "DEV_UPDATE_TRIGGER_SOURCE" => "Activities::TriggerDevEnvironmentUpdateActivity",
+      "DEV_UPDATE_TRIGGER_MODE" => mode,
+      "DEV_UPDATE_PROJECT_ID" => project_id.to_s,
+      "DEV_UPDATE_PR_NUMBER" => "42",
+      "DEV_UPDATE_CHANGED_FILES" => changed_files,
+      "DEV_UPDATE_RESTART_TRIGGER_FILES" => restart_trigger_files,
+      "RUBYGEMS_GEMDEPS" => nil,
+      "RUBYLIB" => nil,
+      "RUBYOPT" => nil
+    )
   end
 end

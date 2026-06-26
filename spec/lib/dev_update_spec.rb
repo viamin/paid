@@ -334,6 +334,73 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "clears bundler env before calling bin/setup" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, capture_bundler_env_in_setup: true)
+      env = poll_env.merge(bundler_contaminated_env(dir))
+
+      stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      setup_env_log = File.read(File.join(dir, "setup-bundler-env.log"))
+      expect(setup_env_log).not_to include("BUNDLE_GEMFILE=")
+      expect(setup_env_log).not_to include("RUBYOPT=")
+    end
+  end
+
+  it "clears bundler env before launching detached bin/dev" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, capture_bundler_env_in_dev: true)
+      env = poll_env.merge(bundler_contaminated_env(dir))
+
+      stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      dev_env_log = File.read(File.join(dir, "dev-bundler-env.log"))
+      expect(dev_env_log).not_to include("BUNDLE_GEMFILE=")
+      expect(dev_env_log).not_to include("RUBYOPT=")
+      expect(dev_env_log).not_to include("TMUX=")
+    end
+  end
+
+  it "requires consecutive healthy overmind polls before declaring restart success" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, status_successes_after_start: 1)
+      env = poll_env.merge(
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "OVERMIND_SOCKET" => ".overmind.sock",
+        "DEV_UPDATE_OVERMIND_HEALTHY_CONFIRM_COUNT" => "2"
+      )
+
+      stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+      updater_log = read_updater_log(dir)
+
+      expect(status.success?).to be(false), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(updater_log).to include("Inspect log/dev-update/dev-start.log for detached bin/dev output.")
+      expect(updater_log).to include("ERROR: Full restart completed setup but failed to restore a healthy Overmind session.")
+    end
+  end
+
+  it "does not treat overmind restart as success unless health persists" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, start_overmind_running: true, status_successes_after_start: 1)
+      env = poll_env.merge(
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "OVERMIND_SOCKET" => ".overmind.sock",
+        "DEV_UPDATE_OVERMIND_HEALTHY_CONFIRM_COUNT" => "2"
+      )
+
+      stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+      updater_log = read_updater_log(dir)
+
+      expect(status.success?).to be(false), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.exist?(File.join(dir, "overmind-restart-ran"))).to be(true)
+      expect(updater_log).to include("Overmind is already running, restarting processes.")
+      expect(updater_log).to include("Inspect log/dev-update/dev-start.log for detached bin/dev output.")
+      expect(updater_log).to include("ERROR: Full restart completed setup but failed to restore a healthy Overmind session.")
+    end
+  end
+
   it "auto-stashes dirty working tree before pulling" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, dirty_tree: true)
@@ -504,13 +571,16 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     setup_exit_status: 0,
     start_overmind_running: false,
     dev_starts_overmind: true,
+    capture_bundler_env_in_setup: false,
+    capture_bundler_env_in_dev: false,
     capture_port_in_dev: false,
     capture_kill_all_in_dev: false,
     dirty_tree: false,
     pull_exit_status: 0,
     stash_pop_exit_status: 0,
     stash_pop_output: "Applied stash",
-    pull_diff_files: []
+    pull_diff_files: [],
+    status_successes_after_start: nil
   )
     FileUtils.mkdir_p(File.join(dir, "bin"))
     FileUtils.mkdir_p(File.join(dir, "bin", "lib"))
@@ -528,6 +598,10 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     capture_port_line = capture_port_in_dev ? %(printf '%s\n' "${PORT:-}" > "#{dir}/dev-port.log") : ""
     capture_kill_all_line =
       capture_kill_all_in_dev ? %(printf '%s\n' "${STARTUP_CLEANUP_KILL_ALL:-}" > "#{dir}/dev-env.log") : ""
+    capture_setup_bundler_line =
+      capture_bundler_env_in_setup ? %((env | sort | grep -E '^(BUNDLE_GEMFILE|BUNDLE_BIN_PATH|BUNDLER_SETUP|BUNDLER_VERSION|RUBYLIB|RUBYOPT|RUBYGEMS_GEMDEPS|TMUX)=' || true) > "#{dir}/setup-bundler-env.log") : ""
+    capture_dev_bundler_line =
+      capture_bundler_env_in_dev ? %((env | sort | grep -E '^(BUNDLE_GEMFILE|BUNDLE_BIN_PATH|BUNDLER_SETUP|BUNDLER_VERSION|RUBYLIB|RUBYOPT|RUBYGEMS_GEMDEPS|TMUX)=' || true) > "#{dir}/dev-bundler-env.log") : ""
 
     write_executable(
       File.join(dir, "bin", "setup"),
@@ -535,6 +609,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
         #!/usr/bin/env bash
         touch "#{dir}/setup-ran"
         printf '%s\n' "${STARTUP_CLEANUP_KILL_ALL:-}" > "#{dir}/setup-env.log"
+        #{capture_setup_bundler_line}
         exit #{setup_exit_status}
       BASH
     )
@@ -546,6 +621,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
         touch "#{dir}/dev-ran"
         #{capture_port_line}
         #{capture_kill_all_line}
+        #{capture_dev_bundler_line}
         #{dev_start_line}
         echo "bin/dev booted"
       BASH
@@ -617,7 +693,26 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
         case "$1" in
           status)
             [ -e "#{dir}/overmind-running" ]
-            exit $?
+            running=$?
+            if [ "$running" -ne 0 ]; then
+              exit "$running"
+            fi
+
+            count_file="#{dir}/overmind-status-count"
+            count=0
+            if [ -f "$count_file" ]; then
+              count="$(cat "$count_file")"
+            fi
+            count=$((count + 1))
+            printf '%s' "$count" > "$count_file"
+
+            if [ "#{status_successes_after_start.nil? ? '' : status_successes_after_start}" != "" ] && [ "$count" -gt #{status_successes_after_start || 0} ]; then
+              rm -f "#{dir}/overmind-running"
+              exit 1
+            fi
+            echo "PROCESS   PID       STATUS"
+            echo "web       12345     running"
+            exit 0
             ;;
           quit)
             touch "#{dir}/overmind-quit-ran"

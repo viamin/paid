@@ -114,12 +114,19 @@ module Activities
       # is not the parent — setsid creates a new session.
       pid = Process.spawn(
         {
+          "BUNDLE_BIN_PATH" => nil,
+          "BUNDLE_GEMFILE" => nil,
+          "BUNDLER_SETUP" => nil,
+          "BUNDLER_VERSION" => nil,
           "DEV_UPDATE_TRIGGER_SOURCE" => self.class.name,
           "DEV_UPDATE_TRIGGER_MODE" => mode,
           "DEV_UPDATE_PROJECT_ID" => project_id.to_s,
           "DEV_UPDATE_PR_NUMBER" => pr_number.to_s,
           "DEV_UPDATE_CHANGED_FILES" => changed_files.join("\n"),
-          "DEV_UPDATE_RESTART_TRIGGER_FILES" => restart_trigger_files.join("\n")
+          "DEV_UPDATE_RESTART_TRIGGER_FILES" => restart_trigger_files.join("\n"),
+          "RUBYGEMS_GEMDEPS" => nil,
+          "RUBYLIB" => nil,
+          "RUBYOPT" => nil
         },
         "setsid", script, flag,
         out: [ log_path.to_s, "a" ],
