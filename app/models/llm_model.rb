@@ -77,4 +77,31 @@ class LlmModel < ApplicationRecord
   def self.find_by_model_id(model_id)
     find_by(model_id: model_id)
   end
+
+  # Idempotently registers a direct-outbound runner's user-entered model id in
+  # the catalog with catalog_source: "manual". Used by Runner to keep the
+  # seeded/synced catalog as the source of truth for automated selection while
+  # still letting users point runners at newly released models before a seed
+  # update lands. Returns the existing or newly-created LlmModel.
+  #
+  # The bare model_id is preferred (no provider prefix) so future lookups using
+  # either the qualified or bare form resolve to the same row, matching how
+  # Models::SeedKnownModels stores seeded entries.
+  def self.upsert_manual_catalog_entry(model_id:, provider:)
+    existing = find_by(model_id: model_id)
+    return existing if existing
+
+    create!(
+      model_id: model_id,
+      display_name: model_id.to_s.tr("_", " ").split.map(&:capitalize).join(" ").presence || model_id.to_s,
+      provider: provider,
+      category: "coding",
+      tier: "mid",
+      active: true,
+      catalog_source: "manual",
+      pricing_tier: "paid"
+    )
+  rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid
+    find_by!(model_id: model_id)
+  end
 end

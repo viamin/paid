@@ -135,6 +135,7 @@ class Runner < ApplicationRecord
   before_validation :normalize_agent_co_author_trailer
   before_validation :sync_provider_key_bridge
   before_validation :clear_stale_direct_outbound_tier_models
+  before_save :ensure_manual_direct_outbound_catalog_entry
   before_save :sync_direct_outbound_tier_models
   before_save :clear_free_model_rotation_snapshot, unless: :rotating_tier_models?
   before_discard :prevent_destroying_last_agent_run_runner
@@ -769,6 +770,39 @@ class Runner < ApplicationRecord
 
   private
 
+  # Registers the user-entered direct-outbound model id in the LlmModel catalog
+  # with catalog_source: "manual" so downstream selection has a row to resolve
+  # (#2669). Runs before sync_direct_outbound_tier_models so the tier-mapping
+  # callback finds the row. A row whose provider differs from the runner's
+  # expected service_type is left untouched — direct_outbound_config_models_must_exist_in_catalog
+  # rejects the save in that case before this hook runs.
+  def ensure_manual_direct_outbound_catalog_entry
+    return unless direct_outbound_capable_runner?
+    return unless will_save_change_to_config?
+
+    bare_model_id = manual_direct_outbound_bare_model_id
+    return if bare_model_id.blank?
+
+    expected_provider = direct_outbound_llm_model_provider
+    return if expected_provider.blank?
+
+    LlmModel.upsert_manual_catalog_entry(model_id: bare_model_id, provider: expected_provider)
+  end
+
+  # Returns the bare model id (no provider prefix) used as the catalog key
+  # when materializing a manual catalog entry. Prefers the bare form so
+  # future lookups using either the qualified or bare model id resolve to
+  # the same row, matching how Models::SeedKnownModels stores entries.
+  def manual_direct_outbound_bare_model_id
+    raw_id = direct_outbound_model_id.to_s
+    return if raw_id.blank?
+
+    provider_prefix = direct_outbound_catalog_provider_prefix
+    return raw_id.delete_prefix("#{provider_prefix}/") if provider_prefix.present? && raw_id.start_with?("#{provider_prefix}/")
+
+    raw_id
+  end
+
   def sync_direct_outbound_tier_models
     if runner_key == "openrouter_free"
       return unless tier_model_ids.blank?
@@ -1372,6 +1406,13 @@ class Runner < ApplicationRecord
     end
   end
 
+  # Validates that an existing catalog row for the configured model id belongs
+  # to the runner's expected service_type. New explicit user-entered model ids
+  # are NOT rejected here — the before_save hook
+  # +ensure_manual_direct_outbound_catalog_entry+ registers a manual catalog row
+  # so downstream selection has something to resolve. Provider-mismatched
+  # existing rows still fail so a user can't repoint an Anthropic-catalog model
+  # at a different provider.
   def direct_outbound_config_models_must_exist_in_catalog
     return unless direct_outbound_capable_runner?
 
@@ -1379,10 +1420,7 @@ class Runner < ApplicationRecord
     return if model_id.blank?
 
     model = find_direct_outbound_catalog_model(model_id)
-    if model.blank?
-      errors.add(:config, "#{direct_outbound_runner_label} model id not found in the catalog")
-      return
-    end
+    return if model.blank?
 
     expected_provider = direct_outbound_llm_model_provider
     return if expected_provider.blank? || model.provider == expected_provider

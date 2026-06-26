@@ -663,15 +663,44 @@ RSpec.describe Runner do
       expect(runner.runner_preflight_timeout_seconds).to eq(90)
     end
 
-    it "rejects an OpenCode model id that is not present in the catalog" do
+    it "creates a manual catalog row for an OpenCode model id that is not present in the seeded catalog (#2669)" do
       api_key = create(:provider_api_key, user: runner.user, api_service_type: "minimax")
       runner.auth_type = "api_key"
       runner.provider_api_key = api_key
       runner.runner_key = "opencode"
       runner.config = { "opencode" => { "api_provider" => "minimax", "model" => "MiniMax-M3" } }
 
-      expect(runner).not_to be_valid
-      expect(runner.errors[:config]).to include("OpenCode model id not found in the catalog")
+      expect(runner).to be_valid
+      expect { runner.save! }.to change { LlmModel.where(catalog_source: "manual", model_id: "MiniMax-M3").count }.by(1)
+
+      seeded = LlmModel.find_by!(model_id: "MiniMax-M3")
+      expect(seeded.provider).to eq("minimax")
+      expect(seeded.catalog_source).to eq("manual")
+    end
+
+    it "stores the manual catalog row under the bare model id when given a provider-qualified OpenCode model id" do
+      api_key = create(:provider_api_key, user: runner.user, api_service_type: "minimax")
+      runner.auth_type = "api_key"
+      runner.provider_api_key = api_key
+      runner.runner_key = "opencode"
+      runner.config = { "opencode" => { "api_provider" => "minimax", "model" => "minimax/MiniMax-M3" } }
+
+      expect { runner.save! }.to change { LlmModel.where(model_id: "MiniMax-M3", catalog_source: "manual").count }.by(1)
+      expect(LlmModel.find_by(model_id: "minimax/MiniMax-M3")).to be_nil
+    end
+
+    it "creates a manual catalog row for a KiloCode model id that is not present in the seeded catalog (#2669)" do
+      api_key = create(:provider_api_key, user: runner.user, api_service_type: "zai_coding")
+      runner.auth_type = "api_key"
+      runner.provider_api_key = api_key
+      runner.runner_key = "kilocode"
+      runner.config = { "kilocode" => { "api_provider" => "zai_coding", "model" => "glm-6" } }
+
+      expect(runner).to be_valid
+      expect { runner.save! }.to change { LlmModel.where(catalog_source: "manual", model_id: "glm-6").count }.by(1)
+
+      seeded = LlmModel.find_by!(model_id: "glm-6")
+      expect(seeded.provider).to eq("zai_coding")
     end
 
     it "accepts a provider-qualified OpenCode model id when the catalog stores the canonical bare model id" do
