@@ -77,6 +77,21 @@ RSpec.describe "ChatMessages" do
         expect(response.parsed_body["content"]).to eq("Hello back!")
       end
 
+      it "reopens a closed API session when sending a new message" do
+        chat_session.update!(status: "closed", idle_timeout_at: 1.day.ago)
+
+        llm_client = instance_double(Proc)
+        allow(ChatSessions::BuildLlmClient).to receive(:call).with(chat_session: chat_session).and_return(llm_client)
+        allow(ChatSessions::SendMessage).to receive(:call).and_call_original
+        allow(llm_client).to receive(:call).and_return(llm_response)
+
+        post chat_session_chat_messages_path(chat_session), params: { content: "Hello again" }
+
+        expect(response).to have_http_status(:created)
+        expect(chat_session.reload.status).to eq("active")
+        expect(chat_session.messages.where(role: "user", content: "Hello again")).to exist
+      end
+
       it "returns error when content is blank" do
         post chat_session_chat_messages_path(chat_session), params: { content: "" }
         expect(response).to have_http_status(:unprocessable_content)

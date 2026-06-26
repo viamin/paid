@@ -31,8 +31,10 @@ module ChatSessions
     end
 
     def call
-      validate!
+      validate_content!
+      validate_session_state!
       check_token_limit!
+      resume_session_if_needed!
 
       persist_user_message
       assistant_message = ChatSessions::AgentLoop.new(**loop_kwargs).run
@@ -42,10 +44,31 @@ module ChatSessions
 
     private
 
-    def validate!
-      raise ArgumentError, "chat session must be active" unless chat_session.status == "active"
+    def resume_session_if_needed!
+      return unless chat_session.status == "closed"
+
+      ChatSessions::Resume.call(chat_session: chat_session)
+    end
+
+    def validate_content!
       raise ArgumentError, "content cannot be blank" if content.blank?
       raise ArgumentError, "content exceeds maximum length of #{MAX_CONTENT_LENGTH} characters" if content.length > MAX_CONTENT_LENGTH
+    end
+
+    def validate_session_state!
+      return if chat_session.status == "active"
+      return if resumable_closed_session?
+      raise ArgumentError, "workspace chat sessions cannot be resumed" if closed_workspace_session?
+
+      raise ArgumentError, "chat session must be active"
+    end
+
+    def resumable_closed_session?
+      chat_session.status == "closed" && chat_session.mode != "workspace"
+    end
+
+    def closed_workspace_session?
+      chat_session.status == "closed" && chat_session.mode == "workspace"
     end
 
     def check_token_limit!

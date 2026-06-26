@@ -91,12 +91,47 @@ RSpec.describe ChatSessions::SendMessage do
       expect(chat_session.idle_timeout_at).to be_within(5.seconds).of(30.minutes.from_now)
     end
 
-    it "raises when session is not active" do
+    it "resumes a closed API session before sending the next message" do
+      closed_session = create(:chat_session, :closed, account: account, created_by: user)
+
+      described_class.call(chat_session: closed_session, content: "Hello", llm_client: llm_client)
+
+      expect(closed_session.reload.status).to eq("active")
+      expect(closed_session.metadata).to include("resume_count" => 1)
+      expect(closed_session.metadata["last_resumed_at"]).to be_present
+    end
+
+    it "does not reopen a closed session for blank content" do
       closed_session = create(:chat_session, :closed, account: account, created_by: user)
 
       expect {
+        described_class.call(chat_session: closed_session, content: "", llm_client: llm_client)
+      }.to raise_error(ArgumentError, /blank/)
+
+      expect(closed_session.reload.status).to eq("closed")
+      expect(closed_session.metadata).not_to include("resume_count")
+    end
+
+    it "does not reopen a closed session when the token limit is already exceeded" do
+      closed_session = create(:chat_session, :closed, account: account, created_by: user)
+      create(:tenant_setting, account: account,
+        features: { "chat_settings" => { "chat_session_token_limit" => 100 } })
+      create(:token_usage, :chat, chat_session: closed_session, input_tokens: 80, output_tokens: 30)
+
+      expect {
         described_class.call(chat_session: closed_session, content: "Hello", llm_client: llm_client)
-      }.to raise_error(ArgumentError, /active/)
+      }.to raise_error(ChatSessions::TokenLimitExceededError)
+
+      expect(closed_session.reload.status).to eq("closed")
+      expect(closed_session.metadata).not_to include("resume_count")
+    end
+
+    it "raises when a closed workspace session is resumed" do
+      closed_session = create(:chat_session, :closed, :workspace, account: account, created_by: user)
+
+      expect {
+        described_class.call(chat_session: closed_session, content: "Hello", llm_client: llm_client)
+      }.to raise_error(ArgumentError, /cannot be resumed/)
     end
 
     it "raises when content is blank" do
