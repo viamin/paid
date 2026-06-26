@@ -353,7 +353,7 @@ end
 # TODO(#2682): remove once agent-harness ships a native code-exchange API.
 module PaidAgentHarnessClaudePkceCodeExchangePatch
   CLAUDE_TOKEN_ENDPOINT = "https://claude.ai/oauth/token"
-  PKCE_VERIFIER_LENGTH = 43 # RFC 7636 minimum; 43 bytes → 43 URL-safe chars
+  PKCE_VERIFIER_LENGTH = 43 # RFC 7636 §4.1 requires 43–128 chars; urlsafe_base64(43) → ~58 URL-safe chars
   PKCE_CHALLENGE_METHOD = "S256"
   HTTP_TIMEOUT_SECONDS = 30
 
