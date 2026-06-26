@@ -29,7 +29,7 @@ class BackfillGlm52LlmModel < ActiveRecord::Migration[8.1]
     model.assign_attributes(GLM_5_2_ATTRIBUTES)
     model.save!
   rescue ActiveRecord::RecordNotUnique
-    retry
+    MigrationLlmModel.find_by!(model_id: "glm-5.2")
   end
 
   def down
