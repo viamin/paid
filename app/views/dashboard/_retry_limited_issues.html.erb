@@ -1,0 +1,61 @@
+<div class="rounded-lg border border-orange-200 bg-orange-50 p-6 shadow-sm">
+  <div class="flex items-start justify-between gap-4">
+    <div>
+      <h3 class="text-base font-semibold text-orange-900">Retry-limited issues</h3>
+      <p class="mt-1 text-sm text-orange-700">These issues/PRs reached their runner retry cap. Clear the flag to retry, or run them manually.</p>
+    </div>
+    <% if retry_limited_issues.any? %>
+      <span class="inline-flex items-center rounded-md bg-orange-100 px-2 py-1 text-xs font-medium text-orange-800">
+        <%= pluralize(retry_limited_issues.size, "item") %>
+      </span>
+    <% end %>
+  </div>
+
+  <% if retry_limited_issues.any? %>
+    <div class="mt-4 flow-root">
+      <div class="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
+        <div class="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
+          <table class="min-w-full divide-y divide-orange-200">
+            <thead>
+              <tr>
+                <th scope="col" class="py-2 pl-4 pr-3 text-left text-xs font-medium uppercase tracking-wide text-orange-700 sm:pl-0">Project</th>
+                <th scope="col" class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-orange-700">Issue</th>
+                <th scope="col" class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-orange-700">Type</th>
+                <th scope="col" class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-orange-700">Reason</th>
+                <th scope="col" class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-orange-700">Abandoned</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-orange-200 bg-orange-50">
+              <% retry_limited_issues.each do |issue| %>
+                <tr>
+                  <td class="whitespace-nowrap py-3 pl-4 pr-3 text-sm font-medium text-orange-900 sm:pl-0">
+                    <%= link_to issue.project.full_name, project_path(issue.project), class: "hover:text-indigo-600" %>
+                  </td>
+                  <td class="whitespace-nowrap px-3 py-3 text-sm text-orange-900">
+                    <%= link_to "##{issue.github_number}", issue.github_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-900" %>
+                    <span class="ml-1 text-orange-700"><%= truncate(issue.title, length: 60) %></span>
+                  </td>
+                  <td class="whitespace-nowrap px-3 py-3 text-sm">
+                    <% if issue.push_permission_abandoned? %>
+                      <span class="inline-flex items-center rounded-md bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700 ring-1 ring-inset ring-orange-600/20">Push Blocked</span>
+                    <% else %>
+                      <span class="inline-flex items-center rounded-md bg-red-50 px-2 py-0.5 text-xs font-medium text-red-700 ring-1 ring-inset ring-red-600/20">Retry Cap</span>
+                    <% end %>
+                  </td>
+                  <td class="px-3 py-3 text-sm text-orange-700 max-w-xs truncate" title="<%= issue.runner_retry_abandon_reason.to_s %>">
+                    <%= issue.runner_retry_abandon_reason.to_s %>
+                  </td>
+                  <td class="whitespace-nowrap px-3 py-3 text-sm text-orange-700">
+                    <%= local_time(issue.runner_retry_abandoned_at, format: :relative) %>
+                  </td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  <% else %>
+    <p class="mt-4 text-sm text-orange-700">No retry-limited issues or PRs at the moment.</p>
+  <% end %>
+</div>
