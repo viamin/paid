@@ -25,6 +25,22 @@ RSpec.describe "Runners" do
     }
   end
 
+  def direct_outbound_runner_params(runner_key:, api_key_id:, api_provider:, model:)
+    {
+      runner_key: runner_key,
+      auth_type: "api_key",
+      provider_api_key_id: api_key_id,
+      enabled_for_agent_runs: true,
+      enabled_for_fallback: true,
+      config: {
+        runner_key => {
+          api_provider: api_provider,
+          model: model
+        }
+      }
+    }
+  end
+
   describe "GET /runners" do
     context "when not authenticated" do
       it "redirects to sign in" do
@@ -580,6 +596,86 @@ RSpec.describe "Runners" do
       runner = user.runners.find_by!(runner_key: "kilocode", auth_type: "api_key")
       expect(runner.kilocode_model_id).to eq("glm-5.1")
       expect(runner.kilocode_preflight_timeout_seconds).to eq(45)
+    end
+
+    it "accepts glm-5.2 for z.ai coding-plan KiloCode runners when the catalog is seeded" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "zai_coding")
+      KnownDirectOutboundModels.seed_model(model_id: "glm-5.2", provider: "zai_coding")
+
+      post runners_path, params: {
+        runner: direct_outbound_runner_params(
+          runner_key: "kilocode",
+          api_key_id: api_key.id,
+          api_provider: "zai_coding",
+          model: "glm-5.2"
+        )
+      }
+
+      expect(response).to redirect_to(runners_path)
+      runner = user.runners.find_by!(runner_key: "kilocode", auth_type: "api_key")
+      expect(runner.kilocode_api_provider).to eq("zai_coding")
+      expect(runner.kilocode_model_id).to eq("glm-5.2")
+    end
+
+    it "upserts a missing catalog model as a manual row for KiloCode direct-outbound saves" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "zai_coding")
+
+      post runners_path, params: {
+        runner: direct_outbound_runner_params(
+          runner_key: "kilocode",
+          api_key_id: api_key.id,
+          api_provider: "zai_coding",
+          model: "glm-5.2"
+        )
+      }
+
+      expect(response).to redirect_to(runners_path)
+      runner = user.runners.find_by!(runner_key: "kilocode", auth_type: "api_key")
+      expect(runner.kilocode_model_id).to eq("glm-5.2")
+      expect(LlmModel.find_by(model_id: "glm-5.2")).to have_attributes(
+        provider: "zai_coding",
+        catalog_source: "manual"
+      )
+    end
+
+    it "accepts glm-5.2 for z.ai coding-plan OpenCode runners when the catalog is seeded" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "zai_coding")
+      KnownDirectOutboundModels.seed_model(model_id: "glm-5.2", provider: "zai_coding")
+
+      post runners_path, params: {
+        runner: direct_outbound_runner_params(
+          runner_key: "opencode",
+          api_key_id: api_key.id,
+          api_provider: "zai_coding",
+          model: "glm-5.2"
+        )
+      }
+
+      expect(response).to redirect_to(runners_path)
+      runner = user.runners.find_by!(runner_key: "opencode", auth_type: "api_key")
+      expect(runner.opencode_api_provider).to eq("zai_coding")
+      expect(runner.opencode_model_id).to eq("glm-5.2")
+    end
+
+    it "upserts a missing catalog model as a manual row for OpenCode direct-outbound saves" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "zai_coding")
+
+      post runners_path, params: {
+        runner: direct_outbound_runner_params(
+          runner_key: "opencode",
+          api_key_id: api_key.id,
+          api_provider: "zai_coding",
+          model: "glm-5.2"
+        )
+      }
+
+      expect(response).to redirect_to(runners_path)
+      runner = user.runners.find_by!(runner_key: "opencode", auth_type: "api_key")
+      expect(runner.opencode_model_id).to eq("glm-5.2")
+      expect(LlmModel.find_by(model_id: "glm-5.2")).to have_attributes(
+        provider: "zai_coding",
+        catalog_source: "manual"
+      )
     end
 
     it "rejects opencode API-key providers without a model id" do
