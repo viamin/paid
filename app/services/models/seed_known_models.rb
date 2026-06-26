@@ -366,17 +366,13 @@ module Models
         tier: "mid"
       },
       # Catalog completeness for the custom Anthropic-compatible MiniMax
-      # endpoint so direct-outbound opencode/pi runners pass
-      # `direct_outbound_config_models_must_exist_in_catalog`/tier_model_ids
-      # validation. This row does NOT fix the runtime `model_not_found`
-      # (ProviderModelNotFoundError): opencode registers the model via
-      # `Runner#opencode_custom_provider_models` and provider-qualifies the
-      # resolved tier model via `Runner#qualified_model_for`. `minimax` is
-      # intentionally excluded from `Models::DetectCatalogDrift`, so the
-      # RubyLLM registry never backfills this entry (unlike the native
-      # anthropic/openai/google rows). Cost is therefore left nil rather than
-      # guessed, because `input_cost_per_million`/`output_cost_per_million`
-      # feed billing; populate them once MiniMax's published pricing is confirmed.
+      # direct-outbound endpoint: opencode/pi runners reference this row via
+      # `Runner#direct_outbound_config_models_must_exist_in_catalog`. MiniMax is
+      # not in the RubyLLM registry (intentionally excluded from
+      # `Models::DetectCatalogDrift`), so — unlike the native
+      # anthropic/openai/google rows — the registry merge never backfills
+      # pricing/context here. Cost stays nil rather than guessed because it
+      # feeds billing; populate once MiniMax publishes figures.
       {
         model_id: "MiniMax-M3",
         display_name: "MiniMax M3",

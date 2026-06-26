@@ -451,12 +451,10 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
         expect(AgentHarness).to have_received(:send_message).with(
           a_string_including(issue.title).and(including(issue.body)),
-          hash_including(
-            provider: :claude,
-            model: Llm::GeneratePrDescription::DEFAULT_MODEL,
-            timeout: Llm::GeneratePrDescription::TIMEOUT,
-            tools: :none
-          )
+          provider: :claude,
+          model: Llm::GeneratePrDescription::DEFAULT_MODEL,
+          timeout: Llm::GeneratePrDescription::TIMEOUT,
+          tools: :none
         )
       end
 
