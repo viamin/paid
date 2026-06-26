@@ -56,6 +56,10 @@
         <%= render "dashboard/queue_preview", queue_preview: @queue_preview %>
       </div>
 
+      <div class="mt-6">
+        <%= render "dashboard/retry_limited_issues", retry_limited_issues: @retry_limited_issues %>
+      </div>
+
       <turbo-frame id="dashboard-runner-health"
         data-dashboard-frames-target="frame"
         data-dashboard-frames-src="<%= dashboard_runner_health_path %>"

@@ -29,6 +29,11 @@ class DashboardController < ApplicationController
       .where.not(quality_paused_at: nil)
       .order(quality_paused_at: :desc)
       .limit(10)
+    @retry_limited_issues = Issue.where.not(runner_retry_abandoned_at: nil)
+      .where(project_id: current_account.projects.select(:id))
+      .includes(:project)
+      .order(runner_retry_abandoned_at: :desc)
+      .limit(20)
     @recent_activity = Dashboard::RecentActivity.call(account: current_account)
   end
 
