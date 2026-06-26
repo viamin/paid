@@ -1809,7 +1809,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_25_222743) do
     t.jsonb "log_data"
     t.integer "max_draft_review_rounds", default: 10, null: false
     t.integer "max_enhance_issue_reevaluation_rounds", default: 3, null: false
-    t.integer "max_execution_seconds", default: 3600, null: false
+    t.integer "max_execution_seconds", default: 7200, null: false
     t.integer "max_issue_runner_failures", comment: "Per-project override for the per-issue per-provider retry cap. When nil, the account-level agent setting (default 10) applies. After a provider fails this many times for a single issue it is excluded from scheduling for that issue."
     t.integer "max_pr_followup_runs", default: 8, null: false
     t.integer "max_tokens_per_run"
@@ -2452,7 +2452,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_25_222743) do
   end
 
   create_table "user_settings", force: :cascade do |t|
-    t.integer "agent_timeout_seconds", default: 3600, null: false
+    t.integer "agent_timeout_seconds", default: 5400, null: false
     t.jsonb "allowed_service_images", default: ["postgres:16.13", "redis:7-alpine", "selenium/standalone-chromium:latest"]
     t.jsonb "auto_pick_skip_labels", comment: "Optional user-level override for labels that make auto-pick skip an issue. Null means inherit tenant or built-in defaults."
     t.integer "circuit_breaker_failure_threshold", default: 5, null: false

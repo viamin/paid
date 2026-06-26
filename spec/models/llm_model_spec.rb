@@ -154,4 +154,35 @@ RSpec.describe LlmModel do
       expect(described_class.default_for_task("review")).to eq(model)
     end
   end
+
+  describe ".upsert_manual_catalog_entry" do
+    it "creates a manual catalog row when the model id is unknown (#2669)" do
+      expect {
+        described_class.upsert_manual_catalog_entry(model_id: "MiniMax-M3", provider: "minimax")
+      }.to change(described_class.where(catalog_source: "manual"), :count).by(1)
+
+      model = described_class.find_by(model_id: "MiniMax-M3")
+      expect(model.provider).to eq("minimax")
+      expect(model.catalog_source).to eq("manual")
+      expect(model.active).to be(true)
+    end
+
+    it "returns the existing row when the model id is already present" do
+      existing = create(:llm_model, model_id: "MiniMax-M3", provider: "minimax", catalog_source: "seeded")
+
+      expect {
+        result = described_class.upsert_manual_catalog_entry(model_id: "MiniMax-M3", provider: "minimax")
+        expect(result).to eq(existing)
+      }.not_to change(described_class, :count)
+    end
+
+    it "is idempotent under concurrent callers via the model_id unique index" do
+      threads = Array.new(3) do
+        Thread.new { described_class.upsert_manual_catalog_entry(model_id: "MiniMax-M3", provider: "minimax") }
+      end
+
+      expect { threads.each(&:join) }.not_to raise_error
+      expect(described_class.where(model_id: "MiniMax-M3").count).to eq(1)
+    end
+  end
 end

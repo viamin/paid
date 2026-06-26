@@ -209,6 +209,9 @@ __pycache__/
 # Claude Code plan files (local scratch; should not be committed)
 .claude/plans/
 
+# Commit-message drafts (local scratch; should not be committed)
+.commit-msg.txt
+
 # Database backups
 /backups/
 

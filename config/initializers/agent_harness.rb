@@ -342,7 +342,7 @@ end
 # fallback when per-user settings are unavailable. Runtime code should
 # prefer UserSetting#agent_timeout_seconds resolved via
 # AgentRuns::UserSettingsResolver.
-AGENT_TIMEOUT_DEFAULT = 3600
+AGENT_TIMEOUT_DEFAULT = 5400
 Rails.application.config.x.agent_timeout = AGENT_TIMEOUT_DEFAULT
 
 AgentHarness.configure do |config|

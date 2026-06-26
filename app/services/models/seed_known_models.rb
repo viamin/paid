@@ -380,6 +380,28 @@ module Models
         supports_json_output: true,
         capability_score: 8.2,
         tier: "mid"
+      },
+      # Catalog completeness for the custom Anthropic-compatible MiniMax
+      # direct-outbound endpoint: opencode/pi runners reference this row via
+      # `Runner#direct_outbound_config_models_must_exist_in_catalog`. MiniMax is
+      # not in the RubyLLM registry (intentionally excluded from
+      # `Models::DetectCatalogDrift`), so — unlike the native
+      # anthropic/openai/google rows — the registry merge never backfills
+      # pricing/context here. Cost stays nil rather than guessed because it
+      # feeds billing; populate once MiniMax publishes figures.
+      {
+        model_id: "MiniMax-M3",
+        display_name: "MiniMax M3",
+        provider: "minimax",
+        family: "MiniMax",
+        category: "coding",
+        context_window: 1_000_000,
+        max_output_tokens: 32_000,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 9.0,
+        tier: "mid"
       }
     ].freeze
 

@@ -135,12 +135,12 @@ module AgentRuns
       return unless credential.present?
       return if credential.provider_api_key? && !credential.provider_api_key.compatible_with?(base_runner.runner_key)
 
-      # Ensure the configured Pi model exists in the LlmModel table before
-      # validation runs on the new runner record. The direct-outbound
-      # validation (direct_outbound_config_models_must_exist_in_catalog)
-      # upserts missing entries as catalog_source: "manual" rows, so this
-      # pre-seed is only an optimization for the pi case where we want the
-      # row visible to model selection without a runner save in flight.
+      # Ensure the configured model exists in the LlmModel table before
+      # validation runs on the new runner record. Direct-outbound validations
+      # reject model IDs whose existing catalog row has a different provider
+      # (see direct_outbound_config_models_must_exist_in_catalog), and
+      # the runner's before_save callback materializes a missing model id as
+      # a manual catalog row (#2669).
       seed_account_managed_model(base_runner, credential)
 
       owner.runners.kept_only.find_or_create_by!(
@@ -189,18 +189,8 @@ module AgentRuns
       model_id = config.dig("pi", "model")
       api_provider = config.dig("pi", "api_provider")
       return if model_id.blank? || api_provider.blank?
-      return if LlmModel.exists?(model_id: model_id)
 
-      LlmModel.create!(
-        model_id: model_id,
-        display_name: model_id.to_s.tr("_-", " ").split.map(&:capitalize).join(" "),
-        provider: api_provider,
-        category: "coding",
-        tier: "mid",
-        active: true,
-        catalog_source: "manual",
-        pricing_tier: "paid"
-      )
+      LlmModel.upsert_manual_catalog_entry(model_id: model_id, provider: api_provider)
     end
 
     def account_managed_runner_config(base_runner, credential)

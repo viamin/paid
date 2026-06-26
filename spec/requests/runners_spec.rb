@@ -824,9 +824,8 @@ RSpec.describe "Runners" do
   describe "PATCH /runners/:id" do
     before do
       sign_in user
-      # Runner.direct_outbound_config_models_must_exist_in_catalog rejects direct-outbound
-      # API-key runners whose model id is not present in the LlmModel catalog, so seed the
-      # model ids used by patch-runner-path params in this spec.
+      # Seed direct-outbound model ids used by patch-runner-path params in this spec so
+      # the seeded-catalog lookup path is exercised (matches the test factory fixture).
       KnownDirectOutboundModels.seed_model(model_id: "moonshotai/kimi-k2-0905", provider: "openrouter")
     end
 
