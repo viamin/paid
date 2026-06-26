@@ -87,8 +87,10 @@ module AgentRuns
 
       # Ensure the configured model exists in the LlmModel table before
       # validation runs on the new provider record. Direct-outbound validations
-      # (direct_outbound_config_models_must_exist_in_catalog) reject model IDs
-      # not present in the catalog.
+      # (direct_outbound_config_models_must_exist_in_catalog) upsert missing
+      # entries as catalog_source: "manual" rows, so this pre-seed is only
+      # needed when we want the row visible to model selection without the
+      # provider save in flight.
       provider_config = account_managed_provider_config(base_provider, credential)
       seed_account_managed_model(base_provider, credential)
 

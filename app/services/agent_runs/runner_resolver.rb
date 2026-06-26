@@ -135,10 +135,12 @@ module AgentRuns
       return unless credential.present?
       return if credential.provider_api_key? && !credential.provider_api_key.compatible_with?(base_runner.runner_key)
 
-      # Ensure the configured model exists in the LlmModel table before
-      # validation runs on the new runner record. Direct-outbound validations
-      # (direct_outbound_config_models_must_exist_in_catalog) reject model IDs
-      # not present in the catalog.
+      # Ensure the configured Pi model exists in the LlmModel table before
+      # validation runs on the new runner record. The direct-outbound
+      # validation (direct_outbound_config_models_must_exist_in_catalog)
+      # upserts missing entries as catalog_source: "manual" rows, so this
+      # pre-seed is only an optimization for the pi case where we want the
+      # row visible to model selection without a runner save in flight.
       seed_account_managed_model(base_runner, credential)
 
       owner.runners.kept_only.find_or_create_by!(

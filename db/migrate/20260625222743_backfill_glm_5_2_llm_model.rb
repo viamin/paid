@@ -19,9 +19,7 @@ class BackfillGlm52LlmModel < ActiveRecord::Migration[8.1]
     supports_json_output: true,
     capability_score: 8.9,
     tier: "mid",
-    active: true,
-    catalog_source: "seeded",
-    pricing_tier: "paid"
+    active: true
   }.freeze
 
   def up

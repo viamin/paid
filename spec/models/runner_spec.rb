@@ -663,15 +663,38 @@ RSpec.describe Runner do
       expect(runner.runner_preflight_timeout_seconds).to eq(90)
     end
 
-    it "rejects an OpenCode model id that is not present in the catalog" do
+    it "upserts an OpenCode model id that is not present in the catalog as a manual row" do
       api_key = create(:provider_api_key, user: runner.user, api_service_type: "minimax")
       runner.auth_type = "api_key"
       runner.provider_api_key = api_key
       runner.runner_key = "opencode"
       runner.config = { "opencode" => { "api_provider" => "minimax", "model" => "MiniMax-M3" } }
 
-      expect(runner).not_to be_valid
-      expect(runner.errors[:config]).to include("OpenCode model id not found in the catalog")
+      expect(runner).to be_valid
+
+      model = LlmModel.find_by(model_id: "MiniMax-M3")
+      expect(model).to have_attributes(
+        provider: "minimax",
+        catalog_source: "manual",
+        tier: "mid",
+        active: true
+      )
+    end
+
+    it "strips the provider prefix before upserting a manual catalog row" do
+      api_key = create(:provider_api_key, user: runner.user, api_service_type: "minimax")
+      runner.auth_type = "api_key"
+      runner.provider_api_key = api_key
+      runner.runner_key = "opencode"
+      runner.config = { "opencode" => { "api_provider" => "minimax", "model" => "minimax/MiniMax-M4" } }
+
+      expect(runner).to be_valid
+
+      expect(LlmModel.find_by(model_id: "MiniMax-M4")).to have_attributes(
+        provider: "minimax",
+        catalog_source: "manual"
+      )
+      expect(LlmModel.find_by(model_id: "minimax/MiniMax-M4")).to be_nil
     end
 
     it "accepts a provider-qualified OpenCode model id when the catalog stores the canonical bare model id" do

@@ -1378,14 +1378,12 @@ class Runner < ApplicationRecord
     model_id = direct_outbound_model_id
     return if model_id.blank?
 
-    model = find_direct_outbound_catalog_model(model_id)
-    if model.blank?
-      errors.add(:config, "#{direct_outbound_runner_label} model id not found in the catalog")
-      return
-    end
-
     expected_provider = direct_outbound_llm_model_provider
-    return if expected_provider.blank? || model.provider == expected_provider
+    return if expected_provider.blank?
+
+    model = find_direct_outbound_catalog_model(model_id) || upsert_direct_outbound_manual_llm_model(model_id, expected_provider)
+
+    return if model.provider == expected_provider
 
     errors.add(:config, "#{direct_outbound_runner_label} model belongs to the #{RunnerSupport.api_service_type_label(model.provider)} catalog but expected #{RunnerSupport.api_service_type_label(expected_provider)}")
   end
@@ -1478,6 +1476,32 @@ class Runner < ApplicationRecord
     end
 
     candidates.uniq
+  end
+
+  # Upserts an LlmModel row for an explicit user-entered (api_provider,
+  # model_id) that is not present in the seeded/synced catalog so the runner
+  # save proceeds without blocking on catalog coverage (#2669). Newly released
+  # direct-outbound models land as catalog_source: "manual" until the next
+  # sync/review promotes them; until then, runner saves still succeed, but the
+  # nightly retire pass leaves manual rows alone (see
+  # Models::SeedKnownModels#retire_stale_seeded_models).
+  #
+  # Falls back to find_or_create_by! so a concurrent save that races the same
+  # manual id does not raise RecordNotUnique. The bare id (provider-prefix
+  # stripped) is used to keep the catalog row aligned with the existing
+  # provider-qualified convention (e.g. "minimax/MiniMax-M3" -> "MiniMax-M3").
+  def upsert_direct_outbound_manual_llm_model(model_id, expected_provider)
+    bare_id = direct_outbound_catalog_model_id_candidates(model_id).last
+    LlmModel.find_or_create_by!(model_id: bare_id) do |model|
+      model.display_name = bare_id.to_s.tr("_-", " ").split.map(&:capitalize).join(" ")
+      model.provider = expected_provider.to_s
+      model.category = "coding"
+      model.tier = "mid"
+      model.active = true
+      model.catalog_source = "manual"
+    end
+  rescue ActiveRecord::RecordNotUnique
+    LlmModel.find_by!(model_id: bare_id)
   end
 
   def direct_outbound_catalog_provider_prefix
