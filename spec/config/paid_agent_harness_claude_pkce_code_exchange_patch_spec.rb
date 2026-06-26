@@ -218,9 +218,9 @@ RSpec.describe PaidAgentHarnessClaudePkceCodeExchangePatch do
             headers: { "Content-Type" => "application/json" }
           )
 
-        begin
+        expect {
           AgentHarness::Authentication.exchange_code(:claude, code: "code", code_verifier: "wrong-verifier")
-        rescue AgentHarness::AuthenticationError => e
+        }.to raise_error(AgentHarness::AuthenticationError) do |e|
           expect(e.context[:status]).to eq(400)
           expect(e.context[:error]).to eq("invalid_grant")
           expect(e.context[:error_description]).to eq("Code verifier mismatch")
