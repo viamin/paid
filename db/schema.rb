@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_25_222743) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_26_174154) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1816,7 +1816,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_25_222743) do
     t.string "merge_method", default: "squash", null: false
     t.jsonb "model_preferences", default: {}, null: false
     t.string "name", null: false
-    t.boolean "open_source", default: false, null: false, comment: "Whether the project is open source (affects mutation test --usage flag)."
     t.string "owner", null: false
     t.string "owner_reviewer_login"
     t.boolean "paused", default: false, null: false, comment: "When true, queued automatic agent runs for this project will not be started. Manual runs are unaffected."

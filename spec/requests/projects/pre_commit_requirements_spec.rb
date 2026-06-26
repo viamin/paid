@@ -27,24 +27,9 @@ RSpec.describe "Projects::PreCommitRequirements" do
         expect(response).to have_http_status(:ok)
       end
 
-      it "renders opensource usage command when project is open source" do
-        project.update!(open_source: true)
-
+      it "renders the default mutation test command hint" do
         get project_pre_commit_requirements_path(project)
-        expect(response.body).to include("--usage opensource")
-      end
-
-      it "renders commercial usage command when project is not open source" do
-        get project_pre_commit_requirements_path(project)
-
-        expect(response.body).to include("--usage commercial")
-      end
-
-      it "renders commercial license banner when project is not open source" do
-        create(:pre_commit_requirement, :mutation_test, account: account, project: project, name: "mutant")
-
-        get project_pre_commit_requirements_path(project)
-        expect(response.body).to include("mutant requires a paid license")
+        expect(response.body).to include("bundle exec mutant run --since HEAD~1")
       end
     end
 
