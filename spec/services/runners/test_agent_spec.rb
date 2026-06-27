@@ -259,6 +259,54 @@ RSpec.describe Runners::TestAgent do
       end
     end
 
+    context "when the codex host health check hits a permission error" do
+      let(:api_key_record) { create(:runner_api_key, user: user, api_service_type: "openai") }
+      let(:runner_record) { create(:runner, :api_key, user: user, runner_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false, provider_api_key: api_key_record) }
+      let(:host_health_result) do
+        {
+          name: :codex,
+          status: "error",
+          message: "Permission denied (os error 13)",
+          error_category: :unknown,
+          latency_ms: 12
+        }
+      end
+      let(:container_health_result) do
+        {
+          name: :codex,
+          status: "ok",
+          message: "All checks passed",
+          output: "OK",
+          error_category: nil,
+          latency_ms: 18
+        }
+      end
+
+      before do
+        allow(RunnerSupport).to receive_messages(supported_runner_key?: true,
+          container_executable_runner_key?: true, harness_runner_key_for: "codex")
+        stub_proxy_api_key(:openai, "sk-test-key")
+        stub_insert_all
+        allow(test_run).to receive(:with_container).and_yield(test_run)
+        allow(AgentHarness).to receive(:check_provider).and_return(host_health_result, container_health_result)
+      end
+
+      it "falls back to the container smoke test" do
+        result = described_class.call(runner: provider)
+
+        expect(result).to be_success
+        expect(result.message).to eq("Agent is healthy")
+        expect(AgentHarness).to have_received(:check_provider).with(:codex, timeout: 60).once
+        expect(AgentHarness).to have_received(:check_provider).with(
+          :codex,
+          hash_including(
+            timeout: 60,
+            executor: an_instance_of(Containers::HarnessExecutor)
+          )
+        ).once
+      end
+    end
+
     context "when agent-harness returns a binary-encoded failure message" do
       let(:api_key_record) { create(:runner_api_key, user: user, api_service_type: "openai") }
       let(:runner_record) { create(:runner, :api_key, user: user, runner_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: false, provider_api_key: api_key_record) }

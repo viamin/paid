@@ -155,7 +155,7 @@ module Providers
           # behaviour match real agent runs.
           execute_container_diagnostic
         elsif harness_health_check_supported?
-          process_harness_result(execute_harness_health_check)
+          execute_harness_health_check_with_fallback
         else
           execute_container_smoke_test
         end
@@ -259,28 +259,47 @@ module Providers
       AgentHarness.check_provider(harness_provider_name, timeout: TIMEOUT)
     end
 
-    # Runs the agent-harness smoke_test contract inside a provisioned container.
-    #
-    # Instead of building provider-specific CLI commands locally, this delegates
-    # to the harness provider's smoke_test method with a container-backed executor.
-    def execute_container_smoke_test
+    def execute_harness_health_check_with_fallback
+      process_harness_result(maybe_fallback_harness_result(execute_harness_health_check))
+    rescue StandardError => e
+      raise unless fallback_to_container_smoke_test?(e.message)
+
+      log_harness_fallback(error_message: e.message, error_class: e.class.name)
+      execute_container_smoke_test
+    end
+
+    def maybe_fallback_harness_result(result)
+      return result unless fallback_to_container_smoke_test?(result[:message], result[:output])
+
+      log_harness_fallback(error_message: [ result[:message], result[:output] ].compact.join("\n"))
+      execute_container_smoke_test_raw
+    end
+
+    def execute_container_smoke_test_raw
       test_run = build_test_run
 
       begin
         test_run.with_container do |run|
           executor = Containers::HarnessExecutor.new(run)
           prepare_kilocode_config!(run) if kilocode_direct_outbound?
-          harness_result = AgentHarness.check_provider(
+          AgentHarness.check_provider(
             harness_provider_name,
             timeout: TIMEOUT,
             executor: executor,
             provider_runtime: container_provider_runtime
           )
-          process_harness_result(harness_result)
         end
       ensure
         test_run.destroy! if test_run&.persisted?
       end
+    end
+
+    # Runs the agent-harness smoke_test contract inside a provisioned container.
+    #
+    # Instead of building provider-specific CLI commands locally, this delegates
+    # to the harness provider's smoke_test method with a container-backed executor.
+    def execute_container_smoke_test
+      process_harness_result(execute_container_smoke_test_raw)
     end
 
     def process_harness_result(result)
@@ -472,6 +491,26 @@ module Providers
       return false if effective_provider.subscription?
       api_key_name = ProviderSupport.proxy_health_check_api_key_for(effective_provider.provider_key)
       !!(api_key_name && proxy_api_key_configured?(api_key_name))
+    end
+
+    def fallback_to_container_smoke_test?(*messages)
+      return false unless test_project
+
+      combined = messages.compact.map { |message| normalize_output_text(message) }.join("\n")
+      return false if combined.blank?
+
+      combined.match?(/permission denied \(os error 13\)/i) ||
+        combined.match?(/sandbox failure detected/i) ||
+        combined.match?(/bwrap:.*permission denied/i)
+    end
+
+    def log_harness_fallback(error_message:, error_class: nil)
+      Rails.logger.warn(
+        message: "providers.test_agent.host_health_check_fallback",
+        provider_key: effective_provider.provider_key,
+        error_class: error_class,
+        error_message: normalize_output_text(error_message)
+      )
     end
 
     def harness_provider_name

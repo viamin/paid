@@ -361,6 +361,7 @@ module Containers
     private def execute_unlocked(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil, heartbeat_path: nil, abort_patterns: nil)
       timeout ||= options[:timeout_seconds]
       cmd_array = command.is_a?(Array) ? command : [ "sh", "-c", command ]
+      cmd_array = close_stdin_for_codex_exec(cmd_array)
       exec_options = { wait: timeout, Env: exec_environment(env) }
       cleanup_steps = apply_execution_preparation(preparation, env: env)
 
@@ -704,6 +705,13 @@ module Containers
           end
         end
       end
+    end
+
+    def close_stdin_for_codex_exec(command)
+      return command unless codex_exec_command?(command)
+
+      escaped = command.map { |part| Shellwords.escape(part.to_s) }.join(" ")
+      [ "sh", "-lc", "exec #{escaped} < /dev/null" ]
     end
 
     # Stops and removes the container, cleaning up resources.
@@ -1142,6 +1150,18 @@ module Containers
 
       mount = codex_subscription_auth_mount
       log_system("container.codex_credentials_shared", source_path: mount.host_path)
+      seed_local_credentials!(
+        source_path: mount.config_path,
+        target_path: "/home/agent/.codex",
+        files: [ "auth.json" ],
+        success_log_key: "container.codex_credentials_seeded",
+        failure_log_key: "container.codex_credentials_seed_failed"
+      )
+      verify_container_file_present!(
+        path: "/home/agent/.codex/auth.json",
+        failure_log_key: "container.codex_credentials_seed_failed",
+        error_message: "Codex subscription auth.json was not copied into the container"
+      )
       seed_sanitized_codex_config!(source_path: mount.config_path)
 
       seed_codex_notify_hook!
@@ -1283,11 +1303,14 @@ module Containers
 
         if acquired
           log_system("container.codex_auth_lock.acquired", lockfile: lockfile)
-          yield
+          result = yield
+          sync_codex_auth_file_to_source!
+          result
         else
           log_system("container.codex_auth_lock.timeout",
             lockfile: lockfile,
             lock_timeout_seconds: lock_timeout)
+          log_system("container.codex_auth_sync_skipped_without_lock", source_path: codex_subscription_auth_source_path)
           yield
         end
       ensure
@@ -1484,6 +1507,21 @@ module Containers
       end
     rescue Docker::Error::DockerError, SystemCallError => e
       log_system(failure_log_key, error: e.message)
+    end
+
+    def verify_container_file_present!(path:, failure_log_key:, error_message:)
+      _stdout, stderr, status = backend.exec_in_container(
+        container,
+        [ "sh", "-lc", "test -s #{Shellwords.escape(path)}" ],
+        user: "agent"
+      )
+      return if status.to_i.zero?
+
+      log_system(failure_log_key, error: [ error_message, Array(stderr).join.presence ].compact.join(": "), path: path)
+      raise ProvisionError, error_message
+    rescue Docker::Error::DockerError => e
+      log_system(failure_log_key, error: e.message, path: path)
+      raise ProvisionError, error_message
     end
 
     # Batches all ownership fixes into a single container exec call.
@@ -1856,10 +1894,6 @@ module Containers
          File.directory?(claude_config_host_path) &&
          File.file?(File.join(claude_config_host_path, ".credentials.json"))
         binds << "#{claude_config_host_path}:/home/agent/.claude-host:ro"
-      end
-
-      if backend.supports_host_paths? && codex_subscription_auth_host_mount_path.present?
-        binds.concat(codex_subscription_auth_file_binds)
       end
 
       if backend.supports_host_paths? &&
@@ -2350,22 +2384,34 @@ module Containers
       (codex_config_candidate_paths + [ codex_local_config_path ]).compact.uniq
     end
 
-    def codex_subscription_auth_file_binds
-      base = codex_subscription_auth_host_mount_path
-      return [] unless base.present?
-
-      [ "#{File.join(base, 'auth.json')}:/home/agent/.codex/auth.json:rw" ]
-    end
-
     def codex_auth_lock_required?(command)
-      codex_subscription_auth_host_mount_path.present? && codex_exec_command?(command)
+      codex_subscription_auth? && codex_exec_command?(command)
     end
 
     def codex_exec_command?(command)
-      parts = command.is_a?(Array) ? command : Shellwords.split(command.to_s)
+      parts = normalized_command_parts(command)
+      return false if parts.empty?
+
+      if parts.first == "env"
+        index = 1
+        while index < parts.length
+          case parts[index]
+          when "-u"
+            index += 2
+          else
+            break
+          end
+        end
+        parts = parts[index..] || []
+      end
+
       parts.first(2) == %w[codex exec]
     rescue ArgumentError
       false
+    end
+
+    def normalized_command_parts(command)
+      command.is_a?(Array) ? command.map(&:to_s) : Shellwords.split(command.to_s)
     end
 
     def codex_auth_lockfile_path
@@ -2374,12 +2420,37 @@ module Containers
       base_path = lock_config&.dig(:path)&.sub(/\.lock\z/, "")
       raise TypeError, "no lock path configured" unless base_path
 
-      host_mount = codex_subscription_auth_host_mount_path
-      digest = Digest::SHA256.hexdigest(host_mount)[0, 16]
+      source_path = codex_subscription_auth_source_path
+      digest = Digest::SHA256.hexdigest(source_path)[0, 16]
       "#{base_path}-#{digest}.lock"
     rescue TypeError
       base = lock_config&.dig(:path)&.sub(/\.lock\z/, "") || "/tmp/codex-auth"
       "#{base}-missing.lock"
+    end
+
+    def codex_subscription_auth_source_path
+      codex_subscription_auth_mount&.config_path
+    end
+
+    def sync_codex_auth_file_to_source!
+      source_path = codex_subscription_auth_source_path
+      return if source_path.blank?
+
+      source_file = File.join(source_path, "auth.json")
+      stdout, stderr, status = backend.exec_in_container(
+        container,
+        [ "sh", "-lc", "base64 -w0 /home/agent/.codex/auth.json" ],
+        user: "agent"
+      )
+      raise Docker::Error::DockerError, Array(stderr).join if status.to_i != 0
+
+      encoded = Array(stdout).join
+      return if encoded.blank?
+
+      File.binwrite(source_file, Base64.strict_decode64(encoded))
+      log_system("container.codex_auth_synced", source_path: source_path)
+    rescue Docker::Error::DockerError, SystemCallError, ArgumentError => e
+      log_system("container.codex_auth_sync_failed", error: e.message, source_path: source_path)
     end
 
     def codex_harness_provider
