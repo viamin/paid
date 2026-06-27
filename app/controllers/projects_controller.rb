@@ -142,6 +142,7 @@ class ProjectsController < ApplicationController
     @available_service_containers = policy_scope(ServiceContainer).where.not(id: @project.service_container_ids).order(:name)
     @available_mcp_server_definitions = policy_scope(McpServerDefinition).where.not(id: @project.mcp_server_definition_ids).order(:name)
     @project_mcp_servers = @project.project_mcp_servers.includes(:mcp_server_definition).to_a
+    @mutation_req = @project.pre_commit_requirements.find_by(check_type: "mutation_test")
     load_screenshot_settings_context
   end
 

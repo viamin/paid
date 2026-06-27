@@ -769,6 +769,77 @@
             </div>
           </fieldset>
 
+          <%# Mutation Testing section %>
+          <fieldset id="mutation-testing" class="space-y-4 rounded-md border border-gray-200 p-4">
+            <legend class="px-1 text-sm font-semibold text-gray-900">Mutation Testing</legend>
+            <p class="text-sm text-gray-600">
+              Run mutation tests before committing to catch inadequate test coverage.
+              Uses <a href="https://github.com/mbj/mutant" class="text-indigo-600 hover:text-indigo-500" target="_blank" rel="noopener noreferrer">mutant</a> via <code class="rounded bg-gray-100 px-1 text-xs">bundle exec mutant</code>.
+            </p>
+
+            <%= form_with url: project_mutation_test_requirement_path(@project), method: :patch,
+                data: { controller: "collapsible-panel" } do |mf| %>
+              <div class="flex items-center">
+                <input type="hidden" name="mutation_test[enabled]" value="0">
+                <input type="checkbox" name="mutation_test[enabled]" value="1"
+                  id="mutation_test_enabled"
+                  <% if @mutation_req&.enabled? %>checked<% end %>
+                  aria-controls="mutation_test_settings"
+                  class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600"
+                  data-action="change->collapsible-panel#toggle"
+                  data-collapsible-panel-target="checkbox">
+                <label for="mutation_test_enabled" class="ml-3 block text-sm font-medium leading-6 text-gray-900">Enable mutation testing</label>
+                <% if @mutation_req&.enabled? %>
+                  <span class="ml-2 inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Active</span>
+                <% end %>
+              </div>
+
+              <div id="mutation_test_settings"
+                class="space-y-4 transition-all duration-200 ease-in-out <%= @mutation_req&.enabled? ? 'max-h-[2000px] opacity-100' : 'max-h-0 overflow-hidden opacity-0' %>"
+                <% unless @mutation_req&.enabled? %>inert<% end %>
+                data-collapsible-panel-target="panel">
+                <div>
+                  <label for="mutation_test_command" class="block text-sm font-medium leading-6 text-gray-900">Command</label>
+                  <div class="mt-1">
+                    <input type="text" name="mutation_test[command]" id="mutation_test_command"
+                      value="<%= @mutation_req&.command || PreCommitRequirement::MUTATION_TEST_DEFAULT_COMMAND %>"
+                      autocomplete="off"
+                      required
+                      class="block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
+                  </div>
+                  <p class="mt-1 text-xs text-gray-500">
+                    Default: <code class="rounded bg-gray-100 px-1"><%= PreCommitRequirement::MUTATION_TEST_DEFAULT_COMMAND %></code>
+                  </p>
+                </div>
+
+                <div>
+                  <label for="mutation_test_failure_behavior" class="block text-sm font-medium leading-6 text-gray-900">Failure behavior</label>
+                  <div class="mt-1">
+                    <select name="mutation_test[failure_behavior]" id="mutation_test_failure_behavior"
+                      class="block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
+                      <%= options_for_select(
+                        [
+                          [ "Warn (log result, do not block)", "warn" ],
+                          [ "Block (fail the pre-commit check)", "block" ]
+                        ],
+                        @mutation_req&.failure_behavior || "warn"
+                      ) %>
+                    </select>
+                  </div>
+                  <p class="mt-1 text-xs text-gray-500">Choose <strong>Warn</strong> to start with, then switch to <strong>Block</strong> once your kill rate is stable.</p>
+                </div>
+              </div>
+
+              <div class="pt-2">
+                <%= mf.submit "Save mutation testing settings",
+                  class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 cursor-pointer" %>
+                <% if @mutation_req %>
+                  <span class="ml-3 text-xs text-gray-500">Last updated: <%= @mutation_req.updated_at.strftime("%b %-d, %Y") %></span>
+                <% end %>
+              </div>
+            <% end %>
+          </fieldset>
+
           <%= render "screenshot_settings", form: form,
                 screenshot_settings: @screenshot_settings,
                 screenshot_service_options: @screenshot_service_options,

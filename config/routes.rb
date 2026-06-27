@@ -228,6 +228,8 @@ Rails.application.routes.draw do
     end
     resources :pre_commit_requirements, only: [ :index, :show, :create, :update, :destroy ],
       controller: "projects/pre_commit_requirements"
+    resource :mutation_test_requirement, only: [ :update ],
+      controller: "projects/mutation_test_requirements"
     resources :pr_templates, only: [ :index, :show, :create, :update, :destroy ],
       controller: "projects/pr_templates"
     resources :project_service_containers, only: [ :create, :destroy ], controller: "projects/service_containers"
