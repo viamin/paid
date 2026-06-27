@@ -155,7 +155,7 @@ module Runners
           # behaviour match real agent runs.
           execute_container_diagnostic
         elsif harness_health_check_supported?
-          process_harness_result(execute_harness_health_check)
+          execute_harness_health_check_with_fallback
         else
           execute_container_smoke_test
         end
@@ -255,32 +255,22 @@ module Runners
       Result.new(success: true, error_type: nil, message: "Diagnostic passed (#{summary})")
     end
 
-    def execute_harness_health_check
-      AgentHarness.check_provider(harness_runner_key, timeout: TIMEOUT)
+    include TestAgentHealthCheckFallback
+
+    def harness_health_check_key
+      harness_runner_key
     end
 
-    # Runs the agent-harness smoke_test contract inside a provisioned container.
-    #
-    # Instead of building provider-specific CLI commands locally, this delegates
-    # to the harness provider's smoke_test method with a container-backed executor.
-    def execute_container_smoke_test
-      test_run = build_test_run
+    def harness_fallback_log_prefix
+      "runners.test_agent"
+    end
 
-      begin
-        test_run.with_container do |run|
-          executor = Containers::HarnessExecutor.new(run)
-          prepare_kilocode_config!(run) if kilocode_direct_outbound?
-          harness_result = AgentHarness.check_provider(
-            harness_runner_key,
-            timeout: TIMEOUT,
-            executor: executor,
-            provider_runtime: container_provider_runtime
-          )
-          process_harness_result(harness_result)
-        end
-      ensure
-        test_run.destroy! if test_run&.persisted?
-      end
+    def harness_fallback_log_context
+      { runner_key: runner.runner_key }
+    end
+
+    def execute_harness_health_check
+      AgentHarness.check_provider(harness_runner_key, timeout: TIMEOUT)
     end
 
     def process_harness_result(result)

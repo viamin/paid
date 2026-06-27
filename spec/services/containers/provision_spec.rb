@@ -1411,10 +1411,10 @@ RSpec.describe Containers::Provision do
         FileUtils.rm_rf(codex_config_dir)
       end
 
-      it "bind-mounts only Codex auth and sets the subscription marker" do
+      it "keeps Codex auth in tmpfs and sets the subscription marker" do
         expect(Docker::Container).to receive(:create) do |config|
           binds = config["HostConfig"]["Binds"]
-          expect(binds).to include("#{File.join(codex_config_dir, 'auth.json')}:/home/agent/.codex/auth.json:rw")
+          expect(binds.none? { |bind| bind.include?("/home/agent/.codex/auth.json") }).to be true
           expect(binds.none? { |bind| bind.include?("/home/agent/.codex/config.toml") }).to be true
           env = config["Env"]
           expect(env).to include("PAID_CODEX_SUBSCRIPTION_AUTH=1")
@@ -1426,19 +1426,40 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
-      it "uses a shared writable Codex auth mount instead of copying credentials" do
+      it "copies Codex auth into tmpfs and records the shared source path" do
         allow(agent_run).to receive(:log!).and_call_original
 
         service.provision
 
-        expect(mock_container).not_to have_received(:exec).with(
-          [ "sh", "-lc", include("/home/agent/.codex/config.toml").and(include('model_provider = "paid"')) ],
+        expect(mock_container).to have_received(:exec).with(
+          [ "sh", "-lc", satisfy { |cmd|
+            cmd.include?("/home/agent/.codex/auth.json") &&
+              decoded_base64_content(cmd).include?("{")
+          } ],
           user: "agent"
         )
         expect(agent_run).to have_received(:log!).with(
           "system",
           "container.codex_credentials_shared",
           metadata: hash_including(source_path: codex_config_dir)
+        )
+      end
+
+      it "fails clearly when Codex auth is not actually copied into tmpfs" do
+        allow(mock_container).to receive(:exec) do |cmd, **_opts|
+          shell = cmd.last.to_s
+          if cmd.first(2) == [ "sh", "-lc" ] && shell.include?("/home/agent/.codex/auth.json")
+            [ [], [ "write failed\n" ], 1 ]
+          else
+            [ [], [], 0 ]
+          end
+        end
+
+        expect {
+          service.provision
+        }.to raise_error(
+          Containers::Provision::ProvisionError,
+          /Codex subscription auth\.json was not copied into the container/
         )
       end
 
@@ -1522,10 +1543,10 @@ RSpec.describe Containers::Provision do
         FileUtils.rm_rf(codex_local_dir)
       end
 
-      it "bind-mounts local Codex auth as the shared writable auth source" do
+      it "does not bind-mount local Codex auth directly" do
         expect(Docker::Container).to receive(:create) do |config|
           binds = config["HostConfig"]["Binds"]
-          expect(binds).to include("#{File.join(codex_local_dir, 'auth.json')}:/home/agent/.codex/auth.json:rw")
+          expect(binds.none? { |bind| bind.include?("/home/agent/.codex/auth.json") }).to be true
           expect(binds.none? { |bind| bind.include?(":/home/agent/.codex:rw") }).to be true
           expect(config["Env"]).to include("PAID_CODEX_SUBSCRIPTION_AUTH=1")
 
@@ -1537,13 +1558,13 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
-      it "uses shared Codex auth and writes sanitized config into the writable tmpfs" do
+      it "copies shared Codex auth and writes sanitized config into the writable tmpfs" do
         service.provision
 
-        expect(mock_container).not_to have_received(:exec).with(
+        expect(mock_container).to have_received(:exec).with(
           [ "sh", "-lc", satisfy { |cmd|
             cmd.include?("/home/agent/.codex/auth.json") &&
-              !cmd.include?("/home/agent/.codex/config.toml")
+              decoded_base64_content(cmd).include?("\"refresh_token\":\"test-token\"")
           } ],
           user: "agent"
         )
@@ -1558,7 +1579,7 @@ RSpec.describe Containers::Provision do
         )
       end
 
-      it "translates a mounted local Codex path to the Docker host bind source" do
+      it "uses the mounted local Codex path as the shared source without binding auth directly" do
         mount_source = Dir.mktmpdir("codex-host")
         mount_destination = File.dirname(codex_local_dir)
         current_container = instance_double(
@@ -1569,8 +1590,7 @@ RSpec.describe Containers::Provision do
 
         expect(Docker::Container).to receive(:create) do |config|
           binds = config["HostConfig"]["Binds"]
-          expected_source = File.join(mount_source, File.basename(codex_local_dir), "auth.json")
-          expect(binds).to include("#{expected_source}:/home/agent/.codex/auth.json:rw")
+          expect(binds.none? { |bind| bind.include?("/home/agent/.codex/auth.json") }).to be true
           mock_container
         end
 
@@ -2541,6 +2561,29 @@ RSpec.describe Containers::Provision do
 
         expect(agent_run).to have_received(:log!).with(
           "system", "container.codex_auth_lock.acquired", metadata: hash_including(:lockfile)
+        )
+      end
+
+      it "treats env-wrapped Codex execution as a Codex command" do
+        allow(agent_run).to receive(:log!)
+
+        service.execute([ "env", "-u", "OPENAI_API_KEY", "codex", "exec", "--dangerously-bypass-approvals-and-sandbox", "--", "prompt" ])
+
+        expect(agent_run).to have_received(:log!).with(
+          "system", "container.codex_auth_lock.acquired", metadata: hash_including(:lockfile)
+        )
+      end
+
+      it "does not sync shared auth back after timing out on the lock" do
+        allow(service).to receive(:acquire_lock_with_timeout).and_return(false)
+        allow(service).to receive(:sync_codex_auth_file_to_source!)
+        allow(agent_run).to receive(:log!)
+
+        service.execute([ "codex", "exec", "--dangerously-bypass-approvals-and-sandbox", "--", "prompt" ])
+
+        expect(service).not_to have_received(:sync_codex_auth_file_to_source!)
+        expect(agent_run).to have_received(:log!).with(
+          "system", "container.codex_auth_sync_skipped_without_lock", metadata: hash_including(:source_path)
         )
       end
 
