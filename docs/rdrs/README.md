@@ -114,6 +114,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | [RDR-018](RDR-018-semantic-code-search.md) | Semantic Code Search (Qdrant + MeiliSearch) | Implemented | Medium |
 | [RDR-021](RDR-021-knowledge-base.md) | Knowledge Base Architecture | Final | High |
 | [RDR-027](RDR-027-auto-enhance-knowledge-evolution.md) | Auto-Enhance and Knowledge Base Evolution | Implemented | High |
+| [RDR-042](RDR-042-change-intent-records.md) | Change Intent Records for the Knowledge Base | Draft | Medium |
 
 ### AI-Native Evolution (Phase 4)
 
