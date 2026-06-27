@@ -360,8 +360,8 @@ module Containers
 
     private def execute_unlocked(command, timeout: nil, startup_timeout: nil, idle_timeout: nil, stream: true, env: {}, preparation: nil, heartbeat_path: nil, abort_patterns: nil)
       timeout ||= options[:timeout_seconds]
-      cmd_array = command.is_a?(Array) ? command : [ "sh", "-c", command ]
-      cmd_array = close_stdin_for_codex_exec(cmd_array)
+      cmd_array = close_stdin_for_codex_exec(command)
+      cmd_array = cmd_array.is_a?(Array) ? cmd_array : [ "sh", "-c", cmd_array ]
       exec_options = { wait: timeout, Env: exec_environment(env) }
       cleanup_steps = apply_execution_preparation(preparation, env: env)
 
@@ -710,7 +710,8 @@ module Containers
     def close_stdin_for_codex_exec(command)
       return command unless codex_exec_command?(command)
 
-      escaped = command.map { |part| Shellwords.escape(part.to_s) }.join(" ")
+      parts = command.is_a?(Array) ? command : Shellwords.split(command.to_s)
+      escaped = parts.map { |part| Shellwords.escape(part.to_s) }.join(" ")
       [ "sh", "-lc", "exec #{escaped} < /dev/null" ]
     end
 
