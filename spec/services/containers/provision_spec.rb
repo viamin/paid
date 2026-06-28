@@ -215,6 +215,14 @@ RSpec.describe Containers::Provision do
 
       expect(svc.options[:memory_bytes]).to eq(4 * 1024 * 1024 * 1024)
     end
+
+    it "allows credential maintenance initialization without agent_run or project" do
+      svc = described_class.new(credential_maintenance: true)
+
+      expect(svc.project).to be_nil
+      expect(svc.agent_run).to be_nil
+      expect(svc.options[:memory_bytes]).to eq(4 * 1024 * 1024 * 1024)
+    end
   end
 
   describe ".reconnect" do

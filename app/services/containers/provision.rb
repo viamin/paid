@@ -7,6 +7,7 @@ require "json"
 require "open3"
 require "securerandom"
 require "shellwords"
+require "time"
 
 module Containers
   # Service for provisioning, managing, and cleaning up Docker containers for agent execution.
@@ -158,8 +159,9 @@ module Containers
     # @option options [Integer] :pids_limit Maximum number of processes
     # @option options [Integer] :timeout_seconds Default command timeout
     # @option options [String] :image Docker image to use
-    def initialize(agent_run: nil, project: nil, worktree_path: nil, pool_entry: nil, workspace_volume: nil, backend: Containers.backend, **options)
-      raise ArgumentError, "agent_run or project is required" if agent_run.nil? && project.nil?
+    def initialize(agent_run: nil, project: nil, worktree_path: nil, pool_entry: nil, workspace_volume: nil,
+      backend: Containers.backend, credential_maintenance: false, **options)
+      raise ArgumentError, "agent_run or project is required" if agent_run.nil? && project.nil? && !credential_maintenance
 
       if options.key?(:network)
         Rails.logger.warn(
@@ -170,7 +172,7 @@ module Containers
         options.delete(:network)
       end
       @agent_run = agent_run
-      @project = project || agent_run.project
+      @project = project || agent_run&.project
       @worktree_path = worktree_path
       @pool_entry = pool_entry
       @workspace_volume = workspace_volume
@@ -1079,6 +1081,8 @@ module Containers
     # Resolves user-configurable container settings from the project's UserSetting.
     # Returns a hash of overrides that sit between DEFAULTS and caller-supplied options.
     def resolve_user_setting_overrides
+      return {} unless project
+
       settings = AgentRuns::UserSettingsResolver.call(
         project: project, strict: false
       )
@@ -2587,7 +2591,9 @@ module Containers
 
     # Returns true when the host-forwarded Claude credential will expire within
     # the given window, meaning a keep-warm refresh should be attempted.
-    CLAUDE_CREDENTIAL_REFRESH_WINDOW = 6.hours
+    # Keep this as a plain Integer so lightweight scripts can require this file
+    # without booting Rails or loading ActiveSupport core extensions.
+    CLAUDE_CREDENTIAL_REFRESH_WINDOW = 6 * 60 * 60
 
     def claude_credentials_near_expiry?(refresh_window: CLAUDE_CREDENTIAL_REFRESH_WINDOW)
       expiry = claude_native_credential_expiry

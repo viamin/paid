@@ -80,6 +80,7 @@ RSpec.describe ClaudeCredentialKeepWarmJob do
         it "calls keep_warm_claude_credentials! on a Provision instance" do
           described_class.perform_now
 
+          expect(Containers::Provision).to have_received(:new).with(credential_maintenance: true)
           expect(mock_provision).to have_received(:keep_warm_claude_credentials!)
         end
 

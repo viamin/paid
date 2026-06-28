@@ -37,7 +37,7 @@ class ClaudeCredentialKeepWarmJob < ApplicationJob
       return
     end
 
-    provision = Containers::Provision.new
+    provision = Containers::Provision.new(credential_maintenance: true)
     result = provision.keep_warm_claude_credentials!
 
     duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
