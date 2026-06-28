@@ -93,6 +93,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 |-----|-------|--------|----------|
 | [RDR-019](RDR-019-remote-container-execution.md) | Remote Container Execution | Implemented | Medium |
 | [RDR-033](RDR-033-worker-pool-scaling-algorithm.md) | Worker Pool Scaling Algorithm | Implemented | Medium |
+| [RDR-043](RDR-043-zero-config-docker-capacity-autoscaling.md) | Zero-Config Docker Capacity Autoscaling | Draft | Medium |
 
 ### Quality & Automation
 
