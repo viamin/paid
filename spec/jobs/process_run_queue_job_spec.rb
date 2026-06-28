@@ -5,6 +5,15 @@ require "rails_helper"
 RSpec.describe ProcessRunQueueJob do
   let(:temporal_client) { double("TemporalClient") } # rubocop:disable RSpec/VerifiedDoubles
   let(:workflow_handle) { double("WorkflowHandle", id: "queued-workflow-id") } # rubocop:disable RSpec/VerifiedDoubles
+  let(:auto_mode_snapshot) do
+    {
+      available: true,
+      effective_agent_budget_bytes: 2 * 1024 * 1024 * 1024,
+      snapshot_at: Time.current,
+      confidence: "high",
+      docker_memory_bytes: 8 * 1024 * 1024 * 1024
+    }
+  end
 
   before do
     allow(Paid).to receive_messages(temporal_client: temporal_client, agent_task_queue: "paid-agent-tasks")
@@ -48,13 +57,7 @@ RSpec.describe ProcessRunQueueJob do
       user = project.created_by
       user.settings.update!(run_concurrency_mode: "auto", max_concurrent_runs: nil)
       queued_run = create(:agent_run, :queued, project: project)
-      allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(
-        available: true,
-        effective_agent_budget_bytes: 2 * 1024 * 1024 * 1024,
-        snapshot_at: Time.current,
-        confidence: "high",
-        docker_memory_bytes: 8 * 1024 * 1024 * 1024
-      )
+      allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(auto_mode_snapshot)
 
       expect(temporal_client).not_to receive(:start_workflow)
 
@@ -62,6 +65,32 @@ RSpec.describe ProcessRunQueueJob do
 
       expect(queued_run.reload.temporal_workflow_id).to be_nil
       expect(queued_run.status).to eq("queued")
+    end
+
+    it "bulk-skips an auto-mode user's backlog when Docker capacity is insufficient" do
+      stub_const("#{described_class}::MAX_ITERATIONS_PER_PERFORM", 5)
+
+      blocked_project = create(:project)
+      blocked_user = blocked_project.created_by
+      blocked_user.settings.update!(run_concurrency_mode: "auto", max_concurrent_runs: nil)
+      10.times do |i|
+        create(:agent_run, :queued, project: blocked_project, created_at: (20 - i).minutes.ago)
+      end
+
+      eligible_project = create(:project)
+      eligible_run = create(:agent_run, :queued, project: eligible_project, created_at: 1.minute.ago)
+
+      allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(auto_mode_snapshot)
+
+      started_ids = []
+      allow(temporal_client).to receive(:start_workflow) do |_wf, input, **_opts|
+        started_ids << input[:agent_run_id]
+        workflow_handle
+      end
+
+      described_class.new.perform
+
+      expect(started_ids).to eq([ eligible_run.id ])
     end
 
     it "reuses one Docker snapshot per queue pass" do

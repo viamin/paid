@@ -169,16 +169,30 @@ module Capacity
     end
 
     def active_local_agent_reserved_bytes
-      AgentRun.capacity_inflight
+      inflight_runs = AgentRun.capacity_inflight
         .where(container_host: [ nil, "", Containers::LOCAL_BACKEND_KEY.to_s ])
-        .includes(project: :created_by)
-        .sum { |run| reserved_memory_bytes_for(run) }
+        .includes(project: [ :account, { created_by: :user_setting } ])
+        .to_a
+
+      latest_limits_by_run_id = latest_metric_limits_by_run_id(inflight_runs)
+
+      inflight_runs.sum { |run| reserved_memory_bytes_for(run, latest_limits_by_run_id[run.id]) }
     end
 
-    def reserved_memory_bytes_for(run)
-      latest_limit = ContainerMetric.where(agent_run_id: run.id).order(recorded_at: :desc).pick(:memory_limit_bytes).to_i
+    def latest_metric_limits_by_run_id(inflight_runs)
+      return {} if inflight_runs.empty?
+
+      ContainerMetric
+        .where(agent_run_id: inflight_runs.map(&:id))
+        .select("DISTINCT ON (agent_run_id) agent_run_id, memory_limit_bytes")
+        .order(:agent_run_id, recorded_at: :desc, id: :desc)
+        .pluck(:agent_run_id, :memory_limit_bytes)
+        .to_h
+    end
+
+    def reserved_memory_bytes_for(run, latest_limit)
       configured_limit = run.project&.effective_owner&.settings&.container_memory_bytes.to_i
-      [ latest_limit, configured_limit, run.peak_memory_bytes.to_i, DEFAULT_ESTIMATED_MEMORY_BYTES ].max
+      [ latest_limit.to_i, configured_limit, run.peak_memory_bytes.to_i, DEFAULT_ESTIMATED_MEMORY_BYTES ].max
     end
   end
 end

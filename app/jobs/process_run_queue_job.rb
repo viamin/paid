@@ -108,7 +108,7 @@ class ProcessRunQueueJob < ApplicationJob
 
           case admission[:reason]
           when "insufficient_docker_capacity"
-            skipped_ids.add(next_run.id)
+            blocked_user_ids.add(user.id)
           when "project_hard_ceiling"
             blocked_project_ids.add(next_run.project_id)
           when "create_pr_hard_ceiling"
