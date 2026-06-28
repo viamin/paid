@@ -199,6 +199,7 @@ module Containers
       start_container
       fix_all_ownership!
       seed_opencode_database!
+      seed_kilo_database!
       seed_codex_credentials!
       seed_gemini_credentials!
       seed_copilot_credentials!
@@ -1368,6 +1369,43 @@ module Containers
       RunnerSupport.runner_key_for_agent_type(agent_run.agent_type) == "opencode"
     end
 
+    # Restores the pre-migrated Kilocode SQLite database into the runtime tmpfs.
+    # The Kilocode CLI runs a slow "one time database migration" on its first
+    # invocation in a fresh container; without this seed that migration runs
+    # inside the runner smoke preflight and exceeds the preflight wall-clock
+    # timeout, exhausting the runner. The build pre-migrates the DB into
+    # /opt/kilo-seed (see docker/agent/Dockerfile); the ~/.local/share/kilo
+    # tmpfs mount wipes the build-time copy, so it is restored after start.
+    # Mirrors seed_opencode_database!.
+    def seed_kilo_database!
+      return unless kilocode_runner_requested?
+
+      result = backend.exec_in_container(
+        container,
+        [ "sh", "-c",
+          "if [ -d /opt/kilo-seed ]; then " \
+          "cp -a /opt/kilo-seed/. /home/agent/.local/share/kilo/ && " \
+          "chown -R agent:agent /home/agent/.local/share/kilo; " \
+          "fi" ],
+        user: "root"
+      )
+      exit_code = result.is_a?(Array) ? result[2].to_i : 0
+      raise Docker::Error::DockerError, "kilo database seed exited with #{exit_code}" unless exit_code == 0
+
+      log_system("container.kilo_database_seeded")
+    rescue Docker::Error::DockerError => e
+      log_system("container.kilo_database_seed_failed", error: e.message)
+    end
+
+    def kilocode_runner_requested?
+      return false unless agent_run
+
+      runners = resolved_run_runner_candidates
+      return runners.any? { |runner| runner.runner_key == "kilocode" } if runners.any?
+
+      RunnerSupport.runner_key_for_agent_type(agent_run.agent_type) == "kilocode"
+    end
+
     def seed_gemini_credentials!
       source_files = %w[
         oauth_creds.json
@@ -2321,7 +2359,17 @@ module Containers
       RunnerSupport.runner_key_for_agent_type(agent_run.agent_type) == "codex"
     end
 
+    # Memoized: several provision-time guards (opencode/kilo/codex runner
+    # detection) resolve the candidate chain, and it is deterministic for a
+    # given run + settings. Caching avoids repeated Runner.for_identifier
+    # lookups on the provision path.
     def resolved_run_runner_candidates
+      return @resolved_run_runner_candidates if defined?(@resolved_run_runner_candidates)
+
+      @resolved_run_runner_candidates = compute_resolved_run_runner_candidates
+    end
+
+    def compute_resolved_run_runner_candidates
       return run_runner_candidates if agent_run.runner
 
       settings = resolved_user_settings
