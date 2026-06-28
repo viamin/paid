@@ -103,6 +103,12 @@ RSpec.describe RunnerCredential do
 
       expect(described_class.active).to include(credential)
     end
+
+    it "includes long_lived credentials even with past expires_at" do
+      credential = create(:runner_credential, :long_lived, expires_at: 1.hour.ago)
+
+      expect(described_class.active).to include(credential)
+    end
   end
 
   describe ".for_runner" do
@@ -131,6 +137,12 @@ RSpec.describe RunnerCredential do
       credential = build(:runner_credential, :expired)
 
       expect(credential).not_to be_active
+    end
+
+    it "returns true for long_lived credential even with past expires_at" do
+      credential = build(:runner_credential, :long_lived, expires_at: 1.hour.ago)
+
+      expect(credential).to be_active
     end
   end
 
