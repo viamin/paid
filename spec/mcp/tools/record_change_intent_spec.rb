@@ -40,6 +40,29 @@ RSpec.describe Tools::RecordChangeIntent do
       expect(ChangeIntents::Activate).to have_received(:call).with(change_intent:)
     end
 
+    it "reauthorizes before mutating the draft" do
+      change_intent = create(:change_intent, :draft, project:, chat_session: session)
+      membership = account.account_memberships.find_by!(user: owner)
+
+      expect {
+        described_class.new(user: owner, session:).resolve_confirmation(
+          decision: :approve,
+          pending_result: { "id" => change_intent.id }
+        )
+      }.not_to raise_error
+
+      membership.update!(role: :viewer)
+
+      expect {
+        described_class.new(user: owner, session:).resolve_confirmation(
+          decision: :deny,
+          pending_result: { "id" => change_intent.id }
+        )
+      }.to raise_error(Tools::UnauthorizedError)
+
+      expect(change_intent.reload.status).to eq("active")
+    end
+
     it "deletes the draft on denial" do
       change_intent = create(:change_intent, :draft, project:, chat_session: session)
 

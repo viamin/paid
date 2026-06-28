@@ -56,16 +56,21 @@ module Tools
       change_intent_id = pending_result["id"] || pending_result[:id]
       raise ArgumentError, "pending result must include an id" if change_intent_id.blank?
 
-      change_intent = ChangeIntent.find(change_intent_id)
+      TenantContext.with(account) do
+        change_intent = policy_scope(ChangeIntent).where(project: project_for_session!).find(change_intent_id)
+        authorize(change_intent, :update?, policy_class: ChangeIntentPolicy)
 
-      case decision
-      when :approve
-        ChangeIntents::Activate.call(change_intent:)
-      when :deny
-        ChangeIntents::DiscardDraft.call(change_intent:)
-      else
-        raise ArgumentError, "decision must be approve or deny"
+        case decision
+        when :approve
+          ChangeIntents::Activate.call(change_intent:)
+        when :deny
+          ChangeIntents::DiscardDraft.call(change_intent:)
+        else
+          raise ArgumentError, "decision must be approve or deny"
+        end
       end
+    rescue Pundit::NotAuthorizedError => error
+      raise UnauthorizedError, error.message
     end
 
     private
