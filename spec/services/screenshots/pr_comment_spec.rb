@@ -113,6 +113,103 @@ RSpec.describe Screenshots::PrComment do
       end
     end
 
+    context "with agent-derived change summaries" do
+      let(:annotated_screenshots) do
+        [
+          { route_name: "dashboard", url: "https://s3.example.com/dashboard.png", summary: "New weekly cost card" },
+          { route_name: "sign_in", url: "https://s3.example.com/sign_in.png" }
+        ]
+      end
+
+      def build(previous: {})
+        described_class.new(
+          github_client: github_client,
+          repo: repo,
+          pr_number: pr_number,
+          commit_sha: commit_sha,
+          screenshots: annotated_screenshots,
+          previous_screenshots: previous
+        ).build_comment_body
+      end
+
+      it "adds a 'What changed' column with the summary" do
+        body = build
+
+        expect(body).to include("| Page | What changed | Screenshot |")
+        expect(body).to include("| Dashboard | New weekly cost card | ![dashboard](https://s3.example.com/dashboard.png) |")
+      end
+
+      it "renders an em dash for pages without a summary" do
+        body = build
+
+        expect(body).to include("| Sign In | — | ![sign_in](https://s3.example.com/sign_in.png) |")
+      end
+
+      it "includes the 'What changed' column in the before/after table" do
+        body = build(previous: { "dashboard" => "https://s3.example.com/prev-dashboard.png" })
+
+        expect(body).to include("| Page | What changed | Before | After |")
+        expect(body).to include("| Dashboard | New weekly cost card | ![before-dashboard](https://s3.example.com/prev-dashboard.png) | ![dashboard](https://s3.example.com/dashboard.png) |")
+      end
+
+      it "escapes pipe characters so the table is not broken" do
+        service = described_class.new(
+          github_client: github_client,
+          repo: repo,
+          pr_number: pr_number,
+          commit_sha: commit_sha,
+          screenshots: [ { route_name: "dashboard", url: "https://s3.example.com/dashboard.png", summary: "a | b" } ]
+        )
+
+        expect(service.build_comment_body).to include("a \\| b")
+      end
+
+      it "neutralizes markdown/HTML so an agent summary cannot inject images or links" do
+        service = described_class.new(
+          github_client: github_client,
+          repo: repo,
+          pr_number: pr_number,
+          commit_sha: commit_sha,
+          screenshots: [
+            { route_name: "dashboard", url: "https://s3.example.com/dashboard.png",
+              summary: "![x](https://evil.example/track.png) <img src=y> [click](https://phish.example)" }
+          ]
+        )
+
+        body = service.build_comment_body
+
+        expect(body).not_to include("![x](https://evil.example/track.png)")
+        expect(body).not_to include("<img src=y>")
+        expect(body).not_to include("[click](https://phish.example)")
+        expect(body).to include("\\!\\[x\\]\\(https://evil.example/track.png\\)")
+      end
+
+      it "discloses that capture was scoped when summaries are present" do
+        service = described_class.new(
+          github_client: github_client,
+          repo: repo,
+          pr_number: pr_number,
+          commit_sha: commit_sha,
+          screenshots: annotated_screenshots
+        )
+
+        expect(service.build_comment_body).to include("scoped by Paid")
+      end
+
+      it "keeps the plain table when no screenshot has a summary" do
+        body = described_class.new(
+          github_client: github_client,
+          repo: repo,
+          pr_number: pr_number,
+          commit_sha: commit_sha,
+          screenshots: [ { route_name: "dashboard", url: "https://s3.example.com/dashboard.png" } ]
+        ).build_comment_body
+
+        expect(body).to include("| Page | Screenshot |")
+        expect(body).not_to include("What changed")
+      end
+    end
+
     it "handles empty screenshots" do
       service = described_class.new(
         github_client: github_client,
