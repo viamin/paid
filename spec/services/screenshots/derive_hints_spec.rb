@@ -54,6 +54,23 @@ RSpec.describe Screenshots::DeriveHints, :no_db do
       )
     end
 
+    it "limits summary input by entry count and character count" do
+      captured_prompt = nil
+      response = instance_double(AgentHarness::Response, success?: true, output: "{}")
+      allow(AgentHarness).to receive(:send_message) do |prompt, **|
+        captured_prompt = prompt
+        response
+      end
+      allow(agent_run).to receive(:update!)
+      allow(agent_run).to receive(:agent_summary).with(limit: described_class::MAX_SUMMARY_ENTRIES).and_return("a" * 9_000)
+
+      described_class.call(agent_run: agent_run, routes: routes)
+
+      expect(agent_run).to have_received(:agent_summary).with(limit: described_class::MAX_SUMMARY_ENTRIES)
+      expect(captured_prompt).to include("a" * described_class::MAX_SUMMARY_CHARS)
+      expect(captured_prompt).not_to include("a" * (described_class::MAX_SUMMARY_CHARS + 1))
+    end
+
     it "drops routes that are not in the configured catalog" do
       stub_llm({ "nonexistent" => { "summary" => "x" }, "dashboard" => { "summary" => "real" } }.to_json)
       allow(agent_run).to receive(:update!)

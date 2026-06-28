@@ -18,7 +18,8 @@ module Screenshots
   class DeriveHints
     DEFAULT_MODEL = "claude-sonnet-4-6"
     TIMEOUT = 30
-    MAX_SUMMARY_INPUT = 8_000
+    MAX_SUMMARY_CHARS = 8_000
+    MAX_SUMMARY_ENTRIES = 500
     MAX_FILES = 100
     MAX_HINT_SUMMARY = 200
     MAX_SELECTOR_LENGTH = 200
@@ -152,7 +153,10 @@ module Screenshots
 
       PROMPT
         .sub("{{routes}}", route_lines)
-        .sub("{{agent_summary}}", @agent_run.agent_summary(limit: MAX_SUMMARY_INPUT).presence || "(no summary available)")
+        .sub(
+          "{{agent_summary}}",
+          @agent_run.agent_summary(limit: MAX_SUMMARY_ENTRIES).truncate(MAX_SUMMARY_CHARS, omission: "").presence || "(no summary available)"
+        )
         .sub("{{changed_files}}", file_lines)
     end
   end
