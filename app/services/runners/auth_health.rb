@@ -7,6 +7,7 @@ require "timeout"
 
 module Runners
   class AuthHealth
+    CACHE_TTL = 20.seconds
     EXPIRING_SOON_THRESHOLD = 24.hours
     CLI_TIMEOUT_SECONDS = 5
     SUPPORTED_RUNNER_KEYS = %w[claude].freeze
@@ -46,20 +47,35 @@ module Runners
       new(...).call
     end
 
-    def initialize(account:, host_forwarded_status_by_runner_key: nil)
+    def initialize(account:, host_forwarded_status_by_runner_key: nil, use_cache: true)
       @account = account
       @host_forwarded_status_by_runner_key = host_forwarded_status_by_runner_key
+      @use_cache = use_cache
     end
 
     def call
-      supported_subscription_runners.map do |runner|
-        build_result(runner)
-      end
+      return build_results unless use_cache?
+
+      Rails.cache.fetch(cache_key, expires_in: CACHE_TTL) { build_results }
     end
 
     private
 
     attr_reader :account
+
+    def build_results
+      supported_subscription_runners.map do |runner|
+        build_result(runner)
+      end
+    end
+
+    def use_cache?
+      @use_cache
+    end
+
+    def cache_key
+      "runners/auth_health/#{account.id}"
+    end
 
     def supported_subscription_runners
       @supported_subscription_runners ||= Runner

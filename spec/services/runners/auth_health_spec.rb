@@ -3,6 +3,15 @@
 require "rails_helper"
 
 RSpec.describe Runners::AuthHealth do
+  around do |example|
+    original_cache = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    Rails.cache.clear
+    example.run
+  ensure
+    Rails.cache = original_cache
+  end
+
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account, name: "Runner Owner") }
   let(:runner) { user.runners.find_by!(runner_key: "claude", auth_type: "subscription") }
@@ -174,6 +183,20 @@ RSpec.describe Runners::AuthHealth do
       expect(results.map(&:valid)).to all(be(true))
     end
 
+    it "caches auth health per account to avoid repeated CLI checks on the request path" do
+      runner
+      expires_at = 4.hours.from_now
+      stub_claude_auth_status(stdout: { expiresAt: expires_at.iso8601 }.to_json, success: true)
+
+      first_result = call_auth_health
+      second_result = call_auth_health
+
+      expect(Open3).to have_received(:capture3).once
+      expect(first_result.valid).to be(true)
+      expect(second_result.valid).to be(true)
+      expect(second_result.expires_at).to eq(first_result.expires_at)
+    end
+
     it "reuses a shared host-forwarded status cache when provided" do
       runner
       other_account = create(:account)
@@ -190,6 +213,22 @@ RSpec.describe Runners::AuthHealth do
       expect(second_results.size).to eq(1)
       expect(Open3).to have_received(:capture3).once
       expect(shared_cache.fetch("claude")).to include(valid: true, source: :host_forwarded)
+    end
+
+    it "can bypass the per-account cache when a caller needs a fresh auth check" do
+      runner
+      first_expires_at = 4.hours.from_now
+      second_expires_at = 5.hours.from_now
+      stub_claude_auth_status(stdout: { expiresAt: first_expires_at.iso8601 }.to_json, success: true)
+
+      cached_result = call_auth_health
+
+      stub_claude_auth_status(stdout: { expiresAt: second_expires_at.iso8601 }.to_json, success: true)
+      fresh_result = described_class.call(account: account, use_cache: false).fetch(0)
+
+      expect(Open3).to have_received(:capture3).twice
+      expect(cached_result.expires_at).to be_within(1.second).of(first_expires_at)
+      expect(fresh_result.expires_at).to be_within(1.second).of(second_expires_at)
     end
 
     it "falls back to the native Claude credential file when the CLI is unavailable" do
