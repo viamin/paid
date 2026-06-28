@@ -170,6 +170,7 @@ export default class extends Controller {
     meta.append(roleBadge, modelLabel, timestamp)
 
     const content = document.createElement("div")
+    content.className = "chat-markdown"
     content.dataset.chatMessageTarget = "content"
     content.dataset.rawContent = ""
 

@@ -201,6 +201,11 @@ Rails.application.configure do
       class: "ClaudeAuthHealthCheckJob",
       description: "Check Claude subscription auth health and flag expired or expiring credentials"
     },
+    claude_credential_keep_warm: {
+      cron: "0 */4 * * *",
+      class: "ClaudeCredentialKeepWarmJob",
+      description: "Refresh host-forwarded Claude subscription credentials before expiry (RDR-041 Phase 3)"
+    },
     chat_idle_reaper: {
       cron: "*/5 * * * *",
       class: "ChatSessions::IdleReaperJob",

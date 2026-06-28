@@ -12,7 +12,8 @@
   <% if message.tool_name.present? || message.role == "tool" %>
     <%= render "chat_messages/tool_call", message: message %>
   <% elsif message.role == "assistant" %>
-    <div data-chat-message-target="content"
+    <div class="chat-markdown"
+         data-chat-message-target="content"
          data-raw-content="<%= message.content.to_s %>">
       <%= simple_format(h(message.content.to_s)) %>
     </div>

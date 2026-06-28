@@ -55,7 +55,8 @@ RSpec.describe Screenshots::Capture do
 
     expect(result).to eq([ "#{output_dir}/project_show.png" ])
     expect(Screenshots::CaptureTargets).to have_received(:call).with(
-      changed_files: [ "app/views/projects/show.html.erb" ]
+      changed_files: [ "app/views/projects/show.html.erb" ],
+      repo_path: Rails.root.to_s
     )
   end
 
