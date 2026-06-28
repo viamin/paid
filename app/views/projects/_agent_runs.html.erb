@@ -35,8 +35,9 @@
                 </tr>
               </thead>
               <tbody class="divide-y divide-gray-200 bg-white">
+                <% runner_displays = agent_run_runner_displays(recent_agent_runs) %>
                 <% recent_agent_runs.each do |run| %>
-                  <%= render "projects/agent_run", agent_run: run, project: project %>
+                  <%= render "projects/agent_run", agent_run: run, project: project, runner_displays: runner_displays %>
                 <% end %>
               </tbody>
             </table>
