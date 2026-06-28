@@ -120,13 +120,44 @@ module ChatSessions
     end
 
     def resume_loop
-      ChatSessions::AgentLoop.new(
+      attempted_runners = [ chat_session.runner ].compact
+
+      loop do
+        return ChatSessions::AgentLoop.new(**loop_kwargs).run
+      rescue AgentHarness::RateLimitError => e
+        fallback_runner = ChatSessions::FallbackRunners.for(chat_session: chat_session, excluding: attempted_runners).first
+        raise unless fallback_runner
+
+        attempted_runners << fallback_runner
+        switch_to_fallback_runner(fallback_runner, e)
+      end
+    end
+
+    def loop_kwargs
+      {
         chat_session: chat_session,
         llm_client: llm_client,
         on_chunk: on_chunk,
         on_message_persisted: on_message_persisted,
         stream_message_id: stream_message_id
-      ).run
+      }
+    end
+
+    def switch_to_fallback_runner(runner, error)
+      ChatSessions::FallbackRunners.switch!(chat_session: chat_session, runner: runner)
+      @llm_client = ChatSessions::BuildLlmClient.call(chat_session: chat_session)
+      persist_fallback_notice(runner, error)
+    end
+
+    def persist_fallback_notice(runner, error)
+      message = chat_session.messages.create!(
+        role: "assistant",
+        content: ChatSessions::FallbackRunners.notice_for(error: error, runner: runner),
+        metadata: { "fallback_notice" => true }
+      )
+
+      on_message_persisted&.call(message)
+      message
     end
 
     def update_session_activity

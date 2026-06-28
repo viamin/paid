@@ -313,6 +313,26 @@ RSpec.describe ChatSessions::SendMessage do
       }.not_to raise_error
     end
 
+    it "falls back to a configured chat runner on provider rate limits without duplicating the user message" do
+      primary_client = rate_limited_llm_client
+      fallback_client = inspecting_llm_client(llm_response)
+      fallback_runner = configure_chat_fallback
+      allow(ChatSessions::BuildLlmClient).to receive(:call).with(chat_session: chat_session).and_return(fallback_client)
+
+      result = described_class.call(chat_session: chat_session, content: "Hello", llm_client: primary_client)
+
+      messages = chat_session.messages.order(:created_at)
+      expect(result.content).to eq("I can help with that.")
+      expect(chat_session.reload.runner).to eq(fallback_runner)
+      expect(messages.where(role: "user", content: "Hello").count).to eq(1)
+      expect(messages.pluck(:role)).to eq(%w[user assistant assistant])
+      expect(messages.second.content).to include("Switching to #{fallback_runner.display_name} and continuing.")
+      expect(messages.second.metadata).to include("fallback_notice" => true)
+      expect(fallback_client.seen_conversations.last).not_to include(
+        hash_including(content: messages.second.content)
+      )
+    end
+
     context "with tool calls in response" do
       let(:tool_llm_client) { build_stateful_llm_client(successful_tool_llm_responses) }
 
@@ -481,6 +501,43 @@ RSpec.describe ChatSessions::SendMessage do
         responses.fetch(seen_conversations.length - 1)
       end
     end.new(responses)
+  end
+
+  def rate_limited_llm_client
+    Class.new do
+      def call(*)
+        raise AgentHarness::RateLimitError, "API rate limit exceeded"
+      end
+    end.new
+  end
+
+  def inspecting_llm_client(response)
+    Class.new do
+      attr_reader :seen_conversations
+
+      def initialize(response)
+        @response = response
+        @seen_conversations = []
+      end
+
+      def call(conversation, **)
+        @seen_conversations << conversation.deep_dup
+        @response
+      end
+    end.new(response)
+  end
+
+  def configure_chat_fallback
+    primary_runner = create(:runner, :api_key, user: user, runner_key: "opencode",
+      provider_api_key: create(:provider_api_key, user: user, api_service_type: "openrouter"),
+      config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2" } })
+    user.runners.find_or_create_by!(runner_key: "claude", auth_type: "subscription")
+    fallback_runner = create(:runner, :api_key, user: user, runner_key: "claude",
+      provider_api_key: create(:provider_api_key, user: user, api_service_type: "anthropic"))
+
+    user.settings.update!(kb_chat_fallback_runners: [ "claude" ])
+    chat_session.update!(runner: primary_runner)
+    fallback_runner
   end
 
   def successful_tool_llm_responses

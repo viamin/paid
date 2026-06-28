@@ -130,6 +130,19 @@ RSpec.describe "ChatMessages" do
           "error" => "Chat requires a configured API-key runner. Add a chat-enabled runner with an API key and select it for this session."
         )
       end
+
+      it "returns provider rate limit errors as too many requests" do
+        allow(ChatSessions::BuildLlmClient).to receive(:call).with(chat_session: chat_session).and_return(instance_double(Proc))
+        allow(ChatSessions::SendMessage).to receive(:call)
+          .and_raise(AgentHarness::RateLimitError, "API rate limit exceeded: Weekly/Monthly Limit Exhausted")
+
+        post chat_session_chat_messages_path(chat_session), params: { content: "Hello" }
+
+        expect(response).to have_http_status(:too_many_requests)
+        expect(response.parsed_body).to eq(
+          "error" => "API rate limit exceeded: Weekly/Monthly Limit Exhausted"
+        )
+      end
     end
 
     context "when authenticated with SSE response" do
@@ -195,6 +208,29 @@ RSpec.describe "ChatMessages" do
         data = JSON.parse(response.body.scan(/event: message_tool_result\ndata: (.+)\n/).flatten.first)
         expect(data).to include("tool_name" => "search", "tool_call_id" => "call_abc",
           "role" => "tool", "tool_result" => { "results" => [ "item" ] }, "stream_message_id" => stream_id)
+      end
+
+      it "emits message_created for fallback notices" do
+        assistant_msg = create(:chat_message, :assistant, chat_session: chat_session, tokens_input: 10, tokens_output: 5)
+        fallback_notice = create(:chat_message, :assistant, chat_session: chat_session,
+          content: "Switching to Claude and continuing.",
+          metadata: { "fallback_notice" => true })
+        allow(ChatSessions::BuildLlmClient).to receive(:call).and_return(instance_double(Proc))
+        allow(ChatSessions::SendMessage).to receive(:call) do |**args|
+          args[:on_message_persisted].call(fallback_notice, stream_message_id: SecureRandom.uuid)
+          assistant_msg
+        end
+
+        post chat_session_chat_messages_path(chat_session),
+          params: { content: "Hello" }, headers: { "Accept" => "text/event-stream" }
+
+        data = JSON.parse(response.body.scan(/event: message_created\ndata: (.+)\n/).flatten.first)
+        expect(data).to include(
+          "role" => "assistant",
+          "content" => "Switching to Claude and continuing.",
+          "fallback_notice" => true,
+          "stream_message_id" => nil
+        )
       end
 
       it "does not emit tool events for regular user or assistant messages" do

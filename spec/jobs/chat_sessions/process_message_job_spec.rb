@@ -208,6 +208,42 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
       .with(hash_including(type: "error", message: "limit reached"))
   end
 
+  it "broadcasts provider rate limit errors" do
+    allow(ChatSessions::SendMessage).to receive(:call)
+      .and_raise(AgentHarness::RateLimitError, "API rate limit exceeded: Weekly/Monthly Limit Exhausted")
+
+    expect {
+      described_class.perform_now(
+        chat_session_id: chat_session.id,
+        content: "Hello",
+        stream_message_id: stream_message_id
+      )
+    }.to have_broadcasted_to(stream_name)
+      .with(hash_including(type: "error", message: "API rate limit exceeded: Weekly/Monthly Limit Exhausted"))
+  end
+
+  it "broadcasts a fallback notice and continues when a fallback runner is configured" do
+    fallback_runner = configure_chat_fallback
+    allow(ChatSessions::BuildLlmClient).to receive(:call)
+      .and_return(rate_limited_llm_client, successful_fallback_llm_client)
+
+    expect {
+      described_class.perform_now(
+        chat_session_id: chat_session.id,
+        content: "Hello",
+        stream_message_id: stream_message_id
+      )
+    }.to have_broadcasted_to(stream_name)
+      .with(hash_including(type: "message_created", role: "assistant",
+        fallback_notice: true,
+        html: include("Switching to #{fallback_runner.display_name} and continuing.")))
+      .and have_broadcasted_to(stream_name)
+      .with(hash_including(type: "message_created", role: "assistant",
+        html: include("Fallback answer")))
+      .and have_broadcasted_to(stream_name)
+      .with(hash_including(type: "message_complete", tokens: { input: 10, output: 5 }))
+  end
+
   it "broadcasts generic error for unexpected failures" do
     allow(ChatSessions::SendMessage).to receive(:call)
       .and_raise(StandardError, "provider timeout")
@@ -230,5 +266,35 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
         stream_message_id: stream_message_id
       )
     }.not_to raise_error
+  end
+
+  def rate_limited_llm_client
+    Class.new do
+      def call(*)
+        raise AgentHarness::RateLimitError, "API rate limit exceeded"
+      end
+    end.new
+  end
+
+  def successful_fallback_llm_client
+    instance_double(Proc, call: {
+      content: "Fallback answer",
+      tool_calls: [],
+      tokens_input: 10,
+      tokens_output: 5,
+      model: "claude"
+    })
+  end
+
+  def configure_chat_fallback
+    primary_runner = create(:runner, :api_key, user: user, runner_key: "opencode",
+      provider_api_key: create(:provider_api_key, user: user, api_service_type: "openrouter"),
+      config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2" } })
+    fallback_runner = create(:runner, :api_key, user: user, runner_key: "claude",
+      provider_api_key: create(:provider_api_key, user: user, api_service_type: "anthropic"))
+
+    user.settings.update!(kb_chat_fallback_runners: [ "claude" ])
+    chat_session.update!(runner: primary_runner)
+    fallback_runner
   end
 end
