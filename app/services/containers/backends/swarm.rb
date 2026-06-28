@@ -115,6 +115,10 @@ module Containers
         manager_connection.ping
       end
 
+      def system_info
+        manager_connection.info
+      end
+
       def container_host_for(container)
         node_hostname(node_for(container)) || identifier
       end
