@@ -153,9 +153,53 @@ RSpec.describe Capacity::DockerSnapshot do
       expect(snapshot.bucket(:paid_agents).container_count).to eq(2)
       expect(snapshot.bucket(:other_docker).container_count).to eq(1)
     end
+
+    it "cuts off container sampling once the shared deadline is exhausted" do
+      monotonic_times = [
+        100.0,
+        100.0,
+        100.2,
+        100.4,
+        103.1
+      ]
+      snapshotter = described_class.new(backend: backend, now: now, cache: cache, force_refresh: true)
+      allow(snapshotter).to receive(:monotonic_now) { monotonic_times.shift || 103.1 }
+
+      snapshot = snapshotter.call
+
+      expect(snapshot).to be_degraded
+      expect(snapshot.available_memory_bytes).to eq(0)
+      expect(snapshot.degraded_reasons).to include("container_sampling_budget_exceeded")
+      expect(snapshot.bucket(:paid_agents)).to have_attributes(container_count: 1, memory_bytes: 3_000, cpu_percent: 22.0)
+      expect(snapshot.bucket(:other_docker)).to have_attributes(container_count: 6, memory_bytes: 0, cpu_percent: 0.0)
+    end
+
+    it "only treats compose workdirs with an exact paid basename as control plane containers" do
+      stub_compose_labels(containers[3], container_rows[3], {
+        "com.docker.compose.project" => "random",
+        "com.docker.compose.project.working_dir" => "/srv/unpaid-tools"
+      })
+      stub_compose_labels(containers[4], container_rows[4], {
+        "com.docker.compose.project" => "random",
+        "com.docker.compose.project.working_dir" => "C:\\src\\paid",
+        "com.docker.compose.service" => "postgres"
+      })
+
+      snapshot = described_class.call(backend: backend, now: now, cache: cache, force_refresh: true)
+
+      expect(snapshot.bucket(:paid_control_plane)).to have_attributes(container_count: 2, memory_bytes: 1_600, cpu_percent: 6.0)
+      expect(snapshot.bucket(:other_docker)).to have_attributes(container_count: 2, memory_bytes: 2_300, cpu_percent: 12.0)
+    end
   end
 
   def load_fixture(name)
     JSON.parse(file_fixture("capacity/docker_snapshot/#{name}").read)
+  end
+
+  def stub_compose_labels(container, row, labels)
+    info = row.fetch("info")
+    allow(container).to receive(:info).and_return(
+      info.merge("Labels" => info.fetch("Labels").merge(labels))
+    )
   end
 end

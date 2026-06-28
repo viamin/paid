@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "pathname"
 require "set"
 require "timeout"
 
@@ -87,6 +88,8 @@ module Capacity
     DOCKER_INFO_TIMEOUT = 2.seconds
     DOCKER_LIST_TIMEOUT = 2.seconds
     DOCKER_CONTAINER_TIMEOUT = 1.second
+    DOCKER_SAMPLING_BUDGET = 3.seconds
+    PAID_COMPOSE_PROJECT = "paid"
 
     PAID_COMPOSE_SERVICES = %w[
       postgres
@@ -202,10 +205,21 @@ module Capacity
       references = build_references
       buckets = deep_dup_buckets
       degraded_reasons = []
+      sampling_deadline = monotonic_now + DOCKER_SAMPLING_BUDGET
+      running_containers = list_running_containers
 
-      list_running_containers.each do |container|
+      running_containers.each_with_index do |container, index|
+        if sampling_budget_exceeded?(sampling_deadline)
+          degraded_reasons << "container_sampling_budget_exceeded"
+          classify_remaining_containers_as_other_docker(
+            containers: running_containers.drop(index),
+            bucket: buckets.fetch(:other_docker)
+          )
+          break
+        end
+
         classification = classify_container(container: container, references: references)
-        stats = sample_container(container)
+        stats = sample_container(container, deadline: sampling_deadline)
 
         if stats.nil?
           degraded_reasons << "container_sample_failed"
@@ -244,8 +258,13 @@ module Capacity
       containers.select { |container| running_container?(container.info) }
     end
 
-    def sample_container(container)
-      raw = with_timeout(DOCKER_CONTAINER_TIMEOUT) { backend.container_stats(container, stream: false) }
+    def sample_container(container, deadline:)
+      remaining_budget = deadline - monotonic_now
+      return nil if remaining_budget <= 0
+
+      raw = with_timeout([ DOCKER_CONTAINER_TIMEOUT, remaining_budget ].min) do
+        backend.container_stats(container, stream: false)
+      end
       parsed = Containers::DockerStatsParser.parse_stats(raw)
 
       {
@@ -305,7 +324,28 @@ module Capacity
       return false unless compose_service.present?
       return false unless PAID_COMPOSE_SERVICES.include?(compose_service)
 
-      compose_project == "paid" || compose_workdir.to_s.include?("/paid")
+      paid_compose_project?(compose_project) || paid_compose_workdir?(compose_workdir)
+    end
+
+    def paid_compose_project?(compose_project)
+      normalize_compose_project(compose_project) == PAID_COMPOSE_PROJECT
+    end
+
+    def paid_compose_workdir?(compose_workdir)
+      normalize_compose_workdir(compose_workdir)&.basename&.to_s == PAID_COMPOSE_PROJECT
+    rescue ArgumentError
+      false
+    end
+
+    def normalize_compose_project(compose_project)
+      compose_project.to_s.strip.downcase
+    end
+
+    def normalize_compose_workdir(compose_workdir)
+      raw = compose_workdir.to_s.strip
+      return if raw.blank?
+
+      Pathname.new(raw.tr("\\", "/")).cleanpath
     end
 
     def container_labels(info)
@@ -325,6 +365,12 @@ module Capacity
       bucket.container_count += 1
       bucket.memory_bytes += memory_bytes
       bucket.cpu_percent = (bucket.cpu_percent + cpu_percent).round(2)
+    end
+
+    def classify_remaining_containers_as_other_docker(containers:, bucket:)
+      containers.each do |_container|
+        accumulate_bucket(bucket, memory_bytes: 0, cpu_percent: 0.0)
+      end
     end
 
     def remaining_memory(system_info:, buckets:)
@@ -381,6 +427,14 @@ module Capacity
 
     def with_timeout(duration, &block)
       Timeout.timeout(duration, &block)
+    end
+
+    def monotonic_now
+      Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    end
+
+    def sampling_budget_exceeded?(deadline)
+      monotonic_now >= deadline
     end
 
     def deep_dup_buckets
