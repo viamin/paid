@@ -86,6 +86,7 @@ RSpec.describe "UserSettings" do
         patch user_settings_path, params: {
           user_setting: {
             agent_timeout_seconds: 7200,
+            agent_update_comment_mode: "summary",
             max_execution_seconds: 5400,
             default_agent_runner: "cursor"
           }
@@ -93,6 +94,7 @@ RSpec.describe "UserSettings" do
         expect(response).to redirect_to(edit_user_settings_path)
         settings = user.reload.settings
         expect(settings.agent_timeout_seconds).to eq(7200)
+        expect(settings.agent_update_comment_mode).to eq("summary")
         expect(settings.max_execution_seconds).to eq(5400)
         expect(settings.default_agent_runner).to eq(cursor.routing_key)
       end

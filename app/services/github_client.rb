@@ -248,6 +248,25 @@ class GithubClient
     end
   end
 
+  # Compares two commits and returns bounded metadata suitable for public
+  # change-summary generation.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param base [String] Base commit SHA
+  # @param head [String] Head commit SHA
+  # @return [Hash] Compare metadata with commits and changed files
+  def compare_summary(repo, base, head)
+    handle_errors do
+      comparison = client.compare(repo, base, head)
+      {
+        ahead_by: comparison.ahead_by.to_i,
+        total_commits: comparison.total_commits.to_i,
+        commits: compare_commits_payload(comparison.commits || []),
+        files: compare_files_payload(comparison.files || [])
+      }
+    end
+  end
+
   # Creates an issue on a repository.
   #
   # @param repo [String] Repository in "owner/name" format
@@ -1594,6 +1613,28 @@ class GithubClient
     parse_timestamp(header)
   rescue ArgumentError
     nil
+  end
+
+  def compare_commits_payload(commits)
+    commits.map do |commit|
+      {
+        sha: commit.sha.to_s,
+        message: commit.commit&.message.to_s
+      }
+    end
+  end
+
+  def compare_files_payload(files)
+    files.map do |file|
+      {
+        filename: file.filename.to_s,
+        status: file.status.to_s,
+        additions: file.additions.to_i,
+        deletions: file.deletions.to_i,
+        changes: file.changes.to_i,
+        patch: file.patch.to_s
+      }
+    end
   end
 
   def handle_errors
