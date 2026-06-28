@@ -111,6 +111,49 @@ RSpec.describe Knowledge::Collectors::DecisionRecordCollector do
       end
     end
 
+    context "with active change intents" do
+      let!(:record) do
+        create(:change_intent,
+          project: project,
+          title: "Prefer sliding window rate limiting",
+          intent: "Prevent bursty throttling behavior.",
+          behavior: "Given sustained requests, when limits are hit, then throttling should remain smooth.",
+          constraints: "Use Redis and existing middleware hooks.",
+          decisions_made: "Rejected token bucket because smoother throttling was the higher priority.",
+          status: "active")
+      end
+
+      let(:artifact) { collector.collect.find { |entry| entry[:artifact_type] == "change_intent" } }
+
+      it "returns one change_intent artifact per record" do
+        expect(collector.collect.count { |entry| entry[:artifact_type] == "change_intent" }).to eq(1)
+      end
+
+      it "uses the change_intent artifact type" do
+        expect(artifact[:artifact_type]).to eq("change_intent")
+      end
+
+      it "stores change intent metadata" do
+        expect(artifact[:metadata]).to include(
+          change_intent_id: record.id,
+          status: "active",
+          chat_session_id: record.chat_session_id,
+          issue_id: record.issue_id
+        )
+      end
+
+      it "builds content with change intent sections" do
+        expect(artifact[:content]).to include("## Intent")
+        expect(artifact[:content]).to include("## Behavior")
+        expect(artifact[:content]).to include("## Constraints")
+        expect(artifact[:content]).to include("## Decisions Made")
+      end
+
+      it "builds summary, context, and evidence chunks" do
+        expect(artifact[:chunks].map { |chunk| chunk[:chunk_type] }).to eq(%w[summary context context evidence])
+      end
+    end
+
     context "with optional fields absent" do
       let(:record) do
         create(:decision_record,
@@ -169,6 +212,7 @@ RSpec.describe Knowledge::Collectors::DecisionRecordCollector do
     context "with records from another project" do
       before do
         create(:decision_record) # different project
+        create(:change_intent) # different project
       end
 
       it "excludes records from other projects" do

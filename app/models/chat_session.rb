@@ -19,6 +19,7 @@ class ChatSession < ApplicationRecord
 
   has_many :messages, class_name: "ChatMessage", dependent: :destroy
   has_many :token_usages, dependent: :destroy
+  has_many :change_intents, dependent: :nullify
   has_many :chat_session_projects, dependent: :destroy
   has_many :projects, through: :chat_session_projects
 
