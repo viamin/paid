@@ -46,6 +46,7 @@ export default class extends Controller {
     const safeContent = this.escapeHtml(rawContent)
 
     try {
+      this.disablePlainTextFallback()
       this.contentTarget.innerHTML = marked.parse(safeContent, {
         breaks: true,
         gfm: true,
@@ -54,6 +55,7 @@ export default class extends Controller {
 
       this.decorateCodeBlocks()
     } catch {
+      this.enablePlainTextFallback()
       this.contentTarget.textContent = rawContent
     }
   }
@@ -128,5 +130,13 @@ export default class extends Controller {
       .replaceAll("&", "&amp;")
       .replaceAll("<", "&lt;")
       .replaceAll(">", "&gt;")
+  }
+
+  enablePlainTextFallback() {
+    this.contentTarget.classList.add("whitespace-pre-wrap", "break-words")
+  }
+
+  disablePlainTextFallback() {
+    this.contentTarget.classList.remove("whitespace-pre-wrap", "break-words")
   }
 }

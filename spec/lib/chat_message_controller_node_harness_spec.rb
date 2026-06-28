@@ -18,11 +18,26 @@ class ChatMessageControllerNodeHarness
     const ChatMessageController = new Function("marked", transformed)(marked);
 
     function makeController(rawContent) {
+      const classes = new Set(["chat-markdown"]);
       const controller = Object.create(ChatMessageController.prototype);
       const content = {
         dataset: { rawContent },
         innerHTML: "",
         textContent: "",
+        className: "chat-markdown",
+        classList: {
+          add(...tokens) {
+            tokens.forEach((token) => classes.add(token));
+            content.className = [...classes].join(" ");
+          },
+          remove(...tokens) {
+            tokens.forEach((token) => classes.delete(token));
+            content.className = [...classes].join(" ");
+          },
+          contains(token) {
+            return classes.has(token);
+          }
+        },
         querySelectorAll: () => []
       };
 
@@ -68,14 +83,29 @@ class ChatMessageControllerNodeHarness
       if (content.textContent !== "<script>alert(1)</script>") {
         throw new Error(`Expected raw text fallback, got: ${content.textContent}`);
       }
+      if (!content.classList.contains("whitespace-pre-wrap") || !content.classList.contains("break-words")) {
+        throw new Error(`Expected fallback to preserve whitespace, got classes: ${content.className}`);
+      }
       if (content.innerHTML) {
         throw new Error(`Expected fallback not to write innerHTML, got: ${content.innerHTML}`);
+      }
+    }
+
+    function testMarkdownSuccessRemovesFallbackFormatting() {
+      const { controller, content } = makeController("line one\\nline two");
+      content.classList.add("whitespace-pre-wrap", "break-words");
+
+      controller.render();
+
+      if (content.classList.contains("whitespace-pre-wrap") || content.classList.contains("break-words")) {
+        throw new Error(`Expected successful parse to clear fallback classes, got: ${content.className}`);
       }
     }
 
     function run() {
       testMarkdownRendersSafeHtml();
       testMarkdownFailureFallsBackToText();
+      testMarkdownSuccessRemovesFallbackFormatting();
     }
 
     try {
