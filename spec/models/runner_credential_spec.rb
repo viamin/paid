@@ -203,5 +203,23 @@ RSpec.describe RunnerCredential do
       expect(raw_value).not_to eq("sk-ant-oat01-secret")
       expect(credential.token).to eq("sk-ant-oat01-secret")
     end
+
+    it "excludes token from logidze history" do
+      credential = create(:runner_credential, token: "sk-ant-oat01-secret")
+
+      credential.update!(name: "Updated Credential", token: "sk-ant-oat01-rotated")
+
+      log_history = credential.reload.log_data
+      history = log_history.data.fetch("h")
+      latest_change = history.last.fetch("c")
+      log_data = log_history.to_json
+
+      expect(latest_change).to eq(
+        "name" => "Updated Credential",
+        "updated_at" => latest_change.fetch("updated_at")
+      )
+      expect(log_data).not_to include("sk-ant-oat01-secret")
+      expect(log_data).not_to include("sk-ant-oat01-rotated")
+    end
   end
 end
