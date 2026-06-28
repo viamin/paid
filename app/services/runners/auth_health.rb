@@ -72,7 +72,7 @@ module Runners
         if (credential = managed_credential_for(runner.runner_key))
           managed_token_status(credential)
         else
-          host_forwarded_status(runner.runner_key)
+          cached_host_forwarded_status(runner.runner_key)
         end
 
       Result.new(
@@ -115,6 +115,14 @@ module Runners
       }
     end
 
+    def cached_host_forwarded_status(runner_key)
+      host_forwarded_status_by_runner_key[runner_key.to_s] ||= host_forwarded_status(runner_key)
+    end
+
+    def host_forwarded_status_by_runner_key
+      @host_forwarded_status_by_runner_key ||= {}
+    end
+
     def host_forwarded_status(runner_key)
       case runner_key.to_s
       when "claude"
@@ -134,11 +142,15 @@ module Runners
       payload = parse_json(stdout)
       return nil unless payload
 
+      error = auth_error_message(payload)
+      error ||= cli_error_message(payload, stderr: stderr, stdout: stdout) unless status.success?
+      valid = status.success? && error.blank?
+
       {
-        valid: status.success?,
+        valid: valid,
         expires_at: extract_expires_at(payload),
         source: :host_forwarded,
-        error: status.success? ? nil : cli_error_message(payload, stderr: stderr, stdout: stdout)
+        error: error
       }
     rescue Errno::ENOENT
       nil
@@ -173,13 +185,17 @@ module Runners
     end
 
     def cli_error_message(payload, stderr:, stdout:)
+      return stderr.presence || stdout.presence || "Claude authentication is unavailable" unless payload.is_a?(Hash)
+
+      auth_error_message(payload) || stderr.presence || stdout.presence || "Claude authentication is unavailable"
+    end
+
+    def auth_error_message(payload)
       [
         payload["error"],
         payload["message"],
-        payload.dig("auth", "error"),
-        stderr.presence,
-        stdout.presence
-      ].find(&:present?) || "Claude authentication is unavailable"
+        payload.dig("auth", "error")
+      ].find(&:present?)
     end
 
     def extract_expires_at(payload)

@@ -6,16 +6,17 @@ RSpec.describe Runners::AuthHealth do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account, name: "Runner Owner") }
   let(:runner) { user.runners.find_by!(runner_key: "claude", auth_type: "subscription") }
+  let(:stderr) { "" }
 
   def call_auth_health
     described_class.call(account: account).fetch(0)
   end
 
-  def stub_claude_auth_status(stdout:, success:)
+  def stub_claude_auth_status(stdout:, success:, stderr: self.stderr)
     status = instance_double(Process::Status, success?: success)
     allow(Open3).to receive(:capture3)
       .with({}, "claude", "auth", "status", "--json")
-      .and_return([ stdout, "", status ])
+      .and_return([ stdout, stderr, status ])
   end
 
   def with_claude_credentials(payload)
@@ -88,6 +89,38 @@ RSpec.describe Runners::AuthHealth do
       expect(result.expires_at).to be_within(1.second).of(expires_at)
       expect(result.source).to eq(:host_forwarded)
       expect(result.error).to be_nil
+    end
+
+    it "treats Claude auth error payloads as invalid even when the CLI exits successfully" do
+      runner
+      stub_claude_auth_status(
+        stdout: {
+          error: "Token expired",
+          message: "Please run claude auth login"
+        }.to_json,
+        success: true
+      )
+
+      result = call_auth_health
+
+      expect(result.valid).to be(false)
+      expect(result.expires_at).to be_nil
+      expect(result.source).to eq(:host_forwarded)
+      expect(result.error).to eq("Token expired")
+    end
+
+    it "checks each host-forwarded runner key only once per service call" do
+      runner
+      other_user = create(:user, account: account, name: "Second Runner Owner")
+      other_user.runners.find_by!(runner_key: "claude", auth_type: "subscription")
+      expires_at = 4.hours.from_now
+      stub_claude_auth_status(stdout: { expiresAt: expires_at.iso8601 }.to_json, success: true)
+
+      results = described_class.call(account: account)
+
+      expect(results.size).to eq(2)
+      expect(Open3).to have_received(:capture3).once
+      expect(results.map(&:valid)).to all(be(true))
     end
 
     it "falls back to the native Claude credential file when the CLI is unavailable" do
