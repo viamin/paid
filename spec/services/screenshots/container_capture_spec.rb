@@ -31,6 +31,7 @@ RSpec.describe Screenshots::ContainerCapture do
     allow(service).to receive(:provision_capture_container) { service.instance_variable_set(:@network, "paid-test") }
     allow(service).to receive(:checkout_branch!)
     allow(Screenshots::PrComment).to receive(:call)
+    allow(Screenshots::DeriveHints).to receive(:call).and_return({})
     allow(Screenshots::ConfigParser).to receive_messages(from_repo_path: config, ui_detection_overrides: {})
     allow(service).to receive_messages(
       fetch_changed_files: [ "app/views/home/index.html.erb" ],
@@ -148,5 +149,47 @@ RSpec.describe Screenshots::ContainerCapture do
     expect(command).to include("SCREENSHOT_APP_PATH=/it\\'s-a-path")
     expect(command).to include('ENV.fetch("SCREENSHOT_APP_PATH")')
     expect(command).not_to include(%q(uri = URI("http://localhost:3000/it's-a-path")))
+  end
+
+  describe "#screenshot_config_json (capture scoping and annotation)" do
+    let(:multi_route_config) do
+      Screenshots::Configuration.from_hash(
+        "base_url" => "http://localhost:3000",
+        "routes" => [
+          { "path" => "/dashboard", "name" => "dashboard" },
+          { "path" => "/settings", "name" => "settings" }
+        ]
+      )
+    end
+
+    before { allow(service).to receive(:config).and_return(multi_route_config) }
+
+    it "captures every configured route when there are no hints" do
+      routes = JSON.parse(service.send(:screenshot_config_json)).fetch("routes")
+
+      expect(routes.map { |r| r["name"] }).to contain_exactly("dashboard", "settings")
+      expect(routes).to all(satisfy { |r| !r.key?("annotation") })
+    end
+
+    it "scopes capture to hinted routes and attaches their annotations" do
+      service.instance_variable_set(:@hints, {
+        "dashboard" => { "summary" => "New cost card", "selector" => "[data-testid='cost']" }
+      })
+
+      routes = JSON.parse(service.send(:screenshot_config_json)).fetch("routes")
+
+      expect(routes.map { |r| r["name"] }).to eq([ "dashboard" ])
+      expect(routes.first["annotation"]).to eq(
+        "summary" => "New cost card", "selector" => "[data-testid='cost']"
+      )
+    end
+
+    it "falls back to all routes when hints match no configured route" do
+      service.instance_variable_set(:@hints, { "nonexistent" => { "summary" => "x" } })
+
+      routes = JSON.parse(service.send(:screenshot_config_json)).fetch("routes")
+
+      expect(routes.map { |r| r["name"] }).to contain_exactly("dashboard", "settings")
+    end
   end
 end

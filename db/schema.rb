@@ -259,6 +259,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_051307) do
     t.bigint "runner_id"
     t.integer "runner_switches", default: 0, null: false
     t.jsonb "runners_attempted", default: [], null: false
+    t.jsonb "screenshot_hints", default: {}, null: false, comment: "Per-route screenshot hints derived from the agent's change (route name => {summary, selector}). Used to scope and annotate UI screenshots to what the agent actually changed."
     t.jsonb "service_container_ids", default: []
     t.jsonb "service_environment", default: {}
     t.integer "source_pull_request_number"
