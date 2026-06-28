@@ -37,6 +37,7 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
       ]
     }
   end
+  let(:summary_base_sha) { agent_run.external_metadata["pre_run_head_sha"] || agent_run.base_commit_sha }
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
@@ -83,6 +84,17 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
         usage: hash_including(metadata: { operation: "agent_update_summary" }),
         enforce_guardrails: false
       )
+    end
+
+    it "summarizes only the new push when a pre-run PR head SHA was recorded" do
+      agent_run.update!(external_metadata: { "pre_run_head_sha" => "fedcba9876543210012345678901234567890abc" })
+      enable_summary_comments
+
+      expect(github_client).to receive(:compare_summary)
+        .with(project.full_name, "fedcba9876543210012345678901234567890abc", agent_run.result_commit_sha)
+        .and_return(summary_comparison)
+
+      activity.execute(agent_run_id: agent_run.id)
     end
 
     it "skips the comment when summary comments are enabled but no commit range exists" do
@@ -246,7 +258,7 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
   def enable_summary_comments
     project.effective_owner.settings.update!(agent_update_comment_mode: "summary")
     allow(github_client).to receive(:compare_summary)
-      .with(project.full_name, agent_run.base_commit_sha, agent_run.result_commit_sha)
+      .with(project.full_name, summary_base_sha, agent_run.result_commit_sha)
       .and_return(summary_comparison)
     allow(AgentHarness).to receive(:send_message).and_return(summary_response)
   end

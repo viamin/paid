@@ -113,18 +113,23 @@ module Activities
     end
 
     def generate_summary(client, project, pr_number, agent_run)
-      return if agent_run.base_commit_sha.blank? || agent_run.result_commit_sha.blank?
+      summary_base_sha = summary_base_sha(agent_run)
+      return if summary_base_sha.blank? || agent_run.result_commit_sha.blank?
 
-      comparison = client.compare_summary(project.full_name, agent_run.base_commit_sha, agent_run.result_commit_sha)
+      comparison = client.compare_summary(project.full_name, summary_base_sha, agent_run.result_commit_sha)
       result = Llm::GenerateAgentUpdateSummary.call(
         repository: project.full_name,
         pr_number: pr_number,
-        base_sha: agent_run.base_commit_sha,
+        base_sha: summary_base_sha,
         head_sha: agent_run.result_commit_sha,
         comparison: comparison
       )
       track_summary_tokens(agent_run, result&.response)
       result&.body
+    end
+
+    def summary_base_sha(agent_run)
+      agent_run.external_metadata["pre_run_head_sha"].presence || agent_run.base_commit_sha
     end
 
     def track_summary_tokens(agent_run, response)

@@ -1809,6 +1809,15 @@ expect(container_service).to receive(:execute).with(
         activity.execute(agent_run_id: agent_run.id)
       end
 
+      it "persists the pre-run head SHA for existing PR runs" do
+        agent_run.update!(source_pull_request_number: 42)
+        allow(git_ops).to receive(:has_changes_since?).and_return(false)
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(agent_run.reload.external_metadata).to include("pre_run_head_sha" => "pre_agent_sha_abc123")
+      end
+
       it "starts the agent run before execution" do
         allow(git_ops).to receive(:has_changes_since?).and_return(false)
 

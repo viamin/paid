@@ -2829,7 +2829,9 @@ module Activities
         container_service: container_service,
         agent_run: agent_run
       )
-      git_ops.head_sha
+      sha = git_ops.head_sha
+      persist_pre_run_head_sha(agent_run, sha)
+      sha
     rescue => e
       logger.warn(
         message: "agent_execution.capture_head_sha_failed",
@@ -2856,6 +2858,16 @@ module Activities
       end
 
       agent_run.log!("system", "Auto-committed uncommitted agent changes") if committed
+    end
+
+    def persist_pre_run_head_sha(agent_run, sha)
+      return if sha.blank?
+      return unless agent_run.existing_pr?
+
+      metadata = agent_run.external_metadata.deep_dup
+      return if metadata["pre_run_head_sha"] == sha
+
+      agent_run.update!(external_metadata: metadata.merge("pre_run_head_sha" => sha))
     end
 
     # Evaluates pre-commit requirements for the agent run.
