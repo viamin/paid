@@ -6,6 +6,10 @@
 
 > Originally numbered RDR-024. Renumbered to RDR-033 to resolve collision with RDR-024 (Multi-Tenancy Isolation Strategy).
 
+## Implementation Status
+
+Implemented for the advisory algorithm and simulator. Paid has `Scaling::WorkerPoolAdvisor`, `Scaling::Configuration`, `Scaling::MetricsSnapshot`, and `Scaling::Simulator`; wiring advisor recommendations into live infrastructure autoscaling remains outside this RDR's pure-function scope unless a separate operational rollout is planned.
+
 ## Context
 
 Paid's worker pools (GoodJob threads, Temporal activity slots, Docker containers) are currently statically sized. As workload grows and varies throughout the day, fixed pools either waste resources during quiet periods or bottleneck during bursts. We need an algorithm that recommends when to add or remove workers based on observable metrics, while respecting cost constraints and avoiding thrashing.

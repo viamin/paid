@@ -5,11 +5,15 @@
 ## Metadata
 
 - **Date**: 2026-05-15
-- **Status**: Draft
+- **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: P1
 - **Related Issues**: #2019 (foundation), #2020 (sync hooks), #2021 (remove throttling), #2022 (dependency resolution)
 - **Related RDRs**: RDR-023 (Automation Modularization), RDR-031 (Focused Agent Runs)
+
+## Implementation Status
+
+Implemented with follow-up hardening. Paid eagerly enqueues eligible issues through single and bulk enqueue services, issue sync hooks, auto-pick enablement hooks, and dependency-unblock hooks; the queue processor is now dequeue-oriented and dashboard preview reads already queued work. A remaining hardening gap is a general dequeue-time eligibility recheck for queued runs whose issues become ineligible after seeding.
 
 ## Problem Statement
 

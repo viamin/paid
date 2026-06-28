@@ -5,12 +5,16 @@
 ## Metadata
 
 - **Date**: 2026-05-24
-- **Status**: Proposed
+- **Status**: Accepted
 - **Type**: Architecture
 - **Priority**: High
 - **Related Issues**: #2254, #2249
 - **Related RDRs**: [RDR-009](RDR-009-prompt-evolution.md) (Prompt Evolution)
 - **Related Tests**: (to be created during implementation)
+
+## Implementation Status
+
+Accepted but not implemented. Paid still has direct `StyleGuide` records with Logidze history and prompt injection through `StyleGuides::InjectIntoPrompt`; the versioning, style-guide A/B tests, exposure tracking, evolution workflow, and quality attribution pipeline described here have not been added.
 
 ## Problem Statement
 

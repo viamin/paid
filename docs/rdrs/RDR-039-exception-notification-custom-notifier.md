@@ -5,11 +5,15 @@
 ## Metadata
 
 - **Date**: 2026-05-30
-- **Status**: Draft
+- **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: P2
-- **Related Issues**: TBD (umbrella issue filed alongside this RDR)
+- **Related Issues**: #2395 (umbrella), #2388, #2389, #2390, #2391, #2392, #2393, #2394
 - **Related RDRs**: [RDR-011](RDR-011-observability.md) (observability stack), [RDR-029](RDR-029-multi-tenancy-preparation.md) (tenant context propagation)
+
+## Implementation Status
+
+Implemented. Paid uses the `exception_notification` gem, a custom `Paid::ExceptionNotifier`, Rack middleware integration, ActiveJob terminal-failure notification, subsystem/project context for knowledge jobs, allowlisted issue filing, rate limits, and dashboard surfacing. The middleware placement intentionally differs from the draft text so production 500s are captured inside Rails exception handling.
 
 ## Problem Statement
 

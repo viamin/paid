@@ -5,11 +5,15 @@
 ## Metadata
 
 - **Date**: 2025-01-23
-- **Status**: Final
+- **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: Medium
 - **Related Issues**: N/A (foundational decision)
 - **Related Tests**: Meta-agent tests, fallback logic tests
+
+## Implementation Status
+
+Implemented through `Models::Select`, `Models::MetaAgentSelector`, `Models::RulesBasedSelector`, the `LlmModel` catalog, and persistent `ModelSelection` audit records. The implementation uses `AgentHarness` for LLM calls, not the older raw RubyLLM examples in this RDR. Budget data informs prompts and runtime cost enforcement; explicit selection-time affordability filtering remains a possible refinement rather than a blocker for the core decision.
 
 ## Problem Statement
 

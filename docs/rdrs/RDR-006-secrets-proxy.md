@@ -5,11 +5,15 @@
 ## Metadata
 
 - **Date**: 2025-01-23
-- **Status**: Final
+- **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: High
 - **Related Issues**: N/A (foundational decision)
 - **Related Tests**: Proxy unit tests, integration tests for API key injection
+
+## Implementation Status
+
+Implemented as Rails API proxy endpoints (`Api::SecretsProxyController`) authenticated by run-scoped container credentials (`Api::ContainerAuthentication`), not as a separate Rack middleware or proxy service. Proxy-mode runners receive provider base URLs and placeholder credentials while Paid injects real provider credentials server-side; subscription-auth and direct-outbound modes are intentional exceptions documented in the current security model.
 
 ## Problem Statement
 

@@ -5,11 +5,15 @@
 ## Metadata
 
 - **Date**: 2025-01-23
-- **Status**: Final
+- **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: High
 - **Related Issues**: N/A (foundational decision)
 - **Related Tests**: Provider unit tests, integration tests for each agent type
+
+## Implementation Status
+
+Implemented with the `agent-harness` gem as Paid's agent and LLM abstraction. Paid configures providers in `config/initializers/agent_harness.rb`, delegates runner support through `RunnerSupport`, builds execution plans through `Runners::HarnessExecutionPlan`, executes containers through `Containers::HarnessExecutor`, and records usage from `AgentHarness::Response`. The original scope boundary that left API-only planning/evaluation to direct RubyLLM calls is stale; current Paid guidance routes LLM calls through `AgentHarness`, with the secrets proxy remaining the infrastructure exception for container traffic.
 
 ## Decision
 

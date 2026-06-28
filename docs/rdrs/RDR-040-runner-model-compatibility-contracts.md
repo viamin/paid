@@ -4,10 +4,15 @@
 
 ## Metadata
 
-- **Status**: Draft
+- **Status**: Partially Implemented
 - **Date**: 2026-06-13
 - **Priority**: P1
+- **Related Issues**: #2600
 - **Related RDRs**: RDR-007 (Agent CLI Abstraction), RDR-008 (Model Selection Strategy), RDR-034 (Tier-Based Runner Fallback), RDR-038 (Free Models Catalog and Runner)
+
+## Implementation Status
+
+Partially implemented. Paid wraps `AgentHarness.model_compatibility`, filters default tier selection, validates runner tier model maps, rejects incompatible tier candidates during resolution, guards Codex host model leakage, and detects some model-health failures reactively. Remaining work includes applying compatibility in general `Models::Select` override paths, using full compatibility during fallback ordering, passing provider runtime into compatibility checks, and adding proactive drift reporting for active model rows versus runner contracts.
 
 ## Problem Statement
 

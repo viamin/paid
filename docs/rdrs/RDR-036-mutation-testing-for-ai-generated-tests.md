@@ -5,7 +5,7 @@
 ## Metadata
 
 - **Date**: 2026-05-25
-- **Status**: Draft
+- **Status**: Partially Implemented
 - **Type**: Architecture
 - **Priority**: P1
 - **Related Issues**: viamin/paid#2371 (this amendment), viamin/paid#2367 (gem-source switch), viamin/paid#2368 (`--usage` cleanup), viamin/paid#2370 (customer UI)
@@ -15,6 +15,10 @@
   - [RDR-031](RDR-031-focused-agent-runs.md) (Focused Agent Runs)
   - [RDR-035](RDR-035-style-guide-evolution.md) (Style Guide Evolution)
 - **Related Tests**: (to be created during implementation)
+
+## Implementation Status
+
+Partially implemented. Paid has mutation CI, `bin/mutation`, managed-project mutation pre-commit requirements, container quality-hook support, Mutant feedback parsing, mutation quality metrics, scheduled sweeps, and dashboard reporting. Remaining work includes completing the sanctioned-source transition to `viamin/mutant` as the default, cleaning stale `--usage`/licensing artifacts, and finishing customer-facing configuration tracked by #2370.
 
 ## Amendment 1 (2026-05-29)
 
