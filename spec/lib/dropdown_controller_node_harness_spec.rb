@@ -91,8 +91,12 @@ class DropdownControllerNodeHarness
 
       harness.controller.toggle(toggleEvent);
 
-      if (!toggleEvent.prevented || !toggleEvent.stopped) {
-        throw new Error("Expected toggle() to stop the triggering click event");
+      if (!toggleEvent.prevented) {
+        throw new Error("Expected toggle() to prevent the click's default action");
+      }
+
+      if (toggleEvent.stopped) {
+        throw new Error("Expected toggle() to let the click propagate so other open menus close");
       }
 
       if (harness.menu.classList.contains("hidden")) {

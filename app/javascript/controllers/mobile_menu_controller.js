@@ -5,7 +5,8 @@ export default class extends Controller {
   static targets = ["menu", "openIcon", "closeIcon", "button"]
 
   connect() {
-    this.mediaQuery = window.matchMedia("(min-width: 768px)")
+    // Matches the Tailwind `lg` breakpoint where the desktop nav takes over.
+    this.mediaQuery = window.matchMedia("(min-width: 1024px)")
     this.boundCloseOnDesktop = this.closeOnDesktop.bind(this)
     this.mediaQuery.addEventListener("change", this.boundCloseOnDesktop)
 
