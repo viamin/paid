@@ -122,7 +122,7 @@ module Runners
     def latest_managed_credential_for(runner_key)
       return if account.blank? || runner_key.blank?
 
-      account.integration_credentials
+      account.integration_credentials.active
         .for_category(:llm_provider)
         .for_service(runner_key)
         .order(created_at: :desc, id: :desc)
@@ -172,7 +172,7 @@ module Runners
         Open3.capture3({}, "claude", "auth", "status", "--json")
       end
       payload = parse_json(stdout)
-      return nil unless payload
+      return missing_host_forwarded_status(cli_error_message(nil, stderr: stderr, stdout: stdout)) unless payload
 
       error = auth_error_message(payload)
       error ||= cli_error_message(payload, stderr: stderr, stdout: stdout) unless status.success?
