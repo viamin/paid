@@ -43,6 +43,46 @@ RSpec.describe ProcessRunQueueJob do
       expect(newer.reload.status).to eq("queued")
     end
 
+    it "keeps auto-mode runs queued when Docker capacity is insufficient" do
+      project = create(:project)
+      user = project.created_by
+      user.settings.update!(run_concurrency_mode: "auto", max_concurrent_runs: nil)
+      queued_run = create(:agent_run, :queued, project: project)
+      allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(
+        available: true,
+        effective_agent_budget_bytes: 2 * 1024 * 1024 * 1024,
+        snapshot_at: Time.current,
+        confidence: "high",
+        docker_memory_bytes: 8 * 1024 * 1024 * 1024
+      )
+
+      expect(temporal_client).not_to receive(:start_workflow)
+
+      described_class.new.perform
+
+      expect(queued_run.reload.temporal_workflow_id).to be_nil
+      expect(queued_run.status).to eq("queued")
+    end
+
+    it "reuses one Docker snapshot per queue pass" do
+      project = create(:project)
+      user = project.created_by
+      user.settings.update!(run_concurrency_mode: "auto", max_concurrent_runs: nil)
+      create(:agent_run, :queued, project: project, trigger_type: "manual", created_at: 2.minutes.ago)
+      create(:agent_run, :queued, project: project, trigger_type: "manual", created_at: 1.minute.ago)
+      allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(
+        available: true,
+        effective_agent_budget_bytes: 16 * 1024 * 1024 * 1024,
+        snapshot_at: Time.current,
+        confidence: "high",
+        docker_memory_bytes: 32 * 1024 * 1024 * 1024
+      )
+
+      described_class.new.perform
+
+      expect(Capacity::DockerSnapshot).to have_received(:fetch).once
+    end
+
     it "stops when user capacity is exhausted" do
       project = create(:project)
       user = project.created_by

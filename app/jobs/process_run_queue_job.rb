@@ -59,6 +59,7 @@ class ProcessRunQueueJob < ApplicationJob
       blocked_account_create_pr_ids = Set.new
       blocked_account_dispatch_ids = Set.new
       started_priority_by_project = {}
+      docker_snapshot = nil
 
       loop do
         iterations += 1
@@ -100,11 +101,25 @@ class ProcessRunQueueJob < ApplicationJob
           next
         end
 
-        unless user_has_capacity?(user)
-          # Exclude the whole owner for the rest of this pass so a deep
-          # backlog for a saturated user cannot consume the iteration budget
-          # one queued row at a time.
-          blocked_user_ids.add(user.id)
+        docker_snapshot ||= Capacity::DockerSnapshot.fetch if user.settings.run_concurrency_auto?
+        admission = run_admission_for(next_run, user, docker_snapshot: docker_snapshot)
+        unless admission[:allowed]
+          log_capacity_skip(next_run, admission)
+
+          case admission[:reason]
+          when "insufficient_docker_capacity"
+            skipped_ids.add(next_run.id)
+          when "project_hard_ceiling"
+            blocked_project_ids.add(next_run.project_id)
+          when "create_pr_hard_ceiling"
+            blocked_account_create_pr_ids.add(next_run.project.account_id)
+          else
+            # Exclude the whole owner for the rest of this pass so a deep
+            # backlog for a saturated user cannot consume the iteration budget
+            # one queued row at a time.
+            blocked_user_ids.add(user.id)
+          end
+
           next
         end
 
@@ -159,11 +174,6 @@ class ProcessRunQueueJob < ApplicationJob
 
         dispatch_decision = dispatch_decision_for(next_run, blocked_account_dispatch_ids)
         next if dispatch_decision == :halt
-
-        if next_run.goal == "create_pr" && !account_has_create_pr_capacity?(next_run.project.account)
-          blocked_account_create_pr_ids.add(next_run.project.account_id)
-          next
-        end
 
         # User has capacity, runner passes preflight, and account has create_pr capacity — now atomically claim the run.
         # claim_next_queued_run returns nil if another process claimed or
@@ -253,12 +263,29 @@ class ProcessRunQueueJob < ApplicationJob
     )
   end
 
-  def user_has_capacity?(user)
-    AgentRun.active_count_for_user(user) < user.account.tenant_max_concurrent_runs(user.settings.max_concurrent_runs)
+  def run_admission_for(agent_run, user, docker_snapshot:)
+    Capacity::RunAdmission.call(
+      user: user,
+      goal: agent_run.goal,
+      docker_snapshot: docker_snapshot
+    )
   end
 
-  def account_has_create_pr_capacity?(account)
-    AgentRun.active_create_pr_count_for_account(account) < account.tenant_max_concurrent_create_pr_runs
+  def log_capacity_skip(agent_run, admission)
+    Rails.logger.info(
+      message: "process_run_queue.capacity_denied",
+      agent_run_id: agent_run.id,
+      project_id: agent_run.project_id,
+      goal: agent_run.goal,
+      reason: admission[:reason],
+      mode: admission[:mode],
+      available_slots: admission[:available_slots],
+      effective_max_concurrent_runs: admission[:effective_max_concurrent_runs],
+      available_memory_bytes: admission[:available_memory_bytes],
+      estimated_memory_per_run_bytes: admission[:estimated_memory_per_run_bytes],
+      reserved_agent_memory_bytes: admission[:reserved_agent_memory_bytes],
+      degraded: admission[:degraded] == true
+    )
   end
 
   # Returns the dispatch circuit-breaker decision for the next queued run:
