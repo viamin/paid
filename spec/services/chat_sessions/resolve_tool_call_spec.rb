@@ -106,6 +106,23 @@ RSpec.describe ChatSessions::ResolveToolCall do
         session: chat_session
       )
     end
+
+    it "persists a structured error when post-dispatch approval resolution fails" do
+      tool_call_message.update!(tool_name: "record_change_intent", tool_result: { "id" => 123, "status" => "draft" })
+      allow(Tools::Registry).to receive(:post_dispatch_confirmation?).with("record_change_intent").and_return(true)
+      allow(Tools::Registry).to receive(:resolve_confirmation).and_raise(Pundit::NotAuthorizedError, "not allowed")
+
+      described_class.call(
+        chat_session: chat_session, tool_call_message: tool_call_message,
+        decision: :approve, llm_client: llm_client
+      )
+
+      expect(chat_session.messages.find_by(role: "tool").tool_result).to eq(
+        "status" => "error",
+        "error" => "unauthorized",
+        "message" => "not allowed"
+      )
+    end
   end
 
   describe ".call deny" do
@@ -137,6 +154,23 @@ RSpec.describe ChatSessions::ResolveToolCall do
 
       expect(Tools::Registry).not_to have_received(:dispatch)
       expect(chat_session.messages.find_by(role: "tool").tool_result).to eq({ "id" => 22, "status" => "denied" })
+    end
+
+    it "persists a structured error when post-dispatch denial resolution fails" do
+      tool_call_message.update!(tool_name: "record_change_intent", tool_result: { "id" => 22, "status" => "draft" })
+      allow(Tools::Registry).to receive(:post_dispatch_confirmation?).with("record_change_intent").and_return(true)
+      allow(Tools::Registry).to receive(:resolve_confirmation).and_raise(ArgumentError, "missing draft id")
+
+      described_class.call(
+        chat_session: chat_session, tool_call_message: tool_call_message,
+        decision: :deny, llm_client: llm_client
+      )
+
+      expect(chat_session.messages.find_by(role: "tool").tool_result).to eq(
+        "status" => "error",
+        "error" => "invalid_arguments",
+        "message" => "missing draft id"
+      )
     end
   end
 

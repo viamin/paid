@@ -107,12 +107,10 @@ module ChatSessions
     end
 
     def resolve_post_dispatch_confirmation
-      Tools::Registry.resolve_confirmation(
+      resolve_tool_confirmation(
         name: tool_call_message.tool_name,
         decision: decision,
-        pending_result: tool_call_message.tool_result || {},
-        user: chat_session.created_by,
-        session: chat_session
+        pending_result: tool_call_message.tool_result || {}
       )
     end
 
