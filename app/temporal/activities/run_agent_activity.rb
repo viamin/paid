@@ -1519,6 +1519,10 @@ module Activities
             "Runner model not found error from #{runner}: #{sanitized_output.truncate(500)}"
         end
 
+        if auth_expired_error?(runner, sanitized_output)
+          raise RunnerAuthExpiredError.new(sanitized_output.truncate(500), runner: runner)
+        end
+
         output_present = stdout.present? || stderr.present?
         output_chars = stdout.to_s.length + stderr.to_s.length
         track_harness_tokens(agent_run, runner_candidate, runner, user_settings.user, result, execution_started_at)
@@ -1701,6 +1705,10 @@ module Activities
             runner: runner,
             reason: "Runner model not found error: #{sanitized_output.truncate(500)}"
           )
+        end
+
+        if auth_expired_error?(runner, sanitized_output)
+          raise RunnerAuthExpiredError.new(sanitized_output.truncate(500), runner: runner)
         end
 
         return
