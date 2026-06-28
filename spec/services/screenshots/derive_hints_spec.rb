@@ -15,8 +15,7 @@ RSpec.describe Screenshots::DeriveHints, :no_db do
   let(:agent_run) do
     instance_double(
       AgentRun,
-      id: 7,
-      agent_summary: "Redesigned the dashboard summary cards."
+      id: 7
     )
   end
 
@@ -38,14 +37,14 @@ RSpec.describe Screenshots::DeriveHints, :no_db do
       expect(agent_run).to have_received(:update!).with(screenshot_hints: result)
     end
 
-    it "passes the route catalog, summary, and changed files to the LLM" do
+    it "passes the route catalog and changed files to the LLM" do
       stub_llm("{}")
       allow(agent_run).to receive(:update!)
 
       described_class.call(agent_run: agent_run, routes: routes, changed_files: [ "app/views/dashboard/show.html.erb" ])
 
       expect(AgentHarness).to have_received(:send_message).with(
-        a_string_including("dashboard — /dashboard", "Redesigned the dashboard", "app/views/dashboard/show.html.erb"),
+        a_string_including("dashboard — /dashboard", "app/views/dashboard/show.html.erb"),
         provider: :claude,
         model: described_class::DEFAULT_MODEL,
         timeout: described_class::TIMEOUT,
@@ -54,7 +53,7 @@ RSpec.describe Screenshots::DeriveHints, :no_db do
       )
     end
 
-    it "limits summary input by entry count and character count" do
+    it "does not reuse the agent summary in the hinting prompt" do
       captured_prompt = nil
       response = instance_double(AgentHarness::Response, success?: true, output: "{}")
       allow(AgentHarness).to receive(:send_message) do |prompt, **|
@@ -62,13 +61,11 @@ RSpec.describe Screenshots::DeriveHints, :no_db do
         response
       end
       allow(agent_run).to receive(:update!)
-      allow(agent_run).to receive(:agent_summary).with(limit: described_class::MAX_SUMMARY_ENTRIES).and_return("a" * 9_000)
+      expect(agent_run).not_to receive(:agent_summary)
 
       described_class.call(agent_run: agent_run, routes: routes)
 
-      expect(agent_run).to have_received(:agent_summary).with(limit: described_class::MAX_SUMMARY_ENTRIES)
-      expect(captured_prompt).to include("a" * described_class::MAX_SUMMARY_CHARS)
-      expect(captured_prompt).not_to include("a" * (described_class::MAX_SUMMARY_CHARS + 1))
+      expect(captured_prompt).not_to include("Agent change summary")
     end
 
     it "drops routes that are not in the configured catalog" do

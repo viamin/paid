@@ -2,10 +2,10 @@
 
 module Screenshots
   # Derives per-route screenshot hints from an agent run's change, using
-  # agent_harness. Given the project's configured screenshot routes, the agent's
-  # summary, and the changed files, it asks the LLM which rendered pages the
-  # change affects, a one-line summary of what changed on each, and an optional
-  # CSS selector to highlight.
+  # agent_harness. Given the project's configured screenshot routes and the
+  # changed files, it asks the LLM which rendered pages the change affects, a
+  # one-line summary of what changed on each, and an optional CSS selector to
+  # highlight.
   #
   # The result scopes screenshot capture to the affected pages and lets the
   # capture runner annotate them. It is persisted to +agent_run.screenshot_hints+
@@ -18,17 +18,14 @@ module Screenshots
   class DeriveHints
     DEFAULT_MODEL = "claude-sonnet-4-6"
     TIMEOUT = 30
-    MAX_SUMMARY_CHARS = 8_000
-    MAX_SUMMARY_ENTRIES = 500
     MAX_FILES = 100
     MAX_HINT_SUMMARY = 200
     MAX_SELECTOR_LENGTH = 200
 
     PROMPT = <<~PROMPT
       You are scoping UI screenshots for a code change. Below are the screenshot routes
-      configured for an application, the summary of an automated agent's change, and the
-      files it changed. Decide which routes render a page that this change could visibly
-      affect.
+      configured for an application and the files changed in the repo. Decide
+      which routes render a page that this change could visibly affect.
 
       Respond with ONLY a JSON object (no preamble, no markdown fences) mapping each
       affected route name to an object with:
@@ -47,9 +44,6 @@ module Screenshots
 
       ## Routes (name — path)
       {{routes}}
-
-      ## Agent change summary
-      {{agent_summary}}
 
       ## Changed files
       {{changed_files}}
@@ -153,10 +147,6 @@ module Screenshots
 
       PROMPT
         .sub("{{routes}}", route_lines)
-        .sub(
-          "{{agent_summary}}",
-          @agent_run.agent_summary(limit: MAX_SUMMARY_ENTRIES).truncate(MAX_SUMMARY_CHARS, omission: "").presence || "(no summary available)"
-        )
         .sub("{{changed_files}}", file_lines)
     end
   end
