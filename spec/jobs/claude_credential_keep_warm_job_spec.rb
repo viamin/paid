@@ -1,0 +1,118 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe ClaudeCredentialKeepWarmJob do
+  describe "#perform" do
+    let(:mock_provision) { instance_double(Containers::Provision) }
+
+    before do
+      allow(Containers::Provision).to receive(:new).and_return(mock_provision)
+      allow(Rails.logger).to receive(:info)
+      allow(Rails.logger).to receive(:warn)
+      allow(Rails.logger).to receive(:error)
+    end
+
+    context "when AgentHarness::Authentication does not expose exchange_refresh_token" do
+      # exchange_refresh_token is not defined on the module, so respond_to? returns false naturally
+
+      it "does not create a Provision instance" do
+        described_class.perform_now
+        expect(Containers::Provision).not_to have_received(:new)
+      end
+
+      it "logs the missing upstream API" do
+        described_class.perform_now
+
+        expect(Rails.logger).to have_received(:info).with(
+          hash_including(message: "claude_credential.keep_warm.exchange_unsupported")
+        )
+      end
+    end
+
+    context "when exchange_refresh_token is available" do
+      # exchange_refresh_token does not exist upstream yet (viamin/agent-harness#265);
+      # bypass verify_partial_doubles so we can stub the future API.
+      around do |example|
+        without_partial_double_verification { example.run }
+      end
+
+      before do
+        allow(AgentHarness::Authentication).to receive(:exchange_refresh_token)
+      end
+
+      context "when no subscription auth is present" do
+        before do
+          allow(mock_provision).to receive(:keep_warm_claude_credentials!)
+            .and_return({ refreshed: false, reason: "no_subscription_auth" })
+        end
+
+        it "logs no subscription auth" do
+          described_class.perform_now
+
+          expect(Rails.logger).to have_received(:info).with(
+            hash_including(message: "claude_credential.keep_warm.no_subscription_auth")
+          )
+        end
+      end
+
+      context "when subscription auth is present but credential is not near expiry" do
+        before do
+          allow(mock_provision).to receive(:keep_warm_claude_credentials!)
+            .and_return({ refreshed: false, reason: "not_near_expiry" })
+        end
+
+        it "logs not near expiry" do
+          described_class.perform_now
+
+          expect(Rails.logger).to have_received(:info).with(
+            hash_including(message: "claude_credential.keep_warm.not_near_expiry")
+          )
+        end
+      end
+
+      context "when credential is near expiry" do
+        before do
+          allow(mock_provision).to receive(:keep_warm_claude_credentials!)
+            .and_return({ refreshed: true, reason: "refreshed" })
+        end
+
+        it "calls keep_warm_claude_credentials! on a Provision instance" do
+          described_class.perform_now
+
+          expect(Containers::Provision).to have_received(:new).with(credential_maintenance: true)
+          expect(mock_provision).to have_received(:keep_warm_claude_credentials!)
+        end
+
+        it "logs completion with refreshed: true" do
+          described_class.perform_now
+
+          expect(Rails.logger).to have_received(:info).with(
+            hash_including(
+              message: "claude_credential.keep_warm.refreshed",
+              refreshed: true
+            )
+          )
+        end
+      end
+
+      context "when refresh fails" do
+        before do
+          allow(mock_provision).to receive(:keep_warm_claude_credentials!)
+            .and_return({ refreshed: false, reason: "refresh_failed" })
+        end
+
+        it "logs completion with refreshed: false" do
+          described_class.perform_now
+
+          expect(Rails.logger).to have_received(:info).with(
+            hash_including(
+              message: "claude_credential.keep_warm.refresh_failed",
+              refreshed: false
+            )
+          )
+        end
+      end
+    end
+  end
+end

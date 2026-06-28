@@ -215,6 +215,14 @@ RSpec.describe Containers::Provision do
 
       expect(svc.options[:memory_bytes]).to eq(4 * 1024 * 1024 * 1024)
     end
+
+    it "allows credential maintenance initialization without agent_run or project" do
+      svc = described_class.new(credential_maintenance: true)
+
+      expect(svc.project).to be_nil
+      expect(svc.agent_run).to be_nil
+      expect(svc.options[:memory_bytes]).to eq(4 * 1024 * 1024 * 1024)
+    end
   end
 
   describe ".reconnect" do
@@ -3630,6 +3638,353 @@ RSpec.describe Containers::Provision do
       allow(service).to receive(:codex_container_model_id).and_return(nil)
 
       expect(service.send(:codex_model_config_line)).to be_nil
+    end
+  end
+
+  describe "Claude credential keep-warm (RDR-041 Phase 3)" do
+    let(:claude_config_dir) { Dir.mktmpdir("claude-config") }
+    let(:service) { described_class.new(agent_run: agent_run, project: project) }
+
+    before do
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return(claude_config_dir)
+      allow(service).to receive(:claude_local_config_path).and_return(nil)
+      allow(service).to receive(:log_system)
+    end
+
+    after do
+      FileUtils.rm_rf(claude_config_dir)
+    end
+
+    describe "#claude_credentials_source_path" do
+      context "when CLAUDE_CONFIG_DIR contains .credentials.json" do
+        before do
+          File.write(File.join(claude_config_dir, ".credentials.json"), "{}")
+        end
+
+        it "returns the host config dir" do
+          expect(service.send(:claude_credentials_source_path)).to eq(claude_config_dir)
+        end
+      end
+
+      context "when no .credentials.json exists" do
+        it "returns nil" do
+          expect(service.send(:claude_credentials_source_path)).to be_nil
+        end
+      end
+
+      context "when CLAUDE_CONFIG_DIR is nil but local path has credentials" do
+        let(:local_dir) { Dir.mktmpdir("claude-local") }
+
+        before do
+          allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return(nil)
+          allow(service).to receive(:claude_local_config_path).and_return(local_dir)
+          File.write(File.join(local_dir, ".credentials.json"), "{}")
+        end
+
+        after { FileUtils.rm_rf(local_dir) }
+
+        it "returns the local config dir" do
+          expect(service.send(:claude_credentials_source_path)).to eq(local_dir)
+        end
+      end
+    end
+
+    describe "#claude_native_credential_expiry" do
+      context "when .credentials.json has native claudeAiOauth shape" do
+        let(:future_expiry) { (Time.now + 2.hours).iso8601 }
+
+        before do
+          File.write(File.join(claude_config_dir, ".credentials.json"), JSON.generate(
+            "claudeAiOauth" => {
+              "accessToken" => "tok",
+              "refreshToken" => "ref",
+              "expiresAt" => future_expiry
+            }
+          ))
+        end
+
+        it "parses the expiry from the claudeAiOauth nesting" do
+          expiry = service.send(:claude_native_credential_expiry)
+          expect(expiry).to be_within(2.seconds).of(Time.parse(future_expiry))
+        end
+      end
+
+      context "when .credentials.json has flat expiresAt shape" do
+        let(:future_expiry) { (Time.now + 2.hours).iso8601 }
+
+        before do
+          File.write(File.join(claude_config_dir, ".credentials.json"), JSON.generate(
+            "expiresAt" => future_expiry,
+            "oauth_token" => "tok"
+          ))
+        end
+
+        it "parses the flat expiresAt" do
+          expiry = service.send(:claude_native_credential_expiry)
+          expect(expiry).to be_within(2.seconds).of(Time.parse(future_expiry))
+        end
+      end
+
+      context "when no .credentials.json exists" do
+        it "returns nil" do
+          expect(service.send(:claude_native_credential_expiry)).to be_nil
+        end
+      end
+
+      context "when .credentials.json has no expiry field" do
+        before do
+          File.write(File.join(claude_config_dir, ".credentials.json"), '{"oauth_token":"tok"}')
+        end
+
+        it "returns nil" do
+          expect(service.send(:claude_native_credential_expiry)).to be_nil
+        end
+      end
+
+      context "when .credentials.json contains invalid JSON" do
+        before do
+          File.write(File.join(claude_config_dir, ".credentials.json"), "not-json")
+        end
+
+        it "returns nil without raising" do
+          expect(service.send(:claude_native_credential_expiry)).to be_nil
+        end
+      end
+    end
+
+    describe "#claude_credentials_near_expiry?" do
+      context "when credential expires within the refresh window" do
+        before do
+          File.write(File.join(claude_config_dir, ".credentials.json"), JSON.generate(
+            "claudeAiOauth" => { "expiresAt" => (Time.now + 1.hour).iso8601 }
+          ))
+        end
+
+        it "returns true" do
+          expect(service.send(:claude_credentials_near_expiry?)).to be true
+        end
+      end
+
+      context "when credential expires beyond the refresh window" do
+        before do
+          File.write(File.join(claude_config_dir, ".credentials.json"), JSON.generate(
+            "claudeAiOauth" => { "expiresAt" => (Time.now + 12.hours).iso8601 }
+          ))
+        end
+
+        it "returns false" do
+          expect(service.send(:claude_credentials_near_expiry?)).to be false
+        end
+      end
+
+      context "when credential is already expired" do
+        before do
+          File.write(File.join(claude_config_dir, ".credentials.json"), JSON.generate(
+            "claudeAiOauth" => { "expiresAt" => (Time.now - 1.hour).iso8601 }
+          ))
+        end
+
+        it "returns true" do
+          expect(service.send(:claude_credentials_near_expiry?)).to be true
+        end
+      end
+
+      context "when expiry is unknown" do
+        before do
+          File.write(File.join(claude_config_dir, ".credentials.json"), '{"oauth_token":"tok"}')
+        end
+
+        it "returns false (don't speculate)" do
+          expect(service.send(:claude_credentials_near_expiry?)).to be false
+        end
+      end
+    end
+
+    describe "#with_claude_auth_lock" do
+      before do
+        File.write(File.join(claude_config_dir, ".credentials.json"), "{}")
+      end
+
+      it "creates a lockfile scoped to the source path" do
+        lockfile = service.send(:claude_auth_lockfile_path)
+        FileUtils.rm_f(lockfile)
+
+        yielded = false
+        service.send(:with_claude_auth_lock) { yielded = true }
+
+        expect(yielded).to be true
+        expect(File.exist?(lockfile)).to be true
+      end
+
+      it "logs lock acquisition and release" do
+        service.send(:with_claude_auth_lock) { nil }
+
+        expect(service).to have_received(:log_system).with(
+          "container.claude_auth_lock.acquired", hash_including(:lockfile)
+        )
+        expect(service).to have_received(:log_system).with(
+          "container.claude_auth_lock.released", hash_including(:lockfile)
+        )
+      end
+
+      it "still yields when lock times out" do
+        allow(service).to receive(:acquire_lock_with_timeout).and_return(false)
+
+        yielded = false
+        service.send(:with_claude_auth_lock) { yielded = true }
+
+        expect(yielded).to be true
+        expect(service).to have_received(:log_system).with(
+          "container.claude_auth_lock.timeout", anything
+        )
+      end
+    end
+
+    describe "#exchange_claude_refresh_token!" do
+      before do
+        File.write(File.join(claude_config_dir, ".credentials.json"), "{}")
+      end
+
+      context "when AgentHarness::Authentication does not expose exchange_refresh_token" do
+        it "logs unsupported and returns false" do
+          # Ensure exchange_refresh_token is NOT defined so respond_to? returns false naturally
+          result = service.send(:exchange_claude_refresh_token!)
+
+          expect(result).to be false
+          expect(service).to have_received(:log_system).with(
+            "container.claude_auth_refresh.unsupported", hash_including(:note)
+          )
+        end
+      end
+
+      # exchange_refresh_token does not exist upstream yet (viamin/agent-harness#265);
+      # bypass verify_partial_doubles so we can stub the future API.
+      context "when AgentHarness::Authentication exposes exchange_refresh_token", :without_partial_double_verification do
+        around { |example| without_partial_double_verification { example.run } }
+
+        it "calls exchange_refresh_token with the source path and returns true on success" do
+          allow(AgentHarness::Authentication).to receive(:exchange_refresh_token)
+            .with(:claude, credentials_path: claude_config_dir)
+            .and_return({ success: true })
+
+          result = service.send(:exchange_claude_refresh_token!)
+
+          expect(result).to be true
+          expect(AgentHarness::Authentication).to have_received(:exchange_refresh_token)
+            .with(:claude, credentials_path: claude_config_dir)
+          expect(service).to have_received(:log_system).with(
+            "container.claude_auth_refreshed", hash_including(:source_path)
+          )
+        end
+
+        it "logs and returns false on AgentHarness::AuthenticationError" do
+          allow(AgentHarness::Authentication).to receive(:exchange_refresh_token)
+            .and_raise(AgentHarness::AuthenticationError.new("refresh_token_reused"))
+
+          result = service.send(:exchange_claude_refresh_token!)
+
+          expect(result).to be false
+          expect(service).to have_received(:log_system).with(
+            "container.claude_auth_refresh_failed", hash_including(:error)
+          )
+        end
+
+        it "logs and returns false on AgentHarness::Error" do
+          allow(AgentHarness::Authentication).to receive(:exchange_refresh_token)
+            .and_raise(AgentHarness::Error.new("network error"))
+
+          result = service.send(:exchange_claude_refresh_token!)
+
+          expect(result).to be false
+          expect(service).to have_received(:log_system).with(
+            "container.claude_auth_refresh_failed", hash_including(:error)
+          )
+        end
+      end
+    end
+
+    describe "#refresh_claude_credentials_if_near_expiry!" do
+      context "when credential is not near expiry" do
+        before do
+          File.write(File.join(claude_config_dir, ".credentials.json"), JSON.generate(
+            "claudeAiOauth" => { "expiresAt" => (Time.now + 12.hours).iso8601 }
+          ))
+        end
+
+        it "does not call exchange_claude_refresh_token!" do
+          allow(service).to receive(:exchange_claude_refresh_token!)
+
+          service.send(:refresh_claude_credentials_if_near_expiry!)
+
+          expect(service).not_to have_received(:exchange_claude_refresh_token!)
+        end
+      end
+
+      context "when credential is near expiry" do
+        before do
+          File.write(File.join(claude_config_dir, ".credentials.json"), JSON.generate(
+            "claudeAiOauth" => { "expiresAt" => (Time.now + 1.hour).iso8601 }
+          ))
+          allow(service).to receive(:exchange_claude_refresh_token!).and_return(true)
+        end
+
+        it "calls exchange_claude_refresh_token! under a lock" do
+          service.send(:refresh_claude_credentials_if_near_expiry!)
+
+          expect(service).to have_received(:exchange_claude_refresh_token!)
+        end
+
+        it "does not call exchange after another process already refreshed while waiting for lock" do
+          call_count = 0
+          allow(service).to receive(:claude_credentials_near_expiry?) do
+            call_count += 1
+            # First call: near expiry; second call (post-lock): already refreshed
+            call_count == 1
+          end
+
+          service.send(:refresh_claude_credentials_if_near_expiry!)
+
+          # exchange not called because second near_expiry? check returned false
+          expect(service).not_to have_received(:exchange_claude_refresh_token!)
+        end
+      end
+
+      context "when no subscription auth is present" do
+        before do
+          allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return(nil)
+          allow(service).to receive(:claude_local_config_path).and_return(nil)
+          allow(service).to receive(:exchange_claude_refresh_token!)
+        end
+
+        it "is a no-op" do
+          service.send(:refresh_claude_credentials_if_near_expiry!)
+          expect(service).not_to have_received(:exchange_claude_refresh_token!)
+        end
+      end
+    end
+
+    describe "#seed_claude_credentials! with keep-warm preflight" do
+      before do
+        File.write(File.join(claude_config_dir, ".credentials.json"), "{}")
+        allow(service).to receive(:refresh_claude_credentials_if_near_expiry!)
+        allow(service).to receive(:seed_host_credentials!)
+        allow(service).to receive(:seed_local_credentials!)
+      end
+
+      it "calls refresh_claude_credentials_if_near_expiry! before seeding" do
+        service.send(:seed_claude_credentials!)
+        expect(service).to have_received(:refresh_claude_credentials_if_near_expiry!)
+      end
+
+      it "does not call refresh when no subscription auth is present" do
+        allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return(nil)
+        allow(service).to receive(:claude_local_config_path).and_return(nil)
+
+        service.send(:seed_claude_credentials!)
+
+        expect(service).not_to have_received(:refresh_claude_credentials_if_near_expiry!)
+      end
     end
   end
 
