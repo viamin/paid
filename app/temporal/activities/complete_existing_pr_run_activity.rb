@@ -129,7 +129,7 @@ module Activities
     end
 
     def summary_base_sha(agent_run)
-      agent_run.external_metadata["pre_run_head_sha"].presence || agent_run.base_commit_sha
+      agent_run.external_metadata["pre_run_head_sha"].presence
     end
 
     def track_summary_tokens(agent_run, response)

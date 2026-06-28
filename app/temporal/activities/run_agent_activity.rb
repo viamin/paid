@@ -2865,7 +2865,7 @@ module Activities
       return unless agent_run.existing_pr?
 
       metadata = agent_run.external_metadata.deep_dup
-      return if metadata["pre_run_head_sha"] == sha
+      return if metadata["pre_run_head_sha"].present?
 
       agent_run.update!(external_metadata: metadata.merge("pre_run_head_sha" => sha))
     end
