@@ -63,33 +63,32 @@ RSpec.describe Runners::AuthHealth do
       expect(result.error).to be_nil
     end
 
-    it "falls back to host-forwarded auth when the newest managed OAuth token is expired" do
+    it "reports an expired newest managed OAuth token instead of falling back to host-forwarded auth" do
       expires_at = 1.hour.ago
       runner
       create_claude_oauth_credential(expires_at:)
-      host_forwarded_expires_at = 4.hours.from_now
-      stub_claude_auth_status(stdout: { expiresAt: host_forwarded_expires_at.iso8601 }.to_json, success: true)
 
       result = call_auth_health
 
-      expect(result.valid).to be(true)
-      expect(result.expires_at).to be_within(1.second).of(host_forwarded_expires_at)
-      expect(result.source).to eq(:host_forwarded)
-      expect(result.error).to be_nil
+      expect(result.valid).to be(false)
+      expect(result.expires_at).to be_within(1.second).of(expires_at)
+      expect(result.source).to eq(:managed_token)
+      expect(result.error).to eq("Managed token expired")
     end
 
-    it "ignores newer revoked managed OAuth tokens when an older active token is still runnable" do
+    it "reports a newer revoked managed OAuth token even when an older token is still active" do
       active_expires_at = 2.days.from_now
+      revoked_expires_at = 5.days.from_now
       runner
       create_claude_oauth_credential(expires_at: active_expires_at, created_at: 2.days.ago)
-      create_claude_oauth_credential(expires_at: 5.days.from_now, revoked_at: 1.hour.ago, created_at: 1.day.ago)
+      create_claude_oauth_credential(expires_at: revoked_expires_at, revoked_at: 1.hour.ago, created_at: 1.day.ago)
 
       result = call_auth_health
 
-      expect(result.valid).to be(true)
-      expect(result.expires_at).to be_within(1.second).of(active_expires_at)
+      expect(result.valid).to be(false)
+      expect(result.expires_at).to be_within(1.second).of(revoked_expires_at)
       expect(result.source).to eq(:managed_token)
-      expect(result.error).to be_nil
+      expect(result.error).to eq("Managed token revoked")
     end
 
     it "prefers claude auth status JSON for host-forwarded credentials" do
@@ -135,6 +134,24 @@ RSpec.describe Runners::AuthHealth do
       expect(results.size).to eq(2)
       expect(Open3).to have_received(:capture3).once
       expect(results.map(&:valid)).to all(be(true))
+    end
+
+    it "reuses a shared host-forwarded status cache when provided" do
+      runner
+      other_account = create(:account)
+      other_user = create(:user, account: other_account, name: "Other Runner Owner")
+      other_user.runners.find_by!(runner_key: "claude", auth_type: "subscription")
+      expires_at = 4.hours.from_now
+      stub_claude_auth_status(stdout: { expiresAt: expires_at.iso8601 }.to_json, success: true)
+      shared_cache = {}
+
+      first_results = described_class.call(account: account, host_forwarded_status_by_runner_key: shared_cache)
+      second_results = described_class.call(account: other_account, host_forwarded_status_by_runner_key: shared_cache)
+
+      expect(first_results.size).to eq(1)
+      expect(second_results.size).to eq(1)
+      expect(Open3).to have_received(:capture3).once
+      expect(shared_cache.fetch("claude")).to include(valid: true, source: :host_forwarded)
     end
 
     it "falls back to the native Claude credential file when the CLI is unavailable" do

@@ -44,8 +44,9 @@ module Runners
       new(...).call
     end
 
-    def initialize(account:)
+    def initialize(account:, host_forwarded_status_by_runner_key: nil)
       @account = account
+      @host_forwarded_status_by_runner_key = host_forwarded_status_by_runner_key
     end
 
     def call
@@ -96,8 +97,18 @@ module Runners
         .map(&:runner_key)
         .uniq
         .index_with do |runner_key|
-          LlmCredentials::AccountResolver.call(account: account, runner_key: runner_key).integration_credential
+          latest_managed_credential_for(runner_key)
         end
+    end
+
+    def latest_managed_credential_for(runner_key)
+      return if account.blank? || runner_key.blank?
+
+      account.integration_credentials
+        .for_category(:llm_provider)
+        .for_service(runner_key)
+        .order(created_at: :desc, id: :desc)
+        .first
     end
 
     def managed_token_status(credential)

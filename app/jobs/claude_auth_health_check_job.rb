@@ -18,9 +18,13 @@ class ClaudeAuthHealthCheckJob < ApplicationJob
     invalid = 0
     expiring = 0
     errors = 0
+    host_forwarded_status_by_runner_key = {}
 
     Account.find_each do |account|
-      health = Runners::AuthHealth.call(account: account)
+      health = Runners::AuthHealth.call(
+        account: account,
+        host_forwarded_status_by_runner_key: host_forwarded_status_by_runner_key
+      )
       next if health.empty?
 
       accounts_checked += 1

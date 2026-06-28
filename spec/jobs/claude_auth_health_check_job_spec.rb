@@ -16,6 +16,17 @@ RSpec.describe ClaudeAuthHealthCheckJob do
     )
   end
 
+  def completed_log_payload
+    hash_including(
+      message: "claude_auth.health_check.completed",
+      accounts_checked: 1,
+      runners_checked: 2,
+      invalid_runners: 1,
+      expiring_runners: 1,
+      accounts_errored: 0
+    )
+  end
+
   describe "#perform" do
     it "logs aggregate auth-health counts for configured accounts" do
       account = create(:account)
@@ -30,17 +41,26 @@ RSpec.describe ClaudeAuthHealthCheckJob do
 
       described_class.perform_now
 
-      expect(Runners::AuthHealth).to have_received(:call).with(account: account)
-      expect(Rails.logger).to have_received(:info).with(
-        hash_including(
-          message: "claude_auth.health_check.completed",
-          accounts_checked: 1,
-          runners_checked: 2,
-          invalid_runners: 1,
-          expiring_runners: 1,
-          accounts_errored: 0
-        )
+      expect(Runners::AuthHealth).to have_received(:call).with(
+        account: account,
+        host_forwarded_status_by_runner_key: kind_of(Hash)
       )
+      expect(Rails.logger).to have_received(:info).with(completed_log_payload)
+    end
+
+    it "reuses the same host-forwarded cache across accounts" do
+      create_list(:account, 2)
+      caches = []
+      allow(Runners::AuthHealth).to receive(:call) do |**kwargs|
+        caches << kwargs.fetch(:host_forwarded_status_by_runner_key)
+        []
+      end
+
+      described_class.perform_now
+
+      expect(Runners::AuthHealth).to have_received(:call).twice
+      expect(caches.size).to eq(2)
+      expect(caches.map(&:object_id).uniq.size).to eq(1)
     end
   end
 end
