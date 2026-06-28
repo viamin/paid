@@ -132,7 +132,7 @@ RSpec.describe "Dashboard" do
         expect(chart).to be_present
       end
 
-      it "renders deferred turbo frame wiring for metrics, performance, knowledge, runner health, and queue health", :aggregate_failures do
+      it "renders deferred turbo frame sources for dashboard widgets", :aggregate_failures do
         get dashboard_path
 
         doc = Nokogiri::HTML(response.body)
@@ -140,17 +140,27 @@ RSpec.describe "Dashboard" do
         expect(doc.at_css("turbo-frame#dashboard-metrics[data-dashboard-frames-src='#{dashboard_metrics_path(time_range: "cumulative")}']")).to be_present
         expect(doc.at_css("turbo-frame#dashboard-performance[data-dashboard-frames-src='#{dashboard_performance_path(time_range: "cumulative", status: "all", goal: "all")}']")).to be_present
         expect(doc.at_css("turbo-frame#dashboard-decision-metrics[data-dashboard-frames-src='#{dashboard_decision_metrics_path(time_range: "cumulative")}']")).to be_present
+        expect(doc.at_css("turbo-frame#dashboard-auth-health[data-dashboard-frames-src='#{dashboard_auth_health_path}']")).to be_present
         expect(doc.at_css("turbo-frame#dashboard-knowledge-stats[data-dashboard-frames-src='#{dashboard_knowledge_stats_path}']")).to be_present
         expect(doc.at_css("turbo-frame#dashboard-runner-health[data-dashboard-frames-src='#{dashboard_runner_health_path}']")).to be_present
+        expect(doc.at_css("turbo-frame#dashboard-queue-health[data-dashboard-frames-src='#{dashboard_queue_health_path}']")).to be_present
+      end
+
+      it "renders dashboard widget frames without eager turbo loading attributes", :aggregate_failures do
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
         expect(doc.at_css("turbo-frame#dashboard-metrics[loading]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-performance[loading]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-decision-metrics[loading]")).not_to be_present
+        expect(doc.at_css("turbo-frame#dashboard-auth-health[loading]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-knowledge-stats[loading]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-runner-health[loading]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-queue-health[loading]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-metrics[src]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-performance[src]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-decision-metrics[src]")).not_to be_present
+        expect(doc.at_css("turbo-frame#dashboard-auth-health[src]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-knowledge-stats[src]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-runner-health[src]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-queue-health[src]")).not_to be_present
@@ -187,6 +197,43 @@ RSpec.describe "Dashboard" do
         expect(frame).to be_present
         expect(frame["loading"]).to be_nil
         expect(frame["src"]).to be_nil
+      end
+
+      it "wires the deferred auth-health turbo frame" do
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
+        frame = doc.at_css("turbo-frame#dashboard-auth-health[data-dashboard-frames-src='#{dashboard_auth_health_path}']")
+
+        expect(frame).to be_present
+        expect(frame["loading"]).to be_nil
+        expect(frame["src"]).to be_nil
+      end
+
+      it "renders the auth-health banner via the deferred frame when Claude auth needs attention" do
+        allow(Runners::AuthHealth).to receive(:call).and_return([
+          Runners::AuthHealth::Result.new(
+            runner: "Claude",
+            runner_key: "claude",
+            owner_name: user.name,
+            owner_email: user.email,
+            valid: false,
+            expires_at: 1.hour.ago,
+            source: :host_forwarded,
+            error: "Session expired"
+          )
+        ])
+
+        get dashboard_auth_health_path
+
+        doc = Nokogiri::HTML(response.body)
+        frame = doc.at_css("turbo-frame#dashboard-auth-health")
+        banner = doc.at_css("[data-testid='dashboard-auth-health-banner']")
+
+        expect(frame).to be_present
+        expect(banner).to be_present
+        expect(banner.text).to include("Claude auth health needs attention")
+        expect(banner.text).to include("Session expired")
       end
 
       it "shows live metrics section with active runs" do

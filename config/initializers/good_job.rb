@@ -196,6 +196,11 @@ Rails.application.configure do
       class: "GithubTokenHealthCheckJob",
       description: "Validate all active GitHub tokens and flag revoked/expired ones"
     },
+    claude_auth_health_check: {
+      cron: "0 */4 * * *",
+      class: "ClaudeAuthHealthCheckJob",
+      description: "Check Claude subscription auth health and flag expired or expiring credentials"
+    },
     claude_credential_keep_warm: {
       cron: "0 */4 * * *",
       class: "ClaudeCredentialKeepWarmJob",

@@ -43,6 +43,7 @@ Rails.application.routes.draw do
   get "dashboard/runner_health", to: "dashboard#runner_health", as: :dashboard_runner_health
   get "dashboard/queue_health", to: "dashboard#queue_health", as: :dashboard_queue_health
   get "dashboard/github_health", to: "dashboard#github_health", as: :dashboard_github_health
+  get "dashboard/auth_health", to: "dashboard#auth_health", as: :dashboard_auth_health
   get "dashboard/knowledge_stats", to: "dashboard#knowledge_stats", as: :dashboard_knowledge_stats
   get "dashboard/pr_cycle_time", to: "dashboard#pr_cycle_time", as: :dashboard_pr_cycle_time
   post "dashboard/cancel_run/:id", to: "dashboard#cancel_run", as: :dashboard_cancel_run
