@@ -12,6 +12,8 @@ module Llm
     MAX_FILES = 40
     MAX_PATCH_LENGTH = 800
     TIMEOUT = 30
+    GITHUB_TOKEN_IN_TEXT = /\b(?:ghp_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,}|gh[oushr]_[A-Za-z0-9]{36,})\b/
+    SECRET_PATTERNS = (StyleGuides::CollectCodeSamples::SECRET_PATTERNS + [ GITHUB_TOKEN_IN_TEXT ]).freeze
 
     Result = Struct.new(:body, :response, keyword_init: true)
 
@@ -106,7 +108,7 @@ module Llm
       serialized = commits.map do |commit|
         {
           sha: short_sha(commit[:sha]),
-          message: commit[:message].to_s.truncate(MAX_COMMIT_MESSAGE_LENGTH, omission: " [truncated]")
+          message: sanitized_prompt_text(commit[:message], max_length: MAX_COMMIT_MESSAGE_LENGTH)
         }
       end
 
@@ -119,8 +121,8 @@ module Llm
 
       serialized = files.map do |file|
         {
-          filename: file[:filename].to_s,
-          status: file[:status].to_s,
+          filename: sanitized_prompt_text(file[:filename]),
+          status: sanitized_prompt_text(file[:status]),
           additions: file[:additions],
           deletions: file[:deletions],
           patch_excerpt: patch_for(file)
@@ -134,7 +136,30 @@ module Llm
       patch = file[:patch].to_s
       return if patch.blank?
 
-      patch.truncate(MAX_PATCH_LENGTH, omission: "\n[truncated]")
+      sanitized_prompt_text(patch, max_length: MAX_PATCH_LENGTH, omission: "\n[truncated]")
+    end
+
+    def sanitized_prompt_text(text, max_length: nil, omission: " [truncated]")
+      sanitized = redact_secrets(Knowledge::Redaction::Redactor.call(text: normalized_text(text)).clean_text)
+      return sanitized if max_length.nil?
+
+      sanitized.truncate(max_length, omission: omission)
+    end
+
+    def normalized_text(text)
+      text.to_s.encode(Encoding::UTF_8, invalid: :replace, undef: :replace, replace: "").delete("\x00")
+    end
+
+    def redact_secrets(text)
+      SECRET_PATTERNS.reduce(text) do |result, pattern|
+        result.gsub(pattern) do
+          if Regexp.last_match.captures.any?
+            "#{Regexp.last_match[1]}[REDACTED]"
+          else
+            "[REDACTED]"
+          end
+        end
+      end
     end
 
     def serialized_json(value)

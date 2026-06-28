@@ -37,6 +37,31 @@ RSpec.describe Llm::GenerateAgentUpdateSummary do
       ]
     }
   end
+  let(:secretive_comparison) do
+    {
+      commits: [
+        {
+          sha: "abc123def456",
+          message: "fix: rotate PAT github_pat_1234567890123456789012_abcdefghijklmnopqrstuvwxyz"
+        }
+      ],
+      files: [
+        {
+          filename: "config/initializers/secrets.rb",
+          status: "modified",
+          additions: 4,
+          deletions: 1,
+          patch: <<~PATCH
+            @@ -1 +1,4 @@
+            -token = nil
+            +token = "github_pat_1234567890123456789012_abcdefghijklmnopqrstuvwxyz"
+            +headers["Authorization"] = "Bearer sk_live_super_secret_value_1234567890"
+            +aws_key = "AKIA1234567890ABCDEF"
+          PATCH
+        }
+      ]
+    }
+  end
   let(:summary_response) do
     instance_double(
       AgentHarness::Response,
@@ -129,6 +154,19 @@ RSpec.describe Llm::GenerateAgentUpdateSummary do
       generate_summary(comparison: dangerous_comparison)
 
       expect(AgentHarness).to have_received(:send_message) { |actual_prompt, **| expect_serialized_prompt(actual_prompt) }
+    end
+
+    it "redacts secrets before sending commit metadata and patches to the LLM" do
+      allow(AgentHarness).to receive(:send_message).and_return(summary_response)
+
+      generate_summary(comparison: secretive_comparison)
+
+      expect(AgentHarness).to have_received(:send_message) do |actual_prompt, **|
+        expect(actual_prompt).to include("[REDACTED")
+        expect(actual_prompt).not_to include("github_pat_1234567890123456789012_abcdefghijklmnopqrstuvwxyz")
+        expect(actual_prompt).not_to include("sk_live_super_secret_value_1234567890")
+        expect(actual_prompt).not_to include("AKIA1234567890ABCDEF")
+      end
     end
   end
 
