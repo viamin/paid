@@ -1112,6 +1112,7 @@ module Containers
     def seed_claude_credentials!
       source_files = %w[.credentials.json]
       return unless claude_subscription_auth?
+      return if claude_managed_oauth_token.present?
 
       refresh_claude_credentials_if_near_expiry!
 
@@ -2203,6 +2204,8 @@ module Containers
       end
 
       if claude_subscription_auth?
+        claude_oauth_token = claude_managed_oauth_token
+        env << "CLAUDE_CODE_OAUTH_TOKEN=#{claude_oauth_token}" if claude_oauth_token.present?
         # Claude subscription mode: let Claude Code use its native auth from
         # ~/.claude while other providers can still use proxy credentials.
         log_system("container.auth_mode", mode: "subscription")
@@ -2356,8 +2359,28 @@ module Containers
     end
 
     def claude_subscription_auth?
+      return true if claude_managed_oauth_token.present?
+
       paths = [ claude_config_host_path, claude_local_config_path ].compact
       paths.any? { |base| File.file?(File.join(base, ".credentials.json")) }
+    end
+
+    def claude_managed_oauth_token
+      claude_managed_oauth_credential&.secret.to_s.presence
+    end
+
+    def claude_managed_oauth_credential
+      return @claude_managed_oauth_credential if defined?(@claude_managed_oauth_credential)
+
+      account = project&.account
+      @claude_managed_oauth_credential = if account.present?
+        credential = LlmCredentials::AccountResolver.call(
+          account: account,
+          runner_key: "claude",
+          tenant_setting: account.tenant_setting
+        ).integration_credential
+        credential if credential&.auth_kind == "oauth_token"
+      end
     end
 
     def gemini_subscription_auth?
