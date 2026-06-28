@@ -21,7 +21,7 @@ module Knowledge
       # Section builders in priority order.
       # Conventions section is not yet implemented — will be added when
       # a conventions collector lands in the knowledge pipeline.
-      SECTION_ORDER = %i[business_context documents routes symbols schema hotspots decisions stats].freeze
+      SECTION_ORDER = %i[business_context documents routes symbols schema hotspots decisions change_intents stats].freeze
 
       attr_reader :issue, :project, :agent_run, :agent_run_id, :token_budget, :section_order
 
@@ -246,6 +246,30 @@ module Knowledge
         artifact_section(name: :stats, heading: "Project Stats", content: lines.join("\n"), artifacts: artifacts)
       end
 
+      def build_change_intents_section
+        records = ChangeIntent.active
+                              .for_project(project)
+                              .order(created_at: :desc)
+                              .limit(10)
+                              .to_a
+        return nil if records.empty?
+
+        lines = records.map do |record|
+          date = record.created_at.strftime("%Y-%m-%d")
+          "- CIR: \"#{record.title}\" (active, #{date})"
+        end
+
+        {
+          name: :change_intents,
+          heading: "Recent Change Intents",
+          content: lines.join("\n"),
+          artifact_type: section_artifact_type(:change_intents),
+          artifact_count: records.size,
+          chunk_count: 0,
+          token_count: estimate_tokens("### Recent Change Intents\n#{lines.join("\n")}")
+        }
+      end
+
       def artifact_section(name:, heading:, content:, artifacts:, chunk_count: 0)
         {
           name: name,
@@ -267,7 +291,8 @@ module Knowledge
           hotspots: "churn_hotspot",
           schema: "schema",
           stats: "language_stat",
-          decisions: "decision_record"
+          decisions: "decision_record",
+          change_intents: "change_intent"
         }.fetch(section_name.to_sym)
       end
 

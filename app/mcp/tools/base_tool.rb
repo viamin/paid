@@ -33,6 +33,10 @@ module Tools
       raise NotImplementedError, "#{self.class}#perform must be implemented"
     end
 
+    def resolve_confirmation(decision:, pending_result:)
+      raise NotImplementedError, "#{self.class} does not support post-dispatch confirmation resolution"
+    end
+
     def self.tool_name
       raise NotImplementedError, "#{name}.tool_name must be implemented"
     end
@@ -55,6 +59,10 @@ module Tools
 
     def self.write_operation?
       false
+    end
+
+    def self.confirmation_mode
+      :pre_dispatch
     end
 
     def self.available_to?(user:)

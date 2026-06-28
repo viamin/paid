@@ -7,6 +7,7 @@ RSpec.describe Tools::Registry do
     %w[
       trigger_agent_run
       cancel_agent_run
+      record_change_intent
       invite_account_member
       update_account_membership
       remove_account_membership
@@ -83,7 +84,7 @@ RSpec.describe Tools::Registry do
     it "advertises write tools so the chat agent can propose them" do
       names = described_class.chat_definitions_for(user: user).map { |definition| definition[:name] }
 
-      expect(names).to include("trigger_agent_run", "cancel_agent_run", "update_user_settings")
+      expect(names).to include("trigger_agent_run", "cancel_agent_run", "record_change_intent", "update_user_settings")
     end
 
     it "strips the confirmed argument from write-tool schemas so the model cannot self-confirm" do

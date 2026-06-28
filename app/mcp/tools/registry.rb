@@ -11,6 +11,7 @@ module Tools
       "Tools::GetAgentRun",
       "Tools::ListAgentRuns",
       "Tools::CancelAgentRun",
+      "Tools::RecordChangeIntent",
       "Tools::GetIssueDetails",
       "Tools::GetPullRequestDetails",
       "Tools::SearchCode",
@@ -74,6 +75,20 @@ module Tools
 
       def write_tool?(name)
         find(name)&.write_operation? ? true : false
+      end
+
+      def post_dispatch_confirmation?(name)
+        find(name)&.confirmation_mode == :post_dispatch
+      end
+
+      def resolve_confirmation(name:, decision:, pending_result:, user:, session:)
+        tool_class = find(name)
+        raise ArgumentError, "Unknown tool: #{name}" unless tool_class
+
+        tool_class.new(user:, session:).resolve_confirmation(
+          decision: decision.to_sym,
+          pending_result: pending_result
+        )
       end
 
       def all

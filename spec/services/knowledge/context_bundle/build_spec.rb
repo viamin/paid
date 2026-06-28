@@ -200,6 +200,23 @@ RSpec.describe Knowledge::ContextBundle::Build do
       end
     end
 
+    context "with change intents" do
+      before do
+        create(:change_intent,
+          project: project,
+          title: "Prefer sliding window over token bucket",
+          status: "active")
+      end
+
+      it "includes a change intents section after decisions" do
+        result = described_class.call(issue: issue, project: project)
+
+        expect(result[:sections]).to include(:change_intents)
+        expect(result[:content]).to include("Recent Change Intents")
+        expect(result[:content]).to include("Prefer sliding window over token bucket")
+      end
+    end
+
     context "with language stat artifacts" do
       before do
         create(:knowledge_artifact,

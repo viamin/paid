@@ -86,6 +86,26 @@ RSpec.describe ChatSessions::ResolveToolCall do
       tool_entry = conversation.find { |message| message[:role] == "tool" }
       expect(tool_entry).to include(content: dispatch_result, tool_call_id: "call_1")
     end
+
+    it "uses post-dispatch confirmation resolution for draft CIRs" do
+      tool_call_message.update!(tool_name: "record_change_intent", tool_result: { "id" => 123, "status" => "draft" })
+      allow(Tools::Registry).to receive(:post_dispatch_confirmation?).with("record_change_intent").and_return(true)
+      allow(Tools::Registry).to receive(:resolve_confirmation).and_return({ "id" => 123, "status" => "active" })
+
+      described_class.call(
+        chat_session: chat_session, tool_call_message: tool_call_message,
+        decision: :approve, llm_client: llm_client
+      )
+
+      expect(Tools::Registry).not_to have_received(:dispatch)
+      expect(Tools::Registry).to have_received(:resolve_confirmation).with(
+        name: "record_change_intent",
+        decision: :approve,
+        pending_result: { "id" => 123, "status" => "draft" },
+        user: user,
+        session: chat_session
+      )
+    end
   end
 
   describe ".call deny" do
@@ -103,6 +123,20 @@ RSpec.describe ChatSessions::ResolveToolCall do
       tool_result = chat_session.messages.find_by(role: "tool")
       expect(tool_result.tool_result).to include("status" => "denied")
       expect(result.content).to eq("Done.")
+    end
+
+    it "routes post-dispatch denials through the tool resolver" do
+      tool_call_message.update!(tool_name: "record_change_intent", tool_result: { "id" => 22, "status" => "draft" })
+      allow(Tools::Registry).to receive(:post_dispatch_confirmation?).with("record_change_intent").and_return(true)
+      allow(Tools::Registry).to receive(:resolve_confirmation).and_return({ "id" => 22, "status" => "denied" })
+
+      described_class.call(
+        chat_session: chat_session, tool_call_message: tool_call_message,
+        decision: :deny, llm_client: llm_client
+      )
+
+      expect(Tools::Registry).not_to have_received(:dispatch)
+      expect(chat_session.messages.find_by(role: "tool").tool_result).to eq({ "id" => 22, "status" => "denied" })
     end
   end
 
