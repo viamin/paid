@@ -1,10 +1,18 @@
 <% tool_title = message.role == "tool" ? "Tool Result" : "Tool Call" %>
 <% payload = message.role == "tool" ? (message.tool_result || message.content) : message.tool_arguments %>
-<details class="rounded-lg border border-blue-200 bg-white <%= "ring-2 ring-amber-300" if message.pending_confirmation? %>" <% if message.role == "tool" || message.resolved_tool_confirmation? %>open<% end %>>
-  <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-semibold text-gray-800">
-    <span><%= tool_title %>: <%= message.tool_name.presence || "Unknown tool" %></span>
-    <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium <%= chat_tool_status_classes(message) %>">
-      <%= chat_tool_status_label(message) %>
+<details class="group rounded-lg border border-blue-200 bg-blue-50/70 <%= "ring-2 ring-amber-300" if message.pending_confirmation? %>" <% if chat_tool_expanded_by_default?(message) %>open<% end %>>
+  <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs font-medium text-gray-700">
+    <span class="min-w-0 truncate">
+      <span class="font-semibold text-gray-800"><%= tool_title %></span>
+      <span class="text-gray-500"><%= chat_tool_summary(message) %></span>
+    </span>
+    <span class="inline-flex shrink-0 items-center gap-2">
+      <span class="inline-flex items-center rounded-md px-2 py-1 text-xs font-medium <%= chat_tool_status_classes(message) %>">
+        <%= chat_tool_status_label(message) %>
+      </span>
+      <svg class="h-3.5 w-3.5 text-gray-400 transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+      </svg>
     </span>
   </summary>
   <div class="border-t border-blue-100 px-4 py-3">

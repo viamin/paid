@@ -4,17 +4,25 @@ import hljs from "highlight.js/lib/common"
 
 const SAFE_URL_SCHEMES = /^(https?|mailto):/i
 
-const renderer = {
-  link({ href, text }) {
-    if (!href) return text
-    if (!SAFE_URL_SCHEMES.test(href)) return text
-    const escaped = href.replaceAll("&", "&amp;").replaceAll('"', "&quot;")
-    return `<a href="${escaped}" rel="noopener noreferrer">${text}</a>`
-  },
-  image({ text }) {
-    return text || ""
-  }
+function escapeAttribute(value) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
 }
+
+const renderer = new marked.Renderer()
+
+renderer.link = function ({ href, tokens, text }) {
+  const label = tokens ? this.parser.parseInline(tokens) : text
+  if (!href) return label
+  if (!SAFE_URL_SCHEMES.test(href)) return label
+  const escaped = escapeAttribute(href)
+  return `<a href="${escaped}" rel="noopener noreferrer">${label}</a>`
+}
+
+renderer.image = ({ text }) => text || ""
 
 export default class extends Controller {
   static targets = ["content"]
@@ -36,13 +44,20 @@ export default class extends Controller {
 
     const rawContent = this.contentTarget.dataset.rawContent || ""
     const safeContent = this.escapeHtml(rawContent)
-    this.contentTarget.innerHTML = marked.parse(safeContent, {
-      breaks: true,
-      gfm: true,
-      renderer
-    })
 
-    this.decorateCodeBlocks()
+    try {
+      this.disablePlainTextFallback()
+      this.contentTarget.innerHTML = marked.parse(safeContent, {
+        breaks: true,
+        gfm: true,
+        renderer
+      })
+
+      this.decorateCodeBlocks()
+    } catch {
+      this.enablePlainTextFallback()
+      this.contentTarget.textContent = rawContent
+    }
   }
 
   async copyCode(event) {
@@ -62,7 +77,11 @@ export default class extends Controller {
     this.contentTarget.querySelectorAll("pre > code").forEach((codeBlock) => {
       if (codeBlock.closest("[data-code-block-wrapper]")) return
 
-      hljs.highlightElement(codeBlock)
+      try {
+        hljs.highlightElement(codeBlock)
+      } catch {
+        // Keep the raw code visible if syntax highlighting cannot classify it.
+      }
 
       const pre = codeBlock.parentElement
       const language = [...codeBlock.classList].find((name) => name.startsWith("language-"))?.replace("language-", "") || "text"
@@ -111,5 +130,13 @@ export default class extends Controller {
       .replaceAll("&", "&amp;")
       .replaceAll("<", "&lt;")
       .replaceAll(">", "&gt;")
+  }
+
+  enablePlainTextFallback() {
+    this.contentTarget.classList.add("whitespace-pre-wrap", "break-words")
+  }
+
+  disablePlainTextFallback() {
+    this.contentTarget.classList.remove("whitespace-pre-wrap", "break-words")
   }
 }

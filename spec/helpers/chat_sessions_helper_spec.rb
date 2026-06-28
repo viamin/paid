@@ -68,4 +68,38 @@ RSpec.describe ChatSessionsHelper do
       expect(helper.chat_session_projects(chat_session)).to contain_exactly(primary_project, reference_project)
     end
   end
+
+  describe "#chat_tool_summary" do
+    it "summarizes grep-style match counts" do
+      message = build(:chat_message, :tool,
+        tool_name: "grep_repo",
+        tool_result: { "total_count" => 81, "matches" => [ { "path" => "app.rb" } ] })
+
+      expect(helper.chat_tool_summary(message)).to eq("grep_repo · result · 81 matches")
+    end
+
+    it "summarizes list-style result arrays" do
+      message = build(:chat_message, :tool,
+        tool_name: "list_projects",
+        tool_result: [ { "name" => "paid" }, { "name" => "mutant" } ])
+
+      expect(helper.chat_tool_summary(message)).to eq("list_projects · result · 2 items")
+    end
+
+    it "summarizes tool errors without expanding the full payload" do
+      message = build(:chat_message, :tool,
+        tool_name: "search_code",
+        tool_result: { error: "internal_error", message: "key not found: :project_id" })
+
+      expect(helper.chat_tool_summary(message)).to eq("search_code · result · error: key not found: :project_id")
+    end
+
+    it "expands only pending tool confirmations by default" do
+      completed = build(:chat_message, :tool)
+      pending = build(:chat_message, :tool_call, tool_status: "pending")
+
+      expect(helper.chat_tool_expanded_by_default?(completed)).to be(false)
+      expect(helper.chat_tool_expanded_by_default?(pending)).to be(true)
+    end
+  end
 end
