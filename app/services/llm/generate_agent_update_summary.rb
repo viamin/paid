@@ -33,12 +33,11 @@ module Llm
       return if comparison_empty?
 
       response = request_summary
-      return unless response.success?
+      body = if response.success?
+        normalize_output(response.output).presence&.truncate(MAX_OUTPUT_LENGTH)
+      end
 
-      body = normalize_output(response.output).presence
-      return unless body
-
-      Result.new(body: body.truncate(MAX_OUTPUT_LENGTH), response: response)
+      Result.new(body: body, response: response)
     end
 
     private
@@ -92,10 +91,10 @@ module Llm
         Pull request: ##{pr_number}
         Commit range: #{short_sha(base_sha)}..#{short_sha(head_sha)}
 
-        ## Commits
+        ## Commits JSON
         #{commit_section}
 
-        ## Changed Files
+        ## Changed Files JSON
         #{file_section}
       PROMPT
     end
@@ -104,29 +103,46 @@ module Llm
       commits = Array(comparison[:commits])
       return "No commit metadata was available." if commits.empty?
 
-      commits.map do |commit|
-        "- #{short_sha(commit[:sha])}: #{commit[:message].to_s.truncate(MAX_COMMIT_MESSAGE_LENGTH, omission: ' [truncated]')}"
-      end.join("\n")
+      serialized = commits.map do |commit|
+        {
+          sha: short_sha(commit[:sha]),
+          message: commit[:message].to_s.truncate(MAX_COMMIT_MESSAGE_LENGTH, omission: " [truncated]")
+        }
+      end
+
+      fenced_json(serialized)
     end
 
     def file_section
       files = Array(comparison[:files]).first(MAX_FILES)
       return "No changed file metadata was available." if files.empty?
 
-      files.map do |file|
-        [
-          "### #{file[:filename]}",
-          "Status: #{file[:status]}, +#{file[:additions]} / -#{file[:deletions]}",
-          patch_for(file)
-        ].compact.join("\n")
-      end.join("\n\n")
+      serialized = files.map do |file|
+        {
+          filename: file[:filename].to_s,
+          status: file[:status].to_s,
+          additions: file[:additions],
+          deletions: file[:deletions],
+          patch_excerpt: patch_for(file)
+        }.compact
+      end
+
+      fenced_json(serialized)
     end
 
     def patch_for(file)
       patch = file[:patch].to_s
       return if patch.blank?
 
-      "Patch excerpt:\n```diff\n#{patch.truncate(MAX_PATCH_LENGTH, omission: "\n[truncated]")}\n```"
+      patch.truncate(MAX_PATCH_LENGTH, omission: "\n[truncated]")
+    end
+
+    def fenced_json(value)
+      <<~JSON_BLOCK.chomp
+        ```json
+        #{JSON.pretty_generate(value)}
+        ```
+      JSON_BLOCK
     end
 
     def short_sha(sha)

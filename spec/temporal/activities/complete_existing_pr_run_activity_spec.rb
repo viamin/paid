@@ -107,12 +107,43 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
     end
 
     it "skips the comment when summary generation fails" do
-      project.effective_owner.settings.update!(agent_update_comment_mode: "summary")
-      allow(github_client).to receive(:compare_summary).and_return(commits: [], files: [])
+      enable_summary_comments
+      allow(AgentHarness).to receive(:send_message).and_return(
+        instance_double(
+          AgentHarness::Response,
+          success?: false,
+          output: "",
+          tokens: true,
+          input_tokens: 90,
+          output_tokens: 0,
+          model: "claude-sonnet-4-6"
+        )
+      )
 
       expect(github_client).not_to receive(:add_comment)
 
-      activity.execute(agent_run_id: agent_run.id)
+      expect { activity.execute(agent_run_id: agent_run.id) }
+        .to change(agent_run.token_usages, :count).by(1)
+    end
+
+    it "tracks tokens even when summary generation returns a blank body" do
+      enable_summary_comments
+      allow(AgentHarness).to receive(:send_message).and_return(
+        instance_double(
+          AgentHarness::Response,
+          success?: true,
+          output: %(\n```markdown\n```\n),
+          tokens: true,
+          input_tokens: 75,
+          output_tokens: 4,
+          model: "claude-sonnet-4-6"
+        )
+      )
+
+      expect(github_client).not_to receive(:add_comment)
+
+      expect { activity.execute(agent_run_id: agent_run.id) }
+        .to change(agent_run.token_usages, :count).by(1)
     end
 
     it "identifies agent update comments" do
