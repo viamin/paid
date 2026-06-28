@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_26_174154) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_28_000001) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2079,6 +2079,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_26_174154) do
     t.index ["project_id", "name"], name: "idx_roi_benchmarks_project_name"
   end
 
+  create_table "runner_credentials", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.bigint "created_by_id"
+    t.jsonb "log_data", comment: "Logidze change tracking"
+    t.boolean "long_lived", default: false, null: false, comment: "Whether this is a long-lived token that does not need periodic refresh"
+    t.datetime "revoked_at", comment: "Timestamp when credential was revoked"
+    t.bigint "runner_id", null: false
+    t.string "token", null: false, comment: "Encrypted authentication token (e.g., claude setup-token)"
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "created_at"], name: "index_runner_credentials_on_account_id_and_created_at"
+    t.index ["account_id"], name: "index_runner_credentials_on_account_id"
+    t.index ["created_by_id"], name: "index_runner_credentials_on_created_by_id"
+    t.index ["runner_id"], name: "index_runner_credentials_on_active_runner_id", unique: true, where: "(revoked_at IS NULL)"
+  end
+
   create_table "runner_states", force: :cascade do |t|
     t.datetime "circuit_opened_at"
     t.string "circuit_state", limit: 20, default: "closed", null: false
@@ -2740,6 +2756,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_26_174154) do
   add_foreign_key "remediation_decisions", "accounts"
   add_foreign_key "remediation_decisions", "users", column: "applied_by_id"
   add_foreign_key "roi_benchmarks", "projects", on_delete: :cascade
+  add_foreign_key "runner_credentials", "accounts"
+  add_foreign_key "runner_credentials", "runners"
+  add_foreign_key "runner_credentials", "users", column: "created_by_id"
   add_foreign_key "runner_states", "users", on_delete: :cascade
   add_foreign_key "runners", "integration_credentials", on_delete: :restrict
   add_foreign_key "runners", "provider_api_keys", on_delete: :restrict
@@ -2779,6 +2798,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_26_174154) do
   add_foreign_key "workflow_states", "projects"
   add_foreign_key "worktrees", "agent_runs", on_delete: :nullify
   add_foreign_key "worktrees", "projects", on_delete: :cascade
+
+  create_function :paid_current_account_id, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.paid_current_account_id()
+       RETURNS bigint
+       LANGUAGE sql
+       STABLE
+      AS $function$
+        SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
+      $function$
+  SQL
+
+  create_function :paid_tenant_bypass, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.paid_tenant_bypass()
+       RETURNS boolean
+       LANGUAGE sql
+       STABLE
+      AS $function$
+        SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
+      $function$
+  SQL
 
   create_function :logidze_capture_exception, sql_definition: <<-'SQL'
       CREATE OR REPLACE FUNCTION public.logidze_capture_exception(error_data jsonb)
@@ -3512,26 +3551,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_26_174154) do
           END IF;
           RETURN buf;
         END;
-      $function$
-  SQL
-
-  create_function :paid_current_account_id, sql_definition: <<-'SQL'
-      CREATE OR REPLACE FUNCTION public.paid_current_account_id()
-       RETURNS bigint
-       LANGUAGE sql
-       STABLE
-      AS $function$
-        SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
-      $function$
-  SQL
-
-  create_function :paid_tenant_bypass, sql_definition: <<-'SQL'
-      CREATE OR REPLACE FUNCTION public.paid_tenant_bypass()
-       RETURNS boolean
-       LANGUAGE sql
-       STABLE
-      AS $function$
-        SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
       $function$
   SQL
 

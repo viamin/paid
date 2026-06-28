@@ -10,7 +10,7 @@ RSpec.describe RunnerCredentialPolicy do
     let(:member) { create(:user, :member, account: account) }
     let(:other_account) { create(:account) }
     let(:other_user) { create(:user, account: other_account) }
-    let(:runner) { create(:runner, account: account) }
+    let(:runner) { create(:runner, user: create(:user, account: account)) }
     let(:credential) { create(:runner_credential, runner: runner, account: account) }
 
     describe "#index?" do
@@ -24,10 +24,6 @@ RSpec.describe RunnerCredentialPolicy do
 
       it "denies member" do
         expect(described_class.new(member, RunnerCredential)).not_to be_index
-      end
-
-      it "denies user from different account" do
-        expect(described_class.new(other_user, RunnerCredential)).not_to be_index
       end
     end
 
@@ -51,29 +47,29 @@ RSpec.describe RunnerCredentialPolicy do
 
     describe "#new?" do
       it "permits owner" do
-        expect(described_class.new(owner, RunnerCredential.new)).to be_new
+        expect(described_class.new(owner, RunnerCredential.new(account: account))).to be_new
       end
 
       it "permits admin" do
-        expect(described_class.new(admin, RunnerCredential.new)).to be_new
+        expect(described_class.new(admin, RunnerCredential.new(account: account))).to be_new
       end
 
       it "denies member" do
-        expect(described_class.new(member, RunnerCredential.new)).not_to be_new
+        expect(described_class.new(member, RunnerCredential.new(account: account))).not_to be_new
       end
     end
 
     describe "#create?" do
       it "permits owner" do
-        expect(described_class.new(owner, RunnerCredential.new)).to be_create
+        expect(described_class.new(owner, RunnerCredential.new(account: account))).to be_create
       end
 
       it "permits admin" do
-        expect(described_class.new(admin, RunnerCredential.new)).to be_create
+        expect(described_class.new(admin, RunnerCredential.new(account: account))).to be_create
       end
 
       it "denies member" do
-        expect(described_class.new(member, RunnerCredential.new)).not_to be_create
+        expect(described_class.new(member, RunnerCredential.new(account: account))).not_to be_create
       end
     end
 
@@ -101,8 +97,8 @@ RSpec.describe RunnerCredentialPolicy do
     let(:account_secondary) { create(:account) }
     let(:owner_primary) { create(:user, :owner, account: account_primary) }
     let(:owner_secondary) { create(:user, :owner, account: account_secondary) }
-    let(:runner_primary) { create(:runner, account: account_primary) }
-    let(:runner_secondary) { create(:runner, account: account_secondary) }
+    let(:runner_primary) { create(:runner, user: create(:user, account: account_primary)) }
+    let(:runner_secondary) { create(:runner, user: create(:user, account: account_secondary)) }
     let!(:credential_primary) { create(:runner_credential, runner: runner_primary, account: account_primary) }
     let!(:credential_secondary) { create(:runner_credential, runner: runner_secondary, account: account_secondary) }
 

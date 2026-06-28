@@ -7,7 +7,7 @@ RSpec.describe "RunnerCredentials" do
   let(:owner_user) { create(:user, :owner, account: account) }
   let(:admin_user) { create(:user, :admin, account: account) }
   let(:member_user) { create(:user, :member, account: account) }
-  let(:runner) { create(:runner, account: account) }
+  let(:runner) { create(:runner, user: owner_user) }
 
   describe "GET /runners/:runner_id/runner_credentials" do
     before { sign_in owner_user }
@@ -24,6 +24,8 @@ RSpec.describe "RunnerCredentials" do
     context "when user is an admin" do
       before { sign_in admin_user }
 
+      let(:runner) { create(:runner, user: admin_user) }
+
       it "allows access" do
         get runner_runner_credentials_path(runner)
 
@@ -33,6 +35,8 @@ RSpec.describe "RunnerCredentials" do
 
     context "when user is a member" do
       before { sign_in member_user }
+
+      let(:runner) { create(:runner, user: member_user) }
 
       it "denies access" do
         get runner_runner_credentials_path(runner)
@@ -56,6 +60,8 @@ RSpec.describe "RunnerCredentials" do
 
     context "when user is a member" do
       before { sign_in member_user }
+
+      let(:runner) { create(:runner, user: member_user) }
 
       it "denies access" do
         get new_runner_runner_credential_path(runner)
@@ -104,6 +110,8 @@ RSpec.describe "RunnerCredentials" do
     context "when user is a member" do
       before { sign_in member_user }
 
+      let(:runner) { create(:runner, user: member_user) }
+
       it "denies access" do
         post runner_runner_credentials_path(runner), params: {
           runner_credential: {
@@ -124,7 +132,7 @@ RSpec.describe "RunnerCredentials" do
     before { sign_in owner_user }
 
     it "shows a runner credential" do
-      get runner_credential_path(runner, credential)
+      get runner_runner_credential_path(runner, credential)
 
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("Runner Credential")
@@ -134,11 +142,13 @@ RSpec.describe "RunnerCredentials" do
     context "when user is a member" do
       before { sign_in member_user }
 
-      it "denies access" do
-        get runner_credential_path(runner, credential)
+      let(:runner) { create(:runner, user: member_user) }
+      let(:credential) { create(:runner_credential, runner: runner, account: account, created_by: owner_user) }
 
-        expect(response).to redirect_to(root_path)
-        expect(flash[:alert]).to include("not authorized")
+      it "denies access" do
+        get runner_runner_credential_path(runner, credential)
+
+        expect(response).to have_http_status(:not_found)
       end
     end
   end
@@ -149,7 +159,7 @@ RSpec.describe "RunnerCredentials" do
     before { sign_in owner_user }
 
     it "revokes a runner credential" do
-      delete runner_credential_path(runner, credential)
+      delete runner_runner_credential_path(runner, credential)
 
       expect(response).to redirect_to(runner_runner_credentials_path(runner))
       expect(flash[:notice]).to include("successfully revoked")
@@ -161,11 +171,13 @@ RSpec.describe "RunnerCredentials" do
     context "when user is a member" do
       before { sign_in member_user }
 
-      it "denies access" do
-        delete runner_credential_path(runner, credential)
+      let(:runner) { create(:runner, user: member_user) }
+      let(:credential) { create(:runner_credential, runner: runner, account: account, created_by: owner_user) }
 
-        expect(response).to redirect_to(root_path)
-        expect(flash[:alert]).to include("not authorized")
+      it "denies access" do
+        delete runner_runner_credential_path(runner, credential)
+
+        expect(response).to have_http_status(:not_found)
       end
     end
   end

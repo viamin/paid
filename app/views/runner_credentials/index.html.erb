@@ -49,7 +49,7 @@
               </td>
               <td class="px-4 py-3 text-sm text-gray-500"><%= l(credential.created_at, format: :short) %></td>
               <td class="px-4 py-3 text-right text-sm">
-                <%= link_to "View", runner_credential_path(credential.runner, credential), class: "font-medium text-indigo-600 hover:text-indigo-500" %>
+                <%= link_to "View", runner_runner_credential_path(credential.runner, credential), class: "font-medium text-indigo-600 hover:text-indigo-500" %>
               </td>
             </tr>
           <% end %>

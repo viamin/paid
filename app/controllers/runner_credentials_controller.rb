@@ -44,7 +44,7 @@ class RunnerCredentialsController < ApplicationController
   end
 
   def set_runner_credential
-    @runner_credential = policy_scope(RunnerCredential).find(params[:id])
+    @runner_credential = filtered_scope.find(params[:id])
   end
 
   def filtered_scope

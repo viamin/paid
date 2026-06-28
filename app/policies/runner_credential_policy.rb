@@ -40,6 +40,8 @@ class RunnerCredentialPolicy < ApplicationPolicy
   private
 
   def account_for_record
+    return user&.account if record.is_a?(Class)
+
     record.respond_to?(:account) ? record.account : user&.account
   end
 end

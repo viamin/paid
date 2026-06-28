@@ -2,8 +2,12 @@
 
 FactoryBot.define do
   factory :runner_credential do
-    account
-    runner { association :runner, account: account }
+    transient do
+      runner_user { association :user }
+    end
+
+    runner { association :runner, user: runner_user }
+    account { runner_user.account }
     created_by { association :user, account: account }
     token { "sk-ant-oat01-#{SecureRandom.hex(32)}" }
     long_lived { false }

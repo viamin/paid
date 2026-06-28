@@ -34,11 +34,11 @@ class RunnerCredential < ApplicationRecord
   private
 
   def assign_account_from_runner
-    self.account_id = runner.account_id if runner.present? && account_id.blank?
+    self.account_id = runner.user&.account_id if runner.present? && account_id.blank?
   end
 
   def runner_belongs_to_same_account
-    return if runner.blank? || runner.account_id == account_id
+    return if runner.blank? || runner.user&.account_id == account_id
 
     errors.add(:runner, "must belong to the same account")
   end
