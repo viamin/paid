@@ -129,6 +129,8 @@ module ChatSessions
       messages = messages.last(MAX_CONVERSATION_MESSAGES)
 
       messages.each_with_object([]) do |msg, conversation|
+        next if fallback_notice?(msg)
+
         if assistant_tool_call_message?(msg)
           append_assistant_tool_call_entry(conversation, msg)
         else
@@ -142,6 +144,10 @@ module ChatSessions
         message.content.blank? &&
         message.tool_call_id.present? &&
         message.tool_name.present?
+    end
+
+    def fallback_notice?(message)
+      message.metadata.is_a?(Hash) && message.metadata["fallback_notice"] == true
     end
 
     def conversation_content_for(message)
