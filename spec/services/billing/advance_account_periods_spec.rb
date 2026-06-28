@@ -43,6 +43,24 @@ RSpec.describe Billing::AdvanceAccountPeriods do
       end
     end
 
+    it "backfills missed billing cycles in order before opening the current period" do
+      freeze_time do
+        create(:billing_period, account: account, billing_plan: plan, starts_at: 2.months.ago.beginning_of_month,
+               ends_at: 1.month.ago.beginning_of_month, status: "open")
+        result = described_class.call(account: account)
+        expect(result.closed_period_ids.size).to eq(2)
+        expect(result.generated_invoice_ids.size).to eq(2)
+        expect(result.issued_invoice_ids.size).to eq(2)
+        expect(account.billing_periods.order(:starts_at).pluck(:status, :starts_at, :ends_at)).to eq(
+          [
+            [ "invoiced", 2.months.ago.beginning_of_month, 1.month.ago.beginning_of_month ],
+            [ "invoiced", 1.month.ago.beginning_of_month, Time.current.beginning_of_month ],
+            [ "open", Time.current.beginning_of_month, Time.current.beginning_of_month.next_month ]
+          ]
+        )
+      end
+    end
+
     it "issues existing draft invoices for already invoiced periods" do
       freeze_time do
         period = create(:billing_period, :invoiced, account: account, billing_plan: plan, ends_at: 1.day.ago)

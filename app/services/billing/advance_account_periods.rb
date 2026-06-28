@@ -30,8 +30,8 @@ module Billing
       ActiveRecord::Base.transaction do
         account.lock!
         close_due_periods
-        invoice_closed_periods
         ensure_current_open_period
+        invoice_closed_periods
       end
 
       result
@@ -105,19 +105,17 @@ module Billing
     def ensure_current_open_period
       return if current_open_period.present?
 
-      starts_at = period_start_for(as_of)
-      ends_at = next_period_start_for(starts_at)
-      period = account.billing_periods.find_or_initialize_by(starts_at: starts_at, ends_at: ends_at)
-      return unless period.new_record?
+      starts_at = next_missing_period_start
+      return if starts_at.nil?
 
-      period.assign_attributes(
-        billing_plan: active_plan,
-        period_type: active_plan.period_type,
-        status: "open",
-        metadata: (period.metadata || {}).merge("opened_by" => "scheduled_billing", "opened_at" => Time.current.iso8601)
-      )
-      period.save!
-      result.opened_period_ids << period.id
+      while starts_at <= as_of
+        period = find_or_initialize_period(starts_at)
+        open_period(period) if period.new_record?
+        break if period.ends_at > as_of
+
+        close_period(period) if period.open?
+        starts_at = period.ends_at
+      end
     end
 
     def current_open_period
@@ -144,6 +142,32 @@ module Billing
       else
         starts_at.next_month
       end
+    end
+
+    def next_missing_period_start
+      latest_period = account.billing_periods.where("starts_at <= ?", as_of).order(:starts_at, :id).last
+      latest_period&.ends_at || period_start_for(as_of)
+    end
+
+    def find_or_initialize_period(starts_at)
+      ends_at = next_period_start_for(starts_at)
+      account.billing_periods.find_or_initialize_by(starts_at: starts_at, ends_at: ends_at)
+    end
+
+    def open_period(period)
+      period.assign_attributes(
+        billing_plan: active_plan,
+        period_type: active_plan.period_type,
+        status: "open",
+        metadata: (period.metadata || {}).merge("opened_by" => "scheduled_billing", "opened_at" => Time.current.iso8601)
+      )
+      period.save!
+      result.opened_period_ids << period.id
+    end
+
+    def close_period(period)
+      period.close!
+      result.closed_period_ids << period.id
     end
   end
 end
