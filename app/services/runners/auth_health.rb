@@ -99,14 +99,14 @@ module Runners
         .map(&:runner_key)
         .uniq
         .index_with do |runner_key|
-          latest_managed_credential_for(runner_key)
+          active_managed_credential_for(runner_key)
         end
     end
 
-    def latest_managed_credential_for(runner_key)
+    def active_managed_credential_for(runner_key)
       return if account.blank? || runner_key.blank?
 
-      account.integration_credentials
+      account.integration_credentials.active
         .for_category(:llm_provider)
         .for_service(runner_key)
         .order(created_at: :desc, id: :desc)

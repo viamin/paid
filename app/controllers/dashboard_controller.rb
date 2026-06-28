@@ -36,7 +36,6 @@ class DashboardController < ApplicationController
       .order(runner_retry_abandoned_at: :desc)
       .limit(20)
       .to_a
-    @auth_health = Runners::AuthHealth.call(account: current_account)
     @recent_activity = Dashboard::RecentActivity.call(account: current_account)
   end
 
@@ -94,6 +93,11 @@ class DashboardController < ApplicationController
   def github_health
     @github_health = Dashboard::GithubHealth.call(account: current_account)
     render partial: "dashboard/github_health", locals: @github_health
+  end
+
+  def auth_health
+    @auth_health = Runners::AuthHealth.call(account: current_account)
+    render partial: "dashboard/auth_health_frame", locals: { auth_health: @auth_health }
   end
 
   def pr_cycle_time
