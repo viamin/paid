@@ -177,6 +177,28 @@ module ApplicationHelper
     )
   end
 
+  # Badge for a PR's position in the review -> merge gate. Driven by
+  # Issue#pr_review_phase, the same field that drives the paid-ready /
+  # paid-escalated / paid-auto-merged GitHub labels, so the project page badge
+  # tracks GitHub readiness rather than "the agent finished a run" (paid_state).
+  PR_REVIEW_PHASE_STYLES = {
+    "draft" => { bg: "bg-blue-100", text: "text-blue-700", label: "In Review" },
+    "restarted" => { bg: "bg-blue-100", text: "text-blue-700", label: "In Review" },
+    "ready" => { bg: "bg-green-100", text: "text-green-700", label: "Ready" },
+    "escalated" => { bg: "bg-orange-100", text: "text-orange-700", label: "Escalated" },
+    "merged" => { bg: "bg-purple-100", text: "text-purple-700", label: "Merged" }
+  }.freeze
+
+  def pr_review_phase_badge(phase, review_count: nil)
+    styles = PR_REVIEW_PHASE_STYLES[phase] || PR_REVIEW_PHASE_STYLES["draft"]
+    title = review_count.to_i.positive? ? pluralize(review_count, "review round") : nil
+    tag.span(
+      styles[:label],
+      title: title,
+      class: "inline-flex items-center rounded-md #{styles[:bg]} px-2 py-1 text-xs font-medium #{styles[:text]}"
+    )
+  end
+
   ISSUE_LIFECYCLE_DISPLAY = {
     blocked: { emoji: "\u{1F550}", label: "Blocked" },
     in_progress: { emoji: "\u{1F9E0}", label: "In Progress" },

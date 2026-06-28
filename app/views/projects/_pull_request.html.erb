@@ -26,7 +26,7 @@
     <% end %>
   </div>
   <div class="ml-4 flex flex-shrink-0 items-center space-x-2">
-    <%= paid_state_badge(pull_request.paid_state) %>
+    <%= pr_review_phase_badge(pull_request.pr_review_phase, review_count: pull_request.draft_review_count) %>
     <%= render "projects/issue_pause_toggle", issue: pull_request, project: project %>
     <% subscription_locals = { issue: pull_request, project: project } %>
     <% if local_assigns.key?(:merge_notification_issue_ids) %>
