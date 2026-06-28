@@ -23,7 +23,7 @@ module Screenshots
         repo_path: @repo_path,
         project: @project,
         config: legacy_config,
-        targets: Screenshots::CaptureTargets.call(changed_files: @changed_files)
+        targets: Screenshots::CaptureTargets.call(changed_files: @changed_files, repo_path: @repo_path)
       )
 
       raise_capture_error!(result.failures) if result.failures.any?

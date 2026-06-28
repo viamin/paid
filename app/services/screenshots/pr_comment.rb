@@ -113,21 +113,30 @@ module Screenshots
         return "#{MARKER}\n## UI Screenshots\n\nNo screenshots captured for commit `#{short_sha}`.\n"
       end
 
+      grouped = group_by_category(@screenshots)
+
+      annotated = @screenshots.any? { |s| s[:summary].present? }
+
       lines = [ MARKER ]
       lines << "## UI Screenshots"
       lines << ""
       lines << "This PR includes **UI-facing changes**. Screenshots captured from commit `#{short_sha}`."
+      if annotated
+        lines << ""
+        lines << "> Pages were scoped by Paid to those this change appears to affect; " \
+                 "pages judged unrelated were skipped. Request a full capture if something looks missing."
+      end
       lines << ""
-
-      grouped = group_by_category(@screenshots)
 
       grouped.each do |category, category_screenshots|
         lines << "### #{category}"
         lines << ""
 
         if @previous_screenshots.any?
-          lines << "| Page | Before | After |"
-          lines << "|------|--------|-------|"
+          header = annotated ? "| Page | What changed | Before | After |" : "| Page | Before | After |"
+          divider = annotated ? "|------|--------------|--------|-------|" : "|------|--------|-------|"
+          lines << header
+          lines << divider
 
           category_screenshots.sort_by { |s| s[:route_name] }.each do |screenshot|
             name = screenshot[:route_name]
@@ -135,16 +144,24 @@ module Screenshots
             before_url = @previous_screenshots[name]
 
             before_cell = before_url ? "![before-#{name}](#{before_url})" : "_New page_"
-            lines << "| #{humanize_route(name)} | #{before_cell} | ![#{name}](#{after_url}) |"
+            cells = [ humanize_route(name) ]
+            cells << changed_cell(screenshot) if annotated
+            cells += [ before_cell, "![#{name}](#{after_url})" ]
+            lines << "| #{cells.join(' | ')} |"
           end
         else
-          lines << "| Page | Screenshot |"
-          lines << "|------|-----------|"
+          header = annotated ? "| Page | What changed | Screenshot |" : "| Page | Screenshot |"
+          divider = annotated ? "|------|--------------|-----------|" : "|------|-----------|"
+          lines << header
+          lines << divider
 
           category_screenshots.sort_by { |s| s[:route_name] }.each do |screenshot|
             name = screenshot[:route_name]
             url = screenshot[:url]
-            lines << "| #{humanize_route(name)} | ![#{name}](#{url}) |"
+            cells = [ humanize_route(name) ]
+            cells << changed_cell(screenshot) if annotated
+            cells << "![#{name}](#{url})"
+            lines << "| #{cells.join(' | ')} |"
           end
         end
 
@@ -166,6 +183,20 @@ module Screenshots
 
     def humanize_route(route_name)
       route_name.to_s.tr("_", " ").gsub(/\b\w/, &:upcase)
+    end
+
+    MAX_SUMMARY_LENGTH = 300
+
+    # Renders the agent-derived "what changed" summary for a table cell. The text
+    # is agent-influenced, so every markdown/HTML-significant character is
+    # backslash-escaped (neutralizing images, links, raw HTML, and table
+    # breakouts) and whitespace is collapsed to keep the row intact. GFM strips
+    # the backslashes on render, so the displayed text stays clean.
+    def changed_cell(screenshot)
+      summary = screenshot[:summary].to_s.gsub(/\s+/, " ").strip
+      return "—" if summary.empty?
+
+      summary.truncate(MAX_SUMMARY_LENGTH).gsub(/[\\`*_{}\[\]()#+\-!<>|~]/) { |char| "\\#{char}" }
     end
 
     def group_by_category(screenshots)
