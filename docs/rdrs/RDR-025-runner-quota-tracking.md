@@ -5,11 +5,15 @@
 ## Metadata
 
 - **Date**: 2026-04-19
-- **Status**: Implemented
+- **Status**: Partially Implemented
 - **Type**: Architecture
 - **Priority**: Medium
 - **Related Issues**: TBD
 - **Related RDRs**: [RDR-007](RDR-007-agent-cli-abstraction.md) (agent-harness), [RDR-008](RDR-008-model-selection.md) (model selection), [RDR-006](RDR-006-secrets-proxy.md) (secrets proxy)
+
+## Implementation Status
+
+Partially implemented. Paid shows recent runner usage from internal run/token data, records reactive runner rate-limit/circuit state, skips currently limited runners, and surfaces reactive quota notifications. Proactive upstream quota polling, quota credentials/snapshots, scheduled refresh, upstream quota display, and quota-aware routing scores are not implemented yet.
 
 ## Problem Statement
 

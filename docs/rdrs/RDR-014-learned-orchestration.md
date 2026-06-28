@@ -11,6 +11,10 @@
 - **Related Issues**: N/A (future enhancement)
 - **Related RDRs**: RDR-002 (Workflow Orchestration), RDR-009 (Prompt Evolution)
 
+## Implementation Status
+
+Implemented with follow-up gaps. Paid has strategy/version models, orchestration decision logging, strategy selection services, baseline extraction, strategy evolution workflows, experiments, human review gates, and coordination policy paths. The generic `Strategies::Select` path is not yet fully wired into every active orchestration decision point, and the promotion loop remains intentionally guarded by review workflows.
+
 ## Problem Statement
 
 Paid's current orchestration layer uses hand-designed workflows: poll issues → plan → execute → create PR. While functional, this approach:

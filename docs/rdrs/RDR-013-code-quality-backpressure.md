@@ -5,11 +5,15 @@
 ## Metadata
 
 - **Date**: 2025-01-23
-- **Status**: Implemented
+- **Status**: Superseded
 - **Type**: Architecture
 - **Priority**: High
 - **Related Issues**: N/A (foundational decision)
 - **Related Tests**: Hook execution tests, CI pipeline tests, linter integration tests
+
+## Implementation Status
+
+Superseded by later concrete quality systems rather than implemented exactly as written. Paid now enforces quality through repository CI/security workflows, `.githooks/pre-commit`, container pre-commit hooks, `PreCommitRequirement` evaluation, project convention guardrails, quality gates/recovery, and mutation backpressure from RDR-036. The original Lefthook/pre-push/SARIF-oriented shape and broad `QualityConfiguratorService` / `RunQualityChecksActivity` design were not adopted as-is.
 
 ## Problem Statement
 

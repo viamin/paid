@@ -5,12 +5,16 @@
 ## Metadata
 
 - **Date**: 2026-05-06
-- **Status**: Final
+- **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: High
 - **Related Issues**: #740 (Multi-Tenancy Phase 3.7), #729, #730, #731, #732, #733
 - **Related RDRs**: RDR-010 (Multi-Tenancy and RBAC), RDR-024 (Isolation Strategy), RDR-018 (Billing Aggregation)
 - **Related Tests**: `spec/services/accounts/provision_spec.rb`, `spec/models/concerns/tenant_enforcement_spec.rb`
+
+## Implementation Status
+
+Implemented for the preparation scope. Paid provisions accounts with tenant settings, billing plans, and onboarding steps; enforces tenant lifecycle state; installs `TenantContext` in requests; applies forced RLS; and exposes account lifecycle UI/actions. Future commercial lifecycle work such as automated billing suspension, tenant limit usage alerts, self-service plan upgrades, and deactivated-account data export remains separate follow-up scope.
 
 ## Problem Statement
 
