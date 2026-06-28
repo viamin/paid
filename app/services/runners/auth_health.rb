@@ -10,6 +10,7 @@ module Runners
     CACHE_TTL = 20.seconds
     EXPIRING_SOON_THRESHOLD = 24.hours
     CLI_TIMEOUT_SECONDS = 5
+    CLI_TIMEOUT_KILL_GRACE_SECONDS = 1
     SUPPORTED_RUNNER_KEYS = %w[claude].freeze
 
     Result = Struct.new(
@@ -168,9 +169,7 @@ module Runners
     end
 
     def cli_claude_status
-      stdout, stderr, status = Timeout.timeout(CLI_TIMEOUT_SECONDS) do
-        Open3.capture3({}, "claude", "auth", "status", "--json")
-      end
+      stdout, stderr, status = run_claude_auth_status
       payload = parse_json(stdout)
       return missing_host_forwarded_status(cli_error_message(nil, stderr: stderr, stdout: stdout)) unless payload
 
@@ -190,6 +189,40 @@ module Runners
       missing_host_forwarded_status("Claude auth status check timed out")
     rescue SystemCallError => e
       missing_host_forwarded_status("Claude auth status check failed: #{e.message}")
+    end
+
+    def run_claude_auth_status
+      stdout_str = +""
+      stderr_str = +""
+      status = nil
+
+      Open3.popen3({}, "claude", "auth", "status", "--json", pgroup: true) do |stdin, stdout, stderr, wait_thr|
+        stdin&.close
+
+        out_thread = spawn_io_reader(stdout, stdout_str)
+        err_thread = spawn_io_reader(stderr, stderr_str)
+
+        begin
+          Timeout.timeout(CLI_TIMEOUT_SECONDS) do
+            status = wait_thr.value
+            join_reader_thread(out_thread)
+            join_reader_thread(err_thread)
+          end
+        rescue Timeout::Error
+          kill_process_group(wait_thr.pid)
+          reap_wait_thread(wait_thr)
+          close_io(stdout)
+          close_io(stderr)
+          join_reader_thread(out_thread, timeout: CLI_TIMEOUT_KILL_GRACE_SECONDS)
+          join_reader_thread(err_thread, timeout: CLI_TIMEOUT_KILL_GRACE_SECONDS)
+          raise
+        ensure
+          close_io(stdout)
+          close_io(stderr)
+        end
+      end
+
+      [ stdout_str, stderr_str, status ]
     end
 
     def fallback_claude_status
@@ -311,6 +344,48 @@ module Runners
         Time.parse(value)
       end
     rescue ArgumentError
+      nil
+    end
+
+    def spawn_io_reader(io, output)
+      Thread.new do
+        Thread.current.report_on_exception = false
+        output << io.read.to_s
+      rescue IOError
+        # IO closed during timeout cleanup
+      end
+    end
+
+    def join_reader_thread(thread, timeout: nil)
+      return unless thread
+      return thread.join unless timeout
+
+      thread.join(timeout) || begin
+        thread.kill
+        thread.join
+      end
+    end
+
+    def close_io(io)
+      io.close unless io.closed?
+    rescue IOError
+      nil
+    end
+
+    def reap_wait_thread(wait_thr)
+      reap_thread = Thread.new do
+        Thread.current.report_on_exception = false
+        wait_thr.value
+      end
+      join_reader_thread(reap_thread, timeout: CLI_TIMEOUT_KILL_GRACE_SECONDS)
+    end
+
+    def kill_process_group(pid)
+      pgid = Process.getpgid(pid)
+      Process.kill("TERM", -pgid)
+      sleep CLI_TIMEOUT_KILL_GRACE_SECONDS
+      Process.kill("KILL", -pgid)
+    rescue Errno::ESRCH, Errno::EPERM
       nil
     end
   end

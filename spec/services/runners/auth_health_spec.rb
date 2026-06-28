@@ -23,9 +23,16 @@ RSpec.describe Runners::AuthHealth do
 
   def stub_claude_auth_status(stdout:, success:, stderr: self.stderr)
     status = instance_double(Process::Status, success?: success)
-    allow(Open3).to receive(:capture3)
-      .with({}, "claude", "auth", "status", "--json")
-      .and_return([ stdout, stderr, status ])
+    wait_thr = instance_double(Process::Waiter, pid: 12_345, value: status)
+
+    allow(Open3).to receive(:popen3)
+      .with({}, "claude", "auth", "status", "--json", pgroup: true)
+      .and_yield(
+        Popen3Stub::FakeIO.new,
+        Popen3Stub::FakeIO.new(stdout),
+        Popen3Stub::FakeIO.new(stderr),
+        wait_thr
+      )
   end
 
   def with_claude_credentials(payload)
@@ -181,7 +188,7 @@ RSpec.describe Runners::AuthHealth do
       results = described_class.call(account: account)
 
       expect(results.size).to eq(2)
-      expect(Open3).to have_received(:capture3).once
+      expect(Open3).to have_received(:popen3).once
       expect(results.map(&:valid)).to all(be(true))
     end
 
@@ -193,7 +200,7 @@ RSpec.describe Runners::AuthHealth do
       first_result = call_auth_health
       second_result = call_auth_health
 
-      expect(Open3).to have_received(:capture3).once
+      expect(Open3).to have_received(:popen3).once
       expect(first_result.valid).to be(true)
       expect(second_result.valid).to be(true)
       expect(second_result.expires_at).to eq(first_result.expires_at)
@@ -213,7 +220,7 @@ RSpec.describe Runners::AuthHealth do
 
       expect(first_results.size).to eq(1)
       expect(second_results.size).to eq(1)
-      expect(Open3).to have_received(:capture3).once
+      expect(Open3).to have_received(:popen3).once
       expect(shared_cache.fetch("claude")).to include(valid: true, source: :host_forwarded)
     end
 
@@ -228,7 +235,7 @@ RSpec.describe Runners::AuthHealth do
       stub_claude_auth_status(stdout: { expiresAt: second_expires_at.iso8601 }.to_json, success: true)
       fresh_result = described_class.call(account: account, use_cache: false).fetch(0)
 
-      expect(Open3).to have_received(:capture3).twice
+      expect(Open3).to have_received(:popen3).twice
       expect(cached_result.expires_at).to be_within(1.second).of(first_expires_at)
       expect(fresh_result.expires_at).to be_within(1.second).of(second_expires_at)
     end
@@ -236,8 +243,8 @@ RSpec.describe Runners::AuthHealth do
     it "falls back to the native Claude credential file when the CLI is unavailable" do
       expires_at = 90.minutes.ago
       runner
-      allow(Open3).to receive(:capture3)
-        .with({}, "claude", "auth", "status", "--json")
+      allow(Open3).to receive(:popen3)
+        .with({}, "claude", "auth", "status", "--json", pgroup: true)
         .and_raise(Errno::ENOENT)
 
       with_claude_credentials(
@@ -280,8 +287,8 @@ RSpec.describe Runners::AuthHealth do
     it "finds fallback Claude credentials in ~/.config/claude when the CLI is unavailable" do
       expires_at = 90.minutes.from_now
       runner
-      allow(Open3).to receive(:capture3)
-        .with({}, "claude", "auth", "status", "--json")
+      allow(Open3).to receive(:popen3)
+        .with({}, "claude", "auth", "status", "--json", pgroup: true)
         .and_raise(Errno::ENOENT)
 
       with_home_dir do |home|
@@ -301,8 +308,8 @@ RSpec.describe Runners::AuthHealth do
 
     it "reports missing host-forwarded credentials when no fallback file exists" do
       runner
-      allow(Open3).to receive(:capture3)
-        .with({}, "claude", "auth", "status", "--json")
+      allow(Open3).to receive(:popen3)
+        .with({}, "claude", "auth", "status", "--json", pgroup: true)
         .and_raise(Errno::ENOENT)
 
       with_home_dir do
@@ -321,12 +328,24 @@ RSpec.describe Runners::AuthHealth do
 
     it "marks host-forwarded auth invalid when the Claude CLI status check times out" do
       runner
-      allow(Open3).to receive(:capture3)
-        .with({}, "claude", "auth", "status", "--json")
+      wait_thr = instance_double(Process::Waiter, pid: 12_345)
+      allow(wait_thr).to receive(:value)
+      allow(Kernel).to receive(:sleep)
+      allow(Timeout).to receive(:timeout)
+        .with(described_class::CLI_TIMEOUT_SECONDS)
         .and_raise(Timeout::Error)
+      allow(Process).to receive(:getpgid).with(12_345).and_return(12_345)
+      allow(Process).to receive(:kill)
+
+      allow(Open3).to receive(:popen3)
+        .with({}, "claude", "auth", "status", "--json", pgroup: true)
+        .and_yield(Popen3Stub::FakeIO.new, Popen3Stub::FakeIO.new, Popen3Stub::FakeIO.new, wait_thr)
 
       result = call_auth_health
 
+      expect(Process).to have_received(:kill).with("TERM", -12_345)
+      expect(Process).to have_received(:kill).with("KILL", -12_345)
+      expect(wait_thr).to have_received(:value).once
       expect(result.valid).to be(false)
       expect(result.expires_at).to be_nil
       expect(result.source).to eq(:host_forwarded)
@@ -335,8 +354,8 @@ RSpec.describe Runners::AuthHealth do
 
     it "marks host-forwarded auth invalid when spawning the Claude CLI fails" do
       runner
-      allow(Open3).to receive(:capture3)
-        .with({}, "claude", "auth", "status", "--json")
+      allow(Open3).to receive(:popen3)
+        .with({}, "claude", "auth", "status", "--json", pgroup: true)
         .and_raise(Errno::EACCES, "Permission denied")
 
       result = call_auth_health
