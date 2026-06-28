@@ -112,6 +112,7 @@ class Runner < ApplicationRecord
   belongs_to :integration_credential, optional: true
 
   has_many :chat_sessions, dependent: :nullify
+  has_many :runner_credentials, dependent: :destroy
 
   # Transient flag set by FreeModels::Rotation (and restore) when the
   # tier_model_ids change originates from the system rather than the user.

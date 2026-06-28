@@ -1,0 +1,65 @@
+<% content_for(:title) { "Runner Credential - Paid" } %>
+
+<div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
+  <div>
+    <%= link_to back_link_path(runner_runner_credentials_path(@runner_credential.runner)), class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
+      <span aria-hidden="true" class="mr-1">&larr;</span>
+      Back to credentials
+    <% end %>
+  </div>
+
+  <div class="mt-4 overflow-hidden rounded-lg bg-white shadow">
+    <div class="border-b border-gray-200 px-6 py-5">
+      <div class="flex items-center justify-between">
+        <div>
+          <h1 class="text-xl font-semibold text-gray-900"><%= @runner_credential.runner.display_name %> Credential</h1>
+          <p class="mt-1 text-sm text-gray-500">Authentication token managed for this runner</p>
+        </div>
+        <% if @runner_credential.revoked? %>
+          <span class="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">Revoked</span>
+        <% else %>
+          <span class="inline-flex items-center rounded-md bg-green-100 px-2 py-1 text-xs font-medium text-green-700">Active</span>
+        <% end %>
+      </div>
+    </div>
+
+    <dl class="divide-y divide-gray-200">
+      <div class="grid grid-cols-1 gap-4 px-6 py-4 sm:grid-cols-3">
+        <dt class="text-sm font-medium text-gray-500">Runner</dt>
+        <dd class="text-sm text-gray-900 sm:col-span-2">
+          <%= link_to @runner_credential.runner.display_name, edit_runner_path(@runner_credential.runner), class: "text-indigo-600 hover:text-indigo-500" %>
+        </dd>
+      </div>
+      <div class="grid grid-cols-1 gap-4 px-6 py-4 sm:grid-cols-3">
+        <dt class="text-sm font-medium text-gray-500">Token Type</dt>
+        <dd class="text-sm text-gray-900 sm:col-span-2">
+          <% if @runner_credential.long_lived %>
+            <span class="inline-flex items-center rounded-md bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700">Long-lived</span>
+          <% else %>
+            <span class="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">Standard</span>
+          <% end %>
+        </dd>
+      </div>
+      <div class="grid grid-cols-1 gap-4 px-6 py-4 sm:grid-cols-3">
+        <dt class="text-sm font-medium text-gray-500">Token</dt>
+        <dd class="text-sm text-gray-900 sm:col-span-2">Stored securely and hidden after save.</dd>
+      </div>
+      <div class="grid grid-cols-1 gap-4 px-6 py-4 sm:grid-cols-3">
+        <dt class="text-sm font-medium text-gray-500">Created at</dt>
+        <dd class="text-sm text-gray-900 sm:col-span-2"><%= l(@runner_credential.created_at, format: :long) %></dd>
+      </div>
+      <% if @runner_credential.created_by %>
+        <div class="grid grid-cols-1 gap-4 px-6 py-4 sm:grid-cols-3">
+          <dt class="text-sm font-medium text-gray-500">Created by</dt>
+          <dd class="text-sm text-gray-900 sm:col-span-2"><%= @runner_credential.created_by.email %></dd>
+        </div>
+      <% end %>
+    </dl>
+
+    <% if policy(@runner_credential).destroy? && !@runner_credential.revoked? %>
+      <div class="border-t border-gray-200 px-6 py-4">
+        <%= button_to "Revoke Credential", runner_credential_path(@runner_credential.runner, @runner_credential), method: :delete, class: "inline-flex items-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500" %>
+      </div>
+    <% end %>
+  </div>
+</div>
