@@ -1082,9 +1082,15 @@ module Containers
     # ~/.claude tmpfs. Only `.credentials.json` is needed for subscription auth;
     # `settings.json` is intentionally excluded to prevent interactive model
     # defaults from leaking into agent runs.
+    #
+    # Phase 3 (RDR-041): attempts a keep-warm refresh-token exchange before
+    # seeding when the credential is near expiry, so the container receives a
+    # fresh token rather than one about to expire mid-run.
     def seed_claude_credentials!
       source_files = %w[.credentials.json]
       return unless claude_subscription_auth?
+
+      refresh_claude_credentials_if_near_expiry!
 
       # Prefer the source that actually contains the required credential file
       # so we don't set PAID_CLAUDE_SUBSCRIPTION_AUTH=1 without seeding creds.
@@ -2504,6 +2510,176 @@ module Containers
 
     def codex_harness_provider
       AgentHarness.provider(:codex)
+    end
+
+    # Phase 3 — Claude credential keep-warm (RDR-041).
+    #
+    # Mirrors the Codex with_codex_auth_lock pattern for the host-forwarded
+    # Claude `.credentials.json`. The Claude CLI does not auto-refresh on
+    # headless machines, so Paid must perform the refresh-token exchange itself
+    # before the container starts, then write the rotated credential back to
+    # the source directory under a serializing file lock.
+    #
+    # Unlike Codex (where the CLI runs inside the container and the lock covers
+    # the entire exec), the Claude refresh happens at provision-preflight time
+    # on the Paid host — the lock serializes concurrent provision attempts that
+    # would race on a single-use rotating refresh token.
+    #
+    # When `AgentHarness::Authentication.exchange_refresh_token` ships
+    # (viamin/agent-harness#265), the actual token exchange is delegated there
+    # so provider-specific OAuth details stay upstream. Until that ships, the
+    # preflight is a no-op guard and the lock infrastructure is still wired.
+
+    # Returns the host-side directory that contains `.credentials.json` for the
+    # Claude subscription path, or nil when no credential file is present.
+    def claude_credentials_source_path
+      host = claude_config_host_path
+      return host if host.present? && File.file?(File.join(host, ".credentials.json"))
+
+      local = claude_local_config_path
+      return local if local.present? && File.file?(File.join(local, ".credentials.json"))
+
+      nil
+    end
+
+    # Parses the native `.credentials.json` shape written by the Claude CLI.
+    # The real format nests tokens under `claudeAiOauth`; the current upstream
+    # `AgentHarness::Authentication.auth_status(:claude)` reads a flat shape
+    # and incorrectly reports "No authentication token found" for real creds.
+    #
+    # TODO(viamin/agent-harness#265): replace with
+    # `AgentHarness::Authentication.auth_status(:claude)` once the upstream
+    # shape gap is resolved.
+    def claude_native_credential_expiry
+      source_path = claude_credentials_source_path
+      return nil unless source_path
+
+      creds_file = File.join(source_path, ".credentials.json")
+      return nil unless File.file?(creds_file)
+
+      raw = JSON.parse(File.read(creds_file))
+      expires_raw = raw.dig("claudeAiOauth", "expiresAt") ||
+                    raw["expiresAt"] ||
+                    raw["expires_at"]
+      expires_raw ? Time.parse(expires_raw.to_s) : nil
+    rescue JSON::ParserError, ArgumentError, SystemCallError
+      nil
+    end
+
+    # Returns true when the host-forwarded Claude credential will expire within
+    # the given window, meaning a keep-warm refresh should be attempted.
+    CLAUDE_CREDENTIAL_REFRESH_WINDOW = 6.hours
+
+    def claude_credentials_near_expiry?(refresh_window: CLAUDE_CREDENTIAL_REFRESH_WINDOW)
+      expiry = claude_native_credential_expiry
+      return false if expiry.nil? # Unknown expiry — don't speculate
+
+      expiry < (Time.now + refresh_window)
+    end
+
+    # Computes a deterministic, source-path-scoped lockfile path for the Claude
+    # credential, preventing different source directories from contending on the
+    # same lock. Mirrors codex_auth_lockfile_path.
+    CLAUDE_AUTH_LOCK_BASE_PATH = "/tmp/claude-auth"
+
+    def claude_auth_lockfile_path
+      source_path = claude_credentials_source_path
+      unless source_path
+        return "#{CLAUDE_AUTH_LOCK_BASE_PATH}-missing.lock"
+      end
+
+      digest = Digest::SHA256.hexdigest(source_path)[0, 16]
+      "#{CLAUDE_AUTH_LOCK_BASE_PATH}-#{digest}.lock"
+    end
+
+    # Serializes concurrent keep-warm attempts on the same source credential.
+    # After the lock is acquired, yields; if the lock times out, yields anyway
+    # (the holder may have already refreshed the credential, or the exchange
+    # will fail with refresh_token_reused which is classified as auth_expired).
+    #
+    # Mirrors with_codex_auth_lock.
+    CLAUDE_AUTH_LOCK_TIMEOUT = 30 # seconds
+
+    def with_claude_auth_lock
+      lockfile = claude_auth_lockfile_path
+      lock_timeout = CLAUDE_AUTH_LOCK_TIMEOUT
+
+      File.open(lockfile, File::WRONLY | File::CREAT, 0o600) do |f|
+        log_system("container.claude_auth_lock.waiting", lockfile: lockfile, lock_timeout_seconds: lock_timeout)
+
+        acquired = false
+        acquired = acquire_lock_with_timeout(f, lock_timeout)
+
+        if acquired
+          log_system("container.claude_auth_lock.acquired", lockfile: lockfile)
+          yield
+        else
+          log_system("container.claude_auth_lock.timeout",
+            lockfile: lockfile,
+            lock_timeout_seconds: lock_timeout)
+          log_system("container.claude_auth_refresh_skipped_without_lock",
+            source_path: claude_credentials_source_path)
+          yield
+        end
+      ensure
+        if acquired
+          f.flock(File::LOCK_UN)
+          acquired = false
+          log_system("container.claude_auth_lock.released", lockfile: lockfile)
+        end
+      end
+    end
+
+    # Provision-preflight keep-warm: if the host-forwarded Claude credential is
+    # near expiry, attempt a refresh-token exchange under a serializing file lock.
+    # The rotated credential is written back to the source directory by the
+    # upstream `exchange_refresh_token` call so the subsequent seed picks it up.
+    #
+    # No-ops if:
+    # - No host-forwarded Claude credential is present
+    # - The credential expiry is unknown (non-`claudeAiOauth` shape)
+    # - The credential has more than CLAUDE_CREDENTIAL_REFRESH_WINDOW remaining
+    # - `AgentHarness::Authentication` does not yet expose `exchange_refresh_token`
+    #   (viamin/agent-harness#265)
+    def refresh_claude_credentials_if_near_expiry!
+      return unless claude_subscription_auth?
+      return unless claude_credentials_near_expiry?
+
+      with_claude_auth_lock do
+        # Re-check after acquiring the lock: another Paid instance may have
+        # already refreshed this credential while we waited.
+        return unless claude_credentials_near_expiry?
+
+        exchange_claude_refresh_token!
+      end
+    end
+
+    # Calls the upstream refresh-token exchange API and writes the rotated
+    # credential back to the source. Requires
+    # `AgentHarness::Authentication.exchange_refresh_token` (viamin/agent-harness#265).
+    # Until that ships, logs and returns false.
+    def exchange_claude_refresh_token!
+      unless AgentHarness::Authentication.respond_to?(:exchange_refresh_token)
+        log_system("container.claude_auth_refresh.unsupported",
+          note: "viamin/agent-harness#265 not yet available; skipping keep-warm exchange")
+        return false
+      end
+
+      source_path = claude_credentials_source_path
+      return false unless source_path
+
+      AgentHarness::Authentication.exchange_refresh_token(:claude, credentials_path: source_path)
+      log_system("container.claude_auth_refreshed", source_path: source_path)
+      true
+    rescue AgentHarness::AuthenticationError => e
+      log_system("container.claude_auth_refresh_failed",
+        error: e.message,
+        source_path: source_path,
+        note: "classify as auth_expired via refresh_token_reused pattern if applicable")
+      false
+    rescue AgentHarness::Error, SystemCallError, JSON::ParserError => e
+      log_system("container.claude_auth_refresh_failed", error: e.message, source_path: source_path)
+      false
     end
 
     # Single source of truth for the Codex heartbeat notify line used in both
