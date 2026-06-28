@@ -14,6 +14,7 @@ module ChatSessions
 
     MAX_TOOL_ITERATIONS = 8
     MAX_CONVERSATION_MESSAGES = 200
+    EMPTY_RESPONSE_MESSAGE = "I couldn't complete that turn because the model returned an empty response. Please try again."
     TOOL_ITERATION_LIMIT_MESSAGE = "I hit the maximum number of tool iterations for this turn. Please try again with a narrower request."
 
     attr_reader :chat_session, :llm_client, :on_chunk, :on_message_persisted, :stream_message_id
@@ -49,7 +50,13 @@ module ChatSessions
         last_response_model = response[:model]
 
         final_assistant_message = create_assistant_message(response) if response[:content].present?
-        break if response[:tool_calls].blank?
+        if response[:tool_calls].blank?
+          final_assistant_message ||= create_empty_response_message(
+            model: last_response_model,
+            aggregate_tokens: aggregate_tokens
+          )
+          break
+        end
 
         conversation << {
           role: "assistant",
@@ -238,6 +245,29 @@ module ChatSessions
 
       on_message_persisted&.call(message, stream_message_id: stream_message_id)
       message
+    end
+
+    def create_empty_response_message(model:, aggregate_tokens:)
+      log_empty_response(model:, aggregate_tokens:)
+
+      create_assistant_message(
+        content: EMPTY_RESPONSE_MESSAGE,
+        model: model,
+        tokens_input: aggregate_tokens[:input],
+        tokens_output: aggregate_tokens[:output]
+      )
+    end
+
+    def log_empty_response(model:, aggregate_tokens:)
+      Rails.logger.warn(
+        message: "chat_agent_loop.empty_response",
+        chat_session_id: chat_session.id,
+        project_id: chat_session.project_id,
+        runner_id: chat_session.runner_id,
+        model: model,
+        tokens_input: aggregate_tokens[:input],
+        tokens_output: aggregate_tokens[:output]
+      )
     end
 
     def persist_tool_call_message(tool_call, status: nil)
