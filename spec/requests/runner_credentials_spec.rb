@@ -19,6 +19,15 @@ RSpec.describe "RunnerCredentials" do
 
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("Runner Credentials")
+      expect(response.body).to include(new_runner_runner_credential_path(runner))
+    end
+
+    it "links to the new credential form when no credentials exist" do
+      get runner_runner_credentials_path(runner)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("No runner credentials yet")
+      expect(response.body).to include(new_runner_runner_credential_path(runner))
     end
 
     context "when an admin manages another user's runner" do

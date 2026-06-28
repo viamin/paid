@@ -47,7 +47,9 @@
           <% end %>
 
           <div class="mt-4">
-            <%= link_to "Manage Credentials", runner_runner_credentials_path(@runner), class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+            <% credentials_path = credentials.any? ? runner_runner_credentials_path(@runner) : new_runner_runner_credential_path(@runner) %>
+            <% credentials_label = credentials.any? ? "Manage Credentials" : "Add Credential" %>
+            <%= link_to credentials_label, credentials_path, class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
           </div>
         </div>
       <% end %>

@@ -7,6 +7,7 @@
       <p class="mt-1 text-sm text-gray-500">Manage encrypted authentication tokens for subscription runners like Claude Code.</p>
     </div>
     <div class="mt-4 flex gap-3 sm:mt-0">
+      <%= link_to "Add Credential", new_runner_runner_credential_path(@runner), class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
       <%= link_to "Back to Runners", runners_path, class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
     </div>
   </div>
@@ -59,7 +60,10 @@
   <% else %>
     <div class="mt-8 rounded-lg border border-dashed border-gray-300 bg-white p-10 text-center">
       <h2 class="text-lg font-semibold text-gray-900">No runner credentials yet</h2>
-      <p class="mt-2 text-sm text-gray-500">Create a runner credential from the runner edit page to get started.</p>
+      <p class="mt-2 text-sm text-gray-500">Add the first encrypted setup token for this runner to get started.</p>
+      <div class="mt-6">
+        <%= link_to "Add Credential", new_runner_runner_credential_path(@runner), class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+      </div>
     </div>
   <% end %>
 </div>
