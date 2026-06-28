@@ -110,7 +110,7 @@ module Llm
         }
       end
 
-      fenced_json(serialized)
+      serialized_json(serialized)
     end
 
     def file_section
@@ -127,7 +127,7 @@ module Llm
         }.compact
       end
 
-      fenced_json(serialized)
+      serialized_json(serialized)
     end
 
     def patch_for(file)
@@ -137,12 +137,8 @@ module Llm
       patch.truncate(MAX_PATCH_LENGTH, omission: "\n[truncated]")
     end
 
-    def fenced_json(value)
-      <<~JSON_BLOCK.chomp
-        ```json
-        #{JSON.pretty_generate(value)}
-        ```
-      JSON_BLOCK
+    def serialized_json(value)
+      JSON.pretty_generate(value)
     end
 
     def short_sha(sha)
