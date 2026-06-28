@@ -222,4 +222,17 @@ RSpec.describe RunnerCredential do
       expect(log_data).not_to include("sk-ant-oat01-rotated")
     end
   end
+
+  describe "creator deletion" do
+    it "nullifies created_by when the creator is destroyed" do
+      account = create(:account)
+      owner = create(:user, account: account)
+      create(:user, :admin, account: account)
+      credential = create(:runner_credential, account: account, created_by: owner)
+
+      expect { owner.destroy! }
+        .to change { credential.reload.created_by_id }
+        .from(owner.id).to(nil)
+    end
+  end
 end

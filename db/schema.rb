@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_28_132627) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_28_182451) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2763,7 +2763,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_132627) do
   add_foreign_key "remediation_decisions", "users", column: "applied_by_id"
   add_foreign_key "roi_benchmarks", "projects", on_delete: :cascade
   add_foreign_key "runner_credentials", "accounts"
-  add_foreign_key "runner_credentials", "users", column: "created_by_id"
+  add_foreign_key "runner_credentials", "users", column: "created_by_id", on_delete: :nullify
   add_foreign_key "runner_states", "users", on_delete: :cascade
   add_foreign_key "runners", "integration_credentials", on_delete: :restrict
   add_foreign_key "runners", "provider_api_keys", on_delete: :restrict
@@ -3539,26 +3539,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_132627) do
       $function$
   SQL
 
-  create_function :paid_current_account_id, sql_definition: <<-'SQL'
-      CREATE OR REPLACE FUNCTION public.paid_current_account_id()
-       RETURNS bigint
-       LANGUAGE sql
-       STABLE
-      AS $function$
-        SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
-      $function$
-  SQL
-
-  create_function :paid_tenant_bypass, sql_definition: <<-'SQL'
-      CREATE OR REPLACE FUNCTION public.paid_tenant_bypass()
-       RETURNS boolean
-       LANGUAGE sql
-       STABLE
-      AS $function$
-        SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
-      $function$
-  SQL
-
   create_function :validate_orchestration_decision_strategy_version_scope, sql_definition: <<-'SQL'
       CREATE OR REPLACE FUNCTION public.validate_orchestration_decision_strategy_version_scope()
        RETURNS trigger
@@ -3592,6 +3572,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_132627) do
 
         RAISE EXCEPTION 'strategy_version_id must reference a global or same-tenant strategy version';
       END;
+      $function$
+  SQL
+
+  create_function :paid_current_account_id, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.paid_current_account_id()
+       RETURNS bigint
+       LANGUAGE sql
+       STABLE
+      AS $function$
+        SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
+      $function$
+  SQL
+
+  create_function :paid_tenant_bypass, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.paid_tenant_bypass()
+       RETURNS boolean
+       LANGUAGE sql
+       STABLE
+      AS $function$
+        SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
       $function$
   SQL
 
@@ -3641,10 +3641,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_132627) do
 
   create_trigger :logidze_on_mcp_server_definitions, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_mcp_server_definitions BEFORE INSERT OR UPDATE ON public.mcp_server_definitions FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{env}')
-  SQL
-
-  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
-      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
   SQL
 
   create_trigger :logidze_on_orchestration_strategies, sql_definition: <<-SQL
@@ -3713,5 +3709,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_132627) do
 
   create_trigger :logidze_on_users, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_users BEFORE INSERT OR UPDATE ON public.users FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{encrypted_password,reset_password_token,reset_password_sent_at,remember_created_at}')
+  SQL
+
+  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
+      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
   SQL
 end
