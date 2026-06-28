@@ -87,16 +87,17 @@ module Runners
       )
     end
 
-    def managed_credentials_by_runner_key
-      @managed_credentials_by_runner_key ||= account.integration_credentials
-        .where(category: "llm_provider", auth_kind: "oauth_token")
-        .order(created_at: :desc)
-        .group_by(&:service_key)
-        .transform_values(&:first)
-    end
-
     def managed_credential_for(runner_key)
       managed_credentials_by_runner_key[runner_key.to_s]
+    end
+
+    def managed_credentials_by_runner_key
+      @managed_credentials_by_runner_key ||= supported_subscription_runners
+        .map(&:runner_key)
+        .uniq
+        .index_with do |runner_key|
+          LlmCredentials::AccountResolver.call(account: account, runner_key: runner_key).integration_credential
+        end
     end
 
     def managed_token_status(credential)

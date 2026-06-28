@@ -30,6 +30,18 @@ RSpec.describe Runners::AuthHealth do
     end
   end
 
+  def create_claude_oauth_credential(expires_at:, **attributes)
+    create(
+      :integration_credential,
+      :oauth,
+      account: account,
+      created_by: user,
+      service_key: "claude",
+      expires_at: expires_at,
+      **attributes
+    )
+  end
+
   describe ".call" do
     it "returns an empty array when the account has no Claude subscription runners" do
       runner.update_column(:discarded_at, Time.current)
@@ -41,14 +53,7 @@ RSpec.describe Runners::AuthHealth do
     it "reports managed OAuth token health for Claude subscription runners" do
       expires_at = 2.days.from_now
       runner
-      create(
-        :integration_credential,
-        :oauth,
-        account: account,
-        created_by: user,
-        service_key: "claude",
-        expires_at: expires_at
-      )
+      create_claude_oauth_credential(expires_at:)
 
       result = call_auth_health
 
@@ -58,24 +63,33 @@ RSpec.describe Runners::AuthHealth do
       expect(result.error).to be_nil
     end
 
-    it "reports expired managed OAuth tokens as invalid" do
+    it "falls back to host-forwarded auth when the newest managed OAuth token is expired" do
       expires_at = 1.hour.ago
       runner
-      create(
-        :integration_credential,
-        :oauth,
-        account: account,
-        created_by: user,
-        service_key: "claude",
-        expires_at: expires_at
-      )
+      create_claude_oauth_credential(expires_at:)
+      host_forwarded_expires_at = 4.hours.from_now
+      stub_claude_auth_status(stdout: { expiresAt: host_forwarded_expires_at.iso8601 }.to_json, success: true)
 
       result = call_auth_health
 
-      expect(result.valid).to be(false)
-      expect(result.expires_at).to be_within(1.second).of(expires_at)
+      expect(result.valid).to be(true)
+      expect(result.expires_at).to be_within(1.second).of(host_forwarded_expires_at)
+      expect(result.source).to eq(:host_forwarded)
+      expect(result.error).to be_nil
+    end
+
+    it "ignores newer revoked managed OAuth tokens when an older active token is still runnable" do
+      active_expires_at = 2.days.from_now
+      runner
+      create_claude_oauth_credential(expires_at: active_expires_at, created_at: 2.days.ago)
+      create_claude_oauth_credential(expires_at: 5.days.from_now, revoked_at: 1.hour.ago, created_at: 1.day.ago)
+
+      result = call_auth_health
+
+      expect(result.valid).to be(true)
+      expect(result.expires_at).to be_within(1.second).of(active_expires_at)
       expect(result.source).to eq(:managed_token)
-      expect(result.error).to eq("Managed token expired")
+      expect(result.error).to be_nil
     end
 
     it "prefers claude auth status JSON for host-forwarded credentials" do
