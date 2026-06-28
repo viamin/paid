@@ -5,11 +5,15 @@
 ## Metadata
 
 - **Date**: 2026-04-22
-- **Status**: Draft
+- **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: Medium
 - **Related Issues**: #2011 (Avo Operator Console), #2012 (User-Facing Account Administration)
 - **Related RDRs**: [RDR-010](RDR-010-multi-tenancy-rbac.md) (Multi-Tenancy and RBAC), [RDR-024](RDR-024-multi-tenancy-isolation-strategy.md) (Multi-Tenancy Isolation Strategy), [RDR-018](RDR-018-billing-aggregation.md) (Billing Aggregation)
+
+## Implementation Status
+
+Implemented with an Avo-powered operator console mounted at `/admin`, fail-closed operator access checks, Pundit-backed operator policies, core account/user/membership/tenant setting resources, account lifecycle actions, and separate customer-facing account administration. Related Phase 5.1 and 5.2 issues are closed.
 
 ## Problem Statement
 

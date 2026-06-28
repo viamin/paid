@@ -11,6 +11,10 @@
 - **Related Issues**: N/A (foundational research)
 - **Related RDRs**: RDR-014 (Learned Orchestration), RDR-015 (End-to-End Optimization)
 
+## Implementation Status
+
+Implemented with follow-up gaps. Paid records scaling observations, assigns scaling experiments, analyzes scaling behavior, integrates learned allocation into feature orchestration, and uses `Scaling::ResourceAllocator` for dynamic allocation. Confidence interval reporting, a dedicated scaling experiment dashboard, and stronger statistical sample thresholds remain follow-up work.
+
 ## Problem Statement
 
 The Bitter Lesson's core insight is that methods which **scale with computation** ultimately win. For LLM training, this manifests as scaling laws: larger models trained on more data perform predictably better.

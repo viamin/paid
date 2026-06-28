@@ -4,10 +4,15 @@
 
 ## Metadata
 
-- **Status**: Draft
+- **Status**: Accepted
 - **Date**: 2026-06-26
 - **Priority**: P1
+- **Related Issues**: #2690, #2683, #2685, #2684, #2686, #2687, #2688, #2689
 - **Related RDRs**: RDR-004 (Container Isolation), RDR-006 (Secrets Proxy Architecture), RDR-007 (Agent CLI Abstraction), RDR-010 (Multi-Tenancy and RBAC), RDR-025 (Runner Quota Tracking), RDR-040 (Runner Model Compatibility Contracts)
+
+## Implementation Status
+
+Accepted and tracked, not materially implemented yet. Existing pre-RDR plumbing includes the `auth_expired` run status and non-zero auth classification, but the exit-0/preflight auth gap, proactive auth health, managed runner credentials, Claude long-lived token injection, and self-heal flows remain open work tracked by the related phase issues.
 
 ## Problem Statement
 

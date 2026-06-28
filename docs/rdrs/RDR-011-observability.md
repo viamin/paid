@@ -5,11 +5,15 @@
 ## Metadata
 
 - **Date**: 2025-01-23
-- **Status**: Final
+- **Status**: Partially Implemented
 - **Type**: Architecture
 - **Priority**: Medium
 - **Related Issues**: N/A (foundational decision)
 - **Related Tests**: Metrics endpoint tests, alert rule tests
+
+## Implementation Status
+
+Partially implemented. Paid exposes Prometheus-compatible metrics at `/api/metrics`, collects application metrics through `Metrics::PrometheusCollector`, and includes in-app queue monitoring/alerts. The full stack described here is not yet checked in: Prometheus configuration/rules, Grafana dashboards/provisioning, AlertManager routing, exporter configuration, and Compose observability services remain follow-up work.
 
 ## Problem Statement
 

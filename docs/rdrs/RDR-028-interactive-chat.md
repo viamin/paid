@@ -11,6 +11,10 @@
 - **Related Issues**: TBD
 - **Related RDRs**: [RDR-007](RDR-007-agent-cli-abstraction.md) (agent-harness), [RDR-004](RDR-004-container-isolation.md) (containers), [RDR-006](RDR-006-secrets-proxy.md) (secrets proxy), [RDR-025](RDR-025-runner-quota-tracking.md) (quota tracking)
 
+## Implementation Status
+
+Implemented for API-mode interactive chat: sessions, messages, UI/API routes, streaming, tool calls, MCP tools, token tracking, and write-tool confirmation are present. The workspace/container chat mode described here is superseded by RDR-037, which tracks containerized multi-repo chat and workspace mutation tools.
+
 ## Problem Statement
 
 Paid orchestrates AI agents to build software through a batch-oriented workflow: label an issue, queue an agent run, wait for the PR. This workflow is powerful but cannot handle four increasingly important use cases:

@@ -5,11 +5,15 @@
 ## Metadata
 
 - **Date**: 2025-01-23
-- **Status**: Final
+- **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: High
 - **Related Issues**: N/A (foundational decision)
 - **Related Tests**: Database migration tests, model specs
+
+## Implementation Status
+
+Implemented in Paid with PostgreSQL for Rails data, GoodJob, Solid Cache, Solid Cable, and Temporal persistence in the local Compose stack. The schema uses PostgreSQL features including JSONB, GIN indexes, full-text search, fx-managed functions/triggers, Logidze, and tenant RLS. Operational follow-ups such as large-table partitioning, retention policies, read-replica criteria, and `pg_stat_statements` monitoring remain scale-triggered work rather than blockers for the core database decision.
 
 ## Problem Statement
 

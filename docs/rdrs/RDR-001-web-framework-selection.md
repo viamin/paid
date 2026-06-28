@@ -5,11 +5,15 @@
 ## Metadata
 
 - **Date**: 2025-01-23
-- **Status**: Final
+- **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: High
 - **Related Issues**: N/A (foundational decision)
 - **Related Tests**: Integration tests for Rails controllers, Hotwire functionality
+
+## Implementation Status
+
+Implemented in Paid as a Rails 8.1 application using Hotwire, Action Cable/Solid Cable, GoodJob, Pundit, PostgreSQL, and the Temporal Ruby SDK. The original Phlex component-layer dependency was deferred; current project guidance treats ERB as the active view stack until a future Phlex adoption effort lands.
 
 ## Problem Statement
 

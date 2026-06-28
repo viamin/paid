@@ -5,11 +5,15 @@
 ## Metadata
 
 - **Date**: 2025-01-23
-- **Status**: Final
+- **Status**: Superseded
 - **Type**: Architecture
 - **Priority**: High
 - **Related Issues**: N/A (foundational decision)
 - **Related Tests**: Worktree service tests, cleanup job tests
+
+## Implementation Status
+
+Partially superseded by RDR-019 for normal agent execution. Paid still uses `Worktree` records and host-side worktrees for branch ownership metadata and maintenance flows, but ordinary agent runs now use Docker named volumes with an in-container clone instead of host-created git worktrees bind-mounted into containers. See RDR-019 for the current remote/container execution workspace model.
 
 ## Problem Statement
 

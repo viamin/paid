@@ -5,11 +5,15 @@
 ## Metadata
 
 - **Date**: 2026-04-17
-- **Status**: Final
+- **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: High
 - **Related Issues**: #729 (Multi-tenancy design), RDR-010 (Multi-Tenancy and RBAC)
 - **Related Tests**: `spec/models/account_spec.rb`, `spec/models/tenant_setting_spec.rb`, `spec/models/concerns/tenant_scoped_spec.rb`
+
+## Implementation Status
+
+Implemented with material hardening beyond the original recommendation. Paid uses account lifecycle states, tenant settings, request-level tenant enforcement, explicit tenant scopes, database session tenant context, and broad forced PostgreSQL RLS. The implementation intentionally evolved from "application-level primary, RLS later" to a hybrid model with database-enforced tenant isolation.
 
 ## Problem Statement
 

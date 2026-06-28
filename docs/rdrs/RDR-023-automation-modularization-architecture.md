@@ -5,12 +5,16 @@
 ## Metadata
 
 - **Date**: 2026-04-15
-- **Status**: Implemented
+- **Status**: Partially Implemented
 - **Type**: Architecture
 - **Priority**: High
 - **Related Issues**: #1114, #1116
 - **Related Tests**: N/A
 - **Related RDRs**: [RDR-012](RDR-012-github-integration.md) (GitHub Integration), [RDR-022](RDR-022-auto-merge-pr-strategy.md) (Auto-Merge Strategy), [RDR-002](RDR-002-workflow-orchestration.md) (Workflow Orchestration)
+
+## Implementation Status
+
+Partially implemented. Paid has provider capability interfaces, provider data objects, GitHub provider adapters, strategy classes, provider resolver wiring, and some merge/review paths using the modular automation layer. Remaining work includes extracting signal collection from `ScanPaidPrsActivity`, adding the strategy coordinator described here, removing remaining direct scanner provider calls, and shrinking `ScanPaidPrsActivity` into orchestration glue.
 
 ## Problem Statement
 

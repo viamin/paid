@@ -11,6 +11,10 @@
 - **Related Issues**: N/A (future enhancement)
 - **Related RDRs**: RDR-009 (Prompt Evolution), RDR-014 (Learned Orchestration)
 
+## Implementation Status
+
+Implemented with one accepted design drift to review. Paid has configuration bundles, bundle outcomes, objective scoring, runtime bundle assignment, outcome recording, exploration/exploitation, optimization services, and dashboard stats. The production surrogate is `ConfigurationBundles::SurrogateOutcomeModel`, a weighted similarity/prior model with uncertainty, not the Gaussian Process surrogate originally specified here.
+
 ## Problem Statement
 
 Paid currently optimizes individual components:

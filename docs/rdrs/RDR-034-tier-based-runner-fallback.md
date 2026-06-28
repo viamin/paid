@@ -5,11 +5,15 @@
 ## Metadata
 
 - **Date**: 2026-05-23
-- **Status**: Draft
+- **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: P1
-- **Related Issues**: TBD (file alongside merging this RDR)
+- **Related Issues**: #2235, #2236, #2237, #2238, #2239, #2240
 - **Related RDRs**: RDR-007 (Agent CLI Abstraction), RDR-008 (Model Selection Strategy), RDR-025 (Runner Quota Tracking)
+
+## Implementation Status
+
+Implemented with minor accepted divergences. Paid filters fallback runners by tier support, resolves concrete models per runner attempt, records resolved attempt metadata, supports runner tier model maps, and fingerprints bundles by tier/selector metadata. The optional `selector_type: tier_only` and `model_pin` escape hatch described here were not implemented; file follow-up work only if those remain desired.
 
 ## Problem Statement
 

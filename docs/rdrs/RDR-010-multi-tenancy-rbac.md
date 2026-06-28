@@ -5,11 +5,15 @@
 ## Metadata
 
 - **Date**: 2025-01-23
-- **Status**: Final
+- **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: Medium
 - **Related Issues**: N/A (foundational decision)
 - **Related Tests**: Authorization policy tests, account scoping tests
+
+## Implementation Status
+
+Implemented with explicit account and project memberships, Pundit policies, request-level tenant context, database session tenant context, and forced PostgreSQL row-level security on tenant-scoped tables. RDR-024 and RDR-029 extend and harden this foundation rather than superseding it.
 
 ## Problem Statement
 

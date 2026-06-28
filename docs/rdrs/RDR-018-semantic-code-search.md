@@ -11,6 +11,10 @@
 - **Related Issues**: #66 (Look into using arcaneum for semantic data)
 - **Related Tests**: N/A (investigation phase)
 
+## Implementation Status
+
+Implemented through the later RDR-021 knowledge-base architecture. Paid uses Qdrant for semantic vector search and PostgreSQL `tsvector`/trigram indexes for exact and full-text search; the original MeiliSearch portion of this RDR was not adopted.
+
 ## Problem Statement
 
 Paid agents operate on codebases they have no prior understanding of. Each agent run starts from scratch—reading issue descriptions, exploring the repository, and building mental models before writing any code. This is wasteful:

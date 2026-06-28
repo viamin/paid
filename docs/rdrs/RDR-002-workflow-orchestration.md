@@ -5,11 +5,15 @@
 ## Metadata
 
 - **Date**: 2025-01-23
-- **Status**: Final
+- **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: High
 - **Related Issues**: N/A (foundational decision)
 - **Related Tests**: Workflow integration tests, activity unit tests
+
+## Implementation Status
+
+Implemented in Paid with the `temporalio` gem, Temporal services in Docker Compose, workflow/activity code under `app/temporal`, split poll and agent task queues, and GoodJob retained for lightweight background jobs. The implementation uses `app/temporal/workflows` and `app/temporal/activities` rather than the earlier illustrative `app/workflows` and `app/activities` paths.
 
 ## Problem Statement
 

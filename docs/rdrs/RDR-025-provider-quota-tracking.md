@@ -5,11 +5,15 @@
 ## Metadata
 
 - **Date**: 2026-04-19
-- **Status**: Implemented
+- **Status**: Superseded
 - **Type**: Architecture
 - **Priority**: Medium
 - **Related Issues**: TBD
 - **Related RDRs**: [RDR-007](RDR-007-agent-cli-abstraction.md) (agent-harness), [RDR-008](RDR-008-model-selection.md) (model selection), [RDR-006](RDR-006-secrets-proxy.md) (secrets proxy)
+
+## Implementation Status
+
+Superseded by [RDR-025: Runner Quota Tracking and Quota-Aware Routing](RDR-025-runner-quota-tracking.md), which uses the current runner terminology. The active runner quota RDR is partially implemented: Paid has internal usage and reactive rate-limit state, but not proactive upstream quota polling, snapshots, refresh, display, or quota-aware routing.
 
 ## Problem Statement
 

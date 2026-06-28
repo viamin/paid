@@ -5,11 +5,15 @@
 ## Metadata
 
 - **Date**: 2025-01-23
-- **Status**: Final
+- **Status**: Partially Implemented
 - **Type**: Architecture
 - **Priority**: High
 - **Related Issues**: N/A (foundational decision)
 - **Related Tests**: GitHub client tests, polling workflow tests
+
+## Implementation Status
+
+Mostly implemented for polling-first GitHub sync, local issue/PR caching, Octokit-backed API access, rate-limit/circuit state, webhooks, PAT credentials, and GitHub App credentials. The original PAT-only assumption was superseded by RDR-030. GitHub Projects V2 field/item synchronization from this RDR has not been implemented and remains follow-up work unless intentionally abandoned.
 
 ## Problem Statement
 

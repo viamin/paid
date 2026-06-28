@@ -5,11 +5,15 @@
 ## Metadata
 
 - **Date**: 2026-04-11
-- **Status**: Final
+- **Status**: Implemented
 - **Type**: Process
 - **Priority**: Medium
 - **Related Issues**: #1003 (Merge strategy decision), #948 (Umbrella auto-merge issue)
 - **Related PRs**: #950 (umbrella), #927 (trigger routing), #1000 (max review rounds), #993 (bot wiring, merged), #921 (clean signal, merged)
+
+## Implementation Status
+
+Implemented as a process decision. PR #950 was closed rather than merged wholesale, and the auto-merge work landed through incremental PRs and follow-up issues. The current implementation includes `Automation::Strategies::AutoMerge`, project auto-merge settings, scanner delegation, merge execution, and Dependabot-specific auto-merge paths.
 
 ## Problem Statement
 

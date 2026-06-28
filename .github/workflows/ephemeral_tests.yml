@@ -232,5 +232,8 @@ jobs:
               --method PATCH \
               --field body="$body"
           else
-            gh pr comment "${{ github.event.pull_request.number }}" --body "$body"
+            gh api \
+              "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+              --method POST \
+              --field body="$body"
           fi
