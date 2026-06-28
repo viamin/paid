@@ -5,11 +5,15 @@
 ## Metadata
 
 - **Date**: 2026-06-27
-- **Status**: Draft
+- **Status**: Accepted
 - **Type**: Process + Architecture
 - **Priority**: Medium
-- **Related Issues**: N/A
+- **Related Issues**: #2695, #2696, #2697
 - **Related Tests**: Knowledge artifact integration tests, context bundle tests, decision record collector tests
+
+## Implementation Status
+
+Accepted and tracked, not implemented yet. Related phase issues cover the `ChangeIntent` model and knowledge pipeline, chat creation flow, issue detection, and external agent exposure. Existing `DecisionRecord` and knowledge collector plumbing are prerequisites only; no `change_intents` table/model, change-intent collector, or MCP tools exist yet.
 
 ## Problem Statement
 

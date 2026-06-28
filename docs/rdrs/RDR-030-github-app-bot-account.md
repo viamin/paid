@@ -5,12 +5,16 @@
 ## Metadata
 
 - **Date**: 2026-05-09
-- **Status**: Implemented
+- **Status**: Partially Implemented
 - **Type**: Architecture
 - **Priority**: High
-- **Related Issues**: TBD
+- **Related Issues**: #2181, #2218, #2408, #2413, #2645
 - **Related RDRs**: [RDR-012](RDR-012-github-integration.md) (extends auth model), [RDR-022](RDR-022-auto-merge-pr-strategy.md) (consumes bot identity for PR authorship)
 - **Related Tests**: `spec/services/github/`, `spec/models/github_installation_*`, `spec/requests/github_app/installations_spec.rb`
+
+## Implementation Status
+
+Partially implemented. Paid has GitHub App registry/configuration, installation token minting and caching, `GithubInstallation` records, project credential resolution, App/PAT switching, git credential and GitHub API proxies, migration UI/services, bot author identity, and health/rate-limit separation. Remaining work includes self-hosted/admin GitHub App manifest setup, an install/callback lifecycle, and automatic persistence/update of installation records from GitHub installation events.
 
 ## Problem Statement
 
