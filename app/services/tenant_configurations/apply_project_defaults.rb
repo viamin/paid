@@ -12,6 +12,7 @@ module TenantConfigurations
     end
 
     def call
+      seed_mutation_test_requirement
       return unless tenant_setting
 
       apply_cost_budgets
@@ -35,6 +36,20 @@ module TenantConfigurations
       return if thresholds.blank? || project.quality_gate_settings.present?
 
       project.update!(quality_gate_settings: tenant_setting.effective_quality_thresholds)
+    end
+
+    def seed_mutation_test_requirement
+      return if project.pre_commit_requirements.exists?(check_type: "mutation_test")
+
+      project.pre_commit_requirements.create!(
+        account: project.account,
+        name: "mutation_test",
+        check_type: "mutation_test",
+        command: PreCommitRequirement::MUTATION_TEST_DEFAULT_COMMAND,
+        failure_behavior: "warn",
+        position: 0,
+        enabled: false
+      )
     end
   end
 end

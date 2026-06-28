@@ -295,6 +295,7 @@ module Screenshots
       "projects/quality_thresholds_controller.rb" => [ :project_quality_dashboard ],
       "projects/service_containers_controller.rb" => [ :project_edit ],
       "projects/mcp_servers_controller.rb" => [ :project_edit ],
+      "projects/mutation_test_requirements_controller.rb" => [ :project_edit ],
       "projects/knowledge_recommendations_controller.rb" => [ :project_knowledge_recommendations ],
       "projects/screenshot_configs_controller.rb" => [ :project_edit ],
       "projects/convention_settings_controller.rb" => [ :project_convention_settings ],
