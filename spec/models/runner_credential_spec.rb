@@ -17,6 +17,21 @@ RSpec.describe RunnerCredential do
       expect(credential.errors[:runner_key]).to include("can't be blank")
     end
 
+    it "requires a supported runner_key" do
+      credential = build(:runner_credential, runner_key: "cluade")
+
+      expect(credential).not_to be_valid
+      expect(credential.errors[:runner_key]).to include("is not supported")
+    end
+
+    it "accepts supported runner_keys" do
+      described_class.supported_runner_keys.each do |runner_key|
+        credential = build(:runner_credential, runner_key:)
+
+        expect(credential).to be_valid, "expected runner_key #{runner_key} to be valid"
+      end
+    end
+
     it "requires name" do
       credential = build(:runner_credential, name: nil)
 

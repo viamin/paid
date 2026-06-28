@@ -11,6 +11,8 @@ class RunnerCredential < ApplicationRecord
 
   validates :name, presence: true, uniqueness: { scope: %i[account_id runner_key] }
   validates :runner_key, presence: true
+  validates :runner_key, inclusion: { in: ->(_) { supported_runner_keys }, message: "is not supported" },
+    allow_blank: true, if: -> { new_record? || will_save_change_to_runner_key? }
   validates :auth_kind, presence: true, inclusion: { in: AUTH_KINDS }
   validates :token, presence: true
   validate :created_by_belongs_to_same_account, if: -> { created_by.present? }
@@ -37,6 +39,10 @@ class RunnerCredential < ApplicationRecord
 
   def revoke!
     update_column(:revoked_at, Time.current)
+  end
+
+  def self.supported_runner_keys
+    RunnerSupport.supported_runner_keys
   end
 
   private
