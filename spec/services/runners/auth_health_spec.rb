@@ -30,6 +30,29 @@ RSpec.describe Runners::AuthHealth do
     end
   end
 
+  def with_home_dir
+    Dir.mktmpdir do |dir|
+      original_home = ENV["HOME"]
+      ENV["HOME"] = dir
+      yield dir
+    ensure
+      ENV["HOME"] = original_home
+    end
+  end
+
+  def with_claude_config_dir_unset
+    original_dir = ENV["CLAUDE_CONFIG_DIR"]
+    ENV.delete("CLAUDE_CONFIG_DIR")
+    yield
+  ensure
+    ENV["CLAUDE_CONFIG_DIR"] = original_dir
+  end
+
+  def write_claude_credentials(dir, payload)
+    FileUtils.mkdir_p(dir)
+    File.write(File.join(dir, ".credentials.json"), payload.to_json)
+  end
+
   def create_claude_oauth_credential(expires_at:, **attributes)
     create(
       :integration_credential,
@@ -63,22 +86,20 @@ RSpec.describe Runners::AuthHealth do
       expect(result.error).to be_nil
     end
 
-    it "falls back to host-forwarded auth when the only managed OAuth token is expired" do
+    it "reports an expired managed OAuth token without falling back to host-forwarded auth" do
       expires_at = 1.hour.ago
       runner
       create_claude_oauth_credential(expires_at:)
-      host_forwarded_expires_at = 4.hours.from_now
-      stub_claude_auth_status(stdout: { expiresAt: host_forwarded_expires_at.iso8601 }.to_json, success: true)
 
       result = call_auth_health
 
-      expect(result.valid).to be(true)
-      expect(result.expires_at).to be_within(1.second).of(host_forwarded_expires_at)
-      expect(result.source).to eq(:host_forwarded)
-      expect(result.error).to be_nil
+      expect(result.valid).to be(false)
+      expect(result.expires_at).to be_within(1.second).of(expires_at)
+      expect(result.source).to eq(:managed_token)
+      expect(result.error).to eq("Managed token expired")
     end
 
-    it "uses the newest active managed OAuth token when a newer revoked token exists" do
+    it "reports the newest managed OAuth token when a newer revoked token exists" do
       active_expires_at = 2.days.from_now
       revoked_expires_at = 5.days.from_now
       runner
@@ -87,24 +108,25 @@ RSpec.describe Runners::AuthHealth do
 
       result = call_auth_health
 
-      expect(result.valid).to be(true)
-      expect(result.expires_at).to be_within(1.second).of(active_expires_at)
+      expect(result.valid).to be(false)
+      expect(result.expires_at).to be_within(1.second).of(revoked_expires_at)
       expect(result.source).to eq(:managed_token)
-      expect(result.error).to be_nil
+      expect(result.error).to eq("Managed token revoked")
     end
 
-    it "uses the newest active managed OAuth token when a newer expired token exists" do
+    it "reports the newest managed OAuth token when a newer expired token exists" do
       active_expires_at = 2.days.from_now
+      expired_expires_at = 1.hour.ago
       runner
       create_claude_oauth_credential(expires_at: active_expires_at, created_at: 2.days.ago)
-      create_claude_oauth_credential(expires_at: 1.hour.ago, created_at: 1.day.ago)
+      create_claude_oauth_credential(expires_at: expired_expires_at, created_at: 1.day.ago)
 
       result = call_auth_health
 
-      expect(result.valid).to be(true)
-      expect(result.expires_at).to be_within(1.second).of(active_expires_at)
+      expect(result.valid).to be(false)
+      expect(result.expires_at).to be_within(1.second).of(expired_expires_at)
       expect(result.source).to eq(:managed_token)
-      expect(result.error).to be_nil
+      expect(result.error).to eq("Managed token expired")
     end
 
     it "prefers claude auth status JSON for host-forwarded credentials" do
@@ -193,21 +215,45 @@ RSpec.describe Runners::AuthHealth do
       end
     end
 
+    it "finds fallback Claude credentials in ~/.config/claude when the CLI is unavailable" do
+      expires_at = 90.minutes.from_now
+      runner
+      allow(Open3).to receive(:capture3)
+        .with({}, "claude", "auth", "status", "--json")
+        .and_raise(Errno::ENOENT)
+
+      with_home_dir do |home|
+        config_dir = File.join(home, ".config", "claude")
+        write_claude_credentials(config_dir, { claudeAiOauth: { expiresAt: expires_at.iso8601 } })
+
+        with_claude_config_dir_unset do
+          result = call_auth_health
+
+          expect(result.valid).to be(true)
+          expect(result.expires_at).to be_within(1.second).of(expires_at)
+          expect(result.source).to eq(:host_forwarded)
+          expect(result.error).to be_nil
+        end
+      end
+    end
+
     it "reports missing host-forwarded credentials when no fallback file exists" do
       runner
       allow(Open3).to receive(:capture3)
         .with({}, "claude", "auth", "status", "--json")
         .and_raise(Errno::ENOENT)
 
-      with_claude_credentials({}) do
-        File.delete(File.join(ENV.fetch("CLAUDE_CONFIG_DIR"), ".credentials.json"))
+      with_home_dir do
+        with_claude_credentials({}) do
+          File.delete(File.join(ENV.fetch("CLAUDE_CONFIG_DIR"), ".credentials.json"))
 
-        result = call_auth_health
+          result = call_auth_health
 
-        expect(result.valid).to be(false)
-        expect(result.expires_at).to be_nil
-        expect(result.source).to eq(:host_forwarded)
-        expect(result.error).to eq("No credentials found")
+          expect(result.valid).to be(false)
+          expect(result.expires_at).to be_nil
+          expect(result.source).to eq(:host_forwarded)
+          expect(result.error).to eq("No credentials found")
+        end
       end
     end
 

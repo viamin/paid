@@ -99,14 +99,14 @@ module Runners
         .map(&:runner_key)
         .uniq
         .index_with do |runner_key|
-          active_managed_credential_for(runner_key)
+          latest_managed_credential_for(runner_key)
         end
     end
 
-    def active_managed_credential_for(runner_key)
+    def latest_managed_credential_for(runner_key)
       return if account.blank? || runner_key.blank?
 
-      account.integration_credentials.active
+      account.integration_credentials
         .for_category(:llm_provider)
         .for_service(runner_key)
         .order(created_at: :desc, id: :desc)
@@ -239,6 +239,7 @@ module Runners
 
     def read_claude_credentials
       path = claude_credentials_path
+      return nil if path.blank?
       return nil unless File.exist?(path)
 
       JSON.parse(File.read(path))
@@ -251,8 +252,35 @@ module Runners
     end
 
     def claude_credentials_path
-      config_dir = ENV["CLAUDE_CONFIG_DIR"].presence || File.expand_path("~/.claude")
+      config_dir = claude_config_dir
+      return if config_dir.blank?
+
       File.join(config_dir, ".credentials.json")
+    end
+
+    def claude_config_dir
+      if ENV["CLAUDE_CONFIG_DIR"].present?
+        return ENV["CLAUDE_CONFIG_DIR"] if credential_present?(ENV["CLAUDE_CONFIG_DIR"], ".credentials.json")
+      end
+
+      home = home_dir
+      if home.present?
+        dot_claude = File.join(home, ".claude")
+        return dot_claude if credential_present?(dot_claude, ".credentials.json")
+
+        config_claude = File.join(home, ".config", "claude")
+        return config_claude if credential_present?(config_claude, ".credentials.json")
+      end
+
+      "/.claude" if credential_present?("/.claude", ".credentials.json")
+    end
+
+    def credential_present?(dir, filename)
+      Dir.exist?(dir) && File.file?(File.join(dir, filename))
+    end
+
+    def home_dir
+      ENV["HOME"].presence || (Dir.respond_to?(:home) ? Dir.home : nil)
     end
 
     def parse_expiry(value)
