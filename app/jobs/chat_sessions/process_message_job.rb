@@ -53,6 +53,8 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue ChatSessions::TokenLimitExceededError => e
     broadcast_error(chat_session_id, stream_message_id, e.message)
+  rescue AgentHarness::RateLimitError => e
+    broadcast_error(chat_session_id, stream_message_id, ChatSessions::ErrorMessage.for(e))
   rescue ActiveRecord::RecordNotFound
     raise
   rescue StandardError => e
@@ -84,12 +86,17 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       tool_call_id: message.tool_call_id,
       tool_arguments: message.tool_arguments,
       tool_result: message.tool_result,
+      fallback_notice: fallback_notice?(message),
       stream_message_id: stream_message_id,
       html: ApplicationController.render(
         partial: "chat_messages/message",
         locals: { message: message }
       )
     })
+  end
+
+  def fallback_notice?(message)
+    message.metadata.is_a?(Hash) && message.metadata["fallback_notice"] == true
   end
 
   def broadcast_error(chat_session_id, stream_message_id, error_message)
