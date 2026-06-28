@@ -31,6 +31,7 @@ RSpec.describe ApplicationJob, :no_db do
         DependencyBackfillJob
         DispatchCircuitBreakerRecoveryJob
         DockerOrphanCleanupJob
+        ClaudeAuthHealthCheckJob
         GithubTokenHealthCheckJob
         KnowledgeAuditRetentionJob
         ModelHealthCheckJob

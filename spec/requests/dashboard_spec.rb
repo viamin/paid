@@ -189,6 +189,30 @@ RSpec.describe "Dashboard" do
         expect(frame["src"]).to be_nil
       end
 
+      it "renders the auth-health banner when Claude auth needs attention" do
+        allow(Runners::AuthHealth).to receive(:call).and_return([
+          Runners::AuthHealth::Result.new(
+            runner: "Claude",
+            runner_key: "claude",
+            owner_name: user.name,
+            owner_email: user.email,
+            valid: false,
+            expires_at: 1.hour.ago,
+            source: :host_forwarded,
+            error: "Session expired"
+          )
+        ])
+
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
+        banner = doc.at_css("[data-testid='dashboard-auth-health-banner']")
+
+        expect(banner).to be_present
+        expect(banner.text).to include("Claude auth health needs attention")
+        expect(banner.text).to include("Session expired")
+      end
+
       it "shows live metrics section with active runs" do
         create(:agent_run, project: project, status: "running", started_at: 5.minutes.ago)
         create(:agent_run, project: project, status: "completed", completed_at: 1.minute.ago, duration_seconds: 42)

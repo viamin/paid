@@ -36,6 +36,7 @@ class DashboardController < ApplicationController
       .order(runner_retry_abandoned_at: :desc)
       .limit(20)
       .to_a
+    @auth_health = Runners::AuthHealth.call(account: current_account)
     @recent_activity = Dashboard::RecentActivity.call(account: current_account)
   end
 
