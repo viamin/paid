@@ -142,6 +142,16 @@ module ChatSessionsHelper
     CHAT_TOOL_STATUS_BADGES.fetch(message.tool_status, message.role == "tool" ? "bg-blue-100 text-blue-700" : "bg-blue-100 text-blue-700")
   end
 
+  def chat_tool_summary(message)
+    payload = chat_tool_payload(message.role == "tool" ? (message.tool_result || message.content) : message.tool_arguments)
+    summary = chat_tool_payload_summary(payload)
+    [ message.tool_name.presence || "Unknown tool", chat_tool_status_label(message), summary ].compact.join(" · ")
+  end
+
+  def chat_tool_expanded_by_default?(message)
+    message.pending_confirmation?
+  end
+
   def pretty_chat_tool_payload(value)
     payload = chat_tool_payload(value)
     return payload if payload.is_a?(String)
@@ -186,5 +196,41 @@ module ChatSessionsHelper
 
   def badge_label(label, classes)
     tag.span(label, class: "inline-flex items-center rounded-full px-2 py-1 text-xs font-medium #{classes}")
+  end
+
+  def chat_tool_payload_summary(payload)
+    case payload
+    when Array
+      "#{payload.size} #{'item'.pluralize(payload.size)}"
+    when Hash
+      chat_tool_hash_payload_summary(payload)
+    when String
+      payload.squish.truncate(72)
+    end
+  end
+
+  def chat_tool_hash_payload_summary(payload)
+    return chat_tool_error_summary(payload) if chat_tool_payload_value(payload, "error").present?
+
+    count = chat_tool_payload_value(payload, "total_count")
+    return "#{count} #{'match'.pluralize(count.to_i)}" if count
+
+    collection_key = %w[matches projects results items].find { |key| chat_tool_payload_value(payload, key).is_a?(Array) }
+    return "#{chat_tool_payload_value(payload, collection_key).size} #{collection_key.humanize(capitalize: false)}" if collection_key
+
+    path = chat_tool_payload_value(payload, "path")
+    size = chat_tool_payload_value(payload, "size")
+    return [ path, number_to_human_size(size) ].compact.join(" · ") if path || size
+
+    "#{payload.size} #{'field'.pluralize(payload.size)}"
+  end
+
+  def chat_tool_error_summary(payload)
+    message = chat_tool_payload_value(payload, "message") || chat_tool_payload_value(payload, "error")
+    "error: #{message.to_s.squish.truncate(64)}"
+  end
+
+  def chat_tool_payload_value(payload, key)
+    payload[key] || payload[key.to_sym]
   end
 end
