@@ -38,25 +38,12 @@ class ClaudeCredentialKeepWarmJob < ApplicationJob
     end
 
     provision = Containers::Provision.new
-    unless provision.send(:claude_subscription_auth?)
-      Rails.logger.info(message: "claude_credential.keep_warm.no_subscription_auth")
-      return
-    end
-
-    unless provision.send(:claude_credentials_near_expiry?)
-      Rails.logger.info(
-        message: "claude_credential.keep_warm.not_near_expiry",
-        expiry: provision.send(:claude_native_credential_expiry)
-      )
-      return
-    end
-
-    refreshed = provision.send(:refresh_claude_credentials_if_near_expiry!)
+    result = provision.keep_warm_claude_credentials!
 
     duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
     Rails.logger.info(
-      message: "claude_credential.keep_warm.completed",
-      refreshed: refreshed,
+      message: "claude_credential.keep_warm.#{result[:reason]}",
+      refreshed: result[:refreshed],
       duration_ms: duration_ms
     )
   end

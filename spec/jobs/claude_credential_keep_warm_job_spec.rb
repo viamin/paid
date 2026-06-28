@@ -43,7 +43,8 @@ RSpec.describe ClaudeCredentialKeepWarmJob do
 
       context "when no subscription auth is present" do
         before do
-          allow(mock_provision).to receive(:send).with(:claude_subscription_auth?).and_return(false)
+          allow(mock_provision).to receive(:keep_warm_claude_credentials!)
+            .and_return({ refreshed: false, reason: "no_subscription_auth" })
         end
 
         it "logs no subscription auth" do
@@ -56,12 +57,9 @@ RSpec.describe ClaudeCredentialKeepWarmJob do
       end
 
       context "when subscription auth is present but credential is not near expiry" do
-        let(:future_expiry) { Time.now + 12.hours }
-
         before do
-          allow(mock_provision).to receive(:send).with(:claude_subscription_auth?).and_return(true)
-          allow(mock_provision).to receive(:send).with(:claude_credentials_near_expiry?).and_return(false)
-          allow(mock_provision).to receive(:send).with(:claude_native_credential_expiry).and_return(future_expiry)
+          allow(mock_provision).to receive(:keep_warm_claude_credentials!)
+            .and_return({ refreshed: false, reason: "not_near_expiry" })
         end
 
         it "logs not near expiry" do
@@ -75,15 +73,14 @@ RSpec.describe ClaudeCredentialKeepWarmJob do
 
       context "when credential is near expiry" do
         before do
-          allow(mock_provision).to receive(:send).with(:claude_subscription_auth?).and_return(true)
-          allow(mock_provision).to receive(:send).with(:claude_credentials_near_expiry?).and_return(true)
-          allow(mock_provision).to receive(:send).with(:refresh_claude_credentials_if_near_expiry!).and_return(true)
+          allow(mock_provision).to receive(:keep_warm_claude_credentials!)
+            .and_return({ refreshed: true, reason: "refreshed" })
         end
 
-        it "calls refresh_claude_credentials_if_near_expiry! on a Provision instance" do
+        it "calls keep_warm_claude_credentials! on a Provision instance" do
           described_class.perform_now
 
-          expect(mock_provision).to have_received(:send).with(:refresh_claude_credentials_if_near_expiry!)
+          expect(mock_provision).to have_received(:keep_warm_claude_credentials!)
         end
 
         it "logs completion with refreshed: true" do
@@ -91,7 +88,7 @@ RSpec.describe ClaudeCredentialKeepWarmJob do
 
           expect(Rails.logger).to have_received(:info).with(
             hash_including(
-              message: "claude_credential.keep_warm.completed",
+              message: "claude_credential.keep_warm.refreshed",
               refreshed: true
             )
           )
@@ -100,9 +97,8 @@ RSpec.describe ClaudeCredentialKeepWarmJob do
 
       context "when refresh fails" do
         before do
-          allow(mock_provision).to receive(:send).with(:claude_subscription_auth?).and_return(true)
-          allow(mock_provision).to receive(:send).with(:claude_credentials_near_expiry?).and_return(true)
-          allow(mock_provision).to receive(:send).with(:refresh_claude_credentials_if_near_expiry!).and_return(false)
+          allow(mock_provision).to receive(:keep_warm_claude_credentials!)
+            .and_return({ refreshed: false, reason: "refresh_failed" })
         end
 
         it "logs completion with refreshed: false" do
@@ -110,7 +106,7 @@ RSpec.describe ClaudeCredentialKeepWarmJob do
 
           expect(Rails.logger).to have_received(:info).with(
             hash_including(
-              message: "claude_credential.keep_warm.completed",
+              message: "claude_credential.keep_warm.refresh_failed",
               refreshed: false
             )
           )

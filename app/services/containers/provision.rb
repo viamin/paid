@@ -845,6 +845,25 @@ module Containers
       end
     end
 
+    # Public entry point for the keep-warm job (RDR-041 Phase 3).
+    # Checks whether a host-forwarded Claude subscription credential exists and
+    # is near expiry, then delegates to the private refresh path.  Returns a
+    # result hash the caller can log without reaching into private internals.
+    #
+    # @return [Hash] { refreshed: Boolean, reason: String }
+    def keep_warm_claude_credentials!
+      unless claude_subscription_auth?
+        return { refreshed: false, reason: "no_subscription_auth" }
+      end
+
+      unless claude_credentials_near_expiry?
+        return { refreshed: false, reason: "not_near_expiry", expiry: claude_native_credential_expiry }
+      end
+
+      refreshed = refresh_claude_credentials_if_near_expiry!
+      { refreshed: !!refreshed, reason: refreshed ? "refreshed" : "refresh_failed" }
+    end
+
     private
 
     def apply_execution_preparation(preparation, env:)
@@ -2617,7 +2636,7 @@ module Containers
           log_system("container.claude_auth_lock.timeout",
             lockfile: lockfile,
             lock_timeout_seconds: lock_timeout)
-          log_system("container.claude_auth_refresh_skipped_without_lock",
+          log_system("container.claude_auth_lock_timeout_proceeding_without_lock",
             source_path: claude_credentials_source_path)
           yield
         end
