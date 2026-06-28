@@ -74,6 +74,10 @@ jobs:
           set +e
           bundle exec mutant run --since origin/${{ github.base_ref }} 2>&1 | tee "$MUTANT_OUTPUT_FILE"
           status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ] && grep -Fq "No subjects matched the configured diff filter. No mutations to test." "$MUTANT_OUTPUT_FILE"; then
+            echo "Mutant found no changed configured subjects; treating incremental run as a pass."
+            status=0
+          fi
           {
             echo "## Incremental Mutation"
             echo
