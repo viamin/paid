@@ -3,7 +3,7 @@
 require "rails_helper"
 
 RSpec.describe Capacity::DockerSnapshot do
-  let(:backend) { instance_double(Containers::Backends::Base, identifier: "local") }
+  let(:backend) { instance_double(Containers::Backends::Base, identifier: "local", all_host_identifiers: [ "local" ]) }
   let(:cache) { ActiveSupport::Cache::MemoryStore.new }
   let(:now) { Time.zone.parse("2026-06-28 12:00:00 UTC") }
   let(:project) { create(:project) }
@@ -121,6 +121,15 @@ RSpec.describe Capacity::DockerSnapshot do
       expect(snapshot.degraded_reasons).to include("stale_cache", "docker_timeout")
     end
 
+    it "preserves a healthy cached snapshot when deserializing explicit false values" do
+      snapshot = described_class.call(backend: backend, now: now, cache: cache)
+      cached_snapshot = described_class.deserialize(cache.read(described_class.cache_key(backend.identifier)))
+
+      expect(snapshot).not_to be_degraded
+      expect(cached_snapshot).not_to be_degraded
+      expect(cached_snapshot.degraded).to be(false)
+    end
+
     it "returns a conservative degraded snapshot when the first Docker read fails" do
       allow(backend).to receive(:system_info).and_raise(Docker::Error::DockerError.new("down"))
 
@@ -130,6 +139,19 @@ RSpec.describe Capacity::DockerSnapshot do
       expect(snapshot.confidence).to eq(0.0)
       expect(snapshot.available_memory_bytes).to eq(0)
       expect(snapshot.degraded_reasons).to eq([ "docker_unavailable" ])
+    end
+
+    it "uses backend host identifiers for DB-backed swarm classification when labels are absent" do
+      agent_run.update!(container_host: "worker-1")
+      allow(backend).to receive_messages(identifier: "swarm", all_host_identifiers: [ "worker-1", "swarm" ])
+      allow(containers.first).to receive(:info).and_return(
+        container_rows.first.fetch("info").merge("Labels" => {})
+      )
+
+      snapshot = described_class.call(backend: backend, now: now, cache: cache, force_refresh: true)
+
+      expect(snapshot.bucket(:paid_agents).container_count).to eq(2)
+      expect(snapshot.bucket(:other_docker).container_count).to eq(1)
     end
   end
 

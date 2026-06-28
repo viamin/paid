@@ -126,28 +126,39 @@ module Capacity
       return if data.blank?
 
       Snapshot.new(
-        backend_identifier: data[:backend_identifier] || data["backend_identifier"],
-        docker_cpu_count: data[:docker_cpu_count] || data["docker_cpu_count"],
-        docker_memory_bytes: data[:docker_memory_bytes] || data["docker_memory_bytes"],
-        usage_buckets: deserialize_buckets(data[:usage_buckets] || data["usage_buckets"]),
-        available_memory_bytes: data[:available_memory_bytes] || data["available_memory_bytes"],
-        agent_container_count: data[:agent_container_count] || data["agent_container_count"],
-        snapshot_at: data[:snapshot_at] || data["snapshot_at"],
-        confidence: data[:confidence] || data["confidence"],
-        degraded: data[:degraded] || data["degraded"],
-        degraded_reasons: Array(data[:degraded_reasons] || data["degraded_reasons"]).map(&:to_s)
+        backend_identifier: fetch_value(data, :backend_identifier),
+        docker_cpu_count: fetch_value(data, :docker_cpu_count),
+        docker_memory_bytes: fetch_value(data, :docker_memory_bytes),
+        usage_buckets: deserialize_buckets(fetch_value(data, :usage_buckets)),
+        available_memory_bytes: fetch_value(data, :available_memory_bytes),
+        agent_container_count: fetch_value(data, :agent_container_count),
+        snapshot_at: fetch_value(data, :snapshot_at),
+        confidence: fetch_value(data, :confidence),
+        degraded: fetch_value(data, :degraded),
+        degraded_reasons: Array(fetch_value(data, :degraded_reasons)).map(&:to_s)
       )
     end
 
     def self.deserialize_buckets(data)
       EMPTY_BUCKETS.keys.index_with do |name|
-        values = data&.[](name) || data&.[](name.to_s) || {}
+        values = fetch_value(data, name, default: {})
         Bucket.new(
-          container_count: (values[:container_count] || values["container_count"] || 0).to_i,
-          memory_bytes: (values[:memory_bytes] || values["memory_bytes"] || 0).to_i,
-          cpu_percent: (values[:cpu_percent] || values["cpu_percent"] || 0.0).to_f.round(2)
+          container_count: fetch_value(values, :container_count, default: 0).to_i,
+          memory_bytes: fetch_value(values, :memory_bytes, default: 0).to_i,
+          cpu_percent: fetch_value(values, :cpu_percent, default: 0.0).to_f.round(2)
         )
       end
+    end
+
+    def self.fetch_value(data, key, default: nil)
+      return default unless data.respond_to?(:key?)
+
+      return data[key] if data.key?(key)
+
+      string_key = key.to_s
+      return data[string_key] if data.key?(string_key)
+
+      default
     end
 
     def initialize(backend: Containers.backend, now: Time.current, cache: Rails.cache, force_refresh: false)
@@ -246,7 +257,7 @@ module Capacity
     end
 
     def build_references
-      host_scope = [ nil, "", backend.identifier ]
+      host_scope = [ nil, "" ] + backend.all_host_identifiers
       active_runs = AgentRun.capacity_inflight.where(container_host: host_scope)
 
       {

@@ -116,7 +116,7 @@ module Containers
       end
 
       def system_info
-        manager_connection.info
+        aggregate_system_info(healthy_nodes)
       end
 
       def container_host_for(container)
@@ -434,6 +434,14 @@ module Containers
         all_nodes.select do |node|
           node.dig("Spec", "Availability") == "active" &&
             node.dig("Status", "State") == "ready"
+        end
+      end
+
+      def aggregate_system_info(nodes)
+        Array(nodes).each_with_object({ "NCPU" => 0, "MemTotal" => 0 }) do |node, aggregate|
+          info = Docker.info(node_connection(node))
+          aggregate["NCPU"] += info.fetch("NCPU", 0).to_i
+          aggregate["MemTotal"] += info.fetch("MemTotal", 0).to_i
         end
       end
 
