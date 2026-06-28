@@ -9,6 +9,7 @@ module Activities
     COMMENT_MARKER = "<!-- paid:agent-update -->"
     SUMMARY_PREFIX = "## Agent Update"
     GENERIC_MESSAGE = "Agent pushed updates to this PR."
+    SUMMARY_COMMENT_MODE = "summary"
 
     class << self
       def agent_update_comment?(body)
@@ -82,26 +83,64 @@ module Activities
     end
 
     def post_update_comment(client, project, pr_number, agent_run)
-      body = build_comment_body(agent_run)
+      return unless summary_comments_enabled?(agent_run)
+
+      body = build_comment_body(client, project, pr_number, agent_run)
+      return if body.blank?
 
       client.add_comment(project.full_name, pr_number, body)
-    rescue GithubClient::Error => e
+    rescue Temporalio::Error::CanceledError
+      raise
+    rescue => e
       logger.warn(
         message: "agent_execution.existing_pr_comment_failed",
         agent_run_id: agent_run.id,
         pr_number: pr_number,
+        error_class: e.class.name,
         error: e.message
       )
     end
 
-    def build_comment_body(agent_run)
-      summary = agent_run.agent_summary
+    def build_comment_body(client, project, pr_number, agent_run)
+      summary = generate_summary(client, project, pr_number, agent_run)
+      return if summary.blank?
 
-      if summary.present?
-        "#{COMMENT_MARKER}\n#{SUMMARY_PREFIX}\n\n#{summary.truncate(50_000)}"
-      else
-        "#{COMMENT_MARKER}\n#{GENERIC_MESSAGE}"
-      end
+      "#{COMMENT_MARKER}\n#{SUMMARY_PREFIX}\n\n#{summary}"
+    end
+
+    def summary_comments_enabled?(agent_run)
+      agent_run.settings_user&.settings&.agent_update_comment_mode == SUMMARY_COMMENT_MODE
+    end
+
+    def generate_summary(client, project, pr_number, agent_run)
+      return if agent_run.base_commit_sha.blank? || agent_run.result_commit_sha.blank?
+
+      comparison = client.compare_summary(project.full_name, agent_run.base_commit_sha, agent_run.result_commit_sha)
+      result = Llm::GenerateAgentUpdateSummary.call(
+        repository: project.full_name,
+        pr_number: pr_number,
+        base_sha: agent_run.base_commit_sha,
+        head_sha: agent_run.result_commit_sha,
+        comparison: comparison
+      )
+      track_summary_tokens(agent_run, result&.response)
+      result&.body
+    end
+
+    def track_summary_tokens(agent_run, response)
+      return unless response&.respond_to?(:tokens) && response.tokens
+
+      TokenUsageTracker.track(
+        tracked_run: agent_run,
+        usage: {
+          tokens_input: response.respond_to?(:input_tokens) ? response.input_tokens.to_i : 0,
+          tokens_output: response.respond_to?(:output_tokens) ? response.output_tokens.to_i : 0,
+          llm_model: response.respond_to?(:model) ? response.model : nil,
+          request_type: "agent",
+          metadata: { operation: "agent_update_summary" }
+        },
+        enforce_guardrails: false
+      )
     end
   end
 end
