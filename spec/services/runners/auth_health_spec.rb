@@ -194,5 +194,33 @@ RSpec.describe Runners::AuthHealth do
         expect(result.error).to eq("No credentials found")
       end
     end
+
+    it "marks host-forwarded auth invalid when the Claude CLI status check times out" do
+      runner
+      allow(Open3).to receive(:capture3)
+        .with({}, "claude", "auth", "status", "--json")
+        .and_raise(Timeout::Error)
+
+      result = call_auth_health
+
+      expect(result.valid).to be(false)
+      expect(result.expires_at).to be_nil
+      expect(result.source).to eq(:host_forwarded)
+      expect(result.error).to eq("Claude auth status check timed out")
+    end
+
+    it "marks host-forwarded auth invalid when spawning the Claude CLI fails" do
+      runner
+      allow(Open3).to receive(:capture3)
+        .with({}, "claude", "auth", "status", "--json")
+        .and_raise(Errno::EACCES, "Permission denied")
+
+      result = call_auth_health
+
+      expect(result.valid).to be(false)
+      expect(result.expires_at).to be_nil
+      expect(result.source).to eq(:host_forwarded)
+      expect(result.error).to eq("Claude auth status check failed: Permission denied - Permission denied")
+    end
   end
 end

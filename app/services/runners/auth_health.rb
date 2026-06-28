@@ -3,10 +3,12 @@
 require "json"
 require "open3"
 require "time"
+require "timeout"
 
 module Runners
   class AuthHealth
     EXPIRING_SOON_THRESHOLD = 24.hours
+    CLI_TIMEOUT_SECONDS = 5
     SUPPORTED_RUNNER_KEYS = %w[claude].freeze
 
     Result = Struct.new(
@@ -150,7 +152,9 @@ module Runners
     end
 
     def cli_claude_status
-      stdout, stderr, status = Open3.capture3({}, "claude", "auth", "status", "--json")
+      stdout, stderr, status = Timeout.timeout(CLI_TIMEOUT_SECONDS) do
+        Open3.capture3({}, "claude", "auth", "status", "--json")
+      end
       payload = parse_json(stdout)
       return nil unless payload
 
@@ -166,6 +170,10 @@ module Runners
       }
     rescue Errno::ENOENT
       nil
+    rescue Timeout::Error
+      missing_host_forwarded_status("Claude auth status check timed out")
+    rescue SystemCallError => e
+      missing_host_forwarded_status("Claude auth status check failed: #{e.message}")
     end
 
     def fallback_claude_status
