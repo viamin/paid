@@ -238,6 +238,37 @@ RUN if [ -z "${KILOCODE_INSTALL_COMMAND}" ]; then \
     && echo "Installing Kilocode CLI via agent-harness contract: ${KILOCODE_INSTALL_COMMAND}" \
     && eval "${KILOCODE_INSTALL_COMMAND}"
 
+# Pre-seed the Kilocode SQLite database so the first container invocation does
+# not run "Performing one time database migration, may take a few minutes..."
+# inside the runner smoke preflight, where it exceeds the preflight wall-clock
+# timeout and exhausts the runner (the original symptom: exit 137 after a 60s
+# preflight timeout). The migration is a local SQLite operation that runs on
+# first `kilo run` regardless of model auth, so warming needs no credentials.
+#
+# `kilo run` opens an interactive session that never exits on its own, so we
+# cap it with `timeout`, which cleanly terminates kilo and its child binary
+# once the migration has had time to run (verified: no orphaned processes, DB
+# fully migrated). We deliberately do NOT pattern-kill "kilo": this RUN's own
+# shell argv contains "kilo", so `pkill -f kilo` would also kill the build
+# shell. The window is generous — the migration was ~60s on a heavily loaded
+# runtime host, and build hosts are far less contended — and `timeout` always
+# runs the full window because the session never exits. The next RUN fails
+# loudly if the migrated DB is absent, rather than shipping a regressed
+# (unwarmed) image. Mirrors the OpenCode pre-seed below.
+#
+# The pre-seeded DB is copied to /opt/kilo-seed so it survives the tmpfs mount
+# that Provision#host_config places at /home/agent/.local/share/kilo at
+# runtime. Containers::Provision#seed_kilo_database! restores it from /opt into
+# the tmpfs after the container starts.
+USER agent
+RUN mkdir -p /home/agent/.local/share/kilo \
+    && timeout -k 10s 120s kilo run "OK" > /dev/null 2>&1 || true
+USER root
+RUN test -f /home/agent/.local/share/kilo/kilo.db \
+    && mkdir -p /opt/kilo-seed \
+    && cp -a /home/agent/.local/share/kilo/. /opt/kilo-seed/ \
+    && chown -R agent:agent /opt/kilo-seed
+
 # OpenCode CLI: version is owned by agent-harness (installation_contract).
 # OPENCODE_PACKAGE is extracted from agent-harness at build time by
 # build-agent-image.sh / agent-image.yml — Paid no longer pins this version.

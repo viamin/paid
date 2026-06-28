@@ -66,6 +66,7 @@ RSpec.describe Containers::Provision do
     allow(provision).to receive(:ensure_network!)
     allow(provision).to receive(:fix_all_ownership!)
     allow(provision).to receive(:seed_opencode_database!)
+    allow(provision).to receive(:seed_kilo_database!)
     allow(provision).to receive(:seed_codex_credentials!)
     allow(provision).to receive(:seed_gemini_credentials!)
     allow(provision).to receive(:seed_copilot_credentials!)
@@ -1906,6 +1907,99 @@ RSpec.describe Containers::Provision do
 
         expect(agent_run).to have_received(:log!).with("system", "container.opencode_database_seed_failed",
           metadata: hash_including(error: "opencode database seed exited with 1"))
+      end
+    end
+  end
+
+  describe "#seed_kilo_database!" do
+    let(:api_key) { create(:provider_api_key, user: project.created_by, api_service_type: "anthropic") }
+    let!(:kilocode_provider) do
+      create(
+        :runner,
+        :api_key,
+        user: project.created_by,
+        runner_key: "kilocode",
+        provider_api_key: api_key,
+        config: { "kilocode" => { "api_provider" => "anthropic", "model" => "claude-sonnet-4-5" } }
+      )
+    end
+    let(:service) { described_class.new(agent_run: agent_run, worktree_path: worktree_path) }
+
+    before do
+      project.created_by.settings.update!(default_agent_runner: kilocode_provider.routing_key)
+      allow(Docker::Container).to receive(:create).and_return(mock_container)
+      allow(mock_container).to receive(:start)
+      allow(NetworkPolicy).to receive_messages(ensure_network!: mock_network, apply_firewall_rules: nil)
+      allow(Docker::Volume).to receive(:create).and_return(mock_volume)
+      allow(Docker::Volume).to receive(:get).and_raise(Docker::Error::NotFoundError)
+      allow(agent_run).to receive(:log!)
+    end
+
+    it "copies pre-seeded database from /opt/kilo-seed into the tmpfs" do
+      service.provision
+
+      expect(mock_container).to have_received(:exec).with(
+        [ "sh", "-c",
+          satisfy { |script|
+            script.include?("/opt/kilo-seed") &&
+              script.include?("/home/agent/.local/share/kilo")
+          } ],
+        user: "root"
+      )
+    end
+
+    it "logs the seeding success" do
+      service.provision
+
+      expect(agent_run).to have_received(:log!).with("system", "container.kilo_database_seeded",
+        metadata: {})
+    end
+
+    it "does not seed when the run resolves to a different runner" do
+      project.created_by.settings.update!(default_agent_runner: "claude")
+
+      service.provision
+
+      expect(mock_container).not_to have_received(:exec).with(
+        [ "sh", "-c", include("/opt/kilo-seed") ],
+        user: "root"
+      )
+    end
+
+    context "when Docker exec fails during kilo seed" do
+      before do
+        allow(mock_container).to receive(:exec) do |cmd, **opts|
+          if cmd.is_a?(Array) && cmd[0] == "sh" && cmd[1] == "-c" && cmd.last.include?("/opt/kilo-seed")
+            raise Docker::Error::DockerError, "copy failed"
+          end
+          nil
+        end
+      end
+
+      it "logs the failure but does not raise" do
+        expect { service.provision }.not_to raise_error
+
+        expect(agent_run).to have_received(:log!).with("system", "container.kilo_database_seed_failed",
+          metadata: hash_including(error: "copy failed"))
+      end
+    end
+
+    context "when the cp command exits non-zero" do
+      before do
+        allow(mock_container).to receive(:exec) do |cmd, **opts|
+          if cmd.is_a?(Array) && cmd[0] == "sh" && cmd[1] == "-c" && cmd.last.include?("/opt/kilo-seed")
+            [ [], [], 1 ]
+          else
+            nil
+          end
+        end
+      end
+
+      it "logs the failure with the exit code" do
+        expect { service.provision }.not_to raise_error
+
+        expect(agent_run).to have_received(:log!).with("system", "container.kilo_database_seed_failed",
+          metadata: hash_including(error: "kilo database seed exited with 1"))
       end
     end
   end
