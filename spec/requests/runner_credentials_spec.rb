@@ -21,7 +21,7 @@ RSpec.describe "RunnerCredentials" do
       expect(response.body).to include("Runner Credentials")
     end
 
-    context "when user is an admin" do
+    context "when an admin manages another user's runner" do
       before { sign_in admin_user }
 
       let(:runner) { create(:runner, user: admin_user) }
@@ -30,6 +30,16 @@ RSpec.describe "RunnerCredentials" do
         get runner_runner_credentials_path(runner)
 
         expect(response).to have_http_status(:ok)
+      end
+
+      it "allows managing another user's runner in the same account" do
+        other_users_runner = create(:runner, user: owner_user)
+        create(:runner_credential, runner: other_users_runner, account: account, created_by: owner_user)
+
+        get runner_runner_credentials_path(other_users_runner)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Runner Credentials")
       end
     end
 
@@ -43,6 +53,26 @@ RSpec.describe "RunnerCredentials" do
 
         expect(response).to redirect_to(root_path)
         expect(flash[:alert]).to include("not authorized")
+      end
+    end
+
+    context "when user is an admin" do
+      before { sign_in admin_user }
+
+      it "creates a credential for another user's runner in the same account" do
+        other_users_runner = create(:runner, user: owner_user)
+
+        expect {
+          post runner_runner_credentials_path(other_users_runner), params: {
+            runner_credential: {
+              token: "sk-ant-oat01-admin-cross-user",
+              long_lived: false
+            }
+          }
+        }.to change(RunnerCredential, :count).by(1)
+
+        expect(response).to redirect_to(runner_runner_credentials_path(other_users_runner))
+        expect(RunnerCredential.last.created_by).to eq(admin_user)
       end
     end
   end

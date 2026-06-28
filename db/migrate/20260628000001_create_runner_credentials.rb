@@ -19,5 +19,17 @@ class CreateRunnerCredentials < ActiveRecord::Migration[8.1]
       where: "revoked_at IS NULL",
       name: "index_runner_credentials_on_active_runner_id"
     add_index :runner_credentials, [ :account_id, :created_at ]
+
+    reversible do |dir|
+      dir.up do
+        create_trigger :logidze_on_runner_credentials, on: :runner_credentials
+      end
+
+      dir.down do
+        execute <<~SQL
+          DROP TRIGGER IF EXISTS "logidze_on_runner_credentials" on "runner_credentials";
+        SQL
+      end
+    end
   end
 end

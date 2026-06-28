@@ -195,6 +195,12 @@ module Screenshots
             record.secret = "sk-ant-#{'a' * 24}"
           end
 
+          runner_credential = account.runner_credentials.find_or_create_by!(runner: provider) do |record|
+            record.created_by = user
+            record.token = "sk-ant-oat01-#{'a' * 24}"
+            record.long_lived = true
+          end
+
           linear_token = account.linear_tokens.find_or_create_by!(name: "Screenshot Linear Token") do |record|
             record.created_by = user
             record.token = "lin_api_#{'a' * 32}"
@@ -326,6 +332,7 @@ module Screenshots
             "github_installation" => { "id" => github_installation.id, "account_login" => github_installation.account_login },
             "github_token" => { "id" => github_token.id, "name" => github_token.name },
             "integration_credential" => { "id" => integration_credential.id, "name" => integration_credential.name },
+            "runner_credential" => { "id" => runner_credential.id },
             "linear_token" => { "id" => linear_token.id, "name" => linear_token.name },
             "provider_api_key" => { "id" => provider_api_key.id, "name" => provider_api_key.name },
             "service_container" => { "id" => service_container.id, "name" => service_container.name },

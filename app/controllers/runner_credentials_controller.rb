@@ -40,7 +40,7 @@ class RunnerCredentialsController < ApplicationController
   private
 
   def set_runner
-    @runner = policy_scope(Runner).find(params[:runner_id])
+    @runner = Runner.kept_only.joins(:user).where(users: { account_id: current_account.id }).find(params[:runner_id])
   end
 
   def set_runner_credential
