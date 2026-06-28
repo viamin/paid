@@ -26,6 +26,8 @@ class UserSetting < ApplicationRecord
   KB_CHAT_RUNNER_DEFAULT = "claude"
   RUNNER_SELECTION_MODES = %w[single round_robin random].freeze
   RUNNER_SELECTION_MODE_DEFAULT = "single"
+  AGENT_UPDATE_COMMENT_MODES = %w[off summary].freeze
+  AGENT_UPDATE_COMMENT_MODE_DEFAULT = "off"
 
   THEME_PREFERENCES = %w[light dark system].freeze
 
@@ -164,6 +166,7 @@ class UserSetting < ApplicationRecord
     numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: PG_INT_MAX }
   validates :max_comment_length,
     numericality: { only_integer: true, greater_than_or_equal_to: 100, less_than_or_equal_to: PG_INT_MAX }
+  validates :agent_update_comment_mode, inclusion: { in: AGENT_UPDATE_COMMENT_MODES }
 
   # Style guide byte limits
   validates :style_guide_max_raw_bytes,

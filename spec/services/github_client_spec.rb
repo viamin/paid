@@ -1431,6 +1431,57 @@ RSpec.describe GithubClient do
     end
   end
 
+  describe "#compare_summary" do
+    let(:repo) { "owner/repo" }
+
+    before do
+      stub_request(:get, "#{api_base}/repos/#{repo}/compare/base123...head456")
+        .to_return(
+          status: 200,
+          body: {
+            ahead_by: 1,
+            total_commits: 1,
+            commits: [
+              {
+                sha: "head456",
+                commit: { message: "fix: tighten provider validation" }
+              }
+            ],
+            files: [
+              {
+                filename: "app/models/provider.rb",
+                status: "modified",
+                additions: 3,
+                deletions: 1,
+                changes: 4,
+                patch: "@@ -1 +1\n-old\n+new"
+              }
+            ]
+          }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+    end
+
+    it "returns commit and file metadata for summary generation" do
+      result = client.compare_summary(repo, "base123", "head456")
+
+      expect(result).to include(ahead_by: 1, total_commits: 1)
+      expect(result[:commits]).to eq([
+        { sha: "head456", message: "fix: tighten provider validation" }
+      ])
+      expect(result[:files]).to eq([
+        {
+          filename: "app/models/provider.rb",
+          status: "modified",
+          additions: 3,
+          deletions: 1,
+          changes: 4,
+          patch: "@@ -1 +1\n-old\n+new"
+        }
+      ])
+    end
+  end
+
   describe "#resolve_review_thread" do
     context "when resolution succeeds" do
       before do

@@ -75,6 +75,7 @@ RSpec.describe UserSetting do
 
     # Agent Execution
     it { is_expected.to validate_numericality_of(:agent_timeout_seconds).only_integer.is_greater_than_or_equal_to(60).is_less_than_or_equal_to(described_class::PG_INT_MAX) }
+    it { is_expected.to validate_inclusion_of(:agent_update_comment_mode).in_array(described_class::AGENT_UPDATE_COMMENT_MODES) }
 
     it "validates default_agent_runner against enabled runners" do
       setting = build(:user_setting, default_agent_runner: "invalid")
