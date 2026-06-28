@@ -39,7 +39,6 @@ export default class extends Controller {
     }
 
     event.preventDefault()
-    event.stopPropagation()
 
     if (this.isOpen()) {
       this.close()

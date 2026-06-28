@@ -102,7 +102,7 @@ RSpec.describe "Dashboard" do
         get dashboard_path
 
         doc = Nokogiri::HTML(response.body)
-        desktop_nav = doc.at_xpath("//nav//div[contains(@class, 'hidden') and contains(@class, 'md:flex')]")
+        desktop_nav = doc.at_xpath("//nav//div[contains(@class, 'hidden') and contains(@class, 'lg:flex')]")
         top_level_labels = desktop_nav.xpath("./a|./form/button").map { |node| node.text.strip }
 
         expect(top_level_labels).not_to include("Settings")

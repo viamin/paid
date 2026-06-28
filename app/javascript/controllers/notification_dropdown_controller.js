@@ -16,9 +16,7 @@ export default class extends Controller {
     document.removeEventListener("keydown", this.boundCloseOnEscape)
   }
 
-  toggle(event) {
-    event.stopPropagation()
-
+  toggle() {
     if (this.menuTarget.classList.contains("hidden")) {
       this.menuTarget.classList.remove("hidden")
     } else {
