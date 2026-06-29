@@ -24,6 +24,8 @@ RSpec.describe "Accounts" do
 
       expect(response).to have_http_status(:ok)
       expect(response.body).to include(*account_page_sections)
+      expect(response.body).to include("Managed billing currently automates billing-period rollover and invoice issuance.")
+      expect(response.body).to include("Payment sync")
     end
 
     it "allows a viewer to read the page" do

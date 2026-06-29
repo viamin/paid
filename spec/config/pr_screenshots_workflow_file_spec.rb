@@ -35,6 +35,12 @@ RSpec.describe PrScreenshotsWorkflowFile, :no_db do
     )
   end
 
+  it "pulls Postgres from the ECR Public mirror to avoid Docker Hub init failures" do
+    expect(workflow.fetch("jobs").fetch("capture").fetch("services").fetch("postgres")).to include(
+      "image" => "public.ecr.aws/docker/library/postgres:16.14"
+    )
+  end
+
   it "locates Chromium via the runner PATH and exports CHROMIUM_PATH for capture" do
     locate_step = capture_step("Locate Chromium-family browser")
     export_step = capture_step("Export Chromium path")

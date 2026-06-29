@@ -122,6 +122,8 @@ module Api
         id: invoice.id,
         external_id: invoice.external_id,
         status: invoice.status,
+        payment_sync_status: invoice.payment_sync_status,
+        payment_provider: invoice.payment_provider,
         subtotal_cents: invoice.subtotal_cents,
         tax_cents: invoice.tax_cents,
         total_cents: invoice.total_cents,

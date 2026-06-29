@@ -95,15 +95,33 @@ jobs:
             fi
           }
 
-          dev=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' .devcontainer/compose.yaml | head -1 | awk '{print $NF}')
-          compose=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' docker-compose.yml | head -1 | awk '{print $NF}')
-          ci=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' .github/workflows/ci.yml | head -1 | awk '{print $NF}')
-          systest=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' .github/workflows/system_tests.yml | head -1 | awk '{print $NF}')
-          test_prof=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' .github/workflows/test_prof.yml | head -1 | awk '{print $NF}')
-          screenshots=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' .github/workflows/pr-screenshots.yml | head -1 | awk '{print $NF}')
-          ephemeral=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' .github/workflows/ephemeral_tests.yml | head -1 | awk '{print $NF}')
-          claude_review=$(grep -oE 'image:[[:space:]]+postgres:[^[:space:]]+' .github/workflows/claude-code-review.yml | head -1 | awk '{print $NF}')
-          version=${compose#postgres:}
+          extract_postgres_image() {
+            local file="$1"
+            grep -oE 'image:[[:space:]]+([^[:space:]]+/)*postgres:[^[:space:]]+' "$file" | head -1 | awk '{print $NF}'
+          }
+
+          postgres_version() {
+            local image="$1"
+            printf '%s\n' "${image##*:}"
+          }
+
+          dev=$(extract_postgres_image .devcontainer/compose.yaml)
+          compose=$(extract_postgres_image docker-compose.yml)
+          ci=$(extract_postgres_image .github/workflows/ci.yml)
+          systest=$(extract_postgres_image .github/workflows/system_tests.yml)
+          test_prof=$(extract_postgres_image .github/workflows/test_prof.yml)
+          screenshots=$(extract_postgres_image .github/workflows/pr-screenshots.yml)
+          ephemeral=$(extract_postgres_image .github/workflows/ephemeral_tests.yml)
+          claude_review=$(extract_postgres_image .github/workflows/claude-code-review.yml)
+          dev_version=$(postgres_version "$dev")
+          compose_version=$(postgres_version "$compose")
+          ci_version=$(postgres_version "$ci")
+          systest_version=$(postgres_version "$systest")
+          test_prof_version=$(postgres_version "$test_prof")
+          screenshots_version=$(postgres_version "$screenshots")
+          ephemeral_version=$(postgres_version "$ephemeral")
+          claude_review_version=$(postgres_version "$claude_review")
+          version="$compose_version"
           major=${version%%.*}
           workflow_client="postgresql-client-${major}"
           bookworm_client="postgresql-client-${major}=${version}-1.pgdg12+1"
@@ -126,7 +144,7 @@ jobs:
             echo "::error::Postgres image pin missing in one or more files"
             exit 1
           fi
-          if [ "$dev" != "$compose" ] || [ "$compose" != "$ci" ] || [ "$ci" != "$systest" ] || [ "$systest" != "$test_prof" ] || [ "$test_prof" != "$screenshots" ] || [ "$screenshots" != "$ephemeral" ] || [ "$ephemeral" != "$claude_review" ]; then
+          if [ "$dev_version" != "$compose_version" ] || [ "$compose_version" != "$ci_version" ] || [ "$ci_version" != "$systest_version" ] || [ "$systest_version" != "$test_prof_version" ] || [ "$test_prof_version" != "$screenshots_version" ] || [ "$screenshots_version" != "$ephemeral_version" ] || [ "$ephemeral_version" != "$claude_review_version" ]; then
             echo "::error::Postgres image pins are out of sync. Update all workflow and compose references together."
             exit 1
           fi

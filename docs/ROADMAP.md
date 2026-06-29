@@ -1241,7 +1241,7 @@ Tasks:
 - [ ] Ownership transfer workflow
 - [ ] Tenant settings and quota visibility
 - [ ] Account lifecycle request flow where appropriate
-- [ ] Billing plan, usage, invoices, and payment status UI once billing models are wired
+- [x] Billing plan, usage, invoices, and payment status UI once billing models are wired
 - [ ] Audit log or activity trail for account-management changes
 
 Deliverables:

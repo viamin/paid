@@ -226,6 +226,11 @@ Rails.application.configure do
       class: "RemediationDecisionOutcomeJob",
       description: "Evaluate outcomes for auto-applied self-heal remediations"
     },
+    billing_period_management: {
+      cron: "15 2 * * *",
+      class: "BillingPeriodManagementJob",
+      description: "Close due billing periods, issue invoices, and open the next active period"
+    },
     temporal_patch_guard_sweep: {
       cron: "0 4 1 */3 *",
       class: "TemporalPatchGuardSweepJob",

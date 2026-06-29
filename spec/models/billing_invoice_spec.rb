@@ -67,4 +67,18 @@ RSpec.describe BillingInvoice do
       expect(invoice.total_cents).to eq(900)
     end
   end
+
+  describe "#payment_sync_status" do
+    it "defaults to not_configured when no external payment sync is present" do
+      invoice = create(:billing_invoice)
+
+      expect(invoice.payment_sync_status).to eq("not_configured")
+    end
+
+    it "returns paid for paid invoices" do
+      invoice = create(:billing_invoice, :paid)
+
+      expect(invoice.payment_sync_status).to eq("paid")
+    end
+  end
 end

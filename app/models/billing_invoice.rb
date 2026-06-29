@@ -3,6 +3,7 @@
 class BillingInvoice < ApplicationRecord
   has_logidze
   STATUSES = %w[draft issued paid void].freeze
+  PAYMENT_SYNC_STATUSES = %w[not_configured pending synchronized failed paid].freeze
 
   belongs_to :account
   belongs_to :billing_period
@@ -22,6 +23,18 @@ class BillingInvoice < ApplicationRecord
     status == "draft"
   end
 
+  def issued?
+    status == "issued"
+  end
+
+  def paid?
+    status == "paid"
+  end
+
+  def void?
+    status == "void"
+  end
+
   def issue!
     update!(status: "issued", issued_at: Time.current)
   end
@@ -38,6 +51,16 @@ class BillingInvoice < ApplicationRecord
     self.subtotal_cents = billing_line_items.sum(:total_cents)
     self.total_cents = subtotal_cents + tax_cents
     save!
+  end
+
+  def payment_sync_status
+    return "paid" if paid?
+
+    metadata["payment_sync_status"].presence || (external_id.present? ? "pending" : "not_configured")
+  end
+
+  def payment_provider
+    metadata["payment_provider"].presence || "Managed billing"
   end
 
   private

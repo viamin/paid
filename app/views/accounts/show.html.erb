@@ -350,13 +350,14 @@
       <%= render "accounts/adoption_readiness", adoption_dashboard: @adoption_dashboard %>
 
       <% if @billing_visible %>
+        <% latest_invoice = @recent_invoices.first %>
         <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
           <div>
             <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Billing</h2>
-            <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">Current plan, recent usage, invoices, and payment status.</p>
+            <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">Current plan, automated invoice cadence, recent usage, and payment follow-up state.</p>
           </div>
 
-          <div class="mt-6 grid gap-4 lg:grid-cols-3">
+          <div class="mt-6 grid gap-4 lg:grid-cols-4">
             <div class="rounded-2xl bg-emerald-50 p-4 dark:bg-emerald-950/20">
               <p class="text-xs uppercase tracking-wide text-emerald-700 dark:text-emerald-300">Active plan</p>
               <p class="mt-2 text-lg font-semibold text-gray-900 dark:text-white"><%= @active_plan&.name || "No active plan" %></p>
@@ -365,19 +366,29 @@
               <% end %>
             </div>
             <div class="rounded-2xl bg-sky-50 p-4 dark:bg-sky-950/20">
-              <p class="text-xs uppercase tracking-wide text-sky-700 dark:text-sky-300">Current usage</p>
+              <p class="text-xs uppercase tracking-wide text-sky-700 dark:text-sky-300">Current period</p>
               <p class="mt-2 text-lg font-semibold text-gray-900 dark:text-white">
                 <%= @current_billing_period ? number_to_currency(@current_billing_period.total_cost_cents / 100.0) : "No period yet" %>
               </p>
               <% if @current_billing_period %>
-                <p class="text-sm text-gray-600 dark:text-gray-300"><%= number_with_delimiter(@current_billing_period.total_runs) %> runs • <%= number_with_delimiter(@current_billing_period.total_tokens) %> tokens</p>
+                <p class="text-sm text-gray-600 dark:text-gray-300"><%= @current_billing_period.status.humanize %> • <%= @current_billing_period.starts_at.to_date %> to <%= @current_billing_period.ends_at.to_date %></p>
               <% end %>
             </div>
             <div class="rounded-2xl bg-violet-50 p-4 dark:bg-violet-950/20">
               <p class="text-xs uppercase tracking-wide text-violet-700 dark:text-violet-300">Payment state</p>
-              <p class="mt-2 text-lg font-semibold text-gray-900 dark:text-white"><%= @recent_invoices.first&.status&.humanize || "No invoices" %></p>
+              <p class="mt-2 text-lg font-semibold text-gray-900 dark:text-white"><%= latest_invoice&.status&.humanize || "No invoices" %></p>
               <p class="text-sm text-gray-600 dark:text-gray-300">Most recent invoice status</p>
             </div>
+            <div class="rounded-2xl bg-amber-50 p-4 dark:bg-amber-950/20">
+              <p class="text-xs uppercase tracking-wide text-amber-700 dark:text-amber-300">Payment sync</p>
+              <p class="mt-2 text-lg font-semibold text-gray-900 dark:text-white"><%= latest_invoice&.payment_sync_status&.humanize || "Not configured" %></p>
+              <p class="text-sm text-gray-600 dark:text-gray-300"><%= latest_invoice&.payment_provider || "Managed billing remains internal-only" %></p>
+            </div>
+          </div>
+
+          <div class="mt-6 rounded-2xl border border-amber-200 bg-amber-50/70 p-4 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-100">
+            Managed billing currently automates billing-period rollover and invoice issuance.
+            External payment collection, webhook-driven payment reconciliation, tax handling, dunning, and non-payment suspension remain out of scope.
           </div>
 
           <div class="mt-6 overflow-hidden rounded-2xl border border-gray-200 dark:border-gray-700">
@@ -386,6 +397,7 @@
                 <tr>
                   <th class="px-4 py-3 text-left font-medium text-gray-700 dark:text-gray-200">Invoice</th>
                   <th class="px-4 py-3 text-left font-medium text-gray-700 dark:text-gray-200">Status</th>
+                  <th class="px-4 py-3 text-left font-medium text-gray-700 dark:text-gray-200">Sync</th>
                   <th class="px-4 py-3 text-left font-medium text-gray-700 dark:text-gray-200">Issued</th>
                   <th class="px-4 py-3 text-left font-medium text-gray-700 dark:text-gray-200">Total</th>
                 </tr>
@@ -396,13 +408,14 @@
                     <tr>
                       <td class="px-4 py-4 font-medium text-gray-900 dark:text-white"><%= invoice.external_id.presence || "Invoice ##{invoice.id}" %></td>
                       <td class="px-4 py-4 text-gray-600 dark:text-gray-300"><%= invoice.status.humanize %></td>
+                      <td class="px-4 py-4 text-gray-600 dark:text-gray-300"><%= invoice.payment_sync_status.humanize %></td>
                       <td class="px-4 py-4 text-gray-600 dark:text-gray-300"><%= invoice.issued_at&.to_date || "Draft" %></td>
                       <td class="px-4 py-4 text-gray-600 dark:text-gray-300"><%= number_to_currency(invoice.total_cents / 100.0) %></td>
                     </tr>
                   <% end %>
                 <% else %>
                   <tr>
-                    <td colspan="4" class="px-4 py-6 text-center text-gray-500 dark:text-gray-400">No invoices yet.</td>
+                    <td colspan="5" class="px-4 py-6 text-center text-gray-500 dark:text-gray-400">No invoices yet.</td>
                   </tr>
                 <% end %>
               </tbody>
