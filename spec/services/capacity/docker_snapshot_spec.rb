@@ -154,6 +154,30 @@ RSpec.describe Capacity::DockerSnapshot do
       expect(snapshot.bucket(:other_docker).container_count).to eq(1)
     end
 
+    it "bypasses tenant RLS when building daemon-wide references" do
+      other_account = create(:account)
+
+      allow(TenantContext).to receive(:with_system_access).and_call_original
+      allow(containers.first).to receive(:info).and_return(
+        container_rows.first.fetch("info").merge("Labels" => {})
+      )
+      allow(containers.second).to receive(:info).and_return(
+        container_rows.second.fetch("info").merge("Labels" => {})
+      )
+      allow(containers[2]).to receive(:info).and_return(
+        container_rows[2].fetch("info").merge("Labels" => {})
+      )
+
+      snapshot = TenantContext.with(other_account) do
+        described_class.call(backend: backend, now: now, cache: cache, force_refresh: true)
+      end
+
+      expect(TenantContext).to have_received(:with_system_access).at_least(:once)
+      expect(snapshot.bucket(:paid_agents)).to have_attributes(container_count: 2, memory_bytes: 3_500)
+      expect(snapshot.bucket(:paid_service_containers)).to have_attributes(container_count: 1, memory_bytes: 1_200)
+      expect(snapshot.bucket(:paid_control_plane)).to have_attributes(container_count: 3, memory_bytes: 3_400)
+    end
+
     it "cuts off container sampling once the shared deadline is exhausted" do
       monotonic_times = [
         100.0,

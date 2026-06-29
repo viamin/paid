@@ -276,15 +276,17 @@ module Capacity
     end
 
     def build_references
-      host_scope = [ nil, "" ] + backend.all_host_identifiers
-      active_runs = AgentRun.capacity_inflight.where(container_host: host_scope)
+      TenantContext.with_system_access do
+        host_scope = [ nil, "" ] + backend.all_host_identifiers
+        active_runs = AgentRun.capacity_inflight.where(container_host: host_scope)
 
-      {
-        agent_container_ids: active_runs.where.not(container_id: nil).pluck(:container_id).to_set,
-        mcp_sidecar_ids: active_runs.pluck(:mcp_sidecar_container_ids).flatten.compact.to_set,
-        service_container_ids: ServiceContainer.running.where.not(docker_container_id: nil).pluck(:docker_container_id).to_set,
-        chat_container_ids: ChatSession.active.where.not(container_id: nil).pluck(:container_id).to_set
-      }
+        {
+          agent_container_ids: active_runs.where.not(container_id: nil).pluck(:container_id).to_set,
+          mcp_sidecar_ids: active_runs.pluck(:mcp_sidecar_container_ids).flatten.compact.to_set,
+          service_container_ids: ServiceContainer.running.where.not(docker_container_id: nil).pluck(:docker_container_id).to_set,
+          chat_container_ids: ChatSession.active.where.not(container_id: nil).pluck(:container_id).to_set
+        }
+      end
     end
 
     def classify_container(container:, references:)
