@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class RunnerCredentialsController < ApplicationController
+  SETUP_TOKEN_AUTH_KIND = "oauth_token"
+
   before_action :set_runner
   before_action :set_runner_credential, only: [ :show, :destroy ]
 
@@ -19,7 +21,7 @@ class RunnerCredentialsController < ApplicationController
       return
     end
 
-    @runner_credential = current_account.runner_credentials.build(runner_key: @runner.runner_key)
+    @runner_credential = current_account.runner_credentials.build(default_credential_attributes)
     authorize @runner_credential
   end
 
@@ -29,8 +31,9 @@ class RunnerCredentialsController < ApplicationController
       return
     end
 
-    @runner_credential = current_account.runner_credentials.build(runner_credential_params)
-    @runner_credential.runner_key = @runner.runner_key
+    @runner_credential = current_account.runner_credentials.build(
+      default_credential_attributes.merge(runner_credential_params)
+    )
     @runner_credential.created_by = current_user
     authorize @runner_credential
 
@@ -59,6 +62,19 @@ class RunnerCredentialsController < ApplicationController
 
   def filtered_scope
     policy_scope(RunnerCredential).where(runner_key: @runner.runner_key)
+  end
+
+  def default_credential_attributes
+    {
+      runner_key: @runner.runner_key
+    }.tap do |attributes|
+      attributes[:name] = generated_credential_name if RunnerCredential.supports_name_attribute?
+      attributes[:auth_kind] = SETUP_TOKEN_AUTH_KIND if RunnerCredential.supports_auth_kind_attribute?
+    end
+  end
+
+  def generated_credential_name
+    "#{@runner.display_name} setup token #{Time.current.utc.iso8601(6)}"
   end
 
   def active_runner_credential

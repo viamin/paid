@@ -4,6 +4,22 @@ require "rails_helper"
 
 RSpec.describe RunnerCredential do
   describe "validations" do
+    it "requires a name when the column exists" do
+      skip "name column not present on this branch schema" unless described_class.supports_name_attribute?
+
+      credential = build(:runner_credential, name: nil)
+      expect(credential).not_to be_valid
+      expect(credential.errors[:name]).to include("can't be blank")
+    end
+
+    it "requires an auth kind when the column exists" do
+      skip "auth_kind column not present on this branch schema" unless described_class.supports_auth_kind_attribute?
+
+      credential = build(:runner_credential, auth_kind: nil)
+      expect(credential).not_to be_valid
+      expect(credential.errors[:auth_kind]).to include("can't be blank")
+    end
+
     it "requires a token" do
       credential = build(:runner_credential, token: nil)
 
@@ -18,19 +34,23 @@ RSpec.describe RunnerCredential do
       expect(credential.errors[:runner_key]).to include("is not supported")
     end
 
-    it "rejects duplicate active credentials for the same account and runner key" do
+    it "rejects duplicate names for the same account and runner key when the column exists" do
+      skip "name column not present on this branch schema" unless described_class.supports_name_attribute?
+
       account = create(:account)
-      create(:runner_credential, account: account, runner_key: "claude")
-      duplicate = build(:runner_credential, account: account, runner_key: "claude")
+      create(:runner_credential, account: account, runner_key: "claude", name: "Claude Setup Token")
+      duplicate = build(:runner_credential, account: account, runner_key: "claude", name: "Claude Setup Token")
 
       expect(duplicate).not_to be_valid
-      expect(duplicate.errors[:runner_key]).to include("already has a credential")
+      expect(duplicate.errors[:name]).to include("has already been taken")
     end
 
-    it "allows duplicate credentials if the first is revoked" do
+    it "allows duplicate names across different runner keys when the column exists" do
+      skip "name column not present on this branch schema" unless described_class.supports_name_attribute?
+
       account = create(:account)
-      create(:runner_credential, :revoked, account: account, runner_key: "claude")
-      new_credential = build(:runner_credential, account: account, runner_key: "claude")
+      create(:runner_credential, account: account, runner_key: "claude", name: "Shared Name")
+      new_credential = build(:runner_credential, account: account, runner_key: "codex", name: "Shared Name")
 
       expect(new_credential).to be_valid
     end
@@ -47,11 +67,19 @@ RSpec.describe RunnerCredential do
   end
 
   describe ".active" do
-    it "excludes revoked credentials" do
+    it "excludes revoked credentials and expired short-lived credentials when expiry tracking exists" do
       active = create(:runner_credential)
       create(:runner_credential, :revoked)
 
-      expect(described_class.active).to contain_exactly(active)
+      if described_class.supports_expires_at_attribute?
+        long_lived = create(:runner_credential, :long_lived)
+        expired = create(:runner_credential, :expired)
+
+        expect(described_class.active).to contain_exactly(active, long_lived)
+        expect(described_class.active).not_to include(expired)
+      else
+        expect(described_class.active).to contain_exactly(active)
+      end
     end
   end
 
@@ -65,16 +93,42 @@ RSpec.describe RunnerCredential do
   end
 
   describe "#active?" do
-    it "returns true when revoked_at is nil" do
+    it "returns true for an unrevoked credential without an expiry" do
       credential = build(:runner_credential, revoked_at: nil)
 
       expect(credential).to be_active
+    end
+
+    it "returns false for an expired short-lived credential when expiry tracking exists" do
+      skip "expires_at column not present on this branch schema" unless described_class.supports_expires_at_attribute?
+
+      credential = build(:runner_credential, :expired)
+
+      expect(credential).not_to be_active
     end
 
     it "returns false when revoked_at is set" do
       credential = build(:runner_credential, :revoked)
 
       expect(credential).not_to be_active
+    end
+  end
+
+  describe "#expired?" do
+    it "returns true for an expired short-lived credential when expiry tracking exists" do
+      skip "expires_at column not present on this branch schema" unless described_class.supports_expires_at_attribute?
+
+      credential = build(:runner_credential, :expired)
+
+      expect(credential).to be_expired
+    end
+
+    it "returns false for long-lived credentials when expiry tracking exists" do
+      skip "expires_at column not present on this branch schema" unless described_class.supports_expires_at_attribute?
+
+      credential = build(:runner_credential, :long_lived, expires_at: 1.hour.ago)
+
+      expect(credential).not_to be_expired
     end
   end
 

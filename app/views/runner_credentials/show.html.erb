@@ -15,11 +15,7 @@
           <h1 class="text-xl font-semibold text-gray-900"><%= @runner_credential.display_name %> Credential</h1>
           <p class="mt-1 text-sm text-gray-500">Authentication token managed for all matching runners in this account</p>
         </div>
-        <% if @runner_credential.revoked? %>
-          <span class="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">Revoked</span>
-        <% else %>
-          <span class="inline-flex items-center rounded-md bg-green-100 px-2 py-1 text-xs font-medium text-green-700">Active</span>
-        <% end %>
+        <%= render_integration_status(@runner_credential) %>
       </div>
     </div>
 
@@ -33,7 +29,7 @@
       <div class="grid grid-cols-1 gap-4 px-6 py-4 sm:grid-cols-3">
         <dt class="text-sm font-medium text-gray-500">Token Type</dt>
         <dd class="text-sm text-gray-900 sm:col-span-2">
-          <% if @runner_credential.long_lived %>
+          <% if @runner_credential.long_lived? %>
             <span class="inline-flex items-center rounded-md bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700">Long-lived</span>
           <% else %>
             <span class="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">Standard</span>

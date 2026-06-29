@@ -45,11 +45,7 @@
                 <% end %>
               </td>
               <td class="px-4 py-3 text-sm">
-                <% if credential.revoked? %>
-                  <span class="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">Revoked</span>
-                <% else %>
-                  <span class="inline-flex items-center rounded-md bg-green-100 px-2 py-1 text-xs font-medium text-green-700">Active</span>
-                <% end %>
+                <%= render_integration_status(credential) %>
               </td>
               <td class="px-4 py-3 text-sm text-gray-500"><%= l(credential.created_at, format: :short) %></td>
               <td class="px-4 py-3 text-right text-sm">
