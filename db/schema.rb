@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_28_160548) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_28_182451) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -396,18 +396,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_160548) do
     t.index ["success"], name: "index_bundle_outcomes_on_success"
   end
 
-  create_table "change_intents", comment: "Change Intent Records that capture human direction given to agents.", force: :cascade do |t|
-    t.text "behavior", comment: "Expected behavior or examples that clarify the intent."
-    t.bigint "chat_session_id", comment: "Chat session where the intent was captured."
-    t.text "constraints", comment: "Non-obvious implementation boundaries or requirements."
+  create_table "change_intents", comment: "Captures human directional intent that should persist in the knowledge base.", force: :cascade do |t|
+    t.text "behavior", comment: "Expected behavior, often captured as given/when/then scenarios."
+    t.bigint "chat_session_id", comment: "Chat session where the intent was captured, when applicable."
+    t.text "constraints", comment: "Boundaries and constraints that shaped the implementation."
     t.datetime "created_at", null: false
-    t.text "decisions_made", comment: "Rejected alternatives or decisions that shaped the approach."
+    t.text "decisions_made", comment: "Alternatives that were rejected and why."
     t.text "intent", null: false, comment: "What the human was trying to accomplish."
-    t.bigint "issue_id", comment: "Optional issue the intent relates to."
-    t.bigint "project_id", null: false, comment: "Project the Change Intent Record belongs to."
-    t.string "status", default: "draft", null: false, comment: "Lifecycle state: draft, active, superseded, or reverted."
-    t.bigint "superseded_by_id", comment: "Newer Change Intent Record that superseded this one."
-    t.text "title", null: false, comment: "Short, human-readable title for the change intent."
+    t.bigint "issue_id", comment: "Issue that motivated or contextualized the intent, when applicable."
+    t.bigint "project_id", null: false, comment: "Project this change intent applies to."
+    t.string "status", limit: 50, default: "draft", null: false, comment: "Lifecycle state for the record: draft, active, or superseded."
+    t.bigint "superseded_by_id", comment: "Newer change intent that superseded this record."
+    t.text "title", null: false, comment: "Short title summarizing the intent."
     t.datetime "updated_at", null: false
     t.index ["chat_session_id"], name: "index_change_intents_on_chat_session_id"
     t.index ["issue_id"], name: "index_change_intents_on_issue_id"
@@ -2100,20 +2100,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_160548) do
     t.index ["project_id", "name"], name: "idx_roi_benchmarks_project_name"
   end
 
-  create_table "runner_credentials", force: :cascade do |t|
-    t.bigint "account_id", null: false
+  create_table "runner_credentials", comment: "Account-scoped encrypted credentials for subscription runners (Claude Code, Codex, Gemini, Copilot)", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Account that owns this credential"
+    t.string "auth_kind", default: "oauth_token", null: false, comment: "Authentication mechanism (oauth_token, api_key, signing_token)"
     t.datetime "created_at", null: false
-    t.bigint "created_by_id"
-    t.jsonb "log_data", comment: "Logidze change tracking"
-    t.boolean "long_lived", default: false, null: false, comment: "Whether this is a long-lived token that does not need periodic refresh"
-    t.datetime "revoked_at", comment: "Timestamp when credential was revoked"
-    t.bigint "runner_id", null: false
-    t.text "token", null: false, comment: "Encrypted authentication token (e.g., claude setup-token)"
+    t.bigint "created_by_id", comment: "User who created the credential"
+    t.datetime "expires_at", comment: "Token expiry time; nil means no expiry"
+    t.datetime "last_used_at", comment: "Last time this credential was injected into a container"
+    t.jsonb "log_data"
+    t.boolean "long_lived", default: false, null: false, comment: "When true, skips expiry tracking and refresh (e.g. claude setup-token)"
+    t.jsonb "metadata", default: {}, null: false, comment: "Arbitrary provider-specific metadata"
+    t.string "name", null: false, comment: "Human-readable label for this credential"
+    t.datetime "revoked_at", comment: "Set when credential is revoked; nil means active"
+    t.string "runner_key", null: false, comment: "Runner provider key (e.g. claude, codex, gemini, copilot)"
+    t.text "token", null: false, comment: "Encrypted credential token"
     t.datetime "updated_at", null: false
-    t.index ["account_id", "created_at"], name: "index_runner_credentials_on_account_id_and_created_at"
+    t.index ["account_id", "revoked_at"], name: "index_runner_credentials_on_account_id_and_revoked_at"
+    t.index ["account_id", "runner_key", "name"], name: "idx_runner_credentials_on_account_runner_key_name", unique: true
+    t.index ["account_id", "runner_key"], name: "index_runner_credentials_on_account_id_and_runner_key"
     t.index ["account_id"], name: "index_runner_credentials_on_account_id"
     t.index ["created_by_id"], name: "index_runner_credentials_on_created_by_id"
-    t.index ["runner_id"], name: "index_runner_credentials_on_active_runner_id", unique: true, where: "(revoked_at IS NULL)"
   end
 
   create_table "runner_states", force: :cascade do |t|
@@ -2633,10 +2639,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_160548) do
   add_foreign_key "billing_plans", "accounts"
   add_foreign_key "bundle_outcomes", "agent_runs", on_delete: :cascade
   add_foreign_key "bundle_outcomes", "configuration_bundles", on_delete: :cascade
-  add_foreign_key "change_intents", "change_intents", column: "superseded_by_id"
-  add_foreign_key "change_intents", "chat_sessions"
-  add_foreign_key "change_intents", "issues"
-  add_foreign_key "change_intents", "projects"
+  add_foreign_key "change_intents", "change_intents", column: "superseded_by_id", on_delete: :nullify
+  add_foreign_key "change_intents", "chat_sessions", on_delete: :nullify
+  add_foreign_key "change_intents", "issues", on_delete: :nullify
+  add_foreign_key "change_intents", "projects", on_delete: :cascade
   add_foreign_key "chat_messages", "chat_sessions"
   add_foreign_key "chat_session_projects", "chat_sessions"
   add_foreign_key "chat_session_projects", "projects"
@@ -2783,8 +2789,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_160548) do
   add_foreign_key "remediation_decisions", "users", column: "applied_by_id"
   add_foreign_key "roi_benchmarks", "projects", on_delete: :cascade
   add_foreign_key "runner_credentials", "accounts"
-  add_foreign_key "runner_credentials", "runners"
-  add_foreign_key "runner_credentials", "users", column: "created_by_id"
+  add_foreign_key "runner_credentials", "users", column: "created_by_id", on_delete: :nullify
   add_foreign_key "runner_states", "users", on_delete: :cascade
   add_foreign_key "runners", "integration_credentials", on_delete: :restrict
   add_foreign_key "runners", "provider_api_keys", on_delete: :restrict
@@ -3560,26 +3565,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_160548) do
       $function$
   SQL
 
-  create_function :paid_current_account_id, sql_definition: <<-'SQL'
-      CREATE OR REPLACE FUNCTION public.paid_current_account_id()
-       RETURNS bigint
-       LANGUAGE sql
-       STABLE
-      AS $function$
-        SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
-      $function$
-  SQL
-
-  create_function :paid_tenant_bypass, sql_definition: <<-'SQL'
-      CREATE OR REPLACE FUNCTION public.paid_tenant_bypass()
-       RETURNS boolean
-       LANGUAGE sql
-       STABLE
-      AS $function$
-        SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
-      $function$
-  SQL
-
   create_function :validate_orchestration_decision_strategy_version_scope, sql_definition: <<-'SQL'
       CREATE OR REPLACE FUNCTION public.validate_orchestration_decision_strategy_version_scope()
        RETURNS trigger
@@ -3613,6 +3598,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_160548) do
 
         RAISE EXCEPTION 'strategy_version_id must reference a global or same-tenant strategy version';
       END;
+      $function$
+  SQL
+
+  create_function :paid_current_account_id, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.paid_current_account_id()
+       RETURNS bigint
+       LANGUAGE sql
+       STABLE
+      AS $function$
+        SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
+      $function$
+  SQL
+
+  create_function :paid_tenant_bypass, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.paid_tenant_bypass()
+       RETURNS boolean
+       LANGUAGE sql
+       STABLE
+      AS $function$
+        SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
       $function$
   SQL
 
@@ -3704,6 +3709,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_160548) do
       CREATE TRIGGER logidze_on_quality_thresholds BEFORE INSERT OR UPDATE ON public.quality_thresholds FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
+  create_trigger :logidze_on_runner_credentials, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_runner_credentials BEFORE INSERT OR UPDATE ON public.runner_credentials FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{token}')
+  SQL
+
   create_trigger :logidze_on_providers, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_providers BEFORE INSERT OR UPDATE ON public.runners FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
@@ -3730,9 +3739,5 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_160548) do
 
   create_trigger :logidze_on_users, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_users BEFORE INSERT OR UPDATE ON public.users FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{encrypted_password,reset_password_token,reset_password_sent_at,remember_created_at}')
-  SQL
-
-  create_trigger :logidze_on_runner_credentials, sql_definition: <<-SQL
-      CREATE TRIGGER logidze_on_runner_credentials BEFORE INSERT OR UPDATE ON public.runner_credentials FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{token}')
   SQL
 end
