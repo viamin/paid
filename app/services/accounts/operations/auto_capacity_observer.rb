@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "docker-api"
+require "pathname"
 require "timeout"
 
 module Accounts
@@ -9,6 +10,7 @@ module Accounts
       CACHE_VERSION = "v1"
       CACHE_TTL = 30.seconds
       SNAPSHOT_TIMEOUT = 4
+      PAID_COMPOSE_PROJECT = "paid"
       DEFAULT_ESTIMATED_RUN_MEMORY_BYTES = Containers::Provision::DEFAULTS[:memory_bytes]
       ESTIMATED_RUN_MEMORY_MULTIPLIER = 1.25
       MIN_CONTROL_PLANE_MARGIN_BYTES = 512.megabytes
@@ -136,10 +138,11 @@ module Accounts
         end
 
         paid_memory_bytes = usage[:paid][:memory_bytes]
+        agent_memory_bytes = usage[:agent][:memory_bytes]
         non_agent_memory_bytes = paid_memory_bytes + usage[:service][:memory_bytes] + usage[:other][:memory_bytes]
         control_plane_margin_bytes = [ (paid_memory_bytes * CONTROL_PLANE_MARGIN_MULTIPLIER).ceil, MIN_CONTROL_PLANE_MARGIN_BYTES ].max
         available_agent_memory_bytes = [
-          daemon_info.fetch("MemTotal", 0).to_i - non_agent_memory_bytes - control_plane_margin_bytes,
+          daemon_info.fetch("MemTotal", 0).to_i - non_agent_memory_bytes - agent_memory_bytes - control_plane_margin_bytes,
           0
         ].max
 
@@ -179,12 +182,43 @@ module Accounts
       def classify_container(info)
         labels = container_labels(info)
         compose_service = labels["com.docker.compose.service"]
+        compose_project = labels["com.docker.compose.project"]
+        compose_workdir = labels["com.docker.compose.project.working_dir"]
 
         return :service if labels["paid.service_container"] == "true"
         return :agent if labels["paid.agent_run_id"].present? || labels["paid.mcp_sidecar"] == "true" || labels["paid.container_pool"] == "true"
-        return :paid if labels["paid.managed"] == "true" || CONTROL_PLANE_SERVICES.include?(compose_service)
+        return :paid if labels["paid.managed"] == "true"
+        return :paid if paid_control_plane_service?(compose_service:, compose_project:, compose_workdir:)
 
         :other
+      end
+
+      def paid_control_plane_service?(compose_service:, compose_project:, compose_workdir:)
+        return false unless compose_service.present?
+        return false unless CONTROL_PLANE_SERVICES.include?(compose_service)
+
+        paid_compose_project?(compose_project) || paid_compose_workdir?(compose_workdir)
+      end
+
+      def paid_compose_project?(compose_project)
+        normalize_compose_project(compose_project) == PAID_COMPOSE_PROJECT
+      end
+
+      def paid_compose_workdir?(compose_workdir)
+        normalize_compose_workdir(compose_workdir)&.basename&.to_s == PAID_COMPOSE_PROJECT
+      rescue ArgumentError
+        false
+      end
+
+      def normalize_compose_project(compose_project)
+        compose_project.to_s.strip.downcase
+      end
+
+      def normalize_compose_workdir(compose_workdir)
+        raw = compose_workdir.to_s.strip
+        return if raw.blank?
+
+        Pathname.new(raw.tr("\\", "/")).cleanpath
       end
 
       def counts_as_running_agent?(info)

@@ -31,6 +31,16 @@ RSpec.describe Accounts::Operations::AutoCapacityObserver do
     expect_capacity_snapshot(payload)
   end
 
+  it "subtracts memory already used by running agents from additional agent headroom" do
+    create_recent_run_profile!
+    allow(backend).to receive(:list_containers).with(all: false).and_return(sampled_containers)
+
+    payload = described_class.call(account: account, manual_limit: 5, backend: backend, cache: cache)
+
+    expect(payload[:available_agent_memory_bytes]).to eq(4.5.gigabytes)
+    expect(payload[:effective_recommended_concurrency]).to eq(1)
+  end
+
   it "reports a degraded preview when docker metrics cannot be collected" do
     allow(Docker).to receive(:info).and_raise(StandardError, "docker unavailable")
 
@@ -110,6 +120,18 @@ RSpec.describe Accounts::Operations::AutoCapacityObserver do
     expect(payload.dig(:usage, :agent, :memory_bytes)).to eq(1.gigabyte)
   end
 
+  it "only treats compose services from the paid project as paid control plane usage" do
+    create_recent_run_profile!
+    allow(backend).to receive(:list_containers).with(all: false).and_return(compose_labeled_containers)
+
+    payload = described_class.call(account: account, manual_limit: 5, backend: backend, cache: cache)
+
+    expect(payload.dig(:usage, :paid, :container_count)).to eq(2)
+    expect(payload.dig(:usage, :paid, :memory_bytes)).to eq(2.25.gigabytes)
+    expect(payload.dig(:usage, :other, :container_count)).to eq(1)
+    expect(payload.dig(:usage, :other, :memory_bytes)).to eq(512.megabytes)
+  end
+
   def docker_container(labels:, memory_bytes:, cpu_percent:)
     info = { "Config" => { "Labels" => labels } }
     stats = docker_stats(memory_bytes:, cpu_percent:)
@@ -165,7 +187,10 @@ RSpec.describe Accounts::Operations::AutoCapacityObserver do
   def sampled_containers
     [
       docker_container(
-        labels: { "com.docker.compose.service" => "web" },
+        labels: {
+          "com.docker.compose.project" => "paid",
+          "com.docker.compose.service" => "web"
+        },
         memory_bytes: 2.gigabytes,
         cpu_percent: 10.0
       ),
@@ -183,6 +208,37 @@ RSpec.describe Accounts::Operations::AutoCapacityObserver do
         labels: {},
         memory_bytes: 3.gigabytes,
         cpu_percent: 25.0
+      )
+    ]
+  end
+
+  def compose_labeled_containers
+    [
+      docker_container(
+        labels: {
+          "com.docker.compose.project" => "paid",
+          "com.docker.compose.service" => "web"
+        },
+        memory_bytes: 2.gigabytes,
+        cpu_percent: 10.0
+      ),
+      docker_container(
+        labels: {
+          "com.docker.compose.project" => "random",
+          "com.docker.compose.project.working_dir" => "/srv/unpaid-tools",
+          "com.docker.compose.service" => "postgres"
+        },
+        memory_bytes: 512.megabytes,
+        cpu_percent: 5.0
+      ),
+      docker_container(
+        labels: {
+          "com.docker.compose.project" => "other",
+          "com.docker.compose.project.working_dir" => "C:\\src\\paid",
+          "com.docker.compose.service" => "worker"
+        },
+        memory_bytes: 256.megabytes,
+        cpu_percent: 2.5
       )
     ]
   end
@@ -206,7 +262,8 @@ RSpec.describe Accounts::Operations::AutoCapacityObserver do
     expect(payload[:docker_cpu_count]).to eq(8)
     expect(payload[:docker_memory_bytes]).to eq(12.gigabytes)
     expect(payload[:running_agent_count]).to eq(1)
-    expect(payload[:effective_recommended_concurrency]).to eq(2)
+    expect(payload[:effective_recommended_concurrency]).to eq(1)
+    expect(payload[:available_agent_memory_bytes]).to eq(4.5.gigabytes)
     expect(payload.dig(:usage, :paid, :memory_bytes)).to eq(2.gigabytes)
     expect(payload.dig(:usage, :agent, :memory_bytes)).to eq(1.gigabyte)
     expect(payload.dig(:usage, :service, :memory_bytes)).to eq(1.gigabyte)
