@@ -69,10 +69,14 @@ module Accounts
         return remote_backend_payload if backend.remote?
 
         snapshot = Timeout.timeout(SNAPSHOT_TIMEOUT) { collect_snapshot }
+        if snapshot[:warnings].any?
+          return degraded_snapshot_payload(snapshot)
+        end
+
         recommended_concurrency = recommended_concurrency_for(snapshot)
 
         {
-          status: snapshot[:warnings].any? ? :degraded : :healthy,
+          status: :healthy,
           sampled_at: Time.current,
           docker_cpu_count: snapshot[:docker_cpu_count],
           docker_memory_bytes: snapshot[:docker_memory_bytes],
@@ -90,6 +94,25 @@ module Accounts
             estimated_next_run_memory_bytes: snapshot[:estimated_next_run_memory_bytes]
           ),
           comparison_summary: comparison_summary(recommended_concurrency)
+        }
+      end
+
+      def degraded_snapshot_payload(snapshot)
+        {
+          status: :degraded,
+          sampled_at: Time.current,
+          docker_cpu_count: snapshot[:docker_cpu_count],
+          docker_memory_bytes: snapshot[:docker_memory_bytes],
+          running_agent_count: snapshot[:running_agent_count],
+          estimated_next_run_memory_bytes: snapshot[:estimated_next_run_memory_bytes],
+          available_agent_memory_bytes: snapshot[:available_agent_memory_bytes],
+          control_plane_margin_bytes: snapshot[:control_plane_margin_bytes],
+          effective_recommended_concurrency: nil,
+          usage: snapshot[:usage],
+          warnings: snapshot[:warnings],
+          manual_mode_summary: manual_mode_summary,
+          auto_mode_summary: degraded_auto_mode_summary,
+          comparison_summary: degraded_comparison_summary
         }
       end
 
@@ -213,6 +236,14 @@ module Accounts
         "Auto preview is advisory only until automatic admission is enabled."
       end
 
+      def degraded_auto_mode_summary
+        "Auto preview cannot make a trustworthy recommendation until Docker metrics recover."
+      end
+
+      def degraded_comparison_summary
+        "Keep using manual mode until the Docker inspection path is healthy again."
+      end
+
       def human_size(bytes)
         ActionController::Base.helpers.number_to_human_size(bytes)
       end
@@ -238,8 +269,8 @@ module Accounts
           usage: empty_usage,
           warnings: [ "#{warning} #{detail}" ],
           manual_mode_summary: manual_mode_summary,
-          auto_mode_summary: "Auto preview cannot make a trustworthy recommendation until Docker metrics recover.",
-          comparison_summary: "Keep using manual mode until the Docker inspection path is healthy again."
+          auto_mode_summary: degraded_auto_mode_summary,
+          comparison_summary: degraded_comparison_summary
         }
       end
     end

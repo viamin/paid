@@ -47,6 +47,22 @@ RSpec.describe Accounts::Operations::AutoCapacityObserver do
     expect(payload[:manual_mode_summary]).to include("3 concurrent runs")
   end
 
+  it "suppresses recommendations when a container stats call fails" do
+    create_recent_run_profile!
+    healthy_container = docker_container(labels: { "paid.agent_run_id" => "123" }, memory_bytes: 1.gigabyte, cpu_percent: 55.0)
+    failing_container = failing_docker_container(
+      labels: { "com.docker.compose.service" => "web" },
+      error_message: "stats unavailable"
+    )
+
+    allow(backend).to receive(:list_containers).with(all: false).and_return([ healthy_container, failing_container ])
+
+    payload = described_class.call(account: account, manual_limit: 5, backend: backend, cache: cache)
+
+    expect_degraded_snapshot_payload(payload, warning: "stats unavailable")
+    expect(payload.dig(:usage, :agent, :memory_bytes)).to eq(1.gigabyte)
+  end
+
   def docker_container(labels:, memory_bytes:, cpu_percent:)
     info = { "Config" => { "Labels" => labels } }
     stats = docker_stats(memory_bytes:, cpu_percent:)
@@ -57,6 +73,15 @@ RSpec.describe Accounts::Operations::AutoCapacityObserver do
       stats: stats
     ).tap do |container|
       allow(backend).to receive(:container_stats).with(container, stream: false).and_return(stats)
+    end
+  end
+
+  def failing_docker_container(labels:, error_message:)
+    info = { "Config" => { "Labels" => labels } }
+
+    instance_double(Docker::Container, info: info).tap do |container|
+      allow(backend).to receive(:container_stats).with(container, stream: false)
+        .and_raise(StandardError, error_message)
     end
   end
 
@@ -113,6 +138,20 @@ RSpec.describe Accounts::Operations::AutoCapacityObserver do
         cpu_percent: 25.0
       )
     ]
+  end
+
+  def expect_degraded_snapshot_payload(payload, warning:)
+    expect(payload[:status]).to eq(:degraded)
+    expect(payload[:effective_recommended_concurrency]).to be_nil
+    expect(payload[:warnings]).to contain_exactly(
+      "Some Docker metrics were unavailable while building the auto-capacity preview: #{warning}"
+    )
+    expect(payload[:auto_mode_summary]).to eq(
+      "Auto preview cannot make a trustworthy recommendation until Docker metrics recover."
+    )
+    expect(payload[:comparison_summary]).to eq(
+      "Keep using manual mode until the Docker inspection path is healthy again."
+    )
   end
 
   def expect_capacity_snapshot(payload)
