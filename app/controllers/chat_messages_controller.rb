@@ -77,14 +77,12 @@ class ChatMessagesController < ApplicationController
       response.headers["X-Accel-Buffering"] = "no"
 
       message_id = SecureRandom.uuid
-      llm_client = ChatSessions::BuildLlmClient.call(chat_session: @chat_session)
 
       write_sse_event("message_start", { message_id: message_id, model: @chat_session.model })
 
       assistant_message = ChatSessions::SendMessage.call(
         chat_session: @chat_session,
         content: params[:content],
-        llm_client: llm_client,
         on_chunk: ->(chunk) { write_sse_event("message_chunk", { message_id: message_id, content: chunk }) },
         on_message_persisted: ->(message, stream_message_id: nil) { write_sse_tool_event(message, stream_message_id: stream_message_id) }
       )
@@ -107,6 +105,8 @@ class ChatMessagesController < ApplicationController
     write_sse_event("error", { message: e.message }) rescue IOError
   rescue AgentHarness::RateLimitError => e
     write_sse_event("error", { message: ChatSessions::ErrorMessage.for(e) }) rescue IOError
+  rescue AgentHarness::Error => e
+    write_sse_event("error", { message: ChatSessions::ErrorMessage.for(e) }) rescue IOError
   rescue StandardError => e
     Rails.logger.error(message: "chat_messages.stream_failed", session_id: @chat_session.id, error: e.message)
     write_sse_event("error", { message: "An unexpected error occurred" }) rescue IOError
@@ -116,12 +116,9 @@ class ChatMessagesController < ApplicationController
 
   def json_response
     assistant_message = with_chat_session_tenant_context do
-      llm_client = ChatSessions::BuildLlmClient.call(chat_session: @chat_session)
-
       ChatSessions::SendMessage.call(
         chat_session: @chat_session,
-        content: params[:content],
-        llm_client: llm_client
+        content: params[:content]
       )
     end
 
@@ -134,6 +131,8 @@ class ChatMessagesController < ApplicationController
     render json: { error: e.message }, status: :unprocessable_content
   rescue AgentHarness::RateLimitError => e
     render json: { error: ChatSessions::ErrorMessage.for(e) }, status: :too_many_requests
+  rescue AgentHarness::Error => e
+    render json: { error: ChatSessions::ErrorMessage.for(e) }, status: :bad_gateway
   rescue StandardError => e
     Rails.logger.error(message: "chat_messages.send_failed", session_id: @chat_session.id, error: e.message)
     render json: { error: "An unexpected error occurred" }, status: :internal_server_error
@@ -144,7 +143,7 @@ class ChatMessagesController < ApplicationController
   end
 
   def write_sse_tool_event(message, stream_message_id: nil)
-    if fallback_notice?(message)
+    if message.fallback_notice?
       write_sse_event("message_created", message_json(message).merge(
         fallback_notice: true,
         stream_message_id: nil
@@ -174,10 +173,6 @@ class ChatMessagesController < ApplicationController
     })
   end
 
-  def fallback_notice?(message)
-    message.metadata.is_a?(Hash) && message.metadata["fallback_notice"] == true
-  end
-
   def stream_resolve_response(tool_call_message, decision)
     with_chat_session_tenant_context do
       response.headers["Content-Type"] = "text/event-stream"
@@ -185,7 +180,6 @@ class ChatMessagesController < ApplicationController
       response.headers["X-Accel-Buffering"] = "no"
 
       message_id = SecureRandom.uuid
-      llm_client = ChatSessions::BuildLlmClient.call(chat_session: @chat_session)
 
       write_sse_event("message_start", { message_id: message_id })
 
@@ -193,7 +187,6 @@ class ChatMessagesController < ApplicationController
         chat_session: @chat_session,
         tool_call_message: tool_call_message,
         decision: decision,
-        llm_client: llm_client,
         on_chunk: ->(chunk) { write_sse_event("message_chunk", { message_id: message_id, content: chunk }) },
         on_tool_call_resolved: ->(message) {
           write_sse_event("message_tool_resolved", {
@@ -224,6 +217,8 @@ class ChatMessagesController < ApplicationController
     write_sse_event("error", { message: e.message }) rescue IOError
   rescue AgentHarness::RateLimitError => e
     write_sse_event("error", { message: ChatSessions::ErrorMessage.for(e) }) rescue IOError
+  rescue AgentHarness::Error => e
+    write_sse_event("error", { message: ChatSessions::ErrorMessage.for(e) }) rescue IOError
   rescue StandardError => e
     Rails.logger.error(message: "chat_messages.resolve_stream_failed", session_id: @chat_session.id, error: e.message)
     write_sse_event("error", { message: "An unexpected error occurred" }) rescue IOError
@@ -233,13 +228,10 @@ class ChatMessagesController < ApplicationController
 
   def json_resolve_response(tool_call_message, decision)
     assistant_message = with_chat_session_tenant_context do
-      llm_client = ChatSessions::BuildLlmClient.call(chat_session: @chat_session)
-
       ChatSessions::ResolveToolCall.call(
         chat_session: @chat_session,
         tool_call_message: tool_call_message,
-        decision: decision,
-        llm_client: llm_client
+        decision: decision
       )
     end
 
@@ -252,6 +244,8 @@ class ChatMessagesController < ApplicationController
     render json: { error: e.message }, status: :unprocessable_content
   rescue AgentHarness::RateLimitError => e
     render json: { error: ChatSessions::ErrorMessage.for(e) }, status: :too_many_requests
+  rescue AgentHarness::Error => e
+    render json: { error: ChatSessions::ErrorMessage.for(e) }, status: :bad_gateway
   rescue StandardError => e
     Rails.logger.error(message: "chat_messages.resolve_failed", session_id: @chat_session.id, error: e.message)
     render json: { error: "An unexpected error occurred" }, status: :internal_server_error

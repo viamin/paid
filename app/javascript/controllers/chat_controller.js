@@ -290,11 +290,18 @@ export default class extends Controller {
     pendingMessage.closest("div")?.remove()
   }
 
+  // On a runner fallback the partial answer from the failed runner is discarded
+  // unconditionally (unlike removePendingAssistantMessage, which preserves a
+  // bubble that already streamed content): the fallback runner produces a fresh
+  // answer, so any partial text from the failed attempt is stale. currentStreamId
+  // is cleared so a late chunk for the old stream cannot resurrect the removed
+  // bubble before the next message_start assigns a new id.
   removeCurrentAssistantMessage() {
     if (!this.currentStreamId) return
 
     const pendingMessage = this.messagesTarget.querySelector(`article[data-stream-message-id="${this.currentStreamId}"]`)
     pendingMessage?.closest("div")?.remove()
+    this.currentStreamId = null
   }
 
   messageElementById(messageId) {
