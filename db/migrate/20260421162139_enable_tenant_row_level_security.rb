@@ -29,6 +29,7 @@ class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
   PROJECT_TABLES = %w[
     agent_run_anomalies
     agent_runs
+    change_intents
     container_pool_entries
     context_intake_sessions
     cost_budgets
