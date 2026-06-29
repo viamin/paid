@@ -24,6 +24,30 @@ RSpec.describe Tools::RecordChangeIntent do
         status: "draft"
       )
     end
+
+    it "associates the current issue from page context metadata" do
+      issue = create(:issue, project:)
+      session.update!(metadata: { "page_context" => { "issue_id" => issue.id } })
+
+      result = described_class.new(user: owner, session:).call(
+        title: "Prefer sliding window rate limiting",
+        intent: "Smooth request limiting"
+      )
+
+      expect(project.change_intents.find(result[:id]).issue).to eq(issue)
+    end
+
+    it "derives the current issue from the popup page path" do
+      issue = create(:issue, project:)
+      session.update!(metadata: { "page_context" => { "path" => "/projects/#{project.id}/issues/#{issue.id}/clarifying_questions" } })
+
+      result = described_class.new(user: owner, session:).call(
+        title: "Prefer sliding window rate limiting",
+        intent: "Smooth request limiting"
+      )
+
+      expect(project.change_intents.find(result[:id]).issue).to eq(issue)
+    end
   end
 
   describe "#resolve_confirmation" do

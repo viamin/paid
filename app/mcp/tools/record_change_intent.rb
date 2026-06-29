@@ -80,10 +80,22 @@ module Tools
     end
 
     def issue_for_session
-      issue_id = session.page_context["issue_id"] || session.metadata&.dig("issue_id")
+      issue_id = issue_id_for_session
       return unless issue_id.present?
 
       project_for_session!.issues.find_by(id: issue_id)
+    end
+
+    def issue_id_for_session
+      session.page_context["issue_id"] ||
+        session.metadata&.dig("issue_id") ||
+        issue_id_from_page_path
+    end
+
+    def issue_id_from_page_path
+      path = session.page_context["path"].to_s
+      match = path.match(%r{\A/projects/\d+/issues/(\d+)(?:/|$)})
+      match&.captures&.first
     end
 
     def serialize(change_intent)
