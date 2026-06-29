@@ -63,6 +63,53 @@ RSpec.describe Accounts::Operations::AutoCapacityObserver do
     expect(payload.dig(:usage, :agent, :memory_bytes)).to eq(1.gigabyte)
   end
 
+  it "returns a degraded payload for swarm backends even though swarm reports remote? == false" do
+    swarm_backend = instance_double(
+      Containers::Backends::Swarm,
+      remote?: false,
+      identifier: "swarm"
+    )
+
+    payload = described_class.call(account: account, manual_limit: 5, backend: swarm_backend, cache: cache)
+
+    expect(payload[:status]).to eq(:degraded)
+    expect(payload[:effective_recommended_concurrency]).to be_nil
+    expect(payload[:warnings].first).to include("local Docker backends")
+    expect(payload[:warnings].first).to include("swarm")
+  end
+
+  it "reads labels from the top-level Labels key when present" do
+    create_recent_run_profile!
+    summary_container = instance_double(
+      Docker::Container,
+      info: { "Labels" => { "paid.agent_run_id" => "123" } }
+    )
+    stats = docker_stats(memory_bytes: 1.gigabyte, cpu_percent: 55.0)
+    allow(backend).to receive(:container_stats).with(summary_container, stream: false).and_return(stats)
+    allow(backend).to receive(:list_containers).with(all: false).and_return([ summary_container ])
+
+    payload = described_class.call(account: account, manual_limit: 5, backend: backend, cache: cache)
+
+    expect(payload[:running_agent_count]).to eq(1)
+    expect(payload.dig(:usage, :agent, :memory_bytes)).to eq(1.gigabyte)
+  end
+
+  it "falls back to Config.Labels when top-level Labels is absent (swarm-style payloads)" do
+    create_recent_run_profile!
+    swarm_style_container = instance_double(
+      Docker::Container,
+      info: { "Config" => { "Labels" => { "paid.agent_run_id" => "456" } } }
+    )
+    stats = docker_stats(memory_bytes: 1.gigabyte, cpu_percent: 55.0)
+    allow(backend).to receive(:container_stats).with(swarm_style_container, stream: false).and_return(stats)
+    allow(backend).to receive(:list_containers).with(all: false).and_return([ swarm_style_container ])
+
+    payload = described_class.call(account: account, manual_limit: 5, backend: backend, cache: cache)
+
+    expect(payload[:running_agent_count]).to eq(1)
+    expect(payload.dig(:usage, :agent, :memory_bytes)).to eq(1.gigabyte)
+  end
+
   def docker_container(labels:, memory_bytes:, cpu_percent:)
     info = { "Config" => { "Labels" => labels } }
     stats = docker_stats(memory_bytes:, cpu_percent:)

@@ -75,6 +75,29 @@ RSpec.describe Accounts::Operations::Dashboard do
       expect(result.dig(:capacity, :cost_ceiling_utilization_percent)).to be_nil
     end
 
+    it "omits the auto-capacity payload by default so the shared admin page does not call Docker" do
+      expect(Accounts::Operations::AutoCapacityObserver).not_to receive(:call)
+
+      result = described_class.call(account: account, tenant_setting: tenant_setting, billing_visible: true)
+
+      expect(result.dig(:capacity, :auto_capacity)).to be_nil
+    end
+
+    it "loads the auto-capacity payload when explicitly requested" do
+      expect(Accounts::Operations::AutoCapacityObserver).to receive(:call).with(
+        hash_including(account: account)
+      ).and_return(status: :healthy, sampled_at: Time.current)
+
+      result = described_class.call(
+        account: account,
+        tenant_setting: tenant_setting,
+        billing_visible: true,
+        include_auto_capacity: true
+      )
+
+      expect(result.dig(:capacity, :auto_capacity, :status)).to eq(:healthy)
+    end
+
     it "reuses calculated service level metrics within a payload build" do
       configure_operations!
       dashboard = described_class.new(account: account, tenant_setting: tenant_setting, billing_visible: true)

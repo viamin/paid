@@ -52,6 +52,15 @@ RSpec.describe "Accounts" do
       expect(response.body).to include("Payment sync")
     end
 
+    it "does not load the auto-capacity panel on the general admin page" do
+      expect(Accounts::Operations::AutoCapacityObserver).not_to receive(:call)
+
+      get account_path
+
+      expect(response.body).not_to include("Auto Capacity Preview")
+      expect(response.body).not_to include("Observe-only auto mode")
+    end
+
     it "allows a viewer to read the page" do
       viewer = create(:user, :viewer, account: account)
       sign_out owner

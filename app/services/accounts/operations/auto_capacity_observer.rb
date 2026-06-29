@@ -66,7 +66,7 @@ module Accounts
       end
 
       def build_payload
-        return remote_backend_payload if backend.remote?
+        return remote_backend_payload unless local_backend?
 
         snapshot = Timeout.timeout(SNAPSHOT_TIMEOUT) { collect_snapshot }
         if snapshot[:warnings].any?
@@ -177,7 +177,7 @@ module Accounts
       end
 
       def classify_container(info)
-        labels = info.dig("Config", "Labels") || {}
+        labels = container_labels(info)
         compose_service = labels["com.docker.compose.service"]
 
         return :service if labels["paid.service_container"] == "true"
@@ -188,9 +188,21 @@ module Accounts
       end
 
       def counts_as_running_agent?(info)
-        labels = info.dig("Config", "Labels") || {}
+        labels = container_labels(info)
 
         labels["paid.agent_run_id"].present? && labels["paid.mcp_sidecar"] != "true"
+      end
+
+      def container_labels(info)
+        info.fetch("Labels", {}).presence || info.dig("Config", "Labels") || {}
+      end
+
+      # Only the local Docker backend can give us a host-level preview: swarm
+      # nodes each carry their own docker_info and the list payload differs
+      # from a plain `docker ps`, and remote deployments are explicitly out of
+      # scope for the auto-capacity preview.
+      def local_backend?
+        !backend.remote? && backend.identifier.to_s == "local"
       end
 
       def estimated_next_run_memory_bytes

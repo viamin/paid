@@ -76,7 +76,8 @@ module Accounts
         @dashboard ||= Dashboard.call(
           account: account,
           tenant_setting: tenant_setting,
-          billing_visible: billing_visible
+          billing_visible: billing_visible,
+          include_auto_capacity: true
         )
       end
     end
