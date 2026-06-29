@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_28_051307) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_28_090750) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -394,6 +394,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_051307) do
     t.index ["configuration_bundle_id", "agent_run_id"], name: "index_bundle_outcomes_unique_run", unique: true
     t.index ["quality_score"], name: "index_bundle_outcomes_on_quality_score"
     t.index ["success"], name: "index_bundle_outcomes_on_success"
+  end
+
+  create_table "change_intents", comment: "Change Intent Records that capture human direction given to agents.", force: :cascade do |t|
+    t.text "behavior", comment: "Expected behavior or examples that clarify the intent."
+    t.bigint "chat_session_id", comment: "Chat session where the intent was captured."
+    t.text "constraints", comment: "Non-obvious implementation boundaries or requirements."
+    t.datetime "created_at", null: false
+    t.text "decisions_made", comment: "Rejected alternatives or decisions that shaped the approach."
+    t.text "intent", null: false, comment: "What the human was trying to accomplish."
+    t.bigint "issue_id", comment: "Optional issue the intent relates to."
+    t.bigint "project_id", null: false, comment: "Project the Change Intent Record belongs to."
+    t.string "status", default: "draft", null: false, comment: "Lifecycle state: draft, active, superseded, or reverted."
+    t.bigint "superseded_by_id", comment: "Newer Change Intent Record that superseded this one."
+    t.text "title", null: false, comment: "Short, human-readable title for the change intent."
+    t.datetime "updated_at", null: false
+    t.index ["chat_session_id"], name: "index_change_intents_on_chat_session_id"
+    t.index ["issue_id"], name: "index_change_intents_on_issue_id"
+    t.index ["project_id", "status"], name: "index_change_intents_on_project_id_and_status"
+    t.index ["project_id"], name: "index_change_intents_on_project_id"
+    t.index ["superseded_by_id"], name: "index_change_intents_on_superseded_by_id"
   end
 
   create_table "chat_messages", force: :cascade do |t|
@@ -2597,6 +2617,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_051307) do
   add_foreign_key "billing_plans", "accounts"
   add_foreign_key "bundle_outcomes", "agent_runs", on_delete: :cascade
   add_foreign_key "bundle_outcomes", "configuration_bundles", on_delete: :cascade
+  add_foreign_key "change_intents", "change_intents", column: "superseded_by_id"
+  add_foreign_key "change_intents", "chat_sessions"
+  add_foreign_key "change_intents", "issues"
+  add_foreign_key "change_intents", "projects"
   add_foreign_key "chat_messages", "chat_sessions"
   add_foreign_key "chat_session_projects", "chat_sessions"
   add_foreign_key "chat_session_projects", "projects"

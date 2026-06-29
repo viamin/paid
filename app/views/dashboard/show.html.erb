@@ -60,6 +60,13 @@
         <%= render "dashboard/retry_limited_issues", retry_limited_issues: @retry_limited_issues %>
       </div>
 
+      <turbo-frame id="dashboard-auth-health"
+        data-dashboard-frames-target="frame"
+        data-dashboard-frames-src="<%= dashboard_auth_health_path %>"
+        class="mt-6 block">
+        <div class="animate-pulse rounded-lg bg-amber-50 h-24"></div>
+      </turbo-frame>
+
       <turbo-frame id="dashboard-runner-health"
         data-dashboard-frames-target="frame"
         data-dashboard-frames-src="<%= dashboard_runner_health_path %>"

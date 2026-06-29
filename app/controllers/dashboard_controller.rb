@@ -95,6 +95,11 @@ class DashboardController < ApplicationController
     render partial: "dashboard/github_health", locals: @github_health
   end
 
+  def auth_health
+    @auth_health = Runners::AuthHealth.call(account: current_account)
+    render partial: "dashboard/auth_health_frame", locals: { auth_health: @auth_health }
+  end
+
   def pr_cycle_time
     @time_range = valid_time_range
     cutoff = valid_outlier_cutoff
