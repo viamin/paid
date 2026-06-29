@@ -259,6 +259,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_182451) do
     t.bigint "runner_id"
     t.integer "runner_switches", default: 0, null: false
     t.jsonb "runners_attempted", default: [], null: false
+    t.jsonb "screenshot_hints", default: {}, null: false, comment: "Per-route screenshot hints derived from the agent's change (route name => {summary, selector}). Used to scope and annotate UI screenshots to what the agent actually changed."
     t.jsonb "service_container_ids", default: []
     t.jsonb "service_environment", default: {}
     t.integer "source_pull_request_number"
@@ -2474,6 +2475,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_182451) do
 
   create_table "user_settings", force: :cascade do |t|
     t.integer "agent_timeout_seconds", default: 5400, null: false
+    t.string "agent_update_comment_mode", default: "off", null: false, comment: "Controls whether existing-PR agent followups post no comment or generate a paid summary comment."
     t.jsonb "allowed_service_images", default: ["postgres:16.13", "redis:7-alpine", "selenium/standalone-chromium:latest"]
     t.jsonb "auto_pick_skip_labels", comment: "Optional user-level override for labels that make auto-pick skip an issue. Null means inherit tenant or built-in defaults."
     t.integer "circuit_breaker_failure_threshold", default: 5, null: false

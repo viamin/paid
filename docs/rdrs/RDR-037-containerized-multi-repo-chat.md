@@ -5,11 +5,15 @@
 ## Metadata
 
 - **Date**: 2026-05-29
-- **Status**: Draft
+- **Status**: Final
 - **Type**: Architecture
 - **Priority**: High
 - **Related Issues**: #2349 (chat-auth invariant), #2350 (admin tools), #2351 (operator tools), #2352 (source-code tools), #2353 (dangerous_mode audit), #2354 (this RDR's tracking issue)
 - **Related RDRs**: [RDR-028](RDR-028-interactive-chat.md) (interactive chat — this RDR supersedes its workspace-mode design), [RDR-004](RDR-004-container-isolation.md) (container isolation), [RDR-005](RDR-005-git-worktree-management.md) (worktree management), [RDR-006](RDR-006-secrets-proxy.md) (secrets proxy)
+
+## Implementation Status
+
+Final and tracked, not implemented. API-mode chat prerequisites and source-code read tools exist, and #2354 plus child issues track the containerized multi-repo work. Core RDR-037 requirements such as capability state, background provisioning, multi-repo clone manifests, mutation tools, shell execution, and PR proposal tooling remain open.
 
 ## Problem Statement
 

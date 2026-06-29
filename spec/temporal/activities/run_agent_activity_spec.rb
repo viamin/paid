@@ -1809,6 +1809,30 @@ expect(container_service).to receive(:execute).with(
         activity.execute(agent_run_id: agent_run.id)
       end
 
+      it "persists the pre-run head SHA for existing PR runs" do
+        agent_run.update!(source_pull_request_number: 42)
+        allow(git_ops).to receive(:has_changes_since?).and_return(false)
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(agent_run.reload.external_metadata).to include("pre_run_head_sha" => "pre_agent_sha_abc123")
+      end
+
+      it "preserves the first pre-run head SHA for existing PR retries" do
+        agent_run.update!(
+          source_pull_request_number: 42,
+          external_metadata: { "pre_run_head_sha" => "original_pre_run_sha_123" }
+        )
+        allow(git_ops).to receive_messages(
+          has_changes_since?: false,
+          head_sha: "later_retry_sha_456"
+        )
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(agent_run.reload.external_metadata).to include("pre_run_head_sha" => "original_pre_run_sha_123")
+      end
+
       it "starts the agent run before execution" do
         allow(git_ops).to receive(:has_changes_since?).and_return(false)
 
@@ -2509,6 +2533,56 @@ expect(container_service).to receive(:execute).with(
         )
         expect(agent_run.runner_switches).to eq(0)
         expect(container_service).to have_received(:execute).twice
+      end
+
+      it "marks the run as auth_expired when the main execution exits 0 with auth error output" do
+        auth_expired_exit0 = Containers::Provision::Result.success(
+          stdout: "",
+          stderr: <<~STDERR,
+            ERROR codex_core::auth: Failed to refresh token: 401 Unauthorized
+            "message": "Your refresh token has already been used to generate a new access token. Please try signing in again."
+            "code": "refresh_token_reused"
+          STDERR
+          exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(exec_success, auth_expired_exit0)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("auth_expired")
+        expect(agent_run.auth_provider).to eq("codex")
+        expect(agent_run.error_message).to include("refresh_token_reused")
+        expect(agent_run.runners_attempted).to contain_exactly(
+          hash_including("runner" => "codex", "success" => false, "error_type" => "auth_expired")
+        )
+      end
+
+      it "marks the run as auth_expired when preflight exits 0 with auth error output" do
+        auth_expired_exit0 = Containers::Provision::Result.success(
+          stdout: "",
+          stderr: <<~STDERR,
+            ERROR codex_core::auth: Failed to refresh token: 401 Unauthorized
+            "message": "Your refresh token has already been used to generate a new access token. Please try signing in again."
+            "code": "refresh_token_reused"
+          STDERR
+          exit_code: 0
+        )
+        allow(container_service).to receive(:execute).and_return(auth_expired_exit0)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("auth_expired")
+        expect(agent_run.auth_provider).to eq("codex")
+        expect(agent_run.error_message).to include("refresh_token_reused")
+        expect(agent_run.runners_attempted).to contain_exactly(
+          hash_including("runner" => "codex", "success" => false, "error_type" => "auth_expired")
+        )
       end
 
       it "treats generic refresh failures during preflight as ordinary runner errors" do

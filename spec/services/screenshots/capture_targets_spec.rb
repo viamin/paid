@@ -264,6 +264,126 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(slugs).to include("chat_sessions", "ab_tests", "style_guides", "knowledge_search")
     end
 
+    context "when scanning Stimulus controller usage with a repo_path" do
+      let(:repo_path) { Dir.mktmpdir }
+
+      after { FileUtils.remove_entry(repo_path) if File.directory?(repo_path) }
+
+      def write_view(repo_path, relative_path, controllers)
+        write_raw(repo_path, relative_path, %(<div data-controller="#{controllers}">content</div>\n))
+      end
+
+      def write_raw(repo_path, relative_path, content)
+        absolute = File.join(repo_path, relative_path)
+        FileUtils.mkdir_p(File.dirname(absolute))
+        File.write(absolute, content)
+      end
+
+      it "narrows an unmapped controller to the pages that mount it" do
+        write_view(repo_path, "app/views/prompts/show.html.erb", "widget")
+
+        targets = described_class.call(
+          changed_files: [ "app/javascript/controllers/widget_controller.js" ],
+          repo_path: repo_path
+        )
+
+        expect(targets.map(&:slug)).to eq([ "prompt_show" ])
+      end
+
+      it "derives nested and underscored identifiers per Stimulus conventions" do
+        write_view(repo_path, "app/views/projects/edit.html.erb", "forms--auto-save")
+
+        targets = described_class.call(
+          changed_files: [ "app/javascript/controllers/forms/auto_save_controller.js" ],
+          repo_path: repo_path
+        )
+
+        expect(targets.map(&:slug)).to eq([ "project_edit" ])
+      end
+
+      it "matches the controller as a whole token, not a substring" do
+        write_view(repo_path, "app/views/prompts/show.html.erb", "chat-stream")
+
+        targets = described_class.call(
+          changed_files: [ "app/javascript/controllers/chat_controller.js" ],
+          repo_path: repo_path
+        )
+
+        # `chat` must not match the `chat-stream` identifier, so it stays conservative.
+        expect(targets.map(&:slug)).to include("dashboard", "projects")
+      end
+
+      it "falls back to shared targets when the controller is mounted in a shared partial" do
+        write_view(repo_path, "app/views/shared/_header.html.erb", "widget")
+        write_view(repo_path, "app/views/prompts/show.html.erb", "widget")
+
+        targets = described_class.call(
+          changed_files: [ "app/javascript/controllers/widget_controller.js" ],
+          repo_path: repo_path
+        )
+
+        expect(targets.map(&:slug)).to include("dashboard", "projects", "prompts")
+      end
+
+      it "stays conservative when the controller is not referenced in any view" do
+        targets = described_class.call(
+          changed_files: [ "app/javascript/controllers/widget_controller.js" ],
+          repo_path: repo_path
+        )
+
+        expect(targets.map(&:slug)).to include("dashboard", "projects")
+      end
+
+      it "detects the Rails tag-helper hash form (data: { controller: ... })" do
+        write_raw(repo_path, "app/views/prompts/show.html.erb",
+          %(<%= form_with data: { controller: "widget", action: "x->widget#go" } do |f| %><% end %>\n))
+
+        targets = described_class.call(
+          changed_files: [ "app/javascript/controllers/widget_controller.js" ],
+          repo_path: repo_path
+        )
+
+        expect(targets.map(&:slug)).to eq([ "prompt_show" ])
+      end
+
+      it "treats a controller in a layout-rendered partial as global" do
+        write_view(repo_path, "app/views/notifications/_bell.html.erb", "widget")
+        write_raw(repo_path, "app/views/layouts/application.html.erb",
+          %(<body><%= render "notifications/bell" %></body>\n))
+
+        targets = described_class.call(
+          changed_files: [ "app/javascript/controllers/widget_controller.js" ],
+          repo_path: repo_path
+        )
+
+        # Mounted in the global nav via the layout — must not narrow to /notifications.
+        expect(targets.map(&:slug)).to include("dashboard", "projects", "prompts")
+      end
+
+      it "narrows even when repo_path has a trailing slash" do
+        write_view(repo_path, "app/views/prompts/show.html.erb", "widget")
+
+        targets = described_class.call(
+          changed_files: [ "app/javascript/controllers/widget_controller.js" ],
+          repo_path: "#{repo_path}/"
+        )
+
+        expect(targets.map(&:slug)).to eq([ "prompt_show" ])
+      end
+
+      it "does not crash when a scanned view contains invalid UTF-8 bytes" do
+        write_view(repo_path, "app/views/prompts/show.html.erb", "widget")
+        write_raw(repo_path, "app/views/prompts/_broken.html.erb", "data-controller=\"widget\" \xC3\x28 invalid")
+
+        expect {
+          described_class.call(
+            changed_files: [ "app/javascript/controllers/widget_controller.js" ],
+            repo_path: repo_path
+          )
+        }.not_to raise_error
+      end
+    end
+
     it "maps Devise registration views to sign_up target" do
       targets = described_class.call(changed_files: [ "app/views/devise/registrations/new.html.erb" ])
 
@@ -342,6 +462,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
 
     it "maps nested project controllers to their redirect targets" do
       targets = described_class.call(changed_files: [ "app/controllers/projects/service_containers_controller.rb" ])
+
+      expect(targets.map(&:slug)).to eq([ "project_edit" ])
+    end
+
+    it "maps the mutation test requirements controller to the project edit page" do
+      targets = described_class.call(changed_files: [ "app/controllers/projects/mutation_test_requirements_controller.rb" ])
 
       expect(targets.map(&:slug)).to eq([ "project_edit" ])
     end

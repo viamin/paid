@@ -5,11 +5,15 @@
 ## Metadata
 
 - **Date**: 2026-05-30
-- **Status**: Draft
+- **Status**: Partially Implemented
 - **Type**: Architecture
 - **Priority**: P1
 - **Related Issues**: #2378 (tracking), #2381 (phase 1), #2380 (phase 2), #2379 (phase 3a), #2383 (phase 3b), #2382 (phase 3c), #2384 (phase 4), #2385 (phase 5)
 - **Related RDRs**: [RDR-007](RDR-007-agent-cli-abstraction.md) (agent-harness), [RDR-008](RDR-008-model-selection.md) (model selection), [RDR-034](RDR-034-tier-based-runner-fallback.md) (tier-based fallback), [RDR-025](RDR-025-runner-quota-tracking.md) (runner quota tracking)
+
+## Implementation Status
+
+Partially implemented. Paid has free-model fields on `LlmModel`, project data classification, the `openrouter_free` runner, OpenRouter data-routing controls, free-model defaults, rotation for knowledge execution, catalog UI, exclusions, and runner wiring. OpenRouter model sync/classification/quality filtering is not implemented yet and remains tracked by #2380.
 
 ## Problem Statement
 

@@ -5,11 +5,15 @@
 ## Metadata
 
 - **Date**: 2025-01-23
-- **Status**: Final
+- **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: High
 - **Related Issues**: N/A (foundational decision)
 - **Related Tests**: Evolution workflow tests, A/B test analysis tests
+
+## Implementation Status
+
+Implemented with prompt/version models, prompt review states, A/B test models and services, the prompt evolution workflow/job, evolution activities, quality metric collection, and GoodJob cron scheduling. Live A/B assignment is wired for goal wrapper prompts in `Activities::RunAgentActivity`; some direct prompt-building paths still resolve the current prompt version directly.
 
 ## Problem Statement
 

@@ -170,6 +170,7 @@ export default class extends Controller {
     meta.append(roleBadge, modelLabel, timestamp)
 
     const content = document.createElement("div")
+    content.className = "chat-markdown"
     content.dataset.chatMessageTarget = "content"
     content.dataset.rawContent = ""
 
@@ -251,6 +252,10 @@ export default class extends Controller {
   handleMessageCreated(data) {
     if (!data.html) return
 
+    if (data.fallback_notice) {
+      this.removeCurrentAssistantMessage()
+    }
+
     const messageElement = this.buildMessageElement(data.html)
     if (!messageElement) return
 
@@ -283,6 +288,13 @@ export default class extends Controller {
     if (contentTarget?.dataset.rawContent) return
 
     pendingMessage.closest("div")?.remove()
+  }
+
+  removeCurrentAssistantMessage() {
+    if (!this.currentStreamId) return
+
+    const pendingMessage = this.messagesTarget.querySelector(`article[data-stream-message-id="${this.currentStreamId}"]`)
+    pendingMessage?.closest("div")?.remove()
   }
 
   messageElementById(messageId) {

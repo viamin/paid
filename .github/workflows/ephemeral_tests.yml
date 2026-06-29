@@ -7,7 +7,7 @@ name: Ephemeral PR Tests
 #   - Only runs for same-repo PRs (trusted collaborators).
 #   - Fork PRs are explicitly excluded — no secret access, no execution.
 #   - GITHUB_TOKEN is scoped to contents:read + checks:write +
-#     pull-requests:write (for posting result comments) only.
+#     pull-requests:write + issues:write (for posting result comments) only.
 #   - Tests run through standard RSpec / Capybara / Playwright — no raw
 #     shell execution from PR content.
 #   - Hard 20-minute timeout prevents runaway tests.
@@ -20,6 +20,7 @@ permissions:
   contents: read
   checks: write
   pull-requests: write
+  issues: write
 
 concurrency:
   group: ephemeral-tests-${{ github.workflow }}-${{ github.ref }}
@@ -231,5 +232,8 @@ jobs:
               --method PATCH \
               --field body="$body"
           else
-            gh pr comment "${{ github.event.pull_request.number }}" --body "$body"
+            gh api \
+              "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+              --method POST \
+              --field body="$body"
           fi

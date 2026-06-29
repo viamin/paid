@@ -15,7 +15,9 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | Status | Meaning |
 |--------|---------|
 | Draft | During planning/research phase |
+| Accepted | Recommendation accepted but implementation not started |
 | Final | Locked, ready for or during implementation |
+| Partially Implemented | Adopted and partly shipped, with remaining implementation work tracked |
 | Implemented | Implementation complete |
 | Abandoned | RDR not implemented |
 | Superseded | Replaced by another RDR |
@@ -26,50 +28,51 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
-| [RDR-001](RDR-001-web-framework-selection.md) | Web Framework Selection (Rails) | Final | High |
-| [RDR-002](RDR-002-workflow-orchestration.md) | Workflow Orchestration (Temporal.io) | Final | High |
-| [RDR-003](RDR-003-database-selection.md) | Database Selection (PostgreSQL) | Final | High |
+| [RDR-001](RDR-001-web-framework-selection.md) | Web Framework Selection (Rails) | Implemented | High |
+| [RDR-002](RDR-002-workflow-orchestration.md) | Workflow Orchestration (Temporal.io) | Implemented | High |
+| [RDR-003](RDR-003-database-selection.md) | Database Selection (PostgreSQL) | Implemented | High |
 
 ### Security & Isolation
 
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
-| [RDR-004](RDR-004-container-isolation.md) | Container Isolation Strategy | Final | High |
-| [RDR-005](RDR-005-git-worktree-management.md) | Git Worktree Management | Final | High |
-| [RDR-006](RDR-006-secrets-proxy.md) | Secrets Proxy Architecture | Final | High |
-| [RDR-041](RDR-041-subscription-runner-auth-lifecycle.md) | Subscription Runner Auth Lifecycle (Detection, Long-Lived Tokens, Self-Heal) | Draft | P1 |
+| [RDR-004](RDR-004-container-isolation.md) | Container Isolation Strategy | Implemented | High |
+| [RDR-005](RDR-005-git-worktree-management.md) | Git Worktree Management | Superseded | High |
+| [RDR-006](RDR-006-secrets-proxy.md) | Secrets Proxy Architecture | Implemented | High |
+| [RDR-041](RDR-041-subscription-runner-auth-lifecycle.md) | Subscription Runner Auth Lifecycle (Detection, Long-Lived Tokens, Self-Heal) | Accepted | P1 |
 
 ### Agent System
 
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
-| [RDR-007](RDR-007-agent-cli-abstraction.md) | Agent CLI Abstraction (agent-harness gem) | Final | High |
-| [RDR-008](RDR-008-model-selection.md) | Model Selection Strategy | Final | Medium |
-| [RDR-034](RDR-034-tier-based-runner-fallback.md) | Tier-Based Runner Fallback | Draft | P1 |
+| [RDR-007](RDR-007-agent-cli-abstraction.md) | Agent CLI Abstraction (agent-harness gem) | Implemented | High |
+| [RDR-008](RDR-008-model-selection.md) | Model Selection Strategy | Implemented | Medium |
+| [RDR-034](RDR-034-tier-based-runner-fallback.md) | Tier-Based Runner Fallback | Implemented | P1 |
 
 ### Intelligence
 
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
-| [RDR-009](RDR-009-prompt-evolution.md) | Prompt Evolution System | Final | High |
+| [RDR-009](RDR-009-prompt-evolution.md) | Prompt Evolution System | Implemented | High |
 
 ### Operations & Access
 
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
-| [RDR-010](RDR-010-multi-tenancy-rbac.md) | Multi-Tenancy and RBAC | Final | Medium |
-| [RDR-011](RDR-011-observability.md) | Observability Stack | Final | Medium |
-| [RDR-039](RDR-039-exception-notification-custom-notifier.md) | Exception Reporting via `exception_notification` Custom Notifier | Draft | P2 |
-| [RDR-024](RDR-024-multi-tenancy-isolation-strategy.md) | Multi-Tenancy Isolation Strategy | Final | High |
-| [RDR-026](RDR-026-admin-interface-strategy.md) | Admin Interface Strategy | Draft | Medium |
-| [RDR-029](RDR-029-multi-tenancy-preparation.md) | Multi-Tenancy Preparation | Final | High |
+| [RDR-010](RDR-010-multi-tenancy-rbac.md) | Multi-Tenancy and RBAC | Implemented | Medium |
+| [RDR-011](RDR-011-observability.md) | Observability Stack | Partially Implemented | Medium |
+| [RDR-039](RDR-039-exception-notification-custom-notifier.md) | Exception Reporting via `exception_notification` Custom Notifier | Implemented | P2 |
+| [RDR-018](RDR-018-billing-aggregation.md) | Billing Aggregation System | Implemented | P2 |
+| [RDR-024](RDR-024-multi-tenancy-isolation-strategy.md) | Multi-Tenancy Isolation Strategy | Implemented | High |
+| [RDR-026](RDR-026-admin-interface-strategy.md) | Admin Interface Strategy | Implemented | Medium |
+| [RDR-029](RDR-029-multi-tenancy-preparation.md) | Multi-Tenancy Preparation | Implemented | High |
 
 ### External Integration
 
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
-| [RDR-012](RDR-012-github-integration.md) | GitHub Integration Strategy | Final | High |
-| [RDR-030](RDR-030-github-app-bot-account.md) | GitHub App Bot Account for Repository Actions | Implemented | High |
+| [RDR-012](RDR-012-github-integration.md) | GitHub Integration Strategy | Partially Implemented | High |
+| [RDR-030](RDR-030-github-app-bot-account.md) | GitHub App Bot Account for Repository Actions | Partially Implemented | High |
 
 ### Service Infrastructure
 
@@ -82,6 +85,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
 | [RDR-028](RDR-028-interactive-chat.md) | Interactive Chat for Agent-Driven Development | Implemented | High |
+| [RDR-037](RDR-037-containerized-multi-repo-chat.md) | Containerized Multi-Repo Chat Sessions | Final | High |
 
 ### Scaling & Distribution
 
@@ -89,32 +93,37 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 |-----|-------|--------|----------|
 | [RDR-019](RDR-019-remote-container-execution.md) | Remote Container Execution | Implemented | Medium |
 | [RDR-033](RDR-033-worker-pool-scaling-algorithm.md) | Worker Pool Scaling Algorithm | Implemented | Medium |
+| [RDR-043](RDR-043-zero-config-docker-capacity-autoscaling.md) | Zero-Config Docker Capacity Autoscaling | Draft | Medium |
 
 ### Quality & Automation
 
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
-| [RDR-013](RDR-013-code-quality-backpressure.md) | Code Quality and Backpressure System | Implemented | High |
-| [RDR-022](RDR-022-auto-merge-pr-strategy.md) | Auto-Merge PR Merge Strategy | Final | Medium |
-| [RDR-023](RDR-023-automation-modularization-architecture.md) | Automation Modularization Architecture | Implemented | High |
+| [RDR-013](RDR-013-code-quality-backpressure.md) | Code Quality and Backpressure System | Superseded | High |
+| [RDR-022](RDR-022-auto-merge-pr-strategy.md) | Auto-Merge PR Merge Strategy | Implemented | Medium |
+| [RDR-023](RDR-023-automation-modularization-architecture.md) | Automation Modularization Architecture | Partially Implemented | High |
 | [RDR-031](RDR-031-focused-agent-runs.md) | Focused Agent Runs — Single-Problem-Per-Run | Implemented | P1 |
-| [RDR-036](RDR-036-mutation-testing-for-ai-generated-tests.md) | Mutation Testing for AI-Generated Tests (Mutant) | Draft | P1 |
+| [RDR-032](RDR-032-eager-queue-seeding.md) | Eager Queue Seeding — Eliminate Auto-Pick Throttling | Implemented | P1 |
+| [RDR-035](RDR-035-style-guide-evolution.md) | Style Guide Evolution | Accepted | High |
+| [RDR-036](RDR-036-mutation-testing-for-ai-generated-tests.md) | Mutation Testing for AI-Generated Tests (Mutant) | Partially Implemented | P1 |
 
 ### Runner Intelligence
 
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
-| [RDR-025](RDR-025-runner-quota-tracking.md) | Runner Quota Tracking and Quota-Aware Routing | Implemented | Medium |
-| [RDR-040](RDR-040-runner-model-compatibility-contracts.md) | Runner Model Compatibility Contracts | Draft | P1 |
+| [RDR-025](RDR-025-runner-quota-tracking.md) | Runner Quota Tracking and Quota-Aware Routing | Partially Implemented | Medium |
+| [RDR-025](RDR-025-provider-quota-tracking.md) | Provider Quota Tracking and Quota-Aware Routing | Superseded | Medium |
+| [RDR-038](RDR-038-free-models-catalog-and-runner.md) | Free Models Catalog and Runner | Partially Implemented | P1 |
+| [RDR-040](RDR-040-runner-model-compatibility-contracts.md) | Runner Model Compatibility Contracts | Partially Implemented | P1 |
 
 ### Semantic Understanding
 
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
-| [RDR-018](RDR-018-semantic-code-search.md) | Semantic Code Search (Qdrant + MeiliSearch) | Implemented | Medium |
-| [RDR-021](RDR-021-knowledge-base.md) | Knowledge Base Architecture | Final | High |
-| [RDR-027](RDR-027-auto-enhance-knowledge-evolution.md) | Auto-Enhance and Knowledge Base Evolution | Implemented | High |
-| [RDR-042](RDR-042-change-intent-records.md) | Change Intent Records for the Knowledge Base | Draft | Medium |
+| [RDR-018](RDR-018-semantic-code-search.md) | Semantic Code Search (Qdrant + PostgreSQL full-text) | Implemented | Medium |
+| [RDR-021](RDR-021-knowledge-base.md) | Knowledge Base Architecture | Implemented | High |
+| [RDR-027](RDR-027-auto-enhance-knowledge-evolution.md) | Auto-Enhance and Knowledge Base Evolution | Partially Implemented | High |
+| [RDR-042](RDR-042-change-intent-records.md) | Change Intent Records for the Knowledge Base | Accepted | Medium |
 
 ### AI-Native Evolution (Phase 4)
 

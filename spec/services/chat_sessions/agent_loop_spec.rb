@@ -170,6 +170,35 @@ RSpec.describe ChatSessions::AgentLoop do
         expect(chat_session.messages.where.not(tool_status: nil).count).to eq(0)
       end
     end
+
+    context "when the model returns no content or tool calls" do
+      let(:llm_client) do
+        Class.new do
+          def call(_conversation, tools: nil)
+            { content: nil, tool_calls: [], tokens_input: 12, tokens_output: 0, model: "glm-5.1" }
+          end
+        end.new
+      end
+
+      it "persists a visible assistant message instead of silently completing" do
+        allow(Rails.logger).to receive(:warn)
+
+        result = described_class.new(chat_session: chat_session, llm_client: llm_client).run
+
+        expect(result).to be_a(ChatMessage)
+        expect(result.content).to eq(described_class::EMPTY_RESPONSE_MESSAGE)
+        expect(result).to have_attributes(tokens_input: 12, tokens_output: 0, model: "glm-5.1")
+        expect(chat_session.messages.where(role: "assistant").last).to eq(result)
+        expect(Rails.logger).to have_received(:warn).with(hash_including(
+          message: "chat_agent_loop.empty_response",
+          chat_session_id: chat_session.id,
+          runner_id: chat_session.runner_id,
+          model: "glm-5.1",
+          tokens_input: 12,
+          tokens_output: 0
+        ))
+      end
+    end
   end
 
   describe "#build_conversation" do
