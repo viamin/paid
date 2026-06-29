@@ -10,8 +10,7 @@ RSpec.describe RunnerCredentialPolicy do
     let(:member) { create(:user, :member, account: account) }
     let(:other_account) { create(:account) }
     let(:other_user) { create(:user, account: other_account) }
-    let(:runner) { create(:runner, user: create(:user, account: account)) }
-    let(:credential) { create(:runner_credential, runner: runner, account: account) }
+    let(:credential) { create(:runner_credential, account: account, runner_key: "claude") }
 
     describe "#index?" do
       it "permits owner" do
@@ -97,10 +96,8 @@ RSpec.describe RunnerCredentialPolicy do
     let(:account_secondary) { create(:account) }
     let(:owner_primary) { create(:user, :owner, account: account_primary) }
     let(:owner_secondary) { create(:user, :owner, account: account_secondary) }
-    let(:runner_primary) { create(:runner, user: create(:user, account: account_primary)) }
-    let(:runner_secondary) { create(:runner, user: create(:user, account: account_secondary)) }
-    let!(:credential_primary) { create(:runner_credential, runner: runner_primary, account: account_primary) }
-    let!(:credential_secondary) { create(:runner_credential, runner: runner_secondary, account: account_secondary) }
+    let!(:credential_primary) { create(:runner_credential, account: account_primary, runner_key: "claude") }
+    let!(:credential_secondary) { create(:runner_credential, account: account_secondary, runner_key: "claude") }
 
     it "shows only credentials from the user's account" do
       scope = described_class::Scope.new(owner_primary, RunnerCredential.all).resolve

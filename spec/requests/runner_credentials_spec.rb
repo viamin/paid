@@ -50,6 +50,17 @@ RSpec.describe "RunnerCredentials" do
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("Runner Credentials")
       end
+
+      it "shows shared credentials for another runner with the same runner key in the account" do
+        create(:runner_credential, runner: runner, account: account, created_by: owner_user)
+        other_users_runner = create(:runner, user: owner_user, runner_key: runner.runner_key)
+
+        get runner_runner_credentials_path(other_users_runner)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Runner Credentials")
+        expect(response.body).to include("View")
+      end
     end
 
     context "when user is a member" do
@@ -128,7 +139,7 @@ RSpec.describe "RunnerCredentials" do
       expect(flash[:notice]).to include("Runner credential saved")
 
       credential = RunnerCredential.last
-      expect(credential.runner_id).to eq(runner.id)
+      expect(credential.runner_key).to eq(runner.runner_key)
       expect(credential.account_id).to eq(account.id)
       expect(credential.long_lived).to be true
       expect(credential.created_by_id).to eq(owner_user.id)
@@ -175,7 +186,7 @@ RSpec.describe "RunnerCredentials" do
 
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("Runner Credential")
-      expect(response.body).to include(runner.display_name)
+      expect(response.body).to include(Runner.display_name_for(runner.runner_key))
     end
 
     context "when user is a member" do

@@ -14,13 +14,13 @@ class RunnerCredentialsController < ApplicationController
   end
 
   def new
-    @runner_credential = current_account.runner_credentials.build(runner: @runner)
+    @runner_credential = current_account.runner_credentials.build(runner_key: @runner.runner_key)
     authorize @runner_credential
   end
 
   def create
     @runner_credential = current_account.runner_credentials.build(runner_credential_params)
-    @runner_credential.runner = @runner
+    @runner_credential.runner_key = @runner.runner_key
     @runner_credential.created_by = current_user
     authorize @runner_credential
 
@@ -48,7 +48,7 @@ class RunnerCredentialsController < ApplicationController
   end
 
   def filtered_scope
-    policy_scope(RunnerCredential).where(runner: @runner)
+    policy_scope(RunnerCredential).where(runner_key: @runner.runner_key)
   end
 
   def runner_credential_params

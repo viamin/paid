@@ -195,7 +195,7 @@ module Screenshots
             record.secret = "sk-ant-#{'a' * 24}"
           end
 
-          runner_credential = account.runner_credentials.find_or_create_by!(runner: provider) do |record|
+          runner_credential = account.runner_credentials.find_or_create_by!(runner_key: provider.runner_key) do |record|
             record.created_by = user
             record.token = "sk-ant-oat01-#{'a' * 24}"
             record.long_lived = true

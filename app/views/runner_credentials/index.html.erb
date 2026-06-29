@@ -33,7 +33,7 @@
         <tbody class="divide-y divide-gray-200 bg-white">
           <% @runner_credentials.each do |credential| %>
             <tr>
-              <td class="px-4 py-3 text-sm font-medium text-gray-900"><%= credential.runner.display_name %></td>
+              <td class="px-4 py-3 text-sm font-medium text-gray-900"><%= credential.display_name %></td>
               <td class="px-4 py-3 text-sm text-gray-700">
                 <% if credential.long_lived %>
                   <span class="inline-flex items-center rounded-md bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700">Long-lived</span>
@@ -50,7 +50,7 @@
               </td>
               <td class="px-4 py-3 text-sm text-gray-500"><%= l(credential.created_at, format: :short) %></td>
               <td class="px-4 py-3 text-right text-sm">
-                <%= link_to "View", runner_runner_credential_path(credential.runner, credential), class: "font-medium text-indigo-600 hover:text-indigo-500" %>
+                <%= link_to "View", runner_runner_credential_path(@runner, credential), class: "font-medium text-indigo-600 hover:text-indigo-500" %>
               </td>
             </tr>
           <% end %>
@@ -60,7 +60,7 @@
   <% else %>
     <div class="mt-8 rounded-lg border border-dashed border-gray-300 bg-white p-10 text-center">
       <h2 class="text-lg font-semibold text-gray-900">No runner credentials yet</h2>
-      <p class="mt-2 text-sm text-gray-500">Add the first encrypted setup token for this runner to get started.</p>
+      <p class="mt-2 text-sm text-gray-500">Add the first encrypted setup token for this runner type to get started.</p>
       <div class="mt-6">
         <%= link_to "Add Credential", new_runner_runner_credential_path(@runner), class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
       </div>

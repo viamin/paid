@@ -2107,13 +2107,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_160548) do
     t.jsonb "log_data", comment: "Logidze change tracking"
     t.boolean "long_lived", default: false, null: false, comment: "Whether this is a long-lived token that does not need periodic refresh"
     t.datetime "revoked_at", comment: "Timestamp when credential was revoked"
-    t.bigint "runner_id", null: false
+    t.string "runner_key", limit: 50, null: false, comment: "Runner key this account-scoped credential applies to"
     t.text "token", null: false, comment: "Encrypted authentication token (e.g., claude setup-token)"
     t.datetime "updated_at", null: false
     t.index ["account_id", "created_at"], name: "index_runner_credentials_on_account_id_and_created_at"
+    t.index ["account_id", "runner_key"], name: "index_runner_credentials_on_active_account_runner_key", unique: true, where: "(revoked_at IS NULL)"
     t.index ["account_id"], name: "index_runner_credentials_on_account_id"
     t.index ["created_by_id"], name: "index_runner_credentials_on_created_by_id"
-    t.index ["runner_id"], name: "index_runner_credentials_on_active_runner_id", unique: true, where: "(revoked_at IS NULL)"
   end
 
   create_table "runner_states", force: :cascade do |t|
@@ -2783,7 +2783,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_160548) do
   add_foreign_key "remediation_decisions", "users", column: "applied_by_id"
   add_foreign_key "roi_benchmarks", "projects", on_delete: :cascade
   add_foreign_key "runner_credentials", "accounts"
-  add_foreign_key "runner_credentials", "runners"
   add_foreign_key "runner_credentials", "users", column: "created_by_id"
   add_foreign_key "runner_states", "users", on_delete: :cascade
   add_foreign_key "runners", "integration_credentials", on_delete: :restrict
