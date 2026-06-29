@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_28_051307) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_28_160548) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -394,6 +394,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_051307) do
     t.index ["configuration_bundle_id", "agent_run_id"], name: "index_bundle_outcomes_unique_run", unique: true
     t.index ["quality_score"], name: "index_bundle_outcomes_on_quality_score"
     t.index ["success"], name: "index_bundle_outcomes_on_success"
+  end
+
+  create_table "change_intents", comment: "Change Intent Records that capture human direction given to agents.", force: :cascade do |t|
+    t.text "behavior", comment: "Expected behavior or examples that clarify the intent."
+    t.bigint "chat_session_id", comment: "Chat session where the intent was captured."
+    t.text "constraints", comment: "Non-obvious implementation boundaries or requirements."
+    t.datetime "created_at", null: false
+    t.text "decisions_made", comment: "Rejected alternatives or decisions that shaped the approach."
+    t.text "intent", null: false, comment: "What the human was trying to accomplish."
+    t.bigint "issue_id", comment: "Optional issue the intent relates to."
+    t.bigint "project_id", null: false, comment: "Project the Change Intent Record belongs to."
+    t.string "status", default: "draft", null: false, comment: "Lifecycle state: draft, active, superseded, or reverted."
+    t.bigint "superseded_by_id", comment: "Newer Change Intent Record that superseded this one."
+    t.text "title", null: false, comment: "Short, human-readable title for the change intent."
+    t.datetime "updated_at", null: false
+    t.index ["chat_session_id"], name: "index_change_intents_on_chat_session_id"
+    t.index ["issue_id"], name: "index_change_intents_on_issue_id"
+    t.index ["project_id", "status"], name: "index_change_intents_on_project_id_and_status"
+    t.index ["project_id"], name: "index_change_intents_on_project_id"
+    t.index ["superseded_by_id"], name: "index_change_intents_on_superseded_by_id"
   end
 
   create_table "chat_messages", force: :cascade do |t|
@@ -2080,6 +2100,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_051307) do
     t.index ["project_id", "name"], name: "idx_roi_benchmarks_project_name"
   end
 
+  create_table "runner_credentials", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.bigint "created_by_id"
+    t.jsonb "log_data", comment: "Logidze change tracking"
+    t.boolean "long_lived", default: false, null: false, comment: "Whether this is a long-lived token that does not need periodic refresh"
+    t.datetime "revoked_at", comment: "Timestamp when credential was revoked"
+    t.bigint "runner_id", null: false
+    t.text "token", null: false, comment: "Encrypted authentication token (e.g., claude setup-token)"
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "created_at"], name: "index_runner_credentials_on_account_id_and_created_at"
+    t.index ["account_id"], name: "index_runner_credentials_on_account_id"
+    t.index ["created_by_id"], name: "index_runner_credentials_on_created_by_id"
+    t.index ["runner_id"], name: "index_runner_credentials_on_active_runner_id", unique: true, where: "(revoked_at IS NULL)"
+  end
+
   create_table "runner_states", force: :cascade do |t|
     t.datetime "circuit_opened_at"
     t.string "circuit_state", limit: 20, default: "closed", null: false
@@ -2597,6 +2633,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_051307) do
   add_foreign_key "billing_plans", "accounts"
   add_foreign_key "bundle_outcomes", "agent_runs", on_delete: :cascade
   add_foreign_key "bundle_outcomes", "configuration_bundles", on_delete: :cascade
+  add_foreign_key "change_intents", "change_intents", column: "superseded_by_id"
+  add_foreign_key "change_intents", "chat_sessions"
+  add_foreign_key "change_intents", "issues"
+  add_foreign_key "change_intents", "projects"
   add_foreign_key "chat_messages", "chat_sessions"
   add_foreign_key "chat_session_projects", "chat_sessions"
   add_foreign_key "chat_session_projects", "projects"
@@ -2742,6 +2782,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_051307) do
   add_foreign_key "remediation_decisions", "accounts"
   add_foreign_key "remediation_decisions", "users", column: "applied_by_id"
   add_foreign_key "roi_benchmarks", "projects", on_delete: :cascade
+  add_foreign_key "runner_credentials", "accounts"
+  add_foreign_key "runner_credentials", "runners"
+  add_foreign_key "runner_credentials", "users", column: "created_by_id"
   add_foreign_key "runner_states", "users", on_delete: :cascade
   add_foreign_key "runners", "integration_credentials", on_delete: :restrict
   add_foreign_key "runners", "provider_api_keys", on_delete: :restrict
@@ -3687,5 +3730,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_051307) do
 
   create_trigger :logidze_on_users, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_users BEFORE INSERT OR UPDATE ON public.users FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{encrypted_password,reset_password_token,reset_password_sent_at,remember_created_at}')
+  SQL
+
+  create_trigger :logidze_on_runner_credentials, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_runner_credentials BEFORE INSERT OR UPDATE ON public.runner_credentials FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{token}')
   SQL
 end
