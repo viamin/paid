@@ -240,6 +240,21 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
     expect(tasks_request).to have_been_requested.once
   end
 
+  it "includes standalone node-local containers for capacity snapshots without duplicating swarm tasks" do
+    stub_manager_get("/services", [ service_payload ])
+    standalone = build_listed_container(id: "standalone-1", labels: { "com.example.role" => "db" })
+    swarm_task_container = build_listed_container(id: container_id, labels: { "com.docker.swarm.service.id" => service_id })
+    allow(Docker::Container).to receive(:all)
+      .with({}, kind_of(Docker::Connection))
+      .and_return([ swarm_task_container, standalone ])
+
+    containers = backend.list_containers(include_node_containers: true)
+
+    expect(containers.length).to eq(2)
+    expect(containers.first).to be_a(described_class::ServiceHandle)
+    expect(containers.last).to eq(standalone)
+  end
+
   it "looks up volumes on each worker connection" do
     volume = instance_double(Docker::Volume)
 
@@ -293,6 +308,18 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
         "Hostname" => host
       }
     }
+  end
+
+  def build_listed_container(id:, labels:)
+    instance_double(
+      Docker::Container,
+      id: id,
+      info: {
+        "Id" => id,
+        "Labels" => labels,
+        "State" => "running"
+      }
+    )
   end
 
   def container_config

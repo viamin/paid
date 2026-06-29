@@ -55,6 +55,7 @@ RSpec.describe Capacity::DockerSnapshot do
     chat_session
 
     allow(backend).to receive_messages(
+      capacity_snapshot_list_container_options: {},
       system_info: system_info,
       list_containers: containers
     )
@@ -143,7 +144,11 @@ RSpec.describe Capacity::DockerSnapshot do
 
     it "uses backend host identifiers for DB-backed swarm classification when labels are absent" do
       agent_run.update!(container_host: "worker-1")
-      allow(backend).to receive_messages(identifier: "swarm", all_host_identifiers: [ "worker-1", "swarm" ])
+      allow(backend).to receive_messages(
+        identifier: "swarm",
+        all_host_identifiers: [ "worker-1", "swarm" ],
+        capacity_snapshot_list_container_options: { include_node_containers: true }
+      )
       allow(containers.first).to receive(:info).and_return(
         container_rows.first.fetch("info").merge("Labels" => {})
       )
@@ -152,6 +157,22 @@ RSpec.describe Capacity::DockerSnapshot do
 
       expect(snapshot.bucket(:paid_agents).container_count).to eq(2)
       expect(snapshot.bucket(:other_docker).container_count).to eq(1)
+    end
+
+    it "accounts for standalone swarm-node containers in other_docker usage" do
+      standalone = build_container(id: "standalone-db", labels: { "com.example.role" => "db" })
+      allow(backend).to receive_messages(
+        identifier: "swarm",
+        all_host_identifiers: [ "worker-1", "swarm" ],
+        capacity_snapshot_list_container_options: { include_node_containers: true },
+        list_containers: containers + [ standalone ]
+      )
+      allow(backend).to receive(:container_stats).with(standalone, stream: false).and_return(stats_payload(memory_bytes: 700, cpu_percent: 30.0))
+
+      snapshot = described_class.call(backend: backend, now: now, cache: cache, force_refresh: true)
+
+      expect(snapshot.bucket(:other_docker)).to have_attributes(container_count: 2, memory_bytes: 1_200, cpu_percent: 32.0)
+      expect(snapshot.available_memory_bytes).to eq(6_700)
     end
 
     it "bypasses tenant RLS when building daemon-wide references" do
@@ -225,5 +246,35 @@ RSpec.describe Capacity::DockerSnapshot do
     allow(container).to receive(:info).and_return(
       info.merge("Labels" => info.fetch("Labels").merge(labels))
     )
+  end
+
+  def build_container(id:, labels:, state: "running")
+    instance_double(
+      Docker::Container,
+      id: id,
+      info: {
+        "Id" => id,
+        "Labels" => labels,
+        "State" => state
+      }
+    )
+  end
+
+  def stats_payload(memory_bytes:, cpu_percent:)
+    system_cpu_delta = 10_000
+    total_cpu_delta = ((cpu_percent / 100.0) * system_cpu_delta).to_i
+
+    {
+      "memory_stats" => { "usage" => memory_bytes },
+      "cpu_stats" => {
+        "cpu_usage" => { "total_usage" => total_cpu_delta },
+        "system_cpu_usage" => system_cpu_delta,
+        "online_cpus" => 1
+      },
+      "precpu_stats" => {
+        "cpu_usage" => { "total_usage" => 0 },
+        "system_cpu_usage" => 0
+      }
+    }
   end
 end

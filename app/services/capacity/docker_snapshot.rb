@@ -254,7 +254,9 @@ module Capacity
     end
 
     def list_running_containers
-      containers = with_timeout(DOCKER_LIST_TIMEOUT) { backend.list_containers }
+      containers = with_timeout(DOCKER_LIST_TIMEOUT) do
+        backend.list_containers(**backend.capacity_snapshot_list_container_options)
+      end
       containers.select { |container| running_container?(container.info) }
     end
 
