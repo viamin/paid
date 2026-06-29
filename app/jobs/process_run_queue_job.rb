@@ -60,6 +60,8 @@ class ProcessRunQueueJob < ApplicationJob
       blocked_account_dispatch_ids = Set.new
       started_priority_by_project = {}
       docker_snapshot = nil
+      base_reserved_agent_memory_bytes = nil
+      started_reserved_agent_memory_bytes = 0
 
       loop do
         iterations += 1
@@ -102,7 +104,19 @@ class ProcessRunQueueJob < ApplicationJob
         end
 
         docker_snapshot ||= Capacity::DockerSnapshot.fetch if user.settings.run_concurrency_auto?
-        admission = run_admission_for(next_run, user, docker_snapshot: docker_snapshot)
+        admission = run_admission_for(
+          next_run,
+          user,
+          docker_snapshot: docker_snapshot,
+          reserved_agent_memory_bytes: queue_reserved_agent_memory_bytes(
+            user,
+            base_reserved_agent_memory_bytes,
+            started_reserved_agent_memory_bytes
+          )
+        )
+        if admission[:snapshot_available]
+          base_reserved_agent_memory_bytes ||= admission[:reserved_agent_memory_bytes].to_i - started_reserved_agent_memory_bytes
+        end
         unless admission[:allowed]
           log_capacity_skip(next_run, admission)
 
@@ -199,6 +213,7 @@ class ProcessRunQueueJob < ApplicationJob
           mark_dispatched_probe(agent_run) if dispatch_decision == :allow_probe
           consecutive_failures = 0
           starts_count += 1
+          started_reserved_agent_memory_bytes += admission[:estimated_memory_per_run_bytes].to_i if admission[:snapshot_available]
           record_started_project_priority(next_run, started_priority_by_project)
           break if starts_count >= MAX_STARTS_PER_PERFORM
         else
@@ -263,12 +278,21 @@ class ProcessRunQueueJob < ApplicationJob
     )
   end
 
-  def run_admission_for(agent_run, user, docker_snapshot:)
+  def run_admission_for(agent_run, user, docker_snapshot:, reserved_agent_memory_bytes:)
     Capacity::RunAdmission.call(
       user: user,
+      project: agent_run.project,
       goal: agent_run.goal,
-      docker_snapshot: docker_snapshot
+      docker_snapshot: docker_snapshot,
+      reserved_agent_memory_bytes: reserved_agent_memory_bytes
     )
+  end
+
+  def queue_reserved_agent_memory_bytes(user, base_reserved_agent_memory_bytes, started_reserved_agent_memory_bytes)
+    return unless user.settings.run_concurrency_auto?
+    return if base_reserved_agent_memory_bytes.nil? && started_reserved_agent_memory_bytes.zero?
+
+    base_reserved_agent_memory_bytes.to_i + started_reserved_agent_memory_bytes
   end
 
   def log_capacity_skip(agent_run, admission)

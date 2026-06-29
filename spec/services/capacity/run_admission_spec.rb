@@ -25,6 +25,13 @@ RSpec.describe Capacity::RunAdmission do
   end
 
   describe ".call" do
+    it "does not report a denial reason when optional project and goal caps do not apply" do
+      result = described_class.call(user: user, docker_snapshot: docker_snapshot)
+
+      expect(result[:allowed]).to be true
+      expect(result[:reason]).to be_nil
+    end
+
     it "uses the latest metric per inflight local run when summing reserved memory" do
       first_run = create(:agent_run, :running, project: project, container_host: Containers::LOCAL_BACKEND_KEY.to_s)
       second_run = create(:agent_run, :running, project: project, container_host: Containers::LOCAL_BACKEND_KEY.to_s)
@@ -54,6 +61,21 @@ RSpec.describe Capacity::RunAdmission do
       metric_queries = queries.grep(/FROM "container_metrics"/)
 
       expect(metric_queries.size).to eq(1)
+    end
+
+    it "uses provided reserved agent memory bytes without rescanning inflight runs" do
+      create(:agent_run, :running, project: project, container_host: Containers::LOCAL_BACKEND_KEY.to_s)
+
+      queries = capture_queries do
+        described_class.call(
+          user: user,
+          project: project,
+          docker_snapshot: docker_snapshot,
+          reserved_agent_memory_bytes: 8.gigabytes
+        )
+      end
+
+      expect(queries.grep(/FROM "container_metrics"/)).to be_empty
     end
   end
 end

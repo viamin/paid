@@ -112,6 +112,29 @@ RSpec.describe ProcessRunQueueJob do
       expect(Capacity::DockerSnapshot).to have_received(:fetch).once
     end
 
+    it "caches reserved local agent memory across auto-mode admissions in one queue pass" do
+      project = create(:project)
+      user = project.created_by
+      user.settings.update!(run_concurrency_mode: "auto", max_concurrent_runs: nil)
+      running_run = create(:agent_run, :running, project: project, container_host: Containers::LOCAL_BACKEND_KEY.to_s)
+      create(:container_metric, agent_run: running_run, memory_limit_bytes: 6.gigabytes, recorded_at: 1.minute.ago)
+      create(:agent_run, :queued, project: project, trigger_type: "manual", created_at: 2.minutes.ago)
+      create(:agent_run, :queued, project: project, trigger_type: "manual", created_at: 1.minute.ago)
+      allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(
+        available: true,
+        effective_agent_budget_bytes: 20.gigabytes,
+        snapshot_at: Time.current,
+        confidence: "high",
+        docker_memory_bytes: 32.gigabytes
+      )
+
+      queries = capture_queries do
+        described_class.new.perform
+      end
+
+      expect(queries.grep(/FROM "container_metrics"/).size).to eq(1)
+    end
+
     it "stops when user capacity is exhausted" do
       project = create(:project)
       user = project.created_by
@@ -384,6 +407,20 @@ RSpec.describe ProcessRunQueueJob do
       expect(queued_run.reload.status).to eq("queued")
     end
 
+    it "does not start a run when the project parallel limit is already reached" do
+      project = create(:project)
+      user = project.created_by
+      user.settings.update!(max_concurrent_runs: 10, max_parallel_agents_per_project: 1)
+      create(:agent_run, :running, project: project)
+      queued_run = create(:agent_run, :queued, project: project)
+
+      expect(temporal_client).not_to receive(:start_workflow)
+
+      described_class.new.perform
+
+      expect(queued_run.reload.status).to eq("queued")
+    end
+
     it "does not start queued runs when the account's scheduler is paused" do
       paused_account = create(:account, scheduler_paused_at: Time.current)
       paused_project = create(:project, account: paused_account, created_by: create(:user, account: paused_account))
@@ -475,7 +512,7 @@ RSpec.describe ProcessRunQueueJob do
     it "never exceeds per-user capacity even when starting multiple queued runs" do
       project = create(:project)
       user = project.created_by
-      user.settings.update!(max_concurrent_runs: 4)
+      user.settings.update!(max_concurrent_runs: 4, max_parallel_agents_per_project: 10)
 
       runs = 6.times.map { |i| create(:agent_run, :queued, project: project, created_at: (6 - i).minutes.ago) }
 
@@ -529,7 +566,7 @@ RSpec.describe ProcessRunQueueJob do
     it "starts a queued manual run alongside running auto-pick work" do
       project = create(:project)
       user = project.created_by
-      user.settings.update!(max_concurrent_runs: 4)
+      user.settings.update!(max_concurrent_runs: 4, max_parallel_agents_per_project: 4)
 
       3.times { create(:agent_run, :running, project: project, trigger_type: "automatic") }
       manual_run = create(:agent_run, :queued, project: project, trigger_type: "manual")

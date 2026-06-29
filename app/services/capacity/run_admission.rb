@@ -10,11 +10,12 @@ module Capacity
       end
     end
 
-    def initialize(user:, project: nil, goal: nil, docker_snapshot: nil)
+    def initialize(user:, project: nil, goal: nil, docker_snapshot: nil, reserved_agent_memory_bytes: nil)
       @user = user
       @project = project
       @goal = goal
       @docker_snapshot = docker_snapshot
+      @reserved_agent_memory_bytes = reserved_agent_memory_bytes
     end
 
     def call
@@ -28,7 +29,7 @@ module Capacity
 
     private
 
-    attr_reader :docker_snapshot, :goal, :project, :user
+    attr_reader :docker_snapshot, :goal, :project, :reserved_agent_memory_bytes, :user
 
     def owner_missing_result
       {
@@ -116,8 +117,8 @@ module Capacity
 
     def denial_reason(remaining_memory_slots:)
       return nil if user_available_slots.positive? &&
-        project_available_slots.to_i.positive? &&
-        create_pr_available_slots.to_i.positive? &&
+        slot_available?(project_available_slots) &&
+        slot_available?(create_pr_available_slots) &&
         (remaining_memory_slots.nil? || remaining_memory_slots.positive?)
 
       return "insufficient_docker_capacity" if !remaining_memory_slots.nil? && remaining_memory_slots <= 0
@@ -126,6 +127,10 @@ module Capacity
       return "create_pr_hard_ceiling" if goal == "create_pr" && create_pr_available_slots.to_i <= 0
 
       "capacity_denied"
+    end
+
+    def slot_available?(slots)
+      slots.nil? || slots.positive?
     end
 
     def user_active_count
@@ -169,6 +174,8 @@ module Capacity
     end
 
     def active_local_agent_reserved_bytes
+      return reserved_agent_memory_bytes unless reserved_agent_memory_bytes.nil?
+
       inflight_runs = AgentRun.capacity_inflight
         .where(container_host: [ nil, "", Containers::LOCAL_BACKEND_KEY.to_s ])
         .includes(project: [ :account, { created_by: :user_setting } ])
