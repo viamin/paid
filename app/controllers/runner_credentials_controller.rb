@@ -61,16 +61,15 @@ class RunnerCredentialsController < ApplicationController
   end
 
   def filtered_scope
-    policy_scope(RunnerCredential).where(runner_key: @runner.runner_key)
+    @filtered_scope ||= policy_scope(RunnerCredential).where(runner_key: @runner.runner_key)
   end
 
   def default_credential_attributes
     {
-      runner_key: @runner.runner_key
-    }.tap do |attributes|
-      attributes[:name] = generated_credential_name if RunnerCredential.supports_name_attribute?
-      attributes[:auth_kind] = SETUP_TOKEN_AUTH_KIND if RunnerCredential.supports_auth_kind_attribute?
-    end
+      runner_key: @runner.runner_key,
+      name: generated_credential_name,
+      auth_kind: SETUP_TOKEN_AUTH_KIND
+    }
   end
 
   def generated_credential_name

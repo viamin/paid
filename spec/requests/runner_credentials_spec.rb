@@ -94,7 +94,7 @@ RSpec.describe "RunnerCredentials" do
 
         expect(response).to redirect_to(runner_runner_credentials_path(other_users_runner))
         expect(RunnerCredential.last.created_by).to eq(admin_user)
-        expect(RunnerCredential.last.auth_kind).to eq("oauth_token") if RunnerCredential.supports_auth_kind_attribute?
+        expect(RunnerCredential.last.auth_kind).to eq("oauth_token")
       end
     end
   end
@@ -153,8 +153,8 @@ RSpec.describe "RunnerCredentials" do
       expect(credential.runner_key).to eq(runner.runner_key)
       expect(credential.account_id).to eq(account.id)
       expect(credential.long_lived).to be true
-      expect(credential.auth_kind).to eq("oauth_token") if RunnerCredential.supports_auth_kind_attribute?
-      expect(credential.name).to include(runner.display_name) if RunnerCredential.supports_name_attribute?
+      expect(credential.auth_kind).to eq("oauth_token")
+      expect(credential.name).to include(runner.display_name)
       expect(credential.created_by_id).to eq(owner_user.id)
     end
 

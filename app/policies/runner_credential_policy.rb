@@ -28,12 +28,9 @@ class RunnerCredentialPolicy < ApplicationPolicy
   class Scope < ApplicationPolicy::Scope
     def resolve
       raise Pundit::NotAuthorizedError, "must be logged in" unless user
+      return scope.none unless user.has_role?(:owner, user.account) || user.has_role?(:admin, user.account)
 
-      if user.has_role?(:owner, user.account) || user.has_role?(:admin, user.account)
-        scope.where(account: user.account)
-      else
-        scope.none
-      end
+      super
     end
   end
 

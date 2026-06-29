@@ -195,14 +195,12 @@ module Screenshots
             record.secret = "sk-ant-#{'a' * 24}"
           end
 
-          runner_credential_lookup = { runner_key: provider.runner_key }
-          if RunnerCredential.supports_name_attribute?
-            runner_credential_lookup[:name] = "Screenshot #{Runner.display_name_for(provider.runner_key)} Setup Token"
-          end
-
-          runner_credential = account.runner_credentials.find_or_create_by!(runner_credential_lookup) do |record|
+          runner_credential = account.runner_credentials.find_or_create_by!(
+            runner_key: provider.runner_key,
+            name: "Screenshot #{Runner.display_name_for(provider.runner_key)} Setup Token"
+          ) do |record|
             record.created_by = user
-            record.auth_kind = "oauth_token" if record.has_attribute?(:auth_kind)
+            record.auth_kind = "oauth_token"
             record.token = "sk-ant-oat01-#{'a' * 24}"
             record.long_lived = true
           end
