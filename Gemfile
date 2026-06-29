@@ -131,12 +131,9 @@ group :test do
   gem "capybara"
   gem "cuprite"
   gem "fixture_kit"
-  # Mutation testing — two sources are supported during the viamin/mutant transition:
-  #   upstream (default): mbj/mutant commercial release from rubygems (current default).
-  #   viamin:             MIT-licensed fork via BUNDLE_GEMFILE=Gemfile.viamin.
-  # See docs/MUTATION_TESTING.md for how to switch and viamin/paid#2367 for context.
-  gem "mutant", require: false
-  gem "mutant-rspec", require: false
+  # Mutation testing uses the MIT-licensed viamin/mutant fork by default.
+  gem "mutant", github: "viamin/mutant", branch: "main", require: false
+  gem "mutant-rspec", github: "viamin/mutant", branch: "main", require: false
   gem "rspec-github", "~> 3.0", require: false
   gem "test-prof"
   gem "webmock"
