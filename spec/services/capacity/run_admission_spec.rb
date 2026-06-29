@@ -77,5 +77,26 @@ RSpec.describe Capacity::RunAdmission do
 
       expect(queries.grep(/FROM "container_metrics"/)).to be_empty
     end
+
+    it "preserves the manual denial reason when Docker inspection is unavailable" do
+      user.settings.update!(max_parallel_agents_per_project: 1)
+      create(:agent_run, :running, project: project)
+
+      result = described_class.call(
+        user: user,
+        project: project,
+        docker_snapshot: {
+          available: false,
+          reason: "docker_timeout",
+          snapshot_at: Time.current,
+          confidence: "low"
+        }
+      )
+
+      expect(result[:allowed]).to be false
+      expect(result[:reason]).to eq("project_hard_ceiling")
+      expect(result[:docker_reason]).to eq("docker_timeout")
+      expect(result[:degraded]).to be true
+    end
   end
 end

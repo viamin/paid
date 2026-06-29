@@ -93,6 +93,25 @@ RSpec.describe ProcessRunQueueJob do
       expect(started_ids).to eq([ eligible_run.id ])
     end
 
+    it "keeps project-level blocking scoped when auto mode degrades to manual admission" do
+      blocked_project = create(:project)
+      blocked_user = blocked_project.created_by
+      blocked_user.settings.update!(run_concurrency_mode: "auto", max_concurrent_runs: nil, max_parallel_agents_per_project: 1)
+      create(:agent_run, :running, project: blocked_project)
+      create(:agent_run, :queued, project: blocked_project, created_at: 2.minutes.ago)
+      eligible_project = create(:project, account: blocked_project.account, created_by: blocked_user)
+      eligible_run = create(:agent_run, :queued, project: eligible_project, created_at: 1.minute.ago)
+      allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(available: false, reason: "docker_timeout",
+        snapshot_at: Time.current, confidence: "low")
+      started_ids = []
+      allow(temporal_client).to receive(:start_workflow) do |_wf, input, **_opts|
+        started_ids << input[:agent_run_id]
+        workflow_handle
+      end
+      described_class.new.perform
+      expect(started_ids).to eq([ eligible_run.id ])
+    end
+
     it "reuses one Docker snapshot per queue pass" do
       project = create(:project)
       user = project.created_by

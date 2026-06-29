@@ -108,7 +108,9 @@ module Capacity
     def degraded_manual_result(snapshot)
       manual_result(mode: UserSetting::RUN_CONCURRENCY_MODE_AUTO).merge(
         degraded: true,
-        reason: snapshot[:reason],
+        docker_reason: snapshot[:reason],
+        docker_error_class: snapshot[:error_class],
+        docker_error_message: snapshot[:error_message],
         snapshot_available: false,
         snapshot_at: snapshot[:snapshot_at],
         docker_confidence: snapshot[:confidence]

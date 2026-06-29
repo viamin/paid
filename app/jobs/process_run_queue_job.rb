@@ -308,6 +308,7 @@ class ProcessRunQueueJob < ApplicationJob
       available_memory_bytes: admission[:available_memory_bytes],
       estimated_memory_per_run_bytes: admission[:estimated_memory_per_run_bytes],
       reserved_agent_memory_bytes: admission[:reserved_agent_memory_bytes],
+      docker_reason: admission[:docker_reason],
       degraded: admission[:degraded] == true
     )
   end
