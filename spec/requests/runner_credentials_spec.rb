@@ -13,13 +13,14 @@ RSpec.describe "RunnerCredentials" do
     before { sign_in owner_user }
 
     it "lists runner credentials for a specific runner" do
-      create(:runner_credential, runner: runner, account: account, created_by: owner_user)
+      credential = create(:runner_credential, runner: runner, account: account, created_by: owner_user)
 
       get runner_runner_credentials_path(runner)
 
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("Runner Credentials")
-      expect(response.body).to include(new_runner_runner_credential_path(runner))
+      expect(response.body).to include(runner_runner_credential_path(runner, credential))
+      expect(response.body).to include("View Active Credential")
     end
 
     it "links to the new credential form when no credentials exist" do
@@ -108,6 +109,15 @@ RSpec.describe "RunnerCredentials" do
       expect(response.body).to include("Setup Token")
     end
 
+    it "redirects to the active credential when one already exists" do
+      credential = create(:runner_credential, runner: runner, account: account, created_by: owner_user)
+
+      get new_runner_runner_credential_path(runner)
+
+      expect(response).to redirect_to(runner_runner_credential_path(runner, credential))
+      expect(flash[:alert]).to include("already has an active credential")
+    end
+
     context "when user is a member" do
       before { sign_in member_user }
 
@@ -143,6 +153,22 @@ RSpec.describe "RunnerCredentials" do
       expect(credential.account_id).to eq(account.id)
       expect(credential.long_lived).to be true
       expect(credential.created_by_id).to eq(owner_user.id)
+    end
+
+    it "redirects to the active credential instead of raising a duplicate validation error" do
+      credential = create(:runner_credential, runner: runner, account: account, created_by: owner_user)
+
+      expect {
+        post runner_runner_credentials_path(runner), params: {
+          runner_credential: {
+            token: "sk-ant-oat01-replacement",
+            long_lived: true
+          }
+        }
+      }.not_to change(RunnerCredential, :count)
+
+      expect(response).to redirect_to(runner_runner_credential_path(runner, credential))
+      expect(flash[:alert]).to include("already has an active credential")
     end
 
     it "requires a token" do

@@ -6,8 +6,11 @@
       <h1 class="text-2xl font-bold text-gray-900">Runner Credentials</h1>
       <p class="mt-1 text-sm text-gray-500">Manage encrypted authentication tokens for subscription runners like Claude Code.</p>
     </div>
+    <% active_credential = @runner_credentials.find(&:active?) %>
     <div class="mt-4 flex gap-3 sm:mt-0">
-      <%= link_to "Add Credential", new_runner_runner_credential_path(@runner), class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+      <% primary_path = active_credential ? runner_runner_credential_path(@runner, active_credential) : new_runner_runner_credential_path(@runner) %>
+      <% primary_label = active_credential ? "View Active Credential" : "Add Credential" %>
+      <%= link_to primary_label, primary_path, class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
       <%= link_to "Back to Runners", runners_path, class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
     </div>
   </div>
