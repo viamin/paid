@@ -213,7 +213,7 @@ class ProcessRunQueueJob < ApplicationJob
           mark_dispatched_probe(agent_run) if dispatch_decision == :allow_probe
           consecutive_failures = 0
           starts_count += 1
-          started_reserved_agent_memory_bytes += admission[:estimated_memory_per_run_bytes].to_i if admission[:snapshot_available]
+          started_reserved_agent_memory_bytes += admission[:estimated_memory_per_run_bytes].to_i if docker_snapshot&.[](:available)
           record_started_project_priority(next_run, started_priority_by_project)
           break if starts_count >= MAX_STARTS_PER_PERFORM
         else

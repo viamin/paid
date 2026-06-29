@@ -135,6 +135,38 @@ RSpec.describe ProcessRunQueueJob do
       expect(queries.grep(/FROM "container_metrics"/).size).to eq(1)
     end
 
+    it "accounts for manual-mode run memory within an auto-mode queue pass" do
+      # Scenario: auto-mode user A has two queued runs; manual-mode user B has one.
+      # Docker budget is exactly 2 × DEFAULT_ESTIMATED_MEMORY_BYTES (4 GB each = 8 GB).
+      # After A's first run starts (4 GB reserved) and B's manual run starts
+      # (4 GB — now also reserved with fix), A's second run must be blocked.
+      auto_project = create(:project)
+      auto_user = auto_project.created_by
+      auto_user.settings.update!(run_concurrency_mode: "auto", max_concurrent_runs: nil)
+
+      manual_project = create(:project)
+      manual_user = manual_project.created_by
+      manual_user.settings.update!(max_concurrent_runs: 10)
+
+      auto_run1 = create(:agent_run, :queued, project: auto_project, created_at: 5.minutes.ago)
+      manual_run  = create(:agent_run, :queued, project: manual_project, created_at: 3.minutes.ago)
+      auto_run2   = create(:agent_run, :queued, project: auto_project, created_at: 1.minute.ago)
+
+      allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(
+        available: true,
+        effective_agent_budget_bytes: 2 * Capacity::RunAdmission::DEFAULT_ESTIMATED_MEMORY_BYTES,
+        snapshot_at: Time.current,
+        confidence: "high",
+        docker_memory_bytes: 16.gigabytes
+      )
+
+      described_class.new.perform
+
+      expect(auto_run1.reload.temporal_workflow_id).to be_present
+      expect(manual_run.reload.temporal_workflow_id).to be_present
+      expect(auto_run2.reload.temporal_workflow_id).to be_nil
+    end
+
     it "stops when user capacity is exhausted" do
       project = create(:project)
       user = project.created_by

@@ -61,7 +61,7 @@ module Capacity
         effective_max_concurrent_runs: user_hard_ceiling,
         available_slots: remaining_slots,
         available_memory_bytes: nil,
-        estimated_memory_per_run_bytes: nil,
+        estimated_memory_per_run_bytes: candidate_memory_bytes,
         reserved_agent_memory_bytes: nil,
         snapshot_available: false
       }
