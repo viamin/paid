@@ -163,7 +163,11 @@ module Accounts
           cost_ceiling_utilization_percent: utilization_percent(current_cost_cents, cost_ceiling_cents),
           project_budgets_count: account.projects.joins(:cost_budgets).distinct.count,
           total_runs_in_period: usage_period&.total_runs,
-          total_compute_seconds_in_period: aggregated_usage&.dig(:compute_usage, :total_compute_seconds)
+          total_compute_seconds_in_period: aggregated_usage&.dig(:compute_usage, :total_compute_seconds),
+          auto_capacity: Accounts::Operations::AutoCapacityObserver.call(
+            account: account,
+            manual_limit: tenant_setting.effective_guardrails["max_concurrent_runs"]
+          )
         }
       end
 

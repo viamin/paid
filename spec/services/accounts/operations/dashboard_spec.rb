@@ -12,6 +12,29 @@ RSpec.describe Accounts::Operations::Dashboard do
       create(:billing_plan, :per_run, account: account)
       create(:billing_period, account: account, total_cost_cents: 15_000, total_runs: 12, starts_at: 20.days.ago, ends_at: 10.days.from_now)
       create(:user, :owner, account: account)
+      allow(Accounts::Operations::AutoCapacityObserver).to receive(:call).and_return(
+        {
+          status: :healthy,
+          sampled_at: Time.current,
+          docker_cpu_count: 8,
+          docker_memory_bytes: 8.gigabytes,
+          running_agent_count: 1,
+          estimated_next_run_memory_bytes: 2.gigabytes,
+          available_agent_memory_bytes: 4.gigabytes,
+          control_plane_margin_bytes: 512.megabytes,
+          effective_recommended_concurrency: 2,
+          usage: {
+            paid: { container_count: 1, cpu_percent: 15.0, memory_bytes: 2.gigabytes },
+            agent: { container_count: 1, cpu_percent: 40.0, memory_bytes: 1.gigabyte },
+            service: { container_count: 0, cpu_percent: 0.0, memory_bytes: 0 },
+            other: { container_count: 0, cpu_percent: 0.0, memory_bytes: 0 }
+          },
+          warnings: [],
+          manual_mode_summary: "Manual mode is enforcing a fixed limit of 2 concurrent runs today.",
+          auto_mode_summary: "Auto preview would allow 2 concurrent runs because Docker currently has 4 GB available for agents and recent runs suggest 2 GB per run.",
+          comparison_summary: "Manual and auto would currently allow the same concurrency."
+        }
+      )
       allow(Scaling::QueueMonitor).to receive(:cached_for_account).and_return(
         Scaling::QueueMonitor::Result.new(
           queue_depths: [

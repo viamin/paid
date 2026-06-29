@@ -62,8 +62,32 @@ RSpec.describe "Accounts::OperationsDashboards" do
       }
     }
   end
+  let(:auto_capacity_payload) do
+    {
+      status: :healthy,
+      sampled_at: 2.minutes.ago,
+      docker_cpu_count: 8,
+      docker_memory_bytes: 12.gigabytes,
+      running_agent_count: 2,
+      estimated_next_run_memory_bytes: 2.gigabytes,
+      available_agent_memory_bytes: 6.gigabytes,
+      control_plane_margin_bytes: 512.megabytes,
+      effective_recommended_concurrency: 3,
+      usage: {
+        paid: { container_count: 2, cpu_percent: 15.0, memory_bytes: 2.gigabytes },
+        agent: { container_count: 2, cpu_percent: 80.0, memory_bytes: 3.gigabytes },
+        service: { container_count: 1, cpu_percent: 10.0, memory_bytes: 1.gigabyte },
+        other: { container_count: 4, cpu_percent: 30.0, memory_bytes: 2.gigabytes }
+      },
+      warnings: [],
+      manual_mode_summary: "Manual mode is enforcing a fixed limit of 4 concurrent runs today.",
+      auto_mode_summary: "Auto preview would allow 3 concurrent runs because Docker currently has 6 GB available for agents and recent runs suggest 2 GB per run.",
+      comparison_summary: "Auto preview is more conservative than the current manual limit."
+    }
+  end
 
   before do
+    allow(Accounts::Operations::AutoCapacityObserver).to receive(:call).and_return(auto_capacity_payload)
     sign_in owner
   end
 
@@ -76,6 +100,8 @@ RSpec.describe "Accounts::OperationsDashboards" do
         "Enterprise Operations &amp; Reliability",
         "Support-safe diagnostics",
         "Capacity &amp; cost controls",
+        "Auto Capacity Preview",
+        "Observe-only auto mode",
         "Disaster recovery",
         "Upgrade orchestration"
       )
@@ -86,6 +112,19 @@ RSpec.describe "Accounts::OperationsDashboards" do
         'name="enterprise_operations[support][health_report_recipients]"',
         'name="enterprise_operations[capacity_management][queue_warning_threshold]"',
         'name="enterprise_operations[capacity_management][queue_critical_threshold]"'
+      )
+    end
+
+    it "renders degraded auto-capacity warnings when docker metrics are unavailable" do
+      allow(Accounts::Operations::AutoCapacityObserver).to receive(:call).and_return(degraded_auto_capacity_payload)
+
+      get account_operations_dashboard_path
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include(
+        "Degraded Docker metrics",
+        "Auto preview cannot make a trustworthy recommendation until Docker metrics recover.",
+        "Action: verify that the Docker daemon is reachable"
       )
     end
 
@@ -233,5 +272,20 @@ RSpec.describe "Accounts::OperationsDashboards" do
 
       expect(response).to redirect_to(root_path)
     end
+  end
+
+  def degraded_auto_capacity_payload
+    auto_capacity_payload.merge(
+      status: :degraded,
+      effective_recommended_concurrency: nil,
+      available_agent_memory_bytes: nil,
+      docker_cpu_count: nil,
+      docker_memory_bytes: nil,
+      running_agent_count: nil,
+      control_plane_margin_bytes: nil,
+      warnings: [ "Auto preview is degraded because Docker metrics could not be collected." ],
+      auto_mode_summary: "Auto preview cannot make a trustworthy recommendation until Docker metrics recover.",
+      comparison_summary: "Keep using manual mode until the Docker inspection path is healthy again."
+    )
   end
 end

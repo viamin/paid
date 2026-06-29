@@ -1,0 +1,99 @@
+<% auto_capacity = capacity[:auto_capacity] %>
+<% status_classes = if auto_capacity[:status] == :degraded
+  "border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/20"
+else
+  "border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/20"
+end %>
+
+<div class="mt-6 rounded-3xl border <%= status_classes %> p-5">
+  <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+    <div>
+      <p class="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500 dark:text-gray-400">Auto Capacity Preview</p>
+      <h3 class="mt-2 text-lg font-semibold text-gray-900 dark:text-white">Observe-only auto mode</h3>
+      <p class="mt-2 max-w-3xl text-sm text-gray-600 dark:text-gray-300"><%= auto_capacity[:auto_mode_summary] %></p>
+      <p class="mt-2 text-sm text-gray-600 dark:text-gray-300"><%= auto_capacity[:comparison_summary] %></p>
+    </div>
+
+    <div class="rounded-2xl bg-white/70 px-4 py-3 text-sm shadow-sm dark:bg-gray-900/60">
+      <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Preview health</p>
+      <p class="mt-2 text-lg font-semibold text-gray-900 dark:text-white"><%= auto_capacity[:status].to_s.humanize %></p>
+      <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">Sampled <%= time_ago_in_words(auto_capacity[:sampled_at]) %> ago</p>
+    </div>
+  </div>
+
+  <div class="mt-5 grid gap-4 lg:grid-cols-2">
+    <div class="rounded-2xl bg-white/70 p-4 shadow-sm dark:bg-gray-900/60">
+      <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Manual mode</p>
+      <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white"><%= capacity[:configured_concurrency_limit] || "Uncapped" %></p>
+      <p class="mt-2 text-sm text-gray-600 dark:text-gray-300"><%= auto_capacity[:manual_mode_summary] %></p>
+    </div>
+
+    <div class="rounded-2xl bg-white/70 p-4 shadow-sm dark:bg-gray-900/60">
+      <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Auto mode</p>
+      <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white"><%= auto_capacity[:effective_recommended_concurrency] || "Unavailable" %></p>
+      <p class="mt-2 text-sm text-gray-600 dark:text-gray-300">
+        Estimated next run: <%= number_to_human_size(auto_capacity[:estimated_next_run_memory_bytes]) %>
+        <% if auto_capacity[:available_agent_memory_bytes] %>
+          • Agent headroom: <%= number_to_human_size(auto_capacity[:available_agent_memory_bytes]) %>
+        <% end %>
+      </p>
+    </div>
+  </div>
+
+  <div class="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <% {
+      "Paid" => auto_capacity.dig(:usage, :paid),
+      "Agents" => auto_capacity.dig(:usage, :agent),
+      "Service Containers" => auto_capacity.dig(:usage, :service),
+      "Other Containers" => auto_capacity.dig(:usage, :other)
+    }.each do |label, bucket| %>
+      <div class="rounded-2xl bg-white/70 p-4 shadow-sm dark:bg-gray-900/60">
+        <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400"><%= label %></p>
+        <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white"><%= number_to_human_size(bucket[:memory_bytes]) %></p>
+        <p class="mt-2 text-sm text-gray-600 dark:text-gray-300"><%= bucket[:container_count] %> containers • <%= bucket[:cpu_percent] %>% CPU</p>
+      </div>
+    <% end %>
+  </div>
+
+  <div class="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <div class="rounded-2xl bg-white/70 p-4 shadow-sm dark:bg-gray-900/60">
+      <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Docker budget</p>
+      <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">
+        <%= auto_capacity[:docker_memory_bytes] ? number_to_human_size(auto_capacity[:docker_memory_bytes]) : "Unavailable" %>
+      </p>
+      <p class="mt-2 text-sm text-gray-600 dark:text-gray-300">
+        <%= auto_capacity[:docker_cpu_count] ? "#{auto_capacity[:docker_cpu_count]} CPUs detected" : "Docker CPU metrics unavailable" %>
+      </p>
+    </div>
+
+    <div class="rounded-2xl bg-white/70 p-4 shadow-sm dark:bg-gray-900/60">
+      <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Running agent runs</p>
+      <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white"><%= auto_capacity[:running_agent_count] || "Unavailable" %></p>
+      <p class="mt-2 text-sm text-gray-600 dark:text-gray-300">Sidecars and service containers are excluded from this count.</p>
+    </div>
+
+    <div class="rounded-2xl bg-white/70 p-4 shadow-sm dark:bg-gray-900/60">
+      <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Control-plane safety margin</p>
+      <p class="mt-2 text-2xl font-semibold text-gray-900 dark:text-white">
+        <%= auto_capacity[:control_plane_margin_bytes] ? number_to_human_size(auto_capacity[:control_plane_margin_bytes]) : "Unavailable" %>
+      </p>
+      <p class="mt-2 text-sm text-gray-600 dark:text-gray-300">Auto mode keeps a small Docker reserve for Rails, Temporal, Redis, Postgres, and Qdrant spikes.</p>
+    </div>
+
+    <div class="rounded-2xl bg-white/70 p-4 shadow-sm dark:bg-gray-900/60">
+      <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Other-container policy</p>
+      <p class="mt-2 text-lg font-semibold text-gray-900 dark:text-white">Aggregate only</p>
+      <p class="mt-2 text-sm text-gray-600 dark:text-gray-300">Unrelated Docker workloads reduce auto capacity, but this panel does not reveal their names or metadata.</p>
+    </div>
+  </div>
+
+  <% if auto_capacity[:warnings].any? %>
+    <div class="mt-5 rounded-2xl border border-amber-200 bg-white/80 px-4 py-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-gray-900/70 dark:text-amber-200">
+      <p class="font-semibold">Degraded Docker metrics</p>
+      <% auto_capacity[:warnings].each do |warning| %>
+        <p class="mt-2"><%= warning %></p>
+      <% end %>
+      <p class="mt-2">Action: verify that the Docker daemon is reachable and that Paid can call Docker info and per-container stats.</p>
+    </div>
+  <% end %>
+</div>
