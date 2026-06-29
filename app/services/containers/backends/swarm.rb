@@ -115,6 +115,14 @@ module Containers
         manager_connection.ping
       end
 
+      def system_info
+        aggregate_system_info(healthy_nodes)
+      end
+
+      def capacity_snapshot_list_container_options
+        { include_node_containers: true }
+      end
+
       def container_host_for(container)
         node_hostname(node_for(container)) || identifier
       end
@@ -155,17 +163,25 @@ module Containers
       end
 
       def list_containers(**options)
+        include_node_containers = options.delete(:include_node_containers)
         query = options[:filters].present? ? { filters: options[:filters] } : {}
         services = parse_json(manager_connection.get("/services", query))
         tasks_by_service = tasks_for_services(services.map { |service| service.fetch("ID") })
+        service_task_container_ids = tasks_by_service.values.flatten.filter_map do |task|
+          task.dig("Status", "ContainerStatus", "ContainerID").presence
+        end.to_set
 
-        services.map do |service|
+        containers = services.map do |service|
           ServiceHandle.new(
             backend: self,
             service: service,
             task: primary_task_for(service.fetch("ID"), tasks: tasks_by_service[service.fetch("ID")])
           )
         end
+
+        return containers unless include_node_containers
+
+        containers + list_node_local_containers(options:, exclude_ids: service_task_container_ids)
       end
 
       def get_network(name)
@@ -433,6 +449,14 @@ module Containers
         end
       end
 
+      def aggregate_system_info(nodes)
+        Array(nodes).each_with_object({ "NCPU" => 0, "MemTotal" => 0 }) do |node, aggregate|
+          info = Docker.info(node_connection(node))
+          aggregate["NCPU"] += info.fetch("NCPU", 0).to_i
+          aggregate["MemTotal"] += info.fetch("MemTotal", 0).to_i
+        end
+      end
+
       def all_nodes
         parse_json(manager_connection.get("/nodes"))
       end
@@ -467,6 +491,22 @@ module Containers
         address = node.dig("Spec", "Labels", NODE_ADDRESS_LABEL).presence ||
           node.dig("Status", "Addr")
         "#{node_scheme}://#{address}:#{node_port}"
+      end
+
+      def list_node_local_containers(options:, exclude_ids:)
+        docker_options = options.except(:filters)
+        docker_options[:all] = options[:all] if options.key?(:all)
+
+        healthy_nodes.flat_map do |node|
+          Docker::Container.all(docker_options, node_connection(node)).reject do |container|
+            exclude_ids.include?(container.id) || swarm_managed_container?(container.info)
+          end
+        end
+      end
+
+      def swarm_managed_container?(info)
+        labels = info.fetch("Labels", {}).presence || info.dig("Config", "Labels") || {}
+        labels["com.docker.swarm.service.id"].present? || labels["com.docker.swarm.task.id"].present?
       end
 
       def tasks_for(service_id)

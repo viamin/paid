@@ -50,6 +50,10 @@ module Containers
         Docker.ping(connection)
       end
 
+      def system_info
+        Docker.info(connection)
+      end
+
       def get_container(id)
         Docker::Container.get(id, {}, connection)
       end

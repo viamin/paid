@@ -13,6 +13,10 @@ module Containers
         Docker.ping
       end
 
+      def system_info
+        Docker.info
+      end
+
       def container_host_for(_container)
         identifier
       end
