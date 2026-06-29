@@ -39,7 +39,7 @@ RSpec.describe ChatSessions::ResolveToolCall do
   end
 
   before do
-    allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user).and_return(tool_definitions)
+    allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user, session: anything).and_return(tool_definitions)
   end
 
   describe ".call approve" do
@@ -107,7 +107,7 @@ RSpec.describe ChatSessions::ResolveToolCall do
       )
     end
 
-    it "persists a structured error when post-dispatch approval resolution fails" do
+    it "rolls back to pending when post-dispatch approval resolution fails" do
       tool_call_message.update!(tool_name: "record_change_intent", tool_result: { "id" => 123, "status" => "draft" })
       allow(Tools::Registry).to receive(:post_dispatch_confirmation?).with("record_change_intent").and_return(true)
       allow(Tools::Registry).to receive(:resolve_confirmation).and_raise(Pundit::NotAuthorizedError, "not allowed")
@@ -117,11 +117,35 @@ RSpec.describe ChatSessions::ResolveToolCall do
         decision: :approve, llm_client: llm_client
       )
 
-      expect(chat_session.messages.find_by(role: "tool").tool_result).to eq(
-        "status" => "error",
-        "error" => "unauthorized",
-        "message" => "not allowed"
+      expect(tool_call_message.reload.tool_status).to eq("pending")
+      expect(chat_session.messages.where(role: "tool")).to be_empty
+      expect(llm_client.seen_conversations).to be_empty
+    end
+
+    it "leaves the confirmation retriable after a failed post-dispatch resolution" do
+      tool_call_message.update!(tool_name: "record_change_intent", tool_result: { "id" => 123, "status" => "draft" })
+      allow(Tools::Registry).to receive(:post_dispatch_confirmation?).with("record_change_intent").and_return(true)
+      attempts = 0
+      allow(Tools::Registry).to receive(:resolve_confirmation) do
+        attempts += 1
+        raise Pundit::NotAuthorizedError, "transient" if attempts == 1
+
+        { "id" => 123, "status" => "active" }
+      end
+
+      described_class.call(
+        chat_session: chat_session, tool_call_message: tool_call_message,
+        decision: :approve, llm_client: llm_client
       )
+      expect(tool_call_message.reload.tool_status).to eq("pending")
+
+      described_class.call(
+        chat_session: chat_session, tool_call_message: tool_call_message,
+        decision: :approve, llm_client: llm_client
+      )
+
+      expect(tool_call_message.reload.tool_status).to eq("approved")
+      expect(chat_session.messages.find_by(role: "tool").tool_result).to eq({ "id" => 123, "status" => "active" })
     end
   end
 
@@ -156,7 +180,7 @@ RSpec.describe ChatSessions::ResolveToolCall do
       expect(chat_session.messages.find_by(role: "tool").tool_result).to eq({ "id" => 22, "status" => "denied" })
     end
 
-    it "persists a structured error when post-dispatch denial resolution fails" do
+    it "rolls back to pending when post-dispatch denial resolution fails" do
       tool_call_message.update!(tool_name: "record_change_intent", tool_result: { "id" => 22, "status" => "draft" })
       allow(Tools::Registry).to receive(:post_dispatch_confirmation?).with("record_change_intent").and_return(true)
       allow(Tools::Registry).to receive(:resolve_confirmation).and_raise(ArgumentError, "missing draft id")
@@ -166,11 +190,9 @@ RSpec.describe ChatSessions::ResolveToolCall do
         decision: :deny, llm_client: llm_client
       )
 
-      expect(chat_session.messages.find_by(role: "tool").tool_result).to eq(
-        "status" => "error",
-        "error" => "invalid_arguments",
-        "message" => "missing draft id"
-      )
+      expect(tool_call_message.reload.tool_status).to eq("pending")
+      expect(chat_session.messages.where(role: "tool")).to be_empty
+      expect(llm_client.seen_conversations).to be_empty
     end
   end
 

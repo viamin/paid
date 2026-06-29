@@ -78,17 +78,18 @@ RSpec.describe Tools::Registry do
     let(:account) { create(:account) }
     let(:project) { create(:project, account: account) }
     let(:user) { create(:user, :owner, account: account) }
+    let(:chat_session) { build(:chat_session, account: account, created_by: user, project: project) }
 
     before { create(:project_membership, :member, user: user, project: project) }
 
     it "advertises write tools so the chat agent can propose them" do
-      names = described_class.chat_definitions_for(user: user).map { |definition| definition[:name] }
+      names = described_class.chat_definitions_for(user: user, session: chat_session).map { |definition| definition[:name] }
 
       expect(names).to include("trigger_agent_run", "cancel_agent_run", "record_change_intent", "update_user_settings")
     end
 
     it "strips the confirmed argument from write-tool schemas so the model cannot self-confirm" do
-      trigger_definition = described_class.chat_definitions_for(user: user).find { |definition| definition[:name] == "trigger_agent_run" }
+      trigger_definition = described_class.chat_definitions_for(user: user, session: chat_session).find { |definition| definition[:name] == "trigger_agent_run" }
       schema = trigger_definition[:inputSchema]
 
       expect(schema[:properties]).not_to have_key(:confirmed)
@@ -96,9 +97,32 @@ RSpec.describe Tools::Registry do
     end
 
     it "leaves read-only tool schemas untouched" do
-      get_project = described_class.chat_definitions_for(user: user).find { |definition| definition[:name] == "get_project" }
+      get_project = described_class.chat_definitions_for(user: user, session: chat_session).find { |definition| definition[:name] == "get_project" }
 
       expect(get_project[:inputSchema]).to eq(Tools::GetProject.definition[:inputSchema])
+    end
+
+    it "does not advertise record_change_intent when the session has no current project" do
+      session_without_project = build(:chat_session, account: account, created_by: user)
+
+      names = described_class.chat_definitions_for(user: user, session: session_without_project).map { |definition| definition[:name] }
+
+      expect(names).not_to include("record_change_intent")
+    end
+
+    it "does not advertise record_change_intent when no session is provided" do
+      names = described_class.chat_definitions_for(user: user).map { |definition| definition[:name] }
+
+      expect(names).not_to include("record_change_intent")
+    end
+
+    it "does not advertise record_change_intent when the user cannot update the session's project" do
+      viewer = create(:user, :viewer, account: account)
+      session = build(:chat_session, account: account, created_by: viewer, project: project)
+
+      names = described_class.chat_definitions_for(user: viewer, session: session).map { |definition| definition[:name] }
+
+      expect(names).not_to include("record_change_intent")
     end
   end
 

@@ -49,7 +49,7 @@ RSpec.describe ChatSessions::AgentLoop do
       end
 
       before do
-        allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user).and_return(tool_definitions)
+        allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user, session: anything).and_return(tool_definitions)
         allow(Tools::Registry).to receive(:dispatch)
       end
 
@@ -189,7 +189,7 @@ RSpec.describe ChatSessions::AgentLoop do
       end
 
       it "dispatches the tool immediately and never pauses" do
-        allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user).and_return(tool_definitions)
+        allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user, session: anything).and_return(tool_definitions)
         allow(Tools::Registry).to receive_messages(
           dispatch: { "status" => "ok" },
           post_dispatch_confirmation?: false

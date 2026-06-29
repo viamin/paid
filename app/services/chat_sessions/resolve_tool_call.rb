@@ -40,9 +40,14 @@ module ChatSessions
     def call
       validate_decision!
       claim_resolution!
-      resolve_pending_tool_call!
       update_session_activity
-      resume_loop_unless_other_pending
+
+      if post_dispatch_confirmation?
+        resolve_post_dispatch_confirmation!
+      else
+        resolve_pending_tool_call!
+        resume_loop_unless_other_pending
+      end
     end
 
     private
@@ -72,19 +77,53 @@ module ChatSessions
       approve? ? approve_tool_call! : deny_tool_call!
     end
 
+    # Post-dispatch tools run their mutating second phase (e.g. activating or
+    # discarding a draft Change Intent Record) during confirmation resolution.
+    # `claim_resolution!` has already flipped the row out of `pending` by the
+    # time this runs, so a failed second phase must roll the status back to
+    # `pending` — otherwise the draft is stranded behind an approved/denied row
+    # that this service (which only accepts pending rows) can never touch again.
+    # The rolled-back confirmation is re-broadcast so the human can retry it.
+    def resolve_post_dispatch_confirmation!
+      result = resolve_post_dispatch_confirmation
+      return rollback_to_pending(error_result: result) if error_result?(result)
+
+      persist_tool_result(result)
+      resume_loop_unless_other_pending
+    end
+
     def approve_tool_call!
-      result =
-        if post_dispatch_confirmation?
-          resolve_post_dispatch_confirmation
-        else
-          dispatch_tool(name: tool_call_message.tool_name, arguments: confirmed_arguments)
-        end
+      result = dispatch_tool(name: tool_call_message.tool_name, arguments: confirmed_arguments)
       persist_tool_result(result)
     end
 
     def deny_tool_call!
-      result = post_dispatch_confirmation? ? resolve_post_dispatch_confirmation : DENIED_RESULT
-      persist_tool_result(result)
+      persist_tool_result(DENIED_RESULT)
+    end
+
+    def rollback_to_pending(error_result:)
+      chat_session.messages
+        .where(id: tool_call_message.id, tool_status: decision_status)
+        .update_all(tool_status: "pending")
+      tool_call_message.reload
+      on_tool_call_resolved&.call(tool_call_message)
+      log_rolled_back_confirmation(error_result:)
+    end
+
+    def error_result?(result)
+      return false unless result.is_a?(Hash)
+
+      result[:status] == "error" || result["status"] == "error"
+    end
+
+    def log_rolled_back_confirmation(error_result:)
+      Rails.logger.warn(
+        message: "chat_tool_confirmation.rolled_back",
+        chat_session_id: chat_session.id,
+        tool_name: tool_call_message.tool_name,
+        tool_error: error_result[:error] || error_result["error"],
+        error_message: error_result[:message] || error_result["message"]
+      )
     end
 
     def decision_status

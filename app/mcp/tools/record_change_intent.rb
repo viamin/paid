@@ -22,6 +22,21 @@ module Tools
       false
     end
 
+    # +perform+ requires a chat session scoped to a current project (it raises
+    # +invalid_arguments+ otherwise). Gate advertisement on that same context so
+    # the tool is never advertised to generic account or workspace chats without
+    # a project, where prompting would otherwise lead to a deterministic failure.
+    def self.available_for_chat?(user:, session:)
+      return false if user.blank? || session.nil?
+
+      project = session.project
+      return false if project.nil?
+
+      policy_allows?(user:, record: project, query: :update?, policy_class: ProjectPolicy)
+    rescue Pundit::NotAuthorizedError
+      false
+    end
+
     def self.input_schema
       {
         type: "object",

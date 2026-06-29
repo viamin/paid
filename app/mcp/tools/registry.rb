@@ -69,8 +69,8 @@ module Tools
       # model can *propose* them, but strips the per-tool `confirmed` argument
       # so confirmation always originates from the human approver, never the
       # model itself. See RDR-028.
-      def chat_definitions_for(user:)
-        available_tool_classes_for(user:).map { |klass| chat_definition_for(klass) }
+      def chat_definitions_for(user:, session: nil)
+        available_chat_tool_classes_for(user:, session:).map { |klass| chat_definition_for(klass) }
       end
 
       def write_tool?(name)
@@ -110,6 +110,10 @@ module Tools
 
       def available_tool_classes_for(user:)
         tool_hash.values.select { |klass| tool_available_to?(klass, user:) }
+      end
+
+      def available_chat_tool_classes_for(user:, session:)
+        tool_hash.values.select { |klass| klass.available_for_chat?(user:, session:) }
       end
 
       def read_only_tool_classes_for(user:)

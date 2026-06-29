@@ -300,7 +300,7 @@ RSpec.describe ChatSessions::SendMessage do
           @response
         end
       end.new(llm_response)
-      allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user).and_return(tool_definitions)
+      allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user, session: anything).and_return(tool_definitions)
 
       described_class.call(chat_session: chat_session, content: "Hello", llm_client: tool_aware_client)
 
@@ -317,7 +317,7 @@ RSpec.describe ChatSessions::SendMessage do
       let(:tool_llm_client) { build_stateful_llm_client(successful_tool_llm_responses) }
 
       before do
-        allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user).and_return(tool_definitions)
+        allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user, session: anything).and_return(tool_definitions)
         allow(Tools::Registry).to receive(:dispatch).and_return(successful_tool_dispatch_result)
       end
 
@@ -397,7 +397,7 @@ RSpec.describe ChatSessions::SendMessage do
       end
 
       it "captures the structured tool error and continues the loop" do
-        allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user).and_return(tool_definitions)
+        allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user, session: anything).and_return(tool_definitions)
         allow(Tools::Registry).to receive(:dispatch).and_raise(StandardError, "boom")
         allow(Rails.logger).to receive(:error)
 
@@ -438,7 +438,7 @@ RSpec.describe ChatSessions::SendMessage do
       end
 
       it "caps the loop and persists a final user-visible note" do
-        allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user).and_return(tool_definitions)
+        allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user, session: anything).and_return(tool_definitions)
         allow(Tools::Registry).to receive(:dispatch).and_return({ "status" => "ok" })
 
         result = described_class.call(

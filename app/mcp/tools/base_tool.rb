@@ -69,6 +69,16 @@ module Tools
       user.present?
     end
 
+    # Whether the interactive chat agent loop should advertise this tool for the
+    # given session. Defaults to the user-scoped gate; tools whose execution
+    # depends on session context (for example a current project) override this
+    # to gate advertisement on that context too. The chat loop always passes the
+    # session, so tools can avoid being advertised (and then failing) in chats
+    # where they cannot run.
+    def self.available_for_chat?(user:, session:)
+      available_to?(user:)
+    end
+
     def self.run_agent_available_to?(user:)
       return false if user.blank?
 

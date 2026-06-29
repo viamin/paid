@@ -275,7 +275,7 @@ module ChatSessions
     end
 
     def tool_definitions
-      @tool_definitions ||= Tools::Registry.chat_definitions_for(user: chat_session.created_by)
+      @tool_definitions ||= Tools::Registry.chat_definitions_for(user: chat_session.created_by, session: chat_session)
     end
 
     def create_assistant_message(response)
