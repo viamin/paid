@@ -87,7 +87,7 @@ RSpec.describe GoodJob, :no_db do
         auto_pick_eligibility_sweep service_container_reconciliation screenshot_cleanup
         knowledge_audit_retention delayed_human_feedback notifications_check_runner_quotas
         claude_auth_health_check
-        agent_run_pattern_detector
+        agent_run_pattern_detector billing_period_management
       ]
 
       expected_jobs.each do |job_key|
