@@ -45,6 +45,7 @@ OVERMIND_HEALTHY_CONFIRM_COUNT="${DEV_UPDATE_OVERMIND_HEALTHY_CONFIRM_COUNT:-2}"
 STARTUP_CLEANUP_KILL_ALL="${DEV_UPDATE_STARTUP_CLEANUP_KILL_ALL:-}"
 STASHED_CHANGES=0
 FAILURE_LOCK_FILE="${APP_ROOT}/tmp/dev-update-failure.lock"
+FAILURE_REASON_FILE="${FAILURE_LOCK_FILE}.reason"
 MAX_CONSECUTIVE_FAILURES="${DEV_UPDATE_MAX_CONSECUTIVE_FAILURES:-3}"
 
 newline_list_to_csv() {
@@ -136,7 +137,7 @@ unstash_dirty_tree() {
       # repo in a broken state that downstream steps (bin/setup, restart) cannot
       # recover from.  The stash entry is preserved so the user can resolve
       # manually with `git stash pop`.
-      record_failure
+      record_failure "stash-pop-conflict"
       fail "git stash pop failed (conflict). Resolve manually with 'git stash pop'."
     else
       log_command_output "git stash pop" "$pop_output"
@@ -151,6 +152,11 @@ check_failure_lock() {
     local count
     count="$(cat "$FAILURE_LOCK_FILE")"
     if [ "$count" -ge "$MAX_CONSECUTIVE_FAILURES" ]; then
+      if failure_lock_can_self_clear; then
+        clear_failure_lock "Cleared failure lock after resolved working-tree condition."
+        return 0
+      fi
+
       log "ERROR: $count consecutive pull failures detected. Manual intervention required."
       log "Remove $FAILURE_LOCK_FILE after resolving the working tree issue."
       exit 1
@@ -159,19 +165,46 @@ check_failure_lock() {
 }
 
 record_failure() {
+  local reason="${1:-unknown}"
   mkdir -p "$(dirname "$FAILURE_LOCK_FILE")"
   local count=0
   [ -f "$FAILURE_LOCK_FILE" ] && count="$(cat "$FAILURE_LOCK_FILE")"
   count=$((count + 1))
   echo "$count" > "$FAILURE_LOCK_FILE"
+  echo "$reason" > "$FAILURE_REASON_FILE"
   log "Recorded pull failure ($count/$MAX_CONSECUTIVE_FAILURES)."
 }
 
 clear_failure_lock() {
   if [ -f "$FAILURE_LOCK_FILE" ]; then
-    rm -f "$FAILURE_LOCK_FILE"
-    log "Cleared failure lock after successful pull."
+    local message="${1:-Cleared failure lock after successful pull.}"
+    rm -f "$FAILURE_LOCK_FILE" "$FAILURE_REASON_FILE"
+    log "$message"
   fi
+}
+
+failure_lock_can_self_clear() {
+  local reason=""
+  [ -f "$FAILURE_REASON_FILE" ] && reason="$(cat "$FAILURE_REASON_FILE")"
+
+  if [ "$reason" = "dirty-non-main" ] && ! tree_is_dirty; then
+    log "Failure lock was caused by dirty non-main branch, but the working tree is clean now; retrying update."
+    return 0
+  fi
+
+  # Older lock files only stored a count. If the updater is still on a clean
+  # non-main branch, this matches the historical dirty-branch failure shape and
+  # lets the next run switch to main instead of requiring manual lock removal.
+  if [ -z "$reason" ] && ! tree_is_dirty; then
+    local current_branch
+    current_branch="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+    if [ -n "$current_branch" ] && [ "$current_branch" != "main" ]; then
+      log "Legacy failure lock found on clean non-main branch; retrying update."
+      return 0
+    fi
+  fi
+
+  return 1
 }
 
 configure_logging() {
@@ -275,7 +308,7 @@ ensure_on_main() {
     # Refuse to switch branches with a dirty tree — stashing would carry
     # feature-branch edits onto main when unstash_dirty_tree runs later.
     if tree_is_dirty; then
-      record_failure
+      record_failure "dirty-non-main"
       fail "Working tree on '$current_branch' has uncommitted changes. Commit or stash them before running dev-update."
     fi
     log "Switching to main branch (currently on $current_branch)..."
@@ -293,7 +326,7 @@ pull_latest() {
 
   log "Pulling latest changes from main..."
   if ! git pull --ff-only origin main; then
-    record_failure
+    record_failure "git-pull"
     unstash_dirty_tree
     fail "git pull --ff-only failed. Check for diverged history or upstream issues."
   fi
