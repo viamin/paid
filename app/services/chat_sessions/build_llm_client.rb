@@ -8,6 +8,14 @@ module ChatSessions
       new(chat_session: chat_session).call
     end
 
+    # Default outbound model for a provider service type. Shared with
+    # ChatSessions::FallbackRunners so a runner switch picks the same default.
+    def self.default_model_for_service_type(service_type)
+      return AgentHarness::TextTransport::DEFAULT_MODEL if service_type == ANTHROPIC_SERVICE_TYPE
+
+      "gpt-4o"
+    end
+
     def initialize(chat_session:)
       @chat_session = chat_session
     end
@@ -86,9 +94,7 @@ module ChatSessions
     end
 
     def default_model_for_service_type(service_type)
-      return AgentHarness::TextTransport::DEFAULT_MODEL if service_type == ANTHROPIC_SERVICE_TYPE
-
-      "gpt-4o"
+      self.class.default_model_for_service_type(service_type)
     end
 
     class HttpClient

@@ -166,6 +166,44 @@ RSpec.describe ChatSessions::ResolveToolCall do
     end
   end
 
+  describe "runner fallback when resuming the loop" do
+    before { allow(Tools::Registry).to receive(:dispatch).and_return(dispatch_result) }
+
+    it "switches to a configured fallback runner and retries when the resumed loop hits a provider error" do
+      fallback_runner = configure_chat_fallback
+      fallback_client = inspecting_llm_client(final_response)
+      allow(ChatSessions::BuildLlmClient).to receive(:call)
+        .with(chat_session: chat_session).and_return(fallback_client)
+
+      result = described_class.call(
+        chat_session: chat_session, tool_call_message: tool_call_message,
+        decision: :approve, llm_client: rate_limited_llm_client
+      )
+
+      expect(result.content).to eq("Done.")
+      expect(chat_session.reload.runner).to eq(fallback_runner)
+
+      notice = chat_session.messages.detect(&:fallback_notice?)
+      expect(notice).to be_present
+      expect(notice.content).to include("Switching to #{fallback_runner.display_name} and continuing.")
+      expect(notice.metadata).to include("fallback_notice" => true)
+
+      # the synthetic notice is never replayed back to the fallback model
+      expect(fallback_client.seen_conversations.last).not_to include(
+        hash_including(content: notice.content)
+      )
+    end
+
+    it "re-raises the provider error when no fallback runner is configured" do
+      expect {
+        described_class.call(
+          chat_session: chat_session, tool_call_message: tool_call_message,
+          decision: :approve, llm_client: rate_limited_llm_client
+        )
+      }.to raise_error(AgentHarness::RateLimitError)
+    end
+  end
+
   describe "several pending tool calls" do
     let(:second_tool_call_message) do
       create(:chat_message,
@@ -202,5 +240,41 @@ RSpec.describe ChatSessions::ResolveToolCall do
       expect(tool_call_message.reload.tool_status).to eq("approved")
       expect(second_tool_call_message.reload.tool_status).to eq("denied")
     end
+  end
+
+  def rate_limited_llm_client
+    Class.new do
+      def call(*)
+        raise AgentHarness::RateLimitError, "API rate limit exceeded"
+      end
+    end.new
+  end
+
+  def inspecting_llm_client(response)
+    Class.new do
+      attr_reader :seen_conversations
+
+      def initialize(response)
+        @response = response
+        @seen_conversations = []
+      end
+
+      def call(conversation, **)
+        @seen_conversations << conversation.deep_dup
+        @response
+      end
+    end.new(response)
+  end
+
+  def configure_chat_fallback
+    primary_runner = create(:runner, :api_key, user: user, runner_key: "opencode",
+      provider_api_key: create(:provider_api_key, user: user, api_service_type: "openrouter"),
+      config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2" } })
+    fallback_runner = create(:runner, :api_key, user: user, runner_key: "claude",
+      provider_api_key: create(:provider_api_key, user: user, api_service_type: "anthropic"))
+
+    user.settings.update!(kb_chat_fallback_runners: [ "claude" ])
+    chat_session.update!(runner: primary_runner)
+    fallback_runner
   end
 end

@@ -14,6 +14,7 @@ module ChatSessions
   # unanswered tool call to the model.
   class ResolveToolCall
     include ToolDispatch
+    include FallbackLoop
 
     DECISIONS = %i[approve deny].freeze
     DENIED_RESULT = { status: "denied", message: "The requested action was not approved" }.freeze
@@ -21,7 +22,7 @@ module ChatSessions
     attr_reader :chat_session, :tool_call_message, :decision, :llm_client,
       :on_chunk, :on_message_persisted, :on_tool_call_resolved, :stream_message_id
 
-    def initialize(chat_session:, tool_call_message:, decision:, llm_client:, on_chunk: nil,
+    def initialize(chat_session:, tool_call_message:, decision:, llm_client: nil, on_chunk: nil,
       on_message_persisted: nil, on_tool_call_resolved: nil, stream_message_id: nil)
       @chat_session = chat_session
       @tool_call_message = tool_call_message
@@ -112,52 +113,11 @@ module ChatSessions
     def resume_loop_unless_other_pending
       return nil if other_pending_confirmations?
 
-      resume_loop
+      run_with_fallbacks
     end
 
     def other_pending_confirmations?
       chat_session.messages.pending_tool_confirmations.exists?
-    end
-
-    def resume_loop
-      attempted_runners = [ chat_session.runner ].compact
-
-      loop do
-        return ChatSessions::AgentLoop.new(**loop_kwargs).run
-      rescue AgentHarness::RateLimitError => e
-        fallback_runner = ChatSessions::FallbackRunners.for(chat_session: chat_session, excluding: attempted_runners).first
-        raise unless fallback_runner
-
-        attempted_runners << fallback_runner
-        switch_to_fallback_runner(fallback_runner, e)
-      end
-    end
-
-    def loop_kwargs
-      {
-        chat_session: chat_session,
-        llm_client: llm_client,
-        on_chunk: on_chunk,
-        on_message_persisted: on_message_persisted,
-        stream_message_id: stream_message_id
-      }
-    end
-
-    def switch_to_fallback_runner(runner, error)
-      ChatSessions::FallbackRunners.switch!(chat_session: chat_session, runner: runner)
-      @llm_client = ChatSessions::BuildLlmClient.call(chat_session: chat_session)
-      persist_fallback_notice(runner, error)
-    end
-
-    def persist_fallback_notice(runner, error)
-      message = chat_session.messages.create!(
-        role: "assistant",
-        content: ChatSessions::FallbackRunners.notice_for(error: error, runner: runner),
-        metadata: { "fallback_notice" => true }
-      )
-
-      on_message_persisted&.call(message)
-      message
     end
 
     def update_session_activity

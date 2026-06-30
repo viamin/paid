@@ -30,7 +30,13 @@ module ChatSessions
     end
 
     def notice_for(error:, runner:)
-      "The selected chat runner hit a rate limit: #{ErrorMessage.for(error)} Switching to #{runner.display_name} and continuing."
+      reason = if error.is_a?(AgentHarness::RateLimitError)
+        "hit a rate limit"
+      else
+        "could not complete the request"
+      end
+
+      "The selected chat runner #{reason}: #{ErrorMessage.for(error)} Switching to #{runner.display_name} and continuing."
     end
 
     def usable_runner?(runner)
@@ -39,7 +45,10 @@ module ChatSessions
 
     def runner_for_identifier(user, identifier, excluding_ids:)
       if Runner.routing_key?(identifier)
-        Runner.for_identifier(user, identifier)
+        runner = Runner.for_identifier(user, identifier)
+        return nil if runner && excluding_ids.include?(runner.id)
+
+        runner
       else
         user.runners.kept_only.where(runner_key: identifier).ordered.find do |runner|
           usable_runner?(runner) && !excluding_ids.include?(runner.id)
@@ -60,9 +69,7 @@ module ChatSessions
     end
 
     def default_model_for_service_type(service_type)
-      return AgentHarness::TextTransport::DEFAULT_MODEL if service_type == BuildLlmClient::ANTHROPIC_SERVICE_TYPE
-
-      "gpt-4o"
+      BuildLlmClient.default_model_for_service_type(service_type)
     end
   end
 end

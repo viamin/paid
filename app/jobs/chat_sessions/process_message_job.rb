@@ -18,13 +18,10 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       message_id: stream_message_id
     })
 
-    llm_client = ChatSessions::BuildLlmClient.call(chat_session: chat_session)
-
     assistant_message = ChatSessions::SendMessage.call(
       chat_session: chat_session,
       content: content,
       stream_message_id: stream_message_id,
-      llm_client: llm_client,
       on_message_persisted: ->(message, stream_message_id: nil) {
         broadcast_persisted_message(stream_name, message, stream_message_id: stream_message_id)
       },
@@ -54,6 +51,20 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
   rescue ChatSessions::TokenLimitExceededError => e
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue AgentHarness::RateLimitError => e
+    Rails.logger.warn(
+      message: "chat_process_message_job.rate_limited",
+      chat_session_id: chat_session_id,
+      error_class: e.class.name,
+      error: e.message
+    )
+    broadcast_error(chat_session_id, stream_message_id, ChatSessions::ErrorMessage.for(e))
+  rescue AgentHarness::Error => e
+    Rails.logger.error(
+      message: "chat_process_message_job.provider_error",
+      chat_session_id: chat_session_id,
+      error_class: e.class.name,
+      error: e.message
+    )
     broadcast_error(chat_session_id, stream_message_id, ChatSessions::ErrorMessage.for(e))
   rescue ActiveRecord::RecordNotFound
     raise
@@ -86,17 +97,13 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       tool_call_id: message.tool_call_id,
       tool_arguments: message.tool_arguments,
       tool_result: message.tool_result,
-      fallback_notice: fallback_notice?(message),
+      fallback_notice: message.fallback_notice?,
       stream_message_id: stream_message_id,
       html: ApplicationController.render(
         partial: "chat_messages/message",
         locals: { message: message }
       )
     })
-  end
-
-  def fallback_notice?(message)
-    message.metadata.is_a?(Hash) && message.metadata["fallback_notice"] == true
   end
 
   def broadcast_error(chat_session_id, stream_message_id, error_message)
