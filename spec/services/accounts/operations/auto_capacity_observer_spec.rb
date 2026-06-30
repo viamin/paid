@@ -132,6 +132,31 @@ RSpec.describe Accounts::Operations::AutoCapacityObserver do
     expect(payload.dig(:usage, :other, :memory_bytes)).to eq(512.megabytes)
   end
 
+  it "classifies paid.resource containers as paid control plane usage" do
+    create_recent_run_profile!
+    allow(backend).to receive(:list_containers).with(all: false).and_return(paid_resource_containers)
+
+    payload = described_class.call(account: account, manual_limit: 5, backend: backend, cache: cache)
+
+    expect(payload.dig(:usage, :paid, :container_count)).to eq(3)
+    expect(payload.dig(:usage, :paid, :memory_bytes)).to eq(896.megabytes)
+    expect(payload.dig(:usage, :other, :container_count)).to eq(0)
+    expect(payload.dig(:usage, :other, :memory_bytes)).to eq(0)
+  end
+
+  it "caches the degraded payload so repeated reads do not retry docker metrics" do
+    create_recent_run_profile!
+    allow(Docker).to receive(:info).and_raise(StandardError, "docker unavailable")
+
+    first = described_class.call(account: account, manual_limit: 3, backend: backend, cache: cache)
+    second = described_class.call(account: account, manual_limit: 3, backend: backend, cache: cache)
+
+    expect(first[:status]).to eq(:degraded)
+    expect(first[:warnings].first).to include("Docker metrics could not be collected")
+    expect(second[:status]).to eq(:degraded)
+    expect(Docker).to have_received(:info).exactly(1).time
+  end
+
   def docker_container(labels:, memory_bytes:, cpu_percent:)
     info = { "Config" => { "Labels" => labels } }
     stats = docker_stats(memory_bytes:, cpu_percent:)
@@ -239,6 +264,34 @@ RSpec.describe Accounts::Operations::AutoCapacityObserver do
         },
         memory_bytes: 256.megabytes,
         cpu_percent: 2.5
+      )
+    ]
+  end
+
+  def paid_resource_containers
+    [
+      docker_container(
+        labels: {
+          "paid.resource" => "analysis_container",
+          "paid.project_id" => "42",
+          "paid.knowledge_run_id" => "7"
+        },
+        memory_bytes: 512.megabytes,
+        cpu_percent: 12.0
+      ),
+      docker_container(
+        labels: {
+          "paid.resource" => "embedding_container",
+          "paid.project_id" => "42",
+          "paid.knowledge_run_id" => "7"
+        },
+        memory_bytes: 256.megabytes,
+        cpu_percent: 8.0
+      ),
+      docker_container(
+        labels: { "paid.resource" => "collector_container", "paid.project_id" => "42" },
+        memory_bytes: 128.megabytes,
+        cpu_percent: 4.0
       )
     ]
   end

@@ -43,17 +43,21 @@ module Accounts
       end
 
       def call
-        cache.fetch(cache_key, expires_in: CACHE_TTL) { build_payload }
+        cache.fetch(cache_key, expires_in: CACHE_TTL) { build_payload_or_degraded }
+      end
+
+      private
+
+      attr_reader :account, :manual_limit, :backend, :cache
+
+      def build_payload_or_degraded
+        build_payload
       rescue StandardError => error
         degraded_payload(
           warning: "Auto preview is degraded because Docker metrics could not be collected.",
           detail: error.message
         )
       end
-
-      private
-
-      attr_reader :account, :manual_limit, :backend, :cache
 
       def cache_key
         [
@@ -187,7 +191,7 @@ module Accounts
 
         return :service if labels["paid.service_container"] == "true"
         return :agent if labels["paid.agent_run_id"].present? || labels["paid.mcp_sidecar"] == "true" || labels["paid.container_pool"] == "true"
-        return :paid if labels["paid.managed"] == "true"
+        return :paid if labels["paid.managed"] == "true" || labels["paid.resource"].present?
         return :paid if paid_control_plane_service?(compose_service:, compose_project:, compose_workdir:)
 
         :other
