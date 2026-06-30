@@ -18,6 +18,9 @@ in CI for the PR but are not merged to `main`.
 3. Results are posted as a PR comment.
 4. Remove the test files from `.ephemeral-tests/` before merging — a CI
    guard on `main` rejects stray test files.
+5. Safety net: if files are left behind, the `ephemeral-cleanup.yml` workflow
+   auto-opens a PR removing them after the merge, so `main` self-heals. Clean
+   up before merge anyway — the guard is briefly red until that PR merges.
 
 ## Security
 
