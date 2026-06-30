@@ -254,7 +254,21 @@ class ProcessRunQueueJob < ApplicationJob
   end
 
   def user_has_capacity?(user)
-    AgentRun.active_count_for_user(user) < user.account.tenant_max_concurrent_runs(user.settings.max_concurrent_runs)
+    policy_decision = current_capacity_policy(user)
+    if policy_decision && !policy_decision.auto_allowed
+      Rails.logger.info(
+        message: "process_run_queue.capacity_policy_block",
+        user_id: user.id,
+        mode: policy_decision.mode,
+        environment: policy_decision.environment,
+        reasons: policy_decision.blocked_reasons.map(&:code)
+      )
+      return false
+    end
+
+    effective_limit = effective_concurrency_limit(user, policy: policy_decision)
+
+    AgentRun.active_count_for_user(user) < effective_limit
   end
 
   def account_has_create_pr_capacity?(account)
@@ -406,5 +420,39 @@ class ProcessRunQueueJob < ApplicationJob
       duration_seconds: agent_run.duration
     )
     agent_run.save!(validate: false)
+  end
+
+  # Resolves a Capacity::Policy decision for the current process pass.
+  # The snapshot is fetched once and cached on the job instance so every
+  # queued-run candidate reuses the same decision without re-reading
+  # Docker. When the policy cannot be resolved the method returns nil
+  # and the caller falls back to legacy behavior — fail-safe default
+  # rather than fail-loud: leaving the queue running with stable manual
+  # limits is better than halting dispatch.
+  def current_capacity_policy(user)
+    return @current_capacity_policy if defined?(@current_capacity_policy)
+
+    snapshot = Capacity::DockerSnapshot.call
+    @current_capacity_policy = Capacity::Policy.call(snapshot: snapshot)
+  rescue => e
+    Rails.logger.warn(
+      message: "process_run_queue.capacity_policy_unavailable",
+      error: e.class.name,
+      detail: e.message
+    )
+    @current_capacity_policy = nil
+  end
+
+  # Returns the effective per-user concurrency limit. Honors the user
+  # setting and tenant guardrails as before, but raises the ceiling to
+  # the policy's auto-max when (and only when) auto mode is allowed for
+  # the current deployment. When auto is disabled, returns the user
+  # setting directly.
+  def effective_concurrency_limit(user, policy:)
+    user_limit = user.account.tenant_max_concurrent_runs(user.settings.max_concurrent_runs)
+
+    return user_limit unless policy && policy.auto_allowed
+
+    [ user_limit, policy.effective_max_concurrent ].max
   end
 end

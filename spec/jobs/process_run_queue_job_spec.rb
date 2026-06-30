@@ -864,5 +864,115 @@ RSpec.describe ProcessRunQueueJob do
         expect(retry_run.reload.temporal_workflow_id).to be_present
       end
     end
+
+    context "with Capacity::Policy gating" do
+      it "fails closed to manual defaults when the policy denies auto" do
+        queued_run = create_queued_run_with_policy(max_concurrent_runs: 5)
+        stub_policy_decision(remote_backend_decision)
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(queued_run.reload.status).to eq("queued")
+      end
+
+      it "logs the policy decision when dispatch is blocked" do
+        create_queued_run_with_policy(max_concurrent_runs: 5)
+        stub_policy_decision(missing_snapshot_decision)
+
+        expect(Rails.logger).to receive(:info).with(
+          hash_including(
+            message: "process_run_queue.capacity_policy_block",
+            mode: "manual"
+          )
+        )
+
+        described_class.new.perform
+      end
+
+      it "falls back to manual limits when the policy cannot be resolved" do
+        project = create(:project)
+        project.created_by.settings.update!(max_concurrent_runs: 1)
+        queued_run = create(:agent_run, :queued, project: project)
+        create(:agent_run, :running, project: project)
+
+        # When DockerSnapshot.call raises, ProcessRunQueueJob should
+        # log the error and fall back to the legacy tenant_max_concurrent_runs
+        # limit (fail-safe, not fail-loud).
+        allow(Capacity::DockerSnapshot).to receive(:call).and_raise(StandardError, "docker unavailable")
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(queued_run.reload.status).to eq("queued")
+      end
+    end
+  end
+
+  def create_queued_run_with_policy(max_concurrent_runs:)
+    project = create(:project)
+    project.created_by.settings.update!(max_concurrent_runs: max_concurrent_runs)
+    create(:agent_run, :queued, project: project)
+  end
+
+  def stub_policy_decision(decision)
+    allow(Capacity::Policy).to receive(:call).and_return(decision)
+  end
+
+  def remote_backend_decision
+    remote_snapshot = Capacity::DockerSnapshot::Snapshot.new(
+      backend_identifier: "remote",
+      backend_kind: "remote",
+      backend_shared: true,
+      docker_cpu_count: 8,
+      docker_memory_bytes: 16_000_000_000,
+      usage_buckets: {},
+      available_memory_bytes: 8_000_000_000,
+      agent_container_count: 0,
+      snapshot_at: Time.current,
+      confidence: 1.0,
+      degraded: false,
+      degraded_reasons: []
+    )
+
+    allow(Capacity::DockerSnapshot).to receive(:call).and_return(remote_snapshot)
+
+    Capacity::Policy::Decision.new(
+      mode: Capacity::Policy::MANUAL,
+      environment: Capacity::Policy::ENVIRONMENT_LINUX_DOCKER,
+      auto_allowed: false,
+      auto_allowed_reasons: [ "deployment_gate" ],
+      blocked_reasons: [ Capacity::BlockedReason[:auto_mode_disabled_for_deployment] ],
+      admission_uses_cpu: false,
+      degraded: false,
+      degraded_reasons: [],
+      effective_min_concurrent: 1,
+      effective_max_concurrent: 10,
+      memory_safety_multiplier: 1.5,
+      cooldown_seconds: 300,
+      snapshot_present: true
+    )
+  end
+
+  def missing_snapshot_decision
+    allow(Capacity::DockerSnapshot).to receive(:call).and_return(nil)
+
+    Capacity::Policy::Decision.new(
+      mode: Capacity::Policy::MANUAL,
+      environment: Capacity::Policy::ENVIRONMENT_UNKNOWN,
+      auto_allowed: false,
+      auto_allowed_reasons: [ "metrics_missing" ],
+      blocked_reasons: [ Capacity::BlockedReason[:docker_unavailable] ],
+      admission_uses_cpu: false,
+      degraded: true,
+      degraded_reasons: [ "no_snapshot" ],
+      effective_min_concurrent: 1,
+      effective_max_concurrent: 4,
+      memory_safety_multiplier: 1.75,
+      cooldown_seconds: 600,
+      snapshot_present: false
+    )
   end
 end

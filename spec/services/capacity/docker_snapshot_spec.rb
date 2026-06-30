@@ -74,6 +74,83 @@ RSpec.describe Capacity::DockerSnapshot do
       expect(snapshot.available_memory_bytes).to eq(7_400)
     end
 
+    it "tags local backends with backend_kind 'local' and not shared" do
+      snapshot = described_class.call(backend: backend, now: now, cache: cache)
+
+      expect(snapshot.backend_kind).to eq("local")
+      expect(snapshot.backend_shared).to be(false)
+      expect(snapshot).to be_local
+      expect(snapshot).not_to be_remote
+      expect(snapshot).not_to be_shared
+    end
+
+    it "tags remote backends as backend_kind 'remote' and shared" do
+      remote_backend = build_backend_double(
+        identifier: "prod-broker",
+        remote: true,
+        host_identifiers: [ "prod-broker" ],
+        containers: containers
+      )
+
+      snapshot = described_class.call(backend: remote_backend, now: now, cache: cache)
+
+      expect(snapshot.backend_kind).to eq("remote")
+      expect(snapshot.backend_shared).to be(true)
+      expect(snapshot).to be_remote
+      expect(snapshot).to be_shared
+    end
+
+    it "tags the swarm backend as backend_kind 'swarm'" do
+      swarm_backend = build_backend_double(
+        identifier: "swarm",
+        remote: false,
+        host_identifiers: [ "swarm" ],
+        containers: containers
+      )
+
+      snapshot = described_class.call(backend: swarm_backend, now: now, cache: cache)
+
+      expect(snapshot.backend_kind).to eq("swarm")
+      expect(snapshot).to be_swarm
+      expect(snapshot.backend_shared).to be(false)
+    end
+
+    it "fails closed (degraded snapshot) when the Docker daemon hangs on system_info" do
+      hanging_backend = build_backend_double(
+        identifier: "local",
+        remote: false,
+        host_identifiers: [ "local" ],
+        containers: containers
+      )
+      allow(hanging_backend).to receive(:system_info).and_raise(Timeout::Error)
+
+      snapshot = described_class.call(backend: hanging_backend, now: now, cache: cache)
+
+      expect(snapshot).to be_degraded
+      expect(snapshot.degraded_reasons).to include("docker_timeout")
+      expect(snapshot.docker_memory_bytes).to eq(0)
+      expect(snapshot.available_memory_bytes).to eq(0)
+    end
+
+    it "preserves classification of unrelated containers even with slow per-container sampling" do
+      threshold = described_class::DOCKER_SAMPLING_BUDGET - 0.05
+      slow_backend = build_backend_double(
+        identifier: "local",
+        remote: false,
+        host_identifiers: [ "local" ],
+        containers: containers
+      )
+      allow(slow_backend).to receive(:container_stats) do |_container, **_opts|
+        sleep threshold
+        {}
+      end
+
+      snapshot = described_class.call(backend: slow_backend, now: now, cache: cache)
+
+      expect(snapshot).to be_degraded
+      expect(snapshot.degraded_reasons).to include("container_sampling_budget_exceeded")
+    end
+
     it "classifies containers from fixtures into paid buckets and aggregates unrelated usage" do
       snapshot = described_class.call(backend: backend, now: now, cache: cache)
 
@@ -258,6 +335,25 @@ RSpec.describe Capacity::DockerSnapshot do
         "State" => state
       }
     )
+  end
+
+  def build_backend_double(identifier:, remote:, host_identifiers:, containers:)
+    backend_double = instance_double(
+      Containers::Backends::Base,
+      identifier: identifier,
+      remote?: remote,
+      all_host_identifiers: host_identifiers
+    )
+    container_rows.each do |row|
+      container = containers.find { |candidate| candidate.id == row.fetch("id") }
+      allow(backend_double).to receive(:container_stats).with(container, stream: false).and_return(row.fetch("stats"))
+    end
+    allow(backend_double).to receive_messages(
+      capacity_snapshot_list_container_options: {},
+      system_info: system_info,
+      list_containers: containers
+    )
+    backend_double
   end
 
   def stats_payload(memory_bytes:, cpu_percent:)

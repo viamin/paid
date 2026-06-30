@@ -18,6 +18,8 @@ module Capacity
 
     Snapshot = Struct.new(
       :backend_identifier,
+      :backend_kind,
+      :backend_shared,
       :docker_cpu_count,
       :docker_memory_bytes,
       :usage_buckets,
@@ -67,9 +69,30 @@ module Capacity
         bucket(:other_docker).memory_bytes
       end
 
+      # Coarse classification of the connected Docker daemon. Used by
+      # Capacity::Policy to gate whether auto mode is eligible for the
+      # current deployment.
+      def local?
+        backend_kind.to_s == "local"
+      end
+
+      def remote?
+        backend_kind.to_s == "remote"
+      end
+
+      def swarm?
+        backend_kind.to_s == "swarm"
+      end
+
+      def shared?
+        backend_shared == true
+      end
+
       def to_h
         {
           backend_identifier: backend_identifier,
+          backend_kind: backend_kind,
+          backend_shared: backend_shared,
           docker_cpu_count: docker_cpu_count,
           docker_memory_bytes: docker_memory_bytes,
           usage_buckets: usage_buckets.transform_values(&:to_h),
@@ -130,6 +153,8 @@ module Capacity
 
       Snapshot.new(
         backend_identifier: fetch_value(data, :backend_identifier),
+        backend_kind: fetch_value(data, :backend_kind),
+        backend_shared: fetch_value(data, :backend_shared),
         docker_cpu_count: fetch_value(data, :docker_cpu_count),
         docker_memory_bytes: fetch_value(data, :docker_memory_bytes),
         usage_buckets: deserialize_buckets(fetch_value(data, :usage_buckets)),
@@ -188,6 +213,35 @@ module Capacity
 
     attr_reader :backend, :now, :cache, :force_refresh
 
+    # Categorizes the connected Docker backend so Capacity::Policy can
+    # reason about whether auto mode is appropriate. Shared daemons
+    # (multi-tenant remote endpoints, cluster managers) default to
+    # manual mode because Paid cannot fairly schedule against capacity
+    # it does not control.
+    def classify_backend_kind(backend)
+      return "swarm" if backend.identifier.to_s == "swarm"
+      return "remote" if backend.respond_to?(:remote?) && backend.remote?
+      return "remote" if backend.identifier.to_s.start_with?("remote")
+
+      "local"
+    end
+
+    # Reports whether the connected Docker daemon is shared infrastructure
+    # that may host unrelated workloads from other tenants or projects.
+    #
+    # Local sockets are private. The Swarm backend reports as not-remote
+    # because it manages its own cluster from the manager node's view.
+    # Everything else (remote Docker endpoints, mismatched identifiers)
+    # is treated as shared by default — the safest possible answer for
+    # an auto-capacity policy that should not schedule against capacity
+    # it does not control.
+    def classify_backend_shared(backend)
+      kind = classify_backend_kind(backend)
+      return false if kind == "local" || kind == "swarm"
+
+      true
+    end
+
     def read_cached_snapshot
       self.class.deserialize(cache.read(cache_key))
     end
@@ -237,6 +291,8 @@ module Capacity
 
       Snapshot.new(
         backend_identifier: backend.identifier,
+        backend_kind: classify_backend_kind(backend),
+        backend_shared: classify_backend_shared(backend),
         docker_cpu_count: system_info.fetch("NCPU", 0).to_i,
         docker_memory_bytes: system_info.fetch("MemTotal", 0).to_i,
         usage_buckets: buckets,
@@ -392,6 +448,8 @@ module Capacity
       if cached_snapshot.present?
         Snapshot.new(
           backend_identifier: cached_snapshot.backend_identifier,
+          backend_kind: cached_snapshot.backend_kind,
+          backend_shared: cached_snapshot.backend_shared,
           docker_cpu_count: cached_snapshot.docker_cpu_count,
           docker_memory_bytes: cached_snapshot.docker_memory_bytes,
           usage_buckets: cached_snapshot.usage_buckets,
@@ -405,6 +463,8 @@ module Capacity
       else
         Snapshot.new(
           backend_identifier: backend.identifier,
+          backend_kind: classify_backend_kind(backend),
+          backend_shared: classify_backend_shared(backend),
           docker_cpu_count: 0,
           docker_memory_bytes: 0,
           usage_buckets: deep_dup_buckets,
