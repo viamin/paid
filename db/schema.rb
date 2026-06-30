@@ -3675,7 +3675,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_182451) do
   SQL
 
   create_trigger :logidze_on_runner_credentials, sql_definition: <<-SQL
-      CREATE TRIGGER logidze_on_runner_credentials BEFORE INSERT OR UPDATE ON public.runner_credentials FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+      CREATE TRIGGER logidze_on_runner_credentials BEFORE INSERT OR UPDATE ON public.runner_credentials FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{token}')
   SQL
 
   create_trigger :logidze_on_providers, sql_definition: <<-SQL

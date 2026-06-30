@@ -3936,9 +3936,14 @@ RSpec.describe Containers::Provision do
         File.write(File.join(claude_config_dir, ".credentials.json"), "{}")
       end
 
-      context "when AgentHarness::Authentication does not expose exchange_refresh_token" do
+      context "when AgentHarness::Authentication does not support exchange_refresh_token" do
+        before do
+          allow(AgentHarness::Authentication).to receive(:exchange_refresh_token_supported?)
+            .with(:claude)
+            .and_return(false)
+        end
+
         it "logs unsupported and returns false" do
-          # Ensure exchange_refresh_token is NOT defined so respond_to? returns false naturally
           result = service.send(:exchange_claude_refresh_token!)
 
           expect(result).to be false
@@ -3948,21 +3953,23 @@ RSpec.describe Containers::Provision do
         end
       end
 
-      # exchange_refresh_token does not exist upstream yet (viamin/agent-harness#265);
-      # bypass verify_partial_doubles so we can stub the future API.
-      context "when AgentHarness::Authentication exposes exchange_refresh_token", :without_partial_double_verification do
-        around { |example| without_partial_double_verification { example.run } }
+      context "when AgentHarness::Authentication supports exchange_refresh_token" do
+        before do
+          allow(AgentHarness::Authentication).to receive(:exchange_refresh_token_supported?)
+            .with(:claude)
+            .and_return(true)
+        end
 
-        it "calls exchange_refresh_token with the source path and returns true on success" do
+        it "calls exchange_refresh_token with the source path in CLAUDE_CONFIG_DIR and returns true on success" do
           allow(AgentHarness::Authentication).to receive(:exchange_refresh_token)
-            .with(:claude, credentials_path: claude_config_dir)
+            .with(:claude)
             .and_return({ success: true })
 
           result = service.send(:exchange_claude_refresh_token!)
 
           expect(result).to be true
           expect(AgentHarness::Authentication).to have_received(:exchange_refresh_token)
-            .with(:claude, credentials_path: claude_config_dir)
+            .with(:claude)
           expect(service).to have_received(:log_system).with(
             "container.claude_auth_refreshed", hash_including(:source_path)
           )
