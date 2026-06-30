@@ -9,6 +9,17 @@ module Capacity
     FETCH_TIMEOUT = 2.seconds
     PER_CONTAINER_TIMEOUT = 0.2.seconds
     MIN_SPIKE_MARGIN_BYTES = 256 * 1024 * 1024
+    PAID_COMPOSE_PROJECT = "paid"
+    PAID_CONTROL_PLANE_SERVICES = %w[
+      postgres
+      redis
+      web
+      temporal
+      temporal-ui
+      temporal-admin-tools
+      qdrant
+      worker
+    ].freeze
 
     class << self
       def fetch(...)
@@ -33,6 +44,7 @@ module Capacity
         control_plane_memory_bytes = categorized[:paid_control_plane_memory_bytes]
         service_container_memory_bytes = categorized[:service_container_memory_bytes]
         unrelated_container_memory_bytes = categorized[:unrelated_container_memory_bytes]
+        agent_memory_bytes = categorized[:agent_memory_bytes]
         reserved_non_agent_bytes =
           control_plane_memory_bytes + service_container_memory_bytes + unrelated_container_memory_bytes
         spike_margin_bytes = [ ((control_plane_memory_bytes + service_container_memory_bytes) * 0.15).to_i, MIN_SPIKE_MARGIN_BYTES ].max
@@ -43,13 +55,13 @@ module Capacity
           confidence: metrics.size == running_containers.size ? "high" : "low",
           snapshot_at: Time.current,
           docker_memory_bytes: docker_memory_bytes,
-          agent_memory_bytes: categorized[:agent_memory_bytes],
+          agent_memory_bytes: agent_memory_bytes,
           paid_control_plane_memory_bytes: control_plane_memory_bytes,
           service_container_memory_bytes: service_container_memory_bytes,
           unrelated_container_memory_bytes: unrelated_container_memory_bytes,
           reserved_non_agent_bytes: reserved_non_agent_bytes,
           spike_margin_bytes: spike_margin_bytes,
-          effective_agent_budget_bytes: [ docker_memory_bytes - reserved_non_agent_bytes - spike_margin_bytes, 0 ].max,
+          effective_agent_budget_bytes: [ docker_memory_bytes - reserved_non_agent_bytes - agent_memory_bytes - spike_margin_bytes, 0 ].max,
           running_container_count: running_containers.size,
           sampled_container_count: metrics.size
         }
@@ -100,16 +112,30 @@ module Capacity
         labels = container.info.dig("Config", "Labels") || container.info["Labels"] || {}
         memory_bytes = metric[:memory_bytes].to_i
 
-        if labels["paid.agent_run_id"].present?
+        if agent_related_container?(labels)
           totals[:agent_memory_bytes] += memory_bytes
         elsif labels["paid.service_container_id"].present?
           totals[:service_container_memory_bytes] += memory_bytes
-        elsif labels["com.docker.compose.project"].present?
+        elsif paid_control_plane_container?(labels)
           totals[:paid_control_plane_memory_bytes] += memory_bytes
         else
           totals[:unrelated_container_memory_bytes] += memory_bytes
         end
       end
+    end
+
+    def agent_related_container?(labels)
+      labels["paid.agent_run_id"].present? ||
+        labels["paid.container_pool"] == "true" ||
+        labels["paid.container_pool_entry_id"].present? ||
+        labels["paid.mcp_sidecar"] == "true" ||
+        labels["paid.managed"] == "true" ||
+        labels["paid.resource"].present?
+    end
+
+    def paid_control_plane_container?(labels)
+      labels["com.docker.compose.project"] == PAID_COMPOSE_PROJECT &&
+        labels["com.docker.compose.service"].in?(PAID_CONTROL_PLANE_SERVICES)
     end
 
     def unavailable_snapshot(reason:, confidence:, **extra)

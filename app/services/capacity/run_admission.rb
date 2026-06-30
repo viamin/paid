@@ -73,10 +73,10 @@ module Capacity
 
       estimated_memory_per_run_bytes = candidate_memory_bytes
       reserved_agent_memory_bytes = active_local_agent_reserved_bytes
-      available_memory_bytes = [ snapshot[:effective_agent_budget_bytes].to_i - reserved_agent_memory_bytes, 0 ].max
+      available_memory_bytes = [ snapshot[:effective_agent_budget_bytes].to_i - additional_local_agent_headroom_bytes(snapshot, reserved_agent_memory_bytes), 0 ].max
       remaining_memory_slots = available_memory_bytes / estimated_memory_per_run_bytes
       effective_max_concurrent_runs = [
-        snapshot[:effective_agent_budget_bytes].to_i / estimated_memory_per_run_bytes,
+        total_agent_budget_bytes(snapshot) / estimated_memory_per_run_bytes,
         user_hard_ceiling
       ].compact.min
       remaining_slots = [
@@ -164,15 +164,20 @@ module Capacity
     end
 
     def user_hard_ceiling
-      @user_hard_ceiling ||= if user.settings.max_concurrent_runs.present?
-        user.account.tenant_max_concurrent_runs(user.settings.max_concurrent_runs)
-      else
-        user.account.tenant_setting&.max_concurrent_runs || TenantSetting::DEFAULT_GUARDRAILS.fetch("max_concurrent_runs")
-      end
+      @user_hard_ceiling ||= user.account.tenant_max_concurrent_runs(user.settings.max_concurrent_runs) ||
+        TenantSetting::DEFAULT_GUARDRAILS.fetch("max_concurrent_runs")
     end
 
     def candidate_memory_bytes
       user.settings.container_memory_bytes.presence || DEFAULT_ESTIMATED_MEMORY_BYTES
+    end
+
+    def total_agent_budget_bytes(snapshot)
+      snapshot[:effective_agent_budget_bytes].to_i + snapshot[:agent_memory_bytes].to_i
+    end
+
+    def additional_local_agent_headroom_bytes(snapshot, reserved_agent_memory_bytes)
+      [ reserved_agent_memory_bytes - snapshot[:agent_memory_bytes].to_i, 0 ].max
     end
 
     def active_local_agent_reserved_bytes

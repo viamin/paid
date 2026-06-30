@@ -25,6 +25,16 @@ RSpec.describe Capacity::RunAdmission do
   end
 
   describe ".call" do
+    it "uses account tenant caps when the user has no explicit manual limit" do
+      user.settings.update!(run_concurrency_mode: "manual", max_concurrent_runs: 2)
+      allow(user.settings).to receive(:max_concurrent_runs).and_return(nil)
+      allow(account).to receive(:tenant_max_concurrent_runs).with(nil).and_return(7)
+
+      result = described_class.call(user: user, project: project)
+
+      expect(result[:effective_max_concurrent_runs]).to eq(7)
+    end
+
     it "does not report a denial reason when optional project and goal caps do not apply" do
       result = described_class.call(user: user, docker_snapshot: docker_snapshot)
 
@@ -76,6 +86,19 @@ RSpec.describe Capacity::RunAdmission do
       end
 
       expect(queries.grep(/FROM "container_metrics"/)).to be_empty
+    end
+
+    it "only reserves local agent headroom that is not already reflected in the Docker snapshot" do
+      result = described_class.call(
+        user: user,
+        project: project,
+        docker_snapshot: docker_snapshot.merge(agent_memory_bytes: 6.gigabytes, effective_agent_budget_bytes: 10.gigabytes),
+        reserved_agent_memory_bytes: 8.gigabytes
+      )
+
+      expect(result[:reserved_agent_memory_bytes]).to eq(8.gigabytes)
+      expect(result[:available_memory_bytes]).to eq(8.gigabytes)
+      expect(result[:available_slots]).to eq(1)
     end
 
     it "preserves the manual denial reason when Docker inspection is unavailable" do
