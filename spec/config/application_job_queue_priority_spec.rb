@@ -7,6 +7,7 @@ RSpec.describe ApplicationJob, :no_db do
     {
       default: %w[
         AgentRunCancellationJob
+        AgentRunResourceProfileRefreshJob
         AnomalyDetectionJob
         AutoReleaseEvaluationJob
         DependabotAutoMergeJob
