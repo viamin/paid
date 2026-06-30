@@ -161,6 +161,50 @@ class ChatControllerNodeHarness
       }
     }
 
+    function testFallbackNoticeRemovesStaleToolCards() {
+      const removed = [];
+      const { controller, appended } = makeController({
+        buildMessageElement: (html) => html ? { outerHTML: html, remove: () => { removed.push(html); } } : null
+      });
+
+      controller.handleMessageStart({ message_id: "stream-1", model: "gpt-4o" });
+      controller.handleMessageToolCall({ html: "<div>tool-call</div>", tool_name: "search" });
+      controller.handleMessageToolResult({ html: "<div>tool-result</div>" });
+
+      if (appended.length !== 2) {
+        throw new Error(`Expected 2 appended tool cards before fallback, got ${appended.length}`);
+      }
+
+      // A fallback notice must tear down the failed attempt's tool cards along
+      // with the in-flight assistant bubble — otherwise the UI keeps showing
+      // tool activity whose backing rows FallbackLoop#discard_partial_attempt
+      // deleted.
+      controller.handleMessageCreated({ html: "<div>fallback notice</div>", fallback_notice: true });
+
+      if (removed.length !== 2) {
+        throw new Error(`Expected both stale tool cards removed on fallback notice, got ${removed.length}`);
+      }
+
+      if ((controller.currentAttemptToolCards || []).length !== 0) {
+        throw new Error("Expected tracked tool cards to be cleared after fallback notice");
+      }
+    }
+
+    function testRegularMessageCreatedKeepsAttemptToolCards() {
+      const removed = [];
+      const { controller } = makeController({
+        buildMessageElement: (html) => html ? { outerHTML: html, remove: () => { removed.push(html); } } : null
+      });
+
+      controller.handleMessageStart({ message_id: "stream-1", model: "gpt-4o" });
+      controller.handleMessageToolCall({ html: "<div>tool-call</div>", tool_name: "search" });
+      controller.handleMessageCreated({ html: "<div>assistant reply</div>" });
+
+      if (removed.length !== 0) {
+        throw new Error(`Expected tool cards to survive a non-fallback message_created, removed ${removed.length}`);
+      }
+    }
+
     function run() {
       testToolCallAppendsCardAndUpdatesStatus();
       testToolCallWithUnknownToolName();
@@ -169,7 +213,9 @@ class ChatControllerNodeHarness
       testToolResultWithMissingHtmlDoesNotAppend();
       testMessageCompleteResetsStreamingState();
       testToolEventsDoNotResetStreamingBeforeComplete();
-      testHandleEventDispatchesToolCall();
+      testHandleEventDispatchsToolCall();
+      testFallbackNoticeRemovesStaleToolCards();
+      testRegularMessageCreatedKeepsAttemptToolCards();
     }
 
     try {

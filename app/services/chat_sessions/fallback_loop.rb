@@ -17,15 +17,15 @@ module ChatSessions
       attempted_runners = [ chat_session.runner ].compact
 
       loop do
-        checkpoint = chat_session.messages.maximum(:id)
         @llm_client ||= ChatSessions::BuildLlmClient.call(chat_session: chat_session)
-        return ChatSessions::AgentLoop.new(**fallback_loop_kwargs).run
+        agent_loop = ChatSessions::AgentLoop.new(**fallback_loop_kwargs)
+        return agent_loop.run
       rescue AgentHarness::Error => e
         fallback_runner = ChatSessions::FallbackRunners.for(chat_session: chat_session, excluding: attempted_runners).first
         raise unless fallback_runner
 
         attempted_runners << fallback_runner
-        discard_partial_attempt(checkpoint)
+        discard_partial_attempt(agent_loop&.created_message_ids)
         switch_to_fallback_runner(fallback_runner, e)
       end
     end
@@ -40,15 +40,16 @@ module ChatSessions
       }
     end
 
-    # Remove any assistant/tool messages the failed attempt persisted before it
-    # raised, so the fallback runner is not replayed a half-finished turn (which
-    # would duplicate the assistant turn or re-feed dispatched tool calls). The
-    # user message and any prior, settled turns precede the checkpoint and are
-    # preserved.
-    def discard_partial_attempt(checkpoint)
-      scope = chat_session.messages
-      scope = scope.where("id > ?", checkpoint) if checkpoint
-      scope.delete_all
+    # Remove only the rows the failed attempt itself persisted, identified by the
+    # IDs AgentLoop recorded for that attempt. Scoping by id (rather than a
+    # blanket "everything after a checkpoint") is safe under concurrency:
+    # SendMessage and ResolveToolCall hold no lock on the session, so ChatChannel
+    # / the HTTP controller can enqueue another turn while this retry runs, and a
+    # concurrent turn's messages have different ids and are left untouched.
+    def discard_partial_attempt(created_ids)
+      return if created_ids.blank?
+
+      chat_session.messages.where(id: created_ids).delete_all
     end
 
     # Switch the session to the fallback runner and record the user-facing

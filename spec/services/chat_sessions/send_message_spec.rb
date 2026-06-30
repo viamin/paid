@@ -384,6 +384,34 @@ RSpec.describe ChatSessions::SendMessage do
       expect(replayed.any? { |m| m[:role] == "tool" }).to be(false)
     end
 
+    it "does not discard messages a concurrent turn persisted during the failed attempt" do
+      allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user).and_return(tool_definitions)
+      fallback_client = inspecting_llm_client(llm_response)
+      fallback_runner = configure_chat_fallback
+      allow(ChatSessions::BuildLlmClient).to receive(:call).with(chat_session: chat_session).and_return(fallback_client)
+
+      # SendMessage holds no lock on the session, so ChatChannel / the HTTP
+      # controller can enqueue another turn while the retry loop runs. Simulate
+      # that concurrent turn persisting a row mid-attempt (during tool dispatch):
+      # it is not part of the failing attempt and must survive the rollback. A
+      # checkpoint-based ("id > checkpoint") rollback would delete it.
+      allow(Tools::Registry).to receive(:dispatch) do
+        chat_session.messages.create!(role: "user", content: "concurrent turn")
+        successful_tool_dispatch_result
+      end
+
+      described_class.call(
+        chat_session: chat_session, content: "Hello",
+        llm_client: tool_then_rate_limited_client
+      )
+
+      messages = chat_session.messages.order(:created_at).pluck(:role, :content)
+      expect(messages).to include([ "user", "concurrent turn" ])
+      # The failed attempt's own rows are still rolled back.
+      expect(messages).not_to include([ "assistant", "Let me search for that." ])
+      expect(messages.none? { |role, _| role == "tool" }).to be(true)
+    end
+
     context "with tool calls in response" do
       let(:tool_llm_client) { build_stateful_llm_client(successful_tool_llm_responses) }
 
