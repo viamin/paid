@@ -25,6 +25,13 @@ class ChatMessage < ApplicationRecord
     tool_status == "approved" || tool_status == "denied"
   end
 
+  # A server-injected assistant message announcing a runner fallback (rate
+  # limit / provider error). Excluded from the LLM conversation rebuild and
+  # surfaced to clients via a dedicated event flag.
+  def fallback_notice?
+    metadata.is_a?(Hash) && metadata["fallback_notice"] == true
+  end
+
   private
 
   def tool_result_message?
