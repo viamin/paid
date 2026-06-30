@@ -13,6 +13,24 @@ module Activities
     LLM_TIMEOUT = 120
     DEFAULT_PROVIDER = "claude"
     DEFAULT_MODEL = "claude-sonnet-4-6"
+    CONSTRAINT_SIGNAL_PATTERNS = [
+      /\binstead of\b/i,
+      /\brather than\b/i,
+      /\bdo not\b/i,
+      /\bdon't\b/i,
+      /\bmust\b/i,
+      /\bmust not\b/i,
+      /\bshould not\b/i,
+      /\bcannot\b/i,
+      /\bwithout\b/i,
+      /\breuse\b/i,
+      /\buse existing\b/i,
+      /\bfollow\b.{0,40}\bpattern\b/i,
+      /\bavoid\b/i,
+      /\breject(?:ed)?\b/i,
+      /\bnot\b.{0,40}\bbut\b/i
+    ].freeze
+    MIN_CONSTRAINT_SIGNALS = 2
 
     def execute(input)
       agent_run_id = input[:agent_run_id]
@@ -45,8 +63,9 @@ module Activities
       context = build_context(agent_run, project, issue)
       response = call_llm(agent_run, prompt_for(project, issue, comments, context))
       parsed = parse_response!(agent_run, response)
+      change_intent = create_change_intent_draft(project:, issue:, parsed:)
       parsed = stop_after_max_rounds(parsed, project, issue)
-      comment_body = comment_body_for(parsed)
+      comment_body = comment_body_for(parsed, change_intent:)
       gh_comment = client.add_comment(project.full_name, issue.github_number, comment_body)
       label_result = apply_label_state(client, project, issue, parsed)
 
@@ -66,7 +85,8 @@ module Activities
         enhance_issue_rounds: issue.enhance_issue_rounds,
         comment_url: gh_comment.html_url,
         knowledge_results: context[:knowledge_results_count],
-        knowledge_sections: context[:bundle_sections]
+        knowledge_sections: context[:bundle_sections],
+        change_intent_id: change_intent&.id
       )
 
       {
@@ -219,17 +239,28 @@ module Activities
     end
 
     def prompt_for(project, issue, comments, context)
+      constraint_heavy = constraint_heavy_issue?(issue)
+
       <<~PROMPT
         You analyze GitHub issues for implementation readiness.
 
         Decide whether the issue has enough context for an implementation agent.
         Use the issue text, conversation, and knowledge base context. Do not invent
         facts. If requirements are missing or ambiguous, ask specific questions.
+        When the issue contains non-obvious constraints or rejects a reasonable
+        alternative, also propose a Change Intent Record (CIR) draft.
 
         Respond with ONLY valid JSON:
         {
           "sufficient_context": true or false,
-          "comment_body": "Markdown comment to post on the issue"
+          "comment_body": "Markdown comment to post on the issue",
+          "change_intent": null or {
+            "title": "Short CIR title",
+            "intent": "What the direction is trying to accomplish",
+            "behavior": "Optional behavior expectations",
+            "constraints": "Important non-obvious constraints",
+            "decisions_made": "Rejected alternatives and why"
+          }
         }
 
         The comment_body must follow one of these structures:
@@ -252,6 +283,9 @@ module Activities
         - ...
 
         Keep the comment concise, actionable, and grounded in the supplied context.
+        Only include change_intent when the issue is CIR-worthy: a future reader
+        might reasonably choose a different approach unless this direction is
+        preserved. Prefer null when constraints are obvious or generic.
 
         ## Repository
         #{project.full_name}
@@ -262,6 +296,12 @@ module Activities
         Author: #{issue.github_creator_login}
 
         #{issue.body.to_s.truncate(20_000)}
+
+        ## CIR Detection
+        Constraint-heavy issue body: #{constraint_heavy ? "yes" : "no"}
+        Only propose a CIR draft when the issue body includes non-obvious
+        constraints, pattern-following requirements, rejected alternatives, or
+        other directional choices worth preserving for future agents.
 
         ## Conversation
         #{format_comments(comments)}
@@ -300,6 +340,18 @@ module Activities
       end.join("\n\n")
     end
 
+    def create_change_intent_draft(project:, issue:, parsed:)
+      return unless constraint_heavy_issue?(issue)
+
+      attributes = normalize_change_intent_attributes(parsed[:change_intent])
+      return if attributes.blank?
+
+      issue.change_intents.where(status: %w[draft active]).find_by(
+        title: attributes[:title],
+        intent: attributes[:intent]
+      ) || issue.change_intents.create!(attributes.merge(project: project, status: "draft"))
+    end
+
     def parse_response!(agent_run, response)
       output = response.respond_to?(:output) ? response.output.to_s : response.to_s
       parsed = JSON.parse(strip_json_fence(output), symbolize_names: true)
@@ -319,8 +371,49 @@ module Activities
       output.gsub(/\A```(?:json)?\s*/, "").gsub(/\s*```\z/, "").strip
     end
 
-    def comment_body_for(parsed)
-      [ COMMENT_MARKER, parsed[:comment_body].to_s.truncate(MAX_COMMENT_BODY) ].join("\n")
+    def comment_body_for(parsed, change_intent: nil)
+      body = [ parsed[:comment_body].to_s, change_intent_offer(change_intent) ].compact.join("\n\n")
+
+      [ COMMENT_MARKER, body.truncate(MAX_COMMENT_BODY) ].join("\n")
+    end
+
+    def change_intent_offer(change_intent)
+      return if change_intent.blank?
+
+      <<~MARKDOWN
+        ## Change Intent Record draft
+
+        Paid detected non-obvious implementation direction in this issue and drafted CIR ID #{change_intent.id} for review.
+
+        - Title: #{change_intent.title}
+        - Status: #{change_intent.status}
+        - Intent: #{change_intent.intent}
+      MARKDOWN
+    end
+
+    def normalize_change_intent_attributes(change_intent_payload)
+      return if !change_intent_payload.is_a?(Hash) && !change_intent_payload.is_a?(ActionController::Parameters)
+
+      normalized = change_intent_payload.to_h.symbolize_keys.slice(
+        :title,
+        :intent,
+        :behavior,
+        :constraints,
+        :decisions_made
+      ).transform_values { |value| value.to_s.strip.presence }
+
+      return if normalized[:title].blank? || normalized[:intent].blank?
+      return if [ normalized[:behavior], normalized[:constraints], normalized[:decisions_made] ].all?(&:blank?)
+
+      normalized
+    end
+
+    def constraint_heavy_issue?(issue)
+      signal_count(issue.body.to_s) >= MIN_CONSTRAINT_SIGNALS
+    end
+
+    def signal_count(text)
+      CONSTRAINT_SIGNAL_PATTERNS.count { |pattern| text.match?(pattern) }
     end
 
     def stop_after_max_rounds(parsed, project, issue)

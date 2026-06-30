@@ -30,7 +30,12 @@ RSpec.describe Tools::Registry do
 
       definitions = described_class.definitions_for(user: user)
 
-      expect(definitions.map { |definition| definition[:name] }).to include("trigger_agent_run", "cancel_agent_run")
+      expect(definitions.map { |definition| definition[:name] }).to include(
+        "trigger_agent_run",
+        "cancel_agent_run",
+        "search_intents",
+        "get_intent"
+      )
     end
 
     it "hides run-management write tools when the user lacks run permissions" do
@@ -83,7 +88,7 @@ RSpec.describe Tools::Registry do
     it "advertises write tools so the chat agent can propose them" do
       names = described_class.chat_definitions_for(user: user).map { |definition| definition[:name] }
 
-      expect(names).to include("trigger_agent_run", "cancel_agent_run", "update_user_settings")
+      expect(names).to include("trigger_agent_run", "cancel_agent_run", "update_user_settings", "search_intents", "get_intent")
     end
 
     it "strips the confirmed argument from write-tool schemas so the model cannot self-confirm" do

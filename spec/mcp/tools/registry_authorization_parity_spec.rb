@@ -119,6 +119,16 @@ RSpec.describe Tools::Registry do
         }
       },
       {
+        tool_name: "search_intents",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> { { project_id: project.id, query: "redis" } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :show?)
+          project_record.change_intents.where("title ILIKE ?", "%redis%").to_a
+        }
+      },
+      {
         tool_name: "read_repo_file",
         denied_user: -> { create(:user, :member, account: other_account) },
         arguments: -> { { project_id: project.id, path: "README.md" } },
@@ -143,6 +153,19 @@ RSpec.describe Tools::Registry do
         ui_call: ->(user) {
           project_record = Pundit.policy_scope!(user, Project).find(project.id)
           authorize_record!(user, project_record, :show?)
+        }
+      },
+      {
+        tool_name: "get_intent",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> {
+          change_intent = create(:change_intent, project: project)
+          { project_id: project.id, intent_id: change_intent.id }
+        },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :show?)
+          project_record.change_intents.order(:id).last
         }
       },
       {

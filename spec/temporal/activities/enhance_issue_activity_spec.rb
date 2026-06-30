@@ -80,6 +80,38 @@ RSpec.describe Activities::EnhanceIssueActivity do
     )
   end
 
+  def change_intent_output
+    {
+      sufficient_context: true,
+      comment_body: "## Implementation context\n### Suggested approach\n1. Reuse the shared Redis path.",
+      change_intent: {
+        title: "Prefer Redis-backed middleware throttling",
+        intent: "Keep throttling aligned with the existing middleware stack.",
+        behavior: "Given bursty traffic, when limits trigger, then responses should stay consistent with auth middleware behavior.",
+        constraints: "Reuse Redis and existing middleware hooks instead of adding a new store.",
+        decisions_made: "Rejected Postgres-backed throttling because it adds latency and a second enforcement path."
+      }
+    }.to_json
+  end
+
+  def expect_change_intent_comment(change_intent)
+    expect(client).to have_received(:add_comment).with(
+      project.full_name,
+      issue.github_number,
+      a_string_including(
+        "## Change Intent Record draft",
+        "CIR ID #{change_intent.id}",
+        "Prefer Redis-backed middleware throttling"
+      )
+    )
+  end
+
+  def expect_no_change_intent_comment
+    expect(client).to have_received(:add_comment) do |_, _, body|
+      expect(body).not_to include("## Change Intent Record draft")
+    end
+  end
+
   def answered_reevaluation_comments
     [
       OpenStruct.new(
@@ -127,6 +159,37 @@ RSpec.describe Activities::EnhanceIssueActivity do
         agent_run_id: agent_run.id
       ))
       expect(Knowledge::ContextBundle::Build).to have_received(:call).with(issue: issue, project: project, agent_run: agent_run, agent_run_id: agent_run.id)
+    end
+
+    it "creates a draft CIR and mentions it in the enhancement comment when the issue is constraint-heavy" do
+      issue.update!(
+        body: "Use Redis rather than Postgres for throttling. Do not add new infrastructure. Follow the auth middleware pattern."
+      )
+      allow(llm_response).to receive(:output).and_return(change_intent_output)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to change(ChangeIntent, :count).by(1)
+
+      change_intent = ChangeIntent.order(:id).last
+
+      expect(change_intent).to have_attributes(
+        project: project,
+        issue: issue,
+        status: "draft",
+        title: "Prefer Redis-backed middleware throttling"
+      )
+      expect_change_intent_comment(change_intent)
+    end
+
+    it "skips CIR drafting when the issue body is not constraint-heavy" do
+      allow(llm_response).to receive(:output).and_return(change_intent_output)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.not_to change(ChangeIntent, :count)
+
+      expect_no_change_intent_comment
     end
 
     it "posts clarifying questions when the LLM reports insufficient context" do
