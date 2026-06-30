@@ -469,6 +469,40 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "self-clears a dirty non-main failure lock once the working tree is clean" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, current_branch: "feature/fix", dirty_tree: false)
+      lock_path, reason_path = seed_failure_lock(dir, reason: "dirty-non-main")
+
+      stdout, stderr, status = Open3.capture3(failure_lock_env(dir), script_path, "--lightweight", chdir: dir)
+      updater_log = read_updater_log(dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(updater_log).to include("Failure lock was caused by dirty non-main branch")
+      expect(updater_log).to include("Cleared failure lock after resolved working-tree condition.")
+      expect(updater_log).to include("Switching to main branch (currently on feature/fix)...")
+      expect(updater_log).to include("Lightweight update complete.")
+      expect(File.exist?(lock_path)).to be(false)
+      expect(File.exist?(reason_path)).to be(false)
+    end
+  end
+
+  it "self-clears a legacy count-only lock on a clean non-main branch" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, current_branch: "feature/fix", dirty_tree: false)
+      lock_path, = seed_failure_lock(dir)
+
+      stdout, stderr, status = Open3.capture3(failure_lock_env(dir), script_path, "--lightweight", chdir: dir)
+      updater_log = read_updater_log(dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(updater_log).to include("Legacy failure lock found on clean non-main branch")
+      expect(updater_log).to include("Cleared failure lock after resolved working-tree condition.")
+      expect(updater_log).to include("Lightweight update complete.")
+      expect(File.exist?(lock_path)).to be(false)
+    end
+  end
+
   it "records and clears failure lock on pull success" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir)
@@ -543,6 +577,23 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     )
   end
 
+  def failure_lock_env(dir)
+    poll_env.merge(
+      "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+      "OVERMIND_SOCKET" => ".overmind.sock",
+      "DEV_UPDATE_MAX_CONSECUTIVE_FAILURES" => "3"
+    )
+  end
+
+  def seed_failure_lock(dir, reason: nil)
+    FileUtils.mkdir_p(File.join(dir, "tmp"))
+    lock_path = File.join(dir, "tmp", "dev-update-failure.lock")
+    reason_path = "#{lock_path}.reason"
+    File.write(lock_path, "3")
+    File.write(reason_path, reason) if reason
+    [ lock_path, reason_path ]
+  end
+
   def wait_for_dev_start_log(dir)
     dev_start_log = nil
 
@@ -576,6 +627,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     capture_port_in_dev: false,
     capture_kill_all_in_dev: false,
     dirty_tree: false,
+    current_branch: "main",
     pull_exit_status: 0,
     stash_pop_exit_status: 0,
     stash_pop_output: "Applied stash",
@@ -638,7 +690,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
           rev-parse)
             case "${2:-}" in
               --abbrev-ref)
-                echo "main"
+                echo "#{current_branch}"
                 ;;
               *)
                 if [ -f "#{dir}/pull-ran" ]; then
