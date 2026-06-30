@@ -213,7 +213,7 @@ class ChatControllerNodeHarness
       testToolResultWithMissingHtmlDoesNotAppend();
       testMessageCompleteResetsStreamingState();
       testToolEventsDoNotResetStreamingBeforeComplete();
-      testHandleEventDispatchsToolCall();
+      testHandleEventDispatchesToolCall();
       testFallbackNoticeRemovesStaleToolCards();
       testRegularMessageCreatedKeepsAttemptToolCards();
     }
