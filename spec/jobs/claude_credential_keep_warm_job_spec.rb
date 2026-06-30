@@ -13,8 +13,12 @@ RSpec.describe ClaudeCredentialKeepWarmJob do
       allow(Rails.logger).to receive(:error)
     end
 
-    context "when AgentHarness::Authentication does not expose exchange_refresh_token" do
-      # exchange_refresh_token is not defined on the module, so respond_to? returns false naturally
+    context "when AgentHarness::Authentication does not support exchange_refresh_token" do
+      before do
+        allow(AgentHarness::Authentication).to receive(:exchange_refresh_token_supported?)
+          .with(:claude)
+          .and_return(false)
+      end
 
       it "does not create a Provision instance" do
         described_class.perform_now
@@ -31,14 +35,10 @@ RSpec.describe ClaudeCredentialKeepWarmJob do
     end
 
     context "when exchange_refresh_token is available" do
-      # exchange_refresh_token does not exist upstream yet (viamin/agent-harness#265);
-      # bypass verify_partial_doubles so we can stub the future API.
-      around do |example|
-        without_partial_double_verification { example.run }
-      end
-
       before do
-        allow(AgentHarness::Authentication).to receive(:exchange_refresh_token)
+        allow(AgentHarness::Authentication).to receive(:exchange_refresh_token_supported?)
+          .with(:claude)
+          .and_return(true)
       end
 
       context "when no subscription auth is present" do

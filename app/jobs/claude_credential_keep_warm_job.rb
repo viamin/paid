@@ -29,7 +29,7 @@ class ClaudeCredentialKeepWarmJob < ApplicationJob
   def perform
     started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
-    unless AgentHarness::Authentication.respond_to?(:exchange_refresh_token)
+    unless claude_refresh_exchange_supported?
       Rails.logger.info(
         message: "claude_credential.keep_warm.exchange_unsupported",
         note: "viamin/agent-harness#265 not yet available; keep-warm exchange skipped"
@@ -46,5 +46,13 @@ class ClaudeCredentialKeepWarmJob < ApplicationJob
       refreshed: result[:refreshed],
       duration_ms: duration_ms
     )
+  end
+
+  private
+
+  def claude_refresh_exchange_supported?
+    AgentHarness::Authentication.respond_to?(:exchange_refresh_token) &&
+      AgentHarness::Authentication.respond_to?(:exchange_refresh_token_supported?) &&
+      AgentHarness::Authentication.exchange_refresh_token_supported?(:claude)
   end
 end

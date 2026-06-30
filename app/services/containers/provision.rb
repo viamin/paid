@@ -2687,7 +2687,7 @@ module Containers
     # - No host-forwarded Claude credential is present
     # - The credential expiry is unknown (non-`claudeAiOauth` shape)
     # - The credential has more than CLAUDE_CREDENTIAL_REFRESH_WINDOW remaining
-    # - `AgentHarness::Authentication` does not yet expose `exchange_refresh_token`
+    # - `AgentHarness::Authentication` does not yet support `exchange_refresh_token`
     #   (viamin/agent-harness#265)
     def refresh_claude_credentials_if_near_expiry!
       return unless claude_subscription_auth?
@@ -2705,9 +2705,9 @@ module Containers
     # Calls the upstream refresh-token exchange API and writes the rotated
     # credential back to the source. Requires
     # `AgentHarness::Authentication.exchange_refresh_token` (viamin/agent-harness#265).
-    # Until that ships, logs and returns false.
+    # Until that is supported, logs and returns false.
     def exchange_claude_refresh_token!
-      unless AgentHarness::Authentication.respond_to?(:exchange_refresh_token)
+      unless claude_refresh_exchange_supported?
         log_system("container.claude_auth_refresh.unsupported",
           note: "viamin/agent-harness#265 not yet available; skipping keep-warm exchange")
         return false
@@ -2716,7 +2716,9 @@ module Containers
       source_path = claude_credentials_source_path
       return false unless source_path
 
-      AgentHarness::Authentication.exchange_refresh_token(:claude, credentials_path: source_path)
+      with_env("CLAUDE_CONFIG_DIR", source_path) do
+        AgentHarness::Authentication.exchange_refresh_token(:claude)
+      end
       log_system("container.claude_auth_refreshed", source_path: source_path)
       true
     rescue AgentHarness::AuthenticationError => e
@@ -2728,6 +2730,20 @@ module Containers
     rescue AgentHarness::Error, SystemCallError, JSON::ParserError => e
       log_system("container.claude_auth_refresh_failed", error: e.message, source_path: source_path)
       false
+    end
+
+    def claude_refresh_exchange_supported?
+      AgentHarness::Authentication.respond_to?(:exchange_refresh_token) &&
+        AgentHarness::Authentication.respond_to?(:exchange_refresh_token_supported?) &&
+        AgentHarness::Authentication.exchange_refresh_token_supported?(:claude)
+    end
+
+    def with_env(key, value)
+      previous = ENV[key]
+      ENV[key] = value
+      yield
+    ensure
+      previous.nil? ? ENV.delete(key) : ENV[key] = previous
     end
 
     # Single source of truth for the Codex heartbeat notify line used in both
