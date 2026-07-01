@@ -42,7 +42,20 @@ RSpec.describe EnsureWorktreeDatabasesScript do
     end
   end
 
-  def prepare_script_fixture(dir)
+  it "succeeds without creator privileges when all worktree databases already exist" do
+    Dir.mktmpdir("ensure-worktree-databases-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, psql_stub: existing_databases_psql_stub(dir))
+
+      stdout, stderr, status = Open3.capture3(base_env(dir), script_path, chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(stdout).to include("Worktree databases already exist.")
+      expect(File.read(File.join(dir, "psql-queries.log"))).to include("SELECT 1 FROM pg_database")
+      expect(File.read(File.join(dir, "psql-queries.log"))).not_to include("SELECT rolcreatedb")
+    end
+  end
+
+  def prepare_script_fixture(dir, psql_stub: default_psql_stub(dir))
     FileUtils.mkdir_p(File.join(dir, "bin"))
     FileUtils.mkdir_p(File.join(dir, "config"))
     FileUtils.mkdir_p(File.join(dir, "stubbin"))
@@ -72,11 +85,7 @@ RSpec.describe EnsureWorktreeDatabasesScript do
 
     write_executable(
       File.join(dir, "stubbin", "psql"),
-      <<~BASH
-        #!/usr/bin/env bash
-        echo invoked > "#{dir}/psql-invoked.log"
-        exit 0
-      BASH
+      psql_stub
     )
 
     File.write(File.join(dir, ".git"), "gitdir: #{dir}/.git/worktrees/test\n")
@@ -96,5 +105,33 @@ RSpec.describe EnsureWorktreeDatabasesScript do
   def write_executable(path, contents)
     File.write(path, contents)
     FileUtils.chmod("+x", path)
+  end
+
+  def default_psql_stub(dir)
+    <<~BASH
+      #!/usr/bin/env bash
+      echo invoked > "#{dir}/psql-invoked.log"
+      exit 0
+    BASH
+  end
+
+  def existing_databases_psql_stub(dir)
+    <<~BASH
+      #!/usr/bin/env bash
+      printf '%s\n' "$*" >> "#{dir}/psql-queries.log"
+
+      case "$*" in
+        *"SELECT 1 FROM pg_database WHERE datname = '"*)
+          echo 1
+          exit 0
+          ;;
+        *"SELECT rolcreatedb FROM pg_roles WHERE rolname = current_user"*)
+          echo "creator check should not run" >&2
+          exit 1
+          ;;
+      esac
+
+      exit 1
+    BASH
   end
 end
