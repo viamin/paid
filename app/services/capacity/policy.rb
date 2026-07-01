@@ -269,8 +269,15 @@ module Capacity
 
     def compute_auto_allowed(env:, blocked:, degraded_reasons:)
       return false if explicit_opt_out == true
-      return false if env.default_mode == MANUAL
-      return false if blocked.any? { |reason| reason.code == "auto_mode_disabled_for_deployment" }
+      # CI is always locked to MANUAL by design — no opt-in can override it.
+      return false if env.name == ENVIRONMENT_CI
+      # Deployment gate: auto is off by default for shared/remote/swarm
+      # backends. explicit_opt_in lets operators enable auto on those
+      # deployments ("disabled by default unless explicitly opted in").
+      unless explicit_opt_in
+        return false if env.default_mode == MANUAL
+        return false if blocked.any? { |reason| reason.code == "auto_mode_disabled_for_deployment" }
+      end
       return false if degraded_reasons.any?
       return false if explicit_mode == MANUAL
 
@@ -278,19 +285,27 @@ module Capacity
     end
 
     def compute_auto_allowed_reasons(env:, auto_allowed:)
+      return [ "explicit_opt_in" ] if auto_allowed && explicit_opt_in
       return [ "environment_default" ] if auto_allowed
-      return [ "deployment_gate" ] if env.default_mode == MANUAL
+      return [ "deployment_gate" ] if env.default_mode == MANUAL || env.name == ENVIRONMENT_CI
       return [ "explicit_opt_out" ] if explicit_opt_out == true
 
       [ "metrics_missing" ]
     end
 
     def resolve_mode(env:, auto_allowed:, blocked:, degraded:)
-      return MANUAL if blocked.any? { |reason| reason.code == "auto_mode_disabled_for_deployment" }
+      # CI is always locked to MANUAL regardless of opt-in.
+      return MANUAL if env.name == ENVIRONMENT_CI
+      # Deployment gate blocks AUTO by default; explicit_opt_in overrides it.
+      return MANUAL if !explicit_opt_in && blocked.any? { |reason| reason.code == "auto_mode_disabled_for_deployment" }
       return MANUAL if degraded
       return explicit_mode if explicit_mode.present? && MODES.include?(explicit_mode)
 
       return MANUAL if auto_allowed == false
+
+      # When operator explicitly opted in, allow AUTO even for environments
+      # whose default_mode is MANUAL (e.g. unknown/remote deployments).
+      return AUTO if explicit_opt_in && auto_allowed
 
       env.default_mode == AUTO ? AUTO : MANUAL
     end

@@ -215,7 +215,30 @@ RSpec.describe Capacity::Policy do
   end
 
   describe "explicit opt-in" do
-    it "lets a local backend with explicit opt-in keep auto mode even when CI markers are present" do
+    it "enables AUTO for a remote backend when explicitly opted in" do
+      decision = described_class.call(
+        snapshot: remote_snapshot,
+        now: now,
+        explicit_opt_in: true
+      )
+
+      expect(decision.mode).to eq(Capacity::Policy::AUTO)
+      expect(decision.auto_allowed).to be(true)
+      expect(decision.auto_allowed_reasons).to include("explicit_opt_in")
+    end
+
+    it "enables AUTO for a swarm backend when explicitly opted in" do
+      decision = described_class.call(
+        snapshot: swarm_snapshot,
+        now: now,
+        explicit_opt_in: true
+      )
+
+      expect(decision.mode).to eq(Capacity::Policy::AUTO)
+      expect(decision.auto_allowed).to be(true)
+    end
+
+    it "does not enable AUTO for CI even with explicit opt-in" do
       decision = described_class.call(
         snapshot: healthy_local_snapshot,
         environment: "linux_docker",
@@ -227,6 +250,18 @@ RSpec.describe Capacity::Policy do
       # CI always forces manual mode by design — opt-in is not enough
       # to override the deployment-level safety rule.
       expect(decision.mode).to eq(Capacity::Policy::MANUAL)
+      expect(decision.auto_allowed).to be(false)
+    end
+
+    it "still fails closed to MANUAL when the snapshot is degraded, even with opt-in" do
+      decision = described_class.call(
+        snapshot: degraded_snapshot,
+        now: now,
+        explicit_opt_in: true
+      )
+
+      expect(decision.mode).to eq(Capacity::Policy::MANUAL)
+      expect(decision.auto_allowed).to be(false)
     end
   end
 

@@ -255,15 +255,19 @@ class ProcessRunQueueJob < ApplicationJob
 
   def user_has_capacity?(user)
     policy_decision = current_capacity_policy(user)
+
     if policy_decision && !policy_decision.auto_allowed
+      # Auto mode is disabled for this deployment — log for observability but
+      # do NOT block dispatch. The effective_concurrency_limit will use the
+      # user's manual limit instead of the auto-expanded ceiling, which is the
+      # "fallback to conservative manual behavior" the policy requires.
       Rails.logger.info(
-        message: "process_run_queue.capacity_policy_block",
+        message: "process_run_queue.capacity_policy_manual_mode",
         user_id: user.id,
         mode: policy_decision.mode,
         environment: policy_decision.environment,
         reasons: policy_decision.blocked_reasons.map(&:code)
       )
-      return false
     end
 
     effective_limit = effective_concurrency_limit(user, policy: policy_decision)

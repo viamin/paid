@@ -866,8 +866,27 @@ RSpec.describe ProcessRunQueueJob do
     end
 
     context "with Capacity::Policy gating" do
-      it "fails closed to manual defaults when the policy denies auto" do
+      it "dispatches under manual limits when auto mode is disabled by deployment policy" do
+        # auto_allowed: false means "stay in manual mode", not "block all dispatch".
+        # With headroom under the user's manual limit, the run should start.
         queued_run = create_queued_run_with_policy(max_concurrent_runs: 5)
+        stub_policy_decision(remote_backend_decision)
+
+        expect(temporal_client).to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(queued_run.reload.temporal_workflow_id).to be_present
+      end
+
+      it "blocks dispatch when the user is at manual capacity even if auto ceiling is higher" do
+        # remote_backend_decision has effective_max_concurrent: 10, but auto_allowed
+        # is false so only the user's manual limit (2) governs concurrency.
+        project = create(:project)
+        project.created_by.settings.update!(max_concurrent_runs: 2)
+        create(:agent_run, :running, project: project)
+        create(:agent_run, :running, project: project)
+        queued_run = create(:agent_run, :queued, project: project)
         stub_policy_decision(remote_backend_decision)
 
         expect(temporal_client).not_to receive(:start_workflow)
@@ -877,18 +896,19 @@ RSpec.describe ProcessRunQueueJob do
         expect(queued_run.reload.status).to eq("queued")
       end
 
-      it "logs the policy decision when dispatch is blocked" do
+      it "logs manual mode info when auto is disabled by deployment policy" do
         create_queued_run_with_policy(max_concurrent_runs: 5)
         stub_policy_decision(missing_snapshot_decision)
+        allow(Rails.logger).to receive(:info)
 
-        expect(Rails.logger).to receive(:info).with(
+        described_class.new.perform
+
+        expect(Rails.logger).to have_received(:info).with(
           hash_including(
-            message: "process_run_queue.capacity_policy_block",
+            message: "process_run_queue.capacity_policy_manual_mode",
             mode: "manual"
           )
         )
-
-        described_class.new.perform
       end
 
       it "falls back to manual limits when the policy cannot be resolved" do
