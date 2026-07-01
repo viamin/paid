@@ -4,7 +4,9 @@ module Activities
   class CompleteReviewGoalActivity < BaseActivity
     activity_name "CompleteReviewGoal"
 
-    PAID_REVIEW_MARKER = "<!-- paid:code-review -->"
+    # Review-body marker is owned by Github::ReviewMarker so the proxy that
+    # injects it and this reconciliation consumer can't drift apart.
+    PAID_REVIEW_MARKER = Github::ReviewMarker::PAID_REVIEW_MARKER
     RECONCILIATION_LOG_LIMIT = 100
 
     def execute(input)
