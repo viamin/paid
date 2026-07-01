@@ -5,7 +5,9 @@ module Api
     include Api::ContainerAuthentication
     allow_chat_session_authentication!
 
-    REVIEW_COMMENT_MARKER = "<!-- paid:code-review -->"
+    # Review-body marker is owned by Github::ReviewMarker so the injection here
+    # and the reconciliation consumer can't drift apart.
+    REVIEW_COMMENT_MARKER = Github::ReviewMarker::PAID_REVIEW_MARKER
     REVIEW_HEADER = "## Code Review"
     STALE_REVIEW_DISMISSAL_MESSAGE = "Subsequent review found no remaining actionable issues."
     PENDING_REVIEW_ERROR_PATTERN = /one pending review per pull request/i
