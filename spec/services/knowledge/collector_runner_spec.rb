@@ -390,6 +390,55 @@ RSpec.describe Knowledge::CollectorRunner do
       end
     end
 
+    context "when a collector times out" do
+      let(:timing_out_collector_class) do
+        attempts = 0
+
+        Class.new(Knowledge::BaseCollector) do
+          define_method(:collect) do
+            attempts += 1
+            raise ApplicationJob::PerformTimeoutError, "perform timeout" if attempts == 1
+
+            [
+              {
+                artifact_type: "test_artifact",
+                scope_path: "app/models/user.rb",
+                identifier: "User",
+                content: '{"class": "User"}',
+                metadata: {},
+                chunks: []
+              }
+            ]
+          end
+
+          def collector_type
+            "timing_out_collector"
+          end
+        end
+      end
+
+      before do
+        described_class.reset_registry!
+        described_class.register("timing_out_collector", timing_out_collector_class)
+      end
+
+      it "marks the persisted run failed before re-raising so the same version can retry" do
+        expect {
+          described_class.call(project: project, commit_sha: commit_sha)
+        }.to raise_error(ApplicationJob::PerformTimeoutError, "perform timeout")
+
+        failed_run = CollectorRun.find_by!(collector_type: "timing_out_collector")
+        expect(failed_run.status).to eq("failed")
+        expect(failed_run.error_message).to eq("perform timeout")
+
+        retry_result = described_class.call(project: project, commit_sha: commit_sha)
+
+        expect(retry_result[:results]).to contain_exactly(
+          hash_including(collector_type: "timing_out_collector", status: "completed", artifacts_count: 1)
+        )
+      end
+    end
+
     context "when running a subset of collectors" do
       let(:other_collector_class) do
         Class.new(Knowledge::BaseCollector) do

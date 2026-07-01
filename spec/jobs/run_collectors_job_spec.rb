@@ -6,6 +6,10 @@ RSpec.describe RunCollectorsJob do
   let(:project) { create(:project) }
   let(:commit_sha) { "a" * 40 }
 
+  it "has a 20-minute perform_timeout so a hung job cannot deadlock the Rails reloader" do
+    expect(described_class.perform_timeout).to eq(20.minutes.to_i)
+  end
+
   describe "#perform" do
     context "when Docker is unavailable" do
       before do

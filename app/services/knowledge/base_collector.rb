@@ -121,24 +121,13 @@ module Knowledge
             out_thread.join
             err_thread.join
           end
+        rescue ApplicationJob::PerformTimeoutError
+          # Job-level abort: tear down the subprocess and reader threads before
+          # re-raising so the timeout propagates without leaking local I/O work.
+          cleanup_timed_out_process(wait_thr:, stdout:, stderr:, out_thread:, err_thread:)
+          raise
         rescue Timeout::Error
-          kill_process_group(wait_thr.pid)
-          # Reap with a short timeout to avoid blocking forever if the process
-          # cannot be signaled (e.g. EPERM from kill_process_group).
-          reap_thread = Thread.new { wait_thr.value }
-          unless reap_thread.join(5)
-            reap_thread.kill
-          end
-          stdout.close unless stdout.closed?
-          stderr.close unless stderr.closed?
-          out_thread.join(5) || begin
-            out_thread.kill
-            out_thread.join
-          end
-          err_thread.join(5) || begin
-            err_thread.kill
-            err_thread.join
-          end
+          cleanup_timed_out_process(wait_thr:, stdout:, stderr:, out_thread:, err_thread:)
           raise Timeout::Error, "Command timed out after #{timeout} seconds: #{argv.join(' ')}"
         ensure
           stdout.close unless stdout.closed?
@@ -162,6 +151,26 @@ module Knowledge
       Process.kill("KILL", -pgid)
     rescue Errno::ESRCH, Errno::EPERM
       # Process already exited or cannot be signaled
+    end
+
+    def cleanup_timed_out_process(wait_thr:, stdout:, stderr:, out_thread:, err_thread:)
+      kill_process_group(wait_thr.pid)
+      # Reap with a short timeout to avoid blocking forever if the process
+      # cannot be signaled (e.g. EPERM from kill_process_group).
+      reap_thread = Thread.new { wait_thr.value }
+      unless reap_thread.join(5)
+        reap_thread.kill
+      end
+      stdout.close unless stdout.closed?
+      stderr.close unless stderr.closed?
+      out_thread.join(5) || begin
+        out_thread.kill
+        out_thread.join
+      end
+      err_thread.join(5) || begin
+        err_thread.kill
+        err_thread.join
+      end
     end
 
     def timeout_kill_grace_seconds
