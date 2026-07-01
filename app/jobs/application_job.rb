@@ -3,10 +3,13 @@
 require "timeout"
 
 class ApplicationJob < ActiveJob::Base
-  # Raised when a job exceeds its configured perform_timeout. Subclasses
-  # Timeout::Error so it is still caught by the base StandardError rescue (and
-  # reported as a terminal failure) while remaining identifiable in incidents.
-  class PerformTimeoutError < Timeout::Error; end
+  # Raised when a job exceeds its configured perform_timeout. Intentionally
+  # inherits from StandardError (NOT Timeout::Error) so that existing
+  # `rescue Timeout::Error` handlers in the call stacks — auth_health.rb,
+  # base_collector.rb, etc. — do not silently swallow the job-level abort
+  # signal. The base `rescue_from(StandardError)` hook in this class is what
+  # catches it, marks the job terminal, and reports an incident.
+  class PerformTimeoutError < StandardError; end
 
   class_attribute :notification_subsystem, default: "general"
   class_attribute :max_attempts, default: 1
@@ -81,8 +84,8 @@ class ApplicationJob < ActiveJob::Base
   end
 
   def with_perform_timeout(&block)
-    timeout = self.class.perform_timeout
-    return yield unless timeout
+    timeout = self.class.perform_timeout&.to_i
+    return yield if timeout.nil? || timeout <= 0
 
     Timeout.timeout(timeout, PerformTimeoutError, "#{self.class.name} exceeded perform_timeout of #{timeout}s", &block)
   end

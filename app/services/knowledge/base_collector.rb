@@ -121,6 +121,11 @@ module Knowledge
             out_thread.join
             err_thread.join
           end
+        rescue ApplicationJob::PerformTimeoutError
+          # Job-level abort: kill the subprocess so it doesn't become an orphan,
+          # then re-raise to propagate the abort signal up through CollectorRunner.
+          kill_process_group(wait_thr.pid)
+          raise
         rescue Timeout::Error
           kill_process_group(wait_thr.pid)
           # Reap with a short timeout to avoid blocking forever if the process

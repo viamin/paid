@@ -120,6 +120,7 @@ module Knowledge
         preserve_existing_artifacts: e.preserve_existing_artifacts?
       }
     rescue => e
+      raise if e.is_a?(ApplicationJob::PerformTimeoutError)
       collector_run&.mark_failed!(error: e.message) if collector_run&.persisted?
       Rails.logger.error(
         message: "knowledge.collector_failed",

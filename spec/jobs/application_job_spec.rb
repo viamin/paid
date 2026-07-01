@@ -69,13 +69,16 @@ RSpec.describe ApplicationJob do
       end
       stub_const("SlowTimeoutJob", job_class)
 
-      allow(Paid::ExceptionNotifier).to receive(:new).and_return(
-        instance_double(Paid::ExceptionNotifier, call: nil)
-      )
+      notifier = instance_double(Paid::ExceptionNotifier, call: nil)
+      allow(Paid::ExceptionNotifier).to receive(:new).and_return(notifier)
 
       job = job_class.new
       job.executions = 0
       expect { job.perform_now }.to raise_error(ApplicationJob::PerformTimeoutError)
+      expect(notifier).to have_received(:call).with(
+        an_instance_of(ApplicationJob::PerformTimeoutError),
+        data: hash_including(subsystem: "general")
+      )
     end
 
     it "does not interrupt work that finishes within the ceiling" do
