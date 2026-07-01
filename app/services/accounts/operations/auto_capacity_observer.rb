@@ -8,22 +8,15 @@ module Accounts
     class AutoCapacityObserver
       CACHE_VERSION = "v1"
       CACHE_TTL = 30.seconds
-      SNAPSHOT_TIMEOUT = 4
-      PAID_COMPOSE_PROJECT = "paid"
+      DOCKER_INFO_TIMEOUT = Capacity::DockerSnapshot::DOCKER_INFO_TIMEOUT
+      DOCKER_LIST_TIMEOUT = Capacity::DockerSnapshot::DOCKER_LIST_TIMEOUT
+      DOCKER_CONTAINER_TIMEOUT = Capacity::DockerSnapshot::DOCKER_CONTAINER_TIMEOUT
+      DOCKER_SAMPLING_BUDGET = Capacity::DockerSnapshot::DOCKER_SAMPLING_BUDGET
       DEFAULT_ESTIMATED_RUN_MEMORY_BYTES = Containers::Provision::DEFAULTS[:memory_bytes]
       ESTIMATED_RUN_MEMORY_MULTIPLIER = 1.25
       MIN_CONTROL_PLANE_MARGIN_BYTES = 512.megabytes
       CONTROL_PLANE_MARGIN_MULTIPLIER = 0.2
-      CONTROL_PLANE_SERVICES = %w[
-        postgres
-        qdrant
-        redis
-        temporal
-        temporal-admin-tools
-        temporal-ui
-        web
-        worker
-      ].freeze
+      SAMPLING_WARNING_PREFIX = "Some Docker metrics were unavailable while building the auto-capacity preview"
       EMPTY_USAGE_BUCKET = {
         container_count: 0,
         cpu_percent: 0.0,
@@ -73,7 +66,7 @@ module Accounts
       def build_payload
         return remote_backend_payload unless local_backend?
 
-        snapshot = Timeout.timeout(SNAPSHOT_TIMEOUT) { collect_snapshot }
+        snapshot = collect_snapshot
         if snapshot[:warnings].any?
           return degraded_snapshot_payload(snapshot)
         end
@@ -126,10 +119,21 @@ module Accounts
         usage = empty_usage
         running_agent_count = 0
         warnings = []
+        deadline = monotonic_now + DOCKER_SAMPLING_BUDGET
+        containers = list_running_containers
 
-        backend.list_containers(all: false).each do |container|
+        containers.each_with_index do |container, index|
+          if sampling_budget_exceeded?(deadline)
+            unsampled = containers.length - index
+            warnings << sampling_budget_warning(unsampled)
+            usage[:other][:container_count] += unsampled
+            break
+          end
+
           info = container.info
-          stats = Containers::DockerStatsParser.parse_stats(backend.container_stats(container, stream: false))
+          stats = Containers::DockerStatsParser.parse_stats(
+            with_timeout(per_container_timeout(deadline)) { backend.container_stats(container, stream: false) }
+          )
           bucket = classify_container(info)
 
           usage[bucket][:container_count] += 1
@@ -137,7 +141,7 @@ module Accounts
           usage[bucket][:memory_bytes] += stats[:memory_bytes]
           running_agent_count += 1 if counts_as_running_agent?(info)
         rescue StandardError => error
-          warnings << "Some Docker metrics were unavailable while building the auto-capacity preview: #{error.message}"
+          warnings << sampling_warning(error)
         end
 
         paid_memory_bytes = usage[:paid][:memory_bytes]
@@ -162,7 +166,36 @@ module Accounts
       end
 
       def docker_info
-        backend.system_info
+        with_timeout(DOCKER_INFO_TIMEOUT) { backend.system_info }
+      end
+
+      def list_running_containers
+        with_timeout(DOCKER_LIST_TIMEOUT) { backend.list_containers(all: false) }
+      end
+
+      def with_timeout(duration)
+        Timeout.timeout(duration) { yield }
+      end
+
+      def monotonic_now
+        Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      end
+
+      def sampling_budget_exceeded?(deadline)
+        monotonic_now >= deadline
+      end
+
+      def per_container_timeout(deadline)
+        [ DOCKER_CONTAINER_TIMEOUT, deadline - monotonic_now ].min
+      end
+
+      def sampling_warning(error)
+        "#{SAMPLING_WARNING_PREFIX}: #{error.message}"
+      end
+
+      def sampling_budget_warning(unsampled)
+        noun = (unsampled == 1) ? "container" : "containers"
+        "#{SAMPLING_WARNING_PREFIX}: container sampling budget exceeded with #{unsampled} #{noun} unsampled"
       end
 
       def empty_usage
@@ -196,17 +229,17 @@ module Accounts
 
       def paid_control_plane_service?(compose_service:, compose_project:, compose_workdir:)
         return false unless compose_service.present?
-        return false unless CONTROL_PLANE_SERVICES.include?(compose_service)
+        return false unless Capacity::DockerSnapshot::PAID_COMPOSE_SERVICES.include?(compose_service)
 
         paid_compose_project?(compose_project) || paid_compose_workdir?(compose_workdir)
       end
 
       def paid_compose_project?(compose_project)
-        normalize_compose_project(compose_project) == PAID_COMPOSE_PROJECT
+        normalize_compose_project(compose_project) == Capacity::DockerSnapshot::PAID_COMPOSE_PROJECT
       end
 
       def paid_compose_workdir?(compose_workdir)
-        normalize_compose_workdir(compose_workdir)&.basename&.to_s == PAID_COMPOSE_PROJECT
+        normalize_compose_workdir(compose_workdir)&.basename&.to_s == Capacity::DockerSnapshot::PAID_COMPOSE_PROJECT
       rescue ArgumentError
         false
       end
@@ -247,7 +280,6 @@ module Accounts
           .order(created_at: :desc)
           .limit(20)
           .pluck(:peak_memory_bytes)
-          .map(&:to_i)
 
         return DEFAULT_ESTIMATED_RUN_MEMORY_BYTES if recent_peak_bytes.empty?
 

@@ -132,6 +132,17 @@ RSpec.describe Accounts::Operations::AutoCapacityObserver do
     expect(payload.dig(:usage, :other, :memory_bytes)).to eq(512.megabytes)
   end
 
+  it "classifies agent-image and agent-test compose services as paid control plane usage" do
+    create_recent_run_profile!
+    allow(backend).to receive(:list_containers).with(all: false).and_return(agent_compose_containers)
+
+    payload = described_class.call(account: account, manual_limit: 5, backend: backend, cache: cache)
+
+    expect(payload.dig(:usage, :paid, :container_count)).to eq(2)
+    expect(payload.dig(:usage, :paid, :memory_bytes)).to eq(384.megabytes)
+    expect(payload.dig(:usage, :other, :container_count)).to eq(0)
+  end
+
   it "classifies paid.resource containers as paid control plane usage" do
     create_recent_run_profile!
     allow(backend).to receive(:list_containers).with(all: false).and_return(paid_resource_containers)
@@ -264,6 +275,27 @@ RSpec.describe Accounts::Operations::AutoCapacityObserver do
         },
         memory_bytes: 256.megabytes,
         cpu_percent: 2.5
+      )
+    ]
+  end
+
+  def agent_compose_containers
+    [
+      docker_container(
+        labels: {
+          "com.docker.compose.project" => "paid",
+          "com.docker.compose.service" => "agent-image"
+        },
+        memory_bytes: 256.megabytes,
+        cpu_percent: 5.0
+      ),
+      docker_container(
+        labels: {
+          "com.docker.compose.project" => "paid",
+          "com.docker.compose.service" => "agent-test"
+        },
+        memory_bytes: 128.megabytes,
+        cpu_percent: 2.0
       )
     ]
   end
