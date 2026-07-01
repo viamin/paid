@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class AddRunConcurrencyModeToUserSettings < ActiveRecord::Migration[8.1]
   def change
     add_column :user_settings, :run_concurrency_mode, :string,
