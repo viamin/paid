@@ -414,22 +414,7 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow, :no_db do
           Temporalio::Error::ApplicationError,
           /returned nil issue_id for task 1: Task B/
         )
-        expect(workflow).to have_received(:run_activity)
-          .with(Activities::LogDecompositionDecisionActivity,
-            hash_including(
-              decision_type: "parallelization_outcome",
-              outcome: "parallelization_planning_failed",
-              metadata: hash_including(
-                policy_source: "coordination_policy",
-                policy_key: "feature_decomposition",
-                coordination_policy_id: 12,
-                coordination_policy_version_id: 34,
-                coordination_policy_version: 5,
-                failed_step: "build_sub_tasks"
-              )
-            ),
-            timeout: 30,
-            retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY)
+        expect_parallelization_failure_logged!
       end
     end
 
@@ -517,9 +502,30 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow, :no_db do
               outcome: "decomposition_failed",
               metadata: hash_including(**failure_policy_metadata)
             ),
+            cancellation: an_instance_of(Temporalio::Cancellation),
             timeout: 30,
             retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY)
         expect_failed_scaling_observation_recorded!
+      end
+
+      it "does not record failure telemetry on cancellation" do
+        allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+          case activity_class.name
+          when "Activities::ResolveCoordinationExperimentActivity"
+            { assignment_id: 77, coordination_policy: OrchestrationStrategies::Defaults.feature_orchestration }
+          when "Activities::ResolveScalingExperimentActivity"
+            { assignments: [] }
+          when "Activities::FetchPlanningContextActivity"
+            { context: {} }
+          when "Activities::DecomposeFeatureActivity"
+            raise Temporalio::Error::CanceledError, "workflow canceled"
+          else
+            raise "unexpected activity #{activity_class.name}"
+          end
+        end
+
+        expect { workflow.execute(input) }.to raise_error(Temporalio::Error::CanceledError)
+        expect_no_failure_telemetry_recorded!
       end
     end
 
@@ -840,6 +846,35 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow, :no_db do
     # Already handled by stub_planning_activities
   end
 
+  def expect_no_failure_telemetry_recorded!
+    expect(workflow).not_to have_received(:run_activity)
+      .with(Activities::LogDecompositionDecisionActivity, anything, any_args)
+    expect(workflow).not_to have_received(:run_activity)
+      .with(Activities::RecordScalingObservationActivity, anything, any_args)
+    expect(workflow).not_to have_received(:run_activity)
+      .with(Activities::RecordCoordinationExperimentOutcomeActivity, anything, any_args)
+  end
+
+  def expect_parallelization_failure_logged!
+    expect(workflow).to have_received(:run_activity)
+      .with(Activities::LogDecompositionDecisionActivity,
+        hash_including(
+          decision_type: "parallelization_outcome",
+          outcome: "parallelization_planning_failed",
+          metadata: hash_including(
+            policy_source: "coordination_policy",
+            policy_key: "feature_decomposition",
+            coordination_policy_id: 12,
+            coordination_policy_version_id: 34,
+            coordination_policy_version: 5,
+            failed_step: "build_sub_tasks"
+          )
+        ),
+        cancellation: an_instance_of(Temporalio::Cancellation),
+        timeout: 30,
+        retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY)
+  end
+
   def expect_failed_scaling_observation_recorded!
     expect(workflow).to have_received(:run_activity)
       .with(
@@ -854,6 +889,7 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow, :no_db do
             failed_step: "decompose_feature"
           )
         ),
+        cancellation: an_instance_of(Temporalio::Cancellation),
         timeout: 30,
         retry_policy: Workflows::FeatureOrchestrationWorkflow::NO_RETRY
       )

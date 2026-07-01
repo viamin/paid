@@ -56,7 +56,28 @@ module Workflows
       deep_symbolize(result)
     end
 
+    def run_cleanup_activity(activity_class, input, timeout: 300, **options)
+      detached_cancellation, = Temporalio::Cancellation.new
+      run_activity(activity_class, input, timeout: timeout, cancellation: detached_cancellation, **options)
+    end
+
     private
+
+    def raise_if_canceled!(error)
+      raise error if error.is_a?(Temporalio::Error::CanceledError)
+
+      cause = error.respond_to?(:cause) ? error.cause : nil
+      raise error if cause.is_a?(Temporalio::Error::CanceledError)
+
+      current_error = error
+      while current_error
+        raise error if current_error.class.name.end_with?("CanceledError")
+
+        current_error = current_error.respond_to?(:cause) ? current_error.cause : nil
+      end
+
+      raise error if Temporalio::Error.canceled?(error)
+    end
 
     def feature_flag_enabled?(flag_name, project_id:)
       snapshot = feature_flag_snapshot_for(project_id)

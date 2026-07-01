@@ -388,6 +388,7 @@ module Workflows
 
       rescue => e
         workflow_error = e
+        raise_if_canceled!(e)
         request_project_resync(project_id) if stale_pull_request_error?(e)
 
         # Mark agent run as failed.
@@ -421,7 +422,7 @@ module Workflows
 
           if retain
             begin
-              retain_result = run_activity(Activities::RetainContainerActivity,
+              retain_result = run_cleanup_activity(Activities::RetainContainerActivity,
                 { agent_run_id: agent_run_id },
                 start_to_close_timeout: 30, schedule_to_close_timeout: 120,
                 retry_policy: Temporalio::RetryPolicy.new(max_attempts: 3, initial_interval: 1))
@@ -441,7 +442,7 @@ module Workflows
 
           unless retain
             begin
-              run_activity(Activities::CleanupContainerActivity,
+              run_cleanup_activity(Activities::CleanupContainerActivity,
                 { agent_run_id: agent_run_id },
                 start_to_close_timeout: 120, schedule_to_close_timeout: 300,
                 retry_policy: CLEANUP_RETRY_POLICY)
@@ -456,7 +457,7 @@ module Workflows
           end
 
           begin
-            run_activity(Activities::CleanupMcpServersActivity,
+            run_cleanup_activity(Activities::CleanupMcpServersActivity,
               { agent_run_id: agent_run_id },
               start_to_close_timeout: 120, schedule_to_close_timeout: 300,
               retry_policy: CLEANUP_RETRY_POLICY)
@@ -470,7 +471,7 @@ module Workflows
           end
 
           begin
-            run_activity(Activities::CleanupServicesActivity,
+            run_cleanup_activity(Activities::CleanupServicesActivity,
               { agent_run_id: agent_run_id },
               start_to_close_timeout: 120, schedule_to_close_timeout: 300,
               retry_policy: CLEANUP_RETRY_POLICY)
@@ -484,7 +485,7 @@ module Workflows
           end
 
           begin
-            run_activity(Activities::CleanupWorktreeActivity,
+            run_cleanup_activity(Activities::CleanupWorktreeActivity,
               { agent_run_id: agent_run_id },
               start_to_close_timeout: 120, schedule_to_close_timeout: 300,
               retry_policy: CLEANUP_RETRY_POLICY)
@@ -504,7 +505,7 @@ module Workflows
         # For retained containers the janitor respects the retention TTL.
         begin
           if agent_run_id.present?
-            run_activity(Activities::EnqueueJanitorActivity,
+            run_cleanup_activity(Activities::EnqueueJanitorActivity,
               { agent_run_id: agent_run_id },
               start_to_close_timeout: 10,
               retry_policy: Temporalio::RetryPolicy.new(max_attempts: 3, initial_interval: 1))
@@ -526,7 +527,7 @@ module Workflows
           error_msg = unwrap_error_message(workflow_error)
           if pre_runner_infra_error?(error_msg)
             begin
-              run_activity(Activities::RequeueInfraFailureActivity,
+              run_cleanup_activity(Activities::RequeueInfraFailureActivity,
                 { agent_run_id: agent_run_id },
                 start_to_close_timeout: 30,
                 retry_policy: NO_RETRY)

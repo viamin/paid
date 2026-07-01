@@ -199,6 +199,7 @@ module Workflows
       }
 
     rescue => e
+      raise_if_canceled!(e)
       policy_metadata = policy_metadata.presence || decomposition_policy_metadata_from_error(e)
 
       safe_log_decomposition_decision(
@@ -228,7 +229,8 @@ module Workflows
             Activities::CreateSubIssuesActivity
             Activities::UpdatePlanningLabelsActivity
           ]
-        }
+        },
+        detached: true
       )
 
       Temporalio::Workflow.logger.error(
@@ -316,13 +318,22 @@ module Workflows
       decision
     end
 
-    def safe_log_decomposition_decision(payload)
-      run_activity(
-        Activities::LogDecompositionDecisionActivity,
-        payload,
-        timeout: 30,
-        retry_policy: NO_RETRY
-      )
+    def safe_log_decomposition_decision(detached: false, **payload)
+      if detached
+        run_cleanup_activity(
+          Activities::LogDecompositionDecisionActivity,
+          payload,
+          timeout: 30,
+          retry_policy: NO_RETRY
+        )
+      else
+        run_activity(
+          Activities::LogDecompositionDecisionActivity,
+          payload,
+          timeout: 30,
+          retry_policy: NO_RETRY
+        )
+      end
     rescue => log_error
       Temporalio::Workflow.logger.warn(
         message: "planning.decomposition_decision_log_failed",

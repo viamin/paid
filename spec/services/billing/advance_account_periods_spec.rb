@@ -63,7 +63,14 @@ RSpec.describe Billing::AdvanceAccountPeriods do
 
     it "issues existing draft invoices for already invoiced periods" do
       freeze_time do
-        period = create(:billing_period, :invoiced, account: account, billing_plan: plan, ends_at: 1.day.ago)
+        period = create(
+          :billing_period,
+          :invoiced,
+          account: account,
+          billing_plan: plan,
+          starts_at: 1.month.ago.beginning_of_month,
+          ends_at: Time.current.beginning_of_month
+        )
         invoice = create(:billing_invoice, account: account, billing_period: period, status: "draft")
 
         result = described_class.call(account: account)

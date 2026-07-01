@@ -189,6 +189,21 @@ RSpec.describe Workflows::PromptEvolutionWorkflow do
       it "re-raises the error" do
         expect { workflow.execute(input) }.to raise_error(Temporalio::Error::ApplicationError)
       end
+
+      it "does not mark the recovery action failed on cancellation" do
+        allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+          case activity_class.name
+          when "Activities::SampleRunsActivity"
+            raise Temporalio::Error::CanceledError, "workflow canceled"
+          else
+            raise "unexpected activity #{activity_class.name}"
+          end
+        end
+
+        expect { workflow.execute(input.merge(recovery_action_id: 99)) }.to raise_error(Temporalio::Error::CanceledError)
+        expect(workflow).not_to have_received(:run_activity)
+          .with(Activities::MarkQualityRecoveryActionActivity, anything, any_args)
+      end
     end
   end
 end
