@@ -1,8 +1,23 @@
 # frozen_string_literal: true
 
+require "timeout"
+
 class ApplicationJob < ActiveJob::Base
+  # Raised when a job exceeds its configured perform_timeout. Subclasses
+  # Timeout::Error so it is still caught by the base StandardError rescue (and
+  # reported as a terminal failure) while remaining identifiable in incidents.
+  class PerformTimeoutError < Timeout::Error; end
+
   class_attribute :notification_subsystem, default: "general"
   class_attribute :max_attempts, default: 1
+
+  # Optional wall-clock ceiling (in seconds) for a single perform; nil disables
+  # it. Opt in per job as a backstop for work that can block indefinitely on
+  # external I/O (containers, network, git). Under GoodJob's :async_server mode
+  # jobs run on threads inside Puma, so a job that hangs forever also pins the
+  # code-reloader's load interlock and stalls every web request — this bound
+  # guarantees such a job eventually fails instead of hanging the process.
+  class_attribute :perform_timeout, default: nil
 
   rescue_from(StandardError) do |exception|
     notify_terminal_failure(exception) if executions >= self.class.max_attempts
@@ -16,6 +31,10 @@ class ApplicationJob < ActiveJob::Base
   end
 
   around_perform :with_tenant_context
+
+  # Innermost around_perform so the timeout bounds the actual work only, not the
+  # tenant/query-monitor setup around it.
+  around_perform :with_perform_timeout
 
   def notification_project_id
     nil
@@ -59,6 +78,13 @@ class ApplicationJob < ActiveJob::Base
     return TenantContext.with(account, &block) if account
 
     TenantContext.with_system_access(&block)
+  end
+
+  def with_perform_timeout(&block)
+    timeout = self.class.perform_timeout
+    return yield unless timeout
+
+    Timeout.timeout(timeout, PerformTimeoutError, "#{self.class.name} exceeded perform_timeout of #{timeout}s", &block)
   end
 
   def tenant_account

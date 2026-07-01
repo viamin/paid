@@ -42,6 +42,56 @@ RSpec.describe ApplicationJob do
     end
   end
 
+  describe "perform_timeout" do
+    it "defaults to nil (disabled)" do
+      expect(described_class.perform_timeout).to be_nil
+    end
+
+    it "runs perform normally when no timeout is configured" do
+      ran = false
+      job_class = Class.new(described_class) do
+        define_method(:perform) { ran = true }
+      end
+      stub_const("NoTimeoutJob", job_class)
+
+      job_class.new.perform_now
+      expect(ran).to be(true)
+    end
+
+    it "raises PerformTimeoutError when perform exceeds the configured ceiling" do
+      job_class = Class.new(described_class) do
+        self.perform_timeout = 1
+        self.max_attempts = 1
+
+        def perform
+          sleep 5
+        end
+      end
+      stub_const("SlowTimeoutJob", job_class)
+
+      allow(Paid::ExceptionNotifier).to receive(:new).and_return(
+        instance_double(Paid::ExceptionNotifier, call: nil)
+      )
+
+      job = job_class.new
+      job.executions = 0
+      expect { job.perform_now }.to raise_error(ApplicationJob::PerformTimeoutError)
+    end
+
+    it "does not interrupt work that finishes within the ceiling" do
+      job_class = Class.new(described_class) do
+        self.perform_timeout = 5
+
+        def perform
+          "done"
+        end
+      end
+      stub_const("FastTimeoutJob", job_class)
+
+      expect { job_class.new.perform_now }.not_to raise_error
+    end
+  end
+
   describe "rescue_from terminal-failure hook" do
     let(:account) { create(:account) }
 
