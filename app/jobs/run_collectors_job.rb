@@ -6,6 +6,11 @@ class RunCollectorsJob < ApplicationJob
   queue_as :knowledge
   self.notification_subsystem = "knowledge"
 
+  # Backstop against a collector run hanging indefinitely on container/git/network
+  # I/O. Inner per-command timeouts are 30s each; 20 minutes leaves ample room for
+  # a full multi-collector run while guaranteeing the job cannot hang forever.
+  self.perform_timeout = 20.minutes.to_i
+
   discard_on ActiveRecord::RecordNotFound
 
   # Prevent duplicate enqueues for the same project+SHA when staleness detection

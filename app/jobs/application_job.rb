@@ -1,8 +1,26 @@
 # frozen_string_literal: true
 
+require "timeout"
+
 class ApplicationJob < ActiveJob::Base
+  # Raised when a job exceeds its configured perform_timeout. Intentionally
+  # inherits from StandardError (NOT Timeout::Error) so that existing
+  # `rescue Timeout::Error` handlers in the call stacks — auth_health.rb,
+  # base_collector.rb, etc. — do not silently swallow the job-level abort
+  # signal. The base `rescue_from(StandardError)` hook in this class is what
+  # catches it, marks the job terminal, and reports an incident.
+  class PerformTimeoutError < StandardError; end
+
   class_attribute :notification_subsystem, default: "general"
   class_attribute :max_attempts, default: 1
+
+  # Optional wall-clock ceiling (in seconds) for a single perform; nil disables
+  # it. Opt in per job as a backstop for work that can block indefinitely on
+  # external I/O (containers, network, git). Under GoodJob's :async_server mode
+  # jobs run on threads inside Puma, so a job that hangs forever also pins the
+  # code-reloader's load interlock and stalls every web request — this bound
+  # guarantees such a job eventually fails instead of hanging the process.
+  class_attribute :perform_timeout, default: nil
 
   rescue_from(StandardError) do |exception|
     notify_terminal_failure(exception) if executions >= self.class.max_attempts
@@ -16,6 +34,13 @@ class ApplicationJob < ActiveJob::Base
   end
 
   around_perform :with_tenant_context
+
+  # IMPORTANT: must remain the last around_perform registration in this class.
+  # ActiveJob callbacks run in registration order, innermost last — adding
+  # another around_perform after this line silently places it inside the
+  # timeout ceiling. Keep the timeout scoped to the actual job work, not the
+  # tenant/query-monitor setup around it.
+  around_perform :with_perform_timeout
 
   def notification_project_id
     nil
@@ -59,6 +84,13 @@ class ApplicationJob < ActiveJob::Base
     return TenantContext.with(account, &block) if account
 
     TenantContext.with_system_access(&block)
+  end
+
+  def with_perform_timeout(&block)
+    timeout = self.class.perform_timeout&.to_i
+    return yield if timeout.nil? || timeout <= 0
+
+    Timeout.timeout(timeout, PerformTimeoutError, "#{self.class.name} exceeded perform_timeout of #{timeout}s", &block)
   end
 
   def tenant_account
