@@ -8,7 +8,10 @@ module Tools
     def self.write_operation? = true
 
     def self.description
-      "Start an agent run on an issue. Requires explicit confirmation."
+      "Start an agent run on a project. Pass issue_id to target an existing issue. To open a brand-new " \
+        "GitHub issue, use goal=create_issue with custom_prompt instead of issue_id — custom_prompt tells " \
+        "the agent what to investigate or implement; the agent writes the resulting issue title and body " \
+        "from its own output. Requires explicit confirmation."
     end
 
     def self.available_to?(user:)
@@ -20,20 +23,27 @@ module Tools
         type: "object",
         properties: {
           project_id: { type: "integer", description: "The project ID" },
-          issue_id: { type: "integer", description: "The issue ID" },
+          issue_id: { type: "integer", description: "The issue ID. Omit when goal is create_issue and custom_prompt is provided instead." },
           goal: { type: "string", description: "Run goal", enum: AgentRun::GOALS, default: "create_pr" },
+          custom_prompt: { type: "string", description: "Description of the work for the agent to do. Required when goal is create_issue and no issue_id is given." },
           confirmed: { type: "boolean", description: "Must be true to execute this write operation" }
         },
-        required: %w[project_id issue_id confirmed]
+        required: %w[project_id confirmed],
+        anyOf: [
+          { required: %w[issue_id] },
+          { required: %w[custom_prompt] }
+        ]
       }
     end
 
-    def perform(project_id:, issue_id:, confirmed: false, goal: "create_pr")
+    def perform(project_id:, confirmed: false, issue_id: nil, goal: "create_pr", custom_prompt: nil)
       raise ArgumentError, "Confirmation required: set confirmed=true to trigger an agent run" unless confirmed
 
       project = project_for(project_id)
+      issue = issue_id ? project.issues.find(issue_id) : nil
+      custom_prompt = custom_prompt&.strip.presence
 
-      issue = project.issues.find(issue_id)
+      raise ArgumentError, "issue_id or custom_prompt is required" if issue.nil? && custom_prompt.nil?
 
       runner_id, agent_type = AgentRuns::RunnerResolver.call(
         project: project,
@@ -47,6 +57,7 @@ module Tools
         runner_id: runner_id,
         agent_type: agent_type,
         goal: goal,
+        custom_prompt: custom_prompt,
         status: "queued",
         trigger_type: "manual"
       )
