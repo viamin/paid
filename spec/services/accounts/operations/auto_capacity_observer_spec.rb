@@ -14,7 +14,7 @@ RSpec.describe Accounts::Operations::AutoCapacityObserver do
   end
 
   before do
-    allow(Docker).to receive(:info).and_return(
+    allow(backend).to receive(:system_info).and_return(
       {
         "MemTotal" => 12.gigabytes,
         "NCPU" => 8
@@ -42,7 +42,7 @@ RSpec.describe Accounts::Operations::AutoCapacityObserver do
   end
 
   it "reports a degraded preview when docker metrics cannot be collected" do
-    allow(Docker).to receive(:info).and_raise(StandardError, "docker unavailable")
+    allow(backend).to receive(:system_info).and_raise(StandardError, "docker unavailable")
 
     payload = described_class.call(
       account: account,
@@ -146,7 +146,7 @@ RSpec.describe Accounts::Operations::AutoCapacityObserver do
 
   it "caches the degraded payload so repeated reads do not retry docker metrics" do
     create_recent_run_profile!
-    allow(Docker).to receive(:info).and_raise(StandardError, "docker unavailable")
+    allow(backend).to receive(:system_info).and_raise(StandardError, "docker unavailable")
 
     first = described_class.call(account: account, manual_limit: 3, backend: backend, cache: cache)
     second = described_class.call(account: account, manual_limit: 3, backend: backend, cache: cache)
@@ -154,7 +154,7 @@ RSpec.describe Accounts::Operations::AutoCapacityObserver do
     expect(first[:status]).to eq(:degraded)
     expect(first[:warnings].first).to include("Docker metrics could not be collected")
     expect(second[:status]).to eq(:degraded)
-    expect(Docker).to have_received(:info).exactly(1).time
+    expect(backend).to have_received(:system_info).exactly(1).time
   end
 
   def docker_container(labels:, memory_bytes:, cpu_percent:)

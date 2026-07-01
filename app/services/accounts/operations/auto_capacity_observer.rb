@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "docker-api"
 require "pathname"
 require "timeout"
 
@@ -163,9 +162,7 @@ module Accounts
       end
 
       def docker_info
-        return backend.connection.info if backend.respond_to?(:connection)
-
-        Docker.info
+        backend.system_info
       end
 
       def empty_usage
