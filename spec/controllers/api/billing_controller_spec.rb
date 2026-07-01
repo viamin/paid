@@ -112,7 +112,7 @@ RSpec.describe Api::BillingController, type: :request do
       expect(response).to have_http_status(:ok)
       body = response.parsed_body
       expect(body.length).to eq(1)
-      expect(body.first).to include("id", "status", "total_cents")
+      expect(body.first).to include("id", "status", "total_cents", "payment_sync_status", "payment_provider")
     end
   end
 

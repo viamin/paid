@@ -1292,6 +1292,66 @@ RSpec.describe Containers::Provision do
       end
     end
 
+    context "with Claude managed subscription token" do
+      let!(:managed_credential) do
+        create(
+          :integration_credential,
+          :oauth,
+          account: project.account,
+          created_by: project.created_by,
+          service_key: "claude",
+          secret: "sk-ant-oat01-managed-token"
+        )
+      end
+
+      before do
+        allow(ENV).to receive(:fetch).and_call_original
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(nil)
+        allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("COPILOT_HOME").and_return(nil)
+        allow(ENV).to receive(:[]).with("COPILOT_CONFIG_DIR").and_return(nil)
+        allow(service).to receive_messages(
+          claude_local_config_path: nil,
+          codex_local_config_path: nil,
+          gemini_local_config_path: nil,
+          copilot_local_config_path: nil
+        )
+      end
+
+      it "treats the managed token as Claude subscription auth and injects it into the container env" do
+        expect(Docker::Container).to receive(:create) do |config|
+          env = config["Env"]
+          expect(env).to include(
+            "PAID_CLAUDE_SUBSCRIPTION_AUTH=1",
+            "CLAUDE_CODE_OAUTH_TOKEN=#{managed_credential.secret}"
+          )
+          expect(env.none? { |entry| entry.start_with?("ANTHROPIC_BASE_URL=") }).to be(true)
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "uses the infrastructure network" do
+        expect(Docker::Container).to receive(:create) do |config|
+          expect(config["HostConfig"]["NetworkMode"]).to eq(NetworkPolicy::INFRA_NETWORK_NAME)
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "skips seeding host-forwarded Claude credentials" do
+        expect(service).not_to receive(:seed_host_credentials!)
+        expect(service).not_to receive(:seed_local_credentials!)
+
+        service.provision
+      end
+    end
+
     context "with Gemini subscription auth (GEMINI_CONFIG_DIR)" do
       let(:gemini_config_dir) { Dir.mktmpdir("gemini-config") }
 
@@ -3801,6 +3861,36 @@ RSpec.describe Containers::Provision do
       end
     end
 
+    describe "#claude_subscription_auth?" do
+      before do
+        allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return(nil)
+        allow(service).to receive(:claude_local_config_path).and_return(nil)
+      end
+
+      it "returns true when an active managed Claude OAuth token exists for the account" do
+        create(
+          :integration_credential,
+          :oauth,
+          account: project.account,
+          created_by: project.created_by,
+          service_key: "claude"
+        )
+
+        expect(service.send(:claude_subscription_auth?)).to be(true)
+      end
+
+      it "ignores account-managed Claude credentials that are not OAuth tokens" do
+        create(
+          :integration_credential,
+          account: project.account,
+          created_by: project.created_by,
+          service_key: "claude"
+        )
+
+        expect(service.send(:claude_subscription_auth?)).to be(false)
+      end
+    end
+
     describe "#with_claude_auth_lock" do
       before do
         File.write(File.join(claude_config_dir, ".credentials.json"), "{}")
@@ -3846,9 +3936,14 @@ RSpec.describe Containers::Provision do
         File.write(File.join(claude_config_dir, ".credentials.json"), "{}")
       end
 
-      context "when AgentHarness::Authentication does not expose exchange_refresh_token" do
+      context "when AgentHarness::Authentication does not support exchange_refresh_token" do
+        before do
+          allow(AgentHarness::Authentication).to receive(:exchange_refresh_token_supported?)
+            .with(:claude)
+            .and_return(false)
+        end
+
         it "logs unsupported and returns false" do
-          # Ensure exchange_refresh_token is NOT defined so respond_to? returns false naturally
           result = service.send(:exchange_claude_refresh_token!)
 
           expect(result).to be false
@@ -3858,21 +3953,23 @@ RSpec.describe Containers::Provision do
         end
       end
 
-      # exchange_refresh_token does not exist upstream yet (viamin/agent-harness#265);
-      # bypass verify_partial_doubles so we can stub the future API.
-      context "when AgentHarness::Authentication exposes exchange_refresh_token", :without_partial_double_verification do
-        around { |example| without_partial_double_verification { example.run } }
+      context "when AgentHarness::Authentication supports exchange_refresh_token" do
+        before do
+          allow(AgentHarness::Authentication).to receive(:exchange_refresh_token_supported?)
+            .with(:claude)
+            .and_return(true)
+        end
 
-        it "calls exchange_refresh_token with the source path and returns true on success" do
+        it "calls exchange_refresh_token with the source path in CLAUDE_CONFIG_DIR and returns true on success" do
           allow(AgentHarness::Authentication).to receive(:exchange_refresh_token)
-            .with(:claude, credentials_path: claude_config_dir)
+            .with(:claude)
             .and_return({ success: true })
 
           result = service.send(:exchange_claude_refresh_token!)
 
           expect(result).to be true
           expect(AgentHarness::Authentication).to have_received(:exchange_refresh_token)
-            .with(:claude, credentials_path: claude_config_dir)
+            .with(:claude)
           expect(service).to have_received(:log_system).with(
             "container.claude_auth_refreshed", hash_including(:source_path)
           )
@@ -3984,6 +4081,24 @@ RSpec.describe Containers::Provision do
         service.send(:seed_claude_credentials!)
 
         expect(service).not_to have_received(:refresh_claude_credentials_if_near_expiry!)
+      end
+
+      it "skips host and local credential seeding when a managed token is present" do
+        create(
+          :integration_credential,
+          :oauth,
+          account: project.account,
+          created_by: project.created_by,
+          service_key: "claude"
+        )
+        allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return(nil)
+        allow(service).to receive(:claude_local_config_path).and_return(nil)
+
+        service.send(:seed_claude_credentials!)
+
+        expect(service).not_to have_received(:refresh_claude_credentials_if_near_expiry!)
+        expect(service).not_to have_received(:seed_host_credentials!)
+        expect(service).not_to have_received(:seed_local_credentials!)
       end
     end
   end

@@ -24,5 +24,10 @@ FactoryBot.define do
     trait :reverted do
       status { "reverted" }
     end
+
+    trait :without_context_links do
+      chat_session { nil }
+      issue { nil }
+    end
   end
 end

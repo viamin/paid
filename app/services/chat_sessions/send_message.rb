@@ -13,6 +13,8 @@ module ChatSessions
   #     on_chunk: ->(chunk) { ActionCable.server.broadcast(channel, chunk) }
   #   )
   class SendMessage
+    include FallbackLoop
+
     attr_reader :chat_session, :content, :on_chunk, :on_message_persisted, :llm_client, :stream_message_id
 
     MAX_CONTENT_LENGTH = 12_000
@@ -37,7 +39,7 @@ module ChatSessions
       resume_session_if_needed!
 
       persist_user_message
-      assistant_message = ChatSessions::AgentLoop.new(**loop_kwargs).run
+      assistant_message = run_with_fallbacks
       update_session_activity
       assistant_message
     end
@@ -92,16 +94,6 @@ module ChatSessions
       chat_session.generate_title_from_content!
       on_message_persisted&.call(message)
       message
-    end
-
-    def loop_kwargs
-      {
-        chat_session: chat_session,
-        llm_client: llm_client,
-        on_chunk: on_chunk,
-        on_message_persisted: on_message_persisted,
-        stream_message_id: stream_message_id
-      }
     end
 
     def update_session_activity

@@ -214,6 +214,7 @@ RSpec.describe Knowledge::ContextBundle::Build do
         expect(result[:sections]).to include(:change_intents)
         expect(result[:content]).to include("Recent Change Intents")
         expect(result[:content]).to include("Prefer sliding window over token bucket")
+        expect(result[:content]).to include("active")
       end
     end
 
@@ -294,6 +295,7 @@ RSpec.describe Knowledge::ContextBundle::Build do
           identifier: "app/models/user.rb", content: "hotspot",
           metadata: { "revisions" => 30 }, status: "active")
         create(:decision_record, project: project, title: "Use JWT", status: "active")
+        create(:change_intent, project: project, title: "Prefer sliding window rate limiting", status: "active")
         create(:knowledge_artifact,
           project: project, collector_run: collector_run,
           artifact_type: "schema", identifier: "users",
@@ -308,7 +310,7 @@ RSpec.describe Knowledge::ContextBundle::Build do
       it "includes all section types in correct order" do
         result = described_class.call(issue: issue, project: project)
 
-        expect(result[:sections]).to eq(%i[routes symbols schema hotspots decisions stats])
+        expect(result[:sections]).to eq(%i[routes symbols schema hotspots decisions change_intents stats])
         expect(result[:content]).to include("Codebase Context")
       end
 

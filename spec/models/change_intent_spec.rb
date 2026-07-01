@@ -28,12 +28,37 @@ RSpec.describe ChangeIntent do
       expect(record.errors[:chat_session]).to include("must belong to the same project")
     end
 
-    it "rejects issues from a different project" do
-      other_project = create(:project)
-      record = build(:change_intent, issue: create(:issue, project: other_project))
+    it "accepts a referenced chat session for the same project" do
+      project = create(:project)
+      session = create(:chat_session, account: project.account, project: nil)
+      create(:chat_session_project, chat_session: session, project: project)
+      record = build(:change_intent, project: project, chat_session: session, issue: create(:issue, project: project))
+
+      expect(record).to be_valid
+    end
+
+    it "rejects an issue from a different project" do
+      other_issue = create(:issue)
+      record = build(:change_intent, issue: other_issue)
 
       expect(record).not_to be_valid
       expect(record.errors[:issue]).to include("must belong to the same project")
+    end
+
+    it "rejects superseded_by from a different project" do
+      other_record = create(:change_intent)
+      record = build(:change_intent, superseded_by: other_record)
+
+      expect(record).not_to be_valid
+      expect(record.errors[:superseded_by]).to include("must belong to the same project")
+    end
+
+    it "rejects superseded_by referencing itself" do
+      record = create(:change_intent)
+      record.superseded_by = record
+
+      expect(record).not_to be_valid
+      expect(record.errors[:superseded_by]).to include("cannot reference itself")
     end
   end
 
@@ -52,15 +77,94 @@ RSpec.describe ChangeIntent do
 
       expect(record.save).to be true
     end
+
+    it "allows updating superseded_by" do
+      record = create(:change_intent)
+      replacement = create(:change_intent, project: record.project)
+      record.superseded_by = replacement
+
+      expect(record.save).to be true
+    end
+  end
+
+  describe "scopes" do
+    it "returns only active records from .active" do
+      active = create(:change_intent, status: "active")
+      create(:change_intent, :draft)
+
+      expect(described_class.active).to eq([ active ])
+    end
+
+    it "returns only draft records from .draft" do
+      create(:change_intent, status: "active")
+      draft = create(:change_intent, :draft)
+
+      expect(described_class.draft).to eq([ draft ])
+    end
   end
 
   describe "#activate!" do
-    it "transitions from draft to active status" do
+    it "transitions from draft to active" do
       record = create(:change_intent, :draft)
 
       record.activate!
 
       expect(record.reload.status).to eq("active")
+    end
+
+    it "raises when not in draft" do
+      record = create(:change_intent, status: "active")
+
+      expect { record.activate! }.to raise_error(ChangeIntent::InvalidTransitionError, /cannot activate from active/)
+    end
+  end
+
+  describe "#supersede!" do
+    it "marks the record as superseded by the given record" do
+      original = create(:change_intent)
+      replacement = create(:change_intent, project: original.project)
+
+      original.supersede!(replacement)
+
+      expect(original.reload.status).to eq("superseded")
+      expect(original.superseded_by).to eq(replacement)
+    end
+
+    it "raises when superseding with itself" do
+      record = create(:change_intent)
+
+      expect { record.supersede!(record) }.to raise_error(ArgumentError, "cannot supersede with itself")
+    end
+
+    it "raises when already superseded" do
+      record = create(:change_intent, status: "superseded")
+      replacement = create(:change_intent, project: record.project)
+
+      expect { record.supersede!(replacement) }.to raise_error(ChangeIntent::InvalidTransitionError, /cannot supersede from superseded/)
+    end
+  end
+
+  describe "#revert!" do
+    it "transitions from draft to reverted" do
+      record = create(:change_intent, :draft)
+
+      record.revert!
+
+      expect(record.reload.status).to eq("reverted")
+    end
+
+    it "transitions from active to reverted" do
+      record = create(:change_intent, status: "active")
+
+      record.revert!
+
+      expect(record.reload.status).to eq("reverted")
+    end
+
+    it "raises when already superseded" do
+      record = create(:change_intent, status: "superseded")
+
+      expect { record.revert! }.to raise_error(ChangeIntent::InvalidTransitionError, /cannot revert from superseded/)
     end
   end
 end

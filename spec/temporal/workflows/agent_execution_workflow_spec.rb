@@ -1124,6 +1124,29 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       end
     end
 
+    def expect_cleanup_activities_with_cancellation(detached_cancellation)
+      [
+        Activities::CleanupMcpServersActivity,
+        Activities::CleanupContainerActivity,
+        Activities::CleanupServicesActivity,
+        Activities::CleanupWorktreeActivity,
+        Activities::EnqueueJanitorActivity
+      ].each do |activity_class|
+        expect(workflow).to have_received(:run_activity)
+          .with(activity_class, anything, hash_including(cancellation: detached_cancellation))
+      end
+    end
+
+    def stub_canceled_run_with_cleanup
+      allow(workflow).to receive(:run_activity).and_return({})
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::CreateAgentRunActivity, anything, timeout: 30)
+        .and_return(agent_run_id: 42)
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::RunAgentActivity, anything, anything)
+        .and_raise(Temporalio::Error::CanceledError, "workflow canceled")
+    end
+
     it "enqueues the janitor activity in the ensure block" do
       stub_successful_run
 
@@ -1132,6 +1155,8 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       expect(workflow).to have_received(:run_activity)
         .with(Activities::EnqueueJanitorActivity,
               { agent_run_id: 42 },
+              timeout: 300,
+              cancellation: an_instance_of(Temporalio::Cancellation),
               start_to_close_timeout: 10,
               retry_policy: an_instance_of(Temporalio::RetryPolicy))
     end
@@ -1149,9 +1174,23 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       ].each do |activity_class|
         expect(workflow).to have_received(:run_activity)
           .with(activity_class, { agent_run_id: 42 },
+                timeout: 300,
+                cancellation: an_instance_of(Temporalio::Cancellation),
                 start_to_close_timeout: 120, schedule_to_close_timeout: 300,
                 retry_policy: described_class::CLEANUP_RETRY_POLICY)
       end
+    end
+
+    it "uses detached cancellation for cleanup and janitor activities after cancellation" do
+      detached_cancellation = instance_double(Temporalio::Cancellation)
+      allow(Temporalio::Cancellation).to receive(:new).and_return([ detached_cancellation, -> { } ])
+      stub_canceled_run_with_cleanup
+
+      expect { workflow.execute(input) }.to raise_error(Temporalio::Error::CanceledError)
+
+      expect_cleanup_activities_with_cancellation(detached_cancellation)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::MarkAgentRunFailedActivity, any_args)
     end
 
     it "does not enqueue janitor when agent_run_id is nil" do

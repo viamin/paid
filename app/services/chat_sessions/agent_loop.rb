@@ -17,7 +17,8 @@ module ChatSessions
     EMPTY_RESPONSE_MESSAGE = "I couldn't complete that turn because the model returned an empty response. Please try again."
     TOOL_ITERATION_LIMIT_MESSAGE = "I hit the maximum number of tool iterations for this turn. Please try again with a narrower request."
 
-    attr_reader :chat_session, :llm_client, :on_chunk, :on_message_persisted, :stream_message_id
+    attr_reader :chat_session, :llm_client, :on_chunk, :on_message_persisted, :stream_message_id,
+      :created_message_ids
 
     def initialize(chat_session:, llm_client:, on_chunk: nil, on_message_persisted: nil, stream_message_id: nil)
       @chat_session = chat_session
@@ -25,6 +26,7 @@ module ChatSessions
       @on_chunk = on_chunk
       @on_message_persisted = on_message_persisted
       @stream_message_id = stream_message_id
+      @created_message_ids = []
     end
 
     # @return [ChatMessage, nil] the final assistant message, or +nil+ when the
@@ -173,6 +175,8 @@ module ChatSessions
       messages = messages.last(MAX_CONVERSATION_MESSAGES)
 
       messages.each_with_object([]) do |msg, conversation|
+        next if msg.fallback_notice?
+
         if assistant_tool_call_message?(msg)
           append_assistant_tool_call_entry(conversation, msg)
         else
@@ -287,6 +291,7 @@ module ChatSessions
         tokens_output: response[:tokens_output]
       )
 
+      track_created_message(message)
       on_message_persisted&.call(message, stream_message_id: stream_message_id)
       message
     end
@@ -325,6 +330,7 @@ module ChatSessions
         tool_result: tool_result
       )
 
+      track_created_message(tool_call_message)
       on_message_persisted&.call(tool_call_message)
       tool_call_message
     end
@@ -342,6 +348,7 @@ module ChatSessions
         tool_name: tool_call[:name]
       )
 
+      track_created_message(tool_result_message)
       on_message_persisted&.call(tool_result_message)
       tool_result_message
     end
@@ -354,6 +361,16 @@ module ChatSessions
       JSON.parse(arguments)
     rescue JSON::ParserError
       {}
+    end
+
+    # Records the id of every row this attempt persists so FallbackLoop can roll
+    # back exactly the failed attempt's messages (see
+    # FallbackLoop#discard_partial_attempt) instead of every row created after a
+    # checkpoint — the latter would also delete a concurrent turn's messages,
+    # since neither SendMessage nor ResolveToolCall locks the session.
+    def track_created_message(message)
+      @created_message_ids << message.id
+      message
     end
 
     def finalize_token_usage(assistant_message)

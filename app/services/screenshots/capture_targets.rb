@@ -104,6 +104,9 @@ module Screenshots
       providers: Target.new(slug: "providers", path_builder: "/runners", requires_auth: true),
       providers_new: Target.new(slug: "providers_new", path_builder: "/runners/new?form_variant=subscription", requires_auth: true),
       providers_edit: Target.new(slug: "providers_edit", path_builder: ->(seed_data) { "/runners/#{seed_data.fetch(:runner).id}/edit" }, requires_auth: true),
+      runner_credentials: Target.new(slug: "runner_credentials", path_builder: "/runner_credentials", requires_auth: true),
+      runner_credential_new: Target.new(slug: "runner_credential_new", path_builder: "/runner_credentials/new?runner_key=claude", requires_auth: true),
+      runner_credential_show: Target.new(slug: "runner_credential_show", path_builder: ->(seed_data) { "/runner_credentials/#{seed_data.fetch(:runner_credential).id}" }, requires_auth: true),
       marketplace_entries: Target.new(slug: "marketplace_entries", path_builder: "/marketplace_entries", requires_auth: true),
       marketplace_entry_new: Target.new(slug: "marketplace_entry_new", path_builder: "/marketplace_entries/new", requires_auth: true),
       marketplace_entry_show: Target.new(slug: "marketplace_entry_show", path_builder: ->(seed_data) { "/marketplace_entries/#{seed_data.fetch(:marketplace_entry).id}" }, requires_auth: true),
@@ -227,6 +230,7 @@ module Screenshots
       "ab_tests_controller.rb" => %i[ab_tests ab_test_new ab_test_show],
       "providers_controller.rb" => %i[providers providers_new providers_edit],
       "runners_controller.rb" => %i[providers providers_new providers_edit],
+      "runner_credentials_controller.rb" => %i[runner_credentials runner_credential_new runner_credential_show],
       "provider_api_keys_controller.rb" => %i[provider_api_keys provider_api_key_new provider_api_key_show provider_api_key_edit],
       "marketplace_entries_controller.rb" => %i[marketplace_entries marketplace_entry_new marketplace_entry_show marketplace_entry_edit],
       "integrations_controller.rb" => %i[integrations integrations_new],
@@ -295,6 +299,7 @@ module Screenshots
       "projects/quality_thresholds_controller.rb" => [ :project_quality_dashboard ],
       "projects/service_containers_controller.rb" => [ :project_edit ],
       "projects/mcp_servers_controller.rb" => [ :project_edit ],
+      "projects/mutation_test_requirements_controller.rb" => [ :project_edit ],
       "projects/knowledge_recommendations_controller.rb" => [ :project_knowledge_recommendations ],
       "projects/screenshot_configs_controller.rb" => [ :project_edit ],
       "projects/convention_settings_controller.rb" => [ :project_convention_settings ],
@@ -503,6 +508,7 @@ module Screenshots
       when /\Aprovider_api_keys\// then rest_resource_targets(relative_path, "provider_api_keys", index: :provider_api_keys, new: :provider_api_key_new, show: :provider_api_key_show, edit: :provider_api_key_edit)
       when /\Aproviders\// then providers_targets(relative_path.delete_prefix("providers/"))
       when /\Arunners\// then providers_targets(relative_path.delete_prefix("runners/"))
+      when /\Arunner_credentials\// then rest_resource_targets(relative_path, "runner_credentials", index: :runner_credentials, new: :runner_credential_new, show: :runner_credential_show, edit: :runner_credential_show)
       when /\Aservice_containers\// then rest_resource_targets(relative_path, "service_containers", index: :service_containers, new: :service_container_new, show: :service_container_show, edit: :service_container_edit)
       when /\Amarketplace_entries\// then rest_resource_targets(relative_path, "marketplace_entries", index: :marketplace_entries, new: :marketplace_entry_new, show: :marketplace_entry_show, edit: :marketplace_entry_edit)
       when /\Amarketplace_entry_pdf_imports\// then [ :marketplace_entry_pdf_import_new ]

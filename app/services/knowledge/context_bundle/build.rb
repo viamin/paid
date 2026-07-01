@@ -230,6 +230,30 @@ module Knowledge
         }
       end
 
+      def build_change_intents_section
+        records = ChangeIntent.for_project(project)
+                              .where(status: %w[active draft])
+                              .order(created_at: :desc)
+                              .limit(10)
+                              .to_a
+        return nil if records.empty?
+
+        lines = records.map do |record|
+          date = record.created_at.strftime("%Y-%m-%d")
+          "- CIR: \"#{record.title}\" (#{record.status}, #{date})"
+        end
+
+        {
+          name: :change_intents,
+          heading: "Recent Change Intents",
+          content: lines.join("\n"),
+          artifact_type: section_artifact_type(:change_intents),
+          artifact_count: records.size,
+          chunk_count: 0,
+          token_count: estimate_tokens("### Recent Change Intents\n#{lines.join("\n")}")
+        }
+      end
+
       def build_stats_section
         artifacts = active_artifacts("language_stat")
         return nil if artifacts.empty?

@@ -39,6 +39,18 @@ RSpec.describe Accounts::Provision do
       expect(billing_plan.base_rate_cents).to eq(4900)
     end
 
+    it "opens the initial billing period during provisioning" do
+      freeze_time do
+        result = described_class.call(name: "Billing Org")
+
+        period = result.account.billing_periods.order(:starts_at).last
+        expect(period).to be_present
+        expect(period).to be_open
+        expect(period.starts_at).to eq(Time.current.beginning_of_month)
+        expect(period.ends_at).to eq(Time.current.beginning_of_month.next_month)
+      end
+    end
+
     it "starts the onboarding flow" do
       result = described_class.call(name: "New Org")
 

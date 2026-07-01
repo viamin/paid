@@ -40,6 +40,7 @@ class UserSettingsController < ApplicationController
       :github_token_cache_ttl_minutes,
       :token_validation_stale_minutes,
       :agent_timeout_seconds,
+      :agent_update_comment_mode,
       :marketplace_auto_attach_enabled,
       :max_execution_seconds,
       :default_agent_runner,

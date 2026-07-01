@@ -65,7 +65,9 @@ class ChangeIntent < ApplicationRecord
   private
 
   def chat_session_belongs_to_same_project
-    return if chat_session.project_id == project_id
+    direct_match = chat_session.project_id == project_id
+    referenced_match = chat_session.projects.where(id: project_id).exists?
+    return if direct_match || referenced_match
 
     errors.add(:chat_session, "must belong to the same project")
   end

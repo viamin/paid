@@ -14,6 +14,7 @@ module ChatSessions
   # unanswered tool call to the model.
   class ResolveToolCall
     include ToolDispatch
+    include FallbackLoop
 
     DECISIONS = %i[approve deny].freeze
     DENIED_RESULT = { status: "denied", message: "The requested action was not approved" }.freeze
@@ -21,7 +22,7 @@ module ChatSessions
     attr_reader :chat_session, :tool_call_message, :decision, :llm_client,
       :on_chunk, :on_message_persisted, :on_tool_call_resolved, :stream_message_id
 
-    def initialize(chat_session:, tool_call_message:, decision:, llm_client:, on_chunk: nil,
+    def initialize(chat_session:, tool_call_message:, decision:, llm_client: nil, on_chunk: nil,
       on_message_persisted: nil, on_tool_call_resolved: nil, stream_message_id: nil)
       @chat_session = chat_session
       @tool_call_message = tool_call_message
@@ -169,21 +170,11 @@ module ChatSessions
     def resume_loop_unless_other_pending
       return nil if other_pending_confirmations?
 
-      resume_loop
+      run_with_fallbacks
     end
 
     def other_pending_confirmations?
       chat_session.messages.pending_tool_confirmations.exists?
-    end
-
-    def resume_loop
-      ChatSessions::AgentLoop.new(
-        chat_session: chat_session,
-        llm_client: llm_client,
-        on_chunk: on_chunk,
-        on_message_persisted: on_message_persisted,
-        stream_message_id: stream_message_id
-      ).run
     end
 
     def update_session_activity
