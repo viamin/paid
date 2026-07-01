@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "pathname"
 require "timeout"
 
 module Accounts
@@ -115,12 +114,14 @@ module Accounts
       end
 
       def collect_snapshot
+        inventory = docker_container_inventory
         daemon_info = docker_info
         usage = empty_usage
         running_agent_count = 0
         warnings = []
         deadline = monotonic_now + DOCKER_SAMPLING_BUDGET
-        containers = list_running_containers
+        references = inventory.build_references
+        containers = inventory.list_running_containers(timeout: DOCKER_LIST_TIMEOUT)
 
         containers.each_with_index do |container, index|
           if sampling_budget_exceeded?(deadline)
@@ -130,16 +131,15 @@ module Accounts
             break
           end
 
-          info = container.info
           stats = Containers::DockerStatsParser.parse_stats(
             with_timeout(per_container_timeout(deadline)) { backend.container_stats(container, stream: false) }
           )
-          bucket = classify_container(info)
+          bucket = usage_bucket_for(inventory.classify_container(container:, references:))
 
           usage[bucket][:container_count] += 1
           usage[bucket][:cpu_percent] += stats[:cpu_percent]
           usage[bucket][:memory_bytes] += stats[:memory_bytes]
-          running_agent_count += 1 if counts_as_running_agent?(info)
+          running_agent_count += 1 if inventory.running_paid_agent_container?(container:, references:)
         rescue StandardError => error
           warnings << sampling_warning(error)
         end
@@ -169,8 +169,8 @@ module Accounts
         with_timeout(DOCKER_INFO_TIMEOUT) { backend.system_info }
       end
 
-      def list_running_containers
-        with_timeout(DOCKER_LIST_TIMEOUT) { backend.list_containers(all: false) }
+      def docker_container_inventory
+        @docker_container_inventory ||= Capacity::DockerContainerInventory.new(backend: backend)
       end
 
       def with_timeout(duration)
@@ -213,56 +213,13 @@ module Accounts
         end
       end
 
-      def classify_container(info)
-        labels = container_labels(info)
-        compose_service = labels["com.docker.compose.service"]
-        compose_project = labels["com.docker.compose.project"]
-        compose_workdir = labels["com.docker.compose.project.working_dir"]
-
-        return :service if labels["paid.service_container"] == "true"
-        return :agent if labels["paid.agent_run_id"].present? || labels["paid.mcp_sidecar"] == "true" || labels["paid.container_pool"] == "true"
-        return :paid if labels["paid.managed"] == "true" || labels["paid.resource"].present?
-        return :paid if paid_control_plane_service?(compose_service:, compose_project:, compose_workdir:)
-
-        :other
-      end
-
-      def paid_control_plane_service?(compose_service:, compose_project:, compose_workdir:)
-        return false unless compose_service.present?
-        return false unless Capacity::DockerSnapshot::PAID_COMPOSE_SERVICES.include?(compose_service)
-
-        paid_compose_project?(compose_project) || paid_compose_workdir?(compose_workdir)
-      end
-
-      def paid_compose_project?(compose_project)
-        normalize_compose_project(compose_project) == Capacity::DockerSnapshot::PAID_COMPOSE_PROJECT
-      end
-
-      def paid_compose_workdir?(compose_workdir)
-        normalize_compose_workdir(compose_workdir)&.basename&.to_s == Capacity::DockerSnapshot::PAID_COMPOSE_PROJECT
-      rescue ArgumentError
-        false
-      end
-
-      def normalize_compose_project(compose_project)
-        compose_project.to_s.strip.downcase
-      end
-
-      def normalize_compose_workdir(compose_workdir)
-        raw = compose_workdir.to_s.strip
-        return if raw.blank?
-
-        Pathname.new(raw.tr("\\", "/")).cleanpath
-      end
-
-      def counts_as_running_agent?(info)
-        labels = container_labels(info)
-
-        labels["paid.agent_run_id"].present? && labels["paid.mcp_sidecar"] != "true"
-      end
-
-      def container_labels(info)
-        info.fetch("Labels", {}).presence || info.dig("Config", "Labels") || {}
+      def usage_bucket_for(classification)
+        case classification
+        when :paid_control_plane then :paid
+        when :paid_agents then :agent
+        when :paid_service_containers then :service
+        else :other
+        end
       end
 
       # Only the local Docker backend can give us a host-level preview: swarm

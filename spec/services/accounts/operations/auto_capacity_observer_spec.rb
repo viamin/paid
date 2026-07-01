@@ -14,17 +14,19 @@ RSpec.describe Accounts::Operations::AutoCapacityObserver do
   end
 
   before do
-    allow(backend).to receive(:system_info).and_return(
-      {
+    allow(backend).to receive_messages(
+      system_info: {
         "MemTotal" => 12.gigabytes,
         "NCPU" => 8
-      }
+      },
+      all_host_identifiers: [ "local" ],
+      capacity_snapshot_list_container_options: {}
     )
   end
 
   it "summarizes docker usage into paid, agent, service, and other buckets" do
     create_recent_run_profile!
-    allow(backend).to receive(:list_containers).with(all: false).and_return(sampled_containers)
+    allow(backend).to receive(:list_containers).with(no_args).and_return(sampled_containers)
 
     payload = described_class.call(account: account, manual_limit: 5, backend: backend, cache: cache)
 
@@ -33,7 +35,7 @@ RSpec.describe Accounts::Operations::AutoCapacityObserver do
 
   it "subtracts memory already used by running agents from additional agent headroom" do
     create_recent_run_profile!
-    allow(backend).to receive(:list_containers).with(all: false).and_return(sampled_containers)
+    allow(backend).to receive(:list_containers).with(no_args).and_return(sampled_containers)
 
     payload = described_class.call(account: account, manual_limit: 5, backend: backend, cache: cache)
 
@@ -65,7 +67,7 @@ RSpec.describe Accounts::Operations::AutoCapacityObserver do
       error_message: "stats unavailable"
     )
 
-    allow(backend).to receive(:list_containers).with(all: false).and_return([ healthy_container, failing_container ])
+    allow(backend).to receive(:list_containers).with(no_args).and_return([ healthy_container, failing_container ])
 
     payload = described_class.call(account: account, manual_limit: 5, backend: backend, cache: cache)
 
@@ -92,11 +94,12 @@ RSpec.describe Accounts::Operations::AutoCapacityObserver do
     create_recent_run_profile!
     summary_container = instance_double(
       Docker::Container,
-      info: { "Labels" => { "paid.agent_run_id" => "123" } }
+      id: "summary-1",
+      info: { "State" => "running", "Labels" => { "paid.agent_run_id" => "123" } }
     )
     stats = docker_stats(memory_bytes: 1.gigabyte, cpu_percent: 55.0)
     allow(backend).to receive(:container_stats).with(summary_container, stream: false).and_return(stats)
-    allow(backend).to receive(:list_containers).with(all: false).and_return([ summary_container ])
+    allow(backend).to receive(:list_containers).with(no_args).and_return([ summary_container ])
 
     payload = described_class.call(account: account, manual_limit: 5, backend: backend, cache: cache)
 
@@ -108,11 +111,12 @@ RSpec.describe Accounts::Operations::AutoCapacityObserver do
     create_recent_run_profile!
     swarm_style_container = instance_double(
       Docker::Container,
-      info: { "Config" => { "Labels" => { "paid.agent_run_id" => "456" } } }
+      id: "swarm-1",
+      info: { "State" => "running", "Config" => { "Labels" => { "paid.agent_run_id" => "456" } } }
     )
     stats = docker_stats(memory_bytes: 1.gigabyte, cpu_percent: 55.0)
     allow(backend).to receive(:container_stats).with(swarm_style_container, stream: false).and_return(stats)
-    allow(backend).to receive(:list_containers).with(all: false).and_return([ swarm_style_container ])
+    allow(backend).to receive(:list_containers).with(no_args).and_return([ swarm_style_container ])
 
     payload = described_class.call(account: account, manual_limit: 5, backend: backend, cache: cache)
 
@@ -122,7 +126,7 @@ RSpec.describe Accounts::Operations::AutoCapacityObserver do
 
   it "only treats compose services from the paid project as paid control plane usage" do
     create_recent_run_profile!
-    allow(backend).to receive(:list_containers).with(all: false).and_return(compose_labeled_containers)
+    allow(backend).to receive(:list_containers).with(no_args).and_return(compose_labeled_containers)
 
     payload = described_class.call(account: account, manual_limit: 5, backend: backend, cache: cache)
 
@@ -134,7 +138,7 @@ RSpec.describe Accounts::Operations::AutoCapacityObserver do
 
   it "classifies agent-image and agent-test compose services as paid control plane usage" do
     create_recent_run_profile!
-    allow(backend).to receive(:list_containers).with(all: false).and_return(agent_compose_containers)
+    allow(backend).to receive(:list_containers).with(no_args).and_return(agent_compose_containers)
 
     payload = described_class.call(account: account, manual_limit: 5, backend: backend, cache: cache)
 
@@ -145,7 +149,7 @@ RSpec.describe Accounts::Operations::AutoCapacityObserver do
 
   it "classifies paid.resource containers as paid control plane usage" do
     create_recent_run_profile!
-    allow(backend).to receive(:list_containers).with(all: false).and_return(paid_resource_containers)
+    allow(backend).to receive(:list_containers).with(no_args).and_return(paid_resource_containers)
 
     payload = described_class.call(account: account, manual_limit: 5, backend: backend, cache: cache)
 
@@ -168,12 +172,30 @@ RSpec.describe Accounts::Operations::AutoCapacityObserver do
     expect(backend).to have_received(:system_info).exactly(1).time
   end
 
-  def docker_container(labels:, memory_bytes:, cpu_percent:)
-    info = { "Config" => { "Labels" => labels } }
+  it "counts active chat containers as paid control plane usage" do
+    create_recent_run_profile!
+    create(:chat_session, account:, container_id: "chat-container-1", status: "active")
+    allow(backend).to receive(:list_containers).with(no_args).and_return(
+      [ docker_container(id: "chat-container-1", labels: {}, memory_bytes: 512.megabytes, cpu_percent: 12.0) ]
+    )
+
+    payload = described_class.call(account: account, manual_limit: 5, backend: backend, cache: cache)
+
+    expect(payload.dig(:usage, :paid, :container_count)).to eq(1)
+    expect(payload.dig(:usage, :paid, :memory_bytes)).to eq(512.megabytes)
+    expect(payload.dig(:usage, :other, :container_count)).to eq(0)
+  end
+
+  def docker_container(id: SecureRandom.hex(6), labels:, memory_bytes:, cpu_percent:)
+    info = {
+      "State" => "running",
+      "Config" => { "Labels" => labels }
+    }
     stats = docker_stats(memory_bytes:, cpu_percent:)
 
     instance_double(
       Docker::Container,
+      id: id,
       info: info,
       stats: stats
     ).tap do |container|
@@ -181,10 +203,13 @@ RSpec.describe Accounts::Operations::AutoCapacityObserver do
     end
   end
 
-  def failing_docker_container(labels:, error_message:)
-    info = { "Config" => { "Labels" => labels } }
+  def failing_docker_container(id: SecureRandom.hex(6), labels:, error_message:)
+    info = {
+      "State" => "running",
+      "Config" => { "Labels" => labels }
+    }
 
-    instance_double(Docker::Container, info: info).tap do |container|
+    instance_double(Docker::Container, id: id, info: info).tap do |container|
       allow(backend).to receive(:container_stats).with(container, stream: false)
         .and_raise(StandardError, error_message)
     end

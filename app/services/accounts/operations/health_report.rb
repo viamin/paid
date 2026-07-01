@@ -77,6 +77,9 @@ module Accounts
           account: account,
           tenant_setting: tenant_setting,
           billing_visible: billing_visible,
+          # Health report exports are used for operator diagnostics, so they
+          # include the same live tenant-specific preview shown in the UI
+          # instead of a cached host-level snapshot.
           include_auto_capacity: true
         )
       end
