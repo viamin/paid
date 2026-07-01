@@ -400,8 +400,26 @@ RSpec.describe Workflows::PlanningWorkflow, :no_db do
               error_details: hash_including(error_message: "LLM failed"),
               metadata: hash_including(**failure_policy_metadata)
             ),
+            cancellation: an_instance_of(Temporalio::Cancellation),
             timeout: 30,
             retry_policy: Workflows::PlanningWorkflow::NO_RETRY)
+      end
+
+      it "does not log a failure activity on cancellation" do
+        allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+          case activity_class.name
+          when "Activities::FetchPlanningContextActivity"
+            { context: {} }
+          when "Activities::DecomposeFeatureActivity"
+            raise Temporalio::Error::CanceledError, "workflow canceled"
+          else
+            raise "unexpected activity #{activity_class.name}"
+          end
+        end
+
+        expect { workflow.execute(input) }.to raise_error(Temporalio::Error::CanceledError)
+        expect(workflow).not_to have_received(:run_activity)
+          .with(Activities::LogDecompositionDecisionActivity, anything, any_args)
       end
     end
 

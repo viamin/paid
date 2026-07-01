@@ -145,23 +145,40 @@ module Workflows
         error_class: e.class.to_s,
         error: e.message
       )
-      fail_recovery_action(recovery_action_id, :workflow_failed, error_class: e.class.to_s, error_message: e.message)
+      raise_if_canceled!(e)
+      fail_recovery_action(
+        recovery_action_id,
+        :workflow_failed,
+        { error_class: e.class.to_s, error_message: e.message },
+        detached: true
+      )
       raise
     end
 
     private
 
-    def fail_recovery_action(recovery_action_id, status, result = {})
+    def fail_recovery_action(recovery_action_id, status, result = {}, detached: false)
       return unless recovery_action_id
 
-      run_activity(
-        Activities::MarkQualityRecoveryActionActivity,
-        {
-          recovery_action_id: recovery_action_id,
-          result: result.merge(status: status)
-        },
-        timeout: 30
-      )
+      if detached
+        run_cleanup_activity(
+          Activities::MarkQualityRecoveryActionActivity,
+          {
+            recovery_action_id: recovery_action_id,
+            result: result.merge(status: status)
+          },
+          timeout: 30
+        )
+      else
+        run_activity(
+          Activities::MarkQualityRecoveryActionActivity,
+          {
+            recovery_action_id: recovery_action_id,
+            result: result.merge(status: status)
+          },
+          timeout: 30
+        )
+      end
     end
   end
 end

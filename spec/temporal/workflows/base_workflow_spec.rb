@@ -87,4 +87,22 @@ RSpec.describe Workflows::BaseWorkflow, :no_db do
       expect(workflow).to have_received(:run_activity).once
     end
   end
+
+  describe "#run_cleanup_activity" do
+    let(:detached_cancellation) { instance_double(Temporalio::Cancellation) }
+
+    it "runs the activity with detached cancellation" do
+      allow(Temporalio::Cancellation).to receive(:new).and_return([ detached_cancellation, -> { } ])
+      allow(workflow).to receive(:run_activity).and_return({})
+
+      workflow.send(:run_cleanup_activity, Activities::CleanupContainerActivity, { agent_run_id: 42 }, timeout: 30)
+
+      expect(workflow).to have_received(:run_activity).with(
+        Activities::CleanupContainerActivity,
+        { agent_run_id: 42 },
+        timeout: 30,
+        cancellation: detached_cancellation
+      )
+    end
+  end
 end
