@@ -124,12 +124,21 @@ RSpec.describe Capacity::Policy do
 
       expect(decision.mode).to eq(Capacity::Policy::MANUAL)
       expect(decision.auto_allowed).to be(false)
+      expect(decision.auto_allowed_reasons).to eq([ "explicit_opt_out" ])
     end
 
     it "respects an explicit manual override for the deployment" do
       decision = described_class.call(snapshot: healthy_local_snapshot, now: now, explicit_mode: "manual")
 
       expect(decision.mode).to eq(Capacity::Policy::MANUAL)
+    end
+
+    it "ignores an explicit auto override when the deployment gate blocks auto" do
+      decision = described_class.call(snapshot: remote_snapshot, now: now, explicit_mode: "auto")
+
+      expect(decision.mode).to eq(Capacity::Policy::MANUAL)
+      expect(decision.auto_allowed).to be(false)
+      expect(decision.blocked_reasons.map(&:code)).to include("auto_mode_disabled_for_deployment")
     end
   end
 

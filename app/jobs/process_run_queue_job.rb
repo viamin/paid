@@ -254,7 +254,7 @@ class ProcessRunQueueJob < ApplicationJob
   end
 
   def user_has_capacity?(user)
-    policy_decision = current_capacity_policy(user)
+    policy_decision = current_capacity_policy
 
     if policy_decision && !policy_decision.auto_allowed
       # Auto mode is disabled for this deployment — log for observability but
@@ -433,7 +433,7 @@ class ProcessRunQueueJob < ApplicationJob
   # and the caller falls back to legacy behavior — fail-safe default
   # rather than fail-loud: leaving the queue running with stable manual
   # limits is better than halting dispatch.
-  def current_capacity_policy(user)
+  def current_capacity_policy
     return @current_capacity_policy if defined?(@current_capacity_policy)
 
     snapshot = Capacity::DockerSnapshot.call

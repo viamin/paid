@@ -285,10 +285,10 @@ module Capacity
     end
 
     def compute_auto_allowed_reasons(env:, auto_allowed:)
+      return [ "explicit_opt_out" ] if explicit_opt_out == true
       return [ "explicit_opt_in" ] if auto_allowed && explicit_opt_in
       return [ "environment_default" ] if auto_allowed
       return [ "deployment_gate" ] if env.default_mode == MANUAL || env.name == ENVIRONMENT_CI
-      return [ "explicit_opt_out" ] if explicit_opt_out == true
 
       [ "metrics_missing" ]
     end
@@ -299,9 +299,8 @@ module Capacity
       # Deployment gate blocks AUTO by default; explicit_opt_in overrides it.
       return MANUAL if !explicit_opt_in && blocked.any? { |reason| reason.code == "auto_mode_disabled_for_deployment" }
       return MANUAL if degraded
-      return explicit_mode if explicit_mode.present? && MODES.include?(explicit_mode)
-
       return MANUAL if auto_allowed == false
+      return explicit_mode if explicit_mode.present? && MODES.include?(explicit_mode)
 
       # When operator explicitly opted in, allow AUTO even for environments
       # whose default_mode is MANUAL (e.g. unknown/remote deployments).

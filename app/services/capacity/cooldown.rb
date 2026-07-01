@@ -17,7 +17,7 @@ module Capacity
 
     class << self
       def lock(key, value:, cooldown: DEFAULT_COOLDOWN, now: Time.current, cache: Rails.cache)
-        previous = read(key, cache: cache)
+        previous = read(key, cache: cache, now: now)
         cache.write(cache_key(key), serialize(value, cooldown: cooldown, now: now), expires_in: cache_ttl(cooldown))
         previous
       end
