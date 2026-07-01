@@ -160,8 +160,9 @@ module Containers
         last_error: nil
       )
       entry
+    rescue ApplicationJob::PerformTimeoutError
+      raise
     rescue StandardError => e
-      raise if e.is_a?(ApplicationJob::PerformTimeoutError)
       remove_failed_provision(entry, service, e.message)
       nil
     end

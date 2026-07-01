@@ -35,7 +35,10 @@ class ApplicationJob < ActiveJob::Base
 
   around_perform :with_tenant_context
 
-  # Innermost around_perform so the timeout bounds the actual work only, not the
+  # IMPORTANT: must remain the last around_perform registration in this class.
+  # ActiveJob callbacks run in registration order, innermost last — adding
+  # another around_perform after this line silently places it inside the
+  # timeout ceiling. Keep the timeout scoped to the actual job work, not the
   # tenant/query-monitor setup around it.
   around_perform :with_perform_timeout
 
