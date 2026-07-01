@@ -1,0 +1,55 @@
+<% content_for(:title) { "Runner Credentials - Paid" } %>
+
+<div class="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="sm:flex sm:items-center sm:justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Runner Credentials</h1>
+      <p class="mt-1 text-sm text-gray-500">Account-managed long-lived tokens for subscription runners, used as a fallback when no host credential is forwarded.</p>
+    </div>
+    <div class="mt-4 flex gap-3 sm:mt-0">
+      <%= link_to "Add Credential", new_runner_credential_path, class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+    </div>
+  </div>
+
+  <% if @runner_credentials.any? %>
+    <div class="mt-8 overflow-hidden overflow-x-auto rounded-lg bg-white shadow">
+      <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+          <tr>
+            <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Credential</th>
+            <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Runner</th>
+            <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Type</th>
+            <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Status</th>
+            <th class="px-4 py-3"></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200 bg-white">
+          <% @runner_credentials.each do |credential| %>
+            <tr>
+              <td class="px-4 py-3 text-sm font-medium text-gray-900"><%= credential.name %></td>
+              <td class="px-4 py-3 text-sm text-gray-700"><%= Runner.display_name_for(credential.runner_key) %></td>
+              <td class="px-4 py-3 text-sm text-gray-700"><%= credential.long_lived? ? "Long-lived" : "Token" %></td>
+              <td class="px-4 py-3 text-sm">
+                <% if credential.revoked? %>
+                  <span class="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">Revoked</span>
+                <% elsif credential.expired? %>
+                  <span class="inline-flex items-center rounded-md bg-orange-100 px-2 py-1 text-xs font-medium text-orange-700">Expired</span>
+                <% else %>
+                  <span class="inline-flex items-center rounded-md bg-green-100 px-2 py-1 text-xs font-medium text-green-700">Active</span>
+                <% end %>
+              </td>
+              <td class="px-4 py-3 text-right text-sm">
+                <%= link_to "View", runner_credential_path(credential), class: "font-medium text-indigo-600 hover:text-indigo-500" %>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  <% else %>
+    <div class="mt-8 rounded-lg border border-dashed border-gray-300 bg-white p-10 text-center">
+      <h2 class="text-lg font-semibold text-gray-900">No runner credentials yet</h2>
+      <p class="mt-2 text-sm text-gray-500">Add a long-lived token so subscription runners can authenticate without a host credential.</p>
+    </div>
+  <% end %>
+</div>

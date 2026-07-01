@@ -52,6 +52,9 @@ Rails.application.routes.draw do
   resources :integrations, only: [ :index, :new ]
   resources :integration_credentials, only: [ :index, :new, :create, :show, :destroy ]
 
+  # Subscription runner credentials (long-lived managed tokens)
+  resources :runner_credentials, only: [ :index, :new, :create, :show, :destroy ]
+
   # GitHub tokens management
   resources :github_tokens, only: [ :index, :new, :create, :show, :destroy ] do
     get :repositories, on: :member

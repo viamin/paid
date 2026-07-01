@@ -454,6 +454,17 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to eq([ "providers" ])
     end
 
+    it "maps runner credential pages to their screenshot targets" do
+      targets = described_class.call(changed_files: [ "app/controllers/runner_credentials_controller.rb" ])
+      expect(targets.map(&:slug)).to contain_exactly("runner_credentials", "runner_credential_new", "runner_credential_show")
+
+      targets = described_class.call(changed_files: [ "app/views/runner_credentials/new.html.erb" ])
+      expect(targets.map(&:slug)).to eq([ "runner_credential_new" ])
+
+      targets = described_class.call(changed_files: [ "app/views/runner_credentials/show.html.erb" ])
+      expect(targets.map(&:slug)).to eq([ "runner_credential_show" ])
+    end
+
     it "raises UnmappedUiChangeError for unmapped controllers" do
       expect {
         described_class.call(changed_files: [ "app/controllers/unknown_controller.rb" ])
