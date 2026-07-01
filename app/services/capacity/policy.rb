@@ -14,9 +14,8 @@ module Capacity
   # - Auto mode **fails closed** when Docker metrics are missing,
   #   stale, or low confidence — the policy returns manual defaults
   #   and reports the degraded reason rather than guessing.
-  # - Tuning decisions are routed through Capacity::Cooldown so
-  #   adjustments do not oscillate. The first implementation is
-  #   memory-first; CPU intentionally does not participate.
+  # - The first implementation is memory-first; CPU intentionally
+  #   does not participate.
   # - Each deployment environment (Docker Desktop, OrbStack, Linux
   #   Docker, CI) carries its own per-environment defaults rather than
   #   sharing one global rule.
@@ -155,11 +154,6 @@ module Capacity
       blocked = build_blocked_reasons(env)
       degraded_reasons = compute_degraded_reasons
 
-      if policy_cooldown_active? && !degraded_reasons.include?("cooldown_active")
-        degraded_reasons = degraded_reasons + [ "cooldown_active" ]
-        blocked << BlockedReason[:cooldown_active] unless blocked.any? { |reason| reason.code == "cooldown_active" }
-      end
-
       degraded = degraded_reasons.any?
 
       auto_allowed = compute_auto_allowed(env: env, blocked: blocked, degraded_reasons: degraded_reasons)
@@ -263,10 +257,6 @@ module Capacity
       reasons
     end
 
-    def policy_cooldown_active?
-      Capacity::Cooldown.frozen?(cooldown_key, now: now, cache: cooldown_store)
-    end
-
     def compute_auto_allowed(env:, blocked:, degraded_reasons:)
       return false if explicit_opt_out == true
       # CI is always locked to MANUAL by design — no opt-in can override it.
@@ -311,10 +301,6 @@ module Capacity
 
     def effective_max_concurrent(env)
       env.default_max_concurrent
-    end
-
-    def cooldown_key
-      "policy/#{snapshot&.backend_identifier || 'unknown'}"
     end
   end
 end

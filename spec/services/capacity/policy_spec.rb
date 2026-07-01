@@ -3,7 +3,6 @@
 require "rails_helper"
 
 RSpec.describe Capacity::Policy do
-  let(:cache) { ActiveSupport::Cache::MemoryStore.new }
   let(:now) { Time.zone.parse("2026-06-30 12:00:00 UTC") }
 
   def healthy_local_snapshot(overrides: {})
@@ -187,39 +186,6 @@ RSpec.describe Capacity::Policy do
 
       expect(decision.environment).to eq("unknown")
       expect(decision.mode).to eq(Capacity::Policy::MANUAL)
-    end
-  end
-
-  describe "cooldown / anti-oscillation" do
-    it "blocks tuning when a policy cooldown is active" do
-      Capacity::Cooldown.lock(
-        "policy/local",
-        value: { mode: "auto", max_concurrent: 6 },
-        cooldown: 5.minutes,
-        now: now,
-        cache: cache
-      )
-
-      decision = described_class.call(snapshot: healthy_local_snapshot, now: now + 1.minute, cooldown_store: cache)
-
-      expect(decision.degraded).to be(true)
-      expect(decision.degraded_reasons).to include("cooldown_active")
-      expect(decision.blocked_reasons.map(&:code)).to include("cooldown_active")
-    end
-
-    it "allows tuning once the cooldown elapses" do
-      Capacity::Cooldown.lock(
-        "policy/local",
-        value: { mode: "auto", max_concurrent: 6 },
-        cooldown: 5.minutes,
-        now: now,
-        cache: cache
-      )
-
-      decision = described_class.call(snapshot: healthy_local_snapshot, now: now + 10.minutes, cooldown_store: cache)
-
-      expect(decision.degraded_reasons).not_to include("cooldown_active")
-      expect(decision.blocked_reasons.map(&:code)).not_to include("cooldown_active")
     end
   end
 

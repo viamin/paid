@@ -9,8 +9,8 @@ module Capacity
   # Reads ask "is this decision still frozen?" and refuse to return a
   # different decision until the cooldown elapses.
   #
-  # Used by Capacity::Policy to clamp memory limit oscillations and by
-  # callers that want to remember "last decision" for dashboards.
+  # Available to future tuning callers that need to remember the last
+  # capacity decision and hold it steady for a cooldown window.
   class Cooldown
     DEFAULT_COOLDOWN = 5.minutes
     DEGRADED_COOLDOWN = 10.minutes
