@@ -9,8 +9,9 @@ module Tools
 
     def self.description
       "Start an agent run on a project. Pass issue_id to target an existing issue. To open a brand-new " \
-        "GitHub issue, use goal=create_issue with custom_prompt instead of issue_id — the agent turns the " \
-        "prompt into the new issue's title and body. Requires explicit confirmation."
+        "GitHub issue, use goal=create_issue with custom_prompt instead of issue_id — custom_prompt tells " \
+        "the agent what to investigate or implement; the agent writes the resulting issue title and body " \
+        "from its own output. Requires explicit confirmation."
     end
 
     def self.available_to?(user:)
@@ -27,7 +28,11 @@ module Tools
           custom_prompt: { type: "string", description: "Description of the work for the agent to do. Required when goal is create_issue and no issue_id is given." },
           confirmed: { type: "boolean", description: "Must be true to execute this write operation" }
         },
-        required: %w[project_id confirmed]
+        required: %w[project_id confirmed],
+        anyOf: [
+          { required: %w[issue_id] },
+          { required: %w[custom_prompt] }
+        ]
       }
     end
 
