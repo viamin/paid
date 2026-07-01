@@ -4,8 +4,10 @@ class CreateAgentRunResourceProfiles < ActiveRecord::Migration[8.1]
   def change
     create_table :agent_run_resource_profiles,
       comment: "Learned memory usage rollups for agent runs across exact and fallback scopes." do |t|
-      t.references :account, foreign_key: true, comment: "Owning account for account/project-scoped profiles."
-      t.references :project, foreign_key: true, comment: "Project for exact or project-level profiles."
+      t.references :account, foreign_key: { on_delete: :cascade },
+        comment: "Owning account for account/project-scoped profiles."
+      t.references :project, foreign_key: { on_delete: :cascade },
+        comment: "Project for exact or project-level profiles."
       t.string :profile_level, null: false, comment: "Profile scope: specific, runner_goal, project, account, or global."
       t.string :lookup_key, null: false, comment: "Deterministic unique key for one profile scope row."
       t.string :runner_key, comment: "Normalized runner key for runner-scoped profiles."

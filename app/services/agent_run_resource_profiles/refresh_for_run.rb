@@ -71,8 +71,7 @@ module AgentRunResourceProfiles
 
     def summarize_samples(definition)
       runs = source_runs_for(definition)
-      metric_limits = metric_limits_for(runs.map(&:id))
-      samples = runs.filter_map { |run| sample_for(run, metric_limits[run.id].to_i) }
+      samples = runs.filter_map { |run| sample_for(run, metric_limit_for(run.id)) }
       return if samples.empty?
 
       sorted_memory = samples.map { |sample| sample[:memory_bytes] }.sort
@@ -95,30 +94,53 @@ module AgentRunResourceProfiles
     end
 
     def source_runs_for(definition)
+      base = base_scope_for(definition)
+      runner_key_filter = definition[:runner_key]
+      base = base.where(runner_key_filter_clause(runner_key_filter)) if runner_key_filter
+
+      base.to_a
+    end
+
+    def base_scope_for(definition)
       case definition.fetch(:profile_level)
       when "specific"
         scoped_runs.where(project_id: definition.fetch(:project_id), goal: definition.fetch(:goal))
-          .to_a
-          .select { |run| run.resource_profile_runner_key == definition.fetch(:runner_key) }
       when "runner_goal"
         finished_runs.where(goal: definition.fetch(:goal))
-          .to_a
-          .select { |run| run.resource_profile_runner_key == definition.fetch(:runner_key) }
       when "project"
-        scoped_runs.where(project_id: definition.fetch(:project_id)).to_a
+        scoped_runs.where(project_id: definition.fetch(:project_id))
       when "account"
-        scoped_runs.to_a
+        scoped_runs
       when "global"
-        finished_runs.to_a
+        finished_runs
       else
-        []
+        AgentRun.none
       end
     end
 
-    def metric_limits_for(run_ids)
-      return {} if run_ids.empty?
+    # Builds a SQL equality predicate against AgentRun.effective_runner_sql so
+    # the runner_key filter is applied in SQL instead of hydrating every row
+    # in scope and filtering in Ruby. effective_runner_sql is sourced from a
+    # whitelist (AgentRun::NORMALIZABLE_COLUMNS), so wrapping the value via
+    # `eq` keeps it as a bound parameter.
+    def runner_key_filter_clause(runner_key)
+      Arel.sql(AgentRun.effective_runner_sql).eq(runner_key)
+    end
 
-      ContainerMetric.where(agent_run_id: run_ids).group(:agent_run_id).maximum(:memory_limit_bytes)
+    def metric_limit_for(run_id)
+      metric_limits_by_run_id[run_id].to_i
+    end
+
+    # Precomputes ContainerMetric#memory_limit_bytes for every finished run in
+    # the lookback window once per refresh, instead of issuing one query per
+    # profile level. The per-level base_scope_for relations are nested
+    # supersets of the same finished_runs set, so this avoids 4 redundant
+    # ContainerMetric lookups per refresh.
+    def metric_limits_by_run_id
+      @metric_limits_by_run_id ||= ContainerMetric
+        .where(agent_run_id: finished_runs.select(:id))
+        .group(:agent_run_id)
+        .maximum(:memory_limit_bytes)
     end
 
     def sample_for(run, metric_limit_bytes)

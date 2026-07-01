@@ -2613,8 +2613,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_30_022611) do
   add_foreign_key "agent_run_marketplace_entries", "marketplace_entries"
   add_foreign_key "agent_run_marketplace_entries", "marketplace_entry_versions"
   add_foreign_key "agent_run_phases", "agent_runs", on_delete: :cascade
-  add_foreign_key "agent_run_resource_profiles", "accounts"
-  add_foreign_key "agent_run_resource_profiles", "projects"
+  add_foreign_key "agent_run_resource_profiles", "accounts", on_delete: :cascade
+  add_foreign_key "agent_run_resource_profiles", "projects", on_delete: :cascade
   add_foreign_key "agent_runs", "configuration_bundles", on_delete: :nullify
   add_foreign_key "agent_runs", "issues", on_delete: :nullify
   add_foreign_key "agent_runs", "projects", on_delete: :cascade
