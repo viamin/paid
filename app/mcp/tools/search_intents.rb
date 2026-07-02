@@ -40,24 +40,25 @@ module Tools
     end
 
     def search_scope(project, query)
-      text_sql = "LOWER(CONCAT_WS(' ', title, intent, behavior, constraints, decisions_made))"
-      phrase_clause = ChangeIntent.sanitize_sql_array([
-        "#{text_sql} LIKE ?",
+      text_col = "LOWER(CONCAT_WS(' ', title, intent, behavior, constraints, decisions_made))"
+      base = project.change_intents
+
+      phrase_scope = base.where(
+        "#{text_col} LIKE ?",
         "%#{ActiveRecord::Base.sanitize_sql_like(query.downcase)}%"
-      ])
-      word_clauses = query.split(/\s+/).map(&:strip).reject(&:blank?).uniq.first(8).map do |term|
-        ChangeIntent.sanitize_sql_array([
-          "#{text_sql} ~* ?",
-          "\\m#{Regexp.escape(term.downcase)}\\M"
-        ])
+      )
+
+      terms = query.split(/\s+/).map(&:strip).reject(&:blank?).uniq.first(8)
+      result = if terms.any?
+        words_scope = terms.inject(base) do |scope, term|
+          scope.where("#{text_col} ~* ?", "\\m#{Regexp.escape(term.downcase)}\\M")
+        end
+        phrase_scope.or(words_scope)
+      else
+        phrase_scope
       end
 
-      combined = [ phrase_clause ]
-      combined << word_clauses.join(" AND ") if word_clauses.any?
-
-      project.change_intents
-        .where(combined.join(") OR ("))
-        .order(Arel.sql(status_order_sql), created_at: :desc)
+      result.order(Arel.sql(status_order_sql), created_at: :desc)
     end
 
     def status_order_sql
