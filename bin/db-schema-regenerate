@@ -1,0 +1,240 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$APP_ROOT" || exit
+
+IDENTIFIER_FORMAT='^[A-Za-z0-9_]+$'
+MAX_IDENTIFIER_LENGTH=63
+SCRATCH_SUFFIX="_schema_regen"
+
+db_names() {
+  ruby <<'RUBY'
+require File.expand_path("config/worktree_database_names", Dir.pwd)
+
+puts Paid::WorktreeDatabaseNames.development_primary_name
+puts Paid::WorktreeDatabaseNames.development_cable_name
+RUBY
+}
+
+usage() {
+  echo "Usage: bin/db-schema-regenerate"
+  echo ""
+  echo "Regenerate db/schema.rb and db/cable_schema.rb from a scratch migration run."
+  echo "Only scratch databases ending in ${SCRATCH_SUFFIX} are created and dropped."
+  echo ""
+  echo "Environment variables:"
+  echo "  DB_HOST              Database host (default: config/database.yml behavior)"
+  echo "  DB_USERNAME/DB_USER  Application database role (default: paid)"
+  echo "  DB_PASSWORD          Application database password (default: paid)"
+  echo "  DB_ADMIN_USERNAME    Optional creator role when the app role lacks CREATEDB"
+  echo "  DB_ADMIN_PASSWORD    Optional creator password"
+  echo "  DB_ADMIN_HOST        Optional creator host (default: DB_HOST)"
+  echo "  DB_ADMIN_DATABASE    Maintenance database (default: postgres)"
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ -n "${1:-}" ]]; then
+  usage
+  exit 1
+fi
+
+mapfile -t DB_NAMES < <(db_names)
+DEV_DB="${DB_NAMES[0]}"
+CABLE_DB="${DB_NAMES[1]}"
+
+APP_DB_USER="${DB_USERNAME:-${DB_USER:-paid}}"
+APP_DB_PASSWORD="${DB_PASSWORD:-paid}"
+APP_DB_HOST="${DB_HOST:-}"
+ADMIN_DB_USER="${DB_ADMIN_USERNAME:-${POSTGRES_USER:-$APP_DB_USER}}"
+ADMIN_DB_PASSWORD="${DB_ADMIN_PASSWORD:-${POSTGRES_PASSWORD:-$APP_DB_PASSWORD}}"
+ADMIN_DB_HOST="${DB_ADMIN_HOST:-$APP_DB_HOST}"
+MAINTENANCE_DB="${DB_ADMIN_DATABASE:-postgres}"
+CREATOR_PASSWORD=""
+CREATOR_ARGS=()
+
+info() {
+  echo "[INFO] $*"
+}
+
+validate_identifier() {
+  local kind="$1"
+  local value="$2"
+  local source="$3"
+
+  if [[ ! "$value" =~ $IDENTIFIER_FORMAT || "${#value}" -gt "$MAX_IDENTIFIER_LENGTH" ]]; then
+    echo "Invalid ${kind} ${value@Q} from ${source}. Only letters, numbers, and underscores up to ${MAX_IDENTIFIER_LENGTH} characters are allowed." >&2
+    exit 1
+  fi
+}
+
+scratch_name() {
+  local base="$1"
+  local max_base_length=$((MAX_IDENTIFIER_LENGTH - ${#SCRATCH_SUFFIX}))
+
+  printf "%s%s" "${base:0:$max_base_length}" "$SCRATCH_SUFFIX"
+}
+
+psql_base_args() {
+  local host="$1"
+  local user="$2"
+  local db="$3"
+  local -a args=(-U "$user" -d "$db" -v ON_ERROR_STOP=1 -q --no-align --tuples-only)
+  if [[ -n "$host" ]]; then
+    args=(-h "$host" "${args[@]}")
+  fi
+  printf "%s\0" "${args[@]}"
+}
+
+run_psql() {
+  local password="$1"
+  shift
+
+  PGPASSWORD="$password" psql "$@"
+}
+
+query_psql() {
+  local password="$1"
+  shift
+
+  PGPASSWORD="$password" psql "$@" 2>/dev/null
+}
+
+can_create_databases() {
+  local host="$1"
+  local user="$2"
+  local password="$3"
+  local -a args
+  mapfile -d '' -t args < <(psql_base_args "$host" "$user" "$MAINTENANCE_DB")
+
+  local createdb_flag
+  createdb_flag="$(query_psql "$password" "${args[@]}" -c "SELECT rolcreatedb FROM pg_roles WHERE rolname = current_user")"
+  [[ "$createdb_flag" == "t" ]]
+}
+
+use_creator() {
+  local host="$1"
+  local user="$2"
+  local password="$3"
+
+  mapfile -d '' -t CREATOR_ARGS < <(psql_base_args "$host" "$user" "$MAINTENANCE_DB")
+  CREATOR_PASSWORD="$password"
+}
+
+database_exists() {
+  local db_name="$1"
+
+  [[ "$(query_psql "$CREATOR_PASSWORD" "${CREATOR_ARGS[@]}" -c "SELECT 1 FROM pg_database WHERE datname = '$db_name'")" == "1" ]]
+}
+
+terminate_connections() {
+  local db_name="$1"
+
+  run_psql "$CREATOR_PASSWORD" "${CREATOR_ARGS[@]}" -c "
+    SELECT pg_terminate_backend(pid)
+    FROM pg_stat_activity
+    WHERE datname = '$db_name'
+      AND pid <> pg_backend_pid();
+  " >/dev/null
+}
+
+drop_scratch_database() {
+  local db_name="$1"
+
+  case "$db_name" in
+    *"${SCRATCH_SUFFIX}") ;;
+    *)
+      echo "Refusing to drop non-scratch database ${db_name@Q}" >&2
+      exit 1
+      ;;
+  esac
+
+  if database_exists "$db_name"; then
+    terminate_connections "$db_name"
+    run_psql "$CREATOR_PASSWORD" "${CREATOR_ARGS[@]}" -c "DROP DATABASE \"$db_name\"" >/dev/null
+  fi
+}
+
+create_scratch_database() {
+  local db_name="$1"
+
+  drop_scratch_database "$db_name"
+  info "Creating scratch database ${db_name}"
+  run_psql "$CREATOR_PASSWORD" "${CREATOR_ARGS[@]}" -c "CREATE DATABASE \"$db_name\" OWNER \"$APP_DB_USER\"" >/dev/null
+}
+
+cleanup() {
+  local exit_code=$?
+
+  if [[ -n "${CREATOR_PASSWORD:-}" && "${#CREATOR_ARGS[@]}" -gt 0 ]]; then
+    info "Dropping scratch databases"
+    drop_scratch_database "$SCRATCH_PRIMARY_DB" || true
+    drop_scratch_database "$SCRATCH_CABLE_DB" || true
+  fi
+
+  exit "$exit_code"
+}
+
+validate_identifier "role name" "$APP_DB_USER" "DB_USERNAME / DB_USER"
+validate_identifier "database name" "$DEV_DB" "PAID_DEVELOPMENT_DATABASE / worktree derivation"
+validate_identifier "database name" "$CABLE_DB" "PAID_DEVELOPMENT_CABLE_DATABASE / worktree derivation"
+
+SCRATCH_PRIMARY_DB="$(scratch_name "$DEV_DB")"
+SCRATCH_CABLE_DB="$(scratch_name "$CABLE_DB")"
+
+validate_identifier "scratch database name" "$SCRATCH_PRIMARY_DB" "derived schema regeneration name"
+validate_identifier "scratch database name" "$SCRATCH_CABLE_DB" "derived schema regeneration name"
+
+if [[ "$SCRATCH_PRIMARY_DB" == "$DEV_DB" || "$SCRATCH_CABLE_DB" == "$CABLE_DB" ]]; then
+  echo "Refusing to use a scratch database name that matches a development database." >&2
+  exit 1
+fi
+
+if [[ -n "${DATABASE_URL:-}" || -n "${CABLE_DATABASE_URL:-}" ]]; then
+  echo "Refusing to run with DATABASE_URL or CABLE_DATABASE_URL already set." >&2
+  echo "This script sets both variables to scratch databases so development data is never migrated." >&2
+  exit 1
+fi
+
+if can_create_databases "$APP_DB_HOST" "$APP_DB_USER" "$APP_DB_PASSWORD"; then
+  use_creator "$APP_DB_HOST" "$APP_DB_USER" "$APP_DB_PASSWORD"
+elif can_create_databases "$ADMIN_DB_HOST" "$ADMIN_DB_USER" "$ADMIN_DB_PASSWORD"; then
+  use_creator "$ADMIN_DB_HOST" "$ADMIN_DB_USER" "$ADMIN_DB_PASSWORD"
+elif [[ "$APP_DB_HOST" == "postgres" ]] && can_create_databases "$APP_DB_HOST" "postgres" "postgres"; then
+  use_creator "$APP_DB_HOST" "postgres" "postgres"
+elif [[ "$APP_DB_HOST" == "postgres" ]] && can_create_databases "$APP_DB_HOST" "paid_admin" "paid_admin"; then
+  use_creator "$APP_DB_HOST" "paid_admin" "paid_admin"
+else
+  echo "Unable to create scratch databases: application role ${APP_DB_USER} lacks CREATEDB and no admin credentials are configured." >&2
+  echo "Set DB_ADMIN_USERNAME / DB_ADMIN_PASSWORD so the script can create scratch databases." >&2
+  exit 1
+fi
+
+trap cleanup EXIT
+
+create_scratch_database "$SCRATCH_PRIMARY_DB"
+create_scratch_database "$SCRATCH_CABLE_DB"
+
+RAILS_DB_ENV=(
+  "RAILS_ENV=development"
+  "RACK_ENV=development"
+  "PAID_DEVELOPMENT_DATABASE=${SCRATCH_PRIMARY_DB}"
+  "PAID_DEVELOPMENT_CABLE_DATABASE=${SCRATCH_CABLE_DB}"
+  "DB_USERNAME=${APP_DB_USER}"
+  "DB_PASSWORD=${APP_DB_PASSWORD}"
+)
+if [[ -n "$APP_DB_HOST" ]]; then
+  RAILS_DB_ENV+=("DB_HOST=${APP_DB_HOST}")
+fi
+
+info "Running primary migrations against ${SCRATCH_PRIMARY_DB}"
+env "${RAILS_DB_ENV[@]}" bin/rails db:migrate
+
+info "Running cable migrations against ${SCRATCH_CABLE_DB}"
+env "${RAILS_DB_ENV[@]}" bin/rails db:migrate:cable
+
+info "Schema files regenerated from scratch migrations"
