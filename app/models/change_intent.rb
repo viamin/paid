@@ -3,7 +3,7 @@
 class ChangeIntent < ApplicationRecord
   class InvalidTransitionError < StandardError; end
 
-  STATUSES = %w[draft active superseded].freeze
+  STATUSES = %w[draft active superseded reverted].freeze
   MUTABLE_FIELDS = %w[status superseded_by_id updated_at].freeze
 
   belongs_to :project
@@ -32,9 +32,7 @@ class ChangeIntent < ApplicationRecord
   def activate!
     with_lock do
       reload
-      unless status == "draft"
-        raise InvalidTransitionError, "cannot activate from #{status}"
-      end
+      raise InvalidTransitionError, "cannot activate from #{status}" unless status == "draft"
 
       update!(status: "active")
     end
@@ -50,6 +48,17 @@ class ChangeIntent < ApplicationRecord
       end
 
       update!(status: "superseded", superseded_by: new_record)
+    end
+  end
+
+  def revert!
+    with_lock do
+      reload
+      unless status.in?(%w[draft active])
+        raise InvalidTransitionError, "cannot revert from #{status}"
+      end
+
+      update!(status: "reverted")
     end
   end
 

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_28_182451) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_29_035155) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -396,18 +396,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_182451) do
     t.index ["success"], name: "index_bundle_outcomes_on_success"
   end
 
-  create_table "change_intents", comment: "Captures human directional intent that should persist in the knowledge base.", force: :cascade do |t|
-    t.text "behavior", comment: "Expected behavior, often captured as given/when/then scenarios."
-    t.bigint "chat_session_id", comment: "Chat session where the intent was captured, when applicable."
-    t.text "constraints", comment: "Boundaries and constraints that shaped the implementation."
+  create_table "change_intents", comment: "Change Intent Records that capture human direction given to agents.", force: :cascade do |t|
+    t.text "behavior", comment: "Expected behavior or examples that clarify the intent."
+    t.bigint "chat_session_id", comment: "Chat session where the intent was captured."
+    t.text "constraints", comment: "Non-obvious implementation boundaries or requirements."
     t.datetime "created_at", null: false
-    t.text "decisions_made", comment: "Alternatives that were rejected and why."
+    t.text "decisions_made", comment: "Rejected alternatives or decisions that shaped the approach."
     t.text "intent", null: false, comment: "What the human was trying to accomplish."
-    t.bigint "issue_id", comment: "Issue that motivated or contextualized the intent, when applicable."
-    t.bigint "project_id", null: false, comment: "Project this change intent applies to."
-    t.string "status", limit: 50, default: "draft", null: false, comment: "Lifecycle state for the record: draft, active, or superseded."
-    t.bigint "superseded_by_id", comment: "Newer change intent that superseded this record."
-    t.text "title", null: false, comment: "Short title summarizing the intent."
+    t.bigint "issue_id", comment: "Optional issue the intent relates to."
+    t.bigint "project_id", null: false, comment: "Project the Change Intent Record belongs to."
+    t.string "status", default: "draft", null: false, comment: "Lifecycle state: draft, active, superseded, or reverted."
+    t.bigint "superseded_by_id", comment: "Newer Change Intent Record that superseded this one."
+    t.text "title", null: false, comment: "Short, human-readable title for the change intent."
     t.datetime "updated_at", null: false
     t.index ["chat_session_id"], name: "index_change_intents_on_chat_session_id"
     t.index ["issue_id"], name: "index_change_intents_on_issue_id"

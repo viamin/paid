@@ -89,6 +89,24 @@ RSpec.describe Tools::Registry do
         }
       },
       {
+        tool_name: "record_change_intent",
+        denied_user: -> {
+          project
+          create(:user, :viewer, account: account)
+        },
+        arguments: -> { { title: "Denied", intent: "Denied", constraints: "Denied" } },
+        session: ->(user) { build(:chat_session, account: user.account, created_by: user, project: project) },
+        ui_call: ->(user) {
+          record = project.change_intents.build(
+            chat_session: build(:chat_session, account: user.account, created_by: user, project: project),
+            title: "Denied",
+            intent: "Denied",
+            constraints: "Denied"
+          )
+          authorize_record!(user, record, :create?, policy_class: ChangeIntentPolicy)
+        }
+      },
+      {
         tool_name: "get_issue_details",
         denied_user: -> { create(:user, :member, account: other_account) },
         arguments: -> { { project_id: project.id, issue_id: issue.id } },
@@ -342,7 +360,7 @@ RSpec.describe Tools::Registry do
             name: scenario[:tool_name],
             arguments: arguments,
             user: user,
-            session: build(:chat_session, account: user&.account || account, created_by: user)
+            session: scenario[:session] ? instance_exec(user, &scenario[:session]) : build(:chat_session, account: user&.account || account, created_by: user)
           )
         end
 
