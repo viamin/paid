@@ -290,29 +290,51 @@ RSpec.describe Capacity::Policy do
     end
 
     it "still falls back to MANUAL when unrelated containers consume Docker capacity" do
-      # Simulate a "shared" docker host running unrelated workloads alongside
-      # a local Paid stack. The backend reports itself as shared, so auto
-      # mode stays off even though memory looks fine.
-      shared_local_snapshot = Capacity::DockerSnapshot::Snapshot.new(
-        backend_identifier: "local",
-        backend_kind: "local",
-        backend_shared: true,
-        docker_cpu_count: 8,
-        docker_memory_bytes: 16_000_000_000,
-        usage_buckets: {},
-        available_memory_bytes: 6_000_000_000,
-        agent_container_count: 1,
-        snapshot_at: now,
-        confidence: 1.0,
-        degraded: false,
-        degraded_reasons: []
-      )
-
-      decision = described_class.call(snapshot: shared_local_snapshot, now: now)
+      decision = described_class.call(snapshot: local_snapshot_with_other_docker_memory, now: now)
 
       expect(decision.mode).to eq(Capacity::Policy::MANUAL)
-      expect(decision.blocked_reasons.map(&:code)).to include("unrelated_workload",
-        "auto_mode_disabled_for_deployment")
+      expect(decision.blocked_reasons.map(&:code)).to include("unrelated_workload")
     end
+
+    it "does not flag unrelated_workload when the other_docker bucket reports zero memory" do
+      # The shared-host check fires on the observed +other_docker+ usage
+      # bucket, not on backend classification. A local host running
+      # only Paid containers (other_docker memory == 0) must stay in
+      # auto mode even though it is technically a "shared" endpoint.
+      empty_buckets = Capacity::DockerSnapshot::EMPTY_BUCKETS
+      local_snapshot = healthy_local_snapshot(
+        overrides: {
+          usage_buckets: empty_buckets,
+          available_memory_bytes: 12_000_000_000
+        }
+      )
+
+      decision = described_class.call(snapshot: local_snapshot, now: now)
+
+      expect(decision.blocked_reasons.map(&:code)).not_to include("unrelated_workload")
+      expect(decision.mode).to eq(Capacity::Policy::AUTO)
+    end
+  end
+
+  def local_snapshot_with_other_docker_memory
+    # A local Docker host can run non-Paid containers alongside the
+    # Paid stack. The +other_docker+ usage bucket tracks that memory;
+    # when it is non-zero auto mode must back off because memory-based
+    # admission cannot account for memory we do not control. Note: the
+    # snapshot's +backend_kind+ stays +local+ — the unrelated-workload
+    # signal is the observed +other_docker+ usage, not the backend's
+    # shared classification (see DockerSnapshot::classify_backend_shared).
+    healthy_local_snapshot(
+      overrides: {
+        usage_buckets: Capacity::DockerSnapshot::EMPTY_BUCKETS.merge(
+          other_docker: Capacity::DockerSnapshot::Bucket.new(
+            container_count: 3,
+            memory_bytes: 2_000_000_000,
+            cpu_percent: 0.0
+          )
+        ),
+        available_memory_bytes: 6_000_000_000
+      }
+    )
   end
 end

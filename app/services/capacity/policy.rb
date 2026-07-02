@@ -226,10 +226,11 @@ module Capacity
         blocked << BlockedReason[:docker_memory_exhausted]
       end
 
-      if snapshot.shared? && snapshot.local?
-        # "Shared" local backend — e.g. a corporate workstation where
-        # Docker also serves other workloads. Auto stays off because
-        # we cannot fairly schedule against memory we do not control.
+      if unrelated_workload_detected?(snapshot)
+        # Docker is running non-Paid containers that are consuming
+        # capacity we cannot fairly schedule against. Auto stays off
+        # because memory-based admission cannot account for memory we
+        # do not control.
         blocked << BlockedReason[:unrelated_workload]
       end
 
@@ -257,10 +258,32 @@ module Capacity
       reasons
     end
 
+    # Detects whether the local Docker host is running non-Paid
+    # containers that consume a non-trivial share of the memory budget.
+    # Backend-level "shared" classification (see DockerSnapshot) is
+    # orthogonal: a local socket can host unrelated containers, and a
+    # remote shared endpoint may run nothing but Paid — so we look at
+    # the observed +other_docker+ usage bucket, not the backend kind.
+    def unrelated_workload_detected?(snapshot)
+      return false unless snapshot.local?
+
+      buckets = snapshot.usage_buckets
+      return false unless buckets.is_a?(Hash)
+
+      other_bucket = buckets[:other_docker] || buckets["other_docker"]
+      return false unless other_bucket
+
+      other_bucket.memory_bytes.to_i.positive?
+    end
+
     def compute_auto_allowed(env:, blocked:, degraded_reasons:)
       return false if explicit_opt_out == true
       # CI is always locked to MANUAL by design — no opt-in can override it.
       return false if env.name == ENVIRONMENT_CI
+      # Unrelated workload is observed memory consumption, not a
+      # deployment policy: even an explicit opt-in cannot make auto
+      # mode safe when we cannot account for memory we do not control.
+      return false if blocked.any? { |reason| reason.code == "unrelated_workload" }
       # Deployment gate: auto is off by default for shared/remote/swarm
       # backends. explicit_opt_in lets operators enable auto on those
       # deployments ("disabled by default unless explicitly opted in").

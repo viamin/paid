@@ -451,12 +451,16 @@ class ProcessRunQueueJob < ApplicationJob
   # setting and tenant guardrails as before, but raises the ceiling to
   # the policy's auto-max when (and only when) auto mode is allowed for
   # the current deployment. When auto is disabled, returns the user
-  # setting directly.
+  # setting directly. The tenant +max_concurrent_runs+ cap is always
+  # enforced as an absolute ceiling (RDR-043 phase 6): a deployment
+  # that has capped the tenant at 3 must not see auto mode raise the
+  # limit to the environment's per-deployment default (e.g. 10).
   def effective_concurrency_limit(user, policy:)
     user_limit = user.account.tenant_max_concurrent_runs(user.settings.max_concurrent_runs)
 
     return user_limit unless policy && policy.auto_allowed
 
-    [ user_limit, policy.effective_max_concurrent ].max
+    auto_ceiling = user.account.tenant_max_concurrent_runs(policy.effective_max_concurrent)
+    [ user_limit, auto_ceiling ].max
   end
 end

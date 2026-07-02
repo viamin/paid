@@ -454,7 +454,8 @@ RSpec.describe Activities::CreatePullRequestActivity do
           provider: :claude,
           model: Llm::GeneratePrDescription::DEFAULT_MODEL,
           timeout: Llm::GeneratePrDescription::TIMEOUT,
-          tools: :none
+          tools: :none,
+          mode: :text
         )
       end
 

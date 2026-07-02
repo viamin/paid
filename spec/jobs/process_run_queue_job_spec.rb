@@ -928,6 +928,22 @@ RSpec.describe ProcessRunQueueJob do
 
         expect(queued_run.reload.status).to eq("queued")
       end
+
+      it "keeps tenant max_concurrent_runs as a hard ceiling in auto mode" do
+        project = create(:project)
+        user = project.created_by
+        user.settings.update!(max_concurrent_runs: 5)
+        create(:tenant_setting, account: user.account, guardrails: { "max_concurrent_runs" => 3 })
+        3.times { create(:agent_run, :running, project: project) }
+        queued_run = create(:agent_run, :queued, project: project)
+        stub_policy_decision(local_auto_decision)
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(queued_run.reload.status).to eq("queued")
+      end
     end
   end
 
@@ -993,6 +1009,41 @@ RSpec.describe ProcessRunQueueJob do
       memory_safety_multiplier: 1.75,
       cooldown_seconds: 600,
       snapshot_present: false
+    )
+  end
+
+  def local_auto_decision
+    local_snapshot = Capacity::DockerSnapshot::Snapshot.new(
+      backend_identifier: "local",
+      backend_kind: "local",
+      backend_shared: false,
+      docker_cpu_count: 8,
+      docker_memory_bytes: 16_000_000_000,
+      usage_buckets: Capacity::DockerSnapshot::EMPTY_BUCKETS,
+      available_memory_bytes: 8_000_000_000,
+      agent_container_count: 0,
+      snapshot_at: Time.current,
+      confidence: 1.0,
+      degraded: false,
+      degraded_reasons: []
+    )
+
+    allow(Capacity::DockerSnapshot).to receive(:call).and_return(local_snapshot)
+
+    Capacity::Policy::Decision.new(
+      mode: Capacity::Policy::AUTO,
+      environment: Capacity::Policy::ENVIRONMENT_LINUX_DOCKER,
+      auto_allowed: true,
+      auto_allowed_reasons: [ "environment_default" ],
+      blocked_reasons: [],
+      admission_uses_cpu: false,
+      degraded: false,
+      degraded_reasons: [],
+      effective_min_concurrent: 1,
+      effective_max_concurrent: 10,
+      memory_safety_multiplier: 1.5,
+      cooldown_seconds: 300,
+      snapshot_present: true
     )
   end
 end
