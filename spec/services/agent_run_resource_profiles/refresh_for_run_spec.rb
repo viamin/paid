@@ -116,5 +116,50 @@ RSpec.describe AgentRunResourceProfiles::RefreshForRun do
       expect(profile.max_memory_bytes).to eq(2.gigabytes)
       expect(profile.recommended_memory_limit_bytes).to be >= (2.gigabytes * 1.25).ceil
     end
+
+    it "marks the profile capacity-blocked when OOMs persist near the user ceiling" do
+      project.created_by.settings.update!(
+        container_memory_auto_ceiling_bytes: 4.gigabytes
+      )
+
+      oom_run = create_sample_run(memory_bytes: 4.gigabytes, completed_at: completed_at, status: "failed", oom: true)
+      create_sample_run(memory_bytes: 4.gigabytes, completed_at: completed_at - 1.day, status: "failed", oom: true)
+      create_sample_run(memory_bytes: 4.gigabytes, completed_at: completed_at - 2.days, status: "failed", oom: true)
+
+      described_class.call(agent_run: oom_run)
+
+      profile = specific_profile
+      expect(profile.oom_count).to eq(3)
+      expect(profile.capacity_blocked).to be(true)
+      expect(profile.capacity_blocked_at).to be_present
+    end
+
+    it "does not tune downward until the sustained low-memory threshold is met" do
+      project.created_by.settings.update!(
+        container_memory_auto_floor_bytes: 256.megabytes,
+        container_memory_auto_ceiling_bytes: 16.gigabytes
+      )
+
+      # First refresh seeds the profile from observed samples (≈ 1.2 GB).
+      create_sample_run(memory_bytes: 1.gigabyte, completed_at: completed_at - 2.days)
+      create_sample_run(memory_bytes: 1.gigabyte, completed_at: completed_at - 1.day)
+      first_refresh_run = create_sample_run(memory_bytes: 1.gigabyte, completed_at: completed_at)
+
+      described_class.call(agent_run: first_refresh_run)
+
+      profile = specific_profile
+      expect(profile.recommended_memory_limit_bytes).to be > 1.gigabyte
+      starting_limit = profile.recommended_memory_limit_bytes
+
+      # Subsequent low-memory refreshes should NOT collapse the limit below
+      # the existing recommendation until the sustained counter is met.
+      2.times do |index|
+        next_run = create_sample_run(memory_bytes: 1.gigabyte, completed_at: completed_at + (index + 1).hours)
+        described_class.call(agent_run: next_run)
+      end
+
+      expect(profile.reload.recommended_memory_limit_bytes).to eq(starting_limit)
+      expect(profile.downward_tuning_count).to eq(0)
+    end
   end
 end

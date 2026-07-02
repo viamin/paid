@@ -86,7 +86,7 @@ module Capacity
         create_pr_available_slots
       ].compact.min
 
-      {
+      decision = {
         allowed: remaining_slots.positive?,
         mode: UserSetting::RUN_CONCURRENCY_MODE_AUTO,
         reason: denial_reason(remaining_memory_slots: remaining_memory_slots),
@@ -103,6 +103,8 @@ module Capacity
         docker_confidence: snapshot[:confidence],
         docker_memory_bytes: snapshot[:docker_memory_bytes]
       }
+
+      annotate_capacity_blocked(decision)
     end
 
     def degraded_manual_result(snapshot)
@@ -129,6 +131,35 @@ module Capacity
       return "create_pr_hard_ceiling" if goal == "create_pr" && create_pr_available_slots.to_i <= 0
 
       "capacity_denied"
+    end
+
+    # Surfaces the capacity-blocked signal on admission decisions so callers
+    # and operators can distinguish "no Docker memory" from "no Docker memory
+    # because the workload keeps OOMing at the configured ceiling".
+    # Lookups are scoped to the user/runner/goal so the annotation is
+    # attached only to the workload currently being evaluated.
+    def annotate_capacity_blocked(decision)
+      profile = capacity_blocked_profile
+      return decision unless profile
+
+      decision.merge(
+        capacity_blocked: true,
+        capacity_blocked_profile_level: profile.profile_level,
+        capacity_blocked_at: profile.capacity_blocked_at,
+        capacity_blocked_oom_count: profile.oom_count,
+        capacity_blocked_recommended_limit_bytes: profile.recommended_memory_limit_bytes
+      )
+    end
+
+    def capacity_blocked_profile
+      return @capacity_blocked_profile if defined?(@capacity_blocked_profile)
+
+      profile = AgentRunResourceProfiles::Resolve.call(
+        project: project,
+        runner_key: nil,
+        goal: goal
+      )[:profile]
+      @capacity_blocked_profile = profile&.capacity_blocked? ? profile : nil
     end
 
     def slot_available?(slots)

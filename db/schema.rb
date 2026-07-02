@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_30_022611) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_02_194605) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -198,7 +198,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_30_022611) do
 
   create_table "agent_run_resource_profiles", comment: "Learned memory usage rollups for agent runs across exact and fallback scopes.", force: :cascade do |t|
     t.bigint "account_id", comment: "Owning account for account/project-scoped profiles."
+    t.boolean "capacity_blocked", default: false, null: false, comment: "True when the profile has hit the configured memory ceiling while still OOM-killing runs. Further limit growth is paused until Docker capacity or the ceiling increases."
+    t.datetime "capacity_blocked_at", comment: "When the profile first transitioned into capacity_blocked. Nil while the profile remains unblocked."
+    t.integer "consecutive_low_memory_samples", default: 0, null: false, comment: "Counter of consecutive successful samples where observed peak stayed well below the recommended limit. Required before any downward tuning, to prevent oscillation."
     t.datetime "created_at", null: false
+    t.integer "downward_tuning_count", default: 0, null: false, comment: "Total number of times the profile has been downward-tuned. Useful for debugging anti-oscillation behavior."
     t.string "goal", comment: "Agent goal for runner-scoped profiles."
     t.datetime "last_oom_at", comment: "Timestamp of the most recent sampled OOM event."
     t.string "lookup_key", null: false, comment: "Deterministic unique key for one profile scope row."
@@ -2488,7 +2492,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_30_022611) do
     t.jsonb "auto_pick_skip_labels", comment: "Optional user-level override for labels that make auto-pick skip an issue. Null means inherit tenant or built-in defaults."
     t.integer "circuit_breaker_failure_threshold", default: 5, null: false
     t.integer "circuit_breaker_timeout_seconds", default: 300, null: false
+    t.bigint "container_memory_auto_ceiling_bytes", default: 17179869184, null: false, comment: "Upper bound (bytes) for the auto-tuned agent container memory limit so capacity-blocked workloads stop requesting unbounded memory."
+    t.bigint "container_memory_auto_floor_bytes", default: 536870912, null: false, comment: "Lower bound (bytes) for the auto-tuned agent container memory limit so a sparse profile does not underprovision runs."
     t.bigint "container_memory_bytes", default: 4294967296, null: false
+    t.string "container_memory_limit_mode", default: "manual", null: false, comment: "Whether agent container memory limits are taken from the fixed container_memory_bytes setting or from learned AgentRunResourceProfile recommendations."
     t.integer "container_timeout_seconds", default: 3600, null: false
     t.integer "create_pr_idle_timeout_seconds"
     t.datetime "created_at", null: false

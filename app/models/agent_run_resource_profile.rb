@@ -9,6 +9,24 @@ class AgentRunResourceProfile < ApplicationRecord
   OOM_BUMP_MULTIPLIER = 1.25
   OOM_MESSAGE_PATTERN = /container OOM-killed/i
 
+  # Downward-tuning safety: when a profile's recommended limit has been
+  # raised because of OOMs, we never let it drop below a configured
+  # fraction of the bump basis on a single refresh. Several consecutive
+  # successful low-memory samples are required before a downward move is
+  # allowed, to prevent oscillation between OOM and low-usage windows.
+  DOWNWARD_TUNING_MIN_SAMPLES = 5
+  DOWNWARD_TUNING_HEADROOM_RATIO = 0.5
+  # Sustained-low threshold: a sample whose observed peak stays at or
+  # below this fraction of the current recommended limit counts toward
+  # the consecutive_low_memory_samples counter.
+  LOW_MEMORY_HEADROOM_RATIO = 0.6
+
+  # OOMs observed while the recommended limit is already at or near the
+  # per-user ceiling indicate the workload is outgrowing Docker's
+  # configured budget. Capacity-blocked profiles stop growing so the
+  # recommended limit cannot chase Docker memory indefinitely.
+  CAPACITY_BLOCKED_OOM_THRESHOLD = 2
+
   belongs_to :account, optional: true
   belongs_to :project, optional: true
 
@@ -17,6 +35,8 @@ class AgentRunResourceProfile < ApplicationRecord
   validates :runner_key, length: { maximum: 50 }, allow_blank: true
   validates :goal, inclusion: { in: AgentRun::GOALS }, allow_blank: true
   validates :sample_count, :oom_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  validates :consecutive_low_memory_samples, :downward_tuning_count,
+    numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :p50_memory_bytes, :p95_memory_bytes, :max_memory_bytes, :recommended_memory_limit_bytes,
     numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :validate_profile_scope
@@ -25,6 +45,30 @@ class AgentRunResourceProfile < ApplicationRecord
 
   def sufficient_samples?
     sample_count >= MIN_SAMPLE_SIZE
+  end
+
+  # Marks the profile as capacity-blocked so the next refresh does not
+  # grow the recommended limit past the user's ceiling even if the
+  # workload keeps OOMing.
+  def mark_capacity_blocked!(now: Time.current)
+    return if capacity_blocked?
+
+    self.capacity_blocked = true
+    self.capacity_blocked_at ||= now
+  end
+
+  def clear_capacity_blocked!
+    return unless capacity_blocked?
+
+    self.capacity_blocked = false
+    self.capacity_blocked_at = nil
+  end
+
+  # True when further limit growth is paused because the recommended
+  # limit has already hit the user-configured ceiling while the
+  # workload is still being OOM-killed.
+  def capacity_blocked?
+    !!capacity_blocked
   end
 
   def self.lookup_key_for(profile_level:, account_id: nil, project_id: nil, runner_key: nil, goal: nil)

@@ -205,6 +205,33 @@
           </div>
 
           <div>
+            <%= form.label :container_memory_limit_mode, "Container Memory Mode", class: "block text-sm font-medium leading-6 text-gray-900 dark:text-gray-100" %>
+            <div class="mt-2">
+              <%= form.select :container_memory_limit_mode,
+                options_for_select([["Manual fixed limit", UserSetting::CONTAINER_MEMORY_LIMIT_MODE_MANUAL], ["Auto from run profiles", UserSetting::CONTAINER_MEMORY_LIMIT_MODE_AUTO]], @user_setting.container_memory_limit_mode),
+                {},
+                class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 dark:text-gray-100 dark:bg-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+            </div>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Manual mode always applies the value above. Auto mode takes the memory limit from the learned AgentRunResourceProfile and grows it conservatively after OOMs, clamping to the auto floor/ceiling below.</p>
+          </div>
+
+          <div>
+            <%= form.label :container_memory_auto_floor_bytes, "Auto Floor (bytes)", class: "block text-sm font-medium leading-6 text-gray-900 dark:text-gray-100" %>
+            <div class="mt-2">
+              <%= form.number_field :container_memory_auto_floor_bytes, min: UserSetting::MIN_CONTAINER_MEMORY_AUTO_FLOOR_BYTES, step: 1.megabyte, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 dark:text-gray-100 dark:bg-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+            </div>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Lower bound (bytes) for auto-tuned memory limits so sparse profiles do not underprovision runs. Default 512 MB.</p>
+          </div>
+
+          <div>
+            <%= form.label :container_memory_auto_ceiling_bytes, "Auto Ceiling (bytes)", class: "block text-sm font-medium leading-6 text-gray-900 dark:text-gray-100" %>
+            <div class="mt-2">
+              <%= form.number_field :container_memory_auto_ceiling_bytes, min: UserSetting::MIN_CONTAINER_MEMORY_AUTO_CEILING_BYTES, step: 1.megabyte, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 dark:text-gray-100 dark:bg-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+            </div>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Upper bound (bytes) for auto-tuned memory limits so capacity-blocked workloads stop requesting more memory than Docker can offer. Default 16 GB.</p>
+          </div>
+
+          <div>
             <%= form.label :run_concurrency_mode, "Run Concurrency Mode", class: "block text-sm font-medium leading-6 text-gray-900 dark:text-gray-100" %>
             <div class="mt-2">
               <%= form.select :run_concurrency_mode,

@@ -125,6 +125,21 @@ RSpec.describe UserSetting do
       expect(setting).to be_valid
     end
 
+    # Container memory limit mode (RDR-043 phase 5)
+    it { is_expected.to validate_inclusion_of(:container_memory_limit_mode).in_array(described_class::CONTAINER_MEMORY_LIMIT_MODES) }
+    it { is_expected.to validate_numericality_of(:container_memory_auto_floor_bytes).only_integer.is_greater_than_or_equal_to(described_class::MIN_CONTAINER_MEMORY_AUTO_FLOOR_BYTES).is_less_than_or_equal_to(described_class::MAX_CONTAINER_MEMORY_BYTES) }
+    it { is_expected.to validate_numericality_of(:container_memory_auto_ceiling_bytes).only_integer.is_greater_than_or_equal_to(described_class::MIN_CONTAINER_MEMORY_AUTO_CEILING_BYTES).is_less_than_or_equal_to(described_class::MAX_CONTAINER_MEMORY_BYTES) }
+
+    it "rejects a container_memory_auto_floor_bytes greater than the ceiling" do
+      setting = build(:user_setting,
+        container_memory_auto_floor_bytes: 4.gigabytes,
+        container_memory_auto_ceiling_bytes: 1.gigabyte
+      )
+
+      expect(setting).not_to be_valid
+      expect(setting.errors[:container_memory_auto_floor_bytes]).to include("must be less than or equal to container_memory_auto_ceiling_bytes")
+    end
+
     # Project Defaults
     it { is_expected.to validate_presence_of(:default_branch) }
 
