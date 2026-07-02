@@ -164,6 +164,10 @@ RSpec.describe Containers::Provision do
       expect(described_class::DEFAULTS[:timeout_seconds]).to eq(3600)
     end
 
+    it "defines default Codex tmpfs size of 256MB" do
+      expect(described_class::DEFAULTS[:tmpfs_codex_size]).to eq(256 * 1024 * 1024)
+    end
+
     it "defines default image name" do
       expect(described_class::DEFAULTS[:image]).to eq("paid-agent:latest")
     end
@@ -409,6 +413,7 @@ RSpec.describe Containers::Provision do
           tmpfs = config["HostConfig"]["Tmpfs"]
           expect(tmpfs["/tmp"]).to eq("exec,size=#{1024 * 1024 * 1024},mode=1777")
           expect(tmpfs["/home/agent/.cache"]).to eq("exec,size=#{512 * 1024 * 1024},mode=0755")
+          expect(tmpfs["/home/agent/.codex"]).to eq("size=#{256 * 1024 * 1024},mode=0700")
           mock_container
         end
 
@@ -446,7 +451,23 @@ RSpec.describe Containers::Provision do
           tmpfs = config["HostConfig"]["Tmpfs"]
           expect(tmpfs).to have_key("/home/agent/.codex")
           expect(tmpfs["/home/agent/.codex"]).to include("mode=0700")
-          expect(tmpfs["/home/agent/.codex"]).to include("size=#{64 * 1024 * 1024}")
+          expect(tmpfs["/home/agent/.codex"]).to include("size=#{256 * 1024 * 1024}")
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "allows the Codex tmpfs size to be overridden" do
+        service = described_class.new(
+          agent_run: agent_run,
+          worktree_path: worktree_path,
+          tmpfs_codex_size: 384 * 1024 * 1024
+        )
+
+        expect(Docker::Container).to receive(:create) do |config|
+          tmpfs = config["HostConfig"]["Tmpfs"]
+          expect(tmpfs["/home/agent/.codex"]).to eq("size=#{384 * 1024 * 1024},mode=0700")
           mock_container
         end
 
