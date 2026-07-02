@@ -76,7 +76,6 @@ module AgentRunResourceProfiles
 
       sorted_memory = samples.map { |sample| sample[:memory_bytes] }.sort
       oom_samples = samples.select { |sample| sample[:oom] }
-      oom_limits = oom_samples.filter_map { |sample| sample[:memory_limit_bytes] }.select(&:positive?)
 
       {
         sample_count: samples.size,
@@ -88,9 +87,21 @@ module AgentRunResourceProfiles
         recommended_memory_limit_bytes: recommended_memory_limit_bytes(
           p95_memory_bytes: percentile(sorted_memory, 0.95),
           max_memory_bytes: sorted_memory.max,
-          oom_memory_limit_bytes: oom_limits.max
+          oom_bump_basis_bytes: oom_bump_basis_bytes(oom_samples)
         )
       }
+    end
+
+    # The OOM headroom bump must fire for any OOM-killed run, per the RDR. When
+    # the actual memory limit is known it is the most accurate basis for the
+    # bump; a run with no ContainerMetric row (or one with a non-positive limit)
+    # falls back to the observed peak, which is a conservative proxy because the
+    # container was killed at or below its real (unknown) limit.
+    def oom_bump_basis_bytes(oom_samples)
+      oom_samples.filter_map do |sample|
+        limit = sample[:memory_limit_bytes]
+        limit.positive? ? limit : sample[:memory_bytes]
+      end.max
     end
 
     def source_runs_for(definition)
@@ -180,17 +191,17 @@ module AgentRunResourceProfiles
       (lower_value + ((upper_value - lower_value) * (rank - lower))).round
     end
 
-    def recommended_memory_limit_bytes(p95_memory_bytes:, max_memory_bytes:, oom_memory_limit_bytes:)
+    def recommended_memory_limit_bytes(p95_memory_bytes:, max_memory_bytes:, oom_bump_basis_bytes:)
       baseline = [
         AgentRunResourceProfile::MIN_RECOMMENDED_MEMORY_LIMIT_BYTES,
         (p95_memory_bytes * AgentRunResourceProfile::SAFETY_MULTIPLIER).ceil,
         max_memory_bytes.to_i
       ].max
 
-      if oom_memory_limit_bytes.to_i.positive?
+      if oom_bump_basis_bytes.to_i.positive?
         baseline = [
           baseline,
-          (oom_memory_limit_bytes * AgentRunResourceProfile::OOM_BUMP_MULTIPLIER).ceil
+          (oom_bump_basis_bytes * AgentRunResourceProfile::OOM_BUMP_MULTIPLIER).ceil
         ].max
       end
 

@@ -90,5 +90,31 @@ RSpec.describe AgentRunResourceProfiles::RefreshForRun do
       expect(specific_profile.oom_count).to eq(1)
       expect(specific_profile.recommended_memory_limit_bytes).to be >= (2.gigabytes * 1.25).ceil
     end
+
+    it "bumps the recommended limit for an OOM run without a container memory limit" do
+      # OOM-killed run whose peak we observed but which has no ContainerMetric
+      # row, so memory_limit_bytes defaults to 0. The bump must still fire,
+      # using the observed peak as the conservative basis.
+      oom_run = create(:agent_run,
+        :failed,
+        project: project,
+        goal: "create_pr",
+        agent_type: "claude_code",
+        final_runner: "claude",
+        completed_at: completed_at,
+        peak_memory_bytes: 2.gigabytes,
+        error_message: "Command failed (container OOM-killed; memory limit 2.0 GB)")
+
+      2.times do |index|
+        create_sample_run(memory_bytes: (index + 1).gigabytes, completed_at: completed_at - (index + 1).days)
+      end
+
+      described_class.call(agent_run: oom_run)
+
+      profile = specific_profile
+      expect(profile.oom_count).to eq(1)
+      expect(profile.max_memory_bytes).to eq(2.gigabytes)
+      expect(profile.recommended_memory_limit_bytes).to be >= (2.gigabytes * 1.25).ceil
+    end
   end
 end
