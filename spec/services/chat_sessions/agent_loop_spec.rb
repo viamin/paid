@@ -63,7 +63,7 @@ RSpec.describe ChatSessions::AgentLoop do
       it "persists the assistant content and a pending tool-call message" do
         described_class.new(chat_session: chat_session, llm_client: llm_client).run
 
-        expect(chat_session.messages.order(:created_at, :id).pluck(:role, :content, :tool_status)).to eq([
+        expect(chat_session.messages.chronological.pluck(:role, :content, :tool_status)).to eq([
           [ "assistant", "I'll kick off an agent run.", nil ],
           [ "assistant", nil, "pending" ]
         ])
