@@ -75,6 +75,7 @@ RSpec.describe UserSetting do
 
     # Agent Execution
     it { is_expected.to validate_numericality_of(:agent_timeout_seconds).only_integer.is_greater_than_or_equal_to(60).is_less_than_or_equal_to(described_class::PG_INT_MAX) }
+    it { is_expected.to validate_inclusion_of(:agent_update_comment_mode).in_array(described_class::AGENT_UPDATE_COMMENT_MODES) }
 
     it "validates default_agent_runner against enabled runners" do
       setting = build(:user_setting, default_agent_runner: "invalid")
@@ -105,10 +106,24 @@ RSpec.describe UserSetting do
     it { is_expected.to validate_numericality_of(:style_guide_max_total_bytes).only_integer.is_greater_than_or_equal_to(1000).is_less_than_or_equal_to(described_class::PG_INT_MAX) }
     it { is_expected.to validate_numericality_of(:style_guide_max_raw_prompt_bytes).only_integer.is_greater_than_or_equal_to(1000).is_less_than_or_equal_to(described_class::PG_INT_MAX) }
     # Concurrency
-    it { is_expected.to validate_numericality_of(:max_concurrent_runs).only_integer.is_greater_than_or_equal_to(1).is_less_than_or_equal_to(100) }
+    it { is_expected.to validate_inclusion_of(:run_concurrency_mode).in_array(described_class::RUN_CONCURRENCY_MODES) }
+    it { is_expected.to validate_numericality_of(:max_concurrent_runs).only_integer.is_greater_than_or_equal_to(1).is_less_than_or_equal_to(100).allow_nil }
     it { is_expected.to validate_numericality_of(:max_parallel_agents_per_project).only_integer.is_greater_than_or_equal_to(1).is_less_than_or_equal_to(20) }
     it { is_expected.to validate_numericality_of(:max_auto_pick_open_prs).only_integer.is_greater_than_or_equal_to(0).is_less_than_or_equal_to(100) }
     it { is_expected.to validate_numericality_of(:container_timeout_seconds).only_integer.is_greater_than_or_equal_to(60).is_less_than_or_equal_to(described_class::PG_INT_MAX) }
+
+    it "requires max_concurrent_runs in manual mode" do
+      setting = build(:user_setting, run_concurrency_mode: "manual", max_concurrent_runs: nil)
+
+      expect(setting).not_to be_valid
+      expect(setting.errors[:max_concurrent_runs]).to include("must be set in manual run concurrency mode")
+    end
+
+    it "allows max_concurrent_runs to be blank in auto mode" do
+      setting = build(:user_setting, run_concurrency_mode: "auto", max_concurrent_runs: nil)
+
+      expect(setting).to be_valid
+    end
 
     # Project Defaults
     it { is_expected.to validate_presence_of(:default_branch) }

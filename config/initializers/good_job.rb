@@ -196,6 +196,16 @@ Rails.application.configure do
       class: "GithubTokenHealthCheckJob",
       description: "Validate all active GitHub tokens and flag revoked/expired ones"
     },
+    claude_auth_health_check: {
+      cron: "0 */4 * * *",
+      class: "ClaudeAuthHealthCheckJob",
+      description: "Check Claude subscription auth health and flag expired or expiring credentials"
+    },
+    claude_credential_keep_warm: {
+      cron: "0 */4 * * *",
+      class: "ClaudeCredentialKeepWarmJob",
+      description: "Refresh host-forwarded Claude subscription credentials before expiry (RDR-041 Phase 3)"
+    },
     chat_idle_reaper: {
       cron: "*/5 * * * *",
       class: "ChatSessions::IdleReaperJob",
@@ -215,6 +225,11 @@ Rails.application.configure do
       cron: "*/15 * * * *",
       class: "RemediationDecisionOutcomeJob",
       description: "Evaluate outcomes for auto-applied self-heal remediations"
+    },
+    billing_period_management: {
+      cron: "15 2 * * *",
+      class: "BillingPeriodManagementJob",
+      description: "Close due billing periods, issue invoices, and open the next active period"
     },
     temporal_patch_guard_sweep: {
       cron: "0 4 1 */3 *",

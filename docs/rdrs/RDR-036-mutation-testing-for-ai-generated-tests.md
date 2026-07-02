@@ -5,7 +5,7 @@
 ## Metadata
 
 - **Date**: 2026-05-25
-- **Status**: Draft
+- **Status**: Partially Implemented
 - **Type**: Architecture
 - **Priority**: P1
 - **Related Issues**: viamin/paid#2371 (this amendment), viamin/paid#2367 (gem-source switch), viamin/paid#2368 (`--usage` cleanup), viamin/paid#2370 (customer UI)
@@ -15,6 +15,10 @@
   - [RDR-031](RDR-031-focused-agent-runs.md) (Focused Agent Runs)
   - [RDR-035](RDR-035-style-guide-evolution.md) (Style Guide Evolution)
 - **Related Tests**: (to be created during implementation)
+
+## Implementation Status
+
+Partially implemented. Paid has mutation CI, `bin/mutation`, managed-project mutation pre-commit requirements, container quality-hook support, Mutant feedback parsing, mutation quality metrics, scheduled sweeps, and dashboard reporting. Remaining work includes completing the sanctioned-source transition to `viamin/mutant` as the default, cleaning stale `--usage`/licensing artifacts, and finishing customer-facing configuration tracked by #2370.
 
 ## Amendment 1 (2026-05-29)
 
@@ -28,7 +32,7 @@ This amendment removes the customer commercial-license burden from the design. T
 
 ### Switch blockers
 
-The gem-source switch remains gated on the upstream `viamin/mutant` blockers tracked in `viamin/mutant#9`, `viamin/mutant#10`, `viamin/mutant#11`, and `viamin/mutant#12`. Compatibility follow-up for the Paid integration remains tracked in `viamin/mutant#16`.
+The upstream blockers that originally gated the switch (`viamin/mutant#9`, `viamin/mutant#10`, `viamin/mutant#11`, `viamin/mutant#12`, and the `--usage` compatibility cleanup in `viamin/mutant#16`) are now closed. Paid should therefore treat `viamin/mutant` as the default sanctioned source and keep `#2370` focused on customer-facing enablement/configuration UX rather than source selection or licensing flow.
 
 ## Problem Statement
 
@@ -491,19 +495,19 @@ For projects with a `mutation_test` requirement, a per-project nightly job runs 
 4. Add `.github/workflows/mutation.yml` with the incremental PR job and nightly cron.
 5. Add a Make/Rake task `bin/mutation` for local incremental runs.
 
-**Gem-source switch (viamin/paid#2367)**: The switch between the upstream rubygems release (`mbj/mutant`, commercial) and the viamin fork (`viamin/mutant`, MIT) is controlled by the `BUNDLE_GEMFILE` environment variable. `Gemfile` (the default) pins the upstream release; `Gemfile.viamin` sources both gems from `https://github.com/viamin/mutant`. See `docs/MUTATION_TESTING.md` for local usage and the CI `mutation-viamin-parity` job for the automated parity signal. The default remains upstream until the blockers in `viamin/mutant#9`, `viamin/mutant#10`, `viamin/mutant#11`, and `viamin/mutant#12` land.
+**Gem-source switch (viamin/paid#2367)**: `Gemfile` now sources `mutant` and `mutant-rspec` directly from `https://github.com/viamin/mutant`, making the MIT-licensed fork the default sanctioned source for local runs and CI. The temporary alternate `Gemfile.viamin` / parity-job setup is no longer needed once the upstream blocker set is closed.
 
-Historical only after Amendment 1 (2026-05-29): ~~No mutant license key, secret, or credential entry is added to Paid for its own runs.~~ The current direction is to land the gem-source switch in `viamin/paid#2367`, then remove `--usage` handling in `viamin/paid#2368`.
+Historical only after Amendment 1 (2026-05-29): ~~No mutant license key, secret, or credential entry is added to Paid for its own runs.~~ With the default source now on `viamin/mutant`, Paid's own runs, CI, and `.mutant.yml` no longer carry usage-flag or license-key assumptions.
 
 ### Phase 2: PreCommitRequirement and container integration
 
-1. Land `viamin/paid#2367` to switch the sanctioned source to `viamin/mutant`, subject to the upstream blockers in `viamin/mutant#9`, `viamin/mutant#10`, `viamin/mutant#11`, and `viamin/mutant#12`.
-2. Land `viamin/paid#2368` to remove stale `--usage` plumbing and license-path assumptions from the integration.
+1. Landed: `viamin/paid#2367` switched the sanctioned source to `viamin/mutant` after the upstream blockers in `viamin/mutant#9`, `viamin/mutant#10`, `viamin/mutant#11`, and `viamin/mutant#12` closed.
+2. Landed: `viamin/paid#2368` removed stale `--usage` plumbing and license-path assumptions from the integration.
 3. Migration: add `"mutation_test"` to `PreCommitRequirement::CHECK_TYPES`.
 4. `Containers::QualityHooks` extension (Section 4 above).
 5. `git_operations.rb` support for `mutation_command` in `install_git_hooks`.
 6. `QualityFeedback::ParseMutant` parser and feedback-loop wiring in `AgentExecutionWorkflow`.
-7. Land `viamin/paid#2370` for the customer-facing settings UI / Avo admin after the gem-source switch and `--usage` cleanup.
+7. Keep `viamin/paid#2370` focused on the customer-facing settings UI / Avo admin work that remains after the gem-source switch and `--usage` cleanup.
 
 ### Phase 3: Quality signal integration
 

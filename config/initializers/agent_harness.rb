@@ -217,6 +217,28 @@ end
 AgentHarness::Providers::Anthropic.prepend(PaidAgentHarnessAnthropicMcpConfigFlagFormPatch) unless
   AgentHarness::Providers::Anthropic < PaidAgentHarnessAnthropicMcpConfigFlagFormPatch
 
+# Classify `refresh_token_reused` as :auth_expired for the Anthropic/Claude provider.
+#
+# Claude's OAuth refresh tokens are single-use and rotating. When two containers
+# race to refresh the same credential, the second gets a 401 with body
+# "refresh_token_reused". Paid serializes concurrent refreshes via
+# with_claude_auth_lock (mirrors the Codex auth-lock pattern), but if the lock
+# times out the runner that lost the race will hit this error and should be
+# treated as auth-expired rather than a generic execution error — triggering the
+# standard auth_expired fallback path rather than retrying indefinitely.
+#
+# TODO(viamin/agent-harness#265): remove once the upstream Anthropic provider
+# adds this pattern natively.
+module PaidAgentHarnessAnthropicRefreshTokenReusedPatch
+  def error_classification_patterns
+    result = super
+    result.merge(auth_expired: result.fetch(:auth_expired, []) + [ /refresh_token_reused/i ])
+  end
+end
+
+AgentHarness::Providers::Anthropic.prepend(PaidAgentHarnessAnthropicRefreshTokenReusedPatch) unless
+  AgentHarness::Providers::Anthropic < PaidAgentHarnessAnthropicRefreshTokenReusedPatch
+
 # Backport embedding support until agent-harness ships a native public API.
 # Keep this version-gated and narrow so Paid can switch back to upstream
 # behavior cleanly once the gem exposes AgentHarness.embed (or equivalent).

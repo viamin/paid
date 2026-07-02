@@ -45,6 +45,7 @@ module Accounts
           account = create_account
           create_tenant_setting(account)
           create_billing_plan(account)
+          create_initial_billing_period(account)
           start_onboarding(account)
         end
       end
@@ -67,6 +68,10 @@ module Accounts
     def create_billing_plan(account)
       template = BILLING_PLAN_TEMPLATES.fetch(plan, BILLING_PLAN_TEMPLATES["trial"])
       account.billing_plans.create!(template)
+    end
+
+    def create_initial_billing_period(account)
+      Billing::AdvanceAccountPeriods.call(account: account)
     end
 
     def start_onboarding(account)

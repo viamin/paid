@@ -198,12 +198,13 @@ module Screenshots
       workflow_status: Target.new(slug: "workflow_status", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/workflow_status" }, requires_auth: true)
     }.freeze
 
-    def self.call(changed_files:)
-      new(changed_files: changed_files).call
+    def self.call(changed_files:, repo_path: nil)
+      new(changed_files: changed_files, repo_path: repo_path).call
     end
 
-    def initialize(changed_files:)
+    def initialize(changed_files:, repo_path: nil)
       @changed_files = Array(changed_files)
+      @repo_path = repo_path.presence&.chomp("/")
     end
 
     def call
@@ -241,6 +242,7 @@ module Screenshots
       "ab_tests_controller.rb" => %i[ab_tests ab_test_new ab_test_show],
       "providers_controller.rb" => %i[providers providers_new providers_edit],
       "runners_controller.rb" => %i[providers providers_new providers_edit],
+      "runner_credentials_controller.rb" => %i[runner_credentials runner_credential_new runner_credential_show],
       "provider_api_keys_controller.rb" => %i[provider_api_keys provider_api_key_new provider_api_key_show provider_api_key_edit],
       "marketplace_entries_controller.rb" => %i[marketplace_entries marketplace_entry_new marketplace_entry_show marketplace_entry_edit],
       "integrations_controller.rb" => %i[integrations integrations_new],
@@ -310,6 +312,7 @@ module Screenshots
       "projects/quality_thresholds_controller.rb" => [ :project_quality_dashboard ],
       "projects/service_containers_controller.rb" => [ :project_edit ],
       "projects/mcp_servers_controller.rb" => [ :project_edit ],
+      "projects/mutation_test_requirements_controller.rb" => [ :project_edit ],
       "projects/knowledge_recommendations_controller.rb" => [ :project_knowledge_recommendations ],
       "projects/screenshot_configs_controller.rb" => [ :project_edit ],
       "projects/convention_settings_controller.rb" => [ :project_convention_settings ],
@@ -321,8 +324,12 @@ module Screenshots
       return targets_for_javascript_registry if path == "app/javascript/controllers/index.js"
 
       if path.start_with?("app/javascript/controllers/")
-        explicit_targets = targets_for_javascript_controller(path.delete_prefix("app/javascript/controllers/"))
+        relative = path.delete_prefix("app/javascript/controllers/")
+        explicit_targets = targets_for_javascript_controller(relative)
         return explicit_targets if explicit_targets.any?
+
+        scanned = targets_for_stimulus_usage(relative)
+        return scanned if scanned&.any?
       end
 
       return SHARED_TARGET_KEYS if shared_ui_file?(path)
@@ -373,6 +380,109 @@ module Screenshots
       SHARED_TARGET_KEYS
     end
 
+    # Globs scanned to discover which views statically reference a Stimulus
+    # controller via `data-controller`. Used to narrow a JS controller change to
+    # the pages that actually mount it, instead of fanning out to every page.
+    STIMULUS_SCAN_GLOBS = %w[app/views/**/*.erb app/components/**/*.erb app/components/**/*.rb].freeze
+
+    # Returns target keys for the pages that statically mount the given Stimulus
+    # controller, or nil to signal "cannot narrow" so the caller falls back to
+    # the conservative shared-target behavior. Requires a repo_path to scan.
+    def targets_for_stimulus_usage(relative_path)
+      return nil if @repo_path.blank?
+
+      identifier = stimulus_identifier(relative_path)
+      return nil if identifier.nil?
+
+      matches = stimulus_usage_index[identifier]
+      return nil if matches.empty? # not referenced statically — stay conservative
+
+      # Mounted on a globally rendered surface (layout, shared partial, component)
+      # — a change can affect any page, so we cannot safely narrow.
+      return SHARED_TARGET_KEYS if matches.any? { |file| global_surface?(file) }
+
+      matches.flat_map { |file| targets_for_static_view(file) }.uniq
+    end
+
+    # Derives the Stimulus identifier from a controller file path, mirroring
+    # Stimulus conventions: underscores become dashes and nested directories
+    # become `--`. e.g. "foo/bar_baz_controller.js" => "foo--bar-baz".
+    def stimulus_identifier(relative_path)
+      return nil unless relative_path.end_with?("_controller.js")
+
+      relative_path
+        .delete_suffix("_controller.js")
+        .split("/")
+        .map { |segment| segment.tr("_", "-") }
+        .join("--")
+    end
+
+    def stimulus_usage_index
+      @stimulus_usage_index ||= STIMULUS_SCAN_GLOBS.each_with_object(Hash.new { |h, k| h[k] = [] }) do |glob, index|
+        Dir.glob(File.join(@repo_path, glob)).each do |file|
+          relative = file.delete_prefix("#{@repo_path}/")
+          stimulus_identifiers_in(read_scrubbed(file)).each { |identifier| index[identifier] << relative }
+        rescue SystemCallError, ArgumentError
+          next # unreadable or undecodable file — skip
+        end
+      end
+    end
+
+    # Reads a file as scrubbed UTF-8 so a stray invalid byte sequence can never
+    # raise from the regex scan and abort the whole capture-targets resolution.
+    def read_scrubbed(file)
+      File.read(file).scrub
+    end
+
+    # Extracts the Stimulus identifiers referenced in the given markup, covering
+    # both the HTML attribute form (`data-controller="a b"`) and the Rails
+    # tag-helper hash form (`data: { controller: "a" }` / `controller: "a"`).
+    def stimulus_identifiers_in(content)
+      content
+        .scan(/(?:data-controller=|\bcontroller:\s*)("|')([^"']*)\1/)
+        .flat_map { |_quote, value| value.split(/\s+/) }
+        .uniq
+    end
+
+    def global_surface?(file)
+      file.start_with?("app/components/") ||
+        file.start_with?("app/views/layouts/") ||
+        file.start_with?("app/views/shared/") ||
+        layout_rendered_partials.include?(file)
+    end
+
+    LAYOUT_GLOB = "app/views/layouts/**/*.erb"
+
+    # Partials rendered directly from a layout are mounted on every page that
+    # uses that layout, so a Stimulus controller living in one cannot be narrowed
+    # to a single page (e.g. the notification bell rendered into the global nav).
+    # Over-matching here only widens capture, which is safe.
+    def layout_rendered_partials
+      @layout_rendered_partials ||= build_layout_rendered_partials
+    end
+
+    def build_layout_rendered_partials
+      return Set.new if @repo_path.blank?
+
+      Dir.glob(File.join(@repo_path, LAYOUT_GLOB)).each_with_object(Set.new) do |layout, set|
+        read_scrubbed(layout).scan(/render\b\s*\(?\s*(?:partial:\s*)?("|')([^"']+)\1/) do |_quote, partial|
+          dir, _, name = partial.rpartition("/")
+          next if name.empty?
+
+          set << "app/views/#{dir.empty? ? '' : "#{dir}/"}_#{name}.html.erb"
+        end
+      rescue SystemCallError, ArgumentError
+        next
+      end
+    end
+
+    def targets_for_static_view(file)
+      return SHARED_TARGET_KEYS if global_surface?(file)
+      return targets_for_view(file.delete_prefix("app/views/")) if file.start_with?("app/views/")
+
+      SHARED_TARGET_KEYS
+    end
+
     def targets_for_helper(path)
       helper_name = File.basename(path).delete_suffix("_helper.rb")
       explicit_targets = HELPER_TARGETS[helper_name]
@@ -412,6 +522,7 @@ module Screenshots
       when /\Aprovider_api_keys\// then rest_resource_targets(relative_path, "provider_api_keys", index: :provider_api_keys, new: :provider_api_key_new, show: :provider_api_key_show, edit: :provider_api_key_edit)
       when /\Aproviders\// then providers_targets(relative_path.delete_prefix("providers/"))
       when /\Arunners\// then providers_targets(relative_path.delete_prefix("runners/"))
+      when /\Arunner_credentials\// then rest_resource_targets(relative_path, "runner_credentials", index: :runner_credentials, new: :runner_credential_new, show: :runner_credential_show, edit: :runner_credential_show)
       when /\Aservice_containers\// then rest_resource_targets(relative_path, "service_containers", index: :service_containers, new: :service_container_new, show: :service_container_show, edit: :service_container_edit)
       when /\Amarketplace_entries\// then rest_resource_targets(relative_path, "marketplace_entries", index: :marketplace_entries, new: :marketplace_entry_new, show: :marketplace_entry_show, edit: :marketplace_entry_edit)
       when /\Amarketplace_entry_pdf_imports\// then [ :marketplace_entry_pdf_import_new ]

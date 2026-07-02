@@ -5,13 +5,17 @@
 ## Metadata
 
 - **Date**: 2026-03-28
-- **Status**: Final
+- **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: High
 - **Related Issues**: #267 (Knowledge Base Architecture Docs), #66 (Semantic data investigation)
 - **Related RDRs**: [RDR-018](RDR-018-semantic-code-search.md) (Semantic Code Search)
 - **Note**: The #267 implementation plan originally referenced this as RDR-019. It was renumbered to RDR-021 because RDR-019 was already assigned to Remote Container Execution.
 - **Related Tests**: `spec/services/knowledge/`, `spec/models/knowledge_*.rb`
+
+## Implementation Status
+
+Implemented with PostgreSQL as the canonical store, Qdrant as a derived vector index, collector runs, project versions, knowledge artifacts/chunks/links, hybrid search, redaction before embedding, audit events, prompt integration, proxy search, and MCP search tooling. Retroactive physical scrubbing/rebuild workflows for already-indexed PostgreSQL and Qdrant data remain follow-up work beyond the logical redaction flags and pre-embedding redaction pipeline.
 
 ## Problem Statement
 

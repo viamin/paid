@@ -86,6 +86,7 @@ RSpec.describe "UserSettings" do
         patch user_settings_path, params: {
           user_setting: {
             agent_timeout_seconds: 7200,
+            agent_update_comment_mode: "summary",
             max_execution_seconds: 5400,
             default_agent_runner: "cursor"
           }
@@ -93,6 +94,7 @@ RSpec.describe "UserSettings" do
         expect(response).to redirect_to(edit_user_settings_path)
         settings = user.reload.settings
         expect(settings.agent_timeout_seconds).to eq(7200)
+        expect(settings.agent_update_comment_mode).to eq("summary")
         expect(settings.max_execution_seconds).to eq(5400)
         expect(settings.default_agent_runner).to eq(cursor.routing_key)
       end
@@ -123,6 +125,20 @@ RSpec.describe "UserSettings" do
         expect(settings.container_memory_bytes).to eq(8 * 1024 * 1024 * 1024)
         expect(settings.max_concurrent_runs).to eq(4)
         expect(settings.container_timeout_seconds).to eq(3600)
+      end
+
+      it "lets the user switch run concurrency to auto mode" do
+        patch user_settings_path, params: {
+          user_setting: {
+            run_concurrency_mode: "auto",
+            max_concurrent_runs: ""
+          }
+        }
+
+        expect(response).to redirect_to(edit_user_settings_path)
+        settings = user.reload.settings
+        expect(settings.run_concurrency_mode).to eq("auto")
+        expect(settings.max_concurrent_runs).to be_nil
       end
 
       it "ignores the deprecated auto-pick PR limit setting" do
@@ -225,6 +241,13 @@ RSpec.describe "UserSettings" do
       it "shows a success notice" do
         patch user_settings_path, params: { user_setting: { default_poll_interval_seconds: 120 } }
         expect(flash[:notice]).to eq("Settings saved successfully.")
+      end
+
+      it "renders the run concurrency mode field" do
+        get edit_user_settings_path
+
+        expect(response.body).to include("Run Concurrency Mode")
+        expect(response.body).to include('name="user_setting[run_concurrency_mode]"')
       end
 
       it "redirects turbo-stream PATCH requests with see other" do

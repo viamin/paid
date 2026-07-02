@@ -9,12 +9,30 @@ module ChatSessions
     private
 
     def dispatch_tool(name:, arguments:)
-      Tools::Registry.dispatch(
-        name: name,
-        arguments: arguments,
-        user: chat_session.created_by,
-        session: chat_session
-      )
+      normalize_tool_dispatch_result(name:) do
+        Tools::Registry.dispatch(
+          name: name,
+          arguments: arguments,
+          user: chat_session.created_by,
+          session: chat_session
+        )
+      end
+    end
+
+    def resolve_tool_confirmation(name:, decision:, pending_result:)
+      normalize_tool_dispatch_result(name:) do
+        Tools::Registry.resolve_confirmation(
+          name: name,
+          decision: decision,
+          pending_result: pending_result,
+          user: chat_session.created_by,
+          session: chat_session
+        )
+      end
+    end
+
+    def normalize_tool_dispatch_result(name:)
+      yield
     rescue Pundit::NotAuthorizedError => error
       { status: "error", error: "unauthorized", message: error.message }
     rescue ArgumentError => error

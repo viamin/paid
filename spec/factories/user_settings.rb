@@ -8,9 +8,11 @@ FactoryBot.define do
     github_token_cache_ttl_minutes { 60 }
     token_validation_stale_minutes { 2 }
     agent_timeout_seconds { 5400 }
+    agent_update_comment_mode { UserSetting::AGENT_UPDATE_COMMENT_MODE_DEFAULT }
     marketplace_auto_attach_enabled { false }
     default_agent_runner { "claude" }
     container_memory_bytes { 4 * 1024 * 1024 * 1024 }
+    run_concurrency_mode { UserSetting::RUN_CONCURRENCY_MODE_MANUAL }
     max_concurrent_runs { 2 }
     max_parallel_agents_per_project { 3 }
     container_timeout_seconds { 3600 }

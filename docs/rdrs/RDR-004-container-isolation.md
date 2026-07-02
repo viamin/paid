@@ -5,11 +5,15 @@
 ## Metadata
 
 - **Date**: 2025-01-23
-- **Status**: Final
+- **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: High
 - **Related Issues**: N/A (foundational decision)
 - **Related Tests**: Container security tests, integration tests for agent execution
+
+## Implementation Status
+
+Implemented with Docker agent containers, non-root execution, read-only root filesystems, dropped capabilities, tmpfs writable areas, resource limits, and per-run workspace isolation. The network contract evolved after this RDR: proxy-mode API-key runs use restricted/firewalled networking and the secrets proxy, while subscription-auth and direct-outbound runners intentionally use `paid_internal`; service containers are intentional same-network peers as described by RDR-020.
 
 ## Problem Statement
 

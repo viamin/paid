@@ -25,6 +25,22 @@ module Models
         tier: "mid"
       },
       {
+        model_id: "claude-sonnet-5",
+        display_name: "Claude Sonnet 5",
+        provider: "anthropic",
+        family: "claude-5",
+        category: "coding",
+        context_window: 200_000,
+        max_output_tokens: 64_000,
+        input_cost_per_million: 3.0,
+        output_cost_per_million: 15.0,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 9.2,
+        tier: "mid"
+      },
+      {
         model_id: "claude-opus-4-7",
         display_name: "Claude Opus 4.7",
         provider: "anthropic",

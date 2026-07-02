@@ -11,6 +11,10 @@
 - **Related Issues**: #1987 (foundation), #1988 (prompt scoping), #1989 (quality scoring)
 - **Related RDRs**: RDR-013 (Code Quality & Backpressure), RDR-014 (Learned Orchestration), RDR-023 (Automation Modularization)
 
+## Implementation Status
+
+Implemented. Focus is now first-class on `AgentRun`, scanner focus resolution, workflow/create paths, prompt scoping, quality metrics, and focus-resolution attribution. The rollout feature flag described in this RDR has been removed because focused runs are now default behavior.
+
 ## Problem Statement
 
 When an agent run encounters multiple classes of problems on a PR (failing CI workflows, code review comments, merge conflicts, linter errors, security findings), the current system bundles all of them into a single agent run and instructs the agent to fix everything in one pass. This causes:

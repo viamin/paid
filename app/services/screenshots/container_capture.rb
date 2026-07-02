@@ -52,6 +52,7 @@ module Screenshots
       @config = nil
       @network = nil
       @published_url = nil
+      @hints = {}
     end
 
     def call
@@ -74,6 +75,15 @@ module Screenshots
         # Re-detect with full repo context (custom patterns/exclusions from config)
         ui_files = detect_ui_files(changed_files, repo_path)
         return finalize_skip("no_ui_changes", changed_files:, ui_files:) if ui_files.empty?
+
+        # Derive per-route hints (best-effort) to scope and annotate capture to the
+        # pages the agent actually changed. Empty hints fall back to all routes.
+        @hints = Screenshots::DeriveHints.call(
+          agent_run: agent_run,
+          routes: @config.routes,
+          changed_files: ui_files,
+          logger: logger
+        )
 
         provision_service_dependencies!
         start_chrome!
@@ -343,6 +353,7 @@ module Screenshots
         route_name = File.basename(path, ".png")
         {
           route_name: route_name,
+          summary: @hints.dig(route_name, "summary"),
           url: storage.upload(
             file_path: path,
             org: project.owner,
@@ -411,12 +422,40 @@ module Screenshots
           ]);
         }
 
+        async function annotate(annotation) {
+          if (!annotation) return;
+          await page.evaluate((hint) => {
+            if (hint.selector) {
+              try {
+                const el = document.querySelector(hint.selector);
+                if (el) {
+                  el.scrollIntoView({ block: "center", inline: "center" });
+                  el.style.outline = "3px solid #ff3b30";
+                  el.style.outlineOffset = "2px";
+                }
+              } catch (e) { /* invalid selector — skip highlight */ }
+            }
+            if (hint.summary) {
+              const banner = document.createElement("div");
+              banner.textContent = "Changed: " + hint.summary;
+              Object.assign(banner.style, {
+                position: "fixed", top: "0", left: "0", right: "0", zIndex: "2147483647",
+                background: "rgba(255,59,48,0.95)", color: "#fff",
+                font: "14px/1.4 system-ui, -apple-system, sans-serif",
+                padding: "8px 12px", boxSizing: "border-box",
+              });
+              document.body.appendChild(banner);
+            }
+          }, annotation);
+        }
+
         await fs.mkdir(outputDir, { recursive: true });
         await authenticate();
 
         for (const route of config.routes) {
           const target = new URL(route.path, config.base_url).toString();
           await page.goto(target, { waitUntil: "networkidle" });
+          await annotate(route.annotation);
           await page.screenshot({ path: `${outputDir}/${route.name}.png`, fullPage: true });
         }
 
@@ -424,11 +463,24 @@ module Screenshots
       JS
     end
 
+    # Scopes capture to the routes the agent's change affected, when hints are
+    # available. Falls back to every configured route when hints are empty or
+    # none of them match a configured route name (conservative — never captures
+    # less than the unscoped behavior would when hints are unusable).
+    def routes_for_capture
+      return config.routes if @hints.blank?
+
+      scoped = config.routes.select { |route| @hints.key?(route.name.to_s) }
+      scoped.presence || config.routes
+    end
+
     def screenshot_config_json
       {
         base_url: config.base_url,
         viewport: { width: config.viewport.width, height: config.viewport.height },
-        routes: config.routes.map { |route| { path: route.path, name: route.name } },
+        routes: routes_for_capture.map { |route|
+          { path: route.path, name: route.name, annotation: @hints[route.name.to_s] }.compact
+        },
         auth: {
           strategy: config.auth.strategy,
           login_path: config.auth.login_path,

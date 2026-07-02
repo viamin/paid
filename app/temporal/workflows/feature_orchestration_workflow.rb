@@ -314,6 +314,7 @@ module Workflows
         aggregated_pr: parallel_result[:aggregated_pr]
       }
     rescue => e
+      raise_if_canceled!(e)
       planning_policy_metadata = planning_policy_metadata.presence || decomposition_policy_metadata_from_error(e)
       failed_step = @decision_step || decision_step
 
@@ -338,7 +339,8 @@ module Workflows
           prompt_source: prompt_source,
           **planning_policy_metadata,
           failed_step: failed_step
-        }
+        },
+        detached: true
       )
 
       scaling_observation = safe_record_scaling_observation(
@@ -359,11 +361,13 @@ module Workflows
           created_issues: created_issues,
           scaling_experiments: scaling_metadata(scaling_assignments),
           learned_allocation: learned_allocation_metadata(learned_scaling_allocation)
-        }
+        },
+        detached: true
       )
       safely_record_scaling_experiment_results(
         assignment_ids: scaling_assignments.map { |assignment| assignment[:assignment_id] || assignment["assignment_id"] },
-        scaling_observation_id: scaling_observation&.dig(:scaling_observation_id)
+        scaling_observation_id: scaling_observation&.dig(:scaling_observation_id),
+        detached: true
       )
 
       Temporalio::Workflow.logger.error(
@@ -384,7 +388,8 @@ module Workflows
           results: [],
           conflicts: { has_conflicts: false, requires_manual_review: false },
           error: e.message
-        }
+        },
+        detached: true
       )
       raise
     end
@@ -532,13 +537,22 @@ module Workflows
       self.class.parallelization_failure_outcome_for(step)
     end
 
-    def safe_log_decomposition_decision(payload)
-      run_activity(
-        Activities::LogDecompositionDecisionActivity,
-        payload,
-        timeout: 30,
-        retry_policy: NO_RETRY
-      )
+    def safe_log_decomposition_decision(detached: false, **payload)
+      if detached
+        run_cleanup_activity(
+          Activities::LogDecompositionDecisionActivity,
+          payload,
+          timeout: 30,
+          retry_policy: NO_RETRY
+        )
+      else
+        run_activity(
+          Activities::LogDecompositionDecisionActivity,
+          payload,
+          timeout: 30,
+          retry_policy: NO_RETRY
+        )
+      end
     rescue => log_error
       Temporalio::Workflow.logger.warn(
         message: "feature_orchestration.decomposition_decision_log_failed",
@@ -548,13 +562,22 @@ module Workflows
       )
     end
 
-    def safe_record_scaling_observation(payload)
-      run_activity(
-        Activities::RecordScalingObservationActivity,
-        payload,
-        timeout: 30,
-        retry_policy: NO_RETRY
-      )
+    def safe_record_scaling_observation(detached: false, **payload)
+      if detached
+        run_cleanup_activity(
+          Activities::RecordScalingObservationActivity,
+          payload,
+          timeout: 30,
+          retry_policy: NO_RETRY
+        )
+      else
+        run_activity(
+          Activities::RecordScalingObservationActivity,
+          payload,
+          timeout: 30,
+          retry_policy: NO_RETRY
+        )
+      end
     rescue => record_error
       Temporalio::Workflow.logger.warn(
         message: "feature_orchestration.scaling_observation_record_failed",
@@ -598,20 +621,34 @@ module Workflows
       { assignment_id: nil, coordination_policy: nil }
     end
 
-    def safely_record_coordination_outcome(assignment_id:, task_count:, parallel_execution:, result:)
+    def safely_record_coordination_outcome(assignment_id:, task_count:, parallel_execution:, result:, detached: false)
       return unless assignment_id
 
-      run_activity(
-        Activities::RecordCoordinationExperimentOutcomeActivity,
-        {
-          assignment_id: assignment_id,
-          task_count: task_count,
-          parallel_execution: parallel_execution,
-          result: result
-        },
-        timeout: 30,
-        retry_policy: NO_RETRY
-      )
+      if detached
+        run_cleanup_activity(
+          Activities::RecordCoordinationExperimentOutcomeActivity,
+          {
+            assignment_id: assignment_id,
+            task_count: task_count,
+            parallel_execution: parallel_execution,
+            result: result
+          },
+          timeout: 30,
+          retry_policy: NO_RETRY
+        )
+      else
+        run_activity(
+          Activities::RecordCoordinationExperimentOutcomeActivity,
+          {
+            assignment_id: assignment_id,
+            task_count: task_count,
+            parallel_execution: parallel_execution,
+            result: result
+          },
+          timeout: 30,
+          retry_policy: NO_RETRY
+        )
+      end
     rescue => e
       Temporalio::Workflow.logger.warn(
         message: "feature_orchestration.coordination_experiment_record_failed",
@@ -622,19 +659,31 @@ module Workflows
       )
     end
 
-    def safely_record_scaling_experiment_results(assignment_ids:, scaling_observation_id:)
+    def safely_record_scaling_experiment_results(assignment_ids:, scaling_observation_id:, detached: false)
       return if assignment_ids.blank? || scaling_observation_id.blank?
 
       Array(assignment_ids).each do |assignment_id|
-        run_activity(
-          Activities::RecordScalingExperimentResultActivity,
-          {
-            assignment_id: assignment_id,
-            scaling_observation_id: scaling_observation_id
-          },
-          timeout: 30,
-          retry_policy: NO_RETRY
-        )
+        if detached
+          run_cleanup_activity(
+            Activities::RecordScalingExperimentResultActivity,
+            {
+              assignment_id: assignment_id,
+              scaling_observation_id: scaling_observation_id
+            },
+            timeout: 30,
+            retry_policy: NO_RETRY
+          )
+        else
+          run_activity(
+            Activities::RecordScalingExperimentResultActivity,
+            {
+              assignment_id: assignment_id,
+              scaling_observation_id: scaling_observation_id
+            },
+            timeout: 30,
+            retry_policy: NO_RETRY
+          )
+        end
       rescue => e
         Temporalio::Workflow.logger.warn(
           message: "feature_orchestration.scaling_experiment_record_failed",

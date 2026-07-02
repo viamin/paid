@@ -5,6 +5,7 @@ require "rails_helper"
 RSpec.describe Activities::CompleteReviewGoalActivity do
   let(:activity) { described_class.new }
   let(:project) { create(:project) }
+  let(:github_client) { instance_double(GithubClient) }
 
   describe "#execute" do
     context "when a review was posted" do
@@ -63,8 +64,59 @@ RSpec.describe Activities::CompleteReviewGoalActivity do
     end
 
     context "when no review was posted" do
+      before do
+        allow(GithubClient).to receive(:new).and_return(github_client)
+      end
+
+      it "reconciles a GitHub review id from the agent output" do
+        agent_run = create(:agent_run, :running, :review_goal, project: project)
+        review_body = "Generated review body from the agent"
+        agent_run.log!("stdout", "tool result: {\"success\":true,\"review_id\":123}")
+
+        allow(github_client).to receive(:pull_request_reviews)
+          .with(project.full_name, agent_run.source_pull_request_number)
+          .and_return([
+            {
+              id: 123,
+              state: "COMMENTED",
+              body: review_body,
+              submitted_at: Time.current
+            }
+          ])
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        agent_run.reload
+        expect(result[:success]).to be true
+        expect(agent_run.status).to eq("completed")
+        expect(agent_run.review_posted_at).to be_present
+        expect(agent_run.review_url).to eq("#{project.github_url}/pull/10#pullrequestreview-123")
+      end
+
+      it "reconciles a Paid-marked GitHub review" do
+        agent_run = create(:agent_run, :running, :review_goal, project: project)
+
+        allow(github_client).to receive(:pull_request_reviews)
+          .with(project.full_name, agent_run.source_pull_request_number)
+          .and_return([
+            {
+              id: 456,
+              state: "COMMENTED",
+              body: "#{described_class::PAID_REVIEW_MARKER}\n## Code Review\n\nGenerated no new comments.",
+              submitted_at: Time.current
+            }
+          ])
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("completed")
+        expect(agent_run.review_url).to eq("#{project.github_url}/pull/10#pullrequestreview-456")
+      end
+
       it "fails the agent run" do
         agent_run = create(:agent_run, :running, :review_goal, project: project)
+        allow(github_client).to receive(:pull_request_reviews).and_return([])
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
@@ -73,6 +125,29 @@ RSpec.describe Activities::CompleteReviewGoalActivity do
         agent_run.reload
         expect(agent_run.status).to eq("failed")
         expect(agent_run.error_message).to include("No review was posted")
+      end
+
+      it "does not reconcile an unrelated review that only appears by body" do
+        agent_run = create(:agent_run, :running, :review_goal, project: project)
+        agent_run.log!("stdout", "fetched existing review: A human review that the agent never produced")
+
+        allow(github_client).to receive(:pull_request_reviews)
+          .and_return([
+            {
+              id: 789,
+              state: "COMMENTED",
+              body: "A human review that the agent never produced",
+              submitted_at: Time.current
+            }
+          ])
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /No review was posted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("failed")
+        expect(agent_run.review_posted_at).to be_nil
       end
     end
   end

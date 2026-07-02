@@ -375,6 +375,20 @@ RSpec.describe Containers::PoolManager do
       expect(project.container_pool_entries.reload.count).to eq(0)
       expect(provision).to have_received(:cleanup).with(force: true)
     end
+
+    it "re-raises perform timeouts instead of swallowing them as provisioning failures" do
+      provision = instance_double(Containers::Provision)
+
+      allow(Containers::Provision).to receive(:new).and_return(provision)
+      allow(provision).to receive(:network_name).and_return("paid_agent")
+      allow(provision).to receive(:provision).and_raise(ApplicationJob::PerformTimeoutError, "perform timeout")
+
+      expect {
+        described_class.new(project: project, target_size: 1).replenish
+      }.to raise_error(ApplicationJob::PerformTimeoutError, "perform timeout")
+
+      expect(project.container_pool_entries.reload.pluck(:status)).to eq([ "warming" ])
+    end
   end
 
   def expect_replenish_to_remove_stale_warm_entry(stale_entry)

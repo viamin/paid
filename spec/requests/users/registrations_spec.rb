@@ -54,6 +54,7 @@ RSpec.describe "User Registrations" do
         account = Account.last
         expect(account.tenant_setting).to be_present
         expect(account.billing_plans.count).to eq(1)
+        expect(account.billing_periods.open.count).to eq(1)
       end
 
       it "creates onboarding once through provisioning" do

@@ -7,7 +7,7 @@ name: Ephemeral PR Tests
 #   - Only runs for same-repo PRs (trusted collaborators).
 #   - Fork PRs are explicitly excluded — no secret access, no execution.
 #   - GITHUB_TOKEN is scoped to contents:read + checks:write +
-#     pull-requests:write (for posting result comments) only.
+#     pull-requests:write + issues:write (for posting result comments) only.
 #   - Tests run through standard RSpec / Capybara / Playwright — no raw
 #     shell execution from PR content.
 #   - Hard 20-minute timeout prevents runaway tests.
@@ -20,6 +20,7 @@ permissions:
   contents: read
   checks: write
   pull-requests: write
+  issues: write
 
 concurrency:
   group: ephemeral-tests-${{ github.workflow }}-${{ github.ref }}
@@ -134,6 +135,9 @@ jobs:
           curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo tee /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc >/dev/null
           . /etc/os-release
           printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nArchitectures: %s\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' "$VERSION_CODENAME" "$(dpkg --print-architecture)" | sudo tee /etc/apt/sources.list.d/pgdg.sources >/dev/null
+          # GitHub's Ubuntu runners sometimes ship unrelated Microsoft sources
+          # that transiently 403 and break apt-get update before PGDG installs.
+          sudo find /etc/apt/sources.list.d -maxdepth 1 -type f -print0 | xargs -0 --no-run-if-empty grep -lZ 'packages.microsoft.com' | sudo xargs -0 --no-run-if-empty rm -f
           sudo apt-get update
           sudo apt-get install -y postgresql-client-16
 
@@ -231,5 +235,8 @@ jobs:
               --method PATCH \
               --field body="$body"
           else
-            gh pr comment "${{ github.event.pull_request.number }}" --body "$body"
+            gh api \
+              "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+              --method POST \
+              --field body="$body"
           fi

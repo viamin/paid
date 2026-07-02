@@ -97,6 +97,17 @@
             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Maximum time an agent can run before being stopped. Minimum 60 seconds.</p>
           </div>
 
+          <div>
+            <%= form.label :agent_update_comment_mode, "Existing PR Update Comments", class: "block text-sm font-medium leading-6 text-gray-900 dark:text-gray-100" %>
+            <div class="mt-2">
+              <%= form.select :agent_update_comment_mode,
+                options_for_select([["Off", "off"], ["Generate summary", "summary"]], @user_setting.agent_update_comment_mode),
+                {},
+                class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 dark:text-gray-100 dark:bg-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+            </div>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Choose whether existing-PR followups post no update comment or spend tokens to generate a concise public summary from the pushed diff.</p>
+          </div>
+
           <label class="flex items-start gap-3 rounded-md border border-gray-200 p-4 text-sm text-gray-700 dark:border-gray-700 dark:text-gray-200">
             <%= form.check_box :marketplace_auto_attach_enabled, class: "mt-1 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
             <span>
@@ -194,11 +205,22 @@
           </div>
 
           <div>
+            <%= form.label :run_concurrency_mode, "Run Concurrency Mode", class: "block text-sm font-medium leading-6 text-gray-900 dark:text-gray-100" %>
+            <div class="mt-2">
+              <%= form.select :run_concurrency_mode,
+                options_for_select([["Manual limit", UserSetting::RUN_CONCURRENCY_MODE_MANUAL], ["Automatic from Docker capacity", UserSetting::RUN_CONCURRENCY_MODE_AUTO]], @user_setting.run_concurrency_mode),
+                {},
+                class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 dark:text-gray-100 dark:bg-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+            </div>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Manual mode enforces the numeric run limit below. Auto mode derives effective concurrency from available Docker memory and still respects project and create PR caps.</p>
+          </div>
+
+          <div>
             <%= form.label :max_concurrent_runs, "Max Concurrent Runs", class: "block text-sm font-medium leading-6 text-gray-900 dark:text-gray-100" %>
             <div class="mt-2">
               <%= form.number_field :max_concurrent_runs, min: 1, max: 100, step: 1, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 dark:text-gray-100 dark:bg-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
             </div>
-            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Maximum number of agent runs that can execute simultaneously (1&ndash;100). Default is 2.</p>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Maximum number of agent runs that can execute simultaneously in manual mode (1&ndash;100). Leave blank in auto mode to let Docker capacity decide the effective limit.</p>
           </div>
 
           <div>

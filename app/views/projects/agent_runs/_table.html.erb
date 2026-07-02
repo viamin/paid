@@ -1,5 +1,6 @@
 <div id="<%= dom_id(project, :agent_runs_list) %>">
   <% runs = agent_runs.to_a %>
+  <% runner_displays = agent_run_runner_displays(runs) %>
   <% if runs.any? %>
     <div class="mt-4 flow-root">
       <div class="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
@@ -28,7 +29,7 @@
                       <%= agent_run_context_display(run) %>
                     </td>
                     <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                      <%= agent_run_runner_display(run) %>
+                      <%= agent_run_runner_display(run, runner_displays) %>
                     </td>
                     <td class="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                       <% elapsed = agent_run_display_duration_seconds(run) %>

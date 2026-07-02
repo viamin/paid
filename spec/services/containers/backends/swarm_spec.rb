@@ -107,6 +107,18 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
     expect(backend.all_host_identifiers).to contain_exactly("worker-1", "swarm")
   end
 
+  it "aggregates CPU and memory across healthy swarm nodes" do
+    stub_manager_get("/nodes", [ node_payload, build_node_payload(id: "node-2", host: "worker-2", addr: "10.0.0.26") ])
+    allow(Docker).to receive(:info)
+      .with(kind_of(Docker::Connection))
+      .and_return(
+        { "NCPU" => 4, "MemTotal" => 8_000 },
+        { "NCPU" => 8, "MemTotal" => 16_000 }
+      )
+
+    expect(backend.system_info).to eq("NCPU" => 12, "MemTotal" => 24_000)
+  end
+
   it "keeps recognizing persisted node hostnames even when the node is not ready" do
     down_node = node_payload.deep_dup
     down_node["Status"]["State"] = "down"
@@ -228,6 +240,21 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
     expect(tasks_request).to have_been_requested.once
   end
 
+  it "includes standalone node-local containers for capacity snapshots without duplicating swarm tasks" do
+    stub_manager_get("/services", [ service_payload ])
+    standalone = build_listed_container(id: "standalone-1", labels: { "com.example.role" => "db" })
+    swarm_task_container = build_listed_container(id: container_id, labels: { "com.docker.swarm.service.id" => service_id })
+    allow(Docker::Container).to receive(:all)
+      .with({}, kind_of(Docker::Connection))
+      .and_return([ swarm_task_container, standalone ])
+
+    containers = backend.list_containers(include_node_containers: true)
+
+    expect(containers.length).to eq(2)
+    expect(containers.first).to be_a(described_class::ServiceHandle)
+    expect(containers.last).to eq(standalone)
+  end
+
   it "looks up volumes on each worker connection" do
     volume = instance_double(Docker::Volume)
 
@@ -262,6 +289,37 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
     request = stub_request(:get, "#{manager_url}#{path}")
     request = request.with(query: query) if query
     request.to_return(status: 200, body: response.to_json)
+  end
+
+  def build_node_payload(id:, host:, addr:)
+    {
+      "ID" => id,
+      "Spec" => {
+        "Availability" => "active",
+        "Labels" => {
+          "paid.docker_host" => "#{host}.internal"
+        }
+      },
+      "Status" => {
+        "State" => "ready",
+        "Addr" => addr
+      },
+      "Description" => {
+        "Hostname" => host
+      }
+    }
+  end
+
+  def build_listed_container(id:, labels:)
+    instance_double(
+      Docker::Container,
+      id: id,
+      info: {
+        "Id" => id,
+        "Labels" => labels,
+        "State" => "running"
+      }
+    )
   end
 
   def container_config

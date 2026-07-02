@@ -84,11 +84,25 @@ can_create_databases() {
 
 database_exists() {
   local db_name="$1"
-  local creator_password="$2"
+  local query_password="$2"
   shift 2
   local -a args=("$@")
 
-  [[ "$(query_psql "$creator_password" "${args[@]}" -c "SELECT 1 FROM pg_database WHERE datname = '$db_name'")" == "1" ]]
+  [[ "$(query_psql "$query_password" "${args[@]}" -c "SELECT 1 FROM pg_database WHERE datname = '$db_name'")" == "1" ]]
+}
+
+all_databases_exist() {
+  local query_password="$1"
+  shift
+  local -a args=("$@")
+
+  for db_name in "$DEV_DB" "$CABLE_DB" "$TEST_DB"; do
+    if ! database_exists "$db_name" "$query_password" "${args[@]}"; then
+      return 1
+    fi
+  done
+
+  return 0
 }
 
 create_database() {
@@ -120,6 +134,12 @@ validate_identifier "role name" "$APP_DB_USER" "DB_USERNAME / DB_USER"
 # database creation entirely — Rails will use DATABASE_URL.
 if [[ -n "${DATABASE_URL:-}" ]]; then
   echo "DATABASE_URL is set — skipping automatic worktree database creation."
+  exit 0
+fi
+
+mapfile -d '' -t APP_QUERY_ARGS < <(psql_base_args "$APP_DB_HOST" "$APP_DB_USER" "$MAINTENANCE_DB")
+if all_databases_exist "$APP_DB_PASSWORD" "${APP_QUERY_ARGS[@]}"; then
+  echo "Worktree databases already exist."
   exit 0
 fi
 
