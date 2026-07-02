@@ -112,6 +112,11 @@ class Runner < ApplicationRecord
   belongs_to :integration_credential, optional: true
 
   has_many :chat_sessions, dependent: :nullify
+  has_many :runner_credentials,
+    ->(runner) { where(account_id: runner.user.account_id) },
+    primary_key: :runner_key,
+    foreign_key: :runner_key,
+    inverse_of: false
 
   # Transient flag set by FreeModels::Rotation (and restore) when the
   # tier_model_ids change originates from the system rather than the user.
