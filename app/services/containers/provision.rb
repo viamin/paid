@@ -2384,24 +2384,23 @@ module Containers
       parsed.credentials_json
     end
 
-    def claude_managed_oauth_credential
-      return @claude_managed_oauth_credential if defined?(@claude_managed_oauth_credential)
+    def claude_managed_runner_credential
+      return @claude_managed_runner_credential if defined?(@claude_managed_runner_credential)
 
       account = project&.account
-      @claude_managed_oauth_credential = if account.present?
-        credential = LlmCredentials::AccountResolver.call(
-          account: account,
-          runner_key: "claude",
-          tenant_setting: account.tenant_setting
-        ).integration_credential
-        credential if credential&.auth_kind == "oauth_token"
+      @claude_managed_runner_credential = if account.present?
+        account.runner_credentials.active
+          .for_runner("claude")
+          .where(auth_kind: "oauth_token")
+          .order(created_at: :desc, id: :desc)
+          .first
       end
     end
 
     def claude_managed_secret
       return @claude_managed_secret if defined?(@claude_managed_secret)
 
-      secret = claude_managed_oauth_credential&.secret.to_s
+      secret = claude_managed_runner_credential&.token.to_s
       @claude_managed_secret = secret.present? ? ClaudeCredentials::Secret.parse(secret) : nil
     end
 

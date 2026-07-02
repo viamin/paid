@@ -87,8 +87,6 @@ module ClaudeLoginSessions
     end
 
     def spawn_login_process!
-      spawn_heartbeat_thread!
-      spawn_code_consumer_thread!
       @reader, @writer = IO.pipe
       @wait_thread = spawn_worker_thread do
         exit_code = run_login_exec!
@@ -96,6 +94,9 @@ module ClaudeLoginSessions
       ensure
         close_io(reader)
       end
+      spawn_heartbeat_thread!
+      spawn_code_consumer_thread!
+      spawn_deadline_watcher_thread!
     end
 
     def spawn_heartbeat_thread!
@@ -116,6 +117,17 @@ module ClaudeLoginSessions
           next if submitted_code.blank?
 
           write_code_to_process(submitted_code)
+        end
+      rescue StandardError => e
+        session.fail!(e.message) unless session.terminal?
+      end
+    end
+
+    def spawn_deadline_watcher_thread!
+      spawn_worker_thread do
+        while running?
+          enforce_deadline!
+          sleep(1)
         end
       rescue StandardError => e
         session.fail!(e.message) unless session.terminal?
@@ -181,6 +193,17 @@ module ClaudeLoginSessions
       writer.flush
     end
 
+    def enforce_deadline!
+      return if session.reload.terminal?
+      return unless session.expired?
+
+      message = "This Claude login session expired before the browser login completed."
+      session.fail!(message)
+      record_failure_audit(message)
+      signal_waiters
+      cleanup
+    end
+
     def finalize_process!(exit_code)
       credentials_json = read_container_file(CREDENTIALS_PATH)
 
@@ -202,14 +225,15 @@ module ClaudeLoginSessions
       parsed = ClaudeCredentials::Secret.parse(credentials_json)
       raise "Claude login did not produce a native .credentials.json payload" unless parsed.native_credentials_json?
 
-      credential = existing_or_new_claude_credential
+      credential = existing_or_new_claude_runner_credential
 
       credential.assign_attributes(
-        category: "llm_provider",
         created_by: session.created_by,
-        secret: credentials_json,
+        auth_kind: "oauth_token",
+        token: credentials_json,
+        long_lived: false,
         revoked_at: nil,
-        expires_at: nil,
+        expires_at: parsed.expires_at,
         metadata: credential.metadata.to_h.merge(
           "source" => "browser_completed_login",
           "storage_format" => "claude_credentials_json",
@@ -221,7 +245,7 @@ module ClaudeLoginSessions
       credential.save!
 
       session.update!(
-        integration_credential: credential,
+        runner_credential: credential,
         status: "completed",
         completed_at: Time.current,
         error_message: nil,
@@ -240,10 +264,9 @@ module ClaudeLoginSessions
       )
     end
 
-    def existing_or_new_claude_credential
-      session.account.integration_credentials.find_or_initialize_by(
-        service_key: "claude",
-        auth_kind: "oauth_token",
+    def existing_or_new_claude_runner_credential
+      session.account.runner_credentials.find_or_initialize_by(
+        runner_key: "claude",
         name: session.credential_name
       )
     end
@@ -311,7 +334,7 @@ module ClaudeLoginSessions
     end
 
     def running?
-      @running && wait_thread&.alive?
+      @running
     end
   end
 end

@@ -7,6 +7,7 @@ class ClaudeLoginSession < ApplicationRecord
   belongs_to :account
   belongs_to :created_by, class_name: "User"
   belongs_to :integration_credential, optional: true
+  belongs_to :runner_credential, optional: true
 
   validates :external_id, presence: true, uniqueness: true
   validates :session_token, presence: true, uniqueness: true
@@ -14,6 +15,7 @@ class ClaudeLoginSession < ApplicationRecord
   validates :status, presence: true, inclusion: { in: STATUSES }
   validate :created_by_belongs_to_account
   validate :integration_credential_belongs_to_account, if: -> { integration_credential.present? }
+  validate :runner_credential_belongs_to_account, if: -> { runner_credential.present? }
 
   before_validation :assign_defaults, on: :create
 
@@ -60,5 +62,11 @@ class ClaudeLoginSession < ApplicationRecord
     return if integration_credential.account_id == account_id
 
     errors.add(:integration_credential, "must belong to the same account")
+  end
+
+  def runner_credential_belongs_to_account
+    return if runner_credential.account_id == account_id
+
+    errors.add(:runner_credential, "must belong to the same account")
   end
 end

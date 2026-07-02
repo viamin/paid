@@ -84,11 +84,10 @@ RSpec.describe ClaudeLoginSessions::InteractiveLogin do
 
     it "reactivates a revoked credential with the same name" do
       revoked_credential = create(
-        :integration_credential,
+        :runner_credential,
         account: account,
         created_by: user,
-        service_key: "claude",
-        auth_kind: "oauth_token",
+        runner_key: "claude",
         name: session_record.credential_name,
         revoked_at: 1.day.ago
       )
@@ -96,53 +95,76 @@ RSpec.describe ClaudeLoginSessions::InteractiveLogin do
       service.send(:persist_captured_credentials!, credentials_json)
 
       expect(revoked_credential.reload.revoked_at).to be_nil
-      expect(IntegrationCredential.active).to include(revoked_credential)
-      expect(revoked_credential.secret).to eq(credentials_json)
-      expect(revoked_credential.expires_at).to be_nil
+      expect(RunnerCredential.active).to include(revoked_credential)
+      expect(revoked_credential.token).to eq(credentials_json)
+      expect(revoked_credential.expires_at).to be_present
       expect(revoked_credential.metadata["access_token_expires_at"]).to be_present
-      expect(session_record.reload.integration_credential).to eq(revoked_credential)
+      expect(session_record.reload.runner_credential).to eq(revoked_credential)
       expect(session_record.status).to eq("completed")
     end
 
     it "reuses an existing Claude OAuth credential with the requested name" do
       existing_credential = create(
-        :integration_credential,
+        :runner_credential,
         account: account,
         created_by: user,
-        service_key: "claude",
-        auth_kind: "oauth_token",
+        runner_key: "claude",
         name: session_record.credential_name
       )
 
       service.send(:persist_captured_credentials!, credentials_json)
 
-      expect(IntegrationCredential.where(account: account, service_key: "claude", auth_kind: "oauth_token").count).to eq(1)
-      expect(existing_credential.reload.secret).to eq(credentials_json)
-      expect(existing_credential.expires_at).to be_nil
+      expect(RunnerCredential.where(account: account, runner_key: "claude", auth_kind: "oauth_token").count).to eq(1)
+      expect(existing_credential.reload.token).to eq(credentials_json)
+      expect(existing_credential.expires_at).to be_present
       expect(existing_credential.metadata["access_token_expires_at"]).to be_present
-      expect(session_record.reload.integration_credential).to eq(existing_credential)
+      expect(session_record.reload.runner_credential).to eq(existing_credential)
       expect(session_record.status).to eq("completed")
     end
 
     it "creates a new Claude OAuth credential instead of renaming a different one" do
       existing_credential = create(
-        :integration_credential,
+        :runner_credential,
         account: account,
         created_by: user,
-        service_key: "claude",
-        auth_kind: "oauth_token",
+        runner_key: "claude",
         name: "Previously Saved Claude Login"
       )
 
       service.send(:persist_captured_credentials!, credentials_json)
 
       expect(existing_credential.reload.name).to eq("Previously Saved Claude Login")
-      created_credential = session_record.reload.integration_credential
+      created_credential = session_record.reload.runner_credential
       expect(created_credential).to be_present
       expect(created_credential).not_to eq(existing_credential)
       expect(created_credential.name).to eq(session_record.credential_name)
-      expect(created_credential.secret).to eq(credentials_json)
-      expect(IntegrationCredential.where(account: account, service_key: "claude", auth_kind: "oauth_token").count).to eq(2)
+      expect(created_credential.token).to eq(credentials_json)
+      expect(RunnerCredential.where(account: account, runner_key: "claude", auth_kind: "oauth_token").count).to eq(2)
+    end
+
+    it "marks the captured runner credential as short-lived using the parsed expiry" do
+      freeze_time do
+        service.send(:persist_captured_credentials!, credentials_json)
+
+        credential = session_record.reload.runner_credential
+
+        expect(credential.long_lived).to be(false)
+        expect(credential.expires_at).to be_within(1.second).of(30.days.from_now)
+      end
+    end
+  end
+
+  describe "#enforce_deadline!" do
+    it "fails and cleans up the worker once the session expires" do
+      service = described_class.new(session: session_record, backend: backend)
+      session_record.update!(expires_at: 1.second.ago)
+      allow(service).to receive(:cleanup)
+
+      service.send(:enforce_deadline!)
+
+      expect(session_record.reload).to be_failed
+      expect(session_record.error_message).to eq("This Claude login session expired before the browser login completed.")
+      expect(service).to have_received(:cleanup)
     end
   end
 

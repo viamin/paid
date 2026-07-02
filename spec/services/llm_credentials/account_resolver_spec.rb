@@ -4,24 +4,19 @@ require "rails_helper"
 
 RSpec.describe LlmCredentials::AccountResolver do
   describe ".call" do
-    it "returns the Claude OAuth access token when the active credential stores native json" do
+    it "returns the active integration credential for the requested runner key" do
       account = create(:account)
-      create(:integration_credential,
+      credential = create(:integration_credential,
         account: account,
         service_key: "claude",
-        auth_kind: "oauth_token",
-        secret: {
-          "claudeAiOauth" => {
-            "accessToken" => "access-token",
-            "refreshToken" => "refresh-token"
-          }
-        }.to_json
+        auth_kind: "api_key",
+        secret: "sk-ant-account-managed"
       )
 
       result = described_class.call(account: account, runner_key: "claude")
 
-      expect(result.integration_credential).to be_present
-      expect(result.api_secret).to eq("access-token")
+      expect(result.integration_credential).to eq(credential)
+      expect(result.api_secret).to eq("sk-ant-account-managed")
     end
   end
 end

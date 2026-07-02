@@ -47,13 +47,7 @@ class IntegrationCredential < ApplicationRecord
   end
 
   def api_secret
-    return secret.to_s.presence unless claude_oauth_credential?
-
-    ClaudeCredentials::Secret.parse(secret).oauth_token.to_s.presence
-  end
-
-  def claude_oauth_credential?
-    service_key == "claude" && auth_kind == "oauth_token"
+    secret.to_s.presence
   end
 
   private

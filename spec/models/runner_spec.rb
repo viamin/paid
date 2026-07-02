@@ -5,7 +5,7 @@ require "securerandom"
 
 RSpec.describe Runner do
   describe "#effective_api_secret" do
-    it "returns the Claude OAuth access token when the credential stores native json" do
+    it "returns the integration credential secret for active account-managed runners" do
       account = create(:account)
       user = create(:user, :owner, account: account)
       integration_credential = create(
@@ -13,8 +13,8 @@ RSpec.describe Runner do
         account: account,
         created_by: user,
         service_key: "claude",
-        auth_kind: "oauth_token",
-        secret: claude_native_secret("access-token")
+        auth_kind: "api_key",
+        secret: "sk-ant-managed"
       )
       runner = create(
         :runner,
@@ -25,7 +25,7 @@ RSpec.describe Runner do
         integration_credential: integration_credential
       )
 
-      expect(runner.effective_api_secret).to eq("access-token")
+      expect(runner.effective_api_secret).to eq("sk-ant-managed")
     end
   end
 
