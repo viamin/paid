@@ -211,6 +211,7 @@ class AgentRun < ApplicationRecord
   after_commit :invalidate_runner_options_cache_on_change, on: [ :create, :update ]
   after_commit :enqueue_quality_metrics_collection, on: :update, if: :just_finished?
   after_commit :enqueue_anomaly_detection, on: :update, if: :just_finished?
+  after_commit :enqueue_resource_profile_refresh, on: :update, if: :just_finished?
   after_commit :enqueue_container_metrics_collection, on: :update, if: :just_started_running?
   after_commit :enqueue_issue_goal_timeout_retry, on: :update, if: :just_timed_out_issue_goal?
   after_commit :enqueue_failure_recovery_decision, on: :update, if: :recovery_decision_required?
@@ -1961,6 +1962,18 @@ class AgentRun < ApplicationRecord
 
   alias_method :effective_provider, :effective_runner
 
+  def resource_profile_runner_key
+    effective_runner.presence
+  end
+
+  def resource_profile_oom?
+    return true if error_message.to_s.match?(AgentRunResourceProfile.oom_message_pattern)
+
+    Array(runners_attempted).any? do |attempt|
+      attempt["error_message"].to_s.match?(AgentRunResourceProfile.oom_message_pattern)
+    end
+  end
+
   def final_runner_record
     return preloaded_final_runner_record if preloaded_final_runner_record_loaded
 
@@ -2545,6 +2558,10 @@ class AgentRun < ApplicationRecord
 
   def enqueue_anomaly_detection
     AnomalyDetectionJob.perform_later(id)
+  end
+
+  def enqueue_resource_profile_refresh
+    AgentRunResourceProfileRefreshJob.perform_later(id) if resource_profile_runner_key.present?
   end
 
   # Records the dispatch circuit breaker outcome for every terminal run,

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_29_035155) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_30_022611) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -194,6 +194,29 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_29_035155) do
     t.index ["phase_key", "started_at"], name: "index_agent_run_phases_on_phase_key_and_started_at"
     t.check_constraint "duration_seconds >= 0", name: "agent_run_phases_duration_seconds_non_negative"
     t.check_constraint "finished_at >= started_at", name: "agent_run_phases_finished_at_after_started_at"
+  end
+
+  create_table "agent_run_resource_profiles", comment: "Learned memory usage rollups for agent runs across exact and fallback scopes.", force: :cascade do |t|
+    t.bigint "account_id", comment: "Owning account for account/project-scoped profiles."
+    t.datetime "created_at", null: false
+    t.string "goal", comment: "Agent goal for runner-scoped profiles."
+    t.datetime "last_oom_at", comment: "Timestamp of the most recent sampled OOM event."
+    t.string "lookup_key", null: false, comment: "Deterministic unique key for one profile scope row."
+    t.bigint "max_memory_bytes", default: 0, null: false, comment: "Maximum observed peak memory across sampled runs."
+    t.integer "oom_count", default: 0, null: false, comment: "Number of sampled runs that showed container OOM evidence."
+    t.bigint "p50_memory_bytes", default: 0, null: false, comment: "Median observed peak memory across sampled runs."
+    t.bigint "p95_memory_bytes", default: 0, null: false, comment: "95th percentile observed peak memory across sampled runs."
+    t.string "profile_level", null: false, comment: "Profile scope: specific, runner_goal, project, account, or global."
+    t.bigint "project_id", comment: "Project for exact or project-level profiles."
+    t.bigint "recommended_memory_limit_bytes", default: 0, null: false, comment: "Learned memory limit recommendation derived from observed peaks and OOMs."
+    t.string "runner_key", comment: "Normalized runner key for runner-scoped profiles."
+    t.integer "sample_count", default: 0, null: false, comment: "Number of terminal runs contributing a memory sample."
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_agent_run_resource_profiles_on_account_id"
+    t.index ["lookup_key"], name: "index_agent_run_resource_profiles_on_lookup_key", unique: true
+    t.index ["profile_level", "sample_count"], name: "idx_on_profile_level_sample_count_92a9d20505"
+    t.index ["project_id"], name: "index_agent_run_resource_profiles_on_project_id"
+    t.index ["runner_key", "goal"], name: "index_agent_run_resource_profiles_on_runner_key_and_goal", where: "((runner_key IS NOT NULL) AND (goal IS NOT NULL))"
   end
 
   create_table "agent_runs", force: :cascade do |t|
@@ -2591,6 +2614,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_29_035155) do
   add_foreign_key "agent_run_marketplace_entries", "marketplace_entries"
   add_foreign_key "agent_run_marketplace_entries", "marketplace_entry_versions"
   add_foreign_key "agent_run_phases", "agent_runs", on_delete: :cascade
+  add_foreign_key "agent_run_resource_profiles", "accounts", on_delete: :cascade
+  add_foreign_key "agent_run_resource_profiles", "projects", on_delete: :cascade
   add_foreign_key "agent_runs", "configuration_bundles", on_delete: :nullify
   add_foreign_key "agent_runs", "issues", on_delete: :nullify
   add_foreign_key "agent_runs", "projects", on_delete: :cascade
