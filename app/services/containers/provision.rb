@@ -135,6 +135,7 @@ module Containers
       timeout_seconds: 3600,                     # 1 hour default timeout
       tmpfs_tmp_size: 1024 * 1024 * 1024,        # 1GB for /tmp
       tmpfs_cache_size: 512 * 1024 * 1024,       # 512MB for /home/agent/.cache
+      tmpfs_codex_size: 256 * 1024 * 1024,       # 256MB for /home/agent/.codex
       image: "paid-agent:latest",
       user: "agent",
       workspace_mount: "/workspace"
@@ -158,6 +159,7 @@ module Containers
     # @option options [Integer] :cpu_quota CPU quota (100_000 per CPU)
     # @option options [Integer] :pids_limit Maximum number of processes
     # @option options [Integer] :timeout_seconds Default command timeout
+    # @option options [Integer] :tmpfs_codex_size Size of the writable ~/.codex tmpfs
     # @option options [String] :image Docker image to use
     def initialize(agent_run: nil, project: nil, worktree_path: nil, pool_entry: nil, workspace_volume: nil,
       backend: Containers.backend, credential_maintenance: false, **options)
@@ -1915,7 +1917,7 @@ module Containers
     #   /tmp                - tmpfs (1GB, for scratch files)
     #   /home/agent/.cache  - tmpfs (512MB, for tool caches: Codex CLI, npm, etc.)
     #   /home/agent/.claude - tmpfs (256MB, for Claude CLI session/project data)
-    #   /home/agent/.codex    - tmpfs (64MB, for Codex CLI config/session data)
+    #   /home/agent/.codex    - tmpfs (256MB, for Codex CLI config/session data)
     #   /home/agent/.gemini   - tmpfs (64MB, for Gemini CLI config/session data)
     #   /home/agent/.cursor-agent - tmpfs (64MB, for Cursor agent CLI config/session data)
     #   /home/agent/.kilocode - tmpfs (64MB, for Kilocode CLI config/session data)
@@ -2014,7 +2016,7 @@ module Containers
       # Codex CLI stores config and session data under ~/.codex.
       # Host-backed auth/config files are mounted into this tmpfs so session
       # state stays ephemeral while OAuth refreshes can still persist.
-      tmpfs["/home/agent/.codex"] = "size=#{64 * 1024 * 1024},mode=0700"
+      tmpfs["/home/agent/.codex"] = "size=#{options[:tmpfs_codex_size]},mode=0700"
 
       # Gemini CLI stores config and session data under ~/.gemini.
       # Ownership is fixed by fix_gemini_tmpfs_ownership! after container start.
