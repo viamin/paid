@@ -187,9 +187,15 @@ module Workflows
         run_activity(Activities::ProvisionMcpServersActivity,
           { agent_run_id: agent_run_id }, timeout: 120)
 
-        # Step 2: Provision container (with empty workspace directory)
+        # Step 2: Provision container (with empty workspace directory).
+        # heartbeat_timeout is set below the start_to_close so a stuck image
+        # pull (the slow part of create/start) is detected before the full
+        # activity timeout; the activity heartbeats periodically while
+        # provisioning. The activity is idempotent, so a retry after a
+        # heartbeat/start_to_close timeout reuses any live container instead
+        # of creating a duplicate.
         run_activity(Activities::ProvisionContainerActivity,
-          { agent_run_id: agent_run_id }, timeout: 60)
+          { agent_run_id: agent_run_id }, timeout: 60, heartbeat_timeout: 30)
 
         # Step 2b: Verify the credential proxy is healthy before git operations.
         # Clone and push depend on the proxy for git authentication. When the
