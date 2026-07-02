@@ -21,6 +21,34 @@ RSpec.describe ChatSessions::FallbackRunners do
 
       expect(described_class.for(chat_session: chat_session, excluding: [ primary_runner ])).to eq([])
     end
+
+    it "returns no fallbacks when the user has no fallback runners configured" do
+      expect(described_class.for(chat_session: chat_session, excluding: [ primary_runner ])).to eq([])
+    end
+  end
+
+  describe ".notice_for" do
+    let(:account) { create(:account) }
+    let(:user) { create(:user, account: account) }
+    let(:runner) { create_openrouter_runner(name: "Fallback") }
+
+    it "describes a rate limit cause" do
+      error = AgentHarness::RateLimitError.new("API rate limit exceeded")
+
+      message = described_class.notice_for(error: error, runner: runner)
+
+      expect(message).to include("hit a rate limit")
+      expect(message).to include("Switching to #{runner.display_name} and continuing.")
+    end
+
+    it "describes a generic provider failure cause" do
+      error = AgentHarness::Error.new("boom")
+
+      message = described_class.notice_for(error: error, runner: runner)
+
+      expect(message).to include("could not complete the request")
+      expect(message).to include("Switching to #{runner.display_name} and continuing.")
+    end
   end
 
   def create_openrouter_runner(name:)

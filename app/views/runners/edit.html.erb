@@ -14,6 +14,47 @@
       </div>
     </div>
 
-    <%= render "remediation_history", remediation_history: @remediation_history %>
+    <div class="space-y-6">
+      <% if @runner.subscription? %>
+        <div class="rounded-lg bg-white p-6 shadow">
+          <h2 class="text-lg font-semibold text-gray-900">Credentials</h2>
+          <p class="mt-1 text-sm text-gray-500">Manage authentication tokens for this subscription runner.</p>
+
+          <% credentials = @runner.runner_credentials.active %>
+          <% if credentials.any? %>
+            <div class="mt-4 space-y-2">
+              <% credentials.each do |credential| %>
+                <div class="rounded-md border border-gray-200 p-3 text-sm">
+                  <div class="flex items-center justify-between">
+                    <div>
+                      <p class="font-medium text-gray-900">Token stored</p>
+                      <p class="text-xs text-gray-500">
+                        <% if credential.long_lived %>
+                          Long-lived •
+                        <% end %>
+                        Created <%= l(credential.created_at, format: :short) %>
+                      </p>
+                    </div>
+                    <div>
+                      <%= link_to "View", runner_runner_credential_path(@runner, credential), class: "text-xs font-medium text-indigo-600 hover:text-indigo-500" %>
+                    </div>
+                  </div>
+                </div>
+              <% end %>
+            </div>
+          <% else %>
+            <p class="mt-4 text-sm text-gray-500">No credentials stored yet.</p>
+          <% end %>
+
+          <div class="mt-4">
+            <% credentials_path = credentials.any? ? runner_runner_credentials_path(@runner) : new_runner_runner_credential_path(@runner) %>
+            <% credentials_label = credentials.any? ? "Manage Credentials" : "Add Credential" %>
+            <%= link_to credentials_label, credentials_path, class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+          </div>
+        </div>
+      <% end %>
+
+      <%= render "remediation_history", remediation_history: @remediation_history %>
+    </div>
   </div>
 </div>

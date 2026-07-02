@@ -14,6 +14,7 @@ module ChatSessions
   # unanswered tool call to the model.
   class ResolveToolCall
     include ToolDispatch
+    include FallbackLoop
 
     DECISIONS = %i[approve deny].freeze
     DENIED_RESULT = { status: "denied", message: "The requested action was not approved" }.freeze
@@ -21,7 +22,7 @@ module ChatSessions
     attr_reader :chat_session, :tool_call_message, :decision, :llm_client,
       :on_chunk, :on_message_persisted, :on_tool_call_resolved, :stream_message_id
 
-    def initialize(chat_session:, tool_call_message:, decision:, llm_client:, on_chunk: nil,
+    def initialize(chat_session:, tool_call_message:, decision:, llm_client: nil, on_chunk: nil,
       on_message_persisted: nil, on_tool_call_resolved: nil, stream_message_id: nil)
       @chat_session = chat_session
       @tool_call_message = tool_call_message
@@ -40,9 +41,14 @@ module ChatSessions
     def call
       validate_decision!
       claim_resolution!
-      resolve_pending_tool_call!
       update_session_activity
-      resume_loop_unless_other_pending
+
+      if post_dispatch_confirmation?
+        resolve_post_dispatch_confirmation!
+      else
+        resolve_pending_tool_call!
+        resume_loop_unless_other_pending
+      end
     end
 
     private
@@ -72,6 +78,21 @@ module ChatSessions
       approve? ? approve_tool_call! : deny_tool_call!
     end
 
+    # Post-dispatch tools run their mutating second phase (e.g. activating or
+    # discarding a draft Change Intent Record) during confirmation resolution.
+    # `claim_resolution!` has already flipped the row out of `pending` by the
+    # time this runs, so a failed second phase must roll the status back to
+    # `pending` — otherwise the draft is stranded behind an approved/denied row
+    # that this service (which only accepts pending rows) can never touch again.
+    # The rolled-back confirmation is re-broadcast so the human can retry it.
+    def resolve_post_dispatch_confirmation!
+      result = resolve_post_dispatch_confirmation
+      return rollback_to_pending(error_result: result) if error_result?(result)
+
+      persist_tool_result(result)
+      resume_loop_unless_other_pending
+    end
+
     def approve_tool_call!
       result = dispatch_tool(name: tool_call_message.tool_name, arguments: confirmed_arguments)
       persist_tool_result(result)
@@ -79,6 +100,31 @@ module ChatSessions
 
     def deny_tool_call!
       persist_tool_result(DENIED_RESULT)
+    end
+
+    def rollback_to_pending(error_result:)
+      chat_session.messages
+        .where(id: tool_call_message.id, tool_status: decision_status)
+        .update_all(tool_status: "pending")
+      tool_call_message.reload
+      on_tool_call_resolved&.call(tool_call_message)
+      log_rolled_back_confirmation(error_result:)
+    end
+
+    def error_result?(result)
+      return false unless result.is_a?(Hash)
+
+      result[:status] == "error" || result["status"] == "error"
+    end
+
+    def log_rolled_back_confirmation(error_result:)
+      Rails.logger.warn(
+        message: "chat_tool_confirmation.rolled_back",
+        chat_session_id: chat_session.id,
+        tool_name: tool_call_message.tool_name,
+        tool_error: error_result[:error] || error_result["error"],
+        error_message: error_result[:message] || error_result["message"]
+      )
     end
 
     def decision_status
@@ -89,11 +135,23 @@ module ChatSessions
       decision == :approve
     end
 
+    def post_dispatch_confirmation?
+      Tools::Registry.post_dispatch_confirmation?(tool_call_message.tool_name)
+    end
+
     # The model never sees the +confirmed+ flag (it is stripped from advertised
     # schemas). Approval injects it here so the write tool's guard passes — the
     # human approver, not the model, authorizes the mutation.
     def confirmed_arguments
       (tool_call_message.tool_arguments || {}).merge("confirmed" => true)
+    end
+
+    def resolve_post_dispatch_confirmation
+      resolve_tool_confirmation(
+        name: tool_call_message.tool_name,
+        decision: decision,
+        pending_result: tool_call_message.tool_result || {}
+      )
     end
 
     def persist_tool_result(result)
@@ -112,52 +170,11 @@ module ChatSessions
     def resume_loop_unless_other_pending
       return nil if other_pending_confirmations?
 
-      resume_loop
+      run_with_fallbacks
     end
 
     def other_pending_confirmations?
       chat_session.messages.pending_tool_confirmations.exists?
-    end
-
-    def resume_loop
-      attempted_runners = [ chat_session.runner ].compact
-
-      loop do
-        return ChatSessions::AgentLoop.new(**loop_kwargs).run
-      rescue AgentHarness::RateLimitError => e
-        fallback_runner = ChatSessions::FallbackRunners.for(chat_session: chat_session, excluding: attempted_runners).first
-        raise unless fallback_runner
-
-        attempted_runners << fallback_runner
-        switch_to_fallback_runner(fallback_runner, e)
-      end
-    end
-
-    def loop_kwargs
-      {
-        chat_session: chat_session,
-        llm_client: llm_client,
-        on_chunk: on_chunk,
-        on_message_persisted: on_message_persisted,
-        stream_message_id: stream_message_id
-      }
-    end
-
-    def switch_to_fallback_runner(runner, error)
-      ChatSessions::FallbackRunners.switch!(chat_session: chat_session, runner: runner)
-      @llm_client = ChatSessions::BuildLlmClient.call(chat_session: chat_session)
-      persist_fallback_notice(runner, error)
-    end
-
-    def persist_fallback_notice(runner, error)
-      message = chat_session.messages.create!(
-        role: "assistant",
-        content: ChatSessions::FallbackRunners.notice_for(error: error, runner: runner),
-        metadata: { "fallback_notice" => true }
-      )
-
-      on_message_persisted&.call(message)
-      message
     end
 
     def update_session_activity

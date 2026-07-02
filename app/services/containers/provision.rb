@@ -135,6 +135,7 @@ module Containers
       timeout_seconds: 3600,                     # 1 hour default timeout
       tmpfs_tmp_size: 1024 * 1024 * 1024,        # 1GB for /tmp
       tmpfs_cache_size: 512 * 1024 * 1024,       # 512MB for /home/agent/.cache
+      tmpfs_codex_size: 256 * 1024 * 1024,       # 256MB for /home/agent/.codex
       image: "paid-agent:latest",
       user: "agent",
       workspace_mount: "/workspace"
@@ -158,6 +159,7 @@ module Containers
     # @option options [Integer] :cpu_quota CPU quota (100_000 per CPU)
     # @option options [Integer] :pids_limit Maximum number of processes
     # @option options [Integer] :timeout_seconds Default command timeout
+    # @option options [Integer] :tmpfs_codex_size Size of the writable ~/.codex tmpfs
     # @option options [String] :image Docker image to use
     def initialize(agent_run: nil, project: nil, worktree_path: nil, pool_entry: nil, workspace_volume: nil,
       backend: Containers.backend, credential_maintenance: false, **options)
@@ -1915,7 +1917,7 @@ module Containers
     #   /tmp                - tmpfs (1GB, for scratch files)
     #   /home/agent/.cache  - tmpfs (512MB, for tool caches: Codex CLI, npm, etc.)
     #   /home/agent/.claude - tmpfs (256MB, for Claude CLI session/project data)
-    #   /home/agent/.codex    - tmpfs (64MB, for Codex CLI config/session data)
+    #   /home/agent/.codex    - tmpfs (256MB, for Codex CLI config/session data)
     #   /home/agent/.gemini   - tmpfs (64MB, for Gemini CLI config/session data)
     #   /home/agent/.cursor-agent - tmpfs (64MB, for Cursor agent CLI config/session data)
     #   /home/agent/.kilocode - tmpfs (64MB, for Kilocode CLI config/session data)
@@ -2014,7 +2016,7 @@ module Containers
       # Codex CLI stores config and session data under ~/.codex.
       # Host-backed auth/config files are mounted into this tmpfs so session
       # state stays ephemeral while OAuth refreshes can still persist.
-      tmpfs["/home/agent/.codex"] = "size=#{64 * 1024 * 1024},mode=0700"
+      tmpfs["/home/agent/.codex"] = "size=#{options[:tmpfs_codex_size]},mode=0700"
 
       # Gemini CLI stores config and session data under ~/.gemini.
       # Ownership is fixed by fix_gemini_tmpfs_ownership! after container start.
@@ -2687,7 +2689,7 @@ module Containers
     # - No host-forwarded Claude credential is present
     # - The credential expiry is unknown (non-`claudeAiOauth` shape)
     # - The credential has more than CLAUDE_CREDENTIAL_REFRESH_WINDOW remaining
-    # - `AgentHarness::Authentication` does not yet expose `exchange_refresh_token`
+    # - `AgentHarness::Authentication` does not yet support `exchange_refresh_token`
     #   (viamin/agent-harness#265)
     def refresh_claude_credentials_if_near_expiry!
       return unless claude_subscription_auth?
@@ -2705,9 +2707,9 @@ module Containers
     # Calls the upstream refresh-token exchange API and writes the rotated
     # credential back to the source. Requires
     # `AgentHarness::Authentication.exchange_refresh_token` (viamin/agent-harness#265).
-    # Until that ships, logs and returns false.
+    # Until that is supported, logs and returns false.
     def exchange_claude_refresh_token!
-      unless AgentHarness::Authentication.respond_to?(:exchange_refresh_token)
+      unless claude_refresh_exchange_supported?
         log_system("container.claude_auth_refresh.unsupported",
           note: "viamin/agent-harness#265 not yet available; skipping keep-warm exchange")
         return false
@@ -2716,7 +2718,9 @@ module Containers
       source_path = claude_credentials_source_path
       return false unless source_path
 
-      AgentHarness::Authentication.exchange_refresh_token(:claude, credentials_path: source_path)
+      with_env("CLAUDE_CONFIG_DIR", source_path) do
+        AgentHarness::Authentication.exchange_refresh_token(:claude)
+      end
       log_system("container.claude_auth_refreshed", source_path: source_path)
       true
     rescue AgentHarness::AuthenticationError => e
@@ -2728,6 +2732,20 @@ module Containers
     rescue AgentHarness::Error, SystemCallError, JSON::ParserError => e
       log_system("container.claude_auth_refresh_failed", error: e.message, source_path: source_path)
       false
+    end
+
+    def claude_refresh_exchange_supported?
+      AgentHarness::Authentication.respond_to?(:exchange_refresh_token) &&
+        AgentHarness::Authentication.respond_to?(:exchange_refresh_token_supported?) &&
+        AgentHarness::Authentication.exchange_refresh_token_supported?(:claude)
+    end
+
+    def with_env(key, value)
+      previous = ENV[key]
+      ENV[key] = value
+      yield
+    ensure
+      previous.nil? ? ENV.delete(key) : ENV[key] = previous
     end
 
     # Single source of truth for the Codex heartbeat notify line used in both

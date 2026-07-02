@@ -115,6 +115,7 @@ Rails.application.routes.draw do
   resources :runners, except: :show do
     patch :settings, on: :collection
     post :test_agent, on: :member
+    resources :runner_credentials, only: [ :index, :new, :create, :show, :destroy ]
   end
   resources :free_models, only: :index, controller: "free_models" do
     patch :project_preferences, on: :collection

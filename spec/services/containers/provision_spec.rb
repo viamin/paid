@@ -164,6 +164,10 @@ RSpec.describe Containers::Provision do
       expect(described_class::DEFAULTS[:timeout_seconds]).to eq(3600)
     end
 
+    it "defines default Codex tmpfs size of 256MB" do
+      expect(described_class::DEFAULTS[:tmpfs_codex_size]).to eq(256 * 1024 * 1024)
+    end
+
     it "defines default image name" do
       expect(described_class::DEFAULTS[:image]).to eq("paid-agent:latest")
     end
@@ -409,6 +413,7 @@ RSpec.describe Containers::Provision do
           tmpfs = config["HostConfig"]["Tmpfs"]
           expect(tmpfs["/tmp"]).to eq("exec,size=#{1024 * 1024 * 1024},mode=1777")
           expect(tmpfs["/home/agent/.cache"]).to eq("exec,size=#{512 * 1024 * 1024},mode=0755")
+          expect(tmpfs["/home/agent/.codex"]).to eq("size=#{256 * 1024 * 1024},mode=0700")
           mock_container
         end
 
@@ -446,7 +451,23 @@ RSpec.describe Containers::Provision do
           tmpfs = config["HostConfig"]["Tmpfs"]
           expect(tmpfs).to have_key("/home/agent/.codex")
           expect(tmpfs["/home/agent/.codex"]).to include("mode=0700")
-          expect(tmpfs["/home/agent/.codex"]).to include("size=#{64 * 1024 * 1024}")
+          expect(tmpfs["/home/agent/.codex"]).to include("size=#{256 * 1024 * 1024}")
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "allows the Codex tmpfs size to be overridden" do
+        service = described_class.new(
+          agent_run: agent_run,
+          worktree_path: worktree_path,
+          tmpfs_codex_size: 384 * 1024 * 1024
+        )
+
+        expect(Docker::Container).to receive(:create) do |config|
+          tmpfs = config["HostConfig"]["Tmpfs"]
+          expect(tmpfs["/home/agent/.codex"]).to eq("size=#{384 * 1024 * 1024},mode=0700")
           mock_container
         end
 
@@ -3936,9 +3957,14 @@ RSpec.describe Containers::Provision do
         File.write(File.join(claude_config_dir, ".credentials.json"), "{}")
       end
 
-      context "when AgentHarness::Authentication does not expose exchange_refresh_token" do
+      context "when AgentHarness::Authentication does not support exchange_refresh_token" do
+        before do
+          allow(AgentHarness::Authentication).to receive(:exchange_refresh_token_supported?)
+            .with(:claude)
+            .and_return(false)
+        end
+
         it "logs unsupported and returns false" do
-          # Ensure exchange_refresh_token is NOT defined so respond_to? returns false naturally
           result = service.send(:exchange_claude_refresh_token!)
 
           expect(result).to be false
@@ -3948,21 +3974,23 @@ RSpec.describe Containers::Provision do
         end
       end
 
-      # exchange_refresh_token does not exist upstream yet (viamin/agent-harness#265);
-      # bypass verify_partial_doubles so we can stub the future API.
-      context "when AgentHarness::Authentication exposes exchange_refresh_token", :without_partial_double_verification do
-        around { |example| without_partial_double_verification { example.run } }
+      context "when AgentHarness::Authentication supports exchange_refresh_token" do
+        before do
+          allow(AgentHarness::Authentication).to receive(:exchange_refresh_token_supported?)
+            .with(:claude)
+            .and_return(true)
+        end
 
-        it "calls exchange_refresh_token with the source path and returns true on success" do
+        it "calls exchange_refresh_token with the source path in CLAUDE_CONFIG_DIR and returns true on success" do
           allow(AgentHarness::Authentication).to receive(:exchange_refresh_token)
-            .with(:claude, credentials_path: claude_config_dir)
+            .with(:claude)
             .and_return({ success: true })
 
           result = service.send(:exchange_claude_refresh_token!)
 
           expect(result).to be true
           expect(AgentHarness::Authentication).to have_received(:exchange_refresh_token)
-            .with(:claude, credentials_path: claude_config_dir)
+            .with(:claude)
           expect(service).to have_received(:log_system).with(
             "container.claude_auth_refreshed", hash_including(:source_path)
           )

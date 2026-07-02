@@ -147,10 +147,10 @@ RSpec.describe ChatSessions::SendMessage do
       }.to raise_error(ArgumentError, /maximum length/)
     end
 
-    it "raises without llm_client when agent-harness is not integrated" do
+    it "raises a setup error without llm_client or a configured chat runner" do
       expect {
         described_class.call(chat_session: chat_session, content: "Hello")
-      }.to raise_error(NotImplementedError, /agent-harness/)
+      }.to raise_error(ChatSessions::LlmClientConfigurationError, /configured API-key runner/)
     end
 
     it "creates a token usage record for the assistant response" do
@@ -300,7 +300,7 @@ RSpec.describe ChatSessions::SendMessage do
           @response
         end
       end.new(llm_response)
-      allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user).and_return(tool_definitions)
+      allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user, session: anything).and_return(tool_definitions)
 
       described_class.call(chat_session: chat_session, content: "Hello", llm_client: tool_aware_client)
 
@@ -333,11 +333,90 @@ RSpec.describe ChatSessions::SendMessage do
       )
     end
 
+    it "falls back when building the selected runner client raises a provider error" do
+      fallback_client = inspecting_llm_client(llm_response)
+      fallback_runner = configure_chat_fallback
+      attempts = 0
+      allow(ChatSessions::BuildLlmClient).to receive(:call)
+        .with(chat_session: chat_session) do
+          attempts += 1
+          raise AgentHarness::Error, "provider unavailable" if attempts == 1
+
+          fallback_client
+        end
+
+      result = described_class.call(chat_session: chat_session, content: "Hello")
+
+      messages = chat_session.messages.order(:created_at)
+      expect(result.content).to eq("I can help with that.")
+      expect(chat_session.reload.runner).to eq(fallback_runner)
+      expect(messages.second.content).to include("could not complete the request")
+      expect(fallback_client.seen_conversations.last).not_to include(
+        hash_including(content: messages.second.content)
+      )
+    end
+
+    it "discards a failed runner's partial turn so the fallback is not replayed it" do
+      allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user, session: anything).and_return(tool_definitions)
+      allow(Tools::Registry).to receive(:dispatch).and_return(successful_tool_dispatch_result)
+      fallback_client = inspecting_llm_client(llm_response)
+      fallback_runner = configure_chat_fallback
+      allow(ChatSessions::BuildLlmClient).to receive(:call).with(chat_session: chat_session).and_return(fallback_client)
+
+      # Primary runner streams a tool round (persisted) then rate-limits on the
+      # follow-up call, leaving a half-finished assistant/tool turn behind.
+      result = described_class.call(
+        chat_session: chat_session, content: "Hello",
+        llm_client: tool_then_rate_limited_client
+      )
+
+      messages = chat_session.messages.order(:created_at)
+      expect(result.content).to eq("I can help with that.")
+      expect(chat_session.reload.runner).to eq(fallback_runner)
+      # Only the user message, the fallback notice, and the fallback answer remain —
+      # the failed attempt's assistant text and tool messages were discarded.
+      expect(messages.pluck(:role)).to eq(%w[user assistant assistant])
+      expect(messages.where(role: "tool")).to be_empty
+      expect(messages.pluck(:content)).not_to include("Let me search for that.")
+
+      replayed = fallback_client.seen_conversations.last
+      expect(replayed.map { |m| m[:content] }).not_to include("Let me search for that.")
+      expect(replayed.any? { |m| m[:role] == "tool" }).to be(false)
+    end
+
+    it "does not discard messages a concurrent turn persisted during the failed attempt" do
+      allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user, session: anything).and_return(tool_definitions)
+      fallback_client = inspecting_llm_client(llm_response)
+      fallback_runner = configure_chat_fallback
+      allow(ChatSessions::BuildLlmClient).to receive(:call).with(chat_session: chat_session).and_return(fallback_client)
+
+      # SendMessage holds no lock on the session, so ChatChannel / the HTTP
+      # controller can enqueue another turn while the retry loop runs. Simulate
+      # that concurrent turn persisting a row mid-attempt (during tool dispatch):
+      # it is not part of the failing attempt and must survive the rollback. A
+      # checkpoint-based ("id > checkpoint") rollback would delete it.
+      allow(Tools::Registry).to receive(:dispatch) do
+        chat_session.messages.create!(role: "user", content: "concurrent turn")
+        successful_tool_dispatch_result
+      end
+
+      described_class.call(
+        chat_session: chat_session, content: "Hello",
+        llm_client: tool_then_rate_limited_client
+      )
+
+      messages = chat_session.messages.order(:created_at).pluck(:role, :content)
+      expect(messages).to include([ "user", "concurrent turn" ])
+      # The failed attempt's own rows are still rolled back.
+      expect(messages).not_to include([ "assistant", "Let me search for that." ])
+      expect(messages.none? { |role, _| role == "tool" }).to be(true)
+    end
+
     context "with tool calls in response" do
       let(:tool_llm_client) { build_stateful_llm_client(successful_tool_llm_responses) }
 
       before do
-        allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user).and_return(tool_definitions)
+        allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user, session: anything).and_return(tool_definitions)
         allow(Tools::Registry).to receive(:dispatch).and_return(successful_tool_dispatch_result)
       end
 
@@ -417,7 +496,7 @@ RSpec.describe ChatSessions::SendMessage do
       end
 
       it "captures the structured tool error and continues the loop" do
-        allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user).and_return(tool_definitions)
+        allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user, session: anything).and_return(tool_definitions)
         allow(Tools::Registry).to receive(:dispatch).and_raise(StandardError, "boom")
         allow(Rails.logger).to receive(:error)
 
@@ -458,7 +537,7 @@ RSpec.describe ChatSessions::SendMessage do
       end
 
       it "caps the loop and persists a final user-visible note" do
-        allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user).and_return(tool_definitions)
+        allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user, session: anything).and_return(tool_definitions)
         allow(Tools::Registry).to receive(:dispatch).and_return({ "status" => "ok" })
 
         result = described_class.call(
@@ -507,6 +586,29 @@ RSpec.describe ChatSessions::SendMessage do
     Class.new do
       def call(*)
         raise AgentHarness::RateLimitError, "API rate limit exceeded"
+      end
+    end.new
+  end
+
+  # Returns a tool call on the first turn (which AgentLoop persists and
+  # dispatches), then rate-limits on the follow-up call.
+  def tool_then_rate_limited_client
+    Class.new do
+      def initialize
+        @calls = 0
+      end
+
+      def call(_conversation, tools: nil)
+        @calls += 1
+        raise AgentHarness::RateLimitError, "API rate limit exceeded" if @calls > 1
+
+        {
+          content: "Let me search for that.",
+          tool_calls: [ { id: "call_1", name: "search", arguments: { "query" => "test" } } ],
+          tokens_input: 100,
+          tokens_output: 50,
+          model: "gpt-4o"
+        }
       end
     end.new
   end

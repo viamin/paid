@@ -1,0 +1,400 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe Accounts::Operations::AutoCapacityObserver do
+  let(:account) { create(:account) }
+  let(:cache) { ActiveSupport::Cache::MemoryStore.new }
+  let(:backend) do
+    instance_double(
+      Containers::Backends::LocalDocker,
+      remote?: false,
+      identifier: "local"
+    )
+  end
+
+  before do
+    allow(backend).to receive_messages(
+      system_info: {
+        "MemTotal" => 12.gigabytes,
+        "NCPU" => 8
+      },
+      all_host_identifiers: [ "local" ],
+      capacity_snapshot_list_container_options: {}
+    )
+  end
+
+  it "summarizes docker usage into paid, agent, service, and other buckets" do
+    create_recent_run_profile!
+    allow(backend).to receive(:list_containers).with(no_args).and_return(sampled_containers)
+
+    payload = described_class.call(account: account, manual_limit: 5, backend: backend, cache: cache)
+
+    expect_capacity_snapshot(payload)
+  end
+
+  it "subtracts memory already used by running agents from additional agent headroom" do
+    create_recent_run_profile!
+    allow(backend).to receive(:list_containers).with(no_args).and_return(sampled_containers)
+
+    payload = described_class.call(account: account, manual_limit: 5, backend: backend, cache: cache)
+
+    expect(payload[:available_agent_memory_bytes]).to eq(4.5.gigabytes)
+    expect(payload[:effective_recommended_concurrency]).to eq(1)
+  end
+
+  it "reports a degraded preview when docker metrics cannot be collected" do
+    allow(backend).to receive(:system_info).and_raise(StandardError, "docker unavailable")
+
+    payload = described_class.call(
+      account: account,
+      manual_limit: 3,
+      backend: backend,
+      cache: cache
+    )
+
+    expect(payload[:status]).to eq(:degraded)
+    expect(payload[:effective_recommended_concurrency]).to be_nil
+    expect(payload[:warnings].first).to include("Docker metrics could not be collected")
+    expect(payload[:manual_mode_summary]).to include("3 concurrent runs")
+  end
+
+  it "suppresses recommendations when a container stats call fails" do
+    create_recent_run_profile!
+    healthy_container = docker_container(labels: { "paid.agent_run_id" => "123" }, memory_bytes: 1.gigabyte, cpu_percent: 55.0)
+    failing_container = failing_docker_container(
+      labels: { "com.docker.compose.service" => "web" },
+      error_message: "stats unavailable"
+    )
+
+    allow(backend).to receive(:list_containers).with(no_args).and_return([ healthy_container, failing_container ])
+
+    payload = described_class.call(account: account, manual_limit: 5, backend: backend, cache: cache)
+
+    expect_degraded_snapshot_payload(payload, warning: "stats unavailable")
+    expect(payload.dig(:usage, :agent, :memory_bytes)).to eq(1.gigabyte)
+  end
+
+  it "clears agent headroom when the sampling budget exhausts before every container is inspected" do
+    create_recent_run_profile!
+    stub_const("Accounts::Operations::AutoCapacityObserver::DOCKER_SAMPLING_BUDGET", 0)
+    allow(backend).to receive(:list_containers).with(no_args).and_return(sampled_containers)
+
+    payload = described_class.call(account: account, manual_limit: 5, backend: backend, cache: cache)
+
+    expect(payload[:status]).to eq(:degraded)
+    expect(payload[:effective_recommended_concurrency]).to be_nil
+    expect(payload[:available_agent_memory_bytes]).to be_nil
+    expect(payload[:control_plane_margin_bytes]).to be_nil
+    expect(payload[:warnings].first).to include("container sampling budget exceeded")
+    expect(payload[:warnings].first).to include("4 containers unsampled")
+  end
+
+  it "returns a degraded payload for swarm backends even though swarm reports remote? == false" do
+    swarm_backend = instance_double(
+      Containers::Backends::Swarm,
+      remote?: false,
+      identifier: "swarm"
+    )
+
+    payload = described_class.call(account: account, manual_limit: 5, backend: swarm_backend, cache: cache)
+
+    expect(payload[:status]).to eq(:degraded)
+    expect(payload[:effective_recommended_concurrency]).to be_nil
+    expect(payload[:warnings].first).to include("local Docker backends")
+    expect(payload[:warnings].first).to include("swarm")
+  end
+
+  it "reads labels from the top-level Labels key when present" do
+    create_recent_run_profile!
+    summary_container = instance_double(
+      Docker::Container,
+      id: "summary-1",
+      info: { "State" => "running", "Labels" => { "paid.agent_run_id" => "123" } }
+    )
+    stats = docker_stats(memory_bytes: 1.gigabyte, cpu_percent: 55.0)
+    allow(backend).to receive(:container_stats).with(summary_container, stream: false).and_return(stats)
+    allow(backend).to receive(:list_containers).with(no_args).and_return([ summary_container ])
+
+    payload = described_class.call(account: account, manual_limit: 5, backend: backend, cache: cache)
+
+    expect(payload[:running_agent_count]).to eq(1)
+    expect(payload.dig(:usage, :agent, :memory_bytes)).to eq(1.gigabyte)
+  end
+
+  it "falls back to Config.Labels when top-level Labels is absent (swarm-style payloads)" do
+    create_recent_run_profile!
+    swarm_style_container = instance_double(
+      Docker::Container,
+      id: "swarm-1",
+      info: { "State" => "running", "Config" => { "Labels" => { "paid.agent_run_id" => "456" } } }
+    )
+    stats = docker_stats(memory_bytes: 1.gigabyte, cpu_percent: 55.0)
+    allow(backend).to receive(:container_stats).with(swarm_style_container, stream: false).and_return(stats)
+    allow(backend).to receive(:list_containers).with(no_args).and_return([ swarm_style_container ])
+
+    payload = described_class.call(account: account, manual_limit: 5, backend: backend, cache: cache)
+
+    expect(payload[:running_agent_count]).to eq(1)
+    expect(payload.dig(:usage, :agent, :memory_bytes)).to eq(1.gigabyte)
+  end
+
+  it "only treats compose services from the paid project as paid control plane usage" do
+    create_recent_run_profile!
+    allow(backend).to receive(:list_containers).with(no_args).and_return(compose_labeled_containers)
+
+    payload = described_class.call(account: account, manual_limit: 5, backend: backend, cache: cache)
+
+    expect(payload.dig(:usage, :paid, :container_count)).to eq(2)
+    expect(payload.dig(:usage, :paid, :memory_bytes)).to eq(2.25.gigabytes)
+    expect(payload.dig(:usage, :other, :container_count)).to eq(1)
+    expect(payload.dig(:usage, :other, :memory_bytes)).to eq(512.megabytes)
+  end
+
+  it "classifies agent-image and agent-test compose services as paid control plane usage" do
+    create_recent_run_profile!
+    allow(backend).to receive(:list_containers).with(no_args).and_return(agent_compose_containers)
+
+    payload = described_class.call(account: account, manual_limit: 5, backend: backend, cache: cache)
+
+    expect(payload.dig(:usage, :paid, :container_count)).to eq(2)
+    expect(payload.dig(:usage, :paid, :memory_bytes)).to eq(384.megabytes)
+    expect(payload.dig(:usage, :other, :container_count)).to eq(0)
+  end
+
+  it "classifies paid.resource containers as paid control plane usage" do
+    create_recent_run_profile!
+    allow(backend).to receive(:list_containers).with(no_args).and_return(paid_resource_containers)
+
+    payload = described_class.call(account: account, manual_limit: 5, backend: backend, cache: cache)
+
+    expect(payload.dig(:usage, :paid, :container_count)).to eq(3)
+    expect(payload.dig(:usage, :paid, :memory_bytes)).to eq(896.megabytes)
+    expect(payload.dig(:usage, :other, :container_count)).to eq(0)
+    expect(payload.dig(:usage, :other, :memory_bytes)).to eq(0)
+  end
+
+  it "caches the degraded payload so repeated reads do not retry docker metrics" do
+    create_recent_run_profile!
+    allow(backend).to receive(:system_info).and_raise(StandardError, "docker unavailable")
+
+    first = described_class.call(account: account, manual_limit: 3, backend: backend, cache: cache)
+    second = described_class.call(account: account, manual_limit: 3, backend: backend, cache: cache)
+
+    expect(first[:status]).to eq(:degraded)
+    expect(first[:warnings].first).to include("Docker metrics could not be collected")
+    expect(second[:status]).to eq(:degraded)
+    expect(backend).to have_received(:system_info).exactly(1).time
+  end
+
+  it "counts active chat containers as paid control plane usage" do
+    create_recent_run_profile!
+    create(:chat_session, account:, container_id: "chat-container-1", status: "active")
+    allow(backend).to receive(:list_containers).with(no_args).and_return(
+      [ docker_container(id: "chat-container-1", labels: {}, memory_bytes: 512.megabytes, cpu_percent: 12.0) ]
+    )
+
+    payload = described_class.call(account: account, manual_limit: 5, backend: backend, cache: cache)
+
+    expect(payload.dig(:usage, :paid, :container_count)).to eq(1)
+    expect(payload.dig(:usage, :paid, :memory_bytes)).to eq(512.megabytes)
+    expect(payload.dig(:usage, :other, :container_count)).to eq(0)
+  end
+
+  def docker_container(id: SecureRandom.hex(6), labels:, memory_bytes:, cpu_percent:)
+    info = {
+      "State" => "running",
+      "Config" => { "Labels" => labels }
+    }
+    stats = docker_stats(memory_bytes:, cpu_percent:)
+
+    instance_double(
+      Docker::Container,
+      id: id,
+      info: info,
+      stats: stats
+    ).tap do |container|
+      allow(backend).to receive(:container_stats).with(container, stream: false).and_return(stats)
+    end
+  end
+
+  def failing_docker_container(id: SecureRandom.hex(6), labels:, error_message:)
+    info = {
+      "State" => "running",
+      "Config" => { "Labels" => labels }
+    }
+
+    instance_double(Docker::Container, id: id, info: info).tap do |container|
+      allow(backend).to receive(:container_stats).with(container, stream: false)
+        .and_raise(StandardError, error_message)
+    end
+  end
+
+  def docker_stats(memory_bytes:, cpu_percent:)
+    {
+      "cpu_stats" => {
+        "cpu_usage" => { "total_usage" => cpu_percent * 100 },
+        "system_cpu_usage" => 1000,
+        "online_cpus" => 1
+      },
+      "precpu_stats" => {
+        "cpu_usage" => { "total_usage" => 0 },
+        "system_cpu_usage" => 100
+      },
+      "memory_stats" => {
+        "usage" => memory_bytes,
+        "limit" => 12.gigabytes
+      },
+      "pids_stats" => {
+        "current" => 12
+      }
+    }
+  end
+
+  def create_recent_run_profile!
+    create(
+      :agent_run,
+      :completed,
+      project: create(:project, account: account),
+      peak_memory_bytes: 2.gigabytes
+    )
+  end
+
+  def sampled_containers
+    [
+      docker_container(
+        labels: {
+          "com.docker.compose.project" => "paid",
+          "com.docker.compose.service" => "web"
+        },
+        memory_bytes: 2.gigabytes,
+        cpu_percent: 10.0
+      ),
+      docker_container(
+        labels: { "paid.agent_run_id" => "123" },
+        memory_bytes: 1.gigabyte,
+        cpu_percent: 55.0
+      ),
+      docker_container(
+        labels: { "paid.service_container" => "true" },
+        memory_bytes: 1.gigabyte,
+        cpu_percent: 15.0
+      ),
+      docker_container(
+        labels: {},
+        memory_bytes: 3.gigabytes,
+        cpu_percent: 25.0
+      )
+    ]
+  end
+
+  def compose_labeled_containers
+    [
+      docker_container(
+        labels: {
+          "com.docker.compose.project" => "paid",
+          "com.docker.compose.service" => "web"
+        },
+        memory_bytes: 2.gigabytes,
+        cpu_percent: 10.0
+      ),
+      docker_container(
+        labels: {
+          "com.docker.compose.project" => "random",
+          "com.docker.compose.project.working_dir" => "/srv/unpaid-tools",
+          "com.docker.compose.service" => "postgres"
+        },
+        memory_bytes: 512.megabytes,
+        cpu_percent: 5.0
+      ),
+      docker_container(
+        labels: {
+          "com.docker.compose.project" => "other",
+          "com.docker.compose.project.working_dir" => "C:\\src\\paid",
+          "com.docker.compose.service" => "worker"
+        },
+        memory_bytes: 256.megabytes,
+        cpu_percent: 2.5
+      )
+    ]
+  end
+
+  def agent_compose_containers
+    [
+      docker_container(
+        labels: {
+          "com.docker.compose.project" => "paid",
+          "com.docker.compose.service" => "agent-image"
+        },
+        memory_bytes: 256.megabytes,
+        cpu_percent: 5.0
+      ),
+      docker_container(
+        labels: {
+          "com.docker.compose.project" => "paid",
+          "com.docker.compose.service" => "agent-test"
+        },
+        memory_bytes: 128.megabytes,
+        cpu_percent: 2.0
+      )
+    ]
+  end
+
+  def paid_resource_containers
+    [
+      docker_container(
+        labels: {
+          "paid.resource" => "analysis_container",
+          "paid.project_id" => "42",
+          "paid.knowledge_run_id" => "7"
+        },
+        memory_bytes: 512.megabytes,
+        cpu_percent: 12.0
+      ),
+      docker_container(
+        labels: {
+          "paid.resource" => "embedding_container",
+          "paid.project_id" => "42",
+          "paid.knowledge_run_id" => "7"
+        },
+        memory_bytes: 256.megabytes,
+        cpu_percent: 8.0
+      ),
+      docker_container(
+        labels: { "paid.resource" => "collector_container", "paid.project_id" => "42" },
+        memory_bytes: 128.megabytes,
+        cpu_percent: 4.0
+      )
+    ]
+  end
+
+  def expect_degraded_snapshot_payload(payload, warning:)
+    expect(payload[:status]).to eq(:degraded)
+    expect(payload[:effective_recommended_concurrency]).to be_nil
+    expect(payload[:available_agent_memory_bytes]).to be_nil
+    expect(payload[:control_plane_margin_bytes]).to be_nil
+    expect(payload[:warnings]).to contain_exactly(
+      "Some Docker metrics were unavailable while building the auto-capacity preview: #{warning}"
+    )
+    expect(payload[:auto_mode_summary]).to eq(
+      "Auto preview cannot make a trustworthy recommendation until Docker metrics recover."
+    )
+    expect(payload[:comparison_summary]).to eq(
+      "Keep using manual mode until the Docker inspection path is healthy again."
+    )
+  end
+
+  def expect_capacity_snapshot(payload)
+    expect(payload[:status]).to eq(:healthy)
+    expect(payload[:docker_cpu_count]).to eq(8)
+    expect(payload[:docker_memory_bytes]).to eq(12.gigabytes)
+    expect(payload[:running_agent_count]).to eq(1)
+    expect(payload[:effective_recommended_concurrency]).to eq(1)
+    expect(payload[:available_agent_memory_bytes]).to eq(4.5.gigabytes)
+    expect(payload.dig(:usage, :paid, :memory_bytes)).to eq(2.gigabytes)
+    expect(payload.dig(:usage, :agent, :memory_bytes)).to eq(1.gigabyte)
+    expect(payload.dig(:usage, :service, :memory_bytes)).to eq(1.gigabyte)
+    expect(payload.dig(:usage, :other, :memory_bytes)).to eq(3.gigabytes)
+    expect(payload[:comparison_summary]).to eq("Auto preview is more conservative than the current manual limit.")
+  end
+end

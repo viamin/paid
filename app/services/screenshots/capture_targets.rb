@@ -72,6 +72,21 @@ module Screenshots
       integration_credentials: Target.new(slug: "integration_credentials", path_builder: "/integration_credentials", requires_auth: true),
       integration_credential_new: Target.new(slug: "integration_credential_new", path_builder: "/integration_credentials/new", requires_auth: true),
       integration_credential_show: Target.new(slug: "integration_credential_show", path_builder: ->(seed_data) { "/integration_credentials/#{seed_data.fetch(:integration_credential).id}" }, requires_auth: true),
+      runner_credentials: Target.new(
+        slug: "runner_credentials",
+        path_builder: ->(seed_data) { "/runners/#{seed_data.fetch(:runner).id}/runner_credentials" },
+        requires_auth: true
+      ),
+      runner_credential_new: Target.new(
+        slug: "runner_credential_new",
+        path_builder: ->(seed_data) { "/runners/#{seed_data.fetch(:runner).id}/runner_credentials/new" },
+        requires_auth: true
+      ),
+      runner_credential_show: Target.new(
+        slug: "runner_credential_show",
+        path_builder: ->(seed_data) { "/runners/#{seed_data.fetch(:runner).id}/runner_credentials/#{seed_data.fetch(:runner_credential).id}" },
+        requires_auth: true
+      ),
       github_installations: Target.new(slug: "github_installations", path_builder: "/github_installations", requires_auth: true),
       github_installation_show: Target.new(slug: "github_installation_show", path_builder: ->(seed_data) { "/github_installations/#{seed_data.fetch(:github_installation).id}" }, requires_auth: true),
       github_installation_migrate_projects: Target.new(
@@ -227,11 +242,13 @@ module Screenshots
       "ab_tests_controller.rb" => %i[ab_tests ab_test_new ab_test_show],
       "providers_controller.rb" => %i[providers providers_new providers_edit],
       "runners_controller.rb" => %i[providers providers_new providers_edit],
+      "runner_credentials_controller.rb" => %i[runner_credentials runner_credential_new runner_credential_show],
       "provider_api_keys_controller.rb" => %i[provider_api_keys provider_api_key_new provider_api_key_show provider_api_key_edit],
       "marketplace_entries_controller.rb" => %i[marketplace_entries marketplace_entry_new marketplace_entry_show marketplace_entry_edit],
       "integrations_controller.rb" => %i[integrations integrations_new],
       "free_models_controller.rb" => [ :free_models_catalog ],
       "integration_credentials_controller.rb" => %i[integration_credentials integration_credential_new integration_credential_show],
+      "runner_credentials_controller.rb" => %i[runner_credentials runner_credential_new runner_credential_show],
       "github_installations_controller.rb" => %i[
         github_installations
         github_installation_show
@@ -490,6 +507,7 @@ module Screenshots
       when /\Afree_models\// then [ :free_models_catalog ]
       when /\Aintegrations\// then integrations_targets(relative_path.delete_prefix("integrations/"))
       when /\Aintegration_credentials\// then rest_resource_targets(relative_path, "integration_credentials", index: :integration_credentials, new: :integration_credential_new, show: :integration_credential_show, edit: :integration_credential_show)
+      when /\Arunner_credentials\// then rest_resource_targets(relative_path, "runner_credentials", index: :runner_credentials, new: :runner_credential_new, show: :runner_credential_show, edit: :runner_credential_show)
       when /\Agithub_installations\// then github_installation_targets(relative_path.delete_prefix("github_installations/"))
       when /\Agithub_tokens\// then rest_resource_targets(relative_path, "github_tokens", index: :github_tokens, new: :github_token_new, show: :github_token_show, edit: :github_token_show)
       when /\Alinear_tokens\// then rest_resource_targets(relative_path, "linear_tokens", index: :linear_tokens, new: :linear_token_new, show: :linear_token_show, edit: :linear_token_show)
@@ -504,6 +522,7 @@ module Screenshots
       when /\Aprovider_api_keys\// then rest_resource_targets(relative_path, "provider_api_keys", index: :provider_api_keys, new: :provider_api_key_new, show: :provider_api_key_show, edit: :provider_api_key_edit)
       when /\Aproviders\// then providers_targets(relative_path.delete_prefix("providers/"))
       when /\Arunners\// then providers_targets(relative_path.delete_prefix("runners/"))
+      when /\Arunner_credentials\// then rest_resource_targets(relative_path, "runner_credentials", index: :runner_credentials, new: :runner_credential_new, show: :runner_credential_show, edit: :runner_credential_show)
       when /\Aservice_containers\// then rest_resource_targets(relative_path, "service_containers", index: :service_containers, new: :service_container_new, show: :service_container_show, edit: :service_container_edit)
       when /\Amarketplace_entries\// then rest_resource_targets(relative_path, "marketplace_entries", index: :marketplace_entries, new: :marketplace_entry_new, show: :marketplace_entry_show, edit: :marketplace_entry_edit)
       when /\Amarketplace_entry_pdf_imports\// then [ :marketplace_entry_pdf_import_new ]

@@ -2,12 +2,17 @@
 
 FactoryBot.define do
   factory :runner_credential do
-    account
+    transient do
+      runner_user { association :user }
+      runner { association :runner, user: runner_user }
+    end
+
+    account { runner.user.account }
+    runner_key { runner.runner_key }
     created_by { association :user, account: account }
-    sequence(:name) { |n| "Runner Credential #{n}" }
-    runner_key { "claude" }
+    name { "#{Runner.display_name_for(runner_key)} credential #{SecureRandom.hex(4)}" }
     auth_kind { "oauth_token" }
-    token { "sk-ant-oat01-#{SecureRandom.hex(16)}" }
+    token { "sk-ant-oat01-#{SecureRandom.hex(32)}" }
     long_lived { false }
     metadata { {} }
 
@@ -15,29 +20,12 @@ FactoryBot.define do
       long_lived { true }
     end
 
-    trait :api_key do
-      auth_kind { "api_key" }
-      token { "sk-#{SecureRandom.hex(16)}" }
-    end
-
-    trait :codex do
-      runner_key { "codex" }
-    end
-
-    trait :gemini do
-      runner_key { "gemini" }
-    end
-
-    trait :copilot do
-      runner_key { "copilot" }
+    trait :expired do
+      expires_at { 1.hour.ago }
     end
 
     trait :revoked do
       revoked_at { 1.hour.ago }
-    end
-
-    trait :expired do
-      expires_at { 1.hour.ago }
     end
   end
 end

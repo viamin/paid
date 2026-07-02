@@ -58,7 +58,8 @@ module Accounts
       @operations_dashboard = Accounts::Operations::Dashboard.call(
         account: current_account,
         tenant_setting: @tenant_setting,
-        billing_visible: BillingPolicy.new(current_user, current_account).billing?
+        billing_visible: BillingPolicy.new(current_user, current_account).billing?,
+        include_auto_capacity: true
       )
     end
 
