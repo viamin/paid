@@ -13,23 +13,31 @@ module Activities
     LLM_TIMEOUT = 120
     DEFAULT_PROVIDER = "claude"
     DEFAULT_MODEL = "claude-sonnet-4-6"
-    CONSTRAINT_SIGNAL_PATTERNS = [
-      /\binstead of\b/i,
-      /\brather than\b/i,
-      /\bdo not\b/i,
-      /\bdon't\b/i,
-      /\bmust\b/i,
-      /\bmust not\b/i,
-      /\bshould not\b/i,
-      /\bcannot\b/i,
-      /\bwithout\b/i,
-      /\breuse\b/i,
-      /\buse existing\b/i,
-      /\bfollow\b.{0,40}\bpattern\b/i,
-      /\bavoid\b/i,
-      /\breject(?:ed)?\b/i,
-      /\bnot\b.{0,40}\bbut\b/i
-    ].freeze
+    CONSTRAINT_SIGNAL_PATTERNS = {
+      alternatives: [
+        /\binstead of\b/i,
+        /\brather than\b/i,
+        /\bnot\b.{0,40}\bbut\b/i
+      ],
+      prohibitions: [
+        /\bdo not\b/i,
+        /\bdon't\b/i,
+        /\bmust not\b/i,
+        /\bmust\b(?!\s+not\b)/i,
+        /\bshould not\b/i,
+        /\bcannot\b/i,
+        /\bwithout\b/i
+      ],
+      existing_patterns: [
+        /\breuse\b/i,
+        /\buse existing\b/i,
+        /\bfollow\b.{0,40}\bpattern\b/i
+      ],
+      rejected_directions: [
+        /\bavoid\b/i,
+        /\breject(?:ed)?\b/i
+      ]
+    }.freeze
     MIN_CONSTRAINT_SIGNALS = 2
 
     def execute(input)
@@ -413,7 +421,9 @@ module Activities
     end
 
     def signal_count(text)
-      CONSTRAINT_SIGNAL_PATTERNS.count { |pattern| text.match?(pattern) }
+      CONSTRAINT_SIGNAL_PATTERNS.count do |_category, patterns|
+        patterns.any? { |pattern| text.match?(pattern) }
+      end
     end
 
     def stop_after_max_rounds(parsed, project, issue)

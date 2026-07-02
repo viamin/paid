@@ -192,6 +192,17 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect_no_change_intent_comment
     end
 
+    it "does not double-count a single 'must not' constraint as constraint-heavy" do
+      issue.update!(body: "Must not introduce a second queue for this workflow.")
+      allow(llm_response).to receive(:output).and_return(change_intent_output)
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.not_to change(ChangeIntent, :count)
+
+      expect_no_change_intent_comment
+    end
+
     it "posts clarifying questions when the LLM reports insufficient context" do
       allow(llm_response).to receive(:output).and_return(
         {

@@ -40,16 +40,21 @@ module Tools
     end
 
     def search_scope(project, query)
-      phrase_patterns = [ query ].map { |term| "%#{ActiveRecord::Base.sanitize_sql_like(term.downcase)}%" }
+      phrase_patterns = [ "%#{ActiveRecord::Base.sanitize_sql_like(query.downcase)}%" ]
       word_patterns = query.split(/\s+/).map(&:strip).reject(&:blank?).uniq.first(8).map do |term|
         "\\m#{Regexp.escape(term.downcase)}\\M"
       end
       text_sql = "LOWER(CONCAT_WS(' ', title, intent, behavior, constraints, decisions_made))"
-      clauses = phrase_patterns.map { "#{text_sql} LIKE ?" } + word_patterns.map { "#{text_sql} ~* ?" }
-      values = phrase_patterns + word_patterns
+      clauses = phrase_patterns.map { "#{text_sql} LIKE ?" }
+      values = phrase_patterns.dup
+
+      if word_patterns.any?
+        clauses << word_patterns.map { "#{text_sql} ~* ?" }.join(" AND ")
+        values.concat(word_patterns)
+      end
 
       project.change_intents
-        .where(clauses.join(" OR "), *values)
+        .where("(#{clauses.join(') OR (')})", *values)
         .order(Arel.sql(status_order_sql), created_at: :desc)
     end
 

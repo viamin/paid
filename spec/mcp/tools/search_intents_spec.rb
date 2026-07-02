@@ -45,9 +45,25 @@ RSpec.describe Tools::SearchIntents do
     [ active_match, stale_match ]
   end
 
+  def seed_partial_term_matches
+    redis_only = create_intent(
+      status: "active",
+      title: "Redis cache direction",
+      intent: "Use Redis for request caching."
+    )
+    throttling_only = create_intent(
+      status: "active",
+      title: "Rack throttling direction",
+      intent: "Use Rack middleware for throttling."
+    )
+
+    [ redis_only, throttling_only ]
+  end
+
   describe "#call" do
     it "returns matching CIRs ordered with active records first" do
       active_match, stale_match = seed_throttling_intents
+      seed_partial_term_matches
 
       result = tool.call(project_id: project.id, query: "redis throttling", limit: 10)
 
@@ -57,6 +73,14 @@ RSpec.describe Tools::SearchIntents do
         status: "active",
         issue_id: active_match.issue_id
       )
+    end
+
+    it "requires every query term when matching multi-word searches" do
+      active_match, stale_match = seed_throttling_intents
+      partial_matches = seed_partial_term_matches
+
+      expect(matching_result_ids("redis throttling")).to eq([ active_match.id, stale_match.id ])
+      expect(matching_result_ids("redis throttling")).not_to include(*partial_matches.map(&:id))
     end
 
     it "raises when query is blank" do
