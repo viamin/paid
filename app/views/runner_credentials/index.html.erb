@@ -4,11 +4,21 @@
   <div class="sm:flex sm:items-center sm:justify-between">
     <div>
       <h1 class="text-2xl font-bold text-gray-900">Runner Credentials</h1>
-      <p class="mt-1 text-sm text-gray-500">Account-managed long-lived tokens for subscription runners, used as a fallback when no host credential is forwarded.</p>
+      <p class="mt-1 text-sm text-gray-500">Manage encrypted authentication tokens for subscription runners like Claude Code.</p>
     </div>
+    <% active_credential = @runner_credentials.find(&:active?) %>
     <div class="mt-4 flex gap-3 sm:mt-0">
-      <%= link_to "Add Credential", new_runner_credential_path, class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+      <% primary_path = active_credential ? runner_runner_credential_path(@runner, active_credential) : new_runner_runner_credential_path(@runner) %>
+      <% primary_label = active_credential ? "View Active Credential" : "Add Credential" %>
+      <%= link_to primary_label, primary_path, class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+      <%= link_to "Back to Runners", runners_path, class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
     </div>
+  </div>
+
+  <div class="mt-6 rounded-md border border-amber-200 bg-amber-50 p-4">
+    <p class="text-sm text-amber-800">
+      Runner credentials allow you to manage long-lived authentication tokens (e.g., <code>claude setup-token</code>) for subscription runners in a central, encrypted location. These credentials are injected into containers and do not require host terminal access to update.
+    </p>
   </div>
 
   <% if @runner_credentials.any? %>
@@ -16,30 +26,30 @@
       <table class="min-w-full divide-y divide-gray-200">
         <thead class="bg-gray-50">
           <tr>
-            <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Credential</th>
             <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Runner</th>
-            <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Type</th>
+            <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Token Type</th>
             <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Status</th>
+            <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Created</th>
             <th class="px-4 py-3"></th>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-200 bg-white">
           <% @runner_credentials.each do |credential| %>
             <tr>
-              <td class="px-4 py-3 text-sm font-medium text-gray-900"><%= credential.name %></td>
-              <td class="px-4 py-3 text-sm text-gray-700"><%= Runner.display_name_for(credential.runner_key) %></td>
-              <td class="px-4 py-3 text-sm text-gray-700"><%= credential.long_lived? ? "Long-lived" : "Token" %></td>
-              <td class="px-4 py-3 text-sm">
-                <% if credential.revoked? %>
-                  <span class="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">Revoked</span>
-                <% elsif credential.expired? %>
-                  <span class="inline-flex items-center rounded-md bg-orange-100 px-2 py-1 text-xs font-medium text-orange-700">Expired</span>
+              <td class="px-4 py-3 text-sm font-medium text-gray-900"><%= credential.display_name %></td>
+              <td class="px-4 py-3 text-sm text-gray-700">
+                <% if credential.long_lived %>
+                  <span class="inline-flex items-center rounded-md bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700">Long-lived</span>
                 <% else %>
-                  <span class="inline-flex items-center rounded-md bg-green-100 px-2 py-1 text-xs font-medium text-green-700">Active</span>
+                  <span class="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">Standard</span>
                 <% end %>
               </td>
+              <td class="px-4 py-3 text-sm">
+                <%= render_integration_status(credential) %>
+              </td>
+              <td class="px-4 py-3 text-sm text-gray-500"><%= l(credential.created_at, format: :short) %></td>
               <td class="px-4 py-3 text-right text-sm">
-                <%= link_to "View", runner_credential_path(credential), class: "font-medium text-indigo-600 hover:text-indigo-500" %>
+                <%= link_to "View", runner_runner_credential_path(@runner, credential), class: "font-medium text-indigo-600 hover:text-indigo-500" %>
               </td>
             </tr>
           <% end %>
@@ -49,7 +59,10 @@
   <% else %>
     <div class="mt-8 rounded-lg border border-dashed border-gray-300 bg-white p-10 text-center">
       <h2 class="text-lg font-semibold text-gray-900">No runner credentials yet</h2>
-      <p class="mt-2 text-sm text-gray-500">Add a long-lived token so subscription runners can authenticate without a host credential.</p>
+      <p class="mt-2 text-sm text-gray-500">Add the first encrypted setup token for this runner type to get started.</p>
+      <div class="mt-6">
+        <%= link_to "Add Credential", new_runner_runner_credential_path(@runner), class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+      </div>
     </div>
   <% end %>
 </div>

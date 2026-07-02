@@ -45,6 +45,10 @@ class RunnerCredential < ApplicationRecord
     RunnerSupport.supported_runner_keys
   end
 
+  def display_name
+    Runner.display_name_for(runner_key)
+  end
+
   private
 
   def created_by_belongs_to_same_account

@@ -1,10 +1,10 @@
-<% content_for(:title) { "#{strip_tags(@runner_credential.name.to_s)} - Paid" } %>
+<% content_for(:title) { "Runner Credential - Paid" } %>
 
 <div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
   <div>
-    <%= link_to back_link_path(runner_credentials_path), class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
+    <%= link_to back_link_path(runner_runner_credentials_path(@runner)), class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
       <span aria-hidden="true" class="mr-1">&larr;</span>
-      Back to runner credentials
+      Back to credentials
     <% end %>
   </div>
 
@@ -12,45 +12,49 @@
     <div class="border-b border-gray-200 px-6 py-5">
       <div class="flex items-center justify-between">
         <div>
-          <h1 class="text-xl font-semibold text-gray-900"><%= @runner_credential.name %></h1>
-          <p class="mt-1 text-sm text-gray-500"><%= Runner.display_name_for(@runner_credential.runner_key) %> • <%= @runner_credential.long_lived? ? "Long-lived" : "Token" %></p>
+          <h1 class="text-xl font-semibold text-gray-900"><%= @runner_credential.display_name %> Credential</h1>
+          <p class="mt-1 text-sm text-gray-500">Authentication token managed for all matching runners in this account</p>
         </div>
-        <% if @runner_credential.revoked? %>
-          <span class="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">Revoked</span>
-        <% elsif @runner_credential.expired? %>
-          <span class="inline-flex items-center rounded-md bg-orange-100 px-2 py-1 text-xs font-medium text-orange-700">Expired</span>
-        <% else %>
-          <span class="inline-flex items-center rounded-md bg-green-100 px-2 py-1 text-xs font-medium text-green-700">Active</span>
-        <% end %>
+        <%= render_integration_status(@runner_credential) %>
       </div>
     </div>
 
     <dl class="divide-y divide-gray-200">
       <div class="grid grid-cols-1 gap-4 px-6 py-4 sm:grid-cols-3">
         <dt class="text-sm font-medium text-gray-500">Runner</dt>
-        <dd class="text-sm text-gray-900 sm:col-span-2"><%= Runner.display_name_for(@runner_credential.runner_key) %></dd>
+        <dd class="text-sm text-gray-900 sm:col-span-2">
+          <%= link_to @runner_credential.display_name, edit_runner_path(@runner), class: "text-indigo-600 hover:text-indigo-500" %>
+        </dd>
+      </div>
+      <div class="grid grid-cols-1 gap-4 px-6 py-4 sm:grid-cols-3">
+        <dt class="text-sm font-medium text-gray-500">Token Type</dt>
+        <dd class="text-sm text-gray-900 sm:col-span-2">
+          <% if @runner_credential.long_lived? %>
+            <span class="inline-flex items-center rounded-md bg-blue-100 px-2 py-1 text-xs font-medium text-blue-700">Long-lived</span>
+          <% else %>
+            <span class="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-700">Standard</span>
+          <% end %>
+        </dd>
       </div>
       <div class="grid grid-cols-1 gap-4 px-6 py-4 sm:grid-cols-3">
         <dt class="text-sm font-medium text-gray-500">Token</dt>
         <dd class="text-sm text-gray-900 sm:col-span-2">Stored securely and hidden after save.</dd>
       </div>
       <div class="grid grid-cols-1 gap-4 px-6 py-4 sm:grid-cols-3">
-        <dt class="text-sm font-medium text-gray-500">Long-lived</dt>
-        <dd class="text-sm text-gray-900 sm:col-span-2"><%= @runner_credential.long_lived? ? "Yes" : "No" %></dd>
+        <dt class="text-sm font-medium text-gray-500">Created at</dt>
+        <dd class="text-sm text-gray-900 sm:col-span-2"><%= l(@runner_credential.created_at, format: :long) %></dd>
       </div>
-      <div class="grid grid-cols-1 gap-4 px-6 py-4 sm:grid-cols-3">
-        <dt class="text-sm font-medium text-gray-500">Expires at</dt>
-        <dd class="text-sm text-gray-900 sm:col-span-2"><%= @runner_credential.expires_at ? l(@runner_credential.expires_at, format: :long) : "No expiry set" %></dd>
-      </div>
-      <div class="grid grid-cols-1 gap-4 px-6 py-4 sm:grid-cols-3">
-        <dt class="text-sm font-medium text-gray-500">Last used</dt>
-        <dd class="text-sm text-gray-900 sm:col-span-2"><%= @runner_credential.last_used_at ? l(@runner_credential.last_used_at, format: :long) : "Not used yet" %></dd>
-      </div>
+      <% if @runner_credential.created_by %>
+        <div class="grid grid-cols-1 gap-4 px-6 py-4 sm:grid-cols-3">
+          <dt class="text-sm font-medium text-gray-500">Created by</dt>
+          <dd class="text-sm text-gray-900 sm:col-span-2"><%= @runner_credential.created_by.email %></dd>
+        </div>
+      <% end %>
     </dl>
 
-    <% if policy(@runner_credential).destroy? %>
+    <% if policy(@runner_credential).destroy? && !@runner_credential.revoked? %>
       <div class="border-t border-gray-200 px-6 py-4">
-        <%= button_to "Deactivate Credential", runner_credential_path(@runner_credential), method: :delete, class: "inline-flex items-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500" %>
+        <%= button_to "Revoke Credential", runner_runner_credential_path(@runner, @runner_credential), method: :delete, class: "inline-flex items-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500" %>
       </div>
     <% end %>
   </div>

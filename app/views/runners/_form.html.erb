@@ -86,12 +86,6 @@
     <% end %>
   </div>
 
-  <% if runner.subscription? %>
-    <div class="rounded-md border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
-      <p>This runner authenticates with a subscription credential forwarded from the host. To avoid host dependency, add a long-lived managed token on the <%= link_to "Runner Credentials page", runner_credentials_path(runner_key: runner.runner_key), class: "font-medium text-indigo-600 hover:text-indigo-500" %>.</p>
-    </div>
-  <% end %>
-
   <div>
     <%= form.label :name, "Custom Name (optional)", class: "block text-sm font-medium text-gray-900" %>
     <div class="mt-2">
