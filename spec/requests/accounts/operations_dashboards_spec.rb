@@ -3,6 +3,8 @@
 require "rails_helper"
 
 RSpec.describe "Accounts::OperationsDashboards" do
+  include_context "with auto capacity payload"
+
   let(:account) { create(:account, name: "Acme") }
   let(:owner) { create(:user, :owner, account: account) }
   let(:member) { create(:user, :member, account: account) }
@@ -64,6 +66,7 @@ RSpec.describe "Accounts::OperationsDashboards" do
   end
 
   before do
+    allow(Accounts::Operations::AutoCapacityObserver).to receive(:call).and_return(auto_capacity_payload)
     sign_in owner
   end
 
@@ -76,6 +79,8 @@ RSpec.describe "Accounts::OperationsDashboards" do
         "Enterprise Operations &amp; Reliability",
         "Support-safe diagnostics",
         "Capacity &amp; cost controls",
+        "Auto Capacity Preview",
+        "Observe-only auto mode",
         "Disaster recovery",
         "Upgrade orchestration"
       )
@@ -86,6 +91,19 @@ RSpec.describe "Accounts::OperationsDashboards" do
         'name="enterprise_operations[support][health_report_recipients]"',
         'name="enterprise_operations[capacity_management][queue_warning_threshold]"',
         'name="enterprise_operations[capacity_management][queue_critical_threshold]"'
+      )
+    end
+
+    it "renders degraded auto-capacity warnings when docker metrics are unavailable" do
+      allow(Accounts::Operations::AutoCapacityObserver).to receive(:call).and_return(degraded_auto_capacity_payload)
+
+      get account_operations_dashboard_path
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include(
+        "Degraded Docker metrics",
+        "Auto preview cannot make a trustworthy recommendation until Docker metrics recover.",
+        "Action: verify that the Docker daemon is reachable"
       )
     end
 
@@ -233,5 +251,20 @@ RSpec.describe "Accounts::OperationsDashboards" do
 
       expect(response).to redirect_to(root_path)
     end
+  end
+
+  def degraded_auto_capacity_payload
+    auto_capacity_payload.merge(
+      status: :degraded,
+      effective_recommended_concurrency: nil,
+      available_agent_memory_bytes: nil,
+      docker_cpu_count: nil,
+      docker_memory_bytes: nil,
+      running_agent_count: nil,
+      control_plane_margin_bytes: nil,
+      warnings: [ "Auto preview is degraded because Docker metrics could not be collected." ],
+      auto_mode_summary: "Auto preview cannot make a trustworthy recommendation until Docker metrics recover.",
+      comparison_summary: "Keep using manual mode until the Docker inspection path is healthy again."
+    )
   end
 end

@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "pathname"
-require "set"
 require "timeout"
 
 module Capacity
@@ -245,12 +243,13 @@ module Capacity
     end
 
     def collect_snapshot
+      inventory = docker_container_inventory
       system_info = docker_info
-      references = build_references
+      references = inventory.build_references
       buckets = deep_dup_buckets
       degraded_reasons = []
       sampling_deadline = monotonic_now + DOCKER_SAMPLING_BUDGET
-      running_containers = list_running_containers
+      running_containers = inventory.list_running_containers(timeout: DOCKER_LIST_TIMEOUT)
 
       running_containers.each_with_index do |container, index|
         if sampling_budget_exceeded?(sampling_deadline)
@@ -262,7 +261,7 @@ module Capacity
           break
         end
 
-        classification = classify_container(container: container, references: references)
+        classification = inventory.classify_container(container:, references:)
         stats = sample_container(container, deadline: sampling_deadline)
 
         if stats.nil?
@@ -297,13 +296,6 @@ module Capacity
       with_timeout(DOCKER_INFO_TIMEOUT) { backend.system_info }
     end
 
-    def list_running_containers
-      containers = with_timeout(DOCKER_LIST_TIMEOUT) do
-        backend.list_containers(**backend.capacity_snapshot_list_container_options)
-      end
-      containers.select { |container| running_container?(container.info) }
-    end
-
     def sample_container(container, deadline:)
       remaining_budget = deadline - monotonic_now
       return nil if remaining_budget <= 0
@@ -321,92 +313,8 @@ module Capacity
       nil
     end
 
-    def build_references
-      TenantContext.with_system_access do
-        host_scope = [ nil, "" ] + backend.all_host_identifiers
-        active_runs = AgentRun.capacity_inflight.where(container_host: host_scope)
-
-        {
-          agent_container_ids: active_runs.where.not(container_id: nil).pluck(:container_id).to_set,
-          mcp_sidecar_ids: active_runs.pluck(:mcp_sidecar_container_ids).flatten.compact.to_set,
-          service_container_ids: ServiceContainer.running.where.not(docker_container_id: nil).pluck(:docker_container_id).to_set,
-          chat_container_ids: ChatSession.active.where.not(container_id: nil).pluck(:container_id).to_set
-        }
-      end
-    end
-
-    def classify_container(container:, references:)
-      info = container.info
-      labels = container_labels(info)
-      container_id = container.id
-
-      return :paid_service_containers if service_container?(labels: labels, container_id: container_id, references: references)
-      return :paid_agents if paid_agent?(labels: labels, container_id: container_id, references: references)
-      return :paid_control_plane if control_plane_container?(labels: labels, container_id: container_id, references: references)
-
-      :other_docker
-    end
-
-    def service_container?(labels:, container_id:, references:)
-      labels["paid.service_container"] == "true" ||
-        references.fetch(:service_container_ids).include?(container_id)
-    end
-
-    def paid_agent?(labels:, container_id:, references:)
-      labels["paid.agent_run_id"].present? ||
-        labels["paid.mcp_sidecar"] == "true" ||
-        labels["paid.container_pool"] == "true" ||
-        references.fetch(:agent_container_ids).include?(container_id) ||
-        references.fetch(:mcp_sidecar_ids).include?(container_id)
-    end
-
-    def control_plane_container?(labels:, container_id:, references:)
-      return true if references.fetch(:chat_container_ids).include?(container_id)
-      return true if labels["paid.managed"] == "true"
-      return true if labels["paid.resource"].present?
-
-      compose_service = labels["com.docker.compose.service"]
-      compose_project = labels["com.docker.compose.project"]
-      compose_workdir = labels["com.docker.compose.project.working_dir"]
-
-      return false unless compose_service.present?
-      return false unless PAID_COMPOSE_SERVICES.include?(compose_service)
-
-      paid_compose_project?(compose_project) || paid_compose_workdir?(compose_workdir)
-    end
-
-    def paid_compose_project?(compose_project)
-      normalize_compose_project(compose_project) == PAID_COMPOSE_PROJECT
-    end
-
-    def paid_compose_workdir?(compose_workdir)
-      normalize_compose_workdir(compose_workdir)&.basename&.to_s == PAID_COMPOSE_PROJECT
-    rescue ArgumentError
-      false
-    end
-
-    def normalize_compose_project(compose_project)
-      compose_project.to_s.strip.downcase
-    end
-
-    def normalize_compose_workdir(compose_workdir)
-      raw = compose_workdir.to_s.strip
-      return if raw.blank?
-
-      Pathname.new(raw.tr("\\", "/")).cleanpath
-    end
-
-    def container_labels(info)
-      info.fetch("Labels", {}).presence || info.dig("Config", "Labels") || {}
-    end
-
-    def running_container?(info)
-      state = info["State"]
-      return true if state == "running"
-      return state["Running"] if state.is_a?(Hash) && state.key?("Running")
-      return state["Status"] == "running" if state.is_a?(Hash)
-
-      info["Status"] == "running"
+    def docker_container_inventory
+      @docker_container_inventory ||= DockerContainerInventory.new(backend: backend)
     end
 
     def accumulate_bucket(bucket, memory_bytes:, cpu_percent:)
