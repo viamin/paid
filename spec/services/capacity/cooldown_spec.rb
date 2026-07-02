@@ -37,6 +37,31 @@ RSpec.describe Capacity::Cooldown do
       expect(described_class.frozen?("max_concurrent:user_42", now: now + 2.minutes, cache: cache)).to be(true)
       expect(described_class.read("max_concurrent:user_42", now: now + 2.minutes, cache: cache)[:value]).to eq(4)
     end
+
+    it "rejects a conflicting write while the cooldown is still active" do
+      # Anti-oscillation contract: a second `lock` mid-window must NOT
+      # overwrite the cached value. Otherwise callers could flip the
+      # decision from 2048 to 4096 immediately and `read` would surface the
+      # new value during the cooldown, defeating the freeze.
+      described_class.lock("memory_limit:paid_agents", value: 2048, cooldown: 5.minutes, now: now, cache: cache)
+
+      previous = described_class.lock(
+        "memory_limit:paid_agents",
+        value: 4096,
+        cooldown: 5.minutes,
+        now: now + 2.minutes,
+        cache: cache
+      )
+
+      expect(previous[:value]).to eq(2048)
+      expect(described_class.read("memory_limit:paid_agents", now: now + 2.minutes, cache: cache)[:value]).to eq(2048)
+
+      # After the original cooldown elapses the conflicting write is accepted.
+      released = now + 6.minutes
+      described_class.lock("memory_limit:paid_agents", value: 4096, cooldown: 5.minutes, now: released, cache: cache)
+
+      expect(described_class.read("memory_limit:paid_agents", now: released, cache: cache)[:value]).to eq(4096)
+    end
   end
 
   describe ".reset!" do

@@ -98,12 +98,35 @@ module Capacity
       :blocked_reasons, :admission_uses_cpu, :degraded, :degraded_reasons,
       :effective_min_concurrent, :effective_max_concurrent,
       :memory_safety_multiplier, :cooldown_seconds, :snapshot_present, keyword_init: true) do
+      # Reason codes that signal Docker has no measurable memory headroom for
+      # another agent run right now. When any are present the queue processor
+      # must leave the run queued regardless of run-count headroom — RDR-043
+      # prefers denying new runs over OOM-killing active ones.
+      #
+      # Deployment-gating reasons (`auto_mode_disabled_for_deployment`,
+      # `docker_unavailable`, `docker_low_confidence`) are intentionally
+      # excluded: those fall back to conservative manual limits rather than
+      # halting dispatch, which is the RDR-mandated fail-safe behavior for
+      # backends where auto mode is not appropriate or Docker is unmeasurable.
+      CAPACITY_BLOCKING_REASONS = %w[docker_memory_exhausted].freeze
+
       def auto?
         mode == Policy::AUTO
       end
 
       def manual?
         mode == Policy::MANUAL
+      end
+
+      # True when Docker has no memory headroom for another run in a
+      # measurable environment. This is keyed off the
+      # `docker_memory_exhausted` reason (available_memory_bytes == 0 while
+      # Docker reports a memory budget) rather than the raw byte count so a
+      # degraded/unmeasured snapshot — which zeroes available memory
+      # defensively — still falls back to manual limits instead of halting
+      # dispatch.
+      def capacity_blocked?
+        blocked_reasons.any? { |reason| CAPACITY_BLOCKING_REASONS.include?(reason.code) }
       end
 
       def to_h
@@ -223,7 +246,14 @@ module Capacity
       end
 
       if snapshot.available_memory_bytes.to_i.zero? && snapshot.docker_memory_bytes.to_i.positive?
-        blocked << BlockedReason[:docker_memory_exhausted]
+        # Only assert a hard memory block when the snapshot is measurement
+        # healthy. A degraded/unmeasured snapshot defensively reports
+        # available_memory_bytes: 0, but that is a "we don't know" signal,
+        # not a "Docker is full" signal — RDR-043 requires falling back to
+        # manual limits rather than halting dispatch when metrics are
+        # unreliable. Capacity::Policy::Decision#capacity_blocked? keys off
+        # this reason to leave capacity-blocked runs queued.
+        blocked << BlockedReason[:docker_memory_exhausted] unless snapshot.degraded?
       end
 
       if unrelated_workload_detected?(snapshot)

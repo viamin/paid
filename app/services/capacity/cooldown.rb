@@ -16,8 +16,19 @@ module Capacity
     DEGRADED_COOLDOWN = 10.minutes
 
     class << self
+      # Stores a tuning decision and freezes reads for the cooldown window.
+      #
+      # If a decision is still frozen (the cooldown has not elapsed) the
+      # existing payload is preserved and the new value is rejected.
+      # Otherwise a caller could flip the cached value from `2048` to
+      # `4096` mid-window and `read` would immediately return the new
+      # value, defeating the anti-oscillation contract documented on this
+      # class. Use `reset!` to force a new decision before the window
+      # elapses.
       def lock(key, value:, cooldown: DEFAULT_COOLDOWN, now: Time.current, cache: Rails.cache)
         previous = read(key, cache: cache, now: now)
+        return previous if previous
+
         cache.write(cache_key(key), serialize(value, cooldown: cooldown, now: now), expires_in: cache_ttl(cooldown))
         previous
       end

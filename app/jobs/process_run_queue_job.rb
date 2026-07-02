@@ -256,6 +256,24 @@ class ProcessRunQueueJob < ApplicationJob
   def user_has_capacity?(user)
     policy_decision = current_capacity_policy
 
+    if policy_decision&.capacity_blocked?
+      # Docker has no measurable memory headroom for another run (see
+      # Capacity::Policy::Decision#capacity_blocked?). Leave the run queued
+      # rather than dispatching against a saturated budget — RDR-043 prefers
+      # denying new runs over OOM-killing active ones. This must take
+      # precedence over run-count headroom: a healthy local user with
+      # max_concurrent_runs = 5 must not dispatch an OOM-bound run just
+      # because the count limit still has room.
+      Rails.logger.info(
+        message: "process_run_queue.capacity_blocked",
+        user_id: user.id,
+        mode: policy_decision.mode,
+        environment: policy_decision.environment,
+        reasons: policy_decision.blocked_reasons.map(&:code)
+      )
+      return false
+    end
+
     if policy_decision && !policy_decision.auto_allowed
       # Auto mode is disabled for this deployment — log for observability but
       # do NOT block dispatch. The effective_concurrency_limit will use the

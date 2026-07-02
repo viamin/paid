@@ -944,6 +944,37 @@ RSpec.describe ProcessRunQueueJob do
 
         expect(queued_run.reload.status).to eq("queued")
       end
+
+      it "denies admission when Docker memory is exhausted even with run-count headroom" do
+        # RDR-043: a healthy local user with max_concurrent_runs = 5 must not
+        # dispatch when available_memory_bytes is 0, even though the count
+        # limit still has room. The policy's docker_memory_exhausted reason
+        # is a hard capacity block that must leave the run queued rather than
+        # fall back to the legacy manual-count check.
+        queued_run = create_queued_run_with_policy(max_concurrent_runs: 5)
+        stub_policy_decision(capacity_blocked_decision)
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(queued_run.reload.status).to eq("queued")
+      end
+
+      it "logs the capacity block reason when admission is denied" do
+        create_queued_run_with_policy(max_concurrent_runs: 5)
+        stub_policy_decision(capacity_blocked_decision)
+        allow(Rails.logger).to receive(:info)
+
+        described_class.new.perform
+
+        expect(Rails.logger).to have_received(:info).with(
+          hash_including(
+            message: "process_run_queue.capacity_blocked",
+            reasons: include("docker_memory_exhausted")
+          )
+        )
+      end
     end
   end
 
@@ -1039,6 +1070,41 @@ RSpec.describe ProcessRunQueueJob do
       admission_uses_cpu: false,
       degraded: false,
       degraded_reasons: [],
+      effective_min_concurrent: 1,
+      effective_max_concurrent: 10,
+      memory_safety_multiplier: 1.5,
+      cooldown_seconds: 300,
+      snapshot_present: true
+    )
+  end
+
+  def capacity_blocked_decision
+    exhausted_snapshot = Capacity::DockerSnapshot::Snapshot.new(
+      backend_identifier: "local",
+      backend_kind: "local",
+      backend_shared: false,
+      docker_cpu_count: 8,
+      docker_memory_bytes: 16_000_000_000,
+      usage_buckets: Capacity::DockerSnapshot::EMPTY_BUCKETS,
+      available_memory_bytes: 0,
+      agent_container_count: 5,
+      snapshot_at: Time.current,
+      confidence: 1.0,
+      degraded: false,
+      degraded_reasons: []
+    )
+
+    allow(Capacity::DockerSnapshot).to receive(:call).and_return(exhausted_snapshot)
+
+    Capacity::Policy::Decision.new(
+      mode: Capacity::Policy::MANUAL,
+      environment: Capacity::Policy::ENVIRONMENT_LINUX_DOCKER,
+      auto_allowed: false,
+      auto_allowed_reasons: [ "metrics_missing" ],
+      blocked_reasons: [ Capacity::BlockedReason[:docker_memory_exhausted] ],
+      admission_uses_cpu: false,
+      degraded: true,
+      degraded_reasons: [ "docker_exhausted" ],
       effective_min_concurrent: 1,
       effective_max_concurrent: 10,
       memory_safety_multiplier: 1.5,

@@ -248,6 +248,42 @@ RSpec.describe Capacity::Policy do
     end
   end
 
+  describe "#capacity_blocked?" do
+    it "is true when a healthy local snapshot reports no available memory" do
+      exhausted = healthy_local_snapshot(overrides: { available_memory_bytes: 0 })
+
+      decision = described_class.call(snapshot: exhausted, now: now)
+
+      expect(decision.blocked_reasons.map(&:code)).to include("docker_memory_exhausted")
+      expect(decision.capacity_blocked?).to be(true)
+    end
+
+    it "is false when there is available memory headroom" do
+      decision = described_class.call(snapshot: healthy_local_snapshot, now: now)
+
+      expect(decision.capacity_blocked?).to be(false)
+    end
+
+    it "is false for deployment-gating reasons that fall back to manual limits" do
+      # Remote/CI backends disable auto mode but must keep dispatching under
+      # manual limits — they are not hard capacity blocks.
+      decision = described_class.call(snapshot: remote_snapshot, now: now)
+
+      expect(decision.blocked_reasons.map(&:code)).to include("auto_mode_disabled_for_deployment")
+      expect(decision.capacity_blocked?).to be(false)
+    end
+
+    it "is false for a degraded/unmeasured snapshot even when memory is zeroed" do
+      # A degraded snapshot defensively reports available_memory_bytes: 0 but
+      # cannot be trusted to mean "Docker is full" — it must fall back to
+      # manual limits rather than halting dispatch.
+      decision = described_class.call(snapshot: degraded_snapshot, now: now)
+
+      expect(decision.blocked_reasons.map(&:code)).to include("docker_low_confidence")
+      expect(decision.capacity_blocked?).to be(false)
+    end
+  end
+
   describe ".to_h" do
     it "returns safe, UI-friendly payload keys only" do
       decision = described_class.call(snapshot: remote_snapshot, now: now)
