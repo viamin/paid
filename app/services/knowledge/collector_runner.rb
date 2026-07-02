@@ -119,7 +119,10 @@ module Knowledge
         reason: e.reason,
         preserve_existing_artifacts: e.preserve_existing_artifacts?
       }
-    rescue => e
+    rescue ApplicationJob::PerformTimeoutError
+      collector_run&.mark_failed!(error: "perform timeout") if collector_run&.persisted?
+      raise
+    rescue StandardError => e
       collector_run&.mark_failed!(error: e.message) if collector_run&.persisted?
       Rails.logger.error(
         message: "knowledge.collector_failed",

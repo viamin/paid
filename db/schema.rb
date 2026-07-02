@@ -419,18 +419,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_30_022611) do
     t.index ["success"], name: "index_bundle_outcomes_on_success"
   end
 
-  create_table "change_intents", comment: "Captures human directional intent that should persist in the knowledge base.", force: :cascade do |t|
-    t.text "behavior", comment: "Expected behavior, often captured as given/when/then scenarios."
-    t.bigint "chat_session_id", comment: "Chat session where the intent was captured, when applicable."
-    t.text "constraints", comment: "Boundaries and constraints that shaped the implementation."
+  create_table "change_intents", comment: "Change Intent Records that capture human direction given to agents.", force: :cascade do |t|
+    t.text "behavior", comment: "Expected behavior or examples that clarify the intent."
+    t.bigint "chat_session_id", comment: "Chat session where the intent was captured."
+    t.text "constraints", comment: "Non-obvious implementation boundaries or requirements."
     t.datetime "created_at", null: false
-    t.text "decisions_made", comment: "Alternatives that were rejected and why."
+    t.text "decisions_made", comment: "Rejected alternatives or decisions that shaped the approach."
     t.text "intent", null: false, comment: "What the human was trying to accomplish."
-    t.bigint "issue_id", comment: "Issue that motivated or contextualized the intent, when applicable."
-    t.bigint "project_id", null: false, comment: "Project this change intent applies to."
-    t.string "status", limit: 50, default: "draft", null: false, comment: "Lifecycle state for the record: draft, active, or superseded."
-    t.bigint "superseded_by_id", comment: "Newer change intent that superseded this record."
-    t.text "title", null: false, comment: "Short title summarizing the intent."
+    t.bigint "issue_id", comment: "Optional issue the intent relates to."
+    t.bigint "project_id", null: false, comment: "Project the Change Intent Record belongs to."
+    t.string "status", default: "draft", null: false, comment: "Lifecycle state: draft, active, superseded, or reverted."
+    t.bigint "superseded_by_id", comment: "Newer Change Intent Record that superseded this one."
+    t.text "title", null: false, comment: "Short, human-readable title for the change intent."
     t.datetime "updated_at", null: false
     t.index ["chat_session_id"], name: "index_change_intents_on_chat_session_id"
     t.index ["issue_id"], name: "index_change_intents_on_issue_id"
@@ -2514,7 +2514,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_30_022611) do
     t.boolean "marketplace_auto_attach_enabled", default: false, null: false, comment: "Whether this user opts their own agent runs into automatic and team-default marketplace attachments."
     t.integer "max_auto_pick_open_prs", default: 1, null: false
     t.integer "max_comment_length", default: 2000, null: false
-    t.integer "max_concurrent_runs", default: 2, null: false
+    t.integer "max_concurrent_runs", default: 2
     t.integer "max_execution_seconds", comment: "User-level override for project max_execution_seconds; nil defers to project setting"
     t.integer "max_issues_per_page", default: 50, null: false
     t.integer "max_parallel_agents_per_project", default: 3, null: false
@@ -2525,6 +2525,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_30_022611) do
     t.integer "retry_max_attempts", default: 3, null: false
     t.float "retry_max_delay", default: 60.0, null: false
     t.integer "review_goal_idle_timeout_seconds", default: 300, null: false
+    t.string "run_concurrency_mode", default: "manual", null: false, comment: "Whether agent run admission uses the fixed max_concurrent_runs limit or Docker-capacity auto admission."
     t.jsonb "runner_round_robin_state", default: {}, null: false
     t.string "runner_selection_mode", limit: 20, default: "single", null: false
     t.integer "style_guide_max_raw_bytes", default: 100000, null: false

@@ -33,6 +33,10 @@ module Tools
       raise NotImplementedError, "#{self.class}#perform must be implemented"
     end
 
+    def resolve_confirmation(decision:, pending_result:)
+      raise NotImplementedError, "#{self.class} does not support post-dispatch confirmation resolution"
+    end
+
     def self.tool_name
       raise NotImplementedError, "#{name}.tool_name must be implemented"
     end
@@ -57,8 +61,22 @@ module Tools
       false
     end
 
+    def self.confirmation_mode
+      :pre_dispatch
+    end
+
     def self.available_to?(user:)
       user.present?
+    end
+
+    # Whether the interactive chat agent loop should advertise this tool for the
+    # given session. Defaults to the user-scoped gate; tools whose execution
+    # depends on session context (for example a current project) override this
+    # to gate advertisement on that context too. The chat loop always passes the
+    # session, so tools can avoid being advertised (and then failing) in chats
+    # where they cannot run.
+    def self.available_for_chat?(user:, session:)
+      available_to?(user:)
     end
 
     def self.run_agent_available_to?(user:)
