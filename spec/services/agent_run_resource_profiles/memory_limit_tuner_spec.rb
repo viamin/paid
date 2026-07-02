@@ -34,7 +34,8 @@ RSpec.describe AgentRunResourceProfiles::MemoryLimitTuner do
       decision = described_class.new(
         profile: profile,
         user_settings: user_settings,
-        baseline_limit_bytes: 64.gigabytes
+        baseline_limit_bytes: 64.gigabytes,
+        p95_memory_bytes: 64.gigabytes
       ).call
 
       expect(decision.recommended_limit_bytes).to eq(16.gigabytes)
@@ -48,7 +49,8 @@ RSpec.describe AgentRunResourceProfiles::MemoryLimitTuner do
       decision = described_class.new(
         profile: profile,
         user_settings: user_settings,
-        baseline_limit_bytes: 6.gigabytes
+        baseline_limit_bytes: 6.gigabytes,
+        p95_memory_bytes: 5.gigabytes
       ).call
 
       expect(decision.recommended_limit_bytes).to eq(6.gigabytes)
@@ -58,12 +60,12 @@ RSpec.describe AgentRunResourceProfiles::MemoryLimitTuner do
     it "marks the profile capacity-blocked when OOMs persist near the ceiling" do
       profile.recommended_memory_limit_bytes = 15.gigabytes
       profile.oom_count = AgentRunResourceProfile::CAPACITY_BLOCKED_OOM_THRESHOLD
-      profile.p95_memory_bytes = 14.gigabytes
 
       decision = described_class.new(
         profile: profile,
         user_settings: user_settings,
-        baseline_limit_bytes: 17.gigabytes
+        baseline_limit_bytes: 17.gigabytes,
+        p95_memory_bytes: 14.gigabytes
       ).call
 
       expect(decision.capacity_blocked?).to be(true)
@@ -80,7 +82,8 @@ RSpec.describe AgentRunResourceProfiles::MemoryLimitTuner do
       decision = described_class.new(
         profile: profile,
         user_settings: user_settings,
-        baseline_limit_bytes: 20.gigabytes
+        baseline_limit_bytes: 20.gigabytes,
+        p95_memory_bytes: 18.gigabytes
       ).call
 
       expect(decision.recommended_limit_bytes).to eq(16.gigabytes)
@@ -96,7 +99,8 @@ RSpec.describe AgentRunResourceProfiles::MemoryLimitTuner do
       decision = described_class.new(
         profile: profile,
         user_settings: user_settings,
-        baseline_limit_bytes: 4.gigabytes
+        baseline_limit_bytes: 4.gigabytes,
+        p95_memory_bytes: 3.gigabytes
       ).call
 
       expect(decision.capacity_blocked?).to be(false)
@@ -105,12 +109,12 @@ RSpec.describe AgentRunResourceProfiles::MemoryLimitTuner do
 
     it "tracks consecutive low-memory samples" do
       profile.recommended_memory_limit_bytes = 8.gigabytes
-      profile.p95_memory_bytes = (8.gigabytes * AgentRunResourceProfile::LOW_MEMORY_HEADROOM_RATIO) - 64.megabytes
 
       decision = described_class.new(
         profile: profile,
         user_settings: user_settings,
-        baseline_limit_bytes: 8.gigabytes
+        baseline_limit_bytes: 8.gigabytes,
+        p95_memory_bytes: (8.gigabytes * AgentRunResourceProfile::LOW_MEMORY_HEADROOM_RATIO) - 64.megabytes
       ).call
 
       expect(decision.consecutive_low_memory_samples).to eq(1)
@@ -118,13 +122,13 @@ RSpec.describe AgentRunResourceProfiles::MemoryLimitTuner do
 
     it "resets the consecutive counter when the latest sample is not low" do
       profile.recommended_memory_limit_bytes = 4.gigabytes
-      profile.p95_memory_bytes = 4.gigabytes
       profile.consecutive_low_memory_samples = 4
 
       decision = described_class.new(
         profile: profile,
         user_settings: user_settings,
-        baseline_limit_bytes: 5.gigabytes
+        baseline_limit_bytes: 5.gigabytes,
+        p95_memory_bytes: 4.gigabytes
       ).call
 
       expect(decision.consecutive_low_memory_samples).to eq(0)
@@ -134,12 +138,12 @@ RSpec.describe AgentRunResourceProfiles::MemoryLimitTuner do
       profile.recommended_memory_limit_bytes = 8.gigabytes
       profile.consecutive_low_memory_samples = AgentRunResourceProfile::DOWNWARD_TUNING_MIN_SAMPLES - 1
       profile.downward_tuning_count = 0
-      profile.p95_memory_bytes = (8.gigabytes * AgentRunResourceProfile::LOW_MEMORY_HEADROOM_RATIO) - 64.megabytes
 
       decision = described_class.new(
         profile: profile,
         user_settings: user_settings,
-        baseline_limit_bytes: 5.gigabytes
+        baseline_limit_bytes: 5.gigabytes,
+        p95_memory_bytes: (8.gigabytes * AgentRunResourceProfile::LOW_MEMORY_HEADROOM_RATIO) - 64.megabytes
       ).call
 
       expect(decision.recommended_limit_bytes).to eq(8.gigabytes)
@@ -151,12 +155,12 @@ RSpec.describe AgentRunResourceProfiles::MemoryLimitTuner do
       profile.recommended_memory_limit_bytes = 8.gigabytes
       profile.consecutive_low_memory_samples = AgentRunResourceProfile::DOWNWARD_TUNING_MIN_SAMPLES + 1
       profile.downward_tuning_count = 0
-      profile.p95_memory_bytes = (8.gigabytes * AgentRunResourceProfile::LOW_MEMORY_HEADROOM_RATIO) - 64.megabytes
 
       decision = described_class.new(
         profile: profile,
         user_settings: user_settings,
-        baseline_limit_bytes: 5.gigabytes
+        baseline_limit_bytes: 5.gigabytes,
+        p95_memory_bytes: (8.gigabytes * AgentRunResourceProfile::LOW_MEMORY_HEADROOM_RATIO) - 64.megabytes
       ).call
 
       expect(decision.recommended_limit_bytes).to eq(5.gigabytes)
@@ -170,7 +174,8 @@ RSpec.describe AgentRunResourceProfiles::MemoryLimitTuner do
       decision = described_class.new(
         profile: profile,
         user_settings: nil,
-        baseline_limit_bytes: 32.gigabytes
+        baseline_limit_bytes: 32.gigabytes,
+        p95_memory_bytes: 32.gigabytes
       ).call
 
       expect(decision.floor_bytes).to eq(UserSetting::DEFAULT_CONTAINER_MEMORY_AUTO_FLOOR_BYTES)
@@ -184,10 +189,47 @@ RSpec.describe AgentRunResourceProfiles::MemoryLimitTuner do
       decision = described_class.new(
         profile: profile,
         user_settings: user_settings,
-        baseline_limit_bytes: 64.megabytes
+        baseline_limit_bytes: 64.megabytes,
+        p95_memory_bytes: 32.megabytes
       ).call
 
       expect(decision.recommended_limit_bytes).to eq(512.megabytes)
+    end
+
+    it "uses the freshly computed p95 instead of the persisted profile p95 to score low-memory samples" do
+      # The profile attribute is the previous refresh's p95; the tuner must
+      # read from the value passed in for the just-computed sample so the
+      # consecutive counter actually reflects the new observation.
+      profile.recommended_memory_limit_bytes = 8.gigabytes
+      profile.consecutive_low_memory_samples = 0
+      profile.p95_memory_bytes = 7.gigabytes # stale, would not qualify as low-memory
+
+      decision = described_class.new(
+        profile: profile,
+        user_settings: user_settings,
+        baseline_limit_bytes: 8.gigabytes,
+        p95_memory_bytes: (8.gigabytes * AgentRunResourceProfile::LOW_MEMORY_HEADROOM_RATIO) - 64.megabytes
+      ).call
+
+      expect(decision.consecutive_low_memory_samples).to eq(1)
+    end
+
+    it "treats a brand-new profile (persisted p95 = 0) as eligible for a low-memory sample when the freshly computed p95 qualifies" do
+      profile.recommended_memory_limit_bytes = 0
+      profile.consecutive_low_memory_samples = 0
+      profile.p95_memory_bytes = 0
+
+      decision = described_class.new(
+        profile: profile,
+        user_settings: user_settings,
+        baseline_limit_bytes: 4.gigabytes,
+        p95_memory_bytes: 1.gigabyte
+      ).call
+
+      # 1GB is below 4GB * 0.6 = 2.4GB headroom threshold, so it should count
+      # toward the consecutive counter rather than being short-circuited by
+      # the stale persisted attribute.
+      expect(decision.consecutive_low_memory_samples).to eq(1)
     end
   end
 end

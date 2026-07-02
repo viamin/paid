@@ -136,8 +136,14 @@ module Capacity
     # Surfaces the capacity-blocked signal on admission decisions so callers
     # and operators can distinguish "no Docker memory" from "no Docker memory
     # because the workload keeps OOMing at the configured ceiling".
-    # Lookups are scoped to the user/runner/goal so the annotation is
-    # attached only to the workload currently being evaluated.
+    #
+    # RunAdmission runs at admission time, before the runner_key for the
+    # next run has been selected, so the lookup intentionally passes
+    # `runner_key: nil`. That skips the `specific` and `runner_goal`
+    # scopes in `Resolve` and only surfaces `project`, `account`, and
+    # `global` profiles that have hit their ceiling — broad enough to
+    # explain the denial to operators without locking in on a runner
+    # that may not be picked.
     def annotate_capacity_blocked(decision)
       profile = capacity_blocked_profile
       return decision unless profile

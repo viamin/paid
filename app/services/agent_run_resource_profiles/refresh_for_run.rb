@@ -70,6 +70,7 @@ module AgentRunResourceProfiles
         profile: profile,
         user_settings: user_settings,
         baseline_limit_bytes: summary[:recommended_memory_limit_bytes],
+        p95_memory_bytes: summary[:p95_memory_bytes],
         projected_oom_count: summary[:oom_count]
       ).call
 

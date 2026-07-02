@@ -32,10 +32,19 @@ module AgentRunResourceProfiles
       end
     end
 
-    def initialize(profile:, user_settings:, baseline_limit_bytes:, projected_oom_count: nil)
+    def initialize(profile:, user_settings:, baseline_limit_bytes:, p95_memory_bytes:, projected_oom_count: nil)
       @profile = profile
       @user_settings = user_settings
       @baseline_limit_bytes = baseline_limit_bytes.to_i
+      # The tuner's cooldown logic depends on the *just-computed* p95, not
+      # the value persisted on the profile. For a brand-new profile
+      # `profile.p95_memory_bytes` is 0 (so the `positive?` guard would
+      # short-circuit and no sample could ever count as low-memory), and
+      # for an existing profile it is the p95 from the previous refresh.
+      # Either way it ignores the current observation. RefreshForRun
+      # passes the freshly computed p95 in here so the consecutive_low
+      # counter reflects the sample that just came in.
+      @p95_memory_bytes = p95_memory_bytes.to_i
       # In a brand-new profile the persisted oom_count is 0 even though
       # the just-computed summary may show several OOMs. The tuner must
       # consider the projected value when deciding whether to mark the
@@ -96,7 +105,7 @@ module AgentRunResourceProfiles
 
     private
 
-    attr_reader :profile, :user_settings, :baseline_limit_bytes, :projected_oom_count
+    attr_reader :profile, :user_settings, :baseline_limit_bytes, :p95_memory_bytes, :projected_oom_count
 
     def floor_bytes
       [ user_floor, AgentRunResourceProfile::MIN_RECOMMENDED_MEMORY_LIMIT_BYTES ].max
@@ -137,7 +146,7 @@ module AgentRunResourceProfiles
 
     def low_memory_sample?(target)
       threshold = (target * AgentRunResourceProfile::LOW_MEMORY_HEADROOM_RATIO).ceil
-      profile.p95_memory_bytes.to_i.positive? && profile.p95_memory_bytes.to_i <= threshold
+      p95_memory_bytes.positive? && p95_memory_bytes <= threshold
     end
 
     def capacity_blocked_eligible?
