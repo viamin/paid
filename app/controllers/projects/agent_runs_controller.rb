@@ -792,7 +792,8 @@ module Projects
       audit_event("agent_run.created", metadata: { agent_run_id: agent_run.id, project_name: @project.name, goal: goal })
 
       capacity_user = settings_owner || current_user
-      notice = if AgentRun.has_run_capacity?(user: capacity_user) && AgentRun.queued.count <= 1
+      admission = Capacity::RunAdmission.call(user: capacity_user, project: @project, goal: goal)
+      notice = if admission[:allowed] && AgentRun.queued.count <= 1
         "Agent run created and will start momentarily."
       else
         "Agent run queued. It will start automatically when a slot opens."

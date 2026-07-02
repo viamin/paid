@@ -6,6 +6,8 @@ require "timeout"
 
 module Capacity
   class DockerSnapshot
+    MIN_SPIKE_MARGIN_BYTES = 256 * 1024 * 1024
+
     Bucket = Struct.new(:container_count, :memory_bytes, :cpu_percent, keyword_init: true) do
       def to_h
         {
@@ -81,6 +83,40 @@ module Capacity
           degraded_reasons: degraded_reasons
         }
       end
+
+      def to_run_admission_h
+        control_plane_memory_bytes = paid_control_plane_memory_bytes
+        service_container_memory_bytes = paid_service_container_memory_bytes
+        unrelated_container_memory_bytes = other_docker_memory_bytes
+        agent_memory_bytes = paid_agent_memory_bytes
+        reserved_non_agent_bytes = control_plane_memory_bytes + service_container_memory_bytes + unrelated_container_memory_bytes
+        spike_margin_bytes = if available_memory_bytes.positive?
+          [ ((control_plane_memory_bytes + service_container_memory_bytes) * 0.15).to_i, DockerSnapshot::MIN_SPIKE_MARGIN_BYTES ].min
+        else
+          0
+        end
+        effective_agent_budget_bytes = [ available_memory_bytes - spike_margin_bytes, 0 ].max
+        available = !degraded? && docker_memory_bytes.positive?
+
+        {
+          available: available,
+          reason: available ? nil : degraded_reasons.last || "docker_memory_unavailable",
+          confidence: confidence,
+          snapshot_at: snapshot_at,
+          docker_memory_bytes: docker_memory_bytes,
+          agent_memory_bytes: agent_memory_bytes,
+          paid_control_plane_memory_bytes: control_plane_memory_bytes,
+          service_container_memory_bytes: service_container_memory_bytes,
+          unrelated_container_memory_bytes: unrelated_container_memory_bytes,
+          reserved_non_agent_bytes: reserved_non_agent_bytes,
+          spike_margin_bytes: spike_margin_bytes,
+          effective_agent_budget_bytes: effective_agent_budget_bytes,
+          running_container_count: usage_buckets.values.sum(&:container_count),
+          sampled_container_count: usage_buckets.values.sum(&:container_count),
+          error_class: nil,
+          error_message: nil
+        }
+      end
     end
 
     CACHE_TTL = 15.seconds
@@ -113,6 +149,10 @@ module Capacity
 
     def self.call(...)
       new(...).call
+    end
+
+    def self.fetch(...)
+      new(...).fetch
     end
 
     def self.cache_key(backend_identifier)
@@ -184,9 +224,13 @@ module Capacity
       fallback_snapshot(cached_snapshot, reason: failure_reason_for(e))
     end
 
+    def fetch
+      call.to_run_admission_h
+    end
+
     private
 
-    attr_reader :backend, :now, :cache, :force_refresh
+    attr_reader :backend, :cache, :force_refresh, :now
 
     def read_cached_snapshot
       self.class.deserialize(cache.read(cache_key))

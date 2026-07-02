@@ -2491,7 +2491,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_29_035155) do
     t.boolean "marketplace_auto_attach_enabled", default: false, null: false, comment: "Whether this user opts their own agent runs into automatic and team-default marketplace attachments."
     t.integer "max_auto_pick_open_prs", default: 1, null: false
     t.integer "max_comment_length", default: 2000, null: false
-    t.integer "max_concurrent_runs", default: 2, null: false
+    t.integer "max_concurrent_runs", default: 2
     t.integer "max_execution_seconds", comment: "User-level override for project max_execution_seconds; nil defers to project setting"
     t.integer "max_issues_per_page", default: 50, null: false
     t.integer "max_parallel_agents_per_project", default: 3, null: false
@@ -2502,6 +2502,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_29_035155) do
     t.integer "retry_max_attempts", default: 3, null: false
     t.float "retry_max_delay", default: 60.0, null: false
     t.integer "review_goal_idle_timeout_seconds", default: 300, null: false
+    t.string "run_concurrency_mode", default: "manual", null: false, comment: "Whether agent run admission uses the fixed max_concurrent_runs limit or Docker-capacity auto admission."
     t.jsonb "runner_round_robin_state", default: {}, null: false
     t.string "runner_selection_mode", limit: 20, default: "single", null: false
     t.integer "style_guide_max_raw_bytes", default: 100000, null: false
