@@ -5,6 +5,15 @@ require "rails_helper"
 RSpec.describe ProcessRunQueueJob do
   let(:temporal_client) { double("TemporalClient") } # rubocop:disable RSpec/VerifiedDoubles
   let(:workflow_handle) { double("WorkflowHandle", id: "queued-workflow-id") } # rubocop:disable RSpec/VerifiedDoubles
+  let(:auto_mode_snapshot) do
+    {
+      available: true,
+      effective_agent_budget_bytes: 2 * 1024 * 1024 * 1024,
+      snapshot_at: Time.current,
+      confidence: "high",
+      docker_memory_bytes: 8 * 1024 * 1024 * 1024
+    }
+  end
 
   before do
     allow(Paid).to receive_messages(temporal_client: temporal_client, agent_task_queue: "paid-agent-tasks")
@@ -41,6 +50,140 @@ RSpec.describe ProcessRunQueueJob do
 
       expect(older.reload.status).to eq("queued")
       expect(newer.reload.status).to eq("queued")
+    end
+
+    it "keeps auto-mode runs queued when Docker capacity is insufficient" do
+      project = create(:project)
+      user = project.created_by
+      user.settings.update!(run_concurrency_mode: "auto", max_concurrent_runs: nil)
+      queued_run = create(:agent_run, :queued, project: project)
+      allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(auto_mode_snapshot)
+
+      expect(temporal_client).not_to receive(:start_workflow)
+
+      described_class.new.perform
+
+      expect(queued_run.reload.temporal_workflow_id).to be_nil
+      expect(queued_run.status).to eq("queued")
+    end
+
+    it "bulk-skips an auto-mode user's backlog when Docker capacity is insufficient" do
+      stub_const("#{described_class}::MAX_ITERATIONS_PER_PERFORM", 5)
+
+      blocked_project = create(:project)
+      blocked_user = blocked_project.created_by
+      blocked_user.settings.update!(run_concurrency_mode: "auto", max_concurrent_runs: nil)
+      10.times do |i|
+        create(:agent_run, :queued, project: blocked_project, created_at: (20 - i).minutes.ago)
+      end
+
+      eligible_project = create(:project)
+      eligible_run = create(:agent_run, :queued, project: eligible_project, created_at: 1.minute.ago)
+
+      allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(auto_mode_snapshot)
+
+      started_ids = []
+      allow(temporal_client).to receive(:start_workflow) do |_wf, input, **_opts|
+        started_ids << input[:agent_run_id]
+        workflow_handle
+      end
+
+      described_class.new.perform
+
+      expect(started_ids).to eq([ eligible_run.id ])
+    end
+
+    it "keeps project-level blocking scoped when auto mode degrades to manual admission" do
+      blocked_project = create(:project)
+      blocked_user = blocked_project.created_by
+      blocked_user.settings.update!(run_concurrency_mode: "auto", max_concurrent_runs: nil, max_parallel_agents_per_project: 1)
+      create(:agent_run, :running, project: blocked_project)
+      create(:agent_run, :queued, project: blocked_project, created_at: 2.minutes.ago)
+      eligible_project = create(:project, account: blocked_project.account, created_by: blocked_user)
+      eligible_run = create(:agent_run, :queued, project: eligible_project, created_at: 1.minute.ago)
+      allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(available: false, reason: "docker_timeout",
+        snapshot_at: Time.current, confidence: "low")
+      started_ids = []
+      allow(temporal_client).to receive(:start_workflow) do |_wf, input, **_opts|
+        started_ids << input[:agent_run_id]
+        workflow_handle
+      end
+      described_class.new.perform
+      expect(started_ids).to eq([ eligible_run.id ])
+    end
+
+    it "reuses one Docker snapshot per queue pass" do
+      project = create(:project)
+      user = project.created_by
+      user.settings.update!(run_concurrency_mode: "auto", max_concurrent_runs: nil)
+      create(:agent_run, :queued, project: project, trigger_type: "manual", created_at: 2.minutes.ago)
+      create(:agent_run, :queued, project: project, trigger_type: "manual", created_at: 1.minute.ago)
+      allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(
+        available: true,
+        effective_agent_budget_bytes: 16 * 1024 * 1024 * 1024,
+        snapshot_at: Time.current,
+        confidence: "high",
+        docker_memory_bytes: 32 * 1024 * 1024 * 1024
+      )
+
+      described_class.new.perform
+
+      expect(Capacity::DockerSnapshot).to have_received(:fetch).once
+    end
+
+    it "caches reserved local agent memory across auto-mode admissions in one queue pass" do
+      project = create(:project)
+      user = project.created_by
+      user.settings.update!(run_concurrency_mode: "auto", max_concurrent_runs: nil)
+      running_run = create(:agent_run, :running, project: project, container_host: Containers::LOCAL_BACKEND_KEY.to_s)
+      create(:container_metric, agent_run: running_run, memory_limit_bytes: 6.gigabytes, recorded_at: 1.minute.ago)
+      create(:agent_run, :queued, project: project, trigger_type: "manual", created_at: 2.minutes.ago)
+      create(:agent_run, :queued, project: project, trigger_type: "manual", created_at: 1.minute.ago)
+      allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(
+        available: true,
+        effective_agent_budget_bytes: 20.gigabytes,
+        snapshot_at: Time.current,
+        confidence: "high",
+        docker_memory_bytes: 32.gigabytes
+      )
+
+      queries = capture_queries do
+        described_class.new.perform
+      end
+
+      expect(queries.grep(/FROM "container_metrics"/).size).to eq(1)
+    end
+
+    it "accounts for manual-mode run memory within an auto-mode queue pass" do
+      # Scenario: auto-mode user A has two queued runs; manual-mode user B has one.
+      # Docker budget is exactly 2 × DEFAULT_ESTIMATED_MEMORY_BYTES (4 GB each = 8 GB).
+      # After A's first run starts (4 GB reserved) and B's manual run starts
+      # (4 GB — now also reserved with fix), A's second run must be blocked.
+      auto_project = create(:project)
+      auto_user = auto_project.created_by
+      auto_user.settings.update!(run_concurrency_mode: "auto", max_concurrent_runs: nil)
+
+      manual_project = create(:project)
+      manual_user = manual_project.created_by
+      manual_user.settings.update!(max_concurrent_runs: 10)
+
+      auto_run1 = create(:agent_run, :queued, project: auto_project, created_at: 5.minutes.ago)
+      manual_run  = create(:agent_run, :queued, project: manual_project, created_at: 3.minutes.ago)
+      auto_run2   = create(:agent_run, :queued, project: auto_project, created_at: 1.minute.ago)
+
+      allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(
+        available: true,
+        effective_agent_budget_bytes: 2 * Capacity::RunAdmission::DEFAULT_ESTIMATED_MEMORY_BYTES,
+        snapshot_at: Time.current,
+        confidence: "high",
+        docker_memory_bytes: 16.gigabytes
+      )
+
+      described_class.new.perform
+
+      expect(auto_run1.reload.temporal_workflow_id).to be_present
+      expect(manual_run.reload.temporal_workflow_id).to be_present
+      expect(auto_run2.reload.temporal_workflow_id).to be_nil
     end
 
     it "stops when user capacity is exhausted" do
@@ -315,6 +458,20 @@ RSpec.describe ProcessRunQueueJob do
       expect(queued_run.reload.status).to eq("queued")
     end
 
+    it "does not start a run when the project parallel limit is already reached" do
+      project = create(:project)
+      user = project.created_by
+      user.settings.update!(max_concurrent_runs: 10, max_parallel_agents_per_project: 1)
+      create(:agent_run, :running, project: project)
+      queued_run = create(:agent_run, :queued, project: project)
+
+      expect(temporal_client).not_to receive(:start_workflow)
+
+      described_class.new.perform
+
+      expect(queued_run.reload.status).to eq("queued")
+    end
+
     it "does not start queued runs when the account's scheduler is paused" do
       paused_account = create(:account, scheduler_paused_at: Time.current)
       paused_project = create(:project, account: paused_account, created_by: create(:user, account: paused_account))
@@ -406,7 +563,7 @@ RSpec.describe ProcessRunQueueJob do
     it "never exceeds per-user capacity even when starting multiple queued runs" do
       project = create(:project)
       user = project.created_by
-      user.settings.update!(max_concurrent_runs: 4)
+      user.settings.update!(max_concurrent_runs: 4, max_parallel_agents_per_project: 10)
 
       runs = 6.times.map { |i| create(:agent_run, :queued, project: project, created_at: (6 - i).minutes.ago) }
 
@@ -460,7 +617,7 @@ RSpec.describe ProcessRunQueueJob do
     it "starts a queued manual run alongside running auto-pick work" do
       project = create(:project)
       user = project.created_by
-      user.settings.update!(max_concurrent_runs: 4)
+      user.settings.update!(max_concurrent_runs: 4, max_parallel_agents_per_project: 4)
 
       3.times { create(:agent_run, :running, project: project, trigger_type: "automatic") }
       manual_run = create(:agent_run, :queued, project: project, trigger_type: "manual")

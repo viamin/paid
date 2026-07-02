@@ -6,36 +6,46 @@ module Activities
 
     def execute(input)
       user = find_user_from_input(input)
+      project = Project.find_by(id: input[:project_id]) if input[:project_id]
 
-      if user
-        user_active_count = AgentRun.active_count_for_user(user)
-        max_concurrent_runs = user.account.tenant_max_concurrent_runs(user.settings.max_concurrent_runs)
-        has_capacity = user_active_count < max_concurrent_runs
-      else
-        # Fail closed: if we can't resolve an owner, don't allow the run.
-        user_active_count = nil
-        max_concurrent_runs = nil
-        has_capacity = false
+      unless user
+        logger.warn(
+          message: "concurrency.owner_not_found",
+          project_id: input[:project_id]
+        ) if input[:project_id]
 
-        if input[:project_id]
-          logger.warn(
-            message: "concurrency.owner_not_found",
-            project_id: input[:project_id]
-          )
-        end
+        return {
+          has_capacity: false,
+          user_active_count: nil,
+          max_concurrent_runs: nil,
+          effective_max_concurrent_runs: nil,
+          reason: "owner_not_found"
+        }
       end
+
+      admission = Capacity::RunAdmission.call(
+        user: user,
+        project: project,
+        goal: input[:goal]
+      )
 
       logger.info(
         message: "concurrency.capacity_check",
-        user_active_count: user_active_count,
-        max_concurrent_runs: max_concurrent_runs,
-        has_capacity: has_capacity
+        user_active_count: admission[:user_active_count],
+        max_concurrent_runs: admission[:effective_max_concurrent_runs],
+        has_capacity: admission[:allowed],
+        reason: admission[:reason],
+        mode: admission[:mode],
+        available_memory_bytes: admission[:available_memory_bytes]
       )
 
       {
-        has_capacity: has_capacity,
-        user_active_count: user_active_count,
-        max_concurrent_runs: max_concurrent_runs
+        has_capacity: admission[:allowed],
+        user_active_count: admission[:user_active_count],
+        max_concurrent_runs: admission[:effective_max_concurrent_runs],
+        effective_max_concurrent_runs: admission[:effective_max_concurrent_runs],
+        reason: admission[:reason],
+        available_memory_bytes: admission[:available_memory_bytes]
       }
     end
 

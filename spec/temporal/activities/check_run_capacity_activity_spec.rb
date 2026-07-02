@@ -64,6 +64,24 @@ RSpec.describe Activities::CheckRunCapacityActivity do
 
         expect(result[:has_capacity]).to be true
       end
+
+      it "uses Docker-backed auto admission in auto mode" do
+        project = create(:project)
+        user = project.created_by
+        user.settings.update!(run_concurrency_mode: "auto", max_concurrent_runs: nil)
+        allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(
+          available: true,
+          effective_agent_budget_bytes: 2 * 1024 * 1024 * 1024,
+          snapshot_at: Time.current,
+          confidence: "high",
+          docker_memory_bytes: 8 * 1024 * 1024 * 1024
+        )
+
+        result = activity.execute({ project_id: project.id })
+
+        expect(result[:has_capacity]).to be false
+        expect(result[:reason]).to eq("insufficient_docker_capacity")
+      end
     end
   end
 end

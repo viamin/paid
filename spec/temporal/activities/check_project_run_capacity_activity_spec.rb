@@ -117,5 +117,24 @@ RSpec.describe Activities::CheckProjectRunCapacityActivity do
       expect(result[:has_capacity]).to be false
       expect(result[:available_slots]).to eq(0)
     end
+
+    it "uses the shared auto admission result when run concurrency is auto" do
+      project = create(:project)
+      user = project.created_by
+      user.settings.update!(run_concurrency_mode: "auto", max_concurrent_runs: nil, max_parallel_agents_per_project: 2)
+      allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(
+        available: true,
+        effective_agent_budget_bytes: 10 * 1024 * 1024 * 1024,
+        snapshot_at: Time.current,
+        confidence: "high",
+        docker_memory_bytes: 16 * 1024 * 1024 * 1024
+      )
+
+      result = activity.execute({ project_id: project.id })
+
+      expect(result[:has_capacity]).to be true
+      expect(result[:available_slots]).to eq(2)
+      expect(result[:max_concurrent_runs]).to eq(2)
+    end
   end
 end
