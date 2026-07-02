@@ -94,6 +94,12 @@ module Accounts
         }
       end
 
+      # Sampling warnings mean some containers' memory was never accounted for
+      # (budget exhausted or per-container stats failed). The partially
+      # collected usage therefore undercounts real memory, which would make the
+      # computed headroom and safety margin read optimistically large. Clear
+      # both derived fields so the degraded preview never advertises capacity it
+      # cannot actually defend.
       def degraded_snapshot_payload(snapshot)
         {
           status: :degraded,
@@ -102,8 +108,8 @@ module Accounts
           docker_memory_bytes: snapshot[:docker_memory_bytes],
           running_agent_count: snapshot[:running_agent_count],
           estimated_next_run_memory_bytes: snapshot[:estimated_next_run_memory_bytes],
-          available_agent_memory_bytes: snapshot[:available_agent_memory_bytes],
-          control_plane_margin_bytes: snapshot[:control_plane_margin_bytes],
+          available_agent_memory_bytes: nil,
+          control_plane_margin_bytes: nil,
           effective_recommended_concurrency: nil,
           usage: snapshot[:usage],
           warnings: snapshot[:warnings],

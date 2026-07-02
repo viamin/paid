@@ -75,6 +75,21 @@ RSpec.describe Accounts::Operations::AutoCapacityObserver do
     expect(payload.dig(:usage, :agent, :memory_bytes)).to eq(1.gigabyte)
   end
 
+  it "clears agent headroom when the sampling budget exhausts before every container is inspected" do
+    create_recent_run_profile!
+    stub_const("Accounts::Operations::AutoCapacityObserver::DOCKER_SAMPLING_BUDGET", 0)
+    allow(backend).to receive(:list_containers).with(no_args).and_return(sampled_containers)
+
+    payload = described_class.call(account: account, manual_limit: 5, backend: backend, cache: cache)
+
+    expect(payload[:status]).to eq(:degraded)
+    expect(payload[:effective_recommended_concurrency]).to be_nil
+    expect(payload[:available_agent_memory_bytes]).to be_nil
+    expect(payload[:control_plane_margin_bytes]).to be_nil
+    expect(payload[:warnings].first).to include("container sampling budget exceeded")
+    expect(payload[:warnings].first).to include("4 containers unsampled")
+  end
+
   it "returns a degraded payload for swarm backends even though swarm reports remote? == false" do
     swarm_backend = instance_double(
       Containers::Backends::Swarm,
@@ -356,6 +371,8 @@ RSpec.describe Accounts::Operations::AutoCapacityObserver do
   def expect_degraded_snapshot_payload(payload, warning:)
     expect(payload[:status]).to eq(:degraded)
     expect(payload[:effective_recommended_concurrency]).to be_nil
+    expect(payload[:available_agent_memory_bytes]).to be_nil
+    expect(payload[:control_plane_margin_bytes]).to be_nil
     expect(payload[:warnings]).to contain_exactly(
       "Some Docker metrics were unavailable while building the auto-capacity preview: #{warning}"
     )
