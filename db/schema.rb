@@ -10,7 +10,11 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
+<<<<<<< HEAD
 ActiveRecord::Schema[8.1].define(version: 2026_06_28_174004) do
+=======
+ActiveRecord::Schema[8.1].define(version: 2026_06_29_035155) do
+>>>>>>> origin/main
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -394,6 +398,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_174004) do
     t.index ["configuration_bundle_id", "agent_run_id"], name: "index_bundle_outcomes_unique_run", unique: true
     t.index ["quality_score"], name: "index_bundle_outcomes_on_quality_score"
     t.index ["success"], name: "index_bundle_outcomes_on_success"
+  end
+
+  create_table "change_intents", comment: "Change Intent Records that capture human direction given to agents.", force: :cascade do |t|
+    t.text "behavior", comment: "Expected behavior or examples that clarify the intent."
+    t.bigint "chat_session_id", comment: "Chat session where the intent was captured."
+    t.text "constraints", comment: "Non-obvious implementation boundaries or requirements."
+    t.datetime "created_at", null: false
+    t.text "decisions_made", comment: "Rejected alternatives or decisions that shaped the approach."
+    t.text "intent", null: false, comment: "What the human was trying to accomplish."
+    t.bigint "issue_id", comment: "Optional issue the intent relates to."
+    t.bigint "project_id", null: false, comment: "Project the Change Intent Record belongs to."
+    t.string "status", default: "draft", null: false, comment: "Lifecycle state: draft, active, superseded, or reverted."
+    t.bigint "superseded_by_id", comment: "Newer Change Intent Record that superseded this one."
+    t.text "title", null: false, comment: "Short, human-readable title for the change intent."
+    t.datetime "updated_at", null: false
+    t.index ["chat_session_id"], name: "index_change_intents_on_chat_session_id"
+    t.index ["issue_id"], name: "index_change_intents_on_issue_id"
+    t.index ["project_id", "status"], name: "index_change_intents_on_project_id_and_status"
+    t.index ["project_id"], name: "index_change_intents_on_project_id"
+    t.index ["superseded_by_id"], name: "index_change_intents_on_superseded_by_id"
   end
 
   create_table "chat_messages", force: :cascade do |t|
@@ -932,27 +956,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_174004) do
     t.index ["feature_key", "key", "value"], name: "index_flipper_gates_on_feature_key_and_key_and_value", unique: true
   end
 
-  create_table "github_app_installations", comment: "GitHub App installations for org/repo access without PATs", force: :cascade do |t|
-    t.bigint "account_id", null: false
-    t.string "app_id", null: false, comment: "GitHub App ID used for this installation"
-    t.string "app_slug", null: false, comment: "GitHub App slug for display and bot identity"
-    t.datetime "created_at", null: false
-    t.bigint "installation_id", null: false, comment: "GitHub installation ID from the App installation event"
-    t.bigint "installed_by_id"
-    t.jsonb "metadata", default: {}, null: false, comment: "Additional installation metadata from GitHub"
-    t.jsonb "repositories", default: [], null: false, comment: "Cached list of installed repository metadata"
-    t.datetime "repositories_synced_at", comment: "Last time the repository list was synced from GitHub"
-    t.string "repository_selection", default: "selected", null: false, comment: "GitHub installation repository_selection: all or selected"
-    t.datetime "revoked_at", comment: "When the installation was revoked or uninstalled"
-    t.string "status", default: "active", null: false, comment: "Installation status: active, suspended, uninstalled"
-    t.datetime "updated_at", null: false
-    t.index ["account_id", "installation_id"], name: "idx_on_account_id_installation_id_effaccd2e5", unique: true
-    t.index ["account_id"], name: "index_github_app_installations_on_account_id"
-    t.index ["installation_id"], name: "index_github_app_installations_on_installation_id", unique: true
-    t.index ["installed_by_id"], name: "index_github_app_installations_on_installed_by_id"
-    t.index ["status"], name: "index_github_app_installations_on_status"
-  end
-
   create_table "github_health_states", force: :cascade do |t|
     t.datetime "circuit_opened_at"
     t.string "circuit_state", limit: 20, default: "closed", null: false
@@ -960,7 +963,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_174004) do
     t.string "endpoint", limit: 50, default: "api", null: false
     t.integer "failure_count", default: 0, null: false
     t.text "last_error_message"
-    t.integer "rate_limit_limit"
+    t.integer "rate_limit_limit", comment: "Total hourly request cap reported by GitHub for this credential (5,000 for PATs, 15,000 for App installations)."
     t.datetime "rate_limit_observed_at", comment: "When the remaining/limit rate-limit figures were last sampled from the GitHub API for this credential endpoint."
     t.integer "rate_limit_remaining"
     t.datetime "rate_limit_reset_at"
@@ -2080,6 +2083,28 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_174004) do
     t.index ["project_id", "name"], name: "idx_roi_benchmarks_project_name"
   end
 
+  create_table "runner_credentials", comment: "Account-scoped encrypted credentials for subscription runners (Claude Code, Codex, Gemini, Copilot)", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Account that owns this credential"
+    t.string "auth_kind", default: "oauth_token", null: false, comment: "Authentication mechanism (oauth_token, api_key, signing_token)"
+    t.datetime "created_at", null: false
+    t.bigint "created_by_id", comment: "User who created the credential"
+    t.datetime "expires_at", comment: "Token expiry time; nil means no expiry"
+    t.datetime "last_used_at", comment: "Last time this credential was injected into a container"
+    t.jsonb "log_data"
+    t.boolean "long_lived", default: false, null: false, comment: "When true, skips expiry tracking and refresh (e.g. claude setup-token)"
+    t.jsonb "metadata", default: {}, null: false, comment: "Arbitrary provider-specific metadata"
+    t.string "name", null: false, comment: "Human-readable label for this credential"
+    t.datetime "revoked_at", comment: "Set when credential is revoked; nil means active"
+    t.string "runner_key", null: false, comment: "Runner provider key (e.g. claude, codex, gemini, copilot)"
+    t.text "token", null: false, comment: "Encrypted credential token"
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "revoked_at"], name: "index_runner_credentials_on_account_id_and_revoked_at"
+    t.index ["account_id", "runner_key", "name"], name: "idx_runner_credentials_on_account_runner_key_name", unique: true
+    t.index ["account_id", "runner_key"], name: "index_runner_credentials_on_account_id_and_runner_key"
+    t.index ["account_id"], name: "index_runner_credentials_on_account_id"
+    t.index ["created_by_id"], name: "index_runner_credentials_on_created_by_id"
+  end
+
   create_table "runner_states", force: :cascade do |t|
     t.datetime "circuit_opened_at"
     t.string "circuit_state", limit: 20, default: "closed", null: false
@@ -2437,20 +2462,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_174004) do
     t.index ["uuid"], name: "index_tracker_configurations_on_uuid", unique: true
   end
 
-  create_table "user_identities", comment: "Links users to external identity providers (SSO/OIDC/SAML)", force: :cascade do |t|
-    t.bigint "account_id", null: false
-    t.jsonb "auth_data", default: {}, null: false, comment: "Raw auth data from provider (serialized for audit trail)"
-    t.datetime "created_at", null: false
-    t.string "provider", null: false, comment: "Identity provider name: saml, oidc, github, etc."
-    t.string "uid", null: false, comment: "External user identifier from the IdP"
-    t.datetime "updated_at", null: false
-    t.bigint "user_id", null: false
-    t.index ["account_id"], name: "index_user_identities_on_account_id"
-    t.index ["provider", "uid"], name: "index_user_identities_on_provider_and_uid", unique: true
-    t.index ["user_id", "provider"], name: "index_user_identities_on_user_id_and_provider", unique: true
-    t.index ["user_id"], name: "index_user_identities_on_user_id"
-  end
-
   create_table "user_settings", force: :cascade do |t|
     t.integer "agent_timeout_seconds", default: 5400, null: false
     t.string "agent_update_comment_mode", default: "off", null: false, comment: "Controls whether existing-PR agent followups post no comment or generate a paid summary comment."
@@ -2598,6 +2609,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_174004) do
   add_foreign_key "billing_plans", "accounts"
   add_foreign_key "bundle_outcomes", "agent_runs", on_delete: :cascade
   add_foreign_key "bundle_outcomes", "configuration_bundles", on_delete: :cascade
+  add_foreign_key "change_intents", "change_intents", column: "superseded_by_id", on_delete: :nullify
+  add_foreign_key "change_intents", "chat_sessions", on_delete: :nullify
+  add_foreign_key "change_intents", "issues", on_delete: :nullify
+  add_foreign_key "change_intents", "projects", on_delete: :cascade
   add_foreign_key "chat_messages", "chat_sessions"
   add_foreign_key "chat_session_projects", "chat_sessions"
   add_foreign_key "chat_session_projects", "projects"
@@ -2743,6 +2758,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_174004) do
   add_foreign_key "remediation_decisions", "accounts"
   add_foreign_key "remediation_decisions", "users", column: "applied_by_id"
   add_foreign_key "roi_benchmarks", "projects", on_delete: :cascade
+  add_foreign_key "runner_credentials", "accounts"
+  add_foreign_key "runner_credentials", "users", column: "created_by_id", on_delete: :nullify
   add_foreign_key "runner_states", "users", on_delete: :cascade
   add_foreign_key "runners", "integration_credentials", on_delete: :restrict
   add_foreign_key "runners", "provider_api_keys", on_delete: :restrict
@@ -2782,6 +2799,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_174004) do
   add_foreign_key "workflow_states", "projects"
   add_foreign_key "worktrees", "agent_runs", on_delete: :nullify
   add_foreign_key "worktrees", "projects", on_delete: :cascade
+
+  create_function :paid_current_account_id, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.paid_current_account_id()
+       RETURNS bigint
+       LANGUAGE sql
+       STABLE
+      AS $function$
+        SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
+      $function$
+  SQL
+
+  create_function :paid_tenant_bypass, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.paid_tenant_bypass()
+       RETURNS boolean
+       LANGUAGE sql
+       STABLE
+      AS $function$
+        SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
+      $function$
+  SQL
 
   create_function :logidze_capture_exception, sql_definition: <<-'SQL'
       CREATE OR REPLACE FUNCTION public.logidze_capture_exception(error_data jsonb)
@@ -3518,26 +3555,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_174004) do
       $function$
   SQL
 
-  create_function :paid_current_account_id, sql_definition: <<-'SQL'
-      CREATE OR REPLACE FUNCTION public.paid_current_account_id()
-       RETURNS bigint
-       LANGUAGE sql
-       STABLE
-      AS $function$
-        SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
-      $function$
-  SQL
-
-  create_function :paid_tenant_bypass, sql_definition: <<-'SQL'
-      CREATE OR REPLACE FUNCTION public.paid_tenant_bypass()
-       RETURNS boolean
-       LANGUAGE sql
-       STABLE
-      AS $function$
-        SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
-      $function$
-  SQL
-
   create_function :validate_orchestration_decision_strategy_version_scope, sql_definition: <<-'SQL'
       CREATE OR REPLACE FUNCTION public.validate_orchestration_decision_strategy_version_scope()
        RETURNS trigger
@@ -3660,6 +3677,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_174004) do
 
   create_trigger :logidze_on_quality_thresholds, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_quality_thresholds BEFORE INSERT OR UPDATE ON public.quality_thresholds FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :logidze_on_runner_credentials, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_runner_credentials BEFORE INSERT OR UPDATE ON public.runner_credentials FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{token}')
   SQL
 
   create_trigger :logidze_on_providers, sql_definition: <<-SQL

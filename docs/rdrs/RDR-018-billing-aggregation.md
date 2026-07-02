@@ -106,3 +106,17 @@ Billing data is restricted to account owners and admins via `BillingPolicy#billi
 - Account-level usage aggregation queries join through `agent_runs → projects → accounts`. For accounts with many projects and runs, these queries may need optimization (materialized views or periodic snapshots).
 - The `external_id` field on invoices enables integration with Stripe, but the webhook/sync layer is not included in this initial design.
 - Billing periods are manually triggered (via service calls) rather than auto-generated. A scheduled job to close periods and generate invoices can be added as a follow-up.
+
+## Managed Billing Follow-Up Status
+
+- Scheduled billing period rollover and invoice issuance are now handled by `BillingPeriodManagementJob`, which closes due periods, generates invoices, and opens the next active period automatically.
+- The account administration UI now exposes billing period status, invoice state, and payment-sync follow-up visibility for owners/admins.
+- External payment collection and reconciliation remain intentionally provider-agnostic. `external_id` and invoice metadata can track synchronization state, but Paid does not yet ship Stripe-specific webhook ingestion or provider credential setup as part of managed billing.
+
+### Remaining Out Of Scope
+
+- Automatic external payment collection or charging customer payment methods
+- Webhook-driven payment reconciliation from Stripe or another processor
+- Tax calculation/remittance, dunning, and collections workflows
+- Automatic account suspension or plan downgrades on unpaid invoices
+- Self-service billing-plan changes or customer-managed payment methods

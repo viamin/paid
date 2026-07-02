@@ -71,5 +71,29 @@ RSpec.describe Tools::TriggerAgentRun do
         tool.call(project_id: project.id, issue_id: issue.id, confirmed: true)
       }.to raise_error(ArgumentError, "An agent run is already queued or in progress for this issue")
     end
+
+    context "with goal create_issue and no issue_id" do
+      it "creates an agent run from custom_prompt alone" do
+        result = tool.call(
+          project_id: project.id,
+          goal: "create_issue",
+          custom_prompt: "Fix the invisible chat popup overlay blocking clicks.",
+          confirmed: true
+        )
+
+        expect(result[:status]).to eq("queued")
+        expect(result[:issue_id]).to be_nil
+
+        run = AgentRun.find(result[:id])
+        expect(run.issue_id).to be_nil
+        expect(run.custom_prompt).to eq("Fix the invisible chat popup overlay blocking clicks.")
+      end
+
+      it "raises when neither issue_id nor custom_prompt is given" do
+        expect {
+          tool.call(project_id: project.id, goal: "create_issue", confirmed: true)
+        }.to raise_error(ArgumentError, "issue_id or custom_prompt is required")
+      end
+    end
   end
 end

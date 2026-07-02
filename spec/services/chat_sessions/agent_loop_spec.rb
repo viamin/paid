@@ -7,6 +7,20 @@ RSpec.describe ChatSessions::AgentLoop do
   let(:user) { create(:user, account: account) }
   let(:chat_session) { create(:chat_session, account: account, created_by: user) }
   let(:tool_definitions) { [ { name: "anything", description: "x", inputSchema: { type: "object" } } ] }
+  let(:mixed_tool_client) do
+    Class.new do
+      def call(_conversation, tools: nil)
+        {
+          content: "Looking, then acting.",
+          tool_calls: [
+            { id: "read", name: "search", arguments: { "q" => "x" } },
+            { id: "write", name: "trigger_agent_run", arguments: {} }
+          ],
+          tokens_input: 5, tokens_output: 5, model: "gpt-4o"
+        }
+      end
+    end.new
+  end
 
   describe "#run" do
     context "when the model requests a write tool" do
@@ -35,7 +49,7 @@ RSpec.describe ChatSessions::AgentLoop do
       end
 
       before do
-        allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user).and_return(tool_definitions)
+        allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user, session: anything).and_return(tool_definitions)
         allow(Tools::Registry).to receive(:dispatch)
       end
 
@@ -49,7 +63,7 @@ RSpec.describe ChatSessions::AgentLoop do
       it "persists the assistant content and a pending tool-call message" do
         described_class.new(chat_session: chat_session, llm_client: llm_client).run
 
-        expect(chat_session.messages.pluck(:role, :content, :tool_status)).to eq([
+        expect(chat_session.messages.chronological.pluck(:role, :content, :tool_status)).to eq([
           [ "assistant", "I'll kick off an agent run.", nil ],
           [ "assistant", nil, "pending" ]
         ])
@@ -110,22 +124,37 @@ RSpec.describe ChatSessions::AgentLoop do
         expect(pending.pluck(:tool_call_id)).to contain_exactly("a", "b")
       end
 
-      it "runs read-only tools immediately when mixed with a write tool in one batch" do
-        allow(Tools::Registry).to receive(:dispatch).and_return({ "status" => "ok" })
-        mixed_client = Class.new do
+      it "creates a draft CIR before showing the pending confirmation for post-dispatch tools" do
+        allow(Tools::Registry).to receive(:post_dispatch_confirmation?).with("record_change_intent").and_return(true)
+        allow(Tools::Registry).to receive(:post_dispatch_confirmation?).with("trigger_agent_run").and_return(false)
+        allow(Tools::Registry).to receive(:dispatch).and_return({ "id" => 44, "status" => "draft" })
+
+        cir_client = Class.new do
           def call(_conversation, tools: nil)
             {
-              content: "Looking, then acting.",
+              content: "I drafted a CIR.",
               tool_calls: [
-                { id: "read", name: "search", arguments: { "q" => "x" } },
-                { id: "write", name: "trigger_agent_run", arguments: {} }
+                { id: "cir", name: "record_change_intent", arguments: { "title" => "Use Redis", "intent" => "Share state" } }
               ],
-              tokens_input: 5, tokens_output: 5, model: "gpt-4o"
+              tokens_input: 7, tokens_output: 5, model: "gpt-4o"
             }
           end
         end.new
 
-        described_class.new(chat_session: chat_session, llm_client: mixed_client).run
+        described_class.new(chat_session: chat_session, llm_client: cir_client).run
+
+        pending = chat_session.messages.find_by(tool_status: "pending")
+        expect(pending.tool_name).to eq("record_change_intent")
+        expect(pending.tool_result).to eq({ "id" => 44, "status" => "draft" })
+      end
+
+      it "runs read-only tools immediately when mixed with a write tool in one batch" do
+        allow(Tools::Registry).to receive_messages(
+          dispatch: { "status" => "ok" },
+          post_dispatch_confirmation?: false
+        )
+
+        described_class.new(chat_session: chat_session, llm_client: mixed_tool_client).run
 
         expect(Tools::Registry).to have_received(:dispatch).once
 
@@ -160,8 +189,11 @@ RSpec.describe ChatSessions::AgentLoop do
       end
 
       it "dispatches the tool immediately and never pauses" do
-        allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user).and_return(tool_definitions)
-        allow(Tools::Registry).to receive(:dispatch).and_return({ "status" => "ok" })
+        allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user, session: anything).and_return(tool_definitions)
+        allow(Tools::Registry).to receive_messages(
+          dispatch: { "status" => "ok" },
+          post_dispatch_confirmation?: false
+        )
 
         result = described_class.new(chat_session: chat_session, llm_client: llm_client).run
 

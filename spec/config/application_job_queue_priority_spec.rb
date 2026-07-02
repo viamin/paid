@@ -28,6 +28,7 @@ RSpec.describe ApplicationJob, :no_db do
         AgentRunPatternDetectorJob
         AgentRunResourceJanitorJob
         AuditEventRetentionJob
+        BillingPeriodManagementJob
         DependencyBackfillJob
         DispatchCircuitBreakerRecoveryJob
         DockerOrphanCleanupJob

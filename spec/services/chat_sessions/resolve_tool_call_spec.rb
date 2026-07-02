@@ -39,7 +39,7 @@ RSpec.describe ChatSessions::ResolveToolCall do
   end
 
   before do
-    allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user).and_return(tool_definitions)
+    allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user, session: anything).and_return(tool_definitions)
   end
 
   describe ".call approve" do
@@ -86,6 +86,67 @@ RSpec.describe ChatSessions::ResolveToolCall do
       tool_entry = conversation.find { |message| message[:role] == "tool" }
       expect(tool_entry).to include(content: dispatch_result, tool_call_id: "call_1")
     end
+
+    it "uses post-dispatch confirmation resolution for draft CIRs" do
+      tool_call_message.update!(tool_name: "record_change_intent", tool_result: { "id" => 123, "status" => "draft" })
+      allow(Tools::Registry).to receive(:post_dispatch_confirmation?).with("record_change_intent").and_return(true)
+      allow(Tools::Registry).to receive(:resolve_confirmation).and_return({ "id" => 123, "status" => "active" })
+
+      described_class.call(
+        chat_session: chat_session, tool_call_message: tool_call_message,
+        decision: :approve, llm_client: llm_client
+      )
+
+      expect(Tools::Registry).not_to have_received(:dispatch)
+      expect(Tools::Registry).to have_received(:resolve_confirmation).with(
+        name: "record_change_intent",
+        decision: :approve,
+        pending_result: { "id" => 123, "status" => "draft" },
+        user: user,
+        session: chat_session
+      )
+    end
+
+    it "rolls back to pending when post-dispatch approval resolution fails" do
+      tool_call_message.update!(tool_name: "record_change_intent", tool_result: { "id" => 123, "status" => "draft" })
+      allow(Tools::Registry).to receive(:post_dispatch_confirmation?).with("record_change_intent").and_return(true)
+      allow(Tools::Registry).to receive(:resolve_confirmation).and_raise(Pundit::NotAuthorizedError, "not allowed")
+
+      described_class.call(
+        chat_session: chat_session, tool_call_message: tool_call_message,
+        decision: :approve, llm_client: llm_client
+      )
+
+      expect(tool_call_message.reload.tool_status).to eq("pending")
+      expect(chat_session.messages.where(role: "tool")).to be_empty
+      expect(llm_client.seen_conversations).to be_empty
+    end
+
+    it "leaves the confirmation retriable after a failed post-dispatch resolution" do
+      tool_call_message.update!(tool_name: "record_change_intent", tool_result: { "id" => 123, "status" => "draft" })
+      allow(Tools::Registry).to receive(:post_dispatch_confirmation?).with("record_change_intent").and_return(true)
+      attempts = 0
+      allow(Tools::Registry).to receive(:resolve_confirmation) do
+        attempts += 1
+        raise Pundit::NotAuthorizedError, "transient" if attempts == 1
+
+        { "id" => 123, "status" => "active" }
+      end
+
+      described_class.call(
+        chat_session: chat_session, tool_call_message: tool_call_message,
+        decision: :approve, llm_client: llm_client
+      )
+      expect(tool_call_message.reload.tool_status).to eq("pending")
+
+      described_class.call(
+        chat_session: chat_session, tool_call_message: tool_call_message,
+        decision: :approve, llm_client: llm_client
+      )
+
+      expect(tool_call_message.reload.tool_status).to eq("approved")
+      expect(chat_session.messages.find_by(role: "tool").tool_result).to eq({ "id" => 123, "status" => "active" })
+    end
   end
 
   describe ".call deny" do
@@ -103,6 +164,35 @@ RSpec.describe ChatSessions::ResolveToolCall do
       tool_result = chat_session.messages.find_by(role: "tool")
       expect(tool_result.tool_result).to include("status" => "denied")
       expect(result.content).to eq("Done.")
+    end
+
+    it "routes post-dispatch denials through the tool resolver" do
+      tool_call_message.update!(tool_name: "record_change_intent", tool_result: { "id" => 22, "status" => "draft" })
+      allow(Tools::Registry).to receive(:post_dispatch_confirmation?).with("record_change_intent").and_return(true)
+      allow(Tools::Registry).to receive(:resolve_confirmation).and_return({ "id" => 22, "status" => "denied" })
+
+      described_class.call(
+        chat_session: chat_session, tool_call_message: tool_call_message,
+        decision: :deny, llm_client: llm_client
+      )
+
+      expect(Tools::Registry).not_to have_received(:dispatch)
+      expect(chat_session.messages.find_by(role: "tool").tool_result).to eq({ "id" => 22, "status" => "denied" })
+    end
+
+    it "rolls back to pending when post-dispatch denial resolution fails" do
+      tool_call_message.update!(tool_name: "record_change_intent", tool_result: { "id" => 22, "status" => "draft" })
+      allow(Tools::Registry).to receive(:post_dispatch_confirmation?).with("record_change_intent").and_return(true)
+      allow(Tools::Registry).to receive(:resolve_confirmation).and_raise(ArgumentError, "missing draft id")
+
+      described_class.call(
+        chat_session: chat_session, tool_call_message: tool_call_message,
+        decision: :deny, llm_client: llm_client
+      )
+
+      expect(tool_call_message.reload.tool_status).to eq("pending")
+      expect(chat_session.messages.where(role: "tool")).to be_empty
+      expect(llm_client.seen_conversations).to be_empty
     end
   end
 
@@ -166,6 +256,44 @@ RSpec.describe ChatSessions::ResolveToolCall do
     end
   end
 
+  describe "runner fallback when resuming the loop" do
+    before { allow(Tools::Registry).to receive(:dispatch).and_return(dispatch_result) }
+
+    it "switches to a configured fallback runner and retries when the resumed loop hits a provider error" do
+      fallback_runner = configure_chat_fallback
+      fallback_client = inspecting_llm_client(final_response)
+      allow(ChatSessions::BuildLlmClient).to receive(:call)
+        .with(chat_session: chat_session).and_return(fallback_client)
+
+      result = described_class.call(
+        chat_session: chat_session, tool_call_message: tool_call_message,
+        decision: :approve, llm_client: rate_limited_llm_client
+      )
+
+      expect(result.content).to eq("Done.")
+      expect(chat_session.reload.runner).to eq(fallback_runner)
+
+      notice = chat_session.messages.detect(&:fallback_notice?)
+      expect(notice).to be_present
+      expect(notice.content).to include("Switching to #{fallback_runner.display_name} and continuing.")
+      expect(notice.metadata).to include("fallback_notice" => true)
+
+      # the synthetic notice is never replayed back to the fallback model
+      expect(fallback_client.seen_conversations.last).not_to include(
+        hash_including(content: notice.content)
+      )
+    end
+
+    it "re-raises the provider error when no fallback runner is configured" do
+      expect {
+        described_class.call(
+          chat_session: chat_session, tool_call_message: tool_call_message,
+          decision: :approve, llm_client: rate_limited_llm_client
+        )
+      }.to raise_error(AgentHarness::RateLimitError)
+    end
+  end
+
   describe "several pending tool calls" do
     let(:second_tool_call_message) do
       create(:chat_message,
@@ -202,5 +330,41 @@ RSpec.describe ChatSessions::ResolveToolCall do
       expect(tool_call_message.reload.tool_status).to eq("approved")
       expect(second_tool_call_message.reload.tool_status).to eq("denied")
     end
+  end
+
+  def rate_limited_llm_client
+    Class.new do
+      def call(*)
+        raise AgentHarness::RateLimitError, "API rate limit exceeded"
+      end
+    end.new
+  end
+
+  def inspecting_llm_client(response)
+    Class.new do
+      attr_reader :seen_conversations
+
+      def initialize(response)
+        @response = response
+        @seen_conversations = []
+      end
+
+      def call(conversation, **)
+        @seen_conversations << conversation.deep_dup
+        @response
+      end
+    end.new(response)
+  end
+
+  def configure_chat_fallback
+    primary_runner = create(:runner, :api_key, user: user, runner_key: "opencode",
+      provider_api_key: create(:provider_api_key, user: user, api_service_type: "openrouter"),
+      config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2" } })
+    fallback_runner = create(:runner, :api_key, user: user, runner_key: "claude",
+      provider_api_key: create(:provider_api_key, user: user, api_service_type: "anthropic"))
+
+    user.settings.update!(kb_chat_fallback_runners: [ "claude" ])
+    chat_session.update!(runner: primary_runner)
+    fallback_runner
   end
 end

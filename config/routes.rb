@@ -52,6 +52,9 @@ Rails.application.routes.draw do
   resources :integrations, only: [ :index, :new ]
   resources :integration_credentials, only: [ :index, :new, :create, :show, :destroy ]
 
+  # Subscription runner credentials (long-lived managed tokens)
+  resources :runner_credentials, only: [ :index, :new, :create, :show, :destroy ]
+
   # GitHub tokens management
   resources :github_tokens, only: [ :index, :new, :create, :show, :destroy ] do
     get :repositories, on: :member
@@ -229,6 +232,8 @@ Rails.application.routes.draw do
     end
     resources :pre_commit_requirements, only: [ :index, :show, :create, :update, :destroy ],
       controller: "projects/pre_commit_requirements"
+    resource :mutation_test_requirement, only: [ :update ],
+      controller: "projects/mutation_test_requirements"
     resources :pr_templates, only: [ :index, :show, :create, :update, :destroy ],
       controller: "projects/pr_templates"
     resources :project_service_containers, only: [ :create, :destroy ], controller: "projects/service_containers"

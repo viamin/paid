@@ -36,6 +36,27 @@ if [ -z "$removed" ] && [ -z "$added" ]; then
   exit 0
 fi
 
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  Migration changes detected on branch switch"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+worktree_database_suffix() {
+  ruby <<'RUBY'
+require File.expand_path("config/worktree_database_names", Dir.pwd)
+
+puts Paid::WorktreeDatabaseNames.suffix.to_s
+RUBY
+}
+
+if command -v bin/ensure-worktree-databases &>/dev/null && [ -n "$(worktree_database_suffix)" ]; then
+  echo "  Ensuring worktree databases..."
+  if ! bin/ensure-worktree-databases 2>&1; then
+    echo "  ⚠  Could not ensure worktree databases. Migration guard skipped."
+    exit 0
+  fi
+fi
+
 restored_files=()
 
 cleanup() {
@@ -44,11 +65,6 @@ cleanup() {
   done
 }
 trap cleanup EXIT
-
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "  Migration changes detected on branch switch"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 if [ -n "$removed" ]; then
   echo ""
