@@ -1462,7 +1462,7 @@ RSpec.describe "AgentRuns" do
 
       context "when at capacity" do
         before do
-          allow(Capacity::RunAdmission).to receive(:call).and_return({ allowed: false })
+          allow(AgentRun).to receive(:has_run_capacity?).and_return(false)
         end
 
         it "creates a queued agent run" do
@@ -1500,26 +1500,6 @@ RSpec.describe "AgentRuns" do
           follow_redirect!
           expect(response.body).to include("already queued or in progress")
         end
-      end
-
-      it "queues the run instead of crashing when auto mode has no tenant setting row yet" do
-        user.settings.update!(run_concurrency_mode: "auto", max_concurrent_runs: nil)
-        allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(
-          available: true,
-          effective_agent_budget_bytes: user.settings.container_memory_bytes,
-          snapshot_at: Time.current,
-          confidence: "high",
-          docker_memory_bytes: user.settings.container_memory_bytes
-        )
-        create(:agent_run, :running, project: project)
-
-        expect {
-          post project_agent_runs_path(project), params: { issue_id: issue.id }
-        }.to change(AgentRun, :count).by(1)
-
-        expect(response).to redirect_to(project_path(project))
-        follow_redirect!
-        expect(response.body).to include("queued")
       end
 
       it "defaults to the configured runner" do

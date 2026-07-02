@@ -6,6 +6,7 @@ class IntegrationCredential < ApplicationRecord
 
   belongs_to :account
   belongs_to :created_by, class_name: "User", optional: true
+  has_many :claude_login_sessions, dependent: :nullify
 
   encrypts :secret
 
@@ -43,6 +44,16 @@ class IntegrationCredential < ApplicationRecord
 
   def service_definition
     Integrations::CredentialCatalog.lookup(service_key)
+  end
+
+  def api_secret
+    return secret.to_s.presence unless claude_oauth_credential?
+
+    ClaudeCredentials::Secret.parse(secret).oauth_token.to_s.presence
+  end
+
+  def claude_oauth_credential?
+    service_key == "claude" && auth_kind == "oauth_token"
   end
 
   private

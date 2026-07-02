@@ -14,7 +14,6 @@ module Tools
       max_execution_seconds
       default_agent_runner
       container_memory_gb
-      run_concurrency_mode
       max_concurrent_runs
       container_timeout_seconds
       default_branch

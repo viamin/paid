@@ -4,6 +4,31 @@ require "rails_helper"
 require "securerandom"
 
 RSpec.describe Runner do
+  describe "#effective_api_secret" do
+    it "returns the Claude OAuth access token when the credential stores native json" do
+      account = create(:account)
+      user = create(:user, :owner, account: account)
+      integration_credential = create(
+        :integration_credential,
+        account: account,
+        created_by: user,
+        service_key: "claude",
+        auth_kind: "oauth_token",
+        secret: claude_native_secret("access-token")
+      )
+      runner = create(
+        :runner,
+        user: user,
+        runner_key: "claude",
+        auth_type: "api_key",
+        provider_api_key: nil,
+        integration_credential: integration_credential
+      )
+
+      expect(runner.effective_api_secret).to eq("access-token")
+    end
+  end
+
   describe "associations" do
     it { is_expected.to belong_to(:user) }
     it { is_expected.to belong_to(:provider_api_key).optional }
@@ -1709,5 +1734,14 @@ RSpec.describe Runner do
 
       expect(runner_state.reload.preferred_tier_model_ids).to eq("high" => free_model.model_id)
     end
+  end
+
+  def claude_native_secret(access_token)
+    {
+      "claudeAiOauth" => {
+        "accessToken" => access_token,
+        "refreshToken" => "refresh-token"
+      }
+    }.to_json
   end
 end

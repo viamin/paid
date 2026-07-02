@@ -5,14 +5,11 @@ require "rails_helper"
 RSpec::Matchers.define_negated_matcher :not_change, :change
 
 RSpec.describe "Accounts" do
-  include_context "with auto capacity payload"
-
   let(:account) { create(:account, name: "Acme") }
   let(:owner) { create(:user, :owner, account: account) }
 
   before do
     ActionMailer::Base.deliveries.clear
-    allow(Accounts::Operations::AutoCapacityObserver).to receive(:call).and_return(auto_capacity_payload)
     sign_in owner
   end
 
@@ -29,15 +26,6 @@ RSpec.describe "Accounts" do
       expect(response.body).to include(*account_page_sections)
       expect(response.body).to include("Managed billing currently automates billing-period rollover and invoice issuance.")
       expect(response.body).to include("Payment sync")
-    end
-
-    it "does not load the auto-capacity panel on the general admin page" do
-      expect(Accounts::Operations::AutoCapacityObserver).not_to receive(:call)
-
-      get account_path
-
-      expect(response.body).not_to include("Auto Capacity Preview")
-      expect(response.body).not_to include("Observe-only auto mode")
     end
 
     it "allows a viewer to read the page" do

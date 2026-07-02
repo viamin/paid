@@ -3,13 +3,13 @@
 FactoryBot.define do
   factory :change_intent do
     project
-    chat_session { association :chat_session, project:, account: project.account }
-    issue { nil }
-    title { "Prefer sliding window rate limiting" }
-    intent { "Smooth request limiting for public API endpoints." }
-    behavior { "Given bursty traffic, keep limits even across the rolling window." }
-    constraints { "Use Redis and match the auth middleware layout." }
-    decisions_made { "Rejected token bucket because it was harder to reason about for support." }
+    chat_session { association :chat_session, :with_project, account: project.account, project: project }
+    issue { association :issue, project: project }
+    title { "Use sliding window rate limiting" }
+    intent { "Smooth API rate limiting without surprising client bursts." }
+    behavior { "Given repeated requests, when a client exceeds the window, then requests should be throttled predictably." }
+    constraints { "Use Redis and follow the existing auth middleware pattern." }
+    decisions_made { "Rejected token bucket because smoother limiting matters more than burst tolerance." }
     status { "active" }
 
     trait :draft do
@@ -19,10 +19,6 @@ FactoryBot.define do
     trait :superseded do
       status { "superseded" }
       superseded_by { association :change_intent, project: project }
-    end
-
-    trait :reverted do
-      status { "reverted" }
     end
 
     trait :without_context_links do

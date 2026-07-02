@@ -175,26 +175,15 @@ module ChatSessionsHelper
     project = current_chat_popup_project
     return context unless project
 
-    context = context.merge(
+    context.merge(
       "project_id" => project.id,
       "project_name" => project.name,
       "project_full_name" => project.full_name
     )
-
-    issue = current_chat_popup_issue
-    return context unless issue
-
-    context.merge("issue_id" => issue.id)
   end
 
   def current_chat_popup_project
     return @project if defined?(@project) && @project.is_a?(Project)
-
-    nil
-  end
-
-  def current_chat_popup_issue
-    return @issue if defined?(@issue) && @issue.is_a?(Issue)
 
     nil
   end

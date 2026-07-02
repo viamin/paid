@@ -164,10 +164,6 @@ RSpec.describe Containers::Provision do
       expect(described_class::DEFAULTS[:timeout_seconds]).to eq(3600)
     end
 
-    it "defines default Codex tmpfs size of 256MB" do
-      expect(described_class::DEFAULTS[:tmpfs_codex_size]).to eq(256 * 1024 * 1024)
-    end
-
     it "defines default image name" do
       expect(described_class::DEFAULTS[:image]).to eq("paid-agent:latest")
     end
@@ -413,7 +409,6 @@ RSpec.describe Containers::Provision do
           tmpfs = config["HostConfig"]["Tmpfs"]
           expect(tmpfs["/tmp"]).to eq("exec,size=#{1024 * 1024 * 1024},mode=1777")
           expect(tmpfs["/home/agent/.cache"]).to eq("exec,size=#{512 * 1024 * 1024},mode=0755")
-          expect(tmpfs["/home/agent/.codex"]).to eq("size=#{256 * 1024 * 1024},mode=0700")
           mock_container
         end
 
@@ -451,23 +446,7 @@ RSpec.describe Containers::Provision do
           tmpfs = config["HostConfig"]["Tmpfs"]
           expect(tmpfs).to have_key("/home/agent/.codex")
           expect(tmpfs["/home/agent/.codex"]).to include("mode=0700")
-          expect(tmpfs["/home/agent/.codex"]).to include("size=#{256 * 1024 * 1024}")
-          mock_container
-        end
-
-        service.provision
-      end
-
-      it "allows the Codex tmpfs size to be overridden" do
-        service = described_class.new(
-          agent_run: agent_run,
-          worktree_path: worktree_path,
-          tmpfs_codex_size: 384 * 1024 * 1024
-        )
-
-        expect(Docker::Container).to receive(:create) do |config|
-          tmpfs = config["HostConfig"]["Tmpfs"]
-          expect(tmpfs["/home/agent/.codex"]).to eq("size=#{384 * 1024 * 1024},mode=0700")
+          expect(tmpfs["/home/agent/.codex"]).to include("size=#{64 * 1024 * 1024}")
           mock_container
         end
 
@@ -1086,6 +1065,62 @@ RSpec.describe Containers::Provision do
         copy_commands.each do |cmd|
           expect(cmd.last).not_to include("settings.json")
         end
+      end
+    end
+
+    context "with managed Claude credentials json" do
+      let!(:managed_credential) do
+        create(
+          :integration_credential,
+          :oauth,
+          account: project.account,
+          created_by: project.created_by,
+          service_key: "claude",
+          secret: JSON.generate(
+            "claudeAiOauth" => {
+              "accessToken" => "managed-access",
+              "refreshToken" => "managed-refresh",
+              "expiresAt" => 12.hours.from_now.iso8601
+            }
+          )
+        )
+      end
+
+      before do
+        allow(ENV).to receive(:fetch).and_call_original
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(nil)
+        allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("COPILOT_HOME").and_return(nil)
+        allow(ENV).to receive(:[]).with("COPILOT_CONFIG_DIR").and_return(nil)
+        allow(service).to receive_messages(
+          claude_local_config_path: nil,
+          codex_local_config_path: nil,
+          gemini_local_config_path: nil,
+          copilot_local_config_path: nil
+        )
+      end
+
+      it "treats the managed credentials json as Claude subscription auth without env token injection" do
+        expect(Docker::Container).to receive(:create) do |config|
+          env = config["Env"]
+          expect(env).to include("PAID_CLAUDE_SUBSCRIPTION_AUTH=1")
+          expect(env.none? { |entry| entry.start_with?("CLAUDE_CODE_OAUTH_TOKEN=") }).to be(true)
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "writes the managed credentials json into the container" do
+        allow(service).to receive(:write_container_file).and_call_original
+
+        service.provision
+
+        expect(service).to have_received(:write_container_file)
+          .with("/home/agent/.claude/.credentials.json", managed_credential.secret)
       end
     end
 

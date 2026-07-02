@@ -98,4 +98,28 @@ RSpec.describe IntegrationCredential do
       end
     end
   end
+
+  describe "#api_secret" do
+    it "returns the raw secret for non-Claude credentials" do
+      credential = build(:integration_credential, service_key: "jira", secret: "jira-secret")
+
+      expect(credential.api_secret).to eq("jira-secret")
+    end
+
+    it "extracts the access token from native Claude credentials json" do
+      credential = build(
+        :integration_credential,
+        service_key: "claude",
+        auth_kind: "oauth_token",
+        secret: {
+          "claudeAiOauth" => {
+            "accessToken" => "access-token",
+            "refreshToken" => "refresh-token"
+          }
+        }.to_json
+      )
+
+      expect(credential.api_secret).to eq("access-token")
+    end
+  end
 end

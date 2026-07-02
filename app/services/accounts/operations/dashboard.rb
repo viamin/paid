@@ -7,11 +7,10 @@ module Accounts
         new(...).call
       end
 
-      def initialize(account:, tenant_setting:, billing_visible: false, include_auto_capacity: false)
+      def initialize(account:, tenant_setting:, billing_visible: false)
         @account = account
         @tenant_setting = tenant_setting
         @billing_visible = billing_visible
-        @include_auto_capacity = include_auto_capacity
       end
 
       def call
@@ -27,7 +26,7 @@ module Accounts
 
       private
 
-      attr_reader :account, :tenant_setting, :billing_visible, :include_auto_capacity
+      attr_reader :account, :tenant_setting, :billing_visible
 
       def configuration
         @configuration ||= tenant_setting.enterprise_operations_configuration
@@ -164,18 +163,8 @@ module Accounts
           cost_ceiling_utilization_percent: utilization_percent(current_cost_cents, cost_ceiling_cents),
           project_budgets_count: account.projects.joins(:cost_budgets).distinct.count,
           total_runs_in_period: usage_period&.total_runs,
-          total_compute_seconds_in_period: aggregated_usage&.dig(:compute_usage, :total_compute_seconds),
-          auto_capacity: auto_capacity_payload
+          total_compute_seconds_in_period: aggregated_usage&.dig(:compute_usage, :total_compute_seconds)
         }
-      end
-
-      def auto_capacity_payload
-        return nil unless include_auto_capacity
-
-        Accounts::Operations::AutoCapacityObserver.call(
-          account: account,
-          manual_limit: tenant_setting.effective_guardrails["max_concurrent_runs"]
-        )
       end
 
       def monitored_run_count

@@ -204,16 +204,16 @@ RSpec.describe Knowledge::ContextBundle::Build do
       before do
         create(:change_intent,
           project: project,
-          title: "Prefer sliding window over token bucket",
+          title: "Prefer sliding window rate limiting",
           status: "active")
       end
 
-      it "includes a change intents section after decisions" do
+      it "includes a change intents section" do
         result = described_class.call(issue: issue, project: project)
 
         expect(result[:sections]).to include(:change_intents)
         expect(result[:content]).to include("Recent Change Intents")
-        expect(result[:content]).to include("Prefer sliding window over token bucket")
+        expect(result[:content]).to include("Prefer sliding window rate limiting")
         expect(result[:content]).to include("active")
       end
     end

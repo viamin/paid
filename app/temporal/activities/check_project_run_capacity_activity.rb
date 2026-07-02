@@ -22,36 +22,34 @@ module Activities
         return { has_capacity: false, available_slots: 0, error: "owner_not_found" }
       end
 
-      admission = Capacity::RunAdmission.call(
-        user: user,
-        project: project,
-        goal: input[:goal]
-      )
       max_parallel = user.settings.max_parallel_agents_per_project
+      active_count = AgentRun.active_count_for_project(project)
+      available_slots = [ max_parallel - active_count, 0 ].max
+
+      # Also check user-level capacity
+      user_active_count = AgentRun.active_count_for_user(user)
+      user_max = user.account.tenant_max_concurrent_runs(user.settings.max_concurrent_runs)
+      user_available = [ user_max - user_active_count, 0 ].max
+
+      effective_slots = [ available_slots, user_available ].min
 
       logger.info(
         message: "concurrency.project_capacity_check",
         project_id: input[:project_id],
-        active_count: admission[:project_active_count],
+        active_count: active_count,
         max_parallel: max_parallel,
-        user_active_count: admission[:user_active_count],
-        user_max: admission[:effective_max_concurrent_runs],
-        effective_slots: admission[:available_slots],
-        reason: admission[:reason],
-        mode: admission[:mode],
-        available_memory_bytes: admission[:available_memory_bytes]
+        user_active_count: user_active_count,
+        user_max: user_max,
+        effective_slots: effective_slots
       )
 
       {
-        has_capacity: admission[:available_slots] > 0,
-        available_slots: admission[:available_slots],
-        project_active_count: admission[:project_active_count],
+        has_capacity: effective_slots > 0,
+        available_slots: effective_slots,
+        project_active_count: active_count,
         max_parallel_per_project: max_parallel,
-        user_active_count: admission[:user_active_count],
-        max_concurrent_runs: admission[:effective_max_concurrent_runs],
-        effective_max_concurrent_runs: admission[:effective_max_concurrent_runs],
-        reason: admission[:reason],
-        available_memory_bytes: admission[:available_memory_bytes],
+        user_active_count: user_active_count,
+        max_concurrent_runs: user_max,
         pr_aggregation_enabled: project.pr_aggregation_enabled?
       }
     end

@@ -30,24 +30,6 @@ RSpec.describe Tools::GetUserSettings do
       expect(user.settings.reload.theme_preference).to eq("dark")
     end
 
-    it "updates run concurrency mode" do
-      account = create(:account)
-      user = create(:user, :member, account:)
-      session = create(:chat_session, account:, created_by: user)
-
-      result = described_class.new(user:, session:).call(
-        settings: {
-          run_concurrency_mode: "auto",
-          max_concurrent_runs: nil
-        },
-        confirmed: true
-      )
-
-      expect(result["run_concurrency_mode"]).to eq("auto")
-      expect(user.settings.reload.run_concurrency_mode).to eq("auto")
-      expect(user.settings.max_concurrent_runs).to be_nil
-    end
-
     it "updates knowledge fallback runners" do
       account = create(:account)
       user = create(:user, :member, account:)

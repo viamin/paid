@@ -28,9 +28,6 @@ class UserSetting < ApplicationRecord
   RUNNER_SELECTION_MODE_DEFAULT = "single"
   AGENT_UPDATE_COMMENT_MODES = %w[off summary].freeze
   AGENT_UPDATE_COMMENT_MODE_DEFAULT = "off"
-  RUN_CONCURRENCY_MODES = %w[manual auto].freeze
-  RUN_CONCURRENCY_MODE_MANUAL = "manual"
-  RUN_CONCURRENCY_MODE_AUTO = "auto"
 
   THEME_PREFERENCES = %w[light dark system].freeze
 
@@ -129,10 +126,8 @@ class UserSetting < ApplicationRecord
     numericality: { only_integer: true, greater_than_or_equal_to: 60, less_than_or_equal_to: PG_INT_MAX }
 
   # Concurrency
-  validates :run_concurrency_mode, inclusion: { in: RUN_CONCURRENCY_MODES }
   validates :max_concurrent_runs,
-    numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 100 },
-    allow_nil: true
+    numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 100 }
   validates :max_parallel_agents_per_project,
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 20 }
   # Deprecated: retained only for migration safety. Auto-pick no longer
@@ -207,7 +202,6 @@ class UserSetting < ApplicationRecord
   validate :validate_kb_embedding_fallback_runners
   validate :validate_kb_chat_runner
   validate :validate_kb_chat_fallback_runners
-  validate :validate_max_concurrent_runs_for_mode
 
   def self.normalize_runner_array_param(value)
     return value unless value.is_a?(String)
@@ -218,14 +212,6 @@ class UserSetting < ApplicationRecord
     parsed.select { |runner| runner.is_a?(String) }
   rescue JSON::ParserError
     []
-  end
-
-  def run_concurrency_auto?
-    run_concurrency_mode == RUN_CONCURRENCY_MODE_AUTO
-  end
-
-  def run_concurrency_manual?
-    run_concurrency_mode == RUN_CONCURRENCY_MODE_MANUAL
   end
 
   def self.parse_runner_array_param(value)
@@ -793,12 +779,6 @@ class UserSetting < ApplicationRecord
     end
 
     normalized
-  end
-
-  def validate_max_concurrent_runs_for_mode
-    return unless run_concurrency_manual? && max_concurrent_runs.blank?
-
-    errors.add(:max_concurrent_runs, "must be set in manual run concurrency mode")
   end
 
   def self.runner_identifiers_for(runners, identifiers:)

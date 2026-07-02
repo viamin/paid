@@ -19,6 +19,14 @@
         </div>
       <% end %>
 
+      <% if @integration_credential.service_key == "claude" && @integration_credential.auth_kind == "oauth_token" %>
+        <div class="mt-4 rounded-md border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+          For a real Claude subscription login, use the
+          <%= link_to "browser-completed Claude login flow", new_claude_login_session_path, class: "font-semibold text-blue-900 underline" %>.
+          It launches the official <code>claude auth login</code> in an isolated container and captures the resulting managed credential for you.
+        </div>
+      <% end %>
+
       <%= form_with model: @integration_credential, url: integration_credentials_path(category: @category_filter, service_key: @service_key_filter), class: "mt-6 space-y-6" do |form| %>
         <% if @integration_credential.errors.any? %>
           <div class="rounded-md bg-red-50 p-4">

@@ -45,18 +45,6 @@ RSpec.describe "Projects::ClarifyingQuestions" do
         expect(response.body).to include('submit-&gt;clarifying-questions#submit')
         expect(response.body).to include('disabled="disabled"')
       end
-
-      it "includes the issue id in the chat popup context" do
-        get project_issue_clarifying_questions_path(project, issue)
-
-        popup = Nokogiri::HTML(response.body).at_css('[data-controller="chat-popup"]')
-        context = JSON.parse(popup["data-chat-popup-context-value"])
-
-        expect(context).to include(
-          "project_id" => project.id,
-          "issue_id" => issue.id
-        )
-      end
     end
 
     context "when no clarifying questions found" do
