@@ -1,26 +1,13 @@
 # frozen_string_literal: true
 
-<<<<<<< HEAD
-=======
 require "pathname"
 require "set"
->>>>>>> origin/main
 require "timeout"
 
 module Capacity
   class DockerSnapshot
-<<<<<<< HEAD
-    CACHE_KEY = "capacity/docker_snapshot/v1"
-    CACHE_TTL = 15.seconds
-    FETCH_TIMEOUT = 2.seconds
-    PER_CONTAINER_TIMEOUT = 0.2.seconds
     MIN_SPIKE_MARGIN_BYTES = 256 * 1024 * 1024
-    PAID_COMPOSE_PROJECT = "paid"
-    PAID_CONTROL_PLANE_SERVICES = %w[
-      postgres
-      redis
-      web
-=======
+
     Bucket = Struct.new(:container_count, :memory_bytes, :cpu_percent, keyword_init: true) do
       def to_h
         {
@@ -96,6 +83,40 @@ module Capacity
           degraded_reasons: degraded_reasons
         }
       end
+
+      def to_run_admission_h
+        control_plane_memory_bytes = paid_control_plane_memory_bytes
+        service_container_memory_bytes = paid_service_container_memory_bytes
+        unrelated_container_memory_bytes = other_docker_memory_bytes
+        agent_memory_bytes = paid_agent_memory_bytes
+        reserved_non_agent_bytes = control_plane_memory_bytes + service_container_memory_bytes + unrelated_container_memory_bytes
+        spike_margin_bytes = if available_memory_bytes.positive?
+          [ ((control_plane_memory_bytes + service_container_memory_bytes) * 0.15).to_i, DockerSnapshot::MIN_SPIKE_MARGIN_BYTES ].min
+        else
+          0
+        end
+        effective_agent_budget_bytes = [ available_memory_bytes - spike_margin_bytes, 0 ].max
+        available = !degraded? && docker_memory_bytes.positive?
+
+        {
+          available: available,
+          reason: available ? nil : degraded_reasons.last || "docker_memory_unavailable",
+          confidence: confidence,
+          snapshot_at: snapshot_at,
+          docker_memory_bytes: docker_memory_bytes,
+          agent_memory_bytes: agent_memory_bytes,
+          paid_control_plane_memory_bytes: control_plane_memory_bytes,
+          service_container_memory_bytes: service_container_memory_bytes,
+          unrelated_container_memory_bytes: unrelated_container_memory_bytes,
+          reserved_non_agent_bytes: reserved_non_agent_bytes,
+          spike_margin_bytes: spike_margin_bytes,
+          effective_agent_budget_bytes: effective_agent_budget_bytes,
+          running_container_count: usage_buckets.values.sum(&:container_count),
+          sampled_container_count: usage_buckets.values.sum(&:container_count),
+          error_class: nil,
+          error_message: nil
+        }
+      end
     end
 
     CACHE_TTL = 15.seconds
@@ -111,24 +132,10 @@ module Capacity
       redis
       web
       worker
->>>>>>> origin/main
       temporal
       temporal-ui
       temporal-admin-tools
       qdrant
-<<<<<<< HEAD
-      worker
-    ].freeze
-
-    class << self
-      def fetch(...)
-        new(...).fetch
-      end
-    end
-
-    def fetch
-      Rails.cache.fetch(CACHE_KEY, expires_in: CACHE_TTL) { build_snapshot }
-=======
       agent-image
       agent-test
     ].freeze
@@ -142,6 +149,10 @@ module Capacity
 
     def self.call(...)
       new(...).call
+    end
+
+    def self.fetch(...)
+      new(...).fetch
     end
 
     def self.cache_key(backend_identifier)
@@ -211,136 +222,15 @@ module Capacity
       fallback_snapshot(cached_snapshot, reason: failure_reason_for(e))
     rescue => e
       fallback_snapshot(cached_snapshot, reason: failure_reason_for(e))
->>>>>>> origin/main
+    end
+
+    def fetch
+      call.to_run_admission_h
     end
 
     private
 
-<<<<<<< HEAD
-    def build_snapshot
-      return unavailable_snapshot(reason: "unsupported_backend", confidence: "low") unless backend.identifier == "local"
-
-      Timeout.timeout(FETCH_TIMEOUT) do
-        running_containers = backend.list_containers(all: true).select { |container| running?(container) }
-        metrics = collect_metrics(running_containers)
-        categorized = categorize(running_containers, metrics)
-        docker_memory_bytes = Docker.info["MemTotal"].to_i
-        control_plane_memory_bytes = categorized[:paid_control_plane_memory_bytes]
-        service_container_memory_bytes = categorized[:service_container_memory_bytes]
-        unrelated_container_memory_bytes = categorized[:unrelated_container_memory_bytes]
-        agent_memory_bytes = categorized[:agent_memory_bytes]
-        reserved_non_agent_bytes =
-          control_plane_memory_bytes + service_container_memory_bytes + unrelated_container_memory_bytes
-        spike_margin_bytes = [ ((control_plane_memory_bytes + service_container_memory_bytes) * 0.15).to_i, MIN_SPIKE_MARGIN_BYTES ].max
-
-        {
-          available: docker_memory_bytes.positive?,
-          reason: docker_memory_bytes.positive? ? nil : "docker_memory_unavailable",
-          confidence: metrics.size == running_containers.size ? "high" : "low",
-          snapshot_at: Time.current,
-          docker_memory_bytes: docker_memory_bytes,
-          agent_memory_bytes: agent_memory_bytes,
-          paid_control_plane_memory_bytes: control_plane_memory_bytes,
-          service_container_memory_bytes: service_container_memory_bytes,
-          unrelated_container_memory_bytes: unrelated_container_memory_bytes,
-          reserved_non_agent_bytes: reserved_non_agent_bytes,
-          spike_margin_bytes: spike_margin_bytes,
-          effective_agent_budget_bytes: [ docker_memory_bytes - reserved_non_agent_bytes - agent_memory_bytes - spike_margin_bytes, 0 ].max,
-          running_container_count: running_containers.size,
-          sampled_container_count: metrics.size
-        }
-      end
-    rescue Timeout::Error
-      unavailable_snapshot(reason: "docker_timeout", confidence: "low")
-    rescue Docker::Error::DockerError, Excon::Error => e
-      unavailable_snapshot(reason: "docker_error", confidence: "low", error_class: e.class.name, error_message: e.message)
-    end
-
-    def backend
-      @backend ||= Containers.backend
-    end
-
-    def running?(container)
-      state = container.info["State"]
-      return state["Running"] == true if state.is_a?(Hash)
-
-      state == "running"
-    end
-
-    def collect_metrics(containers)
-      containers.each_with_object({}) do |container, metrics|
-        metric = collect_container_metric(container)
-        metrics[container.id] = metric if metric
-      end
-    end
-
-    def collect_container_metric(container)
-      Timeout.timeout(PER_CONTAINER_TIMEOUT) do
-        raw = backend.container_stats(container, stream: false)
-        Containers::DockerStatsParser.parse_stats(raw)
-      end
-    rescue Timeout::Error, Docker::Error::DockerError, Excon::Error
-      nil
-    end
-
-    def categorize(containers, metrics)
-      containers.each_with_object(
-        agent_memory_bytes: 0,
-        paid_control_plane_memory_bytes: 0,
-        service_container_memory_bytes: 0,
-        unrelated_container_memory_bytes: 0
-      ) do |container, totals|
-        metric = metrics[container.id]
-        next unless metric
-
-        labels = container.info.dig("Config", "Labels") || container.info["Labels"] || {}
-        memory_bytes = metric[:memory_bytes].to_i
-
-        if agent_related_container?(labels)
-          totals[:agent_memory_bytes] += memory_bytes
-        elsif labels["paid.service_container_id"].present?
-          totals[:service_container_memory_bytes] += memory_bytes
-        elsif paid_control_plane_container?(labels)
-          totals[:paid_control_plane_memory_bytes] += memory_bytes
-        else
-          totals[:unrelated_container_memory_bytes] += memory_bytes
-        end
-      end
-    end
-
-    def agent_related_container?(labels)
-      labels["paid.agent_run_id"].present? ||
-        labels["paid.container_pool"] == "true" ||
-        labels["paid.container_pool_entry_id"].present? ||
-        labels["paid.mcp_sidecar"] == "true" ||
-        labels["paid.managed"] == "true" ||
-        labels["paid.resource"].present?
-    end
-
-    def paid_control_plane_container?(labels)
-      labels["com.docker.compose.project"] == PAID_COMPOSE_PROJECT &&
-        labels["com.docker.compose.service"].in?(PAID_CONTROL_PLANE_SERVICES)
-    end
-
-    def unavailable_snapshot(reason:, confidence:, **extra)
-      {
-        available: false,
-        reason: reason,
-        confidence: confidence,
-        snapshot_at: Time.current,
-        docker_memory_bytes: 0,
-        agent_memory_bytes: 0,
-        paid_control_plane_memory_bytes: 0,
-        service_container_memory_bytes: 0,
-        unrelated_container_memory_bytes: 0,
-        reserved_non_agent_bytes: 0,
-        spike_margin_bytes: 0,
-        effective_agent_budget_bytes: 0,
-        running_container_count: 0,
-        sampled_container_count: 0
-      }.merge(extra)
-=======
-    attr_reader :backend, :now, :cache, :force_refresh
+    attr_reader :backend, :cache, :force_refresh, :now
 
     def read_cached_snapshot
       self.class.deserialize(cache.read(cache_key))
@@ -603,7 +493,6 @@ module Capacity
           cpu_percent: bucket.cpu_percent
         )
       end
->>>>>>> origin/main
     end
   end
 end
