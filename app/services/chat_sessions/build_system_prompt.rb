@@ -84,6 +84,7 @@ module ChatSessions
         - Answering questions about codebases and project status
 
         When the user asks you to perform actions (trigger runs, list projects, etc.), use the available tools.
+        When the user gives a non-obvious constraint or rejects a reasonable alternative, ask if they'd like to create a Change Intent Record.
         Be concise and technical. Ask clarifying questions when the request is ambiguous.
       PROMPT
     end

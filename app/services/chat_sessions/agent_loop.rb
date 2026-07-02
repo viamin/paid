@@ -66,11 +66,9 @@ module ChatSessions
           tool_calls: response[:tool_calls]
         }
 
-        if pending_write_tool?(response[:tool_calls])
-          return pause_for_confirmation(response[:tool_calls], aggregate_tokens:, model: last_response_model)
-        end
+        read_only_calls, write_calls = partition_tool_calls(response[:tool_calls])
 
-        response[:tool_calls].each do |tool_call|
+        read_only_calls.each do |tool_call|
           tool_result = process_tool_call(tool_call)
 
           conversation << {
@@ -79,6 +77,20 @@ module ChatSessions
             tool_call_id: tool_call[:id],
             tool_name: tool_call[:name]
           }
+        end
+
+        executed_write_results, paused_for_confirmation = process_write_tool_calls(write_calls)
+        executed_write_results.each do |tool_call, tool_result|
+          conversation << {
+            role: "tool",
+            content: tool_result,
+            tool_call_id: tool_call[:id],
+            tool_name: tool_call[:name]
+          }
+        end
+
+        if paused_for_confirmation
+          return pause_for_confirmation(aggregate_tokens:, model: last_response_model)
         end
 
         next unless iteration == (MAX_TOOL_ITERATIONS - 1)
@@ -99,14 +111,7 @@ module ChatSessions
     # time is safe because `ResolveToolCall` only resumes the loop once the last
     # pending confirmation is settled — the rebuilt conversation never contains an
     # unanswered tool call. See RDR-028.
-    def pause_for_confirmation(tool_calls, aggregate_tokens:, model:)
-      write_calls, read_only_calls = tool_calls.partition do |tool_call|
-        Tools::Registry.write_tool?(tool_call[:name])
-      end
-
-      read_only_calls.each { |tool_call| process_tool_call(tool_call) }
-      write_calls.each { |tool_call| persist_pending_tool_call_message(tool_call) }
-
+    def pause_for_confirmation(aggregate_tokens:, model:)
       record_token_usage(aggregate_tokens[:input], aggregate_tokens[:output], model:)
       nil
     end
@@ -124,6 +129,45 @@ module ChatSessions
 
     def pending_write_tool?(tool_calls)
       tool_calls.any? { |tool_call| Tools::Registry.write_tool?(tool_call[:name]) }
+    end
+
+    def partition_tool_calls(tool_calls)
+      tool_calls.partition { |tool_call| !Tools::Registry.write_tool?(tool_call[:name]) }
+    end
+
+    def process_write_tool_calls(write_calls)
+      executed_results = []
+      paused_for_confirmation = false
+
+      write_calls.each do |tool_call|
+        if Tools::Registry.post_dispatch_confirmation?(tool_call[:name])
+          tool_result = dispatch_tool(name: tool_call[:name], arguments: parse_tool_arguments(tool_call))
+
+          if ready_for_post_dispatch_confirmation?(tool_result)
+            persist_pending_tool_call_message(tool_call, tool_result:)
+            paused_for_confirmation = true
+          else
+            persist_tool_call_message(tool_call)
+            persist_tool_result_message(tool_call, tool_result)
+            executed_results << [ tool_call, tool_result ]
+          end
+        else
+          persist_pending_tool_call_message(tool_call)
+          paused_for_confirmation = true
+        end
+      end
+
+      [ executed_results, paused_for_confirmation ]
+    end
+
+    def ready_for_post_dispatch_confirmation?(tool_result)
+      return false unless tool_result.is_a?(Hash)
+
+      tool_result_value(tool_result, :id).present? && tool_result_value(tool_result, :status) == "draft"
+    end
+
+    def tool_result_value(tool_result, key)
+      tool_result[key] || tool_result[key.to_s]
     end
 
     def build_conversation
@@ -235,7 +279,7 @@ module ChatSessions
     end
 
     def tool_definitions
-      @tool_definitions ||= Tools::Registry.chat_definitions_for(user: chat_session.created_by)
+      @tool_definitions ||= Tools::Registry.chat_definitions_for(user: chat_session.created_by, session: chat_session)
     end
 
     def create_assistant_message(response)
@@ -275,14 +319,15 @@ module ChatSessions
       )
     end
 
-    def persist_tool_call_message(tool_call, status: nil)
+    def persist_tool_call_message(tool_call, status: nil, tool_result: nil)
       tool_call_message = chat_session.messages.create!(
         role: "assistant",
         content: nil,
         tool_name: tool_call[:name],
         tool_arguments: parse_tool_arguments(tool_call),
         tool_call_id: tool_call[:id],
-        tool_status: status
+        tool_status: status,
+        tool_result: tool_result
       )
 
       track_created_message(tool_call_message)
@@ -290,8 +335,8 @@ module ChatSessions
       tool_call_message
     end
 
-    def persist_pending_tool_call_message(tool_call)
-      persist_tool_call_message(tool_call, status: "pending")
+    def persist_pending_tool_call_message(tool_call, tool_result: nil)
+      persist_tool_call_message(tool_call, status: "pending", tool_result:)
     end
 
     def persist_tool_result_message(tool_call, tool_result)

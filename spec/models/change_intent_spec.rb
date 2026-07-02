@@ -20,10 +20,9 @@ RSpec.describe ChangeIntent do
     it { is_expected.to validate_presence_of(:status) }
     it { is_expected.to validate_inclusion_of(:status).in_array(described_class::STATUSES) }
 
-    it "rejects a chat session from a different project" do
+    it "rejects chat sessions from a different project" do
       other_project = create(:project)
-      other_session = create(:chat_session, :with_project, account: other_project.account, project: other_project)
-      record = build(:change_intent, chat_session: other_session)
+      record = build(:change_intent, chat_session: create(:chat_session, project: other_project, account: other_project.account))
 
       expect(record).not_to be_valid
       expect(record.errors[:chat_session]).to include("must belong to the same project")
@@ -66,7 +65,7 @@ RSpec.describe ChangeIntent do
   describe "immutability" do
     it "prevents updating content fields after creation" do
       record = create(:change_intent)
-      record.title = "Updated title"
+      record.title = "New title"
 
       expect(record.save).to be false
       expect(record.errors[:title]).to include("is immutable after creation")
@@ -142,6 +141,30 @@ RSpec.describe ChangeIntent do
       replacement = create(:change_intent, project: record.project)
 
       expect { record.supersede!(replacement) }.to raise_error(ChangeIntent::InvalidTransitionError, /cannot supersede from superseded/)
+    end
+  end
+
+  describe "#revert!" do
+    it "transitions from draft to reverted" do
+      record = create(:change_intent, :draft)
+
+      record.revert!
+
+      expect(record.reload.status).to eq("reverted")
+    end
+
+    it "transitions from active to reverted" do
+      record = create(:change_intent, status: "active")
+
+      record.revert!
+
+      expect(record.reload.status).to eq("reverted")
+    end
+
+    it "raises when already superseded" do
+      record = create(:change_intent, status: "superseded")
+
+      expect { record.revert! }.to raise_error(ChangeIntent::InvalidTransitionError, /cannot revert from superseded/)
     end
   end
 end

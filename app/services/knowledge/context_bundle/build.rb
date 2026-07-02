@@ -270,6 +270,30 @@ module Knowledge
         artifact_section(name: :stats, heading: "Project Stats", content: lines.join("\n"), artifacts: artifacts)
       end
 
+      def build_change_intents_section
+        records = ChangeIntent.active
+                              .for_project(project)
+                              .order(created_at: :desc)
+                              .limit(10)
+                              .to_a
+        return nil if records.empty?
+
+        lines = records.map do |record|
+          date = record.created_at.strftime("%Y-%m-%d")
+          "- CIR: \"#{record.title}\" (active, #{date})"
+        end
+
+        {
+          name: :change_intents,
+          heading: "Recent Change Intents",
+          content: lines.join("\n"),
+          artifact_type: section_artifact_type(:change_intents),
+          artifact_count: records.size,
+          chunk_count: 0,
+          token_count: estimate_tokens("### Recent Change Intents\n#{lines.join("\n")}")
+        }
+      end
+
       def artifact_section(name:, heading:, content:, artifacts:, chunk_count: 0)
         {
           name: name,
