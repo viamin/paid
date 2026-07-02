@@ -40,21 +40,23 @@ module Tools
     end
 
     def search_scope(project, query)
-      phrase_patterns = [ "%#{ActiveRecord::Base.sanitize_sql_like(query.downcase)}%" ]
-      word_patterns = query.split(/\s+/).map(&:strip).reject(&:blank?).uniq.first(8).map do |term|
-        "\\m#{Regexp.escape(term.downcase)}\\M"
-      end
       text_sql = "LOWER(CONCAT_WS(' ', title, intent, behavior, constraints, decisions_made))"
-      clauses = phrase_patterns.map { "#{text_sql} LIKE ?" }
-      values = phrase_patterns.dup
-
-      if word_patterns.any?
-        clauses << word_patterns.map { "#{text_sql} ~* ?" }.join(" AND ")
-        values.concat(word_patterns)
+      phrase_clause = ChangeIntent.sanitize_sql_array([
+        "#{text_sql} LIKE ?",
+        "%#{ActiveRecord::Base.sanitize_sql_like(query.downcase)}%"
+      ])
+      word_clauses = query.split(/\s+/).map(&:strip).reject(&:blank?).uniq.first(8).map do |term|
+        ChangeIntent.sanitize_sql_array([
+          "#{text_sql} ~* ?",
+          "\\m#{Regexp.escape(term.downcase)}\\M"
+        ])
       end
+
+      combined = [ phrase_clause ]
+      combined << word_clauses.join(" AND ") if word_clauses.any?
 
       project.change_intents
-        .where("(#{clauses.join(') OR (')})", *values)
+        .where(combined.join(") OR ("))
         .order(Arel.sql(status_order_sql), created_at: :desc)
     end
 
