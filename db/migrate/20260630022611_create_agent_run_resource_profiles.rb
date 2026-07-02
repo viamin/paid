@@ -26,5 +26,37 @@ class CreateAgentRunResourceProfiles < ActiveRecord::Migration[8.1]
     add_index :agent_run_resource_profiles, :lookup_key, unique: true
     add_index :agent_run_resource_profiles, [ :profile_level, :sample_count ]
     add_index :agent_run_resource_profiles, [ :runner_key, :goal ], where: "runner_key IS NOT NULL AND goal IS NOT NULL"
+
+    reversible do |dir|
+      dir.up do
+        safety_assured do
+          execute <<~SQL
+            ALTER TABLE agent_run_resource_profiles ENABLE ROW LEVEL SECURITY;
+            ALTER TABLE agent_run_resource_profiles FORCE ROW LEVEL SECURITY;
+            CREATE POLICY tenant_isolation ON agent_run_resource_profiles
+              USING (
+                paid_tenant_bypass() OR (
+                  agent_run_resource_profiles.account_id IS NULL
+                  OR agent_run_resource_profiles.account_id = paid_current_account_id()
+                )
+              )
+              WITH CHECK (
+                paid_tenant_bypass() OR (
+                  agent_run_resource_profiles.account_id IS NULL
+                  OR agent_run_resource_profiles.account_id = paid_current_account_id()
+                )
+              );
+          SQL
+        end
+      end
+
+      dir.down do
+        safety_assured do
+          execute "DROP POLICY IF EXISTS tenant_isolation ON agent_run_resource_profiles"
+          execute "ALTER TABLE agent_run_resource_profiles NO FORCE ROW LEVEL SECURITY"
+          execute "ALTER TABLE agent_run_resource_profiles DISABLE ROW LEVEL SECURITY"
+        end
+      end
+    end
   end
 end
