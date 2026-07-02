@@ -219,6 +219,19 @@ RSpec.describe "Api::GithubProxy" do
         )
     end
 
+    # Stub the GET to list reviews without an auth header check, so the
+    # Faraday-based recovery flow (which sends "Bearer …") matches in tests
+    # that don't go through Octokit.
+    def stub_reviews_listing(reviews = [])
+      stub_request(:get, target_url)
+        .with(query: hash_including("per_page" => "100"))
+        .to_return(
+          status: 200,
+          body: reviews.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+    end
+
     def stub_stale_review_dismissal(review_id: 101)
       dismiss_url = "https://api.github.com/repos/testowner/testrepo/pulls/10/reviews/#{review_id}/dismissals"
 
@@ -790,6 +803,173 @@ RSpec.describe "Api::GithubProxy" do
         expect(Rails.logger).not_to have_received(:warn).with(
           hash_including(message: "github_proxy.review_missing_inline_comments")
         )
+      end
+
+      context "when the POST times out before GitHub responds (#2778)" do
+        def paid_marker_review_body
+          "<!-- paid:code-review -->\n## Code Review\n\nLooks good"
+        end
+
+        def existing_paid_review
+          {
+            id: 888, state: "COMMENTED", body: paid_marker_review_body,
+            html_url: "https://github.com/testowner/testrepo/pull/10#pullrequestreview-888",
+            submitted_at: Time.current.iso8601, user: { login: "paid-code-reviewer[bot]" }
+          }
+        end
+
+        def post_review
+          post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+            params: { body: "Looks good", event: "COMMENT" }.to_json,
+            headers: valid_headers
+        end
+
+        def silence_review_logs(error: false)
+          allow(Rails.logger).to receive(:warn)
+          allow(Rails.logger).to receive(:info)
+          allow(Rails.logger).to receive(:error) if error
+        end
+
+        def stub_post_first_timeout
+          post_call_count = 0
+          stub_request(:post, target_url).to_return do |_req|
+            post_call_count += 1
+            raise Faraday::TimeoutError, "execution expired" if post_call_count == 1
+
+            { status: 200, body: review_response_body, headers: { "Content-Type" => "application/json" } }
+          end
+        end
+
+        def stub_post_raise(error)
+          stub_request(:post, target_url).to_raise(error)
+        end
+
+        def unrelated_review
+          { id: 1, state: "COMMENTED", body: "Unrelated older review", submitted_at: 1.day.ago.iso8601 }
+        end
+
+        it "recovers by listing PR reviews when the matching review already exists" do
+          stub_post_raise(Faraday::TimeoutError.new("execution expired"))
+          stub_reviews_listing([ existing_paid_review ])
+          silence_review_logs
+
+          post_review
+
+          expect(response).to have_http_status(:ok)
+          expect(WebMock).to have_requested(:post, target_url).once
+          expect(Rails.logger).to have_received(:warn).with(
+            hash_including(message: "github_proxy.upstream_timeout", agent_run_id: agent_run.id)
+          )
+          expect(Rails.logger).to have_received(:info).with(
+            hash_including(message: "github_proxy.recovered_existing_review", review_id: 888)
+          )
+          agent_run.reload
+          expect(agent_run.review_url)
+            .to eq("https://github.com/testowner/testrepo/pull/10#pullrequestreview-888")
+        end
+
+        it "retries the POST when no matching review exists in the listing" do
+          stub_post_first_timeout
+          stub_reviews_listing([ unrelated_review ])
+          silence_review_logs
+
+          post_review
+
+          expect(response).to have_http_status(:ok)
+          expect(WebMock).to have_requested(:post, target_url).twice
+          expect(Rails.logger).to have_received(:info).with(hash_including(message: "github_proxy.retry"))
+          expect(Rails.logger).to have_received(:info).with(
+            hash_including(message: "github_proxy.retry_succeeded", status: 200)
+          )
+        end
+
+        it "logs final_failure when the retry also fails with a connection error" do
+          stub_post_raise(Faraday::ConnectionFailed.new("connect refused"))
+          stub_reviews_listing([ unrelated_review ])
+          silence_review_logs(error: true)
+
+          post_review
+
+          expect(response).to have_http_status(:bad_gateway)
+          expect(Rails.logger).to have_received(:error).with(
+            hash_including(message: "github_proxy.final_failure")
+          )
+        end
+
+        it "logs final_failure when the listing call itself times out" do
+          stub_post_raise(Faraday::TimeoutError.new("execution expired"))
+          stub_request(:get, target_url)
+            .with(query: hash_including("per_page" => "100"))
+            .to_raise(Faraday::TimeoutError.new("listing timed out"))
+          silence_review_logs(error: true)
+
+          post_review
+
+          expect(response).to have_http_status(:bad_gateway)
+          expect(Rails.logger).to have_received(:error).with(
+            hash_including(message: "github_proxy.review_recovery_list_failed")
+          )
+        end
+
+        it "ignores pending reviews when looking for the matching review" do
+          pending_review = {
+            id: 555, state: "PENDING", body: paid_marker_review_body,
+            submitted_at: Time.current.iso8601, user: { login: "paid-code-reviewer[bot]" }
+          }
+          stub_post_first_timeout
+          stub_reviews_listing([ pending_review ])
+          silence_review_logs
+
+          post_review
+
+          expect(response).to have_http_status(:ok)
+          expect(WebMock).to have_requested(:post, target_url).twice
+        end
+
+        it "does not double-post when a non-Pending review with the same body is found" do
+          stub_post_raise(Faraday::TimeoutError.new("execution expired"))
+          stub_reviews_listing([ existing_paid_review ])
+          silence_review_logs
+
+          post_review
+
+          expect(WebMock).to have_requested(:post, target_url).once
+        end
+
+        it "matches by body+time-window even when the Paid marker is missing" do
+          unmarker_review = {
+            id: 777, state: "COMMENTED", body: "Looks good",
+            html_url: "https://github.com/testowner/testrepo/pull/10#pullrequestreview-777",
+            submitted_at: 1.minute.ago.iso8601, user: { login: "paid-code-reviewer[bot]" }
+          }
+          stub_post_raise(Faraday::TimeoutError.new("execution expired"))
+          stub_reviews_listing([ unmarker_review ])
+          silence_review_logs
+
+          post_review
+
+          expect(response).to have_http_status(:ok)
+          expect(WebMock).to have_requested(:post, target_url).once
+          agent_run.reload
+          expect(agent_run.review_url)
+            .to eq("https://github.com/testowner/testrepo/pull/10#pullrequestreview-777")
+        end
+
+        it "ignores older reviews whose body matches but lie outside the recovery window" do
+          stale_match_review = {
+            id: 444, state: "COMMENTED", body: "Looks good",
+            html_url: "https://github.com/testowner/testrepo/pull/10#pullrequestreview-444",
+            submitted_at: 3.hours.ago.iso8601, user: { login: "paid-code-reviewer[bot]" }
+          }
+          stub_post_first_timeout
+          stub_reviews_listing([ stale_match_review ])
+          silence_review_logs
+
+          post_review
+
+          expect(response).to have_http_status(:ok)
+          expect(WebMock).to have_requested(:post, target_url).twice
+        end
       end
     end
   end
