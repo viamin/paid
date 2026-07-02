@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_26_174154) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_28_182451) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2079,6 +2079,28 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_26_174154) do
     t.index ["project_id", "name"], name: "idx_roi_benchmarks_project_name"
   end
 
+  create_table "runner_credentials", comment: "Account-scoped encrypted credentials for subscription runners (Claude Code, Codex, Gemini, Copilot)", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Account that owns this credential"
+    t.string "auth_kind", default: "oauth_token", null: false, comment: "Authentication mechanism (oauth_token, api_key, signing_token)"
+    t.datetime "created_at", null: false
+    t.bigint "created_by_id", comment: "User who created the credential"
+    t.datetime "expires_at", comment: "Token expiry time; nil means no expiry"
+    t.datetime "last_used_at", comment: "Last time this credential was injected into a container"
+    t.jsonb "log_data"
+    t.boolean "long_lived", default: false, null: false, comment: "When true, skips expiry tracking and refresh (e.g. claude setup-token)"
+    t.jsonb "metadata", default: {}, null: false, comment: "Arbitrary provider-specific metadata"
+    t.string "name", null: false, comment: "Human-readable label for this credential"
+    t.datetime "revoked_at", comment: "Set when credential is revoked; nil means active"
+    t.string "runner_key", null: false, comment: "Runner provider key (e.g. claude, codex, gemini, copilot)"
+    t.text "token", null: false, comment: "Encrypted credential token"
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "revoked_at"], name: "index_runner_credentials_on_account_id_and_revoked_at"
+    t.index ["account_id", "runner_key", "name"], name: "idx_runner_credentials_on_account_runner_key_name", unique: true
+    t.index ["account_id", "runner_key"], name: "index_runner_credentials_on_account_id_and_runner_key"
+    t.index ["account_id"], name: "index_runner_credentials_on_account_id"
+    t.index ["created_by_id"], name: "index_runner_credentials_on_created_by_id"
+  end
+
   create_table "runner_states", force: :cascade do |t|
     t.datetime "circuit_opened_at"
     t.string "circuit_state", limit: 20, default: "closed", null: false
@@ -2740,6 +2762,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_26_174154) do
   add_foreign_key "remediation_decisions", "accounts"
   add_foreign_key "remediation_decisions", "users", column: "applied_by_id"
   add_foreign_key "roi_benchmarks", "projects", on_delete: :cascade
+  add_foreign_key "runner_credentials", "accounts"
+  add_foreign_key "runner_credentials", "users", column: "created_by_id", on_delete: :nullify
   add_foreign_key "runner_states", "users", on_delete: :cascade
   add_foreign_key "runners", "integration_credentials", on_delete: :restrict
   add_foreign_key "runners", "provider_api_keys", on_delete: :restrict
@@ -3685,5 +3709,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_26_174154) do
 
   create_trigger :logidze_on_users, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_users BEFORE INSERT OR UPDATE ON public.users FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{encrypted_password,reset_password_token,reset_password_sent_at,remember_created_at}')
+  SQL
+
+  create_trigger :logidze_on_runner_credentials, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_runner_credentials BEFORE INSERT OR UPDATE ON public.runner_credentials FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{token}')
   SQL
 end
