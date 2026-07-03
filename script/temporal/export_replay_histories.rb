@@ -8,11 +8,13 @@ require "fileutils"
 require "temporalio/testing"
 require "temporalio/worker"
 
+Rails.application.eager_load!
+
 module Script
   module Temporal
     class ExportReplayHistories
       FIXTURE_DIR = Rails.root.join("spec/fixtures/temporal/replay_histories")
-      TASK_QUEUE = "temporal-replay-history-export"
+      TASK_QUEUE = Paid::AGENT_TASK_QUEUE
 
       def self.call
         new.call
@@ -25,7 +27,8 @@ module Script
           worker = Temporalio::Worker.new(
             client: environment.client,
             task_queue: TASK_QUEUE,
-            workflows: workflow_classes,
+            activities: WorkflowReplayFixtures.activity_definitions,
+            workflows: WorkflowReplayFixtures.workflow_classes,
             workflow_failure_exception_types: [ Exception ]
           )
 
@@ -40,20 +43,17 @@ module Script
       private
 
       def export_histories(environment)
-        workflow_classes.each do |workflow_class|
+        WorkflowReplayFixtures.workflow_classes.each do |workflow_class|
+          scenario = WorkflowReplayFixtures.scenario_for(workflow_class)
           workflow_id = "replay-history-#{workflow_class.name.demodulize.underscore}"
           handle = environment.client.start_workflow(
             workflow_class,
-            nil,
+            scenario.input,
             id: workflow_id,
             task_queue: TASK_QUEUE
           )
 
-          begin
-            handle.result
-          rescue StandardError
-            nil
-          end
+          handle.result
 
           fixture_path_for(workflow_class).write(handle.fetch_history.to_history_json)
         end
@@ -61,13 +61,6 @@ module Script
 
       def fixture_path_for(workflow_class)
         FIXTURE_DIR.join("#{workflow_class.name.demodulize.underscore}.json")
-      end
-
-      def workflow_classes
-        @workflow_classes ||= Workflows.constants.map { |const| Workflows.const_get(const) }
-          .select { |klass| klass.is_a?(Class) && klass < Workflows::BaseWorkflow }
-          .reject { |klass| klass == Workflows::BaseWorkflow }
-          .sort_by(&:name)
       end
     end
   end
