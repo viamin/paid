@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_02_194605) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_02_235858) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -282,6 +282,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_02_194605) do
     t.datetime "rate_limited_until"
     t.string "result_commit_sha", limit: 40
     t.datetime "review_posted_at"
+    t.jsonb "review_proxy_diagnostics", default: {}, null: false, comment: "Latest known outcome of the review-creation proxy POST for this run (outcome: attempted/timeout/connection_failed/upstream_error/succeeded, plus http_status/error_class/error_message/recorded_at when available). Lets CompleteReviewGoalActivity explain review-goal failures without raw log inspection (#2779). Not part of run history/state."
     t.string "review_url", limit: 500
     t.bigint "runner_id"
     t.integer "runner_switches", default: 0, null: false
@@ -503,6 +504,33 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_02_194605) do
     t.index ["proxy_token"], name: "index_chat_sessions_on_proxy_token", unique: true
     t.index ["runner_id"], name: "index_chat_sessions_on_runner_id"
     t.index ["status"], name: "index_chat_sessions_on_status"
+  end
+
+  create_table "claude_login_sessions", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Account that owns this browser-completed Claude login session."
+    t.datetime "completed_at"
+    t.string "container_id"
+    t.datetime "created_at", null: false
+    t.bigint "created_by_id", null: false, comment: "User who initiated the Claude browser login."
+    t.string "credential_name", null: false, comment: "IntegrationCredential name to create or replace on successful capture."
+    t.text "error_message"
+    t.datetime "expires_at", comment: "Session expiry until completed; replaced with credential expiry after capture."
+    t.uuid "external_id", null: false, comment: "Opaque public identifier used in user-facing URLs."
+    t.datetime "failed_at"
+    t.bigint "integration_credential_id", comment: "Managed Claude credential captured when the login completes."
+    t.jsonb "metadata", default: {}, null: false, comment: "Structured runtime details such as return paths and parsed Claude metadata."
+    t.text "oauth_url"
+    t.bigint "runner_credential_id", comment: "Managed Claude runner credential captured when the browser login completes."
+    t.string "session_token", null: false, comment: "Time-boxed shared secret required to submit the browser code."
+    t.string "status", default: "starting", null: false, comment: "Browser login lifecycle state."
+    t.datetime "submitted_at"
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_claude_login_sessions_on_account_id"
+    t.index ["created_by_id"], name: "index_claude_login_sessions_on_created_by_id"
+    t.index ["external_id"], name: "index_claude_login_sessions_on_external_id", unique: true
+    t.index ["integration_credential_id"], name: "index_claude_login_sessions_on_integration_credential_id"
+    t.index ["runner_credential_id"], name: "index_claude_login_sessions_on_runner_credential_id"
+    t.index ["session_token"], name: "index_claude_login_sessions_on_session_token", unique: true
   end
 
   create_table "collector_runs", force: :cascade do |t|
@@ -2648,6 +2676,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_02_194605) do
   add_foreign_key "chat_sessions", "projects"
   add_foreign_key "chat_sessions", "runners", name: "fk_chat_sessions_runner_id"
   add_foreign_key "chat_sessions", "users", column: "created_by_id"
+  add_foreign_key "claude_login_sessions", "accounts"
+  add_foreign_key "claude_login_sessions", "integration_credentials"
+  add_foreign_key "claude_login_sessions", "users", column: "created_by_id"
   add_foreign_key "collector_runs", "project_versions"
   add_foreign_key "configuration_bundles", "accounts", on_delete: :cascade
   add_foreign_key "configuration_bundles", "llm_models", on_delete: :nullify

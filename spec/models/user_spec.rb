@@ -246,5 +246,15 @@ RSpec.describe User do
         .to change { Runner.with_discarded.where(id: runner.id).count }
         .from(1).to(0)
     end
+
+    it "destroys created Claude login sessions when the user is destroyed" do
+      user = create(:user)
+      login_session = create(:claude_login_session, account: user.account, created_by: user)
+
+      expect { user.destroy! }
+        .to change(ClaudeLoginSession, :count).by(-1)
+
+      expect(ClaudeLoginSession.exists?(login_session.id)).to be(false)
+    end
   end
 end

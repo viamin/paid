@@ -981,6 +981,73 @@ RSpec.describe Containers::Provision do
       end
     end
 
+    context "when interrupted with SignalException" do
+      # ProvisionContainerActivity escalates to Thread#raise(Interrupt) when its
+      # worker thread does not finish within the cancellation grace window.
+      # Interrupt inherits from SignalException — NOT StandardError — so the
+      # existing rescue clauses would bypass cleanup. The SignalException
+      # rescue clause runs cleanup + cleanup_workspace_volume before re-raising
+      # so a half-provisioned container and workspace volume are not orphaned.
+      it "deletes the half-provisioned container before re-raising Interrupt" do
+        stub_provision_steps(service)
+
+        allow(mock_container).to receive(:delete)
+        allow(mock_container).to receive(:stop)
+        allow(service).to receive(:log_system)
+        allow(service).to receive(:cleanup_workspace_volume)
+
+        # Drop into the rescue path immediately after create_container
+        # populates @container, mimicking the activity's worker thread being
+        # raised into the middle of provision.
+        allow(service).to receive(:start_container) do
+          raise Interrupt, "canceled"
+        end
+        allow(Docker::Container).to receive(:create).and_return(mock_container)
+
+        expect {
+          service.provision
+        }.to raise_error(Interrupt)
+
+        expect(mock_container).to have_received(:delete)
+      end
+
+      it "deletes the workspace volume before re-raising Interrupt" do
+        # No worktree_path means provision creates a named Docker volume via
+        # prepare_workspace! — interrupt mid-flight and verify
+        # cleanup_workspace_volume ran (no orphan leaked).
+        worktree_vol_service = described_class.new(agent_run: agent_run, worktree_path: nil)
+
+        # Stub only the steps after the interrupt point so prepare_workspace!
+        # actually creates the volume (and @workspace_volume is set). The
+        # global before already mocks Docker::Volume.create to return
+        # mock_volume, so prepare_workspace! seeds @workspace_volume for us.
+        allow(worktree_vol_service).to receive(:log_system)
+        allow(worktree_vol_service).to receive(:fix_all_ownership!)
+        allow(worktree_vol_service).to receive(:seed_opencode_database!)
+        allow(worktree_vol_service).to receive(:seed_kilo_database!)
+        allow(worktree_vol_service).to receive(:seed_codex_credentials!)
+        allow(worktree_vol_service).to receive(:seed_gemini_credentials!)
+        allow(worktree_vol_service).to receive(:seed_copilot_credentials!)
+        allow(worktree_vol_service).to receive(:seed_claude_credentials!)
+        allow(worktree_vol_service).to receive(:apply_network_restrictions!)
+
+        # Override the global Docker::Volume.get mock so it returns the just-
+        # created volume (rather than always raising). This simulates the
+        # production behaviour where Docker actually returns the volume.
+        allow(Docker::Volume).to receive(:get).with("paid-workspace-#{agent_run.id}").and_return(mock_volume)
+
+        allow(worktree_vol_service).to receive(:ensure_network!) do
+          raise Interrupt, "canceled"
+        end
+
+        expect(mock_volume).to receive(:remove)
+
+        expect {
+          worktree_vol_service.provision
+        }.to raise_error(Interrupt)
+      end
+    end
+
     context "with network integration" do
       it "ensures the agent network exists before provisioning" do
         expect(NetworkPolicy).to receive(:ensure_network!).with(
@@ -1163,6 +1230,62 @@ RSpec.describe Containers::Provision do
         copy_commands.each do |cmd|
           expect(cmd.last).not_to include("settings.json")
         end
+      end
+    end
+
+    context "with managed Claude credentials json" do
+      let!(:managed_credential) do
+        create(
+          :runner_credential,
+          account: project.account,
+          created_by: project.created_by,
+          runner_key: "claude",
+          auth_kind: "oauth_token",
+          token: JSON.generate(
+            "claudeAiOauth" => {
+              "accessToken" => "managed-access",
+              "refreshToken" => "managed-refresh",
+              "expiresAt" => 12.hours.from_now.iso8601
+            }
+          )
+        )
+      end
+
+      before do
+        allow(ENV).to receive(:fetch).and_call_original
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(nil)
+        allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("COPILOT_HOME").and_return(nil)
+        allow(ENV).to receive(:[]).with("COPILOT_CONFIG_DIR").and_return(nil)
+        allow(service).to receive_messages(
+          claude_local_config_path: nil,
+          codex_local_config_path: nil,
+          gemini_local_config_path: nil,
+          copilot_local_config_path: nil
+        )
+      end
+
+      it "treats the managed credentials json as Claude subscription auth without env token injection" do
+        expect(Docker::Container).to receive(:create) do |config|
+          env = config["Env"]
+          expect(env).to include("PAID_CLAUDE_SUBSCRIPTION_AUTH=1")
+          expect(env.none? { |entry| entry.start_with?("CLAUDE_CODE_OAUTH_TOKEN=") }).to be(true)
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "writes the managed credentials json into the container" do
+        allow(service).to receive(:write_container_file).and_call_original
+
+        service.provision
+
+        expect(service).to have_received(:write_container_file)
+          .with("/home/agent/.claude/.credentials.json", managed_credential.token)
       end
     end
 
@@ -1390,15 +1513,15 @@ RSpec.describe Containers::Provision do
       end
     end
 
-    context "with Claude managed subscription token" do
+    context "with Claude managed runner token" do
       let!(:managed_credential) do
         create(
-          :integration_credential,
-          :oauth,
+          :runner_credential,
           account: project.account,
           created_by: project.created_by,
-          service_key: "claude",
-          secret: "sk-ant-oat01-managed-token"
+          runner_key: "claude",
+          auth_kind: "oauth_token",
+          token: "sk-ant-oat01-managed-token"
         )
       end
 
@@ -1424,7 +1547,7 @@ RSpec.describe Containers::Provision do
           env = config["Env"]
           expect(env).to include(
             "PAID_CLAUDE_SUBSCRIPTION_AUTH=1",
-            "CLAUDE_CODE_OAUTH_TOKEN=#{managed_credential.secret}"
+            "CLAUDE_CODE_OAUTH_TOKEN=#{managed_credential.token}"
           )
           expect(env.none? { |entry| entry.start_with?("ANTHROPIC_BASE_URL=") }).to be(true)
           mock_container
@@ -3965,24 +4088,25 @@ RSpec.describe Containers::Provision do
         allow(service).to receive(:claude_local_config_path).and_return(nil)
       end
 
-      it "returns true when an active managed Claude OAuth token exists for the account" do
+      it "returns true when an active managed Claude runner credential exists for the account" do
         create(
-          :integration_credential,
-          :oauth,
+          :runner_credential,
           account: project.account,
           created_by: project.created_by,
-          service_key: "claude"
+          runner_key: "claude",
+          auth_kind: "oauth_token"
         )
 
         expect(service.send(:claude_subscription_auth?)).to be(true)
       end
 
-      it "ignores account-managed Claude credentials that are not OAuth tokens" do
+      it "ignores account-managed Claude runner credentials that are not OAuth tokens" do
         create(
-          :integration_credential,
+          :runner_credential,
           account: project.account,
           created_by: project.created_by,
-          service_key: "claude"
+          runner_key: "claude",
+          auth_kind: "api_key"
         )
 
         expect(service.send(:claude_subscription_auth?)).to be(false)
@@ -4183,11 +4307,11 @@ RSpec.describe Containers::Provision do
 
       it "skips host and local credential seeding when a managed token is present" do
         create(
-          :integration_credential,
-          :oauth,
+          :runner_credential,
           account: project.account,
           created_by: project.created_by,
-          service_key: "claude"
+          runner_key: "claude",
+          auth_kind: "oauth_token"
         )
         allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return(nil)
         allow(service).to receive(:claude_local_config_path).and_return(nil)

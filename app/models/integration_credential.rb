@@ -6,6 +6,7 @@ class IntegrationCredential < ApplicationRecord
 
   belongs_to :account
   belongs_to :created_by, class_name: "User", optional: true
+  has_many :claude_login_sessions, dependent: :nullify
 
   encrypts :secret
 
@@ -43,6 +44,10 @@ class IntegrationCredential < ApplicationRecord
 
   def service_definition
     Integrations::CredentialCatalog.lookup(service_key)
+  end
+
+  def api_secret
+    secret.to_s.presence
   end
 
   private
