@@ -171,14 +171,16 @@ RSpec.describe StaleRunDetectorJob do
           temporal_workflow_id: "test-workflow-id",
           queue_entered_at: 3.hours.ago)
         stale_run.update_columns(updated_at: (claimed_threshold + 60).seconds.ago)
+        frozen_now = nil
 
         freeze_time do
+          frozen_now = Time.current
           described_class.perform_now
         end
 
         stale_run.reload
         expect(stale_run.status).to eq("queued")
-        expect(stale_run.queue_entered_at).to be_within(1.second).of(Time.current)
+        expect(stale_run.queue_entered_at).to be_within(1.second).of(frozen_now)
         expect(stale_run.temporal_workflow_id).to be_nil
         expect(stale_run.stale_requeue_count).to eq(1)
       end

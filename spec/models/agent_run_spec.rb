@@ -4116,14 +4116,16 @@ RSpec.describe AgentRun do
 
     it "transitions a paused run back to queued" do
       agent_run = build_resumable_paused_run
+      frozen_now = nil
 
       freeze_time do
+        frozen_now = Time.current
         agent_run.resume!
       end
 
       agent_run.reload
       expect(agent_run.status).to eq("queued")
-      expect(agent_run.queue_entered_at).to be_within(1.second).of(Time.current)
+      expect(agent_run.queue_entered_at).to be_within(1.second).of(frozen_now)
       expect(agent_run.started_at).to be_nil
       expect(agent_run.completed_at).to be_nil
       expect(agent_run.duration_seconds).to be_nil
@@ -4140,12 +4142,14 @@ RSpec.describe AgentRun do
 
     it "refreshes queue_entered_at when resuming" do
       agent_run = build_resumable_paused_run
+      frozen_now = nil
 
       freeze_time do
+        frozen_now = Time.current
         agent_run.resume!
       end
 
-      expect(agent_run.reload.queue_entered_at).to be_within(1.second).of(Time.current)
+      expect(agent_run.reload.queue_entered_at).to be_within(1.second).of(frozen_now)
     end
 
     it "records a resume decision event" do
