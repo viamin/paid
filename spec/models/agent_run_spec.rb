@@ -852,7 +852,7 @@ RSpec.describe AgentRun do
 
       it "returns false for failed status with review posting failure" do
         agent_run = build(:agent_run, :failed,
-          error_message: "No review was posted on PR #1234")
+          error_message: "No tracked review for PR #1234 and no GitHub review exists.")
 
         expect(agent_run.operational_failure?).to be false
       end
