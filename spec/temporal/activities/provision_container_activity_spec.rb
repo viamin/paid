@@ -99,6 +99,35 @@ RSpec.describe Activities::ProvisionContainerActivity do
       expect(mock_context).to have_received(:heartbeat).with("provisioning").at_least(:once)
     end
 
+    # A wedged Docker call (e.g. a stuck image pull) keeps the worker thread
+    # alive but makes no progress. The heartbeat only proves the Ruby worker is
+    # alive, so it keeps flowing and a heartbeat_timeout would never fire — a
+    # stuck pull is therefore bounded by start_to_close, not by the heartbeat.
+    # No heartbeat_timeout is configured on the workflow call site for this
+    # reason (see AgentExecutionWorkflow#execute).
+    it "keeps heartbeating while a wedged worker is alive (bounded by start_to_close, not heartbeat)" do
+      allow(Temporalio::Activity::Context).to receive(:current_or_nil).and_return(mock_context)
+
+      gate = Queue.new
+      allow(agent_run).to receive(:provision_container) do
+        gate.pop # simulate a wedged Docker call that never completes on its own
+        :provisioned
+      end
+
+      heartbeat_count = 0
+      allow(mock_context).to receive(:heartbeat) do
+        heartbeat_count += 1
+        # Release the wedged worker only after observing several heartbeats
+        # that fired while it made zero progress.
+        gate << :release if heartbeat_count >= 3
+      end
+
+      result = activity.send(:provision_with_heartbeat, agent_run, interval: 0.01, grace_seconds: 0.05)
+
+      expect(result).to eq(:provisioned)
+      expect(heartbeat_count).to be >= 3
+    end
+
     it "propagates exceptions raised during provisioning" do
       allow(Temporalio::Activity::Context).to receive(:current_or_nil).and_return(mock_context)
       allow(agent_run).to receive(:provision_container).and_raise(Containers::Provision::ProvisionError, "boom")

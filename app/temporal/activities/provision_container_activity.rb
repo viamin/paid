@@ -9,13 +9,17 @@ module Activities
   # Idempotent: re-running this activity for a run that already has a live
   # container reuses it instead of creating a duplicate (see
   # AgentRun#provision_container). A periodic heartbeat is sent while
-  # provisioning so a stuck image pull is detected before the full
-  # start_to_close timeout.
+  # provisioning so a workflow cancellation interrupts an in-flight provision
+  # promptly (within one heartbeat interval) instead of waiting for
+  # start_to_close. The heartbeat does NOT surface a wedged Docker call
+  # (e.g. a stuck image pull) any faster than start_to_close: it only proves
+  # the Ruby worker thread is alive, not that Docker is making progress, so
+  # no heartbeat_timeout is configured for this activity.
   class ProvisionContainerActivity < BaseActivity
     activity_name "ProvisionContainer"
 
-    # How often to heartbeat while provisioning. Well under the heartbeat
-    # timeout configured at the workflow call site, giving ample margin.
+    # How often to heartbeat while provisioning. Well under start_to_close so
+    # a workflow cancellation interrupts provisioning promptly.
     HEARTBEAT_INTERVAL_SECONDS = 15
 
     # Grace window given to an in-flight provisioning worker to finish on
@@ -45,12 +49,20 @@ module Activities
 
     private
 
-    # Provisions the container while sending periodic heartbeats so a stuck
-    # image pull (the slow part of create/start) is surfaced before the full
-    # start_to_close timeout. Provisioning runs in a background thread; the
-    # activity thread emits heartbeats because the Temporal activity context
-    # is thread-local. Falls back to a direct call when no activity context
-    # is present (e.g. unit tests).
+    # Provisions the container while sending periodic heartbeats so a workflow
+    # cancellation interrupts an in-flight provision promptly (within one
+    # interval) instead of waiting for start_to_close. Provisioning runs in a
+    # background thread; the activity thread emits heartbeats because the
+    # Temporal activity context is thread-local. Falls back to a direct call
+    # when no activity context is present (e.g. unit tests).
+    #
+    # The heartbeat only proves the Ruby worker thread is alive; it does not
+    # prove Docker pull/create/start is making progress. A wedged Docker call
+    # therefore keeps the worker thread alive and the heartbeats keep flowing,
+    # so the activity is bounded by start_to_close, not by any heartbeat
+    # timeout. No heartbeat_timeout is set on the workflow call site for this
+    # reason — relying on one would imply (falsely) that hung pulls surface
+    # before start_to_close.
     #
     # Mirrors RunAgentActivity#with_periodic_heartbeat: on cancellation we
     # flag the worker and re-raise CanceledError, then drain the worker in
