@@ -14,6 +14,7 @@ module Workflows
   # Use `run_activity` instead of `Temporalio::Workflow.execute_activity` to
   # automatically normalize activity return values as well.
   class BaseWorkflow < Temporalio::Workflow::Definition
+    SWALLOWED_NON_CRITICAL_FAILURE_METRIC = "paid_swallowed_non_critical_activity_failures".freeze
     DECOMPOSITION_POLICY_METADATA_KEYS = %i[
       policy_source
       skip_reason
@@ -39,6 +40,10 @@ module Workflows
       max_interval: 60,
       max_attempts: 3
     )
+    RETRY_EXHAUSTED_RETRY_STATES = [
+      Temporalio::Error::RetryState::MAXIMUM_ATTEMPTS_REACHED,
+      Temporalio::Error::RetryState::TIMEOUT
+    ].freeze
 
     def activity_options(timeout: 300)
       {
@@ -89,8 +94,31 @@ module Workflows
     def feature_flag_snapshot_for(project_id)
       @feature_flags_by_project ||= {}
       @feature_flags_by_project[project_id] ||= begin
+        # This snapshot is memoized for the lifetime of the workflow run. In
+        # long-lived workflows like GitHubPollWorkflow, runtime flag changes are
+        # not observed until the next continue-as-new boundary.
         run_activity(Activities::LoadFeatureFlagsActivity, { project_id: project_id }, timeout: 10)
       end
+    end
+
+    def retry_exhausted_activity_error?(error)
+      error.is_a?(Temporalio::Error::ActivityError) &&
+        RETRY_EXHAUSTED_RETRY_STATES.include?(error.retry_state)
+    end
+
+    def record_swallowed_non_critical_activity_failure(project_id:, helper:, error:, pr_number: nil)
+      return unless retry_exhausted_activity_error?(error)
+
+      swallowed_non_critical_failure_metric.record(
+        1,
+        additional_attributes: {
+          "project_id" => project_id.to_s,
+          "helper" => helper,
+          "error_class" => error.class.name,
+          "retry_state" => error.retry_state.to_s,
+          "pr_number" => pr_number.to_s
+        }.compact
+      )
     end
 
     def deep_symbolize(obj)
@@ -124,6 +152,14 @@ module Workflows
       end
 
       {}
+    end
+
+    def swallowed_non_critical_failure_metric
+      @swallowed_non_critical_failure_metric ||= Temporalio::Workflow.metric_meter.create_metric(
+        :counter,
+        SWALLOWED_NON_CRITICAL_FAILURE_METRIC,
+        description: "Counts exhausted-retry non-critical poller failures that are swallowed after logging."
+      )
     end
   end
 end

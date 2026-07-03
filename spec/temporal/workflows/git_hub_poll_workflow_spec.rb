@@ -308,6 +308,70 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     end
   end
 
+  describe "non-critical exhausted retry failures" do
+    let(:workflow) { described_class.new }
+    let(:logger) { instance_double(Logger, warn: nil) }
+
+    def exhausted_activity_error(activity_type)
+      Temporalio::Error::ActivityError.new(
+        "activity failed",
+        scheduled_event_id: 1,
+        started_event_id: 2,
+        identity: "worker-1",
+        activity_type: activity_type,
+        activity_id: "activity-1",
+        retry_state: Temporalio::Error::RetryState::MAXIMUM_ATTEMPTS_REACHED
+      )
+    end
+
+    before do
+      allow(Temporalio::Workflow).to receive(:logger).and_return(logger)
+    end
+
+    it "records a metric when knowledge staleness checks fail after retries are exhausted" do
+      error = exhausted_activity_error("CheckKnowledgeStalenessActivity")
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::CheckKnowledgeStalenessActivity, { project_id: 7 }, timeout: 30)
+        .and_raise(error)
+      allow(workflow).to receive(:record_swallowed_non_critical_activity_failure)
+
+      workflow.send(:maybe_check_knowledge_staleness, 7)
+
+      expect(workflow).to have_received(:record_swallowed_non_critical_activity_failure).with(
+        project_id: 7,
+        helper: "maybe_check_knowledge_staleness",
+        error: error
+      )
+      expect(logger).to have_received(:warn).with(hash_including(
+        message: "knowledge.staleness_check_failed",
+        project_id: 7
+      ))
+    end
+
+    it "does not raise when request_review swallows an exhausted retry failure" do
+      error = exhausted_activity_error("RequestReviewActivity")
+      allow(workflow).to receive(:run_activity)
+        .with(
+          Activities::RequestReviewActivity,
+          { project_id: 7, pr_number: 12, reviewers: [ "octocat" ] },
+          timeout: 60
+        )
+        .and_raise(error)
+      allow(workflow).to receive(:record_swallowed_non_critical_activity_failure)
+
+      expect {
+        workflow.send(:request_review, 7, 12, [ "octocat" ], log_key: "pr_review.request_review_failed")
+      }.not_to raise_error
+
+      expect(workflow).to have_received(:record_swallowed_non_critical_activity_failure).with(
+        project_id: 7,
+        helper: "request_review",
+        error: error,
+        pr_number: 12
+      )
+    end
+  end
+
   describe "ScanSecurityAlertsActivity error handling" do
     let(:workflow) { described_class.new }
 
