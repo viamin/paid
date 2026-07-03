@@ -243,10 +243,6 @@ class UserSetting < ApplicationRecord
     run_concurrency_mode == RUN_CONCURRENCY_MODE_MANUAL
   end
 
-  def container_memory_limit_auto?
-    container_memory_limit_mode == CONTAINER_MEMORY_LIMIT_MODE_AUTO
-  end
-
   def container_memory_limit_manual?
     container_memory_limit_mode == CONTAINER_MEMORY_LIMIT_MODE_MANUAL
   end

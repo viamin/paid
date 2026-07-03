@@ -131,16 +131,55 @@ RSpec.describe Capacity::RunAdmission do
         goal: nil,
         sample_count: 8,
         oom_count: 3,
-        recommended_memory_limit_bytes: 16.gigabytes
-      )
+        recommended_memory_limit_bytes: 16.gigabytes)
       profile.update_columns(capacity_blocked: true, capacity_blocked_at: 1.minute.ago)
 
-      result = described_class.call(user: user, project: project, docker_snapshot: docker_snapshot)
+      # The annotation only fires when Docker memory is the binding
+      # constraint, so drive the admission into an insufficient-capacity
+      # denial before the lookup runs.
+      constrained_snapshot = docker_snapshot.merge(effective_agent_budget_bytes: 4.gigabytes)
 
+      result = described_class.call(user: user, project: project, docker_snapshot: constrained_snapshot)
+
+      expect(result[:allowed]).to be false
+      expect(result[:reason]).to eq("insufficient_docker_capacity")
       expect(result[:capacity_blocked]).to be true
       expect(result[:capacity_blocked_profile_level]).to eq("project")
       expect(result[:capacity_blocked_recommended_limit_bytes]).to eq(16.gigabytes)
     end
+
+    it "does not annotate capacity_blocked when the matched profile is not blocked" do
+      create(:agent_run_resource_profile,
+        :project_level,
+        account: account,
+        project: project,
+        runner_key: nil,
+        goal: nil,
+        sample_count: 5,
+        oom_count: 0,
+        recommended_memory_limit_bytes: 4.gigabytes)
+
+      constrained_snapshot = docker_snapshot.merge(effective_agent_budget_bytes: 4.gigabytes)
+
+      result = described_class.call(user: user, project: project, docker_snapshot: constrained_snapshot)
+
+      expect(result[:reason]).to eq("insufficient_docker_capacity")
+      expect(result[:capacity_blocked]).to be_nil
+    end
+
+    it "skips the capacity-blocked lookup entirely when Docker memory is available" do
+      # Allowed admissions must not pay for the Resolve lookup on the hot
+      # path; capacity-blocked is only meaningful when memory-constrained.
+      expect(AgentRunResourceProfiles::Resolve).not_to receive(:call)
+
+      result = described_class.call(user: user, project: project, docker_snapshot: docker_snapshot)
+
+      expect(result[:allowed]).to be true
+      expect(result[:reason]).to be_nil
+      expect(result[:capacity_blocked]).to be_nil
+    end
+  end
+end
 
     it "does not annotate capacity_blocked when the matched profile is not blocked" do
       create(:agent_run_resource_profile,

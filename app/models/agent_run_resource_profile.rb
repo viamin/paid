@@ -47,26 +47,14 @@ class AgentRunResourceProfile < ApplicationRecord
     sample_count >= MIN_SAMPLE_SIZE
   end
 
-  # Marks the profile as capacity-blocked so the next refresh does not
-  # grow the recommended limit past the user's ceiling even if the
-  # workload keeps OOMing.
-  def mark_capacity_blocked!(now: Time.current)
-    return if capacity_blocked?
-
-    self.capacity_blocked = true
-    self.capacity_blocked_at ||= now
-  end
-
-  def clear_capacity_blocked!
-    return unless capacity_blocked?
-
-    self.capacity_blocked = false
-    self.capacity_blocked_at = nil
-  end
-
   # True when further limit growth is paused because the recommended
   # limit has already hit the user-configured ceiling while the
   # workload is still being OOM-killed.
+  #
+  # The capacity-blocked state machine itself lives in
+  # AgentRunResourceProfiles::MemoryLimitTuner (the single, tested
+  # source of truth) and is persisted here through assign_attributes in
+  # RefreshForRun, so this model only exposes the predicate.
   def capacity_blocked?
     !!capacity_blocked
   end

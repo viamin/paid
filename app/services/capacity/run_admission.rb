@@ -104,7 +104,13 @@ module Capacity
         docker_memory_bytes: snapshot[:docker_memory_bytes]
       }
 
-      annotate_capacity_blocked(decision)
+      # The capacity-blocked annotation only matters when Docker memory is
+      # the binding constraint, so skip the Resolve lookup (which walks
+      # project → account → global via find_by) entirely on allowed
+      # admissions and on denials caused by the user/project/create_pr
+      # ceilings, where the annotation could never explain the denial.
+      annotate_capacity_blocked(decision) if decision[:reason] == "insufficient_docker_capacity"
+      decision
     end
 
     def degraded_manual_result(snapshot)
@@ -146,15 +152,13 @@ module Capacity
     # that may not be picked.
     def annotate_capacity_blocked(decision)
       profile = capacity_blocked_profile
-      return decision unless profile
+      return unless profile
 
-      decision.merge(
-        capacity_blocked: true,
-        capacity_blocked_profile_level: profile.profile_level,
-        capacity_blocked_at: profile.capacity_blocked_at,
-        capacity_blocked_oom_count: profile.oom_count,
-        capacity_blocked_recommended_limit_bytes: profile.recommended_memory_limit_bytes
-      )
+      decision[:capacity_blocked] = true
+      decision[:capacity_blocked_profile_level] = profile.profile_level
+      decision[:capacity_blocked_at] = profile.capacity_blocked_at
+      decision[:capacity_blocked_oom_count] = profile.oom_count
+      decision[:capacity_blocked_recommended_limit_bytes] = profile.recommended_memory_limit_bytes
     end
 
     def capacity_blocked_profile

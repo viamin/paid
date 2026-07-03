@@ -64,10 +64,21 @@ module AgentRunResourceProfiles
       capacity_blocked_at = @profile.capacity_blocked_at
 
       if downward_move?(previous_limit, target) && !downward_tune_authorized?
-        # Hold the existing limit until enough low-memory samples have
-        # accumulated. Reset the counter on every hold so an isolated
-        # high-memory sample restarts the cooldown — a real OOM or
-        # pressure spike should clear the runway, not be averaged in.
+        # This branch fires when the baseline dropped *below* the current
+        # limit (observed usage fell, so a downward move is requested) but
+        # we have not yet banked enough sustained low-memory samples to
+        # trust the lower number. Hold the limit so a single transient dip
+        # — e.g. one high-peak run aging out of the lookback window — can't
+        # collapse it.
+        #
+        # The consecutive counter is reset here on purpose. It is meant to
+        # accrue during *stable* windows where the baseline stays at or
+        # above the current limit (the else branch below). A baseline that
+        # dips below the limit is exactly the transitional trigger we are
+        # being cautious about, so it restarts the cooldown instead of
+        # counting toward the very lowering it would cause. Authorization
+        # can therefore only come from low usage observed while the limit
+        # was held steady, never from the dip itself.
         consecutive_low = 0
         target = previous_limit
       elsif capacity_blocked_eligible? && should_block_capacity?(target, ceiling)
