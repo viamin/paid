@@ -2460,13 +2460,19 @@ module Activities
     def harness_execution_plan_for(runner_key, prompt, runner_entry: nil, user: nil, agent_run: nil)
       @harness_plan_cache ||= {}
       runtime = selected_runner_runtime(runner_entry || runner_key, user, agent_run)
-      cache_key = [ runner_key, prompt, runtime_cache_key(runtime), @effective_mcp_servers ]
+      cache_key = [
+        runner_key,
+        prompt,
+        runtime_cache_key(runtime),
+        @effective_mcp_servers,
+        disable_codex_apps_for_review_goal?(runner_key, agent_run)
+      ]
       return @harness_plan_cache[cache_key] if @harness_plan_cache.key?(cache_key)
 
       options = { dangerous_mode: true }
       options[:mcp_servers] = @effective_mcp_servers if @effective_mcp_servers&.any?
 
-      @harness_plan_cache[cache_key] = if runner_entry
+      plan = if runner_entry
         Runners::HarnessExecutionPlan.call(
           runner: runner_entry,
           prompt: prompt,
@@ -2481,6 +2487,34 @@ module Activities
           provider_runtime: runtime
         )
       end
+
+      @harness_plan_cache[cache_key] = disable_codex_apps_for_review_goal?(runner_key, agent_run) ?
+        disable_codex_apps(plan) :
+        plan
+    end
+
+    def disable_codex_apps_for_review_goal?(runner_key, agent_run)
+      return false unless agent_run&.review_goal?
+
+      RunnerSupport.runner_key_for_agent_type(runner_key) == "codex"
+    rescue ArgumentError
+      false
+    end
+
+    def disable_codex_apps(plan)
+      return plan if plan.command.include?("--disable") && plan.command.each_cons(2).any? { |left, right| left == "--disable" && right == "apps" }
+
+      prompt = plan.command.last
+      command_prefix = plan.command[0..-2]
+      disable_index = command_prefix.index("exec") || 0
+      command = command_prefix.dup
+      command.insert(disable_index + 1, "--disable", "apps")
+
+      Runners::HarnessExecutionPlan::Result.new(
+        command: command + [ prompt ],
+        env: plan.env,
+        preparation: plan.preparation
+      )
     end
 
     def command_env_for(command_context, prompt)
