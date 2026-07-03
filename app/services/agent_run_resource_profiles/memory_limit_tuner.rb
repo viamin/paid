@@ -45,10 +45,15 @@ module AgentRunResourceProfiles
       # passes the freshly computed p95 in here so the consecutive_low
       # counter reflects the sample that just came in.
       @p95_memory_bytes = p95_memory_bytes.to_i
-      # In a brand-new profile the persisted oom_count is 0 even though
-      # the just-computed summary may show several OOMs. The tuner must
-      # consider the projected value when deciding whether to mark the
-      # profile capacity-blocked on the very first refresh.
+      # The tuner must reason about the *just-computed* window's OOM count,
+      # not the value persisted on the profile (which is the previous
+      # window's count). On a brand-new profile the persisted count is 0
+      # while the new summary may show several OOMs; on an existing profile
+      # the persisted count is stale. Either way the current observation is
+      # authoritative — including when it is 0, which means the workload has
+      # just had an OOM-free window. effective_oom_count distinguishes nil
+      # ("caller passed nothing") from 0 ("no OOMs this window") so a stale
+      # persisted count can't keep a recovered profile capacity-blocked.
       @projected_oom_count = projected_oom_count
     end
 
@@ -175,7 +180,12 @@ module AgentRunResourceProfiles
     end
 
     def effective_oom_count
-      return projected_oom_count if projected_oom_count
+      # Distinguish "absent" (nil — caller passed nothing, so fall back to
+      # the persisted count) from "zero" (0 — the just-computed window had
+      # no OOMs, which is the authoritative value for this refresh). A bare
+      # truthiness check would treat 0 as absent and let stale persisted
+      # OOM counts keep a profile capacity-blocked after it has recovered.
+      return projected_oom_count.to_i unless projected_oom_count.nil?
 
       profile.oom_count.to_i
     end

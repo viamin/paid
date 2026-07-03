@@ -73,6 +73,45 @@ RSpec.describe AgentRunResourceProfiles::MemoryLimitTuner do
       expect(decision.recommended_limit_bytes).to eq(15.gigabytes)
     end
 
+    it "does not mark the profile capacity-blocked from stale persisted OOMs when the current window is OOM-free" do
+      # Regression: projected_oom_count is the just-computed window's OOM count
+      # and may legitimately be 0. A truthiness guard would treat that 0 as
+      # "not provided" and fall back to the stale persisted profile.oom_count,
+      # marking a profile capacity-blocked even after it has recovered into an
+      # OOM-free window. The nil-vs-0 distinction is what keeps that from
+      # happening.
+      profile.recommended_memory_limit_bytes = 16.gigabytes
+      profile.oom_count = AgentRunResourceProfile::CAPACITY_BLOCKED_OOM_THRESHOLD # stale
+
+      decision = described_class.new(
+        profile: profile,
+        user_settings: user_settings,
+        baseline_limit_bytes: 17.gigabytes, # clamps to the 16 GB ceiling
+        p95_memory_bytes: 16.gigabytes,      # still peaking at the ceiling
+        projected_oom_count: 0               # current window is OOM-free
+      ).call
+
+      expect(decision.capacity_blocked?).to be(false)
+    end
+
+    it "uses the persisted oom_count when no projected count is provided" do
+      # The nil fallback path: when RefreshForRun cannot supply a projected
+      # count (e.g. a brand-new tuner invocation in tests), the persisted
+      # profile.oom_count remains authoritative for capacity decisions.
+      profile.recommended_memory_limit_bytes = 15.gigabytes
+      profile.oom_count = AgentRunResourceProfile::CAPACITY_BLOCKED_OOM_THRESHOLD
+
+      decision = described_class.new(
+        profile: profile,
+        user_settings: user_settings,
+        baseline_limit_bytes: 17.gigabytes,
+        p95_memory_bytes: 14.gigabytes
+        # projected_oom_count omitted on purpose
+      ).call
+
+      expect(decision.capacity_blocked?).to be(true)
+    end
+
     it "does not grow past the existing limit once the profile is capacity-blocked" do
       profile.recommended_memory_limit_bytes = 16.gigabytes
       profile.oom_count = AgentRunResourceProfile::CAPACITY_BLOCKED_OOM_THRESHOLD
