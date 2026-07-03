@@ -254,7 +254,7 @@ module Workflows
     end
 
     def plan_review_required?(tasks)
-      tasks.present? && tasks.size > 1 && Temporalio::Workflow.patched("planning-review-signal-gate-v1")
+      tasks.present? && tasks.size > 1
     end
 
     def resolve_reviewed_tasks(tasks, review_outcome)
