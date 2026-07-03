@@ -76,15 +76,23 @@ module AgentRunResourceProfiles
         # — e.g. one high-peak run aging out of the lookback window — can't
         # collapse it.
         #
-        # The consecutive counter is reset here on purpose. It is meant to
-        # accrue during *stable* windows where the baseline stays at or
-        # above the current limit (the else branch below). A baseline that
-        # dips below the limit is exactly the transitional trigger we are
-        # being cautious about, so it restarts the cooldown instead of
-        # counting toward the very lowering it would cause. Authorization
-        # can therefore only come from low usage observed while the limit
-        # was held steady, never from the dip itself.
-        consecutive_low = 0
+        # Accrue consecutive_low against the *held* limit, not against
+        # `target` (≈ p95 * SAFETY_MULTIPLIER). The cooldown test is
+        # `p95 <= target * LOW_MEMORY_HEADROOM_RATIO`, but `target` is
+        # built from p95 itself, so the inequality is unsatisfiable as
+        # written: `target * 0.6 < p95 * 1.2 * 0.6 = p95 * 0.72`, and
+        # `0.72 < 1`, meaning the freshly observed p95 is always above
+        # the threshold. Scoring against `previous_limit` instead — the
+        # held value the tuner is about to persist — measures "is this
+        # workload comfortably below the limit we are keeping it at?",
+        # which is the question that actually justifies dropping the
+        # limit on a future refresh. previous_limit is guaranteed
+        # positive here because `downward_move?` already required it.
+        if low_memory_sample?(previous_limit)
+          consecutive_low += 1
+        else
+          consecutive_low = 0
+        end
         # Hold at the previous limit, but never above the current ceiling.
         # If an operator lowers container_memory_auto_ceiling_bytes while a
         # recommendation is already in flight, previous_limit can sit above

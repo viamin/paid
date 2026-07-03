@@ -202,5 +202,82 @@ RSpec.describe AgentRunResourceProfiles::RefreshForRun do
       expect(profile.reload.recommended_memory_limit_bytes).to eq(starting_limit)
       expect(profile.downward_tuning_count).to eq(0)
     end
+
+    it "tunes the limit downward after sustained low-memory refreshes through RefreshForRun" do
+      # End-to-end shape of the production path: a profile pinned at 8 GB
+      # by an earlier OOM bump observes sustained low usage (~1 GB) across
+      # many refreshes. The first few refreshes must hold the limit (the
+      # cooldown is banking), and the first refresh after the threshold
+      # is met must collapse the recommendation to the new baseline. This
+      # test would have hung indefinitely at 8 GB before the
+      # `low_memory_sample?(previous_limit)` fix in MemoryLimitTuner,
+      # because `target = p95 * SAFETY_MULTIPLIER` made the hold-branch
+      # sample test unsatisfiable.
+      project.created_by.settings.update!(
+        container_memory_auto_floor_bytes: 256.megabytes,
+        container_memory_auto_ceiling_bytes: 16.gigabytes
+      )
+
+      # Seed the specific profile at 8 GB, as if an earlier OOM had bumped
+      # it from a low-usage baseline.
+      specific_key = AgentRunResourceProfile.lookup_key_for(
+        profile_level: "specific",
+        account_id: project.account_id,
+        project_id: project.id,
+        runner_key: "claude",
+        goal: "create_pr"
+      )
+      create(
+        :agent_run_resource_profile,
+        profile_level: "specific",
+        account: project.account,
+        project: project,
+        runner_key: "claude",
+        goal: "create_pr",
+        sample_count: 3,
+        oom_count: 0,
+        p50_memory_bytes: 1.gigabyte,
+        p95_memory_bytes: 1.gigabyte,
+        max_memory_bytes: 1.gigabyte,
+        recommended_memory_limit_bytes: 8.gigabytes,
+        consecutive_low_memory_samples: 0,
+        downward_tuning_count: 0,
+        lookup_key: specific_key
+      )
+
+      # Three low-memory refreshes hold the limit but bank consecutive
+      # low-memory samples against the held 8 GB value (threshold = 4.8 GB,
+      # observed p95 = 1 GB → comfortably below).
+      3.times do |index|
+        next_run = create_sample_run(memory_bytes: 1.gigabyte, completed_at: completed_at + index.hours)
+        described_class.call(agent_run: next_run)
+
+        profile = specific_profile
+        expect(profile.recommended_memory_limit_bytes).to eq(8.gigabytes)
+        expect(profile.downward_tuning_count).to eq(0)
+        expect(profile.consecutive_low_memory_samples).to eq(index + 1)
+      end
+
+      # Two more refreshes push the counter up to DOWNWARD_TUNING_MIN_SAMPLES.
+      2.times do |index|
+        next_run = create_sample_run(memory_bytes: 1.gigabyte, completed_at: completed_at + (3 + index).hours)
+        described_class.call(agent_run: next_run)
+      end
+
+      profile = specific_profile
+      expect(profile.consecutive_low_memory_samples).to eq(AgentRunResourceProfile::DOWNWARD_TUNING_MIN_SAMPLES)
+      expect(profile.recommended_memory_limit_bytes).to eq(8.gigabytes)
+      expect(profile.downward_tuning_count).to eq(0)
+
+      # One more refresh crosses the threshold: the authorize check uses
+      # `>=` against the value persisted *before* this refresh, so the
+      # sixth refresh is the first one that satisfies it.
+      next_run = create_sample_run(memory_bytes: 1.gigabyte, completed_at: completed_at + 5.hours)
+      described_class.call(agent_run: next_run)
+
+      profile = specific_profile
+      expect(profile.recommended_memory_limit_bytes).to eq((1.gigabyte * AgentRunResourceProfile::SAFETY_MULTIPLIER).ceil)
+      expect(profile.downward_tuning_count).to eq(1)
+    end
   end
 end

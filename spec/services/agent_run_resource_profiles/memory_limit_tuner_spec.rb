@@ -331,5 +331,76 @@ RSpec.describe AgentRunResourceProfiles::MemoryLimitTuner do
       # the stale persisted attribute.
       expect(decision.consecutive_low_memory_samples).to eq(1)
     end
+
+    it "accrues consecutive low-memory samples against the held limit when baseline is derived from p95" do
+      # Regression: with `baseline_limit_bytes = p95 * SAFETY_MULTIPLIER`
+      # (the value RefreshForRun actually passes in production), scoring
+      # the low-memory test against `target` was unsatisfiable because
+      # `target ≈ p95 * 1.2` and `p95 > target * 0.6 = p95 * 0.72`. The
+      # counter therefore never incremented and the held limit could
+      # never drop. The hold branch must score against `previous_limit`
+      # so sustained low-usage windows can authorize a downward tune.
+      profile.recommended_memory_limit_bytes = 8.gigabytes
+      profile.consecutive_low_memory_samples = 0
+      profile.downward_tuning_count = 0
+      p95_memory_bytes = 1.gigabyte
+
+      decision = described_class.new(
+        profile: profile,
+        user_settings: user_settings,
+        baseline_limit_bytes: (p95_memory_bytes * AgentRunResourceProfile::SAFETY_MULTIPLIER).ceil,
+        p95_memory_bytes: p95_memory_bytes
+      ).call
+
+      # Held at 8 GB because no consecutive samples have banked yet.
+      expect(decision.recommended_limit_bytes).to eq(8.gigabytes)
+      # But the counter must have incremented — 1 GB <= 8 GB * 0.6 = 4.8 GB.
+      expect(decision.consecutive_low_memory_samples).to eq(1)
+      expect(decision.downward_tuning_count).to eq(0)
+    end
+
+    it "tunes downward after sustained low-memory windows when baseline tracks p95" do
+      # End-to-end shape of the production path: every refresh passes
+      # `baseline_limit_bytes = p95 * SAFETY_MULTIPLIER`. After enough
+      # consecutive hold-branch samples, the next refresh must authorize
+      # the downward move and collapse the held limit to the new baseline.
+      profile.recommended_memory_limit_bytes = 8.gigabytes
+      profile.consecutive_low_memory_samples = AgentRunResourceProfile::DOWNWARD_TUNING_MIN_SAMPLES
+      profile.downward_tuning_count = 0
+      p95_memory_bytes = 1.gigabyte
+
+      decision = described_class.new(
+        profile: profile,
+        user_settings: user_settings,
+        baseline_limit_bytes: (p95_memory_bytes * AgentRunResourceProfile::SAFETY_MULTIPLIER).ceil,
+        p95_memory_bytes: p95_memory_bytes
+      ).call
+
+      expect(decision.recommended_limit_bytes).to eq((p95_memory_bytes * AgentRunResourceProfile::SAFETY_MULTIPLIER).ceil)
+      expect(decision.downward_tuning_count).to eq(1)
+      expect(decision.downward_tuned?).to be(true)
+    end
+
+    it "resets the consecutive counter inside the hold branch when the held limit is no longer comfortable" do
+      # Symmetric guard: when the held limit is *not* comfortable anymore
+      # (the workload grew back toward it), the cooldown must reset even
+      # if `target` is unchanged. Otherwise a single quiet refresh could
+      # bank a sample that later authorized an unsafe drop.
+      profile.recommended_memory_limit_bytes = 8.gigabytes
+      profile.consecutive_low_memory_samples = AgentRunResourceProfile::DOWNWARD_TUNING_MIN_SAMPLES - 1
+      profile.downward_tuning_count = 0
+      p95_memory_bytes = 1.gigabyte
+
+      decision = described_class.new(
+        profile: profile,
+        user_settings: user_settings,
+        baseline_limit_bytes: (p95_memory_bytes * AgentRunResourceProfile::SAFETY_MULTIPLIER).ceil,
+        # p95 is now 5 GB — comfortably above 8 GB * 0.6 = 4.8 GB.
+        p95_memory_bytes: 5.gigabytes
+      ).call
+
+      expect(decision.recommended_limit_bytes).to eq(8.gigabytes)
+      expect(decision.consecutive_low_memory_samples).to eq(0)
+    end
   end
 end
