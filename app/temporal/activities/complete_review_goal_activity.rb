@@ -94,16 +94,21 @@ module Activities
       { untracked_reviews: [], reconciliation_error: e }
     end
 
-    # All non-pending reviews submitted on GitHub during the run's window,
-    # regardless of whether they carry the Paid marker or a logged review id.
+    # All non-pending reviews authored by an enabled review bot and submitted
+    # on GitHub during the run's window, regardless of whether they carry the
+    # Paid marker or a logged review id.
     def candidate_reviews(agent_run)
       return [] unless agent_run.source_pull_request_number.present?
+
+      enabled_bot_logins = agent_run.project.enabled_review_bot_logins
+      return [] if enabled_bot_logins.blank?
 
       reviews = agent_run.project.client&.pull_request_reviews(
         agent_run.project.full_name,
         agent_run.source_pull_request_number
       )
       Array(reviews).select do |review|
+        enabled_bot_logins.include?(review[:user_login].to_s.downcase) &&
         review[:submitted_at].present? &&
           submitted_during_run?(agent_run, review[:submitted_at]) &&
           !review[:state].to_s.casecmp("PENDING").zero?
