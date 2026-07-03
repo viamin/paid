@@ -3,17 +3,17 @@
 require "rails_helper"
 
 RSpec.describe Api::GithubProxyController, :no_db, type: :controller do
+  let(:project_stub_class) do
+    Class.new(Struct.new(:full_name, :enabled_review_bot_logins)) do
+      def review_method_enabled?(_method)
+        true
+      end
+    end
+  end
+
   describe "#dismiss_stale_changes_requested_reviews" do
     subject(:dismiss_stale_reviews) do
       controller.send(:dismiss_stale_changes_requested_reviews, path_match, new_review)
-    end
-
-    let(:project_stub_class) do
-      Class.new(Struct.new(:full_name, :enabled_review_bot_logins)) do
-        def review_method_enabled?(_method)
-          true
-        end
-      end
     end
 
     let(:path_match) { { number: "10" } }
@@ -126,6 +126,126 @@ RSpec.describe Api::GithubProxyController, :no_db, type: :controller do
       dismiss_stale_reviews
 
       expect(client).not_to have_received(:dismiss_pull_request_review)
+    end
+  end
+
+  describe "#find_recent_paid_review" do
+    let(:match) { { owner: "testowner", repo: "testrepo", number: "10" } }
+    let(:token) { "ghs_token" }
+    let(:marker) { Api::GithubProxyController::REVIEW_COMMENT_MARKER }
+    let(:header) { Api::GithubProxyController::REVIEW_HEADER }
+    let(:forwarded_body) { { body: "#{marker}\n#{header}\n\nLooks good" }.to_json }
+    let(:raw_body) { { body: "Looks good" }.to_json }
+    let(:project) do
+      instance_double(
+        project_stub_class,
+        full_name: "testowner/testrepo",
+        review_method_enabled?: true,
+        enabled_review_bot_logins: Set["paid-code-reviewer[bot]"]
+      )
+    end
+
+    before do
+      allow(controller).to receive_messages(request: double(raw_post: raw_body),
+        authenticated_project: project)
+    end
+
+    def stub_list(reviews)
+      allow(controller).to receive(:github_api_call).with(
+        :get,
+        "repos/testowner/testrepo/pulls/10/reviews?per_page=100",
+        token,
+        nil
+      ).and_return(
+        instance_double(Faraday::Response, status: 200, body: reviews.to_json)
+      )
+    end
+
+    it "returns the most recent review whose body includes the Paid marker" do
+      stub_list([
+        { id: 1, state: "COMMENTED", body: "old", submitted_at: 1.day.ago.iso8601 },
+        { id: 2, state: "COMMENTED", body: "#{marker}\n#{header}\n\nLooks good", submitted_at: Time.current.iso8601 }
+      ])
+
+      result = controller.send(:find_recent_paid_review, match, token, forwarded_body, raw_body)
+
+      expect(result["id"]).to eq(2)
+    end
+
+    it "skips pending reviews even if their body matches" do
+      stub_list([
+        { id: 9, state: "PENDING", body: "#{marker}\n#{header}\n\nLooks good", submitted_at: Time.current.iso8601 }
+      ])
+
+      result = controller.send(:find_recent_paid_review, match, token, forwarded_body, raw_body)
+
+      expect(result).to be_nil
+    end
+
+    it "returns nil when the listing call fails" do
+      allow(controller).to receive(:github_api_call).and_raise(Faraday::TimeoutError.new("expired"))
+      allow(Rails.logger).to receive(:error)
+
+      result = controller.send(:find_recent_paid_review, match, token, forwarded_body, raw_body)
+
+      expect(result).to be_nil
+      expect(Rails.logger).to have_received(:error).with(
+        hash_including(message: "github_proxy.review_recovery_list_failed")
+      )
+    end
+
+    it "matches by raw body when the marker is missing but the body matches within the time window" do
+      stub_list([
+        { id: 11, state: "COMMENTED", body: "Looks good", submitted_at: 1.minute.ago.iso8601 }
+      ])
+
+      result = controller.send(:find_recent_paid_review, match, token, forwarded_body, raw_body)
+
+      expect(result["id"]).to eq(11)
+    end
+
+    it "ignores body matches whose submitted_at lies outside the recovery window" do
+      stub_list([
+        { id: 22, state: "COMMENTED", body: "Looks good", submitted_at: 5.hours.ago.iso8601 }
+      ])
+
+      agent_run = instance_double(
+        AgentRun,
+        started_at: 2.hours.ago,
+        created_at: 2.hours.ago
+      )
+      controller.instance_variable_set(:@agent_run, agent_run)
+
+      result = controller.send(:find_recent_paid_review, match, token, forwarded_body, raw_body)
+
+      expect(result).to be_nil
+    end
+  end
+
+  describe "Api::SyntheticResponse" do
+    it "exposes status and body" do
+      response = Api::SyntheticResponse.new(status: 200, body: "ok")
+
+      expect(response.status).to eq(200)
+      expect(response.body).to eq("ok")
+      expect(response.success?).to be(true)
+    end
+
+    it "reports success? as false for non-2xx statuses" do
+      response = Api::SyntheticResponse.new(status: 422, body: "{}")
+
+      expect(response.success?).to be(false)
+    end
+
+    it "looks up headers by both string and symbol keys" do
+      response = Api::SyntheticResponse.new(
+        status: 200,
+        body: "{}",
+        headers: { "Content-Type" => "application/json" }
+      )
+
+      expect(response["Content-Type"]).to eq("application/json")
+      expect(response[:content_type]).to be_nil
     end
   end
 end

@@ -49,7 +49,7 @@ RSpec.describe "Dashboard" do
         get dashboard_path
 
         doc = Nokogiri::HTML(response.body)
-        desktop_nav_link = doc.at_css("nav [data-nav-section='exception_incidents']")
+        desktop_nav_link = doc.at_css("#operations-menu a[href='#{exception_incidents_path}']")
 
         expect(desktop_nav_link).to be_present
         expect(desktop_nav_link["href"]).to eq(exception_incidents_path)

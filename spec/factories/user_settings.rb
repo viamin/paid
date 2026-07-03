@@ -12,6 +12,7 @@ FactoryBot.define do
     marketplace_auto_attach_enabled { false }
     default_agent_runner { "claude" }
     container_memory_bytes { 4 * 1024 * 1024 * 1024 }
+    run_concurrency_mode { UserSetting::RUN_CONCURRENCY_MODE_MANUAL }
     max_concurrent_runs { 2 }
     max_parallel_agents_per_project { 3 }
     container_timeout_seconds { 3600 }

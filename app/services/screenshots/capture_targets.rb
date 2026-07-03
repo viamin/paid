@@ -250,6 +250,7 @@ module Screenshots
       "integrations_controller.rb" => %i[integrations integrations_new],
       "free_models_controller.rb" => [ :free_models_catalog ],
       "integration_credentials_controller.rb" => %i[integration_credentials integration_credential_new integration_credential_show],
+      "runner_credentials_controller.rb" => %i[runner_credentials runner_credential_new runner_credential_show],
       "claude_login_sessions_controller.rb" => %i[claude_login_session_new claude_login_session_show],
       "github_installations_controller.rb" => %i[
         github_installations

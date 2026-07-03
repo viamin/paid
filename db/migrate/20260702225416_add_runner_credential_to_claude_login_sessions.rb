@@ -14,6 +14,6 @@ class AddRunnerCredentialToClaudeLoginSessions < ActiveRecord::Migration[8.1]
 
     add_index :claude_login_sessions, :runner_credential_id, algorithm: :concurrently unless index_exists?(:claude_login_sessions, :runner_credential_id)
     change_column_comment :claude_login_sessions, :runner_credential_id, "Managed Claude runner credential captured when the browser login completes."
-    remove_foreign_key :claude_login_sessions, :runner_credentials if foreign_key_exists?(:claude_login_sessions, :runner_credentials)
+    add_foreign_key :claude_login_sessions, :runner_credentials unless foreign_key_exists?(:claude_login_sessions, :runner_credentials)
   end
 end

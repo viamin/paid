@@ -510,6 +510,36 @@ RSpec.describe Activities::RunAgentActivity do
       expect(command[4]).to eq("say 'hi'")
     end
 
+    it "disables Codex app connectors for review-goal runs" do
+      review_run = create(:agent_run, :running, project: project, goal: "review", source_pull_request_number: 42)
+      context = described_class::CommandContext.new(
+        runner_candidate: "codex",
+        runner: "codex",
+        user: nil
+      )
+
+      command = activity.send(:build_command, context, "review prompt", agent_run: review_run)
+      script = command[2]
+
+      expect(script).to include("--disable")
+      expect(script).to include("apps")
+      expect(command[4]).to eq("review prompt")
+    end
+
+    it "keeps Codex app connectors enabled for non-review runs" do
+      context = described_class::CommandContext.new(
+        runner_candidate: "codex",
+        runner: "codex",
+        user: nil
+      )
+
+      command = activity.send(:build_command, context, "say 'hi'", agent_run: agent_run)
+      script = command[2]
+
+      expect(script).not_to include("--disable")
+      expect(script).not_to include("apps")
+    end
+
     it "builds a sh -c wrapper for Gemini subscription auth" do
       context = described_class::CommandContext.new(
         runner_candidate: "gemini",

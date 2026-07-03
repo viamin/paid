@@ -12,6 +12,7 @@ module Api
     STALE_REVIEW_DISMISSAL_MESSAGE = "Subsequent review found no remaining actionable issues."
     PENDING_REVIEW_ERROR_PATTERN = /one pending review per pull request/i
     GITHUB_ERROR_BODY_LOG_LIMIT = 2_000
+    REVIEW_RECOVERY_WINDOW = 30.minutes
 
     # Allowlisted GitHub API endpoints (regex with named captures for owner/repo).
     ALLOWED_ENDPOINTS = [
@@ -58,7 +59,7 @@ module Api
 
       forwarded_body = maybe_prepend_review_header(path, request.raw_post)
       authorization_token = github_authorization_token(path)
-      response = proxy_to_github(path, authorization_token, forwarded_body)
+      response = forward_with_idempotent_recovery(path, authorization_token, forwarded_body, match: match)
 
       if review_creation_request?(path) && pending_review_conflict?(response)
         recovered = recover_from_pending_review(path, authorization_token, forwarded_body, match: match)
@@ -126,6 +127,108 @@ module Api
           "Accept" => "application/vnd.github+json"
         )
       )
+    end
+
+    # Wrap the GitHub POST with idempotency-aware recovery for review creation
+    # requests. The upstream review POST is not naturally idempotent, so a
+    # timeout or connection failure can leave us uncertain whether GitHub
+    # actually created the review. Listing PR reviews first lets us detect the
+    # review if it did land and synthesize a success-equivalent response
+    # instead of either silently retrying into a duplicate or surfacing a
+    # bare 502 (#2778).
+    def forward_with_idempotent_recovery(path, authorization_token, forwarded_body, match:)
+      if review_creation_request?(path)
+        forward_review_creation_with_idempotent_recovery(path, authorization_token, forwarded_body, match: match)
+      else
+        proxy_to_github(path, authorization_token, forwarded_body)
+      end
+    end
+
+    def forward_review_creation_with_idempotent_recovery(path, authorization_token, forwarded_body, match:)
+      proxy_to_github(path, authorization_token, forwarded_body)
+    rescue Faraday::TimeoutError, Faraday::ConnectionFailed => e
+      log_review_upstream_timeout(e)
+      recover_or_retry_review(path, authorization_token, forwarded_body, match: match, error: e)
+    end
+
+    def log_review_upstream_timeout(error)
+      Rails.logger.warn(
+        message: "github_proxy.upstream_timeout",
+        agent_run_id: @agent_run&.id,
+        chat_session_id: @chat_session&.id,
+        method: request.method,
+        path: path_for_log,
+        error_class: error.class.name,
+        error: error.message.to_s.truncate(GITHUB_ERROR_BODY_LOG_LIMIT)
+      )
+    end
+
+    def path_for_log
+      @path_for_log ||= params[:path].to_s
+    end
+
+    def recover_or_retry_review(path, authorization_token, forwarded_body, match:, error:)
+      existing = find_recent_paid_review(match, authorization_token, forwarded_body, request.raw_post)
+      if existing
+        log_review_recovered(existing, error)
+        return synthetic_review_response(existing, match)
+      end
+
+      log_review_retry(match)
+      retried = proxy_to_github(path, authorization_token, forwarded_body)
+      log_review_retry_outcome(retried)
+      retried
+    rescue Faraday::Error => e
+      log_error("github_proxy.final_failure",
+        "path=#{path} error_class=#{e.class.name} message=#{e.message.to_s.truncate(GITHUB_ERROR_BODY_LOG_LIMIT)}")
+      raise
+    end
+
+    def log_review_recovered(existing, error)
+      Rails.logger.info(
+        message: "github_proxy.recovered_existing_review",
+        agent_run_id: @agent_run&.id,
+        chat_session_id: @chat_session&.id,
+        review_id: existing["id"],
+        review_state: existing["state"],
+        upstream_error_class: error.class.name
+      )
+    end
+
+    def log_review_retry(match)
+      Rails.logger.info(
+        message: "github_proxy.retry",
+        agent_run_id: @agent_run&.id,
+        chat_session_id: @chat_session&.id,
+        path: "repos/#{match[:owner]}/#{match[:repo]}/pulls/#{match[:number]}/reviews"
+      )
+    end
+
+    def log_review_retry_outcome(response)
+      Rails.logger.info(
+        message: response.success? ? "github_proxy.retry_succeeded" : "github_proxy.retry_failed",
+        agent_run_id: @agent_run&.id,
+        chat_session_id: @chat_session&.id,
+        status: response.status
+      )
+    end
+
+    # Build a Faraday response-like object from a review we recovered by listing
+    # the PR's existing reviews. The downstream tracking code reads
+    # response.status / response.body and passes them on, so we just need a
+    # minimal Hash-shaped payload that responds to those interfaces.
+    def synthetic_review_response(review, match)
+      body = {
+        "id" => review["id"],
+        "state" => review["state"],
+        "html_url" => review["html_url"] ||
+          review_url_for(match[:number], review["id"]),
+        "body" => review["body"],
+        "submitted_at" => review["submitted_at"],
+        "user" => review["user"]
+      }.compact.to_json
+
+      SyntheticResponse.new(status: 200, body: body)
     end
 
     def github_authorization_token(path)
@@ -468,6 +571,96 @@ module Api
         chat_session_id: @chat_session&.id,
         **metadata
       )
+    end
+
+    # List PR reviews and pick one that looks like the review this run was
+    # trying to post: the Paid marker is present, or the actor matches the
+    # authenticated GitHub user, or the review body matches the body the
+    # proxy was about to send. Time-windowing against the agent run keeps us
+    # from claiming a stale review posted by a previous attempt.
+    def find_recent_paid_review(match, authorization_token, forwarded_body, raw_body)
+      list_path = "repos/#{match[:owner]}/#{match[:repo]}/pulls/#{match[:number]}/reviews?per_page=100"
+      response = github_api_call(:get, list_path, authorization_token, nil)
+      return nil unless response.status.between?(200, 299)
+
+      reviews = parse_response_body(response.body)
+      return nil unless reviews.is_a?(Array)
+
+      forwarded_marker_body = parse_review_body(forwarded_body)
+      raw_body_value = parse_review_body(raw_body)
+      candidates = reviews.select do |review|
+        review.is_a?(Hash) && recovery_match?(review, forwarded_marker_body, raw_body_value)
+      end
+      candidates.max_by { |r| review_submitted_at(r) || Time.at(0) }
+    rescue Github::AppInstallation::Error, Github::ReviewBotInstallationToken::Error,
+           Faraday::Error => e
+      log_error("github_proxy.review_recovery_list_failed", e.message)
+      nil
+    end
+
+    def parse_review_body(body)
+      parse_request_body(body)["body"]
+    end
+
+    def recovery_match?(review, forwarded_marker_body, raw_body)
+      return false if review["state"].to_s.casecmp("PENDING").zero?
+      return false unless within_recovery_window?(review)
+
+      # Marker match (strong): the GitHub-stored review body includes the Paid
+      # marker, which the proxy always prepends to review-goal POST bodies. If
+      # the stored body includes it, this review was posted by the proxy.
+      return true if recovery_marker_match?(review)
+
+      # Body match against the forwarded body (also strong, catches the case
+      # where the agent happens to include the marker in their submitted body
+      # and the proxy didn't need to prepend).
+      return true if recovery_body_match?(review, forwarded_marker_body)
+
+      # Body match against the original raw body (weaker; useful when the
+      # review was posted without the marker — e.g., directly from the runner
+      # bypassing the proxy).
+      recovery_body_match?(review, raw_body)
+    end
+
+    def within_recovery_window?(review)
+      submitted_at = review_submitted_at(review)
+      return true unless submitted_at
+      return true unless @agent_run
+
+      lower = (@agent_run.started_at || @agent_run.created_at) - REVIEW_RECOVERY_WINDOW
+      upper = Time.current + REVIEW_RECOVERY_WINDOW
+      submitted_at.between?(lower, upper)
+    end
+
+    def recovery_marker_match?(review)
+      review["body"].to_s.include?(REVIEW_COMMENT_MARKER)
+    end
+
+    def recovery_body_match?(review, submitted_body)
+      return false if submitted_body.blank?
+
+      review["body"].to_s.strip == submitted_body.to_s.strip
+    end
+  end
+
+  # Minimal Faraday::Response-shaped object used to surface a recovered review
+  # back through the proxy's tracking pipeline without re-running the upstream
+  # request. The controller only reads .status, .body, and .headers.
+  class SyntheticResponse
+    attr_reader :status, :body, :headers
+
+    def initialize(status:, body:, headers: { "Content-Type" => "application/json" })
+      @status = status
+      @body = body
+      @headers = headers
+    end
+
+    def success?
+      status.is_a?(Integer) && status >= 200 && status < 300
+    end
+
+    def [](key)
+      headers[key.to_s] || headers[key.to_sym]
     end
   end
 end

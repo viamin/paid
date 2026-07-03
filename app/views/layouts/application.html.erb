@@ -51,7 +51,6 @@
     <% if user_signed_in? %>
       <%= turbo_stream_from current_account, :notification_updates %>
       <%= turbo_stream_from current_user, :notification_updates %>
-      <%= render "notifications/nav_badges", account: current_account %>
     <% end %>
     <nav class="bg-white shadow-sm dark:bg-gray-800 dark:shadow-gray-700/30" data-controller="mobile-menu">
       <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -67,10 +66,10 @@
               <% nav_trigger_class = "inline-flex items-center gap-1 whitespace-nowrap text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-300 dark:hover:text-white" %>
               <% nav_menu_class = "absolute left-0 top-full z-10 mt-2 hidden min-w-48 overflow-hidden rounded-md bg-white py-1 shadow-lg ring-1 ring-black/5 dark:bg-gray-800 dark:ring-white/10" %>
               <% nav_menu_item_class = "block whitespace-nowrap px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-700" %>
-              <%= link_to "Dashboard", dashboard_path, class: nav_link_class, data: { nav_section: "dashboard" } %>
-              <%= link_to "Projects", projects_path, class: nav_link_class, data: { nav_section: "projects" } %>
-              <%= link_to "Agent Runs", agent_runs_path, class: nav_link_class, data: { nav_section: "agent_runs" } %>
-              <%= link_to "Chat", chat_sessions_path, class: nav_link_class, data: { nav_section: "chat" } %>
+              <%= link_to "Dashboard", dashboard_path, class: nav_link_class %>
+              <%= link_to "Projects", projects_path, class: nav_link_class %>
+              <%= link_to "Agent Runs", agent_runs_path, class: nav_link_class %>
+              <%= link_to "Chat", chat_sessions_path, class: nav_link_class %>
               <% if current_account&.scheduler_paused? %>
                 <%= link_to agent_runs_path,
                   class: "inline-flex items-center gap-x-1 rounded-full bg-yellow-100 px-2.5 py-1 text-xs font-semibold text-yellow-800 ring-1 ring-inset ring-yellow-400 hover:bg-yellow-200",
@@ -119,7 +118,7 @@
                         aria-controls="operations-menu"
                         data-action="dropdown#toggle"
                         data-dropdown-target="button">
-                  <span data-nav-badge-rollup="runners exception_incidents">Operations</span>
+                  <span>Operations</span>
                   <svg class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
                     <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.168l3.71-3.938a.75.75 0 1 1 1.08 1.04l-4.25 4.5a.75.75 0 0 1-1.08 0l-4.25-4.5a.75.75 0 0 1 .02-1.06Z" clip-rule="evenodd" />
                   </svg>
@@ -129,13 +128,13 @@
                      role="menu"
                      aria-labelledby="operations-menu-button"
                      data-dropdown-target="menu">
-                  <%= link_to "Runners", runners_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close", nav_section: "runners" } %>
+                  <%= link_to "Runners", runners_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close" } %>
                   <% if policy(ServiceContainer).index? %>
                     <%= link_to "Services", service_containers_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close" } %>
                   <% end %>
                   <%= link_to "Integrations", integrations_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close" } %>
                   <% if policy(ExceptionIncident).index? %>
-                    <%= link_to "Exception incidents", exception_incidents_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close", nav_section: "exception_incidents" } %>
+                    <%= link_to "Exception incidents", exception_incidents_path, class: nav_menu_item_class, role: "menuitem", data: { action: "dropdown#close" } %>
                   <% end %>
                 </div>
               </div>
@@ -217,10 +216,10 @@
           <% if user_signed_in? %>
             <% mobile_link_class = "block rounded-md px-3 py-2 text-base font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white" %>
             <% mobile_heading_class = "px-3 pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500" %>
-            <%= link_to "Dashboard", dashboard_path, data: { action: "mobile-menu#close", nav_section: "dashboard" }, class: mobile_link_class %>
-            <%= link_to "Projects", projects_path, data: { action: "mobile-menu#close", nav_section: "projects" }, class: mobile_link_class %>
-            <%= link_to "Agent Runs", agent_runs_path, data: { action: "mobile-menu#close", nav_section: "agent_runs" }, class: mobile_link_class %>
-            <%= link_to "Chat", chat_sessions_path, data: { action: "mobile-menu#close", nav_section: "chat" }, class: mobile_link_class %>
+            <%= link_to "Dashboard", dashboard_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
+            <%= link_to "Projects", projects_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
+            <%= link_to "Agent Runs", agent_runs_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
+            <%= link_to "Chat", chat_sessions_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
             <% if current_account&.scheduler_paused? %>
               <%= link_to agent_runs_path,
                 data: { action: "mobile-menu#close", testid: "navbar-scheduler-paused-mobile" },
@@ -238,13 +237,13 @@
             <%= link_to "Knowledge", knowledge_search_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
 
             <p class="<%= mobile_heading_class %>">Operations</p>
-            <%= link_to "Runners", runners_path, data: { action: "mobile-menu#close", nav_section: "runners" }, class: mobile_link_class %>
+            <%= link_to "Runners", runners_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
             <% if policy(ServiceContainer).index? %>
               <%= link_to "Services", service_containers_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
             <% end %>
             <%= link_to "Integrations", integrations_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
             <% if policy(ExceptionIncident).index? %>
-              <%= link_to "Exception incidents", exception_incidents_path, data: { action: "mobile-menu#close", testid: "mobile-exception-incidents-link", nav_section: "exception_incidents" }, class: mobile_link_class %>
+              <%= link_to "Exception incidents", exception_incidents_path, data: { action: "mobile-menu#close", testid: "mobile-exception-incidents-link" }, class: mobile_link_class %>
             <% end %>
             <%= link_to "Notifications", notifications_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
             <div class="border-t border-gray-200 dark:border-gray-600 pt-3 mt-2">
