@@ -15,6 +15,15 @@ module Activities
   # (e.g. a stuck image pull) any faster than start_to_close: it only proves
   # the Ruby worker thread is alive, not that Docker is making progress, so
   # no heartbeat_timeout is configured for this activity.
+  #
+  # Cancellation cleanup: Containers::Provision#provision has a SignalException
+  # rescue clause (covering Thread#raise(Interrupt)) that runs cleanup and
+  # cleanup_workspace_volume before re-raising, so a thread that is alive
+  # enough to catch an Interrupt does not orphan the half-created container
+  # or workspace volume. Thread#kill (the last-resort path for truly stuck
+  # I/O) bypasses ensure/rescue; the workflow's CleanupContainerActivity
+  # ensure-block falls back to cleanup_orphaned_workspace_volume by name to
+  # pick up that residual. Both paths together guarantee no leak on cancel.
   class ProvisionContainerActivity < BaseActivity
     activity_name "ProvisionContainer"
 
@@ -143,6 +152,16 @@ module Activities
     # the CanceledError already in flight. Polling drains the worker without
     # propagating its exception. Mirrors the interrupted branch of
     # RunAgentActivity#with_periodic_heartbeat.
+    #
+    # Cleanup on this path is delegated to Containers::Provision#provision's
+    # SignalException rescue — it runs cleanup + cleanup_workspace_volume
+    # before re-raising, so a caught Interrupt never orphans a half-created
+    # container or workspace volume. Thread#kill (last resort for a worker
+    # truly stuck in an uninterruptible Docker call) bypasses rescue, so any
+    # residual workspace volume is cleaned up downstream by the workflow's
+    # CleanupContainerActivity, which uses agent_run.cleanup_container and
+    # falls back to cleanup_orphaned_workspace_volume by name when
+    # container_id is blank.
     def drain_worker(worker, canceled:, grace_seconds: CANCEL_GRACE_SECONDS)
       if canceled
         worker.join(grace_seconds)

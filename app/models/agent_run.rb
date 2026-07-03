@@ -2126,9 +2126,21 @@ class AgentRun < ApplicationRecord
 
   # Cleans up the provisioned container.
   #
+  # Always attempts to remove the agent run's named workspace volume as a
+  # safety net, even when no container_id is recorded — a worker killed
+  # mid-provision (e.g. by Thread#kill on activity cancellation) may have
+  # created the volume via prepare_workspace! without ever persisting
+  # container_id. cleanup_orphaned_workspace_volume is a no-op when no
+  # such volume exists or when worktree_path is set (bind-mount flows).
+  #
   # @param force [Boolean] Force kill if container doesn't stop gracefully
   # @return [void]
   def cleanup_container(force: false)
+    # Safety net for a worker killed mid-provision: the workspace volume
+    # may exist with no container_id to drive a normal cleanup. Run before
+    # the early-return so it covers all paths (worktree-based runs are no-ops).
+    cleanup_orphaned_workspace_volume if container_id.blank? && @container_service.nil?
+
     return if container_id.blank? && @container_service.nil?
 
     if Containers::PoolManager.cleanup_claimed_container(agent_run: self, force: force)
