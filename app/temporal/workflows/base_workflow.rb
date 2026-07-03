@@ -109,15 +109,29 @@ module Workflows
     def record_swallowed_non_critical_activity_failure(project_id:, helper:, error:, pr_number: nil)
       return unless retry_exhausted_activity_error?(error)
 
+      # `pr_number` is intentionally kept out of metric labels: it is unbounded
+      # cardinality (one time series per PR) and would blow up Prometheus
+      # storage. The structured log below carries the per-PR context for
+      # on-call drill-down.
       swallowed_non_critical_failure_metric.record(
         1,
         additional_attributes: {
           "project_id" => project_id.to_s,
           "helper" => helper,
           "error_class" => error.class.name,
-          "retry_state" => error.retry_state.to_s,
-          "pr_number" => pr_number.to_s
+          "retry_state" => error.retry_state.to_s
         }.compact
+      )
+
+      return unless pr_number
+
+      Temporalio::Workflow.logger.warn(
+        message: "poll.swallowed_non_critical_failure_pr_context",
+        project_id: project_id,
+        helper: helper,
+        pr_number: pr_number,
+        error_class: error.class.name,
+        retry_state: error.retry_state.to_s
       )
     end
 

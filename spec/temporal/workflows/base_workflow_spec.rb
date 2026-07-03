@@ -91,9 +91,11 @@ RSpec.describe Workflows::BaseWorkflow, :no_db do
   describe "#record_swallowed_non_critical_activity_failure" do
     let(:metric) { instance_double(Temporalio::Metric, record: nil) }
     let(:meter) { instance_double(Temporalio::Metric::Meter, create_metric: metric) }
+    let(:logger) { instance_double(Logger, warn: nil) }
 
     before do
       allow(Temporalio::Workflow).to receive(:metric_meter).and_return(meter)
+      allow(Temporalio::Workflow).to receive(:logger).and_return(logger)
     end
 
     def exhausted_activity_error(activity_type)
@@ -126,6 +128,55 @@ RSpec.describe Workflows::BaseWorkflow, :no_db do
           "retry_state" => Temporalio::Error::RetryState::MAXIMUM_ATTEMPTS_REACHED.to_s
         )
       )
+    end
+
+    it "does not include pr_number in metric attributes to avoid unbounded label cardinality" do
+      error = exhausted_activity_error("RequestReviewActivity")
+
+      workflow.send(
+        :record_swallowed_non_critical_activity_failure,
+        project_id: 42,
+        helper: "request_review",
+        error: error,
+        pr_number: 12
+      )
+
+      expect(metric).to have_received(:record).with(
+        1,
+        additional_attributes: hash_not_including("pr_number")
+      )
+    end
+
+    it "forwards pr_number to the structured logger for on-call drill-down" do
+      error = exhausted_activity_error("RequestReviewActivity")
+
+      workflow.send(
+        :record_swallowed_non_critical_activity_failure,
+        project_id: 42,
+        helper: "request_review",
+        error: error,
+        pr_number: 12
+      )
+
+      expect(logger).to have_received(:warn).with(hash_including(
+        message: "poll.swallowed_non_critical_failure_pr_context",
+        project_id: 42,
+        helper: "request_review",
+        pr_number: 12
+      ))
+    end
+
+    it "does not log a pr-context line when pr_number is not provided" do
+      error = exhausted_activity_error("CheckKnowledgeStalenessActivity")
+
+      workflow.send(
+        :record_swallowed_non_critical_activity_failure,
+        project_id: 42,
+        helper: "maybe_check_knowledge_staleness",
+        error: error
+      )
+
+      expect(logger).not_to have_received(:warn)
     end
 
     it "does not record for non-exhausted failures" do
