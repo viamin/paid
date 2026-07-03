@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_02_235858) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_03_184158) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2671,6 +2671,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_02_235858) do
   add_foreign_key "chat_sessions", "users", column: "created_by_id"
   add_foreign_key "claude_login_sessions", "accounts"
   add_foreign_key "claude_login_sessions", "integration_credentials"
+  add_foreign_key "claude_login_sessions", "runner_credentials"
   add_foreign_key "claude_login_sessions", "users", column: "created_by_id"
   add_foreign_key "collector_runs", "project_versions"
   add_foreign_key "configuration_bundles", "accounts", on_delete: :cascade

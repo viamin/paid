@@ -93,6 +93,20 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
           expect(bootstrap_step.fetch("run")).to eq("bin/rails ci:bootstrap_test_defaults")
         end
       end
+
+      if workflow_path == ".github/workflows/ci.yml"
+        it "replays migrations in a dedicated CI job" do
+          job = workflow.fetch("jobs").fetch("migrations")
+          setup_step = job.fetch("steps").find { |step| step["name"] == "Replay migrations" }
+
+          expect(job.fetch("env")).to include(
+            "PAID_TEST_DATABASE" => "paid_migration_test",
+            "DB_USERNAME" => "postgres",
+            "DB_PASSWORD" => "postgres"
+          )
+          expect(setup_step.fetch("run")).to eq("bin/rails db:create db:migrate")
+        end
+      end
     end
   end
 end
