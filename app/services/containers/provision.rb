@@ -191,6 +191,12 @@ module Containers
     # Ensures the selected network exists before creating the container,
     # and applies firewall rules for restricted proxy-mode runs after start.
     #
+    # Signal-aware: a rescue clause for SignalException (e.g. Interrupt from
+    # Thread#raise on cancellation) runs cleanup before re-raising so the
+    # half-created container and workspace volume are not leaked. Without
+    # this clause, StandardError rescues below bypass an in-flight cancel
+    # because SignalException inherits from Exception, not StandardError.
+    #
     # @return [Result] Result object with success/failure status
     def provision
       log_system("container.provision.start", image: options[:image])
@@ -219,6 +225,16 @@ module Containers
       raise ProvisionError, "Docker error: #{e.message}"
     rescue StandardError => e
       log_system("container.provision.failed", error: e.message)
+      cleanup
+      cleanup_workspace_volume
+      raise
+    rescue SignalException => e
+      # Cancellation signal (typically Interrupt from Thread#raise in the
+      # activity's drain path) lands here. run the same cleanup as the
+      # StandardError rescue so a half-provisioned container and its
+      # workspace volume are not orphaned, then re-raise so the worker
+      # thread exits with the original signal.
+      log_system("container.provision.interrupted", signal: e.class.name)
       cleanup
       cleanup_workspace_volume
       raise

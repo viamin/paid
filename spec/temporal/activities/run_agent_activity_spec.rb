@@ -24,9 +24,14 @@ RSpec.describe Activities::RunAgentActivity do
 
     allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
     allow(Containers::Provision).to receive(:reconnect)
-      .with(agent_run: agent_run, container_id: "abc123")
+      .with(hash_including(agent_run: agent_run, container_id: "abc123"))
       .and_return(container_service)
-    allow(container_service).to receive_messages(container_running?: true, container: nil, heartbeat_host_path: "/tmp/paid-heartbeat-test/.paid-heartbeat")
+    allow(container_service).to receive_messages(
+      cleanup: nil,
+      container_running?: true,
+      container: nil,
+      heartbeat_host_path: "/tmp/paid-heartbeat-test/.paid-heartbeat"
+    )
     allow(Containers::GitOperations).to receive(:new)
       .with(container_service: container_service, agent_run: agent_run)
       .and_return(git_ops)
@@ -3533,7 +3538,7 @@ expect(container_service).to receive(:execute).with(
         agent_type: "api", container_id: "abc123")
       allow(AgentRun).to receive(:find).with(unsupported_run.id).and_return(unsupported_run)
       allow(Containers::Provision).to receive(:reconnect)
-        .with(agent_run: unsupported_run, container_id: "abc123")
+        .with(hash_including(agent_run: unsupported_run, container_id: "abc123"))
         .and_return(container_service)
       allow(Containers::GitOperations).to receive(:new)
         .with(container_service: container_service, agent_run: unsupported_run)
@@ -4013,7 +4018,7 @@ expect(container_service).to receive(:execute).with(
           project: project, issue: issue, container_id: "abc123")
         allow(AgentRun).to receive(:find).with(create_issue_run.id).and_return(create_issue_run)
         allow(Containers::Provision).to receive(:reconnect)
-          .with(agent_run: create_issue_run, container_id: "abc123")
+          .with(hash_including(agent_run: create_issue_run, container_id: "abc123"))
           .and_return(container_service)
         allow(Containers::GitOperations).to receive(:new)
           .with(container_service: container_service, agent_run: create_issue_run)
