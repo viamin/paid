@@ -40,16 +40,7 @@ module Workflows
 
         queue_enhance_issue_rechecks(project_id, result[:enhance_issue_rechecks])
 
-        if Temporalio::Workflow.patched("batch-evaluate-issues-v1")
-          evaluate_issues_batch(project_id, result[:issues])
-        else
-          result[:issues].each do |issue_data|
-            evaluation = run_activity(Activities::DetectLabelsActivity,
-              { project_id: project_id, issue_id: issue_data[:id] }, timeout: 30)
-
-            handle_automation_result(evaluation, project_id)
-          end
-        end
+        evaluate_issues_batch(project_id, result[:issues])
 
         record_poll_heartbeat(project_id)
 
@@ -93,8 +84,7 @@ module Workflows
           goal: "analyze_issue"
         }, timeout: 30)
       when "start_planning"
-        if Temporalio::Workflow.patched("feature-orchestration-start-v1") &&
-            feature_flag_enabled?(:feature_orchestration, project_id:)
+        if feature_flag_enabled?(:feature_orchestration, project_id:)
           start_feature_orchestration_workflow(project_id, decision[:issue_id])
         else
           start_planning_workflow(project_id, decision[:issue_id])
@@ -252,8 +242,6 @@ module Workflows
     # Evaluate auto-release for the project's open release-please PRs.
     # Runs on every poll cycle so webhooks are not required for auto-release.
     def maybe_evaluate_auto_release(project_id)
-      return unless Temporalio::Workflow.patched("add-auto-release-poll-v1")
-
       run_activity(Activities::EvaluateAutoReleaseActivity,
         { project_id: project_id }, timeout: 30)
     rescue Temporalio::Error::CanceledError
@@ -270,8 +258,6 @@ module Workflows
     # Evaluate dependabot auto-merge for the project's open Dependabot PRs.
     # Runs on every poll cycle so webhooks are not required for auto-merge.
     def maybe_evaluate_dependabot_auto_merge(project_id)
-      return unless Temporalio::Workflow.patched("add-dependabot-auto-merge-poll-v1")
-
       run_activity(Activities::EvaluateDependabotAutoMergeActivity,
         { project_id: project_id }, timeout: 30)
     rescue Temporalio::Error::CanceledError
@@ -286,8 +272,6 @@ module Workflows
     end
 
     def run_notification_rules(project_id, issue_ids:, pr_scan_result:)
-      return unless Temporalio::Workflow.patched("notification-rules-v1")
-
       pr_scan_result = normalize_scan_result(pr_scan_result)
 
       run_activity(Activities::EvaluateNotificationRulesActivity, {
@@ -391,11 +375,9 @@ module Workflows
       workflow_id = "plan-#{project_id}-#{issue_id}-#{Temporalio::Workflow.now.to_i}"
       child_input = { project_id: project_id, issue_id: issue_id }
 
-      if Temporalio::Workflow.patched("planning-review-timeout-v1")
-        timeout_config = run_activity(Activities::FetchPlanReviewTimeoutActivity,
-          { project_id: project_id }, timeout: 10)
-        child_input[:plan_review_timeout_hours] = timeout_config[:plan_review_timeout_hours]
-      end\
+      timeout_config = run_activity(Activities::FetchPlanReviewTimeoutActivity,
+        { project_id: project_id }, timeout: 10)
+      child_input[:plan_review_timeout_hours] = timeout_config[:plan_review_timeout_hours]
 
       Temporalio::Workflow.start_child_workflow(
         Workflows::PlanningWorkflow,
