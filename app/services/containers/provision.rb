@@ -1116,8 +1116,13 @@ module Containers
       # Treat "no profile found" (Resolve returns the built-in default) the
       # same as no sample so first-run deployments honor the user's
       # configured limit instead of silently switching to the global
-      # 4 GB estimate.
-      recommended = settings.container_memory_bytes if recommended <= 0 || resolution[:source] == "default"
+      # 4 GB estimate. Return the manual value directly — do NOT clamp it
+      # to the auto band — otherwise flipping to auto mode can quietly
+      # shrink a user's explicit container_memory_bytes (e.g. a 20 GB
+      # manual limit collapsing to the 16 GB default ceiling) before any
+      # profile has been learned. The floor/ceiling band constrains
+      # learned recommendations only.
+      return settings.container_memory_bytes if recommended <= 0 || resolution[:source] == "default"
 
       clamp_auto_memory_limit(recommended, settings)
     end

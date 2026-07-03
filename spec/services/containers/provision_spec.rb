@@ -242,6 +242,24 @@ RSpec.describe Containers::Provision do
       expect(svc.options[:memory_bytes]).to eq(2 * 1024 * 1024 * 1024)
     end
 
+    it "does not clamp the manual fallback to the auto ceiling when no profile exists" do
+      # A user who raised container_memory_bytes above the default 16 GB auto
+      # ceiling and then flips to auto mode should not silently get a smaller
+      # container on the next provision before any profile has been learned.
+      # The floor/ceiling band constrains learned recommendations only.
+      create(:user_setting,
+        user: project.created_by,
+        container_memory_limit_mode: UserSetting::CONTAINER_MEMORY_LIMIT_MODE_AUTO,
+        container_memory_bytes: 20 * 1024 * 1024 * 1024,
+        container_memory_auto_floor_bytes: 512.megabytes,
+        container_memory_auto_ceiling_bytes: 16.gigabytes
+      )
+
+      svc = described_class.new(agent_run: agent_run, worktree_path: worktree_path)
+
+      expect(svc.options[:memory_bytes]).to eq(20 * 1024 * 1024 * 1024)
+    end
+
     it "clamps the auto memory limit between the user-configured floor and ceiling" do
       create(:user_setting,
         user: project.created_by,

@@ -80,11 +80,21 @@ module AgentRunResourceProfiles
         # can therefore only come from low usage observed while the limit
         # was held steady, never from the dip itself.
         consecutive_low = 0
-        target = previous_limit
+        # Hold at the previous limit, but never above the current ceiling.
+        # If an operator lowers container_memory_auto_ceiling_bytes while a
+        # recommendation is already in flight, previous_limit can sit above
+        # the new ceiling; honouring it verbatim would persist a value
+        # outside the operator-controllable band.
+        target = [ previous_limit, ceiling ].min
       elsif capacity_blocked_eligible? && should_block_capacity?(target, ceiling)
         capacity_blocked = true
         capacity_blocked_at ||= Time.current
-        target = previous_limit.positive? ? previous_limit : [ ceiling, floor ].max
+        # Pin to the previous limit so the recommendation stops chasing
+        # Docker memory upward — but still clamp it to the ceiling so a
+        # lowered ceiling remains an effective escape hatch for a blocked
+        # profile. When there is no prior limit yet, start at the top of
+        # the band (capacity is already the binding constraint).
+        target = previous_limit.positive? ? [ previous_limit, ceiling ].min : [ ceiling, floor ].max
       else
         if downward_move?(previous_limit, target)
           downward_tuning_count += 1

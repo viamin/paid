@@ -90,6 +90,67 @@ RSpec.describe AgentRunResourceProfiles::MemoryLimitTuner do
       expect(decision.capacity_blocked?).to be(true)
     end
 
+    it "drops a capacity-blocked recommendation down to a newly lowered ceiling" do
+      # The profile is already capacity-blocked at 16 GB and the operator
+      # subsequently lowers container_memory_auto_ceiling_bytes to 8 GB to
+      # force the limit down. The ceiling must remain an effective escape
+      # hatch: the persisted recommendation cannot stay parked above the
+      # new ceiling just because the profile is blocked.
+      #
+      # The downward move is authorized (enough sustained low-memory
+      # samples) so the cooldown-hold branch is skipped and execution
+      # reaches the capacity-blocked branch, which is the line that
+      # previously re-pinned target to the stale previous_limit.
+      profile.recommended_memory_limit_bytes = 16.gigabytes
+      profile.oom_count = AgentRunResourceProfile::CAPACITY_BLOCKED_OOM_THRESHOLD
+      profile.capacity_blocked = true
+      profile.capacity_blocked_at = 1.minute.ago
+      profile.consecutive_low_memory_samples = AgentRunResourceProfile::DOWNWARD_TUNING_MIN_SAMPLES
+      lowered_settings = build(
+        :user_setting,
+        user: build(:user),
+        container_memory_auto_floor_bytes: 512.megabytes,
+        container_memory_auto_ceiling_bytes: 8.gigabytes
+      )
+
+      decision = described_class.new(
+        profile: profile,
+        user_settings: lowered_settings,
+        baseline_limit_bytes: 17.gigabytes,
+        p95_memory_bytes: 14.gigabytes
+      ).call
+
+      expect(decision.recommended_limit_bytes).to eq(8.gigabytes)
+      expect(decision.ceiling_bytes).to eq(8.gigabytes)
+      expect(decision.capacity_blocked?).to be(true)
+    end
+
+    it "respects a lowered ceiling while holding during the downward cooldown" do
+      # Same class of issue as the capacity-blocked case: a downward move is
+      # requested but not yet authorized, so we hold near the previous limit.
+      # If that previous limit now exceeds a lowered ceiling, the hold must
+      # still come down to the ceiling rather than persisting above the band.
+      profile.recommended_memory_limit_bytes = 15.gigabytes
+      profile.consecutive_low_memory_samples = 0
+      profile.oom_count = 0
+      lowered_settings = build(
+        :user_setting,
+        user: build(:user),
+        container_memory_auto_floor_bytes: 512.megabytes,
+        container_memory_auto_ceiling_bytes: 8.gigabytes
+      )
+
+      decision = described_class.new(
+        profile: profile,
+        user_settings: lowered_settings,
+        baseline_limit_bytes: 7.gigabytes,
+        p95_memory_bytes: 7.gigabytes
+      ).call
+
+      expect(decision.recommended_limit_bytes).to eq(8.gigabytes)
+      expect(decision.downward_tuning_count).to eq(0)
+    end
+
     it "clears capacity_blocked when the latest recommendation drops well below the ceiling" do
       profile.recommended_memory_limit_bytes = 4.gigabytes
       profile.oom_count = 0
