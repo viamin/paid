@@ -202,6 +202,15 @@ RSpec.describe Activities::ProvisionContainerActivity do
 
       activity.send(:drain_worker, worker, canceled: true, grace_seconds: 0.05, agent_run: agent_run)
 
+      # Thread#kill is asynchronous — it only schedules the worker to terminate,
+      # so the worker may still be alive briefly after drain_worker returns. In
+      # production this is intentional: a worker wedged in uninterruptible I/O
+      # may never die, so joining after kill could block the activity. Here the
+      # worker is in interruptible sleep (not truly wedged), so it terminates
+      # promptly — wait for the scheduled termination before asserting instead
+      # of relying on kill being synchronous.
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 5
+      sleep(0.01) while worker.alive? && Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
       expect(worker).not_to be_alive
       # recover runs only on the Thread#kill path, proving the in-flight
       # container is recorded before the worker is forcibly terminated.
