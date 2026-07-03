@@ -252,6 +252,23 @@ RSpec.describe Activities::CreateAgentRunActivity do
       )
     end
 
+    it "records schedule_to_start latency per account when resuming a queued run" do
+      queued_run = create(
+        :agent_run,
+        :queued,
+        project: project,
+        issue: issue,
+        created_at: 90.seconds.ago
+      )
+
+      freeze_time do
+        activity.execute(agent_run_id: queued_run.id)
+      end
+
+      metric_log = queued_run.reload.agent_run_logs.metric.order(:id).last
+      expect_schedule_to_start_metric(metric_log, account_id: project.account_id, project_id: project.id, min_seconds: 89.0)
+    end
+
     it "preserves the existing configuration bundle on resume when provider selection is unchanged" do
       existing_bundle = create_runtime_bundle(existing_create_pr_bundle_definition)
       queued_run = create(:agent_run,
@@ -380,6 +397,22 @@ RSpec.describe Activities::CreateAgentRunActivity do
           "tier" => "high"
         )
       )
+    end
+
+    def expect_schedule_to_start_metric(metric_log, account_id:, project_id:, min_seconds:)
+      expect(metric_log.metadata).to include(
+        "type" => "schedule_to_start_latency",
+        "account_id" => account_id
+      )
+
+      payload = JSON.parse(metric_log.content)
+      expect(payload).to include(
+        "metric_name" => "schedule_to_start_latency",
+        "account_id" => account_id,
+        "project_id" => project_id,
+        "queue" => Paid.agent_task_queue
+      )
+      expect(payload.fetch("seconds")).to be >= min_seconds
     end
 
     it "fails fast when a resumed queued run refreshes to a runner now disabled for agent runs" do

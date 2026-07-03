@@ -265,9 +265,12 @@ module Activities
       logger.info(
         message: "agent_execution.queued_run_resumed",
         agent_run_id: agent_run.id,
+        account_id: agent_run.project.account_id,
         project_id: agent_run.project_id,
-        issue_id: agent_run.issue_id
+        issue_id: agent_run.issue_id,
+        schedule_to_start_seconds: schedule_to_start_seconds(agent_run)
       )
+      record_schedule_to_start_metric(agent_run)
 
       {
         agent_run_id: agent_run.id,
@@ -278,6 +281,24 @@ module Activities
         max_execution_seconds: effective_max_execution_seconds(agent_run.project, user_settings),
         paused: policy_evaluation.paused
       }
+    end
+
+    def record_schedule_to_start_metric(agent_run)
+      agent_run.log!(
+        "metric",
+        {
+          metric_name: "schedule_to_start_latency",
+          seconds: schedule_to_start_seconds(agent_run),
+          account_id: agent_run.project.account_id,
+          project_id: agent_run.project_id,
+          queue: Paid.agent_task_queue
+        }.to_json,
+        metadata: { type: "schedule_to_start_latency", account_id: agent_run.project.account_id }
+      )
+    end
+
+    def schedule_to_start_seconds(agent_run)
+      [ (Time.current - agent_run.created_at).to_f, 0.0 ].max.round(3)
     end
 
     def analyze_scope(issue)
