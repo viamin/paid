@@ -904,6 +904,73 @@ RSpec.describe Containers::Provision do
       end
     end
 
+    context "when interrupted with SignalException" do
+      # ProvisionContainerActivity escalates to Thread#raise(Interrupt) when its
+      # worker thread does not finish within the cancellation grace window.
+      # Interrupt inherits from SignalException — NOT StandardError — so the
+      # existing rescue clauses would bypass cleanup. The SignalException
+      # rescue clause runs cleanup + cleanup_workspace_volume before re-raising
+      # so a half-provisioned container and workspace volume are not orphaned.
+      it "deletes the half-provisioned container before re-raising Interrupt" do
+        stub_provision_steps(service)
+
+        allow(mock_container).to receive(:delete)
+        allow(mock_container).to receive(:stop)
+        allow(service).to receive(:log_system)
+        allow(service).to receive(:cleanup_workspace_volume)
+
+        # Drop into the rescue path immediately after create_container
+        # populates @container, mimicking the activity's worker thread being
+        # raised into the middle of provision.
+        allow(service).to receive(:start_container) do
+          raise Interrupt, "canceled"
+        end
+        allow(Docker::Container).to receive(:create).and_return(mock_container)
+
+        expect {
+          service.provision
+        }.to raise_error(Interrupt)
+
+        expect(mock_container).to have_received(:delete)
+      end
+
+      it "deletes the workspace volume before re-raising Interrupt" do
+        # No worktree_path means provision creates a named Docker volume via
+        # prepare_workspace! — interrupt mid-flight and verify
+        # cleanup_workspace_volume ran (no orphan leaked).
+        worktree_vol_service = described_class.new(agent_run: agent_run, worktree_path: nil)
+
+        # Stub only the steps after the interrupt point so prepare_workspace!
+        # actually creates the volume (and @workspace_volume is set). The
+        # global before already mocks Docker::Volume.create to return
+        # mock_volume, so prepare_workspace! seeds @workspace_volume for us.
+        allow(worktree_vol_service).to receive(:log_system)
+        allow(worktree_vol_service).to receive(:fix_all_ownership!)
+        allow(worktree_vol_service).to receive(:seed_opencode_database!)
+        allow(worktree_vol_service).to receive(:seed_kilo_database!)
+        allow(worktree_vol_service).to receive(:seed_codex_credentials!)
+        allow(worktree_vol_service).to receive(:seed_gemini_credentials!)
+        allow(worktree_vol_service).to receive(:seed_copilot_credentials!)
+        allow(worktree_vol_service).to receive(:seed_claude_credentials!)
+        allow(worktree_vol_service).to receive(:apply_network_restrictions!)
+
+        # Override the global Docker::Volume.get mock so it returns the just-
+        # created volume (rather than always raising). This simulates the
+        # production behaviour where Docker actually returns the volume.
+        allow(Docker::Volume).to receive(:get).with("paid-workspace-#{agent_run.id}").and_return(mock_volume)
+
+        allow(worktree_vol_service).to receive(:ensure_network!) do
+          raise Interrupt, "canceled"
+        end
+
+        expect(mock_volume).to receive(:remove)
+
+        expect {
+          worktree_vol_service.provision
+        }.to raise_error(Interrupt)
+      end
+    end
+
     context "with network integration" do
       it "ensures the agent network exists before provisioning" do
         expect(NetworkPolicy).to receive(:ensure_network!).with(
