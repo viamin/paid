@@ -7,13 +7,6 @@ module NotificationsHelper
     @_unread_notification_count ||= visible_notifications.active.unread.count
   end
 
-  def notification_badge_counts
-    return {} unless current_account
-
-    @_notification_badge_counts ||= visible_notifications.active.unread
-      .where.not(nav_section: nil).group(:nav_section).count
-  end
-
   private
 
   def visible_notifications
