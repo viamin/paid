@@ -2471,16 +2471,7 @@ class AgentRun < ApplicationRecord
   # container that has died or been removed is reconciled away before a fresh
   # one is provisioned, so a retry never leaks a duplicate container.
   def reuse_or_reconcile_container(**options)
-    service = begin
-      Containers::Provision.reconnect(
-        agent_run: self,
-        container_id: container_id,
-        worktree_path: worktree_path.presence
-      )
-    rescue Containers::Provision::ProvisionError
-      # Recorded container is gone (manually removed / expired) — reconcile below.
-      nil
-    end
+    service = reconnect_recorded_container_for_reuse
 
     if service&.container_running?
       @container_service = service
@@ -2494,6 +2485,23 @@ class AgentRun < ApplicationRecord
 
     reconcile_stale_container!(service)
     provision_new_container(**options)
+  end
+
+  def reconnect_recorded_container_for_reuse
+    Containers::Provision.reconnect(
+      agent_run: self,
+      container_id: container_id,
+      worktree_path: worktree_path.presence
+    )
+  rescue Containers::Provision::ProvisionError => e
+    raise unless recorded_container_missing?(e)
+
+    # Recorded container is gone (manually removed / expired) — reconcile below.
+    nil
+  end
+
+  def recorded_container_missing?(error)
+    error.message.match?(/\AContainer .* not found\z/)
   end
 
   # Provisions a brand-new container when there is no existing container to

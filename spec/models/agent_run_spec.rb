@@ -1867,58 +1867,56 @@ RSpec.describe AgentRun do
           agent_run.provision_container(memory_bytes: 1024 * 1024 * 1024)
         end
 
-        context "when the run already has a recorded container (Temporal retry)" do
-          it "reuses a live container instead of provisioning a duplicate" do
-            agent_run = create(:agent_run, worktree_path: worktree_path, container_id: "existing-container")
-            existing = instance_double(
-              Docker::Container,
-              id: "existing-container",
-              refresh!: true,
-              info: { "State" => { "Running" => true } }
-            )
-            allow(Docker::Container).to receive(:get).with("existing-container").and_return(existing)
+        it "reuses a live recorded container on Temporal retry instead of provisioning a duplicate" do
+          agent_run = create(:agent_run, worktree_path: worktree_path, container_id: "existing-container")
+          existing = instance_double(
+            Docker::Container,
+            id: "existing-container",
+            refresh!: true,
+            info: { "State" => { "Running" => true } }
+          )
+          allow(Docker::Container).to receive(:get).with("existing-container").and_return(existing)
 
-            # A second container must never be created on retry.
-            expect(Docker::Container).not_to receive(:create)
+          # A second container must never be created on retry.
+          expect(Docker::Container).not_to receive(:create)
 
-            result = agent_run.provision_container
+          result = agent_run.provision_container
 
-            expect(result).to be_success
-            expect(result[:container_id]).to eq("existing-container")
-            # container_id is unchanged — no new container recorded.
-            expect(agent_run.reload.container_id).to eq("existing-container")
-          end
+          expect(result).to be_success
+          expect(result[:container_id]).to eq("existing-container")
+          # container_id is unchanged — no new container recorded.
+          expect(agent_run.reload.container_id).to eq("existing-container")
+        end
 
-          it "reconciles a dead recorded container and provisions a fresh one" do
-            agent_run = create(:agent_run, worktree_path: worktree_path, container_id: "dead-container")
-            dead = instance_double(
-              Docker::Container,
-              id: "dead-container",
-              refresh!: true,
-              stop: true,
-              delete: true,
-              info: { "State" => { "Running" => false } }
-            )
-            allow(Docker::Container).to receive(:get).with("dead-container").and_return(dead)
+        it "reconciles a dead recorded container on Temporal retry and provisions a fresh one" do
+          agent_run = create(:agent_run, worktree_path: worktree_path, container_id: "dead-container")
+          dead = instance_double(
+            Docker::Container,
+            id: "dead-container",
+            refresh!: true,
+            stop: true,
+            delete: true,
+            info: { "State" => { "Running" => false } }
+          )
+          allow(Docker::Container).to receive(:get).with("dead-container").and_return(dead)
 
-            result = agent_run.provision_container
+          result = agent_run.provision_container
 
-            expect(result).to be_success
-            # The dead container was cleaned up...
-            expect(dead).to have_received(:delete)
-            # ...and a fresh container took its place (no orphan left behind).
-            expect(agent_run.reload.container_id).to eq("abc123container")
-          end
+          expect(result).to be_success
+          # The dead container was cleaned up...
+          expect(dead).to have_received(:delete)
+          # ...and a fresh container took its place (no orphan left behind).
+          expect(agent_run.reload.container_id).to eq("abc123container")
+        end
 
-          it "reconciles a missing recorded container and provisions a fresh one" do
-            agent_run = create(:agent_run, worktree_path: worktree_path, container_id: "gone-container")
-            allow(Docker::Container).to receive(:get).with("gone-container").and_raise(Docker::Error::NotFoundError)
+        it "reconciles a missing recorded container on Temporal retry and provisions a fresh one" do
+          agent_run = create(:agent_run, worktree_path: worktree_path, container_id: "gone-container")
+          allow(Docker::Container).to receive(:get).with("gone-container").and_raise(Docker::Error::NotFoundError)
 
-            result = agent_run.provision_container
+          result = agent_run.provision_container
 
-            expect(result).to be_success
-            expect(agent_run.reload.container_id).to eq("abc123container")
-          end
+          expect(result).to be_success
+          expect(agent_run.reload.container_id).to eq("abc123container")
         end
       end
 
