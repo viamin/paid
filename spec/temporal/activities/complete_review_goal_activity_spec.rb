@@ -175,7 +175,7 @@ RSpec.describe Activities::CompleteReviewGoalActivity do
         expect(agent_run.error_message).not_to include("no GitHub review exists")
       end
 
-      it "treats missing enabled review bot logins as an unverifiable lookup" do
+      it "treats missing paid_agent review bot logins as an unverifiable lookup" do
         agent_run = create(:agent_run, :running, :review_goal, project: project)
         stub_review_lookup(agent_run, enabled_bot_logins: Set.new)
 
@@ -183,7 +183,7 @@ RSpec.describe Activities::CompleteReviewGoalActivity do
           activity.execute(agent_run_id: agent_run.id)
         }.to raise_error(Temporalio::Error::ApplicationError) { |error|
           expect(error.message).to include("could not verify whether GitHub has a review")
-          expect(error.message).to include("no enabled review bot logins are configured")
+          expect(error.message).to include("no enabled paid_agent review bot logins are configured")
           expect(error.type).to eq("ReviewVerificationFailed")
         }
 
@@ -236,6 +236,24 @@ RSpec.describe Activities::CompleteReviewGoalActivity do
         agent_run = create(:agent_run, :running, :review_goal, project: project)
         stub_review_lookup(agent_run)
         review = review_payload(id: 790, user_login: "maintainer", body: "Human review left while the run was open")
+
+        allow(github_client).to receive(:pull_request_reviews).and_return([ review ])
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+          expect(error.message).to include("no GitHub review exists")
+          expect(error.message).not_to include("bypassed the proxy tracking path")
+          expect(error.type).to eq("ReviewNotPosted")
+        }
+      end
+
+      it "ignores concurrent non-paid review-bot reviews when checking for untracked Paid reviews" do
+        agent_run = create(:agent_run, :running, :review_goal, project: project)
+        stub_review_lookup(agent_run,
+          enabled_bot_logins: Set["paid-code-reviewer[bot]", "chatgpt-codex-connector[bot]"])
+        review = review_payload(id: 791, user_login: "chatgpt-codex-connector[bot]",
+          body: "Codex review left while the paid-agent run was open")
 
         allow(github_client).to receive(:pull_request_reviews).and_return([ review ])
 

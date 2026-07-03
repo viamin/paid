@@ -103,9 +103,9 @@ module Activities
         raise ReviewVerificationUnavailable, "the source pull request number is missing"
       end
 
-      enabled_bot_logins = agent_run.project.enabled_review_bot_logins
-      if enabled_bot_logins.blank?
-        raise ReviewVerificationUnavailable, "no enabled review bot logins are configured"
+      paid_agent_logins = paid_agent_review_logins(agent_run.project)
+      if paid_agent_logins.blank?
+        raise ReviewVerificationUnavailable, "no enabled paid_agent review bot logins are configured"
       end
 
       client = agent_run.project.client
@@ -116,11 +116,16 @@ module Activities
         agent_run.source_pull_request_number
       )
       Array(reviews).select do |review|
-        enabled_bot_logins.include?(review[:user_login].to_s.downcase) &&
+        paid_agent_logins.include?(review[:user_login].to_s.downcase) &&
         review[:submitted_at].present? &&
           submitted_during_run?(agent_run, review[:submitted_at]) &&
           !review[:state].to_s.casecmp("PENDING").zero?
       end
+    end
+
+    def paid_agent_review_logins(project)
+      project.enabled_review_bot_logins &
+        ProviderSupport.provider_bot_usernames_for("paid_agent")
     end
 
     def matching_review?(agent_run, review)
