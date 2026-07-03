@@ -18,6 +18,11 @@ module Activities
     # timeout configured at the workflow call site, giving ample margin.
     HEARTBEAT_INTERVAL_SECONDS = 15
 
+    # Grace window given to an in-flight provisioning worker to finish on
+    # its own after the activity is canceled, before it is forcibly
+    # interrupted.
+    CANCEL_GRACE_SECONDS = 5
+
     def execute(input)
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)
@@ -46,27 +51,35 @@ module Activities
     # activity thread emits heartbeats because the Temporal activity context
     # is thread-local. Falls back to a direct call when no activity context
     # is present (e.g. unit tests).
-    def provision_with_heartbeat(agent_run, interval: HEARTBEAT_INTERVAL_SECONDS)
+    #
+    # Mirrors RunAgentActivity#with_periodic_heartbeat: on cancellation we
+    # flag the worker and re-raise CanceledError, then drain the worker in
+    # the ensure block (joining first, escalating to Interrupt only if it is
+    # still alive) so the propagating CanceledError is not masked by a worker
+    # Interrupt.
+    def provision_with_heartbeat(agent_run, interval: HEARTBEAT_INTERVAL_SECONDS,
+                                 grace_seconds: CANCEL_GRACE_SECONDS)
       context = Temporalio::Activity::Context.current_or_nil
       return agent_run.provision_container unless context
 
       tenant_account_id = Current.account&.id
       worker = Thread.new { run_provision_in_context(agent_run, tenant_account_id) }
       worker.report_on_exception = false
+      canceled = false
 
       begin
         until worker.join(interval)
           begin
             context.heartbeat("provisioning")
           rescue Temporalio::Error::CanceledError
-            interrupt_worker(worker)
+            canceled = true
             raise
           rescue StandardError
             # Best-effort heartbeat; the next interval retries.
           end
         end
       ensure
-        worker.join unless $!
+        drain_worker(worker, canceled: canceled, grace_seconds: grace_seconds)
       end
 
       worker.value
@@ -104,12 +117,32 @@ module Activities
       executor ? executor.wrap(&tenant_scoped) : tenant_scoped.call
     end
 
-    # Cooperatively stops the provisioning worker on cancellation so the
-    # activity can shut down promptly without leaving a detached thread.
-    def interrupt_worker(worker)
-      worker.raise(Interrupt) if worker.alive?
-      worker.join(5)
-      worker.kill if worker.alive?
+    # Tears down the provisioning worker once the heartbeat loop has exited.
+    #
+    # On cancellation, give the worker a short grace window to finish on its
+    # own before escalating: join first, and only Thread#raise (then
+    # Thread#kill as a last resort) if it is still alive. Joining before
+    # raising avoids spuriously interrupting a worker that was about to
+    # finish.
+    #
+    # After escalating we poll worker.alive? rather than worker.join: the
+    # worker dies with the Interrupt we sent, and Interrupt inherits from
+    # SignalException, so Thread#join/#value would re-raise it here and mask
+    # the CanceledError already in flight. Polling drains the worker without
+    # propagating its exception. Mirrors the interrupted branch of
+    # RunAgentActivity#with_periodic_heartbeat.
+    def drain_worker(worker, canceled:, grace_seconds: CANCEL_GRACE_SECONDS)
+      if canceled
+        worker.join(grace_seconds)
+        return unless worker.alive?
+
+        worker.raise(Interrupt)
+        deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + grace_seconds
+        sleep(0.05) while worker.alive? && Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
+        worker.kill if worker.alive?
+      else
+        worker.join
+      end
     end
   end
 end

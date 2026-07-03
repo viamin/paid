@@ -117,5 +117,40 @@ RSpec.describe Activities::ProvisionContainerActivity do
         activity.send(:provision_with_heartbeat, agent_run, interval: 0.01)
       }.to raise_error(Temporalio::Error::CanceledError)
     end
+
+    it "does not spuriously interrupt a worker that finishes within the grace window" do
+      allow(Temporalio::Activity::Context).to receive(:current_or_nil).and_return(mock_context)
+      allow(mock_context).to receive(:heartbeat).and_raise(Temporalio::Error::CanceledError, "canceled")
+      finished = []
+      allow(agent_run).to receive(:provision_container) { sleep 0.1; finished << true }
+
+      expect {
+        activity.send(:provision_with_heartbeat, agent_run, interval: 0.01, grace_seconds: 5)
+      }.to raise_error(Temporalio::Error::CanceledError)
+
+      # The worker ran to completion instead of being forcibly interrupted —
+      # the grace-window join succeeded before escalation.
+      expect(finished).to eq([ true ])
+    end
+
+    it "interrupts a stuck worker but still surfaces CanceledError" do
+      allow(Temporalio::Activity::Context).to receive(:current_or_nil).and_return(mock_context)
+      allow(mock_context).to receive(:heartbeat).and_raise(Temporalio::Error::CanceledError, "canceled")
+      interrupted = []
+      allow(agent_run).to receive(:provision_container) do
+        sleep 10
+      rescue Interrupt
+        interrupted << true
+        raise
+      end
+
+      expect {
+        activity.send(:provision_with_heartbeat, agent_run, interval: 0.01, grace_seconds: 0.05)
+      }.to raise_error(Temporalio::Error::CanceledError)
+
+      # The worker outlived the grace window and was interrupted, yet the
+      # propagating CanceledError was not masked by the worker's Interrupt.
+      expect(interrupted).to eq([ true ])
+    end
   end
 end
