@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_30_022611) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_03_064043) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -275,6 +275,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_30_022611) do
     t.string "proxy_token", limit: 64
     t.integer "pull_request_number"
     t.string "pull_request_url", limit: 500
+    t.datetime "queue_entered_at", comment: "Most recent time this run entered queued status so queue latency metrics reflect the current queue episode."
     t.datetime "rate_limited_until"
     t.string "result_commit_sha", limit: 40
     t.datetime "review_posted_at"

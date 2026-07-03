@@ -124,6 +124,7 @@ module Workflows
     def requeue_attributes(agent_run)
       {
         status: "queued",
+        queue_entered_at: Time.current,
         started_at: nil,
         completed_at: nil,
         duration_seconds: nil,

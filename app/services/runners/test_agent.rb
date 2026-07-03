@@ -477,6 +477,7 @@ module Runners
             runner_id: runner.id,
             agent_type: Runner.agent_type_for(runner.runner_key),
             status: "queued",
+            queue_entered_at: now,
             temporal_workflow_id: AgentRun::CLAIMED_SENTINEL,
             goal: "create_pr",
             trigger_type: "manual",

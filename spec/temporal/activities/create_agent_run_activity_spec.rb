@@ -258,7 +258,8 @@ RSpec.describe Activities::CreateAgentRunActivity do
         :queued,
         project: project,
         issue: issue,
-        created_at: 90.seconds.ago
+        created_at: 2.hours.ago,
+        queue_entered_at: 90.seconds.ago
       )
 
       freeze_time do

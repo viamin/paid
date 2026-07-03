@@ -298,7 +298,7 @@ module Activities
     end
 
     def schedule_to_start_seconds(agent_run)
-      [ (Time.current - agent_run.created_at).to_f, 0.0 ].max.round(3)
+      [ (Time.current - agent_run.queue_entered_at_for_current_episode).to_f, 0.0 ].max.round(3)
     end
 
     def analyze_scope(issue)

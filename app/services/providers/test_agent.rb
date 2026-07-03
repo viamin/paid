@@ -438,6 +438,7 @@ module Providers
             runner_id: effective_provider.id,
             agent_type: Provider.agent_type_for(effective_provider.provider_key),
             status: "queued",
+            queue_entered_at: now,
             temporal_workflow_id: AgentRun::CLAIMED_SENTINEL,
             goal: "create_pr",
             trigger_type: "manual",
