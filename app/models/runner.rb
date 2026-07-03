@@ -206,7 +206,7 @@ class Runner < ApplicationRecord
     return provider_api_key&.api_key.to_s.presence if provider_api_key.present?
     return unless active_integration_credential?
 
-    integration_credential.secret.to_s.presence
+    integration_credential.api_secret
   end
 
   def active_integration_credential?
