@@ -2163,6 +2163,43 @@ class AgentRun < ApplicationRecord
     cleanup_orphaned_workspace_volume
   end
 
+  # Persists the id of a container that provisioning created but never
+  # recorded, so a later CleanupContainerActivity can tear it down.
+  #
+  # Containers::Provision#provision creates the Docker container at
+  # +@container = create_container+ but only records it here once the full
+  # provision (start + credential seeding) succeeds. If the provisioning
+  # worker is forcibly terminated in that window — e.g. ProvisionContainerActivity
+  # falls back to Thread#kill for a worker stuck in an uninterruptible Docker
+  # call, which bypasses Containers::Provision's SignalException cleanup — the
+  # created container is orphaned with no recorded container_id, and
+  # CleanupContainerActivity could previously only reclaim its workspace
+  # volume by name. Recording the in-flight container here closes that leak.
+  #
+  # No-op when a container_id is already recorded or no in-flight container
+  # exists (e.g. the worker was killed before create_container). Returns the
+  # recorded container id, or nil.
+  def recover_in_flight_container!
+    return if container_id.present?
+
+    service = @container_service
+    container = service&.container
+    return unless container
+
+    host = service.backend.container_host_for(container)
+    self.class.where(id: id, container_id: nil)
+      .update_all(container_id: container.id, container_host: host)
+    self.container_id = container.id
+    self.container_host = host
+    Rails.logger.info(
+      message: "container_manager.recovered_in_flight_container",
+      agent_run_id: id,
+      container_id: container.id,
+      container_host: host
+    )
+    container.id
+  end
+
   # Executes a block with a provisioned container, ensuring cleanup.
   #
   # @param options [Hash] Override default container options

@@ -1920,6 +1920,43 @@ RSpec.describe AgentRun do
         end
       end
 
+      describe "#recover_in_flight_container!" do
+        it "records an in-flight container that provisioning created but never persisted" do
+          agent_run = create(:agent_run, worktree_path: worktree_path, container_id: nil)
+          service = instance_double(Containers::Provision)
+          backend = instance_double(Containers::Backends::LocalDocker)
+          allow(service).to receive_messages(
+            container: mock_container,
+            backend: backend
+          )
+          allow(backend).to receive(:container_host_for).with(mock_container).and_return("local")
+          agent_run.instance_variable_set(:@container_service, service)
+
+          result = agent_run.recover_in_flight_container!
+
+          expect(result).to eq("abc123container")
+          expect(agent_run.reload.container_id).to eq("abc123container")
+          expect(agent_run.container_host).to eq("local")
+        end
+
+        it "is a no-op when a container_id is already recorded" do
+          agent_run = create(:agent_run, worktree_path: worktree_path, container_id: "existing-container")
+          service = instance_double(Containers::Provision)
+          allow(service).to receive(:container).and_return(mock_container)
+          agent_run.instance_variable_set(:@container_service, service)
+
+          expect(agent_run.recover_in_flight_container!).to be_nil
+          expect(agent_run.reload.container_id).to eq("existing-container")
+        end
+
+        it "is a no-op when no in-flight container exists" do
+          agent_run = create(:agent_run, worktree_path: worktree_path, container_id: nil)
+
+          expect(agent_run.recover_in_flight_container!).to be_nil
+          expect(agent_run.reload.container_id).to be_nil
+        end
+      end
+
       describe "#execute_in_container" do
         it "executes command in the provisioned container" do
           agent_run = create(:agent_run, worktree_path: worktree_path)

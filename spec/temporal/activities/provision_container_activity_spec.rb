@@ -181,5 +181,31 @@ RSpec.describe Activities::ProvisionContainerActivity do
       # propagating CanceledError was not masked by the worker's Interrupt.
       expect(interrupted).to eq([ true ])
     end
+
+    it "recovers an in-flight container before Thread#kill on the last-resort path" do
+      # Exercise drain_worker directly with a raw blocking thread (rather than
+      # the with_connection-wrapped provision worker) so a forcibly killed
+      # worker cannot leak a DB connection into the test pool. The worker
+      # swallows Interrupt and stays alive past the grace window, forcing the
+      # Thread#kill path that recover_in_flight_container! guards.
+      worker = Thread.new do
+        loop do
+          begin
+            sleep 5
+          rescue Interrupt
+            # swallowed — simulates a worker wedged in uninterruptible I/O
+          end
+        end
+      end
+
+      allow(agent_run).to receive(:recover_in_flight_container!).and_return("recovered-container")
+
+      activity.send(:drain_worker, worker, canceled: true, grace_seconds: 0.05, agent_run: agent_run)
+
+      expect(worker).not_to be_alive
+      # recover runs only on the Thread#kill path, proving the in-flight
+      # container is recorded before the worker is forcibly terminated.
+      expect(agent_run).to have_received(:recover_in_flight_container!)
+    end
   end
 end

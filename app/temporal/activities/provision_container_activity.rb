@@ -21,9 +21,12 @@ module Activities
   # cleanup_workspace_volume before re-raising, so a thread that is alive
   # enough to catch an Interrupt does not orphan the half-created container
   # or workspace volume. Thread#kill (the last-resort path for truly stuck
-  # I/O) bypasses ensure/rescue; the workflow's CleanupContainerActivity
-  # ensure-block falls back to cleanup_orphaned_workspace_volume by name to
-  # pick up that residual. Both paths together guarantee no leak on cancel.
+  # I/O) bypasses ensure/rescue, so drain_worker first persists any
+  # in-flight container via AgentRun#recover_in_flight_container! (giving
+  # CleanupContainerActivity a recorded id to remove) and the workflow's
+  # cleanup ensure-block still falls back to
+  # cleanup_orphaned_workspace_volume by name for any residual volume.
+  # Both paths together guarantee no leak on cancel.
   class ProvisionContainerActivity < BaseActivity
     activity_name "ProvisionContainer"
 
@@ -100,7 +103,7 @@ module Activities
           end
         end
       ensure
-        drain_worker(worker, canceled: canceled, grace_seconds: grace_seconds)
+        drain_worker(worker, canceled: canceled, grace_seconds: grace_seconds, agent_run: agent_run)
       end
 
       worker.value
@@ -153,16 +156,18 @@ module Activities
     # propagating its exception. Mirrors the interrupted branch of
     # RunAgentActivity#with_periodic_heartbeat.
     #
-    # Cleanup on this path is delegated to Containers::Provision#provision's
+    # Cleanup on the Interrupt path is delegated to Containers::Provision#provision's
     # SignalException rescue — it runs cleanup + cleanup_workspace_volume
     # before re-raising, so a caught Interrupt never orphans a half-created
     # container or workspace volume. Thread#kill (last resort for a worker
-    # truly stuck in an uninterruptible Docker call) bypasses rescue, so any
-    # residual workspace volume is cleaned up downstream by the workflow's
-    # CleanupContainerActivity, which uses agent_run.cleanup_container and
-    # falls back to cleanup_orphaned_workspace_volume by name when
-    # container_id is blank.
-    def drain_worker(worker, canceled:, grace_seconds: CANCEL_GRACE_SECONDS)
+    # truly stuck in an uninterruptible Docker call) bypasses rescue/ensure,
+    # so before killing we recover any container the worker already created
+    # via AgentRun#recover_in_flight_container! — persisting its id so the
+    # workflow's CleanupContainerActivity can remove it instead of leaking it
+    # until the orphan janitor runs. Any residual workspace volume is still
+    # cleaned up downstream by cleanup_orphaned_workspace_volume (by name
+    # when container_id ends up blank).
+    def drain_worker(worker, canceled:, grace_seconds: CANCEL_GRACE_SECONDS, agent_run: nil)
       if canceled
         worker.join(grace_seconds)
         return unless worker.alive?
@@ -170,7 +175,23 @@ module Activities
         worker.raise(Interrupt)
         deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + grace_seconds
         sleep(0.05) while worker.alive? && Process.clock_gettime(Process::CLOCK_MONOTONIC) < deadline
-        worker.kill if worker.alive?
+        return unless worker.alive?
+
+        # The worker is stuck in an uninterruptible call, so Thread#kill is the
+        # only way to reclaim the thread. recover_in_flight_container! runs on
+        # this (activity) thread — safe to call because a worker wedged in
+        # blocking I/O is not mutating its Ruby state — and is best-effort so
+        # the kill always proceeds even if the recover write fails.
+        begin
+          agent_run&.recover_in_flight_container!
+        rescue StandardError => e
+          logger.warn(
+            message: "agent_execution.in_flight_container_recover_failed",
+            agent_run_id: agent_run&.id,
+            error: e.message
+          )
+        end
+        worker.kill
       else
         worker.join
       end
