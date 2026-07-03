@@ -159,6 +159,11 @@ module Activities
 
     HEARTBEAT_INTERVAL = 30
 
+    # Runs a block in a worker thread while the activity thread sends
+    # heartbeats. Any activity that uses this helper can hold a second DB
+    # connection concurrently with its activity slot once the worker thread
+    # touches Active Record, so worker pool sizing must budget one extra
+    # connection per regular activity slot on queues that use this helper.
     def with_periodic_heartbeat(*details, interval: HEARTBEAT_INTERVAL, **metadata)
       context = Temporalio::Activity::Context.current_or_nil
       return yield unless context
@@ -217,6 +222,7 @@ module Activities
           if worker.alive?
             worker.raise(Interrupt)
             worker.join(5)
+            worker.kill if worker.alive?
           end
         else
           worker.join

@@ -82,20 +82,23 @@ one concurrent agent execution (container launch, monitoring, teardown). Activit
 are I/O-bound (waiting on Docker and LLM APIs), so more slots improve throughput
 linearly up to the database connection limit.
 
-**Key constraint** (each agent activity slot holds **two** connections — see below):
+**Key constraint** (heartbeat-enabled regular activity slots can hold **two** connections — see below):
 
 - `TEMPORAL_WORKER_MODE=poll`:
-  `DB_POOL >= TEMPORAL_POLL_ACTIVITY_SLOTS + TEMPORAL_POLL_LOCAL_ACTIVITY_SLOTS + 2`
+  `DB_POOL >= TEMPORAL_POLL_ACTIVITY_SLOTS + TEMPORAL_POLL_LOCAL_ACTIVITY_SLOTS + TEMPORAL_POLL_ACTIVITY_SLOTS + 2`
 - `TEMPORAL_WORKER_MODE=agent`:
   `DB_POOL >= TEMPORAL_ACTIVITY_SLOTS + TEMPORAL_LOCAL_ACTIVITY_SLOTS + TEMPORAL_ACTIVITY_SLOTS + 2`
 - `TEMPORAL_WORKER_MODE=both`:
-  `DB_POOL >= (TEMPORAL_ACTIVITY_SLOTS + TEMPORAL_LOCAL_ACTIVITY_SLOTS + TEMPORAL_POLL_ACTIVITY_SLOTS + TEMPORAL_POLL_LOCAL_ACTIVITY_SLOTS) + TEMPORAL_ACTIVITY_SLOTS + 4`
+  `DB_POOL >= (TEMPORAL_ACTIVITY_SLOTS + TEMPORAL_LOCAL_ACTIVITY_SLOTS + TEMPORAL_POLL_ACTIVITY_SLOTS + TEMPORAL_POLL_LOCAL_ACTIVITY_SLOTS) + (TEMPORAL_ACTIVITY_SLOTS + TEMPORAL_POLL_ACTIVITY_SLOTS) + 4`
 
 The fixed `+2`/`+4` headroom covers the Temporal SDK's polling and internal threads
-for the selected worker set. The additional `TEMPORAL_ACTIVITY_SLOTS` term is separate:
-it accounts for `RunAgentActivity`'s heartbeat worker thread, which streams agent output
-to the database throughout the run and holds its own connection concurrently with the
-activity's main thread — so each in-flight agent run consumes two connections. `bin/temporal_worker` computes this
+for the selected worker set. The additional regular-activity-slot term is separate:
+long-running activities that use `Activities::BaseActivity#with_periodic_heartbeat`
+run their work in a helper thread so the activity thread can keep heartbeating. Once
+that helper thread touches Active Record it can hold its own connection concurrently
+with the activity's main thread. Today that includes `RunAgentActivity` on the agent
+queue plus long-running poll activities such as issue/PR/security scans, so budget one
+extra connection per regular activity slot on each selected worker set. `bin/temporal_worker` computes this
 minimum via `Paid::TemporalWorkerConfig.min_required_db_pool` and **auto-corrects the
 primary pool size at boot** if `DB_POOL` is below it (refusing to start only if the
 resize fails). Setting `DB_POOL` at or above the minimum avoids the boot-time resize.
