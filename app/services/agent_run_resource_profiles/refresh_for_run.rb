@@ -66,6 +66,7 @@ module AgentRunResourceProfiles
       )
 
       prior_limit = profile.recommended_memory_limit_bytes
+      prior_capacity_blocked = profile.capacity_blocked?
       tuning_decision = MemoryLimitTuner.new(
         profile: profile,
         user_settings: user_settings,
@@ -83,7 +84,7 @@ module AgentRunResourceProfiles
       profile.assign_attributes(definition.merge(summary))
       profile.save!
 
-      log_tuning_change(profile, prior_limit, tuning_decision)
+      log_tuning_change(profile, prior_limit, prior_capacity_blocked, tuning_decision)
     end
 
     def summarize_samples(definition)
@@ -258,8 +259,8 @@ module AgentRunResourceProfiles
       end
     end
 
-    def log_tuning_change(profile, prior_limit, decision)
-      return if prior_limit.to_i == decision.recommended_limit_bytes && profile.capacity_blocked? == decision.capacity_blocked?
+    def log_tuning_change(profile, prior_limit, prior_capacity_blocked, decision)
+      return if prior_limit.to_i == decision.recommended_limit_bytes && prior_capacity_blocked == decision.capacity_blocked?
 
       payload = {
         message: "agent_run_resource_profile.memory_limit_tuned",

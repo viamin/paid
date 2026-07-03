@@ -134,6 +134,47 @@ RSpec.describe AgentRunResourceProfiles::RefreshForRun do
       expect(profile.capacity_blocked_at).to be_present
     end
 
+    it "logs a capacity-blocked transition even when the limit is unchanged" do
+      project.created_by.settings.update!(
+        container_memory_auto_ceiling_bytes: 4.gigabytes
+      )
+
+      # First refresh: three 4 GB runs with no OOMs pin the recommendation at
+      # the ceiling without tripping capacity-blocked (oom_count below the
+      # threshold of 2).
+      create_sample_run(memory_bytes: 4.gigabytes, completed_at: completed_at - 3.days)
+      create_sample_run(memory_bytes: 4.gigabytes, completed_at: completed_at - 2.days)
+      first_refresh_run = create_sample_run(memory_bytes: 4.gigabytes, completed_at: completed_at - 1.day)
+      described_class.call(agent_run: first_refresh_run)
+
+      profile = specific_profile
+      expect(profile.capacity_blocked).to be(false)
+      expect(profile.recommended_memory_limit_bytes).to eq(4.gigabytes)
+
+      # Second refresh: two additional OOM-killed runs at the ceiling push
+      # oom_count over the threshold, flipping capacity_blocked true while
+      # the recommended limit stays pinned at the ceiling (no change). This
+      # is the transition that must still emit a log line.
+      allow(Rails.logger).to receive(:info)
+
+      create_sample_run(memory_bytes: 4.gigabytes, completed_at: completed_at + 1.hour, status: "failed", oom: true)
+      second_refresh_run = create_sample_run(memory_bytes: 4.gigabytes, completed_at: completed_at + 2.hours,
+        status: "failed", oom: true)
+      described_class.call(agent_run: second_refresh_run)
+
+      expect(profile.reload.capacity_blocked).to be(true)
+      expect(profile.reload.recommended_memory_limit_bytes).to eq(4.gigabytes)
+      expect(Rails.logger).to have_received(:info).with(
+        hash_including(
+          message: "agent_run_resource_profile.memory_limit_tuned",
+          profile_level: "specific",
+          prior_limit_bytes: 4.gigabytes,
+          new_limit_bytes: 4.gigabytes,
+          capacity_blocked: true
+        )
+      )
+    end
+
     it "does not tune downward until the sustained low-memory threshold is met" do
       project.created_by.settings.update!(
         container_memory_auto_floor_bytes: 256.megabytes,
