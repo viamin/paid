@@ -175,6 +175,41 @@ RSpec.describe Activities::CompleteReviewGoalActivity do
         expect(agent_run.error_message).not_to include("no GitHub review exists")
       end
 
+      it "treats missing enabled review bot logins as an unverifiable lookup" do
+        agent_run = create(:agent_run, :running, :review_goal, project: project)
+        stub_review_lookup(agent_run, enabled_bot_logins: Set.new)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+          expect(error.message).to include("could not verify whether GitHub has a review")
+          expect(error.message).to include("no enabled review bot logins are configured")
+          expect(error.type).to eq("ReviewVerificationFailed")
+        }
+
+        agent_run.reload
+        expect(agent_run.status).to eq("failed")
+        expect(agent_run.error_message).not_to include("no GitHub review exists")
+      end
+
+      it "treats missing GitHub credentials as an unverifiable lookup" do
+        agent_run = create(:agent_run, :running, :review_goal, project: project)
+        stub_review_lookup(agent_run)
+        allow(agent_run.project).to receive(:client).and_return(nil)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+          expect(error.message).to include("could not verify whether GitHub has a review")
+          expect(error.message).to include("GitHub credentials are unavailable for review lookup")
+          expect(error.type).to eq("ReviewVerificationFailed")
+        }
+
+        agent_run.reload
+        expect(agent_run.status).to eq("failed")
+        expect(agent_run.error_message).not_to include("no GitHub review exists")
+      end
+
       it "flags an untracked review that exists on GitHub but bypassed the tracking path" do
         agent_run = create(:agent_run, :running, :review_goal, project: project)
         stub_review_lookup(agent_run)

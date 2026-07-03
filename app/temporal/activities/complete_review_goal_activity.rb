@@ -3,6 +3,7 @@
 module Activities
   class CompleteReviewGoalActivity < BaseActivity
     activity_name "CompleteReviewGoal"
+    ReviewVerificationUnavailable = Class.new(StandardError)
 
     # Review-body marker is owned by Github::ReviewMarker so the proxy that
     # injects it and this reconciliation consumer can't drift apart.
@@ -83,7 +84,7 @@ module Activities
       end
 
       { untracked_reviews: candidates, reconciliation_error: nil }
-    rescue GithubClient::Error, Github::AppInstallation::Error => e
+    rescue GithubClient::Error, Github::AppInstallation::Error, ReviewVerificationUnavailable => e
       logger.warn(
         message: "agent_execution.review_goal_reconciliation_failed",
         agent_run_id: agent_run.id,
@@ -98,12 +99,19 @@ module Activities
     # on GitHub during the run's window, regardless of whether they carry the
     # Paid marker or a logged review id.
     def candidate_reviews(agent_run)
-      return [] unless agent_run.source_pull_request_number.present?
+      unless agent_run.source_pull_request_number.present?
+        raise ReviewVerificationUnavailable, "the source pull request number is missing"
+      end
 
       enabled_bot_logins = agent_run.project.enabled_review_bot_logins
-      return [] if enabled_bot_logins.blank?
+      if enabled_bot_logins.blank?
+        raise ReviewVerificationUnavailable, "no enabled review bot logins are configured"
+      end
 
-      reviews = agent_run.project.client&.pull_request_reviews(
+      client = agent_run.project.client
+      raise ReviewVerificationUnavailable, "GitHub credentials are unavailable for review lookup" if client.blank?
+
+      reviews = client.pull_request_reviews(
         agent_run.project.full_name,
         agent_run.source_pull_request_number
       )
