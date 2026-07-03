@@ -180,22 +180,3 @@ RSpec.describe Capacity::RunAdmission do
     end
   end
 end
-
-    it "does not annotate capacity_blocked when the matched profile is not blocked" do
-      create(:agent_run_resource_profile,
-        :project_level,
-        account: account,
-        project: project,
-        runner_key: nil,
-        goal: nil,
-        sample_count: 5,
-        oom_count: 0,
-        recommended_memory_limit_bytes: 4.gigabytes
-      )
-
-      result = described_class.call(user: user, project: project, docker_snapshot: docker_snapshot)
-
-      expect(result[:capacity_blocked]).to be_nil
-    end
-  end
-end
