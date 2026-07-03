@@ -57,8 +57,6 @@ module Api
         return
       end
 
-      record_review_proxy_diagnostic(outcome: "attempted") if review_creation_request?(path)
-
       forwarded_body = maybe_prepend_review_header(path, request.raw_post)
       authorization_token = github_authorization_token(path)
       response = forward_with_idempotent_recovery(path, authorization_token, forwarded_body, match: match)
@@ -117,6 +115,8 @@ module Api
     end
 
     def proxy_to_github(path, authorization_token, body = request.raw_post)
+      record_review_proxy_diagnostic(outcome: "attempted") if review_creation_request?(path)
+
       target_url = "https://api.github.com/#{path}"
       target_url = "#{target_url}?#{request.query_string}" if request.query_string.present?
 

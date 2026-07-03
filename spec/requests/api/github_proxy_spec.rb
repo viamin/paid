@@ -682,6 +682,7 @@ RSpec.describe "Api::GithubProxy" do
 
         expect(response).to have_http_status(:service_unavailable)
         expect(JSON.parse(response.body)["error"]).to include("not configured")
+        expect(agent_run.reload.review_proxy_diagnostics).not_to include("outcome" => "attempted")
       end
 
       context "when a stale PENDING review blocks the POST with 422 (#2324)" do
