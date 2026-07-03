@@ -308,6 +308,15 @@ RSpec.describe "Api::GithubProxy" do
       expect(agent_run.review_url).to eq("https://github.com/testowner/testrepo/pull/10#pullrequestreview-999")
     end
 
+    it "records a succeeded review proxy diagnostic (#2779)" do
+      post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+        params: { body: "Looks good", event: "COMMENT" }.to_json,
+        headers: valid_headers
+
+      agent_run.reload
+      expect(agent_run.review_proxy_diagnostics["outcome"]).to eq("succeeded")
+    end
+
     it "does not track review_posted_at when PR number does not match" do
       mismatched_url = "https://api.github.com/repos/testowner/testrepo/pulls/99/reviews"
       stub_request(:post, mismatched_url)
@@ -388,6 +397,22 @@ RSpec.describe "Api::GithubProxy" do
 
       agent_run.reload
       expect(agent_run.review_posted_at).to be_nil
+    end
+
+    it "records an upstream_error review proxy diagnostic with the HTTP status (#2779)" do
+      stub_request(:post, target_url)
+        .to_return(status: 422, body: { message: "Validation Failed" }.to_json,
+                   headers: { "Content-Type" => "application/json" })
+
+      post "/api/proxy/github/repos/testowner/testrepo/pulls/10/reviews",
+        params: { body: "Looks good", event: "COMMENT" }.to_json,
+        headers: valid_headers
+
+      agent_run.reload
+      expect(agent_run.review_proxy_diagnostics).to include(
+        "outcome" => "upstream_error",
+        "http_status" => 422
+      )
     end
 
     it "logs a warning when review has zero inline comments and actionable body" do

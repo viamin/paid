@@ -57,6 +57,8 @@ module Api
         return
       end
 
+      record_review_proxy_diagnostic(outcome: "attempted") if review_creation_request?(path)
+
       forwarded_body = maybe_prepend_review_header(path, request.raw_post)
       authorization_token = github_authorization_token(path)
       response = forward_with_idempotent_recovery(path, authorization_token, forwarded_body, match: match)
@@ -148,6 +150,11 @@ module Api
       proxy_to_github(path, authorization_token, forwarded_body)
     rescue Faraday::TimeoutError, Faraday::ConnectionFailed => e
       log_review_upstream_timeout(e)
+      record_review_proxy_diagnostic(
+        outcome: e.is_a?(Faraday::TimeoutError) ? "timeout" : "connection_failed",
+        error_class: e.class.name,
+        error_message: e.message
+      )
       recover_or_retry_review(path, authorization_token, forwarded_body, match: match, error: e)
     end
 
@@ -181,6 +188,11 @@ module Api
     rescue Faraday::Error => e
       log_error("github_proxy.final_failure",
         "path=#{path} error_class=#{e.class.name} message=#{e.message.to_s.truncate(GITHUB_ERROR_BODY_LOG_LIMIT)}")
+      record_review_proxy_diagnostic(
+        outcome: e.is_a?(Faraday::TimeoutError) ? "timeout" : "connection_failed",
+        error_class: e.class.name,
+        error_message: e.message
+      )
       raise
     end
 
@@ -319,6 +331,9 @@ module Api
 
       body = parse_response_body(response.body)
       return unless body.is_a?(Hash) && body["id"].present?
+
+      record_review_proxy_diagnostic(outcome: "succeeded")
+
       if @agent_run.review_posted_at.blank? || @agent_run.review_url.blank?
         review_url = body["html_url"].presence || review_url_for(match[:number], body["id"])
         @agent_run.update!(
@@ -339,6 +354,25 @@ module Api
 
     def review_url_for(pr_number, review_id)
       "https://github.com/#{authenticated_project.full_name}/pull/#{pr_number}#pullrequestreview-#{review_id}"
+    end
+
+    # Records the latest known outcome of a review-creation proxy POST on the
+    # agent run so CompleteReviewGoalActivity can explain a missing-review
+    # failure without digging through raw logs (#2779). Each call overwrites
+    # the prior snapshot — only the most recent outcome matters for
+    # diagnosing why a run finished without a tracked review.
+    def record_review_proxy_diagnostic(outcome:, http_status: nil, error_class: nil, error_message: nil)
+      return unless @agent_run
+
+      @agent_run.update_column(:review_proxy_diagnostics, {
+        "outcome" => outcome,
+        "http_status" => http_status,
+        "error_class" => error_class,
+        "error_message" => error_message.presence&.to_s&.truncate(GITHUB_ERROR_BODY_LOG_LIMIT),
+        "recorded_at" => Time.current.iso8601
+      }.compact)
+    rescue => e
+      log_error("github_proxy.review_diagnostic_record_failed", e.message)
     end
 
     # GitHub rejects POST /pulls/N/reviews with 422 if the authenticated user
@@ -415,6 +449,14 @@ module Api
         path: path,
         status: response.status,
         body: response.body.to_s.truncate(GITHUB_ERROR_BODY_LOG_LIMIT)
+      )
+
+      return unless review_creation_request?(path)
+
+      record_review_proxy_diagnostic(
+        outcome: "upstream_error",
+        http_status: response.status,
+        error_message: response.body
       )
     end
 

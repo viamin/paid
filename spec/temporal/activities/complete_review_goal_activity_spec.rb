@@ -114,40 +114,88 @@ RSpec.describe Activities::CompleteReviewGoalActivity do
         expect(agent_run.review_url).to eq("#{project.github_url}/pull/10#pullrequestreview-456")
       end
 
-      it "fails the agent run" do
+      it "fails the agent run with a message distinguishing no GitHub review from an untracked one" do
         agent_run = create(:agent_run, :running, :review_goal, project: project)
         allow(github_client).to receive(:pull_request_reviews).and_return([])
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /No review was posted/)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+          expect(error.message).to include("no GitHub review exists")
+          expect(error.type).to eq("ReviewNotPosted")
+        }
 
         agent_run.reload
         expect(agent_run.status).to eq("failed")
-        expect(agent_run.error_message).to include("No review was posted")
+        expect(agent_run.error_message).to include("no GitHub review exists")
       end
 
-      it "does not reconcile an unrelated review that only appears by body" do
-        agent_run = create(:agent_run, :running, :review_goal, project: project)
-        agent_run.log!("stdout", "fetched existing review: A human review that the agent never produced")
-
-        allow(github_client).to receive(:pull_request_reviews)
-          .and_return([
-            {
-              id: 789,
-              state: "COMMENTED",
-              body: "A human review that the agent never produced",
-              submitted_at: Time.current
-            }
-          ])
+      it "includes proxy diagnostics in the failure message when available" do
+        agent_run = create(:agent_run, :running, :review_goal, project: project,
+          review_proxy_diagnostics: { "outcome" => "timeout" })
+        allow(github_client).to receive(:pull_request_reviews).and_return([])
 
         expect {
           activity.execute(agent_run_id: agent_run.id)
-        }.to raise_error(Temporalio::Error::ApplicationError, /No review was posted/)
+        }.to raise_error(Temporalio::Error::ApplicationError, /proxy POST timed out/)
+
+        agent_run.reload
+        expect(agent_run.error_message).to include("proxy POST timed out")
+      end
+
+      it "includes the upstream HTTP status when the proxy POST returned an upstream error" do
+        agent_run = create(:agent_run, :running, :review_goal, project: project,
+          review_proxy_diagnostics: { "outcome" => "upstream_error", "http_status" => 422 })
+        allow(github_client).to receive(:pull_request_reviews).and_return([])
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /upstream error from GitHub \(HTTP 422\)/)
+      end
+
+      it "distinguishes an unverifiable GitHub review lookup from no GitHub review existing" do
+        agent_run = create(:agent_run, :running, :review_goal, project: project,
+          review_proxy_diagnostics: { "outcome" => "attempted" })
+        allow(github_client).to receive(:pull_request_reviews).and_raise(GithubClient::Error.new("GitHub unavailable"))
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+          expect(error.message).to include("could not verify whether GitHub has a review")
+          expect(error.message).to include("review lookup failed")
+          expect(error.message).to include("proxy POST was attempted")
+          expect(error.type).to eq("ReviewVerificationFailed")
+        }
+
+        agent_run.reload
+        expect(agent_run.status).to eq("failed")
+        expect(agent_run.error_message).not_to include("no GitHub review exists")
+      end
+
+      it "flags an untracked review that exists on GitHub but bypassed the tracking path" do
+        agent_run = create(:agent_run, :running, :review_goal, project: project)
+        agent_run.log!("stdout", "fetched existing review: A human review that the agent never produced")
+        review = {
+          id: 789,
+          state: "COMMENTED",
+          body: "A human review that the agent never produced",
+          submitted_at: Time.current
+        }
+
+        allow(github_client).to receive(:pull_request_reviews).and_return([ review ])
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+          expect(error.message).to include("No tracked review")
+          expect(error.message).to include("id=789")
+          expect(error.type).to eq("ReviewUntracked")
+        }
 
         agent_run.reload
         expect(agent_run.status).to eq("failed")
         expect(agent_run.review_posted_at).to be_nil
+        expect(agent_run.error_message).to include("bypassed the proxy tracking path")
       end
     end
   end
