@@ -157,6 +157,75 @@ module Activities
       raise
     end
 
+    HEARTBEAT_INTERVAL = 30
+
+    def with_periodic_heartbeat(*details, interval: HEARTBEAT_INTERVAL, **metadata)
+      context = Temporalio::Activity::Context.current_or_nil
+      return yield unless context
+
+      details << metadata if metadata.any?
+      tenant_account_id = Current.account&.id if defined?(Current)
+      worker = Thread.new do
+        executor = Rails.application.executor if defined?(Rails) && Rails.respond_to?(:application) &&
+          Rails.application.respond_to?(:executor)
+        work = proc { yield }
+
+        db_scoped = proc do
+          if defined?(ActiveRecord::Base) && ActiveRecord::Base.respond_to?(:connection_pool)
+            ActiveRecord::Base.connection_pool.with_connection { work.call }
+          else
+            work.call
+          end
+        end
+
+        tenant_scoped = proc do
+          if tenant_account_id
+            tenant_account = TenantContext.with_system_access { Account.find_by(id: tenant_account_id) }
+            if tenant_account
+              TenantContext.with(tenant_account, &db_scoped)
+            else
+              TenantContext.with_system_access(&db_scoped)
+            end
+          else
+            TenantContext.with_system_access(&db_scoped)
+          end
+        end
+
+        if executor
+          executor.wrap(&tenant_scoped)
+        else
+          tenant_scoped.call
+        end
+      end
+      worker.report_on_exception = false
+      canceled = false
+
+      begin
+        until worker.join(interval)
+          begin
+            context.heartbeat(*details)
+          rescue Temporalio::Error::CanceledError
+            canceled = true
+            raise
+          rescue StandardError
+            nil
+          end
+        end
+      ensure
+        if canceled
+          worker.join(5)
+          if worker.alive?
+            worker.raise(Interrupt)
+            worker.join(5)
+          end
+        else
+          worker.join
+        end
+      end
+
+      worker.value
+    end
+
     def update_workflow_state(workflow_id, attributes)
       WorkflowState.upsert(
         attributes.merge(temporal_workflow_id: workflow_id),

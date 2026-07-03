@@ -160,14 +160,16 @@ module Activities
     end
 
     def decompose(prompt)
-      response = AgentHarness.send_message(
-        prompt,
-        provider: :claude,
-        model: DEFAULT_MODEL,
-        timeout: TIMEOUT,
-        tools: :none,
-        **Llm::TextMode.options
-      )
+      response = with_periodic_heartbeat("decompose_feature.llm_request", model: DEFAULT_MODEL) do
+        AgentHarness.send_message(
+          prompt,
+          provider: :claude,
+          model: DEFAULT_MODEL,
+          timeout: TIMEOUT,
+          tools: :none,
+          **Llm::TextMode.options
+        )
+      end
 
       unless response.success?
         raise Temporalio::Error::ApplicationError.new(

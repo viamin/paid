@@ -189,7 +189,7 @@ module Workflows
 
         # Step 2: Provision container (with empty workspace directory)
         run_activity(Activities::ProvisionContainerActivity,
-          { agent_run_id: agent_run_id }, timeout: 60)
+          { agent_run_id: agent_run_id }, timeout: 60, heartbeat_timeout: DEFAULT_HEARTBEAT_TIMEOUT)
 
         # Step 2b: Verify the credential proxy is healthy before git operations.
         # Clone and push depend on the proxy for git authentication. When the
@@ -207,7 +207,7 @@ module Workflows
         # Review goals always need the repo to examine code.
         unless skip_clone
           run_activity(Activities::CloneRepoActivity,
-            { agent_run_id: agent_run_id }, timeout: 180)
+            { agent_run_id: agent_run_id }, timeout: 180, heartbeat_timeout: DEFAULT_HEARTBEAT_TIMEOUT)
         end
 
         # Step 3b: For existing PR runs without a custom prompt, rebase and build a rich prompt.
@@ -311,7 +311,7 @@ module Workflows
           ensure_proxy_healthy(agent_run_id)
 
           run_activity(Activities::PushBranchActivity,
-            { agent_run_id: agent_run_id }, timeout: 60)
+            { agent_run_id: agent_run_id }, timeout: 60, heartbeat_timeout: DEFAULT_HEARTBEAT_TIMEOUT)
 
           if source_pull_request_number
             # Resolve review threads (best-effort, non-fatal)
@@ -665,7 +665,7 @@ module Workflows
 
     def capture_screenshots(agent_run_id)
       run_activity(Activities::CaptureScreenshotsActivity,
-        { agent_run_id: agent_run_id }, timeout: 900, retry_policy: NO_RETRY)
+        { agent_run_id: agent_run_id }, timeout: 900, heartbeat_timeout: DEFAULT_HEARTBEAT_TIMEOUT, retry_policy: NO_RETRY)
     rescue Temporalio::Error::CanceledError
       raise
     rescue => e

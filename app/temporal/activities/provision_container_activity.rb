@@ -13,7 +13,9 @@ module Activities
       agent_run = AgentRun.find(agent_run_id)
       track_phase(agent_run_id: agent_run_id, phase_key: "provision_container", phase_group: "setup", agent_run: agent_run) do
         agent_run.ensure_proxy_token!
-        agent_run.provision_container
+        with_periodic_heartbeat("provision_container", agent_run_id: agent_run_id) do
+          agent_run.provision_container
+        end
 
         # worktree_path is not yet populated at provision time — git clone
         # happens later in CloneRepoActivity. log_container_context in
