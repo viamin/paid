@@ -4,6 +4,31 @@ require "rails_helper"
 require "securerandom"
 
 RSpec.describe Runner do
+  describe "#effective_api_secret" do
+    it "returns the integration credential secret for active account-managed runners" do
+      account = create(:account)
+      user = create(:user, :owner, account: account)
+      integration_credential = create(
+        :integration_credential,
+        account: account,
+        created_by: user,
+        service_key: "claude",
+        auth_kind: "api_key",
+        secret: "sk-ant-managed"
+      )
+      runner = create(
+        :runner,
+        user: user,
+        runner_key: "claude",
+        auth_type: "api_key",
+        provider_api_key: nil,
+        integration_credential: integration_credential
+      )
+
+      expect(runner.effective_api_secret).to eq("sk-ant-managed")
+    end
+  end
+
   describe "associations" do
     it { is_expected.to belong_to(:user) }
     it { is_expected.to belong_to(:provider_api_key).optional }
@@ -1709,5 +1734,14 @@ RSpec.describe Runner do
 
       expect(runner_state.reload.preferred_tier_model_ids).to eq("high" => free_model.model_id)
     end
+  end
+
+  def claude_native_secret(access_token)
+    {
+      "claudeAiOauth" => {
+        "accessToken" => access_token,
+        "refreshToken" => "refresh-token"
+      }
+    }.to_json
   end
 end

@@ -1156,6 +1156,62 @@ RSpec.describe Containers::Provision do
       end
     end
 
+    context "with managed Claude credentials json" do
+      let!(:managed_credential) do
+        create(
+          :runner_credential,
+          account: project.account,
+          created_by: project.created_by,
+          runner_key: "claude",
+          auth_kind: "oauth_token",
+          token: JSON.generate(
+            "claudeAiOauth" => {
+              "accessToken" => "managed-access",
+              "refreshToken" => "managed-refresh",
+              "expiresAt" => 12.hours.from_now.iso8601
+            }
+          )
+        )
+      end
+
+      before do
+        allow(ENV).to receive(:fetch).and_call_original
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(nil)
+        allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("COPILOT_HOME").and_return(nil)
+        allow(ENV).to receive(:[]).with("COPILOT_CONFIG_DIR").and_return(nil)
+        allow(service).to receive_messages(
+          claude_local_config_path: nil,
+          codex_local_config_path: nil,
+          gemini_local_config_path: nil,
+          copilot_local_config_path: nil
+        )
+      end
+
+      it "treats the managed credentials json as Claude subscription auth without env token injection" do
+        expect(Docker::Container).to receive(:create) do |config|
+          env = config["Env"]
+          expect(env).to include("PAID_CLAUDE_SUBSCRIPTION_AUTH=1")
+          expect(env.none? { |entry| entry.start_with?("CLAUDE_CODE_OAUTH_TOKEN=") }).to be(true)
+          mock_container
+        end
+
+        service.provision
+      end
+
+      it "writes the managed credentials json into the container" do
+        allow(service).to receive(:write_container_file).and_call_original
+
+        service.provision
+
+        expect(service).to have_received(:write_container_file)
+          .with("/home/agent/.claude/.credentials.json", managed_credential.token)
+      end
+    end
+
     context "with fallback providers" do
       let(:settings) { project.created_by.settings }
       let(:api_key) { create(:provider_api_key, user: project.created_by, api_service_type: "openrouter") }
@@ -1380,15 +1436,15 @@ RSpec.describe Containers::Provision do
       end
     end
 
-    context "with Claude managed subscription token" do
+    context "with Claude managed runner token" do
       let!(:managed_credential) do
         create(
-          :integration_credential,
-          :oauth,
+          :runner_credential,
           account: project.account,
           created_by: project.created_by,
-          service_key: "claude",
-          secret: "sk-ant-oat01-managed-token"
+          runner_key: "claude",
+          auth_kind: "oauth_token",
+          token: "sk-ant-oat01-managed-token"
         )
       end
 
@@ -1414,7 +1470,7 @@ RSpec.describe Containers::Provision do
           env = config["Env"]
           expect(env).to include(
             "PAID_CLAUDE_SUBSCRIPTION_AUTH=1",
-            "CLAUDE_CODE_OAUTH_TOKEN=#{managed_credential.secret}"
+            "CLAUDE_CODE_OAUTH_TOKEN=#{managed_credential.token}"
           )
           expect(env.none? { |entry| entry.start_with?("ANTHROPIC_BASE_URL=") }).to be(true)
           mock_container
@@ -3955,24 +4011,25 @@ RSpec.describe Containers::Provision do
         allow(service).to receive(:claude_local_config_path).and_return(nil)
       end
 
-      it "returns true when an active managed Claude OAuth token exists for the account" do
+      it "returns true when an active managed Claude runner credential exists for the account" do
         create(
-          :integration_credential,
-          :oauth,
+          :runner_credential,
           account: project.account,
           created_by: project.created_by,
-          service_key: "claude"
+          runner_key: "claude",
+          auth_kind: "oauth_token"
         )
 
         expect(service.send(:claude_subscription_auth?)).to be(true)
       end
 
-      it "ignores account-managed Claude credentials that are not OAuth tokens" do
+      it "ignores account-managed Claude runner credentials that are not OAuth tokens" do
         create(
-          :integration_credential,
+          :runner_credential,
           account: project.account,
           created_by: project.created_by,
-          service_key: "claude"
+          runner_key: "claude",
+          auth_kind: "api_key"
         )
 
         expect(service.send(:claude_subscription_auth?)).to be(false)
@@ -4173,11 +4230,11 @@ RSpec.describe Containers::Provision do
 
       it "skips host and local credential seeding when a managed token is present" do
         create(
-          :integration_credential,
-          :oauth,
+          :runner_credential,
           account: project.account,
           created_by: project.created_by,
-          service_key: "claude"
+          runner_key: "claude",
+          auth_kind: "oauth_token"
         )
         allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return(nil)
         allow(service).to receive(:claude_local_config_path).and_return(nil)

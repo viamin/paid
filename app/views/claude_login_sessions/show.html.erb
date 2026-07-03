@@ -1,0 +1,60 @@
+<% content_for(:title) { "Claude Browser Login - Paid" } %>
+
+<div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="overflow-hidden rounded-lg bg-white shadow">
+    <div class="px-6 py-5">
+      <h1 class="text-xl font-semibold text-gray-900">Claude Browser Login</h1>
+      <p class="mt-1 text-sm text-gray-500">Session status: <span class="font-medium text-gray-900"><%= @claude_login_session.status.humanize %></span></p>
+
+      <% if flash[:alert].present? %>
+        <div class="mt-4 rounded-md bg-red-50 p-4 text-sm text-red-700"><%= flash[:alert] %></div>
+      <% end %>
+
+      <% if flash[:notice].present? %>
+        <div class="mt-4 rounded-md bg-green-50 p-4 text-sm text-green-700"><%= flash[:notice] %></div>
+      <% end %>
+
+      <% if @claude_login_session.awaiting_code? || @claude_login_session.authorizing? %>
+        <div class="mt-6 rounded-md border border-gray-200 bg-gray-50 p-4">
+          <h2 class="text-sm font-semibold text-gray-900">1. Open the Claude OAuth URL</h2>
+          <p class="mt-2 break-all rounded bg-white p-3 font-mono text-xs text-gray-700 ring-1 ring-inset ring-gray-200"><%= @claude_login_session.oauth_url %></p>
+          <p class="mt-2 text-xs text-gray-500">Use your own browser to finish the Claude consent flow, then paste the returned code below.</p>
+        </div>
+
+        <div class="mt-6">
+          <h2 class="text-sm font-semibold text-gray-900">2. Paste the browser code</h2>
+          <%= form_with url: claude_login_session_path(@claude_login_session.external_id), method: :patch, class: "mt-4 space-y-4" do |form| %>
+            <%= hidden_field_tag :session_token, @claude_login_session.session_token %>
+            <div>
+              <%= form.label :authorization_code, "Authorization code", class: "block text-sm font-medium text-gray-900" %>
+              <%= form.text_field :authorization_code, value: "", class: "mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500", autocomplete: "off" %>
+            </div>
+            <div class="flex items-center gap-3">
+              <%= form.submit "Submit Code", class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+              <%= link_to "Refresh Status", claude_login_session_path(@claude_login_session.external_id), class: "text-sm font-semibold text-gray-900 hover:text-gray-700" %>
+            </div>
+          <% end %>
+        </div>
+      <% elsif @claude_login_session.starting? %>
+        <div class="mt-6 rounded-md border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+          Starting the isolated Claude login session. Refresh this page if the OAuth URL does not appear within a few seconds.
+        </div>
+      <% elsif @claude_login_session.completed? %>
+        <div class="mt-6 rounded-md border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+          Captured and stored the Claude credential as <strong><%= @claude_login_session.credential_name %></strong>.
+        </div>
+      <% else %>
+        <div class="mt-6 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          <%= @claude_login_session.error_message.presence || "Claude login failed before a credential was captured." %>
+        </div>
+      <% end %>
+
+      <div class="mt-6 flex items-center gap-3">
+        <%= link_to "Back to Credentials", integration_credentials_path(category: "llm_provider", service_key: "claude"), class: "text-sm font-semibold text-gray-900 hover:text-gray-700" %>
+        <% if @return_to_path.present? %>
+          <%= link_to "Return to Previous Page", safe_return_path_or(@return_to_path, integration_credentials_path(category: "llm_provider", service_key: "claude")), class: "text-sm font-semibold text-gray-900 hover:text-gray-700" %>
+        <% end %>
+      </div>
+    </div>
+  </div>
+</div>

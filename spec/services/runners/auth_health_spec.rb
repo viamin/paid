@@ -71,11 +71,12 @@ RSpec.describe Runners::AuthHealth do
 
   def create_claude_oauth_credential(expires_at:, **attributes)
     create(
-      :integration_credential,
-      :oauth,
+      :runner_credential,
       account: account,
       created_by: user,
-      service_key: "claude",
+      runner_key: "claude",
+      auth_kind: "oauth_token",
+      token: JSON.generate("claudeAiOauth" => { "expiresAt" => expires_at.iso8601 }),
       expires_at: expires_at,
       **attributes
     )
@@ -89,7 +90,7 @@ RSpec.describe Runners::AuthHealth do
       expect(described_class.call(account: account)).to eq([])
     end
 
-    it "reports managed OAuth token health for Claude subscription runners" do
+    it "reports managed runner credential health for Claude subscription runners" do
       expires_at = 2.days.from_now
       runner
       create_claude_oauth_credential(expires_at:)
@@ -102,7 +103,7 @@ RSpec.describe Runners::AuthHealth do
       expect(result.error).to be_nil
     end
 
-    it "falls back to host-forwarded auth when the newest managed OAuth token is expired" do
+    it "falls back to host-forwarded auth when the newest managed runner credential is expired" do
       expires_at = 1.hour.ago
       runner
       create_claude_oauth_credential(expires_at:)
@@ -117,7 +118,7 @@ RSpec.describe Runners::AuthHealth do
       expect(result.error).to be_nil
     end
 
-    it "uses the newest active managed OAuth token when a newer revoked token exists" do
+    it "uses the newest active managed runner credential when a newer revoked token exists" do
       active_expires_at = 2.days.from_now
       revoked_expires_at = 5.days.from_now
       runner
@@ -132,7 +133,7 @@ RSpec.describe Runners::AuthHealth do
       expect(result.error).to be_nil
     end
 
-    it "uses the newest active managed OAuth token when a newer expired token exists" do
+    it "uses the newest active managed runner credential when a newer expired token exists" do
       active_expires_at = 2.days.from_now
       expired_expires_at = 1.hour.ago
       runner

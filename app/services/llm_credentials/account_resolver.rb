@@ -16,7 +16,7 @@ module LlmCredentials
       end
 
       def api_secret
-        provider_api_key&.api_key.to_s.presence || integration_credential&.secret.to_s.presence
+        provider_api_key&.api_key.to_s.presence || integration_credential&.api_secret
       end
     end
 

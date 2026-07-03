@@ -21,6 +21,9 @@ class AccountActivityEvent < ApplicationRecord
     "runner.created" => "runner",
     "runner.updated" => "runner",
     "runner.deleted" => "runner",
+    "runner.claude_login_started" => "runner",
+    "runner.claude_login_completed" => "runner",
+    "runner.claude_login_failed" => "runner",
     "self_heal.remediation_applied" => "runner",
     "self_heal.remediation_reverted" => "runner",
     "agent_run.created" => "run",
@@ -115,6 +118,12 @@ class AccountActivityEvent < ApplicationRecord
       "Updated #{metadata_value('runner_name')} runner"
     when "runner.deleted"
       "Removed #{metadata_value('runner_name')} runner"
+    when "runner.claude_login_started"
+      "Started Claude browser login for #{metadata_value('credential_name')}"
+    when "runner.claude_login_completed"
+      "Completed Claude browser login for #{metadata_value('credential_name')}"
+    when "runner.claude_login_failed"
+      "Claude browser login failed for #{metadata_value('credential_name')}"
     when "self_heal.remediation_applied"
       "Auto-applied #{metadata_value('remediation_action').to_s.humanize.downcase} for #{metadata_value('target_label')}"
     when "self_heal.remediation_reverted"
@@ -152,7 +161,7 @@ class AccountActivityEvent < ApplicationRecord
       Array(metadata.to_h["changed_fields"]).map { |field| "#{field.to_s.humanize} changed" }
     when "project.created"
       Array(metadata.to_h["github_url"]).compact
-    when "runner.created", "runner.updated"
+    when "runner.created", "runner.updated", "runner.claude_login_started", "runner.claude_login_completed", "runner.claude_login_failed"
       Array(metadata.to_h["details"]).compact
     when "self_heal.remediation_applied", "self_heal.remediation_reverted"
       Array(metadata.to_h["details"]).compact
