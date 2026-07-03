@@ -2,7 +2,7 @@
 #
 # See docs/PATCH_GUARDS.md for the policy, sweep workflow, and the rules for
 # adding new guards.
-#
-# This file is intentionally empty: all previously tracked guards have been
-# swept in #2773.
-workflows: {}
+workflows:
+  "Workflows::PlanningWorkflow":
+    "planning-review-signal-gate-v1":
+      introduced_on: "2026-05-22"
