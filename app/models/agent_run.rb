@@ -198,6 +198,7 @@ class AgentRun < ApplicationRecord
   attr_readonly :mcp_server_snapshot
 
   before_validation :set_initiating_user_from_current_user, on: :create
+  before_validation :refresh_queue_entered_at, if: :should_refresh_queue_entered_at?
   before_create :generate_proxy_token
   before_create :snapshot_mcp_servers
 
@@ -646,6 +647,10 @@ class AgentRun < ApplicationRecord
     [ (end_time - started_at).to_i, 0 ].max
   end
 
+  def queue_entered_at_for_current_episode
+    queue_entered_at || created_at
+  end
+
   # Checks whether the given user has capacity for another agent run.
   #
   # Capacity is determined by the user's max_concurrent_runs setting capped by
@@ -729,6 +734,16 @@ class AgentRun < ApplicationRecord
       agent_run.started_at.present? &&
       agent_run.started_at < stale_running_cutoff(goal: agent_run.goal, now: now)
   end
+
+  def should_refresh_queue_entered_at?
+    queued? && (queue_entered_at.blank? || will_save_change_to_status?)
+  end
+  private :should_refresh_queue_entered_at?
+
+  def refresh_queue_entered_at
+    self.queue_entered_at = Time.current
+  end
+  private :refresh_queue_entered_at
 
   def self.default_stale_running_timeout
     AGENT_TIMEOUT_DEFAULT.seconds + STALE_RUNNING_GRACE_PERIOD

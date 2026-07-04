@@ -4189,21 +4189,32 @@ RSpec.describe AgentRun do
   end
 
   describe "#resume!" do
-    it "transitions a paused run back to queued" do
+    def build_resumable_paused_run
       agent_run = create(:agent_run, :running)
       agent_run.pause!(violation_type: "loop_detected", context: { details: "test" })
       agent_run.update!(
+        queue_entered_at: 2.hours.ago,
         temporal_workflow_id: "workflow-123",
         temporal_run_id: "run-123",
         started_at: 10.minutes.ago,
         completed_at: 5.minutes.ago,
         duration_seconds: 300
       )
+      agent_run
+    end
 
-      expect(agent_run.resume!).to be true
+    it "transitions a paused run back to queued" do
+      agent_run = build_resumable_paused_run
+      frozen_now = nil
+
+      freeze_time do
+        frozen_now = Time.current
+        agent_run.resume!
+      end
 
       agent_run.reload
       expect(agent_run.status).to eq("queued")
+      expect(agent_run.queue_entered_at).to be_within(1.second).of(frozen_now)
       expect(agent_run.started_at).to be_nil
       expect(agent_run.completed_at).to be_nil
       expect(agent_run.duration_seconds).to be_nil
@@ -4212,6 +4223,22 @@ RSpec.describe AgentRun do
       expect(agent_run.guardrail_context).to be_nil
       expect(agent_run.temporal_workflow_id).to be_nil
       expect(agent_run.temporal_run_id).to be_nil
+    end
+
+    it "returns true for paused runs" do
+      expect(build_resumable_paused_run.resume!).to be true
+    end
+
+    it "refreshes queue_entered_at when resuming" do
+      agent_run = build_resumable_paused_run
+      frozen_now = nil
+
+      freeze_time do
+        frozen_now = Time.current
+        agent_run.resume!
+      end
+
+      expect(agent_run.reload.queue_entered_at).to be_within(1.second).of(frozen_now)
     end
 
     it "records a resume decision event" do
@@ -4247,6 +4274,14 @@ RSpec.describe AgentRun do
       expect(agent_run.resume!).to be true
 
       expect(agent_run.reload.status).to eq("queued")
+    end
+  end
+
+  describe "#queue_entered_at_for_current_episode" do
+    it "falls back to created_at when queue_entered_at is missing" do
+      queued_run = build(:agent_run, status: "queued", queue_entered_at: nil, created_at: 5.minutes.ago)
+
+      expect(queued_run.queue_entered_at_for_current_episode).to eq(queued_run.created_at)
     end
   end
 
