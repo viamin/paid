@@ -222,7 +222,7 @@ module Workflows
         # Review goals always need the repo to examine code.
         unless skip_clone
           run_activity(Activities::CloneRepoActivity,
-            { agent_run_id: agent_run_id }, timeout: 180)
+            { agent_run_id: agent_run_id }, timeout: 180, heartbeat_timeout: DEFAULT_HEARTBEAT_TIMEOUT)
         end
 
         # Step 3b: For existing PR runs without a custom prompt, rebase and build a rich prompt.
@@ -326,7 +326,7 @@ module Workflows
           ensure_proxy_healthy(agent_run_id)
 
           run_activity(Activities::PushBranchActivity,
-            { agent_run_id: agent_run_id }, timeout: 60)
+            { agent_run_id: agent_run_id }, timeout: 60, heartbeat_timeout: DEFAULT_HEARTBEAT_TIMEOUT)
 
           if source_pull_request_number
             # Resolve review threads (best-effort, non-fatal)
@@ -680,7 +680,7 @@ module Workflows
 
     def capture_screenshots(agent_run_id)
       run_activity(Activities::CaptureScreenshotsActivity,
-        { agent_run_id: agent_run_id }, timeout: 900, retry_policy: NO_RETRY)
+        { agent_run_id: agent_run_id }, timeout: 900, heartbeat_timeout: DEFAULT_HEARTBEAT_TIMEOUT, retry_policy: NO_RETRY)
     rescue Temporalio::Error::CanceledError
       raise
     rescue => e

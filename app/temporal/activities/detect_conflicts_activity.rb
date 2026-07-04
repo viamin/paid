@@ -29,10 +29,12 @@ module Activities
         agent_run_count: agent_run_ids.size
       )
 
-      result = Conflicts::Detect.call(
-        agent_run_ids: agent_run_ids,
-        project_id: project_id
-      )
+      result = with_periodic_heartbeat("detect_conflicts", project_id: project_id, total_runs: agent_run_ids.size) do
+        Conflicts::Detect.call(
+          agent_run_ids: agent_run_ids,
+          project_id: project_id
+        )
+      end
 
       logger.info(
         message: "conflicts.detect.completed",

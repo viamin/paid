@@ -120,7 +120,8 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow, :no_db do
               workflow_name: "Workflows::FeatureOrchestrationWorkflow",
               workflow_id: "test-orchestration-wf"
             ),
-            timeout: 120
+            timeout: described_class::LLM_ACTIVITY_TIMEOUT,
+            heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT
           )
         expect_orchestration_sub_issue_creation!
         expect_feature_planning_decision_logged

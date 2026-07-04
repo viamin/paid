@@ -5,14 +5,20 @@ module Activities
     activity_name "GenerateCoordinationPolicyCandidates"
 
     def execute(input)
-      mutations = CoordinationPolicyEvolution::GenerateCandidates.call(
-        policy: input.fetch(:policy),
-        analysis: input.slice(:performance, :sample_successes, :sample_failures, :prior_versions),
-        options: {
-          mutation_count: input.fetch(:mutation_count, 2),
-          strategies: input[:strategies]
-        }.compact
-      )
+      mutations = with_periodic_heartbeat(
+        "generate_coordination_policy_candidates",
+        policy_type: input.fetch(:policy).fetch(:policy_type),
+        mutation_count: input.fetch(:mutation_count, 2)
+      ) do
+        CoordinationPolicyEvolution::GenerateCandidates.call(
+          policy: input.fetch(:policy),
+          analysis: input.slice(:performance, :sample_successes, :sample_failures, :prior_versions),
+          options: {
+            mutation_count: input.fetch(:mutation_count, 2),
+            strategies: input[:strategies]
+          }.compact
+        )
+      end
 
       {
         policy_type: input.fetch(:policy).fetch(:policy_type),

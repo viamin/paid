@@ -22,7 +22,9 @@ module Activities
           agent_run: agent_run
         )
 
-        commit_sha = git_ops.push_branch
+        commit_sha = with_periodic_heartbeat("push_branch", agent_run_id: agent_run_id, branch_name: agent_run.branch_name) do
+          git_ops.push_branch
+        end
 
         { commit_sha: commit_sha, agent_run_id: agent_run_id }
       end

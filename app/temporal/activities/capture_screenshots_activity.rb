@@ -13,7 +13,9 @@ module Activities
         phase_group: "post",
         agent_run: agent_run
       ) do
-        result = Screenshots::ContainerCapture.call(agent_run: agent_run, logger: logger)
+        result = with_periodic_heartbeat("capture_screenshots", agent_run_id: agent_run.id) do
+          Screenshots::ContainerCapture.call(agent_run: agent_run, logger: logger)
+        end
 
         logger.info(
           message: "screenshots.capture_activity_completed",

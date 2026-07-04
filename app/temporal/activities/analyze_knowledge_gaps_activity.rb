@@ -19,15 +19,17 @@ module Activities
 
       project = Project.find(project_id)
       prompt = build_prompt(project, sampled_runs, artifact_usage)
-      response = AgentHarness.send_message(
-        prompt,
-        provider: :claude,
-        model: DEFAULT_MODEL,
-        timeout: LLM_TIMEOUT,
-        tools: :none,
-        dangerous_mode: false,
-        **Llm::TextMode.options
-      )
+      response = with_periodic_heartbeat("analyze_knowledge_gaps", project_id: project_id, model: DEFAULT_MODEL) do
+        AgentHarness.send_message(
+          prompt,
+          provider: :claude,
+          model: DEFAULT_MODEL,
+          timeout: LLM_TIMEOUT,
+          tools: :none,
+          dangerous_mode: false,
+          **Llm::TextMode.options
+        )
+      end
 
       parsed = parse_response(response)
 

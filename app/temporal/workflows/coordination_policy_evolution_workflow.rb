@@ -2,8 +2,6 @@
 
 module Workflows
   class CoordinationPolicyEvolutionWorkflow < BaseWorkflow
-    MUTATION_TIMEOUT = 120
-
     def execute(input)
       account_id = input.fetch(:account_id)
       policy_type = input.fetch(:policy_type, CoordinationPolicyEvolution::PrepareInputs::POLICY_TYPE)
@@ -42,7 +40,8 @@ module Workflows
           mutation_count: input.fetch(:mutation_count, 2),
           strategies: input[:strategies]
         ),
-        timeout: MUTATION_TIMEOUT
+        timeout: LLM_ACTIVITY_TIMEOUT,
+        heartbeat_timeout: DEFAULT_HEARTBEAT_TIMEOUT
       )
 
       mutations = mutation_result.fetch(:mutations, [])

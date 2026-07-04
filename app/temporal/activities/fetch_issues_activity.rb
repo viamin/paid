@@ -14,7 +14,6 @@ module Activities
 
     def execute(input)
       project_id = input[:project_id]
-
       github_state = unavailable_github_state
 
       project = Project.find_by(id: project_id)
@@ -31,6 +30,7 @@ module Activities
       eager_queue_enabled = incremental && Issues::AutoPickProjectGate.call(project)
       sync_started_at = Time.current
 
+      heartbeat("fetch_issues.github_list", project_id: project_id, incremental: incremental)
       github_issues, truncated = fetch_all_issues(client, project.full_name, since: project.last_issue_sync_at)
 
       synced_issues = nil
@@ -42,7 +42,10 @@ module Activities
       eligible_issues = []
 
       Project.suppress_broadcasts do
-        synced_issues = github_issues.map { |gi| sync_issue(project, gi, eager_queue_enabled: eager_queue_enabled, eligible_issues: eligible_issues) }
+        synced_issues = github_issues.each_with_index.map do |gi, index|
+          heartbeat("fetch_issues.sync_issue", project_id: project.id, github_issue_id: gi.id, index: index, total: github_issues.size)
+          sync_issue(project, gi, eager_queue_enabled: eager_queue_enabled, eligible_issues: eligible_issues)
+        end
         sync_changed ||= synced_issues.any? { |issue_data| issue_data[:changed] }
         relationship_changes = parse_issue_relationships(project, synced_issues)
         sync_changed ||= relationship_changes
@@ -82,27 +85,9 @@ module Activities
       end
 
       if truncated && incremental
-        # Incremental fetches sort ascending (oldest-updated first), so a
-        # truncated result contains the oldest slice of the `since` window.
-        # Advance the watermark to the latest `updated_at` among fetched
-        # issues so the next sync picks up where this one left off.
-        #
-        # Prefer subtracting 1 second for an inclusive boundary: GitHub's
-        # `since` filters as "updated after" the given timestamp, so
-        # issues sharing the exact second-level `updated_at` would be
-        # excluded on the next poll. Overlapping is safe (sync_issue is
-        # idempotent).
-        #
-        # However, if subtracting 1 second would not advance past the
-        # current watermark (i.e. all fetched issues share the same
-        # `updated_at` second as the watermark), use the exact timestamp
-        # to guarantee forward progress. Some same-second issues may be
-        # skipped, but permanent re-fetch of the same window is worse.
         latest_updated = github_issues.filter_map(&:updated_at).max
         if latest_updated
           inclusive_cursor = latest_updated - 1.second
-          # `incremental` is only true when `last_issue_sync_at` is present,
-          # so the nil-guard is unnecessary here.
           new_watermark = if inclusive_cursor <= project.last_issue_sync_at
             latest_updated
           else
@@ -111,37 +96,16 @@ module Activities
           project.touch_last_issue_sync_at(new_watermark)
         end
       elsif !truncated
-        # Subtract 1 second to create an inclusive boundary: GitHub's
-        # `since` filter is strictly `updated_at > X`, so any issue whose
-        # `updated_at` equals the watermark exactly would be excluded on
-        # the next poll. The small overlap is harmless because sync_issue
-        # is idempotent (upsert by github_issue_id).
         project.touch_last_issue_sync_at(sync_started_at - 1.second)
       end
 
       recheck_issue_ids = enhance_issue_rechecks.map { |recheck| recheck[:issue_id] }.to_set
-
-      # Exclude closed issues and enhance_issue waits/rechecks from downstream
-      # processing (DetectLabelsActivity). Rechecks are returned separately for
-      # the workflow to queue, and needs-input issues are still waiting on
-      # human answers, so evaluating their automation labels in this poll can
-      # incorrectly start a create_pr run before enhancement completes.
-      # sync_issue already persisted their github_state to the DB, but passing
-      # them downstream could incorrectly trigger agent runs for closed work.
-      # Note: parse_issue_relationships receives all synced_issues (including
-      # closed), but filters to github_state: "open" internally.
       open_issues = synced_issues.reject do |si|
         si[:github_state] == "closed" ||
           recheck_issue_ids.include?(si[:id]) ||
           enhance_issue_needs_input?(project, si)
       end
 
-      # During incremental fetches, issues whose `updated_at` did not change
-      # on GitHub are not returned by the API. However, those issues may still
-      # need re-evaluation by DetectLabelsActivity — for example when a
-      # blocking dependency was resolved, or project label/trust settings
-      # changed. Append locally-open issues in re-scannable states that were
-      # not already part of this fetch so the workflow passes them downstream.
       if incremental && !truncated
         fetched_ids = open_issues.map { |si| si[:id] }.to_set
         rescannable = project.issues
@@ -151,7 +115,8 @@ module Activities
           .limit(200)
           .pluck(:id, :github_number, :github_state)
 
-        rescannable.each do |id, github_number, github_state|
+        rescannable.each_with_index do |(id, github_number, github_state), index|
+          heartbeat("fetch_issues.add_rescannable", project_id: project.id, issue_id: id, index: index, total: rescannable.size)
           open_issues << { id: id, github_number: github_number, labels: [],
                            github_state: github_state, rescan: true }
         end
@@ -224,6 +189,7 @@ module Activities
       truncated = false
 
       loop do
+        heartbeat("fetch_issues.page", repo: repo_full_name, label: label, page: page, since: since&.iso8601)
         opts = {
           labels: label ? [ label ] : nil,
           state: "open",
@@ -321,7 +287,14 @@ module Activities
 
     def seed_eligible_issues(project, eligible_issues, incremental:)
       if incremental
-        eligible_issues.each do |issue|
+        eligible_issues.each_with_index do |issue, index|
+          heartbeat(
+            "fetch_issues.seed_eligible",
+            project_id: project.id,
+            issue_id: issue.respond_to?(:id) ? issue.id : nil,
+            index: index,
+            total: eligible_issues.size
+          )
           Issues::EnqueueEligible.call(issue, project: project, skip_project_gate: true)
         end
       else
@@ -429,7 +402,8 @@ module Activities
         Activities::HandleNoOutputIssueRunActivity::PAID_NEEDS_INPUT_LABEL
       changed = false
 
-      synced_issues.each do |issue_data|
+      synced_issues.each_with_index do |issue_data, index|
+        heartbeat("fetch_issues.needs_input_removal", project_id: project.id, issue_id: issue_data[:id], index: index, total: synced_issues.size)
         next unless Array(issue_data[:removed_labels]).include?(needs_input_label)
 
         issue = project.issues.find(issue_data[:id])
@@ -477,7 +451,8 @@ module Activities
 
       changed = false
 
-      open_issues.each do |issue_data|
+      open_issues.each_with_index do |issue_data, index|
+        heartbeat("fetch_issues.sync_paused_state", project_id: project.id, issue_id: issue_data[:id], index: index, total: open_issues.size)
         desired_paused = Array(issue_data[:labels]).include?(Issue::PAUSED_LABEL)
         currently_paused = currently_paused_ids.include?(issue_data[:id])
         next if currently_paused == desired_paused
@@ -597,6 +572,7 @@ module Activities
       comments_by_number = fetch_batch_comments(client, project, issues)
 
       issues.each_with_index do |issue, index|
+        heartbeat("fetch_issues.parse_relationships", project_id: project.id, issue_id: issue.id, github_number: issue.github_number, index: index, total: issues.size)
         if index.positive? && monotonic_now >= deadline
           deferred_count += issues.size - index
           logger.warn(
@@ -677,7 +653,8 @@ module Activities
 
       changed = false
 
-      scope.find_each do |dep|
+      scope.find_each.with_index do |dep, index|
+        heartbeat("fetch_issues.resolve_external_dependency", project_id: project.id, issue_id: dep.issue_id, depends_on_number: dep.depends_on_number, index: index)
         resolved_issue = issues_by_number[dep.depends_on_number]
         next unless resolved_issue
 
@@ -826,6 +803,7 @@ module Activities
       truncated = false
 
       loop do
+        heartbeat("fetch_issues.pull_request_page", repo: repo_full_name, page: page)
         page_prs = client.pull_requests(repo_full_name, state: "open", per_page: DEFAULT_PER_PAGE, page: page)
         break if page_prs.empty?
 
@@ -859,7 +837,8 @@ module Activities
 
       missing_numbers = open_pr_numbers - existing_open_numbers.to_a
 
-      missing_numbers.each do |number|
+      missing_numbers.each_with_index do |number, index|
+        heartbeat("fetch_issues.backfill_pull_request", project_id: project.id, pr_number: number, index: index, total: missing_numbers.size)
         github_issue = client.issue(project.full_name, number)
         sync_issue(project, github_issue)
       end
@@ -921,7 +900,8 @@ module Activities
       unmerged_numbers = []
       unknown_numbers = []
 
-      pr_numbers.each do |number|
+      pr_numbers.each_with_index do |number, index|
+        heartbeat("fetch_issues.partition_pr_merge_status", repo: repo_full_name, pr_number: number, index: index, total: pr_numbers.size)
         github_pr = client.pull_request(repo_full_name, number)
         if github_pr.merged_at.present? || github_pr.merged == true
           merged_numbers << number
@@ -951,7 +931,8 @@ module Activities
     def clear_stale_escalation_labels(project, client, escalated_prs)
       return if escalated_prs.empty?
 
-      escalated_prs.each do |issue|
+      escalated_prs.each_with_index do |issue, index|
+        heartbeat("fetch_issues.clear_stale_escalation", project_id: project.id, issue_id: issue.id, pr_number: issue.github_number, index: index, total: escalated_prs.size)
         next unless issue.has_label?(PAID_ESCALATED_LABEL)
 
         begin
@@ -1027,7 +1008,8 @@ module Activities
 
       missing_numbers = open_issue_numbers - existing_open_numbers.to_a
 
-      missing_numbers.each do |number|
+      missing_numbers.each_with_index do |number, index|
+        heartbeat("fetch_issues.backfill_issue", project_id: project.id, issue_number: number, index: index, total: missing_numbers.size)
         github_issue = client.issue(project.full_name, number)
         sync_issue(
           project,
@@ -1051,6 +1033,7 @@ module Activities
       truncated = false
 
       loop do
+        heartbeat("fetch_issues.issue_page", repo: repo_full_name, page: page)
         page_issues = client.issues(repo_full_name, state: "open", per_page: DEFAULT_PER_PAGE, page: page)
         break if page_issues.empty?
 

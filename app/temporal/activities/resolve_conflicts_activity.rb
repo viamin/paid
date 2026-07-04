@@ -32,11 +32,13 @@ module Activities
         conflicting_pairs: detection_result[:conflicting_pairs]&.size
       )
 
-      result = Conflicts::Resolve.call(
-        detection_result: detection_result,
-        project_id: project_id,
-        strategy: requested_strategy
-      )
+      result = with_periodic_heartbeat("resolve_conflicts", project_id: project_id, strategy: requested_strategy.presence || "auto_rebase") do
+        Conflicts::Resolve.call(
+          detection_result: detection_result,
+          project_id: project_id,
+          strategy: requested_strategy
+        )
+      end
 
       logger.info(
         message: "conflicts.resolve.completed",
