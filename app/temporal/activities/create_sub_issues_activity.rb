@@ -109,8 +109,6 @@ module Activities
           sub_issue_number: gh_issue.number
         )
       end
-    rescue Temporalio::Error::CanceledError
-      raise
     end
 
     # Idempotency: a Temporal retry (or a re-trigger) must not duplicate a

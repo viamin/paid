@@ -24,7 +24,7 @@ module Activities
 
       existing = prompt.ab_tests.find_by(idempotency_key: idempotency_key)
       if existing
-        return reuse_existing_test(existing, generation:, recovery_action_id:)
+        return reuse_existing_test(existing, recovery_action_id:)
       end
 
       if prompt.ab_tests.running.exists?
@@ -74,7 +74,7 @@ module Activities
     # A previous attempt of this activity already created the test for this
     # exact variant set. Reuse it: start a draft left behind by a crash that
     # happened after create but before start!, and surface the recovery action.
-    def reuse_existing_test(existing, generation:, recovery_action_id:)
+    def reuse_existing_test(existing, recovery_action_id:)
       existing.start! if existing.draft?
 
       status = existing.running? ? :already_running : :created
@@ -90,7 +90,7 @@ module Activities
       {
         ab_test_id: existing.id,
         status: status,
-        generation: generation
+        generation: generation_from_test(existing)
       }
     end
 
@@ -100,6 +100,18 @@ module Activities
       prompt.ab_tests
         .where("name LIKE ?", "Evolution gen-%")
         .count + 1
+    end
+
+    # On a Temporal retry, the reused test was already created by a prior
+    # attempt, so `evolution_generation` now counts it and would over-report
+    # by one (returning N+1 for a gen-N test). That inflated value would leak
+    # into the workflow result, which forwards this activity's `generation` as
+    # its own. Parsing the generation out of the deterministic test name keeps
+    # the retry invisible. Fall back to the recomputed count for any test not
+    # named by this activity.
+    def generation_from_test(test)
+      parsed = test.name.to_s[/Evolution gen-(\d+)/, 1]
+      parsed ? parsed.to_i : evolution_generation(test.prompt)
     end
 
     def track_recovery_action(recovery_action_id, ab_test, status)

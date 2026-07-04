@@ -123,6 +123,33 @@ RSpec.describe Activities::CreateEvolutionAbTestActivity do
         expect(AbTest.find(result[:ab_test_id]).status).to eq("running")
         expect(prompt.ab_tests.count).to eq(1)
       end
+
+      it "returns the reused test's generation instead of an inflated count" do
+        first = activity.execute(input)
+        expect(first[:generation]).to eq(1)
+
+        # The first attempt created "Evolution gen-1 ...", which now matches
+        # the generation count filter. A naive retry would return 2.
+        second = activity.execute(input)
+
+        expect(second[:ab_test_id]).to eq(first[:ab_test_id])
+        expect(second[:generation]).to eq(first[:generation])
+      end
+
+      it "keeps the retry invisible even with prior generations present" do
+        prior = create(:ab_test, prompt: prompt, name: "Evolution gen-1 2026-01-01")
+        prior.ab_test_variants.create!(prompt_version: prompt.current_version, is_control: true)
+        prior.ab_test_variants.create!(prompt_version: variant_version, is_control: false)
+
+        first = activity.execute(input)
+        expect(first[:generation]).to eq(2) # gen-1 exists, so this creates gen-2
+
+        # Without the fix, the count would be 3 (gen-1 + gen-2 + 1).
+        second = activity.execute(input)
+
+        expect(second[:ab_test_id]).to eq(first[:ab_test_id])
+        expect(second[:generation]).to eq(2)
+      end
     end
   end
 end
