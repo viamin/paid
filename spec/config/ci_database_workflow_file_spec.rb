@@ -99,8 +99,10 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
           job = workflow.fetch("jobs").fetch("migrations")
           setup_step = job.fetch("steps").find { |step| step["name"] == "Replay migrations" }
 
+          expect(setup_step).not_to be_nil, "expected migrations job to include a Replay migrations step"
           expect(job.fetch("env")).to include(
-            "PAID_TEST_DATABASE" => "paid_migration_test",
+            "PAID_TEST_DATABASE" => "paid_test",
+            "RAILS_TEST_KEY" => "${{ secrets.RAILS_TEST_KEY }}",
             "DB_USERNAME" => "postgres",
             "DB_PASSWORD" => "postgres"
           )
