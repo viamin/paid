@@ -20,21 +20,18 @@ module Workflows
 
     workflow_signal
     def approve_plan
-      @plan_review_decision = :approved
-      @plan_review_cancel_proc&.call
+      record_plan_review_decision(:approved)
     end
 
     workflow_signal
     def reject_plan
-      @plan_review_decision = :rejected
-      @plan_review_cancel_proc&.call
+      record_plan_review_decision(:rejected)
     end
 
     workflow_signal
     def revise_plan(revised_tasks)
-      @plan_review_decision = :revised
       @revised_tasks = deep_symbolize(revised_tasks)
-      @plan_review_cancel_proc&.call
+      record_plan_review_decision(:revised)
     end
 
     class << self
@@ -287,18 +284,11 @@ module Workflows
         }
       )
 
-      cancellation, @plan_review_cancel_proc = Temporalio::Cancellation.new
-
-      begin
-        timeout_seconds = timeout_hours.to_i * 3600
-        Temporalio::Workflow.sleep(timeout_seconds, cancellation: cancellation) unless @plan_review_decision
-      rescue Temporalio::Error::CanceledError
-        # Signal arrived — decision is in @plan_review_decision
-      ensure
-        @plan_review_cancel_proc = nil
+      decision = if Temporalio::Workflow.patched("planning-review-wait-condition-v1")
+        wait_for_plan_review_with_wait_condition(timeout_hours)
+      else
+        wait_for_plan_review_with_legacy_signal_await(timeout_hours)
       end
-
-      decision = @plan_review_decision || :timed_out
 
       safe_log_decomposition_decision(
         project_id: project_id,
@@ -317,6 +307,39 @@ module Workflows
       )
 
       decision
+    end
+
+    def record_plan_review_decision(decision)
+      @plan_review_decision = decision
+      @plan_review_cancel_proc&.call unless Temporalio::Workflow.patched("planning-review-wait-condition-v1")
+    end
+
+    def wait_for_plan_review_with_wait_condition(timeout_hours)
+      return @plan_review_decision if @plan_review_decision
+
+      timeout_seconds = timeout_hours.to_i * 3600
+      Temporalio::Workflow.timeout(timeout_seconds) do
+        Temporalio::Workflow.wait_condition { !@plan_review_decision.nil? }
+      end
+
+      @plan_review_decision
+    rescue Timeout::Error
+      :timed_out
+    end
+
+    def wait_for_plan_review_with_legacy_signal_await(timeout_hours)
+      cancellation, @plan_review_cancel_proc = Temporalio::Cancellation.new
+
+      begin
+        timeout_seconds = timeout_hours.to_i * 3600
+        Temporalio::Workflow.sleep(timeout_seconds, cancellation: cancellation) unless @plan_review_decision
+      rescue Temporalio::Error::CanceledError
+        raise unless @plan_review_decision
+      ensure
+        @plan_review_cancel_proc = nil
+      end
+
+      @plan_review_decision || :timed_out
     end
 
     def safe_log_decomposition_decision(detached: false, **payload)
