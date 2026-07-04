@@ -302,6 +302,24 @@ RSpec.describe Automation::Strategies::AutoReview do
       expect(types).to eq(%w[queue_create_pr_run record_pr_followup])
     end
 
+    it "suppresses create_pr follow-ups while a paid_agent review is actively running, even with posted bot feedback" do
+      result = evaluate(scan: {
+        issue_id: pull_request.id,
+        pr_number: 42,
+        phase: "ready",
+        current_followup_count: 0,
+        labels_to_remove: [],
+        triggers: [
+          { type: "paid_agent_review_pending", active_run: true },
+          { type: "review_bot_comments", details: "Latest review bot review generated comments" }
+        ]
+      })
+
+      types = result.to_h[:decisions].map { |d| d[:type] }
+      expect(types).to eq([ "noop" ])
+      expect(types).not_to include("queue_create_pr_run", "record_pr_followup")
+    end
+
     it "marks ready on ready_for_owner triggers" do
       result = evaluate(scan: {
         issue_id: pull_request.id,

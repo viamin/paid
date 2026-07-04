@@ -257,8 +257,10 @@ module Automation
         decisions.concat(non_bot_request_decisions(plugins))
 
         if trigger_types.include?(Automation::ReviewMethods::Copilot::TRIGGER_TYPE)
+          # posted_bot_feedback_trigger? was already handled by the early
+          # return at the top of this method, so no follow-up is appended
+          # here — only the bot review request.
           decisions.concat(review_bot_request_decisions(plugins))
-          decisions.concat(followup_decisions(signals)) if posted_bot_feedback_trigger?(trigger_types)
           return decisions
         end
 
