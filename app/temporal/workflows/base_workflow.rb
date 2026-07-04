@@ -14,6 +14,9 @@ module Workflows
   # Use `run_activity` instead of `Temporalio::Workflow.execute_activity` to
   # automatically normalize activity return values as well.
   class BaseWorkflow < Temporalio::Workflow::Definition
+    DEFAULT_HEARTBEAT_TIMEOUT = 60
+    LLM_ACTIVITY_TIMEOUT = 300
+
     DECOMPOSITION_POLICY_METADATA_KEYS = %i[
       policy_source
       skip_reason
@@ -63,6 +66,8 @@ module Workflows
 
     private
 
+    # Call this first inside workflow rescue blocks so cancellation re-raises
+    # immediately before any failure-marking, telemetry, or error logging runs.
     def raise_if_canceled!(error)
       raise error if error.is_a?(Temporalio::Error::CanceledError)
 

@@ -51,6 +51,7 @@ module Activities
       end
 
       # Get the SHA of the default branch to base the feature branch on
+      heartbeat("aggregate_branches.fetch_base_ref", project_id: project.id, feature_branch: feature_branch)
       base_ref = client.ref(repo, "heads/#{default_branch}")
       base_sha = base_ref.object.sha
 
@@ -67,10 +68,20 @@ module Activities
       merged_branches = []
       failed_merges = []
 
-      merge_candidates.each do |branch_name|
+      merge_candidates.each_with_index do |branch_name, index|
+        heartbeat(
+          "aggregate_branches.merge_candidate",
+          project_id: project.id,
+          feature_branch: feature_branch,
+          branch_name: branch_name,
+          index: index,
+          total: merge_candidates.size
+        )
         begin
-          client.merge(repo, feature_branch, branch_name,
-            commit_message: "Merge #{branch_name} into #{feature_branch}")
+          with_periodic_heartbeat("aggregate_branches.merge", project_id: project.id, feature_branch: feature_branch, branch_name: branch_name) do
+            client.merge(repo, feature_branch, branch_name,
+              commit_message: "Merge #{branch_name} into #{feature_branch}")
+          end
           merged_branches << branch_name
 
           logger.info(

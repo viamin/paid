@@ -24,12 +24,14 @@ module Activities
       options = { mutation_count: mutation_count }
       options[:strategies] = strategies if strategies.present?
 
-      mutations = PromptEvolution::Mutate.call(
-        prompt: prompt,
-        quality_metrics: quality_metrics,
-        sample_outputs: sample_outputs,
-        options: options
-      )
+      mutations = with_periodic_heartbeat("generate_mutations", prompt_id: prompt_id, mutation_count: mutation_count) do
+        PromptEvolution::Mutate.call(
+          prompt: prompt,
+          quality_metrics: quality_metrics,
+          sample_outputs: sample_outputs,
+          options: options
+        )
+      end
 
       {
         prompt_id: prompt_id,

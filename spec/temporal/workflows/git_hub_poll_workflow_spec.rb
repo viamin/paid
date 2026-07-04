@@ -114,7 +114,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       workflow.send(:maybe_scan_paid_prs, 1)
 
       expect(workflow).to have_received(:run_activity)
-        .with(Activities::ScanPaidPrsActivity, { project_id: 1 }, timeout: 120)
+        .with(Activities::ScanPaidPrsActivity, { project_id: 1 }, timeout: 120, heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT)
     end
   end
 
@@ -215,7 +215,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       workflow.send(:maybe_run_non_critical_activities, 1)
 
       expect(workflow).to have_received(:run_activity)
-        .with(Activities::ScanPaidPrsActivity, { project_id: 1 }, timeout: 120)
+        .with(Activities::ScanPaidPrsActivity, { project_id: 1 }, timeout: 120, heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT)
     end
 
     it "runs the rate limit check before the non-critical activities" do
@@ -231,7 +231,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       expect(workflow).to have_received(:run_activity)
         .with(Activities::CheckRateLimitActivity, { project_id: 1 }, timeout: 10)
       expect(workflow).to have_received(:run_activity)
-        .with(Activities::ScanPaidPrsActivity, { project_id: 1 }, timeout: 120)
+        .with(Activities::ScanPaidPrsActivity, { project_id: 1 }, timeout: 120, heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT)
     end
   end
 
@@ -308,7 +308,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       )
       activity_error = activity_error_with_cause(config_error)
       allow(workflow).to receive(:run_activity)
-        .with(Activities::ScanSecurityAlertsActivity, anything, timeout: anything)
+        .with(Activities::ScanSecurityAlertsActivity, anything, timeout: anything, heartbeat_timeout: anything)
         .and_raise(activity_error)
 
       logger = instance_double(Logger, warn: nil)
@@ -330,7 +330,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       )
       activity_error = activity_error_with_cause(config_error)
       allow(workflow).to receive(:run_activity)
-        .with(Activities::ScanSecurityAlertsActivity, anything, timeout: anything)
+        .with(Activities::ScanSecurityAlertsActivity, anything, timeout: anything, heartbeat_timeout: anything)
         .and_raise(activity_error)
 
       expect { workflow.send(:maybe_scan_code_scanning_alerts, 1) }
@@ -345,7 +345,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       )
       activity_error = activity_error_with_cause(other_error)
       allow(workflow).to receive(:run_activity)
-        .with(Activities::ScanSecurityAlertsActivity, anything, timeout: anything)
+        .with(Activities::ScanSecurityAlertsActivity, anything, timeout: anything, heartbeat_timeout: anything)
         .and_raise(activity_error)
 
       expect { workflow.send(:maybe_scan_code_scanning_alerts, 1) }
@@ -527,12 +527,12 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
       expect(workflow).to have_received(:run_activity)
         .with(Activities::EvaluateIssuesActivity,
-          { project_id: project_id, issue_ids: [ 10, 20, 30 ] }, timeout: 120)
+          { project_id: project_id, issue_ids: [ 10, 20, 30 ] }, timeout: 120, heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT)
     end
 
     it "dispatches each result through handle_automation_result" do
       allow(workflow).to receive(:run_activity)
-        .with(Activities::EvaluateIssuesActivity, anything, timeout: anything)
+        .with(Activities::EvaluateIssuesActivity, anything, timeout: anything, heartbeat_timeout: anything)
         .and_return({
           results: [
             { decisions: [ { type: "queue_create_pr_run", issue_id: 10 } ] },
@@ -559,7 +559,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
     it "handles nil results gracefully" do
       allow(workflow).to receive(:run_activity)
-        .with(Activities::EvaluateIssuesActivity, anything, timeout: anything)
+        .with(Activities::EvaluateIssuesActivity, anything, timeout: anything, heartbeat_timeout: anything)
         .and_return({ results: nil })
 
       expect { workflow.send(:evaluate_issues_batch, project_id, [ { id: 10 } ]) }
@@ -572,17 +572,18 @@ RSpec.describe Workflows::GitHubPollWorkflow do
     let(:project_id) { 1 }
 
     def stub_initial_sync(trigger_result:)
+      allow(workflow).to receive(:run_activity).and_return({})
       allow(workflow).to receive(:run_activity)
         .with(Activities::CheckRateLimitActivity, { project_id: project_id }, timeout: 10)
         .and_return({ rate_limit_remaining: 500, rate_limit_low: false })
       allow(workflow).to receive(:run_activity)
-        .with(Activities::FetchIssuesActivity, { project_id: project_id }, timeout: 60)
+        .with(Activities::FetchIssuesActivity, { project_id: project_id }, timeout: 60, heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT)
         .and_return(
           { issues: [ { id: 10 } ], project_id: project_id },
           { issues: [], project_id: project_id, project_missing: true }
         )
       allow(workflow).to receive(:run_activity)
-        .with(Activities::ScanPaidPrsActivity, { project_id: project_id }, timeout: 120)
+        .with(Activities::ScanPaidPrsActivity, { project_id: project_id }, timeout: 120, heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT)
         .and_return(trigger_result)
       allow(workflow).to receive(:run_activity)
         .with(Activities::QueueAgentRunActivity, anything, timeout: anything)
@@ -605,7 +606,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::RecordPollHeartbeatActivity, anything, timeout: anything)
         .and_return({ recorded: true })
       allow(workflow).to receive(:run_activity)
-        .with(Activities::ScanSecurityAlertsActivity, { project_id: project_id }, timeout: 120)
+        .with(Activities::ScanSecurityAlertsActivity, { project_id: project_id }, timeout: 120, heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT)
         .and_return({})
       allow(workflow).to receive(:run_activity)
         .with(Activities::CheckKnowledgeStalenessActivity, { project_id: project_id }, timeout: 30)
@@ -623,7 +624,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
         .with(Activities::LoadFeatureFlagsActivity, { project_id: project_id }, timeout: 10)
         .and_return(flags: {}, project_missing: false)
       allow(workflow).to receive(:run_activity)
-        .with(Activities::EvaluateIssuesActivity, anything, timeout: anything)
+        .with(Activities::EvaluateIssuesActivity, anything, timeout: anything, heartbeat_timeout: anything)
         .and_return({ results: [ { decisions: [ { type: "noop" } ], action: "none", issue_id: 10, project_id: project_id } ] })
     end
 

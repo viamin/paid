@@ -32,7 +32,7 @@ module Workflows
         @sync_requested = false
 
         result = run_activity(Activities::FetchIssuesActivity,
-          { project_id: project_id }, timeout: 60)
+          { project_id: project_id }, timeout: 60, heartbeat_timeout: DEFAULT_HEARTBEAT_TIMEOUT)
 
         break if result[:project_missing]
 
@@ -134,7 +134,7 @@ module Workflows
 
       issue_ids = issues.map { |issue_data| issue_data[:id] }
       batch_result = run_activity(Activities::EvaluateIssuesActivity,
-        { project_id: project_id, issue_ids: issue_ids }, timeout: 120)
+        { project_id: project_id, issue_ids: issue_ids }, timeout: 120, heartbeat_timeout: DEFAULT_HEARTBEAT_TIMEOUT)
 
       (batch_result[:results] || []).each do |evaluation|
         handle_automation_result(evaluation, project_id)
@@ -201,7 +201,7 @@ module Workflows
     # Scan paid-generated PRs for follow-up work.
     def maybe_scan_paid_prs(project_id)
       scan_result = run_activity(Activities::ScanPaidPrsActivity,
-        { project_id: project_id }, timeout: 120)
+        { project_id: project_id }, timeout: 120, heartbeat_timeout: DEFAULT_HEARTBEAT_TIMEOUT)
 
       handle_pr_scan_results(scan_result, project_id)
       scan_result
@@ -212,7 +212,7 @@ module Workflows
     # agent runs are triggered here.
     def maybe_scan_code_scanning_alerts(project_id)
       run_activity(Activities::ScanSecurityAlertsActivity,
-        { project_id: project_id }, timeout: 120)
+        { project_id: project_id }, timeout: 120, heartbeat_timeout: DEFAULT_HEARTBEAT_TIMEOUT)
     rescue Temporalio::Error::ActivityError => e
       raise unless e.cause.is_a?(Temporalio::Error::ApplicationError) &&
         e.cause.type == "CodeScanningPermissionsError"

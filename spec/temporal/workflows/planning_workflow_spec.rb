@@ -21,8 +21,12 @@ RSpec.describe Workflows::PlanningWorkflow, :no_db do
     before do
       workflow_info = Struct.new(:workflow_id).new("test-planning-wf")
       allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, info: workflow_info)
+      allow(Temporalio::Workflow).to receive(:patched).and_return(false)
       allow(Temporalio::Workflow).to receive(:patched)
         .with("planning-review-signal-gate-v1")
+        .and_return(true)
+      allow(Temporalio::Workflow).to receive(:patched)
+        .with("planning-review-wait-condition-v1")
         .and_return(true)
     end
 
@@ -36,7 +40,8 @@ RSpec.describe Workflows::PlanningWorkflow, :no_db do
             workflow_name: "Workflows::PlanningWorkflow",
             workflow_id: "test-planning-wf"
           ),
-          timeout: 120
+          timeout: described_class::LLM_ACTIVITY_TIMEOUT,
+          heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT
         )
     end
 
@@ -96,11 +101,9 @@ RSpec.describe Workflows::PlanningWorkflow, :no_db do
       end
     end
 
-    def stub_review_gate(timeout: true)
-      if timeout
-        allow(Temporalio::Workflow).to receive(:sleep)
-      end
-      allow(Temporalio::Cancellation).to receive(:new).and_return([ double, -> { } ])
+    def stub_review_gate_timeout
+      allow(Temporalio::Workflow).to receive(:timeout).and_raise(Timeout::Error)
+      allow(Temporalio::Workflow).to receive(:wait_condition)
     end
 
     it "accepts a single input parameter" do
@@ -135,7 +138,7 @@ RSpec.describe Workflows::PlanningWorkflow, :no_db do
             {}
           end
         end
-        stub_review_gate(timeout: true)
+        stub_review_gate_timeout
       end
 
       it "returns success with created issues" do
@@ -237,7 +240,8 @@ RSpec.describe Workflows::PlanningWorkflow, :no_db do
         allow(Temporalio::Workflow).to receive(:patched)
           .with("planning-review-signal-gate-v1")
           .and_return(false)
-        allow(Temporalio::Workflow).to receive(:sleep)
+        allow(Temporalio::Workflow).to receive(:timeout)
+        allow(Temporalio::Workflow).to receive(:wait_condition)
 
         allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
           case activity_class.name
@@ -262,13 +266,101 @@ RSpec.describe Workflows::PlanningWorkflow, :no_db do
 
         expect(result[:success]).to be true
         expect(result[:created_issues]).to eq([ { issue_id: 10 }, { issue_id: 11 } ])
-        expect(Temporalio::Workflow).not_to have_received(:sleep)
+        expect(Temporalio::Workflow).not_to have_received(:timeout)
+        expect(Temporalio::Workflow).not_to have_received(:wait_condition)
         expect(workflow).not_to have_received(:run_activity)
           .with(
             Activities::LogDecompositionDecisionActivity,
             hash_including(outcome: "plan_pending_review"),
             any_args
           )
+      end
+    end
+
+    context "when replaying an execution that started before the wait-condition patch" do
+      let(:tasks) do
+        [
+          { index: 0, title: "Add migration", description: "Create table", dependencies: [], parallel_group: 0 },
+          { index: 1, title: "Add model", description: "Create model", dependencies: [ 0 ], parallel_group: 1 }
+        ]
+      end
+
+      before do
+        allow(Temporalio::Workflow).to receive(:patched)
+          .with("planning-review-wait-condition-v1")
+          .and_return(false)
+        allow(Temporalio::Workflow).to receive(:sleep)
+        allow(Temporalio::Workflow).to receive(:timeout)
+        allow(Temporalio::Workflow).to receive(:wait_condition)
+        allow(Temporalio::Cancellation).to receive(:new).and_return([ double, -> { } ])
+
+        allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+          case activity_class.name
+          when "Activities::FetchPlanningContextActivity"
+            { context: { issue_title: "Feature", knowledge_snippets: [] } }
+          when "Activities::DecomposeFeatureActivity"
+            { tasks: tasks }
+          when "Activities::CreateSubIssuesActivity"
+            { created_issues: [ { issue_id: 10 }, { issue_id: 11 } ] }
+          when "Activities::UpdatePlanningLabelsActivity"
+            { success: true }
+          when "Activities::LogDecompositionDecisionActivity"
+            { decomposition_decision_id: 1 }
+          else
+            {}
+          end
+        end
+      end
+
+      it "replays through the legacy signal-await path" do
+        result = workflow.execute(input)
+
+        expect(result[:success]).to be true
+        expect(result[:created_issues]).to eq([ { issue_id: 10 }, { issue_id: 11 } ])
+        expect(Temporalio::Workflow).to have_received(:sleep)
+        expect(Temporalio::Workflow).not_to have_received(:timeout)
+        expect(Temporalio::Workflow).not_to have_received(:wait_condition)
+      end
+
+      context "when the workflow is canceled while waiting for review" do
+        before do
+          allow(Temporalio::Workflow).to receive(:sleep)
+            .and_raise(Temporalio::Error::CanceledError, "workflow canceled")
+        end
+
+        it "re-raises cancellation without creating sub-issues" do
+          expect { workflow.execute(input) }.to raise_error(Temporalio::Error::CanceledError)
+
+          expect(workflow).not_to have_received(:run_activity)
+            .with(Activities::CreateSubIssuesActivity, anything, any_args)
+          expect(workflow).not_to have_received(:run_activity)
+            .with(Activities::LogDecompositionDecisionActivity,
+              hash_including(decision_key: "test-planning-wf:plan_review:timed_out"),
+              any_args)
+        end
+      end
+
+      context "when a review signal arrives before a real workflow cancellation" do
+        let(:workflow_cancellation) { instance_double(Temporalio::Cancellation, canceled?: true) }
+
+        before do
+          allow(Temporalio::Workflow).to receive(:cancellation).and_return(workflow_cancellation)
+          allow(Temporalio::Workflow).to receive(:sleep) do
+            workflow.approve_plan
+            raise Temporalio::Error::CanceledError, "workflow canceled"
+          end
+        end
+
+        it "re-raises cancellation instead of falling through to sub-issue creation" do
+          expect { workflow.execute(input) }.to raise_error(Temporalio::Error::CanceledError)
+
+          expect(workflow).not_to have_received(:run_activity)
+            .with(Activities::CreateSubIssuesActivity, anything, any_args)
+          expect(workflow).not_to have_received(:run_activity)
+            .with(Activities::LogDecompositionDecisionActivity,
+              hash_including(decision_key: "test-planning-wf:plan_review:approved"),
+              any_args)
+        end
       end
     end
 
@@ -449,12 +541,12 @@ RSpec.describe Workflows::PlanningWorkflow, :no_db do
             {}
           end
         end
-        allow(Temporalio::Cancellation).to receive(:new).and_return([ double, -> { } ])
       end
 
       context "when approve_plan signal arrives" do
         before do
-          allow(Temporalio::Workflow).to receive(:sleep) { workflow.approve_plan }
+          allow(Temporalio::Workflow).to receive(:timeout).and_yield
+          allow(Temporalio::Workflow).to receive(:wait_condition) { workflow.approve_plan }
         end
 
         it "creates sub-issues" do
@@ -476,7 +568,8 @@ RSpec.describe Workflows::PlanningWorkflow, :no_db do
 
       context "when approve_plan arrives while pending review is still being logged" do
         before do
-          allow(Temporalio::Workflow).to receive(:sleep)
+          allow(Temporalio::Workflow).to receive(:timeout)
+          allow(Temporalio::Workflow).to receive(:wait_condition)
           allow(workflow).to receive(:run_activity) do |activity_class, activity_input, **_opts|
             case activity_class.name
             when "Activities::FetchPlanningContextActivity"
@@ -501,7 +594,8 @@ RSpec.describe Workflows::PlanningWorkflow, :no_db do
 
           expect(result[:success]).to be true
           expect(result[:created_issues]).to eq([ { issue_id: 10 }, { issue_id: 11 }, { issue_id: 12 } ])
-          expect(Temporalio::Workflow).not_to have_received(:sleep)
+          expect(Temporalio::Workflow).not_to have_received(:timeout)
+          expect(Temporalio::Workflow).not_to have_received(:wait_condition)
           expect(workflow).to have_received(:run_activity)
             .with(Activities::LogDecompositionDecisionActivity,
               hash_including(decision_key: "test-planning-wf:plan_review:approved", outcome: "plan_review_approved"),
@@ -511,7 +605,8 @@ RSpec.describe Workflows::PlanningWorkflow, :no_db do
 
       context "when reject_plan signal arrives" do
         before do
-          allow(Temporalio::Workflow).to receive(:sleep) { workflow.reject_plan }
+          allow(Temporalio::Workflow).to receive(:timeout).and_yield
+          allow(Temporalio::Workflow).to receive(:wait_condition) { workflow.reject_plan }
         end
 
         it "skips sub-issue creation" do
@@ -547,7 +642,8 @@ RSpec.describe Workflows::PlanningWorkflow, :no_db do
         end
 
         before do
-          allow(Temporalio::Workflow).to receive(:sleep) { workflow.revise_plan(revised_tasks) }
+          allow(Temporalio::Workflow).to receive(:timeout).and_yield
+          allow(Temporalio::Workflow).to receive(:wait_condition) { workflow.revise_plan(revised_tasks) }
         end
 
         it "creates sub-issues with revised tasks" do
@@ -569,7 +665,8 @@ RSpec.describe Workflows::PlanningWorkflow, :no_db do
         end
 
         before do
-          allow(Temporalio::Workflow).to receive(:sleep) { workflow.revise_plan(revised_tasks) }
+          allow(Temporalio::Workflow).to receive(:timeout).and_yield
+          allow(Temporalio::Workflow).to receive(:wait_condition) { workflow.revise_plan(revised_tasks) }
         end
 
         it "skips sub-issue creation" do
@@ -605,7 +702,8 @@ RSpec.describe Workflows::PlanningWorkflow, :no_db do
         let(:revised_tasks) { [] }
 
         before do
-          allow(Temporalio::Workflow).to receive(:sleep) { workflow.revise_plan(revised_tasks) }
+          allow(Temporalio::Workflow).to receive(:timeout).and_yield
+          allow(Temporalio::Workflow).to receive(:wait_condition) { workflow.revise_plan(revised_tasks) }
         end
 
         it "returns an empty plan without creating sub-issues" do
@@ -635,7 +733,7 @@ RSpec.describe Workflows::PlanningWorkflow, :no_db do
 
       context "when timeout occurs" do
         before do
-          allow(Temporalio::Workflow).to receive(:sleep)
+          stub_review_gate_timeout
         end
 
         it "auto-approves and creates sub-issues" do
@@ -652,6 +750,22 @@ RSpec.describe Workflows::PlanningWorkflow, :no_db do
             .with(Activities::LogDecompositionDecisionActivity,
               hash_including(decision_key: "test-planning-wf:plan_review:timed_out", outcome: "plan_review_timed_out"),
               timeout: 30, retry_policy: Workflows::PlanningWorkflow::NO_RETRY)
+        end
+      end
+
+      context "when the workflow is canceled while waiting for plan review" do
+        before do
+          allow(Temporalio::Workflow).to receive(:timeout).and_yield
+          allow(Temporalio::Workflow).to receive(:wait_condition)
+            .and_raise(Temporalio::Error::CanceledError, "workflow canceled")
+        end
+
+        it "propagates cancellation and does not create sub-issues" do
+          expect { workflow.execute(input) }.to raise_error(Temporalio::Error::CanceledError)
+          expect(workflow).not_to have_received(:run_activity)
+            .with(Activities::CreateSubIssuesActivity, anything, any_args)
+          expect(workflow).not_to have_received(:run_activity)
+            .with(Activities::UpdatePlanningLabelsActivity, anything, any_args)
         end
       end
     end

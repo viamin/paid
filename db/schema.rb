@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_02_235858) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_03_184158) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -275,6 +275,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_02_235858) do
     t.string "proxy_token", limit: 64
     t.integer "pull_request_number"
     t.string "pull_request_url", limit: 500
+    t.datetime "queue_entered_at", comment: "Most recent time this run entered queued status so queue latency metrics reflect the current queue episode."
     t.datetime "rate_limited_until"
     t.string "result_commit_sha", limit: 40
     t.datetime "review_posted_at"
@@ -2671,6 +2672,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_02_235858) do
   add_foreign_key "chat_sessions", "users", column: "created_by_id"
   add_foreign_key "claude_login_sessions", "accounts"
   add_foreign_key "claude_login_sessions", "integration_credentials"
+  add_foreign_key "claude_login_sessions", "runner_credentials"
   add_foreign_key "claude_login_sessions", "users", column: "created_by_id"
   add_foreign_key "collector_runs", "project_versions"
   add_foreign_key "configuration_bundles", "accounts", on_delete: :cascade
@@ -2851,26 +2853,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_02_235858) do
   add_foreign_key "workflow_states", "projects"
   add_foreign_key "worktrees", "agent_runs", on_delete: :nullify
   add_foreign_key "worktrees", "projects", on_delete: :cascade
-
-  create_function :paid_current_account_id, sql_definition: <<-'SQL'
-      CREATE OR REPLACE FUNCTION public.paid_current_account_id()
-       RETURNS bigint
-       LANGUAGE sql
-       STABLE
-      AS $function$
-        SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
-      $function$
-  SQL
-
-  create_function :paid_tenant_bypass, sql_definition: <<-'SQL'
-      CREATE OR REPLACE FUNCTION public.paid_tenant_bypass()
-       RETURNS boolean
-       LANGUAGE sql
-       STABLE
-      AS $function$
-        SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
-      $function$
-  SQL
 
   create_function :logidze_capture_exception, sql_definition: <<-'SQL'
       CREATE OR REPLACE FUNCTION public.logidze_capture_exception(error_data jsonb)
@@ -3604,6 +3586,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_02_235858) do
           END IF;
           RETURN buf;
         END;
+      $function$
+  SQL
+
+  create_function :paid_current_account_id, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.paid_current_account_id()
+       RETURNS bigint
+       LANGUAGE sql
+       STABLE
+      AS $function$
+        SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
+      $function$
+  SQL
+
+  create_function :paid_tenant_bypass, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.paid_tenant_bypass()
+       RETURNS boolean
+       LANGUAGE sql
+       STABLE
+      AS $function$
+        SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
       $function$
   SQL
 
