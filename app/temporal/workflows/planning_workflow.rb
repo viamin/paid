@@ -295,7 +295,7 @@ module Workflows
       rescue Temporalio::Error::CanceledError => e
         # Only swallow the local timer cancellation used to wake the review gate
         # after a signal. A real workflow cancellation must keep propagating.
-        raise e if @plan_review_decision.blank?
+        raise e if @plan_review_decision.blank? || Temporalio::Workflow.cancellation.canceled?
       ensure
         @plan_review_cancel_proc = nil
       end

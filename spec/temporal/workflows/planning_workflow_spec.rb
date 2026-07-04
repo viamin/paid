@@ -557,6 +557,29 @@ RSpec.describe Workflows::PlanningWorkflow, :no_db do
         end
       end
 
+      context "when a review signal arrives before a real workflow cancellation" do
+        let(:workflow_cancellation) { instance_double(Temporalio::Cancellation, canceled?: true) }
+
+        before do
+          allow(Temporalio::Workflow).to receive(:cancellation).and_return(workflow_cancellation)
+          allow(Temporalio::Workflow).to receive(:sleep) do
+            workflow.approve_plan
+            raise Temporalio::Error::CanceledError, "workflow canceled"
+          end
+        end
+
+        it "re-raises cancellation instead of falling through to sub-issue creation" do
+          expect { workflow.execute(input) }.to raise_error(Temporalio::Error::CanceledError)
+
+          expect(workflow).not_to have_received(:run_activity)
+            .with(Activities::CreateSubIssuesActivity, anything, any_args)
+          expect(workflow).not_to have_received(:run_activity)
+            .with(Activities::LogDecompositionDecisionActivity,
+              hash_including(decision_key: "test-planning-wf:plan_review:approved"),
+              any_args)
+        end
+      end
+
       context "when revise_plan signal arrives" do
         let(:revised_tasks) do
           [
