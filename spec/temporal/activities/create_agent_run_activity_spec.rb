@@ -252,6 +252,21 @@ RSpec.describe Activities::CreateAgentRunActivity do
       )
     end
 
+    it "preserves the existing configuration bundle on resume when provider selection is unchanged" do
+      existing_bundle = create_runtime_bundle(existing_create_pr_bundle_definition)
+      queued_run = create(:agent_run,
+        :queued,
+        project: project,
+        issue: issue,
+        runner: claude_runner,
+        agent_type: "claude_code",
+        configuration_bundle: existing_bundle)
+
+      activity.execute(agent_run_id: queued_run.id)
+
+      expect(queued_run.reload.configuration_bundle).to eq(existing_bundle)
+    end
+
     it "records schedule_to_start latency per account when resuming a queued run" do
       queued_run = create(
         :agent_run,
@@ -268,21 +283,6 @@ RSpec.describe Activities::CreateAgentRunActivity do
 
       metric_log = queued_run.reload.agent_run_logs.metric.order(:id).last
       expect_schedule_to_start_metric(metric_log, account_id: project.account_id, project_id: project.id, min_seconds: 89.0)
-    end
-
-    it "preserves the existing configuration bundle on resume when provider selection is unchanged" do
-      existing_bundle = create_runtime_bundle(existing_create_pr_bundle_definition)
-      queued_run = create(:agent_run,
-        :queued,
-        project: project,
-        issue: issue,
-        runner: claude_runner,
-        agent_type: "claude_code",
-        configuration_bundle: existing_bundle)
-
-      activity.execute(agent_run_id: queued_run.id)
-
-      expect(queued_run.reload.configuration_bundle).to eq(existing_bundle)
     end
 
     it "recomputes the configuration bundle on resume when automatic runner selection changes" do

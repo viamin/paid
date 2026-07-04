@@ -2108,6 +2108,12 @@ class AgentRun < ApplicationRecord
 
   # Provisions a Docker container for this agent run.
   #
+  # Idempotent across retries: if a previous attempt already recorded a live
+  # container (e.g. a Temporal activity retry after a worker crash mid-provision),
+  # it is reused instead of provisioning a duplicate. A recorded container that
+  # has since died or disappeared is reconciled (cleaned up and cleared) before
+  # a fresh one is provisioned, preventing orphaned-container leaks on retry.
+  #
   # When worktree_path is blank, an empty workspace directory is auto-created
   # for in-container git clone. When set, the existing path is bind-mounted.
   #
@@ -2115,24 +2121,9 @@ class AgentRun < ApplicationRecord
   # @return [Containers::Provision::Result] Result with container_id on success
   # @raise [Containers::Provision::ProvisionError] When container creation fails
   def provision_container(**options)
-    pooled_result = Containers::PoolManager.new(project: project).acquire(agent_run: self, **options)
-    if pooled_result&.success?
-      @container_service = pooled_result[:service]
-      update!(container_id: pooled_result[:container_id], container_host: pooled_result[:container_host])
-      return pooled_result
-    end
+    return reuse_or_reconcile_container(**options) if container_id.present?
 
-    @container_service = Containers::Provision.new(
-      agent_run: self,
-      worktree_path: worktree_path.presence,
-      **options
-    )
-    result = @container_service.provision
-    if result.success?
-      update!(container_id: result[:container_id], container_host: result[:container_host])
-      PoolReplenishmentJob.perform_later(project_id)
-    end
-    result
+    provision_new_container(**options)
   end
 
   # Executes a command in the provisioned container.
@@ -2150,9 +2141,21 @@ class AgentRun < ApplicationRecord
 
   # Cleans up the provisioned container.
   #
+  # Always attempts to remove the agent run's named workspace volume as a
+  # safety net, even when no container_id is recorded — a worker killed
+  # mid-provision (e.g. by Thread#kill on activity cancellation) may have
+  # created the volume via prepare_workspace! without ever persisting
+  # container_id. cleanup_orphaned_workspace_volume is a no-op when no
+  # such volume exists or when worktree_path is set (bind-mount flows).
+  #
   # @param force [Boolean] Force kill if container doesn't stop gracefully
   # @return [void]
   def cleanup_container(force: false)
+    # Safety net for a worker killed mid-provision: the workspace volume
+    # may exist with no container_id to drive a normal cleanup. Run before
+    # the early-return so it covers all paths (worktree-based runs are no-ops).
+    cleanup_orphaned_workspace_volume if container_id.blank? && @container_service.nil?
+
     return if container_id.blank? && @container_service.nil?
 
     if Containers::PoolManager.cleanup_claimed_container(agent_run: self, force: force)
@@ -2173,6 +2176,43 @@ class AgentRun < ApplicationRecord
     # Provision#cleanup would normally handle this in its ensure block,
     # but we never reached it, so clean up the volume directly.
     cleanup_orphaned_workspace_volume
+  end
+
+  # Persists the id of a container that provisioning created but never
+  # recorded, so a later CleanupContainerActivity can tear it down.
+  #
+  # Containers::Provision#provision creates the Docker container at
+  # +@container = create_container+ but only records it here once the full
+  # provision (start + credential seeding) succeeds. If the provisioning
+  # worker is forcibly terminated in that window — e.g. ProvisionContainerActivity
+  # falls back to Thread#kill for a worker stuck in an uninterruptible Docker
+  # call, which bypasses Containers::Provision's SignalException cleanup — the
+  # created container is orphaned with no recorded container_id, and
+  # CleanupContainerActivity could previously only reclaim its workspace
+  # volume by name. Recording the in-flight container here closes that leak.
+  #
+  # No-op when a container_id is already recorded or no in-flight container
+  # exists (e.g. the worker was killed before create_container). Returns the
+  # recorded container id, or nil.
+  def recover_in_flight_container!
+    return if container_id.present?
+
+    service = @container_service
+    container = service&.container
+    return unless container
+
+    host = service.backend.container_host_for(container)
+    self.class.where(id: id, container_id: nil)
+      .update_all(container_id: container.id, container_host: host)
+    self.container_id = container.id
+    self.container_host = host
+    Rails.logger.info(
+      message: "container_manager.recovered_in_flight_container",
+      agent_run_id: id,
+      container_id: container.id,
+      container_host: host
+    )
+    container.id
   end
 
   # Executes a block with a provisioned container, ensuring cleanup.
@@ -2488,6 +2528,85 @@ class AgentRun < ApplicationRecord
       container_id: container_id,
       worktree_path: worktree_path
     )
+  end
+
+  # Reuses an already-recorded container when it is still alive, making
+  # provision_container safe to invoke again on a Temporal retry. A recorded
+  # container that has died or been removed is reconciled away before a fresh
+  # one is provisioned, so a retry never leaks a duplicate container.
+  def reuse_or_reconcile_container(**options)
+    service = reconnect_recorded_container_for_reuse
+
+    if service&.container_running?
+      @container_service = service
+      Rails.logger.info(
+        message: "container_manager.provision_reused_existing",
+        agent_run_id: id,
+        container_id: container_id
+      )
+      return Containers::Provision::Result.success(container_id: container_id, container_host: container_host)
+    end
+
+    reconcile_stale_container!(service)
+    provision_new_container(**options)
+  end
+
+  def reconnect_recorded_container_for_reuse
+    Containers::Provision.reconnect(
+      agent_run: self,
+      container_id: container_id,
+      worktree_path: worktree_path.presence
+    )
+  rescue Containers::Provision::ProvisionError => e
+    raise unless recorded_container_missing?(e)
+
+    # Recorded container is gone (manually removed / expired) — reconcile below.
+    nil
+  end
+
+  def recorded_container_missing?(error)
+    error.message.match?(/\AContainer .* not found\z/)
+  end
+
+  # Provisions a brand-new container when there is no existing container to
+  # reuse. Tries the warm pool first, then falls back to a fresh provision.
+  def provision_new_container(**options)
+    pooled_result = Containers::PoolManager.new(project: project).acquire(agent_run: self, **options)
+    if pooled_result&.success?
+      @container_service = pooled_result[:service]
+      update!(container_id: pooled_result[:container_id], container_host: pooled_result[:container_host])
+      return pooled_result
+    end
+
+    @container_service = Containers::Provision.new(
+      agent_run: self,
+      worktree_path: worktree_path.presence,
+      **options
+    )
+    result = @container_service.provision
+    if result.success?
+      update!(container_id: result[:container_id], container_host: result[:container_host])
+      PoolReplenishmentJob.perform_later(project_id)
+    end
+    result
+  end
+
+  # Cleans up a recorded container that is no longer usable (dead or missing)
+  # so a fresh one can be provisioned. Handles both pooled and freshly
+  # provisioned containers and guarantees the stale container_id is cleared.
+  def reconcile_stale_container!(service)
+    @container_service = service
+    cleanup_container(force: true)
+  rescue StandardError => e
+    Rails.logger.warn(
+      message: "container_manager.reconcile_stale_failed",
+      agent_run_id: id,
+      container_id: container_id,
+      error: e.message.to_s.truncate(500)
+    )
+  ensure
+    @container_service = nil
+    update_column(:container_id, nil) if container_id.present?
   end
 
   def issue_belongs_to_same_project

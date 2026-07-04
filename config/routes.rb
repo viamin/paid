@@ -51,6 +51,7 @@ Rails.application.routes.draw do
   # Integrations hub
   resources :integrations, only: [ :index, :new ]
   resources :integration_credentials, only: [ :index, :new, :create, :show, :destroy ]
+  resources :claude_login_sessions, only: [ :new, :create, :show, :update ]
 
   # GitHub tokens management
   resources :github_tokens, only: [ :index, :new, :create, :show, :destroy ] do

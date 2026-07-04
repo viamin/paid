@@ -462,6 +462,10 @@ module ApplicationHelper
     end
   end
 
+  def safe_return_path_or(path, fallback)
+    safe_return_path?(path.to_s) ? path : fallback
+  end
+
   # Redacts potential secrets from error messages before displaying them in the UI.
   # Uses the Knowledge::Redaction::Redactor for consistent secret detection.
   def redacted_error_message(message)

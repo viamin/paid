@@ -215,6 +215,23 @@ RSpec.describe ProcessRunQueueJob do
       described_class.new.perform
     end
 
+    it "uses the account id as the Temporal fairness key" do
+      queued_run = create(:agent_run, :queued)
+
+      expect(temporal_client).to receive(:start_workflow).with(
+        Workflows::AgentExecutionWorkflow,
+        hash_including(agent_run_id: queued_run.id),
+        hash_including(
+          priority: Temporalio::Priority.new(
+            priority_key: AgentRun::QUEUE_PRIORITIES.fetch(queued_run.queue_priority_tier).fetch(:indicator),
+            fairness_key: queued_run.project.account_id.to_s
+          )
+        )
+      ).and_return(workflow_handle)
+
+      described_class.new.perform
+    end
+
     it "processes runs in FIFO order within the same priority" do
       project = create(:project)
       project.created_by.settings.update!(max_concurrent_runs: 1)
@@ -750,23 +767,6 @@ RSpec.describe ProcessRunQueueJob do
           source_pull_request_number: 42
         ),
         anything
-      ).and_return(workflow_handle)
-
-      described_class.new.perform
-    end
-
-    it "uses the account id as the Temporal fairness key" do
-      queued_run = create(:agent_run, :queued)
-
-      expect(temporal_client).to receive(:start_workflow).with(
-        Workflows::AgentExecutionWorkflow,
-        hash_including(agent_run_id: queued_run.id),
-        hash_including(
-          priority: Temporalio::Priority.new(
-            priority_key: AgentRun::QUEUE_PRIORITIES.fetch(queued_run.queue_priority_tier).fetch(:indicator),
-            fairness_key: queued_run.project.account_id.to_s
-          )
-        )
       ).and_return(workflow_handle)
 
       described_class.new.perform
