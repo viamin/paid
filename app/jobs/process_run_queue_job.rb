@@ -2,6 +2,7 @@
 
 require "digest/md5"
 require "set"
+require "temporalio/priority"
 
 class ProcessRunQueueJob < ApplicationJob
   include GoodJob::ActiveJobExtensions::Concurrency
@@ -425,7 +426,8 @@ class ProcessRunQueueJob < ApplicationJob
       Workflows::AgentExecutionWorkflow,
       workflow_input,
       id: workflow_id,
-      task_queue: Paid.agent_task_queue
+      task_queue: Paid.agent_task_queue,
+      priority: temporal_priority_for(agent_run)
     )
 
     Rails.logger.info(
@@ -458,5 +460,16 @@ class ProcessRunQueueJob < ApplicationJob
       duration_seconds: agent_run.duration
     )
     agent_run.save!(validate: false)
+  end
+
+  def temporal_priority_for(agent_run)
+    Temporalio::Priority.new(
+      priority_key: AgentRun::QUEUE_PRIORITIES.fetch(agent_run.queue_priority_tier).fetch(:indicator),
+      fairness_key: temporal_fairness_key_for(agent_run)
+    )
+  end
+
+  def temporal_fairness_key_for(agent_run)
+    agent_run.project.account_id.to_s
   end
 end

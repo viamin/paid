@@ -139,13 +139,13 @@ module Workflows
       }
 
     rescue => e
+      raise_if_canceled!(e)
       Temporalio::Workflow.logger.error(
         message: "PromptEvolutionWorkflow failed",
         prompt_id: prompt_id,
         error_class: e.class.to_s,
         error: e.message
       )
-      raise_if_canceled!(e)
       fail_recovery_action(
         recovery_action_id,
         :workflow_failed,

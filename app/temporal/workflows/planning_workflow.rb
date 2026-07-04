@@ -20,18 +20,21 @@ module Workflows
 
     workflow_signal
     def approve_plan
-      record_plan_review_decision(:approved)
+      @plan_review_decision = :approved
+      @plan_review_cancel_proc&.call
     end
 
     workflow_signal
     def reject_plan
-      record_plan_review_decision(:rejected)
+      @plan_review_decision = :rejected
+      @plan_review_cancel_proc&.call
     end
 
     workflow_signal
     def revise_plan(revised_tasks)
+      @plan_review_decision = :revised
       @revised_tasks = deep_symbolize(revised_tasks)
-      record_plan_review_decision(:revised)
+      @plan_review_cancel_proc&.call
     end
 
     class << self
@@ -284,10 +287,12 @@ module Workflows
         }
       )
 
-      decision = if Temporalio::Workflow.patched("planning-review-wait-condition-v1")
-        wait_for_plan_review_with_wait_condition(timeout_hours)
+      decision = if @plan_review_decision
+        @plan_review_decision
+      elsif Temporalio::Workflow.patched("planning-review-wait-condition-v1")
+        wait_for_plan_review_with_wait_condition(timeout_hours.to_i * 3600)
       else
-        wait_for_plan_review_with_legacy_signal_await(timeout_hours)
+        wait_for_plan_review_with_legacy_signal_await(timeout_hours.to_i * 3600)
       end
 
       safe_log_decomposition_decision(
@@ -309,15 +314,7 @@ module Workflows
       decision
     end
 
-    def record_plan_review_decision(decision)
-      @plan_review_decision = decision
-      @plan_review_cancel_proc&.call unless Temporalio::Workflow.patched("planning-review-wait-condition-v1")
-    end
-
-    def wait_for_plan_review_with_wait_condition(timeout_hours)
-      return @plan_review_decision if @plan_review_decision
-
-      timeout_seconds = timeout_hours.to_i * 3600
+    def wait_for_plan_review_with_wait_condition(timeout_seconds)
       Temporalio::Workflow.timeout(timeout_seconds) do
         Temporalio::Workflow.wait_condition { !@plan_review_decision.nil? }
       end
@@ -327,14 +324,15 @@ module Workflows
       :timed_out
     end
 
-    def wait_for_plan_review_with_legacy_signal_await(timeout_hours)
+    def wait_for_plan_review_with_legacy_signal_await(timeout_seconds)
       cancellation, @plan_review_cancel_proc = Temporalio::Cancellation.new
 
       begin
-        timeout_seconds = timeout_hours.to_i * 3600
         Temporalio::Workflow.sleep(timeout_seconds, cancellation: cancellation) unless @plan_review_decision
-      rescue Temporalio::Error::CanceledError
-        raise unless @plan_review_decision
+      rescue Temporalio::Error::CanceledError => e
+        # Only swallow the local timer cancellation used to wake the review gate
+        # after a signal. A real workflow cancellation must keep propagating.
+        raise e if @plan_review_decision.blank? || Temporalio::Workflow.cancellation.canceled?
       ensure
         @plan_review_cancel_proc = nil
       end
