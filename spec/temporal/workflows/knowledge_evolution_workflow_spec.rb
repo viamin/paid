@@ -141,6 +141,16 @@ RSpec.describe Workflows::KnowledgeEvolutionWorkflow do
       it "re-raises the error" do
         expect { workflow.execute(input) }.to raise_error(Temporalio::Error::ApplicationError)
       end
+
+      it "does not log cancellation as a workflow failure" do
+        logger = instance_spy(Logger)
+        allow(Temporalio::Workflow).to receive(:logger).and_return(logger)
+        allow(workflow).to receive(:run_activity)
+          .and_raise(Temporalio::Error::CanceledError, "workflow canceled")
+
+        expect { workflow.execute(input) }.to raise_error(Temporalio::Error::CanceledError)
+        expect(logger).not_to have_received(:error)
+      end
     end
   end
 end
