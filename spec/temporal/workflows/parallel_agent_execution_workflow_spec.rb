@@ -471,7 +471,7 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
       pr_result = { pull_request_url: "https://github.com/test/repo/pull/99", pull_request_number: 99 }
 
       allow(workflow).to receive(:run_activity)
-        .with(Activities::AggregateBranchesActivity, anything, timeout: 120)
+        .with(Activities::AggregateBranchesActivity, anything, timeout: 120, heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT)
         .and_return(feature_branch: "feature/aggregated-test", merged_branches: [ "b-1" ], failed_merges: [])
       allow(workflow).to receive(:run_activity)
         .with(Activities::CreateAggregatedPullRequestActivity, anything, timeout: 60)
@@ -497,7 +497,7 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
       }
 
       allow(workflow).to receive(:run_activity)
-        .with(Activities::AggregateBranchesActivity, anything, timeout: 120)
+        .with(Activities::AggregateBranchesActivity, anything, timeout: 120, heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT)
         .and_return(aggregate_result)
       allow(workflow).to receive(:run_activity)
         .with(Activities::CreateAggregatedPullRequestActivity, anything, timeout: 60)
@@ -550,7 +550,7 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
       }
 
       allow(workflow).to receive(:run_activity)
-        .with(Activities::AggregateBranchesActivity, anything, timeout: 120)
+        .with(Activities::AggregateBranchesActivity, anything, timeout: 120, heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT)
         .and_return(aggregate_result)
 
       result = workflow.execute(
@@ -567,7 +567,7 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
       stub_successful_futures(count: 2)
 
       allow(workflow).to receive(:run_activity)
-        .with(Activities::AggregateBranchesActivity, anything, timeout: 120)
+        .with(Activities::AggregateBranchesActivity, anything, timeout: 120, heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT)
         .and_raise(StandardError, "GitHub API error")
 
       result = workflow.execute(two_task_input.merge(aggregate_pr: true))
@@ -582,7 +582,7 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
       stub_successful_futures(count: 2)
 
       allow(workflow).to receive(:run_activity)
-        .with(Activities::AggregateBranchesActivity, anything, timeout: 120)
+        .with(Activities::AggregateBranchesActivity, anything, timeout: 120, heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT)
         .and_raise(Temporalio::Error::CanceledError, "workflow canceled")
 
       expect {
@@ -600,7 +600,7 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
 
   def stub_no_conflicts
     allow(workflow).to receive(:run_activity)
-      .with(Activities::DetectConflictsActivity, anything, timeout: 120) do |_, input, timeout:|
+      .with(Activities::DetectConflictsActivity, anything, timeout: 120, heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT) do |_, input, timeout:, heartbeat_timeout: _heartbeat_timeout|
         {
           project_id: input.is_a?(Hash) ? input[:project_id] : nil,
           has_conflicts: false,
@@ -629,9 +629,9 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
       requires_manual_review: true
     }
     allow(workflow).to receive(:run_activity)
-      .with(Activities::DetectConflictsActivity, anything, timeout: 120).and_return(detection)
+      .with(Activities::DetectConflictsActivity, anything, timeout: 120, heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT).and_return(detection)
     allow(workflow).to receive(:run_activity)
-      .with(Activities::ResolveConflictsActivity, anything, timeout: 300).and_return(resolution)
+      .with(Activities::ResolveConflictsActivity, anything, timeout: 300, heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT).and_return(resolution)
   end
 
   def stub_no_capacity
@@ -783,9 +783,9 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
       requires_manual_review: true
     }
     allow(workflow).to receive(:run_activity)
-      .with(Activities::DetectConflictsActivity, anything, timeout: 120).and_return(detection)
+      .with(Activities::DetectConflictsActivity, anything, timeout: 120, heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT).and_return(detection)
     allow(workflow).to receive(:run_activity)
-      .with(Activities::ResolveConflictsActivity, anything, timeout: 300).and_return(resolution)
+      .with(Activities::ResolveConflictsActivity, anything, timeout: 300, heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT).and_return(resolution)
   end
 
   def stub_total_detection_failure
@@ -794,7 +794,7 @@ RSpec.describe Workflows::ParallelAgentExecutionWorkflow do
       detection_failed: true, failed_run_ids: [ 42, 43 ], requires_manual_review: true
     }
     allow(workflow).to receive(:run_activity)
-      .with(Activities::DetectConflictsActivity, anything, timeout: 120).and_return(detection)
+      .with(Activities::DetectConflictsActivity, anything, timeout: 120, heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT).and_return(detection)
   end
 
   def two_task_input

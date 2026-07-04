@@ -83,7 +83,9 @@ RSpec.describe Workflows::PromptEvolutionWorkflow do
             hash_including(prompt_id: prompt_id, project_id: project_id), timeout: 60)
         expect(workflow).to have_received(:run_activity)
           .with(Activities::GenerateMutationsActivity,
-            hash_including(prompt_id: prompt_id), timeout: described_class::MUTATION_TIMEOUT)
+            hash_including(prompt_id: prompt_id),
+            timeout: described_class::LLM_ACTIVITY_TIMEOUT,
+            heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT)
         expect(workflow).to have_received(:run_activity)
           .with(Activities::CreateEvolutionVariantsActivity,
             hash_including(prompt_id: prompt_id, project_id: project_id, mutations: mutations), timeout: 30)
@@ -102,7 +104,9 @@ RSpec.describe Workflows::PromptEvolutionWorkflow do
             hash_including(sample_size: 100, sample_days: 30), timeout: 60)
         expect(workflow).to have_received(:run_activity)
           .with(Activities::GenerateMutationsActivity,
-            hash_including(mutation_count: 5), timeout: described_class::MUTATION_TIMEOUT)
+            hash_including(mutation_count: 5),
+            timeout: described_class::LLM_ACTIVITY_TIMEOUT,
+            heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT)
       end
     end
 

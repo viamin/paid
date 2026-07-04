@@ -13,8 +13,11 @@ module Activities
       issue_ids = input[:issue_ids]
       project = Project.find(project_id)
 
-      results = issue_ids.filter_map do |issue_id|
-        evaluate_issue(project, issue_id)
+      results = with_periodic_heartbeat("evaluate_issues", project_id: project_id, issue_count: issue_ids.size) do
+        issue_ids.each_with_index.filter_map do |issue_id, index|
+          heartbeat("evaluate_issues.issue", project_id: project_id, issue_id: issue_id, index: index, total: issue_ids.size)
+          evaluate_issue(project, issue_id)
+        end
       end
 
       { results: results }
