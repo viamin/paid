@@ -60,7 +60,6 @@ class NotificationsController < ApplicationController
         @notifications = policy_scope(Notification).visible.recent.limit(25)
         render turbo_stream: [
           turbo_stream.replace("notification_bell", partial: "notifications/bell", locals: { account: current_account }),
-          turbo_stream.replace("notification_nav_badges", partial: "notifications/nav_badges", locals: { account: current_account }),
           turbo_stream.update("notifications_list") {
             render_to_string(partial: "notifications/notification", collection: @notifications, as: :notification)
           }

@@ -15,20 +15,12 @@ module Notifications
       account_notifications = Notification.where(account: account, user_id: nil)
       active_unread = account_notifications.active.unread
       unread_count = active_unread.count
-      badge_counts = active_unread.where.not(nav_section: nil).group(:nav_section).count
 
       Turbo::StreamsChannel.broadcast_replace_to(
         account, :notification_updates,
         target: "notification_bell",
         partial: "notifications/bell",
         locals: { account: account, unread_count: unread_count }
-      )
-
-      Turbo::StreamsChannel.broadcast_replace_to(
-        account, :notification_updates,
-        target: "notification_nav_badges",
-        partial: "notifications/nav_badges",
-        locals: { account: account, badge_counts: badge_counts }
       )
     end
 
@@ -39,20 +31,12 @@ module Notifications
       user_visible = Notification.where(account: account, user_id: [ nil, user.id ])
       active_unread = user_visible.active.unread
       unread_count = active_unread.count
-      badge_counts = active_unread.where.not(nav_section: nil).group(:nav_section).count
 
       Turbo::StreamsChannel.broadcast_replace_to(
         user, :notification_updates,
         target: "notification_bell",
         partial: "notifications/bell",
         locals: { account: account, unread_count: unread_count }
-      )
-
-      Turbo::StreamsChannel.broadcast_replace_to(
-        user, :notification_updates,
-        target: "notification_nav_badges",
-        partial: "notifications/nav_badges",
-        locals: { account: account, badge_counts: badge_counts }
       )
     end
   end

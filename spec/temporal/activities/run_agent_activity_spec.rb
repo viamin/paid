@@ -24,9 +24,14 @@ RSpec.describe Activities::RunAgentActivity do
 
     allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
     allow(Containers::Provision).to receive(:reconnect)
-      .with(agent_run: agent_run, container_id: "abc123")
+      .with(hash_including(agent_run: agent_run, container_id: "abc123"))
       .and_return(container_service)
-    allow(container_service).to receive_messages(container_running?: true, container: nil, heartbeat_host_path: "/tmp/paid-heartbeat-test/.paid-heartbeat")
+    allow(container_service).to receive_messages(
+      cleanup: nil,
+      container_running?: true,
+      container: nil,
+      heartbeat_host_path: "/tmp/paid-heartbeat-test/.paid-heartbeat"
+    )
     allow(Containers::GitOperations).to receive(:new)
       .with(container_service: container_service, agent_run: agent_run)
       .and_return(git_ops)
@@ -508,6 +513,36 @@ RSpec.describe Activities::RunAgentActivity do
       expect(script).to include("codex")
       expect(command[3]).to eq("--")
       expect(command[4]).to eq("say 'hi'")
+    end
+
+    it "disables Codex app connectors for review-goal runs" do
+      review_run = create(:agent_run, :running, project: project, goal: "review", source_pull_request_number: 42)
+      context = described_class::CommandContext.new(
+        runner_candidate: "codex",
+        runner: "codex",
+        user: nil
+      )
+
+      command = activity.send(:build_command, context, "review prompt", agent_run: review_run)
+      script = command[2]
+
+      expect(script).to include("--disable")
+      expect(script).to include("apps")
+      expect(command[4]).to eq("review prompt")
+    end
+
+    it "keeps Codex app connectors enabled for non-review runs" do
+      context = described_class::CommandContext.new(
+        runner_candidate: "codex",
+        runner: "codex",
+        user: nil
+      )
+
+      command = activity.send(:build_command, context, "say 'hi'", agent_run: agent_run)
+      script = command[2]
+
+      expect(script).not_to include("--disable")
+      expect(script).not_to include("apps")
     end
 
     it "builds a sh -c wrapper for Gemini subscription auth" do
@@ -3503,7 +3538,7 @@ expect(container_service).to receive(:execute).with(
         agent_type: "api", container_id: "abc123")
       allow(AgentRun).to receive(:find).with(unsupported_run.id).and_return(unsupported_run)
       allow(Containers::Provision).to receive(:reconnect)
-        .with(agent_run: unsupported_run, container_id: "abc123")
+        .with(hash_including(agent_run: unsupported_run, container_id: "abc123"))
         .and_return(container_service)
       allow(Containers::GitOperations).to receive(:new)
         .with(container_service: container_service, agent_run: unsupported_run)
@@ -3983,7 +4018,7 @@ expect(container_service).to receive(:execute).with(
           project: project, issue: issue, container_id: "abc123")
         allow(AgentRun).to receive(:find).with(create_issue_run.id).and_return(create_issue_run)
         allow(Containers::Provision).to receive(:reconnect)
-          .with(agent_run: create_issue_run, container_id: "abc123")
+          .with(hash_including(agent_run: create_issue_run, container_id: "abc123"))
           .and_return(container_service)
         allow(Containers::GitOperations).to receive(:new)
           .with(container_service: container_service, agent_run: create_issue_run)

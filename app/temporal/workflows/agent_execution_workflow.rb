@@ -187,9 +187,24 @@ module Workflows
         run_activity(Activities::ProvisionMcpServersActivity,
           { agent_run_id: agent_run_id }, timeout: 120)
 
-        # Step 2: Provision container (with empty workspace directory)
+        # Step 2: Provision container (with empty workspace directory).
+        # The activity heartbeats while provisioning so a workflow
+        # cancellation interrupts an in-flight provision promptly (within one
+        # heartbeat interval) instead of waiting for start_to_close.
+        #
+        # No heartbeat_timeout is set: a heartbeat only proves the Ruby worker
+        # thread is alive, not that Docker pull/create/start is making
+        # progress, so a heartbeat_timeout would never fire for a wedged Docker
+        # call. start_to_close therefore remains the bound for stuck
+        # provisioning. Tying heartbeats to observable progress is impractical
+        # here because create/start are opaque blocking Docker calls with no
+        # sub-call progress signal — a progress-tied timeout tight enough to
+        # beat start_to_close would risk false positives on healthy-but-slow
+        # pulls, while a safe one offers no speedup. The activity is
+        # idempotent, so a retry after a start_to_close timeout reuses any
+        # live container instead of creating a duplicate.
         run_activity(Activities::ProvisionContainerActivity,
-          { agent_run_id: agent_run_id }, timeout: 60, heartbeat_timeout: DEFAULT_HEARTBEAT_TIMEOUT)
+          { agent_run_id: agent_run_id }, timeout: 60)
 
         # Step 2b: Verify the credential proxy is healthy before git operations.
         # Clone and push depend on the proxy for git authentication. When the
