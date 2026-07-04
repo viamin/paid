@@ -421,7 +421,8 @@ module Workflows
           workflow_name: self.class.name,
           workflow_id: Temporalio::Workflow.info.workflow_id
         },
-        timeout: 120
+        timeout: LLM_ACTIVITY_TIMEOUT,
+        heartbeat_timeout: DEFAULT_HEARTBEAT_TIMEOUT
       )
 
       tasks = decompose_result[:tasks]

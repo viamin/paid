@@ -33,3 +33,5 @@ workflows:
   Workflows::PlanningWorkflow:
     planning-review-signal-gate-v1:
       introduced_on: "2026-05-22"
+    planning-review-wait-condition-v1:
+      introduced_on: "2026-07-04"
