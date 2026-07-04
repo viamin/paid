@@ -76,7 +76,7 @@ RSpec.describe Automation::Strategies::AutoReview do
   end
 
   describe "review_goal_retry with posted bot feedback" do
-    it "keeps follow-up decisions when bot has already posted feedback" do
+    it "queues a follow-up instead of retrying review when bot has already posted feedback" do
       result = evaluate(scan: {
         issue_id: pull_request.id,
         pr_number: 42,
@@ -92,8 +92,7 @@ RSpec.describe Automation::Strategies::AutoReview do
       })
 
       types = decision_types(result)
-      expect(types).to include("record_review_goal_retry", "queue_review_run", "request_review")
-      expect(types).to include("queue_create_pr_run", "record_pr_followup")
+      expect(types).to eq(%w[queue_create_pr_run record_pr_followup])
     end
   end
 
