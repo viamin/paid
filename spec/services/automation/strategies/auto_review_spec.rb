@@ -266,7 +266,7 @@ RSpec.describe Automation::Strategies::AutoReview do
       expect(types).not_to include("queue_create_pr_run", "record_pr_followup")
     end
 
-    it "keeps retry follow-up decisions for posted bot feedback while review_bot_review_pending is outstanding" do
+    it "queues a follow-up instead of retrying review when bot has already posted feedback" do
       result = evaluate(scan: {
         issue_id: pull_request.id,
         pr_number: 42,
@@ -282,8 +282,24 @@ RSpec.describe Automation::Strategies::AutoReview do
       })
 
       types = result.to_h[:decisions].map { |d| d[:type] }
-      expect(types).to include("record_review_goal_retry", "queue_review_run", "request_review")
-      expect(types).to include("queue_create_pr_run", "record_pr_followup")
+      expect(types).to eq(%w[queue_create_pr_run record_pr_followup])
+    end
+
+    it "routes posted review feedback to create_pr instead of another paid_agent review" do
+      result = evaluate(scan: {
+        issue_id: pull_request.id,
+        pr_number: 42,
+        phase: "ready",
+        current_followup_count: 0,
+        labels_to_remove: [],
+        triggers: [
+          { type: "paid_agent_review_pending" },
+          { type: "review_bot_comments", details: "Latest review bot review generated comments" }
+        ]
+      })
+
+      types = result.to_h[:decisions].map { |d| d[:type] }
+      expect(types).to eq(%w[queue_create_pr_run record_pr_followup])
     end
 
     it "marks ready on ready_for_owner triggers" do
