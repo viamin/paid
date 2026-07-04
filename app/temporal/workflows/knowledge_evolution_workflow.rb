@@ -15,7 +15,6 @@ module Workflows
   #   lookback_days: - Days to look back for sampling (default: 14)
   class KnowledgeEvolutionWorkflow < BaseWorkflow
     SAMPLE_TIMEOUT = 60
-    ANALYSIS_TIMEOUT = 120
     RECORD_TIMEOUT = 30
 
     def execute(input)
@@ -48,7 +47,8 @@ module Workflows
           sampled_runs: sample_result[:runs],
           artifact_usage: sample_result[:artifact_usage]
         },
-        timeout: ANALYSIS_TIMEOUT
+        timeout: LLM_ACTIVITY_TIMEOUT,
+        heartbeat_timeout: DEFAULT_HEARTBEAT_TIMEOUT
       )
 
       if analysis_result[:recommendations].blank?

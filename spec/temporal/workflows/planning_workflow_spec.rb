@@ -36,7 +36,8 @@ RSpec.describe Workflows::PlanningWorkflow, :no_db do
             workflow_name: "Workflows::PlanningWorkflow",
             workflow_id: "test-planning-wf"
           ),
-          timeout: 120
+          timeout: described_class::LLM_ACTIVITY_TIMEOUT,
+          heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT
         )
     end
 

@@ -19,7 +19,9 @@ module Activities
       return { alerts_to_fix: [], project_missing: true } unless project
       return { alerts_to_fix: [] } unless project.auto_scan_security
 
-      scan_code_scanning_alerts(project)
+      with_periodic_heartbeat("scan_security_alerts", project_id: project_id) do
+        scan_code_scanning_alerts(project)
+      end
 
       { alerts_to_fix: [] }
     rescue SecurityAlerts::CodeScanningPermissionsError => e
@@ -48,6 +50,7 @@ module Activities
       return unless project.security_alert_types.include?("code_scanning")
       return unless should_scan_code_scanning?(project)
 
+      heartbeat("scan_security_alerts.fetch_alerts", project_id: project.id)
       all_alerts = fetch_code_scanning_alerts(project)
 
       if all_alerts.nil?
@@ -55,12 +58,14 @@ module Activities
         return
       end
 
+      heartbeat("scan_security_alerts.reconcile_resolved", project_id: project.id, alert_count: all_alerts.size)
       SecurityAlerts::ReconcileResolved.new(
         project, all_alerts,
         source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE
       ).call
 
       open_alerts = all_alerts.select { |a| a[:state] == "open" }
+      heartbeat("scan_security_alerts.process_open", project_id: project.id, alert_count: open_alerts.size)
       SecurityAlerts::ProcessCodeScanningAlerts.new(project).call(open_alerts)
 
       # Record scan timestamp only after successful processing. Retryable

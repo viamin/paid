@@ -112,42 +112,46 @@ module Activities
       automation_results = []
       pending_review_states = []
       progress_states = []
-      scanned_prs.each_with_index do |issue, index|
-        if skip_unchanged_pr?(project, issue)
-          if merge_conflict_rescan_needed?(project, issue)
-            result = scan_merge_conflict_only(project, client, issue)
-            if result && result != :skipped
-              scanned_count += 1
-              issue.update_column(:last_pr_scan_at, Time.current)
-              pending_review_states << pending_review_state(issue, result)
-              progress_states << serialized_pr_progress_state(project, issue)
-              collect_scan_result(issue, result, prs_to_trigger, automation_results,
-                lifecycle: build_lifecycle_signals(project, issue))
-              next
+      with_periodic_heartbeat("scan_paid_prs", project_id: project_id, pr_count: scanned_prs.size) do
+        scanned_prs.each_with_index do |issue, index|
+          heartbeat("scan_paid_prs.pr", project_id: project_id, issue_id: issue.id, pr_number: issue.github_number, index: index, total: scanned_prs.size)
+
+          if skip_unchanged_pr?(project, issue)
+            if merge_conflict_rescan_needed?(project, issue)
+              result = scan_merge_conflict_only(project, client, issue)
+              if result && result != :skipped
+                scanned_count += 1
+                issue.update_column(:last_pr_scan_at, Time.current)
+                pending_review_states << pending_review_state(issue, result)
+                progress_states << serialized_pr_progress_state(project, issue)
+                collect_scan_result(issue, result, prs_to_trigger, automation_results,
+                  lifecycle: build_lifecycle_signals(project, issue))
+                next
+              end
             end
+            unchanged_count += 1
+            next
           end
-          unchanged_count += 1
-          next
+
+          result = scan_pr(project, client, issue)
+          lifecycle_signals = build_lifecycle_signals(project, issue)
+          next if result == :skipped
+          scanned_count += 1
+          issue.update_column(:last_pr_scan_at, Time.current)
+          pending_review_states << pending_review_state(issue, result)
+          progress_states << serialized_pr_progress_state(project, issue)
+          collect_scan_result(issue, result, prs_to_trigger, automation_results, lifecycle: lifecycle_signals)
+        rescue Temporalio::Error::ApplicationError => e
+          raise unless e.type == "RateLimit"
+
+          logger.warn(
+            message: "pr_scanner.rate_budget_exhausted_mid_scan",
+            project_id: project_id,
+            prs_collected: automation_results.size,
+            prs_remaining: scanned_prs.size - index - 1
+          )
+          break
         end
-
-        result = scan_pr(project, client, issue)
-        lifecycle_signals = build_lifecycle_signals(project, issue)
-        next if result == :skipped
-        scanned_count += 1
-        issue.update_column(:last_pr_scan_at, Time.current)
-        pending_review_states << pending_review_state(issue, result)
-        progress_states << serialized_pr_progress_state(project, issue)
-        collect_scan_result(issue, result, prs_to_trigger, automation_results, lifecycle: lifecycle_signals)
-      rescue Temporalio::Error::ApplicationError => e
-        raise unless e.type == "RateLimit"
-
-        logger.warn(
-          message: "pr_scanner.rate_budget_exhausted_mid_scan",
-          project_id: project_id,
-          prs_collected: automation_results.size,
-          prs_remaining: scanned_prs.size - index - 1
-        )
-        break
       end
 
       logger.info(

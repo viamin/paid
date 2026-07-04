@@ -34,16 +34,22 @@ module Paid
       validate_worker_mode!(worker_mode) == "both" ? 4 : 2
     end
 
-    # RunAgentActivity (a regular agent-queue activity) spawns a heartbeat
-    # worker thread that holds its own DB connection for the entire run —
-    # it streams agent output to the DB on every chunk, so the connection
-    # cannot be released mid-run without thrashing the pool or losing the
-    # per-connection tenant RLS context. That worker thread runs concurrently
-    # with the activity's main thread, so each agent activity slot consumes
-    # two connections, not one. Local/poll activities do not spawn this
-    # thread. Only the agent (non-local) pool is affected.
-    def agent_heartbeat_connections(worker_mode:, agent_activity_slots:)
-      %w[agent both].include?(validate_worker_mode!(worker_mode)) ? agent_activity_slots : 0
+    # Long-running regular activities on both queues use BaseActivity's
+    # periodic-heartbeat helper, which runs the activity body in a worker
+    # thread so the activity thread can keep heartbeating. Once that worker
+    # thread touches Active Record it can hold a second DB connection
+    # concurrently with the activity slot, so budget one extra connection per
+    # regular activity slot on each selected worker set. Local activities are
+    # not included here because they do not currently use the helper.
+    def heartbeat_thread_connections(worker_mode:, agent_activity_slots:, poll_activity_slots:)
+      case validate_worker_mode!(worker_mode)
+      when "poll"
+        poll_activity_slots
+      when "agent"
+        agent_activity_slots
+      when "both"
+        agent_activity_slots + poll_activity_slots
+      end
     end
 
     def min_required_db_pool(worker_mode:, agent_activity_slots:, agent_local_activity_slots:,
@@ -55,7 +61,11 @@ module Paid
         poll_activity_slots: poll_activity_slots,
         poll_local_activity_slots: poll_local_activity_slots
       ) +
-        agent_heartbeat_connections(worker_mode: worker_mode, agent_activity_slots: agent_activity_slots) +
+        heartbeat_thread_connections(
+          worker_mode: worker_mode,
+          agent_activity_slots: agent_activity_slots,
+          poll_activity_slots: poll_activity_slots
+        ) +
         selected_pool_overhead(worker_mode: worker_mode)
     end
   end

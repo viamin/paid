@@ -956,7 +956,8 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
       expect(workflow).to have_received(:run_activity)
         .with(Activities::PushBranchActivity,
           { agent_run_id: 42 },
-          timeout: 60)
+          timeout: 60,
+          heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT)
       expect(workflow).to have_received(:run_activity)
         .with(Activities::CompleteExistingPrRunActivity,
           { agent_run_id: 42 },
@@ -1047,6 +1048,7 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
         .with(Activities::CaptureScreenshotsActivity,
           { agent_run_id: 42 },
           timeout: 900,
+          heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT,
           retry_policy: described_class::NO_RETRY)
     end
 
