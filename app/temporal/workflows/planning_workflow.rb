@@ -292,8 +292,10 @@ module Workflows
       begin
         timeout_seconds = timeout_hours.to_i * 3600
         Temporalio::Workflow.sleep(timeout_seconds, cancellation: cancellation) unless @plan_review_decision
-      rescue Temporalio::Error::CanceledError
-        # Signal arrived — decision is in @plan_review_decision
+      rescue Temporalio::Error::CanceledError => e
+        # Only swallow the local timer cancellation used to wake the review gate
+        # after a signal. A real workflow cancellation must keep propagating.
+        raise e if @plan_review_decision.blank?
       ensure
         @plan_review_cancel_proc = nil
       end

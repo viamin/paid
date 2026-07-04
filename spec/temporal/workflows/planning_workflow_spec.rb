@@ -539,6 +539,24 @@ RSpec.describe Workflows::PlanningWorkflow, :no_db do
         end
       end
 
+      context "when the workflow is canceled while waiting for review" do
+        before do
+          allow(Temporalio::Workflow).to receive(:sleep)
+            .and_raise(Temporalio::Error::CanceledError, "workflow canceled")
+        end
+
+        it "re-raises cancellation without creating sub-issues" do
+          expect { workflow.execute(input) }.to raise_error(Temporalio::Error::CanceledError)
+
+          expect(workflow).not_to have_received(:run_activity)
+            .with(Activities::CreateSubIssuesActivity, anything, any_args)
+          expect(workflow).not_to have_received(:run_activity)
+            .with(Activities::LogDecompositionDecisionActivity,
+              hash_including(decision_key: "test-planning-wf:plan_review:timed_out"),
+              any_args)
+        end
+      end
+
       context "when revise_plan signal arrives" do
         let(:revised_tasks) do
           [
