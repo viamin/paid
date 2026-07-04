@@ -333,6 +333,26 @@ class UserSetting < ApplicationRecord
     self.container_memory_bytes = (value.to_f * 1024 * 1024 * 1024).to_i
   end
 
+  # Returns the auto-tuning memory floor in a human-readable format (GB)
+  def container_memory_auto_floor_gb
+    container_memory_auto_floor_bytes / (1024.0 * 1024 * 1024)
+  end
+
+  # Sets the auto-tuning memory floor from a human-readable GB value
+  def container_memory_auto_floor_gb=(value)
+    self.container_memory_auto_floor_bytes = (value.to_f * 1024 * 1024 * 1024).to_i
+  end
+
+  # Returns the auto-tuning memory ceiling in a human-readable format (GB)
+  def container_memory_auto_ceiling_gb
+    container_memory_auto_ceiling_bytes / (1024.0 * 1024 * 1024)
+  end
+
+  # Sets the auto-tuning memory ceiling from a human-readable GB value
+  def container_memory_auto_ceiling_gb=(value)
+    self.container_memory_auto_ceiling_bytes = (value.to_f * 1024 * 1024 * 1024).to_i
+  end
+
   # Returns the allowed service images list
   def allowed_service_images_list
     allowed_service_images || []

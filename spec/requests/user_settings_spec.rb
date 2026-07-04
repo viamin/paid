@@ -145,8 +145,8 @@ RSpec.describe "UserSettings" do
         patch user_settings_path, params: {
           user_setting: {
             container_memory_limit_mode: UserSetting::CONTAINER_MEMORY_LIMIT_MODE_AUTO,
-            container_memory_auto_floor_bytes: 768.megabytes,
-            container_memory_auto_ceiling_bytes: 8.gigabytes
+            container_memory_auto_floor_gb: 0.75,
+            container_memory_auto_ceiling_gb: 8
           }
         }
 
@@ -162,8 +162,8 @@ RSpec.describe "UserSettings" do
 
         expect(response.body).to include("Container Memory Mode")
         expect(response.body).to include('name="user_setting[container_memory_limit_mode]"')
-        expect(response.body).to include('name="user_setting[container_memory_auto_floor_bytes]"')
-        expect(response.body).to include('name="user_setting[container_memory_auto_ceiling_bytes]"')
+        expect(response.body).to include('name="user_setting[container_memory_auto_floor_gb]"')
+        expect(response.body).to include('name="user_setting[container_memory_auto_ceiling_gb]"')
       end
 
       it "ignores the deprecated auto-pick PR limit setting" do

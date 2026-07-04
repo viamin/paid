@@ -345,6 +345,36 @@ RSpec.describe UserSetting do
     end
   end
 
+  describe "#container_memory_auto_floor_gb" do
+    it "converts bytes to gigabytes" do
+      setting = build(:user_setting, container_memory_auto_floor_bytes: 512 * 1024 * 1024)
+      expect(setting.container_memory_auto_floor_gb).to eq(0.5)
+    end
+  end
+
+  describe "#container_memory_auto_floor_gb=" do
+    it "converts gigabytes to bytes" do
+      setting = build(:user_setting)
+      setting.container_memory_auto_floor_gb = 0.75
+      expect(setting.container_memory_auto_floor_bytes).to eq(768 * 1024 * 1024)
+    end
+  end
+
+  describe "#container_memory_auto_ceiling_gb" do
+    it "converts bytes to gigabytes" do
+      setting = build(:user_setting, container_memory_auto_ceiling_bytes: 16 * 1024 * 1024 * 1024)
+      expect(setting.container_memory_auto_ceiling_gb).to eq(16.0)
+    end
+  end
+
+  describe "#container_memory_auto_ceiling_gb=" do
+    it "converts gigabytes to bytes" do
+      setting = build(:user_setting)
+      setting.container_memory_auto_ceiling_gb = 8
+      expect(setting.container_memory_auto_ceiling_bytes).to eq(8 * 1024 * 1024 * 1024)
+    end
+  end
+
   describe "#default_allowed_github_usernames_csv" do
     it "returns usernames as comma-separated string" do
       setting = build(:user_setting, default_allowed_github_usernames: %w[alice bob])

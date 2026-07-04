@@ -9,13 +9,15 @@ class AgentRunResourceProfile < ApplicationRecord
   OOM_BUMP_MULTIPLIER = 1.25
   OOM_MESSAGE_PATTERN = /container OOM-killed/i
 
-  # Downward-tuning safety: when a profile's recommended limit has been
-  # raised because of OOMs, we never let it drop below a configured
-  # fraction of the bump basis on a single refresh. Several consecutive
-  # successful low-memory samples are required before a downward move is
-  # allowed, to prevent oscillation between OOM and low-usage windows.
+  # Downward-tuning safety: a recommended limit that has grown because of
+  # OOMs is never dropped on a single refresh. Several consecutive
+  # low-memory samples are required before a downward move is authorized,
+  # so a single transient dip — e.g. one high-peak run aging out of the
+  # lookback window — cannot collapse the limit. The sustained-low test
+  # itself lives in AgentRunResourceProfiles::MemoryLimitTuner#low_memory_sample?,
+  # which scores each sample against LOW_MEMORY_HEADROOM_RATIO and banks
+  # the result in consecutive_low_memory_samples.
   DOWNWARD_TUNING_MIN_SAMPLES = 5
-  DOWNWARD_TUNING_HEADROOM_RATIO = 0.5
   # Sustained-low threshold: a sample whose observed peak stays at or
   # below this fraction of the current recommended limit counts toward
   # the consecutive_low_memory_samples counter.
