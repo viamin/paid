@@ -321,6 +321,47 @@ RSpec.describe Workflows::PlanningWorkflow, :no_db do
         expect(Temporalio::Workflow).not_to have_received(:timeout)
         expect(Temporalio::Workflow).not_to have_received(:wait_condition)
       end
+
+      context "when the workflow is canceled while waiting for review" do
+        before do
+          allow(Temporalio::Workflow).to receive(:sleep)
+            .and_raise(Temporalio::Error::CanceledError, "workflow canceled")
+        end
+
+        it "re-raises cancellation without creating sub-issues" do
+          expect { workflow.execute(input) }.to raise_error(Temporalio::Error::CanceledError)
+
+          expect(workflow).not_to have_received(:run_activity)
+            .with(Activities::CreateSubIssuesActivity, anything, any_args)
+          expect(workflow).not_to have_received(:run_activity)
+            .with(Activities::LogDecompositionDecisionActivity,
+              hash_including(decision_key: "test-planning-wf:plan_review:timed_out"),
+              any_args)
+        end
+      end
+
+      context "when a review signal arrives before a real workflow cancellation" do
+        let(:workflow_cancellation) { instance_double(Temporalio::Cancellation, canceled?: true) }
+
+        before do
+          allow(Temporalio::Workflow).to receive(:cancellation).and_return(workflow_cancellation)
+          allow(Temporalio::Workflow).to receive(:sleep) do
+            workflow.approve_plan
+            raise Temporalio::Error::CanceledError, "workflow canceled"
+          end
+        end
+
+        it "re-raises cancellation instead of falling through to sub-issue creation" do
+          expect { workflow.execute(input) }.to raise_error(Temporalio::Error::CanceledError)
+
+          expect(workflow).not_to have_received(:run_activity)
+            .with(Activities::CreateSubIssuesActivity, anything, any_args)
+          expect(workflow).not_to have_received(:run_activity)
+            .with(Activities::LogDecompositionDecisionActivity,
+              hash_including(decision_key: "test-planning-wf:plan_review:approved"),
+              any_args)
+        end
+      end
     end
 
     context "when decomposition produces a single task" do

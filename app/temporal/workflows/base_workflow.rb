@@ -66,6 +66,8 @@ module Workflows
 
     private
 
+    # Call this first inside workflow rescue blocks so cancellation re-raises
+    # immediately before any failure-marking, telemetry, or error logging runs.
     def raise_if_canceled!(error)
       raise error if error.is_a?(Temporalio::Error::CanceledError)
 

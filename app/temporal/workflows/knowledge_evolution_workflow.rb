@@ -75,6 +75,7 @@ module Workflows
         recommendations_dismissed: record_result[:dismissed_count]
       }
     rescue => e
+      raise_if_canceled!(e)
       Temporalio::Workflow.logger.error(
         message: "KnowledgeEvolutionWorkflow failed",
         project_id: input[:project_id],
