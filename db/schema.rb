@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_03_064043) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_04_043457) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -53,6 +53,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_03_064043) do
     t.bigint "control_version_id", null: false
     t.datetime "created_at", null: false
     t.text "description"
+    t.string "idempotency_key"
     t.integer "min_samples_per_variant", default: 30, null: false
     t.string "name", limit: 255, null: false
     t.bigint "prompt_id", null: false
@@ -61,6 +62,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_03_064043) do
     t.datetime "updated_at", null: false
     t.bigint "winner_variant_id"
     t.index ["control_version_id"], name: "index_ab_tests_on_control_version_id"
+    t.index ["prompt_id", "idempotency_key"], name: "index_ab_tests_on_prompt_and_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["prompt_id", "status"], name: "index_ab_tests_on_prompt_id_and_status"
     t.index ["prompt_id"], name: "index_ab_tests_on_prompt_id"
     t.index ["prompt_id"], name: "index_ab_tests_one_running_per_prompt", unique: true, where: "((status)::text = 'running'::text)"
@@ -811,6 +813,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_03_064043) do
     t.datetime "activated_at", comment: "When this version became the policy's active revision."
     t.bigint "coordination_policy_id", null: false, comment: "Owning policy catalog entry."
     t.datetime "created_at", null: false
+    t.string "idempotency_key"
     t.text "llm_prompt", comment: "Optional prompt template used when the policy delegates part of the decision to an LLM."
     t.jsonb "metadata", default: {}, null: false, comment: "Structured provenance such as generator metadata, rollout notes, and approval state."
     t.jsonb "parameters", default: {}, null: false, comment: "Thresholds, weights, and other tunable policy parameters."
@@ -820,6 +823,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_03_064043) do
     t.string "status", limit: 30, default: "draft", null: false, comment: "Revision lifecycle state: draft, active, superseded, or retired."
     t.datetime "updated_at", null: false
     t.integer "version", null: false, comment: "Monotonic version number within the owning coordination policy."
+    t.index ["coordination_policy_id", "idempotency_key"], name: "index_coordination_policy_versions_on_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["coordination_policy_id", "status", "created_at"], name: "idx_coordination_policy_versions_policy_status_created"
     t.index ["coordination_policy_id", "version"], name: "idx_coordination_policy_versions_unique_version", unique: true
     t.index ["coordination_policy_id"], name: "idx_coordination_policy_versions_one_active", unique: true, where: "((status)::text = 'active'::text)"
@@ -1637,11 +1641,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_03_064043) do
     t.boolean "active", default: true, null: false, comment: "Whether this strategy is currently in effect"
     t.jsonb "configuration", default: {}, null: false, comment: "Strategy-specific configuration data"
     t.datetime "created_at", null: false
+    t.string "idempotency_key"
     t.jsonb "log_data"
     t.string "name", null: false, comment: "Human-readable name for this strategy"
     t.string "strategy_type", null: false, comment: "Category: review_settings, quality_gate, execution_timeouts, retry_policies, agent_settings, feature_orchestration, provider_resolution"
     t.datetime "updated_at", null: false
     t.integer "version", default: 1, null: false, comment: "Monotonically increasing version for audit trail"
+    t.index ["account_id", "strategy_type", "idempotency_key"], name: "index_orchestration_strategies_on_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["account_id"], name: "index_orchestration_strategies_on_account_id"
     t.index ["active"], name: "index_orchestration_strategies_on_active"
     t.index ["strategy_type", "account_id"], name: "idx_orchestration_strategies_active_type_account", unique: true, where: "(active = true)", nulls_not_distinct: true
@@ -1915,6 +1921,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_03_064043) do
     t.datetime "created_at", null: false
     t.string "created_by", limit: 50
     t.bigint "created_by_user_id"
+    t.string "idempotency_key"
     t.bigint "parent_version_id"
     t.bigint "prompt_id", null: false
     t.datetime "retired_at"
@@ -1929,6 +1936,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_03_064043) do
     t.integer "version", null: false
     t.index ["created_by_user_id"], name: "index_prompt_versions_on_created_by_user_id"
     t.index ["parent_version_id"], name: "index_prompt_versions_on_parent_version_id"
+    t.index ["prompt_id", "idempotency_key"], name: "index_prompt_versions_on_prompt_and_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["prompt_id", "review_status"], name: "index_prompt_versions_on_prompt_and_review_status", where: "(review_status IS NOT NULL)"
     t.index ["prompt_id", "version"], name: "index_prompt_versions_on_prompt_id_and_version", unique: true
     t.index ["prompt_id"], name: "index_prompt_versions_on_prompt_id"
@@ -2381,6 +2389,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_03_064043) do
     t.text "control_config", null: false, comment: "JSON-encoded baseline configuration for the strategy"
     t.datetime "created_at", null: false
     t.text "description"
+    t.string "idempotency_key"
     t.integer "min_samples_per_variant", default: 30, null: false
     t.string "name", null: false
     t.datetime "started_at"
@@ -2389,6 +2398,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_03_064043) do
     t.integer "traffic_percentage", default: 100, null: false
     t.datetime "updated_at", null: false
     t.bigint "winner_variant_id"
+    t.index ["account_id", "strategy_name", "idempotency_key"], name: "index_strategy_experiments_on_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["account_id", "strategy_name", "status"], name: "index_strategy_experiments_on_account_strategy_status"
     t.index ["account_id", "strategy_name"], name: "index_strategy_experiments_one_running_per_account_strategy", unique: true, where: "((status)::text = 'running'::text)"
     t.index ["winner_variant_id"], name: "index_strategy_experiments_on_winner_variant_id"
@@ -3692,6 +3702,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_03_064043) do
       CREATE TRIGGER logidze_on_mcp_server_definitions BEFORE INSERT OR UPDATE ON public.mcp_server_definitions FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{env}')
   SQL
 
+  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
+      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
+  SQL
+
   create_trigger :logidze_on_orchestration_strategies, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_orchestration_strategies BEFORE INSERT OR UPDATE ON public.orchestration_strategies FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
@@ -3758,9 +3772,5 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_03_064043) do
 
   create_trigger :logidze_on_users, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_users BEFORE INSERT OR UPDATE ON public.users FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{encrypted_password,reset_password_token,reset_password_sent_at,remember_created_at}')
-  SQL
-
-  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
-      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
   SQL
 end

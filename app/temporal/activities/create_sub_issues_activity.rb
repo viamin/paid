@@ -7,11 +7,10 @@ module Activities
   # NOTE: This activity is designed to be invoked from PlanningWorkflow
   # once the workflow layer is implemented. See #695 for the full scope.
   #
-  # IMPORTANT: This activity creates GitHub issues as a side effect and is
-  # NOT idempotent. If a failure occurs after some sub-issues have already
-  # been created, the error is raised as non-retryable to prevent Temporal
-  # retries from producing duplicates. Callers should also prefer a
-  # no-retry policy (max_attempts: 1) as a belt-and-suspenders safeguard.
+  # Idempotency: this activity creates GitHub issues as a side effect and is
+  # safe to retry. Each task is deduped by parent issue + truncated title, so
+  # a Temporal retry (worker crash after creating some sub-issues) reuses the
+  # already-created issues instead of duplicating them (#2770).
   #
   # Input:
   #   project_id:      [Integer] The project to create issues in
@@ -38,7 +37,7 @@ module Activities
       creation_order = topological_sort!(sub_tasks)
       index_to_github_number = {}
 
-      create_issues_with_partial_failure_guard(
+      create_or_reuse_sub_issues(
         sub_tasks, created_issues, client, project, parent_issue, creation_mode,
         creation_order, index_to_github_number
       )
@@ -51,7 +50,7 @@ module Activities
 
     private
 
-    def create_issues_with_partial_failure_guard(
+    def create_or_reuse_sub_issues(
       sub_tasks, created_issues, client, project, parent_issue, creation_mode,
       creation_order, index_to_github_number
     )
@@ -62,6 +61,26 @@ module Activities
         heartbeat("creating_sub_issue_#{step + 1}_of_#{creation_order.size}")
 
         title = task[:title].to_s.truncate(Llm::GenerateIssueTitle::MAX_TITLE_LENGTH)
+
+        existing = existing_sub_issue(project, parent_issue, title)
+        if existing
+          index_to_github_number[task_index] = existing.github_number
+          created_issues << {
+            index: task_index,
+            github_number: existing.github_number,
+            github_issue_id: existing.github_issue_id,
+            issue_id: existing.id,
+            title: title
+          }
+          logger.info(
+            message: "orchestration.sub_issue_reused",
+            project_id: project.id,
+            parent_issue_id: parent_issue.id,
+            sub_issue_number: existing.github_number
+          )
+          next
+        end
+
         body = build_body(task, project, parent_issue, creation_mode, index_to_github_number, resolved: resolved)
         labels = build_labels(project, creation_mode)
 
@@ -92,14 +111,15 @@ module Activities
       end
     rescue Temporalio::Error::CanceledError
       raise
-    rescue StandardError => e
-      raise e if created_issues.empty?
+    end
 
-      raise Temporalio::Error::ApplicationError.new(
-        "Partial failure after creating #{created_issues.size}/#{sub_tasks.size} sub-issues: #{e.message}",
-        type: "SubIssueCreationPartialFailure",
-        non_retryable: true
-      )
+    # Idempotency: a Temporal retry (or a re-trigger) must not duplicate a
+    # sub-issue that a previous attempt already created. We match on the
+    # parent issue + truncated title, which is the stable, persisted identity
+    # of a decomposed task. GitHub-issue-created-but-not-yet-synced races are
+    # out of scope (the local record is the source of truth for "created").
+    def existing_sub_issue(project, parent_issue, title)
+      project.issues.where(parent_issue_id: parent_issue.id, title: title).first
     end
 
     def validate_sub_tasks!(sub_tasks)

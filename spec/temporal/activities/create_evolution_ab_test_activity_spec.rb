@@ -99,5 +99,30 @@ RSpec.describe Activities::CreateEvolutionAbTestActivity do
         expect(result[:generation]).to eq(2)
       end
     end
+
+    context "when retried with identical input" do
+      it "reuses the AbTest instead of creating a duplicate" do
+        first = activity.execute(input)
+        second = activity.execute(input)
+
+        expect(second[:ab_test_id]).to eq(first[:ab_test_id])
+        expect { activity.execute(input) }.not_to change { prompt.ab_tests.count }
+        expect(prompt.ab_tests.where.not(idempotency_key: nil).count).to eq(1)
+      end
+
+      it "starts a draft left behind by a crash before start" do
+        # Simulate a crash after create but before start: a draft test tagged
+        # with the idempotency key exists.
+        allow(AbTests::Create).to receive(:call).and_call_original
+        activity.execute(input)
+        AbTest.last.update!(status: "draft", started_at: nil)
+
+        result = activity.execute(input)
+
+        expect(result[:ab_test_id]).to eq(AbTest.last.id)
+        expect(AbTest.find(result[:ab_test_id]).status).to eq("running")
+        expect(prompt.ab_tests.count).to eq(1)
+      end
+    end
   end
 end
