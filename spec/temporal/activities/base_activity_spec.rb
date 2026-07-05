@@ -125,4 +125,42 @@ RSpec.describe Activities::BaseActivity do
       expect { activity.send(:check_rate_budget!, client) }.not_to raise_error
     end
   end
+
+  describe "#with_periodic_heartbeat" do
+    let(:activity_class) do
+      Class.new(described_class) do
+        def execute(input)
+          input
+        end
+      end
+    end
+    let(:activity) do
+      stub_const("TestHeartbeatActivity", activity_class)
+      TestHeartbeatActivity.new
+    end
+    let(:mock_context) { instance_double(Temporalio::Activity::Context) }
+
+    before do
+      allow(Temporalio::Activity::Context).to receive(:current_or_nil).and_return(mock_context)
+    end
+
+    it "kills the worker thread as a last resort when cancellation leaves it running" do
+      worker = instance_double(Thread)
+      allow(Thread).to receive(:new).and_return(worker)
+      allow(worker).to receive(:report_on_exception=).with(false)
+      allow(worker).to receive(:join).with(0.01).and_return(false)
+      allow(worker).to receive(:join).with(5).and_return(nil)
+      allow(worker).to receive(:alive?).and_return(true)
+      allow(worker).to receive(:raise).with(Interrupt)
+      allow(worker).to receive(:kill)
+      allow(mock_context).to receive(:heartbeat).and_raise(Temporalio::Error::CanceledError, "canceled")
+
+      expect {
+        activity.send(:with_periodic_heartbeat, "test", interval: 0.01) { :done }
+      }.to raise_error(Temporalio::Error::CanceledError)
+
+      expect(worker).to have_received(:raise).with(Interrupt)
+      expect(worker).to have_received(:kill)
+    end
+  end
 end

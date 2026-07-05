@@ -23,7 +23,6 @@ module Workflows
   #   confidence:      - Statistical confidence threshold (default: 0.95)
   class PromptEvolutionWorkflow < BaseWorkflow
     # Explicit activity timeouts (BaseWorkflow default is 300s)
-    MUTATION_TIMEOUT = 120
     AB_TEST_TIMEOUT = 30
 
     def execute(input)
@@ -79,7 +78,8 @@ module Workflows
           mutation_count: input.fetch(:mutation_count, 3),
           strategies: input[:strategies]
         },
-        timeout: MUTATION_TIMEOUT
+        timeout: LLM_ACTIVITY_TIMEOUT,
+        heartbeat_timeout: DEFAULT_HEARTBEAT_TIMEOUT
       )
 
       mutations = mutation_result[:mutations]
@@ -139,13 +139,13 @@ module Workflows
       }
 
     rescue => e
+      raise_if_canceled!(e)
       Temporalio::Workflow.logger.error(
         message: "PromptEvolutionWorkflow failed",
         prompt_id: prompt_id,
         error_class: e.class.to_s,
         error: e.message
       )
-      raise_if_canceled!(e)
       fail_recovery_action(
         recovery_action_id,
         :workflow_failed,

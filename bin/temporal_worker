@@ -92,7 +92,7 @@ puts "Poll worker concurrency: workflows=#{poll_workflow_slots} activities=#{pol
 if db_pool < min_required_pool
   warn "WARNING: DB_POOL (#{db_pool}) is less than the required minimum " \
        "(#{min_required_pool}) for selected activity_slots=#{selected_activity_slots} " \
-       "in #{worker_mode} mode (agent activities hold two connections each)."
+       "in #{worker_mode} mode (heartbeat-enabled regular activities can hold two connections each)."
 
   # Auto-correct rather than booting under-provisioned: an undersized pool
   # surfaces as "could not obtain a connection from the pool" mid-run, which

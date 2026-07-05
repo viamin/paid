@@ -21,15 +21,21 @@ module Activities
         )
 
         if agent_run.existing_pr?
+          heartbeat("clone_repo.fetch_pr_branch", agent_run_id: agent_run_id)
           branch_name = fetch_pr_branch(agent_run)
-          git_ops.clone_and_checkout_branch(
-            branch_name: branch_name,
-            pull_request_number: agent_run.source_pull_request_number
-          )
+          with_periodic_heartbeat("clone_repo.checkout_existing_pr", agent_run_id: agent_run_id, branch_name: branch_name) do
+            git_ops.clone_and_checkout_branch(
+              branch_name: branch_name,
+              pull_request_number: agent_run.source_pull_request_number
+            )
+          end
         else
-          git_ops.clone_and_setup_branch
+          with_periodic_heartbeat("clone_repo.setup_branch", agent_run_id: agent_run_id, branch_name: agent_run.branch_name) do
+            git_ops.clone_and_setup_branch
+          end
         end
 
+        heartbeat("clone_repo.install_hooks", agent_run_id: agent_run_id, branch_name: agent_run.branch_name)
         git_ops.install_artifact_excludes
         install_quality_hooks(git_ops, agent_run)
         git_ops.install_co_author_hook

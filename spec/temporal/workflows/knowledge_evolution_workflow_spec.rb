@@ -65,7 +65,9 @@ RSpec.describe Workflows::KnowledgeEvolutionWorkflow do
             hash_including(project_id: project_id), timeout: described_class::SAMPLE_TIMEOUT)
         expect(workflow).to have_received(:run_activity)
           .with(Activities::AnalyzeKnowledgeGapsActivity,
-            hash_including(project_id: project_id, sampled_runs: sampled_runs), timeout: described_class::ANALYSIS_TIMEOUT)
+            hash_including(project_id: project_id, sampled_runs: sampled_runs),
+            timeout: described_class::LLM_ACTIVITY_TIMEOUT,
+            heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT)
         expect(workflow).to have_received(:run_activity)
           .with(Activities::RecordKnowledgeRecommendationsActivity,
             hash_including(project_id: project_id, recommendations: recommendations), timeout: described_class::RECORD_TIMEOUT)
@@ -138,6 +140,16 @@ RSpec.describe Workflows::KnowledgeEvolutionWorkflow do
 
       it "re-raises the error" do
         expect { workflow.execute(input) }.to raise_error(Temporalio::Error::ApplicationError)
+      end
+
+      it "does not log cancellation as a workflow failure" do
+        logger = instance_spy(Logger)
+        allow(Temporalio::Workflow).to receive(:logger).and_return(logger)
+        allow(workflow).to receive(:run_activity)
+          .and_raise(Temporalio::Error::CanceledError, "workflow canceled")
+
+        expect { workflow.execute(input) }.to raise_error(Temporalio::Error::CanceledError)
+        expect(logger).not_to have_received(:error)
       end
     end
   end
