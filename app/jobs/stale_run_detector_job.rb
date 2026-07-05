@@ -325,6 +325,7 @@ class StaleRunDetectorJob < ApplicationJob
 
       agent_run.update!(
         status: "queued",
+        queue_entered_at: Time.current,
         stale_requeue_count: agent_run.stale_requeue_count + 1,
         stale_skip_count: 0,
         started_at: nil,
@@ -463,6 +464,7 @@ class StaleRunDetectorJob < ApplicationJob
   def requeue_attributes(agent_run, policy)
     {
       status: "queued",
+      queue_entered_at: Time.current,
       stale_requeue_count: agent_run.stale_requeue_count + 1,
       stale_skip_count: 0,
       temporal_workflow_id: nil,

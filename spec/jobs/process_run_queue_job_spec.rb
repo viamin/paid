@@ -28,7 +28,13 @@ RSpec.describe ProcessRunQueueJob do
       expect(temporal_client).to receive(:start_workflow).with(
         Workflows::AgentExecutionWorkflow,
         hash_including(agent_run_id: queued_run.id),
-        hash_including(task_queue: "paid-agent-tasks")
+        hash_including(
+          task_queue: "paid-agent-tasks",
+          priority: Temporalio::Priority.new(
+            priority_key: AgentRun::QUEUE_PRIORITIES.fetch(queued_run.queue_priority_tier).fetch(:indicator),
+            fairness_key: queued_run.project.account_id.to_s
+          )
+        )
       ).and_return(workflow_handle)
 
       described_class.new.perform
@@ -205,6 +211,23 @@ RSpec.describe ProcessRunQueueJob do
       create(:agent_run, :running)
 
       expect(temporal_client).not_to receive(:start_workflow)
+
+      described_class.new.perform
+    end
+
+    it "uses the account id as the Temporal fairness key" do
+      queued_run = create(:agent_run, :queued)
+
+      expect(temporal_client).to receive(:start_workflow).with(
+        Workflows::AgentExecutionWorkflow,
+        hash_including(agent_run_id: queued_run.id),
+        hash_including(
+          priority: Temporalio::Priority.new(
+            priority_key: AgentRun::QUEUE_PRIORITIES.fetch(queued_run.queue_priority_tier).fetch(:indicator),
+            fairness_key: queued_run.project.account_id.to_s
+          )
+        )
+      ).and_return(workflow_handle)
 
       described_class.new.perform
     end

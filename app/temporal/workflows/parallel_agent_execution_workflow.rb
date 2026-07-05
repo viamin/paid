@@ -426,7 +426,8 @@ module Workflows
           results: results,
           feature_branch_name: feature_branch
         },
-        timeout: 120
+        timeout: 120,
+        heartbeat_timeout: DEFAULT_HEARTBEAT_TIMEOUT
       )
 
       return nil if aggregate_result[:merged_branches].empty?
@@ -469,7 +470,8 @@ module Workflows
       detection = run_activity(
         Activities::DetectConflictsActivity,
         { agent_run_ids: successful_run_ids, project_id: project_id },
-        timeout: 120
+        timeout: 120,
+        heartbeat_timeout: DEFAULT_HEARTBEAT_TIMEOUT
       )
 
       unless detection[:has_conflicts]
@@ -491,7 +493,8 @@ module Workflows
       resolution = run_activity(
         Activities::ResolveConflictsActivity,
         { detection_result: detection, project_id: project_id, strategy: "auto_rebase" },
-        timeout: 300
+        timeout: 300,
+        heartbeat_timeout: DEFAULT_HEARTBEAT_TIMEOUT
       )
 
       detection.merge(
