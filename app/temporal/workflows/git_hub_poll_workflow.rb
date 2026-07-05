@@ -11,11 +11,7 @@ module Workflows
   # Temporal's event limit. The server signals when history is getting
   # large via continue_as_new_suggested; a hard cap provides a safety net.
   class GitHubPollWorkflow < BaseWorkflow
-    include Automation::ReviewBotTrigger
     MAX_ITERATIONS = 100
-    POSTED_BOT_FEEDBACK_TRIGGER_TYPES = %w[
-      review_bot_comments review_bot_threads
-    ].freeze
     JITTER_FRACTION = 0.15
 
     workflow_signal
