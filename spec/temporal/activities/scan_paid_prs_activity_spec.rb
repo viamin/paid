@@ -7080,6 +7080,44 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when a failure-streak escalated PR has its label removed while the streak persists" do
+      before do
+        project.update!(max_pr_followup_runs: 3)
+        issue = create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "escalated",
+          pr_escalation_reason: "failure_streak",
+          paid_state: "completed")
+        issue.update_columns(last_pr_scan_at: 10.minutes.ago)
+        create_stale_review_runs!(issue, statuses: %w[failed failed failed])
+        stub_github_for_pr(head_committed_at: 4.hours.ago)
+      end
+
+      it "dismisses escalation instead of immediately re-escalating on the same scan tick" do
+        result = activity.execute(project_id: project.id)
+
+        trigger = automation_scan_results(result).first
+        expect(trigger[:triggers].first[:type]).to eq("dismiss_escalation")
+      end
+
+      it "does not re-escalate on the next tick while the follow-up run is still active" do
+        issue = project.issues.find_by!(github_number: 42)
+        # Simulate what DismissEscalationActivity + handle_dismiss_escalation
+        # do on the workflow side: dismiss to ready, then queue a follow-up run.
+        issue.dismiss_escalation!(draft: false)
+        issue.update_columns(last_pr_scan_at: 10.minutes.ago)
+        create(:agent_run,
+          project: project, issue: issue, source_pull_request_number: 42,
+          goal: "create_pr", trigger_type: "automatic", status: "running")
+
+        result = activity.execute(project_id: project.id)
+
+        decisions = automation_scan_results(result).flat_map { |entry| entry[:triggers] }.map { |t| t[:type] }
+        expect(decisions).not_to include("escalate_to_owner")
+      end
+    end
+
     context "when a non-operational escalation no longer has any operational failures" do
       before do
         issue = create(:issue, :pull_request,
