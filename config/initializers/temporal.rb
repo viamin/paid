@@ -50,6 +50,9 @@ module Paid
 
     # Resets the cached Temporal client, allowing reconnection on next access.
     # Useful for recovering from connection failures or configuration changes.
+    # Also clears the memoized TemporalObservability runtime/tracer caches so
+    # that env-driven configuration (metrics exporter, Prometheus bind address,
+    # OTLP endpoint) is re-read on the next worker client connection.
     def reset_temporal_client!
       @temporal_mutex.synchronize do
         remove_instance_variable(:@temporal_client) if defined?(@temporal_client)
@@ -57,6 +60,7 @@ module Paid
 
       @temporal_worker_mutex.synchronize do
         remove_instance_variable(:@temporal_worker_client) if defined?(@temporal_worker_client)
+        TemporalObservability.reset!
       end
     end
 

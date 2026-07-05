@@ -20,6 +20,16 @@ module Paid
       )
     end
 
+    # Clears the memoized env-derived caches (worker runtime and OTLP tracer
+    # configuration). Call from `Paid.reset_temporal_client!` (under the worker
+    # mutex) so that a configuration change to TEMPORAL_PROMETHEUS_BIND_ADDRESS,
+    # TEMPORAL_METRICS_EXPORTER, or the OTLP endpoint is honored on the next
+    # worker client connection instead of reusing the first captured values.
+    def reset!
+      remove_instance_variable(:@worker_runtime) if defined?(@worker_runtime)
+      remove_instance_variable(:@otlp_configured_endpoint) if defined?(@otlp_configured_endpoint)
+    end
+
     def client_interceptors(env = ENV)
       tracer = temporal_tracer(env)
       return [] unless tracer

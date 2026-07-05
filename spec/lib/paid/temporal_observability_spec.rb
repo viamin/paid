@@ -31,4 +31,28 @@ RSpec.describe Paid::TemporalObservability do
       expect(described_class.otlp_endpoint(env)).to eq("http://tempo:4318/v1/traces")
     end
   end
+
+  describe ".reset!" do
+    after { described_class.reset! }
+
+    it "clears the memoized worker runtime cache" do
+      described_class.instance_variable_set(:@worker_runtime, :cached_runtime)
+
+      described_class.reset!
+
+      expect(described_class.instance_variable_defined?(:@worker_runtime)).to be(false)
+    end
+
+    it "clears the memoized OTLP endpoint cache" do
+      described_class.instance_variable_set(:@otlp_configured_endpoint, "http://otel:4318")
+
+      described_class.reset!
+
+      expect(described_class.instance_variable_defined?(:@otlp_configured_endpoint)).to be(false)
+    end
+
+    it "is a no-op when nothing is memoized" do
+      expect { described_class.reset! }.not_to raise_error
+    end
+  end
 end
