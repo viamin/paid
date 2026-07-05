@@ -2682,6 +2682,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_04_043457) do
   add_foreign_key "chat_sessions", "users", column: "created_by_id"
   add_foreign_key "claude_login_sessions", "accounts"
   add_foreign_key "claude_login_sessions", "integration_credentials"
+  add_foreign_key "claude_login_sessions", "runner_credentials"
   add_foreign_key "claude_login_sessions", "users", column: "created_by_id"
   add_foreign_key "collector_runs", "project_versions"
   add_foreign_key "configuration_bundles", "accounts", on_delete: :cascade
