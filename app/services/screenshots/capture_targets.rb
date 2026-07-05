@@ -72,6 +72,23 @@ module Screenshots
       integration_credentials: Target.new(slug: "integration_credentials", path_builder: "/integration_credentials", requires_auth: true),
       integration_credential_new: Target.new(slug: "integration_credential_new", path_builder: "/integration_credentials/new", requires_auth: true),
       integration_credential_show: Target.new(slug: "integration_credential_show", path_builder: ->(seed_data) { "/integration_credentials/#{seed_data.fetch(:integration_credential).id}" }, requires_auth: true),
+      runner_credentials: Target.new(
+        slug: "runner_credentials",
+        path_builder: ->(seed_data) { "/runners/#{seed_data.fetch(:runner).id}/runner_credentials" },
+        requires_auth: true
+      ),
+      runner_credential_new: Target.new(
+        slug: "runner_credential_new",
+        path_builder: ->(seed_data) { "/runners/#{seed_data.fetch(:runner).id}/runner_credentials/new" },
+        requires_auth: true
+      ),
+      runner_credential_show: Target.new(
+        slug: "runner_credential_show",
+        path_builder: ->(seed_data) { "/runners/#{seed_data.fetch(:runner).id}/runner_credentials/#{seed_data.fetch(:runner_credential).id}" },
+        requires_auth: true
+      ),
+      claude_login_session_new: Target.new(slug: "claude_login_session_new", path_builder: "/claude_login_sessions/new", requires_auth: true),
+      claude_login_session_show: Target.new(slug: "claude_login_session_show", path_builder: ->(seed_data) { "/claude_login_sessions/#{seed_data.fetch(:claude_login_session).external_id}" }, requires_auth: true),
       github_installations: Target.new(slug: "github_installations", path_builder: "/github_installations", requires_auth: true),
       github_installation_show: Target.new(slug: "github_installation_show", path_builder: ->(seed_data) { "/github_installations/#{seed_data.fetch(:github_installation).id}" }, requires_auth: true),
       github_installation_migrate_projects: Target.new(
@@ -104,9 +121,6 @@ module Screenshots
       providers: Target.new(slug: "providers", path_builder: "/runners", requires_auth: true),
       providers_new: Target.new(slug: "providers_new", path_builder: "/runners/new?form_variant=subscription", requires_auth: true),
       providers_edit: Target.new(slug: "providers_edit", path_builder: ->(seed_data) { "/runners/#{seed_data.fetch(:runner).id}/edit" }, requires_auth: true),
-      runner_credentials: Target.new(slug: "runner_credentials", path_builder: "/runner_credentials", requires_auth: true),
-      runner_credential_new: Target.new(slug: "runner_credential_new", path_builder: "/runner_credentials/new?runner_key=claude", requires_auth: true),
-      runner_credential_show: Target.new(slug: "runner_credential_show", path_builder: ->(seed_data) { "/runner_credentials/#{seed_data.fetch(:runner_credential).id}" }, requires_auth: true),
       marketplace_entries: Target.new(slug: "marketplace_entries", path_builder: "/marketplace_entries", requires_auth: true),
       marketplace_entry_new: Target.new(slug: "marketplace_entry_new", path_builder: "/marketplace_entries/new", requires_auth: true),
       marketplace_entry_show: Target.new(slug: "marketplace_entry_show", path_builder: ->(seed_data) { "/marketplace_entries/#{seed_data.fetch(:marketplace_entry).id}" }, requires_auth: true),
@@ -236,6 +250,8 @@ module Screenshots
       "integrations_controller.rb" => %i[integrations integrations_new],
       "free_models_controller.rb" => [ :free_models_catalog ],
       "integration_credentials_controller.rb" => %i[integration_credentials integration_credential_new integration_credential_show],
+      "runner_credentials_controller.rb" => %i[runner_credentials runner_credential_new runner_credential_show],
+      "claude_login_sessions_controller.rb" => %i[claude_login_session_new claude_login_session_show],
       "github_installations_controller.rb" => %i[
         github_installations
         github_installation_show
@@ -494,6 +510,8 @@ module Screenshots
       when /\Afree_models\// then [ :free_models_catalog ]
       when /\Aintegrations\// then integrations_targets(relative_path.delete_prefix("integrations/"))
       when /\Aintegration_credentials\// then rest_resource_targets(relative_path, "integration_credentials", index: :integration_credentials, new: :integration_credential_new, show: :integration_credential_show, edit: :integration_credential_show)
+      when /\Arunner_credentials\// then rest_resource_targets(relative_path, "runner_credentials", index: :runner_credentials, new: :runner_credential_new, show: :runner_credential_show, edit: :runner_credential_show)
+      when /\Aclaude_login_sessions\// then rest_resource_targets(relative_path, "claude_login_sessions", index: :claude_login_session_new, new: :claude_login_session_new, show: :claude_login_session_show, edit: :claude_login_session_show)
       when /\Agithub_installations\// then github_installation_targets(relative_path.delete_prefix("github_installations/"))
       when /\Agithub_tokens\// then rest_resource_targets(relative_path, "github_tokens", index: :github_tokens, new: :github_token_new, show: :github_token_show, edit: :github_token_show)
       when /\Alinear_tokens\// then rest_resource_targets(relative_path, "linear_tokens", index: :linear_tokens, new: :linear_token_new, show: :linear_token_show, edit: :linear_token_show)

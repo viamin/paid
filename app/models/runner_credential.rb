@@ -6,6 +6,7 @@ class RunnerCredential < ApplicationRecord
 
   belongs_to :account
   belongs_to :created_by, class_name: "User", optional: true
+  has_many :claude_login_sessions, dependent: :nullify
 
   encrypts :token
 
@@ -43,6 +44,10 @@ class RunnerCredential < ApplicationRecord
 
   def self.supported_runner_keys
     RunnerSupport.supported_runner_keys
+  end
+
+  def display_name
+    Runner.display_name_for(runner_key)
   end
 
   private

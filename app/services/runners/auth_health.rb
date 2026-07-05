@@ -123,9 +123,8 @@ module Runners
     def latest_managed_credential_for(runner_key)
       return if account.blank? || runner_key.blank?
 
-      account.integration_credentials.active
-        .for_category(:llm_provider)
-        .for_service(runner_key)
+      account.runner_credentials.active
+        .for_runner(runner_key)
         .order(created_at: :desc, id: :desc)
         .first
     end

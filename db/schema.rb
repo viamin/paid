@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_28_182451) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_02_235858) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -196,6 +196,29 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_182451) do
     t.check_constraint "finished_at >= started_at", name: "agent_run_phases_finished_at_after_started_at"
   end
 
+  create_table "agent_run_resource_profiles", comment: "Learned memory usage rollups for agent runs across exact and fallback scopes.", force: :cascade do |t|
+    t.bigint "account_id", comment: "Owning account for account/project-scoped profiles."
+    t.datetime "created_at", null: false
+    t.string "goal", comment: "Agent goal for runner-scoped profiles."
+    t.datetime "last_oom_at", comment: "Timestamp of the most recent sampled OOM event."
+    t.string "lookup_key", null: false, comment: "Deterministic unique key for one profile scope row."
+    t.bigint "max_memory_bytes", default: 0, null: false, comment: "Maximum observed peak memory across sampled runs."
+    t.integer "oom_count", default: 0, null: false, comment: "Number of sampled runs that showed container OOM evidence."
+    t.bigint "p50_memory_bytes", default: 0, null: false, comment: "Median observed peak memory across sampled runs."
+    t.bigint "p95_memory_bytes", default: 0, null: false, comment: "95th percentile observed peak memory across sampled runs."
+    t.string "profile_level", null: false, comment: "Profile scope: specific, runner_goal, project, account, or global."
+    t.bigint "project_id", comment: "Project for exact or project-level profiles."
+    t.bigint "recommended_memory_limit_bytes", default: 0, null: false, comment: "Learned memory limit recommendation derived from observed peaks and OOMs."
+    t.string "runner_key", comment: "Normalized runner key for runner-scoped profiles."
+    t.integer "sample_count", default: 0, null: false, comment: "Number of terminal runs contributing a memory sample."
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_agent_run_resource_profiles_on_account_id"
+    t.index ["lookup_key"], name: "index_agent_run_resource_profiles_on_lookup_key", unique: true
+    t.index ["profile_level", "sample_count"], name: "idx_on_profile_level_sample_count_92a9d20505"
+    t.index ["project_id"], name: "index_agent_run_resource_profiles_on_project_id"
+    t.index ["runner_key", "goal"], name: "index_agent_run_resource_profiles_on_runner_key_and_goal", where: "((runner_key IS NOT NULL) AND (goal IS NOT NULL))"
+  end
+
   create_table "agent_runs", force: :cascade do |t|
     t.string "adoption_mode_snapshot", comment: "Project adoption mode captured when an external execution was ingested."
     t.string "agent_type", limit: 50, null: false
@@ -255,6 +278,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_182451) do
     t.datetime "rate_limited_until"
     t.string "result_commit_sha", limit: 40
     t.datetime "review_posted_at"
+    t.jsonb "review_proxy_diagnostics", default: {}, null: false, comment: "Latest known outcome of the review-creation proxy POST for this run (outcome: attempted/timeout/connection_failed/upstream_error/succeeded, plus http_status/error_class/error_message/recorded_at when available). Lets CompleteReviewGoalActivity explain review-goal failures without raw log inspection (#2779). Not part of run history/state."
     t.string "review_url", limit: 500
     t.bigint "runner_id"
     t.integer "runner_switches", default: 0, null: false
@@ -476,6 +500,33 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_182451) do
     t.index ["proxy_token"], name: "index_chat_sessions_on_proxy_token", unique: true
     t.index ["runner_id"], name: "index_chat_sessions_on_runner_id"
     t.index ["status"], name: "index_chat_sessions_on_status"
+  end
+
+  create_table "claude_login_sessions", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Account that owns this browser-completed Claude login session."
+    t.datetime "completed_at"
+    t.string "container_id"
+    t.datetime "created_at", null: false
+    t.bigint "created_by_id", null: false, comment: "User who initiated the Claude browser login."
+    t.string "credential_name", null: false, comment: "IntegrationCredential name to create or replace on successful capture."
+    t.text "error_message"
+    t.datetime "expires_at", comment: "Session expiry until completed; replaced with credential expiry after capture."
+    t.uuid "external_id", null: false, comment: "Opaque public identifier used in user-facing URLs."
+    t.datetime "failed_at"
+    t.bigint "integration_credential_id", comment: "Managed Claude credential captured when the login completes."
+    t.jsonb "metadata", default: {}, null: false, comment: "Structured runtime details such as return paths and parsed Claude metadata."
+    t.text "oauth_url"
+    t.bigint "runner_credential_id", comment: "Managed Claude runner credential captured when the browser login completes."
+    t.string "session_token", null: false, comment: "Time-boxed shared secret required to submit the browser code."
+    t.string "status", default: "starting", null: false, comment: "Browser login lifecycle state."
+    t.datetime "submitted_at"
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_claude_login_sessions_on_account_id"
+    t.index ["created_by_id"], name: "index_claude_login_sessions_on_created_by_id"
+    t.index ["external_id"], name: "index_claude_login_sessions_on_external_id", unique: true
+    t.index ["integration_credential_id"], name: "index_claude_login_sessions_on_integration_credential_id"
+    t.index ["runner_credential_id"], name: "index_claude_login_sessions_on_runner_credential_id"
+    t.index ["session_token"], name: "index_claude_login_sessions_on_session_token", unique: true
   end
 
   create_table "collector_runs", force: :cascade do |t|
@@ -2491,7 +2542,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_182451) do
     t.boolean "marketplace_auto_attach_enabled", default: false, null: false, comment: "Whether this user opts their own agent runs into automatic and team-default marketplace attachments."
     t.integer "max_auto_pick_open_prs", default: 1, null: false
     t.integer "max_comment_length", default: 2000, null: false
-    t.integer "max_concurrent_runs", default: 2, null: false
+    t.integer "max_concurrent_runs", default: 2
     t.integer "max_execution_seconds", comment: "User-level override for project max_execution_seconds; nil defers to project setting"
     t.integer "max_issues_per_page", default: 50, null: false
     t.integer "max_parallel_agents_per_project", default: 3, null: false
@@ -2502,6 +2553,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_182451) do
     t.integer "retry_max_attempts", default: 3, null: false
     t.float "retry_max_delay", default: 60.0, null: false
     t.integer "review_goal_idle_timeout_seconds", default: 300, null: false
+    t.string "run_concurrency_mode", default: "manual", null: false, comment: "Whether agent run admission uses the fixed max_concurrent_runs limit or Docker-capacity auto admission."
     t.jsonb "runner_round_robin_state", default: {}, null: false
     t.string "runner_selection_mode", limit: 20, default: "single", null: false
     t.integer "style_guide_max_raw_bytes", default: 100000, null: false
@@ -2590,6 +2642,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_182451) do
   add_foreign_key "agent_run_marketplace_entries", "marketplace_entries"
   add_foreign_key "agent_run_marketplace_entries", "marketplace_entry_versions"
   add_foreign_key "agent_run_phases", "agent_runs", on_delete: :cascade
+  add_foreign_key "agent_run_resource_profiles", "accounts", on_delete: :cascade
+  add_foreign_key "agent_run_resource_profiles", "projects", on_delete: :cascade
   add_foreign_key "agent_runs", "configuration_bundles", on_delete: :nullify
   add_foreign_key "agent_runs", "issues", on_delete: :nullify
   add_foreign_key "agent_runs", "projects", on_delete: :cascade
@@ -2615,6 +2669,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_28_182451) do
   add_foreign_key "chat_sessions", "projects"
   add_foreign_key "chat_sessions", "runners", name: "fk_chat_sessions_runner_id"
   add_foreign_key "chat_sessions", "users", column: "created_by_id"
+  add_foreign_key "claude_login_sessions", "accounts"
+  add_foreign_key "claude_login_sessions", "integration_credentials"
+  add_foreign_key "claude_login_sessions", "users", column: "created_by_id"
   add_foreign_key "collector_runs", "project_versions"
   add_foreign_key "configuration_bundles", "accounts", on_delete: :cascade
   add_foreign_key "configuration_bundles", "llm_models", on_delete: :nullify

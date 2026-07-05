@@ -11,12 +11,15 @@ module Tools
       "Tools::GetAgentRun",
       "Tools::ListAgentRuns",
       "Tools::CancelAgentRun",
+      "Tools::RecordChangeIntent",
       "Tools::GetIssueDetails",
       "Tools::GetPullRequestDetails",
       "Tools::SearchCode",
+      "Tools::SearchIntents",
       "Tools::ReadRepoFile",
       "Tools::ListRepoTree",
       "Tools::GrepRepo",
+      "Tools::GetIntent",
       "Tools::ListAccountMemberships",
       "Tools::InviteAccountMember",
       "Tools::UpdateAccountMembership",
@@ -68,12 +71,26 @@ module Tools
       # model can *propose* them, but strips the per-tool `confirmed` argument
       # so confirmation always originates from the human approver, never the
       # model itself. See RDR-028.
-      def chat_definitions_for(user:)
-        available_tool_classes_for(user:).map { |klass| chat_definition_for(klass) }
+      def chat_definitions_for(user:, session: nil)
+        available_chat_tool_classes_for(user:, session:).map { |klass| chat_definition_for(klass) }
       end
 
       def write_tool?(name)
         find(name)&.write_operation? ? true : false
+      end
+
+      def post_dispatch_confirmation?(name)
+        find(name)&.confirmation_mode == :post_dispatch
+      end
+
+      def resolve_confirmation(name:, decision:, pending_result:, user:, session:)
+        tool_class = find(name)
+        raise ArgumentError, "Unknown tool: #{name}" unless tool_class
+
+        tool_class.new(user:, session:).resolve_confirmation(
+          decision: decision.to_sym,
+          pending_result: pending_result
+        )
       end
 
       def all
@@ -95,6 +112,10 @@ module Tools
 
       def available_tool_classes_for(user:)
         tool_hash.values.select { |klass| tool_available_to?(klass, user:) }
+      end
+
+      def available_chat_tool_classes_for(user:, session:)
+        tool_hash.values.select { |klass| klass.available_for_chat?(user:, session:) }
       end
 
       def read_only_tool_classes_for(user:)

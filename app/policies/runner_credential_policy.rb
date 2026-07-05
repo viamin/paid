@@ -9,6 +9,10 @@ class RunnerCredentialPolicy < ApplicationPolicy
     has_any_account_role?(:owner, :admin)
   end
 
+  def new?
+    has_any_account_role?(:owner, :admin)
+  end
+
   def create?
     has_any_account_role?(:owner, :admin)
   end
@@ -24,18 +28,17 @@ class RunnerCredentialPolicy < ApplicationPolicy
   class Scope < ApplicationPolicy::Scope
     def resolve
       raise Pundit::NotAuthorizedError, "must be logged in" unless user
+      return scope.none unless user.has_role?(:owner, user.account) || user.has_role?(:admin, user.account)
 
-      if user.has_role?(:owner, user.account) || user.has_role?(:admin, user.account)
-        scope.where(account: user.account)
-      else
-        scope.none
-      end
+      super
     end
   end
 
   private
 
   def account_for_record
+    return user&.account if record.is_a?(Class)
+
     record.respond_to?(:account) ? record.account : user&.account
   end
 end

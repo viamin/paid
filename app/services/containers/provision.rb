@@ -135,6 +135,7 @@ module Containers
       timeout_seconds: 3600,                     # 1 hour default timeout
       tmpfs_tmp_size: 1024 * 1024 * 1024,        # 1GB for /tmp
       tmpfs_cache_size: 512 * 1024 * 1024,       # 512MB for /home/agent/.cache
+      tmpfs_codex_size: 256 * 1024 * 1024,       # 256MB for /home/agent/.codex
       image: "paid-agent:latest",
       user: "agent",
       workspace_mount: "/workspace"
@@ -158,6 +159,7 @@ module Containers
     # @option options [Integer] :cpu_quota CPU quota (100_000 per CPU)
     # @option options [Integer] :pids_limit Maximum number of processes
     # @option options [Integer] :timeout_seconds Default command timeout
+    # @option options [Integer] :tmpfs_codex_size Size of the writable ~/.codex tmpfs
     # @option options [String] :image Docker image to use
     def initialize(agent_run: nil, project: nil, worktree_path: nil, pool_entry: nil, workspace_volume: nil,
       backend: Containers.backend, credential_maintenance: false, **options)
@@ -189,6 +191,12 @@ module Containers
     # Ensures the selected network exists before creating the container,
     # and applies firewall rules for restricted proxy-mode runs after start.
     #
+    # Signal-aware: a rescue clause for SignalException (e.g. Interrupt from
+    # Thread#raise on cancellation) runs cleanup before re-raising so the
+    # half-created container and workspace volume are not leaked. Without
+    # this clause, StandardError rescues below bypass an in-flight cancel
+    # because SignalException inherits from Exception, not StandardError.
+    #
     # @return [Result] Result object with success/failure status
     def provision
       log_system("container.provision.start", image: options[:image])
@@ -217,6 +225,16 @@ module Containers
       raise ProvisionError, "Docker error: #{e.message}"
     rescue StandardError => e
       log_system("container.provision.failed", error: e.message)
+      cleanup
+      cleanup_workspace_volume
+      raise
+    rescue SignalException => e
+      # Cancellation signal (typically Interrupt from Thread#raise in the
+      # activity's drain path) lands here. run the same cleanup as the
+      # StandardError rescue so a half-provisioned container and its
+      # workspace volume are not orphaned, then re-raise so the worker
+      # thread exits with the original signal.
+      log_system("container.provision.interrupted", signal: e.class.name)
       cleanup
       cleanup_workspace_volume
       raise
@@ -1112,6 +1130,11 @@ module Containers
     def seed_claude_credentials!
       source_files = %w[.credentials.json]
       return unless claude_subscription_auth?
+      if claude_managed_credentials_json.present?
+        write_container_file("/home/agent/.claude/.credentials.json", claude_managed_credentials_json)
+        log_system("container.claude_credentials_seeded", source: "managed_json")
+        return
+      end
       return if claude_managed_oauth_token.present?
 
       refresh_claude_credentials_if_near_expiry!
@@ -1915,7 +1938,7 @@ module Containers
     #   /tmp                - tmpfs (1GB, for scratch files)
     #   /home/agent/.cache  - tmpfs (512MB, for tool caches: Codex CLI, npm, etc.)
     #   /home/agent/.claude - tmpfs (256MB, for Claude CLI session/project data)
-    #   /home/agent/.codex    - tmpfs (64MB, for Codex CLI config/session data)
+    #   /home/agent/.codex    - tmpfs (256MB, for Codex CLI config/session data)
     #   /home/agent/.gemini   - tmpfs (64MB, for Gemini CLI config/session data)
     #   /home/agent/.cursor-agent - tmpfs (64MB, for Cursor agent CLI config/session data)
     #   /home/agent/.kilocode - tmpfs (64MB, for Kilocode CLI config/session data)
@@ -2014,7 +2037,7 @@ module Containers
       # Codex CLI stores config and session data under ~/.codex.
       # Host-backed auth/config files are mounted into this tmpfs so session
       # state stays ephemeral while OAuth refreshes can still persist.
-      tmpfs["/home/agent/.codex"] = "size=#{64 * 1024 * 1024},mode=0700"
+      tmpfs["/home/agent/.codex"] = "size=#{options[:tmpfs_codex_size]},mode=0700"
 
       # Gemini CLI stores config and session data under ~/.gemini.
       # Ownership is fixed by fix_gemini_tmpfs_ownership! after container start.
@@ -2359,28 +2382,44 @@ module Containers
     end
 
     def claude_subscription_auth?
-      return true if claude_managed_oauth_token.present?
+      return true if claude_managed_secret && !claude_managed_secret.blank?
 
       paths = [ claude_config_host_path, claude_local_config_path ].compact
       paths.any? { |base| File.file?(File.join(base, ".credentials.json")) }
     end
 
     def claude_managed_oauth_token
-      claude_managed_oauth_credential&.secret.to_s.presence
+      parsed = claude_managed_secret
+      return unless parsed&.long_lived_token?
+
+      parsed.oauth_token.to_s.presence
     end
 
-    def claude_managed_oauth_credential
-      return @claude_managed_oauth_credential if defined?(@claude_managed_oauth_credential)
+    def claude_managed_credentials_json
+      parsed = claude_managed_secret
+      return unless parsed&.native_credentials_json?
+
+      parsed.credentials_json
+    end
+
+    def claude_managed_runner_credential
+      return @claude_managed_runner_credential if defined?(@claude_managed_runner_credential)
 
       account = project&.account
-      @claude_managed_oauth_credential = if account.present?
-        credential = LlmCredentials::AccountResolver.call(
-          account: account,
-          runner_key: "claude",
-          tenant_setting: account.tenant_setting
-        ).integration_credential
-        credential if credential&.auth_kind == "oauth_token"
+      @claude_managed_runner_credential = if account.present?
+        account.runner_credentials.active
+          .for_runner("claude")
+          .where(auth_kind: "oauth_token")
+          .order(created_at: :desc, id: :desc)
+          .first
       end
+    end
+
+    def claude_managed_secret
+      return @claude_managed_secret if defined?(@claude_managed_secret)
+
+      secret = claude_managed_runner_credential&.token.to_s
+      @claude_managed_secret = secret.present? ? ClaudeCredentials::Secret.parse(secret) : nil
     end
 
     def gemini_subscription_auth?

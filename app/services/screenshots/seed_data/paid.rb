@@ -195,12 +195,21 @@ module Screenshots
             record.secret = "sk-ant-#{'a' * 24}"
           end
 
+          claude_login_session = account.claude_login_sessions.find_or_create_by!(
+            credential_name: "Screenshot Claude Browser Login",
+            created_by: user
+          ) do |record|
+            record.status = "awaiting_code"
+            record.oauth_url = "https://claude.com/cai/oauth/authorize?code=true"
+            record.metadata = {}
+          end
+
           runner_credential = account.runner_credentials.find_or_create_by!(
-            runner_key: "claude",
-            name: "Screenshot Claude Runner Credential"
+            runner_key: provider.runner_key,
+            name: "Screenshot #{Runner.display_name_for(provider.runner_key)} Setup Token"
           ) do |record|
             record.created_by = user
-            record.auth_kind = "api_key"
+            record.auth_kind = "oauth_token"
             record.token = "sk-ant-oat01-#{'a' * 24}"
             record.long_lived = true
           end
@@ -336,6 +345,7 @@ module Screenshots
             "github_installation" => { "id" => github_installation.id, "account_login" => github_installation.account_login },
             "github_token" => { "id" => github_token.id, "name" => github_token.name },
             "integration_credential" => { "id" => integration_credential.id, "name" => integration_credential.name },
+            "claude_login_session" => { "id" => claude_login_session.id, "external_id" => claude_login_session.external_id },
             "runner_credential" => { "id" => runner_credential.id, "name" => runner_credential.name },
             "linear_token" => { "id" => linear_token.id, "name" => linear_token.name },
             "provider_api_key" => { "id" => provider_api_key.id, "name" => provider_api_key.name },

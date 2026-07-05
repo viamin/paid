@@ -852,7 +852,7 @@ RSpec.describe AgentRun do
 
       it "returns false for failed status with review posting failure" do
         agent_run = build(:agent_run, :failed,
-          error_message: "No review was posted on PR #1234")
+          error_message: "No tracked review for PR #1234 and no GitHub review exists.")
 
         expect(agent_run.operational_failure?).to be false
       end
@@ -1865,6 +1865,95 @@ RSpec.describe AgentRun do
           ).and_call_original
 
           agent_run.provision_container(memory_bytes: 1024 * 1024 * 1024)
+        end
+
+        it "reuses a live recorded container on Temporal retry instead of provisioning a duplicate" do
+          agent_run = create(:agent_run, worktree_path: worktree_path, container_id: "existing-container")
+          existing = instance_double(
+            Docker::Container,
+            id: "existing-container",
+            refresh!: true,
+            info: { "State" => { "Running" => true } }
+          )
+          allow(Docker::Container).to receive(:get).with("existing-container").and_return(existing)
+
+          # A second container must never be created on retry.
+          expect(Docker::Container).not_to receive(:create)
+
+          result = agent_run.provision_container
+
+          expect(result).to be_success
+          expect(result[:container_id]).to eq("existing-container")
+          # container_id is unchanged — no new container recorded.
+          expect(agent_run.reload.container_id).to eq("existing-container")
+        end
+
+        it "reconciles a dead recorded container on Temporal retry and provisions a fresh one" do
+          agent_run = create(:agent_run, worktree_path: worktree_path, container_id: "dead-container")
+          dead = instance_double(
+            Docker::Container,
+            id: "dead-container",
+            refresh!: true,
+            stop: true,
+            delete: true,
+            info: { "State" => { "Running" => false } }
+          )
+          allow(Docker::Container).to receive(:get).with("dead-container").and_return(dead)
+
+          result = agent_run.provision_container
+
+          expect(result).to be_success
+          # The dead container was cleaned up...
+          expect(dead).to have_received(:delete)
+          # ...and a fresh container took its place (no orphan left behind).
+          expect(agent_run.reload.container_id).to eq("abc123container")
+        end
+
+        it "reconciles a missing recorded container on Temporal retry and provisions a fresh one" do
+          agent_run = create(:agent_run, worktree_path: worktree_path, container_id: "gone-container")
+          allow(Docker::Container).to receive(:get).with("gone-container").and_raise(Docker::Error::NotFoundError)
+
+          result = agent_run.provision_container
+
+          expect(result).to be_success
+          expect(agent_run.reload.container_id).to eq("abc123container")
+        end
+      end
+
+      describe "#recover_in_flight_container!" do
+        it "records an in-flight container that provisioning created but never persisted" do
+          agent_run = create(:agent_run, worktree_path: worktree_path, container_id: nil)
+          service = instance_double(Containers::Provision)
+          backend = instance_double(Containers::Backends::LocalDocker)
+          allow(service).to receive_messages(
+            container: mock_container,
+            backend: backend
+          )
+          allow(backend).to receive(:container_host_for).with(mock_container).and_return("local")
+          agent_run.instance_variable_set(:@container_service, service)
+
+          result = agent_run.recover_in_flight_container!
+
+          expect(result).to eq("abc123container")
+          expect(agent_run.reload.container_id).to eq("abc123container")
+          expect(agent_run.container_host).to eq("local")
+        end
+
+        it "is a no-op when a container_id is already recorded" do
+          agent_run = create(:agent_run, worktree_path: worktree_path, container_id: "existing-container")
+          service = instance_double(Containers::Provision)
+          allow(service).to receive(:container).and_return(mock_container)
+          agent_run.instance_variable_set(:@container_service, service)
+
+          expect(agent_run.recover_in_flight_container!).to be_nil
+          expect(agent_run.reload.container_id).to eq("existing-container")
+        end
+
+        it "is a no-op when no in-flight container exists" do
+          agent_run = create(:agent_run, worktree_path: worktree_path, container_id: nil)
+
+          expect(agent_run.recover_in_flight_container!).to be_nil
+          expect(agent_run.reload.container_id).to be_nil
         end
       end
 

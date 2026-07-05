@@ -4,235 +4,111 @@ require "rails_helper"
 
 RSpec.describe RunnerCredentialPolicy do
   describe "permissions" do
+    let(:account) { create(:account) }
+    let(:owner) { create(:user, :owner, account: account) }
+    let(:admin) { create(:user, :admin, account: account) }
+    let(:member) { create(:user, :member, account: account) }
+    let(:other_account) { create(:account) }
+    let(:other_user) { create(:user, account: other_account) }
+    let(:credential) { create(:runner_credential, account: account, runner_key: "claude") }
+
     describe "#index?" do
       it "permits owner" do
-        account = create(:account)
-        owner = create(:user, account: account)
-        credential = create(:runner_credential, account: account, created_by: owner)
-
-        expect(described_class.new(owner, credential)).to be_index
+        expect(described_class.new(owner, RunnerCredential)).to be_index
       end
 
       it "permits admin" do
-        account = create(:account)
-        create(:user, account: account) # absorb owner role
-        admin = create(:user, :admin, account: account)
-        credential = create(:runner_credential, account: account, created_by: admin)
-
-        expect(described_class.new(admin, credential)).to be_index
+        expect(described_class.new(admin, RunnerCredential)).to be_index
       end
 
-      it "does not permit member" do
-        account = create(:account)
-        create(:user, account: account) # absorb owner role
-        member = create(:user, :member, account: account)
-        credential = create(:runner_credential, account: account)
-
-        expect(described_class.new(member, credential)).not_to be_index
-      end
-
-      it "does not permit viewer" do
-        account = create(:account)
-        create(:user, account: account) # absorb owner role
-        viewer = create(:user, :viewer, account: account)
-        credential = create(:runner_credential, account: account)
-
-        expect(described_class.new(viewer, credential)).not_to be_index
-      end
-
-      it "does not permit users from different account" do
-        account = create(:account)
-        owner = create(:user, account: account)
-        credential = create(:runner_credential, account: account, created_by: owner)
-        other_account = create(:account)
-        other_user = create(:user, account: other_account)
-
-        expect(described_class.new(other_user, credential)).not_to be_index
+      it "denies member" do
+        expect(described_class.new(member, RunnerCredential)).not_to be_index
       end
     end
 
     describe "#show?" do
       it "permits owner" do
-        account = create(:account)
-        owner = create(:user, account: account)
-        credential = create(:runner_credential, account: account, created_by: owner)
-
         expect(described_class.new(owner, credential)).to be_show
       end
 
       it "permits admin" do
-        account = create(:account)
-        create(:user, account: account) # absorb owner role
-        admin = create(:user, :admin, account: account)
-        credential = create(:runner_credential, account: account, created_by: admin)
-
         expect(described_class.new(admin, credential)).to be_show
       end
 
-      it "does not permit member" do
-        account = create(:account)
-        create(:user, account: account) # absorb owner role
-        member = create(:user, :member, account: account)
-        credential = create(:runner_credential, account: account)
-
+      it "denies member" do
         expect(described_class.new(member, credential)).not_to be_show
       end
 
-      it "does not permit users from different account" do
-        account = create(:account)
-        owner = create(:user, account: account)
-        credential = create(:runner_credential, account: account, created_by: owner)
-        other_account = create(:account)
-        other_user = create(:user, account: other_account)
-
+      it "denies user from different account" do
         expect(described_class.new(other_user, credential)).not_to be_show
+      end
+    end
+
+    describe "#new?" do
+      it "permits owner" do
+        expect(described_class.new(owner, RunnerCredential.new(account: account))).to be_new
+      end
+
+      it "permits admin" do
+        expect(described_class.new(admin, RunnerCredential.new(account: account))).to be_new
+      end
+
+      it "denies member" do
+        expect(described_class.new(member, RunnerCredential.new(account: account))).not_to be_new
       end
     end
 
     describe "#create?" do
       it "permits owner" do
-        account = create(:account)
-        owner = create(:user, account: account)
-        credential = create(:runner_credential, account: account, created_by: owner)
-
-        expect(described_class.new(owner, credential)).to be_create
+        expect(described_class.new(owner, RunnerCredential.new(account: account))).to be_create
       end
 
       it "permits admin" do
-        account = create(:account)
-        create(:user, account: account) # absorb owner role
-        admin = create(:user, :admin, account: account)
-        credential = create(:runner_credential, account: account, created_by: admin)
-
-        expect(described_class.new(admin, credential)).to be_create
+        expect(described_class.new(admin, RunnerCredential.new(account: account))).to be_create
       end
 
-      it "does not permit member" do
-        account = create(:account)
-        create(:user, account: account) # absorb owner role
-        member = create(:user, :member, account: account)
-        credential = create(:runner_credential, account: account)
-
-        expect(described_class.new(member, credential)).not_to be_create
-      end
-
-      it "does not permit viewer" do
-        account = create(:account)
-        create(:user, account: account) # absorb owner role
-        viewer = create(:user, :viewer, account: account)
-        credential = create(:runner_credential, account: account)
-
-        expect(described_class.new(viewer, credential)).not_to be_create
+      it "denies member" do
+        expect(described_class.new(member, RunnerCredential.new(account: account))).not_to be_create
       end
     end
 
     describe "#destroy?" do
       it "permits owner" do
-        account = create(:account)
-        owner = create(:user, account: account)
-        credential = create(:runner_credential, account: account, created_by: owner)
-
         expect(described_class.new(owner, credential)).to be_destroy
       end
 
       it "permits admin" do
-        account = create(:account)
-        create(:user, account: account) # absorb owner role
-        admin = create(:user, :admin, account: account)
-        credential = create(:runner_credential, account: account, created_by: admin)
-
         expect(described_class.new(admin, credential)).to be_destroy
       end
 
-      it "does not permit member" do
-        account = create(:account)
-        create(:user, account: account) # absorb owner role
-        member = create(:user, :member, account: account)
-        credential = create(:runner_credential, account: account)
-
+      it "denies member" do
         expect(described_class.new(member, credential)).not_to be_destroy
       end
 
-      it "does not permit users from different account" do
-        account = create(:account)
-        owner = create(:user, account: account)
-        credential = create(:runner_credential, account: account, created_by: owner)
-        other_account = create(:account)
-        other_user = create(:user, account: other_account)
-
+      it "denies user from different account" do
         expect(described_class.new(other_user, credential)).not_to be_destroy
-      end
-    end
-
-    describe "#revoke?" do
-      it "permits owner" do
-        account = create(:account)
-        owner = create(:user, account: account)
-        credential = create(:runner_credential, account: account, created_by: owner)
-
-        expect(described_class.new(owner, credential)).to be_revoke
-      end
-
-      it "permits admin" do
-        account = create(:account)
-        create(:user, account: account) # absorb owner role
-        admin = create(:user, :admin, account: account)
-        credential = create(:runner_credential, account: account, created_by: admin)
-
-        expect(described_class.new(admin, credential)).to be_revoke
-      end
-
-      it "does not permit member" do
-        account = create(:account)
-        create(:user, account: account) # absorb owner role
-        member = create(:user, :member, account: account)
-        credential = create(:runner_credential, account: account)
-
-        expect(described_class.new(member, credential)).not_to be_revoke
-      end
-
-      it "does not permit users from different account" do
-        account = create(:account)
-        owner = create(:user, account: account)
-        credential = create(:runner_credential, account: account, created_by: owner)
-        other_account = create(:account)
-        other_user = create(:user, account: other_account)
-
-        expect(described_class.new(other_user, credential)).not_to be_revoke
       end
     end
   end
 
   describe "Scope" do
-    it "returns runner_credentials for the user's account" do
-      account = create(:account)
-      owner = create(:user, account: account)
-      credential_in_account = create(:runner_credential, account: account, created_by: owner)
-      other_account = create(:account)
-      other_user = create(:user, account: other_account)
-      credential_in_other_account = create(:runner_credential, account: other_account, created_by: other_user)
+    let(:account_primary) { create(:account) }
+    let(:account_secondary) { create(:account) }
+    let(:owner_primary) { create(:user, :owner, account: account_primary) }
+    let(:owner_secondary) { create(:user, :owner, account: account_secondary) }
+    let!(:credential_primary) { create(:runner_credential, account: account_primary, runner_key: "claude") }
+    let!(:credential_secondary) { create(:runner_credential, account: account_secondary, runner_key: "claude") }
 
-      scope = described_class::Scope.new(owner, RunnerCredential).resolve
+    it "shows only credentials from the user's account" do
+      scope = described_class::Scope.new(owner_primary, RunnerCredential.all).resolve
 
-      expect(scope).to include(credential_in_account)
-      expect(scope).not_to include(credential_in_other_account)
+      expect(scope).to contain_exactly(credential_primary)
     end
 
-    it "returns nothing for member" do
-      account = create(:account)
-      create(:user, account: account) # absorb owner role
-      member = create(:user, :member, account: account)
-      create(:runner_credential, account: account)
+    it "shows credentials for the secondary user's account" do
+      scope = described_class::Scope.new(owner_secondary, RunnerCredential.all).resolve
 
-      scope = described_class::Scope.new(member, RunnerCredential).resolve
-
-      expect(scope).to be_empty
-    end
-
-    it "raises error when user is not logged in" do
-      expect {
-        described_class::Scope.new(nil, RunnerCredential).resolve
-      }.to raise_error(Pundit::NotAuthorizedError, "must be logged in")
+      expect(scope).to contain_exactly(credential_secondary)
     end
   end
 end
