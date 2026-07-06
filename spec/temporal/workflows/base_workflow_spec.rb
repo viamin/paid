@@ -94,8 +94,7 @@ RSpec.describe Workflows::BaseWorkflow, :no_db do
     let(:logger) { instance_double(Logger, warn: nil) }
 
     before do
-      allow(Temporalio::Workflow).to receive(:metric_meter).and_return(meter)
-      allow(Temporalio::Workflow).to receive(:logger).and_return(logger)
+      allow(Temporalio::Workflow).to receive_messages(metric_meter: meter, logger: logger)
     end
 
     def exhausted_activity_error(activity_type)
