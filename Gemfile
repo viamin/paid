@@ -48,6 +48,8 @@ gem "faraday-http-cache"
 # Defer loading — 139 MB gem with native Rust extensions only needed for
 # Temporal client/worker code, not the web process boot path.
 gem "temporalio", require: false
+gem "opentelemetry-sdk", require: false
+gem "opentelemetry-exporter-otlp", require: false
 
 # Docker API client [https://github.com/upserve/docker-api]
 # Defer loading — only used by container management services.

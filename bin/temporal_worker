@@ -2,6 +2,7 @@
 # frozen_string_literal: true
 
 require_relative "../config/environment"
+require_relative "../lib/paid/temporal_observability"
 
 # Explicitly load temporalio — the initializer defers it for web process boot
 # performance, but the worker process needs the full gem loaded upfront.
@@ -148,7 +149,7 @@ when "poll"
     # Poll worker: handles GitHubPollWorkflow and its activities on the poll queue.
     # Small activity pool ensures poll cycles are never blocked by agent workloads.
     Temporalio::Worker.new(
-      client: Paid.temporal_client,
+      client: Paid.temporal_worker_client,
       task_queue: Paid.poll_task_queue,
       activities: activity_instances,
       workflows: poll_workflows,
@@ -167,7 +168,7 @@ when "agent"
     # Agent worker: handles AgentExecutionWorkflow, PlanningWorkflow, etc. on the agent queue.
     # Larger activity pool for long-running agent activities.
     Temporalio::Worker.new(
-      client: Paid.temporal_client,
+      client: Paid.temporal_worker_client,
       task_queue: Paid.agent_task_queue,
       activities: activity_instances,
       workflows: agent_workflows,
@@ -186,7 +187,7 @@ else
     # Poll worker: handles GitHubPollWorkflow and its activities on the poll queue.
     # Small activity pool ensures poll cycles are never blocked by agent workloads.
     Temporalio::Worker.new(
-      client: Paid.temporal_client,
+      client: Paid.temporal_worker_client,
       task_queue: Paid.poll_task_queue,
       activities: activity_instances,
       workflows: poll_workflows,
@@ -202,7 +203,7 @@ else
     # Agent worker: handles AgentExecutionWorkflow, PlanningWorkflow, etc. on the agent queue.
     # Larger activity pool for long-running agent activities.
     Temporalio::Worker.new(
-      client: Paid.temporal_client,
+      client: Paid.temporal_worker_client,
       task_queue: Paid.agent_task_queue,
       activities: activity_instances,
       workflows: agent_workflows,

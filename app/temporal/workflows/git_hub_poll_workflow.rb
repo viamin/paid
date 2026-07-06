@@ -241,6 +241,11 @@ module Workflows
     rescue Temporalio::Error::CanceledError
       raise
     rescue => e
+      record_swallowed_non_critical_activity_failure(
+        project_id: project_id,
+        helper: "maybe_check_knowledge_staleness",
+        error: e
+      )
       Temporalio::Workflow.logger.warn(
         message: "knowledge.staleness_check_failed",
         project_id: project_id,
@@ -259,6 +264,11 @@ module Workflows
     rescue Temporalio::Error::CanceledError
       raise
     rescue => e
+      record_swallowed_non_critical_activity_failure(
+        project_id: project_id,
+        helper: "maybe_evaluate_auto_release",
+        error: e
+      )
       Temporalio::Workflow.logger.warn(
         message: "auto_release.poll_evaluation_failed",
         project_id: project_id,
@@ -277,6 +287,11 @@ module Workflows
     rescue Temporalio::Error::CanceledError
       raise
     rescue => e
+      record_swallowed_non_critical_activity_failure(
+        project_id: project_id,
+        helper: "maybe_evaluate_dependabot_auto_merge",
+        error: e
+      )
       Temporalio::Workflow.logger.warn(
         message: "dependabot_auto_merge.poll_evaluation_failed",
         project_id: project_id,
@@ -300,6 +315,11 @@ module Workflows
     rescue Temporalio::Error::CanceledError
       raise
     rescue => e
+      record_swallowed_non_critical_activity_failure(
+        project_id: project_id,
+        helper: "run_notification_rules",
+        error: e
+      )
       Temporalio::Workflow.logger.warn(
         message: "notifications.rule_evaluation_failed",
         project_id: project_id,
@@ -741,6 +761,12 @@ module Workflows
     rescue Temporalio::Error::CanceledError
       raise
     rescue => e
+      record_swallowed_non_critical_activity_failure(
+        project_id: project_id,
+        helper: "request_review",
+        error: e,
+        pr_number: pr_number
+      )
       Temporalio::Workflow.logger.warn(
         message: log_key,
         project_id: project_id,
@@ -766,6 +792,12 @@ module Workflows
     rescue Temporalio::Error::CanceledError
       raise
     rescue => e
+      record_swallowed_non_critical_activity_failure(
+        project_id: project_id,
+        helper: "maybe_trigger_dev_update",
+        error: e,
+        pr_number: pr_data[:pr_number]
+      )
       Temporalio::Workflow.logger.warn(
         message: "dev_update.trigger_failed",
         project_id: project_id,
