@@ -8,7 +8,7 @@
 - **Status**: Draft
 - **Type**: Architecture
 - **Priority**: High
-- **Related Issues**: TBD (epic + phase issues filed alongside this RDR)
+- **Related Issues**: #2820 (epic), #2821 (Phase 1), #2822 (Phase 2), #2823 (Phase 3)
 - **Related RDRs**: [RDR-028](RDR-028-interactive-chat.md) (Interactive Chat), [RDR-042](RDR-042-change-intent-records.md) (Change Intent Records), [RDR-024](RDR-024-multi-tenancy-isolation-strategy.md) (Multi-Tenancy Isolation), [RDR-023](RDR-023-automation-modularization-architecture.md) (Automation Modularization), [RDR-022](RDR-022-auto-merge-pr-strategy.md) (Auto-Merge Strategy), [RDR-014](RDR-014-learned-orchestration.md) (Learned Orchestration)
 - **Related Tests**: `spec/mcp/tools/`, `spec/services/configuration/`
 
