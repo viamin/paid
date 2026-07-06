@@ -1,5 +1,25 @@
 # frozen_string_literal: true
 
+# Regenerates the checked-in Temporal replay-history fixtures under
+# `spec/fixtures/temporal/replay_histories/`.
+#
+# IMPORTANT — these histories are SYNTHETIC, not captured from staging:
+# each workflow is run to completion inside a time-skipping
+# `Temporalio::Testing::WorkflowEnvironment` using the stubbed activity
+# return values defined in `WorkflowReplayFixtures::StubActivityState`
+# (see app/temporal/workflow_replay_fixtures.rb). They are therefore a
+# legitimate WorkflowReplayer input — the replayer guards against
+# non-deterministic command sequences regardless of how the history was
+# produced — but they only exercise the stubbed happy-path branches and
+# will NOT surface non-determinism that is driven by real activity
+# results, error/timeout paths, or genuine poller loop iterations.
+#
+# When a workflow's history shape or stubbed inputs change, re-run:
+#
+#     bin/rails runner script/temporal/export_replay_histories.rb
+#
+# and commit the regenerated JSON alongside the workflow change.
+
 ENV["RAILS_ENV"] ||= "test"
 ENV["PAID_SKIP_DATABASE_RUNTIME_ROLE_GUARD"] = "true"
 

@@ -2,6 +2,18 @@
 
 require "temporalio/activity/definition"
 
+# Stub inputs and activity return values used to generate the checked-in
+# Temporal replay-history fixtures (see
+# `spec/fixtures/temporal/replay_histories/` and
+# `script/temporal/export_replay_histories.rb`).
+#
+# These stubs produce SYNTHETIC histories, not staging captures: the
+# export script drives each workflow through a time-skipping test
+# environment using the fixed return values below. The resulting
+# fixtures are a valid WorkflowReplayer input for the non-determinism
+# guard, but they only cover the happy-path branches these stubs
+# exercise. Branching driven by real activity results, error/timeout
+# paths, or live poller iterations is NOT represented here.
 module WorkflowReplayFixtures
   TASKS = [
     { index: 0, title: "Add migration", description: "Create users table", dependencies: [], parallel_group: 0 },

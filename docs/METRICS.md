@@ -65,11 +65,14 @@ scrape_configs:
   - job_name: paid
     scrape_interval: 30s
     metrics_path: /api/metrics
+    static_configs:
+      - targets: ["paid-host:3000"]
   - job_name: paid-temporal-worker
     static_configs:
       - targets: ['temporal-worker:9464']
+```
 
-Recommended dashboard queries:
+### Recommended dashboard queries
 
 - Workflow task queue `schedule_to_start` p95 by task queue:
   `histogram_quantile(0.95, sum by (task_queue, le) (rate(temporal_workflow_task_schedule_to_start_latency_seconds_bucket[5m])))`
@@ -77,9 +80,6 @@ Recommended dashboard queries:
   `histogram_quantile(0.95, sum by (task_queue, le) (rate(temporal_activity_schedule_to_start_latency_seconds_bucket[5m])))`
 - Swallowed exhausted-retry poller failures:
   `sum by (helper, task_queue) (rate(temporal_paid_swallowed_non_critical_activity_failures_total[15m]))`
-    static_configs:
-      - targets: ["paid-host:3000"]
-```
 
 ## Scaling Signals
 
