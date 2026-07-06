@@ -1,0 +1,55 @@
+# frozen_string_literal: true
+
+module ConfigurationProfiles
+  # Base class for configuration profiles (RDR-044). A profile is a named
+  # bundle of recommended changes across one or more levels (:user, :project,
+  # :tenant). Subclasses override +id+, +summary+, and +build_plan+ to
+  # describe the posture and compute a serialized plan for a target.
+  class Profile
+    LEVELS = %i[user project tenant].freeze
+
+    class << self
+      def id(id = nil)
+        @id = id.to_s if id
+        @id
+      end
+
+      def display_name(name = nil)
+        @display_name = name if name
+        @display_name || @id&.to_s&.titleize
+      end
+
+      def description(text = nil)
+        @description = text if text
+        @description
+      end
+
+      def levels(*values)
+        @levels = values.flatten.map(&:to_sym) if values.any?
+        @levels || []
+      end
+
+      def required_policy_class(klass = nil)
+        @required_policy_class = klass if klass
+        @required_policy_class
+      end
+
+      def build_plan(_user:, _project:, _overrides: {})
+        raise NotImplementedError, "#{name} must implement .build_plan"
+      end
+
+      def summary
+        {
+          id: id,
+          name: display_name,
+          description: description,
+          levels: levels
+        }
+      end
+
+      def inherited(subclass)
+        subclass
+      end
+    end
+  end
+end
