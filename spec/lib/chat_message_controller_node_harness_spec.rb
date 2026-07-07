@@ -6,7 +6,31 @@ require "rails_helper"
 class ChatMessageControllerNodeHarness
   SCRIPT = <<~JAVASCRIPT
     const fs = require("node:fs");
-    const { marked } = require("marked");
+
+    class Renderer {
+      constructor() {
+        this.parser = {
+          parseInline(tokens) {
+            return tokens.map((token) => token.text || token.raw || "").join("");
+          }
+        };
+      }
+    }
+
+    const marked = {
+      Renderer,
+      parse(input, { renderer }) {
+        const parserContext = { parser: new Renderer().parser };
+
+        return input
+          .replace(/!\\[([^\\]]*)\\]\\(([^)]*)\\)/g, (_match, text) => renderer.image({ text }))
+          .replace(/\\[([^\\]]+)\\]\\(([^)]*)\\)/g, (_match, text, href) => (
+            renderer.link.call(parserContext, { href, tokens: [{ text }], text })
+          ))
+          .replace(/\\*\\*(.+?)\\*\\*/g, "<strong>$1</strong>")
+          .replace(/\\n/g, "<br>");
+      }
+    };
 
     const source = fs.readFileSync("app/javascript/controllers/chat_message_controller.js", "utf8");
     const transformed = source

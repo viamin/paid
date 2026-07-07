@@ -7,6 +7,7 @@ module Tools
       "Tools::GetProject",
       "Tools::GetProjectIssues",
       "Tools::GetProjectPullRequests",
+      "Tools::UpdateProjectSettings",
       "Tools::TriggerAgentRun",
       "Tools::GetAgentRun",
       "Tools::ListAgentRuns",
