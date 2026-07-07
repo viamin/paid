@@ -50,28 +50,33 @@ module ConfigurationProfiles
 
       results = { profile_id: @plan.profile_id, project_id: @project_id, applied: [], skipped: [] }
 
+      # Group changes by level so all changes targeting the same record are
+      # applied with a single `update!`. Per-change writes are both wasteful
+      # (one SQL UPDATE per attribute) and order-dependent: a record-level
+      # validation (e.g. UserSetting#validate_max_concurrent_runs_for_mode)
+      # fires on every save, so applying `run_concurrency_mode: "manual"` on
+      # its own can reject a plan that also sets `max_concurrent_runs` later.
+      grouped_changes = @plan.changes.group_by { |change| change[:level] }
+
       ActiveRecord::Base.transaction do
-        @plan.changes.each do |change|
-          level = change[:level]
+        grouped_changes.each do |level, changes|
           gate = AUTHORIZATION_GATES[level]
           unless gate
-            results[:skipped] << skipped_change(change, reason: "unknown_level")
+            changes.each { |change| results[:skipped] << skipped_change(change, reason: "unknown_level") }
             next
           end
 
           begin
             send(gate)
           rescue Pundit::NotAuthorizedError => error
-            results[:skipped] << skipped_change(change, reason: "unauthorized", detail: error.message)
+            changes.each { |change| results[:skipped] << skipped_change(change, reason: "unauthorized", detail: error.message) }
             next
           end
 
-          result = apply_change(change)
-          if result[:status] == "applied"
-            results[:applied] << result
-          else
-            results[:skipped] << result
-          end
+          target_record, permitted = target_for(level)
+          update_results = apply_changes_for_record(target_record, permitted: permitted, changes: changes)
+          results[:applied].concat(update_results[:applied])
+          results[:skipped].concat(update_results[:skipped])
         end
 
         if results[:applied].any?
@@ -140,41 +145,60 @@ module ConfigurationProfiles
       raise Pundit::NotAuthorizedError, "not authorized" unless result
     end
 
-    def apply_change(change)
-      case change[:level]
+    def target_for(level)
+      case level
       when :user
-        apply_attribute_change(record: user.settings, permitted: user_permitted_attrs, change: change)
+        [ user.settings, user_permitted_attrs ]
       when :project
-        apply_attribute_change(record: project, permitted: project_permitted_attrs, change: change)
+        [ project, project_permitted_attrs ]
       when :tenant
-        apply_attribute_change(record: account.tenant_setting!, permitted: tenant_permitted_attrs, change: change)
-      else
-        # Unreachable in practice: `call` already skips levels missing from
-        # AUTHORIZATION_GATES before ever invoking `apply_change`. Raise
-        # instead of silently skipping so a future drift between the two
-        # dispatch tables fails loudly rather than looking like a no-op apply.
-        raise ArgumentError, "unexpected change level: #{change[:level].inspect}"
+        [ account.tenant_setting!, tenant_permitted_attrs ]
       end
     end
 
-    # `change[:before]`/`change[:after]` were captured by `Profile.build_plan`
-    # at plan time, so they can go stale if the record changed between plan
-    # and apply. Re-read `before` from the live record immediately before the
-    # write and `after` from the record immediately after, so the returned
-    # audit result always reflects the actual transition applied here.
-    def apply_attribute_change(record:, permitted:, change:)
-      attribute = change[:attribute].to_s.split(".").last.to_sym
-      return skipped_change(change, reason: "unknown_attribute") unless permitted.include?(attribute)
+    # Applies every change targeting a single record with one `update!`,
+    # returning one audit entry per attribute. `change[:before]`/`change[:after]`
+    # were captured at plan time and can go stale if the record changed in
+    # between, so `before`/`after` are re-read from the live record immediately
+    # before and after the write to reflect the actual transition applied here.
+    def apply_changes_for_record(record, permitted:, changes:)
+      applied = []
+      skipped = []
+      attrs_to_write = {}
+      change_by_attr = {}
 
-      before = record.public_send(attribute)
-      record.update!(attribute => change[:after])
-      {
-        status: "applied",
-        level: change[:level],
-        attribute: change[:attribute],
-        before: before,
-        after: record.public_send(attribute)
-      }
+      changes.each do |change|
+        attribute = change[:attribute].to_s.split(".").last.to_sym
+        unless permitted.include?(attribute)
+          skipped << skipped_change(change, reason: "unknown_attribute")
+          next
+        end
+
+        attrs_to_write[attribute] = change[:after]
+        change_by_attr[attribute] = change
+      end
+
+      return { applied: applied, skipped: skipped } if attrs_to_write.empty?
+
+      before_by_attr = {}
+      attrs_to_write.each_key { |attribute| before_by_attr[attribute] = record.public_send(attribute) }
+
+      record.update!(attrs_to_write)
+
+      attrs_to_write.each_key do |attribute|
+        change = change_by_attr[attribute]
+        next if change.nil?
+
+        applied << {
+          status: "applied",
+          level: change[:level],
+          attribute: change[:attribute],
+          before: before_by_attr[attribute],
+          after: record.public_send(attribute)
+        }
+      end
+
+      { applied: applied, skipped: skipped }
     end
 
     def skipped_change(change, reason:, detail: nil)

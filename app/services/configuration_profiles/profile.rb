@@ -59,10 +59,6 @@ module ConfigurationProfiles
           levels: levels
         }
       end
-
-      def inherited(subclass)
-        subclass
-      end
     end
   end
 end

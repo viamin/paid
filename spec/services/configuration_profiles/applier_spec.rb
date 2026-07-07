@@ -194,6 +194,40 @@ RSpec.describe ConfigurationProfiles::Applier do
 
         expect(user.settings.reload.run_concurrency_mode).not_to eq("auto")
       end
+
+      it "batches changes to the same record so order-dependent validations do not reject a valid plan" do
+        # mode=auto allows a nil max_concurrent_runs. Switching to "manual"
+        # requires max_concurrent_runs, so applying these as two separate writes
+        # would raise on the first one before the second sets the cap.
+        create(:user_setting, user: user, run_concurrency_mode: "auto", max_concurrent_runs: nil)
+        plan = plan_for(changes: [
+          { level: :user, attribute: "user_settings.run_concurrency_mode", before: "auto", after: "manual" },
+          { level: :user, attribute: "user_settings.max_concurrent_runs", before: nil, after: 1 }
+        ])
+
+        result = described_class.call(plan: plan, user: user)
+
+        expect(result[:applied]).to contain_exactly(
+          hash_including(attribute: "user_settings.run_concurrency_mode", before: "auto", after: "manual"),
+          hash_including(attribute: "user_settings.max_concurrent_runs", before: nil, after: 1)
+        )
+        expect(user.settings.reload).to have_attributes(run_concurrency_mode: "manual", max_concurrent_runs: 1)
+      end
+
+      it "applies a full multi-change profile for a user with no persisted UserSetting" do
+        plan = ConfigurationProfiles::TeamCollaborativeProfile.build_plan(user: user)
+
+        expect { described_class.call(plan: plan, user: user) }.to(
+          change(UserSetting, :count).by(1).and(change(TenantSetting, :count).by(1))
+        )
+
+        expect(user.settings).to have_attributes(
+          run_concurrency_mode: "manual",
+          max_concurrent_runs: 1,
+          auto_pick_skip_labels: [ "needs-review" ]
+        )
+        expect(account.tenant_setting.max_concurrent_runs).to eq(3)
+      end
     end
   end
 end
