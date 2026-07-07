@@ -14,6 +14,7 @@ RSpec.describe Tools::Registry do
       update_user_settings
       update_tenant_settings
       update_project_settings
+      apply_configuration_profile
       create_provider_api_key
       update_provider_api_key
       remove_provider_api_key
@@ -96,6 +97,9 @@ RSpec.describe Tools::Registry do
         "cancel_agent_run",
         "record_change_intent",
         "update_user_settings",
+        "list_configuration_profiles",
+        "plan_configuration_profile",
+        "apply_configuration_profile",
         "search_intents",
         "get_intent"
       )
