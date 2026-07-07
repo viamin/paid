@@ -145,8 +145,7 @@ module Workflows
             parent_issue_id: issue_id,
             sub_tasks: sub_tasks
           },
-          timeout: 120,
-          retry_policy: NO_RETRY
+          **create_sub_issues_activity_options
         )
 
         created_issues = create_result[:created_issues]
@@ -248,6 +247,16 @@ module Workflows
 
     def planning_outcome_for(tasks)
       self.class.planning_outcome_for(tasks)
+    end
+
+    # CreateSubIssuesActivity is now idempotent (#2770), so new executions use
+    # the default retry policy instead of NO_RETRY. Replay-safe via a patch:
+    # in-flight executions that predate the fix keep their original no-retry
+    # behavior to stay deterministic.
+    def create_sub_issues_activity_options
+      options = { timeout: 120 }
+      options[:retry_policy] = NO_RETRY unless Temporalio::Workflow.patched("create-sub-issues-idempotent-retry-v1")
+      options
     end
 
     def planning_failure_outcome_for(step)

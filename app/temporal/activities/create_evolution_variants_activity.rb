@@ -27,7 +27,8 @@ module Activities
       variants = PromptEvolution::CreateVariants.call(
         prompt: prompt,
         mutations: mutations,
-        project: project
+        project: project,
+        idempotency_key: idempotency_key_for(prompt_id, mutations_data)
       )
 
       {
@@ -36,6 +37,15 @@ module Activities
         variant_count: variants.size,
         review_required: prompt.requires_review?
       }
+    end
+
+    private
+
+    # Stable across Temporal retries: derived from the prompt id and the
+    # exact mutation payloads Temporal replays, so a retry reuses the
+    # PromptVersions a previous attempt already created (#2770).
+    def idempotency_key_for(prompt_id, mutations_data)
+      Activities::IdempotencyKey.compute(prompt_id, mutations_data)
     end
   end
 end

@@ -708,6 +708,7 @@ RSpec.describe Workflows::FeatureOrchestrationWorkflow, :no_db do
       info: workflow_info,
       now: Time.current
     )
+    allow(Temporalio::Workflow).to receive(:patched)
     allow(Temporalio::Workflow).to receive(:execute_child_workflow)
   end
 
