@@ -2,6 +2,7 @@
 
 require "rails_helper"
 require Rails.root.join("db/migrate/20260509101016_create_coordination_policies")
+require Rails.root.join("db/migrate/20260704043457_add_idempotency_key_to_evolution_tables")
 
 RSpec.describe CreateCoordinationPolicies, :aggregate_failures do
   self.use_transactional_tests = false
@@ -17,7 +18,10 @@ RSpec.describe CreateCoordinationPolicies, :aggregate_failures do
     example.run
   ensure
     migration.down if connection.table_exists?(:coordination_policy_versions) || connection.table_exists?(:coordination_policies)
-    migration.up if policies_existed || versions_existed
+    if policies_existed || versions_existed
+      migration.up
+      restore_columns_added_by_later_migrations
+    end
   end
 
   it "creates the policy catalog and version tables with indexes, comments, and tenant RLS" do
@@ -43,6 +47,17 @@ RSpec.describe CreateCoordinationPolicies, :aggregate_failures do
   end
 
   private
+
+  # +CreateCoordinationPolicies+ recreates the tables in their original form,
+  # which predates later migrations that added columns production code now
+  # depends on (e.g. +idempotency_key+ on +coordination_policy_versions+, added
+  # by +AddIdempotencyKeyToEvolutionTables+). Re-applying those later migrations
+  # restores the canonical schema so downstream specs see the columns they
+  # expect. Each migration is idempotent (guarded on column/index existence),
+  # so this is safe whether or not the columns are already present.
+  def restore_columns_added_by_later_migrations
+    AddIdempotencyKeyToEvolutionTables.new.up
+  end
 
   def expect_policy_schema
     columns = connection.columns(:coordination_policies).index_by(&:name)

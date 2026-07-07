@@ -35,3 +35,8 @@ workflows:
       introduced_on: "2026-05-22"
     planning-review-wait-condition-v1:
       introduced_on: "2026-07-04"
+    create-sub-issues-idempotent-retry-v1:
+      introduced_on: "2026-07-04"
+  Workflows::FeatureOrchestrationWorkflow:
+    create-sub-issues-idempotent-retry-v1:
+      introduced_on: "2026-07-04"

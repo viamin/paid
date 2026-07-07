@@ -25,6 +25,35 @@ RSpec.describe Tools::Registry do
         ui_call: ->(user) { Pundit.policy_scope!(user, AgentRun).recent.limit(20).to_a }
       },
       {
+        tool_name: "list_configuration_profiles",
+        denied_user: -> { nil },
+        arguments: -> { {} },
+        ui_call: ->(user) {
+          raise Tools::UnauthorizedError, "Tool calls require an authenticated user" if user.blank?
+
+          ConfigurationProfiles::Registry.summaries
+        }
+      },
+      {
+        tool_name: "plan_configuration_profile",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> { { profile_id: "solo_fully_automated", project_id: project.id } },
+        ui_call: ->(user) {
+          Pundit.policy_scope!(user, Project).find(project.id)
+          ConfigurationProfiles::SoloFullyAutomatedProfile.build_plan(user:, project_id: project.id)
+        }
+      },
+      {
+        tool_name: "apply_configuration_profile",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> { { profile_id: "solo_fully_automated", project_id: project.id, confirmed: true } },
+        ui_call: ->(user) {
+          Pundit.policy_scope!(user, Project).find(project.id)
+          plan = ConfigurationProfiles::SoloFullyAutomatedProfile.build_plan(user:, project_id: project.id)
+          ConfigurationProfiles::Applier.call(plan:, user:, project_id: project.id)
+        }
+      },
+      {
         tool_name: "get_project",
         denied_user: -> { create(:user, :member, account: other_account) },
         arguments: -> { { project_id: project.id } },

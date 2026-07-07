@@ -31,7 +31,8 @@ module StrategyExperiments
           control_config: encoded(control_config),
           min_samples_per_variant: options.fetch(:min_samples_per_variant, 30),
           confidence_threshold: options.fetch(:confidence_threshold, 0.95),
-          traffic_percentage: options.fetch(:traffic_percentage, 100)
+          traffic_percentage: options.fetch(:traffic_percentage, 100),
+          idempotency_key: options[:idempotency_key]
         )
 
         experiment.strategy_experiment_variants.create!(

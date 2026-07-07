@@ -67,6 +67,16 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(agent_run.configuration_bundle).to be_present
     end
 
+    it "reuses the AgentRun when retried with the same workflow_id" do
+      base_input = { project_id: project.id, issue_id: issue.id, workflow_id: "wf-idempotent-123" }
+
+      first = activity.execute(**base_input)
+      second = activity.execute(**base_input)
+
+      expect(second[:agent_run_id]).to eq(first[:agent_run_id])
+      expect(AgentRun.where(temporal_workflow_id: "wf-idempotent-123").count).to eq(1)
+    end
+
     it "returns the project max_execution_seconds in the result" do
       project.update!(max_execution_seconds: 900)
       result = activity.execute(project_id: project.id, issue_id: issue.id)
