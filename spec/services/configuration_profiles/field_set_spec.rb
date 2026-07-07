@@ -62,6 +62,32 @@ RSpec.describe ConfigurationProfiles::FieldSet do
       expect(described_class.read(project.reload, :review_paid_agent)).to be true
     end
 
+    it "syncs the top-level review toggle on when a method is enabled" do
+      expect(project.effective_review_settings["enabled"]).to be false
+
+      described_class.write(project, :review_paid_agent, true)
+
+      expect(project.review_settings["enabled"]).to be true
+      expect(Automation::Configuration::AutoReview.from_project(project).enabled?).to be true
+    end
+
+    it "clears the top-level review toggle when no method remains enabled" do
+      described_class.write(project, :review_paid_agent, true)
+      described_class.write(project, :review_copilot, false)
+      described_class.write(project, :review_paid_agent, false)
+
+      expect(project.review_settings["enabled"]).to be false
+      expect(Automation::Configuration::AutoReview.from_project(project).bot_request_chain).to eq([])
+    end
+
+    it "keeps the top-level toggle on while another method stays enabled" do
+      described_class.write(project, :review_paid_agent, true)
+      described_class.write(project, :review_copilot, true)
+      described_class.write(project, :review_paid_agent, false)
+
+      expect(project.review_settings["enabled"]).to be true
+    end
+
     it "round-trips the quality gate flag" do
       described_class.write(project, :quality_gate_enabled, true)
       project.save!

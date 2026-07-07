@@ -172,6 +172,13 @@ module ConfigurationProfiles
         settings["methods"] ||= {}
         settings["methods"][method_name] ||= {}
         settings["methods"][method_name]["enabled"] = enabled
+        # Keep the top-level review toggle in sync with the method set so the
+        # auto-review runtime (AutoReview#bot_request_chain gates on
+        # ReviewSettings#enabled?, i.e. review_settings["enabled"]) and the
+        # field-set view agree. Otherwise a profile that enables a review
+        # method would leave reviews globally disabled, so no review is ever
+        # requested despite FieldSet.read reporting the method as enabled.
+        settings["enabled"] = settings["methods"].values.any? { |config| config.is_a?(Hash) && config["enabled"] == true }
         project.review_settings = settings
       end
 
