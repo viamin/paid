@@ -18,7 +18,7 @@ module ConfigurationProfiles
       end
     end
 
-    def initialize(activity_event, actor)
+    def initialize(activity_event, actor:)
       unless activity_event.is_a?(AccountActivityEvent)
         raise ArgumentError, "Expected an AccountActivityEvent, got #{activity_event.class}"
       end

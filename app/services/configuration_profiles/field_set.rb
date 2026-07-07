@@ -135,7 +135,7 @@ module ConfigurationProfiles
       # Reads every field into a {String} => value hash. Used for snapshots,
       # posture matching, and activity audit metadata.
       def snapshot(project)
-        keys.to_h { |key| [key.to_s, read(project, key)] }
+        keys.to_h { |key| [ key.to_s, read(project, key) ] }
       end
 
       # Values considered "equivalent" for posture matching — normalizes

@@ -59,8 +59,8 @@ module ConfigurationProfiles
         profile_key: plan.reference&.to_s,
         project_name: project.name,
         changed_fields: plan.applied_fields.map(&:to_s),
-        previous_values: plan.changes.to_h { |change| [change.field.to_s, change.from] },
-        applied_values: plan.changes.to_h { |change| [change.field.to_s, change.to] }
+        previous_values: plan.changes.to_h { |change| [ change.field.to_s, change.from ] },
+        applied_values: plan.changes.to_h { |change| [ change.field.to_s, change.to ] }
       }.merge(extra_metadata)
     end
   end

@@ -8,6 +8,7 @@ RSpec.describe ConfigurationProfiles::PostureDescriber do
     # GitHub App credential as an external dependency in specs.
     allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
   end
+
   describe ".describe_current_posture" do
     it "reports an exact match when the project matches a profile" do
       profile = ConfigurationProfiles::Registry.find(:observe_only)

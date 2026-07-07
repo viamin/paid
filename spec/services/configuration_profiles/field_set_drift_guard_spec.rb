@@ -2,14 +2,14 @@
 
 require "rails_helper"
 
-RSpec.describe "ConfigurationProfiles drift regression guard" do
+RSpec.describe ConfigurationProfiles::FieldSet do
   # This spec is the durable version of the coverage check enforced at profile
   # construction time. It exists so that adding a new operating-mode-relevant
   # flag to Project CANNOT silently leave profiles stale: the guard fails
   # loudly until every profile covers the new field (or the field is explicitly
   # declared out of scope in FieldSet).
   describe "profile coverage of the operating-mode field set" do
-    let(:field_keys) { ConfigurationProfiles::FieldSet.keys.map(&:to_s) }
+    let(:field_keys) { described_class.keys.map(&:to_s) }
 
     it "every registered profile covers exactly the field set" do
       ConfigurationProfiles::Registry.all.each do |profile|
@@ -32,7 +32,7 @@ RSpec.describe "ConfigurationProfiles drift regression guard" do
     let(:columns) { Project.columns_hash }
 
     it "every attribute field references a real projects column" do
-      ConfigurationProfiles::FieldSet.all.each do |field|
+      described_class.all.each do |field|
         next unless field.column
 
         expect(columns).to include(field.column),
@@ -41,7 +41,7 @@ RSpec.describe "ConfigurationProfiles drift regression guard" do
     end
 
     it "boolean attribute fields map to boolean columns" do
-      ConfigurationProfiles::FieldSet.all.each do |field|
+      described_class.all.each do |field|
         next unless field.kind == :boolean_attribute
 
         expect(columns[field.column].type).to eq(:boolean),
@@ -55,7 +55,7 @@ RSpec.describe "ConfigurationProfiles drift regression guard" do
         "merge_method" => Project::MERGE_METHODS,
         "auto_release_granularity" => Project::AUTO_RELEASE_GRANULARITIES
       }
-      ConfigurationProfiles::FieldSet.all.each do |field|
+      described_class.all.each do |field|
         next unless field.kind == :enum_attribute
 
         expect(field.options).to match_array(allowed.fetch(field.column)),
@@ -64,7 +64,7 @@ RSpec.describe "ConfigurationProfiles drift regression guard" do
     end
 
     it "adoption_mode options match Project::ADOPTION_MODES" do
-      field = ConfigurationProfiles::FieldSet.lookup(:adoption_mode)
+      field = described_class.lookup(:adoption_mode)
       expect(field.options).to match_array(Project::ADOPTION_MODES)
     end
   end
@@ -74,9 +74,9 @@ RSpec.describe "ConfigurationProfiles drift regression guard" do
     # mode-relevant) column to projects without adding it to FieldSet. The
     # guard then fails until the field is either covered by profiles or
     # explicitly exempted in FieldSet::EXCLUDED_ATTRIBUTE_COLUMNS.
-    let(:patterns) { ConfigurationProfiles::FieldSet::MODE_RELEVANT_COLUMN_PATTERNS }
-    let(:covered) { ConfigurationProfiles::FieldSet.attribute_columns }
-    let(:excluded) { ConfigurationProfiles::FieldSet.excluded_attribute_columns }
+    let(:patterns) { described_class::MODE_RELEVANT_COLUMN_PATTERNS }
+    let(:covered) { described_class.attribute_columns }
+    let(:excluded) { described_class.excluded_attribute_columns }
     let(:accounted_for) { covered + excluded }
 
     it "every mode-relevant projects column is covered or explicitly excluded" do
@@ -93,7 +93,7 @@ RSpec.describe "ConfigurationProfiles drift regression guard" do
     end
 
     it "every excluded column still exists on the projects table" do
-      ConfigurationProfiles::FieldSet::EXCLUDED_ATTRIBUTE_COLUMNS.each_key do |column|
+      described_class::EXCLUDED_ATTRIBUTE_COLUMNS.each_key do |column|
         expect(Project.columns_hash).to include(column),
           "#{column} is exempted in FieldSet but no longer exists on projects"
       end
