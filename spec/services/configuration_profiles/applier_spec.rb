@@ -188,6 +188,27 @@ RSpec.describe ConfigurationProfiles::Applier do
         expect(result[:skipped]).to contain_exactly(hash_including(level: :tenant, reason: "unauthorized"))
       end
 
+      it "treats policy helpers that raise as unauthorized skips instead of crashing the apply" do
+        plan = plan_for(changes: [
+          { level: :user, attribute: "user_settings.run_concurrency_mode", before: "manual", after: "auto" }
+        ])
+
+        stub_const("UserSettingPolicy", Class.new do
+          def initialize(*); end
+
+          def update?
+            raise Pundit::NotAuthorizedError, "denied"
+          end
+        end)
+
+        result = described_class.call(plan: plan, user: user)
+
+        expect(result[:applied]).to be_empty
+        expect(result[:skipped]).to contain_exactly(
+          hash_including(level: :user, reason: "unauthorized", detail: "not authorized")
+        )
+      end
+
       it "records account activity only when at least one change is applied" do
         plan = plan_for(changes: [
           { level: :user, attribute: "user_settings.not_a_real_attribute", before: nil, after: "x" }

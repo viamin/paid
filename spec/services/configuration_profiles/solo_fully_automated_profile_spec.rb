@@ -64,6 +64,12 @@ RSpec.describe ConfigurationProfiles::SoloFullyAutomatedProfile do
       expect(tenant_change[:after]).to eq(7)
     end
 
+    it "rejects unknown overrides instead of silently ignoring them" do
+      expect {
+        described_class.build_plan(user: create(:user), overrides: { typo_key: 1 })
+      }.to raise_error(ArgumentError, /does not accept overrides/)
+    end
+
     it "declares the user and tenant levels only" do
       plan = described_class.build_plan(user: create(:user))
 

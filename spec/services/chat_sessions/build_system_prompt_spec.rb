@@ -32,6 +32,7 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
 
       it "includes usage guidance" do
         expect(prompt).to include("use the available tools")
+        expect(prompt).to include("prefer configuration profiles")
         expect(prompt).to include("create a Change Intent Record")
         expect(prompt).to include("Be concise and technical")
       end

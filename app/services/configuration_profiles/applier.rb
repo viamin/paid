@@ -7,6 +7,8 @@ module ConfigurationProfiles
   # unmet so the user is asked to clear them first), and records a per-change
   # result for the chat reply.
   class Applier
+    Target = Data.define(:project, :project_id)
+
     # Raised when one or more of the plan's declared prerequisites is not met.
     # Carries the unmet prerequisite hashes so callers can surface their
     # `description:` to the user.
@@ -32,22 +34,34 @@ module ConfigurationProfiles
       "github_app_installed" => ->(account, _project) { account.github_installations.active.exists? }
     }.freeze
 
-    def self.call(...)
-      new(...).call
+    def self.call(plan:, user:, project: nil, project_id: nil)
+      target = resolve_project_target(user:, plan:, project:, project_id:)
+      new(plan:, user:, target:).call
     end
 
-    def initialize(plan:, user:, project: nil, project_id: nil)
+    def self.resolve_project_target(user:, plan:, project:, project_id:)
+      effective_project_id = project_id || project&.id || plan.project_id
+      resolved_project = project || resolve_project_for(user:, project_id: effective_project_id)
+
+      Target.new(
+        project: resolved_project,
+        project_id: resolved_project&.id || effective_project_id
+      )
+    end
+
+    def self.resolve_project_for(user:, project_id:)
+      return nil if project_id.blank?
+
+      Project.where(account: user.account).find_by(id: project_id)
+    end
+    private_class_method :resolve_project_target, :resolve_project_for
+
+    def initialize(plan:, user:, target:)
       @plan = plan
       @user = user
       @account = user.account
-      # An explicit `project:`/`project_id:` wins, but fall back to the
-      # project_id the plan already carries. In the plan -> confirm -> apply
-      # flow (#2822) callers hand the stored/serialized plan back here without
-      # re-passing the project out-of-band, so resolving from `plan.project_id`
-      # keeps a project-scoped plan from failing with "project_id is required".
-      effective_project_id = project_id || plan.project_id
-      @project = project || resolve_project(effective_project_id)
-      @project_id = @project&.id || effective_project_id
+      @project = target.project
+      @project_id = target.project_id
     end
 
     def call
@@ -107,12 +121,6 @@ module ConfigurationProfiles
 
     attr_reader :user, :account, :project, :project_id, :plan
 
-    def resolve_project(project_id)
-      return nil if project_id.blank?
-
-      Project.where(account: account).find_by(id: project_id)
-    end
-
     def validate_target!
       raise ArgumentError, "Profile not found: #{plan.profile_id}" unless ConfigurationProfiles::Registry.find(plan.profile_id)
       if plan.levels.include?(:project) && project.nil?
@@ -147,8 +155,9 @@ module ConfigurationProfiles
     end
 
     def policy_allows?(record:, query:, policy_class:)
-      result = policy_class.new(user, record).public_send(query)
-      raise Pundit::NotAuthorizedError, "not authorized" unless result
+      return if Tools::BaseTool.policy_allows?(user:, record:, query:, policy_class:)
+
+      raise Pundit::NotAuthorizedError, "not authorized"
     end
 
     def target_for(level)

@@ -7,6 +7,14 @@ module ConfigurationProfiles
   # budgets). Skips project-level overrides — that posture is the caller's
   # project-level decision.
   class SoloFullyAutomatedProfile < Profile
+    OVERRIDE_KEYS = %i[
+      run_concurrency_mode
+      max_concurrent_runs
+      default_poll_interval_seconds
+      auto_pick_skip_labels
+      max_tokens_per_run
+    ].freeze
+
     id "solo_fully_automated"
     display_name "Solo Fully Automated"
     description "Configure Paid to pick up issues and ship PRs end-to-end without supervision. " \
@@ -18,6 +26,10 @@ module ConfigurationProfiles
       current_tenant = current_tenant_setting(user)
 
       overrides = (overrides || {}).symbolize_keys
+      unknown_keys = overrides.keys - OVERRIDE_KEYS
+      if unknown_keys.any?
+        raise ArgumentError, "SoloFullyAutomatedProfile does not accept overrides: #{unknown_keys.inspect}"
+      end
 
       user_after = {
         run_concurrency_mode: "auto",
