@@ -13,6 +13,7 @@ RSpec.describe Tools::Registry do
       remove_account_membership
       update_user_settings
       update_tenant_settings
+      update_project_settings
       create_provider_api_key
       update_provider_api_key
       remove_provider_api_key

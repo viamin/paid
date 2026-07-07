@@ -54,6 +54,16 @@ RSpec.describe Tools::Registry do
         }
       },
       {
+        tool_name: "update_project_settings",
+        denied_user: -> { create(:user, :member, account: account) },
+        arguments: -> { { project_id: project.id, settings: { paused: true }, confirmed: true } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :update?, policy_class: ProjectPolicy)
+          project_record.update!(paused: true)
+        }
+      },
+      {
         tool_name: "trigger_agent_run",
         denied_user: -> {
           project
