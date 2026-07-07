@@ -44,5 +44,23 @@ RSpec.describe ConfigurationProfiles::TeamCollaborativeProfile do
       expect(plan.prerequisites).to contain_exactly(hash_including(key: "github_app_installed"))
       expect(plan.questions).to be_empty
     end
+
+    it "rejects overrides so an unsupported override is not silently ignored" do
+      user = create(:user)
+
+      expect {
+        described_class.build_plan(user: user, overrides: { max_concurrent_runs: 5 })
+      }.to raise_error(ArgumentError, /does not accept overrides/)
+    end
+
+    it "builds the fixed posture when no overrides are given" do
+      plan = described_class.build_plan(user: create(:user), overrides: {})
+
+      expect(plan.changes).to include(
+        hash_including(attribute: "user_settings.run_concurrency_mode", after: "manual"),
+        hash_including(attribute: "user_settings.max_concurrent_runs", after: 1),
+        hash_including(attribute: "tenant_settings.max_concurrent_runs", after: 3)
+      )
+    end
   end
 end

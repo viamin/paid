@@ -40,8 +40,14 @@ module ConfigurationProfiles
       @plan = plan
       @user = user
       @account = user.account
-      @project = project || resolve_project(project_id)
-      @project_id = @project&.id || project_id
+      # An explicit `project:`/`project_id:` wins, but fall back to the
+      # project_id the plan already carries. In the plan -> confirm -> apply
+      # flow (#2822) callers hand the stored/serialized plan back here without
+      # re-passing the project out-of-band, so resolving from `plan.project_id`
+      # keeps a project-scoped plan from failing with "project_id is required".
+      effective_project_id = project_id || plan.project_id
+      @project = project || resolve_project(effective_project_id)
+      @project_id = @project&.id || effective_project_id
     end
 
     def call

@@ -25,6 +25,16 @@ module ConfigurationProfiles
       current_tenant = current_tenant_setting(user)
       overrides = (overrides || {}).symbolize_keys
 
+      # This profile encodes a fixed, opinionated posture (manual runs, a
+      # single concurrent run per project, review-label exclusions), so it
+      # does not accept per-attribute overrides the way SoloFullyAutomated
+      # Profile does. Accepting an override here but ignoring it would apply
+      # the hard-coded defaults instead (silently wrong), so reject explicitly
+      # and fail loudly.
+      unless overrides.empty?
+        raise ArgumentError, "TeamCollaborativeProfile does not accept overrides (got: #{overrides.keys.inspect})"
+      end
+
       changes = []
       changes << {
         level: :user,

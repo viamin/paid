@@ -123,6 +123,35 @@ RSpec.describe ConfigurationProfiles::Applier do
         expect(project.reload.poll_interval_seconds).to eq(90)
       end
 
+      it "resolves the project from a serialized plan when none is passed out-of-band" do
+        project = create(:project, account: account, poll_interval_seconds: 60)
+        source = plan_for(
+          changes: [ { level: :project, attribute: "project.poll_interval_seconds", before: 60, after: 90 } ],
+          project_id: project.id
+        )
+
+        # Simulate the plan -> confirm -> apply round-trip: the plan is
+        # serialized (e.g. to JSON) and handed back to the applier without
+        # the project passed out-of-band. The applier must resolve the target
+        # from the project_id carried on the plan itself.
+        serialized = source.to_h
+        restored = ConfigurationProfiles::Plan.new(
+          profile_id: serialized[:profile_id],
+          project_id: serialized[:project_id],
+          changes: serialized[:changes],
+          prerequisites: serialized[:prerequisites],
+          questions: serialized[:questions]
+        )
+
+        result = described_class.call(plan: restored, user: user)
+
+        expect(result[:applied]).to contain_exactly(
+          hash_including(status: "applied", level: :project, before: 60, after: 90)
+        )
+        expect(result[:project_id]).to eq(project.id)
+        expect(project.reload.poll_interval_seconds).to eq(90)
+      end
+
       it "skips a change whose attribute is not in the permitted list" do
         plan = plan_for(changes: [
           { level: :user, attribute: "user_settings.not_a_real_attribute", before: nil, after: "x" }
