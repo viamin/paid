@@ -51,20 +51,12 @@ module Tools
     private
 
     def plan_payload_for(profile_id:, project_id:, overrides:, plan_payload:)
-      return build_fresh_plan(profile_id:, project_id:, overrides:) if plan_payload.blank?
-
-      if plan_payload[:profile_id].to_s != profile_id.to_s && plan_payload["profile_id"].to_s != profile_id.to_s
-        raise ArgumentError, "plan profile_id does not match profile_id"
-      end
-
-      effective_project_id = project_id_for(project_id)
-      if effective_project_id.present? &&
-          plan_payload[:project_id].to_i != effective_project_id.to_i &&
-          plan_payload["project_id"].to_i != effective_project_id.to_i
-        raise ArgumentError, "plan project_id does not match project_id"
-      end
-
-      plan_payload.deep_symbolize_keys
+      validate_plan_context!(profile_id:, project_id:, plan_payload:)
+      build_fresh_plan(
+        profile_id:,
+        project_id:,
+        overrides: effective_overrides(profile_id:, overrides:, plan_payload:)
+      )
     end
 
     def build_fresh_plan(profile_id:, project_id:, overrides:)
@@ -73,6 +65,49 @@ module Tools
         project_id:,
         overrides:
       ).deep_symbolize_keys
+    end
+
+    def validate_plan_context!(profile_id:, project_id:, plan_payload:)
+      return if plan_payload.blank?
+
+      if plan_payload[:profile_id].to_s != profile_id.to_s && plan_payload["profile_id"].to_s != profile_id.to_s
+        raise ArgumentError, "plan profile_id does not match profile_id"
+      end
+
+      effective_project_id = project_id_for(project_id)
+      return if effective_project_id.blank?
+
+      planned_project_id = plan_payload[:project_id] || plan_payload["project_id"]
+      raise ArgumentError, "plan project_id does not match project_id" if planned_project_id.to_i != effective_project_id.to_i
+    end
+
+    def effective_overrides(profile_id:, overrides:, plan_payload:)
+      explicit_overrides = overrides.deep_symbolize_keys
+      return explicit_overrides if plan_payload.blank?
+
+      inferred_overrides = infer_overrides_from_plan(
+        profile: ConfigurationProfiles::Registry.find(profile_id),
+        plan_payload:
+      )
+
+      inferred_overrides.merge(explicit_overrides)
+    end
+
+    def infer_overrides_from_plan(profile:, plan_payload:)
+      return {} if profile.blank?
+
+      serialized_plan = plan_payload.deep_symbolize_keys
+      changes = serialized_plan[:changes] || []
+
+      profile.override_keys.each_with_object({}) do |key, inferred|
+        matching_values = changes.filter_map do |change|
+          next unless change[:attribute].to_s.split(".").last == key.to_s
+
+          change[:after]
+        end.uniq
+
+        inferred[key] = matching_values.first if matching_values.one?
+      end
     end
 
     def build_plan(serialized_plan)

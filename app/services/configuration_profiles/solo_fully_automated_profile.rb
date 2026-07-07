@@ -21,6 +21,8 @@ module ConfigurationProfiles
                 "Best for solo developers who want maximum automation."
     levels :user, :tenant
 
+    def self.override_keys = OVERRIDE_KEYS
+
     def self.build_plan(user:, project: nil, project_id: nil, overrides: {})
       current_user_settings = current_user_settings(user)
       current_tenant = current_tenant_setting(user)

@@ -38,6 +38,10 @@ module ConfigurationProfiles
         raise NotImplementedError, "#{name} must implement .build_plan"
       end
 
+      def override_keys
+        []
+      end
+
       # Read-only accessors for +build_plan+ implementations. Plan building must
       # never create rows (the profile "recommend"/"plan" tools execute no
       # writes), so these return an unsaved default record when none exists yet
