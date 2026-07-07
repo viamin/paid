@@ -18,13 +18,14 @@ module PromptEvolution
   #     created_by_user: system_user
   #   )
   class CreateVariants
-    attr_reader :prompt, :mutations, :created_by_user, :project
+    attr_reader :prompt, :mutations, :created_by_user, :project, :idempotency_key
 
-    def initialize(prompt:, mutations:, created_by_user: nil, project: nil)
+    def initialize(prompt:, mutations:, created_by_user: nil, project: nil, idempotency_key: nil)
       @prompt = prompt
       @mutations = Array(mutations)
       @created_by_user = created_by_user
       @project = project || prompt.project
+      @idempotency_key = idempotency_key
     end
 
     def self.call(...)
@@ -56,10 +57,23 @@ module PromptEvolution
         created_by_user: created_by_user,
         parent_version: parent
       }
-      # Always start evolved variants as pending so history records the
-      # review-workflow lineage; auto-promote flips the first one to approved
-      # when the review gate is off.
-      prompt.create_pending_version!(attributes)
+      # Idempotent on retry: when an idempotency key is supplied, reuse the
+      # PromptVersion a previous attempt already created for this mutation
+      # instead of inserting a duplicate (#2770). Always start evolved
+      # variants as pending so history records the review-workflow lineage;
+      # auto-promote flips the first one to approved when the gate is off.
+      if idempotency_key
+        prompt.find_or_create_pending_version_by!(
+          idempotency_key: variant_idempotency_key(mutation),
+          **attributes
+        )
+      else
+        prompt.create_pending_version!(attributes)
+      end
+    end
+
+    def variant_idempotency_key(mutation)
+      Activities::IdempotencyKey.compute(idempotency_key, mutation.template, mutation.strategy)
     end
 
     def auto_promote_first(variants)

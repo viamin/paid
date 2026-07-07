@@ -89,6 +89,30 @@ class Prompt < ApplicationRecord
     end
   end
 
+  # Idempotent variant of +create_pending_version!+: when a previous attempt
+  # already created a version with the given +idempotency_key+ (e.g. a Temporal
+  # activity retry after a worker crash), reuse it instead of inserting a
+  # duplicate (#2770). The version number is assigned only on first creation.
+  #
+  # @param idempotency_key [String] Stable dedup key for this version
+  # @param attributes [Hash] Attributes for the new PromptVersion
+  # @return [PromptVersion] The existing or newly created (unpromoted) version
+  def find_or_create_pending_version_by!(idempotency_key:, **attributes)
+    existing = prompt_versions.find_by(idempotency_key: idempotency_key)
+    return existing if existing
+
+    with_lock do
+      existing = prompt_versions.find_by(idempotency_key: idempotency_key)
+      return existing if existing
+
+      next_version = (prompt_versions.maximum(:version) || 0) + 1
+      safe_attributes = attributes.except(:version, "version")
+      safe_attributes[:review_status] ||= "pending"
+
+      prompt_versions.create!(safe_attributes.merge(version: next_version, idempotency_key: idempotency_key))
+    end
+  end
+
   def pending_reviews
     prompt_versions.pending_review
   end

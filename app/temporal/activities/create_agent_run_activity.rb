@@ -98,7 +98,7 @@ module Activities
       attrs[:parent_workflow_id] = input[:parent_workflow_id] if input[:parent_workflow_id]
 
       agent_run = ActiveRecord::Base.transaction do
-        created_run = AgentRun.create!(**attrs)
+        created_run = find_or_create_agent_run(attrs)
         attach_marketplace_entries(
           agent_run: created_run,
           manual_entry_ids: manual_marketplace_entry_ids,
@@ -176,6 +176,21 @@ module Activities
         type: "UntrustedIssue",
         non_retryable: true
       )
+    end
+
+    # Idempotent on Temporal retry: when the workflow passes a real
+    # `temporal_workflow_id`, reuse the AgentRun a previous attempt already
+    # created instead of inserting a duplicate. The CLAIMED_SENTINEL fallback
+    # (and a nil workflow id) cannot be used as a dedup key, so those paths
+    # fall back to a plain create. Marketplace attachment and the post-create
+    # setup steps are all idempotent when re-run against the same run.
+    def find_or_create_agent_run(attrs)
+      workflow_id = attrs[:temporal_workflow_id]
+      return AgentRun.create!(**attrs) if workflow_id.blank? || workflow_id == AgentRun::CLAIMED_SENTINEL
+
+      AgentRun.find_or_create_by!(temporal_workflow_id: workflow_id) do |run|
+        run.assign_attributes(attrs)
+      end
     end
 
     def resolve_runner_selection(project:, requested_agent_type:, requested_runner_id:, goal:, respect_requested: true)

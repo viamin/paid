@@ -51,4 +51,12 @@ RSpec.describe Activities::PersistStrategyCandidatesActivity do
     expect(result[:candidate_ids]).not_to be_empty
     expect(OrchestrationStrategy.find(result[:candidate_ids].first)).not_to be_active
   end
+
+  it "reuses candidates when retried with identical input" do
+    first = activity.execute(input)
+    second = activity.execute(input)
+
+    expect(second[:candidate_ids]).to match_array(first[:candidate_ids])
+    expect { activity.execute(input) }.not_to change { account.orchestration_strategies.by_type(strategy.strategy_type).count }
+  end
 end

@@ -13,10 +13,11 @@ module CoordinationPolicyEvolution
       new(...).call
     end
 
-    def initialize(policy_snapshot:, account:, mutations:)
+    def initialize(policy_snapshot:, account:, mutations:, idempotency_key: nil)
       @policy_snapshot = policy_snapshot.deep_symbolize_keys
       @account = account
       @mutations = Array(mutations)
+      @idempotency_key = idempotency_key
 
       validate_policy_type!
     end
@@ -29,7 +30,10 @@ module CoordinationPolicyEvolution
           policy = coordination_policy
           next_version = next_version_number
 
-          mutations.map do |mutation|
+          mutations.map.with_index do |mutation, index|
+            candidate = find_existing_version(policy, index)
+            next candidate if candidate
+
             candidate = policy.coordination_policy_versions.create!(
               version: next_version,
               status: "draft",
@@ -37,7 +41,8 @@ module CoordinationPolicyEvolution
               parameters: candidate_parameters(mutation),
               metadata: candidate_metadata(mutation),
               reasoning: mutation.reasoning,
-              llm_prompt: policy_snapshot[:llm_prompt]
+              llm_prompt: policy_snapshot[:llm_prompt],
+              idempotency_key: candidate_idempotency_key(index)
             )
             next_version += 1
             candidate
@@ -48,7 +53,22 @@ module CoordinationPolicyEvolution
 
     private
 
-    attr_reader :policy_snapshot, :account, :mutations
+    attr_reader :policy_snapshot, :account, :mutations, :idempotency_key
+
+    # Idempotent on retry: when an idempotency key is supplied, reuse the
+    # version a previous attempt already created for this mutation position
+    # instead of inserting a duplicate (#2770).
+    def find_existing_version(policy, index)
+      return unless idempotency_key
+
+      policy.coordination_policy_versions.find_by(idempotency_key: candidate_idempotency_key(index))
+    end
+
+    def candidate_idempotency_key(index)
+      return nil unless idempotency_key
+
+      Activities::IdempotencyKey.compute(idempotency_key, index)
+    end
 
     def validate_policy_type!
       return if SUPPORTED_POLICY_TYPES.include?(policy_type)

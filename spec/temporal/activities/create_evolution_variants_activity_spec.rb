@@ -81,5 +81,23 @@ RSpec.describe Activities::CreateEvolutionVariantsActivity do
         expect(result[:variant_count]).to eq(0)
       end
     end
+
+    context "when retried with identical input" do
+      let(:mutations_data) do
+        [
+          { template: "Variant A {{title}}", strategy: "refinement", reasoning: "a", expected_improvement: "x" },
+          { template: "Variant B {{title}}", strategy: "simplification", reasoning: "b", expected_improvement: "y" }
+        ]
+      end
+
+      it "reuses the PromptVersions instead of duplicating them" do
+        first = activity.execute(input)
+        second = activity.execute(input)
+
+        expect(second[:variant_version_ids]).to match_array(first[:variant_version_ids])
+        expect { activity.execute(input) }.not_to change { prompt.prompt_versions.count }
+        expect(prompt.prompt_versions.where.not(idempotency_key: nil).count).to eq(2)
+      end
+    end
   end
 end

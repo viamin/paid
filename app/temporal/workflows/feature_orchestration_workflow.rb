@@ -396,6 +396,16 @@ module Workflows
 
     private
 
+    # CreateSubIssuesActivity is now idempotent (#2770), so new executions use
+    # the default retry policy instead of a single attempt. Replay-safe via a
+    # patch: in-flight executions that predate the fix keep their original
+    # no-retry behavior to stay deterministic.
+    def create_sub_issues_activity_options
+      options = { timeout: 120 }
+      options[:retry_policy] = Temporalio::RetryPolicy.new(max_attempts: 1) unless Temporalio::Workflow.patched("create-sub-issues-idempotent-retry-v1")
+      options
+    end
+
     # Inline planning steps (mirrors PlanningWorkflow) rather than invoking it as a child
     # workflow because orchestration needs direct access to the decomposed tasks and created
     # issues to build sub_tasks for parallel execution. A child workflow would only return a
@@ -447,8 +457,7 @@ module Workflows
               }
             end
           },
-          timeout: 120,
-          retry_policy: Temporalio::RetryPolicy.new(max_attempts: 1)
+          **create_sub_issues_activity_options
         )
 
         created_issues = create_result[:created_issues]

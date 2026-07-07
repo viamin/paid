@@ -28,15 +28,9 @@ module Activities
           pr_action = "reused"
         elsif branch_exists
           pr_body = build_pr_body(issue, agent_run, client: client)
-          pr = client.create_pull_request(
-            project.full_name,
-            base: project.default_branch,
-            head: agent_run.branch_name,
-            title: pr_title(issue),
-            body: pr_body.fetch(:body),
-            draft: true
+          pr, pr_action = create_pull_request_or_reuse(
+            client, project, agent_run, issue, pr_body, agent_run_id: agent_run_id
           )
-          pr_action = "created"
         else
           # Branch confirmed missing (404). Raise so Temporal retries —
           # the branch may appear after a push that is still in flight.
@@ -129,6 +123,42 @@ module Activities
         error: e.message
       )
       nil
+    end
+
+    # Creates the PR, but treats a GitHub 422 "pull request already exists"
+    # response as a reuse signal: a prior attempt (or a transient lookup
+    # failure that masked an existing PR) already created the PR, so we
+    # re-query and reuse it instead of letting the 422 retry pointlessly.
+    # Returns a [pr, action] tuple where action is "created" or "reused".
+    def create_pull_request_or_reuse(client, project, agent_run, issue, pr_body, agent_run_id:)
+      pr = client.create_pull_request(
+        project.full_name,
+        base: project.default_branch,
+        head: agent_run.branch_name,
+        title: pr_title(issue),
+        body: pr_body.fetch(:body),
+        draft: true
+      )
+      [ pr, "created" ]
+    rescue GithubClient::ApiError => e
+      raise e unless pr_already_exists_error?(e)
+
+      logger.info(
+        message: "agent_execution.pull_request_create_conflict_reuse",
+        agent_run_id: agent_run_id,
+        branch: agent_run.branch_name,
+        error: e.message
+      )
+      reused = find_existing_pr(client, project, agent_run.branch_name, agent_run_id: agent_run_id)
+      raise e if reused.nil?
+
+      [ reused, "reused" ]
+    end
+
+    def pr_already_exists_error?(error)
+      return false unless error.respond_to?(:status) && error.status == 422
+
+      error.message.to_s.match?(/a pull request already exists|pull request.*already exist/i)
     end
 
     def best_effort(agent_run_id, context: nil)

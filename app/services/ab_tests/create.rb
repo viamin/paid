@@ -35,7 +35,8 @@ module AbTests
           status: "draft",
           control_version_id: prompt.current_version_id,
           min_samples_per_variant: options.fetch(:min_samples_per_variant, 30),
-          confidence_threshold: options.fetch(:confidence_threshold, 0.95)
+          confidence_threshold: options.fetch(:confidence_threshold, 0.95),
+          idempotency_key: options[:idempotency_key]
         )
 
         test.ab_test_variants.create!(

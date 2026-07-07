@@ -103,6 +103,19 @@ RSpec.describe Activities::CreateSubIssuesActivity do
       expect(result[:created_issues].last[:github_number]).to eq(102)
     end
 
+    it "reuses existing sub-issues when executed twice with identical input" do
+      parent_issue # ensure parent is created before counting
+      activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: sub_tasks)
+
+      expect {
+        activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: sub_tasks)
+      }.not_to change(Issue, :count)
+
+      expect(github_client).to have_received(:create_issue).exactly(2).times
+      children = parent_issue.sub_issues.reload
+      expect(children.size).to eq(2)
+    end
+
     context "when automation_on_label_enabled is true" do
       before { project.update!(automation_on_label_enabled: true) }
 
@@ -261,7 +274,7 @@ RSpec.describe Activities::CreateSubIssuesActivity do
     end
 
     context "when create_issue fails after partial success" do
-      it "raises a non-retryable error to prevent duplicate sub-issues" do
+      it "lets the original error propagate so Temporal can retry idempotently" do
         call_count = 0
         allow(github_client).to receive(:create_issue) do |*_args|
           call_count += 1
@@ -274,9 +287,34 @@ RSpec.describe Activities::CreateSubIssuesActivity do
 
         expect {
           activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: sub_tasks)
-        }.to raise_error(Temporalio::Error::ApplicationError, /Partial failure/) { |e|
-          expect(e.non_retryable).to be true
-        }
+        }.to raise_error(StandardError, "GitHub API timeout")
+      end
+
+      it "reuses already-created sub-issues on retry instead of duplicating them" do
+        create_count = 0
+        allow(github_client).to receive(:create_issue) do |*_args|
+          create_count += 1
+          if create_count == 1
+            gh_issue_response(number: 101, id: 200_001, title: "Implement authentication", body: "body1")
+          elsif create_count == 2
+            raise StandardError, "GitHub API timeout"
+          else
+            gh_issue_response(number: 102, id: 200_002, title: "Add database migrations", body: "body2")
+          end
+        end
+
+        # First attempt: creates the first sub-issue, then fails on the second.
+        expect {
+          activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: sub_tasks)
+        }.to raise_error(StandardError, "GitHub API timeout")
+
+        # Retry: first sub-issue is reused (no new GitHub call for it), only
+        # the previously-failed second task is created.
+        result = activity.execute(project_id: project.id, parent_issue_id: parent_issue.id, sub_tasks: sub_tasks)
+
+        expect(result[:created_issues].size).to eq(2)
+        expect(result[:created_issues].map { |i| i[:github_number] }).to contain_exactly(101, 102)
+        expect(create_count).to eq(3) # two attempts only created each issue once
       end
 
       it "lets the error propagate normally when no sub-issues were created" do

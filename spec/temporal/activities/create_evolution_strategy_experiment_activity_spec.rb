@@ -43,4 +43,23 @@ RSpec.describe Activities::CreateEvolutionStrategyExperimentActivity do
       status: :already_running
     )
   end
+
+  it "reuses the experiment when retried with identical input" do
+    first = activity.execute(input)
+    second = activity.execute(input)
+
+    expect(second[:strategy_experiment_id]).to eq(first[:strategy_experiment_id])
+    expect { activity.execute(input) }.not_to change { account.strategy_experiments.count }
+    expect(account.strategy_experiments.where.not(idempotency_key: nil).count).to eq(1)
+  end
+
+  it "starts a draft left behind by a crash before start" do
+    activity.execute(input)
+    StrategyExperiment.last.update!(status: "draft", started_at: nil)
+
+    result = activity.execute(input)
+
+    expect(StrategyExperiment.find(result[:strategy_experiment_id])).to be_running
+    expect(account.strategy_experiments.count).to eq(1)
+  end
 end
