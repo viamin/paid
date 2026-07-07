@@ -94,6 +94,21 @@ RSpec.describe ChatSessionsHelper do
       expect(helper.chat_tool_summary(message)).to eq("search_code · result · error: key not found: :project_id")
     end
 
+    it "summarizes configuration profile plans by change and level count" do
+      message = build(:chat_message, :tool,
+        tool_name: "plan_configuration_profile",
+        tool_result: {
+          profile_id: "solo_fully_automated",
+          changes: [
+            { level: :user, attribute: "user_settings.run_concurrency_mode", before: "manual", after: "auto" },
+            { level: :tenant, attribute: "tenant_settings.max_concurrent_runs", before: 3, after: 10 }
+          ],
+          levels: %i[user tenant]
+        })
+
+      expect(helper.chat_tool_summary(message)).to eq("plan_configuration_profile · result · 2 changes across 2 levels")
+    end
+
     it "expands only pending tool confirmations by default" do
       completed = build(:chat_message, :tool)
       pending = build(:chat_message, :tool_call, tool_status: "pending")
