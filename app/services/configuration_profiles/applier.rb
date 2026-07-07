@@ -7,10 +7,29 @@ module ConfigurationProfiles
   # unmet so the user is asked to clear them first), and records a per-change
   # result for the chat reply.
   class Applier
+    # Raised when one or more of the plan's declared prerequisites is not met.
+    # Carries the unmet prerequisite hashes so callers can surface their
+    # `description:` to the user.
+    class UnmetPrerequisiteError < StandardError
+      attr_reader :prerequisites
+
+      def initialize(prerequisites)
+        @prerequisites = prerequisites
+        super(prerequisites.map { |prerequisite| prerequisite[:description] || prerequisite[:key] }.join("; "))
+      end
+    end
+
     AUTHORIZATION_GATES = {
       user: :authorize_user_level!,
       project: :authorize_project_level!,
       tenant: :authorize_tenant_level!
+    }.freeze
+
+    # Maps a prerequisite's `key:` to a check `->(account, project) { true/false }`.
+    # A key with no registered check is treated as unmet (fail closed) rather
+    # than silently ignored.
+    PREREQUISITE_CHECKS = {
+      "github_app_installed" => ->(account, _project) { account.github_installations.active.exists? }
     }.freeze
 
     def self.call(...)
@@ -27,6 +46,7 @@ module ConfigurationProfiles
 
     def call
       validate_target!
+      check_prerequisites!
 
       results = { profile_id: @plan.profile_id, project_id: @project_id, applied: [], skipped: [] }
 
@@ -40,7 +60,7 @@ module ConfigurationProfiles
           end
 
           begin
-            public_send(gate)
+            send(gate)
           rescue Pundit::NotAuthorizedError => error
             results[:skipped] << skipped_change(change, reason: "unauthorized", detail: error.message)
             next
@@ -89,6 +109,18 @@ module ConfigurationProfiles
       end
     end
 
+    def check_prerequisites!
+      unmet = plan.prerequisites.reject { |prerequisite| prerequisite_met?(prerequisite) }
+      raise UnmetPrerequisiteError, unmet if unmet.any?
+    end
+
+    def prerequisite_met?(prerequisite)
+      check = PREREQUISITE_CHECKS[prerequisite[:key].to_s]
+      return false unless check
+
+      check.call(account, project)
+    end
+
     def authorize_user_level!
       policy_allows?(record: user.settings, query: :update?, policy_class: UserSettingPolicy)
     end
@@ -111,56 +143,37 @@ module ConfigurationProfiles
     def apply_change(change)
       case change[:level]
       when :user
-        apply_user_change(change)
+        apply_attribute_change(record: user.settings, permitted: user_permitted_attrs, change: change)
       when :project
-        apply_project_change(change)
+        apply_attribute_change(record: project, permitted: project_permitted_attrs, change: change)
       when :tenant
-        apply_tenant_change(change)
+        apply_attribute_change(record: account.tenant_setting!, permitted: tenant_permitted_attrs, change: change)
       else
-        skipped_change(change, reason: "unknown_level")
+        # Unreachable in practice: `call` already skips levels missing from
+        # AUTHORIZATION_GATES before ever invoking `apply_change`. Raise
+        # instead of silently skipping so a future drift between the two
+        # dispatch tables fails loudly rather than looking like a no-op apply.
+        raise ArgumentError, "unexpected change level: #{change[:level].inspect}"
       end
     end
 
-    def apply_user_change(change)
-      attrs = change[:after]
-      return skipped_change(change, reason: "no_attrs") unless attrs.is_a?(Hash)
+    # `change[:before]`/`change[:after]` were captured by `Profile.build_plan`
+    # at plan time, so they can go stale if the record changed between plan
+    # and apply. Re-read `before` from the live record immediately before the
+    # write and `after` from the record immediately after, so the returned
+    # audit result always reflects the actual transition applied here.
+    def apply_attribute_change(record:, permitted:, change:)
+      attribute = change[:attribute].to_s.split(".").last.to_sym
+      return skipped_change(change, reason: "unknown_attribute") unless permitted.include?(attribute)
 
-      user.settings.update!(attrs.symbolize_keys.slice(*user_permitted_attrs))
+      before = record.public_send(attribute)
+      record.update!(attribute => change[:after])
       {
         status: "applied",
-        level: :user,
+        level: change[:level],
         attribute: change[:attribute],
-        before: change[:before],
-        after: change[:after]
-      }
-    end
-
-    def apply_project_change(change)
-      attrs = change[:after]
-      return skipped_change(change, reason: "no_attrs") unless attrs.is_a?(Hash)
-
-      project.update!(attrs.symbolize_keys.slice(*project_permitted_attrs))
-      {
-        status: "applied",
-        level: :project,
-        attribute: change[:attribute],
-        before: change[:before],
-        after: change[:after]
-      }
-    end
-
-    def apply_tenant_change(change)
-      attrs = change[:after]
-      return skipped_change(change, reason: "no_attrs") unless attrs.is_a?(Hash)
-
-      tenant_setting = account.tenant_setting!
-      tenant_setting.update!(attrs.symbolize_keys.slice(*tenant_permitted_attrs))
-      {
-        status: "applied",
-        level: :tenant,
-        attribute: change[:attribute],
-        before: change[:before],
-        after: change[:after]
+        before: before,
+        after: record.public_send(attribute)
       }
     end
 

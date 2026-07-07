@@ -14,8 +14,8 @@ module ConfigurationProfiles
     levels :user, :tenant
 
     def self.build_plan(user:, project: nil, project_id: nil, overrides: {})
-      current_user_settings = user.settings
-      current_tenant = user.account.tenant_setting!
+      current_user_settings = current_user_settings(user)
+      current_tenant = current_tenant_setting(user)
 
       overrides = (overrides || {}).symbolize_keys
 
@@ -30,9 +30,7 @@ module ConfigurationProfiles
       tenant_after = {
         max_concurrent_runs: 10,
         max_tokens_per_run: 25_000_000
-      }.merge(overrides.slice(:max_concurrent_runs, :max_tokens_per_run).transform_keys do |key|
-        key == :max_concurrent_runs ? :max_concurrent_runs : key
-      end)
+      }.merge(overrides.slice(:max_concurrent_runs, :max_tokens_per_run))
 
       changes = []
       changes << {

@@ -3,7 +3,8 @@
 module ConfigurationProfiles
   # Configures Paid for a team that wants agent runs gated behind a
   # per-project label and a single concurrent run per project. Touches
-  # user, project, and tenant settings.
+  # user settings (gating labels, concurrency caps) and tenant settings
+  # (concurrency budget).
   class TeamCollaborativeProfile < Profile
     id "team_collaborative"
     display_name "Team Collaborative"
@@ -12,8 +13,8 @@ module ConfigurationProfiles
     levels :user, :tenant
 
     def self.build_plan(user:, project: nil, project_id: nil, overrides: {})
-      current_user_settings = user.settings
-      current_tenant = user.account.tenant_setting!
+      current_user_settings = current_user_settings(user)
+      current_tenant = current_tenant_setting(user)
       overrides = (overrides || {}).symbolize_keys
 
       changes = []

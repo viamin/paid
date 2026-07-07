@@ -38,6 +38,19 @@ module ConfigurationProfiles
         raise NotImplementedError, "#{name} must implement .build_plan"
       end
 
+      # Read-only accessors for +build_plan+ implementations. Plan building must
+      # never create rows (the profile "recommend"/"plan" tools execute no
+      # writes), so these return an unsaved default record when none exists yet
+      # instead of the persisting `user.settings` / `account.tenant_setting!`
+      # helpers used elsewhere in the app.
+      def current_user_settings(user)
+        user.user_setting || UserSetting.new(user: user)
+      end
+
+      def current_tenant_setting(user)
+        user.account.tenant_setting || TenantSetting.new(account: user.account)
+      end
+
       def summary
         {
           id: id,

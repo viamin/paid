@@ -1,0 +1,199 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe ConfigurationProfiles::Applier do
+  let(:user) { create(:user, :owner) }
+  let(:account) { user.account }
+
+  def plan_for(changes:, prerequisites: [], project_id: nil)
+    ConfigurationProfiles::Plan.new(
+      profile_id: "solo_fully_automated",
+      project_id: project_id,
+      changes: changes,
+      prerequisites: prerequisites
+    )
+  end
+
+  describe "#call" do
+    context "when validating the target" do
+      it "raises when the profile is not registered" do
+        plan = ConfigurationProfiles::Plan.new(profile_id: "not_a_real_profile", project_id: nil)
+
+        expect {
+          described_class.call(plan: plan, user: user)
+        }.to raise_error(ArgumentError, /Profile not found/)
+      end
+
+      it "raises when the plan requires a project level but no project is given" do
+        plan = plan_for(changes: [ { level: :project, attribute: "project.poll_interval_seconds", before: 60, after: 30 } ])
+
+        expect {
+          described_class.call(plan: plan, user: user)
+        }.to raise_error(ArgumentError, /project_id is required/)
+      end
+    end
+
+    context "when checking prerequisites" do
+      let(:plan) do
+        plan_for(
+          changes: [ { level: :user, attribute: "user_settings.run_concurrency_mode", before: "manual", after: "auto" } ],
+          prerequisites: [ { key: "github_app_installed", description: "GitHub App must be installed" } ]
+        )
+      end
+
+      it "hard-fails without applying any changes when a prerequisite is unmet" do
+        create(:user_setting, user: user, run_concurrency_mode: "manual")
+
+        expect {
+          described_class.call(plan: plan, user: user)
+        }.to raise_error(described_class::UnmetPrerequisiteError, /GitHub App must be installed/)
+
+        expect(user.settings.reload.run_concurrency_mode).to eq("manual")
+      end
+
+      it "exposes the unmet prerequisites on the error" do
+        expect {
+          described_class.call(plan: plan, user: user)
+        }.to raise_error(described_class::UnmetPrerequisiteError) do |error|
+          expect(error.prerequisites).to contain_exactly(hash_including(key: "github_app_installed"))
+        end
+      end
+
+      it "treats an unrecognized prerequisite key as unmet (fails closed)" do
+        plan = plan_for(
+          changes: [ { level: :user, attribute: "user_settings.run_concurrency_mode", before: "manual", after: "auto" } ],
+          prerequisites: [ { key: "some_future_prerequisite", description: "Not yet checkable" } ]
+        )
+
+        expect {
+          described_class.call(plan: plan, user: user)
+        }.to raise_error(described_class::UnmetPrerequisiteError)
+      end
+
+      it "proceeds when the prerequisite is met" do
+        create(:github_installation, account: account)
+
+        result = described_class.call(plan: plan, user: user)
+
+        expect(result[:applied].size).to eq(1)
+      end
+    end
+
+    context "when applying changes" do
+      before { create(:github_installation, account: account) }
+
+      it "updates the live record and returns the actual before/after transition" do
+        create(:user_setting, user: user, run_concurrency_mode: "manual")
+        plan = plan_for(changes: [
+          { level: :user, attribute: "user_settings.run_concurrency_mode", before: "stale-plan-time-value", after: "auto" }
+        ])
+
+        result = described_class.call(plan: plan, user: user)
+
+        applied = result[:applied].first
+        expect(applied).to include(status: "applied", level: :user, before: "manual", after: "auto")
+        expect(user.settings.reload.run_concurrency_mode).to eq("auto")
+      end
+
+      it "creates the tenant setting on demand when applying a tenant-level change" do
+        plan = plan_for(changes: [
+          { level: :tenant, attribute: "tenant_settings.max_concurrent_runs", before: 10, after: 25 }
+        ])
+
+        expect {
+          described_class.call(plan: plan, user: user)
+        }.to change(TenantSetting, :count).by(1)
+
+        expect(account.tenant_setting.max_concurrent_runs).to eq(25)
+      end
+
+      it "applies a project-level change when a project is provided" do
+        project = create(:project, account: account, poll_interval_seconds: 60)
+        plan = plan_for(
+          changes: [ { level: :project, attribute: "project.poll_interval_seconds", before: 60, after: 90 } ],
+          project_id: project.id
+        )
+
+        result = described_class.call(plan: plan, user: user, project: project)
+
+        expect(result[:applied]).to contain_exactly(
+          hash_including(status: "applied", level: :project, before: 60, after: 90)
+        )
+        expect(project.reload.poll_interval_seconds).to eq(90)
+      end
+
+      it "skips a change whose attribute is not in the permitted list" do
+        plan = plan_for(changes: [
+          { level: :user, attribute: "user_settings.not_a_real_attribute", before: nil, after: "x" }
+        ])
+
+        result = described_class.call(plan: plan, user: user)
+
+        expect(result[:skipped]).to contain_exactly(
+          hash_including(status: "skipped", level: :user, reason: "unknown_attribute")
+        )
+        expect(result[:applied]).to be_empty
+      end
+
+      it "skips an unknown level" do
+        plan = plan_for(changes: [
+          { level: :mystery, attribute: "mystery.thing", before: nil, after: "x" }
+        ])
+
+        result = described_class.call(plan: plan, user: user)
+
+        expect(result[:skipped]).to contain_exactly(hash_including(reason: "unknown_level"))
+      end
+
+      it "skips a tenant-level change when the user is not authorized, without blocking other changes" do
+        member = create(:user, :member, account: account)
+        plan = plan_for(changes: [
+          { level: :user, attribute: "user_settings.run_concurrency_mode", before: "manual", after: "auto" },
+          { level: :tenant, attribute: "tenant_settings.max_concurrent_runs", before: 10, after: 25 }
+        ])
+
+        result = described_class.call(plan: plan, user: member)
+
+        expect(result[:applied]).to contain_exactly(hash_including(level: :user))
+        expect(result[:skipped]).to contain_exactly(hash_including(level: :tenant, reason: "unauthorized"))
+      end
+
+      it "records account activity only when at least one change is applied" do
+        plan = plan_for(changes: [
+          { level: :user, attribute: "user_settings.not_a_real_attribute", before: nil, after: "x" }
+        ])
+
+        expect {
+          described_class.call(plan: plan, user: user)
+        }.not_to change(AccountActivityEvent, :count)
+
+        plan = plan_for(changes: [
+          { level: :user, attribute: "user_settings.run_concurrency_mode", before: "manual", after: "auto" }
+        ])
+
+        expect {
+          described_class.call(plan: plan, user: user)
+        }.to change(AccountActivityEvent, :count).by(1)
+
+        event = AccountActivityEvent.last
+        expect(event.action).to eq("configuration_profile.applied")
+        expect(event.metadata["profile_id"]).to eq("solo_fully_automated")
+      end
+
+      it "rolls back all changes when applying one raises" do
+        create(:user_setting, user: user, run_concurrency_mode: "manual", max_concurrent_runs: 2)
+        plan = plan_for(changes: [
+          { level: :user, attribute: "user_settings.run_concurrency_mode", before: "manual", after: "auto" },
+          { level: :user, attribute: "user_settings.max_concurrent_runs", before: 2, after: -1 }
+        ])
+
+        expect {
+          described_class.call(plan: plan, user: user)
+        }.to raise_error(ActiveRecord::RecordInvalid)
+
+        expect(user.settings.reload.run_concurrency_mode).not_to eq("auto")
+      end
+    end
+  end
+end
