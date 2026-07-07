@@ -9,7 +9,7 @@ module ConfigurationProfiles
   class Profile < Data.define(:key, :name, :description, :values)
     def initialize(key:, name:, description:, values:)
       values = values.deep_stringify_keys
-      validate_coverage!(values)
+      validate_coverage!(key, values)
       super
     end
 
@@ -38,7 +38,7 @@ module ConfigurationProfiles
 
     private
 
-    def validate_coverage!(values)
+    def validate_coverage!(key, values)
       expected = FieldSet.keys.map(&:to_s)
       missing = expected - values.keys
       extra = values.keys - expected

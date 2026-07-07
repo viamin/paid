@@ -12,17 +12,17 @@ RSpec.describe ConfigurationProfiles::Profile do
       expect(profile.values.keys).to match_array(field_keys)
     end
 
-    it "rejects missing fields" do
+    it "rejects missing fields and names the offending profile" do
       expect {
-        described_class.new(key: :x, name: "X", description: "d", values: { "auto_pick_enabled" => false })
-      }.to raise_error(ArgumentError, /does not cover the operating-mode field set/)
+        described_class.new(key: :observe_only, name: "X", description: "d", values: { "auto_pick_enabled" => false })
+      }.to raise_error(ArgumentError, /Profile :observe_only does not cover the operating-mode field set/)
     end
 
-    it "rejects unknown fields" do
+    it "rejects unknown fields and names the offending profile" do
       values = field_keys.index_with { false }.merge("bogus_field" => true)
       expect {
-        described_class.new(key: :x, name: "X", description: "d", values: values)
-      }.to raise_error(ArgumentError, /Unknown fields/)
+        described_class.new(key: :solo_automated, name: "X", description: "d", values: values)
+      }.to raise_error(ArgumentError, /Profile :solo_automated does not cover.*Unknown fields/)
     end
   end
 
