@@ -131,6 +131,7 @@ end
 group :test do
   gem "simplecov", require: false
   gem "capybara"
+  gem "ferrum", path: "vendor/ferrum"
   gem "cuprite"
   gem "fixture_kit"
   # Mutation testing uses the MIT-licensed viamin/mutant fork by default.
