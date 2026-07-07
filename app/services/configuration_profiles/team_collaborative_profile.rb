@@ -1,15 +1,23 @@
 # frozen_string_literal: true
 
 module ConfigurationProfiles
-  # Configures Paid for a team that wants agent runs gated behind a
-  # per-project label and a single concurrent run per project. Touches
-  # user settings (gating labels, concurrency caps) and tenant settings
-  # (concurrency budget).
+  # Configures Paid for a team that wants slow, supervised agent runs with a
+  # single concurrent run per project. Touches user settings (skip labels,
+  # concurrency caps) and tenant settings (concurrency budget).
+  #
+  # Note: `auto_pick_skip_labels` is an *exclusion* list (see
+  # AutoPickSkipLabels / Automation::Strategies::AutoPick::DefaultCandidateSource)
+  # -- issues carrying the label are skipped by auto-pick, but unlabeled
+  # issues are still auto-picked. Paid has no positive allow/gate mechanism
+  # today (i.e. no way to require a label before an issue becomes
+  # auto-pickable), so this profile does not claim to "gate" automation
+  # behind a label -- it only excludes issues that are explicitly flagged
+  # as awaiting human review.
   class TeamCollaborativeProfile < Profile
     id "team_collaborative"
     display_name "Team Collaborative"
     description "Slow, supervised agent runs that pair with human review. Best for teams " \
-                "that want to gate automation behind explicit labels."
+                "that want to exclude issues awaiting review from auto-pick."
     levels :user, :tenant
 
     def self.build_plan(user:, project: nil, project_id: nil, overrides: {})
@@ -49,9 +57,6 @@ module ConfigurationProfiles
         changes: changes,
         prerequisites: [
           { key: "github_app_installed", description: "GitHub App must be installed" }
-        ],
-        questions: [
-          { key: "gate_label", prompt: "Which label should gate auto-pick?", default: "agent-ready" }
         ]
       )
     end

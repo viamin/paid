@@ -41,6 +41,16 @@ RSpec.describe ConfigurationProfiles::SoloFullyAutomatedProfile do
         expect(tenant_change[:before]).to eq(2)
         expect(tenant_change[:after]).to eq(10)
       end
+
+      it "plans the permissive skip-label posture advertised by the profile" do
+        create(:user_setting, user: user, auto_pick_skip_labels: [ "blocked" ])
+
+        plan = described_class.build_plan(user: user)
+
+        skip_labels_change = plan.changes.find { |change| change[:attribute] == "user_settings.auto_pick_skip_labels" }
+        expect(skip_labels_change[:before]).to eq([ "blocked" ])
+        expect(skip_labels_change[:after]).to eq([ "needs-design", "blocked-external" ])
+      end
     end
 
     it "applies overrides on top of the profile defaults" do

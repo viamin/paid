@@ -12,7 +12,7 @@ RSpec.describe ConfigurationProfiles::TeamCollaborativeProfile do
       }.not_to change { [ UserSetting.count, TenantSetting.count ] }
     end
 
-    it "gates auto-pick behind a single concurrent run and a review label" do
+    it "plans a single concurrent run and excludes issues labeled for review from auto-pick" do
       user = create(:user)
 
       plan = described_class.build_plan(user: user)
@@ -38,11 +38,11 @@ RSpec.describe ConfigurationProfiles::TeamCollaborativeProfile do
       expect(tenant_change[:before]).to eq(20)
     end
 
-    it "declares a github_app_installed prerequisite and a gate_label question" do
+    it "declares a github_app_installed prerequisite and no clarifying questions" do
       plan = described_class.build_plan(user: create(:user))
 
       expect(plan.prerequisites).to contain_exactly(hash_including(key: "github_app_installed"))
-      expect(plan.questions).to contain_exactly(hash_including(key: "gate_label"))
+      expect(plan.questions).to be_empty
     end
   end
 end

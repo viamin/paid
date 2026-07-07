@@ -52,6 +52,12 @@ module ConfigurationProfiles
         after: user_after[:default_poll_interval_seconds]
       }
       changes << {
+        level: :user,
+        attribute: "user_settings.auto_pick_skip_labels",
+        before: current_user_settings.auto_pick_skip_labels,
+        after: user_after[:auto_pick_skip_labels]
+      }
+      changes << {
         level: :tenant,
         attribute: "tenant_settings.max_concurrent_runs",
         before: current_tenant.max_concurrent_runs,
