@@ -31,26 +31,29 @@ RSpec.describe Tools::Registry do
         ui_call: ->(user) {
           raise Tools::UnauthorizedError, "Tool calls require an authenticated user" if user.blank?
 
-          ConfigurationProfiles::Registry.summaries
+          ConfigurationProfiles::Registry.all.map { |profile| { key: profile.key.to_s, name: profile.name, description: profile.description } }
         }
       },
       {
         tool_name: "plan_configuration_profile",
         denied_user: -> { create(:user, :member, account: other_account) },
-        arguments: -> { { profile_id: "solo_fully_automated", project_id: project.id } },
+        arguments: -> { { profile_id: "observe_only", project_id: project.id } },
         ui_call: ->(user) {
           Pundit.policy_scope!(user, Project).find(project.id)
-          ConfigurationProfiles::SoloFullyAutomatedProfile.build_plan(user:, project_id: project.id)
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          ConfigurationProfiles::Planner.for_profile(project_record, ConfigurationProfiles::Registry.find!(:observe_only))
         }
       },
       {
         tool_name: "apply_configuration_profile",
         denied_user: -> { create(:user, :member, account: other_account) },
-        arguments: -> { { profile_id: "solo_fully_automated", project_id: project.id, confirmed: true } },
+        arguments: -> { { profile_id: "observe_only", project_id: project.id, confirmed: true } },
         ui_call: ->(user) {
           Pundit.policy_scope!(user, Project).find(project.id)
-          plan = ConfigurationProfiles::SoloFullyAutomatedProfile.build_plan(user:, project_id: project.id)
-          ConfigurationProfiles::Applier.call(plan:, user:, project_id: project.id)
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          profile = ConfigurationProfiles::Registry.find!(:observe_only)
+          plan = ConfigurationProfiles::Planner.for_profile(project_record, profile)
+          ConfigurationProfiles::Applier.call(project_record, plan, actor: user)
         }
       },
       {

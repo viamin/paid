@@ -2,17 +2,23 @@
 
 module Tools
   class ListConfigurationProfiles < BaseTool
-    authorize :update?, ->(_args) { current_user.user_setting || UserSetting.new(user: current_user) }, policy_class: UserSettingPolicy
+    authorize :index?, ->(_args) { Project.new(account: account) }, policy_class: ProjectPolicy
 
     def self.tool_name = "list_configuration_profiles"
 
     def self.description
-      "List the available Paid configuration profiles and the settings levels each one changes."
+      "List the available Paid operating-mode configuration profiles."
     end
 
     def perform
       {
-        profiles: ConfigurationProfiles::Registry.summaries
+        profiles: ConfigurationProfiles::Registry.all.map do |profile|
+          {
+            key: profile.key.to_s,
+            name: profile.name,
+            description: profile.description
+          }
+        end
       }
     end
   end

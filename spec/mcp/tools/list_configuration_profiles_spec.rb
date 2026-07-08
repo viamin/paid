@@ -11,8 +11,8 @@ RSpec.describe Tools::ListConfigurationProfiles do
     result = described_class.new(user:, session:).call
 
     expect(result[:profiles]).to include(
-      hash_including(id: "solo_fully_automated", levels: contain_exactly(:user, :tenant)),
-      hash_including(id: "team_collaborative", levels: contain_exactly(:user, :tenant))
+      hash_including(key: "observe_only", name: "Observe Only"),
+      hash_including(key: "solo_automated", name: "Solo Automated")
     )
   end
 end

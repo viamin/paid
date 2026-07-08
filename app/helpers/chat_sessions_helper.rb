@@ -166,17 +166,23 @@ module ChatSessionsHelper
     plan.deep_symbolize_keys
   end
 
-  def chat_configuration_profile_plan_groups(payload)
+  def chat_configuration_profile_plan_changes(payload)
     plan = chat_configuration_profile_plan(payload)
-    return {} unless plan
+    return [] unless plan
 
-    Array(plan[:changes]).group_by { |change| change[:level].to_s }
+    Array(plan[:changes])
   end
 
   def configuration_profile_plan_summary(plan)
     change_count = Array(plan[:changes]).size
-    level_count = Array(plan[:levels]).presence&.size || Array(plan[:changes]).map { |change| change[:level].to_s }.uniq.size
-    "#{change_count} #{'change'.pluralize(change_count)} across #{level_count} #{'level'.pluralize(level_count)}"
+    "#{change_count} #{'change'.pluralize(change_count)}"
+  end
+
+  def configuration_profile_field_label(field)
+    return "" if field.blank?
+
+    profile_field = ConfigurationProfiles::FieldSet.all.find { |candidate| candidate.key.to_s == field.to_s }
+    profile_field&.label || field.to_s.humanize
   end
 
   def chat_configuration_profile_plan_title(payload)

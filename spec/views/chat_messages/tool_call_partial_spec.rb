@@ -22,28 +22,20 @@ RSpec.describe "chat_messages/_tool_call", :no_db, type: :view do
 
   def configuration_profile_tool_message
     tool_message(
-      role: "assistant",
-      tool_status: "pending",
-      tool_name: "apply_configuration_profile",
-      tool_arguments: {
-        "profile_id" => "solo_fully_automated",
-        "plan" => {
-          "profile_id" => "solo_fully_automated",
-          "project_id" => 42,
-          "changes" => [
-            {
-              "level" => "user",
-              "attribute" => "user_settings.run_concurrency_mode",
-              "before" => "manual",
-              "after" => "auto"
-            }
-          ],
-          "prerequisites" => [
-            { "key" => "github_app_installed", "description" => "GitHub App must be installed" }
-          ]
-        }
+      role: "tool",
+      tool_status: nil,
+      tool_name: "plan_configuration_profile",
+      tool_result: {
+        "profile_id" => "solo_automated",
+        "project_id" => 42,
+        "label" => "Apply Solo Automated posture",
+        "source" => "configuration_profile",
+        "changes" => [
+          { "field" => "auto_pick_enabled", "from" => false, "to" => true }
+        ],
+        "applied_fields" => [ "auto_pick_enabled" ]
       },
-      tool_result: nil
+      tool_arguments: nil
     )
   end
 
@@ -69,15 +61,14 @@ RSpec.describe "chat_messages/_tool_call", :no_db, type: :view do
     expect(rendered).to include("Assistant wants to run this action")
   end
 
-  it "renders grouped before/after diffs for configuration profile plans" do
+  it "renders field from/to diffs for configuration profile plans" do
     render partial: "chat_messages/tool_call", locals: { message: configuration_profile_tool_message }
 
     expect(rendered).to include("Configuration Profile Plan")
-    expect(rendered).to include("Solo fully automated for project #42")
-    expect(rendered).to include("Before:")
-    expect(rendered).to include("manual")
-    expect(rendered).to include("After:")
-    expect(rendered).to include("auto")
-    expect(rendered).to include("GitHub App must be installed")
+    expect(rendered).to include("Solo automated for project #42")
+    expect(rendered).to include("Auto-pick issues")
+    expect(rendered).to include("From:")
+    expect(rendered).to include("To:")
+    expect(rendered).not_to include("Prerequisites")
   end
 end
