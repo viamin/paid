@@ -3,33 +3,6 @@
 # See docs/PATCH_GUARDS.md for the policy, sweep workflow, and the rules for
 # adding new guards.
 workflows:
-  Workflows::GitHubPollWorkflow:
-    add-dev-environment-update-v1:
-      introduced_on: "2026-03-25"
-    escalation-reason-payload-v1:
-      introduced_on: "2026-04-11"
-    queue-agent-run-goal-v1:
-      introduced_on: "2026-04-13"
-    queue-paid-agent-review-run-v1:
-      introduced_on: "2026-04-13"
-    pause-followup-during-review-v1:
-      introduced_on: "2026-04-15"
-    batch-evaluate-issues-v1:
-      introduced_on: "2026-04-17"
-    pause-review-bot-followup-during-review-v1:
-      introduced_on: "2026-04-20"
-    github-poll-quality-gate-v1:
-      introduced_on: "2026-04-21"
-    add-auto-release-poll-v1:
-      introduced_on: "2026-04-25"
-    notification-rules-v1:
-      introduced_on: "2026-04-25"
-    add-dependabot-auto-merge-poll-v1:
-      introduced_on: "2026-04-27"
-    feature-orchestration-start-v1:
-      introduced_on: "2026-05-05"
-    planning-review-timeout-v1:
-      introduced_on: "2026-05-22"
   Workflows::PlanningWorkflow:
     planning-review-signal-gate-v1:
       introduced_on: "2026-05-22"
