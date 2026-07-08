@@ -570,6 +570,31 @@ RSpec.describe "Projects" do
         expect(response.body).not_to include("Average Quality Score")
       end
 
+      it "shows a quality pause banner with resume action when quality-paused" do
+        project = create(:project, account: account, github_token: github_token,
+          quality_paused_at: 1.hour.ago,
+          quality_pause_metadata: {
+            "composite_score" => 0.32,
+            "threshold" => 0.5,
+            "metric_type" => "composite_score"
+          })
+
+        get project_path(project)
+
+        expect(response.body).to include("Quality Paused")
+        expect(response.body).to include("32.0%")
+        expect(response.body).to include("50.0%")
+        expect(response.body).to include(quality_resume_project_path(project))
+      end
+
+      it "does not show a quality pause banner when not quality-paused" do
+        project = create(:project, account: account, github_token: github_token)
+
+        get project_path(project)
+
+        expect(response.body).not_to include("Quality Paused")
+      end
+
       it "shows recent agent runs" do
         project = create(:project, account: account, github_token: github_token)
         run = create(:agent_run, project: project, agent_type: "claude_code", status: "completed")
