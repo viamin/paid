@@ -11,11 +11,7 @@ module Workflows
   # Temporal's event limit. The server signals when history is getting
   # large via continue_as_new_suggested; a hard cap provides a safety net.
   class GitHubPollWorkflow < BaseWorkflow
-    include Automation::ReviewBotTrigger
     MAX_ITERATIONS = 100
-    POSTED_BOT_FEEDBACK_TRIGGER_TYPES = %w[
-      review_bot_comments review_bot_threads
-    ].freeze
     JITTER_FRACTION = 0.15
 
     workflow_signal
@@ -40,16 +36,7 @@ module Workflows
 
         queue_enhance_issue_rechecks(project_id, result[:enhance_issue_rechecks])
 
-        if Temporalio::Workflow.patched("batch-evaluate-issues-v1")
-          evaluate_issues_batch(project_id, result[:issues])
-        else
-          result[:issues].each do |issue_data|
-            evaluation = run_activity(Activities::DetectLabelsActivity,
-              { project_id: project_id, issue_id: issue_data[:id] }, timeout: 30)
-
-            handle_automation_result(evaluation, project_id)
-          end
-        end
+        evaluate_issues_batch(project_id, result[:issues])
 
         record_poll_heartbeat(project_id)
 
@@ -93,8 +80,7 @@ module Workflows
           goal: "analyze_issue"
         }, timeout: 30)
       when "start_planning"
-        if Temporalio::Workflow.patched("feature-orchestration-start-v1") &&
-            feature_flag_enabled?(:feature_orchestration, project_id:)
+        if feature_flag_enabled?(:feature_orchestration, project_id:)
           start_feature_orchestration_workflow(project_id, decision[:issue_id])
         else
           start_planning_workflow(project_id, decision[:issue_id])
@@ -241,6 +227,11 @@ module Workflows
     rescue Temporalio::Error::CanceledError
       raise
     rescue => e
+      record_swallowed_non_critical_activity_failure(
+        project_id: project_id,
+        helper: "maybe_check_knowledge_staleness",
+        error: e
+      )
       Temporalio::Workflow.logger.warn(
         message: "knowledge.staleness_check_failed",
         project_id: project_id,
@@ -252,13 +243,16 @@ module Workflows
     # Evaluate auto-release for the project's open release-please PRs.
     # Runs on every poll cycle so webhooks are not required for auto-release.
     def maybe_evaluate_auto_release(project_id)
-      return unless Temporalio::Workflow.patched("add-auto-release-poll-v1")
-
       run_activity(Activities::EvaluateAutoReleaseActivity,
         { project_id: project_id }, timeout: 30)
     rescue Temporalio::Error::CanceledError
       raise
     rescue => e
+      record_swallowed_non_critical_activity_failure(
+        project_id: project_id,
+        helper: "maybe_evaluate_auto_release",
+        error: e
+      )
       Temporalio::Workflow.logger.warn(
         message: "auto_release.poll_evaluation_failed",
         project_id: project_id,
@@ -270,13 +264,16 @@ module Workflows
     # Evaluate dependabot auto-merge for the project's open Dependabot PRs.
     # Runs on every poll cycle so webhooks are not required for auto-merge.
     def maybe_evaluate_dependabot_auto_merge(project_id)
-      return unless Temporalio::Workflow.patched("add-dependabot-auto-merge-poll-v1")
-
       run_activity(Activities::EvaluateDependabotAutoMergeActivity,
         { project_id: project_id }, timeout: 30)
     rescue Temporalio::Error::CanceledError
       raise
     rescue => e
+      record_swallowed_non_critical_activity_failure(
+        project_id: project_id,
+        helper: "maybe_evaluate_dependabot_auto_merge",
+        error: e
+      )
       Temporalio::Workflow.logger.warn(
         message: "dependabot_auto_merge.poll_evaluation_failed",
         project_id: project_id,
@@ -286,8 +283,6 @@ module Workflows
     end
 
     def run_notification_rules(project_id, issue_ids:, pr_scan_result:)
-      return unless Temporalio::Workflow.patched("notification-rules-v1")
-
       pr_scan_result = normalize_scan_result(pr_scan_result)
 
       run_activity(Activities::EvaluateNotificationRulesActivity, {
@@ -300,6 +295,11 @@ module Workflows
     rescue Temporalio::Error::CanceledError
       raise
     rescue => e
+      record_swallowed_non_critical_activity_failure(
+        project_id: project_id,
+        helper: "run_notification_rules",
+        error: e
+      )
       Temporalio::Workflow.logger.warn(
         message: "notifications.rule_evaluation_failed",
         project_id: project_id,
@@ -391,11 +391,9 @@ module Workflows
       workflow_id = "plan-#{project_id}-#{issue_id}-#{Temporalio::Workflow.now.to_i}"
       child_input = { project_id: project_id, issue_id: issue_id }
 
-      if Temporalio::Workflow.patched("planning-review-timeout-v1")
-        timeout_config = run_activity(Activities::FetchPlanReviewTimeoutActivity,
-          { project_id: project_id }, timeout: 10)
-        child_input[:plan_review_timeout_hours] = timeout_config[:plan_review_timeout_hours]
-      end
+      timeout_config = run_activity(Activities::FetchPlanReviewTimeoutActivity,
+        { project_id: project_id }, timeout: 10)
+      child_input[:plan_review_timeout_hours] = timeout_config[:plan_review_timeout_hours]
 
       Temporalio::Workflow.start_child_workflow(
         Workflows::PlanningWorkflow,
@@ -409,40 +407,6 @@ module Workflows
     def handle_pr_scan_results(scan_result, project_id)
       (scan_result[:automation_results] || []).each do |result|
         handle_automation_result(result, project_id)
-      end
-    end
-
-    # Dead code: the trigger-based routing below was superseded by
-    # Automation::WorkflowDecisionExecutor. Retained temporarily because
-    # in-flight Temporal workflow histories may still reference this method.
-    # Remove in a follow-up once all in-flight histories have rolled forward.
-    def handle_pr_trigger(project_id, pr_data)
-      trigger_types = (pr_data[:triggers] || []).map { |t| t[:type] }
-
-      if trigger_types.include?("escalate_to_owner")
-        handle_escalate_to_owner(project_id, pr_data)
-      elsif trigger_types.include?("dismiss_escalation")
-        handle_dismiss_escalation(project_id, pr_data)
-      elsif trigger_types.include?("review_goal_retry")
-        handle_review_goal_retry(project_id, pr_data)
-      elsif trigger_types.include?("ready_for_owner")
-        handle_ready_for_owner(project_id, pr_data)
-      elsif trigger_types.include?("owner_approved")
-        handle_owner_approved(project_id, pr_data)
-      elsif trigger_types.include?("paid_agent_review_pending")
-        handle_paid_agent_review_pending(project_id, pr_data, trigger_types)
-      elsif trigger_types.include?("review_bot_review_pending")
-        handle_review_bot_review_pending(project_id, pr_data, trigger_types)
-      elsif trigger_types.include?("manual_review_pending") || trigger_types.include?("ci_action_pending")
-        # NOTE: when both review_bot_review_pending and manual/ci_action triggers
-        # are present, the bot handler above runs first and the non-bot handler is
-        # deferred to the next scan cycle. This is intentional — bot review
-        # completes before requesting human review or awaiting CI actions.
-        handle_non_bot_review_pending(project_id, pr_data, trigger_types)
-      elsif pr_data[:phase].in?(%w[draft restarted])
-        start_draft_followup_workflow(project_id, pr_data)
-      else
-        start_pr_followup_workflow(project_id, pr_data)
       end
     end
 
@@ -461,11 +425,7 @@ module Workflows
     end
 
     def handle_escalate_decision(project_id, decision)
-      activity_input = if Temporalio::Workflow.patched("escalation-reason-payload-v1")
-        { issue_id: decision[:issue_id], reason: decision[:reason], reason_key: decision[:reason_key] }.compact
-      else
-        { issue_id: decision[:issue_id] }
-      end
+      activity_input = { issue_id: decision[:issue_id], reason: decision[:reason], reason_key: decision[:reason_key] }.compact
 
       run_activity(Activities::MarkEscalatedActivity, activity_input, timeout: 30)
 
@@ -474,31 +434,6 @@ module Workflows
 
       request_review(project_id, decision[:pr_number], [ reviewer ],
         log_key: "pr_review.request_owner_review_failed")
-    end
-
-    def handle_ready_for_owner(project_id, pr_data)
-      trigger_types = (pr_data[:triggers] || []).map { |t| t[:type] }
-
-      # Queue paid_agent review sidecar if bundled with ready_for_owner
-      queue_paid_agent_review_run(project_id, pr_data) if trigger_types.include?("paid_agent_review_pending")
-
-      result = run_activity(Activities::MarkPrReadyActivity,
-        { project_id: project_id, pr_number: pr_data[:pr_number],
-          issue_id: pr_data[:issue_id] }, timeout: 60)
-
-      return unless result[:marked_ready]
-
-      request_owner_review(project_id, pr_data)
-    end
-
-    def handle_escalate_to_owner(project_id, pr_data)
-      escalate_trigger = (pr_data[:triggers] || []).find { |t| t[:type] == "escalate_to_owner" }
-      handle_escalate_decision(project_id,
-        issue_id: pr_data[:issue_id],
-        pr_number: pr_data[:pr_number],
-        owner_reviewer_login: pr_data[:owner_reviewer_login],
-        reason: escalate_trigger&.dig(:details),
-        reason_key: escalate_trigger&.dig(:reason_key))
     end
 
     def handle_dismiss_escalation(project_id, pr_data)
@@ -523,217 +458,6 @@ module Workflows
       end
     end
 
-    def request_owner_review(project_id, pr_data)
-      reviewer = pr_data[:owner_reviewer_login]
-      return if reviewer.blank?
-
-      request_review(project_id, pr_data[:pr_number], [ reviewer ],
-        log_key: "pr_review.request_owner_review_failed")
-    end
-
-    def handle_paid_agent_review_pending(project_id, pr_data, trigger_types)
-      queue_paid_agent_review_run(project_id, pr_data)
-
-      if Temporalio::Workflow.patched("pause-followup-during-review-v1")
-        # paid_agent_review_pending is a hard gate: suppress all create_pr
-        # follow-up runs while the review for the current head is outstanding.
-        # Other triggers (CI failures, merge conflicts, conversation comments)
-        # will be re-detected on the next scan cycle after the review completes
-        # and any resulting code changes are made. (#1135)
-        return nil
-      end
-
-      other_triggers = trigger_types - [ "paid_agent_review_pending" ]
-
-      if other_triggers.empty?
-        # paid_agent_review_pending as sole trigger means no code changes are
-        # needed — the review queue above is the only action. When the scanner
-        # detects unaddressed review findings it emits review_bot_comments
-        # alongside, which routes through handle_review_bot_review_pending
-        # with a create_pr follow-up instead (#1152).
-        nil
-      elsif pr_data[:phase].in?(%w[draft restarted])
-        start_draft_followup_workflow(project_id, pr_data)
-      else
-        start_pr_followup_workflow(project_id, pr_data)
-      end
-    end
-
-    def queue_paid_agent_review_run(project_id, pr_data)
-      return unless Temporalio::Workflow.patched("queue-paid-agent-review-run-v1")
-
-      pending_trigger = (pr_data[:triggers] || []).find { |t| t[:type] == "paid_agent_review_pending" }
-      return if pending_trigger&.dig(:active_run)
-      return unless quality_gate_allows_run?(project_id, pr_data, goal: "review")
-
-      run_activity(Activities::QueueAgentRunActivity,
-        { project_id: project_id, issue_id: pr_data[:issue_id],
-          source_pull_request_number: pr_data[:pr_number],
-          goal: "review",
-          focus: pr_data[:focus] || "general" }, timeout: 30)
-    end
-
-    def handle_review_bot_review_pending(project_id, pr_data, trigger_types)
-      if Temporalio::Workflow.patched("pause-review-bot-followup-during-review-v1")
-        dispatch_review_bot_review_request(project_id, pr_data)
-
-        # Posted bot feedback is already actionable; keep the hard gate for
-        # outstanding review requests, but let the agent resolve existing bot
-        # comments/threads.
-        if posted_bot_feedback_trigger?(trigger_types)
-          if pr_data[:phase].in?(%w[draft restarted])
-            start_draft_followup_workflow(project_id, pr_data)
-          else
-            start_pr_followup_workflow(project_id, pr_data)
-          end
-        end
-
-        return nil
-      end
-
-      other_triggers = trigger_types - [ "review_bot_review_pending" ]
-
-      if pr_data[:phase].in?(%w[draft restarted])
-        dispatch_review_bot_review_request(project_id, pr_data)
-        return if other_triggers.empty?
-
-        start_draft_followup_workflow(project_id, pr_data)
-        return
-      end
-
-      return dispatch_review_bot_review_request(project_id, pr_data) if other_triggers.empty?
-
-      start_pr_followup_workflow(project_id, pr_data)
-    end
-
-    def dispatch_review_bot_review_request(project_id, pr_data)
-      # Use the chain from the trigger: an empty list means the bot
-      # auto-reviews (e.g. Codex via GitHub App) and no explicit request is
-      # needed. The full chain is forwarded to RequestReviewActivity so it
-      # can fall through to a configured secondary bot when the primary is
-      # rate-limited or unavailable.
-      pending_trigger = (pr_data[:triggers] || []).find { |t| t[:type] == "review_bot_review_pending" }
-      reviewers = review_bot_reviewers_from(pending_trigger)
-      return if reviewers.empty?
-
-      request_review(project_id, pr_data[:pr_number],
-        reviewers,
-        log_key: "pr_review.request_review_bot_review_failed")
-    end
-
-    def posted_bot_feedback_trigger?(trigger_types)
-      POSTED_BOT_FEEDBACK_TRIGGER_TYPES.any? { |type| trigger_types.include?(type) }
-    end
-
-    def handle_review_goal_retry(project_id, pr_data)
-      trigger_types = (pr_data[:triggers] || []).map { |t| t[:type] }
-
-      if trigger_types.include?("owner_approved")
-        handle_owner_approved(project_id, pr_data)
-        return
-      end
-
-      issue_id = pr_data[:issue_id]
-      pr_number = pr_data[:pr_number]
-
-      run_activity(Activities::RecordReviewGoalRetryActivity,
-        { issue_id: issue_id,
-          expected_review_goal_retry_count: pr_data[:current_review_goal_retry_count] },
-        timeout: 30)
-
-      run_activity(Activities::QueueAgentRunActivity, {
-        project_id: project_id,
-        issue_id: issue_id,
-        source_pull_request_number: pr_number,
-        goal: "review",
-        focus: pr_data[:focus] || "general"
-      }, timeout: 30)
-
-      if trigger_types.include?("ready_for_owner")
-        without_paid_agent_review = pr_data[:triggers].reject { |t| t[:type] == "paid_agent_review_pending" }
-        handle_ready_for_owner(project_id, pr_data.merge(triggers: without_paid_agent_review))
-        return
-      end
-
-      dispatch_manual_review_request(project_id, pr_data)
-
-      if trigger_types.include?("review_bot_review_pending")
-        dispatch_bot_review_request(project_id, pr_data)
-        return unless posted_bot_feedback_trigger?(trigger_types)
-      end
-
-      followup_trigger_types = %w[
-        ci_failure review_threads conversation_comments changes_requested
-        actionable_labels merge_conflicts review_bot_comments review_bot_threads
-      ]
-      followup_triggers = (pr_data[:triggers] || []).any? { |t| followup_trigger_types.include?(t[:type]) }
-
-      if followup_triggers
-        if pr_data[:phase].in?(%w[draft restarted])
-          start_draft_followup_workflow(project_id, pr_data)
-        else
-          start_pr_followup_workflow(project_id, pr_data)
-        end
-      else
-        dispatch_bot_review_request(project_id, pr_data)
-      end
-    end
-
-    def dispatch_manual_review_request(project_id, pr_data)
-      manual = (pr_data[:triggers] || []).find { |t| t[:type] == "manual_review_pending" }
-      return unless manual
-
-      login = manual[:reviewer_login]
-      return unless login
-
-      request_review(project_id, pr_data[:pr_number],
-        [ login ],
-        log_key: "pr_review.request_manual_review_failed")
-    end
-
-    def dispatch_bot_review_request(project_id, pr_data)
-      pending_bot = (pr_data[:triggers] || []).find { |t| t[:type] == "review_bot_review_pending" }
-      reviewers = review_bot_reviewers_from(pending_bot)
-      return if reviewers.empty?
-
-      request_review(project_id, pr_data[:pr_number],
-        reviewers,
-        log_key: "pr_review.request_review_bot_review_failed")
-    end
-
-    def handle_non_bot_review_pending(project_id, pr_data, trigger_types)
-      # For manual_review_pending, request a review from the configured reviewer.
-      # For ci_action_pending, dispatch the Claude review workflow only when
-      # the trigger explicitly asks for it; otherwise the PR simply waits for
-      # the existing check run to finish.
-      manual_trigger = (pr_data[:triggers] || []).find { |t| t[:type] == "manual_review_pending" }
-      if manual_trigger
-        login = manual_trigger[:reviewer_login]
-        if login.present?
-          request_review(project_id, pr_data[:pr_number],
-            [ login ],
-            log_key: "pr_review.request_manual_review_failed")
-        end
-      end
-
-      ci_action_trigger = (pr_data[:triggers] || []).find { |t| t[:type] == "ci_action_pending" }
-      if ci_action_trigger&.dig(:dispatch_required)
-        run_activity(Activities::DispatchClaudeReviewActivity,
-          { project_id: project_id, pr_number: pr_data[:pr_number] }, timeout: 60)
-      end
-
-      # If there are other actionable triggers beyond the non-bot gates,
-      # start a followup workflow to address them.
-      other_triggers = trigger_types - %w[manual_review_pending ci_action_pending]
-      return if other_triggers.empty?
-
-      if pr_data[:phase].in?(%w[draft restarted])
-        start_draft_followup_workflow(project_id, pr_data)
-      else
-        start_pr_followup_workflow(project_id, pr_data)
-      end
-    end
-
     def request_review(project_id, pr_number, reviewers, log_key:)
       run_activity(Activities::RequestReviewActivity,
         { project_id: project_id, pr_number: pr_number,
@@ -741,6 +465,12 @@ module Workflows
     rescue Temporalio::Error::CanceledError
       raise
     rescue => e
+      record_swallowed_non_critical_activity_failure(
+        project_id: project_id,
+        helper: "request_review",
+        error: e,
+        pr_number: pr_number
+      )
       Temporalio::Workflow.logger.warn(
         message: log_key,
         project_id: project_id,
@@ -759,13 +489,18 @@ module Workflows
 
     def maybe_trigger_dev_update(project_id, pr_data, merge_result)
       return unless merge_result[:merged]
-      return unless Temporalio::Workflow.patched("add-dev-environment-update-v1")
 
       run_activity(Activities::TriggerDevEnvironmentUpdateActivity,
         { project_id: project_id, pr_number: pr_data[:pr_number] }, timeout: 60)
     rescue Temporalio::Error::CanceledError
       raise
     rescue => e
+      record_swallowed_non_critical_activity_failure(
+        project_id: project_id,
+        helper: "maybe_trigger_dev_update",
+        error: e,
+        pr_number: pr_data[:pr_number]
+      )
       Temporalio::Workflow.logger.warn(
         message: "dev_update.trigger_failed",
         project_id: project_id,
@@ -785,9 +520,9 @@ module Workflows
         source_pull_request_number: pr_number,
         focus: pr_data[:focus] || "general",
         count_toward_draft_review_round: true,
-        expected_draft_review_count: pr_data[:current_draft_review_count]
+        expected_draft_review_count: pr_data[:current_draft_review_count],
+        goal: "create_pr"
       }
-      draft_input[:goal] = "create_pr" if Temporalio::Workflow.patched("queue-agent-run-goal-v1")
       run_activity(Activities::QueueAgentRunActivity, draft_input, timeout: 30)
     end
 
@@ -805,15 +540,13 @@ module Workflows
 
       followup_queue_input = { project_id: project_id, issue_id: issue_id,
         source_pull_request_number: pr_number,
-        focus: pr_data[:focus] || "general" }
-      followup_queue_input[:goal] = "create_pr" if Temporalio::Workflow.patched("queue-agent-run-goal-v1")
+        focus: pr_data[:focus] || "general",
+        goal: "create_pr" }
       run_activity(Activities::QueueAgentRunActivity, followup_queue_input, timeout: 30)
       run_activity(Activities::RecordPrFollowupActivity, followup_input, timeout: 30)
     end
 
     def quality_gate_allows_run?(project_id, data, goal:)
-      return true unless Temporalio::Workflow.patched("github-poll-quality-gate-v1")
-
       result = run_activity(Activities::CheckQualityGateActivity,
         {
           project_id: project_id,

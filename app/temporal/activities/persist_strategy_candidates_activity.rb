@@ -22,7 +22,12 @@ module Activities
       candidates = StrategyEvolution::CreateCandidates.call(
         strategy_snapshot: input.fetch(:strategy),
         account: account,
-        mutations: mutations
+        mutations: mutations,
+        idempotency_key: Activities::IdempotencyKey.compute(
+          input.fetch(:account_id),
+          input.fetch(:strategy),
+          input.fetch(:mutations, [])
+        )
       )
 
       {
