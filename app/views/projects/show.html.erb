@@ -78,7 +78,9 @@
                 <% if pause_metadata["metric_type"].present? %>
                   (<%= pause_metadata["metric_type"].humanize.downcase %>)
                 <% end %>.
-                <%= link_to "Review details", edit_project_path(@project), class: "font-medium text-amber-800 underline hover:text-amber-900" %>
+                <% if policy(@project).update? %>
+                  <%= link_to "Review details", edit_project_path(@project), class: "font-medium text-amber-800 underline hover:text-amber-900" %>
+                <% end %>
               </p>
             <% end %>
           </div>
