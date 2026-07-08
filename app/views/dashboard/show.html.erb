@@ -53,7 +53,11 @@
       </div>
 
       <div class="mt-6">
-        <%= render "dashboard/queue_preview", queue_preview: @queue_preview %>
+        <%= render "dashboard/quality_paused_projects", projects: @quality_paused_projects %>
+      </div>
+
+      <div class="mt-6">
+        <%= render "dashboard/queue_preview", queue_preview: @queue_preview, paused_projects: @quality_paused_projects %>
       </div>
 
       <div class="mt-6">
@@ -89,10 +93,6 @@
       </turbo-frame>
 
       <div id="dashboard-alerts" class="mt-6 space-y-3"></div>
-
-      <div class="mt-6">
-        <%= render "dashboard/quality_paused_projects", projects: @quality_paused_projects %>
-      </div>
     </div>
   </details>
 

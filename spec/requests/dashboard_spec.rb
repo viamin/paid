@@ -478,6 +478,35 @@ RSpec.describe "Dashboard" do
         expect(response.body).to include(edit_project_path(project))
       end
 
+      it "shows the quality-paused notice above the queue and explains the empty queue" do
+        project.update!(
+          name: "Paused Project",
+          auto_pick_enabled: true,
+          quality_paused_at: 30.minutes.ago,
+          quality_pause_metadata: { "composite_score" => 0.34, "threshold" => 0.5 }
+        )
+
+        get dashboard_path
+
+        body = response.body
+        expect(body.index("Quality-paused projects")).to be < body.index("Upcoming Queue")
+        expect(body).not_to include("No queued runs for your projects.")
+        expect(body).to include("no work is being queued")
+      end
+
+      it "does not blame the empty queue on a quality-paused project with auto-pick off" do
+        project.update!(
+          auto_pick_enabled: false,
+          quality_paused_at: 30.minutes.ago,
+          quality_pause_metadata: { "composite_score" => 0.34, "threshold" => 0.5 }
+        )
+
+        get dashboard_path
+
+        expect(response.body).to include("Quality-paused projects")
+        expect(response.body).to include("No queued runs for your projects.")
+      end
+
       it "shows paused runs with resume actions on the dashboard" do
         issue = create(:issue, :pull_request, project: project,
           github_number: 88, title: "Handle paused runs better")

@@ -3,7 +3,7 @@
 require "rails_helper"
 
 RSpec.describe QualityPause::Check do
-  let(:project) { create(:project) }
+  let(:project) { create(:project, quality_gate_settings: Project::DEFAULT_QUALITY_GATE_SETTINGS.merge("enabled" => true)) }
   let(:agent_run) { create(:agent_run, :completed, project: project) }
   let(:prompt) { create(:prompt, :with_version, project: project, account: project.account) }
   let(:prompt_version) { prompt.current_version }
@@ -16,6 +16,16 @@ RSpec.describe QualityPause::Check do
       described_class.call(agent_run: agent_run)
 
       expect(project.reload.quality_paused?).to be false
+    end
+
+    it "does nothing when quality gates are disabled for the project" do
+      disabled_project = create(:project)
+      run = create(:agent_run, :completed, project: disabled_project)
+      create_quality_metrics(disabled_project, scores: [ 0.0, 0.0, 0.0, 0.0, 0.0 ])
+
+      described_class.call(agent_run: run)
+
+      expect(disabled_project.reload.quality_paused?).to be false
     end
 
     it "does nothing when project is already paused" do
