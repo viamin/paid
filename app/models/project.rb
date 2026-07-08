@@ -1059,13 +1059,15 @@ class Project < ApplicationRecord
     end
   end
 
-  # True when this app-backed project is configured to retry a git push with
-  # its fallback PAT after the App installation token is rejected for a missing
-  # permission (e.g. a push touching .github/workflows/). This is the opt-in
-  # gate only — the App remains the default credential for every operation; the
-  # PAT is used solely for the failing retry (see Containers::GitOperations and
-  # WorktreeService). We trust the configured setting rather than inspecting the
-  # PAT's scopes, because fine-grained PATs do not report classic OAuth scopes.
+  # True when this app-backed project is configured to retry a GitHub
+  # operation with its fallback PAT after the App installation token is
+  # rejected for a missing permission (e.g. a change touching
+  # .github/workflows/). This is the opt-in gate only — the App remains the
+  # default credential for every operation; the PAT is used solely for the
+  # failing retry (see Containers::GitOperations, WorktreeService, and
+  # Activities::MergePullRequestActivity for the push and merge retry sites).
+  # We trust the configured setting rather than inspecting the PAT's scopes,
+  # because fine-grained PATs do not report classic OAuth scopes.
   def git_push_pat_fallback_configured?
     return false unless github_installation_id.present? || github_installation.present?
     return false unless git_push_pat_fallback_enabled?
@@ -1075,9 +1077,18 @@ class Project < ApplicationRecord
   end
 
   # The fallback PAT credential string, or nil when fallback is not configured.
-  # Callers use this only on a permission-rejected push retry.
+  # Used by the git-level push retry, which swaps the credential in the git
+  # remote URL rather than going through a GithubClient.
   def git_push_fallback_credential
     git_push_fallback_token.token if git_push_pat_fallback_configured?
+  end
+
+  # The fallback PAT's authenticated GithubClient, or nil when fallback is not
+  # configured. Used by REST-API-level retries (e.g. a merge rejected for the
+  # same missing App permission) that need a ready client rather than a raw
+  # token string.
+  def git_push_fallback_client
+    git_push_fallback_token.client if git_push_pat_fallback_configured?
   end
 
   # Returns a GithubClient authenticated via the project's GitHub credential

@@ -17,6 +17,7 @@ module Activities
     PAID_AUTO_MERGED_LABEL = "paid-auto-merged"
     PAID_ESCALATED_LABEL = "paid-escalated"
     AUTO_MERGE_COMMENT = "This PR was automatically merged by paid's auto-merge feature."
+    MERGE_PERMISSION_COMMENT_MARKER = "<!-- paid: merge-permission-rejection -->"
 
     def execute(input)
       project = Project.find(input[:project_id])
@@ -38,6 +39,20 @@ module Activities
           project_id: project.id,
           pr_number: pr_number,
           label: Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL
+        )
+        return { merged: false, skipped: true, pr_number: pr_number }
+      end
+
+      # A prior attempt hit a permanent GitHub App permission rejection (e.g.
+      # missing `workflows` permission). Re-attempting every poll cycle only
+      # wastes API calls on a failure that repeats identically until the App's
+      # permissions change, so this is retried on a cooldown instead — see
+      # Issue#merge_permission_retry_due?.
+      unless issue.merge_permission_retry_due?
+        logger.info(
+          message: "pr_review.merge_permission_cooldown",
+          project_id: project.id,
+          pr_number: pr_number
         )
         return { merged: false, skipped: true, pr_number: pr_number }
       end
@@ -71,12 +86,20 @@ module Activities
         )
         true
       else
-        attempt_merge(provider, project, repo, pr_number)
+        attempt_merge(provider, project, issue, repo, pr_number)
       end
 
       if merged
         had_escalated_label = issue.has_label?(PAID_ESCALATED_LABEL)
-        issue.update!(pr_review_phase: "merged", labels: issue.labels - [ PAID_ESCALATED_LABEL ])
+        # Clear any prior merge-permission rejection recorded on this issue —
+        # otherwise the "Merge Blocked" indicator keeps showing on an already-
+        # merged PR until the next full GitHub sync updates github_state.
+        issue.update!(
+          pr_review_phase: "merged",
+          labels: issue.labels - [ PAID_ESCALATED_LABEL ],
+          merge_permission_rejected_at: nil,
+          merge_permission_rejection_reason: nil
+        )
         IssueMergeSubscriptions::Deliver.call(issue: issue, event: :merged)
         # A merge resolves any prior escalation; strip the stale label so the
         # closed PR isn't left flagged as escalated.
@@ -94,7 +117,7 @@ module Activities
 
     private
 
-    def attempt_merge(provider, project, repo, pr_number)
+    def attempt_merge(provider, project, issue, repo, pr_number)
       config = Automation::Configuration::AutoMerge.from_project(project)
 
       result = provider.merge_pull_request(
@@ -115,6 +138,114 @@ module Activities
         project_id: project.id,
         pr_number: pr_number,
         error: e.message
+      )
+      handle_merge_failure(project, issue, repo, pr_number, config, e.message)
+    end
+
+    def handle_merge_failure(project, issue, repo, pr_number, config, message)
+      return false unless permission_rejection?(message)
+
+      fallback_merged = attempt_merge_with_pat_fallback(project, repo, pr_number, config)
+      return true if fallback_merged
+
+      handle_merge_permission_rejection(project, issue, pr_number, message, fallback_attempted: !fallback_merged.nil?)
+      false
+    end
+
+    def permission_rejection?(message)
+      AgentRun::PUSH_PERMISSION_REJECTION_KEYWORDS.any? { |keyword| message.to_s.include?(keyword) }
+    end
+
+    # Retries the merge with the project's PAT push-fallback credential when
+    # the App installation token lacks a permission the merge needs (same
+    # class of rejection the push retry already handles — see
+    # Project#git_push_pat_fallback_configured?). Returns nil when fallback
+    # isn't configured (caller falls through to the cooldown/comment path),
+    # false when the retry itself failed, or the merge outcome on success.
+    def attempt_merge_with_pat_fallback(project, repo, pr_number, config)
+      client = project.git_push_fallback_client
+      return nil unless client
+
+      fallback_provider = Automation::Providers::Github::RepositoryProvider.new(project, client: client)
+      result = fallback_provider.merge_pull_request(
+        repo: repo,
+        number: pr_number,
+        method: config.merge_method.to_sym
+      )
+      logger.info(
+        message: "pr_review.merged_with_pat_fallback",
+        project_id: project.id,
+        pr_number: pr_number
+      )
+      result.merged
+    rescue Automation::Providers::RepositoryProvider::ProviderError => e
+      logger.warn(
+        message: "pr_review.merge_pat_fallback_failed",
+        project_id: project.id,
+        pr_number: pr_number,
+        error: e.message
+      )
+      false
+    end
+
+    def handle_merge_permission_rejection(project, issue, pr_number, message, fallback_attempted:)
+      issue.record_merge_permission_rejection!(reason: message)
+      post_merge_permission_comment(project, issue, pr_number, fallback_attempted:)
+    end
+
+    def post_merge_permission_comment(project, issue, pr_number, fallback_attempted:)
+      client = project.client
+      return unless client
+
+      return if merge_permission_comment_present?(client, project, pr_number)
+
+      next_step = if fallback_attempted
+        "**Next step:** the configured PAT push-fallback credential also could not merge this PR — " \
+          "check that it has not expired or been revoked, then merge manually or wait for the next automatic check."
+      else
+        "**Next step:** grant the App the `workflows` permission, or configure a PAT push-fallback " \
+          "credential for this project, then merge manually or wait for the next automatic check."
+      end
+
+      body = [
+        MERGE_PERMISSION_COMMENT_MARKER,
+        "**Auto-merge blocked: missing GitHub App permission**",
+        "",
+        "Paid could not merge this PR because the GitHub App installation token " \
+          "lacks a permission needed for a change under `.github/workflows/` " \
+          "(most commonly the `workflows` permission). This is permanent until " \
+          "the App's permissions change, so Paid will keep checking periodically " \
+          "rather than retrying every cycle.",
+        "",
+        next_step
+      ].join("\n")
+
+      client.add_comment(project.full_name, pr_number, body)
+      logger.info(
+        message: "github_integration.merge_permission_comment_posted",
+        project_id: project.id,
+        pr_number: pr_number
+      )
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "github_integration.merge_permission_comment_failed",
+        project_id: project.id,
+        pr_number: pr_number,
+        error_class: e.class.name,
+        error_message: e.message.to_s.truncate(200)
+      )
+    end
+
+    def merge_permission_comment_present?(client, project, pr_number)
+      comments = client.recent_issue_comments(project.full_name, pr_number)
+      comments.any? { |comment| comment.respond_to?(:body) && comment.body&.include?(MERGE_PERMISSION_COMMENT_MARKER) }
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "github_integration.merge_permission_comment_check_failed",
+        project_id: project.id,
+        pr_number: pr_number,
+        error_class: e.class.name,
+        error_message: e.message.to_s.truncate(200)
       )
       false
     end

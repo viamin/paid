@@ -1239,7 +1239,7 @@ RSpec.describe Project do
         expect(project.git_push_pat_fallback_configured?).to be(false)
       end
 
-      it "never mints an App installation token (it is a push-only fallback)" do
+      it "never mints an App installation token (the App remains the default credential)" do
         account = create(:account)
         fallback = create(:github_token, account: account)
         project = app_backed_project(account, git_push_pat_fallback_enabled: true, git_push_fallback_token: fallback)
@@ -1248,6 +1248,28 @@ RSpec.describe Project do
         project.git_push_fallback_credential
 
         expect(Github::AppInstallation).not_to have_received(:token_for)
+      end
+    end
+
+    describe "#git_push_fallback_client" do
+      def app_backed_project(account, **attrs)
+        build(:project, :with_github_installation, account: account, **attrs)
+      end
+
+      it "returns the fallback token's client when fallback is configured" do
+        account = create(:account)
+        fallback = create(:github_token, account: account)
+        project = app_backed_project(account, git_push_pat_fallback_enabled: true, git_push_fallback_token: fallback)
+
+        expect(project.git_push_fallback_client).to eq(fallback.client)
+      end
+
+      it "returns nil when fallback is not configured" do
+        account = create(:account)
+        fallback = create(:github_token, account: account)
+        project = app_backed_project(account, git_push_pat_fallback_enabled: false, git_push_fallback_token: fallback)
+
+        expect(project.git_push_fallback_client).to be_nil
       end
     end
 
