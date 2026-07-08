@@ -14,7 +14,6 @@ class AccountActivityEvent < ApplicationRecord
     "tenant_configuration.updated" => "settings",
     "compliance.assurance_updated" => "settings",
     "operations.dashboard_updated" => "settings",
-    "configuration_profile.applied" => "settings",
     "project.created" => "project",
     "project.updated" => "project",
     "project.deleted" => "project",
@@ -34,6 +33,8 @@ class AccountActivityEvent < ApplicationRecord
     "agent_run.resumed" => "run",
     "prompt_version.approved" => "approval",
     "prompt_version.rejected" => "approval",
+    "configuration_profile.applied" => "configuration_profile",
+    "configuration_profile.reverted" => "configuration_profile",
     "auth.sign_in" => "auth",
     "auth.password_changed" => "auth"
   }.freeze
@@ -143,6 +144,10 @@ class AccountActivityEvent < ApplicationRecord
       "Approved prompt #{metadata_value('prompt_slug')} v#{metadata_value('version')}"
     when "prompt_version.rejected"
       "Rejected prompt #{metadata_value('prompt_slug')} v#{metadata_value('version')}"
+    when "configuration_profile.applied"
+      "Applied posture #{metadata_value('label')} to #{metadata_value('project_name')}"
+    when "configuration_profile.reverted"
+      "Reverted posture change on #{metadata_value('project_name')}"
     when "auth.sign_in"
       "Signed in"
     when "auth.password_changed"
@@ -174,6 +179,8 @@ class AccountActivityEvent < ApplicationRecord
       Array(metadata.to_h["notes"]).compact.map { |n| "Notes: #{n}" }
     when "prompt_version.rejected"
       Array(metadata.to_h["notes"]).compact.map { |n| "Notes: #{n}" }
+    when "configuration_profile.applied", "configuration_profile.reverted"
+      Array(metadata.to_h["changed_fields"]).map { |field| "#{field.to_s.humanize} changed" }
     else
       []
     end
