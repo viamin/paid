@@ -107,6 +107,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | [RDR-032](RDR-032-eager-queue-seeding.md) | Eager Queue Seeding — Eliminate Auto-Pick Throttling | Implemented | P1 |
 | [RDR-035](RDR-035-style-guide-evolution.md) | Style Guide Evolution | Accepted | High |
 | [RDR-036](RDR-036-mutation-testing-for-ai-generated-tests.md) | Mutation Testing for AI-Generated Tests (Mutant) | Partially Implemented | P1 |
+| [RDR-045](RDR-045-live-web-app-preview-agent-verification.md) | Live Web App Preview and Interactive Agent Verification | Draft | High |
 
 ### Runner Intelligence
 
