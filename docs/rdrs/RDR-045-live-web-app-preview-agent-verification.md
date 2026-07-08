@@ -298,23 +298,32 @@ elixir: %w[
 
 All Playwright-driven sessions (agent verification, screenshot capture, human preview scripted flows) record traces:
 
-**Recording**: Enable in the Playwright launch config:
+**Recording**: Tracing is controlled via the `context.tracing` API, not a `newContext` option:
 
 ```javascript
 const context = await browser.newContext({
   viewport: config.viewport,
-  trace: 'on'  // or 'retain-on-failure', 'on-first-retry'
+  recordVideo: { dir: "tmp/videos/" }  // optional: capture .webm video
 });
+await context.tracing.start({
+  screenshots: true,
+  snapshots: true,
+  sources: true
+});
+// ... run interactions ...
+await context.tracing.stop({ path: "tmp/trace.zip" });
 ```
 
-**Outputs from a single trace**:
+**Artifacts from a Playwright session**:
 
-| Output | Format | Use Case |
-|--------|--------|----------|
-| Trace file (`.zip`) | Playwright trace | Interactive viewer embedded in iframe |
-| Animated GIF | `.gif` | PR comments (upgrade from static PNGs) |
-| Video | `.webm` | Demo reels, documentation |
-| Step screenshots | `.png` sequence | Before/after comparisons with interaction context |
+| Artifact | How produced | Format | Use Case |
+|----------|-------------|--------|----------|
+| Trace file | `context.tracing.stop({ path })` | `.zip` | Interactive viewer embedded in iframe |
+| Video | `recordVideo` dir on `newContext` | `.webm` | Demo reels, documentation |
+| Animated GIF | Post-processing from video or trace (e.g., ffmpeg, `playwright-gif`) | `.gif` | PR comments (upgrade from static PNGs) |
+| Step screenshots | Trace viewer export or `page.screenshot()` per step | `.png` | Before/after comparisons with interaction context |
+
+The trace `.zip` is the primary artifact — it contains DOM snapshots, network requests, console logs, and screenshots at each step. Video requires enabling `recordVideo` on the context separately. Animated GIFs are derived from video or trace files via post-processing tooling (ffmpeg or a conversion library), not produced by Playwright directly.
 
 **PR comment upgrade**: `Screenshots::PrComment` currently posts static before/after PNGs. With traces, it posts animated GIFs showing the interaction flow (e.g., form fill → submit → result page transition). The static PNG fallback remains for projects without trace support.
 
