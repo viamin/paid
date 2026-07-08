@@ -42,6 +42,7 @@ RSpec.describe "Dashboard" do
         expect(card).to be_present
 
         heading = card.at_xpath(".//h3[normalize-space()='Retry-limited issues']")
+        expect(heading).to be_present
 
         expect(card["class"]).to include("border-gray-200")
         expect(card["class"]).to include("bg-white")
@@ -64,6 +65,7 @@ RSpec.describe "Dashboard" do
         expect(card).to be_present
 
         heading = card.at_xpath(".//h3[normalize-space()='Retry-limited issues']")
+        expect(heading).to be_present
 
         expect(card["class"]).to include("border-orange-200")
         expect(card["class"]).to include("bg-orange-50")
