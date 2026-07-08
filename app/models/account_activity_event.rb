@@ -14,7 +14,6 @@ class AccountActivityEvent < ApplicationRecord
     "tenant_configuration.updated" => "settings",
     "compliance.assurance_updated" => "settings",
     "operations.dashboard_updated" => "settings",
-    "configuration_profile.applied" => "settings",
     "project.created" => "project",
     "project.updated" => "project",
     "project.deleted" => "project",
