@@ -91,7 +91,7 @@ This proves the core capability: Paid can start an arbitrary web app in an isola
 
 **Discovery 7 — playwright-mcp is an npx MCP server.** The `McpProvisioner` already handles `npx`-based stdio servers. playwright-mcp (`@executeautomation/playwright-mcp-server` or similar) would be provisioned as an npx server inside the agent container, with a CDP URL pointing to the browser container. No new MCP infrastructure is needed.
 
-**Discovery 8 — Playwright traces produce multiple valuable outputs.** A single Playwright trace recording yields: interactive trace viewer (scrub through DOM snapshots, network, console), animated GIFs (for PR comments), and video (for demos). This upgrades the screenshot system from static PNGs to rich, animated content with minimal additional code (`trace: 'on'` in Playwright config).
+**Discovery 8 — Playwright traces produce multiple valuable outputs.** A Playwright session yields a trace file (interactive viewer with DOM snapshots, network, console), video (via `recordVideo`), and animated GIFs (via post-processing). This upgrades the screenshot system from static PNGs to rich, animated content with minimal additional code (`context.tracing.start()` / `context.tracing.stop()`).
 
 ## Proposed Solution
 
@@ -142,7 +142,8 @@ The same preview session can serve both the agent (during verification) and the 
 │  │  │ │ Rathole    │ │            │ (playwright-mcp)     │             │ │
 │  │  │ │ Client     │─┼──────────► │                      │             │ │
 │  │  │ └────────────┘ │  outbound  └──────────────────────┘             │ │
-│  │  └────────────────┘    connection                                    │ │
+│  │  └────────────────┘  to Rathole                                    │ │
+│  │                     Server (below)                                 │ │
 │  │                                │                                     │ │
 │  │                                ▼                                     │ │
 │  │  ┌───────────────────────────────────────────────────────────────┐  │ │
@@ -461,7 +462,7 @@ Files modified:
 
 Files modified:
 
-- `app/services/screenshots/container_capture.rb` — add `trace: 'on'` to Playwright context config in `capture_runner_script`
+- `app/services/screenshots/container_capture.rb` — add `context.tracing.start()` / `context.tracing.stop()` calls in `capture_runner_script`; enable `recordVideo` for video output
 - `app/services/screenshots/storage.rb` — add trace file upload alongside PNG upload
 - `app/services/screenshots/pr_comment.rb` — add animated GIF generation from trace, post alongside or instead of static PNGs
 
