@@ -454,11 +454,13 @@ module Containers
           timeout: nil, stream: false
         )
       else
-        # Shellwords.shellescape neutralises any shell metacharacters in the
-        # trailer so printf writes exactly the configured value (no newline).
-        escaped = Shellwords.shellescape(trailer)
+        # The trailer is passed as a positional shell argument ($1) rather
+        # than interpolated into the script text, so shell metacharacters in
+        # the trailer can't affect command parsing regardless of their
+        # content.
         result = container_service.execute(
-          "mkdir -p .git && printf '%s' #{escaped} > #{CO_AUTHOR_TRAILER_FILE}",
+          [ "sh", "-c", "mkdir -p .git && printf '%s' \"$1\" > \"$2\"", "--",
+            trailer, CO_AUTHOR_TRAILER_FILE ],
           timeout: nil, stream: false
         )
       end

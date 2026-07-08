@@ -1981,8 +1981,8 @@ RSpec.describe Containers::GitOperations do
       described_class::CO_AUTHOR_TRAILER_FILE
     end
 
-    def trailer_file_write_pattern
-      /printf '%s' .* > #{Regexp.escape(trailer_file)}/
+    def trailer_file_write_matcher
+      array_including("sh", "-c", a_string_matching(/printf '%s'/), "--")
     end
 
     context "when project has a trailer configured" do
@@ -2005,7 +2005,7 @@ RSpec.describe Containers::GitOperations do
           .with("mv .git/hooks/commit-msg.tmp .git/hooks/commit-msg", timeout: nil, stream: false)
           .and_return(success_result)
         allow(container_service).to receive(:execute)
-          .with(a_string_matching(trailer_file_write_pattern), timeout: nil, stream: false)
+          .with(trailer_file_write_matcher, timeout: nil, stream: false)
           .and_return(success_result)
       end
 
@@ -2031,18 +2031,16 @@ RSpec.describe Containers::GitOperations do
           .with(a_string_matching(/cat > \.git\/hooks\/commit-msg\.tmp/), timeout: nil, stream: false)
           .and_return(success_result)
 
-        write_script = nil
+        write_command = nil
         allow(container_service).to receive(:execute)
-          .with(a_string_matching(trailer_file_write_pattern), timeout: nil, stream: false) { |cmd, **|
-            write_script = cmd
+          .with(trailer_file_write_matcher, timeout: nil, stream: false) { |cmd, **|
+            write_command = cmd
             success_result
           }
 
         git_ops.install_co_author_hook
 
-        expect(write_script).to include(
-          Shellwords.shellescape("Co-Authored-By: Claude <noreply@anthropic.com>")
-        )
+        expect(write_command).to include("Co-Authored-By: Claude <noreply@anthropic.com>")
       end
     end
 
@@ -2066,15 +2064,15 @@ RSpec.describe Containers::GitOperations do
           .with("mv .git/hooks/commit-msg.tmp .git/hooks/commit-msg", timeout: nil, stream: false)
           .and_return(success_result)
         allow(container_service).to receive(:execute)
-          .with(a_string_matching(trailer_file_write_pattern), timeout: nil, stream: false)
+          .with(trailer_file_write_matcher, timeout: nil, stream: false)
           .and_return(success_result)
       end
 
-      it "escapes the trailer for the shared file write using Shellwords" do
-        write_script = nil
+      it "passes the trailer as a positional argument, not interpolated" do
+        write_command = nil
         allow(container_service).to receive(:execute)
-          .with(a_string_matching(trailer_file_write_pattern), timeout: nil, stream: false) { |cmd, **|
-            write_script = cmd
+          .with(trailer_file_write_matcher, timeout: nil, stream: false) { |cmd, **|
+            write_command = cmd
             success_result
           }
         allow(container_service).to receive(:execute)
@@ -2083,8 +2081,11 @@ RSpec.describe Containers::GitOperations do
 
         git_ops.install_co_author_hook
 
-        expect(write_script).to include(Shellwords.shellescape("Co-Authored-By: O'Brien <ob@example.com>"))
-        expect(write_script).not_to include("''")
+        # The trailer (containing a shell metacharacter) is passed as its own
+        # array element rather than woven into the script text, so no
+        # escaping of the trailer itself is needed.
+        expect(write_command).to include("Co-Authored-By: O'Brien <ob@example.com>")
+        expect(write_command[2]).to eq("mkdir -p .git && printf '%s' \"$1\" > \"$2\"")
       end
     end
 
@@ -2168,7 +2169,7 @@ RSpec.describe Containers::GitOperations do
           .with("mv .git/hooks/commit-msg.tmp .git/hooks/commit-msg", timeout: nil, stream: false)
           .and_return(success_result)
         allow(container_service).to receive(:execute)
-          .with(a_string_matching(trailer_file_write_pattern), timeout: nil, stream: false)
+          .with(trailer_file_write_matcher, timeout: nil, stream: false)
           .and_return(success_result)
       end
 
@@ -2220,7 +2221,7 @@ RSpec.describe Containers::GitOperations do
           .with("mv .git/hooks/commit-msg.tmp .git/hooks/commit-msg", timeout: nil, stream: false)
           .and_return(success_result)
         allow(container_service).to receive(:execute)
-          .with(a_string_matching(trailer_file_write_pattern), timeout: nil, stream: false)
+          .with(trailer_file_write_matcher, timeout: nil, stream: false)
           .and_return(success_result)
       end
 
@@ -2345,31 +2346,36 @@ RSpec.describe Containers::GitOperations do
     it "writes the provider's trailer to the shared file" do
       runner.update!(agent_co_author_trailer: "Co-Authored-By: Claude <noreply@anthropic.com>")
 
-      write_script = nil
+      write_command = nil
       allow(container_service).to receive(:execute)
-        .with(a_string_matching(/printf '%s' .* > #{Regexp.escape(trailer_file)}/), timeout: nil, stream: false) { |cmd, **|
-          write_script = cmd
+        .with(array_including("sh", "-c", a_string_matching(/printf '%s'/)), timeout: nil, stream: false) { |cmd, **|
+          write_command = cmd
           success_result
         }
 
       git_ops.write_co_author_trailer(runner)
 
-      expect(write_script).to include(Shellwords.shellescape("Co-Authored-By: Claude <noreply@anthropic.com>"))
+      expect(write_command).to eq(
+        [ "sh", "-c", "mkdir -p .git && printf '%s' \"$1\" > \"$2\"", "--",
+          "Co-Authored-By: Claude <noreply@anthropic.com>", trailer_file ]
+      )
     end
 
-    it "escapes shell metacharacters in the trailer" do
+    it "passes trailers containing shell metacharacters as a positional argument, not interpolated" do
       runner.update!(agent_co_author_trailer: "Co-Authored-By: O'Brien <ob@example.com>")
 
-      write_script = nil
+      write_command = nil
       allow(container_service).to receive(:execute) { |cmd, **|
-        write_script = cmd
+        write_command = cmd
         success_result
       }
 
       git_ops.write_co_author_trailer(runner)
 
-      expect(write_script).to include(Shellwords.shellescape("Co-Authored-By: O'Brien <ob@example.com>"))
-      expect(write_script).not_to include("''")
+      expect(write_command).to eq(
+        [ "sh", "-c", "mkdir -p .git && printf '%s' \"$1\" > \"$2\"", "--",
+          "Co-Authored-By: O'Brien <ob@example.com>", trailer_file ]
+      )
     end
 
     it "removes the file when the provider has a blank trailer" do
