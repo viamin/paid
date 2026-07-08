@@ -151,6 +151,13 @@ module Automation
         # queue_review_run decision and suppress create_pr follow-up runs
         # while the review is outstanding (#1135).
         #
+        # Exception: posted bot feedback is already actionable. Queue a
+        # create_pr follow-up to address it before asking paid_agent to
+        # review the same findings again.
+        if !review_actively_running?(signals) && posted_bot_feedback_trigger?(signals.trigger_types)
+          return followup_decisions(signals)
+        end
+
         # Exception: when merge_conflicts is also present and the review
         # isn't currently running, address the conflict via create_pr first
         # (#2324). A review of code with conflicts can't produce meaningful
@@ -220,6 +227,10 @@ module Automation
       end
 
       def review_goal_retry_decisions(signals, plugins, outcomes, trigger_types)
+        if posted_bot_feedback_trigger?(trigger_types)
+          return followup_decisions(signals)
+        end
+
         paid_decision = plugins.find { |p| p.name == :paid_agent }&.decision
         retry_decision = Automation::Decision.record_review_goal_retry(
           issue_id: signals.issue_id,
@@ -246,8 +257,10 @@ module Automation
         decisions.concat(non_bot_request_decisions(plugins))
 
         if trigger_types.include?(Automation::ReviewMethods::Copilot::TRIGGER_TYPE)
+          # posted_bot_feedback_trigger? was already handled by the early
+          # return at the top of this method, so no follow-up is appended
+          # here — only the bot review request.
           decisions.concat(review_bot_request_decisions(plugins))
-          decisions.concat(followup_decisions(signals)) if posted_bot_feedback_trigger?(trigger_types)
           return decisions
         end
 

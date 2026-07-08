@@ -6,6 +6,11 @@ module Activities
   # Creates new recommendations with status "pending", skips duplicates
   # (same recommendation_type + collector_type + project with status "pending"),
   # and closes stale recommendations no longer flagged by the LLM.
+  #
+  # Idempotent on Temporal retry (#2770): the pending-duplicate check means a
+  # retry that replays identical recommendations reuses the rows a previous
+  # attempt already created instead of duplicating them, and stale-dismissal
+  # is a pure function of the flagged recommendation set.
   class RecordKnowledgeRecommendationsActivity < BaseActivity
     activity_name "RecordKnowledgeRecommendations"
 

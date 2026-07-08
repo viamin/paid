@@ -145,8 +145,7 @@ module Workflows
             parent_issue_id: issue_id,
             sub_tasks: sub_tasks
           },
-          timeout: 120,
-          retry_policy: NO_RETRY
+          **create_sub_issues_activity_options
         )
 
         created_issues = create_result[:created_issues]
@@ -250,6 +249,16 @@ module Workflows
       self.class.planning_outcome_for(tasks)
     end
 
+    # CreateSubIssuesActivity is now idempotent (#2770), so new executions use
+    # the default retry policy instead of NO_RETRY. Replay-safe via a patch:
+    # in-flight executions that predate the fix keep their original no-retry
+    # behavior to stay deterministic.
+    def create_sub_issues_activity_options
+      options = { timeout: 120 }
+      options[:retry_policy] = NO_RETRY unless Temporalio::Workflow.patched("create-sub-issues-idempotent-retry-v1")
+      options
+    end
+
     def planning_failure_outcome_for(step)
       self.class.planning_failure_outcome_for(step)
     end
@@ -287,18 +296,13 @@ module Workflows
         }
       )
 
-      cancellation, @plan_review_cancel_proc = Temporalio::Cancellation.new
-
-      begin
-        timeout_seconds = timeout_hours.to_i * 3600
-        Temporalio::Workflow.sleep(timeout_seconds, cancellation: cancellation) unless @plan_review_decision
-      rescue Temporalio::Error::CanceledError
-        # Signal arrived — decision is in @plan_review_decision
-      ensure
-        @plan_review_cancel_proc = nil
+      decision = if @plan_review_decision
+        @plan_review_decision
+      elsif Temporalio::Workflow.patched("planning-review-wait-condition-v1")
+        wait_for_plan_review_with_wait_condition(timeout_hours.to_i * 3600)
+      else
+        wait_for_plan_review_with_legacy_signal_await(timeout_hours.to_i * 3600)
       end
-
-      decision = @plan_review_decision || :timed_out
 
       safe_log_decomposition_decision(
         project_id: project_id,
@@ -317,6 +321,32 @@ module Workflows
       )
 
       decision
+    end
+
+    def wait_for_plan_review_with_wait_condition(timeout_seconds)
+      Temporalio::Workflow.timeout(timeout_seconds) do
+        Temporalio::Workflow.wait_condition { !@plan_review_decision.nil? }
+      end
+
+      @plan_review_decision
+    rescue Timeout::Error
+      :timed_out
+    end
+
+    def wait_for_plan_review_with_legacy_signal_await(timeout_seconds)
+      cancellation, @plan_review_cancel_proc = Temporalio::Cancellation.new
+
+      begin
+        Temporalio::Workflow.sleep(timeout_seconds, cancellation: cancellation) unless @plan_review_decision
+      rescue Temporalio::Error::CanceledError => e
+        # Only swallow the local timer cancellation used to wake the review gate
+        # after a signal. A real workflow cancellation must keep propagating.
+        raise e if @plan_review_decision.blank? || Temporalio::Workflow.cancellation.canceled?
+      ensure
+        @plan_review_cancel_proc = nil
+      end
+
+      @plan_review_decision || :timed_out
     end
 
     def safe_log_decomposition_decision(detached: false, **payload)

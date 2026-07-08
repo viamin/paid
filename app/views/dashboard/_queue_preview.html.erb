@@ -36,6 +36,19 @@
       </div>
     </div>
   <% else %>
-    <p class="mt-4 text-sm text-gray-500">No queued runs for your projects.</p>
+    <% paused_autopick = Array(local_assigns[:paused_projects]).count(&:auto_pick_enabled?) %>
+    <% if paused_autopick.positive? %>
+      <div class="mt-4 rounded-md bg-amber-50 p-3 ring-1 ring-inset ring-amber-200">
+        <p class="text-sm text-amber-800">
+          <%= pluralize(paused_autopick, "project") %> with auto-pick enabled
+          <%= paused_autopick == 1 ? "is" : "are" %>
+          <%= link_to "quality-paused", "#quality-paused-projects",
+            class: "font-medium text-amber-900 underline hover:text-amber-700" %>,
+          so no work is being queued. Resume a project to start picking up its issues.
+        </p>
+      </div>
+    <% else %>
+      <p class="mt-4 text-sm text-gray-500">No queued runs for your projects.</p>
+    <% end %>
   <% end %>
 </div>

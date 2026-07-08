@@ -2,6 +2,8 @@
 
 Paid exports worker and infrastructure metrics at `GET /api/metrics` in Prometheus text exposition format (`text/plain; version=0.0.4`). Authentication is optional: when `METRICS_TOKEN` is set, scrapers must send `Authorization: Bearer <token>`; when unset, the endpoint is unauthenticated and should be network-isolated (VPC-internal only).
 
+Temporal SDK worker metrics are exported separately by `bin/temporal_worker` on `TEMPORAL_PROMETHEUS_BIND_ADDRESS` (default `0.0.0.0:9464`). That endpoint includes built-in Temporal queue latency/retry/saturation metrics plus Paid's replay-safe workflow counter `temporal_paid_swallowed_non_critical_activity_failures_total`.
+
 ## Agent Run Metrics
 
 | Metric | Type | Labels | Description |
@@ -65,7 +67,19 @@ scrape_configs:
     metrics_path: /api/metrics
     static_configs:
       - targets: ["paid-host:3000"]
+  - job_name: paid-temporal-worker
+    static_configs:
+      - targets: ['temporal-worker:9464']
 ```
+
+### Recommended dashboard queries
+
+- Workflow task queue `schedule_to_start` p95 by task queue:
+  `histogram_quantile(0.95, sum by (task_queue, le) (rate(temporal_workflow_task_schedule_to_start_latency_seconds_bucket[5m])))`
+- Activity task queue `schedule_to_start` p95 by task queue:
+  `histogram_quantile(0.95, sum by (task_queue, le) (rate(temporal_activity_schedule_to_start_latency_seconds_bucket[5m])))`
+- Swallowed exhausted-retry poller failures:
+  `sum by (helper, task_queue) (rate(temporal_paid_swallowed_non_critical_activity_failures_total[15m]))`
 
 ## Scaling Signals
 

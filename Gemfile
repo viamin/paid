@@ -30,7 +30,7 @@ gem "devise"
 
 # Authorization [https://github.com/varvet/pundit]
 gem "pundit"
-gem "avo", "4.0.4"
+gem "avo", "4.0.9"
 
 # Soft-delete for low-volume reference records
 gem "discard"
@@ -48,6 +48,8 @@ gem "faraday-http-cache"
 # Defer loading — 139 MB gem with native Rust extensions only needed for
 # Temporal client/worker code, not the web process boot path.
 gem "temporalio", require: false
+gem "opentelemetry-sdk", require: false
+gem "opentelemetry-exporter-otlp", require: false
 
 # Docker API client [https://github.com/upserve/docker-api]
 # Defer loading — only used by container management services.
@@ -62,7 +64,7 @@ gem "qdrant-ruby", require: false
 gem "aws-sdk-s3", require: false
 
 # Unified interface for AI agent CLIs [https://github.com/viamin/agent-harness]
-gem "agent-harness", "~> 0.27.0"
+gem "agent-harness", "~> 0.28.1"
 
 # Runtime model registry for canonical model metadata, pricing, and capabilities.
 gem "ruby_llm", "~> 1.16"
@@ -129,6 +131,7 @@ end
 group :test do
   gem "simplecov", require: false
   gem "capybara"
+  gem "ferrum", path: "vendor/ferrum"
   gem "cuprite"
   gem "fixture_kit"
   # Mutation testing uses the MIT-licensed viamin/mutant fork by default.

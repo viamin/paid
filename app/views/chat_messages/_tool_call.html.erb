@@ -1,5 +1,6 @@
 <% tool_title = message.role == "tool" ? "Tool Result" : "Tool Call" %>
 <% payload = message.role == "tool" ? (message.tool_result || message.content) : message.tool_arguments %>
+<% configuration_profile_plan = chat_configuration_profile_plan(payload) %>
 <details class="group rounded-lg border border-blue-200 bg-blue-50/70 <%= "ring-2 ring-amber-300" if message.pending_confirmation? %>" <% if chat_tool_expanded_by_default?(message) %>open<% end %>>
   <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs font-medium text-gray-700">
     <span class="min-w-0 truncate">
@@ -16,6 +17,27 @@
     </span>
   </summary>
   <div class="border-t border-blue-100 px-4 py-3">
+    <% if configuration_profile_plan %>
+      <div class="mb-3 rounded-lg border border-blue-200 bg-white/80 p-3">
+        <div class="text-xs font-semibold uppercase tracking-wide text-gray-500">Configuration Profile Plan</div>
+        <div class="mt-1 text-sm font-medium text-gray-900"><%= chat_configuration_profile_plan_title(payload) %></div>
+
+        <% chat_configuration_profile_plan_changes(payload).each do |change| %>
+          <div class="mt-3 rounded-md border border-gray-200 bg-white px-3 py-2">
+            <div class="text-xs font-medium text-gray-700"><%= configuration_profile_field_label(change[:field]) %></div>
+            <div class="mt-1 text-xs text-gray-600">
+              <span class="font-medium text-gray-900">From:</span>
+              <code><%= format_configuration_profile_change_value(change[:from]) %></code>
+            </div>
+            <div class="mt-1 text-xs text-gray-600">
+              <span class="font-medium text-gray-900">To:</span>
+              <code><%= format_configuration_profile_change_value(change[:to]) %></code>
+            </div>
+          </div>
+        <% end %>
+      </div>
+    <% end %>
+
     <pre class="overflow-x-auto whitespace-pre-wrap break-words rounded-lg bg-gray-900 p-4 text-xs leading-6 text-gray-100"><%= pretty_chat_tool_payload(payload) %></pre>
 
     <% if message.pending_confirmation? %>

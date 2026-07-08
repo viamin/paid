@@ -98,7 +98,7 @@ module Activities
       attrs[:parent_workflow_id] = input[:parent_workflow_id] if input[:parent_workflow_id]
 
       agent_run = ActiveRecord::Base.transaction do
-        created_run = AgentRun.create!(**attrs)
+        created_run = find_or_create_agent_run(attrs)
         attach_marketplace_entries(
           agent_run: created_run,
           manual_entry_ids: manual_marketplace_entry_ids,
@@ -176,6 +176,21 @@ module Activities
         type: "UntrustedIssue",
         non_retryable: true
       )
+    end
+
+    # Idempotent on Temporal retry: when the workflow passes a real
+    # `temporal_workflow_id`, reuse the AgentRun a previous attempt already
+    # created instead of inserting a duplicate. The CLAIMED_SENTINEL fallback
+    # (and a nil workflow id) cannot be used as a dedup key, so those paths
+    # fall back to a plain create. Marketplace attachment and the post-create
+    # setup steps are all idempotent when re-run against the same run.
+    def find_or_create_agent_run(attrs)
+      workflow_id = attrs[:temporal_workflow_id]
+      return AgentRun.create!(**attrs) if workflow_id.blank? || workflow_id == AgentRun::CLAIMED_SENTINEL
+
+      AgentRun.find_or_create_by!(temporal_workflow_id: workflow_id) do |run|
+        run.assign_attributes(attrs)
+      end
     end
 
     def resolve_runner_selection(project:, requested_agent_type:, requested_runner_id:, goal:, respect_requested: true)
@@ -265,9 +280,12 @@ module Activities
       logger.info(
         message: "agent_execution.queued_run_resumed",
         agent_run_id: agent_run.id,
+        account_id: agent_run.project.account_id,
         project_id: agent_run.project_id,
-        issue_id: agent_run.issue_id
+        issue_id: agent_run.issue_id,
+        schedule_to_start_seconds: schedule_to_start_seconds(agent_run)
       )
+      record_schedule_to_start_metric(agent_run)
 
       {
         agent_run_id: agent_run.id,
@@ -278,6 +296,24 @@ module Activities
         max_execution_seconds: effective_max_execution_seconds(agent_run.project, user_settings),
         paused: policy_evaluation.paused
       }
+    end
+
+    def record_schedule_to_start_metric(agent_run)
+      agent_run.log!(
+        "metric",
+        {
+          metric_name: "schedule_to_start_latency",
+          seconds: schedule_to_start_seconds(agent_run),
+          account_id: agent_run.project.account_id,
+          project_id: agent_run.project_id,
+          queue: Paid.agent_task_queue
+        }.to_json,
+        metadata: { type: "schedule_to_start_latency", account_id: agent_run.project.account_id }
+      )
+    end
+
+    def schedule_to_start_seconds(agent_run)
+      [ (Time.current - agent_run.queue_entered_at_for_current_episode).to_f, 0.0 ].max.round(3)
     end
 
     def analyze_scope(issue)

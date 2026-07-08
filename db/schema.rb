@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_02_235858) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_04_043457) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -53,6 +53,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_02_235858) do
     t.bigint "control_version_id", null: false
     t.datetime "created_at", null: false
     t.text "description"
+    t.string "idempotency_key"
     t.integer "min_samples_per_variant", default: 30, null: false
     t.string "name", limit: 255, null: false
     t.bigint "prompt_id", null: false
@@ -61,6 +62,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_02_235858) do
     t.datetime "updated_at", null: false
     t.bigint "winner_variant_id"
     t.index ["control_version_id"], name: "index_ab_tests_on_control_version_id"
+    t.index ["prompt_id", "idempotency_key"], name: "index_ab_tests_on_prompt_and_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["prompt_id", "status"], name: "index_ab_tests_on_prompt_id_and_status"
     t.index ["prompt_id"], name: "index_ab_tests_on_prompt_id"
     t.index ["prompt_id"], name: "index_ab_tests_one_running_per_prompt", unique: true, where: "((status)::text = 'running'::text)"
@@ -279,6 +281,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_02_235858) do
     t.string "proxy_token", limit: 64
     t.integer "pull_request_number"
     t.string "pull_request_url", limit: 500
+    t.datetime "queue_entered_at", comment: "Most recent time this run entered queued status so queue latency metrics reflect the current queue episode."
     t.datetime "rate_limited_until"
     t.string "result_commit_sha", limit: 40
     t.datetime "review_posted_at"
@@ -814,6 +817,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_02_235858) do
     t.datetime "activated_at", comment: "When this version became the policy's active revision."
     t.bigint "coordination_policy_id", null: false, comment: "Owning policy catalog entry."
     t.datetime "created_at", null: false
+    t.string "idempotency_key"
     t.text "llm_prompt", comment: "Optional prompt template used when the policy delegates part of the decision to an LLM."
     t.jsonb "metadata", default: {}, null: false, comment: "Structured provenance such as generator metadata, rollout notes, and approval state."
     t.jsonb "parameters", default: {}, null: false, comment: "Thresholds, weights, and other tunable policy parameters."
@@ -823,6 +827,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_02_235858) do
     t.string "status", limit: 30, default: "draft", null: false, comment: "Revision lifecycle state: draft, active, superseded, or retired."
     t.datetime "updated_at", null: false
     t.integer "version", null: false, comment: "Monotonic version number within the owning coordination policy."
+    t.index ["coordination_policy_id", "idempotency_key"], name: "index_coordination_policy_versions_on_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["coordination_policy_id", "status", "created_at"], name: "idx_coordination_policy_versions_policy_status_created"
     t.index ["coordination_policy_id", "version"], name: "idx_coordination_policy_versions_unique_version", unique: true
     t.index ["coordination_policy_id"], name: "idx_coordination_policy_versions_one_active", unique: true, where: "((status)::text = 'active'::text)"
@@ -1640,11 +1645,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_02_235858) do
     t.boolean "active", default: true, null: false, comment: "Whether this strategy is currently in effect"
     t.jsonb "configuration", default: {}, null: false, comment: "Strategy-specific configuration data"
     t.datetime "created_at", null: false
+    t.string "idempotency_key"
     t.jsonb "log_data"
     t.string "name", null: false, comment: "Human-readable name for this strategy"
     t.string "strategy_type", null: false, comment: "Category: review_settings, quality_gate, execution_timeouts, retry_policies, agent_settings, feature_orchestration, provider_resolution"
     t.datetime "updated_at", null: false
     t.integer "version", default: 1, null: false, comment: "Monotonically increasing version for audit trail"
+    t.index ["account_id", "strategy_type", "idempotency_key"], name: "index_orchestration_strategies_on_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["account_id"], name: "index_orchestration_strategies_on_account_id"
     t.index ["active"], name: "index_orchestration_strategies_on_active"
     t.index ["strategy_type", "account_id"], name: "idx_orchestration_strategies_active_type_account", unique: true, where: "(active = true)", nulls_not_distinct: true
@@ -1918,6 +1925,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_02_235858) do
     t.datetime "created_at", null: false
     t.string "created_by", limit: 50
     t.bigint "created_by_user_id"
+    t.string "idempotency_key"
     t.bigint "parent_version_id"
     t.bigint "prompt_id", null: false
     t.datetime "retired_at"
@@ -1932,6 +1940,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_02_235858) do
     t.integer "version", null: false
     t.index ["created_by_user_id"], name: "index_prompt_versions_on_created_by_user_id"
     t.index ["parent_version_id"], name: "index_prompt_versions_on_parent_version_id"
+    t.index ["prompt_id", "idempotency_key"], name: "index_prompt_versions_on_prompt_and_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["prompt_id", "review_status"], name: "index_prompt_versions_on_prompt_and_review_status", where: "(review_status IS NOT NULL)"
     t.index ["prompt_id", "version"], name: "index_prompt_versions_on_prompt_id_and_version", unique: true
     t.index ["prompt_id"], name: "index_prompt_versions_on_prompt_id"
@@ -2384,6 +2393,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_02_235858) do
     t.text "control_config", null: false, comment: "JSON-encoded baseline configuration for the strategy"
     t.datetime "created_at", null: false
     t.text "description"
+    t.string "idempotency_key"
     t.integer "min_samples_per_variant", default: 30, null: false
     t.string "name", null: false
     t.datetime "started_at"
@@ -2392,6 +2402,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_02_235858) do
     t.integer "traffic_percentage", default: 100, null: false
     t.datetime "updated_at", null: false
     t.bigint "winner_variant_id"
+    t.index ["account_id", "strategy_name", "idempotency_key"], name: "index_strategy_experiments_on_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["account_id", "strategy_name", "status"], name: "index_strategy_experiments_on_account_strategy_status"
     t.index ["account_id", "strategy_name"], name: "index_strategy_experiments_one_running_per_account_strategy", unique: true, where: "((status)::text = 'running'::text)"
     t.index ["winner_variant_id"], name: "index_strategy_experiments_on_winner_variant_id"
@@ -2678,6 +2689,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_02_235858) do
   add_foreign_key "chat_sessions", "users", column: "created_by_id"
   add_foreign_key "claude_login_sessions", "accounts"
   add_foreign_key "claude_login_sessions", "integration_credentials"
+  add_foreign_key "claude_login_sessions", "runner_credentials"
   add_foreign_key "claude_login_sessions", "users", column: "created_by_id"
   add_foreign_key "collector_runs", "project_versions"
   add_foreign_key "configuration_bundles", "accounts", on_delete: :cascade
@@ -2858,26 +2870,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_02_235858) do
   add_foreign_key "workflow_states", "projects"
   add_foreign_key "worktrees", "agent_runs", on_delete: :nullify
   add_foreign_key "worktrees", "projects", on_delete: :cascade
-
-  create_function :paid_current_account_id, sql_definition: <<-'SQL'
-      CREATE OR REPLACE FUNCTION public.paid_current_account_id()
-       RETURNS bigint
-       LANGUAGE sql
-       STABLE
-      AS $function$
-        SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
-      $function$
-  SQL
-
-  create_function :paid_tenant_bypass, sql_definition: <<-'SQL'
-      CREATE OR REPLACE FUNCTION public.paid_tenant_bypass()
-       RETURNS boolean
-       LANGUAGE sql
-       STABLE
-      AS $function$
-        SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
-      $function$
-  SQL
 
   create_function :logidze_capture_exception, sql_definition: <<-'SQL'
       CREATE OR REPLACE FUNCTION public.logidze_capture_exception(error_data jsonb)
@@ -3611,6 +3603,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_02_235858) do
           END IF;
           RETURN buf;
         END;
+      $function$
+  SQL
+
+  create_function :paid_current_account_id, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.paid_current_account_id()
+       RETURNS bigint
+       LANGUAGE sql
+       STABLE
+      AS $function$
+        SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
+      $function$
+  SQL
+
+  create_function :paid_tenant_bypass, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.paid_tenant_bypass()
+       RETURNS boolean
+       LANGUAGE sql
+       STABLE
+      AS $function$
+        SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
       $function$
   SQL
 

@@ -21,6 +21,7 @@ module QualityPause
 
     def call
       return if project.quality_paused?
+      return unless project.quality_gates_enabled?
 
       breached = breached_threshold
       return unless breached

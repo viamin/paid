@@ -2,6 +2,7 @@
 
 module Paid
   @temporal_mutex = Mutex.new
+  @temporal_worker_mutex = Mutex.new
 
   class << self
     # Returns a connected Temporal client. Connection is established lazily
@@ -27,11 +28,39 @@ module Paid
       end
     end
 
+    def temporal_worker_client
+      @temporal_worker_mutex.synchronize do
+        unless defined?(@temporal_worker_client)
+          suppress_circular_require_warnings do
+            require "temporalio/client"
+            require "temporalio/contrib/open_telemetry"
+          end
+
+          @temporal_worker_client = Temporalio::Client.connect(
+            temporal_address,
+            temporal_namespace,
+            runtime: TemporalObservability.worker_runtime,
+            interceptors: TemporalObservability.client_interceptors
+          )
+        end
+
+        @temporal_worker_client
+      end
+    end
+
     # Resets the cached Temporal client, allowing reconnection on next access.
     # Useful for recovering from connection failures or configuration changes.
+    # Also clears the memoized TemporalObservability runtime/tracer caches so
+    # that env-driven configuration (metrics exporter, Prometheus bind address,
+    # OTLP endpoint) is re-read on the next worker client connection.
     def reset_temporal_client!
       @temporal_mutex.synchronize do
         remove_instance_variable(:@temporal_client) if defined?(@temporal_client)
+      end
+
+      @temporal_worker_mutex.synchronize do
+        remove_instance_variable(:@temporal_worker_client) if defined?(@temporal_worker_client)
+        TemporalObservability.reset!
       end
     end
 

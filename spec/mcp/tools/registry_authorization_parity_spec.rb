@@ -25,6 +25,38 @@ RSpec.describe Tools::Registry do
         ui_call: ->(user) { Pundit.policy_scope!(user, AgentRun).recent.limit(20).to_a }
       },
       {
+        tool_name: "list_configuration_profiles",
+        denied_user: -> { nil },
+        arguments: -> { {} },
+        ui_call: ->(user) {
+          raise Tools::UnauthorizedError, "Tool calls require an authenticated user" if user.blank?
+
+          ConfigurationProfiles::Registry.all.map { |profile| { key: profile.key.to_s, name: profile.name, description: profile.description } }
+        }
+      },
+      {
+        tool_name: "plan_configuration_profile",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> { { profile_id: "observe_only", project_id: project.id } },
+        ui_call: ->(user) {
+          Pundit.policy_scope!(user, Project).find(project.id)
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          ConfigurationProfiles::Planner.for_profile(project_record, ConfigurationProfiles::Registry.find!(:observe_only))
+        }
+      },
+      {
+        tool_name: "apply_configuration_profile",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> { { profile_id: "observe_only", project_id: project.id, confirmed: true } },
+        ui_call: ->(user) {
+          Pundit.policy_scope!(user, Project).find(project.id)
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          profile = ConfigurationProfiles::Registry.find!(:observe_only)
+          plan = ConfigurationProfiles::Planner.for_profile(project_record, profile)
+          ConfigurationProfiles::Applier.call(project_record, plan, actor: user)
+        }
+      },
+      {
         tool_name: "get_project",
         denied_user: -> { create(:user, :member, account: other_account) },
         arguments: -> { { project_id: project.id } },
@@ -51,6 +83,16 @@ RSpec.describe Tools::Registry do
           project_record = Pundit.policy_scope!(user, Project).find(project.id)
           authorize_record!(user, project_record, :show?)
           project_record.issues.pull_requests_only.order(updated_at: :desc).limit(20).to_a
+        }
+      },
+      {
+        tool_name: "update_project_settings",
+        denied_user: -> { create(:user, :member, account: account) },
+        arguments: -> { { project_id: project.id, settings: { paused: true }, confirmed: true } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :update?, policy_class: ProjectPolicy)
+          project_record.update!(paused: true)
         }
       },
       {
