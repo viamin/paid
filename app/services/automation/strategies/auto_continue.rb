@@ -79,6 +79,16 @@ module Automation
       private
 
       def check_lifecycle_gates(context:, signals:)
+        # The scan already decided to dismiss escalation this cycle (the
+        # owner removed paid-escalated). DismissEscalationActivity preserves
+        # the failure streak by design, so it will still satisfy the gates
+        # below immediately after dismissal — without this check, the same
+        # scan tick would re-escalate before the dismissal ever takes
+        # effect, re-adding the label the owner just removed. Let the
+        # dismissal through; a still-stuck PR surfaces again on a later scan
+        # once it has re-entered a gated phase.
+        return nil if dismiss_escalation_pending?(signals)
+
         # Operational failure breaker — provider/infrastructure bursts only
         # escalate once the PR has also gone stale without meaningful
         # progress for too long.
@@ -117,9 +127,15 @@ module Automation
       end
 
       def review_followup_pending?(signals)
-        Array(signals.scan&.dig(:triggers) || signals.scan&.dig("triggers")).any? do |trigger|
-          REVIEW_FOLLOWUP_TRIGGER_TYPES.include?(trigger_type(trigger))
-        end
+        scan_trigger_types(signals).any? { |type| REVIEW_FOLLOWUP_TRIGGER_TYPES.include?(type) }
+      end
+
+      def dismiss_escalation_pending?(signals)
+        scan_trigger_types(signals).include?("dismiss_escalation")
+      end
+
+      def scan_trigger_types(signals)
+        Array(signals.scan&.dig(:triggers) || signals.scan&.dig("triggers")).map { |trigger| trigger_type(trigger) }
       end
 
       def trigger_type(trigger)

@@ -144,12 +144,65 @@ module ChatSessionsHelper
 
   def chat_tool_summary(message)
     payload = chat_tool_payload(message.role == "tool" ? (message.tool_result || message.content) : message.tool_arguments)
+    if (plan = chat_configuration_profile_plan(payload))
+      return [ message.tool_name.presence || "Unknown tool", chat_tool_status_label(message), configuration_profile_plan_summary(plan) ].join(" · ")
+    end
+
     summary = chat_tool_payload_summary(payload)
     [ message.tool_name.presence || "Unknown tool", chat_tool_status_label(message), summary ].compact.join(" · ")
   end
 
   def chat_tool_expanded_by_default?(message)
     message.pending_confirmation?
+  end
+
+  def chat_configuration_profile_plan(payload)
+    hash = chat_tool_payload(payload)
+    return unless hash.is_a?(Hash)
+
+    plan = chat_tool_payload_value(hash, "plan") || hash
+    return unless configuration_profile_plan_payload?(plan)
+
+    plan.deep_symbolize_keys
+  end
+
+  def chat_configuration_profile_plan_changes(payload)
+    plan = chat_configuration_profile_plan(payload)
+    return [] unless plan
+
+    Array(plan[:changes])
+  end
+
+  def configuration_profile_plan_summary(plan)
+    change_count = Array(plan[:changes]).size
+    "#{change_count} #{'change'.pluralize(change_count)}"
+  end
+
+  def configuration_profile_field_label(field)
+    return "" if field.blank?
+
+    profile_field = ConfigurationProfiles::FieldSet.all.find { |candidate| candidate.key.to_s == field.to_s }
+    profile_field&.label || field.to_s.humanize
+  end
+
+  def chat_configuration_profile_plan_title(payload)
+    plan = chat_configuration_profile_plan(payload)
+    return unless plan
+
+    profile_id = plan[:profile_id].to_s.humanize
+    project_id = plan[:project_id]
+    [ profile_id, ("project ##{project_id}" if project_id.present?) ].compact.join(" for ")
+  end
+
+  def format_configuration_profile_change_value(value)
+    case value
+    when String
+      value
+    when NilClass
+      "nil"
+    else
+      JSON.generate(value)
+    end
   end
 
   def pretty_chat_tool_payload(value)
@@ -234,6 +287,12 @@ module ChatSessionsHelper
     return [ path, number_to_human_size(size) ].compact.join(" · ") if path || size
 
     "#{payload.size} #{'field'.pluralize(payload.size)}"
+  end
+
+  def configuration_profile_plan_payload?(payload)
+    payload.is_a?(Hash) &&
+      chat_tool_payload_value(payload, "profile_id").present? &&
+      chat_tool_payload_value(payload, "changes").is_a?(Array)
   end
 
   def chat_tool_error_summary(payload)

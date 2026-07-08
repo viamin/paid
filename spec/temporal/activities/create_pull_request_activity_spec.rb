@@ -983,6 +983,31 @@ RSpec.describe Activities::CreatePullRequestActivity do
         expect(agent_run.reload.status).to eq("completed")
       end
 
+      it "reuses the existing PR when create raises a 422 already-exists error" do
+        # First lookup finds nothing; the post-conflict lookup finds the PR.
+        allow(github_client).to receive(:pull_requests).and_return([], [ existing_pr ])
+        allow(github_client).to receive(:create_pull_request)
+          .and_raise(GithubClient::ApiError.new("Validation Failed: A pull request already exists for owner:branch.", status: 422))
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(github_client).to have_received(:create_pull_request).once
+        expect(result[:pull_request_number]).to eq(99)
+        expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/99")
+        expect(agent_run.reload.status).to eq("completed")
+      end
+
+      it "re-raises a non-already-exists 422 instead of treating it as a reuse signal" do
+        allow(github_client).to receive(:pull_requests).and_return([])
+        allow(github_client).to receive(:create_pull_request)
+          .and_raise(GithubClient::ApiError.new("Validation Failed: base branch invalid", status: 422))
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(GithubClient::ApiError, /base branch invalid/)
+        expect(github_client).to have_received(:create_pull_request).once
+      end
+
       it "does not produce orphan branches when log! raises after completion" do
         allow(github_client).to receive(:pull_requests).and_return([])
         # agent_run.log! is called in best_effort, so even if it raises,

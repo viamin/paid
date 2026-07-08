@@ -22,7 +22,12 @@ module Activities
       candidates = CoordinationPolicyEvolution::CreateCandidates.call(
         policy_snapshot: input.fetch(:policy),
         account: account,
-        mutations: mutations
+        mutations: mutations,
+        idempotency_key: Activities::IdempotencyKey.compute(
+          input.fetch(:account_id),
+          input.fetch(:policy),
+          input.fetch(:mutations, [])
+        )
       )
 
       {

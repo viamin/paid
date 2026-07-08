@@ -94,12 +94,56 @@ RSpec.describe ChatSessionsHelper do
       expect(helper.chat_tool_summary(message)).to eq("search_code · result · error: key not found: :project_id")
     end
 
+    it "summarizes configuration profile plans by change count" do
+      message = build(:chat_message, :tool,
+        tool_name: "plan_configuration_profile",
+        tool_result: {
+          profile_id: "solo_automated",
+          project_id: 42,
+          changes: [
+            { field: "auto_pick_enabled", from: false, to: true },
+            { field: "auto_merge_mode", from: "off", to: "all" }
+          ]
+        })
+
+      expect(helper.chat_tool_summary(message)).to eq("plan_configuration_profile · result · 2 changes")
+    end
+
     it "expands only pending tool confirmations by default" do
       completed = build(:chat_message, :tool)
       pending = build(:chat_message, :tool_call, tool_status: "pending")
 
       expect(helper.chat_tool_expanded_by_default?(completed)).to be(false)
       expect(helper.chat_tool_expanded_by_default?(pending)).to be(true)
+    end
+  end
+
+  describe "#chat_configuration_profile_plan_changes and #configuration_profile_field_label" do
+    it "returns the flat list of changes from a plan payload" do
+      payload = {
+        profile_id: "solo_automated",
+        changes: [
+          { field: "auto_pick_enabled", from: false, to: true },
+          { field: "auto_merge_mode", from: "off", to: "all" }
+        ]
+      }
+
+      expect(helper.chat_configuration_profile_plan_changes(payload).map { |c| c[:field] })
+        .to eq(%w[auto_pick_enabled auto_merge_mode])
+    end
+
+    it "returns an empty list when the payload is not a configuration profile plan" do
+      expect(helper.chat_configuration_profile_plan_changes({ profile_id: "solo_automated" })).to eq([])
+      expect(helper.chat_configuration_profile_plan_changes(nil)).to eq([])
+    end
+
+    it "uses the canonical FieldSet label for known fields" do
+      expect(helper.configuration_profile_field_label("auto_pick_enabled")).to eq("Auto-pick issues")
+    end
+
+    it "falls back to humanizing unknown or blank fields instead of raising" do
+      expect(helper.configuration_profile_field_label("some_future_field")).to eq("Some future field")
+      expect(helper.configuration_profile_field_label(nil)).to eq("")
     end
   end
 end
