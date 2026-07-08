@@ -407,6 +407,8 @@ RSpec.describe Activities::CreatePullRequestActivity do
     context "when LLM generates a structured description" do
       let(:llm_description) { "## Summary\n\nAdds OAuth support for third-party integrations." }
 
+      before { allow(Llm::TextMode).to receive(:options).and_return(mode: :text) }
+
       it "uses the LLM-generated description in the PR body" do
         agent_run.log!("stdout", "Added OAuth middleware")
         allow(AgentHarness).to receive(:send_message)
