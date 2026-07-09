@@ -10,18 +10,19 @@ module Capacity
       end
     end
 
-    def initialize(user:, project: nil, goal: nil, docker_snapshot: nil, reserved_agent_memory_bytes: nil)
+    def initialize(user:, project: nil, goal: nil, docker_snapshot: nil, reserved_agent_memory_bytes: nil, mode: nil)
       @user = user
       @project = project
       @goal = goal
       @docker_snapshot = docker_snapshot
       @reserved_agent_memory_bytes = reserved_agent_memory_bytes
+      @mode = mode
     end
 
     def call
       return owner_missing_result unless user
 
-      mode = user.settings.run_concurrency_mode
+      mode = @mode || user.settings.run_concurrency_mode
       return manual_result(mode: mode) unless mode == UserSetting::RUN_CONCURRENCY_MODE_AUTO
 
       auto_result
