@@ -56,10 +56,12 @@ class ProcessRunQueueJob < ApplicationJob
       # healthy alternative; only when no alternative exists is the run
       # added to +skipped_ids+.
       blocked_runner_ids = Set.new
-      # Maps original (blocked) runner IDs to their reroute resolution:
+      # Maps reroute resolution context to its resolved alternative:
       # { runner_id:, agent_type:, from_key:, to_key: } or nil when no
-      # healthy alternative exists. Avoids re-running the resolver for
-      # every queued run pinned to the same unavailable runner.
+      # healthy alternative exists. The cache is scoped to the blocked
+      # runner plus the run's resolver inputs (project + goal), because
+      # different projects/goals can legitimately resolve to different
+      # healthy alternatives.
       reroute_cache = {}
       blocked_account_create_pr_ids = Set.new
       blocked_account_dispatch_ids = Set.new
@@ -235,43 +237,59 @@ class ProcessRunQueueJob < ApplicationJob
   # availability is a hard filter, so a rate-limited / circuit-open runner must
   # never block the run.
   #
-  # Resolutions are cached per original runner ID so that multiple queued runs
-  # pinned to the same blocked runner share one resolver call. When no healthy
-  # alternative exists the run's original pin is *restored* (not silently
-  # downgraded) and the run is skipped for the rest of this pass — the preferred
-  # runner is retried on the next tick.
+  # Resolutions are cached per blocked runner + resolution context so that
+  # multiple queued runs with the same resolver inputs share one resolver call
+  # without leaking a reroute across projects/goals. When no healthy alternative
+  # exists the run's original pin is *restored* (not silently downgraded) and
+  # the run is skipped for the rest of this pass — the preferred runner is
+  # retried on the next tick.
   def reroute_unavailable_runner(agent_run, blocked_runner_ids, skipped_ids, reroute_cache)
     original_id = agent_run.runner_id
+    cache_key = reroute_cache_key(agent_run, original_id)
 
-    if reroute_cache.key?(original_id)
-      cached = reroute_cache[original_id]
+    if reroute_cache.key?(cache_key)
+      cached = reroute_cache[cache_key]
       return skipped_ids.add(agent_run.id) if cached.nil?
       return apply_cached_reroute(agent_run, cached) unless blocked_runner_ids.include?(cached[:runner_id])
     end
 
     agent_run.update_columns(runner_id: nil)
     if AgentRuns::BindRunner.call(agent_run: agent_run, exclude_runner_ids: blocked_runner_ids)
-      cache_reroute_resolution(agent_run, original_id, reroute_cache)
+      cache_reroute_resolution(agent_run, original_id, cache_key, reroute_cache)
     else
       agent_run.update_columns(runner_id: original_id)
-      reroute_cache[original_id] = nil
+      reroute_cache[cache_key] = nil
       skipped_ids.add(agent_run.id)
     end
   end
 
   def apply_cached_reroute(agent_run, cached)
     agent_run.update_columns(runner_id: cached[:runner_id], agent_type: cached[:agent_type])
-    agent_run.log_runner_switch!(cached[:from_key], cached[:to_key], "dispatch_reroute")
+    log_runner_reroute(agent_run, cached[:from_key], cached[:to_key])
   end
 
-  def cache_reroute_resolution(agent_run, original_id, reroute_cache)
-    from_key = Runner.find_by(id: original_id)&.routing_key
-    to_key = Runner.find_by(id: agent_run.runner_id)&.routing_key
-    reroute_cache[original_id] = {
+  def cache_reroute_resolution(agent_run, original_id, cache_key, reroute_cache)
+    from_key = runner_routing_key(original_id)
+    to_key = runner_routing_key(agent_run.runner_id)
+    reroute_cache[cache_key] = {
       runner_id: agent_run.runner_id, agent_type: agent_run.agent_type,
       from_key: from_key, to_key: to_key
     }
-    agent_run.log_runner_switch!(from_key, to_key, "dispatch_reroute") if from_key && to_key
+    log_runner_reroute(agent_run, from_key, to_key)
+  end
+
+  def reroute_cache_key(agent_run, original_id)
+    [ original_id, agent_run.project_id, agent_run.goal ]
+  end
+
+  def runner_routing_key(runner_id)
+    Runner.find_by(id: runner_id)&.routing_key
+  end
+
+  def log_runner_reroute(agent_run, from_key, to_key)
+    return unless from_key && to_key
+
+    agent_run.log_runner_switch!(from_key, to_key, "dispatch_reroute")
   end
 
   def log_preflight_skip(agent_run, result)

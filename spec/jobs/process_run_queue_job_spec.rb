@@ -926,7 +926,7 @@ RSpec.describe ProcessRunQueueJob do
         expect(queued_run.runner_id).to eq(runner.id)
       end
 
-      it "caches reroute resolution so BindRunner is called once per blocked runner" do
+      it "caches reroute resolution so BindRunner is called once per blocked runner context" do
         stub_const("#{described_class}::MAX_ITERATIONS_PER_PERFORM", 5)
 
         project = create(:project)
@@ -946,6 +946,29 @@ RSpec.describe ProcessRunQueueJob do
         expect(AgentRun.where(runner_id: codex_runner.id).count).to eq(3)
       end
 
+      it "does not reuse a cached reroute across projects with different resolver context" do
+        owner = create(:user, :owner)
+        account = owner.account
+        first_project = create(:project, account: account, created_by: owner,
+          model_preferences: { "preferred_agent_type" => "codex" })
+        second_project = create(:project, account: account, created_by: owner,
+          model_preferences: { "preferred_agent_type" => "cursor" })
+        claude_runner = owner.runners.kept_only.find_by!(runner_key: "claude", auth_type: "subscription")
+        create(:runner_state, :rate_limited, user: owner, runner_name: claude_runner.state_key)
+        codex_runner = create(:runner, user: owner, runner_key: "codex")
+        cursor_runner = create(:runner, user: owner, runner_key: "cursor")
+        codex_run = create(:agent_run, :queued, project: first_project, runner: claude_runner, created_at: 2.minutes.ago)
+        cursor_run = create(:agent_run, :queued, project: second_project, runner: claude_runner, created_at: 1.minute.ago)
+
+        allow(AgentRuns::BindRunner).to receive(:call).and_call_original
+
+        described_class.new.perform
+
+        expect(AgentRuns::BindRunner).to have_received(:call).twice
+        expect(codex_run.reload.runner_id).to eq(codex_runner.id)
+        expect(cursor_run.reload.runner_id).to eq(cursor_runner.id)
+      end
+
       it "logs runner switch in audit trail when rerouting" do
         project = create(:project)
         user = project.created_by
@@ -963,6 +986,29 @@ RSpec.describe ProcessRunQueueJob do
         expect(log_entry).to be_present
         expect(log_entry.content).to include("dispatch_reroute")
         expect(queued_run.runner_switches).to eq(1)
+      end
+
+      it "skips reroute audit logging when a routing key cannot be resolved" do
+        stub_const("#{described_class}::MAX_ITERATIONS_PER_PERFORM", 5)
+
+        project = create(:project)
+        user = project.created_by
+        claude_runner = user.runners.kept_only.find_by!(runner_key: "claude", auth_type: "subscription")
+        create(:runner_state, :rate_limited, user: user, runner_name: claude_runner.state_key)
+        create(:runner, user: user, runner_key: "codex")
+        first_run = create(:agent_run, :queued, project: project, runner: claude_runner, created_at: 2.minutes.ago)
+        second_run = create(:agent_run, :queued, project: project, runner: claude_runner, created_at: 1.minute.ago)
+        job = described_class.new
+
+        allow(job).to receive(:runner_routing_key).and_call_original
+        allow(job).to receive(:runner_routing_key).with(claude_runner.id).and_return(nil)
+
+        job.perform
+
+        expect(first_run.reload.runner_switches).to eq(0)
+        expect(second_run.reload.runner_switches).to eq(0)
+        expect(first_run.agent_run_logs.none? { |log| log.content.include?("dispatch_reroute") }).to be(true)
+        expect(second_run.agent_run_logs.none? { |log| log.content.include?("dispatch_reroute") }).to be(true)
       end
     end
 
