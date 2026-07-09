@@ -326,3 +326,118 @@ curl -X POST "http://localhost:6333/collections/project_42/snapshots"
 ### Cleanup on Project Deletion
 
 The `QdrantCollectionCleanupJob` runs when a project is deleted, dropping its Qdrant collection. Verify this job is registered in the project deletion flow.
+
+## Retroactive Physical Redaction (Scrub Workflow)
+
+The pre-embedding redaction pipeline (`Knowledge::Embeddings::Pipeline`) only
+scrubs content *before* it is embedded. When a new redaction pattern is added
+to `config/knowledge/redaction_patterns.yml` after content has already been
+indexed, or when an operator needs to retroactively purge sensitive material
+from an already-embedded codebase, use the scrub workflow.
+
+The scrub workflow is implemented by `Knowledge::Redaction::Scrubber` and
+`Knowledge::Redaction::Reembed`. It runs in three stages:
+
+1. **Scan** — re-runs `Knowledge::Redaction::Redactor` against every active
+   chunk in the project and finds content that matches redaction patterns but
+   has not yet been scrubbed.
+2. **PostgreSQL scrub** — clears or replaces matched content with typed
+   placeholders, updates `content_hash`, and flips the chunk to `redacted`
+   (or keeps it `active` when only partial redaction applies).
+3. **Qdrant cleanup** — deletes affected points in batches so semantic search
+   cannot surface the removed content. When the number of scrubbed chunks
+   exceeds `KNOWLEDGE_SCRUB_COLLECTION_REBUILD_THRESHOLD` (default: 500), the
+   workflow instead calls `Knowledge::Qdrant::CollectionManager#rebuild_schema!`
+   to drop and recreate the collection, then queues `EmbedChunksJob` to
+   re-embed everything from PostgreSQL.
+
+Every stage emits `KnowledgeAuditEvent` records (`chunks_scrubbed`,
+`chunk_redacted`, `qdrant_collection_scrubbed`) so operators can audit what
+was scrubbed, when, and by whom.
+
+### Operator Workflow
+
+The fastest path is the `knowledge:redact:scrub` rake task:
+
+```bash
+# Dry-run: preview what would be scrubbed without writing changes
+bin/rails 'knowledge:redact:scrub[123]' DRY_RUN=true ACTOR_ID=42
+
+# Live scrub for project 123, attributed to operator 42
+bin/rails 'knowledge:redact:scrub[123]' ACTOR_ID=42
+
+# Only re-embed previously scrubbed chunks from the last 24 hours
+bin/rails 'knowledge:redact:reembed[123]' SINCE='2026-05-01T00:00:00Z'
+
+# Re-embed an explicit list of chunk UUIDs
+bin/rails 'knowledge:redact:reembed[123]' CHUNK_IDS='<uuid1>,<uuid2>'
+```
+
+Programmatic invocation (e.g. from a custom rake task or a Rails console
+session):
+
+```ruby
+project = Project.find(123)
+
+# Stage 1 + 2: scrub + Qdrant cleanup
+scrub_result = Knowledge::Redaction::Scrubber.new(
+  project: project,
+  qdrant_client: Paid.qdrant_client,
+  actor: { type: "operator", id: "42" }
+).call
+
+scrub_result.scrubbed_chunks          # chunks physically scrubbed in Postgres
+scrub_result.deleted_qdrant_points    # Qdrant points removed
+scrub_result.qdrant_collection_rebuilt # true when threshold-driven rebuild ran
+
+# Stage 3: re-embed partially redacted chunks (those still active with a
+# prior embedding). Uses the project's configured embedding provider.
+generator = Knowledge::Embeddings::ProxyGenerator.new(
+  project: project,
+  provider_configs: Knowledge::RunnerConfiguration.for_embedding_candidate_runners(project: project),
+  containerize: true
+)
+
+reembed_result = Knowledge::Redaction::Reembed.new(
+  project: project,
+  generator: generator,
+  actor: { type: "operator", id: "42" }
+).call
+
+reembed_result.reembedded_count # active chunks whose embeddings were refreshed
+```
+
+To scope the scrub to a subset of the project, pass `scope_filter:`:
+
+```ruby
+Knowledge::Redaction::Scrubber.new(
+  project: project,
+  qdrant_client: Paid.qdrant_client,
+  scope_filter: { scope_path: "app/controllers/users_controller.rb" }
+).call
+```
+
+The supported `scope_filter` keys are:
+
+- `knowledge_artifact_id:` — limit to a single artifact.
+- `scope_path:` — limit to artifacts sharing a `scope_path` (typically a file).
+
+### Safety Notes
+
+- `Scrubber` is idempotent: re-running it skips chunks whose content has
+  already been scrubbed because the redactor returns no changes for already
+  redacted text.
+- Set `dry_run: true` (or `DRY_RUN=true`) to preview scrub counts without
+  writing to PostgreSQL, Qdrant, or the audit log. The dry-run summary is
+  emitted as a structured log line (`knowledge.audit.dry_run_summary`)
+  instead of a `KnowledgeAuditEvent` so the audit log stays free of
+  speculative entries.
+- When the bulk rebuild threshold trips, the collection is dropped via
+  `rebuild_schema!`. Embeddings are *not* re-upserted automatically — you
+  must run `Knowledge::Embeddings::Pipeline.call(project: project)` (or
+  `EmbedChunksJob`) after the rebuild to restore semantic search. The rake
+  task queues `EmbedChunksJob` automatically for you.
+- Re-embedding requires an embedding provider configured for the project. If
+  none is configured, `Knowledge::RunnerConfiguration.for_embedding_candidate_runners`
+  returns an empty array and the re-embed step is a no-op (logged as
+  `knowledge.embeddings.project_skipped`).
