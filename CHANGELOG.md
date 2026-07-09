@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.5.0](https://github.com/viamin/paid/compare/v1.4.0...v1.5.0) (2026-07-09)
+
+
+### Features
+
+* **chat:** raise tool iteration limit to 50 with soft-stop and configurable budget guard ([#2838](https://github.com/viamin/paid/issues/2838)) ([1686228](https://github.com/viamin/paid/commit/1686228225cb6293eb4bae31270dd94ba3f31305))
+
+
+### Bug Fixes
+
+* **agent-runs:** reroute pinned runs to healthy alternative instead of stalling ([#2839](https://github.com/viamin/paid/issues/2839)) ([3d08d6a](https://github.com/viamin/paid/commit/3d08d6a9714d3ba8761fbf270111a89dcbfca166))
+* **pr-review:** stop merge-permission retry storm, add PAT fallback for merges ([#2837](https://github.com/viamin/paid/issues/2837)) ([4cddb8f](https://github.com/viamin/paid/commit/4cddb8fe96ed5a5cb3c9bfbcddde32091f3e8067))
+* RDR-043 phase 6: harden auto-capacity policy defaults and degraded-mode behavior ([#2756](https://github.com/viamin/paid/issues/2756)) ([9c2fa60](https://github.com/viamin/paid/commit/9c2fa609766d26919fb3e412e975bd463bce1345))
+
 ## [1.4.0](https://github.com/viamin/paid/compare/v1.3.0...v1.4.0) (2026-07-09)
 
 
