@@ -34,6 +34,46 @@ RSpec.describe "Dashboard" do
         expect(response.body).to include("Test Company")
       end
 
+      it "renders retry-limited issues as a neutral empty dashboard card", :aggregate_failures do
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
+        card = doc.at_css("[data-testid='retry-limited-issues-card']")
+        expect(card).to be_present
+
+        heading = card.at_xpath(".//h3[normalize-space()='Retry-limited issues']")
+        expect(heading).to be_present
+
+        expect(card["class"]).to include("border-gray-200")
+        expect(card["class"]).to include("bg-white")
+        expect(heading["class"]).to include("text-gray-900")
+        expect(response.body).to include("No retry-limited issues or PRs at the moment.")
+      end
+
+      it "calls out retry-limited issues when operator action is available", :aggregate_failures do
+        create(
+          :issue,
+          project: project,
+          runner_retry_abandoned_at: Time.current,
+          runner_retry_abandon_reason: "All runners reached the retry cap"
+        )
+
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
+        card = doc.at_css("[data-testid='retry-limited-issues-card']")
+        expect(card).to be_present
+
+        heading = card.at_xpath(".//h3[normalize-space()='Retry-limited issues']")
+        expect(heading).to be_present
+
+        expect(card["class"]).to include("border-orange-200")
+        expect(card["class"]).to include("bg-orange-50")
+        expect(heading["class"]).to include("text-orange-900")
+        expect(response.body).to include("Clear the flag to retry, or run them manually.")
+        expect(response.body).to include("Retry Cap")
+      end
+
       it "surfaces exception incidents from the dashboard header" do
         get dashboard_path
 

@@ -309,6 +309,7 @@ RSpec.describe TenantContext, :tenant_isolation do
       EnableRlsOnStrategiesAndStrategyVersions.new.up unless strategies_have_rls?
       FixStrategiesRlsInfiniteRecursion.new.up
     end
+    OrchestrationDecision.reset_column_information
   end
 
   def knowledge_recommendations_has_rls?

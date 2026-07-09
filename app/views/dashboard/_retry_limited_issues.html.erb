@@ -1,17 +1,23 @@
-<div class="rounded-lg border border-orange-200 bg-orange-50 p-6 shadow-sm">
+<% has_retry_limited_issues = retry_limited_issues.any? %>
+
+<div class="rounded-lg border <%= has_retry_limited_issues ? "border-orange-200 bg-orange-50" : "border-gray-200 bg-white" %> p-6 shadow-sm" data-testid="retry-limited-issues-card">
   <div class="flex items-start justify-between gap-4">
     <div>
-      <h3 class="text-base font-semibold text-orange-900">Retry-limited issues</h3>
-      <p class="mt-1 text-sm text-orange-700">These issues/PRs reached their runner retry cap. Clear the flag to retry, or run them manually.</p>
+      <h3 class="text-base font-semibold <%= has_retry_limited_issues ? "text-orange-900" : "text-gray-900" %>">Retry-limited issues</h3>
+      <% if has_retry_limited_issues %>
+        <p class="mt-1 text-sm text-orange-700">These issues/PRs reached their runner retry cap. Clear the flag to retry, or run them manually.</p>
+      <% else %>
+        <p class="mt-1 text-sm text-gray-500">Issues and PRs that need retry-cap review will appear here.</p>
+      <% end %>
     </div>
-    <% if retry_limited_issues.any? %>
+    <% if has_retry_limited_issues %>
       <span class="inline-flex items-center rounded-md bg-orange-100 px-2 py-1 text-xs font-medium text-orange-800">
         <%= pluralize(retry_limited_issues.size, "item") %>
       </span>
     <% end %>
   </div>
 
-  <% if retry_limited_issues.any? %>
+  <% if has_retry_limited_issues %>
     <div class="mt-4 flow-root">
       <div class="-mx-4 -my-2 overflow-x-auto sm:-mx-6 lg:-mx-8">
         <div class="inline-block min-w-full py-2 align-middle sm:px-6 lg:px-8">
@@ -56,6 +62,6 @@
       </div>
     </div>
   <% else %>
-    <p class="mt-4 text-sm text-orange-700">No retry-limited issues or PRs at the moment.</p>
+    <p class="mt-4 text-sm text-gray-500">No retry-limited issues or PRs at the moment.</p>
   <% end %>
 </div>

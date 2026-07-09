@@ -28,7 +28,7 @@ module Workflows
         @sync_requested = false
 
         result = run_activity(Activities::FetchIssuesActivity,
-          { project_id: project_id }, timeout: 60, heartbeat_timeout: DEFAULT_HEARTBEAT_TIMEOUT)
+          { project_id: project_id }, **poll_activity_options(timeout: 60))
 
         break if result[:project_missing]
 
@@ -130,7 +130,7 @@ module Workflows
 
       issue_ids = issues.map { |issue_data| issue_data[:id] }
       batch_result = run_activity(Activities::EvaluateIssuesActivity,
-        { project_id: project_id, issue_ids: issue_ids }, timeout: 120, heartbeat_timeout: DEFAULT_HEARTBEAT_TIMEOUT)
+        { project_id: project_id, issue_ids: issue_ids }, **poll_activity_options(timeout: 120))
 
       (batch_result[:results] || []).each do |evaluation|
         handle_automation_result(evaluation, project_id)
@@ -169,6 +169,22 @@ module Workflows
       base_seconds + Temporalio::Workflow.random.rand(-jitter_range..jitter_range)
     end
 
+    # Heartbeat timeouts were added to long-running poll activities after
+    # replay fixtures and live executions already existed. Keep legacy
+    # histories on the old options so replay remains deterministic.
+    def poll_activity_options(timeout:)
+      options = { timeout: timeout }
+      return options unless github_poll_activity_heartbeats_enabled?
+
+      options.merge(heartbeat_timeout: DEFAULT_HEARTBEAT_TIMEOUT)
+    end
+
+    def github_poll_activity_heartbeats_enabled?
+      Temporalio::Workflow.patched("github-poll-activity-heartbeats-v1")
+    rescue Temporalio::Error
+      true
+    end
+
     # Checks rate limit budget and runs non-critical activities only when
     # sufficient budget remains. Issue detection (FetchIssues + DetectLabels)
     # is prioritized as core work; PR scanning, security alerts, and knowledge
@@ -197,7 +213,7 @@ module Workflows
     # Scan paid-generated PRs for follow-up work.
     def maybe_scan_paid_prs(project_id)
       scan_result = run_activity(Activities::ScanPaidPrsActivity,
-        { project_id: project_id }, timeout: 120, heartbeat_timeout: DEFAULT_HEARTBEAT_TIMEOUT)
+        { project_id: project_id }, **poll_activity_options(timeout: 120))
 
       handle_pr_scan_results(scan_result, project_id)
       scan_result
@@ -208,7 +224,7 @@ module Workflows
     # agent runs are triggered here.
     def maybe_scan_code_scanning_alerts(project_id)
       run_activity(Activities::ScanSecurityAlertsActivity,
-        { project_id: project_id }, timeout: 120, heartbeat_timeout: DEFAULT_HEARTBEAT_TIMEOUT)
+        { project_id: project_id }, **poll_activity_options(timeout: 120))
     rescue Temporalio::Error::ActivityError => e
       raise unless e.cause.is_a?(Temporalio::Error::ApplicationError) &&
         e.cause.type == "CodeScanningPermissionsError"
