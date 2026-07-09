@@ -6,6 +6,18 @@ RSpec.describe "GithubApp::Webhooks", type: :request do
   let(:account) { create(:account) }
   let(:webhook_secret) { "shhh-shhh-shhh" }
   let(:webhook_url) { "/api/webhooks/github_app" }
+  let(:base_installation) do
+    {
+      "id" => 88_777_777,
+      "account" => { "login" => "acme-corp" },
+      "target_type" => "Organization",
+      "repository_selection" => "all",
+      "repositories" => [
+        { "id" => 1, "full_name" => "acme-corp/widgets", "name" => "widgets",
+          "owner" => { "login" => "acme-corp" }, "default_branch" => "main" }
+      ]
+    }
+  end
 
   before do
     ENV["PAID_AGENT_APP_WEBHOOK_SECRET"] = webhook_secret
@@ -27,18 +39,6 @@ RSpec.describe "GithubApp::Webhooks", type: :request do
       }
   end
 
-  let(:base_installation) do
-    {
-      "id" => 88_777_777,
-      "account" => { "login" => "acme-corp" },
-      "target_type" => "Organization",
-      "repository_selection" => "all",
-      "repositories" => [
-        { "id" => 1, "full_name" => "acme-corp/widgets", "name" => "widgets",
-          "owner" => { "login" => "acme-corp" }, "default_branch" => "main" }
-      ]
-    }
-  end
 
   describe "signature verification" do
     it "rejects requests without a signature" do
@@ -63,6 +63,7 @@ RSpec.describe "GithubApp::Webhooks", type: :request do
 
     it "rejects requests when the webhook secret is not configured" do
       ENV.delete("PAID_AGENT_APP_WEBHOOK_SECRET")
+      allow(Github::AppRegistry).to receive(:webhook_secret).and_return(nil)
       post webhook_url,
         params: {}.to_json,
         headers: {
@@ -72,6 +73,22 @@ RSpec.describe "GithubApp::Webhooks", type: :request do
         }
 
       expect(response).to have_http_status(:unauthorized)
+    end
+
+    it "verifies the signature against the secret resolved from AppRegistry" do
+      allow(Github::AppRegistry).to receive(:webhook_secret).and_return(webhook_secret)
+      ENV.delete("PAID_AGENT_APP_WEBHOOK_SECRET")
+      existing = create(:github_installation, account: account,
+                        github_installation_id: 88_777_777,
+                        account_login: "old-login")
+
+      post_webhook(
+        event: "installation",
+        payload: { "action" => "created", "installation" => base_installation }
+      )
+
+      expect(response).to have_http_status(:ok)
+      expect(existing.reload.account_login).to eq("acme-corp")
     end
   end
 

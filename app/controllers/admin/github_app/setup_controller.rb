@@ -12,8 +12,9 @@ module Admin
     #   3. After registering the app on GitHub, GitHub redirects to
     #      GET /admin/github_app/setup/callback with a temporary `code`.
     #   4. The callback exchanges the code for the app's id and PEM private
-    #      key, persists them to Rails credentials (encrypted), and sets the
-    #      webhook secret used by `GithubApp::WebhooksController`.
+    #      key, hands the result to `Github::AppCredentialsPersister`, and
+    #      either writes the values into the encrypted Rails credentials file
+    #      or surfaces the exact snippet the operator must add by hand.
     #
     # Once the App is configured, new projects can use the App-managed
     # auth flow via `GithubApp::InstallationsController`.
@@ -42,7 +43,7 @@ module Admin
         @configured = Github::AppRegistry.configured?
         @app_slug = Github::AppRegistry.slug
         @app_id = Github::AppRegistry.app_id
-        @webhook_secret_configured = ENV["PAID_AGENT_APP_WEBHOOK_SECRET"].present?
+        @webhook_secret_configured = Github::AppRegistry.webhook_secret.present?
         @setup_path = admin_github_app_setup_path
       end
 
@@ -77,18 +78,21 @@ module Admin
         end
 
         result = Github::AppManifestExchanger.call(code: code)
-        persist_setup!(result)
+        persistence = Github::AppCredentialsPersister.call(result: result)
 
         audit_event(
           "github_app.setup_completed",
           metadata: {
             app_id: result.app_id,
             app_slug: result.slug,
-            html_url: result.html_url
+            html_url: result.html_url,
+            persistence_status: persistence.status,
+            credentials_path: persistence.credentials_path
           }
         )
 
-        redirect_to admin_github_app_setup_path, notice: "GitHub App #{result.slug} registered."
+        notice = build_notice(result: result, persistence: persistence)
+        redirect_to admin_github_app_setup_path, notice: notice
       rescue Github::AppManifestExchanger::Error => e
         redirect_to admin_github_app_setup_path, alert: "GitHub App setup failed: #{e.message}"
       end
@@ -144,11 +148,13 @@ module Admin
         uri.to_s
       end
 
-      def persist_setup!(result)
-        ENV["PAID_AGENT_APP_ID"] = result.app_id.to_s
-        ENV["PAID_AGENT_APP_SLUG"] = result.slug if result.slug.present?
-        ENV["PAID_AGENT_APP_PRIVATE_KEY"] = result.private_key.to_s
-        ENV["PAID_AGENT_APP_WEBHOOK_SECRET"] = result.webhook_secret
+      def build_notice(result:, persistence:)
+        base = "GitHub App #{result.slug} registered."
+        if persistence.persisted?
+          "#{base} Credentials written to #{persistence.credentials_path}."
+        else
+          "#{base} Add the App credentials manually — they were NOT persisted automatically."
+        end
       end
     end
   end

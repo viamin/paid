@@ -10,9 +10,11 @@ module GithubApp
   #   - installation_repositories                 (added/removed)
   #
   # Webhook authenticity is verified using the shared App webhook secret
-  # configured via `PAID_AGENT_APP_WEBHOOK_SECRET`. In multi-tenant SaaS this
-  # secret is rotated with the App itself; in self-hosted deployments it is
-  # supplied via Rails credentials at app setup time.
+  # resolved via `Github::AppRegistry.webhook_secret` (which checks
+  # `PAID_AGENT_APP_WEBHOOK_SECRET` first and falls back to the
+  # `paid_agent_app_webhook_secret` Rails credential). In multi-tenant SaaS
+  # this secret is rotated with the App itself; in self-hosted deployments it
+  # is supplied via Rails credentials at app setup time.
   class WebhooksController < ActionController::API
     before_action :verify_signature
 
@@ -107,7 +109,7 @@ module GithubApp
 
     def verify_signature
       signature = request.headers["X-Hub-Signature-256"].to_s
-      secret = ENV["PAID_AGENT_APP_WEBHOOK_SECRET"].presence
+      secret = Github::AppRegistry.webhook_secret
 
       if secret.blank? || signature.blank?
         head :unauthorized

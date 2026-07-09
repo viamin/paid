@@ -20,6 +20,10 @@ module Github
       ENV["PAID_AGENT_APP_PRIVATE_KEY"].presence || credentials_dig(:paid_agent_app_private_key)
     end
 
+    def self.webhook_secret
+      ENV["PAID_AGENT_APP_WEBHOOK_SECRET"].presence || credentials_dig(:paid_agent_app_webhook_secret)
+    end
+
     def self.bot_login
       "#{slug}[bot]"
     end

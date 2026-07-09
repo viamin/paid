@@ -5,10 +5,21 @@ require "rails_helper"
 RSpec.describe "Admin::GithubApp::Setup" do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account, email: "operator@example.com") }
+  let(:pem) { OpenSSL::PKey::RSA.new(2048).to_pem }
+  let(:exchanger_result) do
+    Github::AppManifestExchanger::Result.new(
+      app_id: 99,
+      slug: "paid-agents-self-hosted",
+      html_url: "https://github.com/apps/paid-agents-self-hosted",
+      private_key: pem,
+      webhook_secret: "shhh"
+    )
+  end
 
   before do
     ENV["PAID_OPERATOR_EMAILS"] = "operator@example.com"
     sign_in user
+    allow(Github::AppManifestExchanger).to receive(:call).and_return(exchanger_result)
   end
 
   after do
@@ -35,6 +46,16 @@ RSpec.describe "Admin::GithubApp::Setup" do
 
       expect(response).to redirect_to(root_path)
       expect(flash[:alert]).to match(/not authorized/i)
+    end
+
+    it "reports webhook secret configured from ENV or credentials" do
+      allow(Github::AppRegistry).to receive(:webhook_secret).and_return(nil)
+      get admin_github_app_setup_path
+      expect(response.body).to include("Missing")
+
+      allow(Github::AppRegistry).to receive(:webhook_secret).and_return("shhh")
+      get admin_github_app_setup_path
+      expect(response.body).to include("Configured")
     end
   end
 
@@ -67,39 +88,61 @@ RSpec.describe "Admin::GithubApp::Setup" do
   end
 
   describe "GET /admin/github_app/setup/callback" do
-    let(:state) { SecureRandom.urlsafe_base64(32) }
     let(:code) { "abc123" }
-    let(:pem) { OpenSSL::PKey::RSA.new(2048).to_pem }
 
-    def with_setup_state(token: state)
-      allow_any_instance_of(Admin::GithubApp::SetupController).to receive(:session)
-        .and_return({ admin_github_app_setup_state: token })
+    # Drives the controller through a real `POST /admin/github_app/setup`
+    # request so the resulting session state is set by the controller itself.
+    # Returns the state token echoed back by GitHub in the callback.
+    def primed_state
+      post admin_github_app_setup_path
+      request.session[:admin_github_app_setup_state]
     end
 
-    it "exchanges the code, persists ENV, and audits the setup" do
-      with_setup_state
-      allow(Github::AppManifestExchanger).to receive(:call).with(code: code).and_return(
-        Github::AppManifestExchanger::Result.new(
-          app_id: 99,
-          slug: "paid-agents-self-hosted",
-          html_url: "https://github.com/apps/paid-agents-self-hosted",
-          private_key: pem,
-          webhook_secret: "shhh"
+    it "exchanges the code, hands the result to the persister, and audits the setup" do
+      state = primed_state
+      allow(Github::AppCredentialsPersister).to receive(:call)
+        .with(result: exchanger_result)
+        .and_return(
+          Github::AppCredentialsPersister::Result.new(
+            status: :persisted,
+            credentials_path: "/workspace/config/credentials/production.yml.enc",
+            written_keys: %w[paid_agent_app_id paid_agent_app_private_key paid_agent_app_slug paid_agent_app_webhook_secret]
+          )
         )
-      )
 
       get admin_github_app_setup_callback_path, params: { code: code, state: state }
 
       expect(response).to redirect_to(admin_github_app_setup_path)
-      expect(flash[:notice]).to match(/paid-agents-self-hosted/)
-      expect(ENV["PAID_AGENT_APP_ID"]).to eq("99")
-      expect(ENV["PAID_AGENT_APP_SLUG"]).to eq("paid-agents-self-hosted")
-      expect(ENV["PAID_AGENT_APP_PRIVATE_KEY"]).to eq(pem)
-      expect(ENV["PAID_AGENT_APP_WEBHOOK_SECRET"]).to eq("shhh")
+      expect(flash[:notice]).to include("paid-agents-self-hosted")
+      expect(flash[:notice]).to match(/written to/i)
+      expect(Github::AppCredentialsPersister).to have_received(:call).with(result: exchanger_result)
+      # ENV must NOT be used as a side-channel — values are persisted via
+      # the credentials file (or surfaced as manual instructions) only.
+      expect(ENV["PAID_AGENT_APP_ID"]).to be_nil
+      expect(ENV["PAID_AGENT_APP_WEBHOOK_SECRET"]).to be_nil
+    end
+
+    it "surfaces manual instructions when the persister cannot write credentials" do
+      state = primed_state
+      allow(Github::AppCredentialsPersister).to receive(:call)
+        .with(result: exchanger_result)
+        .and_return(
+          Github::AppCredentialsPersister::Result.new(
+            status: :manual,
+            credentials_path: "/workspace/config/credentials/production.yml.enc",
+            written_keys: [],
+            manual_instructions: "Add PAID_AGENT_APP_ID, PAID_AGENT_APP_SLUG, ..."
+          )
+        )
+
+      get admin_github_app_setup_callback_path, params: { code: code, state: state }
+
+      expect(response).to redirect_to(admin_github_app_setup_path)
+      expect(flash[:notice]).to include("NOT persisted automatically")
     end
 
     it "rejects mismatched state" do
-      with_setup_state
+      primed_state
 
       get admin_github_app_setup_callback_path, params: { code: code, state: "wrong" }
 
@@ -108,16 +151,16 @@ RSpec.describe "Admin::GithubApp::Setup" do
     end
 
     it "rejects missing code" do
-      with_setup_state
+      state = primed_state
 
       get admin_github_app_setup_callback_path, params: { state: state }
 
       expect(response).to redirect_to(admin_github_app_setup_path)
-      expect(flash[:alert]).to match(/did not return a setup code/)
+      expect(flash[:alert]).to include("did not return a setup code")
     end
 
     it "surfaces exchanger errors as a redirect alert" do
-      with_setup_state
+      state = primed_state
       allow(Github::AppManifestExchanger).to receive(:call).and_raise(
         Github::AppManifestExchanger::Error, "code expired"
       )
@@ -125,7 +168,7 @@ RSpec.describe "Admin::GithubApp::Setup" do
       get admin_github_app_setup_callback_path, params: { code: code, state: state }
 
       expect(response).to redirect_to(admin_github_app_setup_path)
-      expect(flash[:alert]).to match(/code expired/)
+      expect(flash[:alert]).to include("code expired")
     end
   end
 end

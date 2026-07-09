@@ -47,6 +47,9 @@ module GithubApp
     def callback
       installation_id = params[:installation_id].to_i
       setup_action = params[:setup_action].presence
+      # Capture the account before clearing the session state so the value
+      # stored at install time survives into the SyncJob.
+      account_id = session_account_id || current_account.id
 
       clear_install_state!
 
@@ -57,7 +60,7 @@ module GithubApp
 
       Github::Installations::SyncJob.perform_later(
         installation_id: installation_id,
-        account_id: session_account_id || current_account.id,
+        account_id: account_id,
         setup_action: setup_action
       )
 
@@ -75,12 +78,12 @@ module GithubApp
     end
 
     def verify_install_state!
-      stored = session[INSTALL_STATE_SESSION_KEY]
-      expected = params[:state].to_s
+      stored = install_state
 
-      if stored.blank? || expected.blank? || !ActiveSupport::SecurityUtils.secure_compare(stored[:token].to_s, expected)
+      if stored.blank? || params[:state].to_s.blank? ||
+          !ActiveSupport::SecurityUtils.secure_compare(install_state_value(stored, :token).to_s, params[:state].to_s)
         redirect_to integrations_path, alert: "GitHub App installation state did not match."
-      elsif stored[:issued_at].to_i < (Time.current - INSTALL_STATE_TTL).to_i
+      elsif install_state_value(stored, :issued_at).to_i < (Time.current - INSTALL_STATE_TTL).to_i
         clear_install_state!
         redirect_to integrations_path, alert: "GitHub App installation request expired. Please try again."
       end
@@ -91,7 +94,23 @@ module GithubApp
     end
 
     def session_account_id
-      session[INSTALL_STATE_SESSION_KEY]&.dig(:account_id)
+      stored = install_state
+      install_state_value(stored, :account_id)
+    end
+
+    # The session hash stored during `install` uses symbol keys, but the
+    # encrypted cookie is JSON-serialized so the hash comes back with string
+    # keys on the next request. Accept either so the controller works
+    # regardless of which side of the cookie round-trip it runs on.
+    def install_state
+      stored = session[INSTALL_STATE_SESSION_KEY]
+      stored.is_a?(Hash) ? stored : nil
+    end
+
+    def install_state_value(stored, key)
+      return nil if stored.blank?
+
+      stored[key] || stored[key.to_s]
     end
   end
 end
