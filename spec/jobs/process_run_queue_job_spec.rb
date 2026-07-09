@@ -1184,5 +1184,329 @@ RSpec.describe ProcessRunQueueJob do
         expect(retry_run.reload.temporal_workflow_id).to be_present
       end
     end
+
+    context "with Capacity::Policy gating" do
+      it "skips the Docker snapshot round trip for manual-only deployments" do
+        # Resolving the deployment capacity policy requires a Docker system_info
+        # + per-container stats round trip via current_capacity_policy. For
+        # pure-manual deployments the legacy run-count gate already bounds
+        # admission, so the policy must stay lazy and never invoke
+        # DockerSnapshot.call or Capacity::Policy.call on a pass with no
+        # auto-mode candidate.
+        create_queued_run_with_policy(max_concurrent_runs: 5)
+
+        expect(Capacity::DockerSnapshot).not_to receive(:call)
+        expect(Capacity::Policy).not_to receive(:call)
+
+        described_class.new.perform
+      end
+
+      it "dispatches under manual limits when auto mode is disabled by deployment policy" do
+        # auto_allowed: false means "stay in manual mode", not "block all dispatch".
+        # With headroom under the user's manual limit, the run should start.
+        queued_run = create_queued_run_with_policy(max_concurrent_runs: 5)
+        queued_run.project.created_by.settings.update!(run_concurrency_mode: "auto")
+        stub_policy_decision(remote_backend_decision)
+        expect(Capacity::DockerSnapshot).not_to receive(:fetch)
+
+        expect(temporal_client).to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(queued_run.reload.temporal_workflow_id).to be_present
+      end
+
+      it "blocks dispatch when the user is at manual capacity even if auto ceiling is higher" do
+        # remote_backend_decision has effective_max_concurrent: 10, but auto_allowed
+        # is false so only the user's manual limit (2) governs concurrency.
+        project = create(:project)
+        project.created_by.settings.update!(run_concurrency_mode: "auto", max_concurrent_runs: 2)
+        create(:agent_run, :running, project: project)
+        create(:agent_run, :running, project: project)
+        queued_run = create(:agent_run, :queued, project: project)
+        stub_policy_decision(remote_backend_decision)
+        expect(Capacity::DockerSnapshot).not_to receive(:fetch)
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(queued_run.reload.status).to eq("queued")
+      end
+
+      it "logs manual mode info when auto is disabled by deployment policy" do
+        queued_run = create_queued_run_with_policy(max_concurrent_runs: 5)
+        # The policy downgrade is only meaningful (and only consulted) for an
+        # auto-mode user; manual-only deployments skip the snapshot entirely.
+        queued_run.project.created_by.settings.update!(run_concurrency_mode: "auto")
+        stub_policy_decision(missing_snapshot_decision)
+        allow(Rails.logger).to receive(:info)
+
+        described_class.new.perform
+
+        expect(Rails.logger).to have_received(:info).with(
+          hash_including(
+            message: "process_run_queue.capacity_policy_manual_mode",
+            mode: "manual"
+          )
+        )
+      end
+
+      it "forwards the CI signal to the capacity policy" do
+        queued_run = create_queued_run_with_policy(max_concurrent_runs: 5)
+        # The policy is only consulted for auto-mode candidates, so the CI
+        # signal only reaches Capacity::Policy when an auto-mode run is queued.
+        queued_run.project.created_by.settings.update!(run_concurrency_mode: "auto")
+        snapshot = ci_policy_snapshot
+        allow(Capacity::DockerSnapshot).to receive(:call).and_return(snapshot)
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("CI").and_return("true")
+        expect(Capacity::Policy).to receive(:call).with(snapshot: snapshot, ci: true).and_return(ci_policy_decision)
+        expect(Capacity::DockerSnapshot).not_to receive(:fetch)
+        expect(temporal_client).to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(queued_run.reload.temporal_workflow_id).to be_present
+      end
+
+      it "falls back to manual limits when the policy cannot be resolved" do
+        project = create(:project)
+        project.created_by.settings.update!(run_concurrency_mode: "auto", max_concurrent_runs: 1)
+        queued_run = create(:agent_run, :queued, project: project)
+        create(:agent_run, :running, project: project)
+
+        # The policy is consulted because the owner is in auto mode. When
+        # DockerSnapshot.call raises, ProcessRunQueueJob should log the
+        # failure — surfacing the policy_unknown reason — and fall back to
+        # the legacy tenant_max_concurrent_runs limit (fail-safe, not fail-loud).
+        allow(Capacity::DockerSnapshot).to receive(:call).and_raise(StandardError, "docker unavailable")
+        allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(
+          available: false, reason: "docker_unavailable", snapshot_at: Time.current, confidence: "low"
+        )
+        allow(Rails.logger).to receive(:warn)
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(queued_run.reload.status).to eq("queued")
+        expect(Rails.logger).to have_received(:warn).with(hash_including(
+          message: "process_run_queue.capacity_policy_unavailable",
+          reason: "policy_unknown"
+        ))
+      end
+
+      it "keeps tenant max_concurrent_runs as a hard ceiling in auto mode" do
+        project = create(:project)
+        user = project.created_by
+        user.settings.update!(run_concurrency_mode: "auto", max_concurrent_runs: 5)
+        create(:tenant_setting, account: user.account, guardrails: { "max_concurrent_runs" => 3 })
+        3.times { create(:agent_run, :running, project: project) }
+        queued_run = create(:agent_run, :queued, project: project)
+        stub_policy_decision(local_auto_decision)
+        allow(Capacity::DockerSnapshot).to receive(:fetch).and_return(
+          available: true,
+          effective_agent_budget_bytes: 16 * 1024 * 1024 * 1024,
+          snapshot_at: Time.current,
+          confidence: "high",
+          docker_memory_bytes: 32 * 1024 * 1024 * 1024
+        )
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(queued_run.reload.status).to eq("queued")
+      end
+
+      it "denies admission when Docker memory is exhausted even with run-count headroom" do
+        # RDR-043: a healthy local user with max_concurrent_runs = 5 must not
+        # dispatch when available_memory_bytes is 0, even though the count
+        # limit still has room. The policy's docker_memory_exhausted reason
+        # is a hard capacity block that must leave the run queued rather than
+        # fall back to the legacy manual-count check.
+        queued_run = create_queued_run_with_policy(max_concurrent_runs: 5)
+        queued_run.project.created_by.settings.update!(run_concurrency_mode: "auto")
+        stub_policy_decision(capacity_blocked_decision)
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(queued_run.reload.status).to eq("queued")
+      end
+
+      it "logs the capacity block reason when admission is denied" do
+        queued_run = create_queued_run_with_policy(max_concurrent_runs: 5)
+        queued_run.project.created_by.settings.update!(run_concurrency_mode: "auto")
+        stub_policy_decision(capacity_blocked_decision)
+        allow(Rails.logger).to receive(:info)
+
+        described_class.new.perform
+
+        expect(Rails.logger).to have_received(:info).with(
+          hash_including(
+            message: "process_run_queue.capacity_blocked",
+            reasons: include("docker_memory_exhausted")
+          )
+        )
+      end
+    end
+  end
+
+  def create_queued_run_with_policy(max_concurrent_runs:)
+    project = create(:project)
+    project.created_by.settings.update!(max_concurrent_runs: max_concurrent_runs)
+    create(:agent_run, :queued, project: project)
+  end
+
+  def stub_policy_decision(decision)
+    allow(Capacity::Policy).to receive(:call).and_return(decision)
+  end
+
+  def remote_backend_decision
+    remote_snapshot = Capacity::DockerSnapshot::Snapshot.new(
+      backend_identifier: "remote",
+      backend_kind: "remote",
+      backend_shared: true,
+      docker_cpu_count: 8,
+      docker_memory_bytes: 16_000_000_000,
+      usage_buckets: {},
+      available_memory_bytes: 8_000_000_000,
+      agent_container_count: 0,
+      snapshot_at: Time.current,
+      confidence: 1.0,
+      degraded: false,
+      degraded_reasons: []
+    )
+
+    allow(Capacity::DockerSnapshot).to receive(:call).and_return(remote_snapshot)
+
+    Capacity::Policy::Decision.new(
+      mode: Capacity::Policy::MANUAL,
+      environment: Capacity::Policy::ENVIRONMENT_LINUX_DOCKER,
+      auto_allowed: false,
+      auto_allowed_reasons: [ "deployment_gate" ],
+      blocked_reasons: [ Capacity::BlockedReason[:auto_mode_disabled_for_deployment] ],
+      admission_uses_cpu: false,
+      degraded: false,
+      degraded_reasons: [],
+      effective_max_concurrent: 10,
+      snapshot_present: true
+    )
+  end
+
+  def missing_snapshot_decision
+    allow(Capacity::DockerSnapshot).to receive(:call).and_return(nil)
+
+    Capacity::Policy::Decision.new(
+      mode: Capacity::Policy::MANUAL,
+      environment: Capacity::Policy::ENVIRONMENT_UNKNOWN,
+      auto_allowed: false,
+      auto_allowed_reasons: [ "deployment_gate" ],
+      blocked_reasons: [ Capacity::BlockedReason[:docker_unavailable] ],
+      admission_uses_cpu: false,
+      degraded: true,
+      degraded_reasons: [ "no_snapshot" ],
+      effective_max_concurrent: 4,
+      snapshot_present: false
+    )
+  end
+
+  def local_auto_decision
+    local_snapshot = Capacity::DockerSnapshot::Snapshot.new(
+      backend_identifier: "local",
+      backend_kind: "local",
+      backend_shared: false,
+      docker_cpu_count: 8,
+      docker_memory_bytes: 16_000_000_000,
+      usage_buckets: Capacity::DockerSnapshot::EMPTY_BUCKETS,
+      available_memory_bytes: 8_000_000_000,
+      agent_container_count: 0,
+      snapshot_at: Time.current,
+      confidence: 1.0,
+      degraded: false,
+      degraded_reasons: []
+    )
+
+    allow(Capacity::DockerSnapshot).to receive(:call).and_return(local_snapshot)
+
+    Capacity::Policy::Decision.new(
+      mode: Capacity::Policy::AUTO,
+      environment: Capacity::Policy::ENVIRONMENT_LINUX_DOCKER,
+      auto_allowed: true,
+      auto_allowed_reasons: [ "environment_default" ],
+      blocked_reasons: [],
+      admission_uses_cpu: false,
+      degraded: false,
+      degraded_reasons: [],
+      effective_max_concurrent: 10,
+      snapshot_present: true
+    )
+  end
+
+  def capacity_blocked_decision
+    exhausted_snapshot = Capacity::DockerSnapshot::Snapshot.new(
+      backend_identifier: "local",
+      backend_kind: "local",
+      backend_shared: false,
+      docker_cpu_count: 8,
+      docker_memory_bytes: 16_000_000_000,
+      usage_buckets: Capacity::DockerSnapshot::EMPTY_BUCKETS,
+      available_memory_bytes: 0,
+      agent_container_count: 5,
+      snapshot_at: Time.current,
+      confidence: 1.0,
+      degraded: false,
+      degraded_reasons: []
+    )
+
+    allow(Capacity::DockerSnapshot).to receive(:call).and_return(exhausted_snapshot)
+
+    Capacity::Policy::Decision.new(
+      mode: Capacity::Policy::MANUAL,
+      environment: Capacity::Policy::ENVIRONMENT_LINUX_DOCKER,
+      auto_allowed: false,
+      auto_allowed_reasons: [ "docker_memory_exhausted" ],
+      blocked_reasons: [ Capacity::BlockedReason[:docker_memory_exhausted] ],
+      admission_uses_cpu: false,
+      degraded: true,
+      degraded_reasons: [ "docker_exhausted" ],
+      effective_max_concurrent: 10,
+      snapshot_present: true
+    )
+  end
+
+  def ci_policy_snapshot
+    Capacity::DockerSnapshot::Snapshot.new(
+      backend_identifier: "local",
+      backend_kind: "local",
+      backend_shared: false,
+      docker_cpu_count: 8,
+      docker_memory_bytes: 16_000_000_000,
+      usage_buckets: Capacity::DockerSnapshot::EMPTY_BUCKETS,
+      available_memory_bytes: 8_000_000_000,
+      agent_container_count: 0,
+      snapshot_at: Time.current,
+      confidence: 1.0,
+      degraded: false,
+      degraded_reasons: []
+    )
+  end
+
+  def ci_policy_decision
+    Capacity::Policy::Decision.new(
+      mode: Capacity::Policy::MANUAL,
+      environment: Capacity::Policy::ENVIRONMENT_CI,
+      auto_allowed: false,
+      auto_allowed_reasons: [],
+      blocked_reasons: [ Capacity::BlockedReason[:auto_mode_disabled_for_deployment] ],
+      admission_uses_cpu: false,
+      degraded: false,
+      degraded_reasons: [],
+      effective_max_concurrent: 2,
+      snapshot_present: true
+    )
   end
 end
