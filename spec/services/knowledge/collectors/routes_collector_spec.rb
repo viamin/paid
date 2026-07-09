@@ -733,5 +733,38 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
         )
       end
     end
+
+    context "with a Phoenix router in the repository" do
+      subject(:phoenix_collector) do
+        described_class.new(
+          project: project,
+          project_version: project_version,
+          collector_run: collector_run,
+          options: { scan_path: Rails.root.join("spec/fixtures/screenshots/phoenix_repo").to_s }
+        )
+      end
+
+      it "collects Phoenix routes from router macros" do
+        artifacts = phoenix_collector.collect
+
+        expect(artifacts).to include(
+          a_hash_including(
+            scope_path: "lib/color_matching_web/router.ex",
+            identifier: "GET /",
+            metadata: include(http_method: "GET", path: "/", controller: "PaletteLive", action: "index")
+          ),
+          a_hash_including(
+            scope_path: "lib/color_matching_web/router.ex",
+            identifier: "POST /samples",
+            metadata: include(http_method: "POST", path: "/samples", controller: "SampleController", action: "create")
+          ),
+          a_hash_including(
+            scope_path: "lib/color_matching_web/router.ex",
+            identifier: "GET /projects",
+            metadata: include(http_method: "GET", path: "/projects", controller: "ProjectController", action: "index")
+          )
+        )
+      end
+    end
   end
 end
