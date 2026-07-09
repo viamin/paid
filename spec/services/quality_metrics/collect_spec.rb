@@ -462,5 +462,25 @@ RSpec.describe QualityMetrics::Collect do
         expect(pv.avg_quality_score).to be_present
       end
     end
+
+    context "with style guide exposures" do
+      let(:style_guide) { create(:style_guide, account: agent_run.project.account, project: nil, raw_content: "Guide rules") }
+
+      before do
+        create(:style_guide_run_exposure,
+          agent_run: agent_run,
+          style_guide: style_guide,
+          style_guide_version: style_guide.current_version,
+          guide_name: style_guide.name)
+      end
+
+      it "updates style guide version usage stats" do
+        described_class.call(agent_run: agent_run)
+
+        version = style_guide.current_version.reload
+        expect(version.usage_count).to eq(1)
+        expect(version.avg_quality_score).to be_present
+      end
+    end
   end
 end

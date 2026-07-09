@@ -168,6 +168,11 @@ Rails.application.configure do
       class: "PromptEvolutionJob",
       description: "Trigger prompt evolution workflows for eligible prompts (weekly)"
     },
+    style_guide_evolution: {
+      cron: "30 3 * * 1",
+      class: "StyleGuideEvolutionJob",
+      description: "Trigger style guide evolution workflows for eligible guides (weekly)"
+    },
     delayed_human_feedback: {
       # Runs hourly, but the job itself skips runs polled within the last 12 hours
       # (SWEEP_INTERVAL). Hourly ticks prevent the scenario where a poll just

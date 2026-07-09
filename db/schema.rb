@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_08_034227) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_09_225313) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2436,12 +2436,119 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_08_034227) do
     t.index ["strategy_id"], name: "index_strategy_versions_one_active_per_strategy", unique: true, where: "(((promotion_state)::text = 'active'::text) AND (retired_at IS NULL))"
   end
 
+  create_table "style_guide_ab_test_assignments", force: :cascade do |t|
+    t.bigint "agent_run_id", null: false
+    t.datetime "created_at", null: false
+    t.decimal "quality_score", precision: 5, scale: 4
+    t.bigint "style_guide_ab_test_id", null: false
+    t.bigint "style_guide_ab_test_variant_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_run_id"], name: "index_style_guide_ab_test_assignments_on_agent_run_id"
+    t.index ["style_guide_ab_test_id", "agent_run_id"], name: "index_style_guide_ab_test_assignments_unique", unique: true
+    t.index ["style_guide_ab_test_id"], name: "idx_on_style_guide_ab_test_id_653b807c99"
+    t.index ["style_guide_ab_test_variant_id"], name: "idx_on_style_guide_ab_test_variant_id_6da5a7dee2"
+  end
+
+  create_table "style_guide_ab_test_variants", force: :cascade do |t|
+    t.decimal "avg_quality_score", precision: 5, scale: 4
+    t.datetime "created_at", null: false
+    t.boolean "is_control", default: false, null: false
+    t.integer "sample_count", default: 0, null: false
+    t.bigint "style_guide_ab_test_id", null: false
+    t.bigint "style_guide_version_id", null: false
+    t.decimal "total_quality_score", precision: 10, scale: 4, default: "0.0", null: false
+    t.datetime "updated_at", null: false
+    t.index ["style_guide_ab_test_id", "style_guide_version_id"], name: "index_style_guide_ab_test_variants_on_test_and_version", unique: true
+    t.index ["style_guide_ab_test_id"], name: "index_style_guide_ab_test_variants_on_control_per_test", unique: true, where: "(is_control = true)"
+    t.index ["style_guide_ab_test_id"], name: "index_style_guide_ab_test_variants_on_style_guide_ab_test_id"
+    t.index ["style_guide_version_id"], name: "index_style_guide_ab_test_variants_on_style_guide_version_id"
+  end
+
+  create_table "style_guide_ab_tests", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "analysis_samples_key"
+    t.jsonb "cached_analysis"
+    t.datetime "completed_at"
+    t.decimal "confidence_threshold", default: "0.95", null: false
+    t.bigint "control_version_id", null: false
+    t.datetime "created_at", null: false
+    t.text "description"
+    t.string "idempotency_key"
+    t.integer "min_samples_per_variant", default: 30, null: false
+    t.string "name", null: false
+    t.datetime "started_at"
+    t.string "status", default: "draft", null: false
+    t.bigint "style_guide_id", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "winner_variant_id"
+    t.index ["account_id"], name: "index_style_guide_ab_tests_on_account_id"
+    t.index ["account_id"], name: "index_style_guide_ab_tests_one_running_per_account", unique: true, where: "((status)::text = 'running'::text)"
+    t.index ["control_version_id"], name: "index_style_guide_ab_tests_on_control_version_id"
+    t.index ["status"], name: "index_style_guide_ab_tests_on_status"
+    t.index ["style_guide_id", "idempotency_key"], name: "idx_on_style_guide_id_idempotency_key_e10519ccd2", unique: true, where: "(idempotency_key IS NOT NULL)"
+    t.index ["style_guide_id", "status"], name: "index_style_guide_ab_tests_on_style_guide_id_and_status"
+    t.index ["style_guide_id"], name: "index_style_guide_ab_tests_on_style_guide_id"
+    t.index ["winner_variant_id"], name: "index_style_guide_ab_tests_on_winner_variant_id"
+  end
+
+  create_table "style_guide_run_exposures", force: :cascade do |t|
+    t.bigint "agent_run_id", null: false
+    t.datetime "created_at", null: false
+    t.string "guide_name", null: false
+    t.text "injected_content"
+    t.string "injected_via", limit: 50, null: false
+    t.integer "position", null: false
+    t.string "source_scope", limit: 20, null: false
+    t.bigint "style_guide_ab_test_assignment_id"
+    t.bigint "style_guide_id"
+    t.bigint "style_guide_version_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_run_id", "guide_name"], name: "index_style_guide_run_exposures_on_run_and_name", unique: true
+    t.index ["agent_run_id"], name: "index_style_guide_run_exposures_on_agent_run_id"
+    t.index ["style_guide_ab_test_assignment_id"], name: "idx_on_style_guide_ab_test_assignment_id_d2bca3fb4e"
+    t.index ["style_guide_ab_test_assignment_id"], name: "index_style_guide_run_exposures_on_assignment_id"
+    t.index ["style_guide_id", "created_at"], name: "idx_on_style_guide_id_created_at_4675f78c23"
+    t.index ["style_guide_id"], name: "index_style_guide_run_exposures_on_style_guide_id"
+    t.index ["style_guide_version_id"], name: "index_style_guide_run_exposures_on_style_guide_version_id"
+  end
+
+  create_table "style_guide_versions", force: :cascade do |t|
+    t.decimal "avg_quality_score", precision: 5, scale: 4
+    t.text "change_notes"
+    t.text "compressed_content"
+    t.jsonb "compression_metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.string "created_by", limit: 50
+    t.bigint "created_by_user_id"
+    t.string "idempotency_key"
+    t.bigint "parent_version_id"
+    t.text "raw_content", null: false
+    t.datetime "retired_at"
+    t.text "review_notes"
+    t.string "review_status", limit: 20
+    t.datetime "reviewed_at"
+    t.bigint "reviewed_by_user_id"
+    t.bigint "style_guide_id", null: false
+    t.datetime "updated_at", null: false
+    t.integer "usage_count", default: 0, null: false
+    t.integer "version", null: false
+    t.index ["created_by_user_id"], name: "index_style_guide_versions_on_created_by_user_id"
+    t.index ["parent_version_id"], name: "index_style_guide_versions_on_parent_version_id"
+    t.index ["retired_at"], name: "index_style_guide_versions_on_retired_at"
+    t.index ["reviewed_by_user_id"], name: "index_style_guide_versions_on_reviewed_by_user_id"
+    t.index ["style_guide_id", "idempotency_key"], name: "idx_on_style_guide_id_idempotency_key_48d30b1e0e", unique: true, where: "(idempotency_key IS NOT NULL)"
+    t.index ["style_guide_id", "review_status"], name: "index_style_guide_versions_on_style_guide_id_and_review_status"
+    t.index ["style_guide_id", "version"], name: "index_style_guide_versions_on_style_guide_id_and_version", unique: true
+    t.index ["style_guide_id"], name: "index_style_guide_versions_on_style_guide_id"
+  end
+
   create_table "style_guides", force: :cascade do |t|
     t.bigint "account_id"
     t.boolean "active", default: true, null: false
     t.text "compressed_content"
     t.jsonb "compression_metadata", default: {}, null: false
     t.datetime "created_at", null: false
+    t.bigint "current_version_id"
     t.string "language", limit: 50
     t.jsonb "log_data"
     t.string "name", limit: 255, null: false
@@ -2450,6 +2557,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_08_034227) do
     t.datetime "updated_at", null: false
     t.index ["account_id"], name: "index_style_guides_on_account_id"
     t.index ["active"], name: "index_style_guides_on_active"
+    t.index ["current_version_id"], name: "index_style_guides_on_current_version_id"
     t.index ["language"], name: "index_style_guides_on_language"
     t.index ["name", "account_id"], name: "index_style_guides_on_name_account", unique: true, where: "((account_id IS NOT NULL) AND (project_id IS NULL))"
     t.index ["name", "project_id"], name: "index_style_guides_on_name_project", unique: true, where: "(project_id IS NOT NULL)"
@@ -2859,6 +2967,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_08_034227) do
   add_foreign_key "strategy_versions", "strategy_versions", column: "parent_version_id", on_delete: :nullify
   add_foreign_key "strategy_versions", "users", column: "created_by_user_id", on_delete: :nullify
   add_foreign_key "strategy_versions", "users", column: "promoted_by_user_id", on_delete: :nullify
+  add_foreign_key "style_guide_ab_test_assignments", "agent_runs", on_delete: :cascade
+  add_foreign_key "style_guide_ab_test_assignments", "style_guide_ab_test_variants", on_delete: :cascade
+  add_foreign_key "style_guide_ab_test_assignments", "style_guide_ab_tests", on_delete: :cascade
+  add_foreign_key "style_guide_ab_test_variants", "style_guide_ab_tests", on_delete: :cascade
+  add_foreign_key "style_guide_ab_test_variants", "style_guide_versions", on_delete: :restrict
+  add_foreign_key "style_guide_ab_tests", "accounts", on_delete: :cascade
+  add_foreign_key "style_guide_ab_tests", "style_guide_versions", column: "control_version_id", on_delete: :restrict
+  add_foreign_key "style_guide_ab_tests", "style_guides", on_delete: :cascade
+  add_foreign_key "style_guide_run_exposures", "agent_runs", on_delete: :cascade
+  add_foreign_key "style_guide_run_exposures", "style_guide_ab_test_assignments", on_delete: :nullify
+  add_foreign_key "style_guide_run_exposures", "style_guide_versions", on_delete: :restrict
+  add_foreign_key "style_guide_run_exposures", "style_guides", on_delete: :nullify
+  add_foreign_key "style_guide_versions", "style_guide_versions", column: "parent_version_id", on_delete: :nullify
+  add_foreign_key "style_guide_versions", "style_guides", on_delete: :cascade
+  add_foreign_key "style_guide_versions", "users", column: "created_by_user_id", on_delete: :nullify
+  add_foreign_key "style_guide_versions", "users", column: "reviewed_by_user_id", on_delete: :nullify
   add_foreign_key "style_guides", "accounts", on_delete: :cascade
   add_foreign_key "style_guides", "projects", on_delete: :cascade
   add_foreign_key "tenant_settings", "accounts"

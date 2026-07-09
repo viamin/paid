@@ -40,7 +40,8 @@ module Activities
           rebase_succeeded: rebase_succeeded,
           issue: agent_run.issue,
           prompt_version: prompt_version,
-          focus: focus
+          focus: focus,
+          agent_run: agent_run
         )
         prompt = prompt_builder.build
         includes_review_threads = prompt_builder.includes_review_threads?

@@ -115,7 +115,12 @@ module Prompts
       ].compact.join("\n\n")
 
       with_knowledge = inject_knowledge_context(base_prompt)
-      with_style_guides = StyleGuides::InjectIntoPrompt.call(prompt: with_knowledge, project: project)
+      with_style_guides = StyleGuides::InjectIntoPrompt.call(
+        prompt: with_knowledge,
+        project: project,
+        agent_run: agent_run,
+        source: self.class.name
+      )
       ProjectConventions::InjectIntoPrompt.call(prompt: with_style_guides, project: project)
     end
 
