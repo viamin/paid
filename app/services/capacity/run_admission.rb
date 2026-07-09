@@ -86,7 +86,7 @@ module Capacity
         create_pr_available_slots
       ].compact.min
 
-      {
+      decision = {
         allowed: remaining_slots.positive?,
         mode: UserSetting::RUN_CONCURRENCY_MODE_AUTO,
         reason: denial_reason(remaining_memory_slots: remaining_memory_slots),
@@ -103,6 +103,14 @@ module Capacity
         docker_confidence: snapshot[:confidence],
         docker_memory_bytes: snapshot[:docker_memory_bytes]
       }
+
+      # The capacity-blocked annotation only matters when Docker memory is
+      # the binding constraint, so skip the Resolve lookup (which walks
+      # project → account → global via find_by) entirely on allowed
+      # admissions and on denials caused by the user/project/create_pr
+      # ceilings, where the annotation could never explain the denial.
+      annotate_capacity_blocked(decision) if decision[:reason] == "insufficient_docker_capacity"
+      decision
     end
 
     def degraded_manual_result(snapshot)
@@ -129,6 +137,39 @@ module Capacity
       return "create_pr_hard_ceiling" if goal == "create_pr" && create_pr_available_slots.to_i <= 0
 
       "capacity_denied"
+    end
+
+    # Surfaces the capacity-blocked signal on admission decisions so callers
+    # and operators can distinguish "no Docker memory" from "no Docker memory
+    # because the workload keeps OOMing at the configured ceiling".
+    #
+    # RunAdmission runs at admission time, before the runner_key for the
+    # next run has been selected, so the lookup intentionally passes
+    # `runner_key: nil`. That skips the `specific` and `runner_goal`
+    # scopes in `Resolve` and only surfaces `project`, `account`, and
+    # `global` profiles that have hit their ceiling — broad enough to
+    # explain the denial to operators without locking in on a runner
+    # that may not be picked.
+    def annotate_capacity_blocked(decision)
+      profile = capacity_blocked_profile
+      return unless profile
+
+      decision[:capacity_blocked] = true
+      decision[:capacity_blocked_profile_level] = profile.profile_level
+      decision[:capacity_blocked_at] = profile.capacity_blocked_at
+      decision[:capacity_blocked_oom_count] = profile.oom_count
+      decision[:capacity_blocked_recommended_limit_bytes] = profile.recommended_memory_limit_bytes
+    end
+
+    def capacity_blocked_profile
+      return @capacity_blocked_profile if defined?(@capacity_blocked_profile)
+
+      profile = AgentRunResourceProfiles::Resolve.call(
+        project: project,
+        runner_key: nil,
+        goal: goal
+      )[:profile]
+      @capacity_blocked_profile = profile&.capacity_blocked? ? profile : nil
     end
 
     def slot_available?(slots)
