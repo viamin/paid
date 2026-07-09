@@ -180,8 +180,15 @@ module Activities
     private
 
     def collect_scan_result(issue, result, prs_to_trigger, automation_results, lifecycle:)
-      automation_result = Automation::Evaluator.for(issue)
-        .call(scan: result, lifecycle: lifecycle)
+      automation_result = Automation::StrategyCoordinator.new(project: issue.project)
+        .evaluate_pull_request(
+          record: issue,
+          metadata: {
+            scan: result,
+            lifecycle: lifecycle
+          },
+          strategy_types: %i[auto_continue]
+        )
 
       legacy_trigger = legacy_trigger_payload(issue, result, lifecycle, automation_result)
       prs_to_trigger << legacy_trigger if legacy_trigger
@@ -982,14 +989,7 @@ module Activities
     # as escalated even though automation has already resumed work on it.
     # Best-effort: a removal failure must not abort the restart.
     def remove_escalated_label_from_github(project, issue)
-      project.client.remove_label_from_issue(project.full_name, issue.github_number, PAID_ESCALATED_LABEL)
-    rescue GithubClient::Error => e
-      logger.warn(
-        message: "pr_scanner.remove_escalated_label_failed",
-        project_id: project.id,
-        pr_number: issue.github_number,
-        error: e.message
-      )
+      pull_request_collector(project).remove_label(issue:, label: PAID_ESCALATED_LABEL)
     end
 
     def escalation_dismissed?(issue)
@@ -1509,25 +1509,13 @@ module Activities
     end
 
     def fetch_pr_data(client, project, issue)
-      client.pull_request(project.full_name, issue.github_number)
-    rescue GithubClient::Error => e
-      log_signal_error("fetch_pr", project, issue, e)
-      nil
+      pull_request_collector(project, client:).fetch_pull_request(issue:)
     end
 
     # --- CI checks ---
 
     def fetch_check_runs(client, project, pr_data)
-      return [] unless pr_data
-
-      client.check_runs_for_ref(project.full_name, pr_data.head.sha)
-    rescue GithubClient::Error => e
-      logger.warn(
-        message: "pr_scanner.ci_check_failed",
-        project_id: project.id,
-        error: e.message
-      )
-      nil
+      pull_request_collector(project).fetch_check_runs(pr_data:)
     end
 
     # Cooldown period after requesting a CI retry. Prevents triggering another
@@ -1694,11 +1682,7 @@ module Activities
     # --- Review checks ---
 
     def fetch_unresolved_threads(client, project, issue)
-      threads = client.review_threads(project.full_name, issue.github_number)
-      threads.reject { |t| t[:is_resolved] }
-    rescue GithubClient::Error => e
-      log_signal_error("review_threads", project, issue, e)
-      nil
+      pull_request_collector(project, client:).fetch_unresolved_threads(issue:)
     end
 
     def human_review_thread_triggers(project, unresolved_threads)
@@ -2377,10 +2361,7 @@ module Activities
     end
 
     def fetch_reviews(client, project, issue)
-      client.pull_request_reviews(project.full_name, issue.github_number)
-    rescue GithubClient::Error => e
-      log_signal_error("fetch_reviews", project, issue, e)
-      nil
+      pull_request_collector(project, client:).fetch_reviews(issue:)
     end
 
     def changes_requested_from_reviews(project, reviews, last_run)
@@ -2570,14 +2551,7 @@ module Activities
     end
 
     def fetch_head_commit_date(client, project, issue, pr_data)
-      sha = pr_data&.head&.sha
-      return nil if sha.nil?
-
-      commit_data = client.commit(project.full_name, sha)
-      commit_data&.commit&.committer&.date
-    rescue GithubClient::Error => e
-      log_signal_error("fetch_head_commit", project, issue, e)
-      nil
+      pull_request_collector(project, client:).fetch_head_commit_date(issue:, pr_data:)
     end
 
     # Returns the latest approval timestamp for each enabled blocking
@@ -3075,45 +3049,11 @@ module Activities
     end
 
     def dependency_comment_bodies(client, project, issue)
-      Array(client.issue_comments(project.full_name, issue.github_number)).filter_map do |comment|
-        dependency_value(comment, :body)
-      end
+      pull_request_collector(project, client:).dependency_comment_bodies(issue:)
     end
 
-    # A "Depends on #N" ref can point to either a PR or an issue. Treat
-    # the dep as satisfied when #N is a merged PR OR a closed issue —
-    # both mean the upstream work is done. Without the issue fallback,
-    # depending on a tracking issue would silently block auto-merge
-    # forever because the pull_request endpoint 404s for issue numbers.
     def dependency_resolved?(client, project, number)
-      pr_data = begin
-        client.pull_request(project.full_name, number)
-      rescue GithubClient::NotFoundError
-        nil
-      end
-
-      return pull_request_merged?(pr_data) if pr_data
-
-      issue_data = client.issue(project.full_name, number)
-      dependency_value(issue_data, :state) == "closed"
-    rescue GithubClient::NotFoundError
-      false
-    end
-
-    def pull_request_merged?(pr_data)
-      dependency_value(pr_data, :merged) == true || dependency_value(pr_data, :merged_at).present?
-    end
-
-    def dependency_value(source, key)
-      return nil if source.nil?
-
-      if source.respond_to?(key)
-        source.public_send(key)
-      elsif source.respond_to?(:key?) && source.key?(key)
-        source[key]
-      elsif source.respond_to?(:[])
-        source[key.to_s]
-      end
+      pull_request_collector(project, client:).dependency_resolved?(number:)
     end
 
     def evaluate_auto_merge(project, signals)
@@ -3122,11 +3062,18 @@ module Activities
         project: project,
         metadata: { Automation::Strategies::AutoMerge::SIGNALS_KEY => signals }
       )
-      result = Automation::Strategies::Select.call(
-        strategy_type: :auto_merge,
-        project: project
-      ).evaluate(context)
+      result = Automation::StrategyCoordinator.new(project: project)
+        .evaluate(context:, strategy_types: %i[auto_merge])
       result.decisions.any? { |d| d.type == "merge" }
+    end
+
+    def pull_request_collector(project, client: nil)
+      @pull_request_collectors ||= {}
+      @pull_request_collectors[project.id] ||= Automation::Signals::PullRequestCollector.new(
+        providers: Automation::Signals::ProviderContext.for(project, client: client || project.client),
+        client: client || project.client,
+        logger: logger
+      )
     end
 
     def log_triggers(project, issue, triggers)

@@ -134,8 +134,19 @@ module Automation
             updated_at: parse_time(read_field(pr, :updated_at)),
             merged_at: merged_at,
             url: read_field(pr, :html_url),
-            raw_state: raw_state&.to_s
+            raw_state: raw_state&.to_s,
+            head_repo_fork: head_repo_fork(pr)
           )
+        end
+
+        # Reads the head repository's fork flag. GitHub reports this as
+        # +head.repo.fork+ on the pull request payload; it drives the
+        # ci_action gating that a forked head cannot fulfill. Returns
+        # +nil+ when the payload omits the flag (e.g. test doubles) so
+        # callers can distinguish "not a fork" from "unknown".
+        def head_repo_fork(pr)
+          fork = read_sub_field(pr, :head, :repo, :fork)
+          fork.nil? ? nil : (fork == true)
         end
 
         def build_check_run(run)
