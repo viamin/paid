@@ -67,4 +67,15 @@ RSpec.describe Github::AppRegistry do
       expect(described_class.bot_logins).to contain_exactly("paid-agents", "paid-agents[bot]")
     end
   end
+
+  describe ".install_url" do
+    it "returns the bare install URL when no state is provided" do
+      expect(described_class.install_url).to eq("https://github.com/apps/paid-agents/installations/new")
+    end
+
+    it "appends the state parameter when given" do
+      url = described_class.install_url(state: "csrf-token")
+      expect(url).to eq("https://github.com/apps/paid-agents/installations/new?state=csrf-token")
+    end
+  end
 end

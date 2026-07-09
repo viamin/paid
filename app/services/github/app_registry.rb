@@ -28,8 +28,11 @@ module Github
       [ slug, bot_login ].freeze
     end
 
-    def self.install_url
-      "https://github.com/apps/#{slug}/installations/new"
+    def self.install_url(state: nil)
+      url = "https://github.com/apps/#{slug}/installations/new"
+      return url if state.blank?
+
+      "#{url}?state=#{state}"
     end
 
     def self.credentials_dig(key)

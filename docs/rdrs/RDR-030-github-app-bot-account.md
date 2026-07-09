@@ -5,16 +5,26 @@
 ## Metadata
 
 - **Date**: 2026-05-09
-- **Status**: Partially Implemented
+- **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: High
-- **Related Issues**: #2181, #2218, #2408, #2413, #2645
+- **Related Issues**: #2181, #2218, #2408, #2413, #2645, #2712
 - **Related RDRs**: [RDR-012](RDR-012-github-integration.md) (extends auth model), [RDR-022](RDR-022-auto-merge-pr-strategy.md) (consumes bot identity for PR authorship)
-- **Related Tests**: `spec/services/github/`, `spec/models/github_installation_*`, `spec/requests/github_app/installations_spec.rb`
+- **Related Tests**: `spec/services/github/`, `spec/models/github_installation_*`, `spec/requests/github_app/installations_spec.rb`, `spec/requests/api/github_app/webhooks_spec.rb`, `spec/requests/admin/github_app/setup_spec.rb`
 
 ## Implementation Status
 
-Partially implemented. Paid has GitHub App registry/configuration, installation token minting and caching, `GithubInstallation` records, project credential resolution, App/PAT switching, git credential and GitHub API proxies, migration UI/services, bot author identity, and health/rate-limit separation. Remaining work includes self-hosted/admin GitHub App manifest setup, an install/callback lifecycle, and automatic persistence/update of installation records from GitHub installation events.
+Implemented. Paid has GitHub App registry/configuration, installation token minting and caching, `GithubInstallation` records, project credential resolution, App/PAT switching, git credential and GitHub API proxies, migration UI/services, bot author identity, health/rate-limit separation, an install/callback lifecycle, an installation-event webhook ingestion path, and the self-hosted admin App manifest setup flow.
+
+The lifecycle pieces that landed with #2712 are:
+
+- **`GithubApp::InstallationsController`** — `GET /github_app/install` mints a CSRF state and 302s to GitHub; `GET /github_app/callback` verifies the state, enqueues a `Github::Installations::SyncJob`, and bounces the operator to `/integrations`.
+- **`Github::Installations::SyncJob`** — fetches the full installation record from `GET /app/installations/:id` and persists it via the `Upserter`.
+- **`Github::Installations::Upserter`** — the single source of truth for translating GitHub payloads into `GithubInstallation` rows (created/updated/suspend/unsuspend/deleted).
+- **`Github::Installations::RepositoriesReconciler`** — reconciles `accessible_repositories` against `installation_repositories.{added,removed}` events.
+- **`Api::GithubApp::WebhooksController`** — `POST /api/webhooks/github_app` verifies the App's webhook secret and dispatches to the upserter / reconciler.
+- **`Admin::GithubApp::SetupController`** — `GET/POST /admin/github_app/setup` and `GET /admin/github_app/setup/callback` for self-hosted deployments; builds a manifest, redirects to GitHub, exchanges the resulting code for app id / slug / PEM private key / webhook secret, and writes them back to `ENV` (which is what `Github::AppRegistry` and the webhook secret already read). Operator-only.
+- **`Github::AppManifestExchanger`** — calls `POST /app-manifests/:code/conversions` and returns the App credentials.
 
 ## Problem Statement
 
