@@ -52,11 +52,17 @@ class ProcessRunQueueJob < ApplicationJob
       blocked_user_ids = Set.new
       # Runner-agnostic queue (#2563): a runner id in this set means
       # "do not pick this runner again on this pass", not "skip the
-      # run". For pinned runs the corresponding run is also added to
-      # +skipped_ids+ so it is not retried; for unbound runs the run
-      # stays queued and the resolver will pick a different runner next
-      # pass if one is healthy.
+      # run". Pinned runs whose runner is blocked are rerouted to a
+      # healthy alternative; only when no alternative exists is the run
+      # added to +skipped_ids+.
       blocked_runner_ids = Set.new
+      # Maps reroute resolution context to its resolved alternative:
+      # { runner_id:, agent_type:, from_key:, to_key: } or nil when no
+      # healthy alternative exists. The cache is scoped to the blocked
+      # runner plus the run's resolver inputs (project + goal), because
+      # different projects/goals can legitimately resolve to different
+      # healthy alternatives.
+      reroute_cache = {}
       blocked_account_create_pr_ids = Set.new
       blocked_account_dispatch_ids = Set.new
       started_priority_by_project = {}
@@ -138,33 +144,25 @@ class ProcessRunQueueJob < ApplicationJob
           next
         end
 
-        # Late-bind a runner for runner-agnostic queued runs (#2563).
-        # The resolver is constrained to runnable runners AND excludes any
-        # runner that already failed preflight during this pass
-        # (+blocked_runner_ids+), so a healthy alternative is picked when the
-        # preferred runner is rate-limited / circuit-open. If no runnable
-        # runner can be resolved the run stays queued and we move on to the
-        # next peek.
-        bound_for_this_iteration = false
+        # Resolve a runner for the queued run. Runner-agnostic (auto-pick)
+        # runs are late-bound here from the healthy runner pool. Any run whose
+        # pinned or just-bound runner is unavailable is *rerouted* to a healthy
+        # alternative configured for the same context (agent runs only consider
+        # agent-run-enabled runners). Weighting/preference is a soft preference
+        # — availability is a hard filter that never blocks work from running.
         if next_run.runner_unbound?
           bound_runner = AgentRuns::BindRunner.call(agent_run: next_run, exclude_runner_ids: blocked_runner_ids)
           unless bound_runner
             log_no_runnable_runner(next_run)
             next
           end
-          bound_for_this_iteration = true
         end
 
         if next_run.runner_id && blocked_runner_ids.include?(next_run.runner_id)
-          if bound_for_this_iteration
-            # Defense in depth: a late-bound run should never resolve to a
-            # blocked runner (the resolver excludes them), but if it does,
-            # clear the pin so the next pass re-resolves rather than
-            # stranding the run on it.
-            next_run.update_columns(runner_id: nil)
-          else
-            skipped_ids.add(next_run.id)
-          end
+          # Runner already failed preflight earlier this pass — reroute to a
+          # healthy alternative without re-checking (preserves the bulk-skip
+          # optimization for runs sharing one bad runner).
+          reroute_unavailable_runner(next_run, blocked_runner_ids, skipped_ids, reroute_cache)
           next
         end
 
@@ -172,18 +170,7 @@ class ProcessRunQueueJob < ApplicationJob
         if preflight_result && !preflight_result.pass?
           log_preflight_skip(next_run, preflight_result)
           blocked_runner_ids.add(preflight_result.runner_id) if preflight_result.runner_id
-          if bound_for_this_iteration
-            # Late-bound on this pass: clear the pin so the next pass
-            # re-resolves (a different healthy runner may be available
-            # by then). The run stays queued; the runner was just
-            # unhealthy, not the run.
-            next_run.update_columns(runner_id: nil)
-          else
-            # Pinned (manually assigned) runs are stuck to one
-            # runner — keep the run skipped for the rest of this pass
-            # and try again next tick.
-            skipped_ids.add(next_run.id)
-          end
+          reroute_unavailable_runner(next_run, blocked_runner_ids, skipped_ids, reroute_cache)
           next
         end
 
@@ -243,6 +230,66 @@ class ProcessRunQueueJob < ApplicationJob
     return nil unless runner
 
     Runners::PreflightCheck.call(runner: runner, user: user)
+  end
+
+  # Reroutes a run whose pinned/bound runner is unavailable to a healthy
+  # alternative configured for the same context. Weighting is a preference;
+  # availability is a hard filter, so a rate-limited / circuit-open runner must
+  # never block the run.
+  #
+  # Resolutions are cached per blocked runner + resolution context so that
+  # multiple queued runs with the same resolver inputs share one resolver call
+  # without leaking a reroute across projects/goals. When no healthy alternative
+  # exists the run's original pin is *restored* (not silently downgraded) and
+  # the run is skipped for the rest of this pass — the preferred runner is
+  # retried on the next tick.
+  def reroute_unavailable_runner(agent_run, blocked_runner_ids, skipped_ids, reroute_cache)
+    original_id = agent_run.runner_id
+    cache_key = reroute_cache_key(agent_run, original_id)
+
+    if reroute_cache.key?(cache_key)
+      cached = reroute_cache[cache_key]
+      return skipped_ids.add(agent_run.id) if cached.nil?
+      return apply_cached_reroute(agent_run, cached) unless blocked_runner_ids.include?(cached[:runner_id])
+    end
+
+    agent_run.update_columns(runner_id: nil)
+    if AgentRuns::BindRunner.call(agent_run: agent_run, exclude_runner_ids: blocked_runner_ids)
+      cache_reroute_resolution(agent_run, original_id, cache_key, reroute_cache)
+    else
+      agent_run.update_columns(runner_id: original_id)
+      reroute_cache[cache_key] = nil
+      skipped_ids.add(agent_run.id)
+    end
+  end
+
+  def apply_cached_reroute(agent_run, cached)
+    agent_run.update_columns(runner_id: cached[:runner_id], agent_type: cached[:agent_type])
+    log_runner_reroute(agent_run, cached[:from_key], cached[:to_key])
+  end
+
+  def cache_reroute_resolution(agent_run, original_id, cache_key, reroute_cache)
+    from_key = runner_routing_key(original_id)
+    to_key = runner_routing_key(agent_run.runner_id)
+    reroute_cache[cache_key] = {
+      runner_id: agent_run.runner_id, agent_type: agent_run.agent_type,
+      from_key: from_key, to_key: to_key
+    }
+    log_runner_reroute(agent_run, from_key, to_key)
+  end
+
+  def reroute_cache_key(agent_run, original_id)
+    [ original_id, agent_run.project_id, agent_run.goal ]
+  end
+
+  def runner_routing_key(runner_id)
+    Runner.find_by(id: runner_id)&.routing_key
+  end
+
+  def log_runner_reroute(agent_run, from_key, to_key)
+    return unless from_key && to_key
+
+    agent_run.log_runner_switch!(from_key, to_key, "dispatch_reroute")
   end
 
   def log_preflight_skip(agent_run, result)
