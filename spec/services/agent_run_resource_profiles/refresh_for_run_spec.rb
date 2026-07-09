@@ -45,6 +45,46 @@ RSpec.describe AgentRunResourceProfiles::RefreshForRun do
       AgentRunResourceProfile.find_by!(lookup_key: specific_lookup_key)
     end
 
+    def seed_specific_profile(overrides = {})
+      defaults = {
+        profile_level: "specific",
+        account: project.account,
+        project: project,
+        runner_key: "claude",
+        goal: "create_pr",
+        sample_count: 3,
+        oom_count: 0,
+        p50_memory_bytes: 1.gigabyte,
+        p95_memory_bytes: 1.gigabyte,
+        max_memory_bytes: 1.gigabyte,
+        recommended_memory_limit_bytes: 4.gigabytes,
+        consecutive_low_memory_samples: 0,
+        downward_tuning_count: 0,
+        lookup_key: specific_lookup_key
+      }
+      create(:agent_run_resource_profile, defaults.merge(overrides))
+    end
+
+    def refresh_low_memory_runs(count:, memory_bytes: 1.gigabyte, start_offset_hours: 0)
+      count.times do |index|
+        run = create_sample_run(
+          memory_bytes: memory_bytes,
+          completed_at: completed_at + (start_offset_hours + index).hours
+        )
+        described_class.call(agent_run: run)
+      end
+    end
+
+    def expected_tuned_log_payload(prior_limit: 4.gigabytes, new_limit: 4.gigabytes, capacity_blocked: true)
+      hash_including(
+        message: "agent_run_resource_profile.memory_limit_tuned",
+        profile_level: "specific",
+        prior_limit_bytes: prior_limit,
+        new_limit_bytes: new_limit,
+        capacity_blocked: capacity_blocked
+      )
+    end
+
     it "creates rollups for each fallback scope from terminal run samples" do
       create_sample_run(memory_bytes: 1.gigabyte, completed_at: completed_at - 2.days)
       create_sample_run(memory_bytes: 2.gigabytes, completed_at: completed_at - 1.day, status: "failed", oom: true)
@@ -115,6 +155,99 @@ RSpec.describe AgentRunResourceProfiles::RefreshForRun do
       expect(profile.oom_count).to eq(1)
       expect(profile.max_memory_bytes).to eq(2.gigabytes)
       expect(profile.recommended_memory_limit_bytes).to be >= (2.gigabytes * 1.25).ceil
+    end
+
+    it "marks the profile capacity-blocked when OOMs persist near the user ceiling" do
+      project.created_by.settings.update!(
+        container_memory_auto_ceiling_bytes: 4.gigabytes
+      )
+
+      oom_run = create_sample_run(memory_bytes: 4.gigabytes, completed_at: completed_at, status: "failed", oom: true)
+      create_sample_run(memory_bytes: 4.gigabytes, completed_at: completed_at - 1.day, status: "failed", oom: true)
+      create_sample_run(memory_bytes: 4.gigabytes, completed_at: completed_at - 2.days, status: "failed", oom: true)
+
+      described_class.call(agent_run: oom_run)
+
+      profile = specific_profile
+      expect(profile.oom_count).to eq(3)
+      expect(profile.capacity_blocked).to be(true)
+      expect(profile.capacity_blocked_at).to be_present
+    end
+
+    it "logs a capacity-blocked transition even when the limit is unchanged" do
+      project.created_by.settings.update!(
+        container_memory_auto_ceiling_bytes: 4.gigabytes
+      )
+      seed_specific_profile(
+        recommended_memory_limit_bytes: 4.gigabytes,
+        p95_memory_bytes: 4.gigabytes,
+        max_memory_bytes: 4.gigabytes
+      )
+
+      allow(Rails.logger).to receive(:info)
+      create_sample_run(memory_bytes: 4.gigabytes, completed_at: completed_at - 1.day, status: "failed", oom: true)
+      refresh_run = create_sample_run(memory_bytes: 4.gigabytes, completed_at: completed_at, status: "failed", oom: true)
+      described_class.call(agent_run: refresh_run)
+
+      expect(specific_profile).to have_attributes(capacity_blocked: true, recommended_memory_limit_bytes: 4.gigabytes)
+      expect(Rails.logger).to have_received(:info).with(expected_tuned_log_payload)
+    end
+
+    it "does not tune downward until the sustained low-memory threshold is met" do
+      project.created_by.settings.update!(
+        container_memory_auto_floor_bytes: 256.megabytes,
+        container_memory_auto_ceiling_bytes: 16.gigabytes
+      )
+
+      # First refresh seeds the profile from observed samples (≈ 1.2 GB).
+      create_sample_run(memory_bytes: 1.gigabyte, completed_at: completed_at - 2.days)
+      create_sample_run(memory_bytes: 1.gigabyte, completed_at: completed_at - 1.day)
+      first_refresh_run = create_sample_run(memory_bytes: 1.gigabyte, completed_at: completed_at)
+
+      described_class.call(agent_run: first_refresh_run)
+
+      profile = specific_profile
+      expect(profile.recommended_memory_limit_bytes).to be > 1.gigabyte
+      starting_limit = profile.recommended_memory_limit_bytes
+
+      # Subsequent low-memory refreshes should NOT collapse the limit below
+      # the existing recommendation until the sustained counter is met.
+      2.times do |index|
+        next_run = create_sample_run(memory_bytes: 1.gigabyte, completed_at: completed_at + (index + 1).hours)
+        described_class.call(agent_run: next_run)
+      end
+
+      expect(profile.reload.recommended_memory_limit_bytes).to eq(starting_limit)
+      expect(profile.downward_tuning_count).to eq(0)
+    end
+
+    it "tunes the limit downward after sustained low-memory refreshes through RefreshForRun" do
+      # End-to-end shape of the production path: a profile pinned at 8 GB by
+      # an earlier OOM bump observes sustained low usage (~1 GB) across many
+      # refreshes. The first few refreshes must hold the limit (the cooldown
+      # is banking), and the first refresh after the threshold is met must
+      # collapse the recommendation to the new baseline.
+      project.created_by.settings.update!(
+        container_memory_auto_floor_bytes: 256.megabytes,
+        container_memory_auto_ceiling_bytes: 16.gigabytes
+      )
+      seed_specific_profile(recommended_memory_limit_bytes: 8.gigabytes)
+
+      # Refreshes 1..DOWNWARD_TUNING_MIN_SAMPLES hold the limit at 8 GB while
+      # banking consecutive_low_memory_samples against the held 8 GB value.
+      threshold = AgentRunResourceProfile::DOWNWARD_TUNING_MIN_SAMPLES
+      refresh_low_memory_runs(count: threshold, memory_bytes: 1.gigabyte, start_offset_hours: 0)
+      profile = specific_profile
+      expect(profile.recommended_memory_limit_bytes).to eq(8.gigabytes)
+      expect(profile.downward_tuning_count).to eq(0)
+      expect(profile.consecutive_low_memory_samples).to eq(threshold)
+
+      # The next refresh crosses the threshold and collapses the limit to the
+      # new baseline (p95 * SAFETY_MULTIPLIER).
+      refresh_low_memory_runs(count: 1, memory_bytes: 1.gigabyte, start_offset_hours: threshold)
+      expect(profile.reload.recommended_memory_limit_bytes)
+        .to eq((1.gigabyte * AgentRunResourceProfile::SAFETY_MULTIPLIER).ceil)
+      expect(profile.reload.downward_tuning_count).to eq(1)
     end
   end
 end

@@ -26,6 +26,7 @@ RSpec.describe Containers::Provision, :no_db do
   let(:host_config_dir) { Dir.mktmpdir("host-config") }
   let(:settings) do
     double(
+      container_memory_limit_manual?: true,
       container_memory_bytes: nil,
       container_cpu_quota: nil,
       container_timeout_seconds: nil,

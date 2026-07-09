@@ -811,23 +811,27 @@ RSpec.describe ProcessRunQueueJob do
         ))
       end
 
-      it "skips the run when an API-key runner has no secret" do
+      it "falls back to a healthy runner when an API-key runner has no secret" do
         project = create(:project)
         user = project.created_by
         provider_api_key = create(:provider_api_key, user: user)
         runner = create(:runner, user: user, runner_key: "cursor", auth_type: "api_key", provider_api_key: provider_api_key)
+        claude_runner = user.runners.kept_only.find_by!(runner_key: "claude", auth_type: "subscription")
         queued_run = create(:agent_run, :queued, project: project, runner: runner)
         allow(Rails.logger).to receive(:info)
 
+        allow(Runners::PreflightCheck).to receive(:call).and_call_original
         allow(Runners::PreflightCheck).to receive(:call)
           .with(runner: runner, user: user)
           .and_return(Runners::PreflightCheck::Result.new(pass?: false, reason: "missing_api_key", runner_id: runner.id))
 
-        expect(temporal_client).not_to receive(:start_workflow)
+        expect(temporal_client).to receive(:start_workflow).once.and_return(workflow_handle)
 
         described_class.new.perform
 
-        expect(queued_run.reload.status).to eq("queued")
+        queued_run.reload
+        expect(queued_run.runner_id).to eq(claude_runner.id)
+        expect(queued_run.temporal_workflow_id).to be_present
         expect(Rails.logger).to have_received(:info).with(hash_including(
           message: "process_run_queue.preflight_skip",
           reason: "missing_api_key"
@@ -869,6 +873,142 @@ RSpec.describe ProcessRunQueueJob do
         described_class.new.perform
 
         expect(Runners::PreflightCheck).to have_received(:call).once
+      end
+
+      it "reroutes a pinned run to a healthy alternative when its runner is rate limited" do
+        project = create(:project)
+        user = project.created_by
+        claude_runner = user.runners.kept_only.find_by!(runner_key: "claude", auth_type: "subscription")
+        create(:runner_state, :rate_limited, user: user, runner_name: claude_runner.state_key)
+        codex_runner = create(:runner, user: user, runner_key: "codex")
+        queued_run = create(:agent_run, :queued, project: project, runner: claude_runner)
+
+        expect(temporal_client).to receive(:start_workflow).once.and_return(workflow_handle)
+
+        described_class.new.perform
+
+        queued_run.reload
+        expect(queued_run.status).to eq("queued")
+        expect(queued_run.runner_id).to eq(codex_runner.id)
+        expect(queued_run.agent_type).to eq("codex")
+        expect(queued_run.temporal_workflow_id).to be_present
+        expect(queued_run.runner_switches).to eq(1)
+      end
+
+      it "reroutes a manually pinned run when its runner circuit is open" do
+        project = create(:project)
+        user = project.created_by
+        claude_runner = user.runners.kept_only.find_by!(runner_key: "claude", auth_type: "subscription")
+        create(:runner_state, :circuit_open, user: user, runner_name: claude_runner.state_key)
+        codex_runner = create(:runner, user: user, runner_key: "codex")
+        queued_run = create(:agent_run, :queued, project: project, runner: claude_runner, trigger_type: "manual")
+
+        expect(temporal_client).to receive(:start_workflow).once.and_return(workflow_handle)
+
+        described_class.new.perform
+
+        expect(queued_run.reload.runner_id).to eq(codex_runner.id)
+      end
+
+      it "restores the pin and keeps the run queued when no healthy alternative exists" do
+        project = create(:project)
+        user = project.created_by
+        runner = user.runners.kept_only.find_by!(runner_key: "claude", auth_type: "subscription")
+        create(:runner_state, :rate_limited, user: user, runner_name: runner.state_key)
+        queued_run = create(:agent_run, :queued, project: project, runner: runner)
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        queued_run.reload
+        expect(queued_run.status).to eq("queued")
+        expect(queued_run.runner_id).to eq(runner.id)
+      end
+
+      it "caches reroute resolution so BindRunner is called once per blocked runner context" do
+        stub_const("#{described_class}::MAX_ITERATIONS_PER_PERFORM", 5)
+
+        project = create(:project)
+        user = project.created_by
+        user.settings.update!(max_concurrent_runs: 10)
+        claude_runner = user.runners.kept_only.find_by!(runner_key: "claude", auth_type: "subscription")
+        create(:runner_state, :rate_limited, user: user, runner_name: claude_runner.state_key)
+        codex_runner = create(:runner, user: user, runner_key: "codex")
+
+        3.times { |i| create(:agent_run, :queued, project: project, runner: claude_runner, created_at: (10 - i).minutes.ago) }
+
+        allow(AgentRuns::BindRunner).to receive(:call).and_call_original
+
+        described_class.new.perform
+
+        expect(AgentRuns::BindRunner).to have_received(:call).once
+        expect(AgentRun.where(runner_id: codex_runner.id).count).to eq(3)
+      end
+
+      it "does not reuse a cached reroute across projects with different resolver context" do
+        owner = create(:user, :owner)
+        account = owner.account
+        first_project = create(:project, account: account, created_by: owner,
+          model_preferences: { "preferred_agent_type" => "codex" })
+        second_project = create(:project, account: account, created_by: owner,
+          model_preferences: { "preferred_agent_type" => "cursor" })
+        claude_runner = owner.runners.kept_only.find_by!(runner_key: "claude", auth_type: "subscription")
+        create(:runner_state, :rate_limited, user: owner, runner_name: claude_runner.state_key)
+        codex_runner = create(:runner, user: owner, runner_key: "codex")
+        cursor_runner = create(:runner, user: owner, runner_key: "cursor")
+        codex_run = create(:agent_run, :queued, project: first_project, runner: claude_runner, created_at: 2.minutes.ago)
+        cursor_run = create(:agent_run, :queued, project: second_project, runner: claude_runner, created_at: 1.minute.ago)
+
+        allow(AgentRuns::BindRunner).to receive(:call).and_call_original
+
+        described_class.new.perform
+
+        expect(AgentRuns::BindRunner).to have_received(:call).twice
+        expect(codex_run.reload.runner_id).to eq(codex_runner.id)
+        expect(cursor_run.reload.runner_id).to eq(cursor_runner.id)
+      end
+
+      it "logs runner switch in audit trail when rerouting" do
+        project = create(:project)
+        user = project.created_by
+        claude_runner = user.runners.kept_only.find_by!(runner_key: "claude", auth_type: "subscription")
+        create(:runner_state, :rate_limited, user: user, runner_name: claude_runner.state_key)
+        create(:runner, user: user, runner_key: "codex")
+        queued_run = create(:agent_run, :queued, project: project, runner: claude_runner)
+
+        expect(temporal_client).to receive(:start_workflow).once.and_return(workflow_handle)
+
+        described_class.new.perform
+
+        queued_run.reload
+        log_entry = queued_run.agent_run_logs.find { |l| l.content.include?("Runner fallback") }
+        expect(log_entry).to be_present
+        expect(log_entry.content).to include("dispatch_reroute")
+        expect(queued_run.runner_switches).to eq(1)
+      end
+
+      it "skips reroute audit logging when a routing key cannot be resolved" do
+        stub_const("#{described_class}::MAX_ITERATIONS_PER_PERFORM", 5)
+
+        project = create(:project)
+        user = project.created_by
+        claude_runner = user.runners.kept_only.find_by!(runner_key: "claude", auth_type: "subscription")
+        create(:runner_state, :rate_limited, user: user, runner_name: claude_runner.state_key)
+        create(:runner, user: user, runner_key: "codex")
+        first_run = create(:agent_run, :queued, project: project, runner: claude_runner, created_at: 2.minutes.ago)
+        second_run = create(:agent_run, :queued, project: project, runner: claude_runner, created_at: 1.minute.ago)
+        job = described_class.new
+
+        allow(job).to receive(:runner_routing_key).and_call_original
+        allow(job).to receive(:runner_routing_key).with(claude_runner.id).and_return(nil)
+
+        job.perform
+
+        expect(first_run.reload.runner_switches).to eq(0)
+        expect(second_run.reload.runner_switches).to eq(0)
+        expect(first_run.agent_run_logs.none? { |log| log.content.include?("dispatch_reroute") }).to be(true)
+        expect(second_run.agent_run_logs.none? { |log| log.content.include?("dispatch_reroute") }).to be(true)
       end
     end
 
