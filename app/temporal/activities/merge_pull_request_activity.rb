@@ -144,7 +144,11 @@ module Activities
 
       fallback_merged = attempt_merge_with_pat_fallback(project, repo, pr_number, config)
       return true if fallback_merged == :merged
-      return false if fallback_merged == :retryable_failure
+
+      if fallback_merged == :retryable_failure
+        issue.record_merge_permission_rejection!(reason: message)
+        return false
+      end
 
       handle_merge_permission_rejection(
         project,

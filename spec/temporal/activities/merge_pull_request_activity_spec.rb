@@ -598,11 +598,12 @@ RSpec.describe Activities::MergePullRequestActivity do
           allow(client).to receive(:add_comment)
         end
 
-        it "returns merged: false without recording a merge-permission rejection" do
+        it "returns merged: false and still records the primary permission rejection cooldown" do
           result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
 
           expect(result[:merged]).to be false
-          expect(issue.reload.merge_permission_rejected?).to be(false)
+          expect(issue.reload.merge_permission_rejected?).to be(true)
+          expect(issue.merge_permission_rejection_reason).to eq(rejection_message)
         end
 
         it "does not post the merge-permission comment" do
@@ -610,6 +611,15 @@ RSpec.describe Activities::MergePullRequestActivity do
 
           expect(client).not_to have_received(:recent_issue_comments)
           expect(client).not_to have_received(:add_comment)
+        end
+
+        it "skips the next merge attempt until the cooldown expires" do
+          activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+          activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+          expect(provider).to have_received(:fetch_pull_request).twice
+          expect(provider).to have_received(:merge_pull_request).once
+          expect(client).to have_received(:merge_pull_request).once
         end
       end
     end
