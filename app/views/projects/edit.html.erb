@@ -229,15 +229,17 @@
                       class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
                   </div>
                   <div class="text-sm leading-6">
-                    <%= form.label :git_push_pat_fallback_enabled, "Use a PAT fallback for git pushes",
+                    <%= form.label :git_push_pat_fallback_enabled, "Use a PAT fallback for pushes and merges",
                       class: "font-medium text-gray-900" %>
                     <p class="text-gray-500">
-                      The App is used for everything by default. If a push is rejected because the App
-                      lacks a permission it needs — for example a change under
+                      The App is used for everything by default. If a push or an auto-merge is rejected
+                      because the App lacks a permission it needs — for example a change under
                       <code>.github/workflows/</code>, which requires the <code>workflows</code> permission —
-                      that single push is retried with the selected token instead. The token must have the
-                      needed permission; fine-grained tokens don't report their scopes, so this is trusted
-                      rather than verified.
+                      that single operation is retried with the selected token instead. The token must have
+                      the needed permission; fine-grained tokens don't report their scopes, so this is
+                      trusted rather than verified. Because a merge performed with this token is attributed
+                      to the token's owner rather than the App, only select a token you're comfortable
+                      appearing as the merger of record.
                     </p>
                   </div>
                 </div>
