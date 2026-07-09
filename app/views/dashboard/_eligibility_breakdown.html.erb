@@ -1,0 +1,63 @@
+<% if breakdowns.any? %>
+  <div class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+    <div class="flex items-center justify-between gap-4">
+      <div>
+        <h3 class="text-base font-semibold text-gray-900">Auto-Pick Eligibility</h3>
+        <p class="mt-1 text-sm text-gray-500">Why open issues are (or aren't) being picked up for automatic work.</p>
+      </div>
+    </div>
+
+    <div class="mt-4 divide-y divide-gray-200">
+      <% breakdowns.each do |bd| %>
+        <div class="py-3">
+          <div class="flex items-center justify-between gap-4">
+            <%= link_to bd.project.full_name, project_member_path(bd.project),
+              class: "text-sm font-medium text-gray-900 hover:text-indigo-600" %>
+            <span class="text-xs text-gray-400"><%= pluralize(bd.total_open, "open issue") %></span>
+          </div>
+          <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+            <% if bd.eligible.positive? %>
+              <span class="inline-flex items-center gap-1 text-green-700">
+                <span class="h-1.5 w-1.5 rounded-full bg-green-500"></span>
+                <%= bd.eligible %> eligible
+              </span>
+            <% end %>
+            <% if bd.needs_input.positive? %>
+              <span class="inline-flex items-center gap-1 text-amber-700" title="Issues where Paid needs human clarification before proceeding">
+                <span class="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
+                <%= bd.needs_input %> needs input
+              </span>
+            <% end %>
+            <% if bd.in_progress.positive? %>
+              <span class="inline-flex items-center gap-1 text-blue-700" title="Issues currently being worked on">
+                <span class="h-1.5 w-1.5 rounded-full bg-blue-500"></span>
+                <%= bd.in_progress %> in progress
+              </span>
+            <% end %>
+            <% if bd.skip_label.positive? %>
+              <span class="inline-flex items-center gap-1 text-gray-600" title="Issues with a skip label (planning, tracking, etc.)">
+                <span class="h-1.5 w-1.5 rounded-full bg-gray-400"></span>
+                <%= bd.skip_label %> skip-labeled
+              </span>
+            <% end %>
+            <% if bd.completed.positive? %>
+              <span class="inline-flex items-center gap-1 text-gray-600" title="Issues already completed (may have an open PR)">
+                <span class="h-1.5 w-1.5 rounded-full bg-gray-300"></span>
+                <%= bd.completed %> completed
+              </span>
+            <% end %>
+            <% if bd.other_excluded.positive? %>
+              <span class="inline-flex items-center gap-1 text-gray-600" title="Blocked by dependencies, tracker logic, retry limits, or other filters">
+                <span class="h-1.5 w-1.5 rounded-full bg-gray-400"></span>
+                <%= bd.other_excluded %> blocked/other
+              </span>
+            <% end %>
+            <% if bd.eligible.zero? && bd.total_open.positive? %>
+              <span class="text-gray-400">No eligible issues</span>
+            <% end %>
+          </div>
+        </div>
+      <% end %>
+    </div>
+  </div>
+<% end %>

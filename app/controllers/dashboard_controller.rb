@@ -12,6 +12,7 @@ class DashboardController < ApplicationController
     @goal_filter = valid_goal_filter
     @live_stats = Dashboard::LiveStats.call(account: current_account)
     @queue_preview = Dashboard::QueuePreview.call(user: current_user)
+    @eligibility_breakdown = Dashboard::EligibilityBreakdown.call(user: current_user)
     @active_runs = live_agent_runs.active.includes(:runner, :issue, :model_selection, project: [ :created_by, :account ])
       .order("agent_runs.created_at DESC")
       .limit(20)

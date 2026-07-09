@@ -61,6 +61,10 @@
       </div>
 
       <div class="mt-6">
+        <%= render "dashboard/eligibility_breakdown", breakdowns: @eligibility_breakdown %>
+      </div>
+
+      <div class="mt-6">
         <%= render "dashboard/retry_limited_issues", retry_limited_issues: @retry_limited_issues %>
       </div>
 
