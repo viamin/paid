@@ -39,6 +39,24 @@ RSpec.describe Screenshots::DetectFramework, :no_db do
       expect(result.suggested_config.dig("auth", "login_path")).to eq("/accounts/login/")
     end
 
+    it "detects a Phoenix app and parses router macros" do
+      result = described_class.call(repo_path: fixture_path("phoenix_repo"))
+
+      expect(result.framework).to eq(:phoenix)
+      expect(result.confidence).to eq(1.0)
+      expect(result.suggested_config["driver"]).to eq("playwright")
+      expect(result.detected_services).to contain_exactly("postgres", "redis")
+      expect(result.suggested_config.dig("auth", "strategy")).to eq("form")
+      expect(result.suggested_config.dig("auth", "login_path")).to eq("/users/log_in")
+      expect(result.detected_routes).to include(
+        a_hash_including("path" => "/", "requires_auth" => false),
+        a_hash_including("path" => "/dashboard", "requires_auth" => false),
+        a_hash_including("path" => "/samples", "requires_auth" => false),
+        a_hash_including("path" => "/projects", "requires_auth" => false),
+        a_hash_including("path" => "/settings", "requires_auth" => true)
+      )
+    end
+
     it "falls back to a generic app when no known framework is detected" do
       result = described_class.call(repo_path: fixture_path("generic_repo"))
 
@@ -317,6 +335,29 @@ RSpec.describe Screenshots::DetectFramework, :no_db do
 
       expect(repo.paths).to eq([ "README.md" ])
       expect(repo.read("README.md")).to eq("# Widgets")
+    end
+  end
+
+  describe "Phoenix router parsing" do
+    it "tracks nested scopes and authenticated pipelines" do
+      router = <<~ELIXIR
+        defmodule DemoWeb.Router do
+          scope "/admin", DemoWeb do
+            pipe_through [:browser, :require_authenticated_user]
+
+            scope "/reports", DemoWeb do
+              live "/daily", ReportLive, :show
+            end
+          end
+        end
+      ELIXIR
+
+      service = described_class.new(repo_path: fixture_path("phoenix_repo"))
+      routes = service.send(:parse_phoenix_router, router)
+
+      expect(routes).to include(
+        a_hash_including("path" => "/admin/reports/daily", "requires_auth" => true)
+      )
     end
   end
 end

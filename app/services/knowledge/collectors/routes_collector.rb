@@ -4,6 +4,7 @@ module Knowledge
   module Collectors
     class RoutesCollector < BaseCollector
       SCOPE_PATH = "config/routes.rb"
+      PHOENIX_ROUTER_GLOB = "lib/*_web/router.ex"
       BUNDLE_HOME = "/tmp/paid-bundle-home"
       SQLITE3_GEMFILE_PATTERN = /^\s*gem(?:\s+|\s*\()\s*["']sqlite3["']/.freeze
       SQLITE3_LOCKFILE_PATTERN = /^\s{2,4}sqlite3(?:\s|\(|$)/.freeze
@@ -41,10 +42,10 @@ module Knowledge
       ].freeze
 
       def collect
-        output = read_routes_output
-        skip!(skip_reason) if output.blank?
+        routes = read_route_definitions
+        skip!(skip_reason) if routes.blank?
 
-        parse_expanded_output(output).map do |route|
+        routes.map do |route|
           build_artifact(route)
         end
       end
@@ -62,6 +63,10 @@ module Knowledge
 
         return "repository path not available" if resolve_repo_path.nil?
 
+        if phoenix_router_path.present?
+          return "Phoenix router file was blank (#{phoenix_router_path})"
+        end
+
         unless repo_file_exists?("config/routes.rb")
           return "not a Rails project (no config/routes.rb)"
         end
@@ -73,15 +78,17 @@ module Knowledge
         "routes output was blank after running bin/rails routes"
       end
 
-      def read_routes_output
+      def read_route_definitions
         # When an explicit routes file path is provided (e.g. via options),
         # use it directly. If the file doesn't exist, return nil so the
         # caller skip!s — silently falling back to `bin/rails routes` would
         # be surprising when the caller intended a specific file.
         routes_file = options[:routes_file]
         if routes_file
-          return File.exist?(routes_file) ? File.read(routes_file) : nil
+          return File.exist?(routes_file) ? parse_expanded_output(File.read(routes_file)) : nil
         end
+
+        return parse_phoenix_routes(phoenix_router_path, read_repo_file(phoenix_router_path)) if phoenix_router_path.present?
 
         # Generate routes by running the rails command directly.
         generate_routes_output
@@ -125,7 +132,7 @@ module Knowledge
           install_gems_in_container
         end
 
-        run_routes_command
+        parse_expanded_output(run_routes_command)
       rescue StandardError => error
         raise unless routes_boot_error?(error)
 
@@ -140,6 +147,15 @@ module Knowledge
           "routes require database access during Rails boot",
           preserve_existing_artifacts: true
         )
+      end
+
+      def phoenix_router_path
+        @phoenix_router_path ||= begin
+          base = host_repo_path
+          if base.present?
+            Dir.glob(PHOENIX_ROUTER_GLOB, base: base).sort.first
+          end
+        end
       end
 
       def run_routes_command
@@ -304,6 +320,76 @@ module Knowledge
         routes.select { |r| r[:verb].present? && r[:uri].present? }
       end
 
+      def parse_phoenix_routes(scope_path, content)
+        routes = []
+        stack = []
+
+        content.each_line.flat_map { |line| line.split(";") }.each do |statement|
+          line = statement.strip
+          next if line.blank? || line.start_with?("#")
+
+          if line == "end"
+            stack.pop if stack.any?
+            next
+          end
+
+          prefix = current_phoenix_prefix(stack)
+
+          if (route = parse_phoenix_route_line(line, prefix, scope_path))
+            routes << route
+            next
+          end
+
+          if (match = line.match(/^scope\s+["']([^"']*)["'][^#]*\bdo\b/))
+            stack << match[1]
+            next
+          end
+
+          stack << nil if line.match?(/\bdo\b\s*$/)
+        end
+
+        routes
+      end
+
+      def parse_phoenix_route_line(line, prefix, scope_path)
+        if (match = line.match(/^(live|get|post|put|patch|delete)\s+["']([^"']+)["']\s*,\s*([^,\n]+)(?:,\s*:([a-zA-Z_][\w]*))?/))
+          verb = match[1] == "live" ? "GET" : match[1].upcase
+          path = normalize_phoenix_path(prefix, match[2])
+          target = match[3].strip
+          action = match[4]
+          return {
+            verb: verb,
+            uri: path,
+            controller_action: [ target, action ].compact.join("#").presence || target,
+            scope_path: scope_path
+          }
+        end
+
+        if (match = line.match(/^resources\s+["']([^"']+)["']\s*,\s*([^,\n]+)/))
+          path = normalize_phoenix_path(prefix, match[1])
+          return {
+            verb: "GET",
+            uri: path,
+            controller_action: "#{match[2].strip}#index",
+            scope_path: scope_path
+          }
+        end
+
+        nil
+      end
+
+      def current_phoenix_prefix(stack)
+        joined = stack.compact.join("/")
+        normalize_phoenix_path(nil, joined)
+      end
+
+      def normalize_phoenix_path(prefix, path)
+        full_path = [ prefix, path ].compact.join("/")
+        normalized = full_path.gsub(%r{/+}, "/")
+        normalized = "/#{normalized}" unless normalized.start_with?("/")
+        normalized.presence || "/"
+      end
+
       def clean_uri(uri)
         uri.sub(/\(\.:format\)\z/, "")
       end
@@ -316,6 +402,7 @@ module Knowledge
         controller = controller.presence
         action = action&.presence
         prefix = route[:prefix]
+        scope_path = route[:scope_path] || SCOPE_PATH
 
         content = "#{verb} #{path}"
         content = "#{content} → #{controller}##{action}" if controller.present?
@@ -326,7 +413,7 @@ module Knowledge
 
         {
           artifact_type: "route",
-          scope_path: SCOPE_PATH,
+          scope_path: scope_path,
           identifier: identifier,
           content: content,
           metadata: {
@@ -340,7 +427,7 @@ module Knowledge
             {
               chunk_type: "definition",
               content: chunk_lines.join("\n"),
-              scope_tags: [ SCOPE_PATH ],
+              scope_tags: [ scope_path ],
               sequence: 0
             }
           ]

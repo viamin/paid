@@ -33,6 +33,14 @@ RSpec.describe Screenshots::FrameworkPatterns do
       expect(result[:patterns]).not_to be_empty
     end
 
+    it "returns Phoenix/Elixir patterns" do
+      result = described_class.for(:elixir)
+
+      expect(result[:patterns]).to be_an(Array)
+      expect(result[:patterns]).not_to be_empty
+      expect(described_class.for(:phoenix)).to eq(result)
+    end
+
     it "raises for unknown framework" do
       expect { described_class.for(:unknown) }.to raise_error(ArgumentError, /Unknown framework/)
     end
@@ -117,6 +125,24 @@ RSpec.describe Screenshots::FrameworkPatterns do
 
     it "matches Svelte components" do
       expect(patterns[:patterns].any? { |p| p.match?("src/routes/+page.svelte") }).to be true
+    end
+  end
+
+  describe "Phoenix/Elixir patterns" do
+    let(:patterns) { described_class.for(:elixir) }
+
+    it "matches LiveView modules" do
+      expect(patterns[:patterns].any? { |p| p.match?("lib/color_matching_web/live/palette_live.ex") }).to be true
+    end
+
+    it "matches controllers and templates" do
+      expect(patterns[:patterns].any? { |p| p.match?("lib/color_matching_web/controllers/page_controller.ex") }).to be true
+      expect(patterns[:patterns].any? { |p| p.match?("lib/color_matching_web/templates/page/index.html.heex") }).to be true
+    end
+
+    it "matches asset files" do
+      expect(patterns[:patterns].any? { |p| p.match?("assets/js/app.js") }).to be true
+      expect(patterns[:patterns].any? { |p| p.match?("assets/css/app.css") }).to be true
     end
   end
 end

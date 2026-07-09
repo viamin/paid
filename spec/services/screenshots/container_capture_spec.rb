@@ -151,6 +151,18 @@ RSpec.describe Screenshots::ContainerCapture do
     expect(command).not_to include(%q(uri = URI("http://localhost:3000/it's-a-path")))
   end
 
+  it "starts Phoenix apps with mix phx.server and a PORT env var" do
+    tmpdir = Dir.mktmpdir("screenshots-phoenix-spec")
+    File.write(File.join(tmpdir, "mix.exs"), "defmodule Demo.MixProject do end")
+    service.instance_variable_set(:@tmpdir, tmpdir)
+    allow(service).to receive(:config).and_return(config)
+
+    expect(service.send(:application_start_command)).to eq("MIX_ENV=dev mix phx.server")
+    expect(service.send(:capture_env)).to include("PORT" => "3000")
+  ensure
+    FileUtils.remove_entry(tmpdir)
+  end
+
   describe "#screenshot_config_json (capture scoping and annotation)" do
     let(:multi_route_config) do
       Screenshots::Configuration.from_hash(
