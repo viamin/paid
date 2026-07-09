@@ -35,11 +35,11 @@ module Automation
       metadata[:scan] = scan if scan
       metadata[:lifecycle] = lifecycle if lifecycle
 
-      context = Context.build(record: record, project: project, metadata: metadata)
-      Strategies::Select.call(
-        strategy_type: :auto_continue,
-        project: project
-      ).evaluate(context)
+      StrategyCoordinator.new(project: project).evaluate_pull_request(
+        record: record,
+        metadata: metadata,
+        strategy_types: %i[auto_continue]
+      )
     end
   end
 end

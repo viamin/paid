@@ -30,9 +30,9 @@ RSpec.describe Automation::Providers::Resolver do
     end
   end
 
-  let(:repo_factory) { ->(_project) { Object.new } }
-  let(:work_item_factory) { ->(_project) { Object.new } }
-  let(:review_factory) { ->(_project) { Object.new } }
+  let(:repo_factory) { ->(_project, client: nil) { Object.new } }
+  let(:work_item_factory) { ->(_project, client: nil) { Object.new } }
+  let(:review_factory) { ->(_project, client: nil) { Object.new } }
 
   describe ".provider_type_for" do
     it "defaults to :github when the project does not declare a provider_type" do
@@ -63,7 +63,7 @@ RSpec.describe Automation::Providers::Resolver do
         review: review_factory
       )
 
-      expect(repo_factory).to receive(:call).with(project_without_provider_type).and_return(:repo)
+      expect(repo_factory).to receive(:call).with(project_without_provider_type, client: nil).and_return(:repo)
       expect(described_class.repository_for(project_without_provider_type)).to eq(:repo)
     end
 
@@ -81,6 +81,20 @@ RSpec.describe Automation::Providers::Resolver do
       expect(described_class.registered?(:github)).to be true
       expect { described_class.repository_for(project_without_provider_type) }.not_to raise_error
       expect { described_class.work_item_for(project_without_provider_type) }.not_to raise_error
+    end
+  end
+
+  describe "client forwarding" do
+    it "forwards an optional client to the factory so providers share it" do
+      client = instance_double(GithubClient)
+      forwarded = []
+      factory = ->(project, client: nil) { forwarded << [ project, client ]; :adapter }
+
+      described_class.reset!
+      described_class.register(:github, repository: factory)
+
+      expect(described_class.repository_for(project_without_provider_type, client: client)).to eq(:adapter)
+      expect(forwarded).to eq([ [ project_without_provider_type, client ] ])
     end
   end
 

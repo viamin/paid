@@ -15,15 +15,16 @@ module Automation
     #
     #   Automation::Providers::Resolver.register(
     #     :github,
-    #     repository: ->(project) { Github::RepositoryProvider.new(project) },
-    #     work_item:  ->(project) { Github::WorkItemProvider.new(project) },
-    #     review:     ->(project) { Github::ReviewProvider.new(project) }
+    #     repository: ->(project, client: nil) { Github::RepositoryProvider.new(project, client: client) },
+    #     work_item:  ->(project, client: nil) { Github::WorkItemProvider.new(project, client: client) },
+    #     review:     ->(project, client: nil) { Github::ReviewProvider.new(project, client: client) }
     #   )
     #
-    # Factories are invoked with the {Project} on every resolution call.
-    # They MAY cache the returned instance per project (e.g. memoize on
-    # the project), but the resolver itself is intentionally stateless so
-    # that tests can register and clear implementations independently.
+    # Factories are invoked with the {Project} (and an optional +client:+)
+    # on every resolution call. They MAY cache the returned instance per
+    # project (e.g. memoize on the project), but the resolver itself is
+    # intentionally stateless so that tests can register and clear
+    # implementations independently.
     class Resolver
       CAPABILITIES = %i[repository work_item review].freeze
 
@@ -81,21 +82,34 @@ module Automation
         end
 
         # Resolves the repository provider for +project+.
+        #
+        # When +client+ is supplied it is forwarded to the registered
+        # factory so the resulting provider shares that client instead of
+        # re-deriving one from the project. Signal collectors that already
+        # hold a credential-aware client use this to keep a single client
+        # across every provider call within a scan cycle.
+        #
+        # @param client [Object, nil] Optional provider client (e.g.
+        #   {::GithubClient}) forwarded to the factory.
         # @return [Object] An instance including {RepositoryProvider}.
-        def repository_for(project)
-          resolve(:repository, project)
+        def repository_for(project, client: nil)
+          resolve(:repository, project, client:)
         end
 
-        # Resolves the work-item provider for +project+.
+        # Resolves the work-item provider for +project+. See
+        # {.repository_for} for the +client:+ forwarding contract.
+        #
         # @return [Object] An instance including {WorkItemProvider}.
-        def work_item_for(project)
-          resolve(:work_item, project)
+        def work_item_for(project, client: nil)
+          resolve(:work_item, project, client:)
         end
 
-        # Resolves the review provider for +project+.
+        # Resolves the review provider for +project+. See
+        # {.repository_for} for the +client:+ forwarding contract.
+        #
         # @return [Object] An instance including {ReviewProvider}.
-        def review_for(project)
-          resolve(:review, project)
+        def review_for(project, client: nil)
+          resolve(:review, project, client:)
         end
 
         # The provider type a project is configured to use. Falls back to
@@ -120,7 +134,7 @@ module Automation
           @registry ||= {}
         end
 
-        def resolve(capability, project)
+        def resolve(capability, project, client: nil)
           raise UnknownCapabilityError, capability.inspect unless CAPABILITIES.include?(capability)
 
           provider_type = provider_type_for(project)
@@ -132,7 +146,7 @@ module Automation
             raise UnregisteredProviderError,
               "No #{capability} provider registered for provider_type #{provider_type.inspect}"
 
-          factory.call(project)
+          factory.call(project, client:)
         end
 
         def validate_factory!(factory, capability)
