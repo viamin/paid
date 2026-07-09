@@ -34,16 +34,12 @@ module Capacity
     ENVIRONMENT_LINUX_DOCKER = "linux_docker".freeze
     ENVIRONMENT_UNKNOWN = "unknown".freeze
 
-    Environments = Struct.new(:name, :default_mode, :default_max_concurrent, :default_min_concurrent,
-      :memory_safety_multiplier, :cooldown_seconds, keyword_init: true) do
+    Environments = Struct.new(:name, :default_mode, :default_max_concurrent, keyword_init: true) do
       def to_h
         {
           name: name,
           default_mode: default_mode,
-          default_max_concurrent: default_max_concurrent,
-          default_min_concurrent: default_min_concurrent,
-          memory_safety_multiplier: memory_safety_multiplier,
-          cooldown_seconds: cooldown_seconds
+          default_max_concurrent: default_max_concurrent
         }
       end
     end
@@ -52,26 +48,17 @@ module Capacity
       ENVIRONMENT_DOCKER_DESKTOP => Environments.new(
         name: ENVIRONMENT_DOCKER_DESKTOP,
         default_mode: AUTO,
-        default_max_concurrent: 6,
-        default_min_concurrent: 1,
-        memory_safety_multiplier: 1.25,
-        cooldown_seconds: 5 * 60
+        default_max_concurrent: 6
       ),
       ENVIRONMENT_ORBSTACK => Environments.new(
         name: ENVIRONMENT_ORBSTACK,
         default_mode: AUTO,
-        default_max_concurrent: 8,
-        default_min_concurrent: 1,
-        memory_safety_multiplier: 1.20,
-        cooldown_seconds: 5 * 60
+        default_max_concurrent: 8
       ),
       ENVIRONMENT_LINUX_DOCKER => Environments.new(
         name: ENVIRONMENT_LINUX_DOCKER,
         default_mode: AUTO,
-        default_max_concurrent: 10,
-        default_min_concurrent: 1,
-        memory_safety_multiplier: 1.50,
-        cooldown_seconds: 5 * 60
+        default_max_concurrent: 10
       ),
       ENVIRONMENT_CI => Environments.new(
         name: ENVIRONMENT_CI,
@@ -79,25 +66,18 @@ module Capacity
         # because a runaway OOM can take down the runner. Manual mode
         # is the safe default.
         default_mode: MANUAL,
-        default_max_concurrent: 2,
-        default_min_concurrent: 1,
-        memory_safety_multiplier: 2.0,
-        cooldown_seconds: 10 * 60
+        default_max_concurrent: 2
       ),
       ENVIRONMENT_UNKNOWN => Environments.new(
         name: ENVIRONMENT_UNKNOWN,
         default_mode: MANUAL,
-        default_max_concurrent: 4,
-        default_min_concurrent: 1,
-        memory_safety_multiplier: 1.75,
-        cooldown_seconds: 10 * 60
+        default_max_concurrent: 4
       )
     }.freeze
 
     Decision = Struct.new(:mode, :environment, :auto_allowed, :auto_allowed_reasons,
       :blocked_reasons, :admission_uses_cpu, :degraded, :degraded_reasons,
-      :effective_min_concurrent, :effective_max_concurrent,
-      :memory_safety_multiplier, :cooldown_seconds, :snapshot_present, keyword_init: true) do
+      :effective_max_concurrent, :snapshot_present, keyword_init: true) do
       # Reason codes that signal Docker has no measurable memory headroom for
       # another agent run right now. When any are present the queue processor
       # must leave the run queued regardless of run-count headroom — RDR-043
@@ -139,10 +119,7 @@ module Capacity
           admission_uses_cpu: admission_uses_cpu,
           degraded: degraded,
           degraded_reasons: degraded_reasons,
-          effective_min_concurrent: effective_min_concurrent,
           effective_max_concurrent: effective_max_concurrent,
-          memory_safety_multiplier: memory_safety_multiplier,
-          cooldown_seconds: cooldown_seconds,
           snapshot_present: snapshot_present
         }
       end
@@ -159,8 +136,7 @@ module Capacity
       explicit_opt_in: false,
       explicit_opt_out: false,
       ci: nil,
-      now: Time.current,
-      cooldown_store: Rails.cache
+      now: Time.current
     )
       @snapshot = snapshot
       @environment = environment
@@ -169,7 +145,6 @@ module Capacity
       @explicit_opt_out = explicit_opt_out
       @ci = ci
       @now = now
-      @cooldown_store = cooldown_store
     end
 
     def call
@@ -186,17 +161,14 @@ module Capacity
         mode: mode,
         environment: env.name,
         auto_allowed: auto_allowed,
-        auto_allowed_reasons: compute_auto_allowed_reasons(env: env, auto_allowed: auto_allowed),
+        auto_allowed_reasons: compute_auto_allowed_reasons(env: env, blocked: blocked, auto_allowed: auto_allowed),
         blocked_reasons: blocked,
         # Phase 6 keeps admission memory-first; CPU participation is
         # deferred until memory tuning stabilizes across environments.
         admission_uses_cpu: false,
         degraded: degraded,
         degraded_reasons: degraded_reasons,
-        effective_min_concurrent: env.default_min_concurrent,
         effective_max_concurrent: effective_max_concurrent(env),
-        memory_safety_multiplier: env.memory_safety_multiplier,
-        cooldown_seconds: env.cooldown_seconds,
         snapshot_present: @snapshot.present?
       )
     end
@@ -204,7 +176,7 @@ module Capacity
     private
 
     attr_reader :snapshot, :environment, :explicit_mode, :explicit_opt_in, :explicit_opt_out,
-      :ci, :now, :cooldown_store
+      :ci, :now
 
     def resolve_environment
       return ENVIRONMENT_DEFAULTS.fetch(ENVIRONMENT_CI) if ci
@@ -283,7 +255,12 @@ module Capacity
       reasons = []
       reasons << "docker_low_confidence" if snapshot.confidence.to_f < 0.5
       reasons << "docker_timeout" if snapshot.degraded_reasons.include?("docker_timeout")
-      reasons << "docker_exhausted" if snapshot.available_memory_bytes.to_i.zero?
+      # A degraded/unmeasured snapshot defensively reports
+      # available_memory_bytes: 0 (see DockerSnapshot#collect_snapshot),
+      # but that is a "we don't know" signal, not a "Docker is full"
+      # signal — mirror the guard used in build_blocked_reasons so a
+      # degraded snapshot is not spuriously tagged docker_exhausted.
+      reasons << "docker_exhausted" if snapshot.available_memory_bytes.to_i.zero? && !snapshot.degraded?
 
       reasons
     end
@@ -327,10 +304,15 @@ module Capacity
       true
     end
 
-    def compute_auto_allowed_reasons(env:, auto_allowed:)
+    def compute_auto_allowed_reasons(env:, blocked:, auto_allowed:)
       return [ "explicit_opt_out" ] if explicit_opt_out == true
       return [ "explicit_opt_in" ] if auto_allowed && explicit_opt_in
       return [ "environment_default" ] if auto_allowed
+      # Auto is off because the deployment gate fired (shared/remote/swarm
+      # backend or CI). Report the gate rather than the catch-all
+      # "metrics_missing", which is reserved for measurable-but-unreliable
+      # local snapshots.
+      return [ "deployment_gate" ] if blocked.any? { |reason| reason.code == "auto_mode_disabled_for_deployment" }
       return [ "deployment_gate" ] if env.default_mode == MANUAL || env.name == ENVIRONMENT_CI
 
       [ "metrics_missing" ]

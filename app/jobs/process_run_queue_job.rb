@@ -117,6 +117,15 @@ class ProcessRunQueueJob < ApplicationJob
           # deployment-wide signal, not a per-user one, so it takes
           # precedence over run_admission_for's per-user/project accounting —
           # RDR-043 prefers denying new runs over OOM-killing active ones.
+          #
+          # The deployment-wide gate itself is the cached re-check of
+          # policy_decision#capacity_blocked? at the top of every loop
+          # iteration (current_capacity_policy memoizes one snapshot per
+          # pass, so every subsequent queued run — for any user — is
+          # re-blocked here). The blocked_user_ids add below is only a
+          # per-user optimization layered on top: it short-circuits this
+          # owner's remaining queued runs so a deep backlog for a single
+          # user cannot burn the iteration budget one row at a time.
           log_capacity_blocked(user, policy_decision)
           blocked_user_ids.add(user.id)
           next

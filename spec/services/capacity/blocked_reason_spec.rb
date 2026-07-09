@@ -7,14 +7,10 @@ RSpec.describe Capacity::BlockedReason do
     it "exposes canonical codes with safe summaries and hints" do
       expected_codes = %w[
         docker_unavailable
-        docker_slow
         docker_low_confidence
         docker_memory_exhausted
         auto_mode_disabled_for_deployment
-        auto_mode_degraded
-        cooldown_active
         unrelated_workload
-        oom_history
         policy_unknown
       ]
 

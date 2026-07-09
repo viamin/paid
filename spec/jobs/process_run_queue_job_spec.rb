@@ -1335,10 +1335,7 @@ RSpec.describe ProcessRunQueueJob do
       admission_uses_cpu: false,
       degraded: false,
       degraded_reasons: [],
-      effective_min_concurrent: 1,
       effective_max_concurrent: 10,
-      memory_safety_multiplier: 1.5,
-      cooldown_seconds: 300,
       snapshot_present: true
     )
   end
@@ -1350,15 +1347,12 @@ RSpec.describe ProcessRunQueueJob do
       mode: Capacity::Policy::MANUAL,
       environment: Capacity::Policy::ENVIRONMENT_UNKNOWN,
       auto_allowed: false,
-      auto_allowed_reasons: [ "metrics_missing" ],
+      auto_allowed_reasons: [ "deployment_gate" ],
       blocked_reasons: [ Capacity::BlockedReason[:docker_unavailable] ],
       admission_uses_cpu: false,
       degraded: true,
       degraded_reasons: [ "no_snapshot" ],
-      effective_min_concurrent: 1,
       effective_max_concurrent: 4,
-      memory_safety_multiplier: 1.75,
-      cooldown_seconds: 600,
       snapshot_present: false
     )
   end
@@ -1390,10 +1384,7 @@ RSpec.describe ProcessRunQueueJob do
       admission_uses_cpu: false,
       degraded: false,
       degraded_reasons: [],
-      effective_min_concurrent: 1,
       effective_max_concurrent: 10,
-      memory_safety_multiplier: 1.5,
-      cooldown_seconds: 300,
       snapshot_present: true
     )
   end
@@ -1425,10 +1416,7 @@ RSpec.describe ProcessRunQueueJob do
       admission_uses_cpu: false,
       degraded: true,
       degraded_reasons: [ "docker_exhausted" ],
-      effective_min_concurrent: 1,
       effective_max_concurrent: 10,
-      memory_safety_multiplier: 1.5,
-      cooldown_seconds: 300,
       snapshot_present: true
     )
   end

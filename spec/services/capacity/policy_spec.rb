@@ -91,6 +91,7 @@ RSpec.describe Capacity::Policy do
       expect(decision.mode).to eq(Capacity::Policy::MANUAL)
       expect(decision.auto_allowed).to be(false)
       expect(decision.blocked_reasons.map(&:code)).to include("auto_mode_disabled_for_deployment")
+      expect(decision.auto_allowed_reasons).to eq([ "deployment_gate" ])
     end
 
     it "returns MANUAL for a swarm backend, gating auto off by default" do
@@ -99,6 +100,23 @@ RSpec.describe Capacity::Policy do
       expect(decision.mode).to eq(Capacity::Policy::MANUAL)
       expect(decision.auto_allowed).to be(false)
       expect(decision.blocked_reasons.map(&:code)).to include("auto_mode_disabled_for_deployment")
+      expect(decision.auto_allowed_reasons).to eq([ "deployment_gate" ])
+    end
+
+    it "reports the deployment gate (not metrics_missing) when auto is blocked for the deployment" do
+      # linux_docker is a default-AUTO, non-CI environment. When the
+      # backend is remote/swarm the deployment gate blocks auto via the
+      # auto_mode_disabled_for_deployment reason — the policy must report
+      # "deployment_gate" rather than falling through to "metrics_missing",
+      # which is reserved for measurable-but-unreliable local snapshots.
+      decision = described_class.call(
+        snapshot: remote_snapshot,
+        environment: "linux_docker",
+        now: now
+      )
+
+      expect(decision.auto_allowed).to be(false)
+      expect(decision.auto_allowed_reasons).to eq([ "deployment_gate" ])
     end
 
     it "fails closed to MANUAL when the snapshot is missing" do
@@ -115,6 +133,11 @@ RSpec.describe Capacity::Policy do
       expect(decision.mode).to eq(Capacity::Policy::MANUAL)
       expect(decision.degraded).to be(true)
       expect(decision.degraded_reasons).to include("docker_timeout")
+      # A degraded snapshot defensively reports available_memory_bytes: 0
+      # (a "we don't know" signal), which must NOT be tagged as
+      # docker_exhausted — that reason is reserved for a genuinely full,
+      # measurement-healthy Docker host.
+      expect(decision.degraded_reasons).not_to include("docker_exhausted")
       expect(decision.blocked_reasons.map(&:code)).to include("docker_low_confidence")
     end
 
@@ -147,7 +170,6 @@ RSpec.describe Capacity::Policy do
 
       expect(decision.environment).to eq("docker_desktop")
       expect(decision.effective_max_concurrent).to eq(6)
-      expect(decision.memory_safety_multiplier).to eq(1.25)
       expect(decision.mode).to eq(Capacity::Policy::AUTO)
     end
 
@@ -156,7 +178,6 @@ RSpec.describe Capacity::Policy do
 
       expect(decision.environment).to eq("orbstack")
       expect(decision.effective_max_concurrent).to eq(8)
-      expect(decision.memory_safety_multiplier).to eq(1.20)
       expect(decision.mode).to eq(Capacity::Policy::AUTO)
     end
 
@@ -177,7 +198,6 @@ RSpec.describe Capacity::Policy do
 
       expect(decision.mode).to eq(Capacity::Policy::MANUAL)
       expect(decision.effective_max_concurrent).to eq(2)
-      expect(decision.cooldown_seconds).to eq(10 * 60)
       expect(decision.blocked_reasons.map(&:code)).to include("auto_mode_disabled_for_deployment")
     end
 
