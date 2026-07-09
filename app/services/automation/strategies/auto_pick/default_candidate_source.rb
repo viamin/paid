@@ -69,8 +69,21 @@ module Automation
               .to_set
           end
 
-          def eligible_scope(project)
-            base = without_open_non_pr_subissues(base_scope(project))
+          # Rechecks a single issue's eligibility at dequeue time. The
+          # queued run being considered is itself a blocking run, so it
+          # must be excluded from the "issue already has work in flight"
+          # filter (otherwise every queued run would self-exclude its own
+          # issue and be wrongly cancelled). Pass +excluding_run_id: <the
+          # candidate run's id>+. Returns true when the issue is still
+          # auto-pick eligible ignoring that one run.
+          def eligible_for_dequeue?(project, issue_id, excluding_run_id:)
+            eligible_scope(project, excluding_run_id: excluding_run_id)
+              .where(id: issue_id)
+              .exists?
+          end
+
+          def eligible_scope(project, excluding_run_id: nil)
+            base = without_open_non_pr_subissues(base_scope(project, excluding_run_id: excluding_run_id))
 
             scope = base.where(paid_state: %w[new planning failed analyzed])
 
@@ -103,8 +116,8 @@ module Automation
             scope
           end
 
-          def ordered_scope(project)
-            eligible_scope(project)
+          def ordered_scope(project, excluding_run_id: nil)
+            eligible_scope(project, excluding_run_id: excluding_run_id)
               .order(
                 Arel::Nodes::Ascending.new(priority_label_order_node(project)),
                 Arel::Nodes::Ascending.new(dependency_tree_order_node),
@@ -193,10 +206,15 @@ module Automation
 
           private
 
-          def base_scope(project)
-            blocking_issue_ids = AgentRun.where(
+          def base_scope(project, excluding_run_id: nil)
+            blocking_runs = AgentRun.where(
               project: project, status: AgentRun::AUTO_PICK_BLOCKING_STATUSES
-            ).where.not(issue_id: nil).select(:issue_id)
+            ).where.not(issue_id: nil)
+            # At dequeue time the candidate run itself is a blocking run; ignore
+            # it so the issue is not self-excluded by the "work already in
+            # flight" filter (RDR-032 dequeue-time eligibility recheck).
+            blocking_runs = blocking_runs.where.not(id: excluding_run_id) if excluding_run_id
+            blocking_issue_ids = blocking_runs.select(:issue_id)
 
             base = Issue.ready_for_work(project)
               .where.not(id: blocking_issue_ids)

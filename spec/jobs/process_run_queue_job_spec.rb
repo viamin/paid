@@ -678,6 +678,104 @@ RSpec.describe ProcessRunQueueJob do
       expect(normal_run.reload.status).to eq("queued")
     end
 
+    context "with RDR-032 dequeue-time eligibility recheck" do
+      # Issues are created in their ineligible state BEFORE the queued run
+      # so update callbacks (closed/paused label sync, orphan-run
+      # cancellation) don't pre-empt the recheck under test.
+      it "cancels a queued auto-pick run whose issue carries a skip label and starts the next eligible run" do
+        project = create(:project, auto_pick_enabled: true)
+        ineligible_issue = create(:issue, project: project, github_state: "open", labels: [ "planning" ],
+          github_number: 1)
+        ineligible_run = create(:agent_run, :queued, :automatic, project: project,
+          issue: ineligible_issue, goal: "create_pr", auto_pick: true, created_at: 2.minutes.ago)
+
+        eligible_issue = create(:issue, project: project, github_state: "open", github_number: 2)
+        eligible_run = create(:agent_run, :queued, :automatic, project: project,
+          issue: eligible_issue, goal: "create_pr", auto_pick: true, created_at: 1.minute.ago)
+
+        started_ids = []
+        allow(temporal_client).to receive(:start_workflow) do |_wf, input, **_opts|
+          started_ids << input[:agent_run_id]
+          workflow_handle
+        end
+
+        described_class.new.perform
+
+        expect(ineligible_run.reload.status).to eq("cancelled")
+        expect(eligible_run.reload.temporal_workflow_id).to be_present
+        expect(started_ids).to eq([ eligible_run.id ])
+      end
+
+      it "cancels a run whose issue is in a paid_state skip state" do
+        project = create(:project, auto_pick_enabled: true)
+        issue = create(:issue, project: project, github_state: "open", paid_state: "needs_input")
+        run = create(:agent_run, :queued, :automatic, project: project,
+          issue: issue, goal: "create_pr", auto_pick: true)
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(run.reload.status).to eq("cancelled")
+      end
+
+      it "cancels a run whose issue is blocked by an open dependency" do
+        project = create(:project, auto_pick_enabled: true)
+        dependent = create(:issue, project: project, github_state: "open")
+        blocker = create(:issue, project: project, github_state: "open")
+        create(:issue_dependency, issue: dependent, depends_on_issue: blocker)
+        run = create(:agent_run, :queued, :automatic, project: project,
+          issue: dependent, goal: "create_pr", auto_pick: true)
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(run.reload.status).to eq("cancelled")
+      end
+
+      it "cancels a run whose issue was closed after seeding" do
+        project = create(:project, auto_pick_enabled: true)
+        issue = create(:issue, project: project, github_state: "closed")
+        run = create(:agent_run, :queued, :automatic, project: project,
+          issue: issue, goal: "create_pr", auto_pick: true)
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(run.reload.status).to eq("cancelled")
+      end
+
+      it "starts an eligible auto-pick run unchanged" do
+        project = create(:project, auto_pick_enabled: true)
+        issue = create(:issue, project: project, github_state: "open")
+        run = create(:agent_run, :queued, :automatic, project: project,
+          issue: issue, goal: "create_pr", auto_pick: true)
+
+        expect(temporal_client).to receive(:start_workflow).and_return(workflow_handle)
+
+        described_class.new.perform
+
+        expect(run.reload.temporal_workflow_id).to be_present
+        expect(run.reload.status).to eq("queued")
+      end
+
+      it "does not recheck a manual run even if its issue is ineligible" do
+        project = create(:project)
+        issue = create(:issue, project: project, github_state: "open", labels: [ "planning" ])
+        run = create(:agent_run, :queued, :manual, project: project,
+          issue: issue, goal: "create_pr")
+
+        expect(temporal_client).to receive(:start_workflow).and_return(workflow_handle)
+
+        described_class.new.perform
+
+        expect(run.reload.status).to eq("queued")
+        expect(run.reload.temporal_workflow_id).to be_present
+      end
+    end
+
     context "when GitHub circuit is open" do
       it "skips dispatching entirely" do
         create(:github_health_state, :circuit_open)
