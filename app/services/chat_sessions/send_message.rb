@@ -75,6 +75,9 @@ module ChatSessions
 
     def check_token_limit!
       result = ChatSessions::CheckTokenLimit.call(chat_session: chat_session)
+      # Capture the baseline so AgentLoop can guard mid-loop without re-running
+      # the same SUM aggregation (see AgentLoop#token_budget).
+      @token_budget = result[:remaining_tokens]
       return if result[:within_limit]
 
       raise TokenLimitExceededError.new(
@@ -100,6 +103,13 @@ module ChatSessions
       chat_session.update!(
         idle_timeout_at: ChatSession::IDLE_TIMEOUT_DURATION.from_now
       )
+    end
+
+    # Reuse the pre-loop budget baseline so the mid-loop guard does not issue a
+    # second SUM query per turn. Only forward when a limit is configured; a nil
+    # baseline means "unlimited" and AgentLoop re-derives nil cheaply.
+    def extra_agent_loop_kwargs
+      @token_budget ? { token_budget: @token_budget } : {}
     end
   end
 end

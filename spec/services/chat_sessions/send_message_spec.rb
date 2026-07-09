@@ -457,6 +457,20 @@ RSpec.describe ChatSessions::SendMessage do
         expect(assistant_message.tokens_output).to eq(65)
       end
 
+      it "reuses the pre-loop token budget so the mid-loop guard does not re-query the limit" do
+        create(:tenant_setting, account: account,
+          features: { "chat_settings" => { "chat_session_token_limit" => 1_000_000 } })
+
+        # SendMessage#check_token_limit! runs CheckTokenLimit once before the
+        # loop; AgentLoop must reuse that baseline rather than aggregating again
+        # mid-turn.
+        expect(ChatSessions::CheckTokenLimit).to receive(:call).once.and_call_original
+
+        described_class.call(
+          chat_session: chat_session, content: "Search for test", llm_client: tool_llm_client
+        )
+      end
+
       it "notifies tool messages so live threads can render them" do
         roles = []
 
@@ -532,21 +546,49 @@ RSpec.describe ChatSessions::SendMessage do
           model: "gpt-4o"
         }
       end
-      let(:tool_llm_client) do
-        build_stateful_llm_client(Array.new(ChatSessions::AgentLoop::MAX_TOOL_ITERATIONS, tool_loop_response))
+      let(:soft_stop_response) do
+        {
+          content: "I searched but need more specific queries. Try narrowing your request.",
+          tool_calls: [],
+          tokens_input: 20,
+          tokens_output: 15,
+          model: "gpt-4o"
+        }
       end
 
-      it "caps the loop and persists a final user-visible note" do
+      before do
+        create(:tenant_setting, account: account,
+          features: { "chat_settings" => { "chat_max_tool_iterations" => 3 } })
         allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user, session: anything).and_return(tool_definitions)
         allow(Tools::Registry).to receive(:dispatch).and_return({ "status" => "ok" })
+      end
+
+      it "caps at the configured limit and runs a soft-stop summary" do
+        tool_llm_client = build_stateful_llm_client(
+          [ tool_loop_response, tool_loop_response, tool_loop_response, soft_stop_response ]
+        )
 
         result = described_class.call(
           chat_session: chat_session, content: "Keep going", llm_client: tool_llm_client
         )
 
-        expect(tool_llm_client.seen_conversations.length).to eq(ChatSessions::AgentLoop::MAX_TOOL_ITERATIONS)
-        expect(result.content).to include("maximum number of tool iterations")
-        expect(chat_session.messages.where(role: "tool").count).to eq(ChatSessions::AgentLoop::MAX_TOOL_ITERATIONS)
+        expect(tool_llm_client.seen_conversations.length).to eq(4)
+        expect(result.content).to include("I searched but need more specific queries")
+        expect(chat_session.messages.where(role: "tool").count).to eq(3)
+      end
+
+      it "uses the soft-stop prompt on the final call (tools excluded)" do
+        tool_llm_client = build_stateful_llm_client(
+          [ tool_loop_response, tool_loop_response, tool_loop_response, soft_stop_response ]
+        )
+
+        described_class.call(
+          chat_session: chat_session, content: "Keep going", llm_client: tool_llm_client
+        )
+
+        last_conversation = tool_llm_client.seen_conversations.last
+        expect(last_conversation.last[:role]).to eq("user")
+        expect(last_conversation.last[:content]).to include("maximum number of tool calls")
       end
     end
   end
