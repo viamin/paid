@@ -231,6 +231,157 @@ RSpec.describe ChatSessions::AgentLoop do
         ))
       end
     end
+
+    context "when the iteration limit is reached" do
+      let(:tool_response) do
+        {
+          content: nil,
+          tool_calls: [ { id: "call_1", name: "search", arguments: { "query" => "test" } } ],
+          tokens_input: 10, tokens_output: 5, model: "gpt-4o"
+        }
+      end
+      let(:summary_response) do
+        { content: "Here is a summary of what I found.", tool_calls: [], tokens_input: 20, tokens_output: 15, model: "gpt-4o" }
+      end
+
+      before do
+        create(:tenant_setting, account: account,
+          features: { "chat_settings" => { "chat_max_tool_iterations" => 2 } })
+        allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user, session: anything).and_return(tool_definitions)
+        allow(Tools::Registry).to receive(:dispatch).and_return({ "status" => "ok" })
+      end
+
+      it "injects the soft-stop prompt and calls the model without tools for the summary" do
+        seen_without_tools = []
+        client = Class.new do
+          attr_reader :seen_conversations
+
+          def initialize(responses, seen_without_tools)
+            @responses = responses
+            @seen_conversations = []
+            @seen_without_tools = seen_without_tools
+          end
+
+          def call(conversation, tools: nil)
+            @seen_conversations << conversation.deep_dup
+            @seen_without_tools << conversation.deep_dup if tools.nil?
+            @responses.fetch(@seen_conversations.length - 1)
+          end
+        end.new([ tool_response, tool_response, summary_response ], seen_without_tools)
+
+        result = described_class.new(chat_session: chat_session, llm_client: client).run
+
+        expect(result.content).to eq("Here is a summary of what I found.")
+        expect(client.seen_conversations.length).to eq(3)
+        expect(seen_without_tools.length).to eq(1)
+        expect(seen_without_tools.first.last[:content]).to include("maximum number of tool calls")
+        expect(chat_session.messages.where(role: "tool").count).to eq(2)
+      end
+
+      it "uses the fallback message when the soft-stop response is empty" do
+        client = Class.new do
+          def initialize(responses)
+            @responses = responses
+            @index = 0
+          end
+
+          def call(_conversation, tools: nil)
+            @index += 1
+            @responses.fetch(@index - 1)
+          end
+        end.new([ tool_response, tool_response, { content: nil, tool_calls: [], tokens_input: 5, tokens_output: 0, model: "gpt-4o" } ])
+
+        result = described_class.new(chat_session: chat_session, llm_client: client).run
+
+        expect(result.content).to eq(described_class::SOFT_STOP_FALLBACK_MESSAGE)
+      end
+    end
+
+    context "when the token budget is exhausted mid-loop" do
+      before do
+        allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user, session: anything).and_return(tool_definitions)
+        allow(Tools::Registry).to receive(:dispatch).and_return({ "status" => "ok" })
+      end
+
+      it "triggers the soft-stop once usage exceeds the budget" do
+        configure_session_token_limit(25)
+        client = build_token_budget_client
+
+        result = described_class.new(chat_session: chat_session, llm_client: client).run
+
+        # Iteration 0: 15 tokens (10+5), under 25 → continue
+        # Iteration 1: +15 = 30 tokens, 30 > 25 → soft-stop (3rd call)
+        expect(result.content).to include("token budget")
+        expect(client.seen_conversations.length).to eq(3)
+        expect(chat_session.messages.where(role: "tool").count).to eq(1)
+      end
+
+      it "triggers the soft-stop when usage reaches the budget exactly (not only above)" do
+        configure_session_token_limit(30)
+        client = build_token_budget_client
+
+        result = described_class.new(chat_session: chat_session, llm_client: client).run
+
+        # Iteration 0: 15 tokens, under 30 → continue
+        # Iteration 1: +15 = exactly 30 → soft-stop fires before the 2nd tool runs
+        expect(result.content).to include("token budget")
+        expect(client.seen_conversations.length).to eq(3)
+        expect(chat_session.messages.where(role: "tool").count).to eq(1)
+      end
+
+      def configure_session_token_limit(limit)
+        account.tenant_setting&.destroy
+        create(:tenant_setting, account: account,
+          features: { "chat_settings" => { "chat_session_token_limit" => limit } })
+      end
+
+      def build_token_budget_client
+        Class.new do
+          attr_reader :seen_conversations
+
+          def initialize
+            @seen_conversations = []
+            @index = 0
+          end
+
+          def call(conversation, tools: nil)
+            @seen_conversations << conversation.deep_dup
+            @index += 1
+            @index <= 2 ? tool_response : summary_response
+          end
+
+          private
+
+          def tool_response
+            {
+              content: nil,
+              tool_calls: [ { id: "call_#{@index}", name: "search", arguments: { "query" => "test" } } ],
+              tokens_input: 10, tokens_output: 5, model: "gpt-4o"
+            }
+          end
+
+          def summary_response
+            { content: "I hit the token budget. Here is what I have so far.", tool_calls: [], tokens_input: 5, tokens_output: 10, model: "gpt-4o" }
+          end
+        end.new
+      end
+    end
+
+    context "when the iteration limit is configurable via tenant settings" do
+      it "defaults to DEFAULT_MAX_TOOL_ITERATIONS when no tenant setting exists" do
+        service = described_class.new(chat_session: chat_session, llm_client: instance_double(Proc))
+
+        expect(service.send(:max_tool_iterations)).to eq(described_class::DEFAULT_MAX_TOOL_ITERATIONS)
+      end
+
+      it "uses the tenant setting when configured" do
+        create(:tenant_setting, account: account,
+          features: { "chat_settings" => { "chat_max_tool_iterations" => 25 } })
+        service = described_class.new(chat_session: chat_session, llm_client: instance_double(Proc))
+
+        expect(service.send(:max_tool_iterations)).to eq(25)
+      end
+    end
   end
 
   describe "#build_conversation" do
@@ -268,6 +419,60 @@ RSpec.describe ChatSessions::AgentLoop do
         tool_call_id: "call_1", tool_name: "search", tool_arguments: { "query" => "test" })
       create(:chat_message, :tool, chat_session: chat_session,
         tool_call_id: "call_1", tool_name: "search", content: result.to_json, tool_result: result)
+    end
+  end
+
+  describe "#trim_conversation" do
+    let(:service) { described_class.new(chat_session: chat_session, llm_client: instance_double(Proc)) }
+    let(:cap) { described_class::MAX_CONVERSATION_MESSAGES }
+
+    it "returns the conversation unchanged when at or under the cap" do
+      conversation = Array.new(cap) { { role: "user", content: "x" } }
+
+      trimmed = service.send(:trim_conversation, conversation)
+
+      expect(trimmed.length).to eq(cap)
+      expect(trimmed).to equal(conversation)
+    end
+
+    it "keeps only the most recent entries once the cap is exceeded" do
+      conversation = Array.new(cap + 5) { |i| { role: "user", content: "m#{i}" } }
+
+      trimmed = service.send(:trim_conversation, conversation)
+
+      expect(trimmed.length).to eq(cap)
+      expect(trimmed.first[:content]).to eq("m5")
+      expect(trimmed.last[:content]).to eq("m#{cap + 4}")
+    end
+
+    it "drops leading tool entries so the window never starts with an orphaned tool result" do
+      user_entry = { role: "user", content: "u" }
+      tool_entry = { role: "tool", content: "r", tool_call_id: "c", tool_name: "search" }
+      # cap + 1 entries; after taking the last `cap`, the first is a tool entry
+      conversation = [ user_entry, tool_entry ] + Array.new(cap - 1) { user_entry }
+
+      trimmed = service.send(:trim_conversation, conversation)
+
+      expect(trimmed.length).to eq(cap - 1)
+      expect(trimmed.first[:role]).to eq("user")
+      expect(trimmed).not_to include(tool_entry)
+    end
+
+    it "preserves an assistant tool-call entry and its following tool results when they lead the window" do
+      assistant_entry = {
+        role: "assistant", content: "ok",
+        tool_calls: [ { id: "c", name: "search", arguments: {} } ]
+      }
+      tool_entry = { role: "tool", content: "r", tool_call_id: "c", tool_name: "search" }
+      user_entry = { role: "user", content: "u" }
+      # One entry over the cap; the window starts at the assistant whose result follows
+      conversation = [ user_entry, assistant_entry, tool_entry ] + Array.new(cap - 2) { user_entry }
+
+      trimmed = service.send(:trim_conversation, conversation)
+
+      expect(trimmed.length).to eq(cap)
+      expect(trimmed.first).to eq(assistant_entry)
+      expect(trimmed.second).to eq(tool_entry)
     end
   end
 end

@@ -66,6 +66,30 @@ RSpec.describe "TenantConfigurations" do
       expect(account.account_activity_events.recent.first.action).to eq("tenant_configuration.updated")
     end
 
+    it "records every changed field when chat_settings are submitted alongside another change" do
+      # The form submits chat_settings on every PATCH; the second save it
+      # triggers must not reset saved_changes and drop an unrelated change made
+      # by the first save from the activity record.
+      account.tenant_setting!.update!(max_concurrent_runs: 5)
+
+      expect do
+        patch tenant_configuration_path, params: {
+          tenant_setting: {
+            guardrails: { max_concurrent_runs: "4" },
+            chat_settings: {
+              chat_max_tool_iterations: "60",
+              chat_session_token_limit: "100000",
+              chat_monthly_token_limit: ""
+            }
+          }
+        }
+      end.to change(AccountActivityEvent, :count).by(1)
+
+      event = account.account_activity_events.recent.first
+      expect(event.action).to eq("tenant_configuration.updated")
+      expect(event.metadata["changed_fields"]).to include("max_concurrent_runs")
+    end
+
     it "updates the tenant marketplace auto-attach override" do
       api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
 

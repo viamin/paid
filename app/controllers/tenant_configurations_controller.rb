@@ -13,16 +13,26 @@ class TenantConfigurationsController < ApplicationController
 
     ActiveRecord::Base.transaction do
       @tenant_setting.update!(tenant_setting_params)
+
+      # update_chat_settings!'s second save resets saved_changes, so capture the
+      # first save's change set now and merge the second save into it. The form
+      # submits chat_settings on every PATCH; without this an unrelated field
+      # changed by the first save (e.g. max_concurrent_runs) would be dropped
+      # from the activity record.
+      saved_changes = @tenant_setting.saved_changes.except("updated_at")
+      update_chat_settings! if params.dig(:tenant_setting, :chat_settings).present?
+      saved_changes.merge!(@tenant_setting.saved_changes.except("updated_at"))
+
       update_feature_flag_rollouts! if feature_flag_rollout_params.present?
 
-      if @tenant_setting.saved_changes.except("updated_at").any? ||
+      if saved_changes.any? ||
           (feature_flag_rollout_params.present? && changed_feature_flag_rollouts.any?)
         Accounts::RecordActivity.call(
           account: current_account,
           actor: current_user,
           action: "tenant_configuration.updated",
           subject: @tenant_setting,
-          metadata: { changed_fields: @tenant_setting.saved_changes.except("updated_at").keys }
+          metadata: { changed_fields: saved_changes.keys }
         )
       end
     end
@@ -134,5 +144,14 @@ class TenantConfigurationsController < ApplicationController
     CostBudget::BUDGET_TYPES.index_with do
       %i[enabled limit_cents alert_threshold_percent enforcement_mode grace_buffer_percent]
     end
+  end
+
+  def update_chat_settings!
+    permitted = params.require(:tenant_setting).permit(
+      chat_settings: %i[chat_session_token_limit chat_monthly_token_limit chat_max_tool_iterations]
+    )[:chat_settings].to_h
+
+    @tenant_setting.chat_settings = permitted
+    @tenant_setting.save!
   end
 end

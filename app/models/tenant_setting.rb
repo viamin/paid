@@ -25,7 +25,8 @@ class TenantSetting < ApplicationRecord
   }.freeze
   DEFAULT_CHAT_SETTINGS = {
     "chat_session_token_limit" => 100_000,
-    "chat_monthly_token_limit" => nil
+    "chat_monthly_token_limit" => nil,
+    "chat_max_tool_iterations" => 50
   }.freeze
   DEFAULT_QUALITY_THRESHOLDS = Project::DEFAULT_QUALITY_GATE_SETTINGS.freeze
   DEFAULT_AGENT_SETTINGS = {
@@ -187,6 +188,7 @@ class TenantSetting < ApplicationRecord
   validate :validate_default_budgets
   validate :validate_agent_settings
   validate :validate_worker_settings
+  validate :validate_chat_settings
   validate :validate_quality_thresholds
   validate :validate_deployment_assurance
   validate :validate_enterprise_operations
@@ -315,6 +317,16 @@ class TenantSetting < ApplicationRecord
     effective_chat_settings["chat_monthly_token_limit"]
   end
 
+  def chat_max_tool_iterations
+    effective_chat_settings["chat_max_tool_iterations"]
+  end
+
+  def chat_settings=(value)
+    merged_features = normalize_hash(features)
+    merged_features["chat_settings"] = normalize_chat_settings(value)
+    self.features = merged_features
+  end
+
   def cap_max_concurrent_runs(limit)
     [ limit, max_concurrent_runs ].compact.min
   end
@@ -439,6 +451,29 @@ class TenantSetting < ApplicationRecord
       elsif key.to_s == "good_job_queues"
         next if value.is_a?(String) && value.match?(/\A([a-z_]+:\d+)(;[a-z_]+:\d+)*\z/)
         errors.add(:worker_settings, "good_job_queues must match format 'name:count;name:count'")
+      end
+    end
+  end
+
+  def validate_chat_settings
+    return unless features.is_a?(Hash)
+
+    chat = features.fetch("chat_settings", nil)
+    return unless chat.is_a?(Hash)
+
+    if chat.key?("chat_max_tool_iterations") && chat["chat_max_tool_iterations"].present?
+      val = chat["chat_max_tool_iterations"]
+      unless val.is_a?(Integer) && val >= 1 && val <= 200
+        errors.add(:features, "chat_settings.chat_max_tool_iterations must be an integer between 1 and 200")
+      end
+    end
+
+    %w[chat_session_token_limit chat_monthly_token_limit].each do |key|
+      next unless chat.key?(key) && chat[key].present?
+
+      val = chat[key]
+      unless val.is_a?(Integer) && val >= 1
+        errors.add(:features, "chat_settings.#{key} must be a positive integer")
       end
     end
   end
@@ -634,6 +669,16 @@ class TenantSetting < ApplicationRecord
 
       normalized["auto_continue"] = ActiveModel::Type::Boolean.new.cast(normalized["auto_continue"]) if normalized.key?("auto_continue")
       normalized["marketplace_auto_attach_required"] = ActiveModel::Type::Boolean.new.cast(normalized["marketplace_auto_attach_required"]) if normalized.key?("marketplace_auto_attach_required")
+    end
+  end
+
+  def normalize_chat_settings(value)
+    normalize_hash(value).slice(*DEFAULT_CHAT_SETTINGS.keys).tap do |normalized|
+      next unless normalized.is_a?(Hash)
+
+      %w[chat_session_token_limit chat_monthly_token_limit chat_max_tool_iterations].each do |key|
+        normalized[key] = normalize_integer_value(normalized[key]) if normalized.key?(key)
+      end
     end
   end
 

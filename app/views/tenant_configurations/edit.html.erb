@@ -235,6 +235,28 @@
       </div>
     </section>
 
+    <section>
+      <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Chat Settings</h2>
+      <% chat = @tenant_setting.effective_chat_settings %>
+      <div class="mt-4 grid gap-4 sm:grid-cols-3">
+        <div>
+          <%= label_tag "tenant_setting_chat_settings_chat_max_tool_iterations", "Max tool calls per turn", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+          <%= number_field_tag "tenant_setting[chat_settings][chat_max_tool_iterations]", chat["chat_max_tool_iterations"], min: 1, max: 200, class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Maximum LLM round-trips (tool calls) per user message before the agent summarizes and stops. Default: 50.</p>
+        </div>
+        <div>
+          <%= label_tag "tenant_setting_chat_settings_chat_session_token_limit", "Session token limit", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+          <%= number_field_tag "tenant_setting[chat_settings][chat_session_token_limit]", chat["chat_session_token_limit"], min: 1, class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Total tokens allowed per chat session. Leave blank for no limit. Default: 100,000.</p>
+        </div>
+        <div>
+          <%= label_tag "tenant_setting_chat_settings_chat_monthly_token_limit", "Monthly token limit", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+          <%= number_field_tag "tenant_setting[chat_settings][chat_monthly_token_limit]", chat["chat_monthly_token_limit"], min: 1, class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Total chat tokens allowed per month across all sessions. Leave blank for no limit.</p>
+        </div>
+      </div>
+    </section>
+
     <div class="flex justify-end">
       <%= form.submit "Save configuration", class: "rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
     </div>
