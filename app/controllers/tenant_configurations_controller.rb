@@ -13,6 +13,7 @@ class TenantConfigurationsController < ApplicationController
 
     ActiveRecord::Base.transaction do
       @tenant_setting.update!(tenant_setting_params)
+      update_chat_settings! if params.dig(:tenant_setting, :chat_settings).present?
       update_feature_flag_rollouts! if feature_flag_rollout_params.present?
 
       if @tenant_setting.saved_changes.except("updated_at").any? ||
@@ -134,5 +135,14 @@ class TenantConfigurationsController < ApplicationController
     CostBudget::BUDGET_TYPES.index_with do
       %i[enabled limit_cents alert_threshold_percent enforcement_mode grace_buffer_percent]
     end
+  end
+
+  def update_chat_settings!
+    permitted = params.require(:tenant_setting).permit(
+      chat_settings: %i[chat_session_token_limit chat_monthly_token_limit chat_max_tool_iterations]
+    )[:chat_settings].to_h
+
+    @tenant_setting.chat_settings = permitted
+    @tenant_setting.save!
   end
 end
