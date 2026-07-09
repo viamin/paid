@@ -65,8 +65,26 @@ module AgentRunResourceProfiles
         lookup_key: lookup_key_for(definition)
       )
 
+      prior_limit = profile.recommended_memory_limit_bytes
+      prior_capacity_blocked = profile.capacity_blocked?
+      tuning_decision = MemoryLimitTuner.new(
+        profile: profile,
+        user_settings: user_settings,
+        baseline_limit_bytes: summary[:recommended_memory_limit_bytes],
+        p95_memory_bytes: summary[:p95_memory_bytes],
+        projected_oom_count: summary[:oom_count]
+      ).call
+
+      summary[:recommended_memory_limit_bytes] = tuning_decision.recommended_limit_bytes
+      summary[:capacity_blocked] = tuning_decision.capacity_blocked?
+      summary[:capacity_blocked_at] = tuning_decision.capacity_blocked_at
+      summary[:consecutive_low_memory_samples] = tuning_decision.consecutive_low_memory_samples
+      summary[:downward_tuning_count] = tuning_decision.downward_tuning_count
+
       profile.assign_attributes(definition.merge(summary))
       profile.save!
+
+      log_tuning_change(profile, prior_limit, prior_capacity_blocked, tuning_decision)
     end
 
     def summarize_samples(definition)
@@ -84,7 +102,7 @@ module AgentRunResourceProfiles
         max_memory_bytes: sorted_memory.max,
         oom_count: oom_samples.size,
         last_oom_at: oom_samples.map { |sample| sample[:completed_at] }.compact.max,
-        recommended_memory_limit_bytes: recommended_memory_limit_bytes(
+        recommended_memory_limit_bytes: baseline_memory_limit_bytes(
           p95_memory_bytes: percentile(sorted_memory, 0.95),
           max_memory_bytes: sorted_memory.max,
           oom_bump_basis_bytes: oom_bump_basis_bytes(oom_samples)
@@ -191,7 +209,9 @@ module AgentRunResourceProfiles
       (lower_value + ((upper_value - lower_value) * (rank - lower))).round
     end
 
-    def recommended_memory_limit_bytes(p95_memory_bytes:, max_memory_bytes:, oom_bump_basis_bytes:)
+    # The "raw" recommended limit before the auto-tuning policy in
+    # MemoryLimitTuner adjusts for ceiling/floor and capacity-blocked state.
+    def baseline_memory_limit_bytes(p95_memory_bytes:, max_memory_bytes:, oom_bump_basis_bytes:)
       baseline = [
         AgentRunResourceProfile::MIN_RECOMMENDED_MEMORY_LIMIT_BYTES,
         (p95_memory_bytes * AgentRunResourceProfile::SAFETY_MULTIPLIER).ceil,
@@ -230,6 +250,34 @@ module AgentRunResourceProfiles
 
     def runner_key
       @runner_key ||= agent_run.resource_profile_runner_key
+    end
+
+    def user_settings
+      @user_settings ||= begin
+        owner = agent_run.project&.effective_owner
+        owner&.user_setting
+      end
+    end
+
+    def log_tuning_change(profile, prior_limit, prior_capacity_blocked, decision)
+      return if prior_limit.to_i == decision.recommended_limit_bytes && prior_capacity_blocked == decision.capacity_blocked?
+
+      payload = {
+        message: "agent_run_resource_profile.memory_limit_tuned",
+        profile_level: profile.profile_level,
+        lookup_key: profile.lookup_key,
+        prior_limit_bytes: prior_limit.to_i,
+        new_limit_bytes: decision.recommended_limit_bytes,
+        ceiling_bytes: decision.ceiling_bytes,
+        floor_bytes: decision.floor_bytes,
+        capacity_blocked: decision.capacity_blocked?,
+        capacity_blocked_at: decision.capacity_blocked_at&.iso8601,
+        downward_tuned: decision.downward_tuned?,
+        consecutive_low_memory_samples: decision.consecutive_low_memory_samples,
+        downward_tuning_count: decision.downward_tuning_count,
+        oom_count: profile.oom_count
+      }
+      Rails.logger.info(payload)
     end
   end
 end
