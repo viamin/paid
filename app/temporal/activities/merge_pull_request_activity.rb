@@ -43,20 +43,6 @@ module Activities
         return { merged: false, skipped: true, pr_number: pr_number }
       end
 
-      # A prior attempt hit a permanent GitHub App permission rejection (e.g.
-      # missing `workflows` permission). Re-attempting every poll cycle only
-      # wastes API calls on a failure that repeats identically until the App's
-      # permissions change, so this is retried on a cooldown instead — see
-      # Issue#merge_permission_retry_due?.
-      unless issue.merge_permission_retry_due?
-        logger.info(
-          message: "pr_review.merge_permission_cooldown",
-          project_id: project.id,
-          pr_number: pr_number
-        )
-        return { merged: false, skipped: true, pr_number: pr_number }
-      end
-
       provider = Automation::Providers::Resolver.repository_for(project)
       repo = project.full_name
 
@@ -85,6 +71,17 @@ module Activities
           pr_number: pr_number
         )
         true
+      elsif !issue.merge_permission_retry_due?
+        # A prior attempt hit a permanent GitHub App permission rejection
+        # (e.g. missing `workflows` permission). Keep fetching the PR so we can
+        # observe an out-of-band merge and clear the blocked state promptly, but
+        # skip the expensive merge retry itself until the cooldown elapses.
+        logger.info(
+          message: "pr_review.merge_permission_cooldown",
+          project_id: project.id,
+          pr_number: pr_number
+        )
+        return { merged: false, skipped: true, pr_number: pr_number }
       else
         attempt_merge(provider, project, issue, repo, pr_number)
       end
@@ -146,9 +143,16 @@ module Activities
       return false unless permission_rejection?(message)
 
       fallback_merged = attempt_merge_with_pat_fallback(project, repo, pr_number, config)
-      return true if fallback_merged
+      return true if fallback_merged == :merged
+      return false if fallback_merged == :retryable_failure
 
-      handle_merge_permission_rejection(project, issue, pr_number, message, fallback_attempted: !fallback_merged.nil?)
+      handle_merge_permission_rejection(
+        project,
+        issue,
+        pr_number,
+        message,
+        fallback_attempted: fallback_merged == :permission_rejected
+      )
       false
     end
 
@@ -159,12 +163,14 @@ module Activities
     # Retries the merge with the project's PAT push-fallback credential when
     # the App installation token lacks a permission the merge needs (same
     # class of rejection the push retry already handles — see
-    # Project#git_push_pat_fallback_configured?). Returns nil when fallback
-    # isn't configured (caller falls through to the cooldown/comment path),
-    # false when the retry itself failed, or the merge outcome on success.
+    # Project#git_push_pat_fallback_configured?). Returns:
+    # - :not_configured when fallback isn't configured
+    # - :merged when the retry succeeds
+    # - :permission_rejected when the fallback hit the same terminal rejection
+    # - :retryable_failure for transient or non-permission fallback failures
     def attempt_merge_with_pat_fallback(project, repo, pr_number, config)
       client = project.git_push_fallback_client
-      return nil unless client
+      return :not_configured unless client
 
       fallback_provider = Automation::Providers::Github::RepositoryProvider.new(project, client: client)
       result = fallback_provider.merge_pull_request(
@@ -177,7 +183,7 @@ module Activities
         project_id: project.id,
         pr_number: pr_number
       )
-      result.merged
+      result.merged ? :merged : :retryable_failure
     rescue Automation::Providers::RepositoryProvider::ProviderError => e
       logger.warn(
         message: "pr_review.merge_pat_fallback_failed",
@@ -185,7 +191,7 @@ module Activities
         pr_number: pr_number,
         error: e.message
       )
-      false
+      permission_rejection?(e.message) ? :permission_rejected : :retryable_failure
     end
 
     def handle_merge_permission_rejection(project, issue, pr_number, message, fallback_attempted:)

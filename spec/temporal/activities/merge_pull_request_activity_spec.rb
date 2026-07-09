@@ -445,11 +445,31 @@ RSpec.describe Activities::MergePullRequestActivity do
 
       it "skips the next attempt within the cooldown window without calling the provider" do
         activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
-        allow(provider).to receive(:fetch_pull_request)
 
         activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
 
-        expect(provider).to have_received(:fetch_pull_request).once
+        expect(provider).to have_received(:fetch_pull_request).twice
+        expect(provider).to have_received(:merge_pull_request).once
+      end
+
+      it "still observes an out-of-band merge during the cooldown and clears the blocked state" do
+        activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        merged_pr_data = Automation::Providers::Data::PullRequest.new(
+          number: 42, title: "Test", body: nil, state: :closed, draft: false,
+          merged: true, mergeable: false, head_sha: "abc", head_ref: "feature",
+          base_ref: "main", author_login: "user", labels: [], created_at: Time.current,
+          updated_at: Time.current, merged_at: Time.current, url: "https://example.com/pr/42",
+          raw_state: "closed"
+        )
+        allow(provider).to receive(:fetch_pull_request).and_return(merged_pr_data)
+
+        result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(result[:merged]).to be true
+        expect(provider).to have_received(:merge_pull_request).once
+        expect(issue.reload.pr_review_phase).to eq("merged")
+        expect(issue.merge_permission_rejected?).to be(false)
       end
 
       it "retries after the cooldown window has elapsed" do
@@ -539,11 +559,11 @@ RSpec.describe Activities::MergePullRequestActivity do
         end
       end
 
-      context "when the fallback merge also fails" do
+      context "when the fallback merge also hits a permission rejection" do
         before do
           allow(Github::AppInstallation).to receive(:token_for).and_return("fake-app-installation-token")
           allow(client).to receive(:merge_pull_request)
-            .and_raise(GithubClient::Error, "fallback also rejected")
+            .and_raise(GithubClient::Error, rejection_message)
           allow(client).to receive(:recent_issue_comments).and_return([])
           allow(client).to receive(:add_comment)
         end
@@ -566,6 +586,30 @@ RSpec.describe Activities::MergePullRequestActivity do
           expect(client).to have_received(:add_comment) do |_repo, _number, body|
             expect(body).to include("PAT push-fallback credential also could not merge")
           end
+        end
+      end
+
+      context "when the fallback merge fails transiently" do
+        before do
+          allow(Github::AppInstallation).to receive(:token_for).and_return("fake-app-installation-token")
+          allow(client).to receive(:merge_pull_request)
+            .and_raise(GithubClient::Error, "502 Bad Gateway")
+          allow(client).to receive(:recent_issue_comments)
+          allow(client).to receive(:add_comment)
+        end
+
+        it "returns merged: false without recording a merge-permission rejection" do
+          result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+          expect(result[:merged]).to be false
+          expect(issue.reload.merge_permission_rejected?).to be(false)
+        end
+
+        it "does not post the merge-permission comment" do
+          activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+          expect(client).not_to have_received(:recent_issue_comments)
+          expect(client).not_to have_received(:add_comment)
         end
       end
     end
