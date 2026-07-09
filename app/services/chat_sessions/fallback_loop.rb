@@ -37,7 +37,13 @@ module ChatSessions
         on_chunk: on_chunk,
         on_message_persisted: on_message_persisted,
         stream_message_id: stream_message_id
-      }
+      }.merge(extra_agent_loop_kwargs)
+    end
+
+    # Hosts may override to pass additional kwargs into AgentLoop (e.g. a
+    # pre-computed token budget). Default: none.
+    def extra_agent_loop_kwargs
+      {}
     end
 
     # Remove only the rows the failed attempt itself persisted, identified by the

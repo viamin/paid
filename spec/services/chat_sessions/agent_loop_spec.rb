@@ -299,22 +299,40 @@ RSpec.describe ChatSessions::AgentLoop do
 
     context "when the token budget is exhausted mid-loop" do
       before do
-        create(:tenant_setting, account: account,
-          features: { "chat_settings" => { "chat_session_token_limit" => 25 } })
         allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user, session: anything).and_return(tool_definitions)
         allow(Tools::Registry).to receive(:dispatch).and_return({ "status" => "ok" })
       end
 
-      it "triggers the soft-stop instead of continuing to call tools" do
+      it "triggers the soft-stop once usage exceeds the budget" do
+        configure_session_token_limit(25)
         client = build_token_budget_client
 
         result = described_class.new(chat_session: chat_session, llm_client: client).run
 
-        # Iteration 0: 15 tokens (10+5), 15 <= 25 → continue
+        # Iteration 0: 15 tokens (10+5), under 25 → continue
         # Iteration 1: +15 = 30 tokens, 30 > 25 → soft-stop (3rd call)
         expect(result.content).to include("token budget")
         expect(client.seen_conversations.length).to eq(3)
         expect(chat_session.messages.where(role: "tool").count).to eq(1)
+      end
+
+      it "triggers the soft-stop when usage reaches the budget exactly (not only above)" do
+        configure_session_token_limit(30)
+        client = build_token_budget_client
+
+        result = described_class.new(chat_session: chat_session, llm_client: client).run
+
+        # Iteration 0: 15 tokens, under 30 → continue
+        # Iteration 1: +15 = exactly 30 → soft-stop fires before the 2nd tool runs
+        expect(result.content).to include("token budget")
+        expect(client.seen_conversations.length).to eq(3)
+        expect(chat_session.messages.where(role: "tool").count).to eq(1)
+      end
+
+      def configure_session_token_limit(limit)
+        account.tenant_setting&.destroy
+        create(:tenant_setting, account: account,
+          features: { "chat_settings" => { "chat_session_token_limit" => limit } })
       end
 
       def build_token_budget_client
@@ -401,6 +419,60 @@ RSpec.describe ChatSessions::AgentLoop do
         tool_call_id: "call_1", tool_name: "search", tool_arguments: { "query" => "test" })
       create(:chat_message, :tool, chat_session: chat_session,
         tool_call_id: "call_1", tool_name: "search", content: result.to_json, tool_result: result)
+    end
+  end
+
+  describe "#trim_conversation" do
+    let(:service) { described_class.new(chat_session: chat_session, llm_client: instance_double(Proc)) }
+    let(:cap) { described_class::MAX_CONVERSATION_MESSAGES }
+
+    it "returns the conversation unchanged when at or under the cap" do
+      conversation = Array.new(cap) { { role: "user", content: "x" } }
+
+      trimmed = service.send(:trim_conversation, conversation)
+
+      expect(trimmed.length).to eq(cap)
+      expect(trimmed).to equal(conversation)
+    end
+
+    it "keeps only the most recent entries once the cap is exceeded" do
+      conversation = Array.new(cap + 5) { |i| { role: "user", content: "m#{i}" } }
+
+      trimmed = service.send(:trim_conversation, conversation)
+
+      expect(trimmed.length).to eq(cap)
+      expect(trimmed.first[:content]).to eq("m5")
+      expect(trimmed.last[:content]).to eq("m#{cap + 4}")
+    end
+
+    it "drops leading tool entries so the window never starts with an orphaned tool result" do
+      user_entry = { role: "user", content: "u" }
+      tool_entry = { role: "tool", content: "r", tool_call_id: "c", tool_name: "search" }
+      # cap + 1 entries; after taking the last `cap`, the first is a tool entry
+      conversation = [user_entry, tool_entry] + Array.new(cap - 1) { user_entry }
+
+      trimmed = service.send(:trim_conversation, conversation)
+
+      expect(trimmed.length).to eq(cap - 1)
+      expect(trimmed.first[:role]).to eq("user")
+      expect(trimmed).not_to include(tool_entry)
+    end
+
+    it "preserves an assistant tool-call entry and its following tool results when they lead the window" do
+      assistant_entry = {
+        role: "assistant", content: "ok",
+        tool_calls: [ { id: "c", name: "search", arguments: {} } ]
+      }
+      tool_entry = { role: "tool", content: "r", tool_call_id: "c", tool_name: "search" }
+      user_entry = { role: "user", content: "u" }
+      # One entry over the cap; the window starts at the assistant whose result follows
+      conversation = [user_entry, assistant_entry, tool_entry] + Array.new(cap - 2) { user_entry }
+
+      trimmed = service.send(:trim_conversation, conversation)
+
+      expect(trimmed.length).to eq(cap)
+      expect(trimmed.first).to eq(assistant_entry)
+      expect(trimmed.second).to eq(tool_entry)
     end
   end
 end

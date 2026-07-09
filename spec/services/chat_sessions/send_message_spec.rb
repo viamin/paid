@@ -457,6 +457,20 @@ RSpec.describe ChatSessions::SendMessage do
         expect(assistant_message.tokens_output).to eq(65)
       end
 
+      it "reuses the pre-loop token budget so the mid-loop guard does not re-query the limit" do
+        create(:tenant_setting, account: account,
+          features: { "chat_settings" => { "chat_session_token_limit" => 1_000_000 } })
+
+        # SendMessage#check_token_limit! runs CheckTokenLimit once before the
+        # loop; AgentLoop must reuse that baseline rather than aggregating again
+        # mid-turn.
+        expect(ChatSessions::CheckTokenLimit).to receive(:call).once.and_call_original
+
+        described_class.call(
+          chat_session: chat_session, content: "Search for test", llm_client: tool_llm_client
+        )
+      end
+
       it "notifies tool messages so live threads can render them" do
         roles = []
 

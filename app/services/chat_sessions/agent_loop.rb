@@ -21,13 +21,15 @@ module ChatSessions
     attr_reader :chat_session, :llm_client, :on_chunk, :on_message_persisted, :stream_message_id,
       :created_message_ids
 
-    def initialize(chat_session:, llm_client:, on_chunk: nil, on_message_persisted: nil, stream_message_id: nil)
+    def initialize(chat_session:, llm_client:, on_chunk: nil, on_message_persisted: nil, stream_message_id: nil,
+      token_budget: nil)
       @chat_session = chat_session
       @llm_client = llm_client
       @on_chunk = on_chunk
       @on_message_persisted = on_message_persisted
       @stream_message_id = stream_message_id
       @created_message_ids = []
+      @token_budget_override = token_budget
     end
 
     # @return [ChatMessage, nil] the final assistant message, or +nil+ when the
@@ -46,9 +48,10 @@ module ChatSessions
       final_assistant_message = nil
       last_response_model = nil
       limit = max_tool_iterations
-      budget = token_budget_remaining
+      budget = token_budget
 
       limit.times do |iteration|
+        conversation = trim_conversation(conversation)
         response = call_llm(conversation)
         aggregate_tokens[:input] += response[:tokens_input].to_i
         aggregate_tokens[:output] += response[:tokens_output].to_i
@@ -65,8 +68,10 @@ module ChatSessions
 
         # Check budget BEFORE persisting the response or processing tools. This
         # prevents an orphaned assistant message that promises a tool action the
-        # loop will never execute.
-        if budget && (aggregate_tokens[:input] + aggregate_tokens[:output]) > budget
+        # loop will never execute. Stop on equality as well: once aggregate usage
+        # reaches the remaining budget there is nothing left for another
+        # LLM round-trip, so continuing would overrun the configured limit.
+        if budget && (aggregate_tokens[:input] + aggregate_tokens[:output]) >= budget
           final_assistant_message = run_soft_stop(conversation, aggregate_tokens:, model: last_response_model)
           break
         end
@@ -137,25 +142,40 @@ module ChatSessions
       )
     end
 
-    # Fetches the remaining token budget once per turn (memoized). Returns nil
-    # when there is no limit configured or the DB query fails (fail-open — the
-    # pre-loop check in SendMessage#check_token_limit! provides the first line
-    # of defense, and transient DB errors should not abort an otherwise healthy
-    # turn). The in-memory aggregate_tokens comparison in run_loop catches
-    # runaway turns without re-querying the database every iteration.
-    def token_budget_remaining
-      return @token_budget_remaining if defined?(@token_budget_remaining)
+    # The remaining token budget for the turn. Callers that already ran the
+    # pre-loop guard (SendMessage#check_token_limit!) pass the value via the
+    # `token_budget:` constructor arg to avoid a redundant SUM aggregation per
+    # turn. Callers without a pre-loop guard (ResolveToolCall, or direct
+    # AgentLoop use) leave it unset and we fetch it once here. Fail-open on DB
+    # errors: a transient failure degrades to no mid-loop budget enforcement
+    # rather than aborting a healthy turn — the pre-loop
+    # SendMessage#check_token_limit! provides the first line of defense.
+    def token_budget
+      return @token_budget if defined?(@token_budget)
 
-      @token_budget_remaining = begin
-        ChatSessions::CheckTokenLimit.call(chat_session: chat_session)[:remaining_tokens]
-      rescue => e
-        Rails.logger.warn(
-          message: "chat_agent_loop.token_budget_check_failed",
-          chat_session_id: chat_session.id,
-          error: e.class.name
-        )
-        nil
-      end
+      @token_budget = @token_budget_override || fetch_token_budget
+    end
+
+    def fetch_token_budget
+      ChatSessions::CheckTokenLimit.call(chat_session: chat_session)[:remaining_tokens]
+    rescue => e
+      Rails.logger.warn(
+        message: "chat_agent_loop.token_budget_check_failed",
+        chat_session_id: chat_session.id,
+        error: e.class.name
+      )
+      nil
+    end
+
+    # Bounds the conversation sent to the LLM so a long tool-driven turn cannot
+    # grow it past MAX_CONVERSATION_MESSAGES. build_conversation already caps the
+    # persisted history; this trims the in-turn entries the loop appends. Leading
+    # tool results are dropped so the window never starts with an orphaned tool
+    # message whose matching assistant tool_calls were trimmed away.
+    def trim_conversation(conversation)
+      return conversation if conversation.length <= MAX_CONVERSATION_MESSAGES
+
+      conversation.last(MAX_CONVERSATION_MESSAGES).drop_while { |entry| entry[:role] == "tool" }
     end
 
     # When the model requests one or more write tools in a batch, run the
