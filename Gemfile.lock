@@ -127,7 +127,7 @@ GEM
       adamantium (~> 0.2)
       equalizer (~> 0.0.11)
     ast (2.4.3)
-    avo (4.0.9)
+    avo (4.0.10)
       actionview (>= 6.1)
       active_link_to
       activerecord (>= 6.1)
@@ -421,26 +421,26 @@ GEM
     octokit (10.0.0)
       faraday (>= 1, < 3)
       sawyer (~> 0.9)
-    opentelemetry-api (1.10.0)
+    opentelemetry-api (1.10.1)
       logger
-    opentelemetry-common (0.25.0)
+    opentelemetry-common (0.25.1)
       opentelemetry-api (~> 1.0)
-    opentelemetry-exporter-otlp (0.34.0)
+    opentelemetry-exporter-otlp (0.34.1)
       google-protobuf (>= 3.18)
       googleapis-common-protos-types (~> 1.3)
       opentelemetry-api (~> 1.1)
       opentelemetry-common (~> 0.20)
       opentelemetry-sdk (~> 1.10)
       opentelemetry-semantic_conventions
-    opentelemetry-registry (0.6.0)
+    opentelemetry-registry (0.6.1)
       opentelemetry-api (~> 1.1)
-    opentelemetry-sdk (1.12.0)
+    opentelemetry-sdk (1.12.1)
       logger
       opentelemetry-api (~> 1.1)
       opentelemetry-common (~> 0.20)
       opentelemetry-registry (~> 0.2)
       opentelemetry-semantic_conventions
-    opentelemetry-semantic_conventions (1.41.0)
+    opentelemetry-semantic_conventions (1.43.0)
       opentelemetry-api (~> 1.0)
     orm_adapter (0.5.0)
     ostruct (0.6.3)
@@ -743,7 +743,7 @@ PLATFORMS
 
 DEPENDENCIES
   agent-harness (~> 0.28.1)
-  avo (= 4.0.9)
+  avo (= 4.0.10)
   aws-sdk-s3
   bootsnap
   brakeman
@@ -833,7 +833,7 @@ CHECKSUMS
   agent-harness (0.28.1) sha256=5af154feb22b780c7c5e6f8e42c30e3aa44713728c547e1946fdf82740748fdd
   anima (0.3.2) sha256=467f775e5c7721f1ac19c0efcef2ca56489b9673809371b12514a77e11cbfc00
   ast (2.4.3) sha256=954615157c1d6a382bc27d690d973195e79db7f55e9765ac7c481c60bdb4d383
-  avo (4.0.9) sha256=f7dfeadd2eed077d30704628d5a6d00896d29724a7e75842a57dd157f5d8436f
+  avo (4.0.10) sha256=223aec3aa92439889b93c8c3cb0abeee435ed5ab37528eb12da0e2666a0c4036
   avo-icons (0.1.6) sha256=6f1c985aca238d81446e517cee4924752e7ada1604971f6bb59913472e123f4c
   aws-eventstream (1.4.0) sha256=116bf85c436200d1060811e6f5d2d40c88f65448f2125bc77ffce5121e6e183b
   aws-partitions (1.1261.0) sha256=89eda89781c1ea4e1be2a2dcdc72318c62c6171a01cdaeaa0cbecf3cea6f9fdc
@@ -961,12 +961,12 @@ CHECKSUMS
   nokogiri (1.19.4-x86_64-linux-musl) sha256=17dfb7c1fa194ae02fbf7c51a7afc8d278045ab3fdacfd86f91d02d7b274470b
   numo-narray (0.9.2.1) sha256=eed76b47eebe1288ffd878b387f1882f4863d8e6ab5dd61453768139e14adceb
   octokit (10.0.0) sha256=82e99a539b7637b7e905e6d277bb0c1a4bed56735935cc33db6da7eae49a24e8
-  opentelemetry-api (1.10.0) sha256=99ee7c829b18381c31a817ee9bf6a160d737542d99cb8da55d443336d266bfa9
-  opentelemetry-common (0.25.0) sha256=73915362e58d337fc92acbe1abfdaee1f725442527125fdb2af1420417f1149d
-  opentelemetry-exporter-otlp (0.34.0) sha256=3b3cdf4329ba30f4389d849c7f13b8f9f983ecb4a030031c03997dffae1e2a60
-  opentelemetry-registry (0.6.0) sha256=5d3ed32ab9eee0fbdb30d4f0d0bb61ad11a4040b267b475ae815b80a8498a728
-  opentelemetry-sdk (1.12.0) sha256=a224abe0c59023d41cb7ac1c634d9d28843907efcd045ed1ae320796c48b864b
-  opentelemetry-semantic_conventions (1.41.0) sha256=3be5e4c141f9c5e9db17ab491ac76826519296ea80994bf7b9ada95c668cc010
+  opentelemetry-api (1.10.1) sha256=5db9535a8aa9e569808518aa103b2cfac44728672a1799e1dd217fe6d9c5642e
+  opentelemetry-common (0.25.1) sha256=38fe87c751e4e13fcd47a8290b4ad67bbedf76c4ed89aeced5ea5c620e66bfb1
+  opentelemetry-exporter-otlp (0.34.1) sha256=4697d81e03aff80ea6fbcc741b1c3c700d3624eddea14b453602ee23275450ca
+  opentelemetry-registry (0.6.1) sha256=a4569df4e366742ab435634115a20169c0073db681eaea406de0dfcaf015e8d1
+  opentelemetry-sdk (1.12.1) sha256=d706be6d7fa0e15b5b36916f65ca6397562b48ad05d4f9b18426d030600525ea
+  opentelemetry-semantic_conventions (1.43.0) sha256=d96eb7da3bc89335786ea676b448701f566cf241a7ca56ae1e814b83816922af
   orm_adapter (0.5.0) sha256=aa5d0be5d540cbb46d3a93e88061f4ece6a25f6e97d6a47122beb84fe595e9b9
   ostruct (0.6.3) sha256=95a2ed4a4bd1d190784e666b47b2d3f078e4a9efda2fccf18f84ddc6538ed912
   pagy (43.5.6) sha256=4d46d262826e055d69713fbbd2c42257cc1d0e87c13a1221764c15d30e46ff85
