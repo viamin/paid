@@ -826,4 +826,42 @@ class Issue < ApplicationRecord
       reason: reason
     )
   end
+
+  # How long MergePullRequestActivity waits before re-attempting a merge after
+  # a GitHub App permission rejection (e.g. missing `workflows` permission for
+  # a change under .github/workflows/). Unlike the push-permission rejection
+  # above, merge attempts are re-triggered by every poll cycle rather than by
+  # a bounded set of agent-run retries, so a hard one-time abandon would
+  # either loop forever (if unchecked) or require a manual clear step once the
+  # App's permissions are fixed. A rolling cooldown self-heals automatically
+  # once the permission is granted, while still cutting retry volume from
+  # every poll cycle down to once per cooldown window.
+  MERGE_PERMISSION_RETRY_COOLDOWN = 6.hours
+
+  def merge_permission_rejected?
+    merge_permission_rejected_at.present?
+  end
+
+  # True once per cooldown window, so MergePullRequestActivity only re-attempts
+  # (and re-checks whether the underlying permission was fixed) periodically
+  # instead of on every poll cycle.
+  def merge_permission_retry_due?
+    !merge_permission_rejected? || merge_permission_rejected_at <= MERGE_PERMISSION_RETRY_COOLDOWN.ago
+  end
+
+  # Records a terminal merge-time GitHub App permission rejection. Always
+  # refreshes the timestamp (unlike the push-permission abandon, this is not
+  # idempotent-once) so the cooldown window restarts from the latest attempt.
+  def record_merge_permission_rejection!(reason:)
+    update!(merge_permission_rejected_at: Time.current, merge_permission_rejection_reason: reason)
+
+    Rails.logger.info(
+      message: "issue.merge_permission_rejected",
+      component: "github_integration",
+      issue_id: id,
+      project_id: project_id,
+      issue_number: github_number,
+      reason: reason
+    )
+  end
 end

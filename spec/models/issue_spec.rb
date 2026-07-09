@@ -2183,4 +2183,63 @@ RSpec.describe Issue do
       expect(issue.push_permission_abandoned?).to be(false)
     end
   end
+
+  describe "#record_merge_permission_rejection!" do
+    let(:issue) { create(:issue) }
+
+    it "stamps the rejection timestamp and reason" do
+      freeze_time = Time.zone.local(2026, 6, 1, 12, 0, 0)
+      travel_to(freeze_time) do
+        issue.record_merge_permission_rejection!(reason: "App lacks workflows permission")
+
+        issue.reload
+        expect(issue.merge_permission_rejected_at).to eq(freeze_time)
+        expect(issue.merge_permission_rejection_reason).to eq("App lacks workflows permission")
+      end
+    end
+
+    it "refreshes the timestamp on a repeat rejection (not idempotent-once)" do
+      issue.update!(merge_permission_rejected_at: 1.hour.ago, merge_permission_rejection_reason: "first")
+
+      issue.record_merge_permission_rejection!(reason: "second")
+
+      issue.reload
+      expect(issue.merge_permission_rejected_at).to be_within(1.second).of(Time.current)
+      expect(issue.merge_permission_rejection_reason).to eq("second")
+    end
+  end
+
+  describe "#merge_permission_rejected?" do
+    it "returns true once a rejection is recorded" do
+      issue = build(:issue, merge_permission_rejected_at: Time.current)
+
+      expect(issue.merge_permission_rejected?).to be(true)
+    end
+
+    it "returns false when never rejected" do
+      issue = build(:issue, merge_permission_rejected_at: nil)
+
+      expect(issue.merge_permission_rejected?).to be(false)
+    end
+  end
+
+  describe "#merge_permission_retry_due?" do
+    it "is true when never rejected" do
+      issue = build(:issue, merge_permission_rejected_at: nil)
+
+      expect(issue.merge_permission_retry_due?).to be(true)
+    end
+
+    it "is false within the cooldown window" do
+      issue = build(:issue, merge_permission_rejected_at: 1.hour.ago)
+
+      expect(issue.merge_permission_retry_due?).to be(false)
+    end
+
+    it "is true once the cooldown window has elapsed" do
+      issue = build(:issue, merge_permission_rejected_at: (Issue::MERGE_PERMISSION_RETRY_COOLDOWN + 1.minute).ago)
+
+      expect(issue.merge_permission_retry_due?).to be(true)
+    end
+  end
 end
