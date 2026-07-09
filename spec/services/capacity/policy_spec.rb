@@ -119,6 +119,20 @@ RSpec.describe Capacity::Policy do
       expect(decision.auto_allowed_reasons).to eq([ "deployment_gate" ])
     end
 
+    it "reports docker_memory_exhausted (not metrics_missing) when a healthy snapshot has no memory" do
+      # A measurement-healthy local snapshot reporting available_memory_bytes: 0
+      # means Docker is genuinely full, not that metrics are missing. The policy
+      # must surface "docker_memory_exhausted" rather than falling through to the
+      # catch-all "metrics_missing" label reserved for measurable-but-unreliable
+      # local snapshots.
+      exhausted = healthy_local_snapshot(overrides: { available_memory_bytes: 0 })
+
+      decision = described_class.call(snapshot: exhausted, now: now)
+
+      expect(decision.auto_allowed).to be(false)
+      expect(decision.auto_allowed_reasons).to eq([ "docker_memory_exhausted" ])
+    end
+
     it "fails closed to MANUAL when the snapshot is missing" do
       decision = described_class.call(snapshot: nil, now: now)
 

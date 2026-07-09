@@ -314,6 +314,12 @@ module Capacity
       # local snapshots.
       return [ "deployment_gate" ] if blocked.any? { |reason| reason.code == "auto_mode_disabled_for_deployment" }
       return [ "deployment_gate" ] if env.default_mode == MANUAL || env.name == ENVIRONMENT_CI
+      # Docker is fully measured and reporting no memory headroom. This is a
+      # hard capacity condition, not a measurement gap — report it explicitly
+      # rather than falling through to "metrics_missing". Checked after the
+      # deployment gate so a remote/swarm backend that is also exhausted still
+      # reports the more fundamental "deployment_gate" reason.
+      return [ "docker_memory_exhausted" ] if blocked.any? { |reason| reason.code == "docker_memory_exhausted" }
 
       [ "metrics_missing" ]
     end

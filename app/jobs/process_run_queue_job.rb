@@ -110,7 +110,17 @@ class ProcessRunQueueJob < ApplicationJob
           next
         end
 
-        policy_decision = current_capacity_policy
+        # The deployment capacity policy drives two decisions: the
+        # deployment-wide hard capacity block (Docker memory exhausted) and
+        # the auto-mode downgrade. Both require a Docker snapshot round trip
+        # the first time current_capacity_policy is called. Resolve it
+        # lazily — only once an auto-mode candidate actually needs it — so
+        # pure-manual deployments (where the legacy run-count gate already
+        # bounds admission) never pay the Docker system_info + per-container
+        # stats cost on a queue pass. Once resolved, the memoized decision
+        # is reused for every remaining candidate so the deployment-wide
+        # capacity gate still applies across users.
+        policy_decision = policy_decision_for(user)
         if policy_decision&.capacity_blocked?
           # Docker has no measurable memory headroom for another run (see
           # Capacity::Policy::Decision#capacity_blocked?). This is a
@@ -131,10 +141,13 @@ class ProcessRunQueueJob < ApplicationJob
           next
         end
         forced_admission_mode = nil
-        if policy_decision && !policy_decision.auto_allowed
+        if policy_decision && !policy_decision.auto_allowed && user.settings.run_concurrency_auto?
           # Deployment policy can disable auto mode even when the user's
           # setting remains AUTO. In that case the queue must downgrade
           # admission to manual for this pass instead of consulting Docker.
+          # The guard on run_concurrency_auto? avoids a redundant log for
+          # users who are already in manual mode (the downgrade is a no-op
+          # for them) and keeps current_capacity_policy lazy.
           forced_admission_mode = UserSetting::RUN_CONCURRENCY_MODE_MANUAL
           log_capacity_policy_manual_mode(user, policy_decision)
         end
@@ -564,6 +577,22 @@ class ProcessRunQueueJob < ApplicationJob
     agent_run.save!(validate: false)
   end
 
+  # Resolves the Capacity::Policy decision for the current candidate only
+  # when it can influence the admission outcome. The first resolution
+  # performs a Docker system_info + per-container stats round trip via
+  # current_capacity_policy; to avoid paying that on every queue pass for
+  # pure-manual deployments — where the legacy tenant_max_concurrent_runs
+  # gate fully bounds admission — the snapshot is fetched lazily, the first
+  # time an auto-mode candidate is encountered. Once the decision is cached
+  # for the pass (including the nil fail-safe), every remaining candidate
+  # reuses it so the deployment-wide capacity gate still applies across
+  # users.
+  def policy_decision_for(user)
+    return current_capacity_policy if defined?(@current_capacity_policy)
+
+    current_capacity_policy if user.settings.run_concurrency_auto?
+  end
+
   # Resolves a Capacity::Policy decision for the current process pass.
   # The snapshot is fetched once and cached on the job instance so every
   # queued-run candidate reuses the same decision without re-reading
@@ -580,7 +609,8 @@ class ProcessRunQueueJob < ApplicationJob
     Rails.logger.warn(
       message: "process_run_queue.capacity_policy_unavailable",
       error: e.class.name,
-      detail: e.message
+      detail: e.message,
+      reason: Capacity::BlockedReason[:policy_unknown].code
     )
     @current_capacity_policy = nil
   end
