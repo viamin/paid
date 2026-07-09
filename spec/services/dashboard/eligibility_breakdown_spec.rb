@@ -3,6 +3,14 @@
 require "rails_helper"
 
 RSpec.describe Dashboard::EligibilityBreakdown do
+  around do |example|
+    original_store = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    example.run
+  ensure
+    Rails.cache = original_store
+  end
+
   let(:user) { create(:user) }
   let(:account) { user.account }
   let!(:project) do
@@ -109,6 +117,42 @@ RSpec.describe Dashboard::EligibilityBreakdown do
 
       expect(result.size).to eq(2)
       expect(result.map { |bd| bd.project.id }).to contain_exactly(project.id, project2.id)
+    end
+
+    it "includes orphaned projects for the account fallback owner" do
+      orphaned_project = create(:project, :without_creator, account: account,
+        auto_pick_enabled: true, active: true, owner: "octo", repo: "orphaned")
+      create(:issue, project: orphaned_project, github_state: "open", paid_state: "new")
+
+      result = described_class.call(user: user)
+
+      expect(result.map { |bd| bd.project.id }).to contain_exactly(project.id, orphaned_project.id)
+    end
+
+    it "hides orphaned projects from non-fallback users" do
+      non_fallback_user = create(:user, account: account)
+      non_fallback_project = create(:project, account: account, created_by: non_fallback_user,
+        auto_pick_enabled: true, active: true, owner: "octo", repo: "owned")
+      orphaned_project = create(:project, :without_creator, account: account,
+        auto_pick_enabled: true, active: true, owner: "octo", repo: "orphaned")
+      create(:issue, project: non_fallback_project, github_state: "open", paid_state: "new")
+      create(:issue, project: orphaned_project, github_state: "open", paid_state: "new")
+
+      result = described_class.call(user: non_fallback_user)
+
+      expect(result.map { |bd| bd.project.id }).to eq([ non_fallback_project.id ])
+    end
+
+    it "reuses the cached breakdown on repeat page loads" do
+      create(:issue, project: project, github_state: "open", paid_state: "new")
+      allow(Automation::Strategies::AutoPick::DefaultCandidateSource)
+        .to receive(:eligible_scope).and_call_original
+
+      described_class.call(user: user)
+      described_class.call(user: user)
+
+      expect(Automation::Strategies::AutoPick::DefaultCandidateSource)
+        .to have_received(:eligible_scope).once
     end
   end
 end

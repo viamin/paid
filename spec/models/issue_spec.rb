@@ -1569,7 +1569,7 @@ RSpec.describe Issue do
     # Regression: "## Remaining work" is a common section heading in regular
     # implementation issues (describing what work the issue itself needs),
     # not a signal that the issue is a tracker/meta-issue. It caused false
-    # positives that silently excluded issues from auto-pick (#2844).
+    # positives that silently excluded issues from auto-pick.
     context "when 'remaining work' appears only in a body heading" do
       it "returns false for '## Remaining work' heading in a regular issue" do
         issue = build(:issue, title: "Implement observability stack",

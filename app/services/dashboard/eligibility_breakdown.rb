@@ -35,8 +35,12 @@ module Dashboard
     def auto_pick_projects
       @auto_pick_projects ||= Project
         .includes(:account)
-        .where(account_id: user.account_id, created_by_id: user.id,
-               auto_pick_enabled: true, active: true)
+        .where(
+          account_id: user.account_id,
+          created_by_id: visible_owner_ids,
+          auto_pick_enabled: true,
+          active: true
+        )
         .reject { |p| p.scheduler_paused? || p.quality_paused? || p.account&.scheduler_paused? }
     end
 
@@ -77,8 +81,23 @@ module Dashboard
       return 0 if labels.empty?
 
       excluded_scope.where(paid_state: %w[new planning failed analyzed])
-        .pluck(:labels)
-        .count { |issue_labels| (Array(issue_labels).map(&:downcase) & labels).any? }
+        .where(
+          <<~SQL.squish,
+            EXISTS (
+              SELECT 1
+              FROM jsonb_array_elements_text(issues.labels) AS label(value)
+              WHERE LOWER(label.value) IN (?)
+            )
+          SQL
+          labels.map(&:downcase)
+        )
+        .count
+    end
+
+    def visible_owner_ids
+      owner_ids = [ user.id ]
+      owner_ids << nil if AgentRun.orphaned_project_owner?(user)
+      owner_ids
     end
 
     def cache_key
