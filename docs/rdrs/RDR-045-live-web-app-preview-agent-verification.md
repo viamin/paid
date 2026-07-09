@@ -8,7 +8,7 @@
 - **Status**: Draft
 - **Type**: Architecture
 - **Priority**: High
-- **Related Issues**: N/A (foundational decision)
+- **Related Issues**: #2844 (Epic), #2845 (Phoenix detection), #2847 (Playwright traces), #2846 (Seed data), #2852 (Agent verification), #2853 (Rathole tunnel), #2849 (PreviewSession model), #2848 (Preview provisioning), #2850 (Reverse proxy), #2851 (Preview UI), #2854 (Trace viewer), #2855 (Demo video/GIF)
 - **Related RDRs**: [RDR-004](RDR-004-container-isolation.md) (Container Isolation), [RDR-006](RDR-006-secrets-proxy.md) (Secrets Proxy), [RDR-019](RDR-019-remote-container-execution.md) (Remote Container Execution), [RDR-020](RDR-020-service-container-architecture.md) (Service Container Architecture), [RDR-028](RDR-028-interactive-chat.md) (Interactive Chat)
 - **Related Tests**: `spec/services/screenshots/`, `spec/services/containers/`
 
