@@ -10,21 +10,20 @@ module AgentRuns
   # pick a healthy runner over the runnable set.
   #
   # This service only ever handles runner-agnostic (auto-pick) queued runs.
-  # Manual runs are created with their runner already pinned
+  # Manual and resume runs are created with their runner already pinned
   # (Projects::AgentRunsController#create_agent_run), so they reach
   # ProcessRunQueueJob already bound (+runner_id.present?+) and never flow
-  # through here. A manual run whose pinned runner is unhealthy is skipped
-  # for the rest of the pass and stays queued — it is *not* silently
-  # re-routed to a different agent_type — which is how the "manual explicit
-  # choice is not switched" policy from #2563 is enforced.
+  # through here on the first dispatch. When such a pinned runner is
+  # unavailable (rate-limited, circuit-open), ProcessRunQueueJob clears the
+  # pin and re-invokes this service to fall back to a healthy alternative —
+  # weighting/preference is a soft preference and never blocks work.
   #
-  # Failover policy for auto-pick: any healthy runner is acceptable (the
-  # project just wants a PR), so +agent_type+ is updated to whatever the
-  # resolver returns, including a different agent family. The
-  # +exclude_runner_ids+ set (runners that already failed preflight during
-  # the current dequeue pass) is threaded into the resolver so the run is
-  # never pinned back to a runner known-unhealthy this pass — it falls
-  # through to a healthy alternative instead.
+  # Failover policy: any healthy runner is acceptable (the project just wants
+  # the work done), so +agent_type+ is updated to whatever the resolver returns,
+  # including a different agent family. The +exclude_runner_ids+ set (runners
+  # that already failed preflight during the current dequeue pass) is threaded
+  # into the resolver so the run is never pinned back to a runner known-unhealthy
+  # this pass — it falls through to a healthy alternative instead.
   class BindRunner
     def self.call(...)
       new(...).call
