@@ -15,7 +15,7 @@
 
 ## Implementation Status
 
-Implemented with PostgreSQL as the canonical store, Qdrant as a derived vector index, collector runs, project versions, knowledge artifacts/chunks/links, hybrid search, redaction before embedding, audit events, prompt integration, proxy search, and MCP search tooling. Retroactive physical scrubbing/rebuild workflows for already-indexed PostgreSQL and Qdrant data remain follow-up work beyond the logical redaction flags and pre-embedding redaction pipeline.
+Implemented with PostgreSQL as the canonical store, Qdrant as a derived vector index, collector runs, project versions, knowledge artifacts/chunks/links, hybrid search, redaction before embedding, audit events, prompt integration, proxy search, and MCP search tooling. Retroactive physical scrubbing/rebuild workflows for already-indexed PostgreSQL and Qdrant data are implemented via `Knowledge::Redaction::Scrubber` and `Knowledge::Redaction::Reembed`, exposed as the `knowledge:redact:scrub` and `knowledge:redact:reembed` rake tasks and described in the operational runbook.
 
 ## Problem Statement
 

@@ -6,6 +6,7 @@ class KnowledgeAuditEvent < ApplicationRecord
   EVENT_TYPES = %w[
     artifact_created artifact_staled chunk_embedded
     chunk_redacted collection_rebuilt
+    chunks_scrubbed qdrant_collection_scrubbed
   ].freeze
 
   # Provenance chain: audit event → target (artifact/chunk) → collector_run → project.
@@ -15,8 +16,10 @@ class KnowledgeAuditEvent < ApplicationRecord
   # The `details` JSONB column carries event-specific context:
   #   artifact_created:    { artifact_type:, identifier: }
   #   artifact_staled:     { identifier: }
-  #   chunk_embedded:      { model:, dimensions: }
+  #   chunk_embedded:      { model:, dimensions:, reembedded: }
   #   collection_rebuilt:  { collection_name: }
+  #   chunks_scrubbed:     { scope:, matched_count:, scrubbed_count:, skipped_count:, qdrant_points_deleted:, qdrant_collection_rebuilt:, dry_run: }
+  #   qdrant_collection_scrubbed: { collection_name:, rebuild_reason: }
   belongs_to :project
 
   validates :event_type, presence: true, inclusion: { in: EVENT_TYPES }
