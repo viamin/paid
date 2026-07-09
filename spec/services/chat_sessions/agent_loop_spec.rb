@@ -449,7 +449,7 @@ RSpec.describe ChatSessions::AgentLoop do
       user_entry = { role: "user", content: "u" }
       tool_entry = { role: "tool", content: "r", tool_call_id: "c", tool_name: "search" }
       # cap + 1 entries; after taking the last `cap`, the first is a tool entry
-      conversation = [user_entry, tool_entry] + Array.new(cap - 1) { user_entry }
+      conversation = [ user_entry, tool_entry ] + Array.new(cap - 1) { user_entry }
 
       trimmed = service.send(:trim_conversation, conversation)
 
@@ -466,7 +466,7 @@ RSpec.describe ChatSessions::AgentLoop do
       tool_entry = { role: "tool", content: "r", tool_call_id: "c", tool_name: "search" }
       user_entry = { role: "user", content: "u" }
       # One entry over the cap; the window starts at the assistant whose result follows
-      conversation = [user_entry, assistant_entry, tool_entry] + Array.new(cap - 2) { user_entry }
+      conversation = [ user_entry, assistant_entry, tool_entry ] + Array.new(cap - 2) { user_entry }
 
       trimmed = service.send(:trim_conversation, conversation)
 
