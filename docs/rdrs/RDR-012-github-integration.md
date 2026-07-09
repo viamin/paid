@@ -4,16 +4,25 @@
 
 ## Metadata
 
-- **Date**: 2025-01-23
-- **Status**: Partially Implemented
+- **Date**: 2025-01-23 (revised 2026-07-09 to record Projects V2 abandonment under #2703)
+- **Status**: Partially Implemented (Projects V2 field/item sync abandoned — see "Implementation Status")
 - **Type**: Architecture
 - **Priority**: High
-- **Related Issues**: N/A (foundational decision)
+- **Related Issues**: #2703 (RDR-012: decide and track GitHub Projects V2 sync)
 - **Related Tests**: GitHub client tests, polling workflow tests
 
 ## Implementation Status
 
-Mostly implemented for polling-first GitHub sync, local issue/PR caching, Octokit-backed API access, rate-limit/circuit state, webhooks, PAT credentials, and GitHub App credentials. The original PAT-only assumption was superseded by RDR-030. GitHub Projects V2 field/item synchronization from this RDR has not been implemented and remains follow-up work unless intentionally abandoned.
+Mostly implemented for polling-first GitHub sync, local issue/PR caching, Octokit-backed API access, rate-limit/circuit state, webhooks, PAT credentials, and GitHub App credentials. The original PAT-only assumption was superseded by RDR-030.
+
+GitHub Projects V2 field/item synchronization (#2703) is **intentionally abandoned** and superseded by Paid's native issue/graph model. Equivalent capability is now provided by:
+
+- `Issue#parent_issue_id` / `Issue#sub_issues` for hierarchical sub-issue tracking
+- `IssueDependency` for cross-issue and cross-project blocking
+- `ChangeIntent` (RDR-042) for feature decomposition in chat and the knowledge pipeline
+- Trigger labels and project auto-merge/PR status fields for workflow state
+
+Re-introducing Projects V2 sync would re-create the very deprecation this RDR's "graceful degradation" section calls for (Project IDs are org-scoped, require extra `project` OAuth scopes, and add a second source of truth for issue hierarchy that already exists locally). This decision is recorded here per issue #2703 so the RDR's polling/caching/auth sections remain authoritative while the Projects V2 sub-decision is explicitly closed.
 
 ## Problem Statement
 
