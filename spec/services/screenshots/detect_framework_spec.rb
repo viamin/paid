@@ -359,5 +359,37 @@ RSpec.describe Screenshots::DetectFramework, :no_db do
         a_hash_including("path" => "/admin/reports/daily", "requires_auth" => true)
       )
     end
+
+    it "matches scope alias modules that contain the letter d" do
+      router = <<~ELIXIR
+        defmodule DemoWeb.Router do
+          scope "/dashboard", DashboardWeb do
+            live "/overview", DashboardLive, :show
+          end
+        end
+      ELIXIR
+
+      service = described_class.new(repo_path: fixture_path("phoenix_repo"))
+      routes = service.send(:parse_phoenix_router, router)
+
+      expect(routes).to include(
+        a_hash_including("path" => "/dashboard/overview")
+      )
+    end
+
+    it "captures the controller name for resources as Controller#index" do
+      router = <<~ELIXIR
+        defmodule DemoWeb.Router do
+          resources "/posts", PostController
+        end
+      ELIXIR
+
+      service = described_class.new(repo_path: fixture_path("phoenix_repo"))
+      routes = service.send(:parse_phoenix_router, router)
+
+      expect(routes).to include(
+        a_hash_including("path" => "/posts", "name" => "PostController#index")
+      )
+    end
   end
 end

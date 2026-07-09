@@ -630,7 +630,7 @@ module Screenshots
           next
         end
 
-        if (match = stripped.match(/^scope\s+["']([^"']*)["'][^d]*\bdo\b/))
+        if (match = stripped.match(/^scope\s+["']([^"']*)["'][^#]*\bdo\b/))
           stack << { prefix: match[1], requires_auth: false }
           next
         end
@@ -654,9 +654,9 @@ module Screenshots
         return route_hash(path, route_name_from_path(path), requires_auth: requires_auth)
       end
 
-      if (match = line.match(/^resources\s+["']([^"']+)["']/))
+      if (match = line.match(/^resources\s+["']([^"']+)["']\s*,\s*([^,\n]+)/))
         path = normalize_route_path([ prefix ].compact, match[1])
-        return route_hash(path, route_name_from_path(path), requires_auth: requires_auth)
+        return route_hash(path, "#{match[2].strip}#index", requires_auth: requires_auth)
       end
 
       if (match = line.match(/^resource\s+["']([^"']+)["']/))
