@@ -281,6 +281,16 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
 
       expect(scope.pluck(:id)).to be_empty
     end
+
+    it "includes issues with a '## Remaining work' body heading and no issue references" do
+      issue = create(:issue, project: project,
+        title: "RDR-011: complete observability stack",
+        body: "## Remaining work\n- Add Prometheus config\n- Add Grafana dashboard")
+
+      scope = described_class.eligible_scope(project)
+
+      expect(scope.pluck(:id)).to include(issue.id)
+    end
   end
 
   describe ".eligible_issue_ids" do
@@ -329,6 +339,29 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       described_class.tracker_ids_blocked_by_open_references(scope, project)
 
       expect(DependencyBackfillJob).not_to have_received(:perform_later)
+    end
+
+    it "blocks a title-matched tracker with no body references" do
+      tracker = create(:issue, project: project, github_number: 1, title: "Phase 2 tracker",
+        body: "Some notes without issue references")
+
+      scope = Issue.where(id: tracker.id)
+
+      blocked = described_class.tracker_ids_blocked_by_open_references(scope, project)
+
+      expect(blocked).to include(tracker.id)
+    end
+
+    it "does not block a body-heading-matched tracker with no body references" do
+      issue = create(:issue, project: project, github_number: 1,
+        title: "Implement feature X",
+        body: "## Completion criteria\n- Add tests\n- Add docs")
+
+      scope = Issue.where(id: issue.id)
+
+      blocked = described_class.tracker_ids_blocked_by_open_references(scope, project)
+
+      expect(blocked).not_to include(issue.id)
     end
   end
 
