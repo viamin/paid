@@ -1107,8 +1107,49 @@ module Containers
       return {} unless settings
 
       overrides = {}
-      overrides[:memory_bytes] = settings.container_memory_bytes if settings.container_memory_bytes.present?
+      overrides[:memory_bytes] = resolve_memory_limit_bytes(settings)
       overrides
+    end
+
+    # In manual mode the memory limit comes straight from
+    # +container_memory_bytes+. In auto mode Paid derives the limit from the
+    # learned AgentRunResourceProfile recommendation for this project's
+    # runner/goal, falling back to the user-configured ceiling when no profile
+    # has enough samples yet. The fallback ladder (specific → runner_goal →
+    # project → account → global → default) lives in
+    # AgentRunResourceProfiles::Resolve; we only clamp the resulting number
+    # to the user-configured auto band.
+    def resolve_memory_limit_bytes(settings)
+      return settings.container_memory_bytes if settings.container_memory_limit_manual?
+
+      resolution = AgentRunResourceProfiles::Resolve.call(
+        project: project,
+        runner_key: agent_run&.resource_profile_runner_key,
+        goal: agent_run&.goal
+      )
+
+      recommended = resolution[:recommended_memory_limit_bytes].to_i
+      # Treat "no profile found" (Resolve returns the built-in default) the
+      # same as no sample so first-run deployments honor the user's
+      # configured limit instead of silently switching to the global
+      # 4 GB estimate. Return the manual value directly — do NOT clamp it
+      # to the auto band — otherwise flipping to auto mode can quietly
+      # shrink a user's explicit container_memory_bytes (e.g. a 20 GB
+      # manual limit collapsing to the 16 GB default ceiling) before any
+      # profile has been learned. The floor/ceiling band constrains
+      # learned recommendations only.
+      return settings.container_memory_bytes if recommended <= 0 || resolution[:source] == "default"
+
+      clamp_auto_memory_limit(recommended, settings)
+    end
+
+    def clamp_auto_memory_limit(bytes, settings)
+      floor = settings.container_memory_auto_floor_bytes.to_i
+      floor = UserSetting::DEFAULT_CONTAINER_MEMORY_AUTO_FLOOR_BYTES if floor <= 0
+      ceiling = settings.container_memory_auto_ceiling_bytes.to_i
+      ceiling = UserSetting::DEFAULT_CONTAINER_MEMORY_AUTO_CEILING_BYTES if ceiling <= 0
+
+      bytes.to_i.clamp(floor, ceiling)
     end
 
     def stop_container(force: false)

@@ -31,6 +31,13 @@ class UserSetting < ApplicationRecord
   RUN_CONCURRENCY_MODES = %w[manual auto].freeze
   RUN_CONCURRENCY_MODE_MANUAL = "manual"
   RUN_CONCURRENCY_MODE_AUTO = "auto"
+  CONTAINER_MEMORY_LIMIT_MODES = %w[manual auto].freeze
+  CONTAINER_MEMORY_LIMIT_MODE_MANUAL = "manual"
+  CONTAINER_MEMORY_LIMIT_MODE_AUTO = "auto"
+  DEFAULT_CONTAINER_MEMORY_AUTO_FLOOR_BYTES = 512 * 1024 * 1024
+  DEFAULT_CONTAINER_MEMORY_AUTO_CEILING_BYTES = 16 * 1024 * 1024 * 1024
+  MIN_CONTAINER_MEMORY_AUTO_FLOOR_BYTES = 256 * 1024 * 1024
+  MIN_CONTAINER_MEMORY_AUTO_CEILING_BYTES = 1024 * 1024 * 1024
 
   THEME_PREFERENCES = %w[light dark system].freeze
 
@@ -125,6 +132,14 @@ class UserSetting < ApplicationRecord
   validates :container_memory_bytes,
     numericality: { only_integer: true, greater_than_or_equal_to: 512 * 1024 * 1024,
                     less_than_or_equal_to: MAX_CONTAINER_MEMORY_BYTES }
+  validates :container_memory_limit_mode, inclusion: { in: CONTAINER_MEMORY_LIMIT_MODES }
+  validates :container_memory_auto_floor_bytes,
+    numericality: { only_integer: true, greater_than_or_equal_to: MIN_CONTAINER_MEMORY_AUTO_FLOOR_BYTES,
+                    less_than_or_equal_to: MAX_CONTAINER_MEMORY_BYTES }
+  validates :container_memory_auto_ceiling_bytes,
+    numericality: { only_integer: true, greater_than_or_equal_to: MIN_CONTAINER_MEMORY_AUTO_CEILING_BYTES,
+                    less_than_or_equal_to: MAX_CONTAINER_MEMORY_BYTES }
+  validate :validate_container_memory_auto_floor_under_ceiling
   validates :container_timeout_seconds,
     numericality: { only_integer: true, greater_than_or_equal_to: 60, less_than_or_equal_to: PG_INT_MAX }
 
@@ -228,6 +243,10 @@ class UserSetting < ApplicationRecord
     run_concurrency_mode == RUN_CONCURRENCY_MODE_MANUAL
   end
 
+  def container_memory_limit_manual?
+    container_memory_limit_mode == CONTAINER_MEMORY_LIMIT_MODE_MANUAL
+  end
+
   def self.parse_runner_array_param(value)
     return value unless value.is_a?(String)
 
@@ -312,6 +331,26 @@ class UserSetting < ApplicationRecord
   # Sets container memory from a human-readable GB value
   def container_memory_gb=(value)
     self.container_memory_bytes = (value.to_f * 1024 * 1024 * 1024).to_i
+  end
+
+  # Returns the auto-tuning memory floor in a human-readable format (GB)
+  def container_memory_auto_floor_gb
+    container_memory_auto_floor_bytes / (1024.0 * 1024 * 1024)
+  end
+
+  # Sets the auto-tuning memory floor from a human-readable GB value
+  def container_memory_auto_floor_gb=(value)
+    self.container_memory_auto_floor_bytes = (value.to_f * 1024 * 1024 * 1024).to_i
+  end
+
+  # Returns the auto-tuning memory ceiling in a human-readable format (GB)
+  def container_memory_auto_ceiling_gb
+    container_memory_auto_ceiling_bytes / (1024.0 * 1024 * 1024)
+  end
+
+  # Sets the auto-tuning memory ceiling from a human-readable GB value
+  def container_memory_auto_ceiling_gb=(value)
+    self.container_memory_auto_ceiling_bytes = (value.to_f * 1024 * 1024 * 1024).to_i
   end
 
   # Returns the allowed service images list
@@ -799,6 +838,13 @@ class UserSetting < ApplicationRecord
     return unless run_concurrency_manual? && max_concurrent_runs.blank?
 
     errors.add(:max_concurrent_runs, "must be set in manual run concurrency mode")
+  end
+
+  def validate_container_memory_auto_floor_under_ceiling
+    return if container_memory_auto_floor_bytes.blank? || container_memory_auto_ceiling_bytes.blank?
+    return if container_memory_auto_floor_bytes <= container_memory_auto_ceiling_bytes
+
+    errors.add(:container_memory_auto_floor_bytes, "must be less than or equal to container_memory_auto_ceiling_bytes")
   end
 
   def self.runner_identifiers_for(runners, identifiers:)

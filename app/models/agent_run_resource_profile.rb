@@ -9,6 +9,26 @@ class AgentRunResourceProfile < ApplicationRecord
   OOM_BUMP_MULTIPLIER = 1.25
   OOM_MESSAGE_PATTERN = /container OOM-killed/i
 
+  # Downward-tuning safety: a recommended limit that has grown because of
+  # OOMs is never dropped on a single refresh. Several consecutive
+  # low-memory samples are required before a downward move is authorized,
+  # so a single transient dip — e.g. one high-peak run aging out of the
+  # lookback window — cannot collapse the limit. The sustained-low test
+  # itself lives in AgentRunResourceProfiles::MemoryLimitTuner#low_memory_sample?,
+  # which scores each sample against LOW_MEMORY_HEADROOM_RATIO and banks
+  # the result in consecutive_low_memory_samples.
+  DOWNWARD_TUNING_MIN_SAMPLES = 5
+  # Sustained-low threshold: a sample whose observed peak stays at or
+  # below this fraction of the current recommended limit counts toward
+  # the consecutive_low_memory_samples counter.
+  LOW_MEMORY_HEADROOM_RATIO = 0.6
+
+  # OOMs observed while the recommended limit is already at or near the
+  # per-user ceiling indicate the workload is outgrowing Docker's
+  # configured budget. Capacity-blocked profiles stop growing so the
+  # recommended limit cannot chase Docker memory indefinitely.
+  CAPACITY_BLOCKED_OOM_THRESHOLD = 2
+
   belongs_to :account, optional: true
   belongs_to :project, optional: true
 
@@ -17,6 +37,8 @@ class AgentRunResourceProfile < ApplicationRecord
   validates :runner_key, length: { maximum: 50 }, allow_blank: true
   validates :goal, inclusion: { in: AgentRun::GOALS }, allow_blank: true
   validates :sample_count, :oom_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  validates :consecutive_low_memory_samples, :downward_tuning_count,
+    numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :p50_memory_bytes, :p95_memory_bytes, :max_memory_bytes, :recommended_memory_limit_bytes,
     numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :validate_profile_scope
@@ -25,6 +47,18 @@ class AgentRunResourceProfile < ApplicationRecord
 
   def sufficient_samples?
     sample_count >= MIN_SAMPLE_SIZE
+  end
+
+  # True when further limit growth is paused because the recommended
+  # limit has already hit the user-configured ceiling while the
+  # workload is still being OOM-killed.
+  #
+  # The capacity-blocked state machine itself lives in
+  # AgentRunResourceProfiles::MemoryLimitTuner (the single, tested
+  # source of truth) and is persisted here through assign_attributes in
+  # RefreshForRun, so this model only exposes the predicate.
+  def capacity_blocked?
+    !!capacity_blocked
   end
 
   def self.lookup_key_for(profile_level:, account_id: nil, project_id: nil, runner_key: nil, goal: nil)

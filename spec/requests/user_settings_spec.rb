@@ -141,6 +141,31 @@ RSpec.describe "UserSettings" do
         expect(settings.max_concurrent_runs).to be_nil
       end
 
+      it "lets the user enable auto container memory limits and configure the auto band" do
+        patch user_settings_path, params: {
+          user_setting: {
+            container_memory_limit_mode: UserSetting::CONTAINER_MEMORY_LIMIT_MODE_AUTO,
+            container_memory_auto_floor_gb: 0.75,
+            container_memory_auto_ceiling_gb: 8
+          }
+        }
+
+        expect(response).to redirect_to(edit_user_settings_path)
+        settings = user.reload.settings
+        expect(settings.container_memory_limit_mode).to eq(UserSetting::CONTAINER_MEMORY_LIMIT_MODE_AUTO)
+        expect(settings.container_memory_auto_floor_bytes).to eq(768.megabytes)
+        expect(settings.container_memory_auto_ceiling_bytes).to eq(8.gigabytes)
+      end
+
+      it "renders the container memory limit mode field" do
+        get edit_user_settings_path
+
+        expect(response.body).to include("Container Memory Mode")
+        expect(response.body).to include('name="user_setting[container_memory_limit_mode]"')
+        expect(response.body).to include('name="user_setting[container_memory_auto_floor_gb]"')
+        expect(response.body).to include('name="user_setting[container_memory_auto_ceiling_gb]"')
+      end
+
       it "ignores the deprecated auto-pick PR limit setting" do
         original_limit = user.settings.max_auto_pick_open_prs
 
