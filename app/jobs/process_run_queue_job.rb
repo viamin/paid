@@ -130,22 +130,28 @@ class ProcessRunQueueJob < ApplicationJob
           blocked_user_ids.add(user.id)
           next
         end
+        forced_admission_mode = nil
         if policy_decision && !policy_decision.auto_allowed
-          # Auto mode is disabled for this deployment — log for observability
-          # but do NOT block dispatch; run_admission_for falls back to the
-          # user's manual limit on its own via run_concurrency_mode.
+          # Deployment policy can disable auto mode even when the user's
+          # setting remains AUTO. In that case the queue must downgrade
+          # admission to manual for this pass instead of consulting Docker.
+          forced_admission_mode = UserSetting::RUN_CONCURRENCY_MODE_MANUAL
           log_capacity_policy_manual_mode(user, policy_decision)
         end
 
-        docker_snapshot ||= Capacity::DockerSnapshot.fetch if user.settings.run_concurrency_auto?
+        admission_uses_auto = forced_admission_mode != UserSetting::RUN_CONCURRENCY_MODE_MANUAL &&
+          user.settings.run_concurrency_auto?
+        docker_snapshot ||= Capacity::DockerSnapshot.fetch if admission_uses_auto
         admission = run_admission_for(
           next_run,
           user,
+          mode: forced_admission_mode,
           docker_snapshot: docker_snapshot,
           reserved_agent_memory_bytes: queue_reserved_agent_memory_bytes(
             user,
             base_reserved_agent_memory_bytes,
-            started_reserved_agent_memory_bytes
+            started_reserved_agent_memory_bytes,
+            mode: forced_admission_mode
           )
         )
         if admission[:snapshot_available]
@@ -353,11 +359,12 @@ class ProcessRunQueueJob < ApplicationJob
     )
   end
 
-  def run_admission_for(agent_run, user, docker_snapshot:, reserved_agent_memory_bytes:)
+  def run_admission_for(agent_run, user, mode:, docker_snapshot:, reserved_agent_memory_bytes:)
     Capacity::RunAdmission.call(
       user: user,
       project: agent_run.project,
       goal: agent_run.goal,
+      mode: mode,
       docker_snapshot: docker_snapshot,
       reserved_agent_memory_bytes: reserved_agent_memory_bytes
     )
@@ -383,8 +390,9 @@ class ProcessRunQueueJob < ApplicationJob
     )
   end
 
-  def queue_reserved_agent_memory_bytes(user, base_reserved_agent_memory_bytes, started_reserved_agent_memory_bytes)
-    return unless user.settings.run_concurrency_auto?
+  def queue_reserved_agent_memory_bytes(user, base_reserved_agent_memory_bytes, started_reserved_agent_memory_bytes, mode:)
+    effective_mode = mode || user.settings.run_concurrency_mode
+    return unless effective_mode == UserSetting::RUN_CONCURRENCY_MODE_AUTO
     return if base_reserved_agent_memory_bytes.nil? && started_reserved_agent_memory_bytes.zero?
 
     base_reserved_agent_memory_bytes.to_i + started_reserved_agent_memory_bytes
@@ -567,7 +575,7 @@ class ProcessRunQueueJob < ApplicationJob
     return @current_capacity_policy if defined?(@current_capacity_policy)
 
     snapshot = Capacity::DockerSnapshot.call
-    @current_capacity_policy = Capacity::Policy.call(snapshot: snapshot)
+    @current_capacity_policy = Capacity::Policy.call(snapshot: snapshot, ci: ENV["CI"].present?)
   rescue => e
     Rails.logger.warn(
       message: "process_run_queue.capacity_policy_unavailable",

@@ -1190,7 +1190,9 @@ RSpec.describe ProcessRunQueueJob do
         # auto_allowed: false means "stay in manual mode", not "block all dispatch".
         # With headroom under the user's manual limit, the run should start.
         queued_run = create_queued_run_with_policy(max_concurrent_runs: 5)
+        queued_run.project.created_by.settings.update!(run_concurrency_mode: "auto")
         stub_policy_decision(remote_backend_decision)
+        expect(Capacity::DockerSnapshot).not_to receive(:fetch)
 
         expect(temporal_client).to receive(:start_workflow)
 
@@ -1203,11 +1205,12 @@ RSpec.describe ProcessRunQueueJob do
         # remote_backend_decision has effective_max_concurrent: 10, but auto_allowed
         # is false so only the user's manual limit (2) governs concurrency.
         project = create(:project)
-        project.created_by.settings.update!(max_concurrent_runs: 2)
+        project.created_by.settings.update!(run_concurrency_mode: "auto", max_concurrent_runs: 2)
         create(:agent_run, :running, project: project)
         create(:agent_run, :running, project: project)
         queued_run = create(:agent_run, :queued, project: project)
         stub_policy_decision(remote_backend_decision)
+        expect(Capacity::DockerSnapshot).not_to receive(:fetch)
 
         expect(temporal_client).not_to receive(:start_workflow)
 
@@ -1229,6 +1232,21 @@ RSpec.describe ProcessRunQueueJob do
             mode: "manual"
           )
         )
+      end
+
+      it "forwards the CI signal to the capacity policy" do
+        queued_run = create_queued_run_with_policy(max_concurrent_runs: 5)
+        snapshot = ci_policy_snapshot
+        allow(Capacity::DockerSnapshot).to receive(:call).and_return(snapshot)
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("CI").and_return("true")
+        expect(Capacity::Policy).to receive(:call).with(snapshot: snapshot, ci: true).and_return(ci_policy_decision)
+        expect(Capacity::DockerSnapshot).not_to receive(:fetch)
+        expect(temporal_client).to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(queued_run.reload.temporal_workflow_id).to be_present
       end
 
       it "falls back to manual limits when the policy cannot be resolved" do
@@ -1417,6 +1435,38 @@ RSpec.describe ProcessRunQueueJob do
       degraded: true,
       degraded_reasons: [ "docker_exhausted" ],
       effective_max_concurrent: 10,
+      snapshot_present: true
+    )
+  end
+
+  def ci_policy_snapshot
+    Capacity::DockerSnapshot::Snapshot.new(
+      backend_identifier: "local",
+      backend_kind: "local",
+      backend_shared: false,
+      docker_cpu_count: 8,
+      docker_memory_bytes: 16_000_000_000,
+      usage_buckets: Capacity::DockerSnapshot::EMPTY_BUCKETS,
+      available_memory_bytes: 8_000_000_000,
+      agent_container_count: 0,
+      snapshot_at: Time.current,
+      confidence: 1.0,
+      degraded: false,
+      degraded_reasons: []
+    )
+  end
+
+  def ci_policy_decision
+    Capacity::Policy::Decision.new(
+      mode: Capacity::Policy::MANUAL,
+      environment: Capacity::Policy::ENVIRONMENT_CI,
+      auto_allowed: false,
+      auto_allowed_reasons: [],
+      blocked_reasons: [ Capacity::BlockedReason[:auto_mode_disabled_for_deployment] ],
+      admission_uses_cpu: false,
+      degraded: false,
+      degraded_reasons: [],
+      effective_max_concurrent: 2,
       snapshot_present: true
     )
   end

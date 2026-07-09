@@ -122,6 +122,15 @@ RSpec.describe Capacity::RunAdmission do
       expect(result[:degraded]).to be true
     end
 
+    it "supports forcing manual mode for one admission without changing user settings" do
+      expect(Capacity::DockerSnapshot).not_to receive(:fetch)
+
+      result = described_class.call(user: user, project: project, mode: "manual")
+
+      expect(result[:mode]).to eq("manual")
+      expect(result[:snapshot_available]).to be(false)
+    end
+
     it "annotates capacity_blocked when the matched profile has hit its ceiling" do
       profile = create(:agent_run_resource_profile,
         :project_level,
