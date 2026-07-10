@@ -3,7 +3,10 @@
 require "rails_helper"
 
 RSpec.describe Llm::GeneratePrDescription do
-  before { allow(Llm::TextMode).to receive(:options).and_return(mode: :text) }
+  before do
+    allow(Llm::TextMode).to receive(:options).and_return(mode: :text)
+    allow_any_instance_of(described_class).to receive(:sleep) # rubocop:disable RSpec/AnyInstance
+  end
 
   let(:agent_summary) { "Added OAuth middleware and user session management." }
   let(:issue_title) { "Add OAuth support" }
@@ -130,13 +133,14 @@ RSpec.describe Llm::GeneratePrDescription do
       expect(described_class.call(agent_summary: nil)).to be_nil
     end
 
-    it "returns nil when agent_harness returns a failed response" do
-      response = instance_double(AgentHarness::Response, success?: false, output: "")
+    it "returns nil when agent_harness returns a failed response after exhausting retries" do
+      response = instance_double(AgentHarness::Response, success?: false, output: "", error: "overloaded")
       allow(AgentHarness).to receive(:send_message).and_return(response)
 
       result = described_class.call(agent_summary: agent_summary)
 
       expect(result).to be_nil
+      expect(AgentHarness).to have_received(:send_message).exactly(described_class::MAX_ATTEMPTS).times
     end
 
     it "returns nil when output is blank" do
@@ -148,22 +152,79 @@ RSpec.describe Llm::GeneratePrDescription do
       expect(result).to be_nil
     end
 
-    it "lets AgentHarness errors propagate to the caller for contextual logging" do
+    it "retries on ProviderError and returns nil after exhausting attempts" do
       allow(AgentHarness).to receive(:send_message)
         .and_raise(AgentHarness::ProviderError.new("Provider unavailable"))
 
-      expect {
-        described_class.call(agent_summary: agent_summary)
-      }.to raise_error(AgentHarness::ProviderError)
+      result = described_class.call(agent_summary: agent_summary)
+
+      expect(result).to be_nil
+      expect(AgentHarness).to have_received(:send_message).exactly(described_class::MAX_ATTEMPTS).times
     end
 
-    it "lets timeout errors propagate to the caller for contextual logging" do
+    it "retries on TimeoutError and returns nil after exhausting attempts" do
       allow(AgentHarness).to receive(:send_message)
         .and_raise(AgentHarness::TimeoutError.new("Timed out"))
 
+      result = described_class.call(agent_summary: agent_summary)
+
+      expect(result).to be_nil
+      expect(AgentHarness).to have_received(:send_message).exactly(described_class::MAX_ATTEMPTS).times
+    end
+
+    it "retries on RateLimitError and returns nil after exhausting attempts" do
+      allow(AgentHarness).to receive(:send_message)
+        .and_raise(AgentHarness::RateLimitError.new("Rate limited"))
+
+      result = described_class.call(agent_summary: agent_summary)
+
+      expect(result).to be_nil
+      expect(AgentHarness).to have_received(:send_message).exactly(described_class::MAX_ATTEMPTS).times
+    end
+
+    it "succeeds when a transient failure is followed by success on retry" do
+      failed = instance_double(AgentHarness::Response, success?: false, output: "", error: "overloaded")
+      success = instance_double(AgentHarness::Response, success?: true, output: generated_description)
+      allow(AgentHarness).to receive(:send_message)
+        .and_return(failed, success)
+
+      result = described_class.call(agent_summary: agent_summary)
+
+      expect(result).to eq(generated_description.strip)
+      expect(AgentHarness).to have_received(:send_message).twice
+    end
+
+    it "succeeds when a raised exception is followed by success on retry" do
+      success = instance_double(AgentHarness::Response, success?: true, output: generated_description)
+      attempts = 0
+      allow(AgentHarness).to receive(:send_message) do
+        attempts += 1
+        raise AgentHarness::ProviderError.new("Provider unavailable") if attempts == 1
+        success
+      end
+
+      result = described_class.call(agent_summary: agent_summary)
+
+      expect(result).to eq(generated_description.strip)
+      expect(AgentHarness).to have_received(:send_message).twice
+    end
+
+    it "does not retry when a successful response has blank output" do
+      response = instance_double(AgentHarness::Response, success?: true, output: "  \n  ")
+      allow(AgentHarness).to receive(:send_message).and_return(response)
+
+      described_class.call(agent_summary: agent_summary)
+
+      expect(AgentHarness).to have_received(:send_message).once
+    end
+
+    it "lets non-retryable AgentHarness errors propagate to the caller" do
+      allow(AgentHarness).to receive(:send_message)
+        .and_raise(AgentHarness::AuthenticationError.new("Invalid key"))
+
       expect {
         described_class.call(agent_summary: agent_summary)
-      }.to raise_error(AgentHarness::TimeoutError)
+      }.to raise_error(AgentHarness::AuthenticationError)
     end
 
     it "truncates long agent summaries in the prompt" do

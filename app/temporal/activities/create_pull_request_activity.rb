@@ -4,8 +4,6 @@ module Activities
   class CreatePullRequestActivity < BaseActivity
     activity_name "CreatePullRequest"
 
-    MAX_FALLBACK_SUMMARY_LENGTH = 10_000
-
     def execute(input)
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find(agent_run_id)
@@ -213,7 +211,7 @@ module Activities
       body = if template
         render_pr_template(template, issue, agent_run, description, quality_warnings)
       else
-        build_default_pr_body(issue, description, summary: summary, quality_warnings: quality_warnings)
+        build_default_pr_body(issue, description, quality_warnings: quality_warnings)
       end
 
       {
@@ -222,13 +220,13 @@ module Activities
       }
     end
 
-    def build_default_pr_body(issue, description, summary: nil, quality_warnings: nil)
+    def build_default_pr_body(issue, description, quality_warnings: nil)
       parts = []
 
       if description.present?
         parts << description
       else
-        parts << fallback_body(issue, summary: summary)
+        parts << fallback_body(issue)
       end
 
       if quality_warnings.present?
@@ -303,14 +301,14 @@ module Activities
       metadata["output_preview"].to_s
     end
 
-    def fallback_body(issue, summary: nil)
-      parts = []
-      parts << "## Summary"
-      parts << ""
+    # Deterministic fallback used when the LLM description generator fails or
+    # returns nothing. Never uses raw agent stdout — that output may contain
+    # debugging commentary, error-chasing notes, or other non-summary text
+    # that is unsuitable as a PR description (see PR #2859).
+    def fallback_body(issue)
+      parts = [ "## Summary", "" ]
 
-      if suitable_fallback_summary?(summary)
-        parts << summary.truncate(MAX_FALLBACK_SUMMARY_LENGTH, omission: "\n\n[truncated]")
-      elsif issue
+      if issue
         parts << issue.title
         parts << ""
         parts << "See ##{issue.github_number} for context."
@@ -319,14 +317,6 @@ module Activities
       end
 
       parts.join("\n")
-    end
-
-    def suitable_fallback_summary?(text)
-      return false if text.blank?
-      return false if text.start_with?("{", "[")
-      return false if text.start_with?("Agent encountered an error:")
-
-      true
     end
 
     def generate_description(summary, issue, agent_run_id:)
