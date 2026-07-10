@@ -528,6 +528,8 @@ module Screenshots
 
       if File.exist?(File.join(@tmpdir, "bin/dev"))
         "PORT=#{port} bin/dev"
+      elsif File.exist?(File.join(@tmpdir, "mix.exs"))
+        "MIX_ENV=dev PORT=#{port} mix phx.server"
       elsif File.exist?(File.join(@tmpdir, "bin/rails"))
         "bundle exec bin/rails server -b 0.0.0.0 -p #{port}"
       elsif File.exist?(File.join(@tmpdir, "manage.py"))

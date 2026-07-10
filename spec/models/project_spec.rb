@@ -1709,10 +1709,10 @@ RSpec.describe Project do
       end
 
       it "rejects unknown screenshot frameworks" do
-        project = build(:project, screenshot_settings: { "framework" => "phoenix" })
+        project = build(:project, screenshot_settings: { "framework" => "laravel" })
 
         expect(project).not_to be_valid
-        expect(project.errors[:screenshot_settings].join).to include("framework must be one of: rails, nextjs, django, generic")
+        expect(project.errors[:screenshot_settings].join).to include("framework must be one of: rails, nextjs, django, phoenix, generic")
       end
 
       it "rejects unknown screenshot_settings keys" do

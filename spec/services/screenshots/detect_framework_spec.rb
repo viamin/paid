@@ -39,6 +39,29 @@ RSpec.describe Screenshots::DetectFramework, :no_db do
       expect(result.suggested_config.dig("auth", "login_path")).to eq("/accounts/login/")
     end
 
+    it "detects a Phoenix app and parses router.ex routes" do
+      result = described_class.call(repo_path: fixture_path("phoenix_repo"))
+
+      expect(result.framework).to eq(:phoenix)
+      expect(result.confidence).to eq(1.0)
+      expect(result.suggested_config["driver"]).to eq("playwright")
+      expect(result.suggested_config["base_url"]).to eq("http://localhost:4000")
+      expect(result.detected_routes.map { |route| route["path"] }).to include("/", "/dashboard", "/reports", "/admin", "/admin/users")
+    end
+
+    it "detects Phoenix services from config/dev.exs adapters and mix.exs deps" do
+      result = described_class.call(repo_path: fixture_path("phoenix_repo"))
+
+      expect(result.detected_services).to include("postgres")
+    end
+
+    it "detects Phoenix auth when phx_gen_auth or LiveView is used" do
+      result = described_class.call(repo_path: fixture_path("phoenix_repo"))
+
+      expect(result.suggested_config.dig("auth", "strategy")).to eq("form")
+      expect(result.suggested_config.dig("auth", "login_path")).to eq("/users/log_in")
+    end
+
     it "falls back to a generic app when no known framework is detected" do
       result = described_class.call(repo_path: fixture_path("generic_repo"))
 
@@ -74,6 +97,14 @@ RSpec.describe Screenshots::DetectFramework, :no_db do
 
         expect(result.framework).to eq(:nextjs)
         expect(result.detected_routes.map { |route| route["path"] }).to include("/")
+      end
+
+      it "detects Phoenix from mix.exs and lib/*_web/router.ex" do
+        result = described_class.call(
+          file_list: [ "mix.exs", "lib/my_app_web/router.ex" ]
+        )
+
+        expect(result.framework).to eq(:phoenix)
       end
 
       it "falls back to generic for an empty file list" do
@@ -263,6 +294,108 @@ RSpec.describe Screenshots::DetectFramework, :no_db do
     end
   end
 
+  describe "Phoenix router parsing" do
+    def phoenix_repo_with_router(router_content)
+      instance_double(
+        described_class::LocalRepository,
+        glob: [ "lib/my_app_web/router.ex" ]
+      ).tap do |repo|
+        allow(repo).to receive(:file?) do |path|
+          [ "lib/my_app_web/router.ex" ].include?(path)
+        end
+        allow(repo).to receive(:read).with("lib/my_app_web/router.ex").and_return(router_content)
+        allow(repo).to receive(:read).with("mix.exs").and_return("")
+        allow(repo).to receive(:read).with("config/dev.exs").and_return("")
+        allow(repo).to receive(:read).with("config/runtime.exs").and_return("")
+      end
+    end
+
+    it "extracts get, post, live, and resources routes" do
+      router = <<~EX
+        defmodule MyAppWeb.Router do
+          use MyAppWeb, :router
+
+          scope "/", MyAppWeb do
+            get "/", PageController, :index
+            post "/contact", PageController, :create
+            live "/dashboard", DashboardLive, :index
+            resources "/reports", ReportController
+          end
+        end
+      EX
+      repo = phoenix_repo_with_router(router)
+      service = described_class.new(repo_path: fixture_path("phoenix_repo"))
+      allow(service).to receive(:repo).and_return(repo)
+
+      parsed_routes = service.send(:discover_phoenix_routes)
+      paths = parsed_routes.map { |r| r["path"] }
+
+      expect(paths).to include("/", "/contact", "/dashboard", "/reports")
+    end
+
+    it "carries scope prefixes into nested routes" do
+      router = <<~EX
+        defmodule MyAppWeb.Router do
+          use MyAppWeb, :router
+
+          scope "/admin", MyAppWeb.Admin do
+            get "/", AdminController, :index
+            resources "/users", UserController
+          end
+        end
+      EX
+      repo = phoenix_repo_with_router(router)
+      service = described_class.new(repo_path: fixture_path("phoenix_repo"))
+      allow(service).to receive(:repo).and_return(repo)
+
+      parsed_routes = service.send(:discover_phoenix_routes)
+      paths = parsed_routes.map { |r| r["path"] }
+
+      expect(paths).to include("/admin", "/admin/users")
+    end
+  end
+
+  describe "Elixir mix dependency parsing" do
+    it "extracts dependency names from mix.exs defp deps" do
+      content = <<~EX
+        defp deps do
+          [
+            {:phoenix, "~> 1.7.0"},
+            {:phoenix_ecto, "~> 4.4"},
+            {:postgrex, ">= 0.0.0"}
+          ]
+        end
+      EX
+
+      repo = instance_double(described_class::LocalRepository)
+      allow(repo).to receive(:read).with("mix.exs").and_return(content)
+      service = described_class.new(repo_path: fixture_path("phoenix_repo"))
+      allow(service).to receive(:repo).and_return(repo)
+
+      deps = service.send(:elixir_mix_dependencies)
+
+      expect(deps).to contain_exactly("phoenix", "phoenix_ecto", "postgrex")
+    end
+
+    it "returns an empty array when mix.exs has no deps block" do
+      repo = instance_double(described_class::LocalRepository)
+      allow(repo).to receive(:read).with("mix.exs").and_return("# no deps")
+      service = described_class.new(repo_path: fixture_path("phoenix_repo"))
+      allow(service).to receive(:repo).and_return(repo)
+
+      expect(service.send(:elixir_mix_dependencies)).to eq([])
+    end
+
+    it "returns an empty array when mix.exs is missing" do
+      repo = instance_double(described_class::LocalRepository)
+      allow(repo).to receive(:read).with("mix.exs").and_return(nil)
+      service = described_class.new(repo_path: fixture_path("phoenix_repo"))
+      allow(service).to receive(:repo).and_return(repo)
+
+      expect(service.send(:elixir_mix_dependencies)).to eq([])
+    end
+  end
+
   describe "dependency memoization" do
     let(:repo) do
       instance_double(
@@ -279,7 +412,10 @@ RSpec.describe Screenshots::DetectFramework, :no_db do
       allow(repo).to receive(:read).with("package.json").and_return(JSON.dump({
         "dependencies" => { "next" => "1.0.0", "next-auth" => "1.0.0", "redis" => "1.0.0" }
       }))
+      allow(repo).to receive(:read).with("mix.exs").and_return("")
       allow(repo).to receive(:read).with("config/database.yml").and_return("")
+      allow(repo).to receive(:read).with("config/dev.exs").and_return("")
+      allow(repo).to receive(:read).with("config/runtime.exs").and_return("")
       allow(repo).to receive(:read).with("config/routes.rb").and_return("devise_for :users\n")
       allow(repo).to receive(:read).with("middleware.ts").and_return("")
       allow(repo).to receive(:read).with("middleware.js").and_return("")

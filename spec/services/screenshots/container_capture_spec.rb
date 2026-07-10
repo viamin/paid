@@ -151,6 +151,50 @@ RSpec.describe Screenshots::ContainerCapture do
     expect(command).not_to include(%q(uri = URI("http://localhost:3000/it's-a-path")))
   end
 
+  describe "#application_start_command" do
+    let(:tmpdir) { Dir.mktmpdir("container-capture-app-start-") }
+
+    before { service.instance_variable_set(:@tmpdir, tmpdir) }
+    after { FileUtils.rm_rf(tmpdir) }
+
+    it "uses mix phx.server for a Phoenix app" do
+      File.write(File.join(tmpdir, "mix.exs"), "defmodule MyApp.MixProject do\nend\n")
+
+      command = service.send(:application_start_command)
+
+      expect(command).to start_with("MIX_ENV=dev PORT=")
+      expect(command).to end_with("mix phx.server")
+    end
+
+    it "uses bin/dev when present, even if mix.exs also exists" do
+      FileUtils.mkdir_p(File.join(tmpdir, "bin"))
+      File.write(File.join(tmpdir, "bin/dev"), "#!/bin/sh\n")
+      File.write(File.join(tmpdir, "mix.exs"), "")
+
+      command = service.send(:application_start_command)
+
+      expect(command).to start_with("PORT=")
+      expect(command).to end_with("bin/dev")
+    end
+
+    it "uses bin/rails for a Rails app" do
+      FileUtils.mkdir_p(File.join(tmpdir, "bin"))
+      File.write(File.join(tmpdir, "bin/rails"), "#!/bin/sh\n")
+
+      command = service.send(:application_start_command)
+
+      expect(command).to include("bin/rails server")
+    end
+
+    it "uses manage.py runserver for Django" do
+      File.write(File.join(tmpdir, "manage.py"), "#!/usr/bin/env python\n")
+
+      command = service.send(:application_start_command)
+
+      expect(command).to eq("python3 manage.py runserver 0.0.0.0:3000")
+    end
+  end
+
   describe "#screenshot_config_json (capture scoping and annotation)" do
     let(:multi_route_config) do
       Screenshots::Configuration.from_hash(
