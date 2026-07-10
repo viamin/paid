@@ -192,4 +192,99 @@ RSpec.describe Screenshots::ContainerCapture do
       expect(routes.map { |r| r["name"] }).to contain_exactly("dashboard", "settings")
     end
   end
+
+  describe "seed data support" do
+    let(:seed_config) do
+      Screenshots::Configuration.from_hash(
+        "base_url" => "http://localhost:3000",
+        "routes" => [ { "path" => "/", "name" => "home" } ],
+        "seed" => [ { "key" => "__all__", "runner" => "Screenshots::SeedData::Paid.call" } ]
+      )
+    end
+    let(:workspace) { Dir.mktmpdir("seed-spec") }
+    let(:container) do
+      instance_double(Containers::Provision).tap do |c|
+        allow(c).to receive(:execute).and_return(
+          Containers::Provision::Result.success(stdout: "{}", stderr: "", exit_code: 0)
+        )
+      end
+    end
+
+    before do
+      allow(service).to receive(:config).and_return(seed_config)
+      service.instance_variable_set(:@tmpdir, workspace)
+      service.instance_variable_set(:@screenshot_container, container)
+      service.instance_variable_set(:@screenshot_service_env, { "DATABASE_URL" => "postgres://isolated/db" })
+    end
+
+    after do
+      FileUtils.rm_rf(workspace)
+    end
+
+    it "runs the seed script inside the container with the isolated database env" do
+      captured_command = nil
+      captured_env = nil
+      allow(container).to receive(:execute) do |command, **opts|
+        captured_command = command
+        captured_env = opts[:env]
+        Containers::Provision::Result.success(stdout: "{}", stderr: "", exit_code: 0)
+      end
+
+      service.send(:run_seed!)
+
+      expect(captured_command).to eq("bin/rails runner .paid-screenshots/seed_runner.rb")
+      expect(captured_env).to include(
+        "DATABASE_URL" => "postgres://isolated/db",
+        "CHROME_URL" => described_class::CHROME_URL
+      )
+      expect(captured_env).to have_key("SCREENSHOT_SEED_CONFIG")
+    end
+
+    it "writes the Screenshots::SeedRunner script into the workspace" do
+      service.send(:run_seed!)
+
+      written = File.read(File.join(workspace, ".paid-screenshots/seed_runner.rb"))
+      expect(written).to eq(Screenshots::SeedRunner::SCRIPT)
+    end
+
+    it "is a no-op when no seed config is present" do
+      allow(service).to receive(:config).and_return(
+        Screenshots::Configuration.from_hash(
+          "base_url" => "http://localhost:3000",
+          "routes" => [ { "path" => "/", "name" => "home" } ]
+        )
+      )
+
+      service.send(:run_seed!)
+
+      expect(container).not_to have_received(:execute)
+    end
+
+    it "raises when the seed script exits non-zero" do
+      allow(container).to receive(:execute).and_return(
+        Containers::Provision::Result.new(success: false, data: { stdout: "", stderr: "seed blew up" })
+      )
+
+      expect { service.send(:run_seed!) }.to raise_error(/Screenshot seed setup failed: seed blew up/)
+    end
+
+    it "loads seed data before the app readiness check, failing the capture on seed error" do
+      allow(container).to receive(:execute).and_return(
+        Containers::Provision::Result.new(success: false, data: { stdout: "", stderr: "seed blew up" })
+      )
+      allow(service).to receive(:provision_service_dependencies!) do
+        service.instance_variable_set(:@screenshot_service_env, { "DATABASE_URL" => "postgres://isolated/db" })
+      end
+      allow(Screenshots::ConfigParser).to receive_messages(from_repo_path: seed_config, ui_detection_overrides: {})
+      allow(service).to receive_messages(start_chrome!: true, run_setup_commands!: true,
+        publish_result!: true, cleanup!: true, run_capture!: [])
+      allow(service).to receive(:start_application!)
+
+      result = service.call
+
+      expect(result.status).to eq("capture_failed")
+      expect(result.error).to include("seed blew up")
+      expect(service).not_to have_received(:start_application!)
+    end
+  end
 end

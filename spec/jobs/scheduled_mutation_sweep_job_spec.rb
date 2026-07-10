@@ -40,7 +40,7 @@ RSpec.describe ScheduledMutationSweepJob do
         source: QualityMetric::SCHEDULED_MUTATION_SWEEP_SOURCE,
         mutation_kill_rate: 0.8,
         scores: { "mutation_kill_rate" => 0.8 },
-        created_at: Time.utc(2026, 5, 27, 6))
+        created_at: Time.zone.local(2026, 5, 27, 12))
 
       job.perform(sweep_date: "2026-05-27")
 
@@ -59,7 +59,7 @@ RSpec.describe ScheduledMutationSweepJob do
         source: QualityMetric::SCHEDULED_MUTATION_SWEEP_SOURCE,
         mutation_kill_rate: nil,
         scores: {},
-        created_at: Time.utc(2026, 5, 27, 6))
+        created_at: Time.zone.local(2026, 5, 27, 12))
 
       job.perform(sweep_date: "2026-05-27")
 
