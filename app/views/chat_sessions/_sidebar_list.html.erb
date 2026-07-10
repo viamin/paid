@@ -1,0 +1,27 @@
+<% archived_view = local_assigns.fetch(:archived_view, false) %>
+<% has_more = local_assigns.fetch(:sidebar_has_more, false) %>
+
+<%= turbo_frame_tag "chat_sessions_list",
+                    class: "max-h-[70vh] flex-1 overflow-y-auto p-4 lg:max-h-[70vh]",
+                    target: "_top",
+                    data: { chat_session_list_target: "list" } do %>
+  <%= render "sidebar_toggle", archived_view: archived_view %>
+
+  <% if sessions.any? %>
+    <div class="space-y-2">
+      <% sessions.each do |sidebar_session| %>
+        <%= render "session_card", chat_session: sidebar_session %>
+      <% end %>
+    </div>
+  <% else %>
+    <p class="py-6 text-center text-xs text-gray-400">
+      <%= archived_view ? "No archived chats." : "No chats yet." %>
+    </p>
+  <% end %>
+
+  <% if has_more && sidebar_next_frame_id && sidebar_next_params %>
+    <%= turbo_frame_tag sidebar_next_frame_id, src: sidebar_page_chat_sessions_path(sidebar_next_params), loading: :lazy do %>
+      <p class="py-3 text-center text-xs text-gray-400">Loading more...</p>
+    <% end %>
+  <% end %>
+<% end %>

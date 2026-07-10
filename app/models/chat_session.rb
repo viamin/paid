@@ -46,6 +46,7 @@ class ChatSession < ApplicationRecord
 
   scope :active, -> { where(status: "active") }
   scope :visible, -> { where.not(status: "archived") }
+  scope :archived_only, -> { where(status: "archived") }
   scope :idle_expired, -> { where(status: "active").where("idle_timeout_at < ?", Time.current) }
   scope :with_preview_content, lambda {
     preview_subquery = ChatMessage.where("chat_messages.chat_session_id = chat_sessions.id")

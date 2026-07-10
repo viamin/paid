@@ -1,0 +1,16 @@
+<% archived_view = local_assigns.fetch(:archived_view, false) %>
+
+<div class="mb-3 flex items-center gap-1 rounded-lg bg-gray-100 p-1 text-xs font-medium" role="tablist" aria-label="Chat sessions filter">
+  <%= link_to "Active",
+              sidebar_page_chat_sessions_path(archived: "false"),
+              role: "tab",
+              "aria-selected": (!archived_view).to_s,
+              class: "flex-1 rounded-md px-3 py-1.5 text-center transition #{archived_view ? 'text-gray-500 hover:text-gray-700' : 'bg-white text-gray-900 shadow-sm'}",
+              data: { turbo_frame: "chat_sessions_list" } %>
+  <%= link_to "Archived",
+              sidebar_page_chat_sessions_path(archived: "true"),
+              role: "tab",
+              "aria-selected": archived_view.to_s,
+              class: "flex-1 rounded-md px-3 py-1.5 text-center transition #{archived_view ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}",
+              data: { turbo_frame: "chat_sessions_list" } %>
+</div>

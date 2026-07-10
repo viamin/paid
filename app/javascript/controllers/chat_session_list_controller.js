@@ -8,15 +8,13 @@ export default class extends Controller {
     this.mediaQuery = typeof window.matchMedia === "function" ? window.matchMedia("(min-width: 1024px)") : null
     this.boundCloseOnDesktop = this.closeOnDesktop.bind(this)
     this.boundCloseOnNavigate = this.closeSidebar.bind(this)
+    this.boundOnFrameRender = this.handleFrameRender.bind(this)
 
     this.addMediaQueryListener(this.boundCloseOnDesktop)
     document.addEventListener("turbo:before-visit", this.boundCloseOnNavigate)
+    this.element.addEventListener("turbo:frame-render", this.boundOnFrameRender)
 
-    this.observer = new window.MutationObserver(() => {
-      this.filter()
-      this.updateActiveCard()
-    })
-    this.observer.observe(this.listTarget, { childList: true, subtree: true })
+    this.setupObserver()
     this.filter()
     this.updateActiveCard()
     this.updateMobileSidebarState()
@@ -26,7 +24,27 @@ export default class extends Controller {
     this.observer?.disconnect()
     this.removeMediaQueryListener(this.boundCloseOnDesktop)
     document.removeEventListener("turbo:before-visit", this.boundCloseOnNavigate)
+    this.element.removeEventListener("turbo:frame-render", this.boundOnFrameRender)
     document.body.classList.remove("overflow-hidden")
+  }
+
+  setupObserver() {
+    this.observer?.disconnect()
+    if (!this.hasListTarget) return
+
+    this.observer = new window.MutationObserver(() => {
+      this.filter()
+      this.updateActiveCard()
+    })
+    this.observer.observe(this.listTarget, { childList: true, subtree: true })
+  }
+
+  handleFrameRender(event) {
+    if (event.target?.id !== "chat_sessions_list") return
+
+    this.setupObserver()
+    this.filter()
+    this.updateActiveCard()
   }
 
   filter() {
