@@ -149,6 +149,17 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
+      - name: Extract agent-harness version from Gemfile.lock
+        if: steps.changes.outputs.image_relevant == 'true'
+        id: agent-harness
+        run: |
+          version=$(sed -n '/^GEM$/,/^$/s/^  *agent-harness (\(.*\))/\1/p' Gemfile.lock | head -n 1)
+          if [ -z "$version" ]; then
+            echo "Failed to extract agent-harness version from Gemfile.lock" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       - name: Extract Bundler version from Gemfile.lock
         if: steps.changes.outputs.image_relevant == 'true'
         id: bundler-version
@@ -323,6 +334,7 @@ jobs:
           build-args: |
             BUNDLER_VERSION=${{ steps.bundler-version.outputs.version }}
             RUBY_MAAT_VERSION=${{ steps.ruby-maat.outputs.version }}
+            AGENT_HARNESS_VERSION=${{ steps.agent-harness.outputs.version }}
             CLAUDE_INSTALL_COMMAND=${{ steps.claude-contract.outputs.install_command }}
             CLAUDE_POST_INSTALL_BINARY_PATH=${{ steps.claude-contract.outputs.post_install_binary_path }}
             CURSOR_ARTIFACT_URL=${{ steps.cursor-contract.outputs.artifact_url }}
