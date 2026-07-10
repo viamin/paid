@@ -14,6 +14,16 @@ RSpec.describe Screenshots::Storage do
     )
   end
 
+  def trace_tempfile
+    file = Tempfile.new([ "trace", ".zip" ])
+    file.write("fake trace data")
+    file.rewind
+    yield file
+  ensure
+    file&.close
+    file&.unlink
+  end
+
   describe "#object_key" do
     it "builds the correct S3 key path" do
       key = storage.object_key(
@@ -25,6 +35,14 @@ RSpec.describe Screenshots::Storage do
       )
 
       expect(key).to eq("screenshots/acme/web/pr-42/abc1234/dashboard.png")
+    end
+  end
+
+  describe "#trace_object_key" do
+    it "builds the trace S3 key path" do
+      key = storage.trace_object_key(org: "acme", repo: "web", pr_number: 42, commit_sha: "abc1234")
+
+      expect(key).to eq("screenshots/acme/web/pr-42/abc1234/trace.zip")
     end
   end
 
@@ -96,6 +114,32 @@ RSpec.describe Screenshots::Storage do
     ensure
       file.close
       file.unlink
+    end
+  end
+
+  describe "#upload_trace" do
+    it "uploads a trace archive to S3 as application/zip and returns a presigned URL" do
+      allow(storage).to receive(:put_object)
+      allow(storage).to receive(:signed_url).and_return("https://example.test/trace.zip?X-Amz-Signature=abc")
+
+      trace_tempfile do |file|
+        url = storage.upload_trace(file_path: file.path, org: "acme", repo: "web", pr_number: 42, commit_sha: "abc1234")
+        expect(url).to eq("https://example.test/trace.zip?X-Amz-Signature=abc")
+        expect(storage).to have_received(:put_object).with(
+          file_path: file.path, key: "screenshots/acme/web/pr-42/abc1234/trace.zip", content_type: "application/zip"
+        )
+        expect(storage).to have_received(:signed_url).with("screenshots/acme/web/pr-42/abc1234/trace.zip")
+      end
+    end
+
+    it "raises StorageError on S3 failure" do
+      trace_tempfile do |file|
+        s3_client.stub_responses(:put_object, "ServiceError")
+
+        expect {
+          storage.upload_trace(file_path: file.path, org: "acme", repo: "web", pr_number: 42, commit_sha: "abc1234")
+        }.to raise_error(Screenshots::Storage::StorageError, /S3 trace upload failed/)
+      end
     end
   end
 

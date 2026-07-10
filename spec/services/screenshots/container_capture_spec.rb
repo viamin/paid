@@ -192,4 +192,88 @@ RSpec.describe Screenshots::ContainerCapture do
       expect(routes.map { |r| r["name"] }).to contain_exactly("dashboard", "settings")
     end
   end
+
+  describe "#capture_runner_script (trace recording)" do
+    it "starts and stops Playwright tracing, writing trace.zip" do
+      script = service.send(:capture_runner_script)
+
+      expect(script).to include("context.tracing.start({ screenshots: true, snapshots: true, sources: true })")
+      expect(script).to include("context.tracing.stop({ path: `${outputDir}/trace.zip` })")
+    end
+
+    it "gates video recording on the SCREENSHOT_RECORD_VIDEO env var" do
+      script = service.send(:capture_runner_script)
+
+      expect(script).to include('process.env.SCREENSHOT_RECORD_VIDEO === "1"')
+      expect(script).to include("contextOptions.recordVideo = { dir: `${outputDir}/videos` }")
+    end
+  end
+
+  describe "#record_video?" do
+    it "defaults to disabled" do
+      expect(service.send(:record_video?)).to be false
+    end
+
+    it "reflects the project record_video screenshot setting" do
+      allow(project).to receive(:effective_screenshot_settings)
+        .and_return("record_video" => true)
+
+      expect(service.send(:record_video?)).to be true
+    end
+  end
+
+  describe "#publish_result! (trace upload)" do
+    before do
+      allow(service).to receive(:publish_result!).and_call_original
+    end
+
+    def with_trace_tempfile
+      trace = Tempfile.new([ "trace", ".zip" ])
+      trace.write("fake trace")
+      trace.rewind
+      service.instance_variable_set(:@trace_path, trace.path)
+      yield trace
+    ensure
+      trace&.close
+      trace&.unlink
+    end
+
+    def stubbed_storage(upload_trace:)
+      storage = instance_double(Screenshots::Storage)
+      allow(Screenshots::Storage).to receive_messages(configured?: true, new: storage)
+      allow(storage).to receive(:upload) { |k| "https://s3.example.com/#{k[:route_name]}.png" }
+      if upload_trace == :raise
+        allow(storage).to receive(:upload_trace).and_raise(Screenshots::Storage::StorageError, "boom")
+      else
+        allow(storage).to receive(:upload_trace).and_return(upload_trace)
+      end
+      allow(storage).to receive(:previous_screenshots).and_return({})
+      storage
+    end
+
+    it "uploads the trace archive and surfaces it in the PR comment" do
+      storage = stubbed_storage(upload_trace: "https://s3.example.com/trace.zip")
+
+      with_trace_tempfile do |trace|
+        service.send(:publish_result!, [ "/tmp/screenshots/home.png" ])
+        expect(storage).to have_received(:upload_trace).with(
+          file_path: trace.path, org: project.owner, repo: project.repo,
+          pr_number: agent_run.pull_request_number, commit_sha: agent_run.result_commit_sha
+        )
+      end
+
+      expect(Screenshots::PrComment).to have_received(:call)
+        .with(hash_including(trace_url: "https://s3.example.com/trace.zip"))
+    end
+
+    it "still publishes screenshots when the trace upload fails" do
+      stubbed_storage(upload_trace: :raise)
+
+      with_trace_tempfile do
+        expect { service.send(:publish_result!, [ "/tmp/screenshots/home.png" ]) }.not_to raise_error
+      end
+
+      expect(Screenshots::PrComment).to have_received(:call).with(hash_including(trace_url: nil))
+    end
+  end
 end

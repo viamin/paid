@@ -1722,6 +1722,19 @@ RSpec.describe Project do
         expect(project.errors[:screenshot_settings].join).to include("unknown keys: bogus")
       end
 
+      it "accepts the record_video screenshot setting" do
+        project = build(:project, screenshot_settings: { "enabled" => true, "record_video" => true })
+
+        expect(project).to be_valid
+      end
+
+      it "rejects a non-boolean record_video screenshot setting" do
+        project = build(:project, screenshot_settings: { "record_video" => "yes" })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:screenshot_settings].join).to include("record_video must be true or false")
+      end
+
       it "rejects invalid viewport in screenshot_settings" do
         project = build(:project, screenshot_settings: { "viewport" => "bad" })
 
