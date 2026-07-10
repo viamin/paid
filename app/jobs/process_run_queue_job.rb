@@ -87,6 +87,17 @@ class ProcessRunQueueJob < ApplicationJob
 
         break unless next_run
 
+        # RDR-032 dequeue-time eligibility recheck: cancel eagerly-seeded
+        # runs whose issue lost eligibility after seeding (skip label,
+        # paid_state skip, new blocking dependency, closed/completed, ...).
+        # Re-enqueue hooks recreate the run if the issue becomes eligible
+        # again. Done before capacity/docker checks so ineligible runs
+        # don't consume expensive admission work.
+        if AgentRuns::RecheckIssueEligibility.call(next_run)
+          skipped_ids.add(next_run.id)
+          next
+        end
+
         if lower_priority_than_inflight_or_started_project_run?(next_run, started_priority_by_project)
           blocked_project_ids.add(next_run.project_id)
           next
