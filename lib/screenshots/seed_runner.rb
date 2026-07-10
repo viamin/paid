@@ -113,25 +113,45 @@ module Screenshots
       puts JSON.generate(results)
     RUBY
 
-    def call(config:, repo_path:, driver_name:, force: false)
-      return {} unless force || driver_name == "cuprite"
+    # Runs the seed script and returns parsed seed data keyed by record name.
+    #
+    # The cuprite (in-process) screenshot path runs seeds locally against
+    # +repo_path+ via +bin/rails runner+. Container capture supplies an
+    # +executor+ that runs the same script inside the screenshot container
+    # so seeds load into the per-run isolated database before the app starts.
+    #
+    # executor - optional callable invoked as +executor.call(env)+ that returns
+    #            +[stdout, stderr, success]+. When omitted, seeds run locally
+    #            and only for the cuprite driver (or when +force+ is true).
+    def call(config:, repo_path:, driver_name:, force: false, executor: nil)
       return {} if config.seed.empty?
+      return {} if !force && executor.nil? && driver_name != "cuprite"
 
-      stdout, stderr, status = Open3.capture3(
-        { "SCREENSHOT_SEED_CONFIG" => JSON.generate(config.seed.map(&:to_h)) },
-        "bin/rails",
-        "runner",
-        SCRIPT,
-        chdir: repo_path
-      )
+      env = seed_env(config)
+      stdout, stderr, success = executor ? executor.call(env) : run_locally(env, repo_path)
 
-      raise "Screenshot seed setup failed: #{stderr.presence || stdout}" unless status.success?
+      raise "Screenshot seed setup failed: #{stderr.presence || stdout}" unless success
 
+      parse_output(stdout)
+    rescue JSON::ParserError => e
+      raise "Screenshot seed setup returned invalid JSON: #{e.message}"
+    end
+
+    private
+
+    def seed_env(config)
+      { "SCREENSHOT_SEED_CONFIG" => JSON.generate(config.seed.map(&:to_h)) }
+    end
+
+    def run_locally(env, repo_path)
+      stdout, stderr, status = Open3.capture3(env, "bin/rails", "runner", SCRIPT, chdir: repo_path)
+      [ stdout, stderr, status.success? ]
+    end
+
+    def parse_output(stdout)
       JSON.parse(stdout).transform_keys(&:to_sym).transform_values do |value|
         value.is_a?(Hash) ? OpenStruct.new(value) : value
       end
-    rescue JSON::ParserError => e
-      raise "Screenshot seed setup returned invalid JSON: #{e.message}"
     end
   end
 end

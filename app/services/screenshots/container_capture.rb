@@ -151,10 +151,6 @@ module Screenshots
           "(configured: #{config.driver})"
       end
 
-      if config.seed.any?
-        raise Screenshots::ConfigError, "container screenshot capture does not yet support seed data"
-      end
-
       dynamic_route = config.routes.find do |route|
         route.path.to_s.match?(/:\w+|%\{[^}]+\}/) || route.seed_key.present?
       end
