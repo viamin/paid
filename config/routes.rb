@@ -210,6 +210,7 @@ Rails.application.routes.draw do
       get :export
     end
     resource :bundle_performance_dashboard, only: [ :show ], controller: "projects/bundle_performance_dashboards"
+    resource :scaling_dashboard, only: [ :show ], controller: "projects/scaling_dashboards"
     resource :roi_dashboard, only: [ :show ], controller: "projects/roi_dashboards" do
       get :export
     end

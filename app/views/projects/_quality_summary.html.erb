@@ -3,6 +3,7 @@
     <h2 class="text-lg font-medium text-gray-900">Quality</h2>
     <div class="flex items-center gap-3">
       <%= link_to "Bundle Analysis", project_bundle_performance_dashboard_path(project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+      <%= link_to "Scaling Dashboard", project_scaling_dashboard_path(project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
       <% if quality_summary[:total_metrics] > 0 %>
         <%= link_to "View Dashboard", project_quality_dashboard_path(project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
       <% end %>

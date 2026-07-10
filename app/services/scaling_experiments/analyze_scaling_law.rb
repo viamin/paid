@@ -12,8 +12,11 @@ module ScalingExperiments
       :leading_value,
       :recommended_value,
       :scaling_exponent,
+      :scaling_exponent_confidence_interval,
       :diminishing_returns_at,
       :efficiency_gain_at_recommendation,
+      :sample_threshold_review,
+      :statistical_rigor,
       :allocator_decision,
       :values,
       keyword_init: true
@@ -29,8 +32,11 @@ module ScalingExperiments
           "leading_value" => leading_value,
           "recommended_value" => recommended_value,
           "scaling_exponent" => scaling_exponent,
+          "scaling_exponent_confidence_interval" => scaling_exponent_confidence_interval,
           "diminishing_returns_at" => diminishing_returns_at,
           "efficiency_gain_at_recommendation" => efficiency_gain_at_recommendation,
+          "sample_threshold_review" => sample_threshold_review,
+          "statistical_rigor" => statistical_rigor,
           "allocator_decision" => allocator_decision,
           "values" => values
         }.compact
@@ -38,10 +44,11 @@ module ScalingExperiments
     end
 
     MIN_SAMPLES = 2
+    RDR_TARGET_MIN_SAMPLES_PER_VALUE = 30
     DIMINISHING_RETURNS_RATIO = 0.10
     MIN_EFFICIENCY_GAIN = 0.10
+    MAX_ACTIONABLE_INTERVAL_WIDTH_RATIO = 0.5
 
-    # Maps validated outcome_metrics keys to summary field names emitted by SummarizeResults.
     METRIC_KEY_TO_SUMMARY_FIELD = {
       "duration_seconds" => "avg_duration_seconds",
       "total_cost_cents" => "avg_cost_cents",
@@ -52,9 +59,10 @@ module ScalingExperiments
       new(...).call
     end
 
-    def initialize(scaling_experiment:, value_summaries:)
+    def initialize(scaling_experiment:, value_summaries:, confidence_level: 0.95)
       @scaling_experiment = scaling_experiment
       @value_summaries = Array(value_summaries)
+      @confidence_level = confidence_level.to_f
     end
 
     def call
@@ -70,8 +78,11 @@ module ScalingExperiments
         leading_value: leading_summary&.fetch("assigned_value", nil),
         recommended_value: recommended_summary&.fetch("assigned_value", nil),
         scaling_exponent: scaling_exponent,
+        scaling_exponent_confidence_interval: scaling_exponent_confidence_interval,
         diminishing_returns_at: diminishing_returns_at,
         efficiency_gain_at_recommendation: recommended_summary&.fetch("efficiency_gain_vs_control", nil),
+        sample_threshold_review: sample_threshold_review,
+        statistical_rigor: statistical_rigor,
         allocator_decision: allocator_decision,
         values: analyzed_values
       )
@@ -79,7 +90,7 @@ module ScalingExperiments
 
     private
 
-    attr_reader :scaling_experiment, :value_summaries
+    attr_reader :scaling_experiment, :value_summaries, :confidence_level
 
     def empty_result
       Result.new(
@@ -89,6 +100,8 @@ module ScalingExperiments
         objective: primary_metric_objective,
         sample_count: 0,
         control_value: scaling_experiment.control_value,
+        sample_threshold_review: sample_threshold_review,
+        statistical_rigor: statistical_rigor,
         values: []
       )
     end
@@ -168,6 +181,7 @@ module ScalingExperiments
 
       summary.merge(
         "primary_metric_value" => primary_value,
+        "primary_metric_confidence_interval" => primary_metric_confidence_interval(summary),
         "transformed_primary_metric" => transformed,
         "efficiency_score" => efficiency_score,
         "efficiency_gain_vs_control" => efficiency_gain_vs_control(efficiency_score),
@@ -272,10 +286,19 @@ module ScalingExperiments
     end
 
     def scaling_exponent
-      exponents = viable_values.filter_map { |summary| summary["scaling_exponent_vs_control"]&.to_f }
-      return nil if exponents.empty?
+      scaling_exponent_confidence_interval["estimate"]
+    end
 
-      (exponents.sum / exponents.size).round(4)
+    def scaling_exponent_confidence_interval
+      @scaling_exponent_confidence_interval ||= ScalingExperiments::Statistics.log_log_slope_interval(
+        points: viable_values.filter_map do |summary|
+          transformed = summary["transformed_primary_metric"]&.to_f
+          next unless transformed&.positive?
+
+          { x: summary["assigned_value"].to_i, y: transformed }
+        end,
+        confidence_level:
+      )
     end
 
     def diminishing_returns_at
@@ -286,17 +309,9 @@ module ScalingExperiments
 
     def build_signals(summary:, previous:, marginal_gain:, primary_value:, transformed:, control_transformed:)
       [].tap do |signals|
-        if previous && marginal_gain && marginal_gain <= DIMINISHING_RETURNS_RATIO
-          signals << "diminishing_returns"
-        end
-
-        if previous && regression?(primary_value:, previous:)
-          signals << "primary_metric_regression"
-        end
-
-        if efficiency_score(summary, transformed, control_transformed) < 0
-          signals << "efficiency_regression"
-        end
+        signals << "diminishing_returns" if previous && marginal_gain && marginal_gain <= DIMINISHING_RETURNS_RATIO
+        signals << "primary_metric_regression" if previous && regression?(primary_value:, previous:)
+        signals << "efficiency_regression" if efficiency_score(summary, transformed, control_transformed) < 0
       end
     end
 
@@ -317,10 +332,12 @@ module ScalingExperiments
         "recommended_value" => value,
         "sample_count" => recommended_summary["sample_count"],
         "confidence" => confidence_for(recommended_summary),
+        "actionable" => actionable_recommendation?(recommended_summary),
         "reason" => recommendation_reason(recommended_summary),
         "efficiency_gain_vs_control" => recommended_summary["efficiency_gain_vs_control"],
         "scaling_exponent" => scaling_exponent,
-        "diminishing_returns_at" => diminishing_returns_at
+        "diminishing_returns_at" => diminishing_returns_at,
+        "scaling_exponent_confidence_interval" => scaling_exponent_confidence_interval
       }
 
       case scaling_experiment.dimension
@@ -344,7 +361,12 @@ module ScalingExperiments
     end
 
     def confidence_for(summary)
-      return "high" if summary["sample_count"].to_i >= 4 && summary["efficiency_gain_vs_control"].to_f >= MIN_EFFICIENCY_GAIN
+      interval_width = ScalingExperiments::Statistics.relative_width(
+        summary["primary_metric_confidence_interval"],
+        baseline: summary["primary_metric_value"]
+      )
+      return "high" if actionable_recommendation?(summary) && summary["sample_count"].to_i >= (configured_min_samples_per_value * 2)
+      return "medium" if summary["sample_count"].to_i >= configured_min_samples_per_value && interval_width && interval_width <= MAX_ACTIONABLE_INTERVAL_WIDTH_RATIO
       return "medium" if summary["sample_count"].to_i >= MIN_SAMPLES
 
       "low"
@@ -356,6 +378,55 @@ module ScalingExperiments
       else
         "highest_efficiency_before_threshold"
       end
+    end
+
+    def primary_metric_confidence_interval(summary)
+      summary.fetch(confidence_interval_field_for(primary_metric_key), nil)
+    end
+
+    def confidence_interval_field_for(metric_key)
+      "#{METRIC_KEY_TO_SUMMARY_FIELD.fetch(metric_key.to_s, metric_key.to_s)}_confidence_interval"
+    end
+
+    def configured_min_samples_per_value
+      @configured_min_samples_per_value ||= begin
+        value = scaling_experiment.respond_to?(:min_samples_per_value) ? scaling_experiment.min_samples_per_value.to_i : MIN_SAMPLES
+        [ value, MIN_SAMPLES ].max
+      end
+    end
+
+    def actionable_recommendation?(summary)
+      interval_width = ScalingExperiments::Statistics.relative_width(
+        summary["primary_metric_confidence_interval"],
+        baseline: summary["primary_metric_value"]
+      )
+
+      summary["sample_count"].to_i >= configured_min_samples_per_value &&
+        summary["efficiency_gain_vs_control"].to_f >= MIN_EFFICIENCY_GAIN &&
+        interval_width.present? &&
+        interval_width <= MAX_ACTIONABLE_INTERVAL_WIDTH_RATIO
+    end
+
+    def sample_threshold_review
+      {
+        "configured_min_samples_per_value" => configured_min_samples_per_value,
+        "analysis_min_samples_per_value" => MIN_SAMPLES,
+        "rdr_target_min_samples_per_value" => RDR_TARGET_MIN_SAMPLES_PER_VALUE,
+        "meets_rdr_target" => configured_min_samples_per_value >= RDR_TARGET_MIN_SAMPLES_PER_VALUE
+      }
+    end
+
+    def statistical_rigor
+      {
+        "confidence_level" => confidence_level.round(2),
+        "actionable_interval_width_ratio" => MAX_ACTIONABLE_INTERVAL_WIDTH_RATIO,
+        "power_law_fit_method" => "log_log_linear_fit",
+        "simplifications" => [
+          "Uses descriptive confidence intervals rather than the full comparative regression suite proposed in the RDR.",
+          "Treats configured experiment sample floors below 30 as intentional simplifications and flags them in reporting.",
+          "Recommendation confidence is based on sample size and interval width, not a full hypothesis-testing pipeline."
+        ]
+      }
     end
   end
 end

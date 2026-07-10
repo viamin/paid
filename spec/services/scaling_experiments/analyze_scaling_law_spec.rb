@@ -29,21 +29,7 @@ RSpec.describe ScalingExperiments::AnalyzeScalingLaw, :no_db do
       build_summary(4, sample_count: 3, success_rate: 0.95, duration: 170, cost: 360)
     )
 
-    expect(result).to include(
-      "status" => "ready",
-      "dimension" => "agent_count",
-      "control_value" => 1,
-      "recommended_value" => 2,
-      "leading_value" => 4,
-      "diminishing_returns_at" => 4
-    )
-    expect(result["scaling_exponent"]).to be > 0
-    expect(result.dig("allocator_decision", "requested_agent_count")).to eq(2)
-    expect(result.dig("allocator_decision", "max_batch_size")).to eq(2)
-    expect(result.dig("allocator_decision", "efficiency_gain_vs_control")).to be >= 0.10
-    expect(result.fetch("values")).to include(
-      hash_including("assigned_value" => 4, "signals" => include("diminishing_returns"))
-    )
+    expect_recommended_agent_count_analysis(result)
   end
 
   it "maps validated metric keys to summary field names (total_cost_cents -> avg_cost_cents)" do
@@ -119,13 +105,58 @@ RSpec.describe ScalingExperiments::AnalyzeScalingLaw, :no_db do
     ).to_h
   end
 
+  def expect_recommended_agent_count_analysis(result)
+    expect(result).to include(
+      "status" => "ready",
+      "dimension" => "agent_count",
+      "control_value" => 1,
+      "recommended_value" => 2,
+      "leading_value" => 4,
+      "diminishing_returns_at" => 4
+    )
+    expect(result["scaling_exponent"]).to be > 0
+    expect(result.dig("allocator_decision", "requested_agent_count")).to eq(2)
+    expect(result.dig("allocator_decision", "max_batch_size")).to eq(2)
+    expect(result.dig("allocator_decision", "efficiency_gain_vs_control")).to be >= 0.10
+    expect(result.dig("allocator_decision", "actionable")).to be(true)
+    expect(result.dig("scaling_exponent_confidence_interval", "estimate")).to eq(result["scaling_exponent"])
+    expect(result.dig("sample_threshold_review", "rdr_target_min_samples_per_value")).to eq(30)
+    expect(result.fetch("values")).to include(
+      hash_including("assigned_value" => 4, "signals" => include("diminishing_returns"))
+    )
+  end
+
   def build_summary(assigned_value, sample_count:, success_rate:, duration:, cost:)
     {
       "assigned_value" => assigned_value,
       "sample_count" => sample_count,
       "success_rate" => success_rate,
+      "success_rate_confidence_interval" => {
+        "mean" => success_rate,
+        "lower_bound" => [ success_rate - 0.05, 0.0 ].max.round(4),
+        "upper_bound" => [ success_rate + 0.05, 1.0 ].min.round(4),
+        "margin_of_error" => 0.05,
+        "sample_count" => sample_count,
+        "confidence_level" => 0.95
+      },
       "avg_duration_seconds" => duration,
-      "avg_cost_cents" => cost
+      "avg_duration_seconds_confidence_interval" => {
+        "mean" => duration.to_f,
+        "lower_bound" => (duration - 10).to_f,
+        "upper_bound" => (duration + 10).to_f,
+        "margin_of_error" => 10.0,
+        "sample_count" => sample_count,
+        "confidence_level" => 0.95
+      },
+      "avg_cost_cents" => cost,
+      "avg_cost_cents_confidence_interval" => {
+        "mean" => cost.to_f,
+        "lower_bound" => (cost - 10).to_f,
+        "upper_bound" => (cost + 10).to_f,
+        "margin_of_error" => 10.0,
+        "sample_count" => sample_count,
+        "confidence_level" => 0.95
+      }
     }
   end
 end

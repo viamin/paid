@@ -30,7 +30,9 @@ RSpec.describe ScalingExperiments::SummarizeResults, :no_db do
 
     expect(value_summary).to include(
       "agent_launch_success_rate" => 0.75,
-      "blocked_task_rate" => 0.25
+      "blocked_task_rate" => 0.25,
+      "success_rate_confidence_interval" => hash_including("sample_count" => 2, "confidence_level" => 0.95),
+      "avg_duration_seconds_confidence_interval" => hash_including("sample_count" => 2, "confidence_level" => 0.95)
     )
   end
 
@@ -53,6 +55,8 @@ RSpec.describe ScalingExperiments::SummarizeResults, :no_db do
     expect(summary.dig("scaling_law", "recommended_value")).to eq(2)
     expect(summary.dig("allocator_decision", "requested_agent_count")).to eq(2)
     expect(summary.dig("scaling_law", "allocator_decision", "efficiency_gain_vs_control")).to be >= 0.10
+    expect(summary.dig("sample_threshold_review", "rdr_target_min_samples_per_value")).to eq(30)
+    expect(summary.fetch("simplifications")).not_to be_empty
   end
 
   def summarize(assignments)
@@ -65,6 +69,7 @@ RSpec.describe ScalingExperiments::SummarizeResults, :no_db do
       :control_value,
       :outcome_metrics,
       :cohort_settings,
+      :min_samples_per_value,
       :values_tested,
       :scaling_experiment_assignments,
       keyword_init: true
@@ -85,6 +90,7 @@ RSpec.describe ScalingExperiments::SummarizeResults, :no_db do
         "cadence" => "continuous",
         "label_template" => "%<dimension>s-%<value>s__%<task_bucket>s"
       },
+      min_samples_per_value: 2,
       values_tested: [ 1, 2 ],
       scaling_experiment_assignments: build_assignment_relation(assignments)
     )
