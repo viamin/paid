@@ -46,6 +46,35 @@ RSpec.describe QualityMetrics::Collect do
       end
     end
 
+    def create_style_guide_experiment_assignment_for(agent_run:)
+      guide = create(:style_guide, account: agent_run.project.account, project: nil)
+      experiment = create(:style_guide_ab_test,
+        account: agent_run.project.account,
+        style_guide: guide,
+        control_version: guide.current_version,
+        status: "running",
+        started_at: Time.current)
+      create(:style_guide_ab_test_variant,
+        style_guide_ab_test: experiment,
+        style_guide_version: guide.current_version,
+        is_control: true)
+      variant_version = create(:style_guide_version,
+        style_guide: guide,
+        version: guide.current_version.version + 1,
+        raw_content: "Variant rules")
+      variant = create(:style_guide_ab_test_variant,
+        style_guide_ab_test: experiment,
+        style_guide_version: variant_version)
+
+      [
+        create(:style_guide_ab_test_assignment,
+          style_guide_ab_test: experiment,
+          style_guide_ab_test_variant: variant,
+          agent_run: agent_run),
+        variant
+      ]
+    end
+
     it "creates a quality metric for the agent run" do
       expect { described_class.call(agent_run: agent_run) }.to change(QualityMetric, :count).by(1)
     end
@@ -175,6 +204,19 @@ RSpec.describe QualityMetrics::Collect do
         metric = described_class.call(agent_run: agent_run)
 
         expect(assignment.reload.quality_score.to_f).to eq(metric.composite_score.to_f)
+        expect(variant.reload.sample_count).to eq(1)
+      end
+
+      it "updates existing style-guide A/B assignment scores on recollection" do
+        assignment, variant = create_style_guide_experiment_assignment_for(agent_run:)
+
+        first_metric = described_class.call(agent_run: agent_run)
+        allow(QualityMetrics::CollectMutationScore).to receive(:call).with(agent_run: agent_run).and_return(0.95)
+
+        second_metric = described_class.call(agent_run: agent_run)
+
+        expect(first_metric.composite_score.to_f).not_to eq(second_metric.composite_score.to_f)
+        expect(assignment.reload.quality_score.to_f).to eq(second_metric.composite_score.to_f)
         expect(variant.reload.sample_count).to eq(1)
       end
     end

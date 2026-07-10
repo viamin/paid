@@ -287,7 +287,8 @@ module QualityMetrics
         StyleGuideAbTests::RecordResult.call(
           style_guide_ab_test: assignment.style_guide_ab_test,
           agent_run: agent_run,
-          quality_score: metric.composite_score
+          quality_score: metric.composite_score,
+          update_existing: true
         )
       end
     end
