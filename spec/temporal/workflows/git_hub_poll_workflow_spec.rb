@@ -112,13 +112,14 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       allow(Temporalio::Workflow).to receive(:logger).and_return(logger)
     end
 
-    it "runs ScanPaidPrsActivity and returns the scan result" do
+    it "runs ScanPaidPrsActivity, executes decisions, and returns the scan result" do
       allow(workflow).to receive(:handle_pr_scan_results)
 
       result = workflow.send(:maybe_scan_paid_prs, 1)
 
       expect(workflow).to have_received(:run_activity)
         .with(Activities::ScanPaidPrsActivity, { project_id: 1 }, timeout: 120, heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT)
+      expect(workflow).to have_received(:handle_pr_scan_results).with({ automation_results: [] }, 1)
       expect(result).to eq({ automation_results: [] })
     end
 
