@@ -135,7 +135,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       expect(workflow).to have_received(:record_swallowed_non_critical_activity_failure).with(
         project_id: 1,
         helper: "maybe_scan_paid_prs",
-        error: instance_of(StandardError)
+        error: kind_of(StandardError)
       )
       expect(logger).to have_received(:warn).with(hash_including(
         message: "pr_scanner.scan_failed",
