@@ -398,6 +398,30 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when authentication fails" do
+      let(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 77,
+          labels: [ project.generated_label_name, project.automation_label_name ],
+          paid_state: "completed")
+      end
+
+      before { pr_issue }
+
+      it "raises ApplicationError with AuthError type" do
+        allow(activity).to receive(:scan_pr)
+          .and_raise(GithubClient::AuthenticationError.new("Bad credentials"))
+
+        expect {
+          activity.execute(project_id: project.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) do |error|
+          expect(error.type).to eq("AuthError")
+          expect(error.message).to include("GitHub authentication failed")
+        end
+      end
+    end
+
     context "when project uses a custom automation_label_name" do
       let(:custom_project) do
         create(:project,

@@ -1395,10 +1395,33 @@ RSpec.describe Project do
         allow(project).to receive(:github_credential).and_return("ghs_app_token")
         allow(GithubClient).to receive(:new).with(
           token: "ghs_app_token",
-          health_endpoint: project.github_health_endpoint
+          health_endpoint: project.github_health_endpoint,
+          token_refresher: instance_of(Proc)
         ).and_return(github_client)
 
         expect(project.client).to be(github_client)
+      end
+    end
+
+    describe "#installation_token_refresher" do
+      it "returns a proc that clears cache and re-mints the token" do
+        project = build(:project, :with_github_installation)
+        fresh_token = "ghs_refreshed_token_abc"
+
+        expect(Github::AppInstallation).to receive(:clear_cached_token).with(
+          installation_id: project.github_installation.github_installation_id,
+          repo_full_name: project.full_name
+        )
+        allow(project).to receive(:github_credential).and_return(fresh_token)
+
+        result = project.installation_token_refresher.call
+        expect(result).to eq(fresh_token)
+      end
+
+      it "returns nil for PAT-backed projects" do
+        project = build(:project, github_installation: nil)
+
+        expect(project.installation_token_refresher).to be_nil
       end
     end
 

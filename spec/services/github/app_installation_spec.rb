@@ -45,6 +45,37 @@ RSpec.describe Github::AppInstallation do
     end
   end
 
+  describe ".clear_cached_token" do
+    let(:different_token) { "ghs_different_token_xyz789" }
+
+    before do
+      # First call mints fake_token (cached)
+      stub_request(:post, %r{/app/installations/\d+/access_tokens})
+        .to_return(
+          status: 201,
+          body: { token: fake_token, expires_at: 1.hour.from_now.iso8601 }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      described_class.token_for(installation_id: installation_id, repo_full_name: repo_full_name)
+    end
+
+    it "clears the cached token so the next call mints a fresh one" do
+      described_class.clear_cached_token(installation_id: installation_id, repo_full_name: repo_full_name)
+
+      # Second call should mint a new token
+      stub_request(:post, %r{/app/installations/\d+/access_tokens})
+        .to_return(
+          status: 201,
+          body: { token: different_token, expires_at: 1.hour.from_now.iso8601 }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      token = described_class.token_for(installation_id: installation_id, repo_full_name: repo_full_name)
+      expect(token).to eq(different_token)
+    end
+  end
+
   describe "#mint" do
     context "when App is not configured" do
       before do

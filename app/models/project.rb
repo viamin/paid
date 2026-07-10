@@ -1108,10 +1108,32 @@ class Project < ApplicationRecord
   def client
     @client ||= if github_installation_id.present? || github_installation.present?
       credential = github_credential
-      credential.present? ? GithubClient.new(token: credential, health_endpoint: github_health_endpoint) : nil
+      credential.present? ? GithubClient.new(
+        token: credential,
+        health_endpoint: github_health_endpoint,
+        token_refresher: installation_token_refresher
+      ) : nil
     else
       github_token&.client
     end
+  end
+
+  # Returns a proc that clears the cached App installation token and mints
+  # a fresh one. Passed to +GithubClient+ so a 401 mid-request triggers a
+  # transparent re-mint instead of a hard failure (RDR-030).
+  def installation_token_refresher
+    return nil unless github_installation_id.present? || github_installation.present?
+
+    installation = github_installation
+    repo_name = full_name
+
+    -> {
+      Github::AppInstallation.clear_cached_token(
+        installation_id: installation.github_installation_id,
+        repo_full_name: repo_name
+      )
+      github_credential
+    }
   end
 
   def github_health_endpoint

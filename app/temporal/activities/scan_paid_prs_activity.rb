@@ -171,6 +171,16 @@ module Activities
         e.message,
         type: "RateLimit"
       )
+    rescue GithubClient::AuthenticationError => e
+      logger.error(
+        message: "pr_scanner.auth_error",
+        project_id: project_id,
+        error: e.message
+      )
+      raise Temporalio::Error::ApplicationError.new(
+        "GitHub authentication failed for project #{project_id}: #{e.message}",
+        type: "AuthError"
+      )
     end
 
     private
