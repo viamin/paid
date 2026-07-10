@@ -19,13 +19,7 @@ module Github
   class AppManifestExchanger
     class Error < StandardError; end
 
-    Result = Struct.new(:app_id, :slug, :html_url, :private_key, :webhook_secret, keyword_init: true) do
-      def app_id = self[:app_id]
-      def slug = self[:slug]
-      def html_url = self[:html_url]
-      def private_key = self[:private_key]
-      def webhook_secret = self[:webhook_secret]
-    end
+    Result = Struct.new(:app_id, :slug, :html_url, :private_key, :webhook_secret, keyword_init: true)
 
     EXCHANGE_PATH_TEMPLATE = "/app-manifests/%s/conversions".freeze
     API_BASE_URL = "https://api.github.com"

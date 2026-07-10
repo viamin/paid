@@ -100,6 +100,8 @@ RSpec.describe "Admin::GithubApp::Setup" do
 
     it "exchanges the code, hands the result to the persister, and audits the setup" do
       state = primed_state
+      original_app_id = ENV["PAID_AGENT_APP_ID"]
+      original_webhook_secret = ENV["PAID_AGENT_APP_WEBHOOK_SECRET"]
       allow(Github::AppCredentialsPersister).to receive(:call)
         .with(result: exchanger_result)
         .and_return(
@@ -116,10 +118,8 @@ RSpec.describe "Admin::GithubApp::Setup" do
       expect(flash[:notice]).to include("paid-agents-self-hosted")
       expect(flash[:notice]).to match(/written to/i)
       expect(Github::AppCredentialsPersister).to have_received(:call).with(result: exchanger_result)
-      # ENV must NOT be used as a side-channel — values are persisted via
-      # the credentials file (or surfaced as manual instructions) only.
-      expect(ENV["PAID_AGENT_APP_ID"]).to be_nil
-      expect(ENV["PAID_AGENT_APP_WEBHOOK_SECRET"]).to be_nil
+      expect(ENV["PAID_AGENT_APP_ID"]).to eq(original_app_id)
+      expect(ENV["PAID_AGENT_APP_WEBHOOK_SECRET"]).to eq(original_webhook_secret)
     end
 
     it "surfaces manual instructions when the persister cannot write credentials" do
