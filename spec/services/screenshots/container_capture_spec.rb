@@ -24,37 +24,42 @@ RSpec.describe Screenshots::ContainerCapture do
       "services" => [ "redis" ]
     )
   end
+  let(:preview_provision) do
+    instance_double(
+      Previews::Provision,
+      prepare_workspace!: true,
+      boot!: true,
+      container_service: instance_double(Containers::Provision),
+      network_name: "paid-test",
+      config: config,
+      service_environment: {},
+      cleanup!: true
+    )
+  end
 
   before do
     allow(Screenshots::Storage).to receive(:configured?).and_return(false)
     allow(service).to receive(:with_workspace).and_yield(Dir.mktmpdir("screenshots-spec"))
-    allow(service).to receive(:provision_capture_container) { service.instance_variable_set(:@network, "paid-test") }
-    allow(service).to receive(:checkout_branch!)
+    allow(Previews::Provision).to receive(:new).and_return(preview_provision)
     allow(Screenshots::PrComment).to receive(:call)
     allow(Screenshots::DeriveHints).to receive(:call).and_return({})
-    allow(Screenshots::ConfigParser).to receive_messages(from_repo_path: config, ui_detection_overrides: {})
+    allow(Screenshots::ConfigParser).to receive(:ui_detection_overrides).and_return({})
     allow(service).to receive_messages(
       fetch_changed_files: [ "app/views/home/index.html.erb" ],
       detect_ui_files: [ "app/views/home/index.html.erb" ],
       run_capture!: []
     )
     allow(service).to receive(:start_chrome!)
-    allow(service).to receive(:run_setup_commands!)
-    allow(service).to receive(:start_application!)
     allow(service).to receive(:publish_result!)
     allow(service).to receive(:cleanup!)
     allow(project).to receive(:update!).and_call_original
   end
 
-  it "merges project and repo service dependencies for provisioning" do
-    provisioner = instance_double(Containers::ServiceProvisioner, cleanup: true)
-    allow(Containers::ServiceProvisioner).to receive(:new).and_return(provisioner)
-    allow(provisioner).to receive(:provision)
-
+  it "boots screenshots through the shared preview provisioner without starting a tunnel" do
     service.call
 
-    expect(provisioner).to have_received(:provision)
-      .with(agent_run, network: "paid-test", service_names: contain_exactly("postgres", "redis"))
+    expect(preview_provision).to have_received(:prepare_workspace!)
+    expect(preview_provision).to have_received(:boot!).with(start_tunnel: false, allow_seed: false)
   end
 
   it "skips before container provisioning when precheck detects no UI changes" do
@@ -63,7 +68,7 @@ RSpec.describe Screenshots::ContainerCapture do
     result = service.call
 
     expect(result.status).to eq("no_ui_changes")
-    expect(service).not_to have_received(:provision_capture_container)
+    expect(preview_provision).not_to have_received(:prepare_workspace!)
     expect(project.reload.effective_screenshot_status["last_capture_status"]).to eq("no_ui_changes")
     expect(Screenshots::PrComment).to have_received(:call) do |**args|
       expect(args).to include(
@@ -78,10 +83,7 @@ RSpec.describe Screenshots::ContainerCapture do
   end
 
   it "refreshes the PR comment when capture fails" do
-    provisioner = instance_double(Containers::ServiceProvisioner, cleanup: true)
-    allow(Containers::ServiceProvisioner).to receive(:new).and_return(provisioner)
-    allow(provisioner).to receive(:provision)
-    allow(service).to receive(:start_application!).and_raise("boom")
+    allow(preview_provision).to receive(:boot!).and_raise("boom")
 
     result = service.call
 
@@ -98,57 +100,18 @@ RSpec.describe Screenshots::ContainerCapture do
     end
   end
 
-  it "restores the original service container ids and environment when dependency provisioning fails" do
-    provisioner = instance_double(Containers::ServiceProvisioner, cleanup: true)
-    allow(Containers::ServiceProvisioner).to receive(:new).and_return(provisioner)
-    allow(provisioner).to receive(:provision) do
-      agent_run.update!(
-        service_container_ids: [ 101, 202 ],
-        service_environment: { "DATABASE_URL" => "postgres://screenshot-host/db" }
-      )
-      raise Containers::Provision::TimeoutError, "timed out"
-    end
-
-    result = service.call
-
-    expect(result.status).to eq("capture_timeout")
-    agent_run.reload
-    expect(agent_run.service_container_ids).to eq([])
-    expect(agent_run.service_environment).to eq({})
-    expect(service.instance_variable_get(:@screenshot_service_container_ids)).to contain_exactly(101, 202)
-  end
-
   it "rejects unsupported screenshot drivers with a config error" do
     cuprite_config = Screenshots::Configuration.from_hash(
       "driver" => "cuprite",
       "base_url" => "http://localhost:3000",
       "routes" => [ { "path" => "/", "name" => "home" } ]
     )
-    allow(Screenshots::ConfigParser).to receive(:from_repo_path).and_return(cuprite_config)
-    provisioner = instance_double(Containers::ServiceProvisioner, cleanup: true)
-    allow(Containers::ServiceProvisioner).to receive(:new).and_return(provisioner)
+    allow(preview_provision).to receive(:config).and_return(cuprite_config)
 
     result = service.call
 
     expect(result.status).to eq("config_error")
     expect(result.error).to include("cuprite")
-  end
-
-  it "shell-escapes readiness probe url parts before building the probe command" do
-    allow(service).to receive(:config).and_return(
-      Screenshots::Configuration.from_hash(
-        "base_url" => "http://localhost:3000/it's-a-path",
-        "routes" => [ { "path" => "/", "name" => "home" } ]
-      )
-    )
-
-    command = service.send(:readiness_probe_command)
-
-    expect(command).to include("SCREENSHOT_APP_HOST=localhost")
-    expect(command).to include("SCREENSHOT_APP_PORT=3000")
-    expect(command).to include("SCREENSHOT_APP_PATH=/it\\'s-a-path")
-    expect(command).to include('ENV.fetch("SCREENSHOT_APP_PATH")')
-    expect(command).not_to include(%q(uri = URI("http://localhost:3000/it's-a-path")))
   end
 
   describe "#screenshot_config_json (capture scoping and annotation)" do

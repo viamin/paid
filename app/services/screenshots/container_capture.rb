@@ -4,9 +4,7 @@ require "docker-api"
 require "fileutils"
 require "json"
 require "securerandom"
-require "shellwords"
 require "tmpdir"
-require "uri"
 
 module Screenshots
   class ContainerCapture
@@ -14,7 +12,6 @@ module Screenshots
     CHROME_ALIAS = "paid-screenshot-browser"
     CHROME_URL = "ws://#{CHROME_ALIAS}:3000"
     OUTPUT_DIR = "tmp/screenshots"
-    APP_LOG_PATH = "tmp/paid-screenshot-app.log"
     CAPTURE_TIMEOUT_SECONDS = 300
     STARTUP_TIMEOUT_SECONDS = 90
     MEMORY_BYTES = 2 * 1024 * 1024 * 1024
@@ -43,11 +40,9 @@ module Screenshots
       @agent_run = agent_run
       @project = agent_run.project
       @logger = logger
-      @service_provisioner = nil
+      @preview_provision = nil
       @screenshot_container = nil
       @chrome_container = nil
-      @screenshot_service_container_ids = []
-      @screenshot_service_env = {}
       @tmpdir = nil
       @config = nil
       @network = nil
@@ -67,9 +62,15 @@ module Screenshots
       return finalize_skip("no_ui_changes", changed_files:, ui_files: precheck_ui_files) if precheck_ui_files.empty?
 
       with_workspace do |repo_path|
-        provision_capture_container(repo_path)
-        checkout_branch!
-        @config = Screenshots::ConfigParser.from_repo_path(repo_path, project: project)
+        @preview_provision = Previews::Provision.new(
+          agent_run:,
+          repo_path:,
+          logger:
+        )
+        @preview_provision.prepare_workspace!
+        @screenshot_container = @preview_provision.container_service
+        @network = @preview_provision.network_name
+        @config = @preview_provision.config
         validate_supported_config!
 
         # Re-detect with full repo context (custom patterns/exclusions from config)
@@ -85,10 +86,8 @@ module Screenshots
           logger: logger
         )
 
-        provision_service_dependencies!
         start_chrome!
-        run_setup_commands!
-        start_application!
+        @preview_provision.boot!(start_tunnel: false, allow_seed: false)
         screenshot_paths = run_capture!(ui_files)
         publish_result!(screenshot_paths)
 
@@ -132,10 +131,6 @@ module Screenshots
 
     attr_reader :agent_run, :project, :logger, :config
 
-    def service_provisioner
-      @service_provisioner ||= Containers::ServiceProvisioner.new
-    end
-
     def ensure_capture_eligible!
       raise Screenshots::ConfigError, "screenshots are disabled for this project" unless project.screenshots_enabled?
       raise Screenshots::ConfigError, "pull request number is required for screenshot capture" if agent_run.pull_request_number.blank?
@@ -145,32 +140,6 @@ module Screenshots
     def with_workspace
       @tmpdir = Dir.mktmpdir("paid-screenshots-#{agent_run.id}-")
       yield(@tmpdir)
-    end
-
-    def provision_capture_container(repo_path)
-      @screenshot_container = Containers::Provision.new(
-        project: project,
-        worktree_path: repo_path,
-        memory_bytes: MEMORY_BYTES,
-        cpu_quota: CPU_QUOTA,
-        pids_limit: PIDS_LIMIT,
-        timeout_seconds: CAPTURE_TIMEOUT_SECONDS
-      )
-      @screenshot_container.provision
-      @network = @screenshot_container.network_name
-    end
-
-    def checkout_branch!
-      git_ops = Containers::GitOperations.new(
-        container_service: @screenshot_container,
-        agent_run: agent_run
-      )
-      git_ops.clone_and_checkout_branch(
-        branch_name: agent_run.branch_name,
-        pull_request_number: agent_run.pull_request_number,
-        persist: false
-      )
-      git_ops.install_artifact_excludes
     end
 
     SUPPORTED_DRIVERS = %w[playwright].freeze
@@ -221,42 +190,6 @@ module Screenshots
       )
     end
 
-    def provision_service_dependencies!
-      service_names = configured_service_dependencies
-      return if service_names.empty?
-
-      # Snapshot the original service_container_ids and service_environment so
-      # we can restore them after provisioning. ServiceProvisioner#provision
-      # overwrites both fields, which would orphan the main workflow's service
-      # containers and leave stale DATABASE_URL/REDIS_URL pointing at the
-      # screenshot network's (now torn-down) services during cleanup.
-      original_ids = agent_run.service_container_ids.dup
-      original_env = agent_run.service_environment&.deep_dup
-
-      service_provisioner.provision(agent_run, network: @network, service_names: service_names)
-
-      # Capture the screenshot-specific service env for use in capture_env,
-      # then restore the agent_run to its original state so the main workflow's
-      # service references are not corrupted.
-      @screenshot_service_env = agent_run.service_environment&.deep_dup || {}
-    ensure
-      current_ids = agent_run.service_container_ids
-      @screenshot_service_container_ids |= current_ids - (original_ids || current_ids)
-
-      needs_restore = original_ids && (current_ids != original_ids || agent_run.service_environment != original_env)
-      if needs_restore
-        agent_run.update!(
-          service_container_ids: original_ids,
-          service_environment: original_env
-        )
-      end
-    end
-
-    def configured_service_dependencies
-      db_services = Array(project.effective_screenshot_settings["service_dependencies"])
-      (db_services + Array(config.services)).map(&:to_s).map(&:strip).reject(&:blank?).uniq
-    end
-
     def start_chrome!
       @chrome_container = Containers.backend.create_container(
         "Image" => CHROME_IMAGE,
@@ -284,41 +217,6 @@ module Screenshots
       Containers.backend.start_container(@chrome_container)
     rescue Docker::Error::DockerError => e
       raise Screenshots::ConfigError, "unable to start Chrome service container: #{e.message}"
-    end
-
-    def run_setup_commands!
-      config.setup_commands.each do |command|
-        result = @screenshot_container.execute(command, timeout: CAPTURE_TIMEOUT_SECONDS, env: capture_env, stream: false)
-        next if result.success?
-
-        raise "setup command failed: #{command}\n#{result[:stderr].presence || result[:stdout]}"
-      end
-    end
-
-    def start_application!
-      command = application_start_command
-      raise Screenshots::ConfigError, "could not determine how to start the application for screenshots" if command.blank?
-
-      launch_command = <<~SH
-        set -e
-        mkdir -p tmp
-        (#{command}) > #{Shellwords.escape(APP_LOG_PATH)} 2>&1 &
-        echo $! > tmp/paid-screenshot-app.pid
-      SH
-      @screenshot_container.execute(launch_command, timeout: 30, env: capture_env, stream: false)
-
-      wait_command = readiness_probe_command
-      @screenshot_container.execute(
-        wait_command,
-        timeout: STARTUP_TIMEOUT_SECONDS,
-        startup_timeout: STARTUP_TIMEOUT_SECONDS,
-        idle_timeout: STARTUP_TIMEOUT_SECONDS,
-        env: capture_env,
-        stream: false
-      )
-    rescue Containers::Provision::ExecutionError => e
-      app_log = read_file(APP_LOG_PATH)
-      raise "application startup failed: #{e.message}\n#{app_log}".strip
     end
 
     def run_capture!(ui_files)
@@ -490,81 +388,15 @@ module Screenshots
       }.to_json
     end
 
-    def application_start_command
-      port = app_port
-
-      if File.exist?(File.join(@tmpdir, "bin/dev"))
-        "PORT=#{port} bin/dev"
-      elsif File.exist?(File.join(@tmpdir, "bin/rails"))
-        "bundle exec bin/rails server -b 0.0.0.0 -p #{port}"
-      elsif File.exist?(File.join(@tmpdir, "manage.py"))
-        "python3 manage.py runserver 0.0.0.0:#{port}"
-      elsif package_dependency?("next")
-        "yarn next dev --hostname 0.0.0.0 --port #{port}"
-      elsif package_dependency?("vite")
-        "yarn vite --host 0.0.0.0 --port #{port}"
-      elsif File.exist?(File.join(@tmpdir, "package.json"))
-        "yarn dev --host 0.0.0.0 --port #{port}"
-      end
-    end
-
-    def readiness_probe_command
-      uri = URI.parse(config.base_url)
-      host = uri.host.presence || "127.0.0.1"
-      path = uri.path.presence || "/"
-      port = uri.port || app_port
-
-      <<~SH.squish
-        SCREENSHOT_APP_HOST=#{Shellwords.escape(host)}
-        SCREENSHOT_APP_PORT=#{Shellwords.escape(port.to_s)}
-        SCREENSHOT_APP_PATH=#{Shellwords.escape(path)}
-        ruby -rnet/http -ruri -e '
-          deadline = Time.now + #{STARTUP_TIMEOUT_SECONDS};
-          uri = URI("http://\#{ENV.fetch("SCREENSHOT_APP_HOST")}:\#{ENV.fetch("SCREENSHOT_APP_PORT")}\#{ENV.fetch("SCREENSHOT_APP_PATH")}");
-          loop do
-            begin
-              response = Net::HTTP.start(uri.host, uri.port, open_timeout: 2, read_timeout: 2) { |http| http.get(uri.request_uri) };
-              exit 0 if response.code.to_i < 500;
-            rescue StandardError
-            end
-            raise "timeout" if Time.now >= deadline;
-            sleep 2;
-          end
-        '
-      SH
-    end
-
     def capture_env
-      @screenshot_service_env.merge(
+      @preview_provision.service_environment.merge(
         "CHROME_URL" => CHROME_URL,
         "CI" => "1"
       )
     end
 
-    def app_port
-      uri = URI.parse(config&.base_url || Screenshots::Configuration::DEFAULT_BASE_URL)
-      uri.port || 3000
-    end
-
-    def package_dependency?(name)
-      package_json_path = File.join(@tmpdir, "package.json")
-      return false unless File.exist?(package_json_path)
-
-      package_json = JSON.parse(File.read(package_json_path))
-      [ "dependencies", "devDependencies" ].any? do |key|
-        package_json.fetch(key, {}).key?(name)
-      end
-    rescue JSON::ParserError
-      false
-    end
-
     def collected_screenshots
       Dir.glob(File.join(@tmpdir.to_s, OUTPUT_DIR, "*.png")).sort
-    end
-
-    def read_file(relative_path)
-      path = File.join(@tmpdir.to_s, relative_path)
-      File.exist?(path) ? File.read(path) : ""
     end
 
     def update_status(status, screenshot_count: 0, screenshots_url: nil)
@@ -628,34 +460,9 @@ module Screenshots
         logger.warn(message: "screenshots.chrome_cleanup_failed", agent_run_id: agent_run.id, error: e.message)
       end
 
-      cleanup_screenshot_services!
-
-      begin
-        @screenshot_container&.cleanup(force: true)
-      rescue StandardError => e
-        logger.warn(message: "screenshots.container_cleanup_failed", agent_run_id: agent_run.id, error: e.message)
-      end
+      @preview_provision&.cleanup!
 
       FileUtils.rm_rf(@tmpdir) if @tmpdir.present?
-    end
-
-    def cleanup_screenshot_services!
-      return if @screenshot_service_container_ids.empty?
-
-      ServiceContainer.where(id: @screenshot_service_container_ids).find_each do |sc|
-        sc.with_lock do
-          next unless sc.capacity_inflight_agent_run_count.zero?
-
-          docker = Containers.backend.get_container(sc.docker_container_id)
-          Containers.backend.stop_container(docker, timeout: 10)
-          Containers.backend.delete_container(docker, force: true, v: true)
-          sc.update!(status: "stopped", docker_container_id: nil)
-        end
-      rescue Docker::Error::DockerError => e
-        logger.warn(message: "screenshots.services_cleanup_failed", agent_run_id: agent_run.id, service_container: sc.name, error: e.message)
-      rescue StandardError => e
-        logger.warn(message: "screenshots.services_cleanup_failed", agent_run_id: agent_run.id, error: e.message)
-      end
     end
   end
 end

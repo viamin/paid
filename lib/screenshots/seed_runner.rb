@@ -113,8 +113,8 @@ module Screenshots
       puts JSON.generate(results)
     RUBY
 
-    def call(config:, repo_path:, driver_name:)
-      return {} unless driver_name == "cuprite"
+    def call(config:, repo_path:, driver_name:, force: false)
+      return {} unless force || driver_name == "cuprite"
       return {} if config.seed.empty?
 
       stdout, stderr, status = Open3.capture3(
