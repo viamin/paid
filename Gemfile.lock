@@ -127,7 +127,7 @@ GEM
       adamantium (~> 0.2)
       equalizer (~> 0.0.11)
     ast (2.4.3)
-    avo (4.0.10)
+    avo (4.0.11)
       actionview (>= 6.1)
       active_link_to
       activerecord (>= 6.1)
@@ -743,7 +743,7 @@ PLATFORMS
 
 DEPENDENCIES
   agent-harness
-  avo (= 4.0.10)
+  avo (= 4.0.11)
   aws-sdk-s3
   bootsnap
   brakeman
@@ -779,7 +779,7 @@ DEPENDENCIES
   octokit
   opentelemetry-exporter-otlp
   opentelemetry-sdk
-  pagy (~> 43.5)
+  pagy (~> 43.6)
   pdf-reader
   pg (~> 1.1)
   pg_query
@@ -833,7 +833,7 @@ CHECKSUMS
   agent-harness (0.28.2) sha256=9ae63916b300ed7fd89fb93d7a80984a96a0e925bba95cabaaf617ea41477449
   anima (0.3.2) sha256=467f775e5c7721f1ac19c0efcef2ca56489b9673809371b12514a77e11cbfc00
   ast (2.4.3) sha256=954615157c1d6a382bc27d690d973195e79db7f55e9765ac7c481c60bdb4d383
-  avo (4.0.10) sha256=223aec3aa92439889b93c8c3cb0abeee435ed5ab37528eb12da0e2666a0c4036
+  avo (4.0.11) sha256=3e1d93402b393f73e994d8180ac6087c3e9019624a127dc587a9d6ce8ef92eec
   avo-icons (0.1.6) sha256=6f1c985aca238d81446e517cee4924752e7ada1604971f6bb59913472e123f4c
   aws-eventstream (1.4.0) sha256=116bf85c436200d1060811e6f5d2d40c88f65448f2125bc77ffce5121e6e183b
   aws-partitions (1.1267.0) sha256=15a4c6bef8c303b09a1452c675cecb1ace0238dc91e26fe4646c5d761cb2221e

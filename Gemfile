@@ -30,7 +30,7 @@ gem "devise"
 
 # Authorization [https://github.com/varvet/pundit]
 gem "pundit"
-gem "avo", "4.0.10"
+gem "avo", "4.0.11"
 
 # Soft-delete for low-volume reference records
 gem "discard"
@@ -159,7 +159,7 @@ end
 gem "good_job", "~> 4.19"
 
 # Pagination [https://github.com/ddnexus/pagy]
-gem "pagy", "~> 43.5"
+gem "pagy", "~> 43.6"
 
 # PDF text extraction for knowledge imports
 gem "pdf-reader"
