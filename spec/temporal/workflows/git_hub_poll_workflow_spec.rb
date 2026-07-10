@@ -109,7 +109,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
     before do
       allow(workflow).to receive(:run_activity).and_return({ automation_results: [] })
-      allow(Temporalio::Workflow).to receive(:logger).and_return(logger)
+      allow(Temporalio::Workflow).to receive_messages(logger: logger, patched: true)
     end
 
     it "runs ScanPaidPrsActivity, executes decisions, and returns the scan result" do
