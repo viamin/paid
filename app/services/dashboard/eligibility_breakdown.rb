@@ -47,11 +47,11 @@ module Dashboard
     def breakdown_for(project)
       open = Issue.where(project: project, github_state: "open", is_pull_request: false)
 
-      eligible_ids = Automation::Strategies::AutoPick::DefaultCandidateSource
-        .eligible_scope(project).pluck(:id).to_set
+      eligible_scope = Automation::Strategies::AutoPick::DefaultCandidateSource.eligible_scope(project)
+      eligible_count = eligible_scope.count
 
       # Count all non-eligible issues in a single conditional-aggregation query.
-      excluded = open.where.not(id: eligible_ids)
+      excluded = open.where.not(id: eligible_scope.select(:id))
       row = excluded.pick(
         Arel.sql("COUNT(*)"),
         Arel.sql("COUNT(*) FILTER (WHERE paid_state = 'needs_input')"),
@@ -66,8 +66,8 @@ module Dashboard
 
       ProjectBreakdown.new(
         project: project,
-        total_open: eligible_ids.size + excluded_total,
-        eligible: eligible_ids.size,
+        total_open: eligible_count + excluded_total,
+        eligible: eligible_count,
         needs_input: needs_input, skip_label: skip_label,
         completed: completed, in_progress: in_progress,
         other_excluded: other
