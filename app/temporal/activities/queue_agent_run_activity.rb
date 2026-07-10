@@ -21,7 +21,17 @@ module Activities
       project = Project.find(project_id)
       goal ||= project.account.tenant_setting&.default_goal || "create_pr"
       issue = issue_id ? Issue.find(issue_id) : nil
-      if issue_requires_trust?(goal) && issue&.untrusted?
+
+      # PR follow-up runs (source_pull_request_number present) are already
+      # authorized upstream — either by ScanPaidPrsActivity#authorized_for_automation_scan?
+      # (trusted authors, dependency-update bots, trusted-user-added labels) or
+      # by LabelPolicy#authorized_for_trigger?. Requiring issue trust here would
+      # block follow-up runs on Dependabot and other third-party bot PRs that
+      # have the automation label — the exact PRs the scan pipeline is supposed
+      # to fix. The BuildForPr prompt builder handles comment trust filtering
+      # independently, so skipping this gate is safe.
+      pr_followup_run = source_pull_request_number.present?
+      if issue_requires_trust?(goal) && issue&.untrusted? && !pr_followup_run
         logger.info(
           message: "queue_agent_run.untrusted_issue_skipped",
           project_id: project.id,

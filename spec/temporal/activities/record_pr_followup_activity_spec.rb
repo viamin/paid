@@ -28,6 +28,24 @@ RSpec.describe Activities::RecordPrFollowupActivity do
       end
     end
 
+    context "when no active run exists (phantom-increment guard)" do
+      let(:issue) do
+        create(:issue, :pull_request, project: project, github_number: 42, pr_followup_count: 0)
+      end
+
+      it "does not increment pr_followup_count" do
+        activity.execute(project_id: project.id, issue_id: issue.id)
+
+        expect(issue.reload.pr_followup_count).to eq(0)
+      end
+
+      it "returns recorded: false with reason: no_active_run" do
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+        expect(result).to include(recorded: false, skipped: true, reason: "no_active_run")
+      end
+    end
+
     context "when recording a follow-up" do
       let(:issue) do
         create(:issue, :pull_request,
@@ -36,6 +54,8 @@ RSpec.describe Activities::RecordPrFollowupActivity do
           labels: [ "paid-generated" ],
           pr_followup_count: 0)
       end
+
+      before { create(:agent_run, :queued, project: project, issue: issue) }
 
       it "increments pr_followup_count" do
         activity.execute(project_id: project.id, issue_id: issue.id)
@@ -58,9 +78,10 @@ RSpec.describe Activities::RecordPrFollowupActivity do
           labels: [ "paid-generated", "paid-rework" ])
       end
 
-      before do
-        allow(github_client).to receive(:remove_label_from_issue)
-      end
+      before { create(:agent_run, :queued, project: project, issue: issue)
+allow(github_client).to receive(:remove_label_from_issue)
+       }
+
 
       it "removes the specified labels" do
         activity.execute(
@@ -82,11 +103,12 @@ RSpec.describe Activities::RecordPrFollowupActivity do
           labels: [ "paid-generated", "paid-rework" ])
       end
 
-      before do
-        allow(github_client).to receive(:remove_label_from_issue)
+      before { create(:agent_run, :queued, project: project, issue: issue)
+allow(github_client).to receive(:remove_label_from_issue)
           .and_raise(GithubClient::Error, "label not found")
         allow(Rails.logger).to receive(:warn)
-      end
+       }
+
 
       it "logs the error and continues" do
         result = activity.execute(
@@ -110,6 +132,8 @@ RSpec.describe Activities::RecordPrFollowupActivity do
           labels: [ "paid-generated" ])
       end
 
+      before { create(:agent_run, :queued, project: project, issue: issue) }
+
       it "does not attempt to remove labels" do
         result = activity.execute(
           project_id: project.id,
@@ -129,6 +153,8 @@ RSpec.describe Activities::RecordPrFollowupActivity do
           labels: [ "paid-generated" ],
           pr_followup_count: 1)
       end
+
+      before { create(:agent_run, :queued, project: project, issue: issue) }
 
       it "increments when expected_count matches current count" do
         activity.execute(
@@ -174,6 +200,8 @@ RSpec.describe Activities::RecordPrFollowupActivity do
           labels: [ "paid-generated" ],
           pr_followup_count: 1)
       end
+
+      before { create(:agent_run, :queued, project: project, issue: issue) }
 
       it "falls back to unconditional increment" do
         activity.execute(

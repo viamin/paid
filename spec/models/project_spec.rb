@@ -913,6 +913,53 @@ RSpec.describe Project do
         expect(project.paid_bot_author?(bot_login)).to be false
       end
     end
+
+    context "with Dependabot auto-merge enabled" do
+      let(:project) do
+        build(:project, :with_github_installation,
+          allowed_github_usernames: [ "viamin" ],
+          auto_merge_mode: "dependabot_only")
+      end
+
+      it "trusts dependabot as an author so its PRs are eligible for fix/merge runs" do
+        expect(project.trusted_github_author?("dependabot[bot]")).to be true
+        expect(project.trusted_github_author?("renovate[bot]")).to be true
+        expect(project.trusted_github_author?("dependabot-preview[bot]")).to be true
+      end
+
+      it "does NOT trust dependabot as a comment author (prevents prompt injection)" do
+        expect(project.trusted_github_user?("dependabot[bot]")).to be false
+      end
+
+      it "still trusts allowlisted humans for both comments and authorship" do
+        expect(project.trusted_github_author?("viamin")).to be true
+        expect(project.trusted_github_user?("viamin")).to be true
+      end
+
+      context "when auto_merge_mode is 'all'" do
+        let(:project) do
+          build(:project, :with_github_installation,
+            allowed_github_usernames: [ "viamin" ],
+            auto_merge_mode: "all")
+        end
+
+        it "also trusts dependabot as an author" do
+          expect(project.trusted_github_author?("dependabot[bot]")).to be true
+        end
+      end
+    end
+
+    context "with Dependabot auto-merge disabled" do
+      let(:project) do
+        build(:project, :with_github_installation,
+          allowed_github_usernames: [ "viamin" ],
+          auto_merge_mode: "off")
+      end
+
+      it "does not trust dependabot as an author" do
+        expect(project.trusted_github_author?("dependabot[bot]")).to be false
+      end
+    end
   end
 
   describe ".ransackable_attributes" do

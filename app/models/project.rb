@@ -148,6 +148,17 @@ class Project < ApplicationRecord
     [ "All PRs", "all" ]
   ].freeze
 
+  # Bots whose PRs are trusted for automation when the project is configured
+  # to auto-merge dependabot PRs. Their output is structured and predictable,
+  # so granting author trust (not comment trust — #trusted_github_user?
+  # deliberately excludes bots) is safe and enables the full scan → fix →
+  # merge loop on their PRs.
+  DEPENDENCY_UPDATE_BOT_AUTHORS = %w[
+    dependabot[bot]
+    dependabot-preview[bot]
+    renovate[bot]
+  ].freeze
+
   AUTO_RELEASE_GRANULARITY_OPTIONS = [
     [ "Off", "off" ],
     [ "Patch only", "patch_only" ],
@@ -489,6 +500,7 @@ class Project < ApplicationRecord
     logins = Array(allowed_github_usernames).filter_map { |name| name.to_s.downcase.presence }
     bot_author = github_author_login&.downcase
     logins << bot_author if bot_author
+    logins.concat(DEPENDENCY_UPDATE_BOT_AUTHORS) if auto_merge_dependabot?
     logins.uniq
   end
 
