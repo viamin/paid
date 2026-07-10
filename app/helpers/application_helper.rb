@@ -287,6 +287,39 @@ module ApplicationHelper
     false
   end
 
+  # Resolves trace viewer data ({ available:, embed_url: }) for an agent run.
+  #
+  # A trace is keyed by the run's repo/PR/result commit. Availability is only
+  # checked once the run is finished (a running run has no recorded trace yet),
+  # and only when trace storage is configured, so this never makes S3 calls
+  # during active runs and degrades to "unavailable" on any error.
+  #
+  # @return [Hash{Symbol => Boolean,String}] with :available and :embed_url keys.
+  def agent_run_trace_viewer_data(agent_run)
+    return { available: false, embed_url: nil } unless agent_run.respond_to?(:project)
+
+    project = agent_run.project
+    return { available: false, embed_url: nil } unless project&.owner && project&.repo
+
+    pr_number = agent_run.try(:pull_request_number)
+    commit_sha = agent_run.try(:result_commit_sha).presence || agent_run.try(:base_commit_sha)
+    return { available: false, embed_url: nil } unless pr_number.present? && commit_sha.present?
+
+    viewer = Previews::TraceViewer.new
+    return { available: false, embed_url: nil } unless viewer.configured?
+
+    unless agent_run.respond_to?(:finished?) && agent_run.finished?
+      return { available: false, embed_url: nil }
+    end
+
+    params = { org: project.owner, repo: project.repo, pr_number: pr_number, commit_sha: commit_sha }
+    available = viewer.trace_available?(**params)
+    embed_url = available ? viewer.embed_url(**params) : nil
+    { available: available, embed_url: embed_url }
+  rescue StandardError
+    { available: false, embed_url: nil }
+  end
+
   def project_member_path(project)
     app_route_path(:project_path, project)
   end
