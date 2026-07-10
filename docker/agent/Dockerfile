@@ -111,9 +111,16 @@ RUN if [ -z "${BUNDLER_VERSION}" ]; then \
 
 # Install agent-harness globally so lightweight utility scripts inside the
 # agent container can use the same transport layer as the Rails app.
-# Keep this pin in sync with Gemfile.lock until the image build is wired to a
-# shared source of truth.
-RUN gem install --no-document agent-harness:0.18.2
+# AGENT_HARNESS_VERSION is extracted from Gemfile.lock at build time by
+# scripts/build-agent-image.sh and .github/workflows/agent-image.yml so the
+# agent image stays in lockstep with the control plane.
+ARG AGENT_HARNESS_VERSION
+RUN if [ -z "${AGENT_HARNESS_VERSION}" ]; then \
+        echo "ERROR: AGENT_HARNESS_VERSION build-arg is required." >&2; \
+        echo "Use scripts/build-agent-image.sh, which extracts it from Gemfile.lock." >&2; \
+        exit 1; \
+    fi \
+    && gem install --no-document "agent-harness:${AGENT_HARNESS_VERSION}"
 
 # Install ruby-maat (VCS mining tool for churn/hotspot analysis)
 # https://github.com/viamin/ruby-maat
