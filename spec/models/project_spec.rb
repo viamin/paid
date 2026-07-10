@@ -1748,7 +1748,8 @@ RSpec.describe Project do
           "auto_capture" => true,
           "service_dependencies" => [],
           "setup_commands" => [],
-          "detection" => {}
+          "detection" => {},
+          "verification_enabled" => false
         )
       end
 
@@ -1762,7 +1763,8 @@ RSpec.describe Project do
           "auto_capture" => true,
           "service_dependencies" => [],
           "setup_commands" => [],
-          "detection" => {}
+          "detection" => {},
+          "verification_enabled" => false
         )
       end
     end
@@ -1796,7 +1798,8 @@ RSpec.describe Project do
           "auto_capture" => true,
           "service_dependencies" => [],
           "setup_commands" => [],
-          "detection" => {}
+          "detection" => {},
+          "verification_enabled" => false
         )
       end
     end
@@ -1808,6 +1811,41 @@ RSpec.describe Project do
 
       it "reflects the enabled flag" do
         expect(build(:project, screenshot_settings: { "enabled" => true }).screenshots_enabled?).to be true
+      end
+    end
+
+    describe "#verification_enabled?" do
+      it "returns false by default" do
+        expect(build(:project).verification_enabled?).to be false
+      end
+
+      it "reflects the verification_enabled flag" do
+        project = build(:project, screenshot_settings: { "verification_enabled" => true })
+        expect(project.verification_enabled?).to be true
+      end
+
+      it "casts string values to booleans" do
+        project = build(:project, screenshot_settings: { "verification_enabled" => "true" })
+        expect(project.verification_enabled?).to be true
+      end
+
+      it "attaches the playwright-mcp MCP server definition when enabled" do
+        account = create(:account)
+        project = create(:project, account: account, screenshot_settings: {})
+
+        expect {
+          project.verification_enabled = true
+          project.save!
+        }.to change { project.account.mcp_server_definitions.where(name: Project::PLAYWRIGHT_MCP_NAME).count }.by(1)
+
+        definition = project.account.mcp_server_definitions.find_by(name: Project::PLAYWRIGHT_MCP_NAME)
+        expect(definition).to have_attributes(
+          transport: "stdio",
+          install_type: "npx",
+          command: Project::PLAYWRIGHT_MCP_COMMAND
+        )
+        expect(definition.env).to eq("CDP_URL" => Project::PLAYWRIGHT_MCP_CDP_URL)
+        expect(project.project_mcp_servers.reload.exists?(mcp_server_definition: definition)).to be true
       end
     end
 
@@ -1957,6 +1995,7 @@ RSpec.describe Project do
           "service_dependencies" => [],
           "setup_commands" => [],
           "detection" => {},
+          "verification_enabled" => false,
           "viewport" => { "width" => 1440, "height" => 900 }
         )
       end

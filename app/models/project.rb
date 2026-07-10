@@ -34,8 +34,13 @@ class Project < ApplicationRecord
     "auto_capture" => true,
     "service_dependencies" => [],
     "setup_commands" => [],
-    "detection" => {}
+    "detection" => {},
+    "verification_enabled" => false
   }.freeze
+  PLAYWRIGHT_MCP_NAME = "playwright-browser".freeze
+  PLAYWRIGHT_MCP_COMMAND = "@executeautomation/playwright-mcp-server".freeze
+  PLAYWRIGHT_MCP_BROWSER_HOST = "paid-screenshot-browser".freeze
+  PLAYWRIGHT_MCP_CDP_URL = "ws://#{PLAYWRIGHT_MCP_BROWSER_HOST}:3000".freeze
   DEFAULT_SCREENSHOT_STATUS = {
     "last_capture_at" => nil,
     "last_capture_status" => nil,
@@ -920,6 +925,41 @@ class Project < ApplicationRecord
     screenshot_enabled
   end
 
+  def verification_enabled
+    effective_screenshot_settings["verification_enabled"] == true
+  end
+
+  def verification_enabled=(value)
+    cast = ActiveModel::Type::Boolean.new.cast(value)
+    write_screenshot_setting("verification_enabled", cast)
+    ensure_playwright_mcp_definition! if cast
+  end
+
+  def verification_enabled?
+    verification_enabled
+  end
+
+  # Ensures the account-scoped playwright-mcp MCP server definition exists and is
+  # attached to this project. Idempotent — safe to call on every verification
+  # run. Returns the attached definition record.
+  #
+  # The npx definition is materialized by `Containers::McpProvisioner` at run
+  # time. The CDP URL env points at the `paid-screenshot-browser` container
+  # that the verification flow provisions on the agent's network. The URL is
+  # stable, so it is set at definition time rather than injected per-run.
+  def ensure_playwright_mcp_definition!
+    definition = account.mcp_server_definitions.find_or_create_by!(name: PLAYWRIGHT_MCP_NAME) do |record|
+      record.transport = "stdio"
+      record.install_type = "npx"
+      record.command = PLAYWRIGHT_MCP_COMMAND
+      record.args = []
+      record.env = { "CDP_URL" => PLAYWRIGHT_MCP_CDP_URL }
+      record.enabled = true
+    end
+    project_mcp_servers.find_or_create_by!(mcp_server_definition: definition)
+    definition
+  end
+
   def screenshot_driver
     effective_screenshot_settings["driver"]
   end
@@ -1291,6 +1331,7 @@ class Project < ApplicationRecord
     settings = settings.deep_stringify_keys
     settings["enabled"] = ActiveModel::Type::Boolean.new.cast(settings["enabled"])
     settings["auto_capture"] = ActiveModel::Type::Boolean.new.cast(settings["auto_capture"])
+    settings["verification_enabled"] = ActiveModel::Type::Boolean.new.cast(settings["verification_enabled"])
     settings["driver"] = normalized_screenshot_driver(settings["driver"])
     settings["config_path"] = settings["config_path"].presence || DEFAULT_SCREENSHOT_SETTINGS["config_path"]
     settings["service_dependencies"] = normalize_string_array(settings["service_dependencies"])
