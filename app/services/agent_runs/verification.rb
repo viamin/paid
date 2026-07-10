@@ -7,10 +7,10 @@ module AgentRuns
   # Provisions the headless browser container that the playwright-mcp MCP server
   # connects to during interactive agent verification (RDR-045 Phase 2).
   #
-  # The browser container (ghcr.io/browserless/chromium) is created on the
-  # agent run's Docker network with the well-known alias `paid-screenshot-browser`
-  # and exposes a CDP WebSocket endpoint at :3000. The playwright-mcp npx MCP
-  # server reaches the browser via Docker DNS by hostname.
+  # The browser container (ghcr.io/browserless/chromium) is created with a
+  # per-run container name on the agent run's Docker network and exposes a
+  # stable Docker DNS alias, `paid-screenshot-browser`. The playwright-mcp npx
+  # MCP server reaches the browser through that alias at :3000.
   #
   # The MCP definition itself is attached by `Project#ensure_playwright_mcp_definition!`,
   # which is invoked here so the definition is in place even for legacy
@@ -23,14 +23,14 @@ module AgentRuns
   # activity completes.
   #
   # The browser container's ID is recorded on the agent run via
-  # `mcp_sidecar_container_ids` so the existing `CleanupMcpServersActivity`
-  # tears it down alongside any other MCP sidecars. This reuses the existing
-  # cleanup code path and keeps capacity accounting accurate (see
-  # `Capacity::DockerContainerInventory`).
+  # `mcp_sidecar_container_ids` only after the MCP provisioner re-runs. That
+  # ordering matters because `Containers::McpProvisioner#provision` clears the
+  # current sidecar list before rebuilding it; recording the browser earlier
+  # would make it look stale and get it deleted before the agent starts.
   #
-  # Idempotency: when a browser container with the expected hostname already
-  # exists (e.g. from a prior failed attempt), it is adopted rather than
-  # recreated. Re-running with the same definition does not duplicate work.
+  # Idempotency: when this agent run's browser container already exists on the
+  # expected network, it is adopted rather than recreated. Re-running with the
+  # same definition does not duplicate work.
   class Verification
     class Error < StandardError; end
 
@@ -38,7 +38,9 @@ module AgentRuns
     BROWSER_HOSTNAME = Screenshots::ContainerCapture::CHROME_ALIAS
     BROWSER_CDP_PORT = 3000
     CDP_URL = Screenshots::ContainerCapture::CHROME_URL
+    BROWSER_CONTAINER_NAME_PREFIX = "paid-verification-browser".freeze
     BROWSER_LABEL = "paid.verification_browser".freeze
+    AGENT_RUN_LABEL = "paid.agent_run_id".freeze
 
     MEMORY_BYTES = 1 * 1024 * 1024 * 1024
     CPU_QUOTA = 100_000
@@ -61,7 +63,7 @@ module AgentRuns
       attach_playwright_definition!
       synchronize_snapshot!
       result = provision_browser_container!
-      republish_provisioned_servers!
+      reprovision_keeping_browser!(result.container_id)
 
       log_info("agent_runs.verification.completed",
         agent_run_id: @agent_run.id,
@@ -104,7 +106,6 @@ module AgentRuns
       container = adopt_or_create_browser
       Containers.backend.start_container(container) unless container_running?(container)
       wait_for_health!(container)
-      track_sidecar_id(container.id)
 
       Result.new(
         status: "provisioned",
@@ -117,7 +118,7 @@ module AgentRuns
     end
 
     # Re-runs the MCP provisioner so the freshly-snapshotted playwright-mcp
-    # definition is materialized into an stdio server spec on the agent run.
+    # definition is materialized into a stdio server spec on the agent run.
     # `mcp_provisioned_servers` is what `RunAgentActivity` reads when wiring
     # MCP servers into the agent's harness, so this update must happen before
     # the agent starts.
@@ -125,8 +126,27 @@ module AgentRuns
       Containers::McpProvisioner.new.provision(@agent_run, network: @network)
     end
 
+    # Re-runs the MCP provisioner while keeping the verification browser out of
+    # `mcp_sidecar_container_ids` for the duration of the call.
+    # `McpProvisioner#provision` clears that list (and deletes those containers)
+    # before rebuilding it, so a browser recorded beforehand would be torn down
+    # as stale and the playwright-mcp `CDP_URL` would resolve to a dead
+    # container. Tracking is restored in `ensure` so a failed reprovision still
+    # leaves the browser recorded for cleanup instead of leaking until the
+    # orphan janitor reaps it.
+    def reprovision_keeping_browser!(browser_container_id)
+      untrack_sidecar_id(browser_container_id)
+      republish_provisioned_servers!
+    ensure
+      track_sidecar_id(browser_container_id)
+    end
+
     def adopt_or_create_browser
-      Containers.backend.get_container(BROWSER_HOSTNAME)
+      container = Containers.backend.get_container(browser_container_name)
+      return container if browser_container_matches_run?(container)
+
+      remove_browser(container)
+      create_browser
     rescue Docker::Error::NotFoundError
       create_browser
     end
@@ -141,7 +161,7 @@ module AgentRuns
     def create_browser
       Containers.backend.create_container(
         "Image" => BROWSER_IMAGE,
-        "name" => BROWSER_HOSTNAME,
+        "name" => browser_container_name,
         "ExposedPorts" => { "#{BROWSER_CDP_PORT}/tcp" => {} },
         "HostConfig" => {
           "NetworkMode" => @network,
@@ -160,7 +180,7 @@ module AgentRuns
         },
         "Labels" => {
           "paid.verification_browser" => "true",
-          "paid.agent_run_id" => @agent_run.id.to_s
+          AGENT_RUN_LABEL => @agent_run.id.to_s
         }
       )
     rescue Docker::Error::DockerError => e
@@ -191,6 +211,55 @@ module AgentRuns
       return if existing.include?(container_id)
 
       @agent_run.update_columns(mcp_sidecar_container_ids: existing + [ container_id ])
+    end
+
+    def untrack_sidecar_id(container_id)
+      existing = Array(@agent_run.mcp_sidecar_container_ids)
+      return unless existing.include?(container_id)
+
+      @agent_run.update_columns(mcp_sidecar_container_ids: existing - [ container_id ])
+    end
+
+    def browser_container_name
+      "#{BROWSER_CONTAINER_NAME_PREFIX}-run#{@agent_run.id}"
+    end
+
+    def browser_container_matches_run?(container)
+      labels = container_config(container).fetch("Labels", {})
+      labels[BROWSER_LABEL] == "true" &&
+        labels[AGENT_RUN_LABEL] == @agent_run.id.to_s &&
+        container_attached_to_network?(container)
+    end
+
+    def container_attached_to_network?(container)
+      networks = container_networks(container)
+      networks.key?(@network)
+    end
+
+    def container_config(container)
+      container.json.fetch("Config", {})
+    rescue Docker::Error::DockerError
+      {}
+    end
+
+    def container_networks(container)
+      container.json.dig("NetworkSettings", "Networks") || {}
+    rescue Docker::Error::DockerError
+      {}
+    end
+
+    def remove_browser(container)
+      Containers.backend.stop_container(container, timeout: 10)
+    rescue Docker::Error::NotFoundError, Docker::Error::ClientError, Docker::Error::ServerError
+      # Already stopped, gone, or a transient daemon error — proceed to force-delete.
+    ensure
+      begin
+        Containers.backend.delete_container(container, force: true, v: true)
+      rescue Docker::Error::NotFoundError
+        # Already removed.
+      rescue Docker::Error::DockerError => e
+        raise Error, "Failed to replace verification browser container: #{e.message}"
+      end
     end
 
     def log_info(message, **metadata)

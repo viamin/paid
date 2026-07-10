@@ -10,17 +10,19 @@ RSpec.describe AgentRuns::Verification do
   let(:network) { NetworkPolicy::NETWORK_NAME }
   let(:provisioner) { described_class.new(agent_run: agent_run, network: network) }
   let(:docker_container) { instance_double(Docker::Container, id: "browser-xyz") }
+  let(:browser_container_name) { "#{described_class::BROWSER_CONTAINER_NAME_PREFIX}-run#{agent_run.id}" }
 
   before do
     allow(NetworkPolicy).to receive(:ensure_network!)
     allow(Containers::TcpHealthProbe).to receive(:open?).and_return(true)
+    allow(Docker::Container).to receive(:create)
   end
 
   describe "#call" do
     context "when the browser container does not exist yet" do
       before do
         allow(Docker::Container).to receive(:get)
-          .with(AgentRuns::Verification::BROWSER_HOSTNAME)
+          .with(browser_container_name)
           .and_raise(Docker::Error::NotFoundError)
         allow(Docker::Container).to receive(:create).and_return(docker_container)
         allow(docker_container).to receive_messages(start: nil, json: { "State" => { "Running" => false } })
@@ -32,7 +34,7 @@ RSpec.describe AgentRuns::Verification do
         expect(Docker::Container).to have_received(:create).with(
           hash_including(
             "Image" => AgentRuns::Verification::BROWSER_IMAGE,
-            "name" => AgentRuns::Verification::BROWSER_HOSTNAME,
+            "name" => browser_container_name,
             "NetworkingConfig" => {
               "EndpointsConfig" => {
                 network => { "Aliases" => [ AgentRuns::Verification::BROWSER_HOSTNAME ] }
@@ -87,17 +89,55 @@ RSpec.describe AgentRuns::Verification do
 
         expect(provisioner).to have_received(:provision).with(agent_run, network: network)
       end
+
+      it "tracks the browser after MCP reprovision resets the sidecar list" do
+        mcp_provisioner = instance_double(Containers::McpProvisioner)
+        allow(Containers::McpProvisioner).to receive(:new).and_return(mcp_provisioner)
+        allow(mcp_provisioner).to receive(:provision) do
+          agent_run.update!(mcp_provisioned_servers: { "stdio_servers" => [], "url_servers" => [] }, mcp_sidecar_container_ids: [])
+        end
+
+        provisioner.call
+
+        expect(agent_run.reload.mcp_sidecar_container_ids).to eq([ "browser-xyz" ])
+      end
+
+      it "still tracks the browser when MCP reprovision fails so it can be cleaned up" do
+        mcp_provisioner = instance_double(Containers::McpProvisioner)
+        allow(Containers::McpProvisioner).to receive(:new).and_return(mcp_provisioner)
+        allow(mcp_provisioner).to receive(:provision)
+          .and_raise(Containers::McpProvisioner::Error, "provisioning failed")
+
+        expect { provisioner.call }.to raise_error(Containers::McpProvisioner::Error, /provisioning failed/)
+        expect(agent_run.reload.mcp_sidecar_container_ids).to eq([ "browser-xyz" ])
+      end
     end
 
-    context "when a browser container with the expected hostname already exists" do
+    context "when this agent run's browser container already exists" do
       let(:existing_container) { instance_double(Docker::Container, id: "browser-existing") }
+      let(:existing_container_json) do
+        {
+          "Config" => {
+            "Labels" => {
+              AgentRuns::Verification::BROWSER_LABEL => "true",
+              AgentRuns::Verification::AGENT_RUN_LABEL => agent_run.id.to_s
+            }
+          },
+          "NetworkSettings" => {
+            "Networks" => {
+              network => { "Aliases" => [ AgentRuns::Verification::BROWSER_HOSTNAME ] }
+            }
+          },
+          "State" => { "Running" => true }
+        }
+      end
 
       before do
         allow(Docker::Container).to receive(:get)
-          .with(AgentRuns::Verification::BROWSER_HOSTNAME)
+          .with(browser_container_name)
           .and_return(existing_container)
         allow(existing_container).to receive_messages(
-          json: { "State" => { "Running" => true } },
+          json: existing_container_json,
           start: nil
         )
       end
@@ -116,6 +156,17 @@ RSpec.describe AgentRuns::Verification do
         expect(agent_run.reload.mcp_sidecar_container_ids).to eq([ "browser-existing" ])
       end
 
+      it "untracks the browser before reprovision so retries do not delete it as stale" do
+        agent_run.update_columns(mcp_sidecar_container_ids: [ "browser-existing" ])
+        allow(existing_container).to receive(:stop)
+        allow(existing_container).to receive(:delete)
+
+        provisioner.call
+
+        expect(existing_container).not_to have_received(:stop)
+        expect(existing_container).not_to have_received(:delete)
+      end
+
       it "adds the sidecar id when it was not previously tracked" do
         agent_run.update_columns(mcp_sidecar_container_ids: [])
         provisioner.call
@@ -125,13 +176,29 @@ RSpec.describe AgentRuns::Verification do
 
     context "when the browser container exists but is not running" do
       let(:stopped_container) { instance_double(Docker::Container, id: "browser-stopped") }
+      let(:stopped_container_json) do
+        {
+          "Config" => {
+            "Labels" => {
+              AgentRuns::Verification::BROWSER_LABEL => "true",
+              AgentRuns::Verification::AGENT_RUN_LABEL => agent_run.id.to_s
+            }
+          },
+          "NetworkSettings" => {
+            "Networks" => {
+              network => { "Aliases" => [ AgentRuns::Verification::BROWSER_HOSTNAME ] }
+            }
+          },
+          "State" => { "Running" => false }
+        }
+      end
 
       before do
         allow(Docker::Container).to receive(:get)
-          .with(AgentRuns::Verification::BROWSER_HOSTNAME)
+          .with(browser_container_name)
           .and_return(stopped_container)
         allow(stopped_container).to receive_messages(
-          json: { "State" => { "Running" => false } },
+          json: stopped_container_json,
           start: nil
         )
       end
@@ -162,7 +229,7 @@ RSpec.describe AgentRuns::Verification do
         agent_run.reload
 
         allow(Docker::Container).to receive(:get)
-          .with(AgentRuns::Verification::BROWSER_HOSTNAME)
+          .with(browser_container_name)
           .and_raise(Docker::Error::NotFoundError)
         allow(Docker::Container).to receive(:create).and_return(docker_container)
         allow(docker_container).to receive_messages(start: nil, json: { "State" => { "Running" => false } })
@@ -180,7 +247,7 @@ RSpec.describe AgentRuns::Verification do
     context "when Docker returns an error" do
       before do
         allow(Docker::Container).to receive(:get)
-          .with(AgentRuns::Verification::BROWSER_HOSTNAME)
+          .with(browser_container_name)
           .and_raise(Docker::Error::DockerError, "boom")
       end
 
@@ -188,6 +255,45 @@ RSpec.describe AgentRuns::Verification do
         expect { provisioner.call }.to raise_error(
           AgentRuns::Verification::Error, /Failed to provision verification browser container/
         )
+      end
+    end
+
+    context "when a stale container with the same run-specific name is on the wrong network" do
+      let(:stale_container) { instance_double(Docker::Container, id: "browser-stale") }
+
+      before do
+        allow(Docker::Container).to receive(:get)
+          .with(browser_container_name)
+          .and_return(stale_container)
+        allow(stale_container).to receive(:json).and_return(
+          {
+            "Config" => {
+              "Labels" => {
+                AgentRuns::Verification::BROWSER_LABEL => "true",
+                AgentRuns::Verification::AGENT_RUN_LABEL => agent_run.id.to_s
+              }
+            },
+            "NetworkSettings" => {
+              "Networks" => {
+                "some-other-network" => { "Aliases" => [ AgentRuns::Verification::BROWSER_HOSTNAME ] }
+              }
+            },
+            "State" => { "Running" => true }
+          }
+        )
+        allow(stale_container).to receive(:stop)
+        allow(stale_container).to receive(:delete)
+        allow(Docker::Container).to receive(:create).and_return(docker_container)
+        allow(docker_container).to receive_messages(start: nil, json: { "State" => { "Running" => false } })
+      end
+
+      it "replaces the stale container so the browser alias resolves on the current network" do
+        result = provisioner.call
+
+        expect(stale_container).to have_received(:stop).with(timeout: 10)
+        expect(stale_container).to have_received(:delete).with(force: true, v: true)
+        expect(Docker::Container).to have_received(:create).with(hash_including("name" => browser_container_name))
+        expect(result.container_id).to eq("browser-xyz")
       end
     end
   end
