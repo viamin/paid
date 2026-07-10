@@ -354,7 +354,45 @@ RSpec.describe "Dashboard" do
         expect(headers).to include("Context")
         expect(headers).not_to include("Created")
         expect(headers).not_to include("Waiting")
+        expect(headers).to include("Actions")
         expect(response.body).not_to include("hidden-owner/hidden-repo")
+      end
+
+      it "renders Cancel and View actions for cancellable queued runs in the upcoming queue" do
+        issue = create(:issue, project: project, github_number: 91, title: "Cancel from the queue")
+        run = create(:agent_run, :queued, project: project, issue: issue, created_at: 2.minutes.ago)
+
+        get dashboard_path
+
+        document = Nokogiri::HTML(response.body)
+        queue_section = document.at_xpath("//h3[normalize-space(text())='Upcoming Queue']/ancestor::div[contains(@class, 'rounded-lg')][1]")
+        row = queue_section.at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(run, :dashboard_queue_row)}"]))
+
+        expect(row).to be_present
+        expect(row.css("a").map { |a| a["href"] }).to include(project_agent_run_path(project, run))
+        cancel_form = row.at_css("form[action='#{dashboard_cancel_run_path(run)}']")
+        expect(cancel_form).to be_present
+        expect(cancel_form["method"]).to eq("post")
+        expect(cancel_form.at_css("button")&.text).to include("Cancel")
+      end
+
+      it "does not render a Cancel button in the upcoming queue for users who cannot run agents" do
+        viewer = create(:user, :viewer, account: account)
+        sign_in viewer
+
+        viewer_project = create(:project, account: account, created_by: viewer, owner: "viewer-octo", repo: "queue")
+        run = create(:agent_run, :queued, project: viewer_project, created_at: 2.minutes.ago)
+
+        get dashboard_path
+
+        document = Nokogiri::HTML(response.body)
+        queue_section = document.at_xpath("//h3[normalize-space(text())='Upcoming Queue']/ancestor::div[contains(@class, 'rounded-lg')][1]")
+        row = queue_section.at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(run, :dashboard_queue_row)}"]))
+
+        expect(row).to be_present
+        expect(row.css("a").map { |a| a["href"] }).to include(project_agent_run_path(viewer_project, run))
+        expect(row.at_css("form")).to be_nil
+        expect(response.body).not_to include(dashboard_cancel_run_path(run))
       end
 
       it "shows orphaned queued projects for the account fallback owner" do
