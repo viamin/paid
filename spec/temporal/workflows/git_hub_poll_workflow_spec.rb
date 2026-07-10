@@ -105,16 +105,58 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
   describe "#maybe_scan_paid_prs" do
     let(:workflow) { described_class.new }
+    let(:logger) { instance_double(Logger, warn: nil) }
 
     before do
       allow(workflow).to receive(:run_activity).and_return({ automation_results: [] })
+      allow(Temporalio::Workflow).to receive(:logger).and_return(logger)
     end
 
-    it "runs ScanPaidPrsActivity" do
-      workflow.send(:maybe_scan_paid_prs, 1)
+    it "runs ScanPaidPrsActivity and returns the scan result" do
+      allow(workflow).to receive(:handle_pr_scan_results)
+
+      result = workflow.send(:maybe_scan_paid_prs, 1)
 
       expect(workflow).to have_received(:run_activity)
         .with(Activities::ScanPaidPrsActivity, { project_id: 1 }, timeout: 120, heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT)
+      expect(result).to eq({ automation_results: [] })
+    end
+
+    it "swallows scan activity errors so the poll loop survives" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::ScanPaidPrsActivity, anything, timeout: anything, heartbeat_timeout: anything)
+        .and_raise(StandardError.new("provider factory crash"))
+      allow(workflow).to receive(:record_swallowed_non_critical_activity_failure)
+
+      result = workflow.send(:maybe_scan_paid_prs, 1)
+
+      expect(result).to be_nil
+      expect(workflow).to have_received(:record_swallowed_non_critical_activity_failure).with(
+        project_id: 1,
+        helper: "maybe_scan_paid_prs",
+        error: instance_of(StandardError)
+      )
+      expect(logger).to have_received(:warn).with(hash_including(
+        message: "pr_scanner.scan_failed",
+        project_id: 1
+      ))
+    end
+
+    it "does not swallow errors from handle_pr_scan_results (automation decisions must propagate)" do
+      allow(workflow).to receive(:handle_pr_scan_results)
+        .and_raise(StandardError, "decision execution failure")
+
+      expect { workflow.send(:maybe_scan_paid_prs, 1) }
+        .to raise_error(StandardError, /decision execution failure/)
+    end
+
+    it "re-raises CanceledError so workflow shutdown is not delayed" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::ScanPaidPrsActivity, anything, timeout: anything, heartbeat_timeout: anything)
+        .and_raise(Temporalio::Error::CanceledError.new("cancelled"))
+
+      expect { workflow.send(:maybe_scan_paid_prs, 1) }
+        .to raise_error(Temporalio::Error::CanceledError)
     end
   end
 
