@@ -349,7 +349,7 @@ module Workflows
           else
             # Step 6: Create PR
             pr_result = run_activity(Activities::CreatePullRequestActivity,
-              { agent_run_id: agent_run_id }, timeout: 60)
+              { agent_run_id: agent_run_id }, timeout: 120)
 
             unless pr_result[:skipped] || pr_result[:pull_request_url].blank?
               # Step 7: Update issue with PR link

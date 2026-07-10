@@ -6,8 +6,11 @@ module Llm
   # full scope, and surfaces design decisions — following the guidelines in
   # GitHub issue #581.
   #
-  # Raises on LLM errors so the caller can log with full context (e.g.
-  # agent_run_id, issue_number) and fall back to the raw agent summary.
+  # Transient errors (provider failures, timeouts, rate limits) are retried
+  # up to MAX_ATTEMPTS times with exponential backoff. After exhausting
+  # retries the method returns nil so the caller can fall back to a
+  # deterministic description. Non-retryable errors (auth, configuration)
+  # and unexpected errors propagate to the caller for contextual logging.
   #
   # @example
   #   body = Llm::GeneratePrDescription.call(
@@ -23,6 +26,14 @@ module Llm
     MAX_SUMMARY_INPUT = 20_000
     MAX_ISSUE_BODY_INPUT = 4_000
     TIMEOUT = 30
+    MAX_ATTEMPTS = 3
+    RETRY_DELAYS = [ 2, 4 ].freeze
+
+    RETRYABLE_ERRORS = [
+      AgentHarness::ProviderError,
+      AgentHarness::TimeoutError,
+      AgentHarness::RateLimitError
+    ].freeze
 
     PROMPT_SLUG = "generation.pr_description"
 
@@ -77,6 +88,23 @@ module Llm
     private
 
     def request_description
+      MAX_ATTEMPTS.times do |attempt|
+        outcome = attempt_single_request
+        return outcome[:description] if outcome[:done]
+
+        break if attempt == MAX_ATTEMPTS - 1
+
+        log_retry(attempt, outcome[:error])
+        sleep RETRY_DELAYS[attempt] || RETRY_DELAYS.last
+      end
+
+      nil
+    end
+
+    # Returns a hash with :done (true when the result is final — success or
+    # empty-but-successful) and :description (the text, or nil). When :done
+    # is false the caller should retry.
+    def attempt_single_request
       response = AgentHarness.send_message(
         prompt,
         provider: :claude,
@@ -85,9 +113,23 @@ module Llm
         tools: :none,
         **TextMode.options
       )
-      return nil unless response.success?
 
-      normalize_output(response.output).presence
+      if response.success?
+        { done: true, description: normalize_output(response.output).presence }
+      else
+        { done: false, error: "LLM response unsuccessful: #{response.error}" }
+      end
+    rescue *RETRYABLE_ERRORS => e
+      { done: false, error: "#{e.class.name}: #{e.message}" }
+    end
+
+    def log_retry(attempt, error)
+      Rails.logger.info(
+        message: "llm.generate_pr_description_retrying",
+        attempt: attempt + 2,
+        max_attempts: MAX_ATTEMPTS,
+        error: error
+      )
     end
 
     def normalize_output(text)

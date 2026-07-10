@@ -39,9 +39,10 @@ RSpec.describe Activities::CreatePullRequestActivity do
     )
     allow(github_client).to receive(:add_labels_to_issue)
     # Stub external agent harness so Llm::GeneratePrDescription runs without real external calls.
-    # By default, return a failed response so the activity falls back to raw summary.
+    # By default, return a failed response so the activity falls back to a deterministic description.
     allow(AgentHarness).to receive(:send_message)
-      .and_return(instance_double(AgentHarness::Response, success?: false, output: ""))
+      .and_return(instance_double(AgentHarness::Response, success?: false, output: "", error: nil))
+    allow_any_instance_of(Llm::GeneratePrDescription).to receive(:sleep) # rubocop:disable RSpec/AnyInstance
   end
 
   describe "#execute" do
@@ -222,19 +223,21 @@ RSpec.describe Activities::CreatePullRequestActivity do
       expect(log.content).to include("https://github.com/owner/repo/pull/42")
     end
 
-    it "uses agent summary as fallback body when LLM description is nil" do
+    it "uses deterministic fallback body when LLM description is nil" do
       agent_run.log!("stdout", "Here are the changes I made to fix the issue.")
 
-      expect(github_client).to receive(:create_pull_request).with(
-        anything,
-        hash_including(
-          body: a_string_including("## Summary")
-            .and(including("Here are the changes I made to fix the issue."))
-            .and(including("Closes ##{issue.github_number}"))
-        )
-      ).and_return(pr_response)
+      captured_body = nil
+      allow(github_client).to receive(:create_pull_request) do |*_args, **kwargs|
+        captured_body = kwargs[:body]
+        pr_response
+      end
 
       activity.execute(agent_run_id: agent_run.id)
+
+      expect(captured_body).to include("## Summary")
+      expect(captured_body).to include(issue.title)
+      expect(captured_body).to include("Closes ##{issue.github_number}")
+      expect(captured_body).not_to include("Here are the changes I made to fix the issue.")
     end
 
     it "does not use raw JSON as fallback body" do
@@ -459,27 +462,26 @@ RSpec.describe Activities::CreatePullRequestActivity do
         )
       end
 
-      it "falls back to agent summary when LLM runner fails and logs with context" do
+      it "falls back to issue-title description when LLM retries are exhausted" do
         agent_run.log!("stdout", "Raw agent output here")
         allow(AgentHarness).to receive(:send_message)
           .and_raise(AgentHarness::ProviderError.new("Provider unavailable"))
         mock_logger = instance_double(ActiveSupport::Logger, info: nil)
         allow(activity).to receive(:logger).and_return(mock_logger)
         expect(mock_logger).to receive(:warn).with(hash_including(
-          message: "agent_execution.pr_description_failed",
+          message: "agent_execution.pr_description_llm_unsuccessful",
           agent_run_id: agent_run.id,
-          issue_number: issue.github_number,
-          error_class: "AgentHarness::ProviderError"
+          issue_number: issue.github_number
         ))
         expect(github_client).to receive(:create_pull_request).with(
           anything,
-          hash_including(body: a_string_including("Raw agent output here"))
+          hash_including(body: a_string_including(issue.title))
         ).and_return(pr_response)
 
         activity.execute(agent_run_id: agent_run.id)
       end
 
-      it "falls back to agent summary when LLM raises an unexpected error and logs with context" do
+      it "falls back to issue-title description when LLM raises a non-retryable error" do
         agent_run.log!("stdout", "Raw agent output here")
         allow(AgentHarness).to receive(:send_message)
           .and_raise(RuntimeError.new("unexpected failure"))
@@ -493,26 +495,26 @@ RSpec.describe Activities::CreatePullRequestActivity do
         ))
         expect(github_client).to receive(:create_pull_request).with(
           anything,
-          hash_including(body: a_string_including("Raw agent output here"))
+          hash_including(body: a_string_including(issue.title))
         ).and_return(pr_response)
 
         activity.execute(agent_run_id: agent_run.id)
       end
 
-      it "falls back to agent summary when LLM returns a failed response" do
+      it "falls back to issue-title description when LLM returns a failed response after retries" do
         agent_run.log!("stdout", "Raw agent output here")
 
         expect(github_client).to receive(:create_pull_request).with(
           anything,
           hash_including(
-            body: a_string_including("Raw agent output here")
+            body: a_string_including(issue.title)
           )
         ).and_return(pr_response)
 
         activity.execute(agent_run_id: agent_run.id)
       end
 
-      it "does not record a PR description metric when the LLM call raises" do
+      it "does not record a PR description metric when LLM retries are exhausted" do
         agent_run.log!("stdout", "Raw agent output here")
         allow(AgentHarness).to receive(:send_message)
           .and_raise(AgentHarness::ProviderError.new("Provider unavailable"))
