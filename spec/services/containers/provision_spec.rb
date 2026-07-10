@@ -25,6 +25,18 @@ RSpec.describe Containers::Provision do
     preparation_class.new([ preparation_write ])
   end
 
+  def build_preview_tunnel_service(agent_run:, worktree_path:)
+    described_class.new(
+      agent_run: agent_run,
+      worktree_path: worktree_path,
+      preview_tunnel: {
+        session_token: "preview-token",
+        tunnel_port: 8201,
+        app_port: 4000
+      }
+    )
+  end
+
   def stub_exec_with_dead_container_cleanup(mock_container)
     allow(mock_container).to receive(:exec) do |cmd, **_opts, &block|
       script = cmd.is_a?(Array) ? cmd.last.to_s : cmd.to_s
@@ -749,6 +761,22 @@ RSpec.describe Containers::Provision do
         end
 
         service.provision
+      end
+
+      it "writes preview tunnel client config when preview metadata is provided" do
+        preview_service = build_preview_tunnel_service(agent_run:, worktree_path:)
+        allow(Containers::ProxyUrl).to receive(:resolve).with(backend: preview_service.backend, restricted: true).and_return("http://paid-proxy:3000")
+        expect(Docker::Container).to receive(:create) { |config| expect(config["Env"]).to include(
+          "PAID_PREVIEW_TUNNEL_CONFIG_PATH=/home/agent/.paid-preview/rathole-client.toml",
+          "PAID_PREVIEW_TUNNEL_SERVICE_NAME=preview-preview-token",
+          "PAID_PREVIEW_TUNNEL_PORT=8201"
+        ); mock_container }
+        allow(preview_service).to receive(:write_container_file).and_call_original
+        preview_service.provision
+        expect(preview_service).to have_received(:write_container_file).with(
+          "/home/agent/.paid-preview/rathole-client.toml",
+          include('[client.services.preview-preview-token]')
+        )
       end
 
       it "sets git committer identity environment variables" do

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+config_dir="${TMPDIR:-/tmp}/paid-preview-tunnel"
+config_path="${config_dir}/server.toml"
+
+mkdir -p "${config_dir}"
+bin/rails runner 'puts Previews::TunnelManager.server_config_toml' > "${config_path}"
+
+exec rathole --server "${config_path}"

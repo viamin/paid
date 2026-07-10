@@ -178,6 +178,7 @@ module Containers
       @worktree_path = worktree_path
       @pool_entry = pool_entry
       @workspace_volume = workspace_volume
+      @preview_tunnel_option = options.delete(:preview_tunnel)
       @pool_mode = options.delete(:pool_mode) { false }
       @options = DEFAULTS.merge(resolve_user_setting_overrides).merge(options)
       @backend = backend
@@ -214,6 +215,7 @@ module Containers
       seed_gemini_credentials!
       seed_copilot_credentials!
       seed_claude_credentials!
+      seed_preview_tunnel_config!
       apply_network_restrictions!
 
       log_system("container.provision.success", container_id: container.id)
@@ -1848,6 +1850,62 @@ module Containers
       worktree_path
     end
 
+    def preview_tunnel
+      return nil unless @preview_tunnel_option.present?
+      return @preview_tunnel if defined?(@preview_tunnel)
+
+      @preview_tunnel = if @preview_tunnel_option.is_a?(Previews::TunnelManager::TunnelDefinition)
+        @preview_tunnel_option
+      else
+        Previews::TunnelManager::TunnelDefinition.new(
+          session_token: @preview_tunnel_option.fetch(:session_token),
+          tunnel_port: @preview_tunnel_option.fetch(:tunnel_port),
+          app_port: @preview_tunnel_option.fetch(:app_port)
+        )
+      end
+    end
+
+    def preview_tunnel?
+      preview_tunnel.present?
+    end
+
+    def preview_tunnel_environment
+      tunnel = preview_tunnel
+
+      [
+        "PAID_PREVIEW_TUNNEL_CONFIG_PATH=#{preview_tunnel_config_path}",
+        "PAID_PREVIEW_TUNNEL_SERVICE_NAME=#{tunnel.service_name}",
+        "PAID_PREVIEW_TUNNEL_PORT=#{tunnel.tunnel_port}"
+      ]
+    end
+
+    def preview_tunnel_config_path
+      "/home/agent/.paid-preview/rathole-client.toml"
+    end
+
+    def seed_preview_tunnel_config!
+      return unless preview_tunnel?
+
+      backend.exec_in_container(container, [ "mkdir", "-p", File.dirname(preview_tunnel_config_path) ], user: "agent")
+      write_container_file(preview_tunnel_config_path, preview_tunnel_client_config)
+      log_system(
+        "container.preview_tunnel_config_seeded",
+        service_name: preview_tunnel.service_name,
+        tunnel_port: preview_tunnel.tunnel_port
+      )
+    rescue Docker::Error::DockerError => e
+      log_system("container.preview_tunnel_config_seed_failed", error: e.message)
+      raise
+    end
+
+    def preview_tunnel_client_config
+      Previews::TunnelManager.client_config(
+        tunnel: preview_tunnel,
+        backend: backend,
+        restricted: network_contract.restricted?
+      )
+    end
+
     def write_container_file(path, content)
       encoded = Base64.strict_encode64(content)
       cmd = "echo #{Shellwords.escape(encoded)} | base64 -d > #{Shellwords.escape(path)}"
@@ -2254,6 +2312,7 @@ module Containers
       ]
 
       env.concat(run_scoped_environment(proxy_base)) if agent_run.present?
+      env.concat(preview_tunnel_environment) if preview_tunnel?
 
       env << "PAID_COPILOT_SUBSCRIPTION_AUTH=#{copilot_subscription_auth? ? 1 : 0}"
 
