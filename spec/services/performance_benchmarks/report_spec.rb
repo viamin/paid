@@ -4,7 +4,7 @@ require "rails_helper"
 
 RSpec.describe PerformanceBenchmarks::Report do
   it "serializes JSON-ready report data" do
-    generated_at = Time.zone.parse("2026-04-21 12:00:00 UTC")
+    generated_at = Time.utc(2026, 4, 21, 12, 0, 0)
     measurement = PerformanceBenchmarks::Measurement.from_samples(
       key: "dashboard_load_time",
       samples: [ 100, 120 ]
