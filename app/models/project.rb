@@ -302,6 +302,21 @@ class Project < ApplicationRecord
     "#{owner}/#{repo}"
   end
 
+  # Normalized primary language key (downcased) used by the prompt-building
+  # services (e.g. Prompts::LanguageCommands) to select test/lint commands.
+  # Returns nil when no language has been detected for the repository.
+  def detected_language
+    primary_language&.strip&.downcase&.presence
+  end
+
+  # Human-friendly project-type label (e.g. "Ruby on Rails") shown as a badge
+  # on project tiles. Returns nil when no language has been detected.
+  def project_type_label
+    return if primary_language.blank?
+
+    Projects::LanguageProfile.label_for(primary_language) || primary_language
+  end
+
   def flipper_id
     "Project;#{id}"
   end

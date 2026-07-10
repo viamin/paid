@@ -359,6 +359,42 @@ RSpec.describe Project do
       end
     end
 
+    describe "#detected_language" do
+      it "returns the downcased primary language" do
+        project = build(:project, primary_language: "Ruby")
+        expect(project.detected_language).to eq("ruby")
+      end
+
+      it "normalizes surrounding whitespace and casing" do
+        project = build(:project, primary_language: "  TypeScript  ")
+        expect(project.detected_language).to eq("typescript")
+      end
+
+      it "returns nil when no language is set" do
+        expect(build(:project, primary_language: nil).detected_language).to be_nil
+      end
+    end
+
+    describe "#project_type_label" do
+      it "maps known languages to a framework label" do
+        expect(build(:project, primary_language: "Ruby").project_type_label).to eq("Ruby on Rails")
+        expect(build(:project, primary_language: "Elixir").project_type_label).to eq("Phoenix / Elixir")
+        expect(build(:project, primary_language: "Swift").project_type_label).to eq("macOS / Swift")
+      end
+
+      it "is case-insensitive" do
+        expect(build(:project, primary_language: "elixir").project_type_label).to eq("Phoenix / Elixir")
+      end
+
+      it "falls back to the raw language when unmapped" do
+        expect(build(:project, primary_language: "Brainfuck").project_type_label).to eq("Brainfuck")
+      end
+
+      it "returns nil when no language is set" do
+        expect(build(:project, primary_language: nil).project_type_label).to be_nil
+      end
+    end
+
     describe "#github_url" do
       it "returns the GitHub URL" do
         project = build(:project, owner: "viamin", repo: "paid")
