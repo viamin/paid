@@ -39,6 +39,12 @@ RSpec.describe "Evolution task queue alignment", :no_db do # rubocop:disable RSp
   end
 
   let(:worker_file) { Rails.root.join("bin/temporal_worker") }
+  let(:workflow_classes) do
+    Workflows.constants.map { |constant| Workflows.const_get(constant) }
+             .select { |constant| constant.is_a?(Class) && constant < Workflows::BaseWorkflow }
+  end
+  let(:agent_workflows) { workflow_classes.reject { |workflow| workflow == Workflows::GitHubPollWorkflow } }
+  let(:poll_workflows) { workflow_classes.select { |workflow| workflow == Workflows::GitHubPollWorkflow } }
 
   it "registers PromptEvolutionWorkflow and KnowledgeEvolutionWorkflow on the agent queue" do
     worker_content = worker_file.read
@@ -47,6 +53,15 @@ RSpec.describe "Evolution task queue alignment", :no_db do # rubocop:disable RSp
     expect(worker_content).to include("task_queue: Paid.agent_task_queue"),
       "bin/temporal_worker must register non-poll workflows (including PromptEvolutionWorkflow " \
       "and KnowledgeEvolutionWorkflow) on Paid.agent_task_queue so agent_workflows actually polls them"
+    expect(agent_workflows).to include(
+      Workflows::PromptEvolutionWorkflow,
+      Workflows::KnowledgeEvolutionWorkflow
+    ), "agent_workflows must include PromptEvolutionWorkflow and KnowledgeEvolutionWorkflow so " \
+       "their start_workflow calls reach a worker polling Paid.agent_task_queue"
+    expect(poll_workflows).not_to include(
+      Workflows::PromptEvolutionWorkflow,
+      Workflows::KnowledgeEvolutionWorkflow
+    ), "PromptEvolutionWorkflow and KnowledgeEvolutionWorkflow must not be routed to poll_workflows"
   end
 
   it "does not start evolution workflows on the poll queue" do
