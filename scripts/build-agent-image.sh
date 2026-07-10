@@ -39,6 +39,13 @@ if [ -z "${RUBY_MAAT_VERSION}" ]; then
     exit 1
 fi
 
+# Extract agent-harness version from Gemfile.lock (single source of truth).
+AGENT_HARNESS_VERSION=$(sed -n '/^GEM$/,/^$/s/^  *agent-harness (\(.*\))/\1/p' "${PROJECT_ROOT}/Gemfile.lock" | head -n 1)
+if [ -z "${AGENT_HARNESS_VERSION}" ]; then
+    echo "ERROR: Could not extract agent-harness version from Gemfile.lock" >&2
+    exit 1
+fi
+
 BUNDLER_VERSION=$(awk '/^BUNDLED WITH$/{getline; gsub(/^ +/, "", $0); print $0}' "${PROJECT_ROOT}/Gemfile.lock")
 if [ -z "${BUNDLER_VERSION}" ]; then
     echo "ERROR: Could not extract Bundler version from Gemfile.lock" >&2
@@ -158,6 +165,7 @@ echo "  Image: ${FULL_IMAGE}"
 echo "  Context: ${PROJECT_ROOT}/docker/agent"
 echo "  bundler: ${BUNDLER_VERSION}"
 echo "  ruby-maat: ${RUBY_MAAT_VERSION}"
+echo "  agent-harness: ${AGENT_HARNESS_VERSION}"
 echo "  claude-install: via agent-harness contract"
 echo "  cursor-install: via agent-harness contract"
 echo "  codex: ${CODEX_PACKAGE}"
@@ -173,6 +181,7 @@ echo "  copilot-cli: ${COPILOT_INSTALL_COMMAND}"
     -f "${PROJECT_ROOT}/docker/agent/Dockerfile" \
     --build-arg "BUNDLER_VERSION=${BUNDLER_VERSION}" \
     --build-arg "RUBY_MAAT_VERSION=${RUBY_MAAT_VERSION}" \
+    --build-arg "AGENT_HARNESS_VERSION=${AGENT_HARNESS_VERSION}" \
     --build-arg "CLAUDE_INSTALL_COMMAND=${CLAUDE_INSTALL_COMMAND}" \
     --build-arg "CLAUDE_POST_INSTALL_BINARY_PATH=${CLAUDE_POST_INSTALL_BINARY_PATH}" \
     --build-arg "CURSOR_ARTIFACT_URL=${CURSOR_ARTIFACT_URL}" \
