@@ -530,6 +530,8 @@ module Screenshots
         "PORT=#{port} bin/dev"
       elsif File.exist?(File.join(@tmpdir, "bin/rails"))
         "bundle exec bin/rails server -b 0.0.0.0 -p #{port}"
+      elsif File.exist?(File.join(@tmpdir, "mix.exs"))
+        "MIX_ENV=dev mix phx.server"
       elsif File.exist?(File.join(@tmpdir, "manage.py"))
         "python3 manage.py runserver 0.0.0.0:#{port}"
       elsif package_dependency?("next")
@@ -570,7 +572,8 @@ module Screenshots
     def capture_env
       @screenshot_service_env.merge(
         "CHROME_URL" => CHROME_URL,
-        "CI" => "1"
+        "CI" => "1",
+        "PORT" => app_port.to_s
       )
     end
 

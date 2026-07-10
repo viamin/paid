@@ -37,6 +37,13 @@ module Screenshots
     NEXT_PAGE_EXTENSIONS = %w[.js .jsx .ts .tsx].freeze
     JS_DEPENDENCY_KEYS = %w[dependencies devDependencies].freeze
     SKIP_DIRECTORIES = %w[.git node_modules vendor tmp log].freeze
+    PHOENIX_ROUTE_VERBS = {
+      "get" => "GET",
+      "post" => "POST",
+      "put" => "PUT",
+      "patch" => "PATCH",
+      "delete" => "DELETE"
+    }.freeze
     DATABASE_ADAPTER_MAP = {
       "postgresql" => "postgres",
       "postgis" => "postgres",
@@ -69,6 +76,10 @@ module Screenshots
       new(...).detect_framework_only
     end
 
+    def self.discover_phoenix_routes(repo_path:)
+      new(repo_path:).send(:discover_phoenix_routes)
+    end
+
     def initialize(project: nil, repo_path: nil, file_list: nil)
       @project = project
       @repo_path = repo_path
@@ -76,7 +87,7 @@ module Screenshots
     end
 
     def call
-      detection = detect_rails || detect_nextjs || detect_django || detect_generic
+      detection = detect_rails || detect_phoenix || detect_nextjs || detect_django || detect_generic
       detected_routes = detection.fetch(:routes)
       suggested_routes = present_value?(detected_routes) ? detected_routes : default_routes_for
       services = detect_services
@@ -100,6 +111,7 @@ module Screenshots
     # service scanning, and auth detection.
     def detect_framework_only
       detect_framework_identity(:rails) ||
+        detect_framework_identity(:phoenix) ||
         detect_framework_identity(:nextjs) ||
         detect_framework_identity(:django) ||
         :generic
@@ -126,6 +138,7 @@ module Screenshots
     def detect_framework_identity(framework)
       score = case framework
       when :rails then score_rails
+      when :phoenix then score_phoenix
       when :nextjs then score_nextjs
       when :django then score_django
       end
@@ -153,6 +166,14 @@ module Screenshots
       score += 0.55 if repo.file?("manage.py")
       score += 0.25 if repo.glob("**/settings.py").any?
       score += 0.2 if repo.glob("**/urls.py").any?
+      score
+    end
+
+    def score_phoenix
+      score = 0.0
+      score += 0.55 if repo.file?("mix.exs")
+      score += 0.3 if mix_dependency?("phoenix") || mix_dependency?("phoenix_live_view")
+      score += 0.15 if phoenix_router_paths.any?
       score
     end
 
@@ -202,6 +223,19 @@ module Screenshots
         driver: "playwright",
         auth: detect_django_auth,
         routes: discover_django_routes
+      }
+    end
+
+    def detect_phoenix
+      score = score_phoenix
+      return unless score >= 0.5
+
+      {
+        framework: :phoenix,
+        confidence: score.round(2),
+        driver: "playwright",
+        auth: detect_phoenix_auth,
+        routes: discover_phoenix_routes
       }
     end
 
@@ -256,6 +290,8 @@ module Screenshots
         services << mapped if present_value?(mapped)
       end
 
+      extract_phoenix_services.each { |service| services << service }
+
       dependency_names.each do |dependency|
         mapped = SERVICE_DEPENDENCY_MAP[dependency]
         services << mapped if present_value?(mapped)
@@ -268,6 +304,7 @@ module Screenshots
       @dependency_names ||= begin
         names = Set.new
         gemfile_dependencies.each { |name| names << name }
+        mix_dependencies.each { |name| names << name }
         package_dependencies.each { |name| names << name }
         names
       end
@@ -286,6 +323,21 @@ module Screenshots
 
     def gemfile_dependency?(name)
       gemfile_dependencies.include?(name)
+    end
+
+    def mix_dependencies
+      @mix_dependencies ||= begin
+        content = repo.read("mix.exs")
+        if blank_value?(content)
+          []
+        else
+          content.scan(/\{\s*:([a-zA-Z0-9_]+)/).flatten
+        end
+      end
+    end
+
+    def mix_dependency?(name)
+      mix_dependencies.include?(name)
     end
 
     def package_dependencies
@@ -334,6 +386,16 @@ module Screenshots
           collect_adapters(child, adapters)
         end
       end
+    end
+
+    def extract_phoenix_services
+      content = repo.read("config/dev.exs").to_s
+      return [] if blank_value?(content)
+
+      services = []
+      services << "postgres" if content.match?(/config\s+:.*?Repo,.*(?:database:|hostname:|url:)/m)
+      services << "redis" if content.match?(/redis:\/\//i) || content.match?(/\bRedix\b/)
+      services
     end
 
     def detect_rails_auth
@@ -388,6 +450,20 @@ module Screenshots
         "fields" => {
           "email" => "username",
           "password" => "password",
+          "submit" => "Log in"
+        }
+      }
+    end
+
+    def detect_phoenix_auth
+      return { "strategy" => "none" } unless phoenix_auth_plug?
+
+      {
+        "strategy" => "form",
+        "login_path" => phoenix_login_path,
+        "fields" => {
+          "email" => "user[email]",
+          "password" => "user[password]",
           "submit" => "Log in"
         }
       }
@@ -563,6 +639,36 @@ module Screenshots
       unique_routes(routes)
     end
 
+    def discover_phoenix_routes
+      routes = []
+      block_stack = []
+
+      phoenix_router_paths.each do |router_path|
+        repo.read(router_path).to_s.each_line.flat_map { |line| line.split(";") }.each do |statement|
+          stripped = statement.strip
+          next if stripped.blank? || stripped.start_with?("#")
+
+          if (match = stripped.match(/^scope\s+["']([^"']*)["'].*\bdo\b/))
+            block_stack << normalize_phoenix_scope_segment(match[1])
+            next
+          end
+
+          if stripped == "end"
+            block_stack.pop if block_stack.any?
+            next
+          end
+
+          route = parse_phoenix_route_line(stripped, current_phoenix_prefixes(block_stack))
+          route["scope_path"] = router_path if route
+          routes << route if route
+
+          block_stack << nil if opens_phoenix_block?(stripped)
+        end
+      end
+
+      unique_routes(routes) { |route| [ route["path"], route["name"], route["scope_path"] ] }
+    end
+
     def django_root_url_files
       roots = django_root_url_files_from_settings
       return roots if roots.any?
@@ -636,6 +742,38 @@ module Screenshots
       present_value?(normalized) ? "/#{normalized}" : "/"
     end
 
+    def parse_phoenix_route_line(line, prefixes)
+      PHOENIX_ROUTE_VERBS.each do |macro, verb|
+        pattern = /^#{macro}\s+["']([^"']+)["']\s*,\s*([A-Z][\w.]+)\s*,\s*:([a-zA-Z_][\w]*)/
+        next unless (match = line.match(pattern))
+
+        path = normalize_route_path(prefixes, match[1])
+        return route_hash(path, route_name_from_path(path)).merge(
+          "verb" => verb,
+          "controller_action" => "#{match[2]}##{match[3]}"
+        )
+      end
+
+      if (match = line.match(/^live\s+["']([^"']+)["']\s*,\s*([A-Z][\w.]+)(?:\s*,\s*:([a-zA-Z_][\w]*))?/))
+        path = normalize_route_path(prefixes, match[1])
+        action = match[3] || "index"
+        return route_hash(path, route_name_from_path(path)).merge(
+          "verb" => "GET",
+          "controller_action" => "#{match[2]}##{action}"
+        )
+      end
+
+      if (match = line.match(/^resources\s+["']([^"']+)["']\s*,\s*([A-Z][\w.]+)/))
+        path = normalize_route_path(prefixes, match[1])
+        return route_hash(path, route_name_from_path(path)).merge(
+          "verb" => "GET",
+          "controller_action" => "#{match[2]}##index"
+        )
+      end
+
+      nil
+    end
+
     def normalize_route_path(prefixes, path)
       full_path = ([ "", *prefixes, path ]).join("/")
       "/" + full_path.gsub(%r{/+}, "/").delete_prefix("/")
@@ -643,6 +781,36 @@ module Screenshots
 
     def normalized_rails_route_segment(path)
       path.to_s.sub(/\(\.:format\)\z/, "").sub(/\(\/\*[^)]+\)\z/, "")
+    end
+
+    def normalize_phoenix_scope_segment(path)
+      normalized = path.to_s.gsub(%r{/+}, "/").delete_suffix("/")
+      return "" if normalized == "/"
+
+      normalized.delete_prefix("/")
+    end
+
+    def current_phoenix_prefixes(block_stack)
+      block_stack.compact
+    end
+
+    def opens_phoenix_block?(line)
+      line.end_with?(" do") || line.match?(/\bdo\s+\|[^|]*\|\s*\z/)
+    end
+
+    def phoenix_router_paths
+      @phoenix_router_paths ||= repo.glob("lib/*_web/router.ex")
+    end
+
+    def phoenix_login_path
+      discover_phoenix_routes.find { |route| route["path"].match?(%r{/(?:users/)?(?:log_in|sign_in|login)\z}) }&.fetch("path", nil) ||
+        "/users/log_in"
+    end
+
+    def phoenix_auth_plug?
+      phoenix_router_paths.any? do |path|
+        repo.read(path).to_s.match?(/require_authenticated_user|redirect_if_user_is_authenticated|fetch_current_scope_for_user|Ueberauth|Pow/)
+      end
     end
 
     def unique_routes(routes, &identity)

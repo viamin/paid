@@ -41,10 +41,10 @@ module Knowledge
       ].freeze
 
       def collect
-        output = read_routes_output
-        skip!(skip_reason) if output.blank?
+        routes = collected_routes
+        skip!(skip_reason) if routes.blank?
 
-        parse_expanded_output(output).map do |route|
+        routes.map do |route|
           build_artifact(route)
         end
       end
@@ -61,6 +61,8 @@ module Knowledge
         end
 
         return "repository path not available" if resolve_repo_path.nil?
+
+        return "Phoenix router files were not found" if phoenix_project?
 
         unless repo_file_exists?("config/routes.rb")
           return "not a Rails project (no config/routes.rb)"
@@ -85,6 +87,13 @@ module Knowledge
 
         # Generate routes by running the rails command directly.
         generate_routes_output
+      end
+
+      def collected_routes
+        output = read_routes_output
+        return parse_expanded_output(output) if output.present?
+
+        phoenix_routes
       end
 
       def generate_routes_output
@@ -140,6 +149,33 @@ module Knowledge
           "routes require database access during Rails boot",
           preserve_existing_artifacts: true
         )
+      end
+
+      def phoenix_routes
+        return [] unless phoenix_project?
+
+        Screenshots::DetectFramework.discover_phoenix_routes(repo_path: host_repo_path).map do |route|
+          {
+            verb: route["verb"],
+            uri: route["path"],
+            controller_action: route["controller_action"],
+            scope_path: route["scope_path"]
+          }.compact
+        end
+      end
+
+      def phoenix_project?
+        base = host_repo_path
+        return false if base.blank?
+
+        File.exist?(File.join(base, "mix.exs")) && phoenix_router_paths.any?
+      end
+
+      def phoenix_router_paths
+        base = host_repo_path
+        return [] if base.blank?
+
+        Dir.glob(File.join(base, "lib", "*_web", "router.ex")).sort
       end
 
       def run_routes_command
@@ -316,17 +352,18 @@ module Knowledge
         controller = controller.presence
         action = action&.presence
         prefix = route[:prefix]
+        scope_path = route[:scope_path] || SCOPE_PATH
 
         content = "#{verb} #{path}"
-        content = "#{content} → #{controller}##{action}" if controller.present?
+        content = "#{content} → #{format_controller_action(controller, action)}" if controller.present?
         content = "#{content} (prefix: #{prefix})" if prefix.present?
 
         chunk_lines = [ "Route: #{verb} #{path}" ]
-        chunk_lines << "Controller: #{controller}##{action}" if controller.present?
+        chunk_lines << "Controller: #{format_controller_action(controller, action)}" if controller.present?
 
         {
           artifact_type: "route",
-          scope_path: SCOPE_PATH,
+          scope_path: scope_path,
           identifier: identifier,
           content: content,
           metadata: {
@@ -340,11 +377,17 @@ module Knowledge
             {
               chunk_type: "definition",
               content: chunk_lines.join("\n"),
-              scope_tags: [ SCOPE_PATH ],
+              scope_tags: [ scope_path ],
               sequence: 0
             }
           ]
         }
+      end
+
+      def format_controller_action(controller, action)
+        return controller if action.blank?
+
+        "#{controller}##{action}"
       end
     end
   end

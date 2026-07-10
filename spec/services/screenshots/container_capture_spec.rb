@@ -151,6 +151,23 @@ RSpec.describe Screenshots::ContainerCapture do
     expect(command).not_to include(%q(uri = URI("http://localhost:3000/it's-a-path")))
   end
 
+  it "uses Phoenix startup when mix.exs is present and exposes the port in capture env" do
+    tmpdir = Dir.mktmpdir("phoenix-screenshot")
+    File.write(File.join(tmpdir, "mix.exs"), "defmodule Demo.MixProject do end")
+    service.instance_variable_set(:@tmpdir, tmpdir)
+    allow(service).to receive(:config).and_return(
+      Screenshots::Configuration.from_hash(
+        "base_url" => "http://localhost:4100",
+        "routes" => [ { "path" => "/", "name" => "home" } ]
+      )
+    )
+
+    expect(service.send(:application_start_command)).to eq("MIX_ENV=dev mix phx.server")
+    expect(service.send(:capture_env).fetch("PORT")).to eq("4100")
+  ensure
+    FileUtils.rm_rf(tmpdir)
+  end
+
   describe "#screenshot_config_json (capture scoping and annotation)" do
     let(:multi_route_config) do
       Screenshots::Configuration.from_hash(
