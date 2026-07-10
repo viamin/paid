@@ -664,6 +664,12 @@ class Project < ApplicationRecord
     status
   end
 
+  # Framework detected by the screenshot framework detector, surfaced as
+  # preview metadata (RDR-045). Returns nil when no detection has run.
+  def detected_framework
+    effective_screenshot_settings.dig("detection", "framework").presence
+  end
+
   def screenshot_preview_config(repo_config: {}, settings: nil)
     repo = repo_config.deep_stringify_keys
     settings = normalize_screenshot_settings(settings || effective_screenshot_settings)

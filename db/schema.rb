@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_08_034227) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_10_151421) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1711,6 +1711,32 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_08_034227) do
     t.check_constraint "NOT (project_id IS NOT NULL AND user_id IS NOT NULL)", name: "chk_pre_commit_requirements_exclusive_scope"
   end
 
+  create_table "preview_sessions", comment: "Live web-app preview sessions exposed to reviewers via the same-origin /previews/:token reverse proxy (RDR-045).", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Owning account for tenant isolation and RLS."
+    t.bigint "agent_run_id", comment: "Agent run that produced the branch, when the preview reuses an agent container."
+    t.string "branch_name", limit: 255, null: false, comment: "Git branch checked out in the preview container (PR branch or default branch)."
+    t.string "container_id", limit: 128, comment: "Docker container id hosting the previewed app."
+    t.datetime "created_at", null: false
+    t.bigint "created_by_id", comment: "User who started the preview."
+    t.text "error_message", comment: "Human-readable failure reason shown in the UI error state when status is failed."
+    t.datetime "expires_at", null: false, comment: "TTL deadline after which the preview is auto-stopped and cleaned up."
+    t.string "framework", limit: 64, comment: "Detected web framework (rails, phoenix, django, nextjs, etc.) shown as preview metadata."
+    t.datetime "last_active_at", comment: "Most recent time the preview was confirmed reachable/interacted with."
+    t.bigint "project_id", null: false, comment: "Project whose branch is being previewed."
+    t.string "status", limit: 32, default: "pending", null: false, comment: "Lifecycle state: pending, provisioning, starting, ready, stopped, or failed."
+    t.string "token", limit: 64, null: false, comment: "Opaque, URL-safe token used as the /previews/:token path segment and auth credential."
+    t.integer "tunnel_port", comment: "Allocated localhost port the reverse proxy forwards /previews/:token traffic to."
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "status", "expires_at"], name: "idx_preview_sessions_on_account_status_expires"
+    t.index ["account_id"], name: "index_preview_sessions_on_account_id"
+    t.index ["agent_run_id"], name: "index_preview_sessions_on_agent_run_id"
+    t.index ["created_by_id"], name: "index_preview_sessions_on_created_by_id"
+    t.index ["project_id", "created_at"], name: "index_preview_sessions_on_project_id_and_created_at", order: { created_at: :desc }
+    t.index ["project_id", "status"], name: "index_preview_sessions_on_project_id_and_status"
+    t.index ["project_id"], name: "index_preview_sessions_on_project_id"
+    t.index ["token"], name: "index_preview_sessions_on_token", unique: true
+  end
+
   create_table "project_baselines", comment: "Stores per-project historical baselines for run metrics so anomalies can be detected against recent norms.", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.datetime "last_calculated_at", comment: "When the baseline values were last recomputed."
@@ -2788,6 +2814,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_08_034227) do
   add_foreign_key "pre_commit_requirements", "accounts", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "projects", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "users", on_delete: :cascade
+  add_foreign_key "preview_sessions", "accounts", on_delete: :cascade
+  add_foreign_key "preview_sessions", "agent_runs", on_delete: :nullify
+  add_foreign_key "preview_sessions", "projects", on_delete: :cascade
+  add_foreign_key "preview_sessions", "users", column: "created_by_id"
   add_foreign_key "project_baselines", "projects"
   add_foreign_key "project_convention_detections", "project_versions"
   add_foreign_key "project_convention_detections", "projects"
