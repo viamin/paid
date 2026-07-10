@@ -15,6 +15,7 @@ module Screenshots
     CHROME_URL = "ws://#{CHROME_ALIAS}:3000"
     OUTPUT_DIR = "tmp/screenshots"
     APP_LOG_PATH = "tmp/paid-screenshot-app.log"
+    SEED_SCRIPT_PATH = ".paid-screenshots/seed_runner.rb"
     CAPTURE_TIMEOUT_SECONDS = 300
     STARTUP_TIMEOUT_SECONDS = 90
     MEMORY_BYTES = 2 * 1024 * 1024 * 1024
@@ -88,6 +89,7 @@ module Screenshots
         provision_service_dependencies!
         start_chrome!
         run_setup_commands!
+        run_seed!
         start_application!
         screenshot_paths = run_capture!(ui_files)
         publish_result!(screenshot_paths)
@@ -180,10 +182,6 @@ module Screenshots
         raise Screenshots::ConfigError,
           "container screenshot capture only supports drivers: #{SUPPORTED_DRIVERS.join(', ')} " \
           "(configured: #{config.driver})"
-      end
-
-      if config.seed.any?
-        raise Screenshots::ConfigError, "container screenshot capture does not yet support seed data"
       end
 
       dynamic_route = config.routes.find do |route|
@@ -293,6 +291,41 @@ module Screenshots
 
         raise "setup command failed: #{command}\n#{result[:stderr].presence || result[:stdout]}"
       end
+    end
+
+    # Loads repo-defined seed data (.paid/screenshots.yml) into the per-run
+    # isolated database before the application starts. Seed commands run inside
+    # the screenshot container via Screenshots::SeedRunner so only repo-defined
+    # seeds are used — never production data. No-op when no seed config is
+    # present, so capture behavior is unchanged for unseeded repos.
+    def run_seed!
+      return if config.seed.empty?
+
+      Screenshots::SeedRunner.new.call(
+        config: config,
+        repo_path: @tmpdir,
+        driver_name: config.driver,
+        executor: method(:execute_seed_script)
+      )
+    end
+
+    def execute_seed_script(env)
+      write_seed_script
+      result = @screenshot_container.execute(
+        "bin/rails runner #{Shellwords.escape(SEED_SCRIPT_PATH)}",
+        timeout: CAPTURE_TIMEOUT_SECONDS,
+        env: capture_env.merge(env),
+        stream: false
+      )
+
+      [ result[:stdout].to_s, result[:stderr].to_s, result.success? ]
+    end
+
+    def write_seed_script
+      path = File.join(@tmpdir, SEED_SCRIPT_PATH)
+      FileUtils.mkdir_p(File.dirname(path))
+      File.write(path, Screenshots::SeedRunner::SCRIPT)
+      path
     end
 
     def start_application!
