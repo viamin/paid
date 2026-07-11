@@ -60,9 +60,12 @@
         <%= render "dashboard/queue_preview", queue_preview: @queue_preview, paused_projects: @quality_paused_projects %>
       </div>
 
-      <div class="mt-6">
-        <%= render "dashboard/eligibility_breakdown", breakdowns: @eligibility_breakdown %>
-      </div>
+      <turbo-frame id="dashboard-eligibility-breakdown"
+        data-dashboard-frames-target="frame"
+        data-dashboard-frames-src="<%= dashboard_eligibility_breakdown_path %>"
+        class="mt-6 block">
+        <div class="animate-pulse rounded-lg bg-gray-100 h-32"></div>
+      </turbo-frame>
 
       <div class="mt-6">
         <%= render "dashboard/retry_limited_issues", retry_limited_issues: @retry_limited_issues %>

@@ -40,6 +40,7 @@ Rails.application.routes.draw do
   get "dashboard/metrics", to: "dashboard#metrics", as: :dashboard_metrics
   get "dashboard/performance", to: "dashboard#performance", as: :dashboard_performance
   get "dashboard/decision_metrics", to: "dashboard#decision_metrics", as: :dashboard_decision_metrics
+  get "dashboard/eligibility_breakdown", to: "dashboard#eligibility_breakdown", as: :dashboard_eligibility_breakdown
   get "dashboard/runner_health", to: "dashboard#runner_health", as: :dashboard_runner_health
   get "dashboard/queue_health", to: "dashboard#queue_health", as: :dashboard_queue_health
   get "dashboard/github_health", to: "dashboard#github_health", as: :dashboard_github_health
