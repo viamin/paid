@@ -207,6 +207,16 @@ RSpec.describe Screenshots::ContainerCapture do
       expect(script).to include('process.env.SCREENSHOT_RECORD_VIDEO === "1"')
       expect(script).to include("contextOptions.recordVideo = { dir: `${outputDir}/videos` }")
     end
+
+    it "closes the context before the browser so recorded videos flush to disk" do
+      script = service.send(:capture_runner_script)
+
+      context_close_index = script.index("await context.close();")
+      browser_close_index = script.index("await browser.close();")
+
+      expect(context_close_index).not_to be_nil
+      expect(browser_close_index).to be > context_close_index
+    end
   end
 
   describe "#record_video?" do

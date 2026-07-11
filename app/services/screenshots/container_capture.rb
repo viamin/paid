@@ -523,6 +523,11 @@ module Screenshots
           }
         }
 
+        // Close the context before the browser: Playwright only flushes the
+        // recorded video to disk once the context is closed, so closing the
+        // browser first can silently drop the .webm output and leave the
+        // record_video setting with no artifact.
+        await context.close();
         await browser.close();
       JS
     end
