@@ -210,6 +210,8 @@ module ChatSessions
     end
 
     def process_write_tool_calls(write_calls)
+      return [ auto_approve_write_tool_calls(write_calls), false ] if chat_session.auto_approve?
+
       executed_results = []
       paused_for_confirmation = false
 
@@ -232,6 +234,33 @@ module ChatSessions
       end
 
       [ executed_results, paused_for_confirmation ]
+    end
+
+    # With auto-approve enabled, write tools are authorized and dispatched
+    # immediately instead of pausing for a manual click. The session owner opted
+    # in per-session, so RDR-028's default is not weakened — authorization is
+    # still re-checked by Pundit at dispatch time, and +confirmed+ never
+    # originates from the model itself (it is injected here, exactly as
+    # ResolveToolCall does on a human approval).
+    def auto_approve_write_tool_calls(write_calls)
+      write_calls.map do |tool_call|
+        tool_result = dispatch_auto_approved_tool(tool_call)
+        persist_tool_call_message(tool_call, status: "approved")
+        persist_tool_result_message(tool_call, tool_result)
+        [ tool_call, tool_result ]
+      end
+    end
+
+    def dispatch_auto_approved_tool(tool_call)
+      name = tool_call[:name]
+      arguments = parse_tool_arguments(tool_call)
+
+      return dispatch_tool(name: name, arguments: arguments.merge("confirmed" => true)) unless Tools::Registry.post_dispatch_confirmation?(name)
+
+      draft_result = dispatch_tool(name: name, arguments: arguments)
+      return draft_result unless ready_for_post_dispatch_confirmation?(draft_result)
+
+      resolve_tool_confirmation(name: name, decision: :approve, pending_result: draft_result)
     end
 
     def ready_for_post_dispatch_confirmation?(tool_result)

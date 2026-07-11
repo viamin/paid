@@ -115,4 +115,16 @@ RSpec.describe "Chat write-tool confirmation security", type: :model do
       expect(user.settings.reload.theme_preference).to eq("dark")
     end
   end
+
+  describe "a per-session auto-approve toggle" do
+    let(:auto_session) { create(:chat_session, account: account, created_by: user, auto_approve: true) }
+    let(:client) { stateful_client([ requested_write_tool_response, final_response ]) }
+
+    it "executes the write tool without a manual approval click" do
+      ChatSessions::SendMessage.call(chat_session: auto_session, content: "Switch my theme", llm_client: client)
+
+      expect(auto_session.messages.where(tool_status: "pending")).not_to exist
+      expect(user.settings.reload.theme_preference).to eq("dark")
+    end
+  end
 end
