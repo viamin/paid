@@ -63,13 +63,15 @@ RSpec.describe Runners::ModelCompatibility do
       context "with CLI-version-gated model (gpt-5.5-pro)" do
         let(:model_id) { "gpt-5.5-pro" }
 
-        it "returns unknown because agent-harness does not advertise it yet" do
+        it "returns unsupported with the advertised fallback model" do
           expect(result).to have_attributes(
-            supported: nil,
+            supported: false,
             incompatibility_type: nil,
+            replacement_model_id: "gpt-5-codex",
             source: "agent_harness"
           )
-          expect(result).to be_unknown
+          expect(result.reason).to be_nil
+          expect(result).to be_unsupported
         end
       end
 

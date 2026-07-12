@@ -166,6 +166,18 @@ RSpec.describe Activities::RunAgentActivity do
       execution_env: {})
   end
 
+  def sigkill_preflight_failure(stderr: "> build · MiniMax-M3", container_running: true)
+    Containers::Provision::Result.failure(
+      error: "exit 137",
+      stdout: "",
+      stderr: stderr,
+      exit_code: 137,
+      oom_killed: false,
+      memory_limit_bytes: 4 * 1024 * 1024 * 1024,
+      container_running: container_running
+    )
+  end
+
   describe "#with_periodic_heartbeat" do
     let(:mock_context) { instance_double(Temporalio::Activity::Context) }
 
@@ -2741,6 +2753,24 @@ expect(container_service).to receive(:execute).with(
         )
       end
 
+      it "classifies direct-outbound preflight exit 137 as infrastructure failure and includes diagnostics" do
+        opencode_provider = create_opencode_provider_for(user)
+        allow(container_service).to receive(:execute).and_return(sigkill_preflight_failure)
+
+        expect {
+          run_direct_outbound_preflight(
+            activity: activity,
+            agent_run: agent_run,
+            container_service: container_service,
+            provider: opencode_provider,
+            user: user
+          )
+        }.to raise_error(
+          described_class::RunnerInfraExecutionError,
+          /Preflight check failed: Agent exited with code 137 \(process killed by SIGKILL; memory limit 4.0 GB, container_running=true\): > build · MiniMax-M3/
+        )
+      end
+
       it "marks the runner rate-limited when preflight surfaces an insufficient credits error" do
         opencode_provider = create_opencode_provider_for(user)
         credit_error = Containers::Provision::Result.success(
@@ -2868,6 +2898,29 @@ expect(container_service).to receive(:execute).with(
           described_class::RunnerExecutionError,
           "Agent exited with code 1: The 'gpt-5.5' model requires a newer version of Codex CLI"
         )
+
+        3.times do
+          run = create_runner_backed_agent_run(project: project, runner: runner)
+          expect_all_runners_exhausted(activity: activity, agent_run: run)
+        end
+
+        state = user.runner_states.find_by(runner_name: runner.state_key)
+        expect(state).to be_nil.or(satisfy(&:circuit_closed?))
+      end
+
+      it "does not trip the circuit breaker for preflight exit 137 infrastructure failures" do
+        runner = user.runners.find_by!(runner_key: "claude")
+        user.settings.update!(
+          fallback_enabled: false,
+          fallback_runners: [],
+          circuit_breaker_failure_threshold: 3
+        )
+        allow(activity).to receive(:run_agent_with_runner).and_raise(
+          described_class::RunnerInfraExecutionError,
+          "Preflight check failed: Agent exited with code 137 (process killed by SIGKILL; memory limit 4.0 GB, container_running=true): > build · MiniMax-M3"
+        )
+        allow(Containers::Provision).to receive(:reconnect).and_return(container_service)
+        allow(container_service).to receive(:container_running?).and_return(true)
 
         3.times do
           run = create_runner_backed_agent_run(project: project, runner: runner)

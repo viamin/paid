@@ -1553,7 +1553,7 @@ module Activities
       end
 
       # Other execution error
-      raise RunnerExecutionError, "Agent exited with code #{result[:exit_code]}#{oom_annotation(result)}: #{output.truncate(500)}"
+      raise RunnerExecutionError, "Agent exited with code #{result[:exit_code]}#{exit_annotation(result)}: #{output.truncate(500)}"
     rescue Containers::Provision::TimeoutError => e
       # execution_started_at is nil if the timeout fires before execution
       # begins (e.g. during start!/callbacks); recent_timeout_output
@@ -1720,13 +1720,11 @@ module Activities
         raise RunnerRateLimitError.new("Rate limited by #{runner}", reset_at: reset_at)
       end
 
-      reason = if sanitized_output.present?
-        "Agent exited with code #{result[:exit_code]}#{oom_annotation(result)}: #{sanitized_output.truncate(500)}"
-      else
-        base = "No output before exit code #{result[:exit_code]}."
-        oom = oom_annotation(result)
-        oom.present? ? "#{base}#{oom}" : "#{base} Check proxy configuration, auth, and network policy."
+      reason = preflight_exit_reason(result, sanitized_output)
+      if sigkill_exit?(result)
+        raise_preflight_infra_failure!(agent_run: agent_run, runner: runner, reason: reason)
       end
+
       raise_preflight_failure!(agent_run: agent_run, runner: runner, reason: reason)
     rescue Containers::Provision::OutputAbortError => e
       reset_at = rate_limit_reset_at(runner, e.matched_output.to_s)
@@ -2188,18 +2186,41 @@ module Activities
       )
     end
 
-    # Surfaces a container OOM kill inline in the runner error so the run's
-    # error_message explains a bare exit 137 (cgroup memory limit exceeded)
-    # instead of leaving it cryptic. Returns "" for non-OOM results.
-    def oom_annotation(result)
-      return "" unless result.respond_to?(:[]) && result[:oom_killed]
+    # Surfaces exit-137 diagnostics inline so the run's error_message explains
+    # a bare SIGKILL with the container state we already inspected.
+    def exit_annotation(result)
+      return "" unless result.respond_to?(:[])
 
-      limit = result[:memory_limit_bytes].to_i
-      if limit.positive?
-        " (container OOM-killed; memory limit #{(limit / 1024.0**3).round(1)} GB)"
-      else
-        " (container OOM-killed)"
+      if result[:oom_killed]
+        limit = result[:memory_limit_bytes].to_i
+        return " (container OOM-killed; memory limit #{(limit / 1024.0**3).round(1)} GB)" if limit.positive?
+
+        return " (container OOM-killed)"
       end
+
+      return "" unless sigkill_exit?(result)
+
+      details = []
+      limit = result[:memory_limit_bytes].to_i
+      details << "memory limit #{(limit / 1024.0**3).round(1)} GB" if limit.positive?
+      details << "container_running=#{result[:container_running]}" unless result[:container_running].nil?
+      suffix = details.present? ? "; #{details.join(', ')}" : ""
+
+      " (process killed by SIGKILL#{suffix})"
+    end
+
+    def preflight_exit_reason(result, sanitized_output)
+      if sanitized_output.present?
+        "Agent exited with code #{result[:exit_code]}#{exit_annotation(result)}: #{sanitized_output.truncate(500)}"
+      else
+        base = "No output before exit code #{result[:exit_code]}."
+        annotation = exit_annotation(result)
+        annotation.present? ? "#{base}#{annotation}" : "#{base} Check proxy configuration, auth, and network policy."
+      end
+    end
+
+    def sigkill_exit?(result)
+      result.respond_to?(:[]) && result[:exit_code].to_i == 137
     end
 
     def raise_preflight_failure!(agent_run:, runner:, reason:)
