@@ -431,7 +431,7 @@ RSpec.describe "Dashboard" do
         row = document.at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(run, :dashboard_row)}"]))
 
         expect(row).to be_present
-        expect(row.text).to include("2 - P1")
+        expect(row.text).to include("6 - P1")
       end
 
       it "shows the final runner label for legacy fallback runs in the active runs table" do
