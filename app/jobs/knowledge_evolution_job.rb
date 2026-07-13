@@ -63,7 +63,7 @@ class KnowledgeEvolutionJob < ApplicationJob
       Workflows::KnowledgeEvolutionWorkflow,
       { project_id: project.id, lookback_days: LOOKBACK_DAYS },
       id: workflow_id,
-      task_queue: ENV.fetch("TEMPORAL_TASK_QUEUE", "paid-tasks")
+      task_queue: Paid.agent_task_queue
     )
 
     Rails.logger.info(

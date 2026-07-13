@@ -542,39 +542,19 @@ services:
 #### Step 2: Configure Rails Temporal Client
 
 ```ruby
-# config/initializers/temporal.rb
-require 'temporalio'
+# config/initializers/temporal.rb — actually shipped configuration uses
+# Paid.agent_task_queue (default "paid-agent-tasks") for all non-poll
+# workflows. The legacy TEMPORAL_TASK_QUEUE ENV var is no longer used by the
+# application code — see spec/config/evolution_task_queue_alignment_spec.rb
+# for the drift guard.
 
-Rails.application.config.to_prepare do
-  Paid::TemporalClient.configure do |config|
-    config.address = ENV.fetch('TEMPORAL_ADDRESS', 'localhost:7233')
-    config.namespace = ENV.fetch('TEMPORAL_NAMESPACE', 'default')
-    config.task_queue = ENV.fetch('TEMPORAL_TASK_QUEUE', 'agent-harness')
-  end
-end
-
-# lib/paid/temporal_client.rb
 module Paid
-  class TemporalClient
-    class << self
-      attr_accessor :configuration
+  def self.agent_task_queue
+    ENV.fetch("TEMPORAL_AGENT_TASK_QUEUE", "paid-agent-tasks")
+  end
 
-      def configure
-        self.configuration ||= Configuration.new
-        yield(configuration)
-      end
-
-      def instance
-        @instance ||= Temporalio::Client.connect(
-          configuration.address,
-          namespace: configuration.namespace
-        )
-      end
-    end
-
-    class Configuration
-      attr_accessor :address, :namespace, :task_queue
-    end
+  def self.poll_task_queue
+    ENV.fetch("TEMPORAL_POLL_TASK_QUEUE", "paid-poll-tasks")
   end
 end
 ```

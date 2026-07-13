@@ -119,7 +119,7 @@ class PromptEvolutionJob < ApplicationJob
       Workflows::PromptEvolutionWorkflow,
       workflow_input(prompt, recovery_action_id: recovery_action_id, sample_days: sample_days),
       id: workflow_id,
-      task_queue: ENV.fetch("TEMPORAL_TASK_QUEUE", "paid-tasks")
+      task_queue: Paid.agent_task_queue
     )
 
     Rails.logger.info(
