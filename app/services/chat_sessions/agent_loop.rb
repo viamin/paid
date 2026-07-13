@@ -210,12 +210,13 @@ module ChatSessions
     end
 
     def process_write_tool_calls(write_calls)
-      return [ auto_approve_write_tool_calls(write_calls), false ] if chat_session.auto_approve?
-
       executed_results = []
       paused_for_confirmation = false
 
-      write_calls.each do |tool_call|
+      auto_approved, manual_confirmation = partition_auto_approved(write_calls)
+      executed_results.concat(auto_approve_write_tool_calls(auto_approved))
+
+      manual_confirmation.each do |tool_call|
         if Tools::Registry.post_dispatch_confirmation?(tool_call[:name])
           tool_result = dispatch_tool(name: tool_call[:name], arguments: parse_tool_arguments(tool_call))
 
@@ -236,18 +237,47 @@ module ChatSessions
       [ executed_results, paused_for_confirmation ]
     end
 
-    # With auto-approve enabled, write tools are authorized and dispatched
-    # immediately instead of pausing for a manual click. The session owner opted
-    # in per-session, so RDR-028's default is not weakened — authorization is
-    # still re-checked by Pundit at dispatch time, and +confirmed+ never
-    # originates from the model itself (it is injected here, exactly as
-    # ResolveToolCall does on a human approval).
+    # Splits a write-tool batch into tools the per-session auto-approve toggle
+    # covers vs. tools that still require an explicit human confirmation. The
+    # toggle is intentionally scoped to `trigger_agent_run` (issue #2894):
+    # agent-run creation is the workflow's primary reason to want hands-off
+    # approvals, while broader mutations (settings, memberships, API keys,
+    # CIRs, etc.) keep RDR-028's manual-confirmation default so we do not
+    # silently widen the blast radius of a single checkbox.
+    def partition_auto_approved(write_calls)
+      write_calls.partition { |tool_call| auto_approve_eligible?(tool_call[:name]) }
+    end
+
+    def auto_approve_eligible?(tool_name)
+      chat_session.auto_approve? && tool_name == "trigger_agent_run"
+    end
+
+    # With auto-approve enabled for a covered tool, the write tool is
+    # authorized and dispatched immediately instead of pausing for a manual
+    # click. The session owner opted in per-session, so RDR-028's default is
+    # not weakened — authorization is still re-checked by Pundit at dispatch
+    # time, and +confirmed+ never originates from the model itself (it is
+    # injected here, exactly as ResolveToolCall does on a human approval).
+    #
+    # For post-dispatch tools, if the confirmation resolution returns a
+    # structured error, the row stays `pending` (mirroring the manual path in
+    # ResolveToolCall#rollback_to_pending) so the failed draft is retriable
+    # instead of being stranded behind an `approved` row this service will
+    # never touch again.
     def auto_approve_write_tool_calls(write_calls)
       write_calls.map do |tool_call|
         tool_result = dispatch_auto_approved_tool(tool_call)
+        persist_auto_approved_tool_call(tool_call, tool_result)
+        [ tool_call, tool_result ]
+      end
+    end
+
+    def persist_auto_approved_tool_call(tool_call, tool_result)
+      if Tools::Registry.post_dispatch_confirmation?(tool_call[:name]) && error_result?(tool_result)
+        persist_pending_tool_call_message(tool_call, tool_result: tool_result)
+      else
         persist_tool_call_message(tool_call, status: "approved")
         persist_tool_result_message(tool_call, tool_result)
-        [ tool_call, tool_result ]
       end
     end
 
@@ -261,6 +291,17 @@ module ChatSessions
       return draft_result unless ready_for_post_dispatch_confirmation?(draft_result)
 
       resolve_tool_confirmation(name: name, decision: :approve, pending_result: draft_result)
+    end
+
+    # Mirrors ResolveToolCall#error_result?: a post-dispatch tool whose
+    # confirmation resolution returned a structured error must stay pending so
+    # a human can retry — same failure semantics as the manual confirmation
+    # path. Marking the row `approved` would strand the failed draft behind a
+    # status that this service (and ResolveToolCall) will never pick up again.
+    def error_result?(result)
+      return false unless result.is_a?(Hash)
+
+      tool_result_value(result, :status) == "error"
     end
 
     def ready_for_post_dispatch_confirmation?(tool_result)

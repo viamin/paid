@@ -242,7 +242,7 @@ RSpec.describe ChatSessions::AgentLoop do
         expect(chat_session.messages.find_by(role: "tool").tool_result).to eq({ "id" => 99, "status" => "queued" })
       end
 
-      it "auto-resolves a post-dispatch tool's draft instead of pausing" do
+      it "still requires a manual confirmation for write tools outside the auto-approve allowlist" do
         allow(Tools::Registry).to receive(:post_dispatch_confirmation?).and_call_original
         allow(Tools::Registry).to receive(:post_dispatch_confirmation?).with("record_change_intent").and_return(true)
         allow(Tools::Registry).to receive_messages(
@@ -250,13 +250,30 @@ RSpec.describe ChatSessions::AgentLoop do
           resolve_confirmation: { "id" => 44, "status" => "active" }
         )
 
+        result = described_class.new(chat_session: chat_session, llm_client: cir_client).run
+
+        expect(result).to be_nil
+        expect(Tools::Registry).not_to have_received(:resolve_confirmation)
+        pending_message = chat_session.messages.find_by(tool_status: "pending")
+        expect(pending_message.tool_name).to eq("record_change_intent")
+        expect(pending_message.tool_result).to eq({ "id" => 44, "status" => "draft" })
+      end
+
+      it "leaves a post-dispatch tool pending when its auto-resolution returns an error" do
+        allow(Tools::Registry).to receive(:post_dispatch_confirmation?).and_call_original
+        allow(Tools::Registry).to receive(:post_dispatch_confirmation?).with("record_change_intent").and_return(true)
+        allow(Tools::Registry).to receive_messages(
+          dispatch: { "id" => 44, "status" => "draft" },
+          resolve_confirmation: { "status" => "error", "error" => "internal_error", "message" => "boom" }
+        )
+
         described_class.new(chat_session: chat_session, llm_client: cir_client).run
 
-        expect(Tools::Registry).to have_received(:resolve_confirmation).with(
-          hash_including(name: "record_change_intent", decision: :approve, pending_result: { "id" => 44, "status" => "draft" })
-        )
-        expect(chat_session.messages.where(tool_status: "pending")).not_to exist
-        expect(chat_session.messages.find_by(role: "tool").tool_result).to eq({ "id" => 44, "status" => "active" })
+        pending_message = chat_session.messages.find_by(tool_status: "pending")
+        expect(pending_message).to be_present
+        expect(pending_message.tool_name).to eq("record_change_intent")
+        expect(pending_message.tool_result).to include("status" => "draft")
+        expect(chat_session.messages.where(tool_status: "approved")).not_to exist
       end
     end
 
