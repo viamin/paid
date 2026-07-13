@@ -5,6 +5,7 @@ require "rails_helper"
 RSpec.describe ProcessRunQueueJob do
   let(:temporal_client) { double("TemporalClient") } # rubocop:disable RSpec/VerifiedDoubles
   let(:workflow_handle) { double("WorkflowHandle", id: "queued-workflow-id") } # rubocop:disable RSpec/VerifiedDoubles
+  let(:job) { described_class.new }
   let(:auto_mode_snapshot) do
     {
       available: true,
@@ -20,6 +21,10 @@ RSpec.describe ProcessRunQueueJob do
     allow(temporal_client).to receive(:start_workflow).and_return(workflow_handle)
   end
 
+  def temporal_priority_for(run)
+    job.send(:temporal_priority_for, run)
+  end
+
   describe "#perform" do
     it "starts the oldest queued run when capacity is available" do
       queued_run = create(:agent_run, :queued, created_at: 2.minutes.ago)
@@ -30,14 +35,11 @@ RSpec.describe ProcessRunQueueJob do
         hash_including(agent_run_id: queued_run.id),
         hash_including(
           task_queue: "paid-agent-tasks",
-          priority: Temporalio::Priority.new(
-            priority_key: AgentRun::QUEUE_PRIORITIES.fetch(queued_run.queue_priority_tier).fetch(:indicator),
-            fairness_key: queued_run.project.account_id.to_s
-          )
+          priority: temporal_priority_for(queued_run)
         )
       ).and_return(workflow_handle)
 
-      described_class.new.perform
+      job.perform
 
       queued_run.reload
       expect(queued_run.status).to eq("queued")
@@ -222,14 +224,11 @@ RSpec.describe ProcessRunQueueJob do
         Workflows::AgentExecutionWorkflow,
         hash_including(agent_run_id: queued_run.id),
         hash_including(
-          priority: Temporalio::Priority.new(
-            priority_key: AgentRun::QUEUE_PRIORITIES.fetch(queued_run.queue_priority_tier).fetch(:indicator),
-            fairness_key: queued_run.project.account_id.to_s
-          )
+          priority: temporal_priority_for(queued_run)
         )
       ).and_return(workflow_handle)
 
-      described_class.new.perform
+      job.perform
     end
 
     it "processes runs in FIFO order within the same priority" do
@@ -1606,5 +1605,52 @@ RSpec.describe ProcessRunQueueJob do
       effective_max_concurrent: 2,
       snapshot_present: true
     )
+  end
+
+  describe "#temporal_priority_for" do
+    let(:project) { create(:project) }
+    let(:expected_temporal_keys) do
+      {
+        manual: 1,
+        pr_p1: 2,
+        pr_p2: 2,
+        pr_p3: 3,
+        pr_continue: 3,
+        issue_p1: 4,
+        issue_p2: 4,
+        issue_p3: 5,
+        auto_pick: 5
+      }
+    end
+
+    def issue_run(label: nil)
+      issue = create(:issue, project: project, labels: Array(label))
+      create(:agent_run, :queued, project: project, trigger_type: "automatic", issue: issue)
+    end
+
+    def pr_run(github_number:, label: nil)
+      create(:issue, project: project, is_pull_request: true, github_number: github_number, labels: Array(label))
+      create(:agent_run, :queued, project: project, trigger_type: "automatic", source_pull_request_number: github_number)
+    end
+
+    def runs_by_tier
+      {
+        manual: create(:agent_run, :queued, project: project, trigger_type: "manual"),
+        pr_p1: pr_run(github_number: 101, label: "P1"),
+        pr_p2: pr_run(github_number: 102, label: "P2"),
+        pr_p3: pr_run(github_number: 103, label: "P3"),
+        pr_continue: pr_run(github_number: 104),
+        issue_p1: issue_run(label: "P1"),
+        issue_p2: issue_run(label: "P2"),
+        issue_p3: issue_run(label: "P3"),
+        auto_pick: issue_run
+      }
+    end
+
+    it "compresses all queue tiers into the default Temporal 1..5 range" do
+      actual_keys = runs_by_tier.transform_values { |run| temporal_priority_for(run).priority_key }
+
+      expect(actual_keys).to eq(expected_temporal_keys)
+    end
   end
 end

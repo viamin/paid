@@ -28,6 +28,7 @@ module Runners
       model_not_found
       cli_version_gated
       auth_unknown
+      auth_mode_gated_for_model
       provider_mismatch
       subscription_only
     ].freeze
@@ -112,6 +113,7 @@ module Runners
     def incompatibility_type_for(raw)
       return :cli_version_gated if raw.reason == AgentHarness::ModelCompatibility::UNSUPPORTED_CLI_VERSION_REASON
       return :auth_unknown if raw.reason == AgentHarness::ModelCompatibility::UNSUPPORTED_AUTH_MODE_REASON
+      return :auth_mode_gated_for_model if raw.reason == AgentHarness::ModelCompatibility::UNSUPPORTED_AUTH_MODE_FOR_MODEL_REASON
 
       nil
     end
@@ -123,6 +125,13 @@ module Runners
         "'#{model_id}' requires Codex CLI #{requirement}"
       when AgentHarness::ModelCompatibility::UNSUPPORTED_AUTH_MODE_REASON
         "'#{model_id}' does not support auth mode '#{auth_type}' for #{runner_key}"
+      when AgentHarness::ModelCompatibility::UNSUPPORTED_AUTH_MODE_FOR_MODEL_REASON
+        supported_modes = raw.details&.dig(:supported_auth_modes)
+        if supported_modes.present?
+          "'#{model_id}' is not available under auth mode '#{auth_type}' (supported: #{supported_modes.join(', ')})"
+        else
+          "'#{model_id}' is not available under auth mode '#{auth_type}'"
+        end
       else
         nil
       end

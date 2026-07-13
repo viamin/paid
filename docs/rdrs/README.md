@@ -109,6 +109,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | [RDR-036](RDR-036-mutation-testing-for-ai-generated-tests.md) | Mutation Testing for AI-Generated Tests (Mutant) | Partially Implemented | P1 |
 | [RDR-045](RDR-045-live-web-app-preview-agent-verification.md) | Live Web App Preview and Interactive Agent Verification | Draft | High |
 | [RDR-046](RDR-046-polyglot-language-detection-and-test-execution.md) | Polyglot Language Detection and Test Execution | Draft | High |
+| [RDR-047](RDR-047-work-category-queue-priority.md) | Work-Category-Aware Queue Priority — PR Continuation Over Fresh Issues | Implemented | P1 |
 
 ### Runner Intelligence
 
