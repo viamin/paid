@@ -10,16 +10,22 @@ RSpec.describe Screenshots::Publish do
       pr_number: pr_number,
       commit_sha: commit_sha,
       screenshot_paths: screenshot_paths,
-      storage: storage
+      storage: storage,
+      trace_viewer: trace_viewer
     )
   end
 
   let(:github_client) { instance_double(GithubClient) }
   let(:storage) { instance_double(Screenshots::Storage) }
+  let(:trace_viewer) { instance_double(Previews::TraceViewer) }
   let(:repo) { "acme/web" }
   let(:pr_number) { 42 }
   let(:commit_sha) { "abc1234def5678" }
   let(:comment) { Struct.new(:id).new(1) }
+
+  before do
+    allow(trace_viewer).to receive(:trace_available?).and_return(false)
+  end
 
   describe "#call" do
     context "with screenshots" do
@@ -72,7 +78,8 @@ RSpec.describe Screenshots::Publish do
             { route_name: "homepage", url: "https://s3.example.com/homepage.png?source=homepage.png" },
             { route_name: "dashboard", url: "https://s3.example.com/dashboard.png?source=dashboard.png" }
           ],
-          previous_screenshots: previous_screenshots
+          previous_screenshots: previous_screenshots,
+          trace_viewer_url: nil
         )
       end
 
@@ -99,7 +106,8 @@ RSpec.describe Screenshots::Publish do
           pr_number: pr_number,
           commit_sha: commit_sha,
           screenshots: [],
-          previous_screenshots: {}
+          previous_screenshots: {},
+          trace_viewer_url: nil
         )
       end
     end
@@ -111,7 +119,8 @@ RSpec.describe Screenshots::Publish do
           repo: repo,
           pr_number: pr_number,
           commit_sha: commit_sha,
-          screenshot_paths: []
+          screenshot_paths: [],
+          trace_viewer: trace_viewer
         )
       end
 
@@ -133,6 +142,31 @@ RSpec.describe Screenshots::Publish do
       it "raises a descriptive error" do
         expect { service.call }
           .to raise_error(Screenshots::Publish::PublishError, /owner\/name/)
+      end
+    end
+
+    context "when a trace is available for the commit" do
+      let(:screenshot_paths) { [ "/tmp/screenshots/homepage.png" ] }
+      let(:embed_url) { "https://bucket.s3.example.com/trace-viewer/index.html?trace=..." }
+
+      before do
+        allow(storage).to receive_messages(upload: "https://s3.example.com/homepage.png", previous_screenshots: {})
+        allow(trace_viewer).to receive_messages(trace_available?: true, embed_url: embed_url)
+        allow(Screenshots::PrComment).to receive(:call).and_return(comment)
+      end
+
+      it "passes the embeddable trace viewer URL to the PR comment" do
+        service.call
+
+        expect(trace_viewer).to have_received(:trace_available?).with(
+          org: "acme", repo: "web", pr_number: 42, commit_sha: commit_sha
+        )
+        expect(trace_viewer).to have_received(:embed_url).with(
+          org: "acme", repo: "web", pr_number: 42, commit_sha: commit_sha
+        )
+        expect(Screenshots::PrComment).to have_received(:call).with(
+          hash_including(trace_viewer_url: embed_url)
+        )
       end
     end
   end

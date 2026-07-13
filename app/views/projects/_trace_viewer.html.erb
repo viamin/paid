@@ -1,0 +1,73 @@
+<%#
+  Embeds the Playwright Trace Viewer for an agent run's recorded trace.
+
+  Locals:
+    embed_url: [String, nil]  Embeddable trace viewer URL (viewer + ?trace=...).
+                              Required when `available` is true.
+    available: [Boolean]      Whether a trace is available to display.
+                              Defaults to `embed_url.present?`.
+    title:     [String]       Optional section heading. Defaults to "Playwright Trace".
+%>
+<%
+  embed_url = local_assigns.fetch(:embed_url, nil)
+  available = local_assigns.fetch(:available, embed_url.present?)
+  title = local_assigns.fetch(:title, "Playwright Trace")
+%>
+<div class="mt-6 overflow-hidden rounded-lg border border-gray-200 bg-white shadow dark:border-gray-700 dark:bg-gray-800"
+     data-controller="trace-viewer"
+     data-trace-viewer-available-value="<%= available %>"
+     data-testid="trace-viewer">
+  <div class="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-gray-700">
+    <div>
+      <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-100"><%= title %></h2>
+      <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+        Scrub through the agent's interaction: DOM snapshots, network requests, console logs, and screenshots at each step.
+      </p>
+    </div>
+    <% if available && embed_url.present? %>
+      <%= link_to embed_url, target: "_blank", rel: "noopener noreferrer",
+                  class: "inline-flex items-center rounded-md bg-white px-2.5 py-1.5 text-xs font-medium text-indigo-600 ring-1 ring-inset ring-indigo-200 hover:bg-indigo-50 dark:bg-gray-700 dark:text-indigo-300 dark:ring-gray-600" do %>
+        Open in new tab
+        <svg class="ml-1 h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <path d="M11 3a1 1 0 1 0 0 2h2.586l-6.293 6.293a1 1 0 1 0 1.414 1.414L15 6.414V9a1 1 0 1 0 2 0V4a1 1 0 0 0-1-1h-5Z" />
+          <path d="M5 5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-3a1 1 0 1 0-2 0v3H5V7h3a1 1 0 0 0 0-2H5Z" />
+        </svg>
+      <% end %>
+    <% end %>
+  </div>
+
+  <% if available && embed_url.present? %>
+    <div class="relative bg-gray-50 dark:bg-gray-900/50">
+      <iframe
+        src="<%= embed_url %>"
+        title="Playwright trace viewer"
+        class="h-[640px] w-full border-0"
+        loading="lazy"
+        allow="clipboard-read; clipboard-write"
+        referrerpolicy="no-referrer"
+        data-action="load->trace-viewer#loaded"
+        data-trace-viewer-target="frame"></iframe>
+      <div class="absolute inset-0 flex items-center justify-center bg-gray-50/80 dark:bg-gray-900/80"
+           data-trace-viewer-target="loading"
+           data-testid="trace-viewer-loading">
+        <span class="inline-flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+          <svg class="h-5 w-5 animate-spin text-indigo-500" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+          </svg>
+          Loading trace viewer…
+        </span>
+      </div>
+    </div>
+  <% else %>
+    <div class="px-4 py-8 text-center" data-testid="trace-viewer-unavailable">
+      <svg class="mx-auto h-10 w-10 text-gray-300 dark:text-gray-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 10.5l4.72-4.72a.75.75 0 011.28.53v11.38a.75.75 0 01-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 002.25-2.25v-9a2.25 2.25 0 00-2.25-2.25h-9A2.25 2.25 0 002.25 7.5v9a2.25 2.25 0 002.25 2.25z" />
+      </svg>
+      <p class="mt-2 text-sm font-medium text-gray-600 dark:text-gray-300">No trace available</p>
+      <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+        A Playwright trace is recorded when an agent verifies its work interactively. None was captured for this run.
+      </p>
+    </div>
+  <% end %>
+</div>

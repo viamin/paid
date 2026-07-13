@@ -299,6 +299,9 @@
     </div>
   <% end %>
 
+  <% trace = agent_run_trace_viewer_data(agent_run) %>
+  <%= render "projects/trace_viewer", available: trace[:available], embed_url: trace[:embed_url], title: "Playwright Trace" %>
+
   <% if safe_github_url?(agent_run.review_url) %>
     <div class="mt-6 rounded-lg border border-purple-200 bg-purple-50 p-4 dark:border-purple-800 dark:bg-purple-900/30">
       <h2 class="text-sm font-semibold text-purple-800 dark:text-purple-200">Review Posted</h2>
