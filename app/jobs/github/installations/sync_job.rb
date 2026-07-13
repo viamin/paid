@@ -9,7 +9,15 @@ module Github
     # The job runs under system tenant context because it may be processing
     # webhooks or callbacks for accounts the worker does not belong to.
     class SyncJob < ApplicationJob
+      # Raised when GitHub is temporarily unavailable (5xx / 429 / timeout /
+      # connection failure). These are retried so a transient blip does not
+      # permanently drop a callback sync — the user already saw a success
+      # notice, so the row must eventually be created.
+      class TransientError < StandardError; end
+
       queue_as :default
+
+      retry_on TransientError, wait: :polynomially_longer, attempts: 5
 
       def perform(installation_id:, account_id:, setup_action: nil)
         return if installation_id.blank? || account_id.blank?
@@ -73,13 +81,32 @@ module Github
           request.options.open_timeout = 10
         end
 
-        return nil unless response.success?
+        return JSON.parse(response.body) if response.success?
 
-        JSON.parse(response.body)
+        raise_for_status(response, installation_id)
+      rescue Faraday::TimeoutError, Faraday::ConnectionFailed => e
+        # Network-level failures are always transient — retry.
+        raise TransientError, "Failed to fetch installation #{installation_id}: #{e.message}"
       rescue Faraday::Error => e
         raise Github::AppInstallation::Error, "Failed to fetch installation #{installation_id}: #{e.message}"
       rescue JSON::ParserError
         raise Github::AppInstallation::Error, "GitHub returned invalid JSON for installation #{installation_id}"
+      end
+
+      # A non-2xx response must not be swallowed: 5xx/429 are transient and get
+      # retried; every other status (404 gone, 401/403 misconfiguration) is
+      # permanent and is logged-and-dropped by the caller's rescue.
+      def raise_for_status(response, installation_id)
+        if retryable_status?(response.status)
+          raise TransientError, "GitHub returned #{response.status} fetching installation #{installation_id}"
+        end
+
+        raise Github::AppInstallation::Error,
+          "GitHub returned #{response.status} fetching installation #{installation_id}"
+      end
+
+      def retryable_status?(status)
+        status >= 500 || status == 429
       end
     end
   end

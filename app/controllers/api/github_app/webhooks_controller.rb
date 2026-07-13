@@ -67,16 +67,30 @@ module GithubApp
       end
     end
 
+    # `installation` events (created/updated/suspend/unsuspend/deleted) are the
+    # only lifecycle events that carry full installation metadata, so they must
+    # create or recover the local row rather than requiring it to already exist.
+    # The owning account is inferred via AccountResolver; if it cannot be mapped
+    # to a single tenant we log and drop instead of guessing.
     def upsert_installation
-      installation_id = payload.dig("installation", "id")
-      record = lookup_installation(installation_id)
-      return unless record
+      account = Github::Installations::AccountResolver.call(payload: payload)
+      unless account
+        Rails.logger.info(
+          message: "github_app.webhook.unresolved_installation",
+          installation_id: payload.dig("installation", "id"),
+          action: payload["action"]
+        )
+        return
+      end
 
-      TenantContext.with(record.account) do
-        Github::Installations::Upserter.call(account: record.account, payload: payload)
+      TenantContext.with(account) do
+        Github::Installations::Upserter.call(account: account, payload: payload)
       end
     end
 
+    # installation_repositories events only carry repository deltas, not enough
+    # metadata to create an installation, so they still require the local row.
+    # A missing row is recovered by the next `installation` event.
     def reconcile_repositories
       installation_id = payload.dig("installation", "id")
       record = lookup_installation(installation_id)
@@ -87,12 +101,6 @@ module GithubApp
       end
     end
 
-    # For system-initiated lifecycle events (suspend, deleted, repositories
-    # removed), the matching GithubInstallation must already exist locally. If
-    # it does not — for example because the App was installed via the
-    # manifest flow and the callback never completed — we still want to be
-    # able to recover on a follow-up `installation` event. Until that
-    # arrives we just ignore the event.
     def lookup_installation(installation_id)
       return nil if installation_id.blank?
 

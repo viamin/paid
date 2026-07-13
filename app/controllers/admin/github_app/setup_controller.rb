@@ -40,11 +40,7 @@ module Admin
 
       # GET /admin/github_app/setup
       def show
-        @configured = Github::AppRegistry.configured?
-        @app_slug = Github::AppRegistry.slug
-        @app_id = Github::AppRegistry.app_id
-        @webhook_secret_configured = Github::AppRegistry.webhook_secret.present?
-        @setup_path = admin_github_app_setup_path
+        load_configuration_state
       end
 
       # POST /admin/github_app/setup
@@ -91,8 +87,7 @@ module Admin
           }
         )
 
-        notice = build_notice(result: result, persistence: persistence)
-        redirect_to admin_github_app_setup_path, notice: notice
+        render_persistence_outcome(result: result, persistence: persistence)
       rescue Github::AppManifestExchanger::Error => e
         redirect_to admin_github_app_setup_path, alert: "GitHub App setup failed: #{e.message}"
       end
@@ -148,13 +143,35 @@ module Admin
         uri.to_s
       end
 
-      def build_notice(result:, persistence:)
-        base = "GitHub App #{result.slug} registered."
+      def load_configuration_state
+        @configured = Github::AppRegistry.configured?
+        @app_slug = Github::AppRegistry.slug
+        @app_id = Github::AppRegistry.app_id
+        @webhook_secret_configured = Github::AppRegistry.webhook_secret.present?
+        @setup_path = admin_github_app_setup_path
+      end
+
+      # On a successful persist we can safely redirect — the values are already
+      # durably stored. When persistence falls back to `:manual` (read-only
+      # credentials file or missing master key), the exchanged PEM and webhook
+      # secret are one-time values GitHub will never resend, so we must render
+      # them for the operator instead of redirecting them away and dropping the
+      # only copy.
+      def render_persistence_outcome(result:, persistence:)
         if persistence.persisted?
-          "#{base} Credentials written to #{persistence.credentials_path}."
-        else
-          "#{base} Add the App credentials manually — they were NOT persisted automatically."
+          redirect_to admin_github_app_setup_path,
+            notice: "GitHub App #{result.slug} registered. Credentials written to #{persistence.credentials_path}."
+          return
         end
+
+        @registered_slug = result.slug
+        @manual_instructions = persistence.manual_instructions
+        @manual_credentials_path = persistence.credentials_path
+        load_configuration_state
+        flash.now[:alert] =
+          "GitHub App #{result.slug} registered, but the credentials could NOT be " \
+          "saved automatically. Copy the values below to finish setup — GitHub will not show them again."
+        render :show, status: :ok
       end
     end
   end

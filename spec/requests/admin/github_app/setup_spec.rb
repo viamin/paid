@@ -122,8 +122,9 @@ RSpec.describe "Admin::GithubApp::Setup" do
       expect(ENV["PAID_AGENT_APP_WEBHOOK_SECRET"]).to eq(original_webhook_secret)
     end
 
-    it "surfaces manual instructions when the persister cannot write credentials" do
+    it "renders the manual instructions when the persister cannot write credentials" do
       state = primed_state
+      instructions = "Add paid_agent_app_id: \"99\" and paid_agent_app_private_key here"
       allow(Github::AppCredentialsPersister).to receive(:call)
         .with(result: exchanger_result)
         .and_return(
@@ -131,14 +132,17 @@ RSpec.describe "Admin::GithubApp::Setup" do
             status: :manual,
             credentials_path: "/workspace/config/credentials/production.yml.enc",
             written_keys: [],
-            manual_instructions: "Add PAID_AGENT_APP_ID, PAID_AGENT_APP_SLUG, ..."
+            manual_instructions: instructions
           )
         )
 
       get admin_github_app_setup_callback_path, params: { code: code, state: state }
 
-      expect(response).to redirect_to(admin_github_app_setup_path)
-      expect(flash[:notice]).to include("NOT persisted automatically")
+      expect(response).to have_http_status(:ok)
+      # The exact PEM/webhook-secret snippet must be surfaced, not discarded, so
+      # the operator can finish setup after a read-only persistence failure.
+      expect(response.body).to include(ERB::Util.html_escape(instructions))
+      expect(response.body).to include("Finish setup manually")
     end
 
     it "rejects mismatched state" do
