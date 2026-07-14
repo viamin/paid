@@ -41,7 +41,7 @@ module Dashboard
           auto_pick_enabled: true,
           active: true
         )
-        .reject { |p| p.scheduler_paused? || p.quality_paused? || p.account&.scheduler_paused? }
+        .select { |p| Issues::AutoPickProjectGate.call(p) }
     end
 
     def breakdown_for(project)

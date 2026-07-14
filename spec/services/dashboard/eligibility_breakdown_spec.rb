@@ -107,6 +107,14 @@ RSpec.describe Dashboard::EligibilityBreakdown do
       expect(result).to eq([])
     end
 
+    it "excludes projects with no effective owner (auto-pick would always skip them)" do
+      allow(Issues::AutoPickProjectGate).to receive(:call).with(project).and_return(false)
+
+      result = described_class.call(user: user)
+
+      expect(result).to eq([])
+    end
+
     it "handles multiple projects in a single call" do
       project2 = create(:project, account: account, created_by: user,
         auto_pick_enabled: true, active: true, owner: "org", repo: "repo2")
