@@ -32,9 +32,15 @@ module Dashboard
       auto_pick_projects.map { |project| breakdown_for(project) }
     end
 
+    # Preload everything the per-project gate and breakdown touch so a dashboard
+    # with many auto-pick repos doesn't devolve into an N+1:
+    #   - +account+ and +created_by+ feed +Issues::AutoPickProjectGate#effective_owner+.
+    #   - +created_by.user_setting+ feeds +#count_skip_labeled+ via
+    #     +Project#effective_auto_pick_skip_labels+ when a project inherits its
+    #     owner's skip labels.
     def auto_pick_projects
       @auto_pick_projects ||= Project
-        .includes(:account)
+        .includes(:account, created_by: :user_setting)
         .where(
           account_id: user.account_id,
           created_by_id: visible_owner_ids,

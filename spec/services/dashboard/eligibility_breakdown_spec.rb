@@ -127,6 +127,27 @@ RSpec.describe Dashboard::EligibilityBreakdown do
       expect(result.map { |bd| bd.project.id }).to contain_exactly(project.id, project2.id)
     end
 
+    it "does not issue a per-project query for owner or owner settings (no N+1)" do
+      extra_projects = Array.new(3) do |i|
+        create(:project, account: account, created_by: user,
+          auto_pick_enabled: true, active: true, owner: "org", repo: "repo-#{i}")
+      end
+      # analyzable excluded issues force the skip-label lookup path, which is
+      # where a per-project +user_setting+ load would otherwise leak in.
+      ([ project ] + extra_projects).each do |p|
+        create(:issue, project: p, github_state: "open", paid_state: "new")
+      end
+
+      lazy_loads = capture_queries { described_class.call(user: user) }.count do |sql|
+        # Lazy belongs_to/has_one lookups are single-row
+        # SELECT ... WHERE col = $1; the eager preloads use WHERE col IN (...).
+        sql.match?(/FROM "users" WHERE "users"\."id" = /) ||
+          sql.match?(/FROM "user_settings" WHERE "user_settings"\."user_id" = /)
+      end
+
+      expect(lazy_loads).to eq(0)
+    end
+
     it "includes orphaned projects for the account fallback owner" do
       orphaned_project = create(:project, :without_creator, account: account,
         auto_pick_enabled: true, active: true, owner: "octo", repo: "orphaned")
