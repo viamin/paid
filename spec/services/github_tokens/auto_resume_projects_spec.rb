@@ -6,6 +6,10 @@ RSpec.describe GithubTokens::AutoResumeProjects do
   let(:account) { create(:account) }
   let(:github_token) { create(:github_token, account: account) }
 
+  before do
+    allow(ProjectWorkflowManager).to receive(:start_polling)
+  end
+
   describe ".call" do
     context "with active projects auto-paused by the token" do
       let!(:project) do
@@ -19,6 +23,25 @@ RSpec.describe GithubTokens::AutoResumeProjects do
 
         expect(project.reload.scheduler_paused_at).to be_nil
         expect(project.reload.scheduler_pause_reason).to be_nil
+      end
+
+      it "restarts the project's poll workflow" do
+        described_class.call(github_token: github_token)
+
+        expect(ProjectWorkflowManager).to have_received(:start_polling)
+          .with(project, restart_reason: "github_token_restored")
+      end
+
+      it "still resumes the project even if restarting the poll workflow errors" do
+        allow(ProjectWorkflowManager).to receive(:start_polling).and_raise(StandardError, "boom")
+        allow(Rails.logger).to receive(:error)
+
+        described_class.call(github_token: github_token)
+
+        expect(project.reload.scheduler_paused_at).to be_nil
+        expect(Rails.logger).to have_received(:error).with(
+          hash_including(message: "github_token.auto_resume.start_polling_failed", project_id: project.id)
+        )
       end
 
       it "returns resumed project ids" do
@@ -55,6 +78,15 @@ RSpec.describe GithubTokens::AutoResumeProjects do
         expect(project.reload.scheduler_paused_at).to be_present
         expect(project.reload.scheduler_pause_reason).to eq("manually paused")
       end
+
+      it "does not restart polling" do
+        described_class.call(github_token: github_token)
+
+        # Project creation itself triggers an unrelated start_polling(project) call;
+        # assert specifically that AutoResumeProjects' own restart call never fires.
+        expect(ProjectWorkflowManager).not_to have_received(:start_polling)
+          .with(project, restart_reason: "github_token_restored")
+      end
     end
 
     context "with inactive projects" do
@@ -69,6 +101,13 @@ RSpec.describe GithubTokens::AutoResumeProjects do
 
         expect(result).to eq([ project.id ])
         expect(project.reload.scheduler_paused_at).to be_nil
+      end
+
+      it "does not restart polling until the project is reactivated" do
+        described_class.call(github_token: github_token)
+
+        expect(ProjectWorkflowManager).not_to have_received(:start_polling)
+          .with(project, restart_reason: "github_token_restored")
       end
     end
 

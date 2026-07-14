@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_08_034227) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_13_233921) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1845,6 +1845,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_08_034227) do
     t.string "automation_label_name", default: "paid-automation", null: false
     t.boolean "automation_on_label_enabled", default: true, null: false
     t.integer "code_scanning_interval_hours", default: 24, null: false
+    t.datetime "code_scanning_permission_error_at", comment: "Timestamp of the most recent 403 (missing security_events/code_scanning_alerts:read permission) hit while scanning for code scanning alerts. Used to back off retrying a scan that will fail identically until a human fixes the token/App permission, without waiting the full code_scanning_interval_hours window. Cleared on the next successful scan."
     t.integer "completed_agent_runs_count", default: 0, null: false, comment: "Counter cache for completed agent runs"
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
