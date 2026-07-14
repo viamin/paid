@@ -290,6 +290,27 @@ RSpec.describe ProcessRunQueueJob do
       expect(auto_continue.reload.status).to eq("queued")
     end
 
+    it "starts review runs before create_pr runs when scheduler priorities tie" do
+      project = create(:project)
+      project.created_by.settings.update!(max_concurrent_runs: 1)
+      create_pr_run = create(:agent_run, :queued, :automatic, :existing_pr,
+        project: project, goal: "create_pr", source_pull_request_number: 42, created_at: 2.minutes.ago)
+      review_run = create(:agent_run, :queued, :automatic, :review_goal,
+        project: project, source_pull_request_number: 43, created_at: 1.minute.ago)
+
+      started_ids = []
+      allow(temporal_client).to receive(:start_workflow) do |_wf, input, **_opts|
+        started_ids << input[:agent_run_id]
+        workflow_handle
+      end
+
+      described_class.new.perform
+
+      expect(started_ids).to eq([ review_run.id ])
+      expect(review_run.reload.temporal_workflow_id).to be_present
+      expect(create_pr_run.reload.temporal_workflow_id).to be_nil
+    end
+
     it "does not start lower-priority work from the same project after claiming a manual run" do
       project = create(:project)
       project.created_by.settings.update!(max_concurrent_runs: 2)
