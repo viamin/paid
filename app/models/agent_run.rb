@@ -1116,6 +1116,10 @@ class AgentRun < ApplicationRecord
     END
   SQL
   GOAL_PRIORITY_SQL = Arel.sql(GOAL_PRIORITY_CASE_SQL).freeze
+  REVIEW_PICKUP_PRIORITY_CASE_SQL = <<~SQL.squish.freeze
+    CASE WHEN goal = 'review' THEN 0 ELSE 1 END
+  SQL
+  REVIEW_PICKUP_PRIORITY_SQL = Arel.sql(REVIEW_PICKUP_PRIORITY_CASE_SQL).freeze
   # Cross-project fair-share: a project's count of currently in-flight runs
   # (running + claimed-queued). Projects with fewer in-flight runs sort ahead
   # so a high-volume project cannot fully starve a low-volume one. This is
@@ -1124,7 +1128,7 @@ class AgentRun < ApplicationRecord
   PROJECT_ACTIVE_COUNT_EXPR_SQL = "COALESCE(project_active_counts.project_active_count, 0)"
   PROJECT_ACTIVE_COUNT_SQL = Arel.sql("#{PROJECT_ACTIVE_COUNT_EXPR_SQL} ASC").freeze
   USER_ACTIVE_COUNT_SQL = Arel.sql("COALESCE(user_active_counts.user_active_count, 0) ASC").freeze
-  # Sort key order:
+  # Visible queue sort key order:
   #   project_active_count → cross-project round-robin
   #   user_active_count    → cross-user fairness within a project tie
   #   queue_priority       → strict priority within a project
@@ -1140,6 +1144,18 @@ class AgentRun < ApplicationRecord
     GOAL_PRIORITY_SQL,
     { created_at: :asc, id: :asc }
   ].freeze
+  # Scheduler-only sort. Keep QUEUE_ORDER as the user-visible ordering; this
+  # adds only a hidden tiebreaker so short review runs drain before create_pr
+  # runs when all visible priority keys are otherwise tied.
+  SCHEDULER_QUEUE_ORDER = [
+    PROJECT_ACTIVE_COUNT_SQL,
+    USER_ACTIVE_COUNT_SQL,
+    QUEUE_PRIORITY_SQL,
+    IN_PROGRESS_SQL,
+    GOAL_PRIORITY_SQL,
+    REVIEW_PICKUP_PRIORITY_SQL,
+    { created_at: :asc, id: :asc }
+  ].freeze
   STATUS_ORDER_CASE_SQL = <<~SQL.squish.freeze
     CASE WHEN agent_runs.status = 'running' THEN 0
          WHEN agent_runs.status = 'queued' AND agent_runs.temporal_workflow_id IS NOT NULL THEN 1
@@ -1148,7 +1164,7 @@ class AgentRun < ApplicationRecord
   SQL
   STATUS_ORDER_SQL = Arel.sql("#{STATUS_ORDER_CASE_SQL} ASC").freeze
 
-  # Scope that adds the CTE and joins required by QUEUE_ORDER.
+  # Scope that adds the CTE and joins required by queue ordering.
   # All queue-ordering methods use this instead of bare `queued`.
   # Filters to unclaimed queued runs (temporal_workflow_id IS NULL) so
   # claimed-but-not-yet-running runs are excluded from peek results.
@@ -1175,7 +1191,7 @@ class AgentRun < ApplicationRecord
   # runs (temporal_workflow_id set) sort ahead of unclaimed ones at the same
   # tier; mirrors QUEUE_ORDER below STATUS_ORDER_SQL.
   scope :queue_order_display, -> {
-    unfinished
+    where(status: UNFINISHED_STATUSES)
       .with(
         project_active_counts: project_active_counts_cte,
         user_active_counts: user_active_counts_cte
@@ -1316,7 +1332,7 @@ class AgentRun < ApplicationRecord
   end
 
   def self.next_queued_run_from(scope)
-    scope.reorder(QUEUE_ORDER).first
+    scope.reorder(SCHEDULER_QUEUE_ORDER).first
   end
   private_class_method :next_queued_run_from
 
