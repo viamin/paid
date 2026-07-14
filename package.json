@@ -4,9 +4,9 @@
   "packageManager": "yarn@1.22.22",
   "devDependencies": {
     "@eslint/js": "10.0.1",
-    "@herb-tools/linter": "^0.10.1",
+    "@herb-tools/linter": "^0.10.2",
     "esbuild": "0.28.1",
-    "eslint": "10.6.0",
+    "eslint": "10.7.0",
     "markdownlint-cli": "0.49.0"
   },
   "scripts": {
