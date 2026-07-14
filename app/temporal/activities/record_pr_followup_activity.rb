@@ -26,8 +26,13 @@ module Activities
       return { recorded: false } unless issue
 
       has_active_run = project.agent_runs
-        .where(issue_id: issue.id)
-        .exists?(status: AgentRun::UNFINISHED_STATUSES)
+        .where(
+          issue_id: issue.id,
+          goal: "create_pr",
+          source_pull_request_number: issue.github_number,
+          status: AgentRun::UNFINISHED_STATUSES
+        )
+        .exists?
 
       unless has_active_run
         logger.info(

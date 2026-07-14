@@ -22,14 +22,14 @@ module Activities
       goal ||= project.account.tenant_setting&.default_goal || "create_pr"
       issue = issue_id ? Issue.find(issue_id) : nil
 
-      # PR follow-up runs (source_pull_request_number present) are already
-      # authorized upstream — either by ScanPaidPrsActivity#authorized_for_automation_scan?
-      # (trusted authors, dependency-update bots, trusted-user-added labels) or
-      # by LabelPolicy#authorized_for_trigger?. Requiring issue trust here would
-      # block follow-up runs on Dependabot and other third-party bot PRs that
-      # have the automation label — the exact PRs the scan pipeline is supposed
-      # to fix. The BuildForPr prompt builder handles comment trust filtering
-      # independently, so skipping this gate is safe.
+      # PR follow-up runs (source_pull_request_number present) intentionally do
+      # not reuse the issue-trust gate below. They are authorized upstream by
+      # ScanPaidPrsActivity#authorized_for_automation_scan? (trusted authors,
+      # dependency-update bots, or trusted-user-added labels) or by
+      # LabelPolicy#authorized_for_trigger?. That broader author trust is what
+      # allows create_pr follow-ups to repair Dependabot and other third-party
+      # bot PRs after the automation label is applied. BuildForPr still filters
+      # comment bodies independently, so this bypass only affects run creation.
       pr_followup_run = source_pull_request_number.present?
       if issue_requires_trust?(goal) && issue&.untrusted? && !pr_followup_run
         logger.info(

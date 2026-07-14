@@ -880,6 +880,13 @@ RSpec.describe Project do
         expect(project.trusted_github_user?(bot_login)).to be false
       end
 
+      it "adds dependency-update bot authors only when dependabot automation is enabled" do
+        project.auto_merge_mode = "dependabot_only"
+
+        expect(project.trusted_github_author_logins).to include("dependabot[bot]", "renovate[bot]")
+        expect(project.trusted_github_user?("dependabot[bot]")).to be false
+      end
+
       it "identifies the app bot as Paid's own author for marker re-admission" do
         expect(project.paid_bot_author?(bot_login)).to be true
         expect(project.paid_bot_author?(bot_login.upcase)).to be true

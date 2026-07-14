@@ -487,9 +487,12 @@ class Project < ApplicationRecord
   # for Paid to pick up and work on it. The human allowlist plus, for GitHub
   # App projects, the app's own bot identity (implicit, never stored in
   # allowed_github_usernames), so Paid can act on issues/PRs its own bot
-  # opens. Broader than #trusted_github_user? on purpose: the bot may author
-  # work Paid acts on, but its comments are never trusted human input. All
-  # logins are downcased for case-insensitive comparison.
+  # opens. When dependabot auto-merge is enabled this also admits the
+  # dependency-update bot author set for AUTHORSHIP trust only, so automation
+  # scans can queue follow-up repair runs on those PRs. Broader than
+  # #trusted_github_user? on purpose: author trust controls pickup/queueing,
+  # while comment trust stays human-only. All logins are downcased for
+  # case-insensitive comparison.
   #
   # Uses github_author_login (the "[bot]" form, e.g. "paid-agents[bot]"),
   # which is the only login GitHub ever reports as the author of app-created
