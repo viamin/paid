@@ -112,6 +112,23 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       allow(Temporalio::Workflow).to receive_messages(logger: logger, patched: true)
     end
 
+    def activity_error_with_cause(cause)
+      begin
+        begin
+          raise cause
+        rescue
+          raise Temporalio::Error::ActivityError.new(
+            "activity failed",
+            scheduled_event_id: 1, started_event_id: 2, identity: "",
+            activity_type: "ScanPaidPrs", activity_id: "1",
+            retry_state: Temporalio::Error::RetryState::NON_RETRYABLE_FAILURE
+          )
+        end
+      rescue => e
+        e
+      end
+    end
+
     it "runs ScanPaidPrsActivity, executes decisions, and returns the scan result" do
       allow(workflow).to receive(:handle_pr_scan_results)
 
@@ -158,6 +175,20 @@ RSpec.describe Workflows::GitHubPollWorkflow do
 
       expect { workflow.send(:maybe_scan_paid_prs, 1) }
         .to raise_error(Temporalio::Error::CanceledError)
+    end
+
+    it "re-raises AuthError activity failures so stale credentials fail loudly" do
+      auth_error = Temporalio::Error::ApplicationError.new(
+        "GitHub authentication failed",
+        type: "AuthError"
+      )
+      activity_error = activity_error_with_cause(auth_error)
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::ScanPaidPrsActivity, anything, timeout: anything, heartbeat_timeout: anything)
+        .and_raise(activity_error)
+
+      expect { workflow.send(:maybe_scan_paid_prs, 1) }
+        .to raise_error(Temporalio::Error::ActivityError)
     end
   end
 
@@ -834,6 +865,48 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       workflow.send(:handle_pr_scan_results, { automation_results: [] }, project_id)
 
       expect(workflow).not_to have_received(:handle_automation_result)
+    end
+
+    it "does not record a PR follow-up when a cross-goal duplicate blocked queueing" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::QueueAgentRunActivity, anything, timeout: anything)
+        .and_return({ queued: false, duplicate: true, cross_goal: true })
+
+      workflow.send(:handle_pr_scan_results, {
+        automation_results: [
+          {
+            decisions: [
+              { type: "queue_create_pr_run", issue_id: 10, source_pull_request_number: 42, focus: "general" },
+              { type: "record_pr_followup", issue_id: 10, labels_to_remove: [], expected_followup_count: 0 }
+            ]
+          }
+        ]
+      }, project_id)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::RecordPrFollowupActivity, anything, timeout: anything)
+    end
+
+    it "records a PR follow-up when the create_pr run was queued" do
+      allow(workflow).to receive(:run_activity)
+        .with(Activities::QueueAgentRunActivity, anything, timeout: anything)
+        .and_return({ queued: true })
+
+      workflow.send(:handle_pr_scan_results, {
+        automation_results: [
+          {
+            decisions: [
+              { type: "queue_create_pr_run", issue_id: 10, source_pull_request_number: 42, focus: "general" },
+              { type: "record_pr_followup", issue_id: 10, labels_to_remove: [], expected_followup_count: 0 }
+            ]
+          }
+        ]
+      }, project_id)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RecordPrFollowupActivity,
+          { project_id: project_id, issue_id: 10, labels_to_remove: [], expected_followup_count: 0 },
+          timeout: 30)
     end
   end
 end

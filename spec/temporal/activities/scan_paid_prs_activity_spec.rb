@@ -166,6 +166,15 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(activity.send(:dependency_update_bot_author?, "renovate-helper")).to be(false)
     end
 
+    it "scopes dependency-update bot trust to PR scan authorization" do
+      issue = build(:issue, :pull_request,
+        project: project,
+        github_creator_login: "dependabot[bot]")
+
+      expect(activity.send(:authorized_for_automation_scan?, project, issue)).to be(true)
+      expect(project.trusted_github_author?("dependabot[bot]")).to be(false)
+    end
+
     it "treats human authors as neither bot nor agent" do
       expect(activity.send(:third_party_bot_author?, project, "viamin")).to be(false)
       expect(activity.send(:paid_agent_pr_author?, project, "viamin")).to be(false)
@@ -395,6 +404,30 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         expect(automation_scan_results(result)).to eq([])
         expect(github_client).to have_received(:rate_limit_remaining!)
+      end
+    end
+
+    context "when authentication fails" do
+      let(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 77,
+          labels: [ project.generated_label_name, project.automation_label_name ],
+          paid_state: "completed")
+      end
+
+      before { pr_issue }
+
+      it "raises ApplicationError with AuthError type" do
+        allow(activity).to receive(:scan_pr)
+          .and_raise(GithubClient::AuthenticationError.new("Bad credentials"))
+
+        expect {
+          activity.execute(project_id: project.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) do |error|
+          expect(error.type).to eq("AuthError")
+          expect(error.message).to include("GitHub authentication failed")
+        end
       end
     end
 

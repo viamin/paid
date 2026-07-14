@@ -880,6 +880,14 @@ RSpec.describe Project do
         expect(project.trusted_github_user?(bot_login)).to be false
       end
 
+      it "does not add dependency-update bot authors to global author trust" do
+        project.auto_merge_mode = "dependabot_only"
+
+        expect(project.trusted_github_author_logins).not_to include("dependabot[bot]", "renovate[bot]")
+        expect(project.trusted_github_author?("dependabot[bot]")).to be false
+        expect(project.trusted_github_user?("dependabot[bot]")).to be false
+      end
+
       it "identifies the app bot as Paid's own author for marker re-admission" do
         expect(project.paid_bot_author?(bot_login)).to be true
         expect(project.paid_bot_author?(bot_login.upcase)).to be true
@@ -911,6 +919,53 @@ RSpec.describe Project do
 
       it "has no Paid bot identity to re-admit (returns false)" do
         expect(project.paid_bot_author?(bot_login)).to be false
+      end
+    end
+
+    context "with Dependabot auto-merge enabled" do
+      let(:project) do
+        build(:project, :with_github_installation,
+          allowed_github_usernames: [ "viamin" ],
+          auto_merge_mode: "dependabot_only")
+      end
+
+      it "does NOT trust dependabot as a global author" do
+        expect(project.trusted_github_author?("dependabot[bot]")).to be false
+        expect(project.trusted_github_author?("renovate[bot]")).to be false
+        expect(project.trusted_github_author?("dependabot-preview[bot]")).to be false
+      end
+
+      it "does NOT trust dependabot as a comment author (prevents prompt injection)" do
+        expect(project.trusted_github_user?("dependabot[bot]")).to be false
+      end
+
+      it "still trusts allowlisted humans for both comments and authorship" do
+        expect(project.trusted_github_author?("viamin")).to be true
+        expect(project.trusted_github_user?("viamin")).to be true
+      end
+
+      context "when auto_merge_mode is 'all'" do
+        let(:project) do
+          build(:project, :with_github_installation,
+            allowed_github_usernames: [ "viamin" ],
+            auto_merge_mode: "all")
+        end
+
+        it "still does not trust dependabot as a global author" do
+          expect(project.trusted_github_author?("dependabot[bot]")).to be false
+        end
+      end
+    end
+
+    context "with Dependabot auto-merge disabled" do
+      let(:project) do
+        build(:project, :with_github_installation,
+          allowed_github_usernames: [ "viamin" ],
+          auto_merge_mode: "off")
+      end
+
+      it "does not trust dependabot as an author" do
+        expect(project.trusted_github_author?("dependabot[bot]")).to be false
       end
     end
   end
@@ -1348,10 +1403,33 @@ RSpec.describe Project do
         allow(project).to receive(:github_credential).and_return("ghs_app_token")
         allow(GithubClient).to receive(:new).with(
           token: "ghs_app_token",
-          health_endpoint: project.github_health_endpoint
+          health_endpoint: project.github_health_endpoint,
+          token_refresher: instance_of(Proc)
         ).and_return(github_client)
 
         expect(project.client).to be(github_client)
+      end
+    end
+
+    describe "#installation_token_refresher" do
+      it "returns a proc that clears cache and re-mints the token" do
+        project = build(:project, :with_github_installation)
+        fresh_token = "ghs_refreshed_token_abc"
+
+        expect(Github::AppInstallation).to receive(:clear_cached_token).with(
+          installation_id: project.github_installation.github_installation_id,
+          repo_full_name: project.full_name
+        )
+        allow(project).to receive(:github_credential).and_return(fresh_token)
+
+        result = project.installation_token_refresher.call
+        expect(result).to eq(fresh_token)
+      end
+
+      it "returns nil for PAT-backed projects" do
+        project = build(:project, github_installation: nil)
+
+        expect(project.installation_token_refresher).to be_nil
       end
     end
 
