@@ -119,7 +119,7 @@ module Previews
         cat > #{Shellwords.escape(CLIENT_CONFIG_PATH)} <<'TOML'
         #{config}
         TOML
-        (rathole #{Shellwords.escape(CLIENT_CONFIG_PATH)} > #{Shellwords.escape(CLIENT_LOG_PATH)} 2>&1 &)
+        rathole #{Shellwords.escape(CLIENT_CONFIG_PATH)} > #{Shellwords.escape(CLIENT_LOG_PATH)} 2>&1 &
         echo $! > #{Shellwords.escape(CLIENT_PID_PATH)}
       SH
 

@@ -29,6 +29,40 @@ RSpec.describe Previews::TunnelManager do
     end
   end
 
+  describe "#start_client!" do
+    it "backgrounds rathole directly so the PID file captures the real process" do
+      manager = described_class.new(backend:, token: "preview-token")
+      executed = []
+      container_service = instance_double(Containers::Provision)
+      allow(container_service).to receive(:execute) { |command, **| executed << command }
+
+      manager.start_client!(container_service:, local_port: 4000, remote_port: 8201)
+
+      command = executed.join
+      expect(command).to include("echo $! >")
+      rathole_line = command.lines.find { |line| line.include?("rathole ") }
+      # Backgrounding rathole directly (rather than inside a subshell) keeps $!
+      # pointed at the real process so stop_client! can kill it. A subshell
+      # wrapper like `(rathole ... &)` clears $! in the parent shell and leaves
+      # the PID file empty, leaking the tunnel client and its port.
+      expect(rathole_line).to end_with("&\n")
+      expect(command).not_to match(/\(.*rathole.*&\)/)
+    end
+  end
+
+  describe "#stop_client!" do
+    it "kills the process whose PID is recorded in the client PID file" do
+      manager = described_class.new(backend:, token: "preview-token")
+      executed = []
+      container_service = instance_double(Containers::Provision)
+      allow(container_service).to receive(:execute) { |command, **| executed << command }
+
+      manager.stop_client!(container_service:)
+
+      expect(executed.join).to include('kill "$(cat tmp/paid-preview-rathole.pid)"')
+    end
+  end
+
   describe ".reserve_port!" do
     it "reserves and releases a port from the preview pool" do
       port = described_class.reserve_port!(range: 8298..8299)
