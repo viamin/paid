@@ -33,12 +33,15 @@ module Automation
     def record_create_pr_queue_result(decision, result)
       return unless decision[:type] == "queue_create_pr_run"
 
-      @create_pr_queue_results[decision[:issue_id]] = result || {}
+      @create_pr_queue_results[decision[:issue_id]] = result
     end
 
     def skip_record_pr_followup?(decision)
-      queue_result = @create_pr_queue_results[decision[:issue_id]]
-      return workflow.execute_automation_decision(project_id:, decision:) unless queue_result
+      issue_id = decision[:issue_id]
+      return workflow.execute_automation_decision(project_id:, decision:) unless @create_pr_queue_results.key?(issue_id)
+
+      queue_result = @create_pr_queue_results[issue_id]
+      return nil if queue_result.nil?
       return workflow.execute_automation_decision(project_id:, decision:) if queue_result[:queued]
       return workflow.execute_automation_decision(project_id:, decision:) unless queue_result[:cross_goal]
 
