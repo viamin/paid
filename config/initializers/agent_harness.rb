@@ -204,8 +204,8 @@ AgentHarness::Providers::Anthropic.prepend(PaidAgentHarnessAnthropicMcpConfigMat
 # still does not classify the same signal. Until a companion pattern lands on
 # `AgentHarness::Providers::Anthropic#error_classification_patterns`, Paid keeps
 # the classification local.
-# TODO(#2718): remove once agent-harness adds refresh_token_reused to the
-# Anthropic auth_expired patterns upstream.
+# TODO(viamin/agent-harness#265): remove once the upstream Anthropic provider
+# adds the refresh_token_reused auth_expired pattern natively.
 module PaidAgentHarnessAnthropicRefreshTokenReusedPatch
   def error_classification_patterns
     result = super
