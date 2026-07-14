@@ -189,6 +189,41 @@ RSpec.describe Screenshots::ContainerCapture do
     FileUtils.rm_rf(tmpdir)
   end
 
+  it "rejects seed configuration for Phoenix projects with a config error" do
+    tmpdir = Dir.mktmpdir("phoenix-seed")
+    File.write(File.join(tmpdir, "mix.exs"), "defmodule Demo.MixProject do end")
+    service.instance_variable_set(:@tmpdir, tmpdir)
+    allow(service).to receive(:config).and_return(
+      Screenshots::Configuration.from_hash(
+        "base_url" => "http://localhost:4100",
+        "routes" => [ { "path" => "/", "name" => "home" } ],
+        "seed" => [ { "key" => "__all__", "runner" => "Screenshots::SeedData::Paid.call" } ]
+      )
+    )
+
+    expect { service.send(:validate_supported_config!) }.to raise_error(
+      Screenshots::ConfigError, /not supported for Phoenix projects yet/
+    )
+  ensure
+    FileUtils.rm_rf(tmpdir)
+  end
+
+  it "allows seedless Phoenix captures through config validation" do
+    tmpdir = Dir.mktmpdir("phoenix-noseed")
+    File.write(File.join(tmpdir, "mix.exs"), "defmodule Demo.MixProject do end")
+    service.instance_variable_set(:@tmpdir, tmpdir)
+    allow(service).to receive(:config).and_return(
+      Screenshots::Configuration.from_hash(
+        "base_url" => "http://localhost:4100",
+        "routes" => [ { "path" => "/", "name" => "home" } ]
+      )
+    )
+
+    expect { service.send(:validate_supported_config!) }.not_to raise_error
+  ensure
+    FileUtils.rm_rf(tmpdir)
+  end
+
   describe "#screenshot_config_json (capture scoping and annotation)" do
     let(:multi_route_config) do
       Screenshots::Configuration.from_hash(

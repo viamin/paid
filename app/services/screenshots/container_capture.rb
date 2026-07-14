@@ -184,6 +184,12 @@ module Screenshots
           "(configured: #{config.driver})"
       end
 
+      if phoenix_project? && config.seed.any?
+        raise Screenshots::ConfigError,
+          "seed configuration is not supported for Phoenix projects yet " \
+          "(seeds run via bin/rails runner, which is unavailable in an Elixir/Phoenix repo)"
+      end
+
       dynamic_route = config.routes.find do |route|
         route.path.to_s.match?(/:\w+|%\{[^}]+\}/) || route.seed_key.present?
       end
@@ -531,7 +537,7 @@ module Screenshots
         "PORT=#{port} bin/dev"
       elsif File.exist?(File.join(@tmpdir, "bin/rails"))
         "bundle exec bin/rails server -b 0.0.0.0 -p #{port}"
-      elsif File.exist?(File.join(@tmpdir, "mix.exs"))
+      elsif phoenix_project?
         "MIX_ENV=dev mix phx.server"
       elsif File.exist?(File.join(@tmpdir, "manage.py"))
         "python3 manage.py runserver 0.0.0.0:#{port}"
@@ -544,8 +550,15 @@ module Screenshots
       end
     end
 
+    # Phoenix/Elixir repos are driven by mix.exs. This matches the same signal
+    # application_start_command uses to pick `mix phx.server`, so seed loading
+    # (which runs via bin/rails runner) is gated on the same framework check.
+    def phoenix_project?
+      File.exist?(File.join(@tmpdir, "mix.exs"))
+    end
+
     def prepare_phoenix_endpoint_binding!
-      return unless File.exist?(File.join(@tmpdir, "mix.exs"))
+      return unless phoenix_project?
 
       endpoint_modules = phoenix_endpoint_modules
       return if endpoint_modules.empty?
