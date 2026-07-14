@@ -107,7 +107,7 @@ This writes:
 - `client-cert.pem`
 - `client-key.pem`
 
-Important detail: the task does not generate the server certificate pair for the NAS daemon. You still need to create `server-cert.pem` and `server-key.pem` separately, signed by the generated `ca-key.pem`, or use another server certificate that the generated `ca.pem` will trust.
+Important detail: the task does not generate the server certificate pair for the NAS daemon. You still need to create `server-cert.pem` and `server-key.pem` separately, signed by the generated `ca-key.pem`, or use another server certificate that the generated `ca.pem` will trust. Make sure `server-cert.pem` includes a `subjectAltName` for the exact host clients use in `REMOTE_DOCKER_HOST`. If `REMOTE_DOCKER_HOST` uses the QNAP Tailscale IP, that IP must appear in the certificate SAN list or Docker TLS hostname verification will fail even when the CA and client certs are otherwise correct.
 
 Distribution model:
 
