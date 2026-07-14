@@ -115,14 +115,18 @@ module Github
 
     def manual_instructions(payload)
       yaml_snippet = payload.map { |key, value| "  #{key}: #{value.inspect}" }.join("\n")
-      <<~INSTRUCTIONS.squish
+      intro = <<~INTRO.squish
         Add the following values to your Rails credentials
         (#{credentials.content_path}) using `bin/rails credentials:edit`,
         or expose them as environment variables
         (PAID_AGENT_APP_ID, PAID_AGENT_APP_SLUG, PAID_AGENT_APP_PRIVATE_KEY,
         PAID_AGENT_APP_WEBHOOK_SECRET) via your process manager:
-        #{yaml_snippet}
-      INSTRUCTIONS
+      INTRO
+      # Preserve the YAML line breaks in the snippet — squishing the joined
+      # output would collapse the PEM and other multi-line values into a single
+      # paragraph and make the snippet non-copyable into credentials. The
+      # squish above only flattens whitespace within the intro paragraph.
+      "#{intro}\n#{yaml_snippet}\n"
     end
   end
 end

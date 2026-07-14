@@ -111,5 +111,61 @@ RSpec.describe Github::Installations::Upserter do
         described_class.call(account: account, payload: base_payload)
       }.not_to change(GithubInstallation, :count)
     end
+
+    # GitHub's installation webhooks put `repositories` at the top level of
+    # the payload, alongside `installation`, `requester`, and `sender`. The
+    # REST `/app/installations/:id` endpoint has no `repositories` field at
+    # all. Both shapes must populate accessible_repositories so coverage and
+    # migration decisions stay correct.
+    context "with webhook-shaped payload (installation.created event)" do
+      let(:webhook_payload) do
+        {
+          "action" => "created",
+          "installation" => {
+            "id" => github_installation_id,
+            "account" => { "login" => "acme-corp" },
+            "target_type" => "Organization",
+            "repository_selection" => "all"
+          },
+          "repositories" => [
+            { "id" => 101, "full_name" => "acme-corp/widgets", "name" => "widgets",
+              "owner" => { "login" => "acme-corp" }, "default_branch" => "main",
+              "private" => false }
+          ],
+          "requester" => { "login" => "acme-admin" }
+        }
+      end
+
+      it "reads repositories from the top-level payload field" do
+        record = described_class.call(account: account, payload: webhook_payload)
+
+        expect(record.accessible_repositories).to contain_exactly(
+          hash_including("full_name" => "acme-corp/widgets")
+        )
+        expect(record.repositories_synced_at).to be_present
+        expect(record.repository_selection).to eq("all")
+      end
+    end
+
+    context "with REST-shaped payload (no top-level repositories)" do
+      let(:rest_payload) do
+        {
+          "action" => "created",
+          "installation" => {
+            "id" => github_installation_id,
+            "account" => { "login" => "acme-corp" },
+            "target_type" => "Organization",
+            "repository_selection" => "all"
+          }
+        }
+      end
+
+      it "leaves accessible_repositories untouched when repositories are absent" do
+        record = described_class.call(account: account, payload: rest_payload)
+
+        expect(record.accessible_repositories).to be_nil.or(be_empty)
+        expect(record.repository_selection).to eq("all")
+      end
+    end
   end
 end

@@ -22,7 +22,6 @@ module Admin
       include OperatorConsole::RequestContext
       include AuditLogging
 
-      MANIFEST_CALLBACK_PATH = "/admin/github_app/setup/callback".freeze
       MANIFEST_DEFAULT_PERMISSIONS = {
         contents: :write,
         pull_requests: :write,
@@ -112,7 +111,18 @@ module Admin
             url: manifest_webhook_url,
             active: true
           },
+          # `redirect_url` is the app-registration handshake target: GitHub
+          # POSTs the temporary manifest code here after the operator confirms
+          # the App on GitHub. `setup_url` is the post-install / post-update
+          # target: GitHub redirects here with `installation_id` and
+          # `setup_action` after the operator installs (or updates) the freshly
+          # registered App on a user/org account. Pointing `setup_url` at the
+          # existing `/github_app/callback` lets self-hosted deployments reuse
+          # the same install lifecycle as the SaaS path: the callback verifies
+          # its own CSRF state and enqueues `Github::Installations::SyncJob`.
           redirect_url: manifest_redirect_url(state: state),
+          setup_url: install_setup_url,
+          setup_on_update: true,
           public: false,
           default_events: [ "installation", "installation_repositories" ],
           default_permissions: MANIFEST_DEFAULT_PERMISSIONS
@@ -140,6 +150,20 @@ module Admin
       def manifest_redirect_url(state:)
         uri = URI.parse(admin_github_app_setup_callback_url)
         uri.query = { state: state }.to_query
+        uri.to_s
+      end
+
+      # GitHub requires the post-install `setup_url` to be a fully-qualified
+      # URL, so we build it from the request host instead of hard-coding a
+      # deployment-specific value. Pointing at `/github_app/callback` (rather
+      # than `/github_app/install`) routes GitHub's post-install redirect —
+      # which already carries `installation_id` and `setup_action` — into the
+      # existing callback controller, which verifies CSRF state and enqueues
+      # `Github::Installations::SyncJob`. Going through `install` instead would
+      # redirect the user back into GitHub's install flow for an already-
+      # installed App, which GitHub either ignores or treats as a no-op.
+      def install_setup_url
+        uri = URI.parse(github_app_callback_url)
         uri.to_s
       end
 

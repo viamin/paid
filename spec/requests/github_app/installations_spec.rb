@@ -137,5 +137,25 @@ RSpec.describe "GithubApp::Installations lifecycle" do
       expect(response).to redirect_to(integrations_path)
       expect(flash[:alert]).to match(/Missing installation_id/i)
     end
+
+    # When GitHub's manifest `setup_url` redirects here directly (post-install
+    # or post-update on a self-hosted App), there is no session state because
+    # the user never went through `/github_app/install`. We accept the
+    # request and defer binding verification to `SyncJob`, which only binds
+    # when the installation matches a trusted signal.
+    it "accepts GitHub-initiated redirects that arrive without session state" do
+      expect {
+        get github_app_callback_path, params: {
+          installation_id: 88_777_777, setup_action: "install"
+        }
+      }.to have_enqueued_job(Github::Installations::SyncJob).with(
+        installation_id: 88_777_777,
+        account_id: account.id,
+        setup_action: "install"
+      )
+
+      expect(response).to redirect_to(integrations_path)
+      expect(flash[:notice]).to match(/installation received/i)
+    end
   end
 end

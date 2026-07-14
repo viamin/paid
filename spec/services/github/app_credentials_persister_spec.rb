@@ -99,6 +99,23 @@ RSpec.describe Github::AppCredentialsPersister do
       expect(outcome.manual_instructions).to include("PAID_AGENT_APP_ID")
     end
 
+    # The manual instructions surface the PEM and webhook secret that GitHub
+    # returns only once, so the YAML snippet must remain copy-pasteable into
+    # credentials. Squishing the entire heredoc would collapse the
+    # newline-separated YAML into one paragraph and break that path.
+    it "preserves YAML line breaks in the manual instructions" do
+      allow(fake_credentials).to receive(:key?).and_return(false)
+
+      outcome = described_class.call(result: result)
+
+      expect(outcome.manual_instructions).to include(
+        "  paid_agent_app_id: \"99\"\n" \
+        "  paid_agent_app_slug: \"paid-agents-self-hosted\"\n" \
+        "  paid_agent_app_private_key: #{pem.inspect}\n" \
+        "  paid_agent_app_webhook_secret: \"shhh\""
+      )
+    end
+
     it "falls back to manual instructions when the credentials file is missing the master key" do
       allow(fake_credentials).to receive(:write).and_raise(ActiveSupport::EncryptedFile::MissingKeyError.new(key_path: "/x", env_key: "RAILS_MASTER_KEY"))
 

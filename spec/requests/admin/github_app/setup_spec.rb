@@ -79,6 +79,28 @@ RSpec.describe "Admin::GithubApp::Setup" do
       )
     end
 
+    it "includes both redirect_url and setup_url so installs route to the callback" do
+      post admin_github_app_setup_path
+
+      decoded = Base64.urlsafe_decode64(
+        CGI.unescape(response.location.split("manifest=").last)
+      )
+      manifest = JSON.parse(decoded)
+
+      # `redirect_url` is the app-registration handshake; `setup_url` is the
+      # post-install target GitHub redirects to with `installation_id` and
+      # `setup_action`. Both are required so self-hosted deployments route new
+      # installs into `GithubApp::InstallationsController#callback` (the same
+      # path the SaaS App uses). Pointing `setup_url` at `callback` directly
+      # keeps GitHub's post-install redirect from bouncing the user back into
+      # the `/github_app/install` flow for an already-installed App.
+      expect(manifest["redirect_url"]).to start_with("http")
+      expect(manifest["redirect_url"]).to include("/admin/github_app/setup/callback")
+      expect(manifest["setup_url"]).to start_with("http")
+      expect(manifest["setup_url"]).to include("/github_app/callback")
+      expect(manifest["setup_on_update"]).to be(true)
+    end
+
     it "stores a one-shot state in the session" do
       post admin_github_app_setup_path
 

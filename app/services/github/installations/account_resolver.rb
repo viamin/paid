@@ -72,7 +72,15 @@ module Github
       end
 
       def repository_pairs
-        Array(installation["repositories"]).filter_map do |repo|
+        # GitHub's `installation.created` / `installation.new_permissions_accepted`
+        # webhooks expose repository matches at the TOP level of the payload
+        # (alongside `installation`, `requester`, `sender`), not under
+        # `installation`. Without this fallback `by_repositories` always
+        # returned an empty list for real webhook payloads, and a deleted
+        # installation row for an existing org could not be recovered.
+        sources = Array(@payload["repositories"]).presence || Array(installation["repositories"])
+
+        sources.filter_map do |repo|
           next unless repo.is_a?(Hash)
 
           owner, name = repo["full_name"].to_s.split("/", 2)

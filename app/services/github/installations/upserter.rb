@@ -64,9 +64,20 @@ module Github
 
         record.account_login = installation["account"].dig("login") if installation["account"].present?
         record.target_type = installation.dig("target_type") if installation["target_type"].present?
+        # `repository_selection` lives on `installation` in both webhook and
+        # REST shapes — `installation` event webhooks put it under installation,
+        # not at the top level alongside `repositories` and `requester`.
         record.repository_selection = installation["repository_selection"] if installation["repository_selection"].present?
 
-        repositories = installation["repositories"]
+        # GitHub's `installation.created` / `installation.new_permissions_accepted`
+        # webhooks put the granted repositories at the TOP level of the payload
+        # (alongside `installation`, `requester`, `sender`), NOT under
+        # `installation`. Reading `installation["repositories"]` would return
+        # nil for real webhook payloads and leave `accessible_repositories`
+        # empty until the next `installation_repositories.added` event. The
+        # REST `/app/installations/:id` response has no `repositories` field
+        # at all — only webhooks do — so falling back to that is safe.
+        repositories = payload["repositories"] || installation["repositories"]
         if repositories.is_a?(Array)
           record.accessible_repositories = serialize_repositories(repositories)
           record.repositories_synced_at = Time.current

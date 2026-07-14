@@ -28,6 +28,18 @@ module Github
         payload = fetch_installation(installation_id)
         return unless payload
 
+        unless callback_binding_trusted?(installation_id: installation_id, account: account, payload: payload)
+          Rails.logger.warn(
+            message: "github_app.installation_callback_binding_refused",
+            installation_id: installation_id,
+            account_id: account_id,
+            account_login: payload.dig("account", "login"),
+            setup_action: setup_action,
+            reason: "no matching project owner or prior installation row"
+          )
+          return
+        end
+
         TenantContext.with(account) do
           Github::Installations::Upserter.call(
             account: account,
@@ -107,6 +119,36 @@ module Github
 
       def retryable_status?(status)
         status >= 500 || status == 429
+      end
+
+      # GitHub's setup URL params (notably `installation_id`) are spoofable —
+      # a signed-in user could complete the local install redirect and bind an
+      # installation they do not actually own. The CSRF `state` only proves the
+      # user clicked Paid's "Install" button, not that they completed the GitHub
+      # side of the flow. We therefore only bind a callback-driven sync when
+      # the JWT-fetched installation matches a signal we already trust:
+      #
+      #   1. An existing GithubInstallation row for this installation_id, owned
+      #      by the same account — re-installs / permission updates.
+      #   2. The installation's `account.login` matches the owner of one of the
+      #      account's Projects — the user has a project in that org already.
+      #
+      # Brand-new installs into a brand-new org cannot satisfy either rule, so
+      # we defer binding to the signed `installation` webhook, which is the
+      # trusted path.
+      def callback_binding_trusted?(installation_id:, account:, payload:)
+        existing_owner = TenantContext.with_system_access do
+          GithubInstallation.where(github_installation_id: installation_id, account_id: account.id)
+            .exists?
+        end
+        return true if existing_owner
+
+        installation_login = payload.dig("account", "login").to_s.downcase
+        return false if installation_login.blank?
+
+        TenantContext.with_system_access do
+          Project.where(account_id: account.id, owner: installation_login).exists?
+        end
       end
     end
   end
