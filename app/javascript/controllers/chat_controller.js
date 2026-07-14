@@ -148,28 +148,24 @@ export default class extends Controller {
     wrapper.className = "flex justify-start"
 
     const article = document.createElement("article")
-    article.className = "max-w-3xl rounded-[1.5rem] rounded-bl-md bg-white px-4 py-3 text-sm text-slate-900 shadow-sm ring-1 ring-slate-200"
+    article.className = "max-w-3xl px-0 py-1 text-[15px] text-gray-900"
     article.dataset.controller = "chat-message"
     article.dataset.chatMessageRoleValue = "assistant"
     article.dataset.chatMessageMarkdownValue = "true"
     article.dataset.streamMessageId = streamId
 
     const meta = document.createElement("div")
-    meta.className = "mb-2 flex items-center gap-2"
-
-    const roleBadge = document.createElement("span")
-    roleBadge.className = "inline-flex items-center rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600"
-    roleBadge.textContent = "Assistant"
+    meta.className = "mb-3 flex items-center gap-2"
 
     const modelLabel = document.createElement("span")
-    modelLabel.className = "text-xs font-medium text-slate-400"
+    modelLabel.className = "text-xs font-medium text-gray-500"
     modelLabel.textContent = model || "Assistant"
 
     const timestamp = document.createElement("span")
-    timestamp.className = "text-xs text-slate-300"
+    timestamp.className = "text-xs text-gray-400"
     timestamp.textContent = "just now"
 
-    meta.append(roleBadge, modelLabel, timestamp)
+    meta.append(modelLabel, timestamp)
 
     const content = document.createElement("div")
     content.className = "chat-markdown"
