@@ -7,6 +7,24 @@ RSpec.describe Screenshots::DetectFramework, :no_db do
     Rails.root.join("spec/fixtures/screenshots/#{name}").to_s
   end
 
+  def build_phx_gen_auth_repo(repo_path)
+    FileUtils.mkdir_p(File.join(repo_path, "lib/my_app_web/controllers"))
+    File.write(File.join(repo_path, "mix.exs"), "defmodule MyApp.MixProject do\nend\n")
+    File.write(File.join(repo_path, "lib/my_app_web/router.ex"), <<~ELIXIR)
+      defmodule MyAppWeb.Router do
+        use MyAppWeb, :router
+
+        scope "/", MyAppWeb do
+          pipe_through :browser
+
+          get "/", PageController, :index
+          get "/users/log_in", UserSessionController, :new
+        end
+      end
+    ELIXIR
+    File.write(File.join(repo_path, "lib/my_app_web/controllers/user_session_controller.ex"), "defmodule MyAppWeb.UserSessionController do\nend\n")
+  end
+
   describe ".call" do
     it "detects a Rails app and suggests a Cuprite config" do
       result = described_class.call(repo_path: fixture_path("rails_repo"))
@@ -16,6 +34,11 @@ RSpec.describe Screenshots::DetectFramework, :no_db do
       expect(result.suggested_config["driver"]).to eq("cuprite")
       expect(result.detected_services).to contain_exactly("postgres", "redis")
       expect(result.suggested_config.dig("auth", "strategy")).to eq("form")
+      expect(result.suggested_config.dig("auth", "fields")).to eq(
+        "email" => 'input[name="user[email]"]',
+        "password" => 'input[name="user[password]"]',
+        "submit" => 'button[type="submit"], input[type="submit"]'
+      )
       expect(result.detected_routes.map { |route| route["path"] }).to include("/", "/dashboard", "/reports")
     end
 
@@ -37,6 +60,11 @@ RSpec.describe Screenshots::DetectFramework, :no_db do
       expect(result.suggested_config["base_url"]).to eq("http://localhost:8000")
       expect(result.detected_routes.map { |route| route["path"] }).to include("/", "/admin/", "/accounts/login/")
       expect(result.suggested_config.dig("auth", "login_path")).to eq("/accounts/login/")
+      expect(result.suggested_config.dig("auth", "fields")).to eq(
+        "email" => 'input[name="username"]',
+        "password" => 'input[name="password"]',
+        "submit" => 'button[type="submit"], input[type="submit"]'
+      )
     end
 
     it "detects a Phoenix app and parses router.ex routes" do
@@ -55,11 +83,10 @@ RSpec.describe Screenshots::DetectFramework, :no_db do
       expect(result.detected_services).to include("postgres")
     end
 
-    it "detects Phoenix auth when phx_gen_auth or LiveView is used" do
+    it "does not infer Phoenix auth from LiveView and browser routes alone" do
       result = described_class.call(repo_path: fixture_path("phoenix_repo"))
 
-      expect(result.suggested_config.dig("auth", "strategy")).to eq("form")
-      expect(result.suggested_config.dig("auth", "login_path")).to eq("/users/log_in")
+      expect(result.suggested_config.dig("auth", "strategy")).to eq("none")
     end
 
     it "falls back to a generic app when no known framework is detected" do
@@ -129,6 +156,21 @@ RSpec.describe Screenshots::DetectFramework, :no_db do
 
         expect(result.framework).to eq(:nextjs)
         expect(result.detected_routes.map { |route| route["path"] }).to include("/")
+      end
+
+      it "detects phx.gen.auth when the generated login route and files are present" do
+        build_phx_gen_auth_repo(repo_path)
+
+        result = described_class.call(repo_path: repo_path)
+
+        expect(result.framework).to eq(:phoenix)
+        expect(result.suggested_config.dig("auth", "strategy")).to eq("form")
+        expect(result.suggested_config.dig("auth", "login_path")).to eq("/users/log_in")
+        expect(result.suggested_config.dig("auth", "fields")).to eq(
+          "email" => 'input[name="user[email]"]',
+          "password" => 'input[name="user[password]"]',
+          "submit" => 'button[type="submit"], input[type="submit"]'
+        )
       end
 
       it "ignores heavyweight directories while scanning the filesystem" do

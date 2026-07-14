@@ -424,9 +424,9 @@ module Screenshots
         "strategy" => "form",
         "login_path" => "/users/sign_in",
         "fields" => {
-          "email" => "user[email]",
-          "password" => "user[password]",
-          "submit" => "Log in"
+          "email" => 'input[name="user[email]"]',
+          "password" => 'input[name="user[password]"]',
+          "submit" => 'button[type="submit"], input[type="submit"]'
         }
       }
     end
@@ -460,9 +460,9 @@ module Screenshots
         "strategy" => "form",
         "login_path" => "/accounts/login/",
         "fields" => {
-          "email" => "username",
-          "password" => "password",
-          "submit" => "Log in"
+          "email" => 'input[name="username"]',
+          "password" => 'input[name="password"]',
+          "submit" => 'button[type="submit"], input[type="submit"]'
         }
       }
     end
@@ -739,20 +739,31 @@ module Screenshots
     end
 
     def detect_phoenix_auth
-      if elixir_mix_dependency?("phoenix_live_view") || elixir_mix_dependency?("phx_gen_auth") ||
-          elixir_mix_dependency?("guardian") || elixir_mix_dependency?("pow")
-        return { "strategy" => "form", "login_path" => "/users/log_in" }
-      end
+      return phx_gen_auth_config if phx_gen_auth_detected?
 
-      content = router_content_for_phoenix
-      return { "strategy" => "none" } if blank_value?(content)
+      { "strategy" => "none" }
+    end
 
-      if content.match?(/pipeline\s+:browser\s+do[\s\S]*plug\s+:fetch_session/i) ||
-          content.match?(/plug\s+:[a-z_]*auth/i)
-        { "strategy" => "form", "login_path" => "/users/log_in" }
-      else
-        { "strategy" => "none" }
+    def phx_gen_auth_detected?
+      router_content = router_content_for_phoenix
+      return false if blank_value?(router_content)
+      return false unless router_content.include?("/users/log_in")
+
+      repo.paths.any? do |path|
+        path.match?(%r{(?:^|/)(?:controllers/user_session_controller|live/user_login_live|user_auth)\.ex$})
       end
+    end
+
+    def phx_gen_auth_config
+      {
+        "strategy" => "form",
+        "login_path" => "/users/log_in",
+        "fields" => {
+          "email" => 'input[name="user[email]"]',
+          "password" => 'input[name="user[password]"]',
+          "submit" => 'button[type="submit"], input[type="submit"]'
+        }
+      }
     end
 
     def router_content_for_phoenix
