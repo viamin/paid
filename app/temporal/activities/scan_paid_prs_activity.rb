@@ -32,11 +32,7 @@ module Activities
     # a time ceiling, PRs waiting on those signals are skipped indefinitely.
     SCAN_STALENESS_MULTIPLIER = 3
     KNOWN_BOT_PREFIXES = %w[dependabot renovate github-actions].freeze
-    DEPENDENCY_UPDATE_BOT_AUTHORS = %w[
-      dependabot[bot]
-      dependabot-preview[bot]
-      renovate[bot]
-    ].freeze
+    DEPENDENCY_UPDATE_BOT_AUTHORS = Project::DEPENDENCY_UPDATE_BOT_AUTHORS
     REVIEW_BOT_CLEAN_PATTERN = /generated no (?:new )?comments/i
     # Body-only review bots (currently Codex) signal "no findings" by posting
     # an *issue comment* — not a review — with text like
@@ -174,6 +170,16 @@ module Activities
       raise Temporalio::Error::ApplicationError.new(
         e.message,
         type: "RateLimit"
+      )
+    rescue GithubClient::AuthenticationError => e
+      logger.error(
+        message: "pr_scanner.auth_error",
+        project_id: project_id,
+        error: e.message
+      )
+      raise Temporalio::Error::ApplicationError.new(
+        "GitHub authentication failed for project #{project_id}: #{e.message}",
+        type: "AuthError"
       )
     end
 

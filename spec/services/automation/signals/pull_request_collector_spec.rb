@@ -97,6 +97,15 @@ RSpec.describe Automation::Signals::PullRequestCollector do
       )
     end
 
+    it "re-raises authentication failures so the scan can fail loudly" do
+      allow(client).to receive(:check_runs_for_ref)
+        .and_raise(GithubClient::AuthenticationError, "bad credentials")
+
+      expect {
+        collector.fetch_check_runs(pr_data: pr_snapshot)
+      }.to raise_error(GithubClient::AuthenticationError)
+    end
+
     it "returns an empty array when no snapshot is supplied" do
       expect(collector.fetch_check_runs(pr_data: nil)).to eq([])
     end
@@ -164,6 +173,15 @@ RSpec.describe Automation::Signals::PullRequestCollector do
       expect(logger).to have_received(:warn).with(
         hash_including(message: "pr_scanner.signal_check_failed", signal: "fetch_head_commit")
       )
+    end
+
+    it "re-raises authentication failures so the scan can fail loudly" do
+      allow(client).to receive(:commit)
+        .and_raise(GithubClient::AuthenticationError, "bad credentials")
+
+      expect {
+        collector.fetch_head_commit_date(issue:, pr_data: pr_snapshot)
+      }.to raise_error(GithubClient::AuthenticationError)
     end
 
     it "returns nil when the snapshot has no head sha" do

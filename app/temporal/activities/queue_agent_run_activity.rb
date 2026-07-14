@@ -21,7 +21,15 @@ module Activities
       project = Project.find(project_id)
       goal ||= project.account.tenant_setting&.default_goal || "create_pr"
       issue = issue_id ? Issue.find(issue_id) : nil
-      if issue_requires_trust?(goal) && issue&.untrusted?
+
+      # PR follow-up runs (source_pull_request_number present) intentionally do
+      # not reuse the issue-trust gate below. They are authorized upstream by
+      # ScanPaidPrsActivity#authorized_for_automation_scan? (trusted authors,
+      # dependency-update bots, or trusted-user-added labels) or by
+      # LabelPolicy#authorized_for_trigger?. BuildForPr still filters comment
+      # bodies independently, so this bypass only affects run creation.
+      pr_followup_run = source_pull_request_number.present?
+      if issue_requires_trust?(goal) && issue&.untrusted? && !pr_followup_run
         logger.info(
           message: "queue_agent_run.untrusted_issue_skipped",
           project_id: project.id,

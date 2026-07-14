@@ -248,6 +248,25 @@ RSpec.describe Activities::QueueAgentRunActivity do
       expect(ProcessRunQueueJob).not_to have_been_enqueued
     end
 
+    it "allows create_pr follow-up runs on untrusted PRs (source_pull_request_number set)" do
+      untrusted_pr = create(:issue, project: project, is_pull_request: true,
+        github_creator_login: "dependabot[bot]")
+
+      result = activity.execute(
+        project_id: project.id,
+        issue_id: untrusted_pr.id,
+        source_pull_request_number: untrusted_pr.github_number,
+        goal: "create_pr",
+        focus: "merge_conflict"
+      )
+
+      expect(result[:queued]).to be true
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.source_pull_request_number).to eq(untrusted_pr.github_number)
+      expect(agent_run.focus).to eq("merge_conflict")
+      expect(ProcessRunQueueJob).to have_been_enqueued
+    end
+
     context "when a duplicate run exists" do
       it "returns existing run when a queued run exists for the same issue" do
         existing = create(:agent_run, :queued, project: project, issue: issue)

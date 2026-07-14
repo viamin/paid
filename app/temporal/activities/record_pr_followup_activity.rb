@@ -3,8 +3,7 @@
 module Activities
   # Records that a PR follow-up was triggered by incrementing the
   # pr_followup_count and removing actionable labels. Called by the
-  # polling workflow both after starting a child workflow and when
-  # no agent capacity is available (to track the follow-up attempt).
+  # polling workflow after queueing a create_pr follow-up run.
   #
   # Idempotent: uses the expected_followup_count parameter to prevent
   # double-counting on Temporal retries. The increment only applies

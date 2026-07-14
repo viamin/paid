@@ -67,10 +67,13 @@ module Automation
         end
 
         # Wraps a GitHub API call, translating {::GithubClient} error classes
-        # into this adapter's ProviderError. Unknown errors propagate so
-        # that genuine bugs do not masquerade as provider failures.
+        # into this adapter's ProviderError. AuthenticationError is deliberately
+        # excluded so callers can distinguish auth failures (which warrant
+        # escalation) from transient provider errors (which warrant retry/skip).
         def with_errors
           yield
+        rescue ::GithubClient::AuthenticationError
+          raise
         rescue ::GithubClient::Error => e
           raise provider_error_class, e.message
         end

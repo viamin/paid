@@ -22,6 +22,14 @@ module Github
       "github_app_installation_token:#{installation_id}:#{repo_full_name}"
     end
 
+    # Clears the cached installation token so the next +token_for+ call
+    # mints a fresh one. Called by +GithubClient+ when a 401 indicates the
+    # cached token is no longer valid (e.g. installation re-suspended and
+    # re-activated, or GitHub returned a token with a shorter lifetime).
+    def self.clear_cached_token(installation_id:, repo_full_name:)
+      Rails.cache.delete(cache_key(installation_id, repo_full_name))
+    end
+
     def initialize(installation_id:, repo_full_name:)
       @installation_id = installation_id
       @repo_full_name = repo_full_name

@@ -54,6 +54,8 @@ module Automation
         return [] unless pr_data
 
         client.check_runs_for_ref(providers.repo, pr_data.head.sha)
+      rescue GithubClient::AuthenticationError
+        raise
       rescue GithubClient::Error => e
         logger.warn(
           message: "pr_scanner.ci_check_failed",
@@ -145,6 +147,8 @@ module Automation
         return nil if sha.nil?
 
         client.commit(providers.repo, sha)&.commit&.committer&.date
+      rescue GithubClient::AuthenticationError
+        raise
       rescue GithubClient::Error => e
         log_signal_error("fetch_head_commit", issue, e)
         nil

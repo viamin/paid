@@ -62,11 +62,19 @@ RSpec.describe Automation::Providers::Github::WorkItemProvider do
     end
 
     it "translates GithubClient errors to WorkItemProvider::ProviderError" do
-      expect(client).to receive(:issue).and_raise(GithubClient::AuthenticationError)
+      expect(client).to receive(:issue).and_raise(GithubClient::ApiError, "boom")
 
       expect {
         adapter.fetch_issue(repo: "acme/widgets", number: 1)
       }.to raise_error(Automation::Providers::WorkItemProvider::ProviderError)
+    end
+
+    it "lets AuthenticationError propagate unwrapped for caller escalation" do
+      expect(client).to receive(:issue).and_raise(GithubClient::AuthenticationError)
+
+      expect {
+        adapter.fetch_issue(repo: "acme/widgets", number: 1)
+      }.to raise_error(GithubClient::AuthenticationError)
     end
   end
 

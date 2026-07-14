@@ -68,9 +68,16 @@ class GithubClient
 
   # @param token [String] GitHub personal access token
   # @param health_endpoint [String] Stable health-state key for the auth principal
+  # @param token_refresher [Proc, nil] Called with no args on 401 to obtain a
+  #   fresh token. Expected to clear any token cache and return a new token
+  #   string. When provided, a single retry is attempted before raising
+  #   AuthenticationError. Used by App-backed projects whose installation
+  #   tokens can become stale mid-process (RDR-030).
   # @param options [Hash] Additional Octokit client options
-  def initialize(token:, health_endpoint: GithubHealthState::DEFAULT_ENDPOINT, **options)
+  def initialize(token:, health_endpoint: GithubHealthState::DEFAULT_ENDPOINT, token_refresher: nil, **options)
     @token = token
+    @token_refresher = token_refresher
+    @client_options = options
     @client = Octokit::Client.new(
       access_token: token,
       auto_paginate: false,
@@ -1484,15 +1491,23 @@ class GithubClient
     # (where the server may have applied the mutation before returning 5xx)
     # can cause duplicate side effects. Only retry read-only queries.
     conn = graphql_mutation?(query) ? graphql_connection_base : graphql_connection
-    response = conn.post("/graphql") do |req|
-      req.headers["Authorization"] = "token #{client.access_token}"
-      req.body = { query: query, variables: variables }
+    token_refreshed = false
+    begin
+      response = conn.post("/graphql") do |req|
+        req.headers["Authorization"] = "token #{client.access_token}"
+        req.body = { query: query, variables: variables }
+      end
+      response.body
+    rescue Faraday::UnauthorizedError
+      if !token_refreshed && refresh_token!
+        token_refreshed = true
+        retry
+      else
+        raise AuthenticationError
+      end
+    rescue Faraday::Error => e
+      raise ApiError.new(e.message)
     end
-    response.body
-  rescue Faraday::UnauthorizedError
-    raise AuthenticationError
-  rescue Faraday::Error => e
-    raise ApiError.new(e.message)
   end
 
   def raise_graphql_errors(data, context: nil)
@@ -1638,34 +1653,42 @@ class GithubClient
   end
 
   def handle_errors
-    result = yield
-    record_github_health_success
-    result
-  rescue Octokit::Unauthorized => e
-    raise AuthenticationError, e.message
-  rescue Octokit::NotFound => e
-    raise NotFoundError, e.message
-  rescue Octokit::TooManyRequests
-    snapshot = rate_limit_snapshot
-    record_github_rate_limit(snapshot[:reset_at], remaining: snapshot[:remaining], limit: snapshot[:limit])
-    raise RateLimitError.new(snapshot[:reset_at])
-  rescue Octokit::Forbidden => e
-    if e.message.include?("rate limit")
+    token_refreshed = false
+    begin
+      result = yield
+      record_github_health_success
+      result
+    rescue Octokit::Unauthorized => e
+      if !token_refreshed && refresh_token!
+        token_refreshed = true
+        retry
+      else
+        raise AuthenticationError, e.message
+      end
+    rescue Octokit::NotFound => e
+      raise NotFoundError, e.message
+    rescue Octokit::TooManyRequests
       snapshot = rate_limit_snapshot
       record_github_rate_limit(snapshot[:reset_at], remaining: snapshot[:remaining], limit: snapshot[:limit])
       raise RateLimitError.new(snapshot[:reset_at])
+    rescue Octokit::Forbidden => e
+      if e.message.include?("rate limit")
+        snapshot = rate_limit_snapshot
+        record_github_rate_limit(snapshot[:reset_at], remaining: snapshot[:remaining], limit: snapshot[:limit])
+        raise RateLimitError.new(snapshot[:reset_at])
+      end
+      raise ApiError.new(e.message, status: 403)
+    rescue Octokit::ServerError => e
+      record_github_health_failure(e.message)
+      status = e.respond_to?(:response_status) ? e.response_status : nil
+      raise ApiError.new(e.message, status: status)
+    rescue Octokit::Error => e
+      status = e.respond_to?(:response_status) ? e.response_status : nil
+      raise ApiError.new(e.message, status: status)
+    rescue Faraday::Error => e
+      record_github_health_failure(e.message)
+      raise
     end
-    raise ApiError.new(e.message, status: 403)
-  rescue Octokit::ServerError => e
-    record_github_health_failure(e.message)
-    status = e.respond_to?(:response_status) ? e.response_status : nil
-    raise ApiError.new(e.message, status: status)
-  rescue Octokit::Error => e
-    status = e.respond_to?(:response_status) ? e.response_status : nil
-    raise ApiError.new(e.message, status: status)
-  rescue Faraday::Error => e
-    record_github_health_failure(e.message)
-    raise
   end
 
   def record_github_health_failure(error_message)
@@ -1697,6 +1720,37 @@ class GithubClient
       message: "github_client.health_state_record_failed",
       error: e.message
     )
+  end
+
+  # Called from +handle_errors+ on 401. When a +token_refresher+ is
+  # configured (App-backed projects), clears the stale installation token
+  # from cache, mints a fresh one, and updates the Octokit client. Returns
+  # true when a retry should be attempted, false when no refresher is
+  # available or the refresh itself fails (so the caller raises
+  # AuthenticationError).
+  def refresh_token!
+    return false unless @token_refresher
+
+    new_token = @token_refresher.call
+    return false if new_token.blank?
+
+    @token = new_token
+    @cache_token_digest = nil
+    @client = Octokit::Client.new(access_token: new_token, auto_paginate: false, **@client_options)
+    configure_middleware
+
+    Rails.logger.info(
+      message: "github_client.token_refreshed_on_401",
+      health_endpoint: health_endpoint
+    )
+    true
+  rescue => e
+    Rails.logger.warn(
+      message: "github_client.token_refresh_failed",
+      health_endpoint: health_endpoint,
+      error: e.message
+    )
+    false
   end
 
   class TokenNamespacedStore
