@@ -13,6 +13,16 @@ module Activities
   class ScanSecurityAlertsActivity < BaseActivity
     activity_name "ScanSecurityAlerts"
 
+    # Backoff for a confirmed permission/configuration error (403 -- missing
+    # security_events / code_scanning_alerts:read). Deliberately much shorter
+    # than code_scanning_interval_hours: a stale credential is retried every
+    # poll cycle otherwise (every 1-2 minutes in some environments), which
+    # wastes worker capacity and API quota on a call that will fail
+    # identically until a human fixes the token/App permission. An hour still
+    # picks up a fix promptly without the full-interval "stale blackout" the
+    # original no-backoff design was written to avoid.
+    PERMISSION_ERROR_BACKOFF = 1.hour
+
     def execute(input)
       project_id = input[:project_id]
       project = Project.find_by(id: project_id)
@@ -54,7 +64,7 @@ module Activities
       all_alerts = fetch_code_scanning_alerts(project)
 
       if all_alerts.nil?
-        project.update_column(:last_code_scanning_scan_at, Time.current)
+        project.update_columns(last_code_scanning_scan_at: Time.current, code_scanning_permission_error_at: nil)
         return
       end
 
@@ -71,7 +81,7 @@ module Activities
       # Record scan timestamp only after successful processing. Retryable
       # errors (5xx) intentionally skip this so Temporal retries within the
       # same interval window.
-      project.update_column(:last_code_scanning_scan_at, Time.current)
+      project.update_columns(last_code_scanning_scan_at: Time.current, code_scanning_permission_error_at: nil)
 
       logger.info(
         message: "github_sync.code_scanning_scan_complete",
@@ -79,20 +89,29 @@ module Activities
         alerts_fetched: all_alerts.size,
         alerts_actionable: open_alerts.size
       )
-    rescue SecurityAlerts::ConfigurationError
+    rescue SecurityAlerts::CodeScanningPermissionsError
       # Do NOT advance last_code_scanning_scan_at here. A 403 means the token
       # lacks the required scope — advancing the timestamp would suppress
       # retries for the full code_scanning_interval_hours window, turning a
-      # recoverable misconfiguration into a stale blackout. The workflow
-      # catches ConfigurationError and logs a warning; rate-limit budget
-      # checks in the poll loop already prevent excessive API calls.
+      # recoverable misconfiguration into a stale blackout. Instead, record
+      # code_scanning_permission_error_at so should_scan_code_scanning? backs
+      # off for PERMISSION_ERROR_BACKOFF (much shorter than the full
+      # interval) instead of retrying every poll cycle. The workflow also
+      # catches ConfigurationError and logs a warning.
+      project.update_column(:code_scanning_permission_error_at, Time.current)
       raise
     end
 
     def should_scan_code_scanning?(project)
+      return false if recent_permission_error?(project)
       return true if project.last_code_scanning_scan_at.nil?
 
       project.last_code_scanning_scan_at <= project.code_scanning_interval_hours.hours.ago
+    end
+
+    def recent_permission_error?(project)
+      project.code_scanning_permission_error_at.present? &&
+        project.code_scanning_permission_error_at > PERMISSION_ERROR_BACKOFF.ago
     end
 
     def fetch_code_scanning_alerts(project)

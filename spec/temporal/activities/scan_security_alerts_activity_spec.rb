@@ -90,6 +90,15 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
         expect(project.last_code_scanning_scan_at).to be_nil
       end
 
+      it "records code_scanning_permission_error_at on 403 so subsequent cycles back off" do
+        allow(github_client).to receive(:code_scanning_alerts)
+          .and_raise(GithubClient::ApiError.new("Forbidden", status: 403))
+
+        expect { activity.execute(project_id: project.id) }.to raise_error(Temporalio::Error::ApplicationError)
+
+        expect(project.reload.code_scanning_permission_error_at).to be_present
+      end
+
       it "re-raises non-403 ApiError without updating last_code_scanning_scan_at" do
         allow(github_client).to receive(:code_scanning_alerts)
           .and_raise(GithubClient::ApiError.new("Server error", status: 500))
@@ -98,6 +107,57 @@ RSpec.describe Activities::ScanSecurityAlertsActivity do
 
         project.reload
         expect(project.last_code_scanning_scan_at).to be_nil
+      end
+
+      it "does not record permission backoff for non-permission configuration errors" do
+        project.update_column(:allowed_github_usernames, [])
+        allow(github_client).to receive(:code_scanning_alerts).and_return([
+          {
+            number: 42, state: "open", severity: "high",
+            rule_id: "test/rule", rule_description: "Test",
+            tool_name: "CodeQL", summary: "Test alert",
+            html_url: "https://github.com/o/r/security/code-scanning/42",
+            created_at: 1.day.ago.iso8601, updated_at: 1.hour.ago.iso8601
+          }
+        ])
+
+        expect { activity.execute(project_id: project.id) }
+          .to raise_error(Temporalio::Error::ApplicationError) do |e|
+            expect(e.type).to eq("ConfigurationError")
+          end
+
+        expect(project.reload.code_scanning_permission_error_at).to be_nil
+      end
+    end
+
+    context "with a recorded permission error" do
+      before { project.update_column(:last_code_scanning_scan_at, nil) }
+
+      it "skips the scan entirely while within the backoff window" do
+        allow(github_client).to receive(:code_scanning_alerts)
+        project.update_column(:code_scanning_permission_error_at, 5.minutes.ago)
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).not_to have_received(:code_scanning_alerts)
+      end
+
+      it "retries once the backoff window has elapsed" do
+        project.update_column(:code_scanning_permission_error_at, 2.hours.ago)
+        allow(github_client).to receive(:code_scanning_alerts).and_return([])
+
+        activity.execute(project_id: project.id)
+
+        expect(github_client).to have_received(:code_scanning_alerts)
+      end
+
+      it "clears the flag once a scan succeeds again" do
+        project.update_column(:code_scanning_permission_error_at, 2.hours.ago)
+        allow(github_client).to receive(:code_scanning_alerts).and_return([])
+
+        activity.execute(project_id: project.id)
+
+        expect(project.reload.code_scanning_permission_error_at).to be_nil
       end
     end
 
