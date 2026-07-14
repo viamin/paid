@@ -554,6 +554,8 @@ module Screenshots
     # application_start_command uses to pick `mix phx.server`, so seed loading
     # (which runs via bin/rails runner) is gated on the same framework check.
     def phoenix_project?
+      return false if @tmpdir.blank?
+
       File.exist?(File.join(@tmpdir, "mix.exs"))
     end
 
