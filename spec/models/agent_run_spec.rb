@@ -2378,6 +2378,59 @@ RSpec.describe AgentRun do
     end
   end
 
+  describe ".retry_trigger_type_for" do
+    let(:project) { create(:project) }
+
+    it "inherits manual priority from the latest unsuccessful PR run for the same goal" do
+      create(:agent_run, :timeout, :manual, project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        completed_at: 5.minutes.ago)
+
+      trigger_type = described_class.retry_trigger_type_for(
+        project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr"
+      )
+
+      expect(trigger_type).to eq("manual")
+    end
+
+    it "keeps automatic priority when a newer unsuccessful PR run was automatic" do
+      create(:agent_run, :timeout, :manual, project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        completed_at: 10.minutes.ago)
+      create(:agent_run, :failed, :automatic, project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        completed_at: 5.minutes.ago)
+
+      trigger_type = described_class.retry_trigger_type_for(
+        project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr"
+      )
+
+      expect(trigger_type).to eq("automatic")
+    end
+
+    it "does not inherit priority from a successful PR run" do
+      create(:agent_run, :completed, :manual, project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        completed_at: 5.minutes.ago)
+
+      trigger_type = described_class.retry_trigger_type_for(
+        project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr"
+      )
+
+      expect(trigger_type).to eq("automatic")
+    end
+  end
+
   describe ".peek_next_queued_run" do
     def claim_peeked_run
       run = described_class.claim_next_queued_run(target_id: described_class.peek_next_queued_run.id)

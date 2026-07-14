@@ -171,6 +171,46 @@ RSpec.describe Activities::QueueAgentRunActivity do
       expect(agent_run.goal).to eq("review")
     end
 
+    it "inherits manual priority from the latest unsuccessful PR run" do
+      create(:agent_run, :timeout,
+        project: project,
+        issue: issue,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        trigger_type: "manual",
+        completed_at: 5.minutes.ago)
+
+      result = activity.execute(
+        project_id: project.id,
+        issue_id: issue.id,
+        source_pull_request_number: 42,
+        goal: "create_pr"
+      )
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.trigger_type).to eq("manual")
+    end
+
+    it "does not inherit manual priority from a successful PR run" do
+      create(:agent_run, :completed,
+        project: project,
+        issue: issue,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        trigger_type: "manual",
+        completed_at: 5.minutes.ago)
+
+      result = activity.execute(
+        project_id: project.id,
+        issue_id: issue.id,
+        source_pull_request_number: 42,
+        goal: "create_pr"
+      )
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.trigger_type).to eq("automatic")
+    end
+
     it "stores the focus parameter on the created agent run" do
       result = activity.execute(
         project_id: project.id,
