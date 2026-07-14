@@ -189,7 +189,10 @@ Operational checks worth doing after the first successful run:
 
 ## 7. Known Constraints
 
-- No host bind mounts. The remote backend reports `supports_host_paths? = false`, so host credential-file mounting does not work. For subscription auth, use managed credentials stored as `RunnerCredential` records or switch to API-key auth mode.
+- No host bind mounts. The remote backend reports `supports_host_paths? = false`, so host credential-file mounting does not work. Subscription auth is per provider, not a generic `RunnerCredential` fallback:
+  - Claude: managed credentials stored as `RunnerCredential` records (Claude OAuth) are fetched from the database and written into the container, so subscription auth works without any bind mount.
+  - Gemini and Copilot: still need a local config copy (`oauth_creds.json` / `config.json`) readable on the Paid control plane; there is no DB-managed credential yet.
+  - Codex: requires `auth.json` from a Docker-host bind mount, which the remote backend cannot provide. When the Codex subscription runner is requested without that mount, provisioning raises an error. Use API-key auth mode for Codex on remote Docker.
 - Auto-capacity is conservative. Remote Docker is classified as shared infrastructure for capacity decisions, so use manual concurrency mode if you want predictable scheduling behavior.
 - Recommended setting for predictability:
 
