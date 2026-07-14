@@ -140,6 +140,14 @@ RSpec.describe "ChatSessions" do
         expect(response.parsed_body["mode"]).to eq("api")
       end
 
+      it "creates a session with auto-approve enabled" do
+        post chat_sessions_path(format: :json), params: { mode: "api", auto_approve: "true" }
+
+        expect(response).to have_http_status(:created)
+        expect(response.parsed_body["auto_approve"]).to be(true)
+        expect(ChatSession.order(:id).last).to be_auto_approve
+      end
+
       it "creates a session with popup metadata context" do
         post chat_sessions_path(format: :json), params: {
           mode: "api",
@@ -259,6 +267,17 @@ RSpec.describe "ChatSessions" do
         expect(response.body).to include("Archive")
       end
 
+      it "renders the auto-approve checkbox reflecting the session state" do
+        chat_session.update!(auto_approve: true)
+
+        get chat_session_path(chat_session)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include(%(name="chat_session[auto_approve]"))
+        expect(response.body).to include("Auto-approve actions")
+        expect(response.body).to include(%(checked="checked"))
+      end
+
       it "renders the popup variant for embedded requests" do
         chat_session.update!(
           metadata: {
@@ -342,6 +361,7 @@ RSpec.describe "ChatSessions" do
         expect(response.body).not_to include(%(name="chat_session[title]"))
         expect(response.body).not_to include(%(name="chat_session[runner_id]"))
         expect(response.body).not_to include(%(name="chat_session[model]"))
+        expect(response.body).not_to include(%(name="chat_session[auto_approve]"))
         expect(response.body).not_to include(%(name="content"))
         expect(response.body).not_to include("New Chat")
       end
@@ -417,6 +437,14 @@ RSpec.describe "ChatSessions" do
         patch chat_session_path(chat_session, format: :json), params: { model: "gpt-4o" }
         expect(response).to have_http_status(:ok)
         expect(chat_session.reload.model).to eq("gpt-4o")
+      end
+
+      it "updates the auto-approve flag and echoes it in the response" do
+        patch chat_session_path(chat_session, format: :json), params: { auto_approve: "true" }
+
+        expect(response).to have_http_status(:ok)
+        expect(response.parsed_body["auto_approve"]).to be(true)
+        expect(chat_session.reload).to be_auto_approve
       end
 
       it "updates values submitted under chat_session params" do
