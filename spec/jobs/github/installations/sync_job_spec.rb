@@ -27,10 +27,6 @@ RSpec.describe Github::Installations::SyncJob do
   end
 
   it "fetches the installation and upserts the record" do
-    # Brand-new install into a fresh org has no project to verify against —
-    # create a project owner first so the binding check passes.
-    create(:project, account: account, owner: "acme-corp", repo: "widgets")
-
     stub_request(:get, %r{/app/installations/#{installation_id}\z})
       .to_return(status: 200, body: installation_payload.to_json,
                  headers: { "Content-Type" => "application/json" })
@@ -39,7 +35,8 @@ RSpec.describe Github::Installations::SyncJob do
     described_class.perform_now(
       installation_id: installation_id,
       account_id: account.id,
-      setup_action: "install"
+      setup_action: "install",
+      trusted_callback: true
     )
 
     record = TenantContext.with_system_access do
@@ -76,10 +73,6 @@ RSpec.describe Github::Installations::SyncJob do
     }.not_to change(GithubInstallation, :count)
   end
 
-  # GitHub's setup URL `installation_id` is spoofable; CSRF state only proves
-  # the user clicked Paid's install button, not that they completed the
-  # GitHub-side install. We refuse to bind a callback-driven sync unless the
-  # JWT-fetched installation matches a signal we already trust.
   describe "callback binding verification" do
     let(:installation_url) { %r{/app/installations/#{installation_id}\z} }
 
@@ -87,6 +80,17 @@ RSpec.describe Github::Installations::SyncJob do
       stub_request(:get, installation_url)
         .to_return(status: 200, body: installation_payload.to_json,
                    headers: { "Content-Type" => "application/json" })
+    end
+
+    it "binds a trusted callback regardless of existing rows or projects (first-install)" do
+      expect {
+        described_class.perform_now(
+          installation_id: installation_id,
+          account_id: account.id,
+          setup_action: "install",
+          trusted_callback: true
+        )
+      }.to change(GithubInstallation, :count).by(1)
     end
 
     it "binds when the installation's account.login matches a project owner in the account" do
@@ -115,19 +119,31 @@ RSpec.describe Github::Installations::SyncJob do
       expect(existing.reload.account_login).to eq("acme-corp")
     end
 
-    it "refuses to bind a brand-new installation into an org with no projects (defer to webhook)" do
+    it "refuses to bind an untrusted callback into an org with no projects (defer to webhook)" do
       expect {
         described_class.perform_now(
           installation_id: installation_id,
           account_id: account.id,
-          setup_action: "install"
+          setup_action: "install",
+          trusted_callback: false
         )
       }.not_to change(GithubInstallation, :count)
     end
 
-    it "refuses to bind an installation whose account_login does not match any project owner in the account" do
+    it "refuses to bind an untrusted callback whose account_login does not match any project owner in the account" do
       create(:project, account: account, owner: "different-org", repo: "widgets")
 
+      expect {
+        described_class.perform_now(
+          installation_id: installation_id,
+          account_id: account.id,
+          setup_action: "install",
+          trusted_callback: false
+        )
+      }.not_to change(GithubInstallation, :count)
+    end
+
+    it "defaults to untrusted when trusted_callback is not passed" do
       expect {
         described_class.perform_now(
           installation_id: installation_id,

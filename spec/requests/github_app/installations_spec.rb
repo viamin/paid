@@ -63,7 +63,8 @@ RSpec.describe "GithubApp::Installations lifecycle" do
       }.to have_enqueued_job(Github::Installations::SyncJob).with(
         installation_id: 88_777_777,
         account_id: account.id,
-        setup_action: "install"
+        setup_action: "install",
+        trusted_callback: true
       )
 
       expect(response).to redirect_to(integrations_path)
@@ -96,7 +97,8 @@ RSpec.describe "GithubApp::Installations lifecycle" do
       }.to have_enqueued_job(Github::Installations::SyncJob).with(
         installation_id: 88_777_777,
         account_id: other_account.id,
-        setup_action: "install"
+        setup_action: "install",
+        trusted_callback: true
       )
     end
 
@@ -151,7 +153,8 @@ RSpec.describe "GithubApp::Installations lifecycle" do
       }.to have_enqueued_job(Github::Installations::SyncJob).with(
         installation_id: 88_777_777,
         account_id: account.id,
-        setup_action: "install"
+        setup_action: "install",
+        trusted_callback: false
       )
 
       expect(response).to redirect_to(integrations_path)

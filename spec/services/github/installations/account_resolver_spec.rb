@@ -100,5 +100,30 @@ RSpec.describe Github::Installations::AccountResolver do
 
       expect(resolved).to be_nil
     end
+
+    it "batches the project lookup into a single query regardless of repository count" do
+      create(:project, account: account, owner: "acme-corp", repo: "widgets")
+      create(:project, account: account, owner: "acme-corp", repo: "gadgets")
+      create(:project, account: account, owner: "acme-corp", repo: "sprockets")
+
+      query_count = 0
+      counter = ->(_name, _start, _finish, _id, payload) {
+        query_count += 1 if payload[:sql] =~ /projects/i && payload[:sql] !~ /SCHEMA|TRANSACTION/i
+      }
+      ActiveSupport::Notifications.subscribed(counter, "sql.active_record") do
+        described_class.call(
+          payload: installation_payload(
+            installation_id: 88_777_777,
+            payload_repositories: [
+              { "id" => 1, "full_name" => "acme-corp/widgets" },
+              { "id" => 2, "full_name" => "acme-corp/gadgets" },
+              { "id" => 3, "full_name" => "acme-corp/sprockets" }
+            ]
+          )
+        )
+      end
+
+      expect(query_count).to eq(1)
+    end
   end
 end

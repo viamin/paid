@@ -195,6 +195,7 @@ module Admin
         flash.now[:alert] =
           "GitHub App #{result.slug} registered, but the credentials could NOT be " \
           "saved automatically. Copy the values below to finish setup — GitHub will not show them again."
+        response.headers["Cache-Control"] = "no-store"
         render :show, status: :ok
       end
     end

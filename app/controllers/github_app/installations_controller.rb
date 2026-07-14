@@ -12,26 +12,27 @@ module GithubApp
   #      c. After install, GitHub redirects to
   #         `GET /github_app/callback?installation_id=...&setup_action=...&state=...`.
   #         The controller verifies the CSRF state, then enqueues
-  #         `Github::Installations::SyncJob`.
+  #         `Github::Installations::SyncJob` with `trusted_callback: true`.
   #
   #   2. The GitHub-initiated flow (post-install or post-update from a manifest
   #      App that has `setup_url` set, e.g. self-hosted deployments):
   #      GitHub redirects to `setup_url` with `installation_id` and
   #      `setup_action` but no `state`. The user lands here without having gone
   #      through `/github_app/install`, so the session has no state to verify.
-  #      In that case the callback skips the CSRF check but still defers to
-  #      `SyncJob`, which only binds when the JWT-fetched installation matches
-  #      a trusted signal (existing row or matching project owner). Otherwise
-  #      binding is deferred to the signed `installation` webhook.
+  #      In that case the callback skips the CSRF check but still enqueues
+  #      `SyncJob` with `trusted_callback: false`; `SyncJob` only binds when the
+  #      JWT-fetched installation matches a trusted signal (existing row or
+  #      matching project owner). Otherwise binding is deferred to the signed
+  #      `installation` webhook.
   #
   # Note: GitHub's setup URL `installation_id` parameter is spoofable — a
   # signed-in user could complete the local callback with an installation_id
   # they do not actually own. The CSRF `state` only proves the user clicked
   # Paid's install button, not that they completed the GitHub side of the
-  # flow. The actual binding is gated inside `SyncJob` against trusted
-  # signals (an existing `GithubInstallation` row, or a project owner in
-  # the account that matches the installation's `account.login`). When
-  # neither holds, the SyncJob defers binding to the signed `installation`
+  # flow. We therefore pass `trusted_callback:` to `SyncJob` so it can trust
+  # the binding only when CSRF state was verified here. Otherwise the binding
+  # is gated against existing rows or matching project owners inside `SyncJob`;
+  # when neither holds, `SyncJob` defers binding to the signed `installation`
   # webhook — the trusted path.
   #
   # Webhook-driven lifecycle updates (suspend, repositories added/removed,
@@ -83,7 +84,8 @@ module GithubApp
       Github::Installations::SyncJob.perform_later(
         installation_id: installation_id,
         account_id: account_id,
-        setup_action: setup_action
+        setup_action: setup_action,
+        trusted_callback: @install_state_verified == true
       )
 
       redirect_to integrations_path,
@@ -123,7 +125,10 @@ module GithubApp
       if install_state_value(stored, :issued_at).to_i < (Time.current - INSTALL_STATE_TTL).to_i
         clear_install_state!
         redirect_to integrations_path, alert: "GitHub App installation request expired. Please try again."
+        return
       end
+
+      @install_state_verified = true
     end
 
     def clear_install_state!

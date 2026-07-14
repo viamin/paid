@@ -51,11 +51,14 @@ module Github
       end
 
       def by_repositories
-        account_ids = TenantContext.with_system_access do
-          repository_pairs.flat_map do |owner, repo|
-            Project.where(owner: owner, repo: repo).pluck(:account_id)
-          end.uniq
+        pairs = repository_pairs.uniq
+        return nil if pairs.empty?
+
+        scope = pairs.reduce(Project.none) do |combined, (owner, repo)|
+          combined.or(Project.where(owner: owner, repo: repo))
         end
+
+        account_ids = TenantContext.with_system_access { scope.distinct.pluck(:account_id) }
 
         single_account(account_ids)
       end

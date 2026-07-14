@@ -165,6 +165,7 @@ RSpec.describe "Admin::GithubApp::Setup" do
       # the operator can finish setup after a read-only persistence failure.
       expect(response.body).to include(ERB::Util.html_escape(instructions))
       expect(response.body).to include("Finish setup manually")
+      expect(response.headers["Cache-Control"]).to eq("no-store")
     end
 
     it "rejects mismatched state" do
