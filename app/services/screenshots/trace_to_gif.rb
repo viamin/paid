@@ -100,7 +100,7 @@ module Screenshots
 
     def resolve_frames_dir(tmpdir)
       return extract_trace_frames(tmpdir) if @trace_path
-      return @frames_dir if @frames_dir
+      return materialize_frames_dir(@frames_dir, tmpdir) if @frames_dir
       return materialize_frames(tmpdir) if @frames
       return transcode_video(tmpdir) if @video_path
 
@@ -134,6 +134,21 @@ module Screenshots
 
       @frames.each_with_index do |src, idx|
         raise ArgumentError, "frame not found: #{src}" unless File.exist?(src)
+        FileUtils.cp(src, File.join(ordered_dir, format(DEFAULT_FRAME_PATTERN, idx + 1)))
+      end
+
+      ordered_dir
+    end
+
+    def materialize_frames_dir(source_dir, tmpdir)
+      raise ArgumentError, "frames_dir not found: #{source_dir}" unless File.directory?(source_dir)
+
+      pngs = Dir.glob(File.join(source_dir, "*.png")).sort
+      raise ConversionError, "frames_dir #{source_dir} contains no PNG frames" if pngs.empty?
+
+      ordered_dir = File.join(tmpdir, "ordered")
+      FileUtils.mkdir_p(ordered_dir)
+      pngs.each_with_index do |src, idx|
         FileUtils.cp(src, File.join(ordered_dir, format(DEFAULT_FRAME_PATTERN, idx + 1)))
       end
 

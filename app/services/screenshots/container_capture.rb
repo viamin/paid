@@ -382,39 +382,82 @@ module Screenshots
       return unless Screenshots::Storage.configured?
 
       storage = Screenshots::Storage.new
-      uploaded = screenshot_paths.map do |path|
-        route_name = File.basename(path, ".png")
-        {
-          route_name: route_name,
-          summary: @hints.dig(route_name, "summary"),
-          url: storage.upload(
-            file_path: path,
-            org: project.owner,
-            repo: project.repo,
-            pr_number: agent_run.pull_request_number,
-            commit_sha: agent_run.result_commit_sha || agent_run.base_commit_sha || agent_run.branch_name,
-            route_name: route_name
-          )
-        }
-      end
+      uploaded = screenshot_paths.map { |path| upload_screenshot(storage, path) }
 
-      previous = storage.previous_screenshots(
+      previous_artifacts = storage.previous_artifacts(
         org: project.owner,
         repo: project.repo,
         pr_number: agent_run.pull_request_number,
-        exclude_sha: agent_run.result_commit_sha || agent_run.base_commit_sha || agent_run.branch_name
+        exclude_sha: commit_sha
       )
 
       Screenshots::PrComment.call(
         github_client: project.client,
         repo: project.full_name,
         pr_number: agent_run.pull_request_number,
-        commit_sha: agent_run.result_commit_sha || agent_run.base_commit_sha || agent_run.branch_name,
+        commit_sha: commit_sha,
         screenshots: uploaded,
-        previous_screenshots: previous
+        previous_screenshots: previous_artifacts.transform_values { |formats| formats[:png] }.compact
       )
 
       @published_url = uploaded.first&.fetch(:url, nil)
+    end
+
+    def upload_screenshot(storage, path)
+      route_name = File.basename(path, ".png")
+      screenshot = {
+        route_name: route_name,
+        summary: @hints.dig(route_name, "summary"),
+        url: storage.upload(
+          file_path: path,
+          org: project.owner,
+          repo: project.repo,
+          pr_number: agent_run.pull_request_number,
+          commit_sha: commit_sha,
+          route_name: route_name
+        )
+      }
+
+      screenshot.merge(export_artifacts(storage, path, route_name))
+    end
+
+    def export_artifacts(storage, path, route_name)
+      Dir.mktmpdir("screenshots-export-") do |tmpdir|
+        video_path = File.join(tmpdir, "#{route_name}.webm")
+        gif_path = File.join(tmpdir, "#{route_name}.gif")
+
+        Screenshots::TraceToVideo.call(frames: [ path ], output_path: video_path)
+        Screenshots::TraceToGif.call(frames: [ path ], output_path: gif_path)
+
+        {
+          gif_url: storage.upload_artifact(
+            file_path: gif_path,
+            org: project.owner,
+            repo: project.repo,
+            pr_number: agent_run.pull_request_number,
+            commit_sha: commit_sha,
+            route_name: route_name
+          ),
+          video_url: storage.upload_artifact(
+            file_path: video_path,
+            org: project.owner,
+            repo: project.repo,
+            pr_number: agent_run.pull_request_number,
+            commit_sha: commit_sha,
+            route_name: route_name
+          ),
+          video_filename: "#{route_name}.webm"
+        }
+      end
+    rescue Screenshots::TraceToVideo::ConversionError, Screenshots::TraceToGif::ConversionError => e
+      logger.warn(
+        message: "screenshots.export_failed",
+        project_id: project.id,
+        agent_run_id: agent_run.id,
+        route_name: route_name,
+        error: e.message
+      )
+      {}
     end
 
     def write_capture_runner
@@ -593,6 +636,10 @@ module Screenshots
 
     def collected_screenshots
       Dir.glob(File.join(@tmpdir.to_s, OUTPUT_DIR, "*.png")).sort
+    end
+
+    def commit_sha
+      agent_run.result_commit_sha || agent_run.base_commit_sha || agent_run.branch_name
     end
 
     def read_file(relative_path)

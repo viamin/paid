@@ -211,7 +211,6 @@ module Screenshots
 
     def format_comparison_row(screenshot)
       name = screenshot[:route_name]
-      after_url = screenshot[:url]
       before_url = @previous_screenshots[name]
 
       before_cell = before_url ? "![before-#{name}](#{before_url})" : "_New page_"

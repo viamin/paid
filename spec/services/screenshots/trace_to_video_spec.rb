@@ -128,6 +128,36 @@ RSpec.describe Screenshots::TraceToVideo do
       }.to raise_error(ArgumentError, /frame not found/)
     end
 
+    it "renumbers lexicographically ordered frames from frames_dir before invoking ffmpeg" do
+      frames_dir = File.join(tmpdir, "frames-dir")
+      FileUtils.mkdir_p(frames_dir)
+      write_png(File.join(frames_dir, "frame-10.png"))
+      write_png(File.join(frames_dir, "frame-2.png"))
+
+      ordered_entries = nil
+      allow(Open3).to receive(:capture3) do |*cmd|
+        next nil unless cmd.first == "ffmpeg"
+
+        pattern = cmd[cmd.index("-i") + 1]
+        ordered_entries = Dir.children(File.dirname(pattern)).sort
+        File.write(output_path, "fake webm data")
+        [ "", "", ffmpeg_success ]
+      end
+
+      described_class.call(frames_dir: frames_dir, output_path: output_path, logger: logger)
+
+      expect(ordered_entries).to include("00001.png", "00002.png")
+    end
+
+    it "raises ConversionError when frames_dir contains no PNGs" do
+      frames_dir = File.join(tmpdir, "empty-frames-dir")
+      FileUtils.mkdir_p(frames_dir)
+
+      expect {
+        described_class.call(frames_dir: frames_dir, output_path: output_path)
+      }.to raise_error(Screenshots::TraceToVideo::ConversionError, /contains no PNG frames/)
+    end
+
     it "extracts embedded PNGs from a Playwright trace zip when given trace_path" do
       trace_zip = File.join(tmpdir, "trace.zip")
       File.write(trace_zip, "")

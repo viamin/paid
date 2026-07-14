@@ -203,6 +203,36 @@ RSpec.describe Screenshots::TraceToGif do
       }.to raise_error(ArgumentError, /frame not found/)
     end
 
+    it "renumbers lexicographically ordered frames from frames_dir before invoking ffmpeg" do
+      frames_dir = File.join(tmpdir, "frames-dir")
+      FileUtils.mkdir_p(frames_dir)
+      write_png(File.join(frames_dir, "frame-10.png"))
+      write_png(File.join(frames_dir, "frame-2.png"))
+
+      ordered_entries = nil
+      allow(Open3).to receive(:capture3) do |*cmd|
+        next nil unless cmd.first == "ffmpeg"
+
+        pattern = cmd[cmd.index("-i") + 1]
+        ordered_entries ||= Dir.children(File.dirname(pattern)).sort
+        File.write(output_path, "GIF89a-fake-data")
+        [ "", "", ffmpeg_success ]
+      end
+
+      described_class.call(frames_dir: frames_dir, output_path: output_path, logger: logger)
+
+      expect(ordered_entries).to include("00001.png", "00002.png")
+    end
+
+    it "raises ConversionError when frames_dir contains no PNGs" do
+      frames_dir = File.join(tmpdir, "empty-frames-dir")
+      FileUtils.mkdir_p(frames_dir)
+
+      expect {
+        described_class.call(frames_dir: frames_dir, output_path: output_path)
+      }.to raise_error(Screenshots::TraceToGif::ConversionError, /contains no PNG frames/)
+    end
+
     it "logs a structured info event after successful conversion" do
       allow(Open3).to receive(:capture3) do |*cmd|
         next nil unless cmd.first == "ffmpeg"

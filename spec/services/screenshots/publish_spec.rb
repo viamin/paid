@@ -20,6 +20,24 @@ RSpec.describe Screenshots::Publish do
   let(:pr_number) { 42 }
   let(:commit_sha) { "abc1234def5678" }
   let(:comment) { Struct.new(:id).new(1) }
+  let(:homepage_artifacts) do
+    {
+      route_name: "homepage",
+      url: "https://s3.example.com/homepage.png?source=homepage.png",
+      gif_url: "https://s3.example.com/homepage.gif",
+      video_url: "https://s3.example.com/homepage.webm",
+      video_filename: "homepage.webm"
+    }
+  end
+  let(:dashboard_artifacts) do
+    {
+      route_name: "dashboard",
+      url: "https://s3.example.com/dashboard.png?source=dashboard.png",
+      gif_url: "https://s3.example.com/dashboard.gif",
+      video_url: "https://s3.example.com/dashboard.webm",
+      video_filename: "dashboard.webm"
+    }
+  end
 
   describe "#call" do
     context "with screenshots" do
@@ -31,14 +49,28 @@ RSpec.describe Screenshots::Publish do
       end
 
       let(:previous_screenshots) do
-        { "homepage" => "https://s3.example.com/prev-homepage.png" }
+        { "homepage" => { png: "https://s3.example.com/prev-homepage.png" } }
       end
 
       before do
+        allow(storage).to receive_messages(
+          upload: nil,
+          previous_artifacts: previous_screenshots
+        )
         allow(storage).to receive(:upload) do |file_path:, route_name:, **|
           "https://s3.example.com/#{route_name}.png?source=#{File.basename(file_path)}"
         end
-        allow(storage).to receive(:previous_screenshots).and_return(previous_screenshots)
+        allow(storage).to receive(:upload_artifact) do |file_path:, route_name:, **|
+          "https://s3.example.com/#{route_name}#{File.extname(file_path)}"
+        end
+        allow(Screenshots::TraceToVideo).to receive(:call) do |frames:, output_path:, **|
+          File.write(output_path, "fake webm for #{File.basename(frames.first)}")
+          output_path
+        end
+        allow(Screenshots::TraceToGif).to receive(:call) do |frames:, output_path:, **|
+          File.write(output_path, "GIF89a for #{File.basename(frames.first)}")
+          output_path
+        end
         allow(Screenshots::PrComment).to receive(:call).and_return(comment)
         service.call
       end
@@ -62,17 +94,26 @@ RSpec.describe Screenshots::Publish do
         )
       end
 
+      it "exports and uploads per-route GIF and video artifacts" do
+        expect(Screenshots::TraceToVideo).to have_received(:call).with(
+          hash_including(frames: [ "/tmp/screenshots/homepage.png" ])
+        )
+        expect(Screenshots::TraceToGif).to have_received(:call).with(
+          hash_including(frames: [ "/tmp/screenshots/dashboard.png" ])
+        )
+        expect(storage).to have_received(:upload_artifact).at_least(:once)
+      end
+
       it "posts the uploaded screenshots with previous screenshots to the PR comment" do
+        expected_screenshots = [ homepage_artifacts, dashboard_artifacts ]
+
         expect(Screenshots::PrComment).to have_received(:call).with(
           github_client: github_client,
           repo: repo,
           pr_number: pr_number,
           commit_sha: commit_sha,
-          screenshots: [
-            { route_name: "homepage", url: "https://s3.example.com/homepage.png?source=homepage.png" },
-            { route_name: "dashboard", url: "https://s3.example.com/dashboard.png?source=dashboard.png" }
-          ],
-          previous_screenshots: previous_screenshots
+          screenshots: expected_screenshots,
+          previous_screenshots: { "homepage" => "https://s3.example.com/prev-homepage.png" }
         )
       end
 
@@ -86,6 +127,7 @@ RSpec.describe Screenshots::Publish do
 
       before do
         allow(storage).to receive(:upload)
+        allow(storage).to receive(:upload_artifact)
         allow(Screenshots::PrComment).to receive(:call).and_return(comment)
       end
 
@@ -93,6 +135,7 @@ RSpec.describe Screenshots::Publish do
         service.call
 
         expect(storage).not_to have_received(:upload)
+        expect(storage).not_to have_received(:upload_artifact)
         expect(Screenshots::PrComment).to have_received(:call).with(
           github_client: github_client,
           repo: repo,
@@ -133,6 +176,29 @@ RSpec.describe Screenshots::Publish do
       it "raises a descriptive error" do
         expect { service.call }
           .to raise_error(Screenshots::Publish::PublishError, /owner\/name/)
+      end
+    end
+
+    context "when export conversion fails" do
+      let(:screenshot_paths) { [ "/tmp/screenshots/homepage.png" ] }
+
+      before do
+        allow(storage).to receive_messages(
+          upload: "https://s3.example.com/homepage.png",
+          previous_artifacts: {}
+        )
+        allow(Screenshots::TraceToVideo).to receive(:call).and_raise(Screenshots::TraceToVideo::ConversionError, "ffmpeg missing")
+        allow(Screenshots::PrComment).to receive(:call).and_return(comment)
+      end
+
+      it "falls back to static PNG publishing" do
+        service.call
+
+        expect(Screenshots::PrComment).to have_received(:call).with(
+          hash_including(
+            screenshots: [ { route_name: "homepage", url: "https://s3.example.com/homepage.png" } ]
+          )
+        )
       end
     end
   end
