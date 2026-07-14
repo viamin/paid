@@ -99,15 +99,20 @@ AgentHarness::Providers::Pi.prepend(PaidAgentHarnessPiRuntimePatch) unless
 # is written inside the agent container at the same path passed to
 # `--mcp-config=...`.
 #
-# This covers both:
-# - the empty-server suppression path, where Paid must pass {"mcpServers": {}}
-#   explicitly to disable Claude's .mcp.json auto-discovery
-# - the configured-server path, where agent-harness otherwise writes a host-side
-#   tempfile during plan construction and returns a path that does not exist
-#   inside the agent container
+# agent-harness >= 0.20.0 already (a) suppresses Claude's .mcp.json auto-discovery
+# when no servers are configured and (b) emits `--mcp-config=<path>` in the
+# equals form, so the legacy flag-form patch is no longer required. This patch
+# still has to remain because agent-harness's `McpConfigFileSupport` writes the
+# MCP config to a *host-side* tempfile, and Paid's `Containers::HarnessExecutor`
+# is not a `DockerCommandExecutor`, so the upstream path is never visible inside
+# the agent container. We intercept the resulting `--mcp-config=<host_path>`
+# from upstream's `Anthropic#build_command`, rename it to a stable container
+# path, and emit a `file_writes` entry that materializes the same content inside
+# the container via Paid's `apply_execution_preparation`.
 #
-# Keep this patch in place until agent-harness materializes MCP config files for
-# all Anthropic execution paths via ExecutionPreparation (or equivalent).
+# Until agent-harness exposes a DockerCommandExecutor-shaped bridge for
+# non-Docker executors, or the upstream MCP config support acquires a
+# container-path injection hook, Paid must keep this materialization local.
 module PaidAgentHarnessAnthropicMcpConfigMaterializationPatch
   def send_message(prompt:, **options)
     super(prompt:, **with_explicit_empty_mcp_servers(options))
@@ -184,39 +189,6 @@ end
 AgentHarness::Providers::Anthropic.prepend(PaidAgentHarnessAnthropicMcpConfigMaterializationPatch) unless
   AgentHarness::Providers::Anthropic < PaidAgentHarnessAnthropicMcpConfigMaterializationPatch
 
-# Force Claude's --mcp-config flag into the `--flag=value` form.
-#
-# The Claude CLI declares `--mcp-config <configs...>` as a *variadic* option, so
-# the space-separated form ("--mcp-config", path) that agent-harness emits right
-# before the positional prompt makes the CLI greedily consume the prompt as a
-# second config path:
-#
-#   claude ... --mcp-config /tmp/cfg.json "Reply with exactly OK."
-#   => Error: Invalid MCP configuration:
-#      MCP config file not found: /workspace/Reply with exactly OK.
-#
-# The `=value` form captures exactly one path and leaves the prompt as a clean
-# positional argument. This covers the with-servers path on 0.18.2 AND every
-# invocation on >= 0.19.0, where the gem always passes --mcp-config (the #225
-# suppression fix) but still with the buggy space-form (confirmed through v0.20.0).
-#
-# Intentionally NOT folded under the < 0.19.0 suppression gate above: that gate
-# drops exactly when the gem starts emitting this flag everywhere, which is when
-# the bug bites hardest. The guard below makes this a no-op once the gem emits a
-# single equals-form token, so it self-deactivates and is safe to leave in place.
-# TODO(#2435): remove once agent-harness ships the =value form (viamin/agent-harness#229).
-module PaidAgentHarnessAnthropicMcpConfigFlagFormPatch
-  def build_mcp_flags(mcp_servers, working_dir: nil)
-    flags = super
-    return flags unless flags.length == 2 && flags.first == "--mcp-config"
-
-    [ "--mcp-config=#{flags.last}" ]
-  end
-end
-
-AgentHarness::Providers::Anthropic.prepend(PaidAgentHarnessAnthropicMcpConfigFlagFormPatch) unless
-  AgentHarness::Providers::Anthropic < PaidAgentHarnessAnthropicMcpConfigFlagFormPatch
-
 # Classify `refresh_token_reused` as :auth_expired for the Anthropic/Claude provider.
 #
 # Claude's OAuth refresh tokens are single-use and rotating. When two containers
@@ -227,8 +199,13 @@ AgentHarness::Providers::Anthropic.prepend(PaidAgentHarnessAnthropicMcpConfigFla
 # treated as auth-expired rather than a generic execution error — triggering the
 # standard auth_expired fallback path rather than retrying indefinitely.
 #
+# The matching `/refresh_token_reused/i` pattern already exists on the Codex
+# provider upstream (PR viamin/agent-harness#108), but the Anthropic provider
+# still does not classify the same signal. Until a companion pattern lands on
+# `AgentHarness::Providers::Anthropic#error_classification_patterns`, Paid keeps
+# the classification local.
 # TODO(viamin/agent-harness#265): remove once the upstream Anthropic provider
-# adds this pattern natively.
+# adds the refresh_token_reused auth_expired pattern natively.
 module PaidAgentHarnessAnthropicRefreshTokenReusedPatch
   def error_classification_patterns
     result = super
