@@ -99,3 +99,6 @@ application.register("theme", ThemeController)
 
 import TooltipController from "./tooltip_controller"
 application.register("tooltip", TooltipController)
+
+import TraceViewerController from "./trace_viewer_controller"
+application.register("trace-viewer", TraceViewerController)
