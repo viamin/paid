@@ -30,6 +30,10 @@ servers:
     hosts:
       - 192.168.0.1
     cmd: bin/jobs
+    options:
+      # GoodJob runs Docker-backed maintenance/reconciliation jobs in this role.
+      volume:
+        - /var/run/docker.sock:/var/run/docker.sock
     env:
       clear:
         # GoodJob worker thread pool size (default: 11). Must not exceed DB_POOL.
@@ -48,6 +52,11 @@ servers:
     hosts:
       - 192.168.0.1
     cmd: bin/temporal_worker
+    options:
+      # RunAgentActivity provisions sibling containers via the local Docker backend
+      # unless CONTAINER_BACKEND points at a remote host.
+      volume:
+        - /var/run/docker.sock:/var/run/docker.sock
     env:
       clear:
         TEMPORAL_WORKER_MODE: agent
