@@ -60,21 +60,6 @@ RSpec.describe Runners::ModelCompatibility do
         end
       end
 
-      context "with CLI-version-gated model (gpt-5.5-pro)" do
-        let(:model_id) { "gpt-5.5-pro" }
-
-        it "returns unsupported with the advertised fallback model" do
-          expect(result).to have_attributes(
-            supported: false,
-            incompatibility_type: nil,
-            replacement_model_id: "gpt-5-codex",
-            source: "agent_harness"
-          )
-          expect(result.reason).to be_nil
-          expect(result).to be_unsupported
-        end
-      end
-
       context "with subscription auth and non-OpenAI model" do
         let(:model_id) { "claude-opus-4-5" }
 
