@@ -880,10 +880,11 @@ RSpec.describe Project do
         expect(project.trusted_github_user?(bot_login)).to be false
       end
 
-      it "adds dependency-update bot authors only when dependabot automation is enabled" do
+      it "does not add dependency-update bot authors to global author trust" do
         project.auto_merge_mode = "dependabot_only"
 
-        expect(project.trusted_github_author_logins).to include("dependabot[bot]", "renovate[bot]")
+        expect(project.trusted_github_author_logins).not_to include("dependabot[bot]", "renovate[bot]")
+        expect(project.trusted_github_author?("dependabot[bot]")).to be false
         expect(project.trusted_github_user?("dependabot[bot]")).to be false
       end
 
@@ -928,10 +929,10 @@ RSpec.describe Project do
           auto_merge_mode: "dependabot_only")
       end
 
-      it "trusts dependabot as an author so its PRs are eligible for fix/merge runs" do
-        expect(project.trusted_github_author?("dependabot[bot]")).to be true
-        expect(project.trusted_github_author?("renovate[bot]")).to be true
-        expect(project.trusted_github_author?("dependabot-preview[bot]")).to be true
+      it "does NOT trust dependabot as a global author" do
+        expect(project.trusted_github_author?("dependabot[bot]")).to be false
+        expect(project.trusted_github_author?("renovate[bot]")).to be false
+        expect(project.trusted_github_author?("dependabot-preview[bot]")).to be false
       end
 
       it "does NOT trust dependabot as a comment author (prevents prompt injection)" do
@@ -950,8 +951,8 @@ RSpec.describe Project do
             auto_merge_mode: "all")
         end
 
-        it "also trusts dependabot as an author" do
-          expect(project.trusted_github_author?("dependabot[bot]")).to be true
+        it "still does not trust dependabot as a global author" do
+          expect(project.trusted_github_author?("dependabot[bot]")).to be false
         end
       end
     end

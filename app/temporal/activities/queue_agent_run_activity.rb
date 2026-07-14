@@ -26,10 +26,8 @@ module Activities
       # not reuse the issue-trust gate below. They are authorized upstream by
       # ScanPaidPrsActivity#authorized_for_automation_scan? (trusted authors,
       # dependency-update bots, or trusted-user-added labels) or by
-      # LabelPolicy#authorized_for_trigger?. That broader author trust is what
-      # allows create_pr follow-ups to repair Dependabot and other third-party
-      # bot PRs after the automation label is applied. BuildForPr still filters
-      # comment bodies independently, so this bypass only affects run creation.
+      # LabelPolicy#authorized_for_trigger?. BuildForPr still filters comment
+      # bodies independently, so this bypass only affects run creation.
       pr_followup_run = source_pull_request_number.present?
       if issue_requires_trust?(goal) && issue&.untrusted? && !pr_followup_run
         logger.info(

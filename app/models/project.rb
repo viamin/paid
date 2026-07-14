@@ -148,11 +148,10 @@ class Project < ApplicationRecord
     [ "All PRs", "all" ]
   ].freeze
 
-  # Bots whose PRs are trusted for automation when the project is configured
-  # to auto-merge dependabot PRs. Their output is structured and predictable,
-  # so granting author trust (not comment trust — #trusted_github_user?
-  # deliberately excludes bots) is safe and enables the full scan → fix →
-  # merge loop on their PRs.
+  # Bots whose PRs may be admitted by scoped automation paths when the project
+  # is configured to auto-merge dependency updates. They are deliberately not
+  # added to #trusted_github_author_logins because that global author trust also
+  # controls issue sync, auto-pick, and prompt-building eligibility.
   DEPENDENCY_UPDATE_BOT_AUTHORS = %w[
     dependabot[bot]
     dependabot-preview[bot]
@@ -487,12 +486,10 @@ class Project < ApplicationRecord
   # for Paid to pick up and work on it. The human allowlist plus, for GitHub
   # App projects, the app's own bot identity (implicit, never stored in
   # allowed_github_usernames), so Paid can act on issues/PRs its own bot
-  # opens. When dependabot auto-merge is enabled this also admits the
-  # dependency-update bot author set for AUTHORSHIP trust only, so automation
-  # scans can queue follow-up repair runs on those PRs. Broader than
-  # #trusted_github_user? on purpose: author trust controls pickup/queueing,
-  # while comment trust stays human-only. All logins are downcased for
-  # case-insensitive comparison.
+  # opens. Broader than #trusted_github_user? on purpose: author trust controls
+  # pickup/queueing, while comment trust stays human-only. Dependency-update
+  # bots are admitted by scoped PR-scan authorization instead of this global
+  # list. All logins are downcased for case-insensitive comparison.
   #
   # Uses github_author_login (the "[bot]" form, e.g. "paid-agents[bot]"),
   # which is the only login GitHub ever reports as the author of app-created
@@ -503,7 +500,6 @@ class Project < ApplicationRecord
     logins = Array(allowed_github_usernames).filter_map { |name| name.to_s.downcase.presence }
     bot_author = github_author_login&.downcase
     logins << bot_author if bot_author
-    logins.concat(DEPENDENCY_UPDATE_BOT_AUTHORS) if auto_merge_dependabot?
     logins.uniq
   end
 
