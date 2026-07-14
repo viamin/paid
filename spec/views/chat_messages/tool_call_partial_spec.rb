@@ -42,7 +42,9 @@ RSpec.describe "chat_messages/_tool_call", :no_db, type: :view do
   it "collapses completed tool results by default" do
     render partial: "chat_messages/tool_call", locals: { message: tool_message }
 
-    expect(rendered).to include("grep_repo · result · 3 matches")
+    expect(rendered).to include("grep_repo")
+    expect(rendered).to include("3 matches")
+    expect(rendered).to include("result")
     expect(rendered).not_to match(/<details[^>]*open/)
   end
 

@@ -76,11 +76,11 @@ module ChatSessionsHelper
   def chat_message_bubble_classes(message)
     case message.role
     when "user"
-      "ml-auto max-w-3xl rounded-lg rounded-br-sm bg-gray-900 px-4 py-3 text-sm text-white shadow-sm"
+      "ml-auto max-w-2xl rounded-2xl rounded-br-md bg-gray-950 px-5 py-3.5 text-sm text-white shadow-sm"
     when "assistant"
-      "max-w-3xl rounded-lg rounded-bl-sm bg-white px-4 py-3 text-sm text-gray-900 shadow-sm ring-1 ring-gray-200"
+      "max-w-3xl px-0 py-1 text-[15px] text-gray-900"
     when "tool"
-      "max-w-3xl rounded-lg border border-dashed border-blue-200 bg-blue-50 px-4 py-3 text-sm text-gray-800"
+      "max-w-3xl px-0 py-1 text-sm text-gray-700"
     else
       "mx-auto max-w-2xl rounded-md bg-white px-4 py-2 text-center text-xs font-medium text-gray-500 ring-1 ring-gray-200"
     end
@@ -91,6 +91,12 @@ module ChatSessionsHelper
     return "flex justify-center" if message.role == "system"
 
     "flex justify-start"
+  end
+
+  def chat_message_meta_classes(message)
+    return "mb-2 flex items-center justify-end gap-2" if message.role == "user"
+
+    "mb-3 flex items-center gap-2"
   end
 
   def chat_message_label(message)
@@ -139,16 +145,20 @@ module ChatSessionsHelper
   end
 
   def chat_tool_status_classes(message)
-    CHAT_TOOL_STATUS_BADGES.fetch(message.tool_status, message.role == "tool" ? "bg-blue-100 text-blue-700" : "bg-blue-100 text-blue-700")
+    CHAT_TOOL_STATUS_BADGES.fetch(message.tool_status, "bg-gray-100 text-gray-600")
+  end
+
+  def chat_tool_payload_excerpt(message)
+    payload = chat_tool_payload(message.role == "tool" ? (message.tool_result || message.content) : message.tool_arguments)
+    if (plan = chat_configuration_profile_plan(payload))
+      return configuration_profile_plan_summary(plan)
+    end
+
+    chat_tool_payload_summary(payload)
   end
 
   def chat_tool_summary(message)
-    payload = chat_tool_payload(message.role == "tool" ? (message.tool_result || message.content) : message.tool_arguments)
-    if (plan = chat_configuration_profile_plan(payload))
-      return [ message.tool_name.presence || "Unknown tool", chat_tool_status_label(message), configuration_profile_plan_summary(plan) ].join(" · ")
-    end
-
-    summary = chat_tool_payload_summary(payload)
+    summary = chat_tool_payload_excerpt(message)
     [ message.tool_name.presence || "Unknown tool", chat_tool_status_label(message), summary ].compact.join(" · ")
   end
 
