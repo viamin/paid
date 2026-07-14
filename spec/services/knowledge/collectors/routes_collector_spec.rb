@@ -734,4 +734,64 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
       end
     end
   end
+
+  describe "Phoenix router parsing" do
+    let(:scan_path) { Dir.mktmpdir("phoenix-routes") }
+    let(:collector) do
+      described_class.new(
+        project: project,
+        project_version: project_version,
+        collector_run: collector_run,
+        options: { scan_path: scan_path }
+      )
+    end
+
+    before do
+      FileUtils.mkdir_p(File.join(scan_path, "lib/demo_web"))
+      File.write(File.join(scan_path, "mix.exs"), "defmodule Demo.MixProject do\n  defp deps, do: [{:phoenix, \"~> 1.7\"}]\nend\n")
+      File.write(File.join(scan_path, "lib/demo_web/router.ex"), <<~ROUTER)
+        defmodule DemoWeb.Router do
+          use DemoWeb, :router
+
+          scope "/", DemoWeb do
+            get "/", PageController, :home
+            live "/dashboard", DashboardLive, :index
+            post "/widgets", WidgetController, :create
+            resources "/reports", ReportController
+          end
+        end
+      ROUTER
+    end
+
+    after do
+      FileUtils.rm_rf(scan_path)
+    end
+
+    it "collects routes from Phoenix router macros without running Rails commands" do
+      expect(collector).not_to receive(:run_command)
+
+      artifacts = collector.collect
+
+      expect(artifacts.map { |artifact| artifact[:identifier] }).to include(
+        "GET /",
+        "GET /dashboard",
+        "POST /widgets",
+        "GET /reports"
+      )
+      expect(artifacts).to all(include(scope_path: "lib/demo_web/router.ex"))
+    end
+
+    it "skips instead of falling back when an explicit routes_file path is missing" do
+      explicit_collector = described_class.new(
+        project: project,
+        project_version: project_version,
+        collector_run: collector_run,
+        options: { scan_path: scan_path, routes_file: File.join(scan_path, "tmp/missing-routes.txt") }
+      )
+
+      expect { explicit_collector.collect }.to raise_error(
+        Knowledge::SkipCollector, /routes_file not found or empty/
+      )
+    end
+  end
 end

@@ -348,7 +348,7 @@ RSpec.describe Screenshots::ConfigParser do
       }.to raise_error(Screenshots::ConfigError, /driver must be one of: playwright, cuprite/)
     end
 
-    it "rejects an unknown framework" do
+    it "accepts Phoenix as a known framework" do
       write_config(repo_dir, <<~YAML)
         framework: phoenix
         routes:
@@ -356,9 +356,9 @@ RSpec.describe Screenshots::ConfigParser do
             name: homepage
       YAML
 
-      expect {
-        described_class.from_repo_path(repo_dir, project: project)
-      }.to raise_error(Screenshots::ConfigError, /framework must be one of: rails, nextjs, django, generic/)
+      config = described_class.from_repo_path(repo_dir, project: project)
+
+      expect(config.routes.map(&:path)).to eq([ "/" ])
     end
 
     it "rejects empty routes" do

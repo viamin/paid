@@ -26,6 +26,13 @@ RSpec.describe Screenshots::FrameworkPatterns do
       expect(result[:patterns]).not_to be_empty
     end
 
+    it "returns Phoenix patterns" do
+      result = described_class.for(:phoenix)
+
+      expect(result[:patterns]).to be_an(Array)
+      expect(result[:patterns]).not_to be_empty
+    end
+
     it "returns generic patterns" do
       result = described_class.for(:generic)
 
@@ -117,6 +124,19 @@ RSpec.describe Screenshots::FrameworkPatterns do
 
     it "matches Svelte components" do
       expect(patterns[:patterns].any? { |p| p.match?("src/routes/+page.svelte") }).to be true
+    end
+  end
+
+  describe "Phoenix patterns" do
+    let(:patterns) { described_class.for(:phoenix) }
+
+    it "matches LiveView modules" do
+      expect(patterns[:patterns].any? { |p| p.match?("lib/color_matching_web/live/match_live.ex") }).to be true
+    end
+
+    it "matches Phoenix assets" do
+      expect(patterns[:patterns].any? { |p| p.match?("assets/js/app.js") }).to be true
+      expect(patterns[:patterns].any? { |p| p.match?("assets/css/app.css") }).to be true
     end
   end
 end

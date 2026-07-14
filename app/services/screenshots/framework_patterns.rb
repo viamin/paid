@@ -72,6 +72,18 @@ module Screenshots
       exclusions: [].freeze
     }.freeze
 
+    PHOENIX = {
+      patterns: [
+        %r{\Alib/[^/]+_web/live/},
+        %r{\Alib/[^/]+_web/controllers/},
+        %r{\Alib/[^/]+_web/components/},
+        %r{\Alib/[^/]+_web/templates/},
+        %r{\Aassets/js/},
+        %r{\Aassets/css/}
+      ].freeze,
+      exclusions: [].freeze
+    }.freeze
+
     GENERIC = {
       patterns: [
         %r{\.(?:html|css|scss|less|sass|vue|jsx|tsx|svelte)\z},
@@ -89,6 +101,7 @@ module Screenshots
       rails: RAILS,
       nextjs: NEXTJS,
       django: DJANGO,
+      phoenix: PHOENIX,
       generic: GENERIC
     }.freeze
 
