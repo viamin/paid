@@ -47,6 +47,7 @@ class Issue < ApplicationRecord
   # still matched in the title pattern below, where the phrase is a
   # stronger tracker signal.
   TRACKER_BODY_HEADING_PATTERN = /^[#]{1,6}\s+.*\b(?:tracker|completion\s+criteria|phase\s+tracker|meta\s+issue)\b/i
+  STRONG_TRACKER_BODY_HEADING_PATTERN = /^[#]{1,6}\s+.*\b(?:tracker|phase\s+tracker|meta\s+issue)\b/i
   # Large offset so synthetic github_issue_id values never collide with real
   # GitHub issue IDs (which currently range in the low billions).
   SYNTHETIC_CODE_SCANNING_ID_OFFSET = 800_000_000_000
@@ -192,6 +193,10 @@ class Issue < ApplicationRecord
 
   def tracker_issue?
     TRACKER_PATTERN.match?(title.to_s) || TRACKER_BODY_HEADING_PATTERN.match?(body.to_s)
+  end
+
+  def strong_tracker_body_heading?
+    STRONG_TRACKER_BODY_HEADING_PATTERN.match?(body.to_s)
   end
 
   def body_referenced_issue_numbers

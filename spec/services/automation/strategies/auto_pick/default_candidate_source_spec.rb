@@ -363,6 +363,18 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
 
       expect(blocked).not_to include(issue.id)
     end
+
+    it "blocks a strong body-heading-matched tracker with no body references" do
+      issue = create(:issue, project: project, github_number: 1,
+        title: "Implement feature X",
+        body: "## Meta issue\nTracks all items")
+
+      scope = Issue.where(id: issue.id)
+
+      blocked = described_class.tracker_ids_blocked_by_open_references(scope, project)
+
+      expect(blocked).to include(issue.id)
+    end
   end
 
   describe "interface compliance" do

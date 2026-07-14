@@ -173,12 +173,14 @@ module Automation
               next unless issue.tracker_issue?
 
               refs = issue.body_referenced_issue_numbers - [ issue.github_number ]
-              [ issue.id, refs, Issue::TRACKER_PATTERN.match?(issue.title.to_s) ]
+              [ issue.id, refs, Issue::TRACKER_PATTERN.match?(issue.title.to_s), issue.strong_tracker_body_heading? ]
             end
             return [] if refs_by_issue.empty?
 
-            no_ref_ids = refs_by_issue.filter_map { |id, refs, title_match| id if refs.empty? && title_match }
-            with_refs = refs_by_issue.filter_map { |id, refs, _| [ id, refs ] if refs.present? }
+            no_ref_ids = refs_by_issue.filter_map do |id, refs, title_match, strong_body_match|
+              id if refs.empty? && (title_match || strong_body_match)
+            end
+            with_refs = refs_by_issue.filter_map { |id, refs, _, _| [ id, refs ] if refs.present? }
             return no_ref_ids if with_refs.empty?
 
             all_referenced_numbers = with_refs.flat_map(&:last).uniq
