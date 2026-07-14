@@ -15,10 +15,9 @@ module GithubTokens
 
       paused_projects.find_each do |project|
         next unless GithubTokens::AutoPauseProjects.auto_pause_reason?(project.scheduler_pause_reason)
-        next unless project.scheduler_resume!
+        next unless resume_project(project)
 
         resumed_ids << project.id
-        start_polling(project) if project.active?
       end
 
       if resumed_ids.any?
@@ -34,10 +33,18 @@ module GithubTokens
 
     private
 
+    def resume_project(project)
+      return project.scheduler_resume! unless project.active?
+      return false unless start_polling(project)
+
+      project.scheduler_resume!
+    end
+
     # Restarts the project's GitHubPollWorkflow, undoing AutoPauseProjects'
     # stop_polling now that the credential is valid again.
     def start_polling(project)
       ProjectWorkflowManager.start_polling(project, restart_reason: "github_token_restored")
+      true
     rescue => e
       Rails.logger.error(
         message: "github_token.auto_resume.start_polling_failed",
@@ -45,6 +52,7 @@ module GithubTokens
         project_id: project.id,
         error: e.message
       )
+      false
     end
 
     def paused_projects

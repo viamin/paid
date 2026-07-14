@@ -32,13 +32,15 @@ RSpec.describe GithubTokens::AutoResumeProjects do
           .with(project, restart_reason: "github_token_restored")
       end
 
-      it "still resumes the project even if restarting the poll workflow errors" do
+      it "leaves the project paused if restarting the poll workflow errors" do
         allow(ProjectWorkflowManager).to receive(:start_polling).and_raise(StandardError, "boom")
         allow(Rails.logger).to receive(:error)
 
-        described_class.call(github_token: github_token)
+        result = described_class.call(github_token: github_token)
 
-        expect(project.reload.scheduler_paused_at).to be_nil
+        expect(result).to be_empty
+        expect(project.reload.scheduler_paused_at).to be_present
+        expect(project.scheduler_pause_reason).to include("failed validation")
         expect(Rails.logger).to have_received(:error).with(
           hash_including(message: "github_token.auto_resume.start_polling_failed", project_id: project.id)
         )
