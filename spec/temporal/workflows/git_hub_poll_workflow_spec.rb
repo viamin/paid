@@ -118,7 +118,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       result = workflow.send(:maybe_scan_paid_prs, 1)
 
       expect(workflow).to have_received(:run_activity)
-        .with(Activities::ScanPaidPrsActivity, { project_id: 1 }, timeout: 120, heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT)
+        .with(Activities::ScanPaidPrsActivity, { project_id: 1 }, timeout: 300, heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT)
       expect(workflow).to have_received(:handle_pr_scan_results).with({ automation_results: [] }, 1)
       expect(result).to eq({ automation_results: [] })
     end
@@ -258,7 +258,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       workflow.send(:maybe_run_non_critical_activities, 1)
 
       expect(workflow).to have_received(:run_activity)
-        .with(Activities::ScanPaidPrsActivity, { project_id: 1 }, timeout: 120, heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT)
+        .with(Activities::ScanPaidPrsActivity, { project_id: 1 }, timeout: 300, heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT)
     end
 
     it "runs the rate limit check before the non-critical activities" do
@@ -274,7 +274,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
       expect(workflow).to have_received(:run_activity)
         .with(Activities::CheckRateLimitActivity, { project_id: 1 }, timeout: 10)
       expect(workflow).to have_received(:run_activity)
-        .with(Activities::ScanPaidPrsActivity, { project_id: 1 }, timeout: 120, heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT)
+        .with(Activities::ScanPaidPrsActivity, { project_id: 1 }, timeout: 300, heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT)
     end
   end
 
@@ -690,7 +690,7 @@ RSpec.describe Workflows::GitHubPollWorkflow do
           { issues: [], project_id: project_id, project_missing: true }
         )
       allow(workflow).to receive(:run_activity)
-        .with(Activities::ScanPaidPrsActivity, { project_id: project_id }, timeout: 120, heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT)
+        .with(Activities::ScanPaidPrsActivity, { project_id: project_id }, timeout: 300, heartbeat_timeout: described_class::DEFAULT_HEARTBEAT_TIMEOUT)
         .and_return(trigger_result)
       allow(workflow).to receive(:run_activity)
         .with(Activities::QueueAgentRunActivity, anything, timeout: anything)
