@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_08_034227) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_11_054951) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -483,6 +483,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_08_034227) do
 
   create_table "chat_sessions", force: :cascade do |t|
     t.bigint "account_id", null: false
+    t.boolean "auto_approve", default: false, null: false, comment: "When true, write tool calls (e.g. agent run creation) are auto-approved without a manual confirmation click"
     t.string "container_id"
     t.datetime "created_at", null: false
     t.bigint "created_by_id"

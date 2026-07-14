@@ -59,6 +59,17 @@
           </div>
         </div>
       </form>
+
+      <%= form_with model: chat_session, url: chat_session_path(chat_session), method: :patch,
+            class: "mt-3 inline-flex items-center gap-2",
+            data: { action: "change->chat#submitForm" } do |form| %>
+        <%= form.check_box :auto_approve,
+              checked: chat_session.auto_approve?,
+              class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" %>
+        <%= form.label :auto_approve, "Auto-approve actions",
+              class: "text-xs font-medium text-gray-600",
+              title: "Skip the approval prompt and run requested actions (like agent runs) automatically" %>
+      <% end %>
     <% else %>
       <p class="text-sm text-gray-500">You have read-only access to this chat.</p>
     <% end %>
