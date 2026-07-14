@@ -92,6 +92,7 @@ RSpec.describe Previews::TunnelManager do
       expect(config).to include('type = "noise"')
       expect(config).to include("[client.services.preview-abc123]")
       expect(config).to include('local_addr = "127.0.0.1:4000"')
+      expect(config).to include("remote_port = 8201")
     end
   end
 

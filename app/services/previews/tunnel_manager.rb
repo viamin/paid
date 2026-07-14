@@ -157,7 +157,8 @@ module Previews
           'type = "noise"',
           "",
           "[client.services.#{definition.service_name}]",
-          %(local_addr = "#{DEFAULT_LOCAL_APP_HOST}:#{definition.app_port}")
+          %(local_addr = "#{DEFAULT_LOCAL_APP_HOST}:#{definition.app_port}"),
+          %(remote_port = #{definition.tunnel_port})
         ].join("\n") + "\n"
       end
 

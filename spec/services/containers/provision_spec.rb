@@ -775,7 +775,7 @@ RSpec.describe Containers::Provision do
         preview_service.provision
         expect(preview_service).to have_received(:write_container_file).with(
           "/home/agent/.paid-preview/rathole-client.toml",
-          include('[client.services.preview-preview-token]')
+          include('[client.services.preview-preview-token]', "remote_port = 8201")
         )
       end
 
