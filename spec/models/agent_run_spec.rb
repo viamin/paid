@@ -2267,6 +2267,22 @@ RSpec.describe AgentRun do
       expect(described_class.next_queued_run).to eq(issue_run)
     end
 
+    it "picks review runs before create_pr runs without changing visible queue order" do
+      project = create(:project)
+      create_pr_run = create(:agent_run, :queued, :automatic, :existing_pr,
+        project: project, goal: "create_pr", source_pull_request_number: 42, created_at: 2.minutes.ago)
+      review_run = create(:agent_run, :queued, :automatic, :review_goal,
+        project: project, source_pull_request_number: 43, created_at: 1.minute.ago)
+
+      queue_preview_ids = described_class.queued_with_priority.order(described_class::QUEUE_ORDER).pluck(:id)
+      index_display_ids = described_class.queue_order_display.pluck(:id)
+
+      expect(described_class.next_queued_run).to eq(review_run)
+      expect(queue_preview_ids).to eq([ create_pr_run.id, review_run.id ])
+      expect(index_display_ids).to eq([ create_pr_run.id, review_run.id ])
+      expect(review_run.queue_priority_label).to eq(create_pr_run.queue_priority_label)
+    end
+
     it "uses FIFO within the same priority tier and goal type" do
       create(:agent_run, :queued, trigger_type: "manual", created_at: 1.minute.ago)
       older_manual = create(:agent_run, :queued, trigger_type: "manual", created_at: 2.minutes.ago)
