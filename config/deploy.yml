@@ -57,8 +57,10 @@ env:
     # GoodJob graceful shutdown timeout in seconds (default: 25).
     # GOOD_JOB_SHUTDOWN_TIMEOUT: 25
 
-    # Set number of Puma worker processes (default: 1, "auto" for WEB_CONCURRENCY_AUTO workers).
-    # Production serving multiple paying users should run 2+ workers for fault tolerance.
+    # Set number of Puma worker processes (default: 1, "auto" for one per CPU).
+    # Production serving multiple paying users should run 2+ workers for fault
+    # tolerance. Set WEB_CONCURRENCY_AUTO to pin `auto` to a specific count on
+    # hosts where the CPU count overshoots the desired worker count.
     # WEB_CONCURRENCY: 2
     # WEB_CONCURRENCY_AUTO: 2
 

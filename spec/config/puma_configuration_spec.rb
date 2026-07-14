@@ -78,15 +78,21 @@ RSpec.describe PumaConfiguration, :no_db do
       expect(loaded_options[:workers]).to eq(2)
     end
 
-    it "expands auto to WEB_CONCURRENCY_AUTO workers" do
+    it "expands auto to WEB_CONCURRENCY_AUTO when set" do
       ENV["WEB_CONCURRENCY"] = "auto"
       ENV["WEB_CONCURRENCY_AUTO"] = "3"
       expect(loaded_options[:workers]).to eq(3)
     end
 
-    it "defaults auto to 2 workers" do
+    it "expands auto to the available processor count when WEB_CONCURRENCY_AUTO is unset" do
       ENV["WEB_CONCURRENCY"] = "auto"
-      expect(loaded_options[:workers]).to eq(2)
+      require "concurrent"
+      expect(loaded_options[:workers]).to eq(Integer(Concurrent.available_processor_count))
+    end
+
+    it "ignores WEB_CONCURRENCY_AUTO without WEB_CONCURRENCY=auto" do
+      ENV["WEB_CONCURRENCY_AUTO"] = "3"
+      expect(loaded_options[:workers]).to eq(0)
     end
   end
 
@@ -94,6 +100,53 @@ RSpec.describe PumaConfiguration, :no_db do
     it "is enabled via RAILS_PRELOAD_APP" do
       ENV["RAILS_PRELOAD_APP"] = "true"
       expect(loaded_options[:preload_app]).to be(true)
+    end
+  end
+
+  describe "before_worker_boot hook" do
+    let(:hook_key) { :before_worker_boot }
+
+    def hook_blocks
+      config = Puma::Configuration.new(config_files: Array(Rails.root.join("config/puma.rb").to_s))
+      config.load
+      config.clamp
+      config.options.all_of(hook_key).map { |entry| entry[:block] }
+    end
+
+    it "is registered when RAILS_PRELOAD_APP=true and WEB_CONCURRENCY >= 2" do
+      ENV["RAILS_PRELOAD_APP"] = "true"
+      ENV["WEB_CONCURRENCY"] = "4"
+      expect(hook_blocks).not_to be_empty
+    end
+
+    it "is registered when RAILS_PRELOAD_APP=true and WEB_CONCURRENCY=auto with WEB_CONCURRENCY_AUTO override >= 2" do
+      ENV["RAILS_PRELOAD_APP"] = "true"
+      ENV["WEB_CONCURRENCY"] = "auto"
+      ENV["WEB_CONCURRENCY_AUTO"] = "2"
+      expect(hook_blocks).not_to be_empty
+    end
+
+    it "is not registered when RAILS_PRELOAD_APP=true but WEB_CONCURRENCY is unset (single mode)" do
+      ENV["RAILS_PRELOAD_APP"] = "true"
+      expect(hook_blocks).to be_empty
+    end
+
+    it "is not registered when WEB_CONCURRENCY=auto without an override (CPU count unknown)" do
+      ENV["RAILS_PRELOAD_APP"] = "true"
+      ENV["WEB_CONCURRENCY"] = "auto"
+      expect(hook_blocks).to be_empty
+    end
+
+    it "is not registered when RAILS_PRELOAD_APP=true and WEB_CONCURRENCY_AUTO=1" do
+      ENV["RAILS_PRELOAD_APP"] = "true"
+      ENV["WEB_CONCURRENCY"] = "auto"
+      ENV["WEB_CONCURRENCY_AUTO"] = "1"
+      expect(hook_blocks).to be_empty
+    end
+
+    it "is not registered when RAILS_PRELOAD_APP is unset" do
+      ENV["WEB_CONCURRENCY"] = "4"
+      expect(hook_blocks).to be_empty
     end
   end
 end
