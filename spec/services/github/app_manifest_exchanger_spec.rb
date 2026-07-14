@@ -47,7 +47,13 @@ RSpec.describe Github::AppManifestExchanger do
       }.to raise_error(Github::AppManifestExchanger::Error, /Missing GitHub manifest code/)
     end
 
-    it "synthesizes a webhook_secret when GitHub does not return one" do
+    # Fabricating a random secret when GitHub omits one would flow into the
+    # credentials file and make `AppRegistry.webhook_secret.present?` true, so
+    # `WebhooksController#verify_signature` would HMAC-compare against a secret
+    # GitHub never shared — silently 401-ing every real webhook. Surfacing the
+    # omission as nil lets the operator set `PAID_AGENT_APP_WEBHOOK_SECRET`
+    # explicitly instead of the misconfiguration being hidden.
+    it "leaves webhook_secret nil when GitHub does not return one" do
       stub_request(:post, exchange_url).to_return(
         status: 201,
         body: { id: 7, slug: "demo", pem: OpenSSL::PKey::RSA.new(2048).to_pem }.to_json,
@@ -55,8 +61,7 @@ RSpec.describe Github::AppManifestExchanger do
       )
 
       result = described_class.call(code: code)
-      expect(result.webhook_secret).to be_present
-      expect(result.webhook_secret.length).to be >= 32
+      expect(result.webhook_secret).to be_nil
     end
   end
 end

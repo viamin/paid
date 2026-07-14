@@ -2,7 +2,6 @@
 
 require "faraday"
 require "openssl"
-require "securerandom"
 
 module Github
   # Exchanges a GitHub App manifest flow `code` for the registered App's
@@ -39,12 +38,21 @@ module Github
       raise Error, "GitHub manifest exchange failed (status #{response.status}): #{response.body}" unless response.success?
 
       body = JSON.parse(response.body)
+      # Leave `webhook_secret` nil when GitHub omits it rather than fabricating
+      # one. A synthesized value would flow into the credentials file (which
+      # only `compact_blank`s blanks) and make `AppRegistry.webhook_secret`
+      # look configured, so `WebhooksController#verify_signature` would
+      # HMAC-compare against a secret GitHub never shared — silently 401-ing
+      # every real webhook while hiding the misconfiguration. GitHub includes
+      # `webhook_secret` whenever the manifest sets `hook_attributes`, so this
+      # is only nil in an edge case; surfacing it honestly lets the operator
+      # set `PAID_AGENT_APP_WEBHOOK_SECRET` (and keeps the manual snippet honest).
       Result.new(
         app_id: body["id"],
         slug: body["slug"],
         html_url: body["html_url"],
         private_key: body["pem"],
-        webhook_secret: body["webhook_secret"].presence || SecureRandom.hex(32)
+        webhook_secret: body["webhook_secret"].presence
       )
     rescue Faraday::Error => e
       raise Error, "GitHub manifest exchange request failed: #{e.message}"
