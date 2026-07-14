@@ -215,7 +215,7 @@ module Workflows
     # allowed to propagate so automation failures surface immediately,
     # matching evaluate_issues_batch.
     def maybe_scan_paid_prs(project_id)
-      activity_options = poll_activity_options(timeout: 120)
+      activity_options = poll_activity_options(timeout: 300)
       scan_result = begin
         run_activity(Activities::ScanPaidPrsActivity,
           { project_id: project_id }, **activity_options)
