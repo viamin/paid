@@ -9,6 +9,7 @@ module Automation
     def initialize(workflow:, project_id:)
       @workflow = workflow
       @project_id = project_id
+      @create_pr_queue_results = {}
     end
 
     def call(result)
@@ -22,7 +23,26 @@ module Automation
     attr_reader :workflow, :project_id
 
     def execute(decision)
-      workflow.execute_automation_decision(project_id:, decision:)
+      return skip_record_pr_followup?(decision) if decision[:type] == "record_pr_followup"
+
+      result = workflow.execute_automation_decision(project_id:, decision:)
+      record_create_pr_queue_result(decision, result)
+      result
+    end
+
+    def record_create_pr_queue_result(decision, result)
+      return unless decision[:type] == "queue_create_pr_run"
+
+      @create_pr_queue_results[decision[:issue_id]] = result || {}
+    end
+
+    def skip_record_pr_followup?(decision)
+      queue_result = @create_pr_queue_results[decision[:issue_id]]
+      return workflow.execute_automation_decision(project_id:, decision:) unless queue_result
+      return workflow.execute_automation_decision(project_id:, decision:) if queue_result[:queued]
+      return workflow.execute_automation_decision(project_id:, decision:) unless queue_result[:cross_goal]
+
+      nil
     end
   end
 end

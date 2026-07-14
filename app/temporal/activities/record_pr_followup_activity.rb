@@ -8,13 +8,6 @@ module Activities
   # Idempotent: uses the expected_followup_count parameter to prevent
   # double-counting on Temporal retries. The increment only applies
   # when the current count matches the expected value.
-  #
-  # Phantom-increment guard: only records when an unfinished run exists
-  # for the issue. Without this, a skipped QueueAgentRunActivity (e.g.,
-  # untrusted issue, duplicate) still increments the counter — inflating
-  # it while zero runs execute and defeating the followup-limit escalation
-  # breaker (which counts consecutive unsuccessful AgentRun records, not
-  # counter increments).
   class RecordPrFollowupActivity < BaseActivity
     activity_name "RecordPrFollowup"
 
@@ -24,25 +17,6 @@ module Activities
 
       issue = project.issues.find_by(id: input[:issue_id])
       return { recorded: false } unless issue
-
-      has_active_run = project.agent_runs
-        .where(
-          issue_id: issue.id,
-          goal: "create_pr",
-          source_pull_request_number: issue.github_number,
-          status: AgentRun::UNFINISHED_STATUSES
-        )
-        .exists?
-
-      unless has_active_run
-        logger.info(
-          message: "pr_scanner.followup_skipped_no_active_run",
-          project_id: project.id,
-          issue_id: issue.id,
-          pr_number: issue.github_number
-        )
-        return { recorded: false, skipped: true, reason: "no_active_run" }
-      end
 
       expected_count = input[:expected_followup_count]
       if expected_count

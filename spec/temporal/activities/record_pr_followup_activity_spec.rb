@@ -28,21 +28,21 @@ RSpec.describe Activities::RecordPrFollowupActivity do
       end
     end
 
-    context "when no active run exists (phantom-increment guard)" do
+    context "when no active run exists" do
       let(:issue) do
         create(:issue, :pull_request, project: project, github_number: 42, pr_followup_count: 0)
       end
 
-      it "does not increment pr_followup_count" do
+      it "still records the follow-up attempt" do
         activity.execute(project_id: project.id, issue_id: issue.id)
 
-        expect(issue.reload.pr_followup_count).to eq(0)
+        expect(issue.reload.pr_followup_count).to eq(1)
       end
 
-      it "returns recorded: false with reason: no_active_run" do
+      it "returns recorded: true" do
         result = activity.execute(project_id: project.id, issue_id: issue.id)
 
-        expect(result).to include(recorded: false, skipped: true, reason: "no_active_run")
+        expect(result).to include(recorded: true)
       end
     end
 
@@ -245,7 +245,7 @@ RSpec.describe Activities::RecordPrFollowupActivity do
       end
     end
 
-    context "when another goal already has the active run for the PR" do
+    context "when the matching create_pr run already finished" do
       let(:issue) do
         create(:issue, :pull_request,
           project: project,
@@ -254,18 +254,18 @@ RSpec.describe Activities::RecordPrFollowupActivity do
       end
 
       before do
-        create(:agent_run, :running,
+        create(:agent_run, :completed,
           project: project,
           issue: issue,
-          goal: "review",
+          goal: "create_pr",
           source_pull_request_number: issue.github_number)
       end
 
-      it "does not record a create_pr follow-up" do
+      it "still records the launched follow-up" do
         result = activity.execute(project_id: project.id, issue_id: issue.id)
 
-        expect(result).to include(recorded: false, skipped: true, reason: "no_active_run")
-        expect(issue.reload.pr_followup_count).to eq(0)
+        expect(result).to include(recorded: true)
+        expect(issue.reload.pr_followup_count).to eq(1)
       end
     end
   end
