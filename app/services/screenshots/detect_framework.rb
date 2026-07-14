@@ -648,8 +648,11 @@ module Screenshots
           stripped = statement.strip
           next if stripped.blank? || stripped.start_with?("#")
 
-          if (match = stripped.match(/^scope\s+["']([^"']*)["'].*\bdo\b/))
-            block_stack << normalize_phoenix_scope_segment(match[1])
+          if (match = stripped.match(/^scope\s+["']([^"']*)["'](?:\s*,\s*([A-Z][\w.]*))?.*\bdo\b/))
+            block_stack << {
+              path: normalize_phoenix_scope_segment(match[1]),
+              module_name: match[2]
+            }
             next
           end
 
@@ -658,7 +661,7 @@ module Screenshots
             next
           end
 
-          route = parse_phoenix_route_line(stripped, current_phoenix_prefixes(block_stack))
+          route = parse_phoenix_route_line(stripped, current_phoenix_scope(block_stack))
           route["scope_path"] = router_path if route
           routes << route if route
 
@@ -742,32 +745,32 @@ module Screenshots
       present_value?(normalized) ? "/#{normalized}" : "/"
     end
 
-    def parse_phoenix_route_line(line, prefixes)
+    def parse_phoenix_route_line(line, scope)
       PHOENIX_ROUTE_VERBS.each do |macro, verb|
         pattern = /^#{macro}\s+["']([^"']+)["']\s*,\s*([A-Z][\w.]+)\s*,\s*:([a-zA-Z_][\w]*)/
         next unless (match = line.match(pattern))
 
-        path = normalize_route_path(prefixes, match[1])
+        path = normalize_route_path(scope.fetch(:prefixes), match[1])
         return route_hash(path, route_name_from_path(path)).merge(
           "verb" => verb,
-          "controller_action" => "#{match[2]}##{match[3]}"
+          "controller_action" => "#{expand_phoenix_module_name(match[2], scope[:module_name])}##{match[3]}"
         )
       end
 
       if (match = line.match(/^live\s+["']([^"']+)["']\s*,\s*([A-Z][\w.]+)(?:\s*,\s*:([a-zA-Z_][\w]*))?/))
-        path = normalize_route_path(prefixes, match[1])
+        path = normalize_route_path(scope.fetch(:prefixes), match[1])
         action = match[3] || "index"
         return route_hash(path, route_name_from_path(path)).merge(
           "verb" => "GET",
-          "controller_action" => "#{match[2]}##{action}"
+          "controller_action" => "#{expand_phoenix_module_name(match[2], scope[:module_name])}##{action}"
         )
       end
 
       if (match = line.match(/^resources\s+["']([^"']+)["']\s*,\s*([A-Z][\w.]+)/))
-        path = normalize_route_path(prefixes, match[1])
+        path = normalize_route_path(scope.fetch(:prefixes), match[1])
         return route_hash(path, route_name_from_path(path)).merge(
           "verb" => "GET",
-          "controller_action" => "#{match[2]}##index"
+          "controller_action" => "#{expand_phoenix_module_name(match[2], scope[:module_name])}##index"
         )
       end
 
@@ -790,12 +793,29 @@ module Screenshots
       normalized.delete_prefix("/")
     end
 
-    def current_phoenix_prefixes(block_stack)
-      block_stack.compact
+    def current_phoenix_scope(block_stack)
+      scope_entries = block_stack.compact
+
+      {
+        prefixes: scope_entries.filter_map { |entry| entry[:path] },
+        module_name: scope_entries.filter_map { |entry| entry[:module_name] }.reduce(nil) do |current, module_name|
+          if current.present? && !module_name.include?(".")
+            "#{current}.#{module_name}"
+          else
+            module_name
+          end
+        end
+      }
     end
 
     def opens_phoenix_block?(line)
       line.end_with?(" do") || line.match?(/\bdo\s+\|[^|]*\|\s*\z/)
+    end
+
+    def expand_phoenix_module_name(module_name, scope_module_name)
+      return module_name if blank_value?(scope_module_name) || module_name.include?(".")
+
+      "#{scope_module_name}.#{module_name}"
     end
 
     def phoenix_router_paths

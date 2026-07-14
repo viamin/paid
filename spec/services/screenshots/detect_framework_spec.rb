@@ -55,6 +55,9 @@ RSpec.describe Screenshots::DetectFramework, :no_db do
         "/swatches",
         "/admin/dashboard"
       )
+      expect(result.detected_routes.find { |route| route["path"] == "/admin/dashboard" }).to include(
+        "controller_action" => "ColorMatchingWeb.AdminDashboardLive#index"
+      )
     end
 
     it "falls back to a generic app when no known framework is detected" do
@@ -169,6 +172,18 @@ RSpec.describe Screenshots::DetectFramework, :no_db do
       paths = routes.map { |r| r["path"] }
 
       expect(paths).to include("/sessions", "/sign_in")
+    end
+
+    it "expands scoped Phoenix module aliases for relative controller and live view names" do
+      service = described_class.new(repo_path: fixture_path("phoenix_repo"))
+      routes = service.send(:discover_phoenix_routes)
+
+      expect(routes.find { |route| route["path"] == "/" }).to include(
+        "controller_action" => "ColorMatchingWeb.PageController#home"
+      )
+      expect(routes.find { |route| route["path"] == "/admin/dashboard" }).to include(
+        "controller_action" => "ColorMatchingWeb.AdminDashboardLive#index"
+      )
     end
 
     it "captures mounted engines and wildcard match routes without verbs" do

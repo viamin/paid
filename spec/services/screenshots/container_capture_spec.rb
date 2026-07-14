@@ -168,6 +168,27 @@ RSpec.describe Screenshots::ContainerCapture do
     FileUtils.rm_rf(tmpdir)
   end
 
+  it "overrides Phoenix dev endpoint binding to listen on all interfaces during capture" do
+    tmpdir = Dir.mktmpdir("phoenix-bind")
+    FileUtils.mkdir_p(File.join(tmpdir, "config"))
+    File.write(File.join(tmpdir, "mix.exs"), "defmodule Demo.MixProject do end")
+    File.write(File.join(tmpdir, "config/dev.exs"), <<~EXS)
+      import Config
+
+      config :demo, DemoWeb.Endpoint,
+        http: [ip: {127, 0, 0, 1}, port: String.to_integer(System.get_env("PORT") || "4000")]
+    EXS
+    service.instance_variable_set(:@tmpdir, tmpdir)
+
+    service.send(:prepare_phoenix_endpoint_binding!)
+
+    runtime = File.read(File.join(tmpdir, "config/runtime.exs"))
+    expect(runtime).to include("config :demo, DemoWeb.Endpoint")
+    expect(runtime).to include("http: [ip: {0, 0, 0, 0}, port: String.to_integer(System.get_env(\"PORT\") || \"4000\")]")
+  ensure
+    FileUtils.rm_rf(tmpdir)
+  end
+
   describe "#screenshot_config_json (capture scoping and annotation)" do
     let(:multi_route_config) do
       Screenshots::Configuration.from_hash(

@@ -780,5 +780,18 @@ RSpec.describe Knowledge::Collectors::RoutesCollector, :no_db do
       )
       expect(artifacts).to all(include(scope_path: "lib/demo_web/router.ex"))
     end
+
+    it "skips instead of falling back when an explicit routes_file path is missing" do
+      explicit_collector = described_class.new(
+        project: project,
+        project_version: project_version,
+        collector_run: collector_run,
+        options: { scan_path: scan_path, routes_file: File.join(scan_path, "tmp/missing-routes.txt") }
+      )
+
+      expect { explicit_collector.collect }.to raise_error(
+        Knowledge::SkipCollector, /routes_file not found or empty/
+      )
+    end
   end
 end

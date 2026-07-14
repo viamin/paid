@@ -62,7 +62,7 @@ module Knowledge
 
         return "repository path not available" if resolve_repo_path.nil?
 
-        return "Phoenix router files were not found" if phoenix_project?
+        return "Phoenix routes could not be parsed from router files" if phoenix_project?
 
         unless repo_file_exists?("config/routes.rb")
           return "not a Rails project (no config/routes.rb)"
@@ -92,6 +92,7 @@ module Knowledge
       def collected_routes
         output = read_routes_output
         return parse_expanded_output(output) if output.present?
+        return [] if options[:routes_file].present?
 
         phoenix_routes
       end
