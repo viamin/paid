@@ -245,6 +245,7 @@ module Screenshots
       "ab_tests_controller.rb" => %i[ab_tests ab_test_new ab_test_show],
       "providers_controller.rb" => %i[providers providers_new providers_edit],
       "runners_controller.rb" => %i[providers providers_new providers_edit],
+      "runner_credentials_controller.rb" => %i[runner_credentials runner_credential_new runner_credential_show],
       "provider_api_keys_controller.rb" => %i[provider_api_keys provider_api_key_new provider_api_key_show provider_api_key_edit],
       "marketplace_entries_controller.rb" => %i[marketplace_entries marketplace_entry_new marketplace_entry_show marketplace_entry_edit],
       "integrations_controller.rb" => %i[integrations integrations_new],
@@ -512,6 +513,7 @@ module Screenshots
       when /\Aintegrations\// then integrations_targets(relative_path.delete_prefix("integrations/"))
       when /\Aadmin\/github_app\/setup\// then [ :admin_github_app_setup ]
       when /\Aintegration_credentials\// then rest_resource_targets(relative_path, "integration_credentials", index: :integration_credentials, new: :integration_credential_new, show: :integration_credential_show, edit: :integration_credential_show)
+      when /\Arunner_credentials\// then rest_resource_targets(relative_path, "runner_credentials", index: :runner_credentials, new: :runner_credential_new, show: :runner_credential_show, edit: :runner_credential_show)
       when /\Aclaude_login_sessions\// then rest_resource_targets(relative_path, "claude_login_sessions", index: :claude_login_session_new, new: :claude_login_session_new, show: :claude_login_session_show, edit: :claude_login_session_show)
       when /\Agithub_installations\// then github_installation_targets(relative_path.delete_prefix("github_installations/"))
       when /\Agithub_tokens\// then rest_resource_targets(relative_path, "github_tokens", index: :github_tokens, new: :github_token_new, show: :github_token_show, edit: :github_token_show)

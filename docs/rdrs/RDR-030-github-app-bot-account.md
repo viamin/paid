@@ -23,7 +23,7 @@ The lifecycle pieces that landed with #2712 are:
 - **`Github::Installations::Upserter`** — the single source of truth for translating GitHub payloads into `GithubInstallation` rows (created/updated/suspend/unsuspend/deleted).
 - **`Github::Installations::RepositoriesReconciler`** — reconciles `accessible_repositories` against `installation_repositories.{added,removed}` events.
 - **`Api::GithubApp::WebhooksController`** — `POST /api/webhooks/github_app` verifies the App's webhook secret and dispatches to the upserter / reconciler.
-- **`Admin::GithubApp::SetupController`** — `GET/POST /admin/github_app/setup` and `GET /admin/github_app/setup/callback` for self-hosted deployments; builds a manifest, redirects to GitHub, exchanges the resulting code for app id / slug / PEM private key / webhook secret, and writes them back to `ENV` (which is what `Github::AppRegistry` and the webhook secret already read). Operator-only.
+- **`Admin::GithubApp::SetupController`** — `GET/POST /admin/github_app/setup` and `GET /admin/github_app/setup/callback` for self-hosted deployments; builds a manifest, redirects to GitHub, exchanges the resulting code for app id / slug / PEM private key / webhook secret, and writes them back to the encrypted Rails credentials file under the `paid_agent_app_*` keys (which `Github::AppRegistry` reads, with `PAID_AGENT_APP_*` env vars as overrides). Operator-only.
 - **`Github::AppManifestExchanger`** — calls `POST /app-manifests/:code/conversions` and returns the App credentials.
 
 ## Problem Statement
