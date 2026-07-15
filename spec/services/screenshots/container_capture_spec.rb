@@ -232,39 +232,68 @@ RSpec.describe Screenshots::ContainerCapture do
     end
   end
 
-  describe "#publish_result! (trace upload)" do
+  describe "#collected_video_path" do
+    it "globs the recorded .webm from the videos subdirectory" do
+      tmpdir = service.instance_variable_get(:@tmpdir) || Dir.mktmpdir("screenshots-spec")
+      service.instance_variable_set(:@tmpdir, tmpdir)
+      videos_dir = File.join(tmpdir, Screenshots::ContainerCapture::OUTPUT_DIR, "videos")
+      FileUtils.mkdir_p(videos_dir)
+      written = File.join(videos_dir, "abc.webm")
+      File.write(written, "fake video")
+
+      expect(service.send(:collected_video_path)).to eq(written)
+    ensure
+      FileUtils.rm_rf(tmpdir)
+    end
+
+    it "returns nil when no video was recorded" do
+      tmpdir = Dir.mktmpdir("screenshots-spec")
+      service.instance_variable_set(:@tmpdir, tmpdir)
+
+      expect(service.send(:collected_video_path)).to be_nil
+    ensure
+      FileUtils.rm_rf(tmpdir)
+    end
+  end
+
+  describe "#publish_result! (trace and video uploads)" do
     before do
       allow(service).to receive(:publish_result!).and_call_original
     end
 
-    def with_trace_tempfile
-      trace = Tempfile.new([ "trace", ".zip" ])
-      trace.write("fake trace")
-      trace.rewind
-      service.instance_variable_set(:@trace_path, trace.path)
-      yield trace
+    def with_artifact_tempfile(prefix, ext)
+      file = Tempfile.new([ prefix, ext ])
+      file.write("fake #{prefix}")
+      file.rewind
+      yield file
     ensure
-      trace&.close
-      trace&.unlink
+      file&.close
+      file&.unlink
     end
 
-    def stubbed_storage(upload_trace:)
+    def stubbed_storage(upload_trace: nil, upload_video: nil)
       storage = instance_double(Screenshots::Storage)
       allow(Screenshots::Storage).to receive_messages(configured?: true, new: storage)
       allow(storage).to receive(:upload) { |k| "https://s3.example.com/#{k[:route_name]}.png" }
-      if upload_trace == :raise
-        allow(storage).to receive(:upload_trace).and_raise(Screenshots::Storage::StorageError, "boom")
-      else
-        allow(storage).to receive(:upload_trace).and_return(upload_trace)
-      end
+      stub_artifact(storage, :upload_trace, upload_trace)
+      stub_artifact(storage, :upload_video, upload_video)
       allow(storage).to receive(:previous_screenshots).and_return({})
       storage
+    end
+
+    def stub_artifact(storage, method, value)
+      if value == :raise
+        allow(storage).to receive(method).and_raise(Screenshots::Storage::StorageError, "boom")
+      else
+        allow(storage).to receive(method).and_return(value)
+      end
     end
 
     it "uploads the trace archive and surfaces it in the PR comment" do
       storage = stubbed_storage(upload_trace: "https://s3.example.com/trace.zip")
 
-      with_trace_tempfile do |trace|
+      with_artifact_tempfile("trace", ".zip") do |trace|
+        service.instance_variable_set(:@trace_path, trace.path)
         service.send(:publish_result!, [ "/tmp/screenshots/home.png" ])
         expect(storage).to have_received(:upload_trace).with(
           file_path: trace.path, org: project.owner, repo: project.repo,
@@ -279,11 +308,48 @@ RSpec.describe Screenshots::ContainerCapture do
     it "still publishes screenshots when the trace upload fails" do
       stubbed_storage(upload_trace: :raise)
 
-      with_trace_tempfile do
+      with_artifact_tempfile("trace", ".zip") do |trace|
+        service.instance_variable_set(:@trace_path, trace.path)
         expect { service.send(:publish_result!, [ "/tmp/screenshots/home.png" ]) }.not_to raise_error
       end
 
       expect(Screenshots::PrComment).to have_received(:call).with(hash_including(trace_url: nil))
+    end
+
+    it "uploads the recorded video and surfaces it in the PR comment" do
+      storage = stubbed_storage(upload_video: "https://s3.example.com/capture.webm")
+
+      with_artifact_tempfile("capture", ".webm") do |video|
+        service.instance_variable_set(:@video_path, video.path)
+        service.send(:publish_result!, [ "/tmp/screenshots/home.png" ])
+        expect(storage).to have_received(:upload_video).with(
+          file_path: video.path, org: project.owner, repo: project.repo,
+          pr_number: agent_run.pull_request_number, commit_sha: agent_run.result_commit_sha
+        )
+      end
+
+      expect(Screenshots::PrComment).to have_received(:call)
+        .with(hash_including(video_url: "https://s3.example.com/capture.webm"))
+    end
+
+    it "still publishes screenshots when the video upload fails" do
+      stubbed_storage(upload_video: :raise)
+
+      with_artifact_tempfile("capture", ".webm") do |video|
+        service.instance_variable_set(:@video_path, video.path)
+        expect { service.send(:publish_result!, [ "/tmp/screenshots/home.png" ]) }.not_to raise_error
+      end
+
+      expect(Screenshots::PrComment).to have_received(:call).with(hash_including(video_url: nil))
+    end
+
+    it "skips the video upload when no recording was collected" do
+      storage = stubbed_storage
+
+      service.instance_variable_set(:@video_path, nil)
+      service.send(:publish_result!, [ "/tmp/screenshots/home.png" ])
+
+      expect(storage).not_to have_received(:upload_video)
     end
   end
 end

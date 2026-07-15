@@ -54,6 +54,7 @@ module Screenshots
       @published_url = nil
       @hints = {}
       @trace_path = nil
+      @video_path = nil
     end
 
     def call
@@ -347,6 +348,7 @@ module Screenshots
       )
 
       @trace_path = collected_trace_path
+      @video_path = collected_video_path
       collected_screenshots
     rescue Containers::Provision::ExecutionError => e
       raise "screenshot capture failed: #{e.message}"
@@ -374,6 +376,7 @@ module Screenshots
       end
 
       trace_url = upload_trace_artifact(storage)
+      video_url = upload_video_artifact(storage)
 
       previous = storage.previous_screenshots(
         org: project.owner,
@@ -389,7 +392,8 @@ module Screenshots
         commit_sha: artifact_commit_sha,
         screenshots: uploaded,
         previous_screenshots: previous,
-        trace_url: trace_url
+        trace_url: trace_url,
+        video_url: video_url
       )
 
       @published_url = uploaded.first&.fetch(:url, nil)
@@ -408,6 +412,26 @@ module Screenshots
     rescue Screenshots::Storage::StorageError => e
       logger.warn(
         message: "screenshots.trace_upload_failed",
+        project_id: project.id,
+        agent_run_id: agent_run.id,
+        error: e.message
+      )
+      nil
+    end
+
+    def upload_video_artifact(storage)
+      return nil if @video_path.blank?
+
+      storage.upload_video(
+        file_path: @video_path,
+        org: project.owner,
+        repo: project.repo,
+        pr_number: agent_run.pull_request_number,
+        commit_sha: artifact_commit_sha
+      )
+    rescue Screenshots::Storage::StorageError => e
+      logger.warn(
+        message: "screenshots.video_upload_failed",
         project_id: project.id,
         agent_run_id: agent_run.id,
         error: e.message
@@ -525,8 +549,8 @@ module Screenshots
 
         // Close the context before the browser: Playwright only flushes the
         // recorded video to disk once the context is closed, so closing the
-        // browser first can silently drop the .webm output and leave the
-        // record_video setting with no artifact.
+        // browser first can silently drop the .webm output. run_capture!
+        // collects the flushed .webm and uploads it alongside the trace.
         await context.close();
         await browser.close();
       JS
@@ -633,6 +657,10 @@ module Screenshots
 
     def collected_trace_path
       Dir.glob(File.join(@tmpdir.to_s, OUTPUT_DIR, "trace.zip")).first
+    end
+
+    def collected_video_path
+      Dir.glob(File.join(@tmpdir.to_s, OUTPUT_DIR, "videos", "*.webm")).first
     end
 
     def read_file(relative_path)

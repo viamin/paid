@@ -296,6 +296,28 @@ RSpec.describe Screenshots::PrComment do
 
         expect(body).not_to include("Playwright trace")
       end
+
+      it "includes a session video link when a video_url is provided" do
+        service = described_class.new(
+          github_client: github_client,
+          repo: repo,
+          pr_number: pr_number,
+          commit_sha: commit_sha,
+          screenshots: screenshots,
+          video_url: "https://s3.example.com/capture.webm"
+        )
+
+        body = service.build_comment_body
+
+        expect(body).to include("[Session video](https://s3.example.com/capture.webm)")
+        expect(body).to include("![dashboard](https://s3.example.com/dashboard.png)")
+      end
+
+      it "omits the video section when no video_url is provided" do
+        body = service.build_comment_body
+
+        expect(body).not_to include("Session video")
+      end
     end
   end
 

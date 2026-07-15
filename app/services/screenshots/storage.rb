@@ -66,6 +66,22 @@ module Screenshots
       raise StorageError, "S3 trace upload failed: #{e.message}"
     end
 
+    # Uploads a Playwright session video to S3 and returns a presigned URL.
+    #
+    # @param file_path [String] Path to the local .webm video file
+    # @param org [String] GitHub org/owner
+    # @param repo [String] Repository name
+    # @param pr_number [Integer] Pull request number
+    # @param commit_sha [String] Commit SHA
+    # @return [String] Presigned GET URL for the uploaded video
+    def upload_video(file_path:, org:, repo:, pr_number:, commit_sha:)
+      key = video_object_key(org:, repo:, pr_number:, commit_sha:)
+      put_object(file_path:, key:, content_type: "video/webm")
+      signed_url(key)
+    rescue Aws::S3::Errors::ServiceError => e
+      raise StorageError, "S3 video upload failed: #{e.message}"
+    end
+
     # Generates a signed URL for an existing S3 object.
     #
     # @param key [String] S3 object key
@@ -169,6 +185,13 @@ module Screenshots
     # @return [String]
     def trace_object_key(org:, repo:, pr_number:, commit_sha:)
       "screenshots/#{org}/#{repo}/pr-#{pr_number}/#{commit_sha}/trace.zip"
+    end
+
+    # Builds the S3 object key for a Playwright session video.
+    #
+    # @return [String]
+    def video_object_key(org:, repo:, pr_number:, commit_sha:)
+      "screenshots/#{org}/#{repo}/pr-#{pr_number}/#{commit_sha}/capture.webm"
     end
 
     private
