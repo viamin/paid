@@ -173,11 +173,29 @@ module Screenshots
     end
 
     def score_phoenix
+      # mix.exs alone is an Elixir marker, not a Phoenix one. A plain Elixir
+      # repo (CLI tool, Nerves firmware, library) only ships mix.exs, so treat
+      # the project as Phoenix only when at least one Phoenix-specific signal
+      # is present (phoenix dep or a lib/*_web/router.ex router).
+      return 0.0 unless phoenix_signal?
+
       score = 0.0
       score += 0.55 if repo.file?("mix.exs")
-      score += 0.3 if elixir_mix_dependency?("phoenix") || elixir_mix_dependency?("phoenix_live_view")
-      score += 0.15 if repo.glob("lib/*_web/router.ex").any?
+      score += 0.3 if phoenix_dependency?
+      score += 0.15 if phoenix_router_present?
       score
+    end
+
+    def phoenix_signal?
+      phoenix_dependency? || phoenix_router_present?
+    end
+
+    def phoenix_dependency?
+      elixir_mix_dependency?("phoenix") || elixir_mix_dependency?("phoenix_live_view")
+    end
+
+    def phoenix_router_present?
+      @phoenix_router_present ||= repo.glob("lib/*_web/router.ex").any?
     end
 
     def repo
@@ -713,6 +731,19 @@ module Screenshots
         return route_hash(path, route_name_from_path(path))
       end
 
+      # Phoenix `match` takes the HTTP verb as its first argument, e.g.
+      #   match :*, "/health", HealthController, :show
+      #   match :get, "/ping", HealthController, :ping
+      #   match [:get, :post], "/path", ...
+      # The verb may be an atom (:get, :*), a quoted string ("*", "get"), or a
+      # list of atoms. Without this, standard `match` routes are omitted.
+      if (match = line.match(/\Amatch\s+(?:\[[^\]]*\]|:[a-z_*]+|["'][a-z*]+["'])\s*,\s*["']([^"']+)["']/))
+        path = normalize_phoenix_route_path(prefixes, match[1])
+        return route_hash(path, route_name_from_path(path))
+      end
+
+      # Legacy `match "/path"` and `forward "/path", SomePlug` take the path
+      # first (kept for backwards compatibility with older Phoenix apps).
       if (match = line.match(/\A(match|forward)\s+["']([^"']*)["']/))
         path = normalize_phoenix_route_path(prefixes, match[2])
         return route_hash(path, route_name_from_path(path))

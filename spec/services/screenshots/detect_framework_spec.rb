@@ -134,6 +134,16 @@ RSpec.describe Screenshots::DetectFramework, :no_db do
         expect(result.framework).to eq(:phoenix)
       end
 
+      it "does not classify a plain Elixir repo (mix.exs only) as Phoenix" do
+        result = described_class.call(file_list: [ "mix.exs" ])
+
+        expect(result.framework).to eq(:generic)
+      end
+
+      it "does not classify a plain Elixir repo as Phoenix in lightweight detection" do
+        expect(described_class.detect_framework_only(file_list: [ "mix.exs" ])).to eq(:generic)
+      end
+
       it "falls back to generic for an empty file list" do
         result = described_class.call(file_list: [])
 
@@ -373,6 +383,29 @@ RSpec.describe Screenshots::DetectFramework, :no_db do
       paths = parsed_routes.map { |r| r["path"] }
 
       expect(paths).to include("/", "/contact", "/dashboard", "/reports")
+    end
+
+    it "extracts match routes where the verb is the first argument" do
+      router = <<~EX
+        defmodule MyAppWeb.Router do
+          use MyAppWeb, :router
+
+          scope "/", MyAppWeb do
+            get "/", PageController, :index
+            match :*, "/health", HealthController, :show
+            match :get, "/ping", HealthController, :ping
+            match [:get, :post], "/batch", HealthController, :batch
+            forward "/proxy", ApiProxy
+          end
+        end
+      EX
+      repo = phoenix_repo_with_router(router)
+      service = described_class.new(repo_path: fixture_path("phoenix_repo"))
+      allow(service).to receive(:repo).and_return(repo)
+
+      paths = service.send(:discover_phoenix_routes).map { |r| r["path"] }
+
+      expect(paths).to include("/health", "/ping", "/batch", "/proxy")
     end
 
     it "carries scope prefixes into nested routes" do
