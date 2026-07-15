@@ -33,6 +33,7 @@ module Activities
     SCAN_STALENESS_MULTIPLIER = 3
     KNOWN_BOT_PREFIXES = %w[dependabot renovate github-actions].freeze
     DEPENDENCY_UPDATE_BOT_AUTHORS = Project::DEPENDENCY_UPDATE_BOT_AUTHORS
+    DEPENDABOT_AUTO_MERGE_AUTHORS = DependabotAutoMergeJob::DEPENDABOT_AUTHORS
     REVIEW_BOT_CLEAN_PATTERN = /generated no (?:new )?comments/i
     # Body-only review bots (currently Codex) signal "no findings" by posting
     # an *issue comment* — not a review — with text like
@@ -310,25 +311,40 @@ module Activities
     end
 
     def find_paid_prs(project)
-      labeled_prs = project.issues
+      candidate_prs = project.issues
         .pull_requests_only
         .auto_continue_active
         .where(github_state: "open")
-        .where("labels @> ?", [ project.automation_label_name ].to_json)
+
+      labeled_prs = automation_labeled_prs(project, candidate_prs)
+      dependabot_prs = if project.auto_merge_dependabot?
+        dependabot_auto_merge_prs(candidate_prs)
+      else
+        candidate_prs.none
+      end
+      scannable_prs = labeled_prs.or(dependabot_prs)
 
       trusted_creator_logins = trusted_creator_logins_for(project)
       trusted_prs = if trusted_creator_logins.any?
-        labeled_prs.where("LOWER(github_creator_login) IN (?)", trusted_creator_logins).to_a
+        scannable_prs.where("LOWER(github_creator_login) IN (?)", trusted_creator_logins).to_a
       else
         []
       end
       untrusted_prs = if trusted_creator_logins.any?
-        labeled_prs.where("LOWER(github_creator_login) NOT IN (?)", trusted_creator_logins)
+        scannable_prs.where("LOWER(github_creator_login) NOT IN (?)", trusted_creator_logins)
       else
-        labeled_prs
+        scannable_prs
       end
 
       trusted_prs + untrusted_prs.select { |issue| authorized_for_automation_scan?(project, issue) }
+    end
+
+    def automation_labeled_prs(project, candidate_prs)
+      candidate_prs.where("labels @> ?", [ project.automation_label_name ].to_json)
+    end
+
+    def dependabot_auto_merge_prs(candidate_prs)
+      candidate_prs.where("LOWER(github_creator_login) IN (?)", DEPENDABOT_AUTO_MERGE_AUTHORS.map(&:downcase))
     end
 
     def authorized_for_automation_scan?(project, issue)
