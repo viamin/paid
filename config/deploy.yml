@@ -58,7 +58,23 @@ env:
     # GOOD_JOB_SHUTDOWN_TIMEOUT: 25
 
     # Set number of Puma worker processes (default: 1, "auto" for one per CPU).
+    # Production serving multiple paying users should run 2+ workers for fault
+    # tolerance. Set WEB_CONCURRENCY_AUTO to pin `auto` to a specific count on
+    # hosts where the CPU count overshoots the desired worker count.
     # WEB_CONCURRENCY: 2
+    # WEB_CONCURRENCY_AUTO: 2
+
+    # Restart a worker that takes longer than this (seconds) to boot or stop
+    # responding to the master's heartbeat (cluster mode only; default: 3600).
+    # WORKER_TIMEOUT: 3600
+
+    # Force-kill a worker that does not shut down within this window during a
+    # deploy (cluster mode only; default: 30).
+    # WORKER_SHUTDOWN_TIMEOUT: 30
+
+    # Preload the app in the master process before forking (copy-on-write memory
+    # savings). Requires workers >= 2. Confirm DB_POOL sizing before enabling.
+    # RAILS_PRELOAD_APP: false
 
     # Puma threads per worker (default: 3).
     # RAILS_MAX_THREADS: 3
