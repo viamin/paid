@@ -100,6 +100,7 @@ class OnboardingController < ApplicationController
     project.github_id = repo_data.id
     project.name = project.name.presence || repo_data.name
     project.default_branch = repo_data.default_branch
+    project.primary_language = repo_data.language
     project.save!
 
     Onboarding::CompleteStep.call(

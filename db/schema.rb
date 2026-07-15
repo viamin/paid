@@ -1889,6 +1889,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_13_233921) do
     t.integer "poll_interval_seconds", default: 60, null: false
     t.jsonb "pr_action_labels", default: [], null: false
     t.boolean "pr_aggregation_enabled", default: false, null: false
+    t.string "primary_language", comment: "Primary language of the repository as reported by GitHub (e.g. Ruby, Elixir, Swift). Used to detect and badge the project type."
     t.jsonb "priority_labels", default: {"P1" => "P1", "P2" => "P2", "P3" => "P3"}, null: false
     t.jsonb "quality_gate_settings", default: {}, null: false
     t.jsonb "quality_pause_metadata", default: {}, null: false

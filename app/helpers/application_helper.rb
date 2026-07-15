@@ -417,6 +417,17 @@ module ApplicationHelper
     )
   end
 
+  def project_type_badge(project)
+    label = project.project_type_label
+    return unless label
+
+    tag.span(
+      label,
+      class: "inline-flex items-center rounded-md bg-indigo-100 px-2 py-1 text-xs font-medium text-indigo-700",
+      title: project.primary_language
+    )
+  end
+
   RANSACK_PERMITTED_KEYS = %i[status_eq agent_type_eq trigger_type_eq goal_eq branch_name_cont category_eq active_eq name_cont s].freeze
 
   def sort_link_to(label, attribute, q)
