@@ -39,7 +39,12 @@ RSpec.describe "Integrations" do
         get integrations_path
 
         expect(response.body).to include("Install the <code>paid-agents</code> GitHub App")
-        expect(response.body).to include(Github::AppRegistry.install_url)
+        install_href = if Github::AppRegistry.configured?
+          github_app_install_path
+        else
+          Github::AppRegistry.install_url
+        end
+        expect(response.body).to include(%(href="#{install_href}"))
         expect(response.body).to include("Repository")
         expect(response.body).to include("User Account")
         expect(response.body).to include("Organization")

@@ -5,16 +5,28 @@
 ## Metadata
 
 - **Date**: 2026-05-09
-- **Status**: Partially Implemented
+- **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: High
-- **Related Issues**: #2181, #2218, #2408, #2413, #2645
+- **Related Issues**: #2181, #2218, #2408, #2413, #2645, #2712
 - **Related RDRs**: [RDR-012](RDR-012-github-integration.md) (extends auth model), [RDR-022](RDR-022-auto-merge-pr-strategy.md) (consumes bot identity for PR authorship)
-- **Related Tests**: `spec/services/github/`, `spec/models/github_installation_*`, `spec/requests/github_app/installations_spec.rb`
+- **Related Tests**: `spec/services/github/`, `spec/models/github_installation_*`, `spec/models/pending_install_claim_spec.rb`, `spec/jobs/github/installations/sync_job_spec.rb`, `spec/services/github/installations/account_resolver_spec.rb`, `spec/requests/github_app/installations_spec.rb`, `spec/requests/api/github_app/webhooks_spec.rb`, `spec/requests/admin/github_app/setup_spec.rb`
 
 ## Implementation Status
 
-Partially implemented. Paid has GitHub App registry/configuration, installation token minting and caching, `GithubInstallation` records, project credential resolution, App/PAT switching, git credential and GitHub API proxies, migration UI/services, bot author identity, and health/rate-limit separation. Remaining work includes self-hosted/admin GitHub App manifest setup, an install/callback lifecycle, and automatic persistence/update of installation records from GitHub installation events.
+Implemented. Paid has GitHub App registry/configuration, installation token minting and caching, `GithubInstallation` records, project credential resolution, App/PAT switching, git credential and GitHub API proxies, migration UI/services, bot author identity, health/rate-limit separation, an install/callback lifecycle, an installation-event webhook ingestion path, and the self-hosted admin App manifest setup flow.
+
+The lifecycle pieces that landed with #2712 are:
+
+- **`GithubApp::InstallationsController`** — `GET /github_app/install` mints a CSRF state and 302s to GitHub; `GET /github_app/callback` verifies the state (or, for the self-hosted `setup_url` redirect, authenticates the operator), upserts a `PendingInstallClaim` server-side, and enqueues a `Github::Installations::SyncJob`. The claim is the server-trusted binding signal: GitHub's `installation_id` query parameter is spoofable, but the claim is created only after the controller has verified the user (state CSRF or operator session), and consumed by the signed `installation` webhook to finalize the `GithubInstallation` row. The state CSRF itself is anti-CSRF only and does not, by itself, authorize a binding.
+- **`PendingInstallClaim`** — server-side record of `(account_id, github_installation_id, source, expires_at)` that ties a freshly-returned installation to a Paid account. The record is the only thing that lets the `SyncJob` bind a first install into a brand-new org (where neither an existing row nor a matching project exists). `source` is `callback_with_state` (CSRF verified) or `operator_setup` (self-hosted manifest redirect, operator signed in). Claims past their 1-hour TTL are skipped so a long-lived claim cannot authorize a binding the user did not initiate recently.
+- **`Github::Installations::SyncJob`** — fetches the full installation record from `GET /app/installations/:id` and persists it via the `Upserter`. Binds only when one of the following server-trusted signals holds: an active `PendingInstallClaim` for the `(account_id, installation_id)` pair, an existing `GithubInstallation` row, or an `account.login` match against a project owner. Otherwise the sync is deferred to the signed `installation` webhook (the trusted binding path).
+- **`Github::Installations::Upserter`** — the single source of truth for translating GitHub payloads into `GithubInstallation` rows (created/updated/suspend/unsuspend/deleted).
+- **`Github::Installations::AccountResolver`** — resolves the owning account for an incoming `installation` webhook. Strategies, in order of confidence: existing installation row, active `PendingInstallClaim`, granted-repository match against connected `Project` rows, and prior-installation match by account login. Each strategy returns nil on ambiguity so we never bind an installation to the wrong tenant.
+- **`Github::Installations::RepositoriesReconciler`** — reconciles `accessible_repositories` against `installation_repositories.{added,removed}` events.
+- **`Api::GithubApp::WebhooksController`** — `POST /api/webhooks/github_app` verifies the App's webhook secret, dispatches to the upserter / reconciler, and consumes any active `PendingInstallClaim` once the row is persisted (so the claim cannot re-bind a future installation).
+- **`Admin::GithubApp::SetupController`** — `GET/POST /admin/github_app/setup` and `GET /admin/github_app/setup/callback` for self-hosted deployments; builds a manifest, redirects to GitHub, exchanges the resulting code for app id / slug / PEM private key / webhook secret, and writes them back to the encrypted Rails credentials file under the `paid_agent_app_*` keys (which `Github::AppRegistry` reads, with `PAID_AGENT_APP_*` env vars as overrides). Operator-only.
+- **`Github::AppManifestExchanger`** — calls `POST /app-manifests/:code/conversions` and returns the App credentials.
 
 ## Problem Statement
 

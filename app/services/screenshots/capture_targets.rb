@@ -68,6 +68,7 @@ module Screenshots
       onboarding: Target.new(slug: "onboarding", path_builder: "/onboarding", requires_auth: true),
       integrations: Target.new(slug: "integrations", path_builder: "/integrations", requires_auth: true),
       integrations_new: Target.new(slug: "integrations_new", path_builder: "/integrations/new", requires_auth: true),
+      admin_github_app_setup: Target.new(slug: "admin_github_app_setup", path_builder: "/admin/github_app/setup", requires_auth: true),
       free_models_catalog: Target.new(slug: "free_models_catalog", path_builder: "/free_models", requires_auth: true),
       integration_credentials: Target.new(slug: "integration_credentials", path_builder: "/integration_credentials", requires_auth: true),
       integration_credential_new: Target.new(slug: "integration_credential_new", path_builder: "/integration_credentials/new", requires_auth: true),
@@ -319,6 +320,8 @@ module Screenshots
       "projects/screenshot_configs_controller.rb" => [ :project_edit ],
       "projects/convention_settings_controller.rb" => [ :project_convention_settings ],
       "projects/pdf_knowledge_imports_controller.rb" => [ :project_pdf_knowledge_import_new ],
+      "admin/github_app/setup_controller.rb" => [ :admin_github_app_setup ],
+      "github_app/installations_controller.rb" => [ :integrations ],
       "marketplace_entry_pdf_imports_controller.rb" => [ :marketplace_entry_pdf_import_new ]
     }.freeze
 
@@ -508,6 +511,7 @@ module Screenshots
       when /\Aonboarding\// then [ :onboarding ]
       when /\Afree_models\// then [ :free_models_catalog ]
       when /\Aintegrations\// then integrations_targets(relative_path.delete_prefix("integrations/"))
+      when /\Aadmin\/github_app\/setup\// then [ :admin_github_app_setup ]
       when /\Aintegration_credentials\// then rest_resource_targets(relative_path, "integration_credentials", index: :integration_credentials, new: :integration_credential_new, show: :integration_credential_show, edit: :integration_credential_show)
       when /\Arunner_credentials\// then rest_resource_targets(relative_path, "runner_credentials", index: :runner_credentials, new: :runner_credential_new, show: :runner_credential_show, edit: :runner_credential_show)
       when /\Aclaude_login_sessions\// then rest_resource_targets(relative_path, "claude_login_sessions", index: :claude_login_session_new, new: :claude_login_session_new, show: :claude_login_session_show, edit: :claude_login_session_show)

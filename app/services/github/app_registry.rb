@@ -20,6 +20,10 @@ module Github
       ENV["PAID_AGENT_APP_PRIVATE_KEY"].presence || credentials_dig(:paid_agent_app_private_key)
     end
 
+    def self.webhook_secret
+      ENV["PAID_AGENT_APP_WEBHOOK_SECRET"].presence || credentials_dig(:paid_agent_app_webhook_secret)
+    end
+
     def self.bot_login
       "#{slug}[bot]"
     end
@@ -28,8 +32,11 @@ module Github
       [ slug, bot_login ].freeze
     end
 
-    def self.install_url
-      "https://github.com/apps/#{slug}/installations/new"
+    def self.install_url(state: nil)
+      url = "https://github.com/apps/#{slug}/installations/new"
+      return url if state.blank?
+
+      "#{url}?state=#{state}"
     end
 
     def self.credentials_dig(key)
