@@ -5,6 +5,7 @@ module Activities
     activity_name "SampleStyleGuideRuns"
 
     def execute(input)
+      style_guide = StyleGuide.find(input[:style_guide_id])
       result = StyleGuideEvolution::SampleRuns.call(
         style_guide_id: input[:style_guide_id],
         project_id: input[:project_id],
@@ -13,8 +14,16 @@ module Activities
         threshold: input.fetch(:threshold, StyleGuideEvolution::SampleRuns::QUALITY_THRESHOLD)
       )
 
+      # Restrict evolution candidates to the current version only. Historical and
+      # A/B test variants that underperform must not retrigger mutation when the
+      # current version is healthy — their fate is determined by the A/B test result.
+      current_version_id = style_guide.current_version_id
+      current_version_candidates = result.evolution_candidates.select do |candidate|
+        candidate[:style_guide_version].id == current_version_id
+      end
+
       {
-        evolution_candidates: result.evolution_candidates.map do |candidate|
+        evolution_candidates: current_version_candidates.map do |candidate|
           {
             style_guide_version_id: candidate[:style_guide_version].id,
             avg_score: candidate[:avg_score],

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_09_225313) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_15_150454) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2985,6 +2985,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_09_225313) do
   add_foreign_key "style_guide_versions", "users", column: "reviewed_by_user_id", on_delete: :nullify
   add_foreign_key "style_guides", "accounts", on_delete: :cascade
   add_foreign_key "style_guides", "projects", on_delete: :cascade
+  add_foreign_key "style_guides", "style_guide_versions", column: "current_version_id", on_delete: :nullify
   add_foreign_key "tenant_settings", "accounts"
   add_foreign_key "token_usages", "agent_runs", on_delete: :cascade
   add_foreign_key "token_usages", "chat_sessions", on_delete: :cascade
