@@ -180,6 +180,7 @@ RSpec.describe "Dashboard" do
         expect(doc.at_css("turbo-frame#dashboard-metrics[data-dashboard-frames-src='#{dashboard_metrics_path(time_range: "cumulative")}']")).to be_present
         expect(doc.at_css("turbo-frame#dashboard-performance[data-dashboard-frames-src='#{dashboard_performance_path(time_range: "cumulative", status: "all", goal: "all")}']")).to be_present
         expect(doc.at_css("turbo-frame#dashboard-decision-metrics[data-dashboard-frames-src='#{dashboard_decision_metrics_path(time_range: "cumulative")}']")).to be_present
+        expect(doc.at_css("turbo-frame#dashboard-eligibility-breakdown[data-dashboard-frames-src='#{dashboard_eligibility_breakdown_path}']")).to be_present
         expect(doc.at_css("turbo-frame#dashboard-auth-health[data-dashboard-frames-src='#{dashboard_auth_health_path}']")).to be_present
         expect(doc.at_css("turbo-frame#dashboard-knowledge-stats[data-dashboard-frames-src='#{dashboard_knowledge_stats_path}']")).to be_present
         expect(doc.at_css("turbo-frame#dashboard-runner-health[data-dashboard-frames-src='#{dashboard_runner_health_path}']")).to be_present
@@ -193,6 +194,7 @@ RSpec.describe "Dashboard" do
         expect(doc.at_css("turbo-frame#dashboard-metrics[loading]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-performance[loading]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-decision-metrics[loading]")).not_to be_present
+        expect(doc.at_css("turbo-frame#dashboard-eligibility-breakdown[loading]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-auth-health[loading]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-knowledge-stats[loading]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-runner-health[loading]")).not_to be_present
@@ -200,10 +202,19 @@ RSpec.describe "Dashboard" do
         expect(doc.at_css("turbo-frame#dashboard-metrics[src]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-performance[src]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-decision-metrics[src]")).not_to be_present
+        expect(doc.at_css("turbo-frame#dashboard-eligibility-breakdown[src]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-auth-health[src]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-knowledge-stats[src]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-runner-health[src]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-queue-health[src]")).not_to be_present
+      end
+
+      it "does not compute the eligibility breakdown during the dashboard shell request" do
+        allow(Dashboard::EligibilityBreakdown).to receive(:call).and_call_original
+
+        get dashboard_path
+
+        expect(Dashboard::EligibilityBreakdown).not_to have_received(:call)
       end
 
       it "renders runner health above queue health in the dashboard shell" do
@@ -729,6 +740,25 @@ RSpec.describe "Dashboard" do
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("dashboard-knowledge-stats")
       expect(response.body).to include("Knowledge Base")
+    end
+  end
+
+  describe "GET /dashboard/eligibility_breakdown" do
+    let(:account) { create(:account) }
+    let(:user) { create(:user, account: account) }
+    let(:project) { create(:project, account: account, created_by: user, auto_pick_enabled: true, active: true) }
+
+    before { sign_in user }
+
+    it "returns the eligibility breakdown partial within a turbo frame" do
+      create(:issue, project: project, github_state: "open", paid_state: "new")
+
+      get dashboard_eligibility_breakdown_path
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("dashboard-eligibility-breakdown")
+      expect(response.body).to include("Auto-Pick Eligibility")
+      expect(response.body).to include(project.full_name)
     end
   end
 
