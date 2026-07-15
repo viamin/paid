@@ -39,6 +39,11 @@ class DashboardController < ApplicationController
     @recent_activity = Dashboard::RecentActivity.call(account: current_account)
   end
 
+  def eligibility_breakdown
+    @eligibility_breakdown = Dashboard::EligibilityBreakdown.call(user: current_user)
+    render partial: "dashboard/eligibility_breakdown", locals: { breakdowns: @eligibility_breakdown }
+  end
+
   def metrics
     @time_range = valid_time_range
     @stats = Dashboard::Stats.call(

@@ -152,9 +152,11 @@ module Automation
           #   IssueDependency graph may be incomplete for body-referenced
           #   issues, and the direct-reference check already catches the
           #   motivating scenario (#615).
-          # - Trackers with NO body references are conservatively blocked —
-          #   they likely track work not enumerated as +#NNN+ references,
-          #   and auto-picking them risks premature selection (see #615).
+          # - Trackers with NO body references are conservatively blocked
+          #   ONLY when the title itself matches tracker vocabulary. A
+          #   body-heading match alone (e.g. "## Completion criteria") is
+          #   a weaker signal — common in regular implementation issues —
+          #   so those are allowed through unless they have open refs.
           def tracker_ids_blocked_by_open_references(candidate_scope, project)
             ilike_conditions = TRACKER_SQL_PATTERNS.each_with_index.flat_map do |_, i|
               [ "title ILIKE :t#{i}", "body ILIKE :t#{i}" ]
@@ -171,12 +173,14 @@ module Automation
               next unless issue.tracker_issue?
 
               refs = issue.body_referenced_issue_numbers - [ issue.github_number ]
-              [ issue.id, refs ]
+              [ issue.id, refs, Issue::TRACKER_PATTERN.match?(issue.title.to_s), issue.strong_tracker_body_heading? ]
             end
             return [] if refs_by_issue.empty?
 
-            no_ref_ids = refs_by_issue.filter_map { |id, refs| id if refs.empty? }
-            with_refs = refs_by_issue.select { |_, refs| refs.present? }
+            no_ref_ids = refs_by_issue.filter_map do |id, refs, title_match, strong_body_match|
+              id if refs.empty? && (title_match || strong_body_match)
+            end
+            with_refs = refs_by_issue.filter_map { |id, refs, _, _| [ id, refs ] if refs.present? }
             return no_ref_ids if with_refs.empty?
 
             all_referenced_numbers = with_refs.flat_map(&:last).uniq
