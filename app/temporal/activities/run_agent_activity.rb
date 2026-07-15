@@ -1721,7 +1721,7 @@ module Activities
       end
 
       reason = preflight_exit_reason(result, sanitized_output)
-      if sigkill_exit?(result)
+      if preflight_sigkill_infra_failure?(result)
         raise_preflight_infra_failure!(agent_run: agent_run, runner: runner, reason: reason)
       end
 
@@ -2221,6 +2221,23 @@ module Activities
 
     def sigkill_exit?(result)
       result.respond_to?(:[]) && result[:exit_code].to_i == 137
+    end
+
+    # A preflight SIGKILL is an infrastructure failure only when the container
+    # itself was lost — OOM-killed, stopped, or no longer inspectable (the "No
+    # such container" case). When the container is still running the preflight
+    # process was killed in isolation (e.g. a runner whose model crashes its
+    # own smoke check), which is a per-runner fault: it must stay on the normal
+    # preflight failure path so record_runner_failure can open the circuit
+    # breaker instead of being bypassed on every attempt.
+    def preflight_sigkill_infra_failure?(result)
+      sigkill_exit?(result) && container_lost_after_exit?(result)
+    end
+
+    def container_lost_after_exit?(result)
+      return true if result[:oom_killed]
+
+      result[:container_running] != true
     end
 
     def raise_preflight_failure!(agent_run:, runner:, reason:)

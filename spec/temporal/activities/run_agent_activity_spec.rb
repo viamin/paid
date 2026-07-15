@@ -178,6 +178,18 @@ RSpec.describe Activities::RunAgentActivity do
     )
   end
 
+  def oom_preflight_failure(stderr: "> build · MiniMax-M3")
+    Containers::Provision::Result.failure(
+      error: "exit 137",
+      stdout: "",
+      stderr: stderr,
+      exit_code: 137,
+      oom_killed: true,
+      memory_limit_bytes: 4 * 1024 * 1024 * 1024,
+      container_running: false
+    )
+  end
+
   describe "#with_periodic_heartbeat" do
     let(:mock_context) { instance_double(Temporalio::Activity::Context) }
 
@@ -2753,7 +2765,45 @@ expect(container_service).to receive(:execute).with(
         )
       end
 
-      it "classifies direct-outbound preflight exit 137 as infrastructure failure and includes diagnostics" do
+      it "classifies direct-outbound preflight exit 137 as infrastructure failure when the container died and includes diagnostics" do
+        opencode_provider = create_opencode_provider_for(user)
+        allow(container_service).to receive(:execute).and_return(
+          sigkill_preflight_failure(container_running: false)
+        )
+
+        expect {
+          run_direct_outbound_preflight(
+            activity: activity,
+            agent_run: agent_run,
+            container_service: container_service,
+            provider: opencode_provider,
+            user: user
+          )
+        }.to raise_error(
+          described_class::RunnerInfraExecutionError,
+          /Preflight check failed: Agent exited with code 137 \(process killed by SIGKILL; memory limit 4.0 GB, container_running=false\): > build · MiniMax-M3/
+        )
+      end
+
+      it "classifies OOM-killed preflight exit 137 as infrastructure failure" do
+        opencode_provider = create_opencode_provider_for(user)
+        allow(container_service).to receive(:execute).and_return(oom_preflight_failure)
+
+        expect {
+          run_direct_outbound_preflight(
+            activity: activity,
+            agent_run: agent_run,
+            container_service: container_service,
+            provider: opencode_provider,
+            user: user
+          )
+        }.to raise_error(
+          described_class::RunnerInfraExecutionError,
+          /container OOM-killed; memory limit 4.0 GB/
+        )
+      end
+
+      it "keeps preflight exit 137 on the runner failure path when the container is still running" do
         opencode_provider = create_opencode_provider_for(user)
         allow(container_service).to receive(:execute).and_return(sigkill_preflight_failure)
 
@@ -2766,7 +2816,7 @@ expect(container_service).to receive(:execute).with(
             user: user
           )
         }.to raise_error(
-          described_class::RunnerInfraExecutionError,
+          described_class::RunnerExecutionError,
           /Preflight check failed: Agent exited with code 137 \(process killed by SIGKILL; memory limit 4.0 GB, container_running=true\): > build · MiniMax-M3/
         )
       end
@@ -2917,7 +2967,7 @@ expect(container_service).to receive(:execute).with(
         )
         allow(activity).to receive(:run_agent_with_runner).and_raise(
           described_class::RunnerInfraExecutionError,
-          "Preflight check failed: Agent exited with code 137 (process killed by SIGKILL; memory limit 4.0 GB, container_running=true): > build · MiniMax-M3"
+          "Preflight check failed: Agent exited with code 137 (process killed by SIGKILL; memory limit 4.0 GB, container_running=false): > build · MiniMax-M3"
         )
         allow(Containers::Provision).to receive(:reconnect).and_return(container_service)
         allow(container_service).to receive(:container_running?).and_return(true)
@@ -2929,6 +2979,29 @@ expect(container_service).to receive(:execute).with(
 
         state = user.runner_states.find_by(runner_name: runner.state_key)
         expect(state).to be_nil.or(satisfy(&:circuit_closed?))
+      end
+
+      it "trips the circuit breaker when preflight exit 137 leaves the container running" do
+        runner = user.runners.find_by!(runner_key: "claude")
+        user.settings.update!(
+          fallback_enabled: false,
+          fallback_runners: [],
+          circuit_breaker_failure_threshold: 3
+        )
+        allow(activity).to receive(:run_agent_with_runner).and_raise(
+          described_class::RunnerExecutionError,
+          "Preflight check failed: Agent exited with code 137 (process killed by SIGKILL; memory limit 4.0 GB, container_running=true): > build · MiniMax-M3"
+        )
+        allow(Containers::Provision).to receive(:reconnect).and_return(container_service)
+        allow(container_service).to receive(:container_running?).and_return(true)
+
+        3.times do
+          run = create_runner_backed_agent_run(project: project, runner: runner)
+          expect_all_runners_exhausted(activity: activity, agent_run: run)
+        end
+
+        state = user.runner_states.find_by(runner_name: runner.state_key)
+        expect(state).to be_circuit_open
       end
 
       it "still records the attempt with error_type 'error' for deterministic config errors" do
