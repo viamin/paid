@@ -4999,6 +4999,65 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(automation_scan_results(result).first[:triggers].map { |t| t[:type] }).to include("ci_failure")
       end
 
+      it "triggers ci_failure without the automation label when Dependabot auto-merge is enabled" do
+        project.update!(auto_merge_mode: "dependabot_only")
+        Issue.find_by!(project: project, github_number: 42).update!(labels: %w[dependencies ruby])
+        expect(github_client).not_to receive(:issue_events)
+        stub_github_for_pr(
+          draft: true,
+          author_login: "dependabot[bot]",
+          checks: [ { name: "ci", conclusion: "failure" } ],
+          review_threads: [],
+          reviews: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result).size).to eq(1)
+        expect(automation_scan_results(result).first[:triggers].map { |t| t[:type] }).to include("ci_failure")
+      end
+
+      it "triggers ci_failure without the automation label when all PR auto-merge is enabled" do
+        project.update!(auto_merge_mode: "all")
+        Issue.find_by!(project: project, github_number: 42).update!(labels: %w[dependencies ruby])
+        expect(github_client).not_to receive(:issue_events)
+        stub_github_for_pr(
+          draft: true,
+          author_login: "dependabot[bot]",
+          checks: [ { name: "ci", conclusion: "failure" } ],
+          review_threads: [],
+          reviews: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result).size).to eq(1)
+        expect(automation_scan_results(result).first[:triggers].map { |t| t[:type] }).to include("ci_failure")
+      end
+
+      it "ignores unlabeled Dependabot PRs when Dependabot auto-merge is disabled" do
+        project.update!(auto_merge_mode: "off")
+        Issue.find_by!(project: project, github_number: 42).update!(labels: %w[dependencies ruby])
+        expect(github_client).not_to receive(:pull_request)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to be_empty
+      end
+
+      it "does not auto-enroll unlabeled Renovate PRs through Dependabot auto-merge" do
+        project.update!(auto_merge_mode: "dependabot_only")
+        Issue.find_by!(project: project, github_number: 42).update!(
+          github_creator_login: "renovate[bot]",
+          labels: %w[dependencies ruby]
+        )
+        expect(github_client).not_to receive(:pull_request)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to be_empty
+      end
+
       it "does not grant the dependency-update bypass to bot-name lookalikes" do
         issue = Issue.find_by!(project: project, github_number: 42)
         issue.update!(github_creator_login: "dependabot-maintainer")
