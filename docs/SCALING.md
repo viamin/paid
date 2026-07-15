@@ -75,7 +75,7 @@ separate Docker container with its own restart boundary:
 
 `GOOD_JOB_EXECUTION_MODE=external` is set globally so the `web` role never runs
 background jobs (preventing job load from OOM-crashing the control plane). Target
-a single role with `bin/kamal <cmd> -r <role>` (e.g. `bin/kamal app boots -r job`).
+a single role with `bin/kamal <cmd> -r <role>` (e.g. `bin/kamal app boot -r job`).
 For env-var sizing per role, see [WORKER_POOL_TUNING.md](WORKER_POOL_TUNING.md).
 
 ### Scaling Decision Flow

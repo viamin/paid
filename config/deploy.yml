@@ -22,7 +22,7 @@ image: paid
 #
 # Target a single role with `bin/kamal <cmd> -r <role>`, e.g.
 # `bin/kamal app exec -r job ...`, `bin/kamal app logs -r worker_agent`,
-# or `bin/kamal app boots -r job`. See docs/SCALING.md for sizing guidance.
+# or `bin/kamal app boot -r job`. See docs/SCALING.md for sizing guidance.
 servers:
   web:
     - 192.168.0.1
@@ -41,6 +41,20 @@ servers:
         # Per-queue thread caps (semicolons create independent pools).
         # Sums to GOOD_JOB_MAX_THREADS so no queue can starve another.
         GOOD_JOB_QUEUES: default:3;maintenance:2;metrics:2;knowledge:2;low_priority:1
+        # CRON SAFETY: Only ONE job host may run with cron enabled (the default).
+        # If you add a second job host, set GOOD_JOB_ENABLE_CRON=false on it to
+        # prevent every scheduled entry in config/initializers/good_job.rb from
+        # firing once per host. The primary host keeps the default (true); add:
+        #
+        #   job-secondary:
+        #     hosts:
+        #       - 192.168.0.3
+        #     cmd: bin/jobs
+        #     env:
+        #       clear:
+        #         GOOD_JOB_ENABLE_CRON: false
+        #
+        # GOOD_JOB_ENABLE_CRON: false   # set this on all secondary job hosts
   worker_poll:
     hosts:
       - 192.168.0.1
