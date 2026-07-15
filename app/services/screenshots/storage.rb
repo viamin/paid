@@ -109,6 +109,8 @@ module Screenshots
 
       s3_client.list_objects_v2(bucket: @bucket, prefix: prefix).each_page do |page|
         page.contents.each do |obj|
+          next unless obj.key.end_with?(".png")
+
           parts = obj.key.delete_prefix(prefix).split("/", 2)
           next unless parts.size == 2
 
