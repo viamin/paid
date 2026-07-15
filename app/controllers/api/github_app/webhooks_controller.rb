@@ -73,18 +73,33 @@ module Api
       # The owning account is inferred via AccountResolver; if it cannot be mapped
       # to a single tenant we log and drop instead of guessing.
       def upsert_installation
+        installation_id = payload.dig("installation", "id")
         account = Github::Installations::AccountResolver.call(payload: payload)
         unless account
           Rails.logger.info(
             message: "github_app.webhook.unresolved_installation",
-            installation_id: payload.dig("installation", "id"),
+            installation_id: installation_id,
             action: payload["action"]
           )
           return
         end
 
+        # Resolve the account under system access so a claim lookup can run
+        # outside the tenant scope, then drop the claim once the row is
+        # persisted so it cannot re-bind a future installation to a stale
+        # account. The `GithubInstallation` row is now the authoritative
+        # binding, so subsequent webhooks resolve via by_installation_id.
+        claim_consumed = nil
+        TenantContext.with_system_access do
+          claim_consumed = PendingInstallClaim.active.find_by(github_installation_id: installation_id)
+        end
+
         TenantContext.with(account) do
           Github::Installations::Upserter.call(account: account, payload: payload)
+        end
+
+        if claim_consumed
+          TenantContext.with_system_access { claim_consumed.destroy! }
         end
       end
 

@@ -26,17 +26,17 @@ RSpec.describe Github::Installations::SyncJob do
     ENV["PAID_AGENT_APP_PRIVATE_KEY"] = original_key
   end
 
-  it "fetches the installation and upserts the record" do
+  it "fetches the installation and upserts the record when an existing row maps this installation" do
     stub_request(:get, %r{/app/installations/#{installation_id}\z})
       .to_return(status: 200, body: installation_payload.to_json,
                  headers: { "Content-Type" => "application/json" })
     allow(Github::Installations::Upserter).to receive(:call).and_call_original
+    create(:github_installation, account: account, github_installation_id: installation_id)
 
     described_class.perform_now(
       installation_id: installation_id,
       account_id: account.id,
-      setup_action: "install",
-      trusted_callback: true
+      setup_action: "install"
     )
 
     record = TenantContext.with_system_access do
@@ -82,15 +82,41 @@ RSpec.describe Github::Installations::SyncJob do
                    headers: { "Content-Type" => "application/json" })
     end
 
-    it "binds a trusted callback regardless of existing rows or projects (first-install)" do
+    it "binds when an active PendingInstallClaim exists for the (installation_id, account_id) pair" do
+      PendingInstallClaim.upsert_for_callback!(
+        account: account,
+        installation_id: installation_id,
+        source: "callback_with_state",
+        state_token: "claimed-token"
+      )
+
       expect {
         described_class.perform_now(
           installation_id: installation_id,
           account_id: account.id,
-          setup_action: "install",
-          trusted_callback: true
+          setup_action: "install"
         )
       }.to change(GithubInstallation, :count).by(1)
+    end
+
+    it "ignores expired claims (defers binding to the webhook or operator recovery)" do
+      PendingInstallClaim.upsert_for_callback!(
+        account: account,
+        installation_id: installation_id,
+        source: "callback_with_state"
+      )
+      TenantContext.with_system_access do
+        PendingInstallClaim.where(github_installation_id: installation_id)
+          .update_all(expires_at: 1.hour.ago)
+      end
+
+      expect {
+        described_class.perform_now(
+          installation_id: installation_id,
+          account_id: account.id,
+          setup_action: "install"
+        )
+      }.not_to change(GithubInstallation, :count)
     end
 
     it "binds when the installation's account.login matches a project owner in the account" do
@@ -119,31 +145,19 @@ RSpec.describe Github::Installations::SyncJob do
       expect(existing.reload.account_login).to eq("acme-corp")
     end
 
-    it "refuses to bind an untrusted callback into an org with no projects (defer to webhook)" do
+    it "refuses to bind a callback that has no claim, no row, and no project match (defer to webhook)" do
       expect {
         described_class.perform_now(
           installation_id: installation_id,
           account_id: account.id,
-          setup_action: "install",
-          trusted_callback: false
+          setup_action: "install"
         )
       }.not_to change(GithubInstallation, :count)
     end
 
-    it "refuses to bind an untrusted callback whose account_login does not match any project owner in the account" do
+    it "refuses to bind a callback whose account_login does not match any project owner" do
       create(:project, account: account, owner: "different-org", repo: "widgets")
 
-      expect {
-        described_class.perform_now(
-          installation_id: installation_id,
-          account_id: account.id,
-          setup_action: "install",
-          trusted_callback: false
-        )
-      }.not_to change(GithubInstallation, :count)
-    end
-
-    it "defaults to untrusted when trusted_callback is not passed" do
       expect {
         described_class.perform_now(
           installation_id: installation_id,

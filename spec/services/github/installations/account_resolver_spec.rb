@@ -125,5 +125,62 @@ RSpec.describe Github::Installations::AccountResolver do
 
       expect(query_count).to eq(1)
     end
+
+    # A first-time install into a brand-new org has no project match and no
+    # existing installation row, so the resolver must defer to the active
+    # `PendingInstallClaim` written by the install callback (state CSRF
+    # verified or operator-authenticated) to identify the owning account.
+    it "binds via an active PendingInstallClaim when no other signal matches" do
+      PendingInstallClaim.upsert_for_callback!(
+        account: account,
+        installation_id: 88_777_777,
+        source: "callback_with_state",
+        state_token: "abc"
+      )
+
+      resolved = described_class.call(
+        payload: installation_payload(installation_id: 88_777_777)
+      )
+
+      expect(resolved).to eq(account)
+    end
+
+    it "ignores an expired PendingInstallClaim" do
+      PendingInstallClaim.upsert_for_callback!(
+        account: account,
+        installation_id: 88_777_777,
+        source: "callback_with_state"
+      )
+      TenantContext.with_system_access do
+        PendingInstallClaim.where(github_installation_id: 88_777_777)
+          .update_all(expires_at: 1.hour.ago)
+      end
+
+      resolved = described_class.call(
+        payload: installation_payload(installation_id: 88_777_777)
+      )
+
+      expect(resolved).to be_nil
+    end
+
+    it "returns nil when two accounts have an active claim for the same installation" do
+      other_account = create(:account)
+      PendingInstallClaim.upsert_for_callback!(
+        account: account,
+        installation_id: 88_777_777,
+        source: "callback_with_state"
+      )
+      PendingInstallClaim.upsert_for_callback!(
+        account: other_account,
+        installation_id: 88_777_777,
+        source: "callback_with_state"
+      )
+
+      resolved = described_class.call(
+        payload: installation_payload(installation_id: 88_777_777)
+      )
+
+      expect(resolved).to be_nil
+    end
   end
 end

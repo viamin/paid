@@ -43,6 +43,7 @@ RSpec.describe "GithubApp::Installations lifecycle" do
 
   describe "GET /github_app/callback" do
     let(:state_token) { SecureRandom.urlsafe_base64(32) }
+    let(:installation_id) { 88_777_777 }
 
     # Drives the controller through a real `install` request so the resulting
     # session state is set by the controller itself. The returned token is
@@ -53,22 +54,29 @@ RSpec.describe "GithubApp::Installations lifecycle" do
       stored[:token] || stored["token"]
     end
 
-    it "enqueues a SyncJob and redirects to integrations on a valid state" do
+    it "creates a PendingInstallClaim, enqueues a SyncJob, and redirects to integrations on a valid state" do
       token = prime_session
 
       expect {
         get github_app_callback_path, params: {
-          installation_id: 88_777_777, setup_action: "install", state: token
+          installation_id: installation_id, setup_action: "install", state: token
         }
       }.to have_enqueued_job(Github::Installations::SyncJob).with(
-        installation_id: 88_777_777,
+        installation_id: installation_id,
         account_id: account.id,
-        setup_action: "install",
-        trusted_callback: true
+        setup_action: "install"
       )
 
       expect(response).to redirect_to(integrations_path)
       expect(flash[:notice]).to match(/installation received/i)
+
+      claim = TenantContext.with_system_access do
+        PendingInstallClaim.find_by(github_installation_id: installation_id)
+      end
+      expect(claim).to be_present
+      expect(claim.account_id).to eq(account.id)
+      expect(claim.source).to eq("callback_with_state")
+      expect(claim.state_token).to eq(token)
     end
 
     it "captures the session-stored account_id before clearing state" do
@@ -90,23 +98,21 @@ RSpec.describe "GithubApp::Installations lifecycle" do
       sign_out other_user
       sign_in user
 
-      expect {
-        get github_app_callback_path, params: {
-          installation_id: 88_777_777, setup_action: "install", state: token
-        }
-      }.to have_enqueued_job(Github::Installations::SyncJob).with(
-        installation_id: 88_777_777,
-        account_id: other_account.id,
-        setup_action: "install",
-        trusted_callback: true
-      )
+      get github_app_callback_path, params: {
+        installation_id: installation_id, setup_action: "install", state: token
+      }
+
+      claim = TenantContext.with_system_access do
+        PendingInstallClaim.find_by(github_installation_id: installation_id)
+      end
+      expect(claim.account_id).to eq(other_account.id)
     end
 
     it "rejects mismatched state" do
       prime_session
 
       get github_app_callback_path, params: {
-        installation_id: 88_777_777, setup_action: "install", state: "wrong-token"
+        installation_id: installation_id, setup_action: "install", state: "wrong-token"
       }
 
       expect(response).to redirect_to(integrations_path)
@@ -122,7 +128,7 @@ RSpec.describe "GithubApp::Installations lifecycle" do
       token = request.session[:github_app_install_state][:token] || request.session[:github_app_install_state]["token"]
 
       get github_app_callback_path, params: {
-        installation_id: 88_777_777, setup_action: "install", state: token
+        installation_id: installation_id, setup_action: "install", state: token
       }
 
       expect(response).to redirect_to(integrations_path)
@@ -140,25 +146,67 @@ RSpec.describe "GithubApp::Installations lifecycle" do
       expect(flash[:alert]).to match(/Missing installation_id/i)
     end
 
-    # When GitHub's manifest `setup_url` redirects here directly (post-install
-    # or post-update on a self-hosted App), there is no session state because
-    # the user never went through `/github_app/install`. We accept the
-    # request and defer binding verification to `SyncJob`, which only binds
-    # when the installation matches a trusted signal.
-    it "accepts GitHub-initiated redirects that arrive without session state" do
-      expect {
-        get github_app_callback_path, params: {
-          installation_id: 88_777_777, setup_action: "install"
-        }
-      }.to have_enqueued_job(Github::Installations::SyncJob).with(
-        installation_id: 88_777_777,
-        account_id: account.id,
-        setup_action: "install",
-        trusted_callback: false
-      )
+    # A non-operator hitting the callback with no session state has no signal
+    # we can trust: the state CSRF was not verified (none was minted), and
+    # the user is not an operator, so no PendingInstallClaim is created.
+    # The SyncJob will then refuse to bind (no claim, no row, no project
+    # match) and the install is effectively dropped — the security property
+    # the reviewer flagged.
+    it "does not create a PendingInstallClaim when a non-operator arrives without session state" do
+      get github_app_callback_path, params: {
+        installation_id: installation_id, setup_action: "install"
+      }
 
       expect(response).to redirect_to(integrations_path)
-      expect(flash[:notice]).to match(/installation received/i)
+
+      claim = TenantContext.with_system_access do
+        PendingInstallClaim.find_by(github_installation_id: installation_id)
+      end
+      expect(claim).to be_nil
+    end
+
+    it "still enqueues a SyncJob on a GitHub-initiated redirect so the secondary-signal check runs" do
+      expect {
+        get github_app_callback_path, params: {
+          installation_id: installation_id, setup_action: "install"
+        }
+      }.to have_enqueued_job(Github::Installations::SyncJob).with(
+        installation_id: installation_id,
+        account_id: account.id,
+        setup_action: "install"
+      )
+    end
+
+    context "when the current user is an operator on a freshly-configured self-hosted App" do
+      let(:operator) { create(:user, account: account) }
+
+      around do |example|
+        original = ENV["PAID_OPERATOR_EMAILS"]
+        ENV["PAID_OPERATOR_EMAILS"] = operator.email
+        example.run
+      ensure
+        ENV["PAID_OPERATOR_EMAILS"] = original
+      end
+
+      before do
+        sign_out user
+        sign_in operator
+      end
+
+      it "creates an operator_setup claim so the webhook can finalize the binding" do
+        get github_app_callback_path, params: {
+          installation_id: installation_id, setup_action: "install"
+        }
+
+        expect(response).to redirect_to(integrations_path)
+
+        claim = TenantContext.with_system_access do
+          PendingInstallClaim.find_by(github_installation_id: installation_id)
+        end
+        expect(claim).to be_present
+        expect(claim.account_id).to eq(account.id)
+        expect(claim.source).to eq("operator_setup")
+      end
     end
   end
 end

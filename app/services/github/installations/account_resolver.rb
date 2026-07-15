@@ -12,17 +12,22 @@ module Github
     #   1. An existing GithubInstallation row for this installation id — the
     #      authoritative binding created by the install callback or a prior
     #      webhook.
-    #   2. The installation's granted repositories matched against connected
+    #   2. An active PendingInstallClaim for this installation id — the
+    #      server-trusted signal written by the install callback when the
+    #      state CSRF was verified (SaaS flow) or when the operator was
+    #      signed in for the self-hosted `setup_url` flow. This is the
+    #      binding path for a first install into a brand-new org where
+    #      neither an existing row nor a matching project exists yet.
+    #   3. The installation's granted repositories matched against connected
     #      Projects (owner/repo). Recovers a deleted row for an org that is
     #      already using Paid.
-    #   3. The installer's account login matched against a prior installation
+    #   4. The installer's account login matched against a prior installation
     #      for the same login.
     #
     # Every strategy only returns an account when it maps to exactly one Paid
     # account. Ambiguous matches resolve to nil so we never bind an installation
     # (and its repository access) to the wrong tenant. When nothing resolves the
-    # caller logs and drops the event — the browser callback remains the binding
-    # path for a brand-new org that has no other footprint yet.
+    # caller logs and drops the event.
     class AccountResolver
       def self.call(payload:)
         new(payload: payload).call
@@ -34,7 +39,7 @@ module Github
       end
 
       def call
-        by_installation_id || by_repositories || by_account_login
+        by_installation_id || by_pending_claim || by_repositories || by_account_login
       end
 
       private
@@ -48,6 +53,18 @@ module Github
         TenantContext.with_system_access do
           GithubInstallation.find_by(github_installation_id: installation_id)&.account
         end
+      end
+
+      def by_pending_claim
+        installation_id = installation["id"]
+        return nil if installation_id.blank?
+
+        account_ids = TenantContext.with_system_access do
+          PendingInstallClaim.active.where(github_installation_id: installation_id)
+            .distinct.pluck(:account_id)
+        end
+
+        single_account(account_ids)
       end
 
       def by_repositories

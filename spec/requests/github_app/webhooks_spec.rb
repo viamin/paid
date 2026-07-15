@@ -108,6 +108,44 @@ RSpec.describe "GithubApp::Webhooks", type: :request do
       expect(existing.accessible_repositories.first["full_name"]).to eq("acme-corp/widgets")
     end
 
+    it "binds a fresh installation to the account claimed by an active PendingInstallClaim" do
+      PendingInstallClaim.upsert_for_callback!(
+        account: account,
+        installation_id: 88_777_777,
+        source: "callback_with_state"
+      )
+
+      post_webhook(
+        event: "installation",
+        payload: { "action" => "created", "installation" => base_installation }
+      )
+
+      expect(response).to have_http_status(:ok)
+      record = TenantContext.with_system_access do
+        GithubInstallation.find_by(github_installation_id: 88_777_777)
+      end
+      expect(record).to be_present
+      expect(record.account_id).to eq(account.id)
+    end
+
+    it "consumes the PendingInstallClaim after binding so it cannot re-bind a future installation" do
+      PendingInstallClaim.upsert_for_callback!(
+        account: account,
+        installation_id: 88_777_777,
+        source: "callback_with_state"
+      )
+
+      post_webhook(
+        event: "installation",
+        payload: { "action" => "created", "installation" => base_installation }
+      )
+
+      claim = TenantContext.with_system_access do
+        PendingInstallClaim.find_by(github_installation_id: 88_777_777)
+      end
+      expect(claim).to be_nil
+    end
+
     it "ignores events for unknown installations" do
       post_webhook(
         event: "installation",

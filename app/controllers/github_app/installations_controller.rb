@@ -11,29 +11,33 @@ module GithubApp
   #         session, and 302s to GitHub's install URL with `state=...`.
   #      c. After install, GitHub redirects to
   #         `GET /github_app/callback?installation_id=...&setup_action=...&state=...`.
-  #         The controller verifies the CSRF state, then enqueues
-  #         `Github::Installations::SyncJob` with `trusted_callback: true`.
+  #         The controller verifies the CSRF state, then upserts a
+  #         `PendingInstallClaim` and enqueues `Github::Installations::SyncJob`.
   #
-  #   2. The GitHub-initiated flow (post-install or post-update from a manifest
-  #      App that has `setup_url` set, e.g. self-hosted deployments):
-  #      GitHub redirects to `setup_url` with `installation_id` and
-  #      `setup_action` but no `state`. The user lands here without having gone
-  #      through `/github_app/install`, so the session has no state to verify.
-  #      In that case the callback skips the CSRF check but still enqueues
-  #      `SyncJob` with `trusted_callback: false`; `SyncJob` only binds when the
-  #      JWT-fetched installation matches a trusted signal (existing row or
-  #      matching project owner). Otherwise binding is deferred to the signed
-  #      `installation` webhook.
+  #   2. The self-hosted manifest flow: GitHub's `setup_url` redirect hits
+  #      the callback with `installation_id` + `setup_action` but no `state`
+  #      (no prior `/install` call). The user is signed in as an operator
+  #      of the only Paid account on the deployment. The controller
+  #      authenticates the operator, upserts a `PendingInstallClaim` tagged
+  #      with `source=operator_setup`, and enqueues the SyncJob. Binding is
+  #      otherwise deferred to the signed `installation` webhook.
   #
-  # Note: GitHub's setup URL `installation_id` parameter is spoofable — a
-  # signed-in user could complete the local callback with an installation_id
-  # they do not actually own. The CSRF `state` only proves the user clicked
-  # Paid's install button, not that they completed the GitHub side of the
-  # flow. We therefore pass `trusted_callback:` to `SyncJob` so it can trust
-  # the binding only when CSRF state was verified here. Otherwise the binding
-  # is gated against existing rows or matching project owners inside `SyncJob`;
-  # when neither holds, `SyncJob` defers binding to the signed `installation`
-  # webhook — the trusted path.
+  # In every other case — a non-operator hitting the callback with no
+  # session state, or a forged `state` — no claim is created and the
+  # SyncJob's secondary-signal check refuses to bind. The webhook's
+  # `AccountResolver` likewise refuses to bind without a claim, since the
+  # only other signals (existing row, project owner match, prior
+  # installation for the same login) cannot resolve an account for a
+  # first-time install into a brand-new org.
+  #
+  # `PendingInstallClaim` is the server-trusted binding signal: it is
+  # created on the same request that verifies the user's intent (state CSRF
+  # or operator session) and consumed by the signed `installation` webhook
+  # to finalize the `GithubInstallation` row. The CSRF `state` itself is
+  # anti-CSRF only — it does not bind the returned `installation_id`, so
+  # even a verified state does not let `SyncJob` skip its secondary-signal
+  # check. Stale claims (past `expires_at`) are skipped so a long-lived
+  # claim can never authorize a binding the user did not initiate recently.
   #
   # Webhook-driven lifecycle updates (suspend, repositories added/removed,
   # uninstall) are handled by `GithubApp::WebhooksController`, not here.
@@ -64,7 +68,7 @@ module GithubApp
     # GET /github_app/callback
     # Handles the post-install redirect from GitHub. Persists the
     # GithubInstallation record asynchronously and redirects the user to
-    # the project picker for the newly installed organization/account.
+    # the integrations page.
     def callback
       installation_id = params[:installation_id].to_i
       setup_action = params[:setup_action].presence
@@ -72,7 +76,7 @@ module GithubApp
       # stored at install time survives into the SyncJob. When GitHub redirects
       # via `setup_url` (no prior /install call), the session has no state and
       # we fall back to the currently signed-in account.
-      account_id = session_account_id || current_account.id
+      account_id = session_account_id || current_account&.id
 
       clear_install_state!
 
@@ -81,11 +85,20 @@ module GithubApp
         return
       end
 
+      claim_source = claim_source_for_callback
+      if claim_source && account_id
+        PendingInstallClaim.upsert_for_callback!(
+          account: Account.find(account_id),
+          installation_id: installation_id,
+          source: claim_source,
+          state_token: @install_state_token
+        )
+      end
+
       Github::Installations::SyncJob.perform_later(
         installation_id: installation_id,
         account_id: account_id,
-        setup_action: setup_action,
-        trusted_callback: @install_state_verified == true
+        setup_action: setup_action
       )
 
       redirect_to integrations_path,
@@ -104,14 +117,15 @@ module GithubApp
     # Validates the CSRF `state` minted by `install`. When no state is present
     # in the session — for example, GitHub's `setup_url` redirected here
     # directly without the user going through `/install` first — we let the
-    # request through and rely on `SyncJob`'s binding verification to gate
-    # persistence. When a state IS present (Paid-initiated flow), it must match
+    # request through and rely on the operator-self-hosted short-circuit
+    # below. When a state IS present (Paid-initiated flow), it must match
     # the request-supplied `state` parameter, otherwise we reject the request.
     def verify_install_state!
       stored = install_state
 
       if stored.blank?
-        # GitHub-initiated redirect — defer binding verification to SyncJob.
+        # GitHub-initiated redirect — defer binding verification to the
+        # operator short-circuit in #callback.
         return
       end
 
@@ -129,6 +143,39 @@ module GithubApp
       end
 
       @install_state_verified = true
+      @install_state_token = params[:state].to_s
+    end
+
+    # Determines whether the current callback should create a
+    # PendingInstallClaim. A claim is the server-trusted signal that ties a
+    # freshly-returned `installation_id` to a Paid account, and it is the
+    # only thing that lets the signed `installation` webhook finalize the
+    # `GithubInstallation` row for a first-time install into a brand-new
+    # org.
+    #
+    # Returns the claim source string, or nil when no claim should be
+    # created (i.e. the callback arrived with no verifiable user intent).
+    def claim_source_for_callback
+      return "callback_with_state" if @install_state_verified
+      return "operator_setup" if self_hosted_setup_redirect?
+
+      nil
+    end
+
+    # The manifest `setup_url` redirect (self-hosted first install into a
+    # brand-new org) arrives with no session state. The only signal we have
+    # that this is a legitimate operator-initiated install is the operator
+    # session: in self-hosted mode the App operator is the only one with
+    # admin access to the deployment, and they had to complete the manifest
+    # exchange on the same browser to obtain App credentials. A non-operator
+    # hitting the callback without session state has no signal we can
+    # trust, so we refuse to create a claim — `SyncJob`'s secondary-signal
+    # check and the webhook's `AccountResolver` will both decline to bind.
+    def self_hosted_setup_redirect?
+      return false unless current_user&.operator?
+      return false unless Github::AppRegistry.configured?
+
+      install_state.blank?
     end
 
     def clear_install_state!

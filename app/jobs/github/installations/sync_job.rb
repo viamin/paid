@@ -19,7 +19,7 @@ module Github
 
       retry_on TransientError, wait: :polynomially_longer, attempts: 5
 
-      def perform(installation_id:, account_id:, setup_action: nil, trusted_callback: false)
+      def perform(installation_id:, account_id:, setup_action: nil)
         return if installation_id.blank? || account_id.blank?
 
         account = Account.find_by(id: account_id)
@@ -28,16 +28,14 @@ module Github
         payload = fetch_installation(installation_id)
         return unless payload
 
-        unless callback_binding_trusted?(installation_id: installation_id, account: account, payload: payload,
-          trusted_callback: trusted_callback)
+        unless callback_binding_trusted?(installation_id: installation_id, account: account, payload: payload)
           Rails.logger.warn(
             message: "github_app.installation_callback_binding_refused",
             installation_id: installation_id,
             account_id: account_id,
             account_login: payload.dig("account", "login"),
             setup_action: setup_action,
-            trusted_callback: trusted_callback,
-            reason: trusted_callback ? "callback_rejected_after_verification" : "no matching project owner or prior installation row"
+            reason: "no matching project owner or prior installation row"
           )
           return
         end
@@ -124,28 +122,35 @@ module Github
       end
 
       # GitHub's setup URL params (notably `installation_id`) are spoofable —
-      # a signed-in user could complete the local install redirect and bind an
-      # installation they do not actually own. The CSRF `state` only proves
-      # the user clicked Paid's "Install" button, not that they completed the
-      # GitHub side of the flow. We therefore only bind a callback-driven sync
-      # when one of the following holds:
+      # a signed-in user could complete the local callback with an
+      # `installation_id` they do not actually own. The CSRF `state` only
+      # proves the user clicked Paid's install button, not that they
+      # completed the GitHub side of the flow. We therefore gate the
+      # callback-driven sync on at least one server-trusted signal that the
+      # `(installation_id, account_id)` pair is legitimate:
       #
-      #   0. The controller verified the CSRF state (`trusted_callback: true`).
-      #      The user went through Paid's `/install` flow, completed the GitHub
-      #      side, and GitHub redirected them back with a matching `state`.
-      #      This covers brand-new installs into brand-new orgs where neither
-      #      signal below is yet present.
-      #   1. An existing GithubInstallation row for this installation_id, owned
-      #      by the same account — re-installs / permission updates.
-      #   2. The installation's `account.login` matches the owner of one of the
-      #      account's Projects — the user has a project in that org already.
+      #   1. An active `PendingInstallClaim` written by the callback (only
+      #      when the state CSRF was verified or the operator was signed in
+      #      for the self-hosted `setup_url` flow). This is the binding
+      #      path for a first install into a brand-new org where neither an
+      #      existing row nor a matching project exists yet.
+      #   2. An existing GithubInstallation row for this installation_id,
+      #      owned by the same account — re-installs / permission updates.
+      #   3. The installation's `account.login` matches the owner of one of
+      #      the account's Projects — the user has a project in that org
+      #      already.
       #
-      # When the controller passes `trusted_callback: false` and neither of
-      # the secondary signals holds (e.g. GitHub-initiated `setup_url`
-      # redirect into a brand-new org), binding is deferred to the signed
-      # `installation` webhook, which is the trusted path.
-      def callback_binding_trusted?(installation_id:, account:, payload:, trusted_callback:)
-        return true if trusted_callback
+      # When none of the signals holds, the sync is deferred to the signed
+      # `installation` webhook, which is the trusted binding path. The
+      # webhook's `AccountResolver` consults the same `PendingInstallClaim`
+      # to finalize the binding.
+      def callback_binding_trusted?(installation_id:, account:, payload:)
+        active_claim = TenantContext.with_system_access do
+          PendingInstallClaim.active.find_by(
+            account_id: account.id, github_installation_id: installation_id
+          )
+        end
+        return true if active_claim
 
         existing_owner = TenantContext.with_system_access do
           GithubInstallation.where(github_installation_id: installation_id, account_id: account.id)
