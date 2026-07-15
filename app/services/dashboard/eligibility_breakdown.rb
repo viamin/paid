@@ -34,13 +34,15 @@ module Dashboard
 
     # Preload everything the per-project gate and breakdown touch so a dashboard
     # with many auto-pick repos doesn't devolve into an N+1:
-    #   - +account+ and +created_by+ feed +Issues::AutoPickProjectGate#effective_owner+.
-    #   - +created_by.user_setting+ feeds +#count_skip_labeled+ via
-    #     +Project#effective_auto_pick_skip_labels+ when a project inherits its
-    #     owner's skip labels.
+    #   - +account+ and +created_by+ feed +Issues::AutoPickProjectGate#effective_owner+
+    #     (created_by is used directly; account backs the orphaned fallback).
+    #   - +created_by.user_setting+ and +account.tenant_setting+ feed
+    #     +#count_skip_labeled+ via +Project#effective_auto_pick_skip_labels+,
+    #     which walks owner -> tenant when neither the project nor owner sets
+    #     skip labels.
     def auto_pick_projects
       @auto_pick_projects ||= Project
-        .includes(:account, created_by: :user_setting)
+        .includes(account: :tenant_setting, created_by: :user_setting)
         .where(
           account_id: user.account_id,
           created_by_id: visible_owner_ids,

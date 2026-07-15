@@ -133,19 +133,25 @@ RSpec.describe Dashboard::EligibilityBreakdown do
           auto_pick_enabled: true, active: true, owner: "org", repo: "repo-#{i}")
       end
       # analyzable excluded issues force the skip-label lookup path, which is
-      # where a per-project +user_setting+ load would otherwise leak in.
+      # where a per-project +user_setting+/+tenant_setting+ load would leak in.
       ([ project ] + extra_projects).each do |p|
         create(:issue, project: p, github_state: "open", paid_state: "new")
       end
 
-      lazy_loads = capture_queries { described_class.call(user: user) }.count do |sql|
-        # Lazy belongs_to/has_one lookups are single-row
-        # SELECT ... WHERE col = $1; the eager preloads use WHERE col IN (...).
+      queries = capture_queries { described_class.call(user: user) }
+
+      # All projects share one owner, so a working preload issues owner/owner-
+      # setting queries at most once each. An N+1 would repeat the identical
+      # query once per project. Detect repeats rather than SQL shape: Rails
+      # collapses a single-value preload to `WHERE id = $1`, which is
+      # indistinguishable from a lazy belongs_to lookup by shape alone.
+      owner_queries = queries.select do |sql|
         sql.match?(/FROM "users" WHERE "users"\."id" = /) ||
           sql.match?(/FROM "user_settings" WHERE "user_settings"\."user_id" = /)
       end
+      max_repeats = owner_queries.tally.values.max.to_i
 
-      expect(lazy_loads).to eq(0)
+      expect(max_repeats).to be <= 1
     end
 
     it "includes orphaned projects for the account fallback owner" do
