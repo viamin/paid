@@ -23,19 +23,13 @@ RSpec.describe Screenshots::Publish do
   let(:homepage_artifacts) do
     {
       route_name: "homepage",
-      url: "https://s3.example.com/homepage.png?source=homepage.png",
-      gif_url: "https://s3.example.com/homepage.gif",
-      video_url: "https://s3.example.com/homepage.webm",
-      video_filename: "homepage.webm"
+      url: "https://s3.example.com/homepage.png?source=homepage.png"
     }
   end
   let(:dashboard_artifacts) do
     {
       route_name: "dashboard",
-      url: "https://s3.example.com/dashboard.png?source=dashboard.png",
-      gif_url: "https://s3.example.com/dashboard.gif",
-      video_url: "https://s3.example.com/dashboard.webm",
-      video_filename: "dashboard.webm"
+      url: "https://s3.example.com/dashboard.png?source=dashboard.png"
     }
   end
 
@@ -55,22 +49,13 @@ RSpec.describe Screenshots::Publish do
       before do
         allow(storage).to receive_messages(
           upload: nil,
-          previous_artifacts: previous_screenshots
+          previous_artifacts: previous_screenshots,
+          upload_artifact: nil
         )
         allow(storage).to receive(:upload) do |file_path:, route_name:, **|
           "https://s3.example.com/#{route_name}.png?source=#{File.basename(file_path)}"
         end
-        allow(storage).to receive(:upload_artifact) do |file_path:, route_name:, **|
-          "https://s3.example.com/#{route_name}#{File.extname(file_path)}"
-        end
-        allow(Screenshots::TraceToVideo).to receive(:call) do |frames:, output_path:, **|
-          File.write(output_path, "fake webm for #{File.basename(frames.first)}")
-          output_path
-        end
-        allow(Screenshots::TraceToGif).to receive(:call) do |frames:, output_path:, **|
-          File.write(output_path, "GIF89a for #{File.basename(frames.first)}")
-          output_path
-        end
+        allow(Screenshots::TraceArtifactExporter).to receive(:call).and_return({})
         allow(Screenshots::PrComment).to receive(:call).and_return(comment)
         service.call
       end
@@ -94,14 +79,24 @@ RSpec.describe Screenshots::Publish do
         )
       end
 
-      it "exports and uploads per-route GIF and video artifacts" do
-        expect(Screenshots::TraceToVideo).to have_received(:call).with(
-          hash_including(frames: [ "/tmp/screenshots/homepage.png" ])
+      it "delegates trace artifact export to the shared exporter" do
+        expect(Screenshots::TraceArtifactExporter).to have_received(:call).with(
+          hash_including(
+            storage: storage,
+            route_name: "homepage",
+            frames: [ "/tmp/screenshots/homepage.png" ],
+            log_message: "screenshots.publish.export_failed"
+          )
         )
-        expect(Screenshots::TraceToGif).to have_received(:call).with(
-          hash_including(frames: [ "/tmp/screenshots/dashboard.png" ])
+        expect(Screenshots::TraceArtifactExporter).to have_received(:call).with(
+          hash_including(
+            storage: storage,
+            route_name: "dashboard",
+            frames: [ "/tmp/screenshots/dashboard.png" ],
+            log_message: "screenshots.publish.export_failed"
+          )
         )
-        expect(storage).to have_received(:upload_artifact).at_least(:once)
+        expect(storage).not_to have_received(:upload_artifact)
       end
 
       it "posts the uploaded screenshots with previous screenshots to the PR comment" do
@@ -128,6 +123,7 @@ RSpec.describe Screenshots::Publish do
       before do
         allow(storage).to receive(:upload)
         allow(storage).to receive(:upload_artifact)
+        allow(Screenshots::TraceArtifactExporter).to receive(:call).and_return({})
         allow(Screenshots::PrComment).to receive(:call).and_return(comment)
       end
 
@@ -179,7 +175,7 @@ RSpec.describe Screenshots::Publish do
       end
     end
 
-    context "when export conversion fails" do
+    context "when the shared exporter returns no artifacts" do
       let(:screenshot_paths) { [ "/tmp/screenshots/homepage.png" ] }
 
       before do
@@ -187,7 +183,7 @@ RSpec.describe Screenshots::Publish do
           upload: "https://s3.example.com/homepage.png",
           previous_artifacts: {}
         )
-        allow(Screenshots::TraceToVideo).to receive(:call).and_raise(Screenshots::TraceToVideo::ConversionError, "ffmpeg missing")
+        allow(Screenshots::TraceArtifactExporter).to receive(:call).and_return({})
         allow(Screenshots::PrComment).to receive(:call).and_return(comment)
       end
 

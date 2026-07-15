@@ -418,46 +418,23 @@ module Screenshots
         )
       }
 
-      screenshot.merge(export_artifacts(storage, path, route_name))
-    end
-
-    def export_artifacts(storage, path, route_name)
-      Dir.mktmpdir("screenshots-export-") do |tmpdir|
-        video_path = File.join(tmpdir, "#{route_name}.webm")
-        gif_path = File.join(tmpdir, "#{route_name}.gif")
-
-        Screenshots::TraceToVideo.call(frames: [ path ], output_path: video_path)
-        Screenshots::TraceToGif.call(frames: [ path ], output_path: gif_path)
-
-        {
-          gif_url: storage.upload_artifact(
-            file_path: gif_path,
-            org: project.owner,
-            repo: project.repo,
-            pr_number: agent_run.pull_request_number,
-            commit_sha: commit_sha,
-            route_name: route_name
-          ),
-          video_url: storage.upload_artifact(
-            file_path: video_path,
-            org: project.owner,
-            repo: project.repo,
-            pr_number: agent_run.pull_request_number,
-            commit_sha: commit_sha,
-            route_name: route_name
-          ),
-          video_filename: "#{route_name}.webm"
-        }
-      end
-    rescue Screenshots::TraceToVideo::ConversionError, Screenshots::TraceToGif::ConversionError => e
-      logger.warn(
-        message: "screenshots.export_failed",
-        project_id: project.id,
-        agent_run_id: agent_run.id,
-        route_name: route_name,
-        error: e.message
+      screenshot.merge(
+        Screenshots::TraceArtifactExporter.call(
+          storage: storage,
+          org: project.owner,
+          repo: project.repo,
+          pr_number: agent_run.pull_request_number,
+          commit_sha: commit_sha,
+          route_name: route_name,
+          frames: [ path ],
+          logger: logger,
+          log_message: "screenshots.export_failed",
+          log_context: {
+            project_id: project.id,
+            agent_run_id: agent_run.id
+          }
+        )
       )
-      {}
     end
 
     def write_capture_runner

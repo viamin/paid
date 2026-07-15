@@ -84,47 +84,24 @@ module Screenshots
         )
       }
 
-      screenshot.merge(export_artifacts(path, route_name))
-    end
-
-    def export_artifacts(path, route_name)
-      Dir.mktmpdir("screenshots-publish-export-") do |tmpdir|
-        video_path = File.join(tmpdir, "#{route_name}.webm")
-        gif_path = File.join(tmpdir, "#{route_name}.gif")
-
-        Screenshots::TraceToVideo.call(frames: [ path ], output_path: video_path)
-        Screenshots::TraceToGif.call(frames: [ path ], output_path: gif_path)
-
-        {
-          gif_url: storage.upload_artifact(
-            file_path: gif_path,
-            org: owner,
-            repo: name,
+      screenshot.merge(
+        Screenshots::TraceArtifactExporter.call(
+          storage: storage,
+          org: owner,
+          repo: name,
+          pr_number: @pr_number,
+          commit_sha: @commit_sha,
+          route_name: route_name,
+          frames: [ path ],
+          logger: Rails.logger,
+          log_message: "screenshots.publish.export_failed",
+          log_context: {
+            repo: @repo,
             pr_number: @pr_number,
-            commit_sha: @commit_sha,
-            route_name: route_name
-          ),
-          video_url: storage.upload_artifact(
-            file_path: video_path,
-            org: owner,
-            repo: name,
-            pr_number: @pr_number,
-            commit_sha: @commit_sha,
-            route_name: route_name
-          ),
-          video_filename: "#{route_name}.webm"
-        }
-      end
-    rescue Screenshots::TraceToVideo::ConversionError, Screenshots::TraceToGif::ConversionError => e
-      Rails.logger.warn(
-        message: "screenshots.publish.export_failed",
-        repo: @repo,
-        pr_number: @pr_number,
-        commit_sha: @commit_sha,
-        route_name: route_name,
-        error: e.message
+            commit_sha: @commit_sha
+          }
+        )
       )
-      {}
     end
   end
 end

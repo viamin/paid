@@ -295,10 +295,7 @@ RSpec.describe Screenshots::ContainerCapture do
       {
         route_name: "home",
         summary: "Updated hero",
-        url: "https://s3.example.com/home.png",
-        gif_url: "https://s3.example.com/home.gif",
-        video_url: "https://s3.example.com/home.webm",
-        video_filename: "home.webm"
+        url: "https://s3.example.com/home.png"
       }
     end
 
@@ -313,26 +310,30 @@ RSpec.describe Screenshots::ContainerCapture do
         upload: "https://s3.example.com/home.png",
         previous_artifacts: { "home" => { png: "https://s3.example.com/previous-home.png" } }
       )
-      allow(storage).to receive(:upload_artifact) do |file_path:, **|
-        "https://s3.example.com/home#{File.extname(file_path)}"
-      end
-      allow(Screenshots::TraceToVideo).to receive(:call) do |output_path:, **|
-        File.write(output_path, "fake webm")
-        output_path
-      end
-      allow(Screenshots::TraceToGif).to receive(:call) do |output_path:, **|
-        File.write(output_path, "GIF89a")
-        output_path
-      end
+      allow(storage).to receive(:upload_artifact)
+      allow(Screenshots::TraceArtifactExporter).to receive(:call).and_return({})
     end
 
-    it "uploads exported artifacts and includes them in the PR comment payload" do
+    it "delegates trace artifact export" do
       service.send(:publish_result!, screenshot_paths)
 
       expect(storage).to have_received(:upload) do |**args|
         expect(args).to include(file_path: "/tmp/screenshots/home.png", route_name: "home")
       end
-      expect(storage).to have_received(:upload_artifact).at_least(:once)
+      expect(Screenshots::TraceArtifactExporter).to have_received(:call).with(
+        hash_including(
+          storage: storage,
+          route_name: "home",
+          frames: [ "/tmp/screenshots/home.png" ],
+          log_message: "screenshots.export_failed"
+        )
+      )
+      expect(storage).not_to have_received(:upload_artifact)
+    end
+
+    it "includes the uploaded screenshot in the PR comment payload" do
+      service.send(:publish_result!, screenshot_paths)
+
       expect(Screenshots::PrComment).to have_received(:call).with(
         hash_including(
           commit_sha: agent_run.result_commit_sha,
@@ -343,8 +344,8 @@ RSpec.describe Screenshots::ContainerCapture do
       expect(service.instance_variable_get(:@published_url)).to eq("https://s3.example.com/home.png")
     end
 
-    it "falls back to static PNG comments when export conversion fails" do
-      allow(Screenshots::TraceToVideo).to receive(:call).and_raise(Screenshots::TraceToVideo::ConversionError, "ffmpeg missing")
+    it "falls back to static PNG comments when no trace artifacts are exported" do
+      allow(Screenshots::TraceArtifactExporter).to receive(:call).and_return({})
 
       service.send(:publish_result!, screenshot_paths)
 

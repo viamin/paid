@@ -7,10 +7,10 @@ module Screenshots
   # if a comment with that marker already exists, it is updated in place;
   # otherwise a new comment is created.
   #
-  # When a screenshot includes an animated `:gif_url` (produced by converting
-  # a Playwright trace to a `.gif`), the GIF is rendered inline instead of the
-  # static PNG. The static PNG remains the fallback for projects without
-  # trace support, preserving the existing before/after comparison UX.
+  # When a screenshot includes an animated `:gif_url` (produced from multi-frame
+  # capture input), the GIF is rendered inline instead of the static PNG.
+  # The static PNG remains the fallback for screenshot-only captures,
+  # preserving the existing before/after comparison UX.
   #
   # @example
   #   Screenshots::PrComment.call(
@@ -131,7 +131,7 @@ module Screenshots
       lines << "This PR includes **UI-facing changes**. Screenshots captured from commit `#{short_sha}`."
       if animated
         lines << ""
-        lines << "> Animated GIFs show the interaction flow captured by the Playwright trace. " \
+        lines << "> Animated GIFs show the captured interaction flow. " \
                  "Static PNG fallbacks remain in the comparison columns."
       end
       if annotated

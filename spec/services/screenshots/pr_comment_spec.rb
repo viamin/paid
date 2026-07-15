@@ -407,7 +407,7 @@ RSpec.describe Screenshots::PrComment do
         screenshots: gif_screenshots
       )
 
-      expect(service.build_comment_body).to include("Animated GIFs show the interaction flow")
+      expect(service.build_comment_body).to include("Animated GIFs show the captured interaction flow")
     end
 
     it "does not disclose GIFs when no capture has a :gif_url" do
