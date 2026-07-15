@@ -395,6 +395,90 @@ RSpec.describe Screenshots::DetectFramework, :no_db do
 
       expect(paths).to include("/admin", "/admin/users")
     end
+
+    it "derives resource route names from the full path without leading slashes" do
+      router = <<~EX
+        defmodule MyAppWeb.Router do
+          use MyAppWeb, :router
+
+          scope "/", MyAppWeb do
+            resources "/reports", ReportController
+          end
+
+          scope "/admin", MyAppWeb.Admin do
+            resources "/users", UserController
+          end
+        end
+      EX
+      repo = phoenix_repo_with_router(router)
+      service = described_class.new(repo_path: fixture_path("phoenix_repo"))
+      allow(service).to receive(:repo).and_return(repo)
+
+      names = service.send(:discover_phoenix_routes).each_with_object({}) do |route, hash|
+        hash[route["path"]] = route["name"]
+      end
+
+      expect(names["/reports"]).to eq("reports")
+      expect(names["/admin/users"]).to eq("admin_users")
+    end
+  end
+
+  describe "Phoenix service detection" do
+    def service_with_mix(content)
+      repo = instance_double(
+        described_class::LocalRepository,
+        file?: false,
+        directory?: false,
+        glob: [],
+        paths: []
+      )
+      allow(repo).to receive(:read).with("Gemfile").and_return("")
+      allow(repo).to receive(:read).with("package.json").and_return("")
+      allow(repo).to receive(:read).with("mix.exs").and_return(content)
+      allow(repo).to receive(:read).with("config/database.yml").and_return("")
+      allow(repo).to receive(:read).with("config/dev.exs").and_return("")
+      allow(repo).to receive(:read).with("config/runtime.exs").and_return("")
+      service = described_class.new(repo_path: fixture_path("phoenix_repo"))
+      allow(service).to receive(:repo).and_return(repo)
+      service
+    end
+
+    it "provisions mysql from myxql without inferring postgres from phoenix_ecto" do
+      service = service_with_mix(<<~EX)
+        defp deps do
+          [
+            {:phoenix_ecto, "~> 4.4"},
+            {:myxql, ">= 0.0.0"}
+          ]
+        end
+      EX
+
+      expect(service.send(:detect_services)).to contain_exactly("mysql")
+    end
+
+    it "provisions sqlite from ecto_sqlite3 without inferring postgres" do
+      service = service_with_mix(<<~EX)
+        defp deps do
+          [
+            {:ecto_sqlite3, "~> 0.10"}
+          ]
+        end
+      EX
+
+      expect(service.send(:detect_services)).to contain_exactly("sqlite")
+    end
+
+    it "does not infer redis from phoenix_pubsub" do
+      service = service_with_mix(<<~EX)
+        defp deps do
+          [
+            {:phoenix_pubsub, "~> 2.1"}
+          ]
+        end
+      EX
+
+      expect(service.send(:detect_services)).to eq([])
+    end
   end
 
   describe "Elixir mix dependency parsing" do

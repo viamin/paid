@@ -65,10 +65,10 @@ module Screenshots
       "mysql2" => "mysql",
       "mysql" => "mysql",
       "postgrex" => "postgres",
-      "redix" => "redis",
-      "ecto" => "postgres",
-      "phoenix_ecto" => "postgres",
-      "phoenix_pubsub" => "redis"
+      "myxql" => "mysql",
+      "ecto_sqlite3" => "sqlite",
+      "tds" => "mssql",
+      "redix" => "redis"
     }.freeze
 
     attr_reader :project, :repo_path, :file_list
@@ -526,7 +526,7 @@ module Screenshots
         verb_index = tokens.index { |token| token.match?(/\A(?:GET|POST|PATCH|PUT|DELETE)\z/) }
         if verb_index && tokens[verb_index + 1]
           path = normalized_rails_route_segment(tokens[verb_index + 1])
-          name = verb_index.positive? ? tokens[verb_index - 1] : path
+          name = verb_index.positive? ? tokens[verb_index - 1] : route_name_from_path(path)
           next route_hash(path, name, requires_auth: false)
         end
 
@@ -720,7 +720,7 @@ module Screenshots
 
       if (match = line.match(/\Aresources\s+["']([^"']+)["']/))
         path = normalize_phoenix_route_path(prefixes, match[1])
-        return route_hash(path, match[1])
+        return route_hash(path, route_name_from_path(path))
       end
 
       nil
