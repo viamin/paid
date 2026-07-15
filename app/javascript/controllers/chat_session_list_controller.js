@@ -40,7 +40,8 @@ export default class extends Controller {
   }
 
   handleFrameRender(event) {
-    if (event.target?.id !== "chat_sessions_list") return
+    const targetId = event.target?.id
+    if (targetId !== "chat_sessions_list_active" && targetId !== "chat_sessions_list_archived") return
 
     this.setupObserver()
     this.filter()

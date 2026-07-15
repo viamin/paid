@@ -9,6 +9,7 @@ class ChatSessionsController < ApplicationController
 
   skip_after_action :verify_authorized, only: %i[index sidebar_page]
   before_action :set_chat_session, only: %i[show update destroy archive unarchive older_messages]
+  before_action :reject_archived_chat_session, only: %i[update destroy archive]
   before_action :enforce_create_rate_limit, only: :create
   before_action :default_request_format_to_json, only: %i[index create show update destroy archive unarchive]
 
@@ -177,6 +178,15 @@ class ChatSessionsController < ApplicationController
 
   def set_chat_session
     @chat_session = member_scope.find(params[:id])
+  end
+
+  def reject_archived_chat_session
+    return unless @chat_session&.archived?
+
+    respond_to do |format|
+      format.html { redirect_to chat_session_path(@chat_session), alert: "Chat session is archived." }
+      format.json { render json: { error: "Chat session is archived." }, status: :unprocessable_entity }
+    end
   end
 
   def regenerate_system_message!

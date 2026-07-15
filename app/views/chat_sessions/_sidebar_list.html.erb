@@ -1,7 +1,8 @@
 <% archived_view = local_assigns.fetch(:archived_view, false) %>
 <% has_more = local_assigns.fetch(:sidebar_has_more, false) %>
+<% list_frame_id = archived_view ? "chat_sessions_list_archived" : "chat_sessions_list_active" %>
 
-<%= turbo_frame_tag "chat_sessions_list",
+<%= turbo_frame_tag list_frame_id,
                     class: "max-h-[70vh] flex-1 overflow-y-auto p-4 lg:max-h-[70vh]",
                     target: "_top",
                     data: { chat_session_list_target: "list" } do %>

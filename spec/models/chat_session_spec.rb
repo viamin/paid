@@ -162,4 +162,21 @@ RSpec.describe ChatSession do
       expect(build(:chat_session, metadata: nil).page_context).to eq({})
     end
   end
+
+  describe "#sidebar_list_target" do
+    let(:account) { create(:account) }
+    let(:user) { create(:user, account: account) }
+
+    it "targets the active list frame for non-archived sessions" do
+      session = build(:chat_session, :active, account: account, created_by: user)
+
+      expect(session.sidebar_list_target).to eq("chat_sessions_list_active")
+    end
+
+    it "targets the archived list frame for archived sessions" do
+      session = build(:chat_session, :archived, account: account, created_by: user)
+
+      expect(session.sidebar_list_target).to eq("chat_sessions_list_archived")
+    end
+  end
 end

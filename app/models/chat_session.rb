@@ -68,6 +68,10 @@ class ChatSession < ApplicationRecord
     status == "archived"
   end
 
+  def sidebar_list_target
+    archived? ? "chat_sessions_list_archived" : "chat_sessions_list_active"
+  end
+
   def generate_title_from_content!
     return if title.present?
 
@@ -146,7 +150,7 @@ class ChatSession < ApplicationRecord
   def broadcast_sidebar_prepend
     Turbo::StreamsChannel.broadcast_prepend_to(
       [ account, :chat_sessions ],
-      target: "chat_sessions_list",
+      target: sidebar_list_target,
       partial: "chat_sessions/session_card",
       locals: { chat_session: self }
     )
