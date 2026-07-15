@@ -324,7 +324,7 @@ RSpec.describe Screenshots::ContainerCapture do
         hash_including(
           storage: storage,
           route_name: "home",
-          frames: [ "/tmp/screenshots/home.png" ],
+          trace_path: nil,
           log_message: "screenshots.export_failed"
         )
       )
@@ -358,6 +358,22 @@ RSpec.describe Screenshots::ContainerCapture do
               url: "https://s3.example.com/home.png"
             }
           ]
+        )
+      )
+    end
+
+    it "passes the sibling Playwright trace path to the exporter when present" do
+      dir = Dir.mktmpdir("container-trace-spec")
+      paths = [ File.join(dir, "home.png") ]
+      File.write(paths.first, "png")
+      File.write(File.join(dir, "home.trace.zip"), "fake trace")
+
+      service.send(:publish_result!, paths)
+
+      expect(Screenshots::TraceArtifactExporter).to have_received(:call).with(
+        hash_including(
+          route_name: "home",
+          trace_path: File.join(dir, "home.trace.zip")
         )
       )
     end

@@ -14,6 +14,10 @@ module Screenshots
     CHROME_ALIAS = "paid-screenshot-browser"
     CHROME_URL = "ws://#{CHROME_ALIAS}:3000"
     OUTPUT_DIR = "tmp/screenshots"
+    # Sibling of each `{route}.png`; the capture runner writes a Playwright
+    # trace to `{route}.trace.zip` so the demo video/GIF exporter has a
+    # multi-frame source for the same route.
+    TRACE_EXTENSION = ".trace.zip"
     APP_LOG_PATH = "tmp/paid-screenshot-app.log"
     SEED_SCRIPT_PATH = ".paid-screenshots/seed_runner.rb"
     CAPTURE_TIMEOUT_SECONDS = 300
@@ -426,7 +430,7 @@ module Screenshots
           pr_number: agent_run.pull_request_number,
           commit_sha: commit_sha,
           route_name: route_name,
-          frames: [ path ],
+          trace_path: trace_path_for(path),
           logger: logger,
           log_message: "screenshots.export_failed",
           log_context: {
@@ -435,6 +439,15 @@ module Screenshots
           }
         )
       )
+    end
+
+    # Resolves the Playwright trace recorded alongside `screenshot_path` by the
+    # capture runner. Returns nil when no trace was produced (e.g. the browser
+    # backend lacks trace support), which makes the exporter fall back to the
+    # static PNG.
+    def trace_path_for(screenshot_path)
+      trace_path = "#{File.dirname(screenshot_path)}/#{File.basename(screenshot_path, '.png')}#{TRACE_EXTENSION}"
+      File.exist?(trace_path) ? trace_path : nil
     end
 
     def write_capture_runner
@@ -506,13 +519,38 @@ module Screenshots
         await authenticate();
 
         for (const route of config.routes) {
-          const target = new URL(route.path, config.base_url).toString();
-          await page.goto(target, { waitUntil: "networkidle" });
-          await annotate(route.annotation);
-          await page.screenshot({ path: `${outputDir}/${route.name}.png`, fullPage: true });
+          await captureRoute(route);
         }
 
         await browser.close();
+
+        // Records a route's screenshot plus a Playwright trace. The trace is the
+        // multi-frame source the demo video/GIF exporters need; tracing is
+        // best-effort so a backend without trace support still yields the PNG.
+        async function captureRoute(route) {
+          let tracing = false;
+          try {
+            await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
+            tracing = true;
+          } catch (traceError) {
+            console.error("trace start failed:", traceError.message);
+          }
+
+          try {
+            const target = new URL(route.path, config.base_url).toString();
+            await page.goto(target, { waitUntil: "networkidle" });
+            await annotate(route.annotation);
+            await page.screenshot({ path: `${outputDir}/${route.name}.png`, fullPage: true });
+          } finally {
+            if (tracing) {
+              try {
+                await context.tracing.stop({ path: `${outputDir}/${route.name}#{TRACE_EXTENSION}` });
+              } catch (traceError) {
+                console.error("trace stop failed:", traceError.message);
+              }
+            }
+          }
+        }
       JS
     end
 

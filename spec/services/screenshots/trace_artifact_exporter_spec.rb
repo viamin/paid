@@ -76,6 +76,57 @@ RSpec.describe Screenshots::TraceArtifactExporter do
       end
     end
 
+    context "with a Playwright trace input" do
+      let(:trace_path) { File.join(Dir.mktmpdir("trace-export-spec"), "homepage.trace.zip") }
+
+      before do
+        File.write(trace_path, "fake trace zip")
+        allow(Screenshots::TraceToVideo).to receive(:call) do |output_path:, **|
+          File.write(output_path, "fake webm")
+          output_path
+        end
+        allow(Screenshots::TraceToGif).to receive(:call) do |output_path:, **|
+          File.write(output_path, "GIF89a")
+          output_path
+        end
+        allow(storage).to receive(:upload_artifact) do |file_path:, route_name:, **|
+          "https://s3.example.com/#{route_name}#{File.extname(file_path)}"
+        end
+      end
+
+      def export_from_trace
+        described_class.new(
+          storage: storage,
+          org: "acme",
+          repo: "web",
+          pr_number: 42,
+          commit_sha: "abc1234def5678",
+          route_name: "homepage",
+          trace_path: trace_path,
+          logger: logger,
+          log_message: "screenshots.export_failed",
+          log_context: { project_id: 12, agent_run_id: 34 }
+        ).call
+      end
+
+      it "exports and uploads GIF and video artifacts from the trace" do
+        expect(export_from_trace).to eq(
+          gif_url: "https://s3.example.com/homepage.gif",
+          video_url: "https://s3.example.com/homepage.webm",
+          video_filename: "homepage.webm"
+        )
+      end
+
+      it "converts the trace through the trace-aware converters" do
+        export_from_trace
+
+        expect(Screenshots::TraceToVideo).to have_received(:call)
+          .with(hash_including(trace_path: trace_path))
+        expect(Screenshots::TraceToGif).to have_received(:call)
+          .with(hash_including(trace_path: trace_path))
+      end
+    end
+
     context "when conversion fails" do
       let(:frames) do
         [

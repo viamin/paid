@@ -84,7 +84,7 @@ RSpec.describe Screenshots::Publish do
           hash_including(
             storage: storage,
             route_name: "homepage",
-            frames: [ "/tmp/screenshots/homepage.png" ],
+            trace_path: nil,
             log_message: "screenshots.publish.export_failed"
           )
         )
@@ -92,7 +92,7 @@ RSpec.describe Screenshots::Publish do
           hash_including(
             storage: storage,
             route_name: "dashboard",
-            frames: [ "/tmp/screenshots/dashboard.png" ],
+            trace_path: nil,
             log_message: "screenshots.publish.export_failed"
           )
         )
@@ -193,6 +193,34 @@ RSpec.describe Screenshots::Publish do
         expect(Screenshots::PrComment).to have_received(:call).with(
           hash_including(
             screenshots: [ { route_name: "homepage", url: "https://s3.example.com/homepage.png" } ]
+          )
+        )
+      end
+    end
+
+    context "when a Playwright trace was recorded alongside the screenshot" do
+      let(:dir) { Dir.mktmpdir("publish-trace-spec") }
+      let(:screenshot_paths) { [ File.join(dir, "homepage.png") ] }
+
+      before do
+        File.write(File.join(dir, "homepage.png"), "png")
+        File.write(File.join(dir, "homepage.trace.zip"), "fake trace")
+        allow(storage).to receive_messages(
+          upload: "https://s3.example.com/homepage.png",
+          previous_artifacts: {}
+        )
+        allow(storage).to receive(:upload_artifact)
+        allow(Screenshots::TraceArtifactExporter).to receive(:call).and_return({})
+        allow(Screenshots::PrComment).to receive(:call).and_return(comment)
+      end
+
+      it "passes the sibling trace path to the exporter" do
+        service.call
+
+        expect(Screenshots::TraceArtifactExporter).to have_received(:call).with(
+          hash_including(
+            route_name: "homepage",
+            trace_path: File.join(dir, "homepage.trace.zip")
           )
         )
       end
