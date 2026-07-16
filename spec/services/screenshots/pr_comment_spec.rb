@@ -489,5 +489,30 @@ RSpec.describe Screenshots::PrComment do
 
       expect(service.build_comment_body).to include("[checkout.webm](https://s3.example.com/checkout.webm)")
     end
+
+    it "escapes markdown-significant characters in video filenames and route labels" do
+      screenshots = [
+        {
+          route_name: "foo](bar)|baz",
+          url: "https://s3.example.com/foo.png",
+          video_url: "https://s3.example.com/foo.webm",
+          video_filename: "demo](bar)|baz.webm"
+        }
+      ]
+
+      service = described_class.new(
+        github_client: github_client,
+        repo: repo,
+        pr_number: pr_number,
+        commit_sha: commit_sha,
+        screenshots: screenshots
+      )
+
+      body = service.build_comment_body
+
+      expect(body).to include("[demo\\]\\(bar\\)\\|baz.webm](https://s3.example.com/foo.webm)")
+      expect(body).to include("Foo\\]\\(Bar\\)\\|Baz")
+      expect(body).not_to include("[demo](bar)")
+    end
   end
 end

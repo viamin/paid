@@ -173,7 +173,7 @@ module Screenshots
         lines << ""
         videos.sort_by { |s| s[:route_name] }.each do |screenshot|
           filename = screenshot[:video_filename].presence || "#{screenshot[:route_name]}.webm"
-          lines << "- [#{filename}](#{screenshot[:video_url]}) — #{humanize_route(screenshot[:route_name])}"
+          lines << "- [#{escape_markdown_label(filename)}](#{screenshot[:video_url]}) — #{route_label(screenshot[:route_name])}"
         end
         lines << ""
       end
@@ -206,23 +206,23 @@ module Screenshots
       summary = screenshot[:summary].to_s.gsub(/\s+/, " ").strip
       return "—" if summary.empty?
 
-      summary.truncate(MAX_SUMMARY_LENGTH).gsub(/[\\`*_{}\[\]()#+\-!<>|~]/) { |char| "\\#{char}" }
+      escape_markdown_text(summary.truncate(MAX_SUMMARY_LENGTH))
     end
 
     def format_comparison_row(screenshot)
       name = screenshot[:route_name]
       before_url = @previous_screenshots[name]
 
-      before_cell = before_url ? "![before-#{name}](#{before_url})" : "_New page_"
+      before_cell = before_url ? markdown_image("before-#{name}", before_url) : "_New page_"
       after_cell = capture_cell(screenshot)
-      cells = [ humanize_route(name) ]
+      cells = [ route_label(name) ]
       cells << changed_cell(screenshot) if annotated?
       cells += [ before_cell, after_cell ]
       "| #{cells.join(' | ')} |"
     end
 
     def format_capture_row(screenshot, annotated:)
-      cells = [ humanize_route(screenshot[:route_name]) ]
+      cells = [ route_label(screenshot[:route_name]) ]
       cells << changed_cell(screenshot) if annotated
       cells << capture_cell(screenshot)
       "| #{cells.join(' | ')} |"
@@ -231,10 +231,26 @@ module Screenshots
     def capture_cell(screenshot)
       name = screenshot[:route_name]
       if screenshot[:gif_url].present?
-        "![#{name}](#{screenshot[:gif_url]})"
+        markdown_image(name, screenshot[:gif_url])
       else
-        "![#{name}](#{screenshot[:url]})"
+        markdown_image(name, screenshot[:url])
       end
+    end
+
+    def route_label(route_name)
+      escape_markdown_label(humanize_route(route_name))
+    end
+
+    def markdown_image(alt_text, url)
+      "![#{escape_markdown_label(alt_text)}](#{url})"
+    end
+
+    def escape_markdown_label(text)
+      text.to_s.gsub(/[\\`\[\]()<>|]/) { |char| "\\#{char}" }
+    end
+
+    def escape_markdown_text(text)
+      text.to_s.gsub(/[\\`*_{}\[\]()#+\-!<>|~]/) { |char| "\\#{char}" }
     end
 
     def annotated?

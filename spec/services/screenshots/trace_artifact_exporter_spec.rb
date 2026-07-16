@@ -153,5 +153,44 @@ RSpec.describe Screenshots::TraceArtifactExporter do
         )
       end
     end
+
+    context "when GIF conversion fails after video export succeeds" do
+      let(:frames) do
+        [
+          "/tmp/screenshots/homepage-0001.png",
+          "/tmp/screenshots/homepage-0002.png"
+        ]
+      end
+
+      before do
+        allow(Screenshots::TraceToVideo).to receive(:call) do |output_path:, **|
+          File.write(output_path, "fake webm")
+          output_path
+        end
+        allow(Screenshots::TraceToGif).to receive(:call)
+          .and_raise(Screenshots::TraceToGif::ConversionError, "gifski missing")
+        allow(storage).to receive(:upload_artifact) do |file_path:, route_name:, **|
+          "https://s3.example.com/#{route_name}#{File.extname(file_path)}"
+        end
+      end
+
+      it "keeps the uploaded video artifact and logs the GIF failure" do
+        expect(service.call).to eq(
+          video_url: "https://s3.example.com/homepage.webm",
+          video_filename: "homepage.webm"
+        )
+
+        expect(storage).to have_received(:upload_artifact).once
+        expect(logger).to have_received(:warn).with(
+          hash_including(
+            message: "screenshots.export_failed",
+            project_id: 12,
+            agent_run_id: 34,
+            route_name: "homepage",
+            error: "gifski missing"
+          )
+        )
+      end
+    end
   end
 end

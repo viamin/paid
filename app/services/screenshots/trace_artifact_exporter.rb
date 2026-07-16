@@ -32,27 +32,42 @@ module Screenshots
         video_path = File.join(tmpdir, "#{@route_name}.webm")
         gif_path = File.join(tmpdir, "#{@route_name}.gif")
 
-        Screenshots::TraceToVideo.call(**conversion_source, output_path: video_path)
-        Screenshots::TraceToGif.call(**conversion_source, output_path: gif_path)
-
-        {
-          gif_url: upload_artifact(gif_path),
-          video_url: upload_artifact(video_path),
-          video_filename: "#{@route_name}.webm"
-        }
+        export_video(video_path).merge(export_gif(gif_path))
       end
-    rescue Screenshots::TraceToVideo::ConversionError, Screenshots::TraceToGif::ConversionError => e
+    end
+
+    private
+
+    def export_video(video_path)
+      Screenshots::TraceToVideo.call(**conversion_source, output_path: video_path)
+
+      {
+        video_url: upload_artifact(video_path),
+        video_filename: "#{@route_name}.webm"
+      }
+    rescue Screenshots::TraceToVideo::ConversionError => e
+      log_failure(e)
+      {}
+    end
+
+    def export_gif(gif_path)
+      Screenshots::TraceToGif.call(**conversion_source, output_path: gif_path)
+
+      { gif_url: upload_artifact(gif_path) }
+    rescue Screenshots::TraceToGif::ConversionError => e
+      log_failure(e)
+      {}
+    end
+
+    def log_failure(error)
       @logger.warn(
         {
           message: @log_message,
           route_name: @route_name,
-          error: e.message
+          error: error.message
         }.merge(@log_context)
       )
-      {}
     end
-
-    private
 
     def exportable_source?
       return true if @trace_path.present? || @frames_dir.present?
