@@ -151,6 +151,79 @@ RSpec.describe Screenshots::ContainerCapture do
     expect(command).not_to include(%q(uri = URI("http://localhost:3000/it's-a-path")))
   end
 
+  it "uses Phoenix startup when mix.exs is present and exposes the port in capture env" do
+    tmpdir = Dir.mktmpdir("phoenix-screenshot")
+    File.write(File.join(tmpdir, "mix.exs"), "defmodule Demo.MixProject do end")
+    service.instance_variable_set(:@tmpdir, tmpdir)
+    allow(service).to receive(:config).and_return(
+      Screenshots::Configuration.from_hash(
+        "base_url" => "http://localhost:4100",
+        "routes" => [ { "path" => "/", "name" => "home" } ]
+      )
+    )
+
+    expect(service.send(:application_start_command)).to eq("MIX_ENV=dev mix phx.server")
+    expect(service.send(:capture_env).fetch("PORT")).to eq("4100")
+  ensure
+    FileUtils.rm_rf(tmpdir)
+  end
+
+  it "overrides Phoenix dev endpoint binding to listen on all interfaces during capture" do
+    tmpdir = Dir.mktmpdir("phoenix-bind")
+    FileUtils.mkdir_p(File.join(tmpdir, "config"))
+    File.write(File.join(tmpdir, "mix.exs"), "defmodule Demo.MixProject do end")
+    File.write(File.join(tmpdir, "config/dev.exs"), <<~EXS)
+      import Config
+
+      config :demo, DemoWeb.Endpoint,
+        http: [ip: {127, 0, 0, 1}, port: String.to_integer(System.get_env("PORT") || "4000")]
+    EXS
+    service.instance_variable_set(:@tmpdir, tmpdir)
+
+    service.send(:prepare_phoenix_endpoint_binding!)
+
+    runtime = File.read(File.join(tmpdir, "config/runtime.exs"))
+    expect(runtime).to include("config :demo, DemoWeb.Endpoint")
+    expect(runtime).to include("http: [ip: {0, 0, 0, 0}, port: String.to_integer(System.get_env(\"PORT\") || \"4000\")]")
+  ensure
+    FileUtils.rm_rf(tmpdir)
+  end
+
+  it "rejects seed configuration for Phoenix projects with a config error" do
+    tmpdir = Dir.mktmpdir("phoenix-seed")
+    File.write(File.join(tmpdir, "mix.exs"), "defmodule Demo.MixProject do end")
+    service.instance_variable_set(:@tmpdir, tmpdir)
+    allow(service).to receive(:config).and_return(
+      Screenshots::Configuration.from_hash(
+        "base_url" => "http://localhost:4100",
+        "routes" => [ { "path" => "/", "name" => "home" } ],
+        "seed" => [ { "key" => "__all__", "runner" => "Screenshots::SeedData::Paid.call" } ]
+      )
+    )
+
+    expect { service.send(:validate_supported_config!) }.to raise_error(
+      Screenshots::ConfigError, /not supported for Phoenix projects yet/
+    )
+  ensure
+    FileUtils.rm_rf(tmpdir)
+  end
+
+  it "allows seedless Phoenix captures through config validation" do
+    tmpdir = Dir.mktmpdir("phoenix-noseed")
+    File.write(File.join(tmpdir, "mix.exs"), "defmodule Demo.MixProject do end")
+    service.instance_variable_set(:@tmpdir, tmpdir)
+    allow(service).to receive(:config).and_return(
+      Screenshots::Configuration.from_hash(
+        "base_url" => "http://localhost:4100",
+        "routes" => [ { "path" => "/", "name" => "home" } ]
+      )
+    )
+
+    expect { service.send(:validate_supported_config!) }.not_to raise_error
+  ensure
+    FileUtils.rm_rf(tmpdir)
+  end
+
   describe "#screenshot_config_json (capture scoping and annotation)" do
     let(:multi_route_config) do
       Screenshots::Configuration.from_hash(

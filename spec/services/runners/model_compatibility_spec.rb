@@ -60,6 +60,21 @@ RSpec.describe Runners::ModelCompatibility do
         end
       end
 
+      context "with CLI-version-gated model (gpt-5.5-pro)" do
+        let(:model_id) { "gpt-5.5-pro" }
+
+        it "returns unsupported because gpt-5.5-pro requires api_key auth, not subscription" do
+          expect(result).to have_attributes(
+            supported: false,
+            incompatibility_type: :auth_mode_gated_for_model,
+            replacement_model_id: "gpt-5-codex",
+            source: "agent_harness"
+          )
+          expect(result.reason).to include("gpt-5.5-pro").and include("api_key")
+          expect(result).to be_unsupported
+        end
+      end
+
       context "with subscription auth and non-OpenAI model" do
         let(:model_id) { "claude-opus-4-5" }
 

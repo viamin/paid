@@ -56,6 +56,31 @@ RSpec.describe Github::AppRegistry do
     end
   end
 
+  describe ".webhook_secret" do
+    around do |example|
+      original = ENV.delete("PAID_AGENT_APP_WEBHOOK_SECRET")
+      example.run
+    ensure
+      ENV["PAID_AGENT_APP_WEBHOOK_SECRET"] = original
+    end
+
+    it "returns nil when not configured via ENV or credentials" do
+      allow(Rails.application.credentials).to receive(:dig).with(:paid_agent_app_webhook_secret).and_return(nil)
+      expect(described_class.webhook_secret).to be_nil
+    end
+
+    it "prefers ENV over credentials" do
+      ENV["PAID_AGENT_APP_WEBHOOK_SECRET"] = "env-secret"
+      allow(Rails.application.credentials).to receive(:dig).with(:paid_agent_app_webhook_secret).and_return("cred-secret")
+      expect(described_class.webhook_secret).to eq("env-secret")
+    end
+
+    it "falls back to the Rails credential" do
+      allow(Rails.application.credentials).to receive(:dig).with(:paid_agent_app_webhook_secret).and_return("cred-secret")
+      expect(described_class.webhook_secret).to eq("cred-secret")
+    end
+  end
+
   describe ".bot_login" do
     it "returns slug with [bot] suffix" do
       expect(described_class.bot_login).to eq("paid-agents[bot]")
@@ -65,6 +90,17 @@ RSpec.describe Github::AppRegistry do
   describe ".bot_logins" do
     it "returns slug and bot_login" do
       expect(described_class.bot_logins).to contain_exactly("paid-agents", "paid-agents[bot]")
+    end
+  end
+
+  describe ".install_url" do
+    it "returns the bare install URL when no state is provided" do
+      expect(described_class.install_url).to eq("https://github.com/apps/paid-agents/installations/new")
+    end
+
+    it "appends the state parameter when given" do
+      url = described_class.install_url(state: "csrf-token")
+      expect(url).to eq("https://github.com/apps/paid-agents/installations/new?state=csrf-token")
     end
   end
 end

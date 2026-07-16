@@ -32,11 +32,8 @@ module Activities
     # a time ceiling, PRs waiting on those signals are skipped indefinitely.
     SCAN_STALENESS_MULTIPLIER = 3
     KNOWN_BOT_PREFIXES = %w[dependabot renovate github-actions].freeze
-    DEPENDENCY_UPDATE_BOT_AUTHORS = %w[
-      dependabot[bot]
-      dependabot-preview[bot]
-      renovate[bot]
-    ].freeze
+    DEPENDENCY_UPDATE_BOT_AUTHORS = Project::DEPENDENCY_UPDATE_BOT_AUTHORS
+    DEPENDABOT_AUTO_MERGE_AUTHORS = DependabotAutoMergeJob::DEPENDABOT_AUTHORS
     REVIEW_BOT_CLEAN_PATTERN = /generated no (?:new )?comments/i
     # Body-only review bots (currently Codex) signal "no findings" by posting
     # an *issue comment* — not a review — with text like
@@ -175,6 +172,16 @@ module Activities
         e.message,
         type: "RateLimit"
       )
+    rescue GithubClient::AuthenticationError => e
+      logger.error(
+        message: "pr_scanner.auth_error",
+        project_id: project_id,
+        error: e.message
+      )
+      raise Temporalio::Error::ApplicationError.new(
+        "GitHub authentication failed for project #{project_id}: #{e.message}",
+        type: "AuthError"
+      )
     end
 
     private
@@ -304,25 +311,40 @@ module Activities
     end
 
     def find_paid_prs(project)
-      labeled_prs = project.issues
+      candidate_prs = project.issues
         .pull_requests_only
         .auto_continue_active
         .where(github_state: "open")
-        .where("labels @> ?", [ project.automation_label_name ].to_json)
+
+      labeled_prs = automation_labeled_prs(project, candidate_prs)
+      dependabot_prs = if project.auto_merge_dependabot?
+        dependabot_auto_merge_prs(candidate_prs)
+      else
+        candidate_prs.none
+      end
+      scannable_prs = labeled_prs.or(dependabot_prs)
 
       trusted_creator_logins = trusted_creator_logins_for(project)
       trusted_prs = if trusted_creator_logins.any?
-        labeled_prs.where("LOWER(github_creator_login) IN (?)", trusted_creator_logins).to_a
+        scannable_prs.where("LOWER(github_creator_login) IN (?)", trusted_creator_logins).to_a
       else
         []
       end
       untrusted_prs = if trusted_creator_logins.any?
-        labeled_prs.where("LOWER(github_creator_login) NOT IN (?)", trusted_creator_logins)
+        scannable_prs.where("LOWER(github_creator_login) NOT IN (?)", trusted_creator_logins)
       else
-        labeled_prs
+        scannable_prs
       end
 
       trusted_prs + untrusted_prs.select { |issue| authorized_for_automation_scan?(project, issue) }
+    end
+
+    def automation_labeled_prs(project, candidate_prs)
+      candidate_prs.where("labels @> ?", [ project.automation_label_name ].to_json)
+    end
+
+    def dependabot_auto_merge_prs(candidate_prs)
+      candidate_prs.where("LOWER(github_creator_login) IN (?)", DEPENDABOT_AUTO_MERGE_AUTHORS.map(&:downcase))
     end
 
     def authorized_for_automation_scan?(project, issue)
@@ -699,14 +721,15 @@ module Activities
       end
 
       reviews = fetch_reviews(client, project, issue)
+      unresolved_threads = fetch_unresolved_threads(client, project, issue)
 
       if auto_merge_eligible?(project, client, issue,
-           pr_data: pr_data, checks: checks, reviews: reviews)
+           pr_data: pr_data, checks: checks, reviews: reviews, unresolved_threads: unresolved_threads)
         return owner_approved_trigger(issue)
       end
 
       triggers = detect_ready_triggers(project, client, issue,
-        pr_data: pr_data, checks: checks, reviews: reviews)
+        pr_data: pr_data, checks: checks, reviews: reviews, unresolved_threads: unresolved_threads)
       return :skipped if triggers.nil?
       return nil if triggers.empty?
 
@@ -768,26 +791,29 @@ module Activities
     def scan_escalated_pr(project, client, issue, pr_data: nil)
       pr_data ||= fetch_pr_data(client, project, issue)
 
+      bot_authored = third_party_bot_author?(project, issue.github_creator_login)
+      checks = fetch_check_runs(client, project, pr_data) if pr_data.present?
+      reviews = fetch_reviews(client, project, issue) if pr_data.present? && !bot_authored
+      unresolved_threads = fetch_unresolved_threads(client, project, issue) if pr_data.present?
+
       # Owner approval on an escalated PR unblocks auto-merge.
       if project.auto_merge_enabled? && pr_data.present?
-        checks = fetch_check_runs(client, project, pr_data)
-
-        if third_party_bot_author?(project, issue.github_creator_login)
+        if bot_authored
           if auto_merge_eligible_bot?(project, client, issue,
                checks: checks, mergeable: pr_data[:mergeable])
             return owner_approved_trigger(issue)
           end
         else
-          reviews = fetch_reviews(client, project, issue)
-
           if auto_merge_eligible?(project, client, issue,
-               pr_data: pr_data, checks: checks, reviews: reviews)
+               pr_data: pr_data, checks: checks, reviews: reviews,
+               unresolved_threads: unresolved_threads)
             return owner_approved_trigger(issue)
           end
         end
       end
 
-      triggers = detect_ready_triggers(project, client, issue, pr_data: pr_data)
+      triggers = detect_ready_triggers(project, client, issue,
+        pr_data: pr_data, checks: checks, reviews: reviews, unresolved_threads: unresolved_threads)
       return :skipped if triggers.nil?
       return nil if triggers.empty?
 
@@ -1057,24 +1083,21 @@ module Activities
     # `updated_at` on GitHub. Without this escape hatch the skip-unchanged
     # optimization prevents the scanner from ever reconsidering them.
     #
-    # Human-authored ready/escalated PRs with auto_merge_mode "all" face the
-    # same problem: CI transitions from pending to green do not update the
-    # PR's `updated_at` on GitHub. Owner approvals do update it, but if the
-    # owner approves before CI settles, the scan stamps `last_pr_scan_at`
-    # while CI is still pending, and the subsequent green transition never
-    # triggers a rescan. Restricted to auto_merge_mode "all" (not
-    # "dependabot_only") because only "all" enables auto-merge for
-    # non-Dependabot PRs.
+    # Human-authored ready/escalated PRs face the same problem regardless of
+    # auto_merge_mode: CI transitions from pending to green/red, review
+    # comments, and merge-conflict onset do not update the PR's `updated_at`
+    # on GitHub. Without this escape hatch a PR scanned while CI is pending
+    # is permanently skipped, blocking follow-up runs for CI failures, review
+    # feedback, or merge conflicts until someone pushes a commit.
     def scan_age_exceeds_ceiling?(project, issue)
       draft_or_restarted = issue.pr_review_phase.in?(%w[draft restarted])
       bot_ready_for_merge = issue.pr_review_phase == "ready" &&
         third_party_bot_author?(project, issue.github_creator_login) &&
         project.auto_merge_dependabot?
-      human_auto_merge = issue.pr_review_phase.in?(%w[ready escalated]) &&
-        !third_party_bot_author?(project, issue.github_creator_login) &&
-        project.auto_merge_mode == "all"
+      human_ready_or_escalated = issue.pr_review_phase.in?(%w[ready escalated]) &&
+        !third_party_bot_author?(project, issue.github_creator_login)
 
-      return false unless draft_or_restarted || bot_ready_for_merge || human_auto_merge
+      return false unless draft_or_restarted || bot_ready_for_merge || human_ready_or_escalated
 
       ceiling = SCAN_STALENESS_MULTIPLIER * project.poll_interval_seconds
       stale = issue.last_pr_scan_at < ceiling.seconds.ago
@@ -2451,9 +2474,10 @@ module Activities
     # non_bot_review_gate_triggers, causing ci_action_succeeded? to return
     # false — conservatively blocking auto-merge if ci_action is enabled.
     # Callers that have check data available should always pass it.
-    def no_outstanding_review_feedback?(project, client, issue, reviews, checks: nil, pr_data: nil)
+    def no_outstanding_review_feedback?(project, client, issue, reviews, checks: nil, pr_data: nil,
+      unresolved_threads: nil)
       last_run = last_completed_run(project, issue)
-      unresolved_threads = fetch_unresolved_threads(client, project, issue)
+      unresolved_threads ||= fetch_unresolved_threads(client, project, issue)
 
       return false if human_review_thread_triggers(project, unresolved_threads).any?
       return false if check_review_bot_status(reviews, unresolved_threads,
@@ -2915,14 +2939,15 @@ module Activities
     # Evaluates human-authored PR merge eligibility via the AutoMerge
     # strategy. Collects signals from provider data and delegates the
     # decision to {Automation::Strategies::AutoMerge}.
-    def auto_merge_eligible?(project, client, issue, pr_data:, checks:, reviews:)
+    def auto_merge_eligible?(project, client, issue, pr_data:, checks:, reviews:, unresolved_threads: nil)
       return false unless project.auto_merge_enabled? && pr_data.present?
 
       owner_approved = owner_approved_or_self_authored?(project, reviews, pr_data)
       checks_green = !checks.nil? && all_checks_green?(checks)
       mergeable = pr_data[:mergeable] == true
       review_feedback_clear = no_outstanding_review_feedback?(
-        project, client, issue, reviews, checks: checks, pr_data: pr_data
+        project, client, issue, reviews, checks: checks, pr_data: pr_data,
+        unresolved_threads: unresolved_threads
       )
       blocking_reviews_complete = all_blocking_review_methods_complete?(
         project, reviews, checks, pr_data: pr_data

@@ -2526,9 +2526,10 @@ module Activities
         )
       end
 
-      @harness_plan_cache[cache_key] = disable_codex_apps_for_review_goal?(runner_key, agent_run) ?
-        disable_codex_apps(plan) :
-        plan
+      plan = allow_codex_bundle_dir(runner_key, plan)
+      plan = disable_codex_apps(plan) if disable_codex_apps_for_review_goal?(runner_key, agent_run)
+
+      @harness_plan_cache[cache_key] = plan
     end
 
     def disable_codex_apps_for_review_goal?(runner_key, agent_run)
@@ -2539,17 +2540,32 @@ module Activities
       false
     end
 
+    def allow_codex_bundle_dir(runner_key, plan)
+      return plan unless RunnerSupport.runner_key_for_agent_type(runner_key) == "codex"
+      return plan if plan.command.each_cons(2).any? { |left, right| left == "--add-dir" && right == "/tmp/bundle" }
+
+      command = plan.command.dup
+      exec_index = command.index("exec") || 0
+      command.insert(exec_index + 1, "--add-dir", "/tmp/bundle")
+
+      Runners::HarnessExecutionPlan::Result.new(
+        command: command,
+        env: plan.env,
+        preparation: plan.preparation
+      )
+    rescue ArgumentError
+      plan
+    end
+
     def disable_codex_apps(plan)
       return plan if plan.command.include?("--disable") && plan.command.each_cons(2).any? { |left, right| left == "--disable" && right == "apps" }
 
-      prompt = plan.command.last
-      command_prefix = plan.command[0..-2]
-      disable_index = command_prefix.index("exec") || 0
-      command = command_prefix.dup
+      command = plan.command.dup
+      disable_index = command.index("exec") || 0
       command.insert(disable_index + 1, "--disable", "apps")
 
       Runners::HarnessExecutionPlan::Result.new(
-        command: command + [ prompt ],
+        command: command,
         env: plan.env,
         preparation: plan.preparation
       )

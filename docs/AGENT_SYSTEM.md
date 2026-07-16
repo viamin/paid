@@ -36,6 +36,8 @@ The agent system has four layers:
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
+For operator setup of a remote Docker worker, including the QNAP NAS + Tailscale pattern, see [Remote Docker Setup](guides/remote-docker-setup.md).
+
 ---
 
 ## Temporal Workflows

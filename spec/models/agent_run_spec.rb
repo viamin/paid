@@ -2267,6 +2267,22 @@ RSpec.describe AgentRun do
       expect(described_class.next_queued_run).to eq(issue_run)
     end
 
+    it "picks review runs before create_pr runs without changing visible queue order" do
+      project = create(:project)
+      create_pr_run = create(:agent_run, :queued, :automatic, :existing_pr,
+        project: project, goal: "create_pr", source_pull_request_number: 42, created_at: 2.minutes.ago)
+      review_run = create(:agent_run, :queued, :automatic, :review_goal,
+        project: project, source_pull_request_number: 43, created_at: 1.minute.ago)
+
+      queue_preview_ids = described_class.queued_with_priority.order(described_class::QUEUE_ORDER).pluck(:id)
+      index_display_ids = described_class.queue_order_display.pluck(:id)
+
+      expect(described_class.next_queued_run).to eq(review_run)
+      expect(queue_preview_ids).to eq([ create_pr_run.id, review_run.id ])
+      expect(index_display_ids).to eq([ create_pr_run.id, review_run.id ])
+      expect(review_run.queue_priority_label).to eq(create_pr_run.queue_priority_label)
+    end
+
     it "uses FIFO within the same priority tier and goal type" do
       create(:agent_run, :queued, trigger_type: "manual", created_at: 1.minute.ago)
       older_manual = create(:agent_run, :queued, trigger_type: "manual", created_at: 2.minutes.ago)
@@ -2284,15 +2300,15 @@ RSpec.describe AgentRun do
       expect(described_class.next_queued_run).to eq(manual_run)
     end
 
-    it "prioritizes P2-labeled issues above auto-continue runs" do
+    it "prioritizes auto-continue (PR) runs above P2-labeled fresh issues" do
       project = create(:project)
       p2_issue = create(:issue, project: project, labels: [ "P2" ])
-      _auto_continue = create(:agent_run, :queued, trigger_type: "automatic", project: project,
+      auto_continue = create(:agent_run, :queued, trigger_type: "automatic", project: project,
         source_pull_request_number: 42, created_at: 2.minutes.ago)
-      p2_run = create(:agent_run, :queued, trigger_type: "automatic", project: project,
+      _p2_run = create(:agent_run, :queued, trigger_type: "automatic", project: project,
         issue: p2_issue, created_at: 1.minute.ago)
 
-      expect(described_class.next_queued_run).to eq(p2_run)
+      expect(described_class.next_queued_run).to eq(auto_continue)
     end
 
     it "prioritizes P3-labeled issues above plain auto-pick runs" do
@@ -2313,7 +2329,7 @@ RSpec.describe AgentRun do
       critical_run = create(:agent_run, :queued, trigger_type: "automatic", project: project,
         issue: critical_issue)
 
-      expect(critical_run.queue_priority_tier).to eq(:label_p1)
+      expect(critical_run.queue_priority_tier).to eq(:issue_p1)
     end
 
     it "resolves labels from PR issue via source_pull_request_number" do
@@ -2323,32 +2339,41 @@ RSpec.describe AgentRun do
       pr_run = create(:agent_run, :queued, trigger_type: "automatic", project: project,
         issue: nil, custom_prompt: "Fix PR", source_pull_request_number: 99)
 
-      expect(pr_run.queue_priority_tier).to eq(:label_p1)
+      expect(pr_run.queue_priority_tier).to eq(:pr_p1)
     end
 
-    context "with all 6 priority tiers" do
+    context "with all 9 priority tiers" do
       let(:project) { create(:project) }
-      let(:p1_issue) { create(:issue, project: project, labels: [ "P1" ]) }
-      let(:p2_issue) { create(:issue, project: project, labels: [ "P2" ]) }
-      let(:p3_issue) { create(:issue, project: project, labels: [ "P3" ]) }
-      let(:plain_issue) { create(:issue, project: project, labels: []) }
+
+      def issue_run(project, minutes_ago, label: nil)
+        issue = create(:issue, project: project, labels: Array(label))
+        create(:agent_run, :queued, trigger_type: "automatic", project: project,
+          issue: issue, created_at: minutes_ago.minutes.ago)
+      end
+
+      def pr_run(project, minutes_ago, github_number:, label: nil)
+        create(:issue, project: project, labels: Array(label), is_pull_request: true, github_number: github_number)
+        create(:agent_run, :queued, trigger_type: "automatic", project: project, issue: nil,
+          custom_prompt: "Fix PR", source_pull_request_number: github_number, created_at: minutes_ago.minutes.ago)
+      end
 
       it "produces correct ordering across all tiers" do
-        auto_pick = create(:agent_run, :queued, trigger_type: "automatic", project: project,
-          issue: plain_issue, created_at: 6.minutes.ago)
-        p3_run = create(:agent_run, :queued, trigger_type: "automatic", project: project,
-          issue: p3_issue, created_at: 5.minutes.ago)
-        auto_continue = create(:agent_run, :queued, trigger_type: "automatic", project: project,
-          issue: nil, custom_prompt: "Fix PR", source_pull_request_number: 42, created_at: 4.minutes.ago)
-        p2_run = create(:agent_run, :queued, trigger_type: "automatic", project: project,
-          issue: p2_issue, created_at: 3.minutes.ago)
+        auto_pick = issue_run(project, 9)
+        issue_p3_run = issue_run(project, 8, label: "P3")
+        issue_p2_run = issue_run(project, 7, label: "P2")
+        issue_p1_run = issue_run(project, 6, label: "P1")
+        auto_continue = pr_run(project, 5, github_number: 100)
+        pr_p3_run = pr_run(project, 4, github_number: 103, label: "P3")
+        pr_p2_run = pr_run(project, 3, github_number: 102, label: "P2")
         manual_run = create(:agent_run, :queued, trigger_type: "manual", project: project,
           issue: create(:issue, project: project, labels: []), created_at: 2.minutes.ago)
-        p1_run = create(:agent_run, :queued, trigger_type: "automatic", project: project,
-          issue: p1_issue, created_at: 1.minute.ago)
+        pr_p1_run = pr_run(project, 1, github_number: 101, label: "P1")
 
         ordered_ids = described_class.queued_with_priority.order(described_class::QUEUE_ORDER).pluck(:id)
-        expect(ordered_ids).to eq([ manual_run, p1_run, p2_run, auto_continue, p3_run, auto_pick ].map(&:id))
+        expect(ordered_ids).to eq(
+          [ manual_run, pr_p1_run, pr_p2_run, pr_p3_run, auto_continue,
+            issue_p1_run, issue_p2_run, issue_p3_run, auto_pick ].map(&:id)
+        )
       end
     end
   end
@@ -2611,10 +2636,10 @@ RSpec.describe AgentRun do
       expect(run.queue_priority_tier).to eq(:manual)
     end
 
-    it "returns :auto_continue for automatic runs with a source PR" do
+    it "returns :pr_continue for automatic runs with a source PR" do
       run = create(:agent_run, trigger_type: "automatic", source_pull_request_number: 42)
 
-      expect(run.queue_priority_tier).to eq(:auto_continue)
+      expect(run.queue_priority_tier).to eq(:pr_continue)
     end
 
     it "returns :auto_pick for automatic runs without a source PR" do
@@ -2623,28 +2648,28 @@ RSpec.describe AgentRun do
       expect(run.queue_priority_tier).to eq(:auto_pick)
     end
 
-    it "returns :label_p1 when the issue has the P1 label" do
+    it "returns :issue_p1 when the issue has the P1 label" do
       project = create(:project)
       issue = create(:issue, project: project, labels: [ "P1" ])
       run = create(:agent_run, trigger_type: "automatic", project: project, issue: issue)
 
-      expect(run.queue_priority_tier).to eq(:label_p1)
+      expect(run.queue_priority_tier).to eq(:issue_p1)
     end
 
-    it "returns :label_p2 when the issue has the P2 label" do
+    it "returns :issue_p2 when the issue has the P2 label" do
       project = create(:project)
       issue = create(:issue, project: project, labels: [ "P2" ])
       run = create(:agent_run, trigger_type: "automatic", project: project, issue: issue)
 
-      expect(run.queue_priority_tier).to eq(:label_p2)
+      expect(run.queue_priority_tier).to eq(:issue_p2)
     end
 
-    it "returns :label_p3 when the issue has the P3 label" do
+    it "returns :issue_p3 when the issue has the P3 label" do
       project = create(:project)
       issue = create(:issue, project: project, labels: [ "P3" ])
       run = create(:agent_run, trigger_type: "automatic", project: project, issue: issue)
 
-      expect(run.queue_priority_tier).to eq(:label_p3)
+      expect(run.queue_priority_tier).to eq(:issue_p3)
     end
 
     it "uses custom label names from project priority_labels" do
@@ -2652,7 +2677,15 @@ RSpec.describe AgentRun do
       issue = create(:issue, project: project, labels: [ "urgent" ])
       run = create(:agent_run, trigger_type: "automatic", project: project, issue: issue)
 
-      expect(run.queue_priority_tier).to eq(:label_p1)
+      expect(run.queue_priority_tier).to eq(:issue_p1)
+    end
+
+    it "returns :pr_p1 when the source PR has the P1 label, taking precedence over PR category" do
+      project = create(:project)
+      create(:issue, project: project, labels: [ "P1" ], is_pull_request: true, github_number: 55)
+      run = create(:agent_run, trigger_type: "automatic", project: project, source_pull_request_number: 55)
+
+      expect(run.queue_priority_tier).to eq(:pr_p1)
     end
   end
 
@@ -2663,16 +2696,40 @@ RSpec.describe AgentRun do
       expect(run.queue_priority_label).to eq("1 - Manual")
     end
 
-    it "returns '4 - Auto-continue' for automatic runs with a source PR" do
+    it "returns '5 - Auto-continue' for automatic runs with a source PR" do
       run = create(:agent_run, trigger_type: "automatic", source_pull_request_number: 42)
 
-      expect(run.queue_priority_label).to eq("4 - Auto-continue")
+      expect(run.queue_priority_label).to eq("5 - Auto-continue")
     end
 
-    it "returns '6 - Auto-pick' for automatic runs without a source PR" do
+    it "returns '9 - Auto-pick' for automatic runs without a source PR" do
       run = create(:agent_run, trigger_type: "automatic")
 
-      expect(run.queue_priority_label).to eq("6 - Auto-pick")
+      expect(run.queue_priority_label).to eq("9 - Auto-pick")
+    end
+
+    it "returns '2 - PR · P1' for a PR-continuation run with the P1 label" do
+      project = create(:project)
+      create(:issue, project: project, labels: [ "P1" ], is_pull_request: true, github_number: 201)
+      run = create(:agent_run, trigger_type: "automatic", project: project, source_pull_request_number: 201)
+
+      expect(run.queue_priority_label).to eq("2 - PR · P1")
+    end
+
+    it "returns '3 - PR · P2' for a PR-continuation run with the P2 label" do
+      project = create(:project)
+      create(:issue, project: project, labels: [ "P2" ], is_pull_request: true, github_number: 202)
+      run = create(:agent_run, trigger_type: "automatic", project: project, source_pull_request_number: 202)
+
+      expect(run.queue_priority_label).to eq("3 - PR · P2")
+    end
+
+    it "returns '4 - PR · P3' for a PR-continuation run with the P3 label" do
+      project = create(:project)
+      create(:issue, project: project, labels: [ "P3" ], is_pull_request: true, github_number: 203)
+      run = create(:agent_run, trigger_type: "automatic", project: project, source_pull_request_number: 203)
+
+      expect(run.queue_priority_label).to eq("4 - PR · P3")
     end
   end
 
@@ -2684,16 +2741,16 @@ RSpec.describe AgentRun do
       create(:agent_run, :queued, project: project, issue: issue, **attrs)
     end
 
-    it "returns :label_p1 when issue carries the configured P1 label" do
+    it "returns :issue_p1 when issue carries the configured P1 label" do
       run = queued_run_with_issue_labels([ "critical" ], trigger_type: "automatic")
 
-      expect(run.queue_priority_tier).to eq(:label_p1)
+      expect(run.queue_priority_tier).to eq(:issue_p1)
     end
 
     it "matches configured priority labels case-insensitively" do
       run = queued_run_with_issue_labels([ "CRITICAL" ], trigger_type: "automatic")
 
-      expect(run.queue_priority_tier).to eq(:label_p1)
+      expect(run.queue_priority_tier).to eq(:issue_p1)
     end
 
     it "ranks manual above P1 within the same project" do
@@ -2704,14 +2761,14 @@ RSpec.describe AgentRun do
       _ = p1
     end
 
-    it "ranks P2 above auto-continue but below manual" do
+    it "ranks auto-continue (PR) above P2-labeled fresh issue but below manual" do
       manual = create(:agent_run, :queued, project: project, trigger_type: "manual", created_at: 3.minutes.ago)
       auto_continue = create(:agent_run, :queued, project: project, trigger_type: "automatic",
         source_pull_request_number: 99, created_at: 1.minute.ago)
       p2 = queued_run_with_issue_labels([ "high" ], trigger_type: "automatic", created_at: 2.minutes.ago)
 
       ordered = described_class.queued_with_priority.order(described_class::QUEUE_ORDER).to_a
-      expect(ordered).to eq([ manual, p2, auto_continue ])
+      expect(ordered).to eq([ manual, auto_continue, p2 ])
     end
 
     it "ranks P3 above auto-pick but below auto-continue" do
@@ -2736,7 +2793,7 @@ RSpec.describe AgentRun do
     it "picks the highest priority when multiple labels are present" do
       run = queued_run_with_issue_labels([ "low", "critical", "high" ], trigger_type: "automatic")
 
-      expect(run.queue_priority_tier).to eq(:label_p1)
+      expect(run.queue_priority_tier).to eq(:issue_p1)
     end
 
     it "reads priority labels from a source pull request when no issue is set" do
@@ -2744,7 +2801,7 @@ RSpec.describe AgentRun do
       run = create(:agent_run, :queued, project: project, trigger_type: "automatic",
         source_pull_request_number: 555)
 
-      expect(run.queue_priority_tier).to eq(:label_p1)
+      expect(run.queue_priority_tier).to eq(:pr_p1)
       _ = pr_record
     end
 
@@ -2754,7 +2811,7 @@ RSpec.describe AgentRun do
       split_run = create(:agent_run, :queued, project: project, trigger_type: "automatic",
         issue: issue, source_pull_request_number: 777)
 
-      expect(split_run.queue_priority_tier).to eq(:label_p1)
+      expect(split_run.queue_priority_tier).to eq(:pr_p1)
     end
 
     describe ".preload_source_pull_requests" do
@@ -2790,12 +2847,12 @@ RSpec.describe AgentRun do
       end
     end
 
-    it "returns '2 - P1' for P1-labeled issues" do
+    it "returns '6 - P1' for P1-labeled fresh issues" do
       project = create(:project)
       issue = create(:issue, project: project, labels: [ "P1" ])
       run = create(:agent_run, trigger_type: "automatic", project: project, issue: issue)
 
-      expect(run.queue_priority_label).to eq("2 - P1")
+      expect(run.queue_priority_label).to eq("6 - P1")
     end
   end
 
