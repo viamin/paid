@@ -528,7 +528,9 @@ RSpec.describe Activities::RunAgentActivity do
 
       expect(script).to include("--disable")
       expect(script).to include("apps")
-      expect(command[4]).to eq("review prompt")
+      expect(script).to include("--add-dir")
+      expect(script).to include("/tmp/bundle")
+      expect(command.last).to eq("review prompt")
     end
 
     it "keeps Codex app connectors enabled for non-review runs" do
@@ -543,6 +545,24 @@ RSpec.describe Activities::RunAgentActivity do
 
       expect(script).not_to include("--disable")
       expect(script).not_to include("apps")
+      expect(script).to include("--add-dir")
+      expect(script).to include("/tmp/bundle")
+    end
+
+    it "allows Codex to inspect the container Bundler path" do
+      context = described_class::CommandContext.new(
+        runner_candidate: "codex",
+        runner: "codex",
+        user: nil
+      )
+
+      command = activity.send(:build_command, context, "say 'hi'", agent_run: agent_run)
+      script = command[2]
+
+      expect(script).to include("codex")
+      expect(script).to include("--add-dir")
+      expect(script).to include("/tmp/bundle")
+      expect(command.last).to eq("say 'hi'")
     end
 
     it "builds a sh -c wrapper for Gemini subscription auth" do
@@ -572,7 +592,7 @@ RSpec.describe Activities::RunAgentActivity do
       )
       command = activity.send(:build_command, context, multiline_prompt)
 
-      expect(command[4]).to eq(multiline_prompt)
+      expect(command.last).to eq(multiline_prompt)
       expect(command[2]).not_to include("\n")
     end
 
@@ -713,7 +733,9 @@ RSpec.describe Activities::RunAgentActivity do
         expect(command).to eq([ "env", "-u", "OPENAI_HEADER_X_AGENT_RUN_ID", "-u", "OPENAI_HEADER_X_PROXY_TOKEN", "opencode", "run", "ping" ])
         expect(env).to include("OPENROUTER_API_KEY" => "sk-openrouter-secret", "OPENAI_BASE_URL" => "https://openrouter.ai/api/v1")
         expect(preparation.file_writes.first.path).to eq("~/.config/opencode/opencode.json")
-        expect(preparation.file_writes.first.content).to include("\"model\": \"openrouter/moonshotai/kimi-k2-0905\"")
+        config = JSON.parse(preparation.file_writes.first.content)
+        expect(config["model"]).to eq("openrouter/moonshotai/kimi-k2-0905")
+        expect(config.dig("permission", "external_directory")).to include("/tmp/**" => "allow")
       end
 
       it "preserves multi-line prompts when wrapping the harness runtime command" do
@@ -755,6 +777,16 @@ RSpec.describe Activities::RunAgentActivity do
         config_json = JSON.parse(Base64.strict_decode64(env["PAID_KILOCODE_CONFIG_B64"]))
         expect(config_json["model"]).to eq("anthropic/claude-sonnet-4-20250514")
         expect(config_json["provider"]).to eq(expected_kilocode_model_config)
+      end
+
+      it "allows Kilocode to inspect container support paths" do
+        context = build_kilocode_context(user)
+
+        env = activity.send(:command_env_for, context, "ping")
+        config_json = JSON.parse(Base64.strict_decode64(env.fetch("PAID_KILOCODE_CONFIG_B64")))
+
+        expect(config_json.dig("permission", "external_directory")).to include("/tmp/**" => "allow")
+        expect(config_json.dig("permission", "external_directory")).not_to have_key("/home/agent/**")
       end
 
       it "does not include PAID_KILOCODE_CONFIG_B64 for subscription kilocode runners" do
