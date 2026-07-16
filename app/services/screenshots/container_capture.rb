@@ -15,6 +15,7 @@ module Screenshots
     CHROME_URL = "ws://#{CHROME_ALIAS}:3000"
     OUTPUT_DIR = "tmp/screenshots"
     APP_LOG_PATH = "tmp/paid-screenshot-app.log"
+    SEED_SCRIPT_PATH = ".paid-screenshots/seed_runner.rb"
     CAPTURE_TIMEOUT_SECONDS = 300
     STARTUP_TIMEOUT_SECONDS = 90
     MEMORY_BYTES = 2 * 1024 * 1024 * 1024
@@ -90,6 +91,7 @@ module Screenshots
         provision_service_dependencies!
         start_chrome!
         run_setup_commands!
+        run_seed!
         start_application!
         screenshot_paths = run_capture!(ui_files)
         publish_result!(screenshot_paths)
@@ -184,8 +186,10 @@ module Screenshots
           "(configured: #{config.driver})"
       end
 
-      if config.seed.any?
-        raise Screenshots::ConfigError, "container screenshot capture does not yet support seed data"
+      if phoenix_project? && config.seed.any?
+        raise Screenshots::ConfigError,
+          "seed configuration is not supported for Phoenix projects yet " \
+          "(seeds run via bin/rails runner, which is unavailable in an Elixir/Phoenix repo)"
       end
 
       dynamic_route = config.routes.find do |route|
@@ -302,7 +306,43 @@ module Screenshots
       end
     end
 
+    # Loads repo-defined seed data (.paid/screenshots.yml) into the per-run
+    # isolated database before the application starts. Seed commands run inside
+    # the screenshot container via Screenshots::SeedRunner so only repo-defined
+    # seeds are used — never production data. No-op when no seed config is
+    # present, so capture behavior is unchanged for unseeded repos.
+    def run_seed!
+      return if config.seed.empty?
+
+      Screenshots::SeedRunner.new.call(
+        config: config,
+        repo_path: @tmpdir,
+        driver_name: config.driver,
+        executor: method(:execute_seed_script)
+      )
+    end
+
+    def execute_seed_script(env)
+      write_seed_script
+      result = @screenshot_container.execute(
+        "bin/rails runner #{Shellwords.escape(SEED_SCRIPT_PATH)}",
+        timeout: CAPTURE_TIMEOUT_SECONDS,
+        env: capture_env.merge(env),
+        stream: false
+      )
+
+      [ result[:stdout].to_s, result[:stderr].to_s, result.success? ]
+    end
+
+    def write_seed_script
+      path = File.join(@tmpdir, SEED_SCRIPT_PATH)
+      FileUtils.mkdir_p(File.dirname(path))
+      File.write(path, Screenshots::SeedRunner::SCRIPT)
+      path
+    end
+
     def start_application!
+      prepare_phoenix_endpoint_binding!
       command = application_start_command
       raise Screenshots::ConfigError, "could not determine how to start the application for screenshots" if command.blank?
 
@@ -590,6 +630,8 @@ module Screenshots
         "PORT=#{port} bin/dev"
       elsif File.exist?(File.join(@tmpdir, "bin/rails"))
         "bundle exec bin/rails server -b 0.0.0.0 -p #{port}"
+      elsif phoenix_project?
+        "MIX_ENV=dev mix phx.server"
       elsif File.exist?(File.join(@tmpdir, "manage.py"))
         "python3 manage.py runserver 0.0.0.0:#{port}"
       elsif package_dependency?("next")
@@ -599,6 +641,55 @@ module Screenshots
       elsif File.exist?(File.join(@tmpdir, "package.json"))
         "yarn dev --host 0.0.0.0 --port #{port}"
       end
+    end
+
+    # Phoenix/Elixir repos are driven by mix.exs. This matches the same signal
+    # application_start_command uses to pick `mix phx.server`, so seed loading
+    # (which runs via bin/rails runner) is gated on the same framework check.
+    def phoenix_project?
+      return false if @tmpdir.blank?
+
+      File.exist?(File.join(@tmpdir, "mix.exs"))
+    end
+
+    def prepare_phoenix_endpoint_binding!
+      return unless phoenix_project?
+
+      endpoint_modules = phoenix_endpoint_modules
+      return if endpoint_modules.empty?
+
+      runtime_path = File.join(@tmpdir, "config/runtime.exs")
+      FileUtils.mkdir_p(File.dirname(runtime_path))
+      runtime_content = File.exist?(runtime_path) ? File.read(runtime_path) : "import Config\n"
+      override = phoenix_endpoint_override(endpoint_modules)
+      return if runtime_content.include?(override)
+
+      runtime_content = "#{runtime_content.rstrip}\n\n#{override}"
+      File.write(runtime_path, runtime_content)
+    end
+
+    def phoenix_endpoint_modules
+      dev_config_path = File.join(@tmpdir, "config/dev.exs")
+      return [] unless File.exist?(dev_config_path)
+
+      File.read(dev_config_path).scan(/config\s+:([a-zA-Z_][\w]*),\s+([A-Z][\w.]*(?:\.Endpoint))/).uniq
+    end
+
+    def phoenix_endpoint_override(endpoint_modules)
+      config_lines = endpoint_modules.map do |application, endpoint_module|
+        <<~EXS.chomp
+          config :#{application}, #{endpoint_module},
+            http: [ip: {0, 0, 0, 0}, port: String.to_integer(System.get_env("PORT") || "4000")]
+        EXS
+      end
+
+      <<~EXS.chomp
+        # Paid screenshot capture override: browserless runs in a separate container,
+        # so Phoenix must bind to all interfaces instead of loopback-only dev defaults.
+        if config_env() == :dev do
+        #{config_lines.join("\n\n").lines.map { |line| "  #{line}" }.join}
+        end
+      EXS
     end
 
     def readiness_probe_command
@@ -630,7 +721,8 @@ module Screenshots
     def capture_env
       @screenshot_service_env.merge(
         "CHROME_URL" => CHROME_URL,
-        "CI" => "1"
+        "CI" => "1",
+        "PORT" => app_port.to_s
       )
     end
 

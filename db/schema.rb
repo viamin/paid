@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_08_034227) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_15_061237) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -483,6 +483,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_08_034227) do
 
   create_table "chat_sessions", force: :cascade do |t|
     t.bigint "account_id", null: false
+    t.boolean "auto_approve", default: false, null: false, comment: "When true, write tool calls (e.g. agent run creation) are auto-approved without a manual confirmation click"
     t.string "container_id"
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
@@ -1660,6 +1661,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_08_034227) do
     t.index ["strategy_type"], name: "index_orchestration_strategies_on_strategy_type"
   end
 
+  create_table "pending_install_claims", comment: "Server-side claims tying a freshly-returned GitHub App installation to a Paid account, so the signed `installation` webhook can finalize the GithubInstallation row for a first-time install into a brand-new org where the existing signals (project owner match, prior installation row) cannot resolve the account.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "expires_at", null: false, comment: "When this claim becomes invalid; a stale claim must never authorize a binding"
+    t.bigint "github_installation_id", null: false, comment: "GitHub installation ID returned by the post-install redirect (callback or setup_url)"
+    t.string "source", null: false, comment: "How the claim was created: callback_with_state (user-initiated SaaS flow with verified CSRF state), operator_setup (self-hosted setup_url redirect, operator-authenticated)"
+    t.string "state_token", comment: "Opaque CSRF state token tied to the user's session at install time; included for audit / forensic value, not used as a binding signal in itself"
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "github_installation_id"], name: "idx_pending_install_claims_on_account_installation", unique: true
+    t.index ["account_id"], name: "index_pending_install_claims_on_account_id"
+    t.index ["expires_at"], name: "index_pending_install_claims_on_expires_at"
+    t.index ["github_installation_id"], name: "index_pending_install_claims_on_github_installation_id"
+  end
+
   create_table "pr_templates", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.text "body", null: false
@@ -1845,6 +1860,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_08_034227) do
     t.string "automation_label_name", default: "paid-automation", null: false
     t.boolean "automation_on_label_enabled", default: true, null: false
     t.integer "code_scanning_interval_hours", default: 24, null: false
+    t.datetime "code_scanning_permission_error_at", comment: "Timestamp of the most recent 403 (missing security_events/code_scanning_alerts:read permission) hit while scanning for code scanning alerts. Used to back off retrying a scan that will fail identically until a human fixes the token/App permission, without waiting the full code_scanning_interval_hours window. Cleared on the next successful scan."
     t.integer "completed_agent_runs_count", default: 0, null: false, comment: "Counter cache for completed agent runs"
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
@@ -1887,6 +1903,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_08_034227) do
     t.integer "poll_interval_seconds", default: 60, null: false
     t.jsonb "pr_action_labels", default: [], null: false
     t.boolean "pr_aggregation_enabled", default: false, null: false
+    t.string "primary_language", comment: "Primary language of the repository as reported by GitHub (e.g. Ruby, Elixir, Swift). Used to detect and badge the project type."
     t.jsonb "priority_labels", default: {"P1" => "P1", "P2" => "P2", "P3" => "P3"}, null: false
     t.jsonb "quality_gate_settings", default: {}, null: false
     t.jsonb "quality_pause_metadata", default: {}, null: false
@@ -2782,6 +2799,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_08_034227) do
   add_foreign_key "orchestration_decisions", "projects", on_delete: :cascade
   add_foreign_key "orchestration_decisions", "strategy_versions", on_delete: :nullify
   add_foreign_key "orchestration_strategies", "accounts"
+  add_foreign_key "pending_install_claims", "accounts"
   add_foreign_key "pr_templates", "accounts", on_delete: :cascade
   add_foreign_key "pr_templates", "projects", on_delete: :cascade
   add_foreign_key "pr_templates", "users", on_delete: :cascade

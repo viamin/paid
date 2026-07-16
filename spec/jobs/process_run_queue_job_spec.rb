@@ -5,6 +5,7 @@ require "rails_helper"
 RSpec.describe ProcessRunQueueJob do
   let(:temporal_client) { double("TemporalClient") } # rubocop:disable RSpec/VerifiedDoubles
   let(:workflow_handle) { double("WorkflowHandle", id: "queued-workflow-id") } # rubocop:disable RSpec/VerifiedDoubles
+  let(:job) { described_class.new }
   let(:auto_mode_snapshot) do
     {
       available: true,
@@ -20,6 +21,10 @@ RSpec.describe ProcessRunQueueJob do
     allow(temporal_client).to receive(:start_workflow).and_return(workflow_handle)
   end
 
+  def temporal_priority_for(run)
+    job.send(:temporal_priority_for, run)
+  end
+
   describe "#perform" do
     it "starts the oldest queued run when capacity is available" do
       queued_run = create(:agent_run, :queued, created_at: 2.minutes.ago)
@@ -30,14 +35,11 @@ RSpec.describe ProcessRunQueueJob do
         hash_including(agent_run_id: queued_run.id),
         hash_including(
           task_queue: "paid-agent-tasks",
-          priority: Temporalio::Priority.new(
-            priority_key: AgentRun::QUEUE_PRIORITIES.fetch(queued_run.queue_priority_tier).fetch(:indicator),
-            fairness_key: queued_run.project.account_id.to_s
-          )
+          priority: temporal_priority_for(queued_run)
         )
       ).and_return(workflow_handle)
 
-      described_class.new.perform
+      job.perform
 
       queued_run.reload
       expect(queued_run.status).to eq("queued")
@@ -222,14 +224,11 @@ RSpec.describe ProcessRunQueueJob do
         Workflows::AgentExecutionWorkflow,
         hash_including(agent_run_id: queued_run.id),
         hash_including(
-          priority: Temporalio::Priority.new(
-            priority_key: AgentRun::QUEUE_PRIORITIES.fetch(queued_run.queue_priority_tier).fetch(:indicator),
-            fairness_key: queued_run.project.account_id.to_s
-          )
+          priority: temporal_priority_for(queued_run)
         )
       ).and_return(workflow_handle)
 
-      described_class.new.perform
+      job.perform
     end
 
     it "processes runs in FIFO order within the same priority" do
@@ -289,6 +288,27 @@ RSpec.describe ProcessRunQueueJob do
       expect(started_ids).to eq([ manual.id ])
       expect(manual.reload.status).to eq("queued")
       expect(auto_continue.reload.status).to eq("queued")
+    end
+
+    it "starts review runs before create_pr runs when scheduler priorities tie" do
+      project = create(:project)
+      project.created_by.settings.update!(max_concurrent_runs: 1)
+      create_pr_run = create(:agent_run, :queued, :automatic, :existing_pr,
+        project: project, goal: "create_pr", source_pull_request_number: 42, created_at: 2.minutes.ago)
+      review_run = create(:agent_run, :queued, :automatic, :review_goal,
+        project: project, source_pull_request_number: 43, created_at: 1.minute.ago)
+
+      started_ids = []
+      allow(temporal_client).to receive(:start_workflow) do |_wf, input, **_opts|
+        started_ids << input[:agent_run_id]
+        workflow_handle
+      end
+
+      described_class.new.perform
+
+      expect(started_ids).to eq([ review_run.id ])
+      expect(review_run.reload.temporal_workflow_id).to be_present
+      expect(create_pr_run.reload.temporal_workflow_id).to be_nil
     end
 
     it "does not start lower-priority work from the same project after claiming a manual run" do
@@ -676,6 +696,104 @@ RSpec.describe ProcessRunQueueJob do
       expect(blocked_run.reload.status).to eq("failed")
       expect(blocked_run.error_message).to include("Budget enforcement")
       expect(normal_run.reload.status).to eq("queued")
+    end
+
+    context "with RDR-032 dequeue-time eligibility recheck" do
+      # Issues are created in their ineligible state BEFORE the queued run
+      # so update callbacks (closed/paused label sync, orphan-run
+      # cancellation) don't pre-empt the recheck under test.
+      it "cancels a queued auto-pick run whose issue carries a skip label and starts the next eligible run" do
+        project = create(:project, auto_pick_enabled: true)
+        ineligible_issue = create(:issue, project: project, github_state: "open", labels: [ "planning" ],
+          github_number: 1)
+        ineligible_run = create(:agent_run, :queued, :automatic, project: project,
+          issue: ineligible_issue, goal: "create_pr", auto_pick: true, created_at: 2.minutes.ago)
+
+        eligible_issue = create(:issue, project: project, github_state: "open", github_number: 2)
+        eligible_run = create(:agent_run, :queued, :automatic, project: project,
+          issue: eligible_issue, goal: "create_pr", auto_pick: true, created_at: 1.minute.ago)
+
+        started_ids = []
+        allow(temporal_client).to receive(:start_workflow) do |_wf, input, **_opts|
+          started_ids << input[:agent_run_id]
+          workflow_handle
+        end
+
+        described_class.new.perform
+
+        expect(ineligible_run.reload.status).to eq("cancelled")
+        expect(eligible_run.reload.temporal_workflow_id).to be_present
+        expect(started_ids).to eq([ eligible_run.id ])
+      end
+
+      it "cancels a run whose issue is in a paid_state skip state" do
+        project = create(:project, auto_pick_enabled: true)
+        issue = create(:issue, project: project, github_state: "open", paid_state: "needs_input")
+        run = create(:agent_run, :queued, :automatic, project: project,
+          issue: issue, goal: "create_pr", auto_pick: true)
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(run.reload.status).to eq("cancelled")
+      end
+
+      it "cancels a run whose issue is blocked by an open dependency" do
+        project = create(:project, auto_pick_enabled: true)
+        dependent = create(:issue, project: project, github_state: "open")
+        blocker = create(:issue, project: project, github_state: "open")
+        create(:issue_dependency, issue: dependent, depends_on_issue: blocker)
+        run = create(:agent_run, :queued, :automatic, project: project,
+          issue: dependent, goal: "create_pr", auto_pick: true)
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(run.reload.status).to eq("cancelled")
+      end
+
+      it "cancels a run whose issue was closed after seeding" do
+        project = create(:project, auto_pick_enabled: true)
+        issue = create(:issue, project: project, github_state: "closed")
+        run = create(:agent_run, :queued, :automatic, project: project,
+          issue: issue, goal: "create_pr", auto_pick: true)
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(run.reload.status).to eq("cancelled")
+      end
+
+      it "starts an eligible auto-pick run unchanged" do
+        project = create(:project, auto_pick_enabled: true)
+        issue = create(:issue, project: project, github_state: "open")
+        run = create(:agent_run, :queued, :automatic, project: project,
+          issue: issue, goal: "create_pr", auto_pick: true)
+
+        expect(temporal_client).to receive(:start_workflow).and_return(workflow_handle)
+
+        described_class.new.perform
+
+        expect(run.reload.temporal_workflow_id).to be_present
+        expect(run.reload.status).to eq("queued")
+      end
+
+      it "does not recheck a manual run even if its issue is ineligible" do
+        project = create(:project)
+        issue = create(:issue, project: project, github_state: "open", labels: [ "planning" ])
+        run = create(:agent_run, :queued, :manual, project: project,
+          issue: issue, goal: "create_pr")
+
+        expect(temporal_client).to receive(:start_workflow).and_return(workflow_handle)
+
+        described_class.new.perform
+
+        expect(run.reload.status).to eq("queued")
+        expect(run.reload.temporal_workflow_id).to be_present
+      end
     end
 
     context "when GitHub circuit is open" do
@@ -1508,5 +1626,52 @@ RSpec.describe ProcessRunQueueJob do
       effective_max_concurrent: 2,
       snapshot_present: true
     )
+  end
+
+  describe "#temporal_priority_for" do
+    let(:project) { create(:project) }
+    let(:expected_temporal_keys) do
+      {
+        manual: 1,
+        pr_p1: 2,
+        pr_p2: 2,
+        pr_p3: 3,
+        pr_continue: 3,
+        issue_p1: 4,
+        issue_p2: 4,
+        issue_p3: 5,
+        auto_pick: 5
+      }
+    end
+
+    def issue_run(label: nil)
+      issue = create(:issue, project: project, labels: Array(label))
+      create(:agent_run, :queued, project: project, trigger_type: "automatic", issue: issue)
+    end
+
+    def pr_run(github_number:, label: nil)
+      create(:issue, project: project, is_pull_request: true, github_number: github_number, labels: Array(label))
+      create(:agent_run, :queued, project: project, trigger_type: "automatic", source_pull_request_number: github_number)
+    end
+
+    def runs_by_tier
+      {
+        manual: create(:agent_run, :queued, project: project, trigger_type: "manual"),
+        pr_p1: pr_run(github_number: 101, label: "P1"),
+        pr_p2: pr_run(github_number: 102, label: "P2"),
+        pr_p3: pr_run(github_number: 103, label: "P3"),
+        pr_continue: pr_run(github_number: 104),
+        issue_p1: issue_run(label: "P1"),
+        issue_p2: issue_run(label: "P2"),
+        issue_p3: issue_run(label: "P3"),
+        auto_pick: issue_run
+      }
+    end
+
+    it "compresses all queue tiers into the default Temporal 1..5 range" do
+      actual_keys = runs_by_tier.transform_values { |run| temporal_priority_for(run).priority_key }
+
+      expect(actual_keys).to eq(expected_temporal_keys)
+    end
   end
 end

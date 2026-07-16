@@ -91,6 +91,33 @@ RSpec.describe Screenshots::SeedRunner do
     expect(result).to eq({})
   end
 
+  it "runs seeds via the supplied executor regardless of driver" do
+    executor_env = nil
+    stdout = JSON.generate("user" => { "id" => 7, "email" => "screenshot@example.com" })
+    executor = lambda do |env|
+      executor_env = env
+      [ stdout, "", true ]
+    end
+
+    result = described_class.new.call(
+      config:,
+      repo_path: Rails.root.to_s,
+      driver_name: "playwright",
+      executor: executor
+    )
+
+    expect(executor_env).to eq("SCREENSHOT_SEED_CONFIG" => JSON.generate(config.seed.map(&:to_h)))
+    expect(result[:user].email).to eq("screenshot@example.com")
+  end
+
+  it "raises when the executor reports a failure" do
+    executor = ->(_env) { [ "", "boom", false ] }
+
+    expect {
+      described_class.new.call(config:, repo_path: Rails.root.to_s, driver_name: "playwright", executor: executor)
+    }.to raise_error("Screenshot seed setup failed: boom")
+  end
+
   it "serializes all scalar record attributes for interpolation" do
     install_seed_script_fakes
     result = run_seed_script([ { "key" => "user", "runner" => "Screenshots::SeedData::Fake.call" } ])
