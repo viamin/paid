@@ -565,6 +565,38 @@ RSpec.describe Activities::RunAgentActivity do
       expect(command.last).to eq("say 'hi'")
     end
 
+    it "preserves trailing Codex harness args when adding bundle access and review disables" do
+      plan = Runners::HarnessExecutionPlan::Result.new(
+        command: [ "codex", "exec", "--json", "review prompt", "--extra-output" ],
+        env: {},
+        preparation: AgentHarness::ExecutionPreparation.new(file_writes: [])
+      )
+      review_run = create(:agent_run, :running, project: project, goal: "review", source_pull_request_number: 42)
+
+      allow(Runners::HarnessExecutionPlan).to receive(:for_runner_key).and_return(plan)
+
+      result = activity.send(:harness_execution_plan_for, "codex", "review prompt", agent_run: review_run)
+
+      expect(result.command).to eq(
+        [ "codex", "exec", "--disable", "apps", "--add-dir", "/tmp/bundle", "--json", "review prompt", "--extra-output" ]
+      )
+    end
+
+    it "does not duplicate existing Codex bundle access or review disables" do
+      plan = Runners::HarnessExecutionPlan::Result.new(
+        command: [ "codex", "exec", "--disable", "apps", "--add-dir", "/tmp/bundle", "review prompt" ],
+        env: {},
+        preparation: AgentHarness::ExecutionPreparation.new(file_writes: [])
+      )
+      review_run = create(:agent_run, :running, project: project, goal: "review", source_pull_request_number: 42)
+
+      allow(Runners::HarnessExecutionPlan).to receive(:for_runner_key).and_return(plan)
+
+      result = activity.send(:harness_execution_plan_for, "codex", "review prompt", agent_run: review_run)
+
+      expect(result.command).to eq(plan.command)
+    end
+
     it "builds a sh -c wrapper for Gemini subscription auth" do
       context = described_class::CommandContext.new(
         runner_candidate: "gemini",
