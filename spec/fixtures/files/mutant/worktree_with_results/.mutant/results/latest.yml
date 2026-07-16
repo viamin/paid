@@ -1,3 +1,5 @@
-summary:
-  total_mutations: 20
-  killed_mutations: 19
+total_mutations: 20
+killed: 19
+alive: 1
+errored: 0
+alive_mutations: []

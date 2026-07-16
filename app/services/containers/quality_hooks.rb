@@ -47,7 +47,9 @@ module Containers
       return unless language == "ruby"
 
       requirement = resolve_mutation_requirement(project, user, language)
-      requirement&.command
+      return unless requirement
+
+      MutantResultsReader.with_results_dir(requirement.command)
     end
 
     def resolve_scheduled_mutation_command(project, user, language)
@@ -91,6 +93,10 @@ module Containers
           normalized.concat([ "--jobs", "1" ])
           jobs_overridden = true
           index += 1
+        when "--results-dir"
+          index += 2
+        when /\A--results-dir=/
+          index += 1
         else
           normalized << token
           index += 1
@@ -98,6 +104,7 @@ module Containers
       end
 
       normalized.concat([ "--jobs", "1" ]) unless jobs_overridden
+      normalized.concat([ "--results-dir", MutantResultsReader::RESULTS_DIRECTORY ])
       Shellwords.join(normalized)
     end
   end

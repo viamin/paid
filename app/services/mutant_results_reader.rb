@@ -1,11 +1,38 @@
 # frozen_string_literal: true
 
+require "shellwords"
+
 class MutantResultsReader
   RESULTS_DIRECTORY = ".mutant/results"
   RESULT_PATTERNS = [ "*.yml", "*.yaml" ].freeze
 
   def self.read(worktree_path)
     new(worktree_path:).read
+  end
+
+  def self.with_results_dir(command)
+    return command if command.blank?
+
+    tokens = Shellwords.split(command)
+    return command if tokens.empty?
+
+    stripped = []
+    index = 0
+
+    while index < tokens.length
+      case tokens[index]
+      when "--results-dir"
+        index += 2
+      when /\A--results-dir=/
+        index += 1
+      else
+        stripped << tokens[index]
+        index += 1
+      end
+    end
+
+    stripped.concat([ "--results-dir", RESULTS_DIRECTORY ])
+    Shellwords.join(stripped)
   end
 
   def initialize(worktree_path:)
@@ -23,7 +50,7 @@ class MutantResultsReader
     return nil unless raw_data.is_a?(Hash)
 
     total_mutations = extract_count(raw_data, "total_mutations")
-    killed_mutations = extract_count(raw_data, "killed_mutations")
+    killed_mutations = extract_count(raw_data, "killed") || extract_count(raw_data, "killed_mutations")
     return nil unless total_mutations && killed_mutations
 
     {

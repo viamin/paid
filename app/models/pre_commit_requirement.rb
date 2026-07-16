@@ -3,7 +3,7 @@
 class PreCommitRequirement < ApplicationRecord
   has_logidze
   CHECK_TYPES = %w[shell_command test_suite coverage security_scan mutation_test].freeze
-  MUTATION_TEST_DEFAULT_COMMAND = "bundle exec mutant run --since HEAD~1 --use rspec --jobs 1".freeze
+  MUTATION_TEST_DEFAULT_COMMAND = "bundle exec mutant run --results-dir .mutant/results --since HEAD~1 --use rspec --jobs 1".freeze
   FAILURE_BEHAVIORS = %w[block warn auto_fix].freeze
 
   belongs_to :account
