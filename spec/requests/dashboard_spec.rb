@@ -1125,5 +1125,39 @@ RSpec.describe "Dashboard" do
       expect(response).to have_http_status(:see_other)
       expect(flash[:notice]).to eq("Agent run is no longer active.")
     end
+
+    context "with a Turbo Stream request" do
+      it "removes the queue row after cancellation" do
+        agent_run = create(:agent_run, project: project, status: "running", started_at: 2.minutes.ago)
+
+        post dashboard_cancel_run_path(agent_run), as: :turbo_stream
+
+        expect(response).to have_http_status(:ok)
+        expect(response.media_type).to eq("text/vnd.turbo-stream.html")
+        expect(response.body).to include(%(action="remove" target="dashboard_queue_row_agent_run_#{agent_run.id}"))
+        expect(agent_run.reload.status).to eq("cancelled")
+      end
+
+      it "prepends an alert when the run is no longer active" do
+        agent_run = create(:agent_run, project: project, status: "completed", completed_at: Time.current)
+
+        post dashboard_cancel_run_path(agent_run), as: :turbo_stream
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include(%(action="prepend" target="dashboard-alerts"))
+        expect(response.body).to include("Agent run is no longer active.")
+      end
+
+      it "forbids users who cannot run agents" do
+        account_membership = user.account_membership_for(account)
+        account_membership.update!(role: :viewer)
+        agent_run = create(:agent_run, project: project, status: "running", started_at: 2.minutes.ago)
+
+        post dashboard_cancel_run_path(agent_run), as: :turbo_stream
+
+        expect(response).to redirect_to(root_path)
+        expect(response).to have_http_status(:found)
+      end
+    end
   end
 end

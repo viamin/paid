@@ -118,6 +118,7 @@ class DashboardController < ApplicationController
   end
 
   def cancel_run
+    authorize @agent_run, :cancel?
     cancel_agent_run(@agent_run, redirect_path: dashboard_path)
   end
 

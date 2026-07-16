@@ -1,0 +1,5 @@
+<% if @cancel_result.cancelled? %>
+  <%= turbo_stream.remove dom_id(@agent_run, :dashboard_queue_row) %>
+<% else %>
+  <%= turbo_stream.prepend "dashboard-alerts", partial: "shared/flash_alert", locals: { message: @cancel_result.message } %>
+<% end %>

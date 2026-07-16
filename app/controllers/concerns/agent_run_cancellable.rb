@@ -31,10 +31,20 @@ module AgentRunCancellable
   end
 
   def cancel_agent_run(agent_run, redirect_path:)
-    unless agent_run.cancellable?
-      redirect_to redirect_path, status: :see_other, notice: "Agent run is no longer active."
-      return
+    result = cancel_agent_run_result(agent_run)
+
+    respond_to do |format|
+      format.html { redirect_to redirect_path, status: :see_other, notice: result.message }
+      format.turbo_stream do
+        Dashboard::CacheVersion.bump(current_account, scope: Dashboard::CacheVersion::LISTS_SCOPE)
+        @cancel_result = result
+        render "dashboard/cancel_run", formats: :turbo_stream
+      end
     end
+  end
+
+  def cancel_agent_run_result(agent_run)
+    return CancellationResult.new(:inactive, "Agent run is no longer active.") unless agent_run.cancellable?
 
     cancelled = false
 
@@ -48,9 +58,15 @@ module AgentRunCancellable
     if cancelled
       AgentRunCancellationJob.perform_later(agent_run.id)
       record_run_audit_event("agent_run.cancelled", agent_run)
-      redirect_to redirect_path, status: :see_other, notice: "Agent run cancelled."
+      CancellationResult.new(:cancelled, "Agent run cancelled.")
     else
-      redirect_to redirect_path, status: :see_other, notice: "Agent run finished before it could be cancelled."
+      CancellationResult.new(:finished, "Agent run finished before it could be cancelled.")
+    end
+  end
+
+  CancellationResult = Struct.new(:status, :message, keyword_init: false) do
+    def cancelled?
+      status == :cancelled
     end
   end
 end
