@@ -42,7 +42,7 @@
         </div>
 
         <div class="mt-4">
-          <%= line_chart data[:series],
+          <%= dashboard_chartkick_chart "LineChart", data[:series],
               id: "pr-cycle-time-chart",
               height: "320px",
               colors: ["#6366f1", "#10b981", "#f59e0b"],

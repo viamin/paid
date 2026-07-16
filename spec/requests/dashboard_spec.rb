@@ -692,6 +692,23 @@ RSpec.describe "Dashboard" do
       expect(chart).to be_present
     end
 
+    it "renders Stimulus-backed chart containers for deferred frame charts", :aggregate_failures do
+      project = create(:project, account: account)
+      create(:agent_run, :completed, project: project, created_at: 1.day.ago)
+
+      get dashboard_metrics_path(time_range: "7d")
+
+      doc = Nokogiri::HTML(response.body)
+      chart = doc.at_css("div#daily-runs-chart[data-controller~='chartkick']")
+
+      expect(chart).to be_present
+      expect(chart["data-chartkick-type-value"]).to eq("ColumnChart")
+      expect(chart["data-chartkick-options-value"]).to include("\"stacked\":true")
+      expect(chart["data-chartkick-data-value"]).to be_present
+      expect(chart.text).to include("Loading...")
+      expect(doc.css("script")).to be_empty
+    end
+
     it "defaults to cumulative when time_range is invalid" do
       get dashboard_metrics_path(time_range: "invalid")
 
@@ -848,6 +865,58 @@ RSpec.describe "Dashboard" do
       expect(actor_headers).to include("Failed")
       expect(response.body).not_to include("Ignored")
       expect(response.body).not_to include("Planning Outcome")
+    end
+
+    it "renders the decision volume chart with Chartkick Stimulus wiring" do
+      create_decision_metric(project: project, created_at: 2.days.ago)
+      create_decision_metric(project: project, created_at: 1.day.ago, decision_status: "failed", agent_run_traits: [ :failed ])
+
+      get dashboard_decision_metrics_path(time_range: "7d")
+
+      doc = Nokogiri::HTML(response.body)
+      chart = doc.at_css("div#decision-volume-chart[data-controller~='chartkick']")
+
+      expect(chart).to be_present
+      expect(chart["data-chartkick-type-value"]).to eq("ColumnChart")
+      expect(doc.css("script")).to be_empty
+    end
+  end
+
+  describe "GET /dashboard/pr_cycle_time" do
+    let(:account) { create(:account) }
+    let(:user) { create(:user, account: account) }
+    let(:pr_cycle_time_data) do
+      {
+        series: [
+          { name: "Average", data: { Date.current => 6.0 } },
+          { name: "Median (p50)", data: { Date.current => 6.0 } },
+          { name: "Trend", data: { Date.current => 6.0 } }
+        ],
+        outlier_annotations: { Date.current => 1 },
+        merged_counts: { Date.current => 1 },
+        summary: {
+          total_merged: 1,
+          total_days: 1,
+          overall_avg_hours: 6.0,
+          overall_p50_hours: 6.0
+        }
+      }
+    end
+
+    before { sign_in user }
+
+    it "renders the cycle time chart with Chartkick Stimulus wiring" do
+      allow(Dashboard::PrCycleTimeSeries).to receive(:call).and_return(pr_cycle_time_data)
+
+      get dashboard_pr_cycle_time_path(time_range: "7d")
+
+      doc = Nokogiri::HTML(response.body)
+      chart = doc.at_css("div#pr-cycle-time-chart[data-controller~='chartkick']")
+
+      expect(chart).to be_present
+      expect(chart["data-chartkick-type-value"]).to eq("LineChart")
+      expect(chart["data-chartkick-options-value"]).to include("\"annotation\"")
+      expect(doc.css("script")).to be_empty
     end
   end
 

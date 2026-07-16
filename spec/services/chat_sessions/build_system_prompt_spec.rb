@@ -17,9 +17,15 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
   end
 
   describe "#call" do
-    subject(:prompt) { described_class.new(chat_session: chat_session).call }
+    subject(:prompt) { builder.call }
+
+    let(:builder) { described_class.new(chat_session: chat_session) }
 
     describe "base identity" do
+      before do
+        allow(builder).to receive(:resolve_prompt).and_return(nil)
+      end
+
       it "is always present" do
         expect(prompt).to include("AI assistant helping manage software projects via Paid")
       end
@@ -32,7 +38,9 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
 
       it "includes usage guidance" do
         expect(prompt).to include("use the available tools")
-        expect(prompt).to include("prefer configuration profiles")
+        expect(prompt).to include("list_configuration_profiles")
+        expect(prompt).to include("plan_configuration_profile")
+        expect(prompt).to include("apply_configuration_profile")
         expect(prompt).to include("create a Change Intent Record")
         expect(prompt).to include("Be concise and technical")
       end
