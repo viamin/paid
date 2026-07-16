@@ -62,5 +62,6 @@ RSpec.describe Screenshots::SeedData::Paid do
       "name" => "Screenshot Catalog Entry"
     )
     expect(marketplace_entry.current_version).to have_attributes(version: 1)
+    expect(marketplace_entry.extension_points).to eq([ "workflow_strategies", "prompts" ])
   end
 end

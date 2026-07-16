@@ -236,7 +236,7 @@ module Screenshots
             record.added_by_name = user.name.presence || "Screenshot User"
             record.added_by_email = user.email
             record.tags = [ "screenshots", "managed-platform" ]
-            record[:extension_points] = [ "workflow_strategies", "prompts" ]
+            record.extension_points = [ "workflow_strategies", "prompts" ]
             record.certification_status = "verified"
             record.support_tier = "first_party"
             record.documentation_url = "https://docs.example.com/screenshots/catalog-entry"
