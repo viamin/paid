@@ -30,9 +30,13 @@ class StyleGuideEvolutionJob < ApplicationJob
   private
 
   def eligible_style_guides(project_id:, style_guide_id:, sample_days:)
+    accounts_with_running_tests = StyleGuideAbTest.running.where.not(account_id: nil).select(:account_id)
+
     scope = StyleGuide.active
       .where.not(current_version_id: nil)
+      .where.not(account_id: nil, project_id: nil)
       .where.not(id: StyleGuideAbTest.running.select(:style_guide_id))
+      .where.not(account_id: accounts_with_running_tests)
       .joins(:style_guide_run_exposures)
       .where(style_guide_run_exposures: { created_at: sample_days.days.ago.. })
       .distinct
