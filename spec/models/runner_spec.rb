@@ -1024,6 +1024,11 @@ RSpec.describe Runner do
         }
       })
       expect(config["model"]).to eq("anthropic/claude-sonnet-4-20250514")
+      expect(config["permission"]).to eq({
+        "external_directory" => {
+          "/tmp/**" => "allow"
+        }
+      })
     end
 
     it "does not double-prefix already-qualified model ids" do

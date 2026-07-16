@@ -434,7 +434,12 @@ class Runner < ApplicationRecord
           }
         }
       },
-      model: kilocode_qualified_model(kilocode_provider_id, model_id)
+      model: kilocode_qualified_model(kilocode_provider_id, model_id),
+      permission: {
+        external_directory: {
+          "/tmp/**": "allow"
+        }
+      }
     }.to_json
   end
 
