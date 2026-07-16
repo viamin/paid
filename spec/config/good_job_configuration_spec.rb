@@ -94,5 +94,29 @@ RSpec.describe GoodJob, :no_db do
         expect(cron).to have_key(job_key), "Expected cron job #{job_key} to be defined"
       end
     end
+
+    it "staggers frequent maintenance jobs across minute boundaries" do
+      expected_offsets = {
+        process_run_queue: "*/5 * * * *",
+        poll_workflow_health_check: "1-59/5 * * * *",
+        service_container_reconciliation: "1-59/5 * * * *",
+        dispatch_circuit_breaker_recovery: "1-59/5 * * * *",
+        stale_run_detector: "2-59/5 * * * *",
+        queue_monitor: "2-59/5 * * * *",
+        docker_orphan_cleanup: "3-59/5 * * * *",
+        notifications_check_runner_quotas: "3-59/5 * * * *",
+        container_pool_replenishment: "4-59/5 * * * *",
+        chat_idle_reaper: "4-59/5 * * * *",
+        auto_pick_eligibility_sweep: "7-59/15 * * * *",
+        agent_run_pattern_detector: "11-59/15 * * * *",
+        remediation_decision_outcomes: "13-59/15 * * * *"
+      }
+
+      aggregate_failures do
+        expected_offsets.each do |job_key, schedule|
+          expect(cron.dig(job_key, :cron)).to eq(schedule)
+        end
+      end
+    end
   end
 end
