@@ -136,7 +136,7 @@ jobs:
       - name: Run Claude Code Review
         if: steps.pr.outputs.head_repo_fork != 'true' && steps.trust.outputs.allowed == 'true'
         id: claude-review
-        uses: anthropics/claude-code-action@12531344451323133b0493233c759991ac61da12 # v1
+        uses: anthropics/claude-code-action@1298632ce7736903d02a1435002705aa2a594a6c # v1
         with:
           # IMPORTANT: Authentication uses an OAuth token, NOT an API key.
           # Create the CLAUDE_CODE_OAUTH_TOKEN secret (not an Anthropic API key)
