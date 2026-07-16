@@ -12,7 +12,7 @@ RSpec.describe PreCommitRequirement do
   describe ".mutation_test_default_command" do
     it "returns the default mutation test command" do
       expect(described_class.mutation_test_default_command)
-        .to eq("bundle exec mutant run --since HEAD~1 --use rspec --jobs 1")
+        .to eq("bundle exec mutant run --results-dir .mutant/results --since HEAD~1 --use rspec --jobs 1")
     end
   end
 
