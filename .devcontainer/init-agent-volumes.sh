@@ -24,6 +24,7 @@ AGENT_DIRS=(
   "$HOME/.kilocode"
   "$HOME/.aider"
   "$HOME/.cursor"
+  "$HOME/.omp"
 )
 
 for dir in "${AGENT_DIRS[@]}"; do
