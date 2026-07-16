@@ -8,6 +8,7 @@ module StyleGuideEvolution
     TIMEOUT = 60
     MAX_MUTATION_COUNT = 5
     MIN_MUTATION_COUNT = 1
+    MAX_GENERATED_TEMPLATE_LENGTH = PromptEvolution::Mutate::MAX_GENERATED_TEMPLATE_LENGTH
     STRATEGIES = PromptEvolution::Mutate::STRATEGIES
 
     Mutation = Struct.new(:raw_content, :strategy, :reasoning, :expected_improvement, keyword_init: true)
@@ -37,10 +38,11 @@ module StyleGuideEvolution
       )
       return [] unless response.success? && response.output.present?
 
-      parsed = parse_json(response.output)
+      parsed = parse_mutations(response.output)
       Array(parsed[:mutations]).filter_map do |mutation|
         raw_content = mutation[:raw_content].to_s.presence || mutation[:content].to_s.presence
         next if raw_content.blank?
+        next if raw_content.length > MAX_GENERATED_TEMPLATE_LENGTH
 
         Mutation.new(
           raw_content: raw_content,
@@ -60,7 +62,7 @@ module StyleGuideEvolution
         You are evolving a coding style guide used by an autonomous coding agent.
 
         Current style guide:
-        #{@style_guide.raw_content}
+        #{redact(@style_guide.raw_content)}
 
         Performance summary:
         #{performance_summary}
@@ -80,6 +82,29 @@ module StyleGuideEvolution
 
       avg = (scores.sum.to_f / scores.size).round(4)
       "sample_size=#{scores.size}, avg_quality_score=#{avg}"
+    end
+
+    def parse_mutations(text)
+      JSON.parse(clean_output(text), symbolize_names: true)
+    rescue JSON::ParserError
+      {}
+    end
+
+    def clean_output(text)
+      cleaned = text.to_s.strip
+      loop do
+        previous = cleaned
+        cleaned = strip_markdown_fence(cleaned)
+        cleaned = strip_surrounding_quotes(cleaned)
+        break if cleaned == previous
+      end
+      cleaned
+    end
+
+    def redact(text)
+      return text if text.blank?
+
+      Knowledge::Redaction::Redactor.call(text: text).clean_text
     end
   end
 end

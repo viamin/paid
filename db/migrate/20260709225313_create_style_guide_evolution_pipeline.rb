@@ -116,7 +116,8 @@ class CreateStyleGuideEvolutionPipeline < ActiveRecord::Migration[8.1]
 
     # Added after backfill so every style_guide row has a current_version_id before the FK is enforced.
     # on_delete: :nullify mirrors the pattern used by prompts.current_version_id → prompt_versions.
-    add_foreign_key :style_guides, :style_guide_versions, column: :current_version_id, on_delete: :nullify
+    add_foreign_key :style_guides, :style_guide_versions, column: :current_version_id,
+      on_delete: :nullify, validate: false
   end
 
   private
