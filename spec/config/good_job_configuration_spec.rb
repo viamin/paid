@@ -6,6 +6,7 @@ RSpec.describe GoodJob, :no_db do
   around do |example|
     original_env = ENV.to_h.slice(
       "GOOD_JOB_EXECUTION_MODE",
+      "GOOD_JOB_BOOTSTRAP_ON_START",
       "GOOD_JOB_MAX_THREADS",
       "GOOD_JOB_POLL_INTERVAL",
       "GOOD_JOB_SHUTDOWN_TIMEOUT",
@@ -14,6 +15,7 @@ RSpec.describe GoodJob, :no_db do
 
     %w[
       GOOD_JOB_EXECUTION_MODE
+      GOOD_JOB_BOOTSTRAP_ON_START
       GOOD_JOB_MAX_THREADS
       GOOD_JOB_POLL_INTERVAL
       GOOD_JOB_SHUTDOWN_TIMEOUT
@@ -24,6 +26,7 @@ RSpec.describe GoodJob, :no_db do
   ensure
     %w[
       GOOD_JOB_EXECUTION_MODE
+      GOOD_JOB_BOOTSTRAP_ON_START
       GOOD_JOB_MAX_THREADS
       GOOD_JOB_POLL_INTERVAL
       GOOD_JOB_SHUTDOWN_TIMEOUT
@@ -35,6 +38,31 @@ RSpec.describe GoodJob, :no_db do
   describe "execution mode" do
     it "defaults to async_server" do
       expect(Paid::GoodJobConfig.execution_mode).to eq(:async_server)
+    end
+  end
+
+  describe "startup bootstrap" do
+    it "runs for the Rails server process" do
+      expect(Paid::GoodJobConfig.bootstrap_startup_jobs?(server_process: true)).to be(true)
+    end
+
+    it "does not run for non-server async_server processes" do
+      ENV["GOOD_JOB_EXECUTION_MODE"] = "async_server"
+
+      expect(Paid::GoodJobConfig.bootstrap_startup_jobs?(server_process: false)).to be(false)
+    end
+
+    it "runs for the dedicated external job role when explicitly enabled" do
+      ENV["GOOD_JOB_EXECUTION_MODE"] = "external"
+      ENV["GOOD_JOB_BOOTSTRAP_ON_START"] = "true"
+
+      expect(Paid::GoodJobConfig.bootstrap_startup_jobs?(server_process: false)).to be(true)
+    end
+
+    it "does not run for unrelated external processes" do
+      ENV["GOOD_JOB_EXECUTION_MODE"] = "external"
+
+      expect(Paid::GoodJobConfig.bootstrap_startup_jobs?(server_process: false)).to be(false)
     end
   end
 

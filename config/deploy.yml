@@ -36,6 +36,8 @@ servers:
         - /var/run/docker.sock:/var/run/docker.sock
     env:
       clear:
+        # Preserve startup bootstrap jobs when GoodJob runs out-of-process via bin/jobs.
+        GOOD_JOB_BOOTSTRAP_ON_START: true
         # GoodJob worker thread pool size (default: 11). Must not exceed DB_POOL.
         GOOD_JOB_MAX_THREADS: 10
         # Per-queue thread caps (semicolons create independent pools).
@@ -111,8 +113,8 @@ env:
     #   - web:        no in-process job execution (avoids OOM'ing the web server)
     #   - job:        the external GoodJob worker process consumes the queue
     #   - worker_*:   harmless; Temporal worker processes never run GoodJob jobs
-    # Development keeps async_server via config/initializers/good_job.rb, so
-    # bin/dev is unaffected.
+    # Development remains unaffected because the Rails server process still
+    # triggers the one-time startup bootstrap in config/initializers/good_job.rb.
     GOOD_JOB_EXECUTION_MODE: external
 
     # GoodJob DB polling interval in seconds (default: 3). Only the job role reads it.
