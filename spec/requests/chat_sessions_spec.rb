@@ -399,28 +399,38 @@ RSpec.describe "ChatSessions" do
       expect(response.body).not_to include("Session 49")
     end
 
-    it "uses the active list frame id for non-archived sessions" do
+    it "renders the stable sidebar frame for non-archived sessions" do
       create(:chat_session, account: account, created_by: user, title: "Active")
 
       get sidebar_page_chat_sessions_path,
         params: { archived: "false" },
-        headers: { "Turbo-Frame" => "chat_sessions_list_active" }
+        headers: { "Turbo-Frame" => "chat_sessions_list" }
 
       expect(response).to have_http_status(:ok)
-      expect(response.body).to match(/<turbo-frame[^>]*id="chat_sessions_list_active"/)
+      expect(response.body).to match(/<turbo-frame[^>]*id="chat_sessions_list"/)
+      expect(response.body).to match(/<div[^>]*id="chat_sessions_list_active"/)
       expect(response.body).to include("Active")
     end
 
-    it "uses the archived list frame id for archived sessions" do
+    it "renders the stable sidebar frame for archived sessions" do
       create(:chat_session, :archived, account: account, created_by: user, title: "Archived")
 
       get sidebar_page_chat_sessions_path,
         params: { archived: "true" },
-        headers: { "Turbo-Frame" => "chat_sessions_list_archived" }
+        headers: { "Turbo-Frame" => "chat_sessions_list" }
 
       expect(response).to have_http_status(:ok)
-      expect(response.body).to match(/<turbo-frame[^>]*id="chat_sessions_list_archived"/)
+      expect(response.body).to match(/<turbo-frame[^>]*id="chat_sessions_list"/)
+      expect(response.body).to match(/<div[^>]*id="chat_sessions_list_archived"/)
       expect(response.body).to include("Archived")
+    end
+
+    it "targets the stable sidebar frame from both filter tabs" do
+      get sidebar_page_chat_sessions_path,
+        params: { archived: "false" },
+        headers: { "Turbo-Frame" => "chat_sessions_list" }
+
+      expect(response.body.scan('data-turbo-frame="chat_sessions_list"').size).to eq(2)
     end
   end
 

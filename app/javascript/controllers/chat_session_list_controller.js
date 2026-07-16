@@ -41,7 +41,7 @@ export default class extends Controller {
 
   handleFrameRender(event) {
     const targetId = event.target?.id
-    if (targetId !== "chat_sessions_list_active" && targetId !== "chat_sessions_list_archived") return
+    if (targetId !== "chat_sessions_list") return
 
     this.setupObserver()
     this.filter()

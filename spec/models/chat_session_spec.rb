@@ -5,6 +5,12 @@ require "rails_helper"
 RSpec.describe ChatSession do
   subject(:chat_session) { build(:chat_session) }
 
+  before do
+    allow(Turbo::StreamsChannel).to receive(:broadcast_append_to)
+    allow(Turbo::StreamsChannel).to receive(:broadcast_prepend_to)
+    allow(Turbo::StreamsChannel).to receive(:broadcast_remove_to)
+  end
+
   describe "associations" do
     it { is_expected.to belong_to(:account) }
     it { is_expected.to belong_to(:project).optional }
@@ -177,6 +183,48 @@ RSpec.describe ChatSession do
       session = build(:chat_session, :archived, account: account, created_by: user)
 
       expect(session.sidebar_list_target).to eq("chat_sessions_list_archived")
+    end
+  end
+
+  describe "sidebar broadcasts" do
+    let(:account) { create(:account) }
+    let(:user) { create(:user, account: account) }
+
+    it "prepends new sessions into the active card list container" do
+      create(:chat_session, :active, account: account, created_by: user)
+
+      expect(Turbo::StreamsChannel).to have_received(:broadcast_prepend_to).with(
+        [ account, :chat_sessions ],
+        target: "chat_sessions_list_active",
+        partial: "chat_sessions/session_card",
+        locals: { chat_session: kind_of(described_class) }
+      )
+    end
+
+    it "moves archived sessions into the archived card list container on archive" do
+      session = create(:chat_session, :active, account: account, created_by: user)
+
+      session.update!(status: "archived")
+
+      expect(Turbo::StreamsChannel).to have_received(:broadcast_prepend_to).with(
+        [ account, :chat_sessions ],
+        target: "chat_sessions_list_archived",
+        partial: "chat_sessions/session_card",
+        locals: { chat_session: session }
+      )
+    end
+
+    it "restores the old list empty state when a status change leaves it empty" do
+      session = create(:chat_session, :active, account: account, created_by: user)
+
+      session.update!(status: "archived")
+
+      expect(Turbo::StreamsChannel).to have_received(:broadcast_append_to).with(
+        [ account, :chat_sessions ],
+        target: "chat_sessions_list_active",
+        partial: "chat_sessions/sidebar_empty_state",
+        locals: { archived_view: false }
+      )
     end
   end
 end
