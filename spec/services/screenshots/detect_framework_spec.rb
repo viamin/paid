@@ -25,6 +25,43 @@ RSpec.describe Screenshots::DetectFramework, :no_db do
     File.write(File.join(repo_path, "lib/my_app_web/controllers/user_session_controller.ex"), "defmodule MyAppWeb.UserSessionController do\nend\n")
   end
 
+  def build_phoenix_pipeline_auth_repo(repo_path)
+    FileUtils.mkdir_p(File.join(repo_path, "lib/my_app_web/controllers"))
+    File.write(File.join(repo_path, "mix.exs"), <<~ELIXIR)
+      defmodule MyApp.MixProject do
+        defp deps do
+          [{:phoenix, "~> 1.7.0"}]
+        end
+      end
+    ELIXIR
+    File.write(File.join(repo_path, "lib/my_app_web/router.ex"), <<~ELIXIR)
+      defmodule MyAppWeb.Router do
+        use MyAppWeb, :router
+
+        pipeline :browser do
+          plug :accepts, ["html"]
+          plug :fetch_session
+        end
+
+        pipeline :require_authenticated_user do
+          plug MyAppWeb.UserAuth, :ensure_authenticated
+        end
+
+        scope "/", MyAppWeb do
+          pipe_through :browser
+
+          get "/users/log_in", UserSessionController, :new
+        end
+
+        scope "/", MyAppWeb do
+          pipe_through [:browser, :require_authenticated_user]
+
+          live "/dashboard", DashboardLive, :index
+        end
+      end
+    ELIXIR
+  end
+
   describe ".call" do
     it "detects a Rails app and suggests a Cuprite config" do
       result = described_class.call(repo_path: fixture_path("rails_repo"))
@@ -87,6 +124,21 @@ RSpec.describe Screenshots::DetectFramework, :no_db do
       result = described_class.call(repo_path: fixture_path("phoenix_repo"))
 
       expect(result.suggested_config.dig("auth", "strategy")).to eq("none")
+    end
+
+    it "detects Phoenix auth from authenticated pipelines plus a login route" do
+      repo_path = Dir.mktmpdir
+
+      begin
+        build_phoenix_pipeline_auth_repo(repo_path)
+
+        result = described_class.call(repo_path: repo_path)
+
+        expect(result.suggested_config.dig("auth", "strategy")).to eq("form")
+        expect(result.suggested_config.dig("auth", "login_path")).to eq("/users/log_in")
+      ensure
+        FileUtils.remove_entry(repo_path)
+      end
     end
 
     it "falls back to a generic app when no known framework is detected" do

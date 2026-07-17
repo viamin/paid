@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "json"
-
 module Projects
   module Screenshots
     class DetectFramework
@@ -28,39 +27,26 @@ module Projects
       end
 
       def call
-        gemfile = fetch_file("Gemfile")
+        detection = ::Screenshots::DetectFramework.call(project: project)
         package_json = parse_package_json(fetch_file("package.json"))
-        services = detect_services
-        framework, confidence = detect_framework(gemfile:, package_json:)
-        driver = suggest_driver(framework:, gemfile:, package_json:)
+        framework = present_framework_name(detection.framework)
+        confidence = confidence_label(detection.confidence)
+        driver = detection.suggested_config["driver"]
         setup_commands = suggest_setup_commands(framework:, package_json:)
-
-        suggested_config = compact_hash(
-          "framework" => framework,
-          "driver" => driver,
-          "auto_capture" => true,
-          "services" => services,
-          "setup" => setup_commands
-        )
 
         Result.new(
           framework: framework,
           confidence: confidence,
           driver: driver,
-          service_dependencies: services,
+          service_dependencies: detection.detected_services,
           setup_commands: setup_commands,
-          suggested_config: suggested_config,
-          suggested_yaml: YAML.dump(suggested_config),
+          suggested_config: detection.suggested_config,
+          suggested_yaml: detection.suggested_yaml,
           detected_at: Time.current.iso8601
         )
       end
 
       private
-
-      def detect_services
-        result = Projects::DetectServices.call(project: project)
-        result.detected.map { |detection| detection[:service].to_s }.uniq.sort
-      end
 
       def fetch_file(path)
         project.client.file_content(project.full_name, path: path)
@@ -76,32 +62,14 @@ module Projects
         {}
       end
 
-      def detect_framework(gemfile:, package_json:)
-        dependencies = package_dependencies(package_json)
-
-        return [ "Rails", "high" ] if gemfile.to_s.match?(/^\s*gem\s+["']rails["']/)
-        return [ "Next.js", "high" ] if dependencies.include?("next")
-        return [ "React + Vite", "medium" ] if dependencies.include?("react") && dependencies.include?("vite")
-        return [ "React", "medium" ] if dependencies.include?("react")
-
-        [ "Unknown", "low" ]
-      end
-
-      def suggest_driver(framework:, gemfile:, package_json:)
-        dependencies = package_dependencies(package_json)
-        return "playwright" if dependencies.include?("@playwright/test")
-        return "cuprite" if framework == "Rails" && gemfile.to_s.include?("cuprite")
-        return "cuprite" if framework == "Rails"
-
-        "playwright"
-      end
-
       def suggest_setup_commands(framework:, package_json:)
         commands = case framework
         when "Rails"
           [ "bin/setup --skip-server", "bin/rails db:prepare" ]
-        when "Next.js", "React", "React + Vite"
+        when "Next.js"
           [ "yarn install" ]
+        when "Phoenix"
+          [ "mix deps.get" ]
         else
           []
         end
@@ -110,15 +78,27 @@ module Projects
         commands.uniq
       end
 
+      def present_framework_name(framework)
+        {
+          rails: "Rails",
+          nextjs: "Next.js",
+          phoenix: "Phoenix",
+          django: "Django",
+          generic: "Unknown"
+        }.fetch(framework) { framework.to_s.humanize.presence || "Unknown" }
+      end
+
+      def confidence_label(confidence)
+        score = confidence.to_f
+        return "high" if score >= 0.85
+        return "medium" if score >= 0.5
+
+        "low"
+      end
+
       def package_dependencies(package_json)
         %w[dependencies devDependencies].flat_map do |key|
           package_json.fetch(key, {}).keys
-        end
-      end
-
-      def compact_hash(hash)
-        hash.compact.transform_values do |value|
-          value.is_a?(Array) ? value.reject(&:blank?) : value
         end
       end
     end

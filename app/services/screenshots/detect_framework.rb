@@ -771,6 +771,7 @@ module Screenshots
 
     def detect_phoenix_auth
       return phx_gen_auth_config if phx_gen_auth_detected?
+      return phoenix_router_auth_config if phoenix_router_auth_detected?
 
       { "strategy" => "none" }
     end
@@ -795,6 +796,88 @@ module Screenshots
           "submit" => 'button[type="submit"], input[type="submit"]'
         }
       }
+    end
+
+    def phoenix_router_auth_config
+      login_path = phoenix_login_path
+      return { "strategy" => "none" } if blank_value?(login_path)
+
+      {
+        "strategy" => "form",
+        "login_path" => login_path,
+        "fields" => {
+          "email" => 'input[name="user[email]"], input[name="email"], input[type="email"]',
+          "password" => 'input[name="user[password]"], input[name="password"], input[type="password"]',
+          "submit" => 'button[type="submit"], input[type="submit"]'
+        }
+      }
+    end
+
+    def phoenix_router_auth_detected?
+      router_content = router_content_for_phoenix
+      return false if blank_value?(router_content)
+      return false if blank_value?(phoenix_login_path)
+
+      phoenix_live_session_auth_detected?(router_content) ||
+        phoenix_scope_auth_detected?(router_content)
+    end
+
+    def phoenix_login_path
+      @phoenix_login_path ||= begin
+        login_route = discover_phoenix_routes.find do |route|
+          route["path"].match?(%r{/(?:users?/)?(?:log_?in|sign_?in)\z}i)
+        end
+        login_route&.fetch("path", nil)
+      end
+    end
+
+    def phoenix_scope_auth_detected?(router_content)
+      auth_pipelines = phoenix_auth_pipelines(router_content)
+      return true if auth_pipelines.any? { |name| router_content.match?(/pipe_through\s+:\s*#{Regexp.escape(name)}\b/) }
+      return true if auth_pipelines.any? { |name| router_content.match?(/pipe_through\s+\[[^\]]*:\s*#{Regexp.escape(name)}\b/i) }
+
+      router_content.match?(/pipe_through\s+\[[^\]]*:\s*(?:require_authenticated_user|authenticated|auth(?:enticated)?)[\],]/i)
+    end
+
+    def phoenix_live_session_auth_detected?(router_content)
+      router_content.match?(/live_session\s+.+?(?:ensure_authenticated|require_authenticated_user|authenticate|user_auth)/i)
+    end
+
+    def phoenix_auth_pipelines(router_content)
+      pipeline_name = nil
+      block_depth = 0
+      auth_pipelines = Set.new
+
+      router_content.each_line do |line|
+        stripped = line.strip
+
+        if pipeline_name.nil? && (match = stripped.match(/\Apipeline\s+:?([a-zA-Z_][\w]*)\s+do\b/))
+          pipeline_name = match[1]
+          block_depth = 1
+          next
+        end
+
+        next if pipeline_name.nil?
+
+        auth_pipelines << pipeline_name if phoenix_auth_plug_line?(stripped)
+
+        block_depth += stripped.scan(/\bdo\b/).size
+        block_depth -= stripped.scan(/\bend\b/).size
+
+        if block_depth <= 0
+          pipeline_name = nil
+          block_depth = 0
+        end
+      end
+
+      auth_pipelines.to_a
+    end
+
+    def phoenix_auth_plug_line?(line)
+      return false unless line.start_with?("plug ")
+      return false if line.match?(/fetch_current_user/i)
+
+      line.match?(/require_authenticated_user|ensure_authenticated|redirect_if_user_is_authenticated|authenticate|user_auth/i)
     end
 
     def router_content_for_phoenix
