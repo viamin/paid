@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
-Rails.application.config.to_prepare do
+require Rails.root.join("app/services/previews/tunnel_manager")
+
+Rails.application.config.after_initialize do
   Previews::TunnelManager.configure!(
     port_range: ENV.fetch("PREVIEW_PORT_RANGE", Previews::TunnelManager::DEFAULT_PORT_RANGE),
     server_port: Integer(ENV.fetch("PREVIEW_TUNNEL_SERVER_PORT", Previews::TunnelManager::DEFAULT_SERVER_PORT)),

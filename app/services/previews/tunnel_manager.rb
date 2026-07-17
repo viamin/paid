@@ -12,7 +12,12 @@ module Previews
     DEFAULT_SERVER_BIND_HOST = "0.0.0.0"
     DEFAULT_LOCAL_APP_HOST = "127.0.0.1"
     DEFAULT_HEALTH_CHECK_TIMEOUT_SECONDS = 10
+    DEFAULT_SERVER_CONFIG_POLL_INTERVAL_SECONDS = 2
     HEALTH_CHECK_POLL_INTERVAL_SECONDS = 0.25
+    PREVIEW_TUNNEL_LABEL = "paid.preview_tunnel"
+    PREVIEW_SESSION_TOKEN_LABEL = "paid.preview_session_token"
+    PREVIEW_SERVICE_NAME_LABEL = "paid.preview_service_name"
+    PREVIEW_TUNNEL_PORT_LABEL = "paid.preview_tunnel_port"
 
     class Error < StandardError; end
     class ConfigurationError < Error; end
@@ -40,11 +45,14 @@ module Previews
     end
 
     class PortPool
-      def initialize(range)
+      attr_reader :range
+
+      def initialize(range, allocations: {})
         @range = range
         @mutex = Mutex.new
         @key_to_port = {}
         @port_to_key = {}
+        reserve_allocations!(allocations)
       end
 
       def allocate(key:)
@@ -73,6 +81,20 @@ module Previews
 
       private
 
+      def reserve_allocations!(allocations)
+        allocations.each do |key, port|
+          reserve_allocation!(key.to_s, Integer(port))
+        end
+      end
+
+      def reserve_allocation!(key, port)
+        raise ConfigurationError, "Preview tunnel port #{port} is outside #{@range.begin}-#{@range.end}" unless @range.cover?(port)
+        raise ConfigurationError, "Preview tunnel port #{port} is already reserved" if @port_to_key.key?(port)
+
+        @key_to_port[key] = port
+        @port_to_key[port] = key
+      end
+
       def release_key(key)
         port = @key_to_port.delete(key.to_s)
         @port_to_key.delete(port) if port
@@ -90,6 +112,7 @@ module Previews
     class << self
       def configure!(port_range:, server_port:, server_bind_host:, shared_token:)
         range = parse_port_range(port_range)
+        existing_pool = Rails.application.config.x.preview_tunnel_port_pool
 
         Rails.application.config.x.preview_tunnel = {
           port_range: range,
@@ -97,7 +120,12 @@ module Previews
           server_bind_host: server_bind_host.to_s,
           shared_token: shared_token.to_s
         }
-        Rails.application.config.x.preview_tunnel_port_pool = PortPool.new(range)
+        Rails.application.config.x.preview_tunnel_port_pool =
+          if existing_pool.is_a?(PortPool) && existing_pool.range == range
+            existing_pool
+          else
+            PortPool.new(range, allocations: active_tunnel_allocations(range:))
+          end
       end
 
       def port_pool
@@ -143,6 +171,10 @@ module Previews
         end
 
         lines.join("\n") + "\n"
+      end
+
+      def active_server_config_toml(backend: Containers.backend)
+        server_config_toml(bindings: active_server_bindings(backend:))
       end
 
       def client_config(tunnel:, backend:, restricted:)
@@ -193,6 +225,18 @@ module Previews
         first..last
       end
 
+      def active_server_bindings(backend: Containers.backend)
+        list_preview_containers(backend:).filter_map do |container|
+          build_active_binding(container)
+        end.sort_by(&:tunnel_port)
+      end
+
+      def active_tunnels(backend: Containers.backend)
+        list_preview_containers(backend:).filter_map do |container|
+          build_active_tunnel(container)
+        end.sort_by(&:tunnel_port)
+      end
+
       private
 
       def config
@@ -215,6 +259,14 @@ module Previews
           shared_token: derived_shared_token
         )
         Rails.application.config.x.preview_tunnel_port_pool
+      end
+
+      def active_tunnel_allocations(range:, backend: Containers.backend)
+        active_tunnels(backend:).each_with_object({}) do |tunnel, allocations|
+          next unless range.cover?(tunnel.tunnel_port)
+
+          allocations[tunnel.session_token] = tunnel.tunnel_port
+        end
       end
 
       def normalize_bindings(bindings)
@@ -252,6 +304,53 @@ module Previews
 
       def toml_string(value)
         value.to_s.gsub("\\", "\\\\").gsub('"', '\"')
+      end
+
+      def list_preview_containers(backend:)
+        backend.list_containers(filters: { label: [ "#{PREVIEW_TUNNEL_LABEL}=true" ] }.to_json)
+      rescue StandardError => e
+        Rails.logger.error(
+          message: "preview_tunnel.list_containers_failed",
+          backend: backend.identifier,
+          error: e.message
+        )
+        []
+      end
+
+      def build_active_tunnel(container)
+        return unless preview_container_running?(container)
+
+        labels = preview_container_labels(container)
+        session_token = labels[PREVIEW_SESSION_TOKEN_LABEL].presence
+        tunnel_port = labels[PREVIEW_TUNNEL_PORT_LABEL].presence
+        return if session_token.blank? || tunnel_port.blank?
+
+        TunnelDefinition.new(session_token: session_token, tunnel_port: tunnel_port, app_port: 0)
+      rescue ArgumentError
+        nil
+      end
+
+      def build_active_binding(container)
+        return unless preview_container_running?(container)
+
+        labels = preview_container_labels(container)
+        session_token = labels[PREVIEW_SESSION_TOKEN_LABEL].presence
+        service_name = labels[PREVIEW_SERVICE_NAME_LABEL].presence || "preview-#{session_token}"
+        tunnel_port = labels[PREVIEW_TUNNEL_PORT_LABEL].presence
+        return if session_token.blank? || tunnel_port.blank?
+
+        ServerBinding.new(service_name: service_name, tunnel_port: tunnel_port)
+      rescue ArgumentError
+        nil
+      end
+
+      def preview_container_running?(container)
+        state = container.info["State"] || {}
+        state["Running"] == true || state["Status"] == "running"
+      end
+
+      def preview_container_labels(container)
+        container.info.dig("Config", "Labels").presence || container.info["Labels"] || {}
       end
     end
   end

@@ -1888,6 +1888,7 @@ module Containers
 
       backend.exec_in_container(container, [ "mkdir", "-p", File.dirname(preview_tunnel_config_path) ], user: "agent")
       write_container_file(preview_tunnel_config_path, preview_tunnel_client_config)
+      start_preview_tunnel_client!
       log_system(
         "container.preview_tunnel_config_seeded",
         service_name: preview_tunnel.service_name,
@@ -1904,6 +1905,21 @@ module Containers
         backend: backend,
         restricted: network_contract.restricted?
       )
+    end
+
+    def start_preview_tunnel_client!
+      backend.exec_in_container(
+        container,
+        [ "sh", "-lc", preview_tunnel_client_start_command ],
+        user: "agent"
+      )
+    end
+
+    def preview_tunnel_client_start_command
+      log_path = "/tmp/paid-preview-tunnel-client.log"
+      config_path = Shellwords.escape(preview_tunnel_config_path)
+
+      "rathole --client #{config_path} > #{Shellwords.escape(log_path)} 2>&1 &"
     end
 
     def write_container_file(path, content)
@@ -2020,6 +2036,12 @@ module Containers
       end
 
       labels["paid.heartbeat_dir"] = heartbeat_dir_host if heartbeat_dir_host
+      if preview_tunnel?
+        labels[Previews::TunnelManager::PREVIEW_TUNNEL_LABEL] = "true"
+        labels[Previews::TunnelManager::PREVIEW_SESSION_TOKEN_LABEL] = preview_tunnel.session_token
+        labels[Previews::TunnelManager::PREVIEW_SERVICE_NAME_LABEL] = preview_tunnel.service_name
+        labels[Previews::TunnelManager::PREVIEW_TUNNEL_PORT_LABEL] = preview_tunnel.tunnel_port.to_s
+      end
       labels
     end
 
