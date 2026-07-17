@@ -5,7 +5,7 @@
 ## Metadata
 
 - **Date**: 2026-06-28
-- **Status**: Draft
+- **Status**: Implemented
 - **Type**: Operations + Architecture
 - **Priority**: Medium
 - **Related RDRs**: RDR-011 (Observability), RDR-019 (Remote Container Execution), RDR-020 (Service Container Architecture), RDR-033 (Worker Pool Scaling Algorithm)
@@ -13,16 +13,19 @@
 
 ## Implementation Status
 
-Not implemented. Paid currently has:
+Implemented. Tracking issue #2726 is closed as completed; implementation landed across #2741, #2747, #2744, #2757, #2797, and #2756.
 
-- Static `max_concurrent_runs` settings that gate how many agent runs may start.
-- Static GoodJob and Temporal worker settings.
-- Per-agent container provisioning with fixed or configured resource limits.
-- Container metrics collection for running agent and service containers.
-- Queue health monitoring and Prometheus metrics.
-- `Scaling::WorkerPoolAdvisor` for pure-function worker-pool scaling recommendations.
+Paid now has:
 
-Paid does **not** currently have zero-config capacity management that automatically decides how many agent runs to start, tunes container memory limits, or adapts to Docker's configured capacity.
+- `Capacity::DockerSnapshot` for Docker-visible CPU/memory, container classification, cached snapshots, confidence, and degraded fallback.
+- Auto-capacity observe mode in the operations dashboard.
+- `Capacity::RunAdmission` integrated with `ProcessRunQueueJob` and Temporal capacity checks.
+- Static tenant/user/project/create-PR limits retained as hard ceilings when configured.
+- `AgentRunResourceProfile` rollups for observed p50/p95/max memory, OOM counts, and recommended memory limits.
+- Auto container memory-limit mode with OOM feedback, conservative upward tuning, and dampened downward tuning.
+- `Capacity::Policy` defaults and guardrails for Docker Desktop, OrbStack, Linux Docker, CI, remote/shared backends, missing metrics, and exhausted Docker memory.
+
+Operational caveat: implemented does not mean always active. Auto capacity deliberately degrades to manual behavior when Docker metrics are missing, stale, slow, or low-confidence; shared, managed, and remote Docker backends default to manual unless explicitly opted in. Existing users or deployments can also remain in manual run-concurrency or manual container-memory modes.
 
 ## Problem Statement
 
@@ -364,47 +367,54 @@ Ignore proactive resource estimates and only react after OOM kills.
 
 Rejected. OOM feedback is valuable, but using it alone creates a poor first-run experience and can destabilize the local control plane. Paid should combine conservative defaults, observed usage, and OOM feedback.
 
-## Implementation Plan
+## Implemented Phases
 
 ### Phase 1: Observe and Explain
 
-1. Add Docker capacity snapshot service.
-2. Classify running containers into Paid control plane, Paid agents, Paid service containers, and other Docker containers.
-3. Add snapshot caching, freshness, confidence, and timeout handling.
-4. Add a capacity panel showing Docker budget, current usage, and what auto mode would choose.
-5. Record capacity snapshots or summarized metrics for debugging.
+Implemented by #2741 and #2747:
+
+1. Docker capacity snapshot service.
+2. Container classification into Paid control plane, Paid agents, Paid service containers, and other Docker containers.
+3. Snapshot caching, freshness, confidence, and timeout handling.
+4. Operations capacity panel showing Docker budget, current usage, effective recommendation, and degraded mode.
 
 ### Phase 2: Auto Admission
 
-1. Add capacity mode fields for run concurrency.
-2. Add `Capacity::RunAdmission`.
-3. Integrate auto admission into `ProcessRunQueueJob`.
-4. Update Temporal capacity-check activities to report the same effective capacity or document why they are advisory only.
-5. Convert project/create-PR/account admission caps into auto-aware effective limits or explicit hard ceilings.
-6. Keep static guardrails as optional hard ceilings.
-7. Add logs/metrics for denied dispatch due to Docker capacity.
+Implemented by #2744:
+
+1. Run-concurrency mode fields.
+2. `Capacity::RunAdmission`.
+3. Queue integration in `ProcessRunQueueJob`.
+4. Temporal capacity-check activities aligned with the same effective capacity logic.
+5. Static guardrails retained as optional hard ceilings.
+6. Logs/metrics for denied dispatch due to Docker capacity.
 
 ### Phase 3: Resource Profiles
 
-1. Add `AgentRunResourceProfile` or equivalent rollup.
-2. Update profiles from completed run container metrics.
-3. Use profile estimates in admission.
-4. Add fallback hierarchy for sparse data.
+Implemented by #2757:
+
+1. `AgentRunResourceProfile` rollups.
+2. Profile refresh from completed run container metrics.
+3. Fallback hierarchy for sparse data.
 
 ### Phase 4: Auto Memory Limits
 
-1. Add memory-limit mode fields.
-2. Apply recommended memory limits during container creation.
-3. Detect OOM-killed containers and update profiles.
-4. Raise limits conservatively after OOM evidence.
-5. Lower limits only after sustained successful low-memory samples.
+Implemented by #2797:
+
+1. Container memory-limit mode fields.
+2. Recommended memory limits applied during container creation when auto mode is enabled.
+3. OOM-killed containers feed profile updates.
+4. Conservative upward tuning after OOM evidence.
+5. Downward tuning only after sustained successful low-memory samples.
 
 ### Phase 5: Policy Refinement
 
-1. Add cooldowns and anti-oscillation rules.
-2. Tune defaults for Docker Desktop, OrbStack, Linux Docker, and CI.
-3. Add capacity-blocked user messaging.
-4. Revisit worker service replica autoscaling for managed deployments as a separate RDR or addendum.
+Implemented by #2756:
+
+1. Conservative defaults for Docker Desktop, OrbStack, Linux Docker, and CI.
+2. Degraded-mode behavior for missing, stale, low-confidence, or slow Docker metrics.
+3. Capacity-blocked user/operator messaging.
+4. Shared, managed, and remote Docker backends default to manual unless explicitly opted in.
 
 ## Validation
 
@@ -454,13 +464,9 @@ Operational validation should include:
 - Local behavior may differ from managed/server deployments.
 - Docker daemon access is privileged and must be handled as an operational trust boundary.
 
-### Open Questions
+### Follow-up Questions
 
-- Where should capacity mode live: user settings, tenant settings, or local deployment settings?
-- What default memory estimate should be used before any run samples exist?
 - How should Paid classify containers from multiple Paid checkouts on the same Docker daemon?
-- Should static tenant `max_concurrent_runs` remain as a hard ceiling in auto mode?
-- Which existing admission limits should become auto-managed versus hard ceilings?
-- How much spike margin is enough to protect the control plane without wasting Docker capacity?
-- Should CPU be used for admission initially, or should the first implementation be memory-first?
-- How should auto mode be explicitly disabled or limited for remote Docker backends and shared managed deployments?
+- Should CPU participate in admission after memory-first tuning has enough operational history?
+- What fairness/isolation policy would make auto mode safe for remote Docker backends and managed shared deployments?
+- Should slow Docker metrics collection get deployment-specific tuning beyond the current conservative degraded fallback?
