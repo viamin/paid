@@ -46,6 +46,14 @@ module Paid
     def enable_cron(env = ENV)
       ActiveModel::Type::Boolean.new.cast(env.fetch("GOOD_JOB_ENABLE_CRON", "true"))
     end
+
+    def bootstrap_startup_jobs?(env = ENV, server_process: defined?(Rails::Server))
+      server_process || bootstrap_on_start?(env)
+    end
+
+    def bootstrap_on_start?(env = ENV)
+      ActiveModel::Type::Boolean.new.cast(env.fetch("GOOD_JOB_BOOTSTRAP_ON_START", "false"))
+    end
   end
 end
 
@@ -271,7 +279,7 @@ end
 # provides a secondary guard.
 Rails.application.config.after_initialize do
   next unless Rails.application.config.good_job.enable_cron
-  next unless defined?(Rails::Server) || ENV["GOOD_JOB_EXECUTION_MODE"] == "async_server"
+  next unless Paid::GoodJobConfig.bootstrap_startup_jobs?
 
   "DockerOrphanCleanupJob".constantize.perform_later
   "AutoPickQueueBackfillJob".constantize.perform_later
