@@ -1048,7 +1048,7 @@ RSpec.describe Prompts::BuildForPr do
     end
 
     before do
-      allow(StyleGuides::InjectIntoPrompt).to receive(:call) { |prompt:, project:| prompt }
+      allow(StyleGuides::InjectIntoPrompt).to receive(:call) { |prompt:, project:, **| prompt }
       allow(ProjectConventions::InjectIntoPrompt).to receive(:call) { |prompt:, project:| prompt }
       allow(Prompts::Render).to receive(:call) do |slug:, project:, variables:, fallback:|
         fallback.call

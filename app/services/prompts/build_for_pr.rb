@@ -24,11 +24,12 @@ module Prompts
     ALREADY_ADDRESSED_MARKER = "PAID_REVIEW_THREADS_ALREADY_ADDRESSED"
 
     attr_reader :project, :pr_number, :github_client, :rebase_succeeded,
-                :lint_command, :test_command, :issue, :prompt_version, :focus
+                :lint_command, :test_command, :issue, :prompt_version, :focus,
+                :agent_run
 
     def initialize(project:, pr_number:, github_client:, rebase_succeeded:,
                    lint_command: nil, test_command: nil, issue: nil, prompt_version: nil,
-                   focus: "general")
+                   focus: "general", agent_run: nil)
       @project = project
       @pr_number = pr_number
       @github_client = github_client
@@ -38,6 +39,7 @@ module Prompts
       @issue = issue
       @prompt_version = prompt_version
       @focus = focus.presence || "general"
+      @agent_run = agent_run
     end
 
     def self.call(...)
@@ -131,7 +133,12 @@ module Prompts
       sections << service_environment_section
       base_prompt = sections.join("\n").delete("\x00")
 
-      with_style_guides = StyleGuides::InjectIntoPrompt.call(prompt: base_prompt, project: project)
+      with_style_guides = StyleGuides::InjectIntoPrompt.call(
+        prompt: base_prompt,
+        project: project,
+        agent_run: agent_run,
+        source: self.class.name
+      )
       ProjectConventions::InjectIntoPrompt.call(prompt: with_style_guides, project: project)
     end
 

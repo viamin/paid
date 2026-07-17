@@ -809,6 +809,17 @@ RSpec.describe Activities::CreateAgentRunActivity do
         expect(agent_run.custom_prompt).to include("Please also update the docs")
       end
 
+      it "injects style guides and records exposures for rendered custom prompts" do
+        guide = create(:style_guide, account: project.account, project: nil, name: "Team Guide", raw_content: "Prefer small methods.")
+
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+        agent_run = AgentRun.find(result[:agent_run_id])
+        expect(agent_run.custom_prompt).to include("Team Guide")
+        expect(agent_run.style_guide_run_exposures.sole.style_guide).to eq(guide)
+        expect(agent_run.style_guide_run_exposures.sole.style_guide_version).to eq(guide.current_version)
+      end
+
       it "appends service environment guidance for configured database containers" do
         project.service_containers << create(:service_container, account: project.account)
 

@@ -22,6 +22,7 @@ module QualityMetrics
       else
         record_quality_metric
         update_experiment_variant_stats(automated_metric)
+        update_style_guide_version_stats if agent_run.style_guide_run_exposures.exists?
         update_prompt_version_stats if agent_run.prompt_version.present?
         check_quality_pause
       end
@@ -281,6 +282,15 @@ module QualityMetrics
           update_existing: true
         )
       end
+
+      agent_run.style_guide_ab_test_assignments.find_each do |assignment|
+        StyleGuideAbTests::RecordResult.call(
+          style_guide_ab_test: assignment.style_guide_ab_test,
+          agent_run: agent_run,
+          quality_score: metric.composite_score,
+          update_existing: true
+        )
+      end
     end
 
     # Adds a new score to variant aggregates. Assumes caller holds the lock.
@@ -319,6 +329,7 @@ module QualityMetrics
 
     def update_prompt_version_stats
       pv = agent_run.prompt_version
+      return if pv.nil?
 
       stats = QualityMetric.where(prompt_version: pv)
         .automated
@@ -331,6 +342,23 @@ module QualityMetrics
         usage_count: count.to_i,
         avg_quality_score: avg&.round(2)
       )
+    end
+
+    def update_style_guide_version_stats
+      agent_run.style_guide_run_exposures.includes(:style_guide_version).find_each do |exposure|
+        version = exposure.style_guide_version
+        stats = StyleGuideRunExposure
+          .joins(agent_run: :quality_metrics)
+          .where(style_guide_version: version)
+          .merge(QualityMetric.automated.with_composite_score)
+          .joins(:agent_run).where(AgentRun.quality_scoreable_sql)
+          .pick(Arel.sql("COUNT(DISTINCT style_guide_run_exposures.agent_run_id), AVG(quality_metrics.composite_score)"))
+        count, avg = stats
+        version.update_columns(
+          usage_count: count.to_i,
+          avg_quality_score: avg&.round(4)
+        )
+      end
     end
   end
 end

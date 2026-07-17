@@ -10,6 +10,26 @@ RSpec.describe StyleGuides::InjectIntoPrompt do
   let(:account) { create(:account) }
   let(:project) { create(:project, account: account) }
   let(:base_prompt) { "# Task\n\nFix the bug in auth.rb" }
+  let(:agent_run) { create(:agent_run, project: project, issue: nil, custom_prompt: base_prompt) }
+
+  def create_running_style_guide_ab_test(guide:, variant_version:)
+    ab_test = create(:style_guide_ab_test,
+      account: account,
+      style_guide: guide,
+      control_version: guide.current_version,
+      status: "running",
+      started_at: Time.current)
+    create(:style_guide_ab_test_variant,
+      style_guide_ab_test: ab_test,
+      style_guide_version: guide.current_version,
+      is_control: true)
+    variant = create(:style_guide_ab_test_variant,
+      style_guide_ab_test: ab_test,
+      style_guide_version: variant_version,
+      is_control: false)
+
+    [ ab_test, variant ]
+  end
 
   describe ".call" do
     context "when no style guides exist" do
@@ -79,6 +99,7 @@ RSpec.describe StyleGuides::InjectIntoPrompt do
       it "skips guides with blank content_for_prompt" do
         guide = create(:style_guide, :global, name: "Empty Guide", raw_content: "Has content")
         guide.update_columns(raw_content: "", compressed_content: "")
+        guide.current_version.update_columns(raw_content: "", compressed_content: "")
 
         result = described_class.call(prompt: base_prompt, project: project)
 
@@ -105,6 +126,37 @@ RSpec.describe StyleGuides::InjectIntoPrompt do
         result = described_class.call(prompt: base_prompt, project: project)
 
         expect(result).not_to include("Other Guide")
+      end
+
+      it "records run exposures when an agent run is provided" do
+        guide = create(:style_guide, account: account, project: nil, name: "Account Guide", raw_content: "Account rules")
+
+        described_class.call(prompt: base_prompt, project: project, agent_run: agent_run, source: "Spec")
+
+        exposure = agent_run.reload.style_guide_run_exposures.sole
+        expect(exposure.style_guide).to eq(guide)
+        expect(exposure.style_guide_version).to eq(guide.current_version)
+        expect(exposure.injected_via).to eq("Spec")
+      end
+
+      it "uses an assigned style-guide A/B test variant and records the assignment" do
+        guide = create(:style_guide, account: account, project: nil, name: "Account Guide", raw_content: "Control rules")
+        variant_version = create(:style_guide_version,
+          style_guide: guide,
+          version: guide.current_version.version + 1,
+          raw_content: "Variant rules")
+        ab_test, variant = create_running_style_guide_ab_test(guide:, variant_version:)
+        create(:style_guide_ab_test_assignment,
+          style_guide_ab_test: ab_test,
+          style_guide_ab_test_variant: variant,
+          agent_run: agent_run)
+
+        result = described_class.call(prompt: base_prompt, project: project, agent_run: agent_run, source: "Spec")
+
+        expect(result).to include("Variant rules")
+        assignment = agent_run.reload.style_guide_ab_test_assignments.sole
+        expect(assignment.style_guide_ab_test).to eq(ab_test)
+        expect(agent_run.style_guide_run_exposures.sole.style_guide_ab_test_assignment).to eq(assignment)
       end
     end
   end

@@ -10,6 +10,8 @@ RSpec.describe StyleGuide do
   describe "associations" do
     it { is_expected.to belong_to(:account).optional }
     it { is_expected.to belong_to(:project).optional }
+    it { is_expected.to belong_to(:current_version).optional }
+    it { is_expected.to have_many(:style_guide_versions).dependent(:destroy) }
   end
 
   describe "validations" do
@@ -211,6 +213,14 @@ RSpec.describe StyleGuide do
   end
 
   describe "callbacks" do
+    it "creates an immutable initial version snapshot" do
+      guide = create(:style_guide, :global, raw_content: "Initial content")
+
+      expect(guide.current_version).to be_present
+      expect(guide.current_version.version).to eq(1)
+      expect(guide.current_version.raw_content).to eq("Initial content")
+    end
+
     describe "clear_compression on raw_content change" do
       it "clears compressed content when raw_content is updated" do
         guide = create(:style_guide, :global, :compressed)
@@ -227,6 +237,19 @@ RSpec.describe StyleGuide do
 
         guide.update!(name: "Renamed Guide")
         expect(guide.compressed_content).to eq(original_compressed)
+      end
+
+      it "creates a new immutable version snapshot when raw content changes" do
+        guide = create(:style_guide, :global, raw_content: "v1")
+        original_version = guide.current_version
+
+        guide.update!(raw_content: "v2")
+
+        guide.reload
+        expect(guide.current_version).not_to eq(original_version)
+        expect(guide.current_version.version).to eq(2)
+        expect(original_version.reload.raw_content).to eq("v1")
+        expect(guide.current_version.parent_version).to eq(original_version)
       end
     end
   end
