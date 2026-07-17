@@ -25,6 +25,7 @@ class AgentRun < ApplicationRecord
   FINISHED_STATUSES = %w[completed no_output failed cancelled timeout token_budget_exceeded retried auth_expired rate_limited].freeze
   FAILURE_STATUSES = %w[failed timeout token_budget_exceeded auth_expired rate_limited].freeze
   TERMINAL_FAILURE_STATUSES = (FAILURE_STATUSES + %w[cancelled]).freeze
+  RETRY_PRIORITY_INHERITANCE_STATUSES = (FAILURE_STATUSES + %w[no_output]).freeze
   QUALITY_EXCLUDED_STATUSES = %w[timeout token_budget_exceeded auth_expired rate_limited].freeze
   STDOUT_TAIL_LINES = 500
 
@@ -1335,6 +1336,24 @@ class AgentRun < ApplicationRecord
     scope.reorder(SCHEDULER_QUEUE_ORDER).first
   end
   private_class_method :next_queued_run_from
+
+  def self.retry_trigger_type_for(project:, source_pull_request_number:, goal:)
+    return "automatic" if project.blank? || source_pull_request_number.blank?
+
+    # A completed run for the same PR/goal is a cycle reset boundary (mirrors
+    # PullRequests::ProgressState#create_pr_progress?), so only the failure
+    # streak after the most recent successful run is eligible for inheritance.
+    latest_pr_run = where(
+      project: project,
+      source_pull_request_number: source_pull_request_number,
+      goal: goal,
+      status: (RETRY_PRIORITY_INHERITANCE_STATUSES + %w[completed])
+    ).order(Arel.sql("COALESCE(completed_at, updated_at, created_at) DESC"), id: :desc).first
+
+    return "automatic" if latest_pr_run.blank? || latest_pr_run.status == "completed"
+
+    latest_pr_run.trigger_type == "manual" ? "manual" : "automatic"
+  end
 
   def runner_belongs_to_project_owner
     owner = project&.effective_owner
