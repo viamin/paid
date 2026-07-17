@@ -1990,6 +1990,24 @@ RSpec.describe "AgentRuns" do
         expect(run.trigger_type).to eq("automatic")
       end
 
+      it "inherits manual priority when resuming after a manual run timed out" do
+        pr.update!(auto_continue_paused: true)
+        create(:agent_run, :timeout, :manual, project: project,
+          source_pull_request_number: pr.github_number,
+          goal: "create_pr",
+          completed_at: 5.minutes.ago)
+
+        expect {
+          post toggle_auto_continue_pause_project_agent_runs_path(project), params: { pull_request_id: pr.id }
+        }.to change(AgentRun, :count).by(1)
+
+        run = AgentRun.last
+        expect(run.source_pull_request_number).to eq(pr.github_number)
+        expect(run.status).to eq("queued")
+        expect(run.goal).to eq("create_pr")
+        expect(run.trigger_type).to eq("manual")
+      end
+
       it "enqueues ProcessRunQueueJob when resuming" do
         pr.update!(auto_continue_paused: true)
 

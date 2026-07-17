@@ -734,7 +734,11 @@ module Projects
         source_pull_request_number: pr.github_number,
         runner_identifier: settings_owner&.settings&.default_runner_identifier_for_goal("create_pr"),
         goal: "create_pr",
-        trigger_type: "automatic"
+        trigger_type: AgentRun.retry_trigger_type_for(
+          project: @project,
+          source_pull_request_number: pr.github_number,
+          goal: "create_pr"
+        )
       )
       ProcessRunQueueJob.perform_later
       :enqueued
