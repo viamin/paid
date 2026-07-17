@@ -164,17 +164,47 @@ module Containers
       return if container_ids.blank?
 
       ServiceContainer.where(id: container_ids).find_each do |sc|
-        if sc.image.include?("postgres")
-          db_name = database_name_for_cleanup(agent_run, stale_requeue_count: stale_requeue_count)
-          drop_per_run_database(sc, db_name) if droppable_per_run_database?(agent_run, sc, db_name)
-        end
-
-        if sc.capacity_inflight_agent_run_count == 0
-          stop_container!(sc)
-        end
+        cleanup_service_container(sc,
+          agent_run: agent_run,
+          service_environment: agent_run.service_environment,
+          stale_requeue_count: stale_requeue_count)
       end
 
       agent_run.update_columns(service_container_ids: [])
+    end
+
+    # Cleans up service containers provisioned outside the normal agent-run
+    # lifecycle (e.g. transient preview/screenshot provisioning).
+    #
+    # Mirrors the per-container work in #cleanup — drops per-run databases for
+    # postgres services and stops containers with no remaining in-flight runs —
+    # but operates on a caller-supplied container list and environment instead
+    # of the agent run's persisted associations, and does not clear those
+    # associations. Preview provisioning restores the agent run's persisted
+    # service_container_ids/service_environment after provisioning, so its
+    # cleanup must not overwrite them (which would clobber the run's real
+    # service associations or wipe them to an empty list).
+    #
+    # A failure on one container is logged and does not abort cleanup of the
+    # remaining containers.
+    #
+    # @param container_ids [Array<Integer>] ServiceContainer IDs to clean up
+    # @param agent_run [AgentRun] Agent run the per-run databases belong to
+    # @param service_environment [Hash, nil] Environment map carrying
+    #   DATABASE_URL used to resolve the per-run database name
+    # @param stale_requeue_count [Integer, nil] Override for the per-run DB suffix
+    def cleanup_service_containers(container_ids, agent_run:, service_environment:, stale_requeue_count: nil)
+      return if container_ids.blank?
+
+      ServiceContainer.where(id: container_ids).find_each do |sc|
+        cleanup_service_container(sc,
+          agent_run: agent_run,
+          service_environment: service_environment,
+          stale_requeue_count: stale_requeue_count)
+      rescue => e
+        log_warn("service_provisioner.cleanup_container_failed",
+          name: sc&.name, error: e.message)
+      end
     end
 
     private
@@ -251,6 +281,19 @@ module Containers
 
       service_container.update!(status: "stopped", docker_container_id: nil)
       log_info("service_provisioner.stopped", name: service_container.name)
+    end
+
+    # Per-container cleanup shared by #cleanup and #cleanup_service_containers.
+    # Drops the per-run database (for postgres services) before stopping the
+    # container so isolated databases are not left behind, and only stops
+    # containers that no other in-flight run still needs.
+    def cleanup_service_container(service_container, agent_run:, service_environment:, stale_requeue_count:)
+      if service_container.image.include?("postgres")
+        db_name = database_name_for(agent_run, service_environment, stale_requeue_count: stale_requeue_count)
+        drop_per_run_database(service_container, db_name) if droppable_per_run_database?(agent_run, service_container, db_name)
+      end
+
+      stop_container!(service_container) if service_container.capacity_inflight_agent_run_count.zero?
     end
 
     def cleanup_failed_container(docker_container, service_container)
@@ -598,8 +641,8 @@ module Containers
 
     # Drops the per-run database during cleanup. Best-effort: logs
     # failures instead of raising so cleanup can continue.
-    def database_name_for_cleanup(agent_run, stale_requeue_count: nil)
-      database_url = agent_run.service_environment&.fetch("DATABASE_URL", nil)
+    def database_name_for(agent_run, service_environment, stale_requeue_count: nil)
+      database_url = service_environment&.fetch("DATABASE_URL", nil)
       database_name_from_url(database_url) || per_run_db_name(
         agent_run,
         stale_requeue_count: stale_requeue_count || agent_run.stale_requeue_count

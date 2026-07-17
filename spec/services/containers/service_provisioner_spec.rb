@@ -847,6 +847,105 @@ RSpec.describe Containers::ServiceProvisioner do
     end
   end
 
+  describe "#cleanup_service_containers" do
+    let(:project) { create(:project) }
+    let(:issue) { create(:issue, project: project) }
+    let(:service_container) { create(:service_container, :running) }
+    let(:agent_run) { create(:agent_run, :completed, project: project, issue: issue) }
+
+    before do
+      create(:project_service_container, project: project, service_container: service_container)
+    end
+
+    it "drops the per-run database resolved from the supplied environment and stops idle containers" do
+      docker_container = instance_double(Docker::Container)
+      commands = []
+      db_name = provisioner.send(:per_run_db_name, agent_run)
+
+      allow(Docker::Container).to receive(:get)
+        .with(service_container.docker_container_id).and_return(docker_container)
+      allow(docker_container).to receive(:exec) do |cmd|
+        commands << cmd
+        [ [], [], 0 ]
+      end
+      allow(docker_container).to receive(:stop)
+      allow(docker_container).to receive(:delete)
+
+      provisioner.cleanup_service_containers(
+        [ service_container.id ],
+        agent_run: agent_run,
+        service_environment: { "DATABASE_URL" => "postgres://agent:agent@pg:5432/#{db_name}" }
+      )
+
+      expect(commands.last.last).to eq("DROP DATABASE IF EXISTS \"#{db_name}\"")
+      expect(docker_container).to have_received(:delete).with(force: true, v: true)
+      expect(service_container.reload.status).to eq("stopped")
+    end
+
+    it "does not clear the agent run's persisted service container associations" do
+      agent_run.update!(service_container_ids: [ service_container.id ])
+      docker_container = instance_double(Docker::Container)
+      allow(Docker::Container).to receive(:get)
+        .with(service_container.docker_container_id).and_return(docker_container)
+      allow(docker_container).to receive(:exec).and_return([ [], [], 0 ])
+      allow(docker_container).to receive(:stop)
+      allow(docker_container).to receive(:delete)
+
+      provisioner.cleanup_service_containers(
+        [ service_container.id ],
+        agent_run: agent_run,
+        service_environment: {}
+      )
+
+      expect(agent_run.reload.service_container_ids).to eq([ service_container.id ])
+    end
+
+    it "resolves the database name from the supplied environment, not the agent run's" do
+      persisted_db = provisioner.send(:per_run_db_name, agent_run, stale_requeue_count: 9)
+      captured_db = provisioner.send(:per_run_db_name, agent_run)
+      agent_run.update!(service_environment: { "DATABASE_URL" => "postgres://agent:agent@pg:5432/#{persisted_db}" })
+
+      docker_container = instance_double(Docker::Container)
+      commands = []
+      allow(Docker::Container).to receive(:get)
+        .with(service_container.docker_container_id).and_return(docker_container)
+      allow(docker_container).to receive(:exec) do |cmd|
+        commands << cmd
+        [ [], [], 0 ]
+      end
+      allow(docker_container).to receive_messages(stop: true, delete: true)
+
+      provisioner.cleanup_service_containers(
+        [ service_container.id ],
+        agent_run: agent_run,
+        service_environment: { "DATABASE_URL" => "postgres://agent:agent@pg:5432/#{captured_db}" }
+      )
+
+      expect(commands.last.last).to eq("DROP DATABASE IF EXISTS \"#{captured_db}\"")
+    end
+
+    it "logs and continues cleaning up remaining containers when one raises" do
+      failing = create(:service_container, :running)
+      create(:project_service_container, project: project, service_container: failing)
+      docker = instance_double(Docker::Container)
+      allow(Docker::Container).to receive(:get).and_return(docker)
+      allow(docker).to receive_messages(exec: [ [], [], 0 ], stop: true, delete: true)
+      allow(Rails.logger).to receive(:warn)
+      allow(provisioner).to receive(:stop_container!) do |sc|
+        raise StandardError, "boom" if sc.id == failing.id
+
+        sc.update!(status: "stopped", docker_container_id: nil)
+      end
+
+      provisioner.cleanup_service_containers([ service_container.id, failing.id ],
+        agent_run: agent_run, service_environment: {})
+
+      expect(Rails.logger).to have_received(:warn)
+        .with(hash_including(message: "service_provisioner.cleanup_container_failed", name: failing.name))
+      expect(service_container.reload.status).to eq("stopped")
+    end
+  end
+
   describe "per-run database isolation" do
     let(:project) { create(:project) }
     let(:issue) { create(:issue, project: project) }

@@ -315,20 +315,15 @@ module Previews
     def cleanup_services!
       return if @service_container_ids.empty?
 
-      ServiceContainer.where(id: @service_container_ids).find_each do |service_container|
-        service_container.with_lock do
-          next unless service_container.capacity_inflight_agent_run_count.zero?
-
-          docker = Containers.backend.get_container(service_container.docker_container_id)
-          Containers.backend.stop_container(docker, timeout: 10)
-          Containers.backend.delete_container(docker, force: true, v: true)
-          service_container.update!(status: "stopped", docker_container_id: nil)
-        end
-      rescue Docker::Error::DockerError => e
-        logger.warn(message: "previews.provision.services_cleanup_failed", agent_run_id: agent_run.id, service_container: service_container.name, error: e.message)
-      rescue StandardError => e
-        logger.warn(message: "previews.provision.services_cleanup_failed", agent_run_id: agent_run.id, error: e.message)
-      end
+      # Reuse the service-provisioner cleanup path so per-run databases are
+      # dropped (not just the containers stopped). Provisioning restores the
+      # agent run's persisted service associations, so pass the transient IDs
+      # and environment captured during provisioning instead of run state.
+      service_provisioner.cleanup_service_containers(
+        @service_container_ids,
+        agent_run: agent_run,
+        service_environment: @service_environment
+      )
     end
 
     def read_file(relative_path)

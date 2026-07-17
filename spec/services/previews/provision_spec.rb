@@ -70,6 +70,24 @@ RSpec.describe Previews::Provision do
       .with(agent_run, network: "paid-test", service_names: contain_exactly("postgres", "redis"))
   end
 
+  it "cleans up provisioned service containers and per-run databases via the service provisioner" do
+    captured_env = { "DATABASE_URL" => "postgres://agent:agent@paid-svc/agent_run_preview" }
+    allow(service_provisioner).to receive(:provision) do
+      agent_run.update!(service_container_ids: [ 101, 202 ], service_environment: captured_env)
+    end
+    allow(service_provisioner).to receive(:cleanup_service_containers)
+
+    service.call(start_tunnel: false, allow_seed: false)
+    service.cleanup!
+
+    expect(service_provisioner).to have_received(:cleanup_service_containers)
+      .with(
+        contain_exactly(101, 202),
+        agent_run: agent_run,
+        service_environment: captured_env
+      )
+  end
+
   it "restores the original service container ids and environment when dependency provisioning fails" do
     allow(service_provisioner).to receive(:provision) do
       agent_run.update!(
