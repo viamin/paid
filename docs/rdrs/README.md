@@ -39,7 +39,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | [RDR-004](RDR-004-container-isolation.md) | Container Isolation Strategy | Implemented | High |
 | [RDR-005](RDR-005-git-worktree-management.md) | Git Worktree Management | Superseded | High |
 | [RDR-006](RDR-006-secrets-proxy.md) | Secrets Proxy Architecture | Implemented | High |
-| [RDR-041](RDR-041-subscription-runner-auth-lifecycle.md) | Subscription Runner Auth Lifecycle (Detection, Long-Lived Tokens, Self-Heal) | Accepted | P1 |
+| [RDR-041](RDR-041-subscription-runner-auth-lifecycle.md) | Subscription Runner Managed Auth Lifecycle | Partially Implemented | P1 |
 
 ### Agent System
 
@@ -187,7 +187,8 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 2. **Research**: Investigation, findings integration, alternative exploration
 3. **Finalize**: Lock before development; status becomes "Final"
 4. **Implement**: Use as specification; no modifications during coding
-5. **Post-Mortem**: Update status; create addendum for lessons learned
+5. **Close Out**: Use a final audit issue that depends on the implementation chain. That issue updates the RDR and README statuses to "Implemented" only after validating the shipped implementation against the RDR plan and acceptance criteria. If gaps are found, it creates specific dependent follow-up issues and leaves the RDR status unchanged or "Partially Implemented".
+6. **Post-Mortem**: Add lessons learned after implementation, when useful.
 
 **Critical Rule**: If implementation exposes fundamental flaws in an RDR, abandon the code, incorporate learnings back into the RDR, and restart.
 

@@ -8,8 +8,8 @@
 - **Status**: Draft
 - **Type**: Operations + Architecture
 - **Priority**: P1
-- **Related Issues**: #2944 (tracking), #2945 (backend configuration and registry), #2946 (scheduler and manual placement), #2947 (per-host concurrency), #2948 (multi-host lifecycle operations), #2949 (readiness checks), #2950 (management UI), #2951 (setup guide and automation helpers), #2952 (optional capacity-aware placement), #2953 (implementation audit and RDR closeout)
-- **Related RDRs**: RDR-019 (Remote Container Execution), RDR-020 (Service Container Architecture), RDR-033 (Worker Pool Scaling Algorithm), RDR-043 (Zero-Config Docker Capacity Autoscaling)
+- **Related Issues**: [#2944](https://github.com/viamin/paid/issues/2944) (tracking), [#2945](https://github.com/viamin/paid/issues/2945) (backend configuration and registry), [#2946](https://github.com/viamin/paid/issues/2946) (scheduler and manual placement), [#2947](https://github.com/viamin/paid/issues/2947) (per-host concurrency), [#2948](https://github.com/viamin/paid/issues/2948) (multi-host lifecycle operations), [#2949](https://github.com/viamin/paid/issues/2949) (readiness checks), [#2950](https://github.com/viamin/paid/issues/2950) (management UI), [#2951](https://github.com/viamin/paid/issues/2951) (setup guide and automation helpers), [#2952](https://github.com/viamin/paid/issues/2952) (optional capacity-aware placement), [#2953](https://github.com/viamin/paid/issues/2953) (implementation audit and RDR closeout), [#2963](https://github.com/viamin/paid/issues/2963) (subscription auth host eligibility)
+- **Related RDRs**: RDR-019 (Remote Container Execution), RDR-020 (Service Container Architecture), RDR-033 (Worker Pool Scaling Algorithm), RDR-041 (Subscription Runner Managed Auth Lifecycle), RDR-043 (Zero-Config Docker Capacity Autoscaling)
 - **Related Tests**: Docker backend resolver tests, container provisioning tests, process queue admission tests, orphan cleanup tests, container metrics tests, capacity snapshot tests, operations dashboard system tests, host setup wizard tests
 
 ## Implementation Status
@@ -43,24 +43,26 @@ Paid still assumes one active backend for placement and admission:
 - Network and proxy readiness are evaluated for the backend passed to provisioning, but no scheduler chooses among several backend candidates.
 - The account operations dashboard can already surface capacity state, but there is no UI for adding Docker hosts, setting per-host concurrency limits, checking readiness, or guiding remote-host setup.
 
+Subscription-runner auth is also not multi-host aware yet. RDR-041 now defines the required auth eligibility contract: managed provider materializers can make a subscription runner remote-safe, but legacy host-mounted subscription credentials remain local-only unless the selected backend supports host paths.
+
 ## Issue Plan
 
-Implementation is tracked by a dependency-ordered issue chain. No issue in this chain should be labeled higher than `P2`.
+Implementation is tracked by a dependency-ordered core issue chain. No issue in the core multi-host chain should be labeled higher than `P2`; the cross-cutting subscription-auth eligibility work is tracked as the `P1` RDR-041 issue [#2963](https://github.com/viamin/paid/issues/2963).
 
 | Issue | Priority | Scope | Dependency |
 |-------|----------|-------|------------|
-| #2944 | P2 | Umbrella tracking issue for RDR-048 | None |
-| #2945 | P2 | Multi-host backend configuration and registry | Depends on #2944 |
-| #2946 | P2 | Conservative scheduler and manual host placement | Depends on #2945 |
-| #2947 | P2 | Independent per-host Docker concurrency limits | Depends on #2946 |
-| #2948 | P2 | Multi-host lifecycle operations for cleanup, metrics, warm pools, and service containers | Depends on #2947 |
-| #2949 | P2 | Per-host Docker readiness checks | Depends on #2948 |
-| #2950 | P2 | Docker Hosts management UI | Depends on #2949 |
-| #2951 | P2 | Remote Docker setup guide and automation helpers | Depends on #2950 |
-| #2952 | P3 | Optional capacity-aware host placement | Depends on #2951 |
-| #2953 | P2 | Final implementation audit, gap filing, and RDR status update | Depends on #2952 |
+| [#2944](https://github.com/viamin/paid/issues/2944) | P2 | Umbrella tracking issue for RDR-048 | None |
+| [#2945](https://github.com/viamin/paid/issues/2945) | P2 | Multi-host backend configuration and registry | Depends on [#2944](https://github.com/viamin/paid/issues/2944) |
+| [#2946](https://github.com/viamin/paid/issues/2946) | P2 | Conservative scheduler and manual host placement | Depends on [#2945](https://github.com/viamin/paid/issues/2945) |
+| [#2947](https://github.com/viamin/paid/issues/2947) | P2 | Independent per-host Docker concurrency limits | Depends on [#2946](https://github.com/viamin/paid/issues/2946) |
+| [#2948](https://github.com/viamin/paid/issues/2948) | P2 | Multi-host lifecycle operations for cleanup, metrics, warm pools, and service containers | Depends on [#2947](https://github.com/viamin/paid/issues/2947) |
+| [#2949](https://github.com/viamin/paid/issues/2949) | P2 | Per-host Docker readiness checks | Depends on [#2948](https://github.com/viamin/paid/issues/2948) |
+| [#2950](https://github.com/viamin/paid/issues/2950) | P2 | Docker Hosts management UI | Depends on [#2949](https://github.com/viamin/paid/issues/2949) |
+| [#2951](https://github.com/viamin/paid/issues/2951) | P2 | Remote Docker setup guide and automation helpers | Depends on [#2950](https://github.com/viamin/paid/issues/2950) |
+| [#2952](https://github.com/viamin/paid/issues/2952) | P3 | Optional capacity-aware host placement | Depends on [#2951](https://github.com/viamin/paid/issues/2951) |
+| [#2953](https://github.com/viamin/paid/issues/2953) | P2 | Final implementation audit, gap filing, and RDR status update | Depends on [#2952](https://github.com/viamin/paid/issues/2952), [#2963](https://github.com/viamin/paid/issues/2963) |
 
-The final issue (#2953) should update this RDR to `Implemented` only after auditing that the shipped implementation matches the plan. If any acceptance criteria are missing or intentionally deferred, #2953 should create specific follow-up issues and reference them from this RDR instead of marking the RDR implemented prematurely.
+The final issue ([#2953](https://github.com/viamin/paid/issues/2953)) should update this RDR to `Implemented` only after auditing that the shipped implementation matches the plan. If any acceptance criteria are missing or intentionally deferred, #2953 should create specific follow-up issues and reference them from this RDR instead of marking the RDR implemented prematurely.
 
 ## Problem Statement
 
@@ -420,12 +422,12 @@ Capacity-aware scheduling should be a later phase unless implementation can safe
 
 The remote backend does not support host bind mounts. Multi-host placement must reject remote hosts for runs requiring `worktree_path` bind mounts and should favor named-volume/in-container clone flows for remote execution.
 
-Subscription-auth behavior also differs by backend:
+Subscription-auth behavior is selected per runner/provider/auth mode, not by backend alone:
 
-- host-backed credential mounts are natural on local Docker;
-- remote Docker cannot mount local credential paths;
-- provider proxy mode works on restricted networks if the remote container can reach Paid’s proxy URL;
-- subscription-auth/direct-outbound mode requires a deliberate host-specific credential story before remote placement is allowed.
+- managed `RunnerCredential` auth is remote-safe only when the provider materializer can produce the required env vars or native CLI files inside the container;
+- host-backed credential mounts are allowed only on backends where `supports_host_paths?` is true;
+- provider proxy/API-key mode works on restricted networks if the remote container can reach Paid's proxy URL;
+- remote placement must be rejected with a named reason when a subscription runner still depends on host-mounted credentials, a missing managed credential, or a provider materializer that has not been implemented.
 
 ## Consequences
 
