@@ -108,29 +108,4 @@ RSpec.describe PreviewSession do
       expect(session.proxy_prefix).to eq("/previews/abc123")
     end
   end
-
-  describe "#authorized_for?" do
-    let(:project) { create(:project) }
-    let(:session) { create(:preview_session, project: project) }
-
-    it "is true for an account member of the session's project" do
-      user = create(:user, :member, account: project.account)
-      expect(session.authorized_for?(user)).to be true
-    end
-
-    it "is true for an account owner" do
-      user = create(:user, :owner, account: project.account)
-      expect(session.authorized_for?(user)).to be true
-    end
-
-    it "is false for a user with no membership on the account" do
-      other_account = create(:account)
-      user = create(:user, :owner, account: other_account)
-      expect(session.authorized_for?(user)).to be false
-    end
-
-    it "is false for a nil user" do
-      expect(session.authorized_for?(nil)).to be false
-    end
-  end
 end

@@ -78,16 +78,6 @@ class PreviewSession < ApplicationRecord
     expires_at.present? && expires_at <= Time.current
   end
 
-  # Whether a given user is authorized to view the preview UI for this session.
-  # Authorization requires an account-level or project-level membership on the
-  # session's project. The proxied content itself is gated by the token.
-  def authorized_for?(user)
-    return false unless user
-
-    user.has_any_role?(:owner, :admin, :member, project.account) ||
-      user.has_any_role?(:project_admin, :project_member, project)
-  end
-
   # Records a proxy access for idle-expiry accounting. Throttled to one write
   # per minute so a busy preview (many asset requests) does not amplify DB
   # writes. Best-effort: failures must never break a proxied response.

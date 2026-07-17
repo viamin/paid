@@ -269,14 +269,14 @@ class PreviewsProxy
     env["rack.hijack"].call
     client_io = env["rack.hijack_io"]
 
-    upstream = TCPSocket.new(CONNECT_HOST, session.tunnel_port)
+    upstream = open_websocket_upstream_socket(session.tunnel_port)
     upstream.setsockopt(Socket::IPPROTO_TCP, Socket::TCP_NODELAY, 1)
 
     raw_request = build_raw_upgrade_request(request:, session:, proxied_path:)
     upstream.write(raw_request)
     upstream.flush
 
-    response_head = read_until_delimiter(upstream, "\r\n\r\n")
+    response_head = read_until_delimiter(upstream, "\r\n\r\n", timeout: @open_timeout)
     client_io.write(response_head)
     client_io.flush
 
@@ -322,12 +322,20 @@ class PreviewsProxy
     headers
   end
 
-  def read_until_delimiter(socket, delimiter)
+  def open_websocket_upstream_socket(port)
+    Timeout.timeout(@open_timeout, Net::OpenTimeout) do
+      TCPSocket.new(CONNECT_HOST, port)
+    end
+  end
+
+  def read_until_delimiter(socket, delimiter, timeout:)
     buffer = +""
-    loop do
-      chunk = socket.readpartial(BUFFER_SIZE)
-      buffer << chunk
-      break if buffer.include?(delimiter)
+    Timeout.timeout(timeout, Net::ReadTimeout) do
+      loop do
+        chunk = socket.readpartial(BUFFER_SIZE)
+        buffer << chunk
+        break if buffer.include?(delimiter)
+      end
     end
     buffer
   rescue EOFError

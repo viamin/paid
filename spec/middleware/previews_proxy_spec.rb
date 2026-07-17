@@ -214,6 +214,25 @@ RSpec.describe PreviewsProxy do
         thread.join(2)
       end
     end
+
+    it "returns a 502 over the hijacked socket when the upstream handshake stalls" do
+      middleware = described_class.new(fallback_app, open_timeout: 0.01)
+      client_io, client_mirror = Socket.pair(:UNIX, :STREAM, 0)
+      env = websocket_env_for(client_io)
+
+      allow(TCPSocket).to receive(:new).and_return(stalled_socket)
+
+      thread = Thread.new { middleware.call(env) }
+      thread.abort_on_exception = false
+
+      response = read_until(client_mirror, "\r\n\r\n", timeout: 2)
+
+      expect(response).to include("502 Bad Gateway")
+      expect(response).to include("Preview websocket upstream unavailable.")
+
+      client_mirror.close
+      thread.join(2)
+    end
   end
 
   def websocket_env_for(client_io)
@@ -259,6 +278,21 @@ RSpec.describe PreviewsProxy do
   ensure
     server_thread&.join(2)
     server&.close
+  end
+
+  def stalled_socket
+    instance_double(TCPSocket,
+      setsockopt: true,
+      write: true,
+      flush: true,
+      close: true,
+      nil?: false,
+      closed?: false).tap do |socket|
+      allow(socket).to receive(:readpartial) do
+        sleep 0.1
+        "HTTP/1.1 101 Switching Protocols\r\n"
+      end
+    end
   end
 
   def read_until(io, delimiter, timeout:)
