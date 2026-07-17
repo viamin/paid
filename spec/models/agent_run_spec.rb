@@ -2429,6 +2429,48 @@ RSpec.describe AgentRun do
 
       expect(trigger_type).to eq("automatic")
     end
+
+    it "treats a completed run as a reset boundary before an older manual failure" do
+      create(:agent_run, :timeout, :manual, project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        completed_at: 10.minutes.ago)
+      create(:agent_run, :completed, :automatic, project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        completed_at: 5.minutes.ago)
+
+      trigger_type = described_class.retry_trigger_type_for(
+        project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr"
+      )
+
+      expect(trigger_type).to eq("automatic")
+    end
+
+    it "inherits manual priority again from a manual failure after a completed reset" do
+      create(:agent_run, :timeout, :manual, project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        completed_at: 15.minutes.ago)
+      create(:agent_run, :completed, :automatic, project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        completed_at: 10.minutes.ago)
+      create(:agent_run, :timeout, :manual, project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        completed_at: 5.minutes.ago)
+
+      trigger_type = described_class.retry_trigger_type_for(
+        project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr"
+      )
+
+      expect(trigger_type).to eq("manual")
+    end
   end
 
   describe ".peek_next_queued_run" do

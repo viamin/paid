@@ -1340,14 +1340,19 @@ class AgentRun < ApplicationRecord
   def self.retry_trigger_type_for(project:, source_pull_request_number:, goal:)
     return "automatic" if project.blank? || source_pull_request_number.blank?
 
-    latest_unsuccessful_pr_run = where(
+    # A completed run for the same PR/goal is a cycle reset boundary (mirrors
+    # PullRequests::ProgressState#create_pr_progress?), so only the failure
+    # streak after the most recent successful run is eligible for inheritance.
+    latest_pr_run = where(
       project: project,
       source_pull_request_number: source_pull_request_number,
       goal: goal,
-      status: RETRY_PRIORITY_INHERITANCE_STATUSES
+      status: (RETRY_PRIORITY_INHERITANCE_STATUSES + %w[completed])
     ).order(Arel.sql("COALESCE(completed_at, updated_at, created_at) DESC"), id: :desc).first
 
-    latest_unsuccessful_pr_run&.trigger_type == "manual" ? "manual" : "automatic"
+    return "automatic" if latest_pr_run.blank? || latest_pr_run.status == "completed"
+
+    latest_pr_run.trigger_type == "manual" ? "manual" : "automatic"
   end
 
   def runner_belongs_to_project_owner
