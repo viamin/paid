@@ -74,7 +74,12 @@ RSpec.describe Runners::TestAgent do
           }
         }
       },
-      "model" => "anthropic/claude-sonnet-4-20250514"
+      "model" => "anthropic/claude-sonnet-4-20250514",
+      "permission" => {
+        "external_directory" => {
+          "/tmp/**" => "allow"
+        }
+      }
     }
   end
 

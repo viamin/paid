@@ -37,7 +37,10 @@ RSpec.describe KnowledgeEvolutionJob do
         expect(temporal_client).to have_received(:start_workflow).with(
           Workflows::KnowledgeEvolutionWorkflow,
           hash_including(project_id: project.id, lookback_days: 14),
-          hash_including(id: "knowledge-evolution-#{project.id}-#{Date.current}")
+          hash_including(
+            id: "knowledge-evolution-#{project.id}-#{Date.current}",
+            task_queue: Paid.agent_task_queue
+          )
         )
       end
     end
@@ -94,7 +97,7 @@ RSpec.describe KnowledgeEvolutionJob do
         expect(temporal_client).to have_received(:start_workflow).with(
           Workflows::KnowledgeEvolutionWorkflow,
           hash_including(project_id: project_a.id),
-          anything
+          hash_including(task_queue: Paid.agent_task_queue)
         )
       end
     end

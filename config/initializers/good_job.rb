@@ -46,6 +46,14 @@ module Paid
     def enable_cron(env = ENV)
       ActiveModel::Type::Boolean.new.cast(env.fetch("GOOD_JOB_ENABLE_CRON", "true"))
     end
+
+    def bootstrap_startup_jobs?(env = ENV, server_process: defined?(Rails::Server))
+      server_process || bootstrap_on_start?(env)
+    end
+
+    def bootstrap_on_start?(env = ENV)
+      ActiveModel::Type::Boolean.new.cast(env.fetch("GOOD_JOB_BOOTSTRAP_ON_START", "false"))
+    end
   end
 end
 
@@ -74,21 +82,25 @@ Rails.application.configure do
   config.x.good_job_enable_cron = Paid::GoodJobConfig.enable_cron
   config.good_job.enable_cron = config.x.good_job_enable_cron
 
+  # Keep frequent maintenance jobs staggered across the 5-minute window. Several
+  # of these jobs scan projects, containers, queues, or external services; if
+  # they all enqueue on :00/:05/:10 boundaries, the in-process async_server
+  # worker can see a short memory spike large enough to OOM the Rails process.
   config.good_job.cron = {
     worktree_cleanup: {
       cron: "0 */6 * * *",
       class: "WorktreeOrphanCleanupJob"
     },
     poll_workflow_health_check: {
-      cron: "*/5 * * * *",
+      cron: "1-59/5 * * * *",
       class: "PollWorkflowHealthCheckJob"
     },
     stale_run_detector: {
-      cron: "*/5 * * * *",
+      cron: "2-59/5 * * * *",
       class: "StaleRunDetectorJob"
     },
     docker_orphan_cleanup: {
-      cron: "*/5 * * * *",
+      cron: "3-59/5 * * * *",
       class: "DockerOrphanCleanupJob",
       description: "Remove orphaned Docker containers and volumes"
     },
@@ -124,7 +136,7 @@ Rails.application.configure do
       description: "Backfill eager auto-pick queue seeding for already-enabled projects"
     },
     auto_pick_eligibility_sweep: {
-      cron: "*/15 * * * *",
+      cron: "7-59/15 * * * *",
       class: "AutoPickEligibilitySweepJob",
       description: "Periodic re-evaluation of all open issues for auto-pick eligibility"
     },
@@ -134,12 +146,12 @@ Rails.application.configure do
       description: "Backfill follow-up runs for legacy analyzed issues"
     },
     service_container_reconciliation: {
-      cron: "*/5 * * * *",
+      cron: "1-59/5 * * * *",
       class: "ServiceContainerReconciliationJob",
       description: "Reconcile service container DB records against Docker state"
     },
     container_pool_replenishment: {
-      cron: "*/5 * * * *",
+      cron: "4-59/5 * * * *",
       class: "PoolReplenishmentJob",
       description: "Maintain warm agent container pool"
     },
@@ -182,12 +194,12 @@ Rails.application.configure do
       description: "Collect delayed human feedback (reactions, reviews) for recent agent runs"
     },
     queue_monitor: {
-      cron: "*/5 * * * *",
+      cron: "2-59/5 * * * *",
       class: "QueueMonitorJob",
       description: "Monitor queue depths and alert when thresholds are exceeded"
     },
     notifications_check_runner_quotas: {
-      cron: "*/5 * * * *",
+      cron: "3-59/5 * * * *",
       class: "Notifications::CheckRunnerQuotasJob",
       description: "Publish runner quota exhaustion notifications"
     },
@@ -212,7 +224,7 @@ Rails.application.configure do
       description: "Refresh host-forwarded Claude subscription credentials before expiry (RDR-041 Phase 3)"
     },
     chat_idle_reaper: {
-      cron: "*/5 * * * *",
+      cron: "4-59/5 * * * *",
       class: "ChatSessions::IdleReaperJob",
       description: "Close idle chat sessions past their timeout"
     },
@@ -222,12 +234,12 @@ Rails.application.configure do
       description: "Analyze knowledge gaps and recommend collector improvements (weekly)"
     },
     agent_run_pattern_detector: {
-      cron: "*/15 * * * *",
+      cron: "11-59/15 * * * *",
       class: "AgentRunPatternDetectorJob",
       description: "Detect goal-level failure patterns in agent runs and notify"
     },
     remediation_decision_outcomes: {
-      cron: "*/15 * * * *",
+      cron: "13-59/15 * * * *",
       class: "RemediationDecisionOutcomeJob",
       description: "Evaluate outcomes for auto-applied self-heal remediations"
     },
@@ -247,7 +259,7 @@ Rails.application.configure do
       description: "Run nightly full-suite mutation sweeps for opted-in Ruby projects"
     },
     dispatch_circuit_breaker_recovery: {
-      cron: "*/5 * * * *",
+      cron: "1-59/5 * * * *",
       class: "DispatchCircuitBreakerRecoveryJob",
       description: "Check open dispatch circuit breakers for recovery to half_open"
     }
@@ -272,7 +284,7 @@ end
 # provides a secondary guard.
 Rails.application.config.after_initialize do
   next unless Rails.application.config.good_job.enable_cron
-  next unless defined?(Rails::Server) || ENV["GOOD_JOB_EXECUTION_MODE"] == "async_server"
+  next unless Paid::GoodJobConfig.bootstrap_startup_jobs?
 
   "DockerOrphanCleanupJob".constantize.perform_later
   "AutoPickQueueBackfillJob".constantize.perform_later

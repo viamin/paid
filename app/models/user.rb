@@ -144,12 +144,10 @@ class User < ApplicationRecord
   end
 
   # Returns the user's settings, creating with defaults if not yet present.
-  # Handles concurrent creation attempts by rescuing unique constraint violations
-  # and reloading the association to return the existing record.
+  # create_or_find_by! uses a savepoint, so unique races do not poison an
+  # outer transaction before returning the existing settings row.
   def settings
-    user_setting || create_user_setting
-  rescue ActiveRecord::RecordNotUnique
-    reload_user_setting
+    user_setting || UserSetting.create_or_find_by!(user: self)
   end
 
   # Convenience method for getting account membership

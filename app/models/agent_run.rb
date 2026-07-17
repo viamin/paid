@@ -25,6 +25,7 @@ class AgentRun < ApplicationRecord
   FINISHED_STATUSES = %w[completed no_output failed cancelled timeout token_budget_exceeded retried auth_expired rate_limited].freeze
   FAILURE_STATUSES = %w[failed timeout token_budget_exceeded auth_expired rate_limited].freeze
   TERMINAL_FAILURE_STATUSES = (FAILURE_STATUSES + %w[cancelled]).freeze
+  RETRY_PRIORITY_INHERITANCE_STATUSES = (FAILURE_STATUSES + %w[no_output]).freeze
   QUALITY_EXCLUDED_STATUSES = %w[timeout token_budget_exceeded auth_expired rate_limited].freeze
   STDOUT_TAIL_LINES = 500
 
@@ -831,19 +832,30 @@ class AgentRun < ApplicationRecord
       stats[:count] >= STALE_RUNNING_HEALTHY_MIN_SAMPLE_SIZE &&
       stats[:p95].positive?
   end
-  # Priority ordering for the run queue (6 tiers):
-  #   0 = manual runs (user pre-emption — highest)
-  #   1 = P1 user-defined label
-  #   2 = P2 user-defined label
-  #   3 = automatic runs fixing a PR (auto-continue, no priority label)
-  #   4 = P3 user-defined label
-  #   5 = automatic runs from auto-pick (lowest)
+  # Priority ordering for the run queue (9 tiers). Work category (PR
+  # continuation vs. fresh issue) is the primary discriminator, with
+  # priority label (P1 > P2 > P3 > none) secondary within each category:
+  #   0 = manual runs (user pre-emption — highest, any category)
+  #   1 = PR continuation, P1 user-defined label
+  #   2 = PR continuation, P2 user-defined label
+  #   3 = PR continuation, P3 user-defined label
+  #   4 = PR continuation, no priority label (auto-continue)
+  #   5 = fresh issue, P1 user-defined label
+  #   6 = fresh issue, P2 user-defined label
+  #   7 = fresh issue, P3 user-defined label
+  #   8 = fresh issue, no priority label (auto-pick — lowest)
   #
-  # Within each tier, runs continuing work on an existing PR
-  # (source_pull_request_number IS NOT NULL) sort ahead of fresh runs.
-  # This is enforced via IN_PROGRESS_SQL in QUEUE_ORDER, not by adding
-  # tiers to the CASE expression, so the user-facing tier badges remain
-  # the same.
+  # This ordering means the highest-priority *workable* PR continuation
+  # work is always scheduled before any fresh-issue work, and fresh issues
+  # are only considered once no PR continuation work remains queued. See
+  # RDR-047 for the rationale: labeling a fresh issue P1 must not let it
+  # leapfrog a ready, unlabeled PR follow-up.
+  #
+  # The manual tier does not split by category — a manual PR-continuation
+  # run and a manual fresh-issue run both land in tier 0. IN_PROGRESS_SQL
+  # in QUEUE_ORDER breaks that tie (PR continuation first); every other
+  # tier already fixes source_pull_request_number nullness by construction,
+  # so IN_PROGRESS_SQL is a no-op there.
   #
   # Priority is strict within a single project. Across projects QUEUE_ORDER
   # sorts by per-project in-flight count first, so a flood of P1s in one
@@ -864,24 +876,26 @@ class AgentRun < ApplicationRecord
   # created_at, with id as a stable tiebreaker.
   QUEUE_PRIORITIES = {
     manual: { label: "Manual", indicator: 1 },
-    label_p1: { label: "P1", indicator: 2 },
-    label_p2: { label: "P2", indicator: 3 },
-    auto_continue: { label: "Auto-continue", indicator: 4 },
-    label_p3: { label: "P3", indicator: 5 },
-    auto_pick: { label: "Auto-pick", indicator: 6 }
+    pr_p1: { label: "PR · P1", indicator: 2 },
+    pr_p2: { label: "PR · P2", indicator: 3 },
+    pr_p3: { label: "PR · P3", indicator: 4 },
+    pr_continue: { label: "Auto-continue", indicator: 5 },
+    issue_p1: { label: "P1", indicator: 6 },
+    issue_p2: { label: "P2", indicator: 7 },
+    issue_p3: { label: "P3", indicator: 8 },
+    auto_pick: { label: "Auto-pick", indicator: 9 }
   }.freeze
   UNKNOWN_PRIORITY = { label: "Unknown", indicator: nil }.freeze
 
   def queue_priority_tier
     return :manual if manual?
 
-    label_tier = label_priority_tier
-    case label_tier
-    when "P1" then :label_p1
-    when "P2" then :label_p2
-    when "P3" then :label_p3
-    else
-      automatic? && existing_pr? ? :auto_continue : :auto_pick
+    category = existing_pr? ? "pr" : "issue"
+    case label_priority_tier
+    when "P1" then :"#{category}_p1"
+    when "P2" then :"#{category}_p2"
+    when "P3" then :"#{category}_p3"
+    else category == "pr" ? :pr_continue : :auto_pick
     end
   end
 
@@ -1051,9 +1065,15 @@ class AgentRun < ApplicationRecord
   #
   # NOTE: This SQL contains no interpolated values — the tier names are
   # hardcoded literals — so it is not a SQL injection vector.
-  QUEUE_PRIORITY_CASE_SQL = <<~SQL.squish.freeze
+  # Resolves to 1/2/3 for whichever of P1/P2/P3 matches (highest wins), or 4
+  # when no priority label matches. Shared by both branches of
+  # QUEUE_PRIORITY_CASE_SQL below (PR-continuation and fresh-issue) via
+  # interpolation, so the label-matching logic is defined once instead of
+  # once per category. For a given row, only one branch's copy is ever
+  # evaluated (SQL CASE only evaluates the taken THEN/ELSE), so this does
+  # not change the number of EXISTS checks Postgres runs per row.
+  LABEL_RANK_CASE_SQL = <<~SQL.squish.freeze
     CASE
-      WHEN trigger_type = 'manual' THEN 0
       WHEN EXISTS (
         SELECT 1
         FROM jsonb_array_elements_text(issue_labels.labels) AS label(value)
@@ -1064,21 +1084,30 @@ class AgentRun < ApplicationRecord
         FROM jsonb_array_elements_text(issue_labels.labels) AS label(value)
         WHERE LOWER(label.value) = LOWER(COALESCE(NULLIF(p.priority_labels->>'P2', ''), 'P2'))
       ) THEN 2
-      WHEN trigger_type = 'automatic' AND source_pull_request_number IS NOT NULL THEN 3
       WHEN EXISTS (
         SELECT 1
         FROM jsonb_array_elements_text(issue_labels.labels) AS label(value)
         WHERE LOWER(label.value) = LOWER(COALESCE(NULLIF(p.priority_labels->>'P3', ''), 'P3'))
-      ) THEN 4
-      ELSE 5
+      ) THEN 3
+      ELSE 4
+    END
+  SQL
+  # trigger_type = 'automatic' is not re-checked below the first WHEN:
+  # TRIGGER_TYPES only has 'manual'/'automatic', so anything that reaches
+  # the second WHEN is already known to be automatic.
+  QUEUE_PRIORITY_CASE_SQL = <<~SQL.squish.freeze
+    CASE
+      WHEN trigger_type = 'manual' THEN 0
+      WHEN source_pull_request_number IS NOT NULL THEN (#{LABEL_RANK_CASE_SQL})
+      ELSE (#{LABEL_RANK_CASE_SQL}) + 4
     END
   SQL
   QUEUE_PRIORITY_SQL = Arel.sql(QUEUE_PRIORITY_CASE_SQL).freeze
-  # Sub-sort within the same priority tier: PR-continuation work (runs
-  # with a source_pull_request_number) sorts ahead of fresh-issue work.
-  # Auto-continue is already gated by source_pull_request_number IS NOT NULL,
-  # so this sub-sort is a no-op there; it primarily affects ties within
-  # label_p1 / label_p2 / label_p3 / manual.
+  # Tie-break within the manual tier only: a manual PR-continuation run
+  # sorts ahead of a manual fresh-issue run. Every other tier already
+  # fixes source_pull_request_number nullness by construction (all PR
+  # tiers require it NOT NULL, all issue tiers require it NULL), so this
+  # is a no-op everywhere except tier 0.
   IN_PROGRESS_CASE_SQL = <<~SQL.squish.freeze
     CASE WHEN source_pull_request_number IS NOT NULL THEN 0 ELSE 1 END
   SQL
@@ -1090,6 +1119,10 @@ class AgentRun < ApplicationRecord
     END
   SQL
   GOAL_PRIORITY_SQL = Arel.sql(GOAL_PRIORITY_CASE_SQL).freeze
+  REVIEW_PICKUP_PRIORITY_CASE_SQL = <<~SQL.squish.freeze
+    CASE WHEN goal = 'review' THEN 0 ELSE 1 END
+  SQL
+  REVIEW_PICKUP_PRIORITY_SQL = Arel.sql(REVIEW_PICKUP_PRIORITY_CASE_SQL).freeze
   # Cross-project fair-share: a project's count of currently in-flight runs
   # (running + claimed-queued). Projects with fewer in-flight runs sort ahead
   # so a high-volume project cannot fully starve a low-volume one. This is
@@ -1098,11 +1131,12 @@ class AgentRun < ApplicationRecord
   PROJECT_ACTIVE_COUNT_EXPR_SQL = "COALESCE(project_active_counts.project_active_count, 0)"
   PROJECT_ACTIVE_COUNT_SQL = Arel.sql("#{PROJECT_ACTIVE_COUNT_EXPR_SQL} ASC").freeze
   USER_ACTIVE_COUNT_SQL = Arel.sql("COALESCE(user_active_counts.user_active_count, 0) ASC").freeze
-  # Sort key order:
+  # Visible queue sort key order:
   #   project_active_count → cross-project round-robin
   #   user_active_count    → cross-user fairness within a project tie
-  #   queue_priority       → strict priority within a project (manual > P1 > P2 > AC > P3 > AP)
-  #   in_progress          → PR-continuation work ahead of fresh issues at the same tier
+  #   queue_priority       → strict priority within a project
+  #                          (manual > PR·P1 > PR·P2 > PR·P3 > PR-continue > issue·P1 > issue·P2 > issue·P3 > auto-pick)
+  #   in_progress          → tie-break within the manual tier only (PR continuation first)
   #   goal_priority        → create_issue ahead of create_pr
   #   created_at, id       → FIFO tiebreaker
   QUEUE_ORDER = [
@@ -1113,6 +1147,18 @@ class AgentRun < ApplicationRecord
     GOAL_PRIORITY_SQL,
     { created_at: :asc, id: :asc }
   ].freeze
+  # Scheduler-only sort. Keep QUEUE_ORDER as the user-visible ordering; this
+  # adds only a hidden tiebreaker so short review runs drain before create_pr
+  # runs when all visible priority keys are otherwise tied.
+  SCHEDULER_QUEUE_ORDER = [
+    PROJECT_ACTIVE_COUNT_SQL,
+    USER_ACTIVE_COUNT_SQL,
+    QUEUE_PRIORITY_SQL,
+    IN_PROGRESS_SQL,
+    GOAL_PRIORITY_SQL,
+    REVIEW_PICKUP_PRIORITY_SQL,
+    { created_at: :asc, id: :asc }
+  ].freeze
   STATUS_ORDER_CASE_SQL = <<~SQL.squish.freeze
     CASE WHEN agent_runs.status = 'running' THEN 0
          WHEN agent_runs.status = 'queued' AND agent_runs.temporal_workflow_id IS NOT NULL THEN 1
@@ -1121,7 +1167,7 @@ class AgentRun < ApplicationRecord
   SQL
   STATUS_ORDER_SQL = Arel.sql("#{STATUS_ORDER_CASE_SQL} ASC").freeze
 
-  # Scope that adds the CTE and joins required by QUEUE_ORDER.
+  # Scope that adds the CTE and joins required by queue ordering.
   # All queue-ordering methods use this instead of bare `queued`.
   # Filters to unclaimed queued runs (temporal_workflow_id IS NULL) so
   # claimed-but-not-yet-running runs are excluded from peek results.
@@ -1148,7 +1194,7 @@ class AgentRun < ApplicationRecord
   # runs (temporal_workflow_id set) sort ahead of unclaimed ones at the same
   # tier; mirrors QUEUE_ORDER below STATUS_ORDER_SQL.
   scope :queue_order_display, -> {
-    unfinished
+    where(status: UNFINISHED_STATUSES)
       .with(
         project_active_counts: project_active_counts_cte,
         user_active_counts: user_active_counts_cte
@@ -1289,9 +1335,27 @@ class AgentRun < ApplicationRecord
   end
 
   def self.next_queued_run_from(scope)
-    scope.reorder(QUEUE_ORDER).first
+    scope.reorder(SCHEDULER_QUEUE_ORDER).first
   end
   private_class_method :next_queued_run_from
+
+  def self.retry_trigger_type_for(project:, source_pull_request_number:, goal:)
+    return "automatic" if project.blank? || source_pull_request_number.blank?
+
+    # A completed run for the same PR/goal is a cycle reset boundary (mirrors
+    # PullRequests::ProgressState#create_pr_progress?), so only the failure
+    # streak after the most recent successful run is eligible for inheritance.
+    latest_pr_run = where(
+      project: project,
+      source_pull_request_number: source_pull_request_number,
+      goal: goal,
+      status: (RETRY_PRIORITY_INHERITANCE_STATUSES + %w[completed])
+    ).order(Arel.sql("COALESCE(completed_at, updated_at, created_at) DESC"), id: :desc).first
+
+    return "automatic" if latest_pr_run.blank? || latest_pr_run.status == "completed"
+
+    latest_pr_run.trigger_type == "manual" ? "manual" : "automatic"
+  end
 
   def runner_belongs_to_project_owner
     owner = project&.effective_owner

@@ -13,6 +13,9 @@ application.register("checkbox-toggle", CheckboxToggleController)
 import ChatController from "./chat_controller"
 application.register("chat", ChatController)
 
+import ChartkickController from "./chartkick_controller"
+application.register("chartkick", ChartkickController)
+
 import CollapsiblePanelController from "./collapsible_panel_controller"
 application.register("collapsible-panel", CollapsiblePanelController)
 
@@ -99,3 +102,6 @@ application.register("theme", ThemeController)
 
 import TooltipController from "./tooltip_controller"
 application.register("tooltip", TooltipController)
+
+import TraceViewerController from "./trace_viewer_controller"
+application.register("trace-viewer", TraceViewerController)

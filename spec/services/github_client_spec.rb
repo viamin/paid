@@ -2599,4 +2599,111 @@ RSpec.describe GithubClient do
       expect(state.reload.failure_count).to eq(0)
     end
   end
+
+  describe "token refresh on 401 (handle_errors)" do
+    let(:fresh_token) { "ghp_fresh_token_9999999999999999999999" }
+    let(:refresher) { -> { fresh_token } }
+    let(:client) do
+      described_class.new(token: token, health_endpoint: health_endpoint, token_refresher: refresher)
+    end
+
+    it "refreshes and retries once on 401, then succeeds" do
+      stub_request(:get, "#{api_base}/user")
+        .to_return(status: 401, body: { message: "Bad credentials" }.to_json)
+        .to_return(
+          status: 200,
+          body: { login: "testuser", id: 1, name: "Test", email: "t@t.com" }.to_json,
+          headers: { "Content-Type" => "application/json", "X-OAuth-Scopes" => "repo" }
+        )
+
+      result = client.validate_token
+      expect(result[:login]).to eq("testuser")
+    end
+
+    it "does not retry more than once on repeated 401" do
+      stub_request(:get, "#{api_base}/user")
+        .to_return(status: 401, body: { message: "Bad credentials" }.to_json)
+
+      expect { client.validate_token }.to raise_error(GithubClient::AuthenticationError)
+    end
+
+    it "raises AuthenticationError without a refresher" do
+      no_refresher_client = described_class.new(token: token, health_endpoint: health_endpoint)
+      stub_request(:get, "#{api_base}/user")
+        .to_return(status: 401, body: { message: "Bad credentials" }.to_json)
+
+      expect { no_refresher_client.validate_token }.to raise_error(GithubClient::AuthenticationError)
+    end
+
+    it "does not loop infinitely when refresher returns a blank token" do
+      blank_refresher_client = described_class.new(
+        token: token, health_endpoint: health_endpoint, token_refresher: -> { "" }
+      )
+      stub_request(:get, "#{api_base}/user")
+        .to_return(status: 401, body: { message: "Bad credentials" }.to_json)
+
+      expect { blank_refresher_client.validate_token }.to raise_error(GithubClient::AuthenticationError)
+    end
+  end
+
+  describe "token refresh on 401 (graphql_request)" do
+    let(:fresh_token) { "ghp_fresh_token_9999999999999999999999" }
+    let(:refresher) { -> { fresh_token } }
+    let(:client) do
+      described_class.new(token: token, health_endpoint: health_endpoint, token_refresher: refresher)
+    end
+
+    it "refreshes and retries once on GraphQL 401, then succeeds" do
+      stub_request(:post, "#{api_base}/graphql")
+        .to_return(status: 401, body: '{"message":"Bad credentials"}')
+        .to_return(
+          status: 200,
+          body: { data: { viewer: { login: "testuser" } } }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      data = client.send(:graphql_request, "query { viewer { login } }")
+      expect(data.dig("data", "viewer", "login")).to eq("testuser")
+    end
+
+    it "does not retry more than once on repeated GraphQL 401" do
+      stub_request(:post, "#{api_base}/graphql")
+        .to_return(status: 401, body: '{"message":"Bad credentials"}')
+
+      expect {
+        client.send(:graphql_request, "query { viewer { login } }")
+      }.to raise_error(GithubClient::AuthenticationError)
+    end
+  end
+
+  describe "#refresh_token!" do
+    let(:fresh_token) { "ghp_fresh_token_9999999999999999999999" }
+
+    it "clears the cached token digest so the HTTP cache namespace changes" do
+      refresher = -> { fresh_token }
+      test_client = described_class.new(token: token, health_endpoint: health_endpoint, token_refresher: refresher)
+
+      old_digest = test_client.send(:cache_token_digest)
+      test_client.send(:refresh_token!)
+      new_digest = test_client.send(:cache_token_digest)
+
+      expect(new_digest).not_to eq(old_digest)
+      expect(new_digest).to eq(Digest::SHA256.hexdigest(fresh_token))
+    end
+
+    it "preserves constructor options in the refreshed Octokit client" do
+      refresher = -> { fresh_token }
+      test_client = described_class.new(
+        token: token,
+        health_endpoint: health_endpoint,
+        token_refresher: refresher,
+        api_endpoint: "https://gh.example.com/api/v3"
+      )
+
+      test_client.send(:refresh_token!)
+
+      expect(test_client.client.access_token).to eq(fresh_token)
+      expect(test_client.client.api_endpoint).to eq("https://gh.example.com/api/v3/")
+    end
+  end
 end

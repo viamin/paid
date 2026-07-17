@@ -39,6 +39,27 @@ RSpec.describe Screenshots::DetectFramework, :no_db do
       expect(result.suggested_config.dig("auth", "login_path")).to eq("/accounts/login/")
     end
 
+    it "detects a Phoenix app and parses router macros" do
+      result = described_class.call(repo_path: fixture_path("phoenix_repo"))
+
+      expect(result.framework).to eq(:phoenix)
+      expect(result.confidence).to eq(1.0)
+      expect(result.suggested_config["driver"]).to eq("playwright")
+      expect(result.detected_services).to contain_exactly("postgres", "redis")
+      expect(result.suggested_config.dig("auth", "strategy")).to eq("form")
+      expect(result.suggested_config.dig("auth", "login_path")).to eq("/users/log_in")
+      expect(result.detected_routes.map { |route| route["path"] }).to include(
+        "/",
+        "/match",
+        "/palette",
+        "/swatches",
+        "/admin/dashboard"
+      )
+      expect(result.detected_routes.find { |route| route["path"] == "/admin/dashboard" }).to include(
+        "controller_action" => "ColorMatchingWeb.AdminDashboardLive#index"
+      )
+    end
+
     it "falls back to a generic app when no known framework is detected" do
       result = described_class.call(repo_path: fixture_path("generic_repo"))
 
@@ -151,6 +172,18 @@ RSpec.describe Screenshots::DetectFramework, :no_db do
       paths = routes.map { |r| r["path"] }
 
       expect(paths).to include("/sessions", "/sign_in")
+    end
+
+    it "expands scoped Phoenix module aliases for relative controller and live view names" do
+      service = described_class.new(repo_path: fixture_path("phoenix_repo"))
+      routes = service.send(:discover_phoenix_routes)
+
+      expect(routes.find { |route| route["path"] == "/" }).to include(
+        "controller_action" => "ColorMatchingWeb.PageController#home"
+      )
+      expect(routes.find { |route| route["path"] == "/admin/dashboard" }).to include(
+        "controller_action" => "ColorMatchingWeb.AdminDashboardLive#index"
+      )
     end
 
     it "captures mounted engines and wildcard match routes without verbs" do
@@ -276,10 +309,12 @@ RSpec.describe Screenshots::DetectFramework, :no_db do
 
     before do
       allow(repo).to receive(:read).with("Gemfile").and_return("gem 'rails'\ngem 'devise'\n")
+      allow(repo).to receive(:read).with("mix.exs").and_return("")
       allow(repo).to receive(:read).with("package.json").and_return(JSON.dump({
         "dependencies" => { "next" => "1.0.0", "next-auth" => "1.0.0", "redis" => "1.0.0" }
       }))
       allow(repo).to receive(:read).with("config/database.yml").and_return("")
+      allow(repo).to receive(:read).with("config/dev.exs").and_return("")
       allow(repo).to receive(:read).with("config/routes.rb").and_return("devise_for :users\n")
       allow(repo).to receive(:read).with("middleware.ts").and_return("")
       allow(repo).to receive(:read).with("middleware.js").and_return("")
