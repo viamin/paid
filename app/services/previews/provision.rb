@@ -88,10 +88,15 @@ module Previews
     def cleanup!
       @tunnel_manager.stop_client!(container_service:) if @tunnel_port.present? && container_service.present?
       @tunnel_manager.release_port!
-      cleanup_services!
+      begin
+        cleanup_services!
+      ensure
+        restore_agent_run_service_state!
+      end
       container_service&.cleanup(force: true)
     rescue StandardError => e
       logger.warn(message: "previews.provision.cleanup_failed", agent_run_id: agent_run.id, error: e.message)
+      restore_agent_run_service_state!
     end
 
     def service_environment
@@ -136,23 +141,35 @@ module Previews
       service_names = configured_service_dependencies
       return if service_names.empty?
 
-      original_ids = agent_run.service_container_ids.dup
-      original_env = agent_run.service_environment&.deep_dup
+      @original_service_container_ids = agent_run.service_container_ids.dup
+      @original_service_environment = agent_run.service_environment&.deep_dup
 
       service_provisioner.provision(agent_run, network: @network_name, service_names:)
 
-      @service_environment = agent_run.service_environment&.deep_dup || {}
-    ensure
-      current_ids = agent_run.service_container_ids
-      @service_container_ids |= current_ids - (original_ids || current_ids)
-
-      needs_restore = original_ids && (current_ids != original_ids || agent_run.service_environment != original_env)
-      if needs_restore
-        agent_run.update!(
-          service_container_ids: original_ids,
-          service_environment: original_env
-        )
+      # Persist the union of original + preview-provisioned IDs on the agent
+      # run so ServiceContainer#capacity_inflight_agent_run_count continues to
+      # count this preview while it is in flight. Without this, restoring
+      # the originals immediately would make the preview's transient service
+      # usage invisible to concurrent cleanup decisions and a sibling
+      # preview/screenshot's cleanup could stop the shared Postgres/Redis
+      # container while this preview is still using it. The originals are
+      # restored in #cleanup! once the preview is done.
+      new_ids = Array(agent_run.service_container_ids) - Array(@original_service_container_ids)
+      combined_ids = (Array(@original_service_container_ids) + new_ids).uniq
+      if combined_ids != @original_service_container_ids
+        agent_run.update!(service_container_ids: combined_ids)
       end
+
+      @service_environment = agent_run.service_environment&.deep_dup || {}
+      @service_container_ids = combined_ids
+    rescue StandardError
+      # Snapshot whatever IDs the provisioner managed to associate with the
+      # agent run before the failure so cleanup can still drop the per-run
+      # database, then restore the originals so the agent run's persisted
+      # service associations match what was there before this attempt.
+      @service_container_ids = Array(agent_run.service_container_ids)
+      restore_agent_run_service_state!
+      raise
     end
 
     def configured_service_dependencies
@@ -316,14 +333,35 @@ module Previews
       return if @service_container_ids.empty?
 
       # Reuse the service-provisioner cleanup path so per-run databases are
-      # dropped (not just the containers stopped). Provisioning restores the
-      # agent run's persisted service associations, so pass the transient IDs
-      # and environment captured during provisioning instead of run state.
+      # dropped (not just the containers stopped). The agent run's persisted
+      # service associations include both the originals and the preview's
+      # transient references (so capacity_inflight_agent_run_count sees this
+      # preview), so pass the captured transient IDs and environment rather
+      # than reading from run state — and leave the run-state restore to
+      # #restore_agent_run_service_state! once cleanup completes.
       service_provisioner.cleanup_service_containers(
         @service_container_ids,
         agent_run: agent_run,
         service_environment: @service_environment
       )
+    end
+
+    def restore_agent_run_service_state!
+      return unless @original_service_container_ids
+
+      agent_run.update!(
+        service_container_ids: @original_service_container_ids,
+        service_environment: @original_service_environment
+      )
+    rescue StandardError => e
+      logger.warn(
+        message: "previews.provision.restore_failed",
+        agent_run_id: agent_run.id,
+        error: e.message
+      )
+    ensure
+      @original_service_container_ids = nil
+      @original_service_environment = nil
     end
 
     def read_file(relative_path)

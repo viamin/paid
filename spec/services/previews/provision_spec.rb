@@ -88,6 +88,72 @@ RSpec.describe Previews::Provision do
       )
   end
 
+  it "leaves the preview's service container ids on the agent run while in flight" do
+    captured_env = { "DATABASE_URL" => "postgres://agent:agent@paid-svc/agent_run_preview" }
+    allow(service_provisioner).to receive(:provision) do
+      agent_run.update!(service_container_ids: [ 101, 202 ], service_environment: captured_env)
+    end
+    allow(service_provisioner).to receive(:cleanup_service_containers)
+
+    service.call(start_tunnel: false, allow_seed: false)
+
+    expect(agent_run.reload.service_container_ids).to contain_exactly(101, 202)
+  end
+
+  it "preserves any pre-existing service container ids when persisting preview references" do
+    agent_run.update!(service_container_ids: [ 7 ])
+    allow(service_provisioner).to receive(:provision) do
+      agent_run.update!(service_container_ids: [ 7, 101, 202 ])
+    end
+    allow(service_provisioner).to receive(:cleanup_service_containers)
+
+    service.call(start_tunnel: false, allow_seed: false)
+
+    expect(agent_run.reload.service_container_ids).to contain_exactly(7, 101, 202)
+  end
+
+  it "restores the agent run's pre-existing service container ids on cleanup" do
+    agent_run.update!(service_container_ids: [ 7 ], service_environment: { "DATABASE_URL" => "postgres://existing/db" })
+    allow(service_provisioner).to receive(:provision) do
+      agent_run.update!(
+        service_container_ids: [ 7, 101, 202 ],
+        service_environment: { "DATABASE_URL" => "postgres://preview-host/db" }
+      )
+    end
+    allow(service_provisioner).to receive(:cleanup_service_containers)
+
+    service.call(start_tunnel: false, allow_seed: false)
+    service.cleanup!
+
+    expect(agent_run.reload.service_container_ids).to eq([ 7 ])
+    expect(agent_run.service_environment).to eq({ "DATABASE_URL" => "postgres://existing/db" })
+  end
+
+  it "counts the preview against service container capacity while in flight so concurrent cleanup cannot stop the shared container" do
+    service_container = create(:service_container, :running)
+    create(:project_service_container, project: project, service_container: service_container)
+    running_agent_run = create(:agent_run, :running, project: project)
+    preview_provision = described_class.new(
+      agent_run: running_agent_run,
+      repo_path:,
+      service_provisioner:,
+      seed_runner:,
+      tunnel_manager:
+    )
+    allow(service_provisioner).to receive(:provision) do
+      running_agent_run.update!(service_container_ids: [ service_container.id ])
+    end
+    allow(service_provisioner).to receive(:cleanup_service_containers)
+
+    preview_provision.call(start_tunnel: false, allow_seed: false)
+
+    expect(service_container.capacity_inflight_agent_run_count).to eq(1)
+
+    preview_provision.cleanup!
+
+    expect(service_container.reload.capacity_inflight_agent_run_count).to eq(0)
+  end
+
   it "restores the original service container ids and environment when dependency provisioning fails" do
     allow(service_provisioner).to receive(:provision) do
       agent_run.update!(
