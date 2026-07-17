@@ -656,11 +656,13 @@ module Screenshots
     end
 
     def discover_phoenix_routes
-      routes = phoenix_router_files.flat_map do |path|
+      unique_routes(discover_all_phoenix_routes)
+    end
+
+    def discover_all_phoenix_routes
+      phoenix_router_files.flat_map do |path|
         parse_phoenix_router(path, prefixes: [], visited: Set.new)
       end
-
-      unique_routes(routes)
     end
 
     def phoenix_router_files
@@ -824,7 +826,7 @@ module Screenshots
 
     def phoenix_login_path
       @phoenix_login_path ||= begin
-        login_route = discover_phoenix_routes.find do |route|
+        login_route = unique_routes(discover_all_phoenix_routes, limit: nil).find do |route|
           route["path"].match?(%r{/(?:users?/)?(?:log_?in|sign_?in)\z}i)
         end
         login_route&.fetch("path", nil)
@@ -970,9 +972,10 @@ module Screenshots
       path.to_s.sub(/\(\.:format\)\z/, "").sub(/\(\/\*[^)]+\)\z/, "")
     end
 
-    def unique_routes(routes, &identity)
+    def unique_routes(routes, limit: 10, &identity)
       identity ||= ->(route) { route["path"] }
-      routes.compact.uniq(&identity).first(10)
+      deduplicated = routes.compact.uniq(&identity)
+      limit ? deduplicated.first(limit) : deduplicated
     end
 
     def route_hash(path, name, requires_auth: false)

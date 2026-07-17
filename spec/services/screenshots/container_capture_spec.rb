@@ -159,6 +159,8 @@ RSpec.describe Screenshots::ContainerCapture do
 
     it "uses mix phx.server for a Phoenix app" do
       File.write(File.join(tmpdir, "mix.exs"), "defmodule MyApp.MixProject do\nend\n")
+      FileUtils.mkdir_p(File.join(tmpdir, "lib/my_app_web"))
+      File.write(File.join(tmpdir, "lib/my_app_web/router.ex"), "defmodule MyAppWeb.Router do\n  use MyAppWeb, :router\nend\n")
 
       command = service.send(:application_start_command)
 
@@ -166,10 +168,20 @@ RSpec.describe Screenshots::ContainerCapture do
       expect(command).to end_with("mix phx.server")
     end
 
+    it "does not use mix phx.server for a plain Elixir app" do
+      File.write(File.join(tmpdir, "mix.exs"), "defmodule MyApp.MixProject do\nend\n")
+
+      command = service.send(:application_start_command)
+
+      expect(command).to be_nil
+    end
+
     it "uses bin/dev when present, even if mix.exs also exists" do
       FileUtils.mkdir_p(File.join(tmpdir, "bin"))
       File.write(File.join(tmpdir, "bin/dev"), "#!/bin/sh\n")
       File.write(File.join(tmpdir, "mix.exs"), "")
+      FileUtils.mkdir_p(File.join(tmpdir, "lib/my_app_web"))
+      File.write(File.join(tmpdir, "lib/my_app_web/router.ex"), "defmodule MyAppWeb.Router do\n  use MyAppWeb, :router\nend\n")
 
       command = service.send(:application_start_command)
 

@@ -62,6 +62,52 @@ RSpec.describe Screenshots::DetectFramework, :no_db do
     ELIXIR
   end
 
+  def build_phoenix_pipeline_auth_repo_with_late_login(repo_path)
+    FileUtils.mkdir_p(File.join(repo_path, "lib/my_app_web"))
+    File.write(File.join(repo_path, "mix.exs"), <<~ELIXIR)
+      defmodule MyApp.MixProject do
+        defp deps do
+          [{:phoenix, "~> 1.7.0"}]
+        end
+      end
+    ELIXIR
+    File.write(File.join(repo_path, "lib/my_app_web/router.ex"), <<~ELIXIR)
+      defmodule MyAppWeb.Router do
+        use MyAppWeb, :router
+
+        pipeline :browser do
+          plug :accepts, ["html"]
+        end
+
+        pipeline :require_authenticated_user do
+          plug MyAppWeb.UserAuth, :ensure_authenticated
+        end
+
+        scope "/", MyAppWeb do
+          pipe_through :browser
+
+          get "/route1", PageController, :show
+          get "/route2", PageController, :show
+          get "/route3", PageController, :show
+          get "/route4", PageController, :show
+          get "/route5", PageController, :show
+          get "/route6", PageController, :show
+          get "/route7", PageController, :show
+          get "/route8", PageController, :show
+          get "/route9", PageController, :show
+          get "/route10", PageController, :show
+          get "/users/log_in", UserSessionController, :new
+        end
+
+        scope "/", MyAppWeb do
+          pipe_through [:browser, :require_authenticated_user]
+
+          live "/dashboard", DashboardLive, :index
+        end
+      end
+    ELIXIR
+  end
+
   describe ".call" do
     it "detects a Rails app and suggests a Cuprite config" do
       result = described_class.call(repo_path: fixture_path("rails_repo"))
@@ -134,6 +180,23 @@ RSpec.describe Screenshots::DetectFramework, :no_db do
 
         result = described_class.call(repo_path: repo_path)
 
+        expect(result.suggested_config.dig("auth", "strategy")).to eq("form")
+        expect(result.suggested_config.dig("auth", "login_path")).to eq("/users/log_in")
+      ensure
+        FileUtils.remove_entry(repo_path)
+      end
+    end
+
+    it "detects Phoenix auth when the login route appears after the first 10 parsed routes" do
+      repo_path = Dir.mktmpdir
+
+      begin
+        build_phoenix_pipeline_auth_repo_with_late_login(repo_path)
+
+        result = described_class.call(repo_path: repo_path)
+
+        expect(result.detected_routes.size).to eq(10)
+        expect(result.detected_routes.map { |route| route["path"] }).not_to include("/users/log_in")
         expect(result.suggested_config.dig("auth", "strategy")).to eq("form")
         expect(result.suggested_config.dig("auth", "login_path")).to eq("/users/log_in")
       ensure

@@ -528,7 +528,7 @@ module Screenshots
 
       if File.exist?(File.join(@tmpdir, "bin/dev"))
         "PORT=#{port} bin/dev"
-      elsif File.exist?(File.join(@tmpdir, "mix.exs"))
+      elsif phoenix_app?
         "MIX_ENV=dev PORT=#{port} mix phx.server"
       elsif File.exist?(File.join(@tmpdir, "bin/rails"))
         "bundle exec bin/rails server -b 0.0.0.0 -p #{port}"
@@ -541,6 +541,12 @@ module Screenshots
       elsif File.exist?(File.join(@tmpdir, "package.json"))
         "yarn dev --host 0.0.0.0 --port #{port}"
       end
+    end
+
+    def phoenix_app?
+      return false unless File.exist?(File.join(@tmpdir, "mix.exs"))
+
+      Screenshots::DetectFramework.detect_framework_only(repo_path: @tmpdir) == :phoenix
     end
 
     def readiness_probe_command
