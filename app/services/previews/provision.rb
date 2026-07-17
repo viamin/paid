@@ -303,7 +303,7 @@ module Previews
     end
 
     def repo_seed_configured?
-      config_path = File.join(repo_path, Screenshots::ConfigParser::CONFIG_PATH)
+      config_path = Screenshots::ConfigParser.config_path_for(project:, repo_path:)
       return false unless File.file?(config_path)
 
       parsed = Psych.safe_load(File.read(config_path), aliases: false)

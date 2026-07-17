@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "net/http"
-require "set"
 require "shellwords"
 require "socket"
 require "uri"
@@ -22,47 +21,27 @@ module Previews
 
     class << self
       def reserve_port!(range: DEFAULT_PORT_RANGE, exclude: [])
-        port_lock.synchronize do
-          used_ports = reserved_ports | active_preview_session_ports | Array(exclude).map(&:to_i)
+        excluded_ports = Array(exclude).map(&:to_i)
 
-          port = range.find do |candidate|
-            next false if used_ports.include?(candidate)
+        range.each do |candidate|
+          next if excluded_ports.include?(candidate)
+          next unless port_available?(candidate)
 
-            port_available?(candidate)
-          end
-
-          raise PortExhaustedError, "no preview tunnel ports available in #{range.begin}-#{range.end}" unless port
-
-          reserved_ports << port
-          port
+          return PreviewTunnelReservation.create!(port: candidate).port
+        rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique
+          next
         end
+
+        raise PortExhaustedError, "no preview tunnel ports available in #{range.begin}-#{range.end}"
       end
 
       def release_port(port)
         return if port.blank?
 
-        port_lock.synchronize do
-          reserved_ports.delete(port.to_i)
-        end
+        PreviewTunnelReservation.find_by(port: port.to_i)&.destroy!
       end
 
       private
-
-      def reserved_ports
-        @reserved_ports ||= Set.new
-      end
-
-      def port_lock
-        @port_lock ||= Mutex.new
-      end
-
-      def active_preview_session_ports
-        return [] unless defined?(PreviewSession)
-
-        PreviewSession.where.not(tunnel_port: nil).pluck(:tunnel_port)
-      rescue StandardError
-        []
-      end
 
       def port_available?(port)
         server = TCPServer.new("127.0.0.1", port)
@@ -86,16 +65,19 @@ module Previews
     def allocate_port!
       return @allocated_port if @allocated_port.present?
 
-      @allocated_port = self.class.reserve_port!
-      persist_preview_session!(tunnel_port: @allocated_port)
-      @allocated_port
+      allocated_port = self.class.reserve_port!
+      persist_preview_session!(tunnel_port: allocated_port)
+      @allocated_port = allocated_port
+    rescue StandardError
+      self.class.release_port(allocated_port) if allocated_port.present?
+      raise
     end
 
     def release_port!
       return if @allocated_port.blank?
 
-      self.class.release_port(@allocated_port)
       persist_preview_session!(tunnel_port: nil)
+      self.class.release_port(@allocated_port)
       @allocated_port = nil
     end
 

@@ -111,6 +111,23 @@ RSpec.describe Previews::Provision do
     )
   end
 
+  it "loads seed data from the configured project screenshot config path" do
+    project.update!(screenshot_settings: project.screenshot_settings.merge("config_path" => ".paid/custom-screenshots.yml"))
+    seeded_config = seed_enabled_config
+    allow(Screenshots::ConfigParser).to receive(:from_repo_path).and_return(seeded_config)
+    write_repo_seed_config(path: ".paid/custom-screenshots.yml")
+
+    service.call(start_tunnel: false, allow_seed: true)
+
+    expect(seed_runner).to have_received(:call).with(
+      config: seeded_config,
+      repo_path:,
+      driver_name: seeded_config.driver,
+      force: true,
+      executor: an_object_responding_to(:call)
+    )
+  end
+
   it "executes screenshot seeds inside the preview container with the preview environment" do
     seeded_config = seed_enabled_config
     allow(Screenshots::ConfigParser).to receive(:from_repo_path).and_return(seeded_config)
@@ -199,9 +216,10 @@ RSpec.describe Previews::Provision do
     )
   end
 
-  def write_repo_seed_config
-    FileUtils.mkdir_p(File.join(repo_path, ".paid"))
-    File.write(File.join(repo_path, ".paid/screenshots.yml"), <<~YAML)
+  def write_repo_seed_config(path: ".paid/screenshots.yml")
+    full_path = File.join(repo_path, path)
+    FileUtils.mkdir_p(File.dirname(full_path))
+    File.write(full_path, <<~YAML)
       seed:
         - key: user
           runner: Screenshots::SeedData::Paid.call

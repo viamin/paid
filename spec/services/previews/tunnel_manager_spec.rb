@@ -64,15 +64,31 @@ RSpec.describe Previews::TunnelManager do
   end
 
   describe ".reserve_port!" do
+    around do |example|
+      described_class.release_port(8298)
+      described_class.release_port(8299)
+      example.run
+    ensure
+      described_class.release_port(8298)
+      described_class.release_port(8299)
+    end
+
     it "reserves and releases a port from the preview pool" do
       port = described_class.reserve_port!(range: 8298..8299)
 
       expect(port).to be_between(8298, 8299)
+      expect(PreviewTunnelReservation.find_by(port: port)).to be_present
 
       described_class.release_port(port)
 
       expect { described_class.reserve_port!(range: port..port) }.not_to raise_error
       described_class.release_port(port)
+    end
+
+    it "skips ports that are already reserved in the database" do
+      PreviewTunnelReservation.create!(port: 8298)
+
+      expect(described_class.reserve_port!(range: 8298..8299)).to eq(8299)
     end
   end
 end

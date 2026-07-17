@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_08_034227) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_17_071831) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1709,6 +1709,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_08_034227) do
     t.index ["user_id", "position"], name: "idx_pre_commit_requirements_user_position", where: "(user_id IS NOT NULL)"
     t.index ["user_id"], name: "index_pre_commit_requirements_on_user_id"
     t.check_constraint "NOT (project_id IS NOT NULL AND user_id IS NOT NULL)", name: "chk_pre_commit_requirements_exclusive_scope"
+  end
+
+  create_table "preview_tunnel_reservations", comment: "Tracks preview tunnel ports reserved across Ruby processes so concurrent preview boots cannot allocate the same port.", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.integer "port", null: false, comment: "TCP port reserved for a preview tunnel listener on the control-plane host."
+    t.datetime "updated_at", null: false
+    t.index ["port"], name: "index_preview_tunnel_reservations_on_port", unique: true
   end
 
   create_table "project_baselines", comment: "Stores per-project historical baselines for run metrics so anomalies can be detected against recent norms.", force: :cascade do |t|

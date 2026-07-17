@@ -36,6 +36,10 @@ module Screenshots
         new(project:, repo_path:, blob:, content:).call
       end
 
+      def config_path_for(project: nil, repo_path:)
+        new(project:, repo_path:).send(:config_path)
+      end
+
       def ui_detection_overrides(project: nil, repo_path: nil, blob: nil, content: nil)
         new(project:, repo_path:, blob:, content:).ui_detection_overrides
       end
