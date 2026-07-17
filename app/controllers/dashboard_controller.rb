@@ -119,7 +119,16 @@ class DashboardController < ApplicationController
 
   def cancel_run
     authorize @agent_run, :cancel?
-    cancel_agent_run(@agent_run, redirect_path: dashboard_path)
+    result = cancel_agent_run_result(@agent_run)
+
+    respond_to do |format|
+      format.html { redirect_to dashboard_path, status: :see_other, notice: result.message }
+      format.turbo_stream do
+        Dashboard::CacheVersion.bump(current_account, scope: Dashboard::CacheVersion::LISTS_SCOPE)
+        @cancel_result = result
+        render "dashboard/cancel_run", formats: :turbo_stream
+      end
+    end
   end
 
   private

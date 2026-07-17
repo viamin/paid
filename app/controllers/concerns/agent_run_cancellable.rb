@@ -4,8 +4,6 @@
 # Sets the cancelled status immediately and enqueues a background job
 # for the slow cleanup (Temporal workflow cancellation + container teardown),
 # so the web UI responds without blocking.
-#
-# Used by Projects::AgentRunsController and DashboardController.
 module AgentRunCancellable
   extend ActiveSupport::Concern
 
@@ -32,15 +30,7 @@ module AgentRunCancellable
 
   def cancel_agent_run(agent_run, redirect_path:)
     result = cancel_agent_run_result(agent_run)
-
-    respond_to do |format|
-      format.html { redirect_to redirect_path, status: :see_other, notice: result.message }
-      format.turbo_stream do
-        Dashboard::CacheVersion.bump(current_account, scope: Dashboard::CacheVersion::LISTS_SCOPE)
-        @cancel_result = result
-        render "dashboard/cancel_run", formats: :turbo_stream
-      end
-    end
+    redirect_to redirect_path, status: :see_other, notice: result.message
   end
 
   def cancel_agent_run_result(agent_run)

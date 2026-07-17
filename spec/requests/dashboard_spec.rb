@@ -366,7 +366,7 @@ RSpec.describe "Dashboard" do
 
         document = Nokogiri::HTML(response.body)
         queue_section = document.at_xpath("//h3[normalize-space(text())='Upcoming Queue']/ancestor::div[contains(@class, 'rounded-lg')][1]")
-        row = queue_section.at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(run, :dashboard_queue_row)}"]))
+        row = queue_section.at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(run, :dashboard_row)}"]))
 
         expect(row).to be_present
         expect(row.css("a").map { |a| a["href"] }).to include(project_agent_run_path(project, run))
@@ -387,7 +387,7 @@ RSpec.describe "Dashboard" do
 
         document = Nokogiri::HTML(response.body)
         queue_section = document.at_xpath("//h3[normalize-space(text())='Upcoming Queue']/ancestor::div[contains(@class, 'rounded-lg')][1]")
-        row = queue_section.at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(run, :dashboard_queue_row)}"]))
+        row = queue_section.at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(run, :dashboard_row)}"]))
 
         expect(row).to be_present
         expect(row.css("a").map { |a| a["href"] }).to include(project_agent_run_path(viewer_project, run))
@@ -1127,14 +1127,24 @@ RSpec.describe "Dashboard" do
     end
 
     context "with a Turbo Stream request" do
-      it "removes the queue row after cancellation" do
+      it "removes the dashboard row after cancellation" do
         agent_run = create(:agent_run, project: project, status: "running", started_at: 2.minutes.ago)
 
         post dashboard_cancel_run_path(agent_run), as: :turbo_stream
 
         expect(response).to have_http_status(:ok)
         expect(response.media_type).to eq("text/vnd.turbo-stream.html")
-        expect(response.body).to include(%(action="remove" target="dashboard_queue_row_agent_run_#{agent_run.id}"))
+        expect(response.body).to include(%(action="remove" target="dashboard_row_agent_run_#{agent_run.id}"))
+        expect(agent_run.reload.status).to eq("cancelled")
+      end
+
+      it "removes a queued run row from the upcoming queue" do
+        agent_run = create(:agent_run, :queued, project: project)
+
+        post dashboard_cancel_run_path(agent_run), as: :turbo_stream
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include(%(action="remove" target="dashboard_row_agent_run_#{agent_run.id}"))
         expect(agent_run.reload.status).to eq("cancelled")
       end
 
