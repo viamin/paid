@@ -8,6 +8,7 @@ module Previews
   class Provision
     APP_LOG_PATH = "tmp/paid-preview-app.log"
     APP_PID_PATH = "tmp/paid-preview-app.pid"
+    PHOENIX_PREVIEW_CONFIG_PATH = "config/paid_preview.exs"
     MEMORY_BYTES = Screenshots::ContainerCapture::MEMORY_BYTES
     CPU_QUOTA = Screenshots::ContainerCapture::CPU_QUOTA
     PIDS_LIMIT = Screenshots::ContainerCapture::PIDS_LIMIT
@@ -176,11 +177,13 @@ module Previews
         config:,
         repo_path:,
         driver_name: config.driver,
-        force: true
+        force: true,
+        executor: method(:execute_seed_in_container)
       )
     end
 
     def start_application!
+      prepare_phoenix_preview_config! if detected_framework == :phoenix
       command = application_start_command
       raise Screenshots::ConfigError, "could not determine how to start the preview application" if command.blank?
 
@@ -227,6 +230,8 @@ module Previews
         "PORT=#{port} bin/dev"
       elsif framework == :rails && File.exist?(File.join(repo_path, "bin/rails"))
         "bundle exec bin/rails server -b 0.0.0.0 -p #{port}"
+      elsif framework == :phoenix && File.exist?(File.join(repo_path, "mix.exs"))
+        "PORT=#{port} MIX_ENV=dev mix phx.server"
       elsif framework == :django && File.exist?(File.join(repo_path, "manage.py"))
         "python3 manage.py runserver 0.0.0.0:#{port}"
       elsif framework == :nextjs && package_dependency?("next")
@@ -329,6 +334,56 @@ module Previews
     def read_file(relative_path)
       path = File.join(repo_path, relative_path)
       File.exist?(path) ? File.read(path) : ""
+    end
+
+    def execute_seed_in_container(env)
+      result = container_service.execute(
+        "bin/rails runner #{Shellwords.escape(Screenshots::SeedRunner::SCRIPT)}",
+        timeout: PROVISION_TIMEOUT_SECONDS,
+        env: preview_env.merge(env),
+        stream: false
+      )
+
+      [ result[:stdout].to_s, result[:stderr].to_s, result.success? ]
+    end
+
+    def prepare_phoenix_preview_config!
+      dev_config_path = File.join(repo_path, "config/dev.exs")
+      return unless File.exist?(dev_config_path)
+
+      override_path = File.join(repo_path, PHOENIX_PREVIEW_CONFIG_PATH)
+      File.write(override_path, phoenix_preview_config)
+
+      import_line = %(import_config "paid_preview.exs")
+      current = File.read(dev_config_path)
+      return if current.include?(import_line)
+
+      File.write(dev_config_path, "#{current.rstrip}\n\n#{import_line}\n")
+    end
+
+    def phoenix_preview_config
+      <<~ELIXIR
+        import Config
+
+        app = Mix.Project.config()[:app]
+        port = String.to_integer(System.get_env("PORT") || "4000")
+
+        for {key, value} <- Application.get_all_env(app),
+            is_atom(key),
+            is_list(value),
+            String.ends_with?(Atom.to_string(key), "Endpoint") or Keyword.has_key?(value, :http) do
+          http =
+            value
+            |> Keyword.get(:http, [])
+            |> Keyword.put(:ip, {0, 0, 0, 0})
+            |> Keyword.put(:port, port)
+
+          config app, key,
+            value
+            |> Keyword.put(:http, http)
+            |> Keyword.put(:server, true)
+        end
+      ELIXIR
     end
 
     def update_preview_session!(attributes)

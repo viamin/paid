@@ -59,7 +59,7 @@ RSpec.describe Screenshots::ContainerCapture do
     service.call
 
     expect(preview_provision).to have_received(:prepare_workspace!)
-    expect(preview_provision).to have_received(:boot!).with(start_tunnel: false, allow_seed: false)
+    expect(preview_provision).to have_received(:boot!).with(start_tunnel: false, allow_seed: true)
   end
 
   it "skips before container provisioning when precheck detects no UI changes" do

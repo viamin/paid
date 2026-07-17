@@ -87,7 +87,7 @@ module Screenshots
         )
 
         start_chrome!
-        @preview_provision.boot!(start_tunnel: false, allow_seed: false)
+        @preview_provision.boot!(start_tunnel: false, allow_seed: true)
         screenshot_paths = run_capture!(ui_files)
         publish_result!(screenshot_paths)
 

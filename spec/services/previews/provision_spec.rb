@@ -106,7 +106,31 @@ RSpec.describe Previews::Provision do
       config: seeded_config,
       repo_path:,
       driver_name: seeded_config.driver,
-      force: true
+      force: true,
+      executor: an_object_responding_to(:call)
+    )
+  end
+
+  it "executes screenshot seeds inside the preview container with the preview environment" do
+    seeded_config = seed_enabled_config
+    allow(Screenshots::ConfigParser).to receive(:from_repo_path).and_return(seeded_config)
+    provision_preview_database
+    write_repo_seed_config
+    stub_seed_runner_executor_probe
+
+    service.call(start_tunnel: false, allow_seed: true)
+
+    expect(container_service).to have_received(:execute).with(
+      a_string_including("bin/rails runner"),
+      hash_including(
+        timeout: described_class::PROVISION_TIMEOUT_SECONDS,
+        stream: false,
+        env: hash_including(
+          "CI" => "1",
+          "DATABASE_URL" => "postgres://preview-host/db",
+          "SCREENSHOT_SEED_CONFIG" => "[]"
+        )
+      )
     )
   end
 
@@ -134,6 +158,23 @@ RSpec.describe Previews::Provision do
       .with(container_service:, local_port: 3000, remote_port: 8201)
     expect(tunnel_manager).to have_received(:wait_until_healthy!)
       .with(port: 8201, path: "/", timeout_seconds: described_class::STARTUP_TIMEOUT_SECONDS)
+  end
+
+  it "starts Phoenix apps through mix phx.server with a preview bind override" do
+    allow(Screenshots::DetectFramework).to receive(:detect_framework_only).and_return(:phoenix)
+
+    File.write(File.join(repo_path, "mix.exs"), "defmodule Demo.MixProject do\nend\n")
+    FileUtils.mkdir_p(File.join(repo_path, "config"))
+    File.write(File.join(repo_path, "config/dev.exs"), "import Config\n")
+
+    service.call(start_tunnel: false, allow_seed: false)
+
+    expect(container_service).to have_received(:execute).with(
+      a_string_including("PORT=3000 MIX_ENV=dev mix phx.server"),
+      hash_including(timeout: 30, env: hash_including("CI" => "1"), stream: false)
+    )
+    expect(File.read(File.join(repo_path, "config/dev.exs"))).to include(%(import_config "paid_preview.exs"))
+    expect(File.read(File.join(repo_path, "config/paid_preview.exs"))).to include("Keyword.put(:ip, {0, 0, 0, 0})")
   end
 
   def container_result
@@ -165,5 +206,28 @@ RSpec.describe Previews::Provision do
         - key: user
           runner: Screenshots::SeedData::Paid.call
     YAML
+  end
+
+  def seed_enabled_config
+    Screenshots::Configuration.from_hash(
+      "base_url" => "http://localhost:3000",
+      "routes" => [ { "path" => "/", "name" => "home" } ],
+      "seed" => [
+        { "key" => "user", "runner" => "Screenshots::SeedData::Paid.call" }
+      ]
+    )
+  end
+
+  def provision_preview_database
+    allow(service_provisioner).to receive(:provision) do
+      agent_run.update!(service_environment: { "DATABASE_URL" => "postgres://preview-host/db" })
+    end
+  end
+
+  def stub_seed_runner_executor_probe
+    allow(seed_runner).to receive(:call) do |**args|
+      args.fetch(:executor).call("SCREENSHOT_SEED_CONFIG" => "[]")
+      {}
+    end
   end
 end
