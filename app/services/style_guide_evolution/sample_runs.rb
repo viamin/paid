@@ -35,7 +35,7 @@ module StyleGuideEvolution
 
     def fetch_samples
       exposures = StyleGuideRunExposure
-        .includes(:style_guide_version, :agent_run)
+        .includes(:style_guide_version, agent_run: :quality_metrics)
         .joins(agent_run: :quality_metrics)
         .where(style_guide_id: style_guide_id)
         .where(created_at: days.days.ago..)
