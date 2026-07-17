@@ -273,6 +273,52 @@ RSpec.describe Screenshots::PrComment do
       expect(body).to include("screenshot capture failed")
       expect(body).to include("stale and should not be used for review")
     end
+
+    context "with a Playwright trace artifact" do
+      it "includes a trace link when a trace_url is provided" do
+        service = described_class.new(
+          github_client: github_client,
+          repo: repo,
+          pr_number: pr_number,
+          commit_sha: commit_sha,
+          screenshots: screenshots,
+          trace_url: "https://s3.example.com/trace.zip"
+        )
+
+        body = service.build_comment_body
+
+        expect(body).to include("[Playwright trace](https://s3.example.com/trace.zip)")
+        expect(body).to include("![dashboard](https://s3.example.com/dashboard.png)")
+      end
+
+      it "omits the trace section when no trace_url is provided" do
+        body = service.build_comment_body
+
+        expect(body).not_to include("Playwright trace")
+      end
+
+      it "includes a session video link when a video_url is provided" do
+        service = described_class.new(
+          github_client: github_client,
+          repo: repo,
+          pr_number: pr_number,
+          commit_sha: commit_sha,
+          screenshots: screenshots,
+          video_url: "https://s3.example.com/capture.webm"
+        )
+
+        body = service.build_comment_body
+
+        expect(body).to include("[Session video](https://s3.example.com/capture.webm)")
+        expect(body).to include("![dashboard](https://s3.example.com/dashboard.png)")
+      end
+
+      it "omits the video section when no video_url is provided" do
+        body = service.build_comment_body
+
+        expect(body).not_to include("Session video")
+      end
+    end
   end
 
   describe "#call" do
