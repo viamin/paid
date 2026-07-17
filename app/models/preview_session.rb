@@ -81,10 +81,17 @@ class PreviewSession < ApplicationRecord
   # Records a proxy access for idle-expiry accounting. Throttled to one write
   # per minute so a busy preview (many asset requests) does not amplify DB
   # writes. Best-effort: failures must never break a proxied response.
+  #
+  # Called from PreviewsProxy, which sits before ApplicationController in the
+  # Rack stack and therefore has no tenant context set (bypass_tenant_rls=
+  # false, current_account_id=NULL). With FORCE ROW LEVEL SECURITY on this
+  # table, an un-bypassed UPDATE would match 0 rows and `last_accessed_at`
+  # would silently never advance — so the write MUST run under system access,
+  # mirroring how resolve_session looks up the session.
   def touch_last_accessed!
     return if last_accessed_at.present? && last_accessed_at > 1.minute.ago
 
-    update_column(:last_accessed_at, Time.current)
+    TenantContext.with_system_access { update_column(:last_accessed_at, Time.current) }
   rescue ActiveRecord::StatementInvalid, ActiveRecord::ActiveRecordError
     true
   end

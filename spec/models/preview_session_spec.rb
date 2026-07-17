@@ -102,6 +102,43 @@ RSpec.describe PreviewSession do
     end
   end
 
+  describe "#touch_last_accessed!" do
+    it "persists last_accessed_at when unset" do
+      session = create(:preview_session, last_accessed_at: nil)
+
+      session.touch_last_accessed!
+
+      expect(session.reload.last_accessed_at).to be_within(1.second).of(Time.current)
+    end
+
+    it "writes when last accessed is older than the throttle window" do
+      session = create(:preview_session, last_accessed_at: 5.minutes.ago)
+      old = session.last_accessed_at
+
+      session.touch_last_accessed!
+
+      expect(session.reload.last_accessed_at).to be > old
+    end
+
+    it "is throttled and skips the write within one minute" do
+      session = create(:preview_session, last_accessed_at: 10.seconds.ago)
+      original = session.last_accessed_at
+
+      session.touch_last_accessed!
+
+      expect(session.reload.last_accessed_at).to eq(original)
+    end
+
+    it "writes even with no tenant context set (proxy runs before ApplicationController)" do
+      session = create(:preview_session, last_accessed_at: nil)
+
+      TenantContext.clear!
+      session.touch_last_accessed!
+
+      expect(session.reload.last_accessed_at).to be_within(1.second).of(Time.current)
+    end
+  end
+
   describe "#proxy_prefix" do
     it "returns the proxy path prefix for the session token" do
       session = build(:preview_session, token: "abc123")
