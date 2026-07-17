@@ -21,11 +21,14 @@ module Activities
 
       project = Project.find(project_id)
       goal ||= project.account.tenant_setting&.default_goal || "create_pr"
-      trigger_type ||= AgentRun.retry_trigger_type_for(
-        project: project,
-        source_pull_request_number: source_pull_request_number,
-        goal: goal
-      )
+      if trigger_type.nil? && goal == "create_pr" && source_pull_request_number.present?
+        trigger_type = AgentRun.retry_trigger_type_for(
+          project: project,
+          source_pull_request_number: source_pull_request_number,
+          goal: goal
+        )
+      end
+      trigger_type ||= "automatic"
       issue = issue_id ? Issue.find(issue_id) : nil
 
       # PR follow-up runs (source_pull_request_number present) intentionally do
