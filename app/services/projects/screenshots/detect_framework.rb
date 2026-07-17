@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "psych"
 module Projects
   module Screenshots
     class DetectFramework
@@ -31,8 +32,12 @@ module Projects
         package_json = parse_package_json(fetch_file("package.json"))
         framework = present_framework_name(detection.framework)
         confidence = confidence_label(detection.confidence)
-        driver = detection.suggested_config["driver"]
         setup_commands = suggest_setup_commands(framework:, package_json:)
+        suggested_config = suggested_config_with_setup(
+          suggested_config: detection.suggested_config,
+          setup_commands: setup_commands
+        )
+        driver = suggested_config["driver"]
 
         Result.new(
           framework: framework,
@@ -40,8 +45,8 @@ module Projects
           driver: driver,
           service_dependencies: detection.detected_services,
           setup_commands: setup_commands,
-          suggested_config: detection.suggested_config,
-          suggested_yaml: detection.suggested_yaml,
+          suggested_config: suggested_config,
+          suggested_yaml: Psych.dump(suggested_config.deep_stringify_keys),
           detected_at: Time.current.iso8601
         )
       end
@@ -76,6 +81,12 @@ module Projects
 
         commands << "yarn build" if package_dependencies(package_json).include?("vite")
         commands.uniq
+      end
+
+      def suggested_config_with_setup(suggested_config:, setup_commands:)
+        suggested_config.deep_dup.tap do |config|
+          config["setup"] = setup_commands if setup_commands.any?
+        end
       end
 
       def present_framework_name(framework)

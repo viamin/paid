@@ -2503,6 +2503,8 @@ RSpec.describe "Projects" do
         expect(body["framework"]).to eq("Rails")
         expect(body["confidence"]).to eq("high")
         expect(body["suggested_yaml"]).to include("driver: cuprite")
+        expect(body["suggested_yaml"]).to include("setup:")
+        expect(body["suggested_yaml"]).to include("- bin/setup --skip-server")
         expect(body["service_dependencies"]).to eq([ "postgres" ])
       end
 

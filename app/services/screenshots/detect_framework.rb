@@ -878,8 +878,9 @@ module Screenshots
     def phoenix_auth_plug_line?(line)
       return false unless line.start_with?("plug ")
       return false if line.match?(/fetch_current_user/i)
+      return false if line.match?(/redirect_if_user_is_authenticated/i)
 
-      line.match?(/require_authenticated_user|ensure_authenticated|redirect_if_user_is_authenticated|authenticate|user_auth/i)
+      line.match?(/require_authenticated_user|ensure_authenticated|authenticate|user_auth/i)
     end
 
     def router_content_for_phoenix

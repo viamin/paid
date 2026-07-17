@@ -62,6 +62,44 @@ RSpec.describe Screenshots::DetectFramework, :no_db do
     ELIXIR
   end
 
+  def build_phoenix_guest_only_pipeline_repo(repo_path)
+    FileUtils.mkdir_p(File.join(repo_path, "lib/my_app_web/controllers"))
+    File.write(File.join(repo_path, "mix.exs"), <<~ELIXIR)
+      defmodule MyApp.MixProject do
+        defp deps do
+          [{:phoenix, "~> 1.7.0"}]
+        end
+      end
+    ELIXIR
+    File.write(File.join(repo_path, "lib/my_app_web/router.ex"), <<~ELIXIR)
+      defmodule MyAppWeb.Router do
+        use MyAppWeb, :router
+
+        pipeline :browser do
+          plug :accepts, ["html"]
+          plug :fetch_session
+        end
+
+        pipeline :redirect_if_user_is_authenticated do
+          plug MyAppWeb.UserAuth, :redirect_if_user_is_authenticated
+        end
+
+        scope "/", MyAppWeb do
+          pipe_through [:browser, :redirect_if_user_is_authenticated]
+
+          get "/users/log_in", UserSessionController, :new
+          get "/users/register", UserRegistrationController, :new
+        end
+
+        scope "/", MyAppWeb do
+          pipe_through :browser
+
+          get "/", PageController, :index
+        end
+      end
+    ELIXIR
+  end
+
   def build_phoenix_pipeline_auth_repo_with_late_login(repo_path)
     FileUtils.mkdir_p(File.join(repo_path, "lib/my_app_web"))
     File.write(File.join(repo_path, "mix.exs"), <<~ELIXIR)
@@ -199,6 +237,20 @@ RSpec.describe Screenshots::DetectFramework, :no_db do
         expect(result.detected_routes.map { |route| route["path"] }).not_to include("/users/log_in")
         expect(result.suggested_config.dig("auth", "strategy")).to eq("form")
         expect(result.suggested_config.dig("auth", "login_path")).to eq("/users/log_in")
+      ensure
+        FileUtils.remove_entry(repo_path)
+      end
+    end
+
+    it "does not infer Phoenix auth from guest-only redirect pipelines" do
+      repo_path = Dir.mktmpdir
+
+      begin
+        build_phoenix_guest_only_pipeline_repo(repo_path)
+
+        result = described_class.call(repo_path: repo_path)
+
+        expect(result.suggested_config.dig("auth", "strategy")).to eq("none")
       ensure
         FileUtils.remove_entry(repo_path)
       end
