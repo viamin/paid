@@ -61,6 +61,23 @@ Paid has four independently scalable process types:
 | **Temporal Worker** | Durable workflow orchestration | Activity slots | DB connections, Docker capacity |
 | **Docker Engine** | Agent container execution | Host memory and CPU | 4 GB RAM per container default |
 
+### Kamal Roles (`config/deploy.yml`)
+
+Production maps the process types above to four Kamal roles, each deployed as a
+separate Docker container with its own restart boundary:
+
+| Role | CMD | Key env vars | Purpose |
+|------|-----|--------------|---------|
+| `web` | `bin/thrust bin/rails server` (Dockerfile CMD) | `GOOD_JOB_EXECUTION_MODE=external`, Puma vars | HTTP/UI; runs no jobs in-process |
+| `job` | `bin/jobs` | `GOOD_JOB_*` (threads, queues) | External GoodJob worker |
+| `worker_poll` | `bin/temporal_worker` | `TEMPORAL_WORKER_MODE=poll` | Poll-queue Temporal worker |
+| `worker_agent` | `bin/temporal_worker` | `TEMPORAL_WORKER_MODE=agent` | Agent-queue Temporal worker |
+
+`GOOD_JOB_EXECUTION_MODE=external` is set globally so the `web` role never runs
+background jobs (preventing job load from OOM-crashing the control plane). Target
+a single role with `bin/kamal <cmd> -r <role>` (e.g. `bin/kamal app boot -r job`).
+For env-var sizing per role, see [WORKER_POOL_TUNING.md](WORKER_POOL_TUNING.md).
+
 ### Scaling Decision Flow
 
 ```
