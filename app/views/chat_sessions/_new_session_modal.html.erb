@@ -55,6 +55,13 @@
                             class: "mt-1 block w-full rounded-md border-gray-300 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
       </div>
 
+      <label class="flex items-center gap-2">
+        <%= form.check_box :auto_approve,
+              class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500",
+              title: "Skip the approval prompt and run requested actions (like agent runs) automatically" %>
+        <span class="text-sm font-medium text-gray-700">Auto-approve actions</span>
+      </label>
+
       <div>
         <%= form.label :system_prompt, "Custom system prompt", class: "block text-sm font-medium text-gray-700" %>
         <%= form.text_area :system_prompt,

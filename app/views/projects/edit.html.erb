@@ -792,7 +792,8 @@
               </div>
               <p class="mt-1 text-xs text-gray-500">
                 Automatically merge PRs when CI passes and all checks are green.
-                "Dependabot Only" merges bot-authored dependency update PRs (review requirements skipped).
+                In "Dependabot Only" and "All PRs" modes, Paid may run agents on Dependabot PRs when CI or merge conflicts need fixes.
+                Dependabot PRs use a dependency-update merge path; GitHub branch protection rules still apply.
                 "All PRs" merges any paid-ready PR, including Paid-generated and Dependabot PRs.
               </p>
               <% if @project.errors[:auto_merge_mode].any? %>

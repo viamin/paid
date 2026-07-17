@@ -6,12 +6,21 @@ class StyleGuide < ApplicationRecord
   has_logidze
   LANGUAGES = %w[ruby javascript typescript python go rust].freeze
   COMPRESSION_FAILED_THRESHOLD = 15.minutes
+  SNAPSHOT_CREATED_BY = "manual"
 
   belongs_to :account, optional: true
   belongs_to :project, optional: true
+  belongs_to :current_version, class_name: "StyleGuideVersion", optional: true
+
+  has_many :style_guide_versions, dependent: :destroy
+  has_many :style_guide_ab_tests, dependent: :destroy
+  has_many :style_guide_run_exposures, dependent: :nullify
 
   before_validation :set_account_from_project, if: -> { project.present? && account.nil? }
   before_update :clear_compression, if: :will_save_change_to_raw_content?
+  after_create :create_initial_version_snapshot!
+  after_update :create_raw_content_version_snapshot!, if: :saved_change_to_raw_content?
+  after_update :sync_current_version_compression!, if: :saved_change_to_compressed_artifact?
 
   validates :name, presence: true, length: { maximum: 255 }
   validates :name, uniqueness: { conditions: -> { where(account_id: nil, project_id: nil) } }, if: :global?
@@ -21,6 +30,7 @@ class StyleGuide < ApplicationRecord
   validates :language, inclusion: { in: LANGUAGES }, allow_nil: true
   validates :account, presence: true, if: :project_level?
   validate :project_belongs_to_account, if: -> { project.present? && account.present? }
+  validate :current_version_belongs_to_style_guide
 
   scope :active, -> { where(active: true) }
   scope :inactive, -> { where(active: false) }
@@ -122,6 +132,13 @@ class StyleGuide < ApplicationRecord
 
   private
 
+  def current_version_belongs_to_style_guide
+    return if current_version.nil?
+    return if current_version.style_guide_id == id
+
+    errors.add(:current_version, "must belong to this style guide")
+  end
+
   def current_raw_content_sha256
     Digest::SHA256.hexdigest(raw_content.to_s)
   end
@@ -157,6 +174,56 @@ class StyleGuide < ApplicationRecord
   def clear_compression
     self.compressed_content = nil
     self.compression_metadata = { "raw_content_updated_at" => Time.current.iso8601 }
+  end
+
+  def create_initial_version_snapshot!
+    version = create_version_snapshot!(
+      created_by: created_by_for_snapshot,
+      change_notes: "Initial version"
+    )
+    update_column(:current_version_id, version.id)
+  end
+
+  def create_raw_content_version_snapshot!
+    version = create_version_snapshot!(
+      created_by: created_by_for_snapshot,
+      parent_version: current_version,
+      change_notes: "Updated style guide content"
+    )
+    update_column(:current_version_id, version.id)
+  end
+
+  def create_version_snapshot!(created_by:, change_notes:, parent_version: nil)
+    next_version = (style_guide_versions.maximum(:version) || 0) + 1
+
+    style_guide_versions.create!(
+      version: next_version,
+      raw_content: raw_content,
+      compressed_content: compressed_content,
+      compression_metadata: compression_metadata || {},
+      created_by: created_by,
+      change_notes: change_notes,
+      parent_version: parent_version
+    )
+  end
+
+  def created_by_for_snapshot
+    SNAPSHOT_CREATED_BY
+  end
+
+  def saved_change_to_compressed_artifact?
+    saved_change_to_compressed_content? || saved_change_to_compression_metadata?
+  end
+
+  def sync_current_version_compression!
+    return unless current_version
+    return unless current_version.raw_content == raw_content
+
+    current_version.update_columns(
+      compressed_content: compressed_content,
+      compression_metadata: compression_metadata || {},
+      updated_at: Time.current
+    )
   end
 
   def set_account_from_project

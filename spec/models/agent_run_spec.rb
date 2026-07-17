@@ -2267,6 +2267,22 @@ RSpec.describe AgentRun do
       expect(described_class.next_queued_run).to eq(issue_run)
     end
 
+    it "picks review runs before create_pr runs without changing visible queue order" do
+      project = create(:project)
+      create_pr_run = create(:agent_run, :queued, :automatic, :existing_pr,
+        project: project, goal: "create_pr", source_pull_request_number: 42, created_at: 2.minutes.ago)
+      review_run = create(:agent_run, :queued, :automatic, :review_goal,
+        project: project, source_pull_request_number: 43, created_at: 1.minute.ago)
+
+      queue_preview_ids = described_class.queued_with_priority.order(described_class::QUEUE_ORDER).pluck(:id)
+      index_display_ids = described_class.queue_order_display.pluck(:id)
+
+      expect(described_class.next_queued_run).to eq(review_run)
+      expect(queue_preview_ids).to eq([ create_pr_run.id, review_run.id ])
+      expect(index_display_ids).to eq([ create_pr_run.id, review_run.id ])
+      expect(review_run.queue_priority_label).to eq(create_pr_run.queue_priority_label)
+    end
+
     it "uses FIFO within the same priority tier and goal type" do
       create(:agent_run, :queued, trigger_type: "manual", created_at: 1.minute.ago)
       older_manual = create(:agent_run, :queued, trigger_type: "manual", created_at: 2.minutes.ago)
@@ -2359,6 +2375,101 @@ RSpec.describe AgentRun do
             issue_p1_run, issue_p2_run, issue_p3_run, auto_pick ].map(&:id)
         )
       end
+    end
+  end
+
+  describe ".retry_trigger_type_for" do
+    let(:project) { create(:project) }
+
+    it "inherits manual priority from the latest unsuccessful PR run for the same goal" do
+      create(:agent_run, :timeout, :manual, project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        completed_at: 5.minutes.ago)
+
+      trigger_type = described_class.retry_trigger_type_for(
+        project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr"
+      )
+
+      expect(trigger_type).to eq("manual")
+    end
+
+    it "keeps automatic priority when a newer unsuccessful PR run was automatic" do
+      create(:agent_run, :timeout, :manual, project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        completed_at: 10.minutes.ago)
+      create(:agent_run, :failed, :automatic, project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        completed_at: 5.minutes.ago)
+
+      trigger_type = described_class.retry_trigger_type_for(
+        project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr"
+      )
+
+      expect(trigger_type).to eq("automatic")
+    end
+
+    it "does not inherit priority from a successful PR run" do
+      create(:agent_run, :completed, :manual, project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        completed_at: 5.minutes.ago)
+
+      trigger_type = described_class.retry_trigger_type_for(
+        project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr"
+      )
+
+      expect(trigger_type).to eq("automatic")
+    end
+
+    it "treats a completed run as a reset boundary before an older manual failure" do
+      create(:agent_run, :timeout, :manual, project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        completed_at: 10.minutes.ago)
+      create(:agent_run, :completed, :automatic, project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        completed_at: 5.minutes.ago)
+
+      trigger_type = described_class.retry_trigger_type_for(
+        project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr"
+      )
+
+      expect(trigger_type).to eq("automatic")
+    end
+
+    it "inherits manual priority again from a manual failure after a completed reset" do
+      create(:agent_run, :timeout, :manual, project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        completed_at: 15.minutes.ago)
+      create(:agent_run, :completed, :automatic, project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        completed_at: 10.minutes.ago)
+      create(:agent_run, :timeout, :manual, project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        completed_at: 5.minutes.ago)
+
+      trigger_type = described_class.retry_trigger_type_for(
+        project: project,
+        source_pull_request_number: 42,
+        goal: "create_pr"
+      )
+
+      expect(trigger_type).to eq("manual")
     end
   end
 

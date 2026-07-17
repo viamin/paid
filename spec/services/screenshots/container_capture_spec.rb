@@ -151,60 +151,77 @@ RSpec.describe Screenshots::ContainerCapture do
     expect(command).not_to include(%q(uri = URI("http://localhost:3000/it's-a-path")))
   end
 
-  describe "#application_start_command" do
-    let(:tmpdir) { Dir.mktmpdir("container-capture-app-start-") }
+  it "uses Phoenix startup when mix.exs is present and exposes the port in capture env" do
+    tmpdir = Dir.mktmpdir("phoenix-screenshot")
+    File.write(File.join(tmpdir, "mix.exs"), "defmodule Demo.MixProject do end")
+    service.instance_variable_set(:@tmpdir, tmpdir)
+    allow(service).to receive(:config).and_return(
+      Screenshots::Configuration.from_hash(
+        "base_url" => "http://localhost:4100",
+        "routes" => [ { "path" => "/", "name" => "home" } ]
+      )
+    )
 
-    before { service.instance_variable_set(:@tmpdir, tmpdir) }
-    after { FileUtils.rm_rf(tmpdir) }
+    expect(service.send(:application_start_command)).to eq("MIX_ENV=dev mix phx.server")
+    expect(service.send(:capture_env).fetch("PORT")).to eq("4100")
+  ensure
+    FileUtils.rm_rf(tmpdir)
+  end
 
-    it "uses mix phx.server for a Phoenix app" do
-      File.write(File.join(tmpdir, "mix.exs"), "defmodule MyApp.MixProject do\nend\n")
-      FileUtils.mkdir_p(File.join(tmpdir, "lib/my_app_web"))
-      File.write(File.join(tmpdir, "lib/my_app_web/router.ex"), "defmodule MyAppWeb.Router do\n  use MyAppWeb, :router\nend\n")
+  it "overrides Phoenix dev endpoint binding to listen on all interfaces during capture" do
+    tmpdir = Dir.mktmpdir("phoenix-bind")
+    FileUtils.mkdir_p(File.join(tmpdir, "config"))
+    File.write(File.join(tmpdir, "mix.exs"), "defmodule Demo.MixProject do end")
+    File.write(File.join(tmpdir, "config/dev.exs"), <<~EXS)
+      import Config
 
-      command = service.send(:application_start_command)
+      config :demo, DemoWeb.Endpoint,
+        http: [ip: {127, 0, 0, 1}, port: String.to_integer(System.get_env("PORT") || "4000")]
+    EXS
+    service.instance_variable_set(:@tmpdir, tmpdir)
 
-      expect(command).to start_with("MIX_ENV=dev PORT=")
-      expect(command).to end_with("mix phx.server")
-    end
+    service.send(:prepare_phoenix_endpoint_binding!)
 
-    it "does not use mix phx.server for a plain Elixir app" do
-      File.write(File.join(tmpdir, "mix.exs"), "defmodule MyApp.MixProject do\nend\n")
+    runtime = File.read(File.join(tmpdir, "config/runtime.exs"))
+    expect(runtime).to include("config :demo, DemoWeb.Endpoint")
+    expect(runtime).to include("http: [ip: {0, 0, 0, 0}, port: String.to_integer(System.get_env(\"PORT\") || \"4000\")]")
+  ensure
+    FileUtils.rm_rf(tmpdir)
+  end
 
-      command = service.send(:application_start_command)
+  it "rejects seed configuration for Phoenix projects with a config error" do
+    tmpdir = Dir.mktmpdir("phoenix-seed")
+    File.write(File.join(tmpdir, "mix.exs"), "defmodule Demo.MixProject do end")
+    service.instance_variable_set(:@tmpdir, tmpdir)
+    allow(service).to receive(:config).and_return(
+      Screenshots::Configuration.from_hash(
+        "base_url" => "http://localhost:4100",
+        "routes" => [ { "path" => "/", "name" => "home" } ],
+        "seed" => [ { "key" => "__all__", "runner" => "Screenshots::SeedData::Paid.call" } ]
+      )
+    )
 
-      expect(command).to be_nil
-    end
+    expect { service.send(:validate_supported_config!) }.to raise_error(
+      Screenshots::ConfigError, /not supported for Phoenix projects yet/
+    )
+  ensure
+    FileUtils.rm_rf(tmpdir)
+  end
 
-    it "uses bin/dev when present, even if mix.exs also exists" do
-      FileUtils.mkdir_p(File.join(tmpdir, "bin"))
-      File.write(File.join(tmpdir, "bin/dev"), "#!/bin/sh\n")
-      File.write(File.join(tmpdir, "mix.exs"), "")
-      FileUtils.mkdir_p(File.join(tmpdir, "lib/my_app_web"))
-      File.write(File.join(tmpdir, "lib/my_app_web/router.ex"), "defmodule MyAppWeb.Router do\n  use MyAppWeb, :router\nend\n")
+  it "allows seedless Phoenix captures through config validation" do
+    tmpdir = Dir.mktmpdir("phoenix-noseed")
+    File.write(File.join(tmpdir, "mix.exs"), "defmodule Demo.MixProject do end")
+    service.instance_variable_set(:@tmpdir, tmpdir)
+    allow(service).to receive(:config).and_return(
+      Screenshots::Configuration.from_hash(
+        "base_url" => "http://localhost:4100",
+        "routes" => [ { "path" => "/", "name" => "home" } ]
+      )
+    )
 
-      command = service.send(:application_start_command)
-
-      expect(command).to start_with("PORT=")
-      expect(command).to end_with("bin/dev")
-    end
-
-    it "uses bin/rails for a Rails app" do
-      FileUtils.mkdir_p(File.join(tmpdir, "bin"))
-      File.write(File.join(tmpdir, "bin/rails"), "#!/bin/sh\n")
-
-      command = service.send(:application_start_command)
-
-      expect(command).to include("bin/rails server")
-    end
-
-    it "uses manage.py runserver for Django" do
-      File.write(File.join(tmpdir, "manage.py"), "#!/usr/bin/env python\n")
-
-      command = service.send(:application_start_command)
-
-      expect(command).to eq("python3 manage.py runserver 0.0.0.0:3000")
-    end
+    expect { service.send(:validate_supported_config!) }.not_to raise_error
+  ensure
+    FileUtils.rm_rf(tmpdir)
   end
 
   describe "#screenshot_config_json (capture scoping and annotation)" do
@@ -246,6 +263,166 @@ RSpec.describe Screenshots::ContainerCapture do
       routes = JSON.parse(service.send(:screenshot_config_json)).fetch("routes")
 
       expect(routes.map { |r| r["name"] }).to contain_exactly("dashboard", "settings")
+    end
+  end
+
+  describe "#capture_runner_script (trace recording)" do
+    it "starts and stops Playwright tracing, writing trace.zip" do
+      script = service.send(:capture_runner_script)
+
+      expect(script).to include("context.tracing.start({ screenshots: true, snapshots: true, sources: true })")
+      expect(script).to include("context.tracing.stop({ path: `${outputDir}/trace.zip` })")
+    end
+
+    it "gates video recording on the SCREENSHOT_RECORD_VIDEO env var" do
+      script = service.send(:capture_runner_script)
+
+      expect(script).to include('process.env.SCREENSHOT_RECORD_VIDEO === "1"')
+      expect(script).to include("contextOptions.recordVideo = { dir: `${outputDir}/videos` }")
+    end
+
+    it "closes the context before the browser so recorded videos flush to disk" do
+      script = service.send(:capture_runner_script)
+
+      context_close_index = script.index("await context.close();")
+      browser_close_index = script.index("await browser.close();")
+
+      expect(context_close_index).not_to be_nil
+      expect(browser_close_index).to be > context_close_index
+    end
+  end
+
+  describe "#record_video?" do
+    it "defaults to disabled" do
+      expect(service.send(:record_video?)).to be false
+    end
+
+    it "reflects the project record_video screenshot setting" do
+      allow(project).to receive(:effective_screenshot_settings)
+        .and_return("record_video" => true)
+
+      expect(service.send(:record_video?)).to be true
+    end
+  end
+
+  describe "#collected_video_path" do
+    it "globs the recorded .webm from the videos subdirectory" do
+      tmpdir = service.instance_variable_get(:@tmpdir) || Dir.mktmpdir("screenshots-spec")
+      service.instance_variable_set(:@tmpdir, tmpdir)
+      videos_dir = File.join(tmpdir, Screenshots::ContainerCapture::OUTPUT_DIR, "videos")
+      FileUtils.mkdir_p(videos_dir)
+      written = File.join(videos_dir, "abc.webm")
+      File.write(written, "fake video")
+
+      expect(service.send(:collected_video_path)).to eq(written)
+    ensure
+      FileUtils.rm_rf(tmpdir)
+    end
+
+    it "returns nil when no video was recorded" do
+      tmpdir = Dir.mktmpdir("screenshots-spec")
+      service.instance_variable_set(:@tmpdir, tmpdir)
+
+      expect(service.send(:collected_video_path)).to be_nil
+    ensure
+      FileUtils.rm_rf(tmpdir)
+    end
+  end
+
+  describe "#publish_result! (trace and video uploads)" do
+    before do
+      allow(service).to receive(:publish_result!).and_call_original
+    end
+
+    def with_artifact_tempfile(prefix, ext)
+      file = Tempfile.new([ prefix, ext ])
+      file.write("fake #{prefix}")
+      file.rewind
+      yield file
+    ensure
+      file&.close
+      file&.unlink
+    end
+
+    def stubbed_storage(upload_trace: nil, upload_video: nil)
+      storage = instance_double(Screenshots::Storage)
+      allow(Screenshots::Storage).to receive_messages(configured?: true, new: storage)
+      allow(storage).to receive(:upload) { |k| "https://s3.example.com/#{k[:route_name]}.png" }
+      stub_artifact(storage, :upload_trace, upload_trace)
+      stub_artifact(storage, :upload_video, upload_video)
+      allow(storage).to receive(:previous_screenshots).and_return({})
+      storage
+    end
+
+    def stub_artifact(storage, method, value)
+      if value == :raise
+        allow(storage).to receive(method).and_raise(Screenshots::Storage::StorageError, "boom")
+      else
+        allow(storage).to receive(method).and_return(value)
+      end
+    end
+
+    it "uploads the trace archive and surfaces it in the PR comment" do
+      storage = stubbed_storage(upload_trace: "https://s3.example.com/trace.zip")
+
+      with_artifact_tempfile("trace", ".zip") do |trace|
+        service.instance_variable_set(:@trace_path, trace.path)
+        service.send(:publish_result!, [ "/tmp/screenshots/home.png" ])
+        expect(storage).to have_received(:upload_trace).with(
+          file_path: trace.path, org: project.owner, repo: project.repo,
+          pr_number: agent_run.pull_request_number, commit_sha: agent_run.result_commit_sha
+        )
+      end
+
+      expect(Screenshots::PrComment).to have_received(:call)
+        .with(hash_including(trace_url: "https://s3.example.com/trace.zip"))
+    end
+
+    it "still publishes screenshots when the trace upload fails" do
+      stubbed_storage(upload_trace: :raise)
+
+      with_artifact_tempfile("trace", ".zip") do |trace|
+        service.instance_variable_set(:@trace_path, trace.path)
+        expect { service.send(:publish_result!, [ "/tmp/screenshots/home.png" ]) }.not_to raise_error
+      end
+
+      expect(Screenshots::PrComment).to have_received(:call).with(hash_including(trace_url: nil))
+    end
+
+    it "uploads the recorded video and surfaces it in the PR comment" do
+      storage = stubbed_storage(upload_video: "https://s3.example.com/capture.webm")
+
+      with_artifact_tempfile("capture", ".webm") do |video|
+        service.instance_variable_set(:@video_path, video.path)
+        service.send(:publish_result!, [ "/tmp/screenshots/home.png" ])
+        expect(storage).to have_received(:upload_video).with(
+          file_path: video.path, org: project.owner, repo: project.repo,
+          pr_number: agent_run.pull_request_number, commit_sha: agent_run.result_commit_sha
+        )
+      end
+
+      expect(Screenshots::PrComment).to have_received(:call)
+        .with(hash_including(video_url: "https://s3.example.com/capture.webm"))
+    end
+
+    it "still publishes screenshots when the video upload fails" do
+      stubbed_storage(upload_video: :raise)
+
+      with_artifact_tempfile("capture", ".webm") do |video|
+        service.instance_variable_set(:@video_path, video.path)
+        expect { service.send(:publish_result!, [ "/tmp/screenshots/home.png" ]) }.not_to raise_error
+      end
+
+      expect(Screenshots::PrComment).to have_received(:call).with(hash_including(video_url: nil))
+    end
+
+    it "skips the video upload when no recording was collected" do
+      storage = stubbed_storage
+
+      service.instance_variable_set(:@video_path, nil)
+      service.send(:publish_result!, [ "/tmp/screenshots/home.png" ])
+
+      expect(storage).not_to have_received(:upload_video)
     end
   end
 

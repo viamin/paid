@@ -348,7 +348,7 @@ RSpec.describe Screenshots::ConfigParser do
       }.to raise_error(Screenshots::ConfigError, /driver must be one of: playwright, cuprite/)
     end
 
-    it "rejects an unknown framework" do
+    it "accepts Phoenix as a known framework" do
       write_config(repo_dir, <<~YAML)
         framework: laravel
         routes:

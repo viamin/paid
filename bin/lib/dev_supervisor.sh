@@ -102,7 +102,7 @@ dev_supervisor_append_shell_context() {
       sh -c "pstree -aps $$ 2>&1 || ps -ef 2>&1"
   fi
   dev_supervisor_append_command "$file" "selected env" \
-    sh -c "env | sort | grep -E '^(TERM|TMUX|OVERMIND_SOCKET|PATH|SHELL|STARTUP_CLEANUP_GRACE_PERIOD|SKIP_DEV_CLEANUP)=' 2>&1 || true"
+    sh -c "env | sort | grep -E '^(TERM|TMUX|OVERMIND_SOCKET|OVERMIND_AUTO_RESTART|GOOD_JOB_DEV_MAX_THREADS|GOOD_JOB_MAX_THREADS|GOOD_JOB_EXECUTION_MODE|PATH|SHELL|STARTUP_CLEANUP_GRACE_PERIOD|SKIP_DEV_CLEANUP)=' 2>&1 || true"
   dev_supervisor_append_command "$file" "tty settings" \
     sh -c "stty -a < /dev/tty 2>&1 || true"
 }
@@ -182,7 +182,10 @@ dev_supervisor_snapshot_state() {
   dev_supervisor_append_command "$file" "overmind socket" sh -c "ls -la '${OVERMIND_SOCKET:-.overmind.sock}' 2>/dev/null"
   dev_supervisor_append_command "$file" "tmux sessions" sh -c "for socket in '$(dev_supervisor_tmux_socket_dir)'/overmind-$(dev_supervisor_app_name)-*; do [ -S \"\$socket\" ] || continue; echo \"-- \$socket --\"; tmux -S \"\$socket\" ls 2>&1 || true; done"
   dev_supervisor_append_tmux_details "$file"
-  dev_supervisor_append_command "$file" "processes" sh -c "if command -v rg >/dev/null 2>&1; then ps -ef | rg 'overmind|tmux|bin/dev|bin/rails server|bin/temporal_worker|yarn build --watch|build:css --watch|esbuild' -S; else ps -ef | grep -E 'overmind|tmux|bin/dev|bin/rails server|bin/temporal_worker|yarn build --watch|build:css --watch|esbuild' | grep -v grep; fi 2>&1 || true"
+  dev_supervisor_append_command "$file" "processes" sh -c "if command -v rg >/dev/null 2>&1; then ps -ef | rg 'overmind|tmux|bin/dev|bin/rails server|bin/jobs|bin/temporal_worker|yarn build --watch|build:css --watch|esbuild' -S; else ps -ef | grep -E 'overmind|tmux|bin/dev|bin/rails server|bin/jobs|bin/temporal_worker|yarn build --watch|build:css --watch|esbuild' | grep -v grep; fi 2>&1 || true"
+  dev_supervisor_append_command "$file" "memory summary" sh -c "free -h 2>&1 || true"
+  dev_supervisor_append_command "$file" "top rss processes" sh -c "ps -eo pid=,ppid=,etime=,stat=,rss=,vsz=,command= --sort=-rss | head -30 2>&1 || true"
+  dev_supervisor_append_command "$file" "cgroup memory" sh -c "for path in /sys/fs/cgroup/memory.current /sys/fs/cgroup/memory.max /sys/fs/cgroup/memory.peak /sys/fs/cgroup/memory.events /sys/fs/cgroup/memory.swap.current /sys/fs/cgroup/memory.swap.max; do [ -e \"\$path\" ] || continue; echo \"-- \$path --\"; cat \"\$path\"; done 2>&1 || true"
   dev_supervisor_append_command "$file" "overmind temp files" sh -c "ls -la /tmp/overmind-* 2>/dev/null || true"
 
   dev_supervisor_log_line "$(dev_supervisor_tmux_log)" "Wrote diagnostics snapshot to $file"
