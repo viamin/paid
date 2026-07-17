@@ -94,7 +94,8 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 |-----|-------|--------|----------|
 | [RDR-019](RDR-019-remote-container-execution.md) | Remote Container Execution | Implemented | Medium |
 | [RDR-033](RDR-033-worker-pool-scaling-algorithm.md) | Worker Pool Scaling Algorithm | Implemented | Medium |
-| [RDR-043](RDR-043-zero-config-docker-capacity-autoscaling.md) | Zero-Config Docker Capacity Autoscaling | Draft | Medium |
+| [RDR-043](RDR-043-zero-config-docker-capacity-autoscaling.md) | Zero-Config Docker Capacity Autoscaling | Implemented | Medium |
+| [RDR-048](RDR-048-multi-host-docker-backend-support.md) | Multi-Host Docker Backend Support | Draft | P1 |
 
 ### Quality & Automation
 
@@ -108,6 +109,8 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | [RDR-035](RDR-035-style-guide-evolution.md) | Style Guide Evolution | Accepted | High |
 | [RDR-036](RDR-036-mutation-testing-for-ai-generated-tests.md) | Mutation Testing for AI-Generated Tests (Mutant) | Partially Implemented | P1 |
 | [RDR-045](RDR-045-live-web-app-preview-agent-verification.md) | Live Web App Preview and Interactive Agent Verification | Draft | High |
+| [RDR-046](RDR-046-polyglot-language-detection-and-test-execution.md) | Polyglot Language Detection and Test Execution | Draft | High |
+| [RDR-047](RDR-047-work-category-queue-priority.md) | Work-Category-Aware Queue Priority — PR Continuation Over Fresh Issues | Implemented | P1 |
 
 ### Runner Intelligence
 

@@ -180,6 +180,7 @@ RSpec.describe "Dashboard" do
         expect(doc.at_css("turbo-frame#dashboard-metrics[data-dashboard-frames-src='#{dashboard_metrics_path(time_range: "cumulative")}']")).to be_present
         expect(doc.at_css("turbo-frame#dashboard-performance[data-dashboard-frames-src='#{dashboard_performance_path(time_range: "cumulative", status: "all", goal: "all")}']")).to be_present
         expect(doc.at_css("turbo-frame#dashboard-decision-metrics[data-dashboard-frames-src='#{dashboard_decision_metrics_path(time_range: "cumulative")}']")).to be_present
+        expect(doc.at_css("turbo-frame#dashboard-eligibility-breakdown[data-dashboard-frames-src='#{dashboard_eligibility_breakdown_path}']")).to be_present
         expect(doc.at_css("turbo-frame#dashboard-auth-health[data-dashboard-frames-src='#{dashboard_auth_health_path}']")).to be_present
         expect(doc.at_css("turbo-frame#dashboard-knowledge-stats[data-dashboard-frames-src='#{dashboard_knowledge_stats_path}']")).to be_present
         expect(doc.at_css("turbo-frame#dashboard-runner-health[data-dashboard-frames-src='#{dashboard_runner_health_path}']")).to be_present
@@ -193,6 +194,7 @@ RSpec.describe "Dashboard" do
         expect(doc.at_css("turbo-frame#dashboard-metrics[loading]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-performance[loading]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-decision-metrics[loading]")).not_to be_present
+        expect(doc.at_css("turbo-frame#dashboard-eligibility-breakdown[loading]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-auth-health[loading]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-knowledge-stats[loading]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-runner-health[loading]")).not_to be_present
@@ -200,10 +202,19 @@ RSpec.describe "Dashboard" do
         expect(doc.at_css("turbo-frame#dashboard-metrics[src]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-performance[src]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-decision-metrics[src]")).not_to be_present
+        expect(doc.at_css("turbo-frame#dashboard-eligibility-breakdown[src]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-auth-health[src]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-knowledge-stats[src]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-runner-health[src]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-queue-health[src]")).not_to be_present
+      end
+
+      it "does not compute the eligibility breakdown during the dashboard shell request" do
+        allow(Dashboard::EligibilityBreakdown).to receive(:call).and_call_original
+
+        get dashboard_path
+
+        expect(Dashboard::EligibilityBreakdown).not_to have_received(:call)
       end
 
       it "renders runner health above queue health in the dashboard shell" do
@@ -431,7 +442,7 @@ RSpec.describe "Dashboard" do
         row = document.at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(run, :dashboard_row)}"]))
 
         expect(row).to be_present
-        expect(row.text).to include("2 - P1")
+        expect(row.text).to include("6 - P1")
       end
 
       it "shows the final runner label for legacy fallback runs in the active runs table" do
@@ -681,6 +692,23 @@ RSpec.describe "Dashboard" do
       expect(chart).to be_present
     end
 
+    it "renders Stimulus-backed chart containers for deferred frame charts", :aggregate_failures do
+      project = create(:project, account: account)
+      create(:agent_run, :completed, project: project, created_at: 1.day.ago)
+
+      get dashboard_metrics_path(time_range: "7d")
+
+      doc = Nokogiri::HTML(response.body)
+      chart = doc.at_css("div#daily-runs-chart[data-controller~='chartkick']")
+
+      expect(chart).to be_present
+      expect(chart["data-chartkick-type-value"]).to eq("ColumnChart")
+      expect(chart["data-chartkick-options-value"]).to include("\"stacked\":true")
+      expect(chart["data-chartkick-data-value"]).to be_present
+      expect(chart.text).to include("Loading...")
+      expect(doc.css("script")).to be_empty
+    end
+
     it "defaults to cumulative when time_range is invalid" do
       get dashboard_metrics_path(time_range: "invalid")
 
@@ -729,6 +757,25 @@ RSpec.describe "Dashboard" do
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("dashboard-knowledge-stats")
       expect(response.body).to include("Knowledge Base")
+    end
+  end
+
+  describe "GET /dashboard/eligibility_breakdown" do
+    let(:account) { create(:account) }
+    let(:user) { create(:user, account: account) }
+    let(:project) { create(:project, account: account, created_by: user, auto_pick_enabled: true, active: true) }
+
+    before { sign_in user }
+
+    it "returns the eligibility breakdown partial within a turbo frame" do
+      create(:issue, project: project, github_state: "open", paid_state: "new")
+
+      get dashboard_eligibility_breakdown_path
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("dashboard-eligibility-breakdown")
+      expect(response.body).to include("Auto-Pick Eligibility")
+      expect(response.body).to include(project.full_name)
     end
   end
 
@@ -818,6 +865,58 @@ RSpec.describe "Dashboard" do
       expect(actor_headers).to include("Failed")
       expect(response.body).not_to include("Ignored")
       expect(response.body).not_to include("Planning Outcome")
+    end
+
+    it "renders the decision volume chart with Chartkick Stimulus wiring" do
+      create_decision_metric(project: project, created_at: 2.days.ago)
+      create_decision_metric(project: project, created_at: 1.day.ago, decision_status: "failed", agent_run_traits: [ :failed ])
+
+      get dashboard_decision_metrics_path(time_range: "7d")
+
+      doc = Nokogiri::HTML(response.body)
+      chart = doc.at_css("div#decision-volume-chart[data-controller~='chartkick']")
+
+      expect(chart).to be_present
+      expect(chart["data-chartkick-type-value"]).to eq("ColumnChart")
+      expect(doc.css("script")).to be_empty
+    end
+  end
+
+  describe "GET /dashboard/pr_cycle_time" do
+    let(:account) { create(:account) }
+    let(:user) { create(:user, account: account) }
+    let(:pr_cycle_time_data) do
+      {
+        series: [
+          { name: "Average", data: { Date.current => 6.0 } },
+          { name: "Median (p50)", data: { Date.current => 6.0 } },
+          { name: "Trend", data: { Date.current => 6.0 } }
+        ],
+        outlier_annotations: { Date.current => 1 },
+        merged_counts: { Date.current => 1 },
+        summary: {
+          total_merged: 1,
+          total_days: 1,
+          overall_avg_hours: 6.0,
+          overall_p50_hours: 6.0
+        }
+      }
+    end
+
+    before { sign_in user }
+
+    it "renders the cycle time chart with Chartkick Stimulus wiring" do
+      allow(Dashboard::PrCycleTimeSeries).to receive(:call).and_return(pr_cycle_time_data)
+
+      get dashboard_pr_cycle_time_path(time_range: "7d")
+
+      doc = Nokogiri::HTML(response.body)
+      chart = doc.at_css("div#pr-cycle-time-chart[data-controller~='chartkick']")
+
+      expect(chart).to be_present
+      expect(chart["data-chartkick-type-value"]).to eq("LineChart")
+      expect(chart["data-chartkick-options-value"]).to include("\"annotation\"")
+      expect(doc.css("script")).to be_empty
     end
   end
 

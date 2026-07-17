@@ -8,13 +8,14 @@ module Screenshots
       new(...).call
     end
 
-    def initialize(github_client:, repo:, pr_number:, commit_sha:, screenshot_paths:, storage: nil)
+    def initialize(github_client:, repo:, pr_number:, commit_sha:, screenshot_paths:, storage: nil, trace_viewer: nil)
       @github_client = github_client
       @repo = repo
       @pr_number = pr_number
       @commit_sha = commit_sha
       @screenshot_paths = screenshot_paths
       @storage = storage
+      @trace_viewer = trace_viewer
     end
 
     def call
@@ -51,13 +52,24 @@ module Screenshots
         pr_number: @pr_number,
         commit_sha: @commit_sha,
         screenshots: uploaded_screenshots,
-        previous_screenshots: previous
+        previous_screenshots: previous,
+        trace_viewer_url: trace_viewer_url
       )
     end
 
     private
 
     attr_reader :screenshot_paths
+
+    # Resolves an embeddable trace viewer URL for this commit when a trace was
+    # recorded (issue #2847) and trace storage is configured. Returns nil when
+    # no trace is available so the PR comment omits the trace link gracefully.
+    def trace_viewer_url
+      trace_params = { org: owner, repo: name, pr_number: @pr_number, commit_sha: @commit_sha }
+      trace_viewer.trace_available?(**trace_params) ? trace_viewer.embed_url(**trace_params) : nil
+    rescue StandardError
+      nil
+    end
 
     def owner
       repo_parts.fetch(0)
@@ -78,6 +90,10 @@ module Screenshots
 
     def storage
       @storage ||= Screenshots::Storage.new
+    end
+
+    def trace_viewer
+      @trace_viewer ||= Previews::TraceViewer.new
     end
   end
 end

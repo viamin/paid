@@ -72,7 +72,7 @@ module PreCommitRequirements
     def run_check(requirement)
       return { passed: false, output: "No container available" } unless agent_run.container_id.present?
 
-      result = agent_run.execute_in_container(requirement.command, stream: false)
+      result = agent_run.execute_in_container(resolve_command(requirement), stream: false)
       passed = container_result_success?(result)
       output = container_result_output(result)
 
@@ -116,6 +116,12 @@ module PreCommitRequirements
 
     def container_result_success?(result)
       result.success?
+    end
+
+    def resolve_command(requirement)
+      return requirement.command unless requirement.check_type == "mutation_test"
+
+      MutantResultsReader.with_results_dir(requirement.command)
     end
 
     # Extracts stdout, stderr, and exit_code from an ExecutionError for

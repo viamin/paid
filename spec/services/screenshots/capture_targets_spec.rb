@@ -147,6 +147,20 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       )
     end
 
+    it "maps the GitHub App install controller to integrations" do
+      targets = described_class.call(changed_files: [ "app/controllers/github_app/installations_controller.rb" ])
+
+      expect(targets.map(&:slug)).to eq([ "integrations" ])
+    end
+
+    it "maps the self-hosted GitHub App setup controller and view" do
+      controller_targets = described_class.call(changed_files: [ "app/controllers/admin/github_app/setup_controller.rb" ])
+      view_targets = described_class.call(changed_files: [ "app/views/admin/github_app/setup/show.html.erb" ])
+
+      expect(controller_targets.map(&:slug)).to eq([ "admin_github_app_setup" ])
+      expect(view_targets.map(&:slug)).to eq([ "admin_github_app_setup" ])
+    end
+
     it "maps nested controller files to their corresponding page targets" do
       targets = described_class.call(changed_files: [ "app/controllers/projects/cost_dashboards_controller.rb" ])
 

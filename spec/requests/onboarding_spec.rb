@@ -80,7 +80,7 @@ RSpec.describe "Onboarding" do
     context "with first_project step" do
       let(:github_token) { create(:github_token, account: account) }
       let(:mock_client) { instance_double(GithubClient) }
-      let(:repo_data) { OpenStruct.new(id: 123_456, name: "hello-world", default_branch: "main") }
+      let(:repo_data) { OpenStruct.new(id: 123_456, name: "hello-world", default_branch: "main", language: "Ruby") }
 
       before do
         %w[account_profile github_token].each do |step|
@@ -104,6 +104,20 @@ RSpec.describe "Onboarding" do
         }.to change { account.projects.count }.by(1)
 
         expect(account.onboarding_steps.find_by(step: "first_project").status).to eq("completed")
+      end
+
+      it "stores the detected primary language on the created project" do
+        patch onboarding_path, params: {
+          step: "first_project",
+          project: {
+            name: "My Project",
+            owner: "octocat",
+            repo: "hello-world",
+            github_token_id: github_token.id
+          }
+        }
+
+        expect(account.projects.last.primary_language).to eq("Ruby")
       end
     end
 

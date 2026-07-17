@@ -27,9 +27,14 @@
           </div>
         </div>
         <div class="flex flex-col gap-3 sm:flex-row" data-controller="stop-propagation" data-action="click->stop-propagation#stop">
-          <%= link_to "Install paid-agents", Github::AppRegistry.install_url,
-            class: "inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500",
-            target: "_blank", rel: "noopener noreferrer" %>
+          <% if Github::AppRegistry.configured? %>
+            <%= link_to "Install paid-agents", github_app_install_path,
+              class: "inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+          <% else %>
+            <%= link_to "Install paid-agents", Github::AppRegistry.install_url,
+              class: "inline-flex items-center justify-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500",
+              target: "_blank", rel: "noopener noreferrer" %>
+          <% end %>
           <% if @github_installations.any? %>
             <%= link_to "View Installations", github_installations_path,
               class: "inline-flex items-center justify-center rounded-md bg-white px-4 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>

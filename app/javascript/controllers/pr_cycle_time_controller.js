@@ -26,10 +26,10 @@ export default class extends Controller {
   }
 
   _installTooltipCallback() {
-    const chartCanvas = this.element.querySelector("#pr-cycle-time-chart")
-    if (!chartCanvas) return
+    const chartContainer = this.element.querySelector("#pr-cycle-time-chart")
+    if (!chartContainer) return
 
-    const chart = Chart.getChart(chartCanvas)
+    const chart = window.Chartkick?.charts?.[chartContainer.id]?.chart
     if (!chart) {
       this._tooltipRetries = (this._tooltipRetries || 0) + 1
       if (this._tooltipRetries > 20) return
