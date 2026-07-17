@@ -209,8 +209,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - /var/paid/workspaces:/var/paid/workspaces
 
-  # Builds the paid-agent:latest image used by Containers::Provision.
-  # This service exits immediately; it exists only to ensure the image is built.
+  # Legacy setup profile for paid-agent:latest. Prefer scripts/build-agent-image.sh,
+  # which extracts required build args from Gemfile.lock and agent-harness.
   agent-image:
     build:
       context: ./docker/agent
