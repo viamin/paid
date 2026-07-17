@@ -25,6 +25,7 @@ module Screenshots
     VALID_PROJECT_TOP_LEVEL_KEYS = %w[
       config_path
       auto_capture
+      record_video
       service_dependencies
       detection
     ].freeze
@@ -103,6 +104,7 @@ module Screenshots
       validate_string_array!("services", settings["services"]) if settings.key?("services")
       validate_config_path!(settings["config_path"]) if settings.key?("config_path")
       validate_auto_capture!(settings["auto_capture"]) if settings.key?("auto_capture")
+      validate_record_video!(settings["record_video"]) if settings.key?("record_video")
       validate_string_array!("service_dependencies", settings["service_dependencies"]) if settings.key?("service_dependencies")
       validate_detection!(settings["detection"]) if settings.key?("detection")
       validate_globs!("ui_patterns", settings["ui_patterns"]) if settings.key?("ui_patterns")
@@ -253,6 +255,12 @@ module Screenshots
       return if value == true || value == false
 
       raise ConfigError, "auto_capture must be true or false"
+    end
+
+    def validate_record_video!(value)
+      return if value == true || value == false
+
+      raise ConfigError, "record_video must be true or false"
     end
 
     def validate_detection!(value)

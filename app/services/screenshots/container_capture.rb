@@ -54,6 +54,8 @@ module Screenshots
       @network = nil
       @published_url = nil
       @hints = {}
+      @trace_path = nil
+      @video_path = nil
     end
 
     def call
@@ -261,6 +263,11 @@ module Screenshots
       (db_services + Array(config.services)).map(&:to_s).map(&:strip).reject(&:blank?).uniq
     end
 
+    # Video recording is opt-in (resource-heavy); traces are always attempted.
+    def record_video?
+      project.effective_screenshot_settings["record_video"] == true
+    end
+
     def start_chrome!
       @chrome_container = Containers.backend.create_container(
         "Image" => CHROME_IMAGE,
@@ -367,6 +374,7 @@ module Screenshots
       env = capture_env.merge(
         "SCREENSHOT_CONFIG_JSON" => screenshot_config_json,
         "SCREENSHOT_OUTPUT_DIR" => OUTPUT_DIR,
+        "SCREENSHOT_RECORD_VIDEO" => record_video? ? "1" : "0",
         "CHANGED_FILES" => ui_files.join("\n")
       )
 
@@ -379,6 +387,8 @@ module Screenshots
         stream: false
       )
 
+      @trace_path = collected_trace_path
+      @video_path = collected_video_path
       collected_screenshots
     rescue Containers::Provision::ExecutionError => e
       raise "screenshot capture failed: #{e.message}"
@@ -399,29 +409,78 @@ module Screenshots
             org: project.owner,
             repo: project.repo,
             pr_number: agent_run.pull_request_number,
-            commit_sha: agent_run.result_commit_sha || agent_run.base_commit_sha || agent_run.branch_name,
+            commit_sha: artifact_commit_sha,
             route_name: route_name
           )
         }
       end
 
+      trace_url = upload_trace_artifact(storage)
+      video_url = upload_video_artifact(storage)
+
       previous = storage.previous_screenshots(
         org: project.owner,
         repo: project.repo,
         pr_number: agent_run.pull_request_number,
-        exclude_sha: agent_run.result_commit_sha || agent_run.base_commit_sha || agent_run.branch_name
+        exclude_sha: artifact_commit_sha
       )
 
       Screenshots::PrComment.call(
         github_client: project.client,
         repo: project.full_name,
         pr_number: agent_run.pull_request_number,
-        commit_sha: agent_run.result_commit_sha || agent_run.base_commit_sha || agent_run.branch_name,
+        commit_sha: artifact_commit_sha,
         screenshots: uploaded,
-        previous_screenshots: previous
+        previous_screenshots: previous,
+        trace_url: trace_url,
+        video_url: video_url
       )
 
       @published_url = uploaded.first&.fetch(:url, nil)
+    end
+
+    def upload_trace_artifact(storage)
+      return nil if @trace_path.blank?
+
+      storage.upload_trace(
+        file_path: @trace_path,
+        org: project.owner,
+        repo: project.repo,
+        pr_number: agent_run.pull_request_number,
+        commit_sha: artifact_commit_sha
+      )
+    rescue Screenshots::Storage::StorageError => e
+      logger.warn(
+        message: "screenshots.trace_upload_failed",
+        project_id: project.id,
+        agent_run_id: agent_run.id,
+        error: e.message
+      )
+      nil
+    end
+
+    def upload_video_artifact(storage)
+      return nil if @video_path.blank?
+
+      storage.upload_video(
+        file_path: @video_path,
+        org: project.owner,
+        repo: project.repo,
+        pr_number: agent_run.pull_request_number,
+        commit_sha: artifact_commit_sha
+      )
+    rescue Screenshots::Storage::StorageError => e
+      logger.warn(
+        message: "screenshots.video_upload_failed",
+        project_id: project.id,
+        agent_run_id: agent_run.id,
+        error: e.message
+      )
+      nil
+    end
+
+    def artifact_commit_sha
+      agent_run.result_commit_sha || agent_run.base_commit_sha || agent_run.branch_name
     end
 
     def write_capture_runner
@@ -439,11 +498,31 @@ module Screenshots
         const playwright = await import("playwright").catch(async () => import("playwright-core"));
         const config = JSON.parse(process.env.SCREENSHOT_CONFIG_JSON);
         const outputDir = process.env.SCREENSHOT_OUTPUT_DIR;
+        const recordVideo = process.env.SCREENSHOT_RECORD_VIDEO === "1";
+
+        await fs.mkdir(outputDir, { recursive: true });
+
         const browser = await playwright.chromium.connectOverCDP(process.env.CHROME_URL);
-        const context = browser.contexts()[0] || await browser.newContext({
-          viewport: config.viewport,
-        });
+
+        // A fresh context is required so context.tracing and (optional)
+        // recordVideo apply; reusing the CDP default context supports neither.
+        const contextOptions = { viewport: config.viewport };
+        if (recordVideo) {
+          await fs.mkdir(`${outputDir}/videos`, { recursive: true });
+          contextOptions.recordVideo = { dir: `${outputDir}/videos` };
+        }
+        const context = await browser.newContext(contextOptions);
         const page = await context.newPage();
+
+        // Trace the entire session: screenshots, DOM snapshots, network, sources.
+        // Wrapped so a backend that lacks tracing still yields the PNGs below.
+        let tracing = false;
+        try {
+          await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
+          tracing = true;
+        } catch (e) {
+          console.error("tracing start failed:", e.message);
+        }
 
         async function authenticate() {
           if (!config.auth || config.auth.strategy === "none") return;
@@ -489,7 +568,6 @@ module Screenshots
           }, annotation);
         }
 
-        await fs.mkdir(outputDir, { recursive: true });
         await authenticate();
 
         for (const route of config.routes) {
@@ -499,6 +577,21 @@ module Screenshots
           await page.screenshot({ path: `${outputDir}/${route.name}.png`, fullPage: true });
         }
 
+        // Stop tracing last so the full session (including the final screenshot)
+        // is captured. Failures must not mask a successful PNG capture.
+        if (tracing) {
+          try {
+            await context.tracing.stop({ path: `${outputDir}/trace.zip` });
+          } catch (e) {
+            console.error("trace stop failed:", e.message);
+          }
+        }
+
+        // Close the context before the browser: Playwright only flushes the
+        // recorded video to disk once the context is closed, so closing the
+        // browser first can silently drop the .webm output. run_capture!
+        // collects the flushed .webm and uploads it alongside the trace.
+        await context.close();
         await browser.close();
       JS
     end
@@ -654,6 +747,14 @@ module Screenshots
       Dir.glob(File.join(@tmpdir.to_s, OUTPUT_DIR, "*.png")).sort
     end
 
+    def collected_trace_path
+      Dir.glob(File.join(@tmpdir.to_s, OUTPUT_DIR, "trace.zip")).first
+    end
+
+    def collected_video_path
+      Dir.glob(File.join(@tmpdir.to_s, OUTPUT_DIR, "videos", "*.webm")).first
+    end
+
     def read_file(relative_path)
       path = File.join(@tmpdir.to_s, relative_path)
       File.exist?(path) ? File.read(path) : ""
@@ -682,7 +783,7 @@ module Screenshots
         github_client: project.client,
         repo: project.full_name,
         pr_number: agent_run.pull_request_number,
-        commit_sha: agent_run.result_commit_sha || agent_run.base_commit_sha || agent_run.branch_name,
+        commit_sha: artifact_commit_sha,
         screenshots: [],
         status: status
       )
