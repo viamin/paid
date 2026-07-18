@@ -64,6 +64,10 @@ servers:
       - 192.168.0.1
     cmd: bin/preview-tunnel-server
     options:
+      # The tunnel server derives live service mappings from Docker-backed
+      # preview containers when generating server.toml.
+      volume:
+        - /var/run/docker.sock:/var/run/docker.sock
       publish:
         - "7000:7000"
   worker_poll:
