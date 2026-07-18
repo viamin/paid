@@ -757,31 +757,32 @@ module Containers
     # @return [void]
     def cleanup(force: false)
       cleanup_heartbeat_dir!
-      return unless container
 
-      log_system("container.cleanup.start", container_id: container.id)
+      log_system("container.cleanup.start", container_id: container&.id)
       preview_tunnel_released = false
 
-      begin
-        stop_container(force: force)
-        backend.delete_container(container, force: force, v: true)
-        preview_tunnel_released = release_preview_tunnel_reservation!
-        log_system("container.cleanup.success")
-      rescue Docker::Error::DockerError => e
-        log_system("container.cleanup.failed", error: e.message)
+      if container
         begin
-          backend.delete_container(container, force: true, v: true)
+          stop_container(force: force)
+          backend.delete_container(container, force: force, v: true)
           preview_tunnel_released = release_preview_tunnel_reservation!
-        rescue Docker::Error::DockerError
-          # Container may already be gone
+          log_system("container.cleanup.success")
+        rescue Docker::Error::DockerError => e
+          log_system("container.cleanup.failed", error: e.message)
+          begin
+            backend.delete_container(container, force: true, v: true)
+            preview_tunnel_released = release_preview_tunnel_reservation!
+          rescue Docker::Error::DockerError
+            # Container may already be gone
+          end
         end
-      ensure
-        preview_tunnel_released ||= release_preview_tunnel_reservation!
-        log_system("container.preview_tunnel_port_released", tunnel_port: preview_tunnel.tunnel_port) if preview_tunnel_released
-        @container = nil
-        cleanup_workspace_volume
-        cleanup_claimed_pool_entry
       end
+
+      preview_tunnel_released ||= release_preview_tunnel_reservation!
+      log_system("container.preview_tunnel_port_released", tunnel_port: preview_tunnel.tunnel_port) if preview_tunnel_released
+      @container = nil
+      cleanup_workspace_volume
+      cleanup_claimed_pool_entry
     end
 
     # Checks if the container is currently running.
