@@ -23,6 +23,7 @@ services:
     - agent-kilocode:/home/vscode/.kilocode
     - agent-aider:/home/vscode/.aider
     - agent-cursor:/home/vscode/.cursor
+    - agent-omp:/home/vscode/.omp
 
     # Overrides default command so things don't shut down after the process ends.
     command: sleep infinity
@@ -122,3 +123,4 @@ volumes:
   agent-kilocode:
   agent-aider:
   agent-cursor:
+  agent-omp:

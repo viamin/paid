@@ -40,6 +40,7 @@ Rails.application.routes.draw do
   get "dashboard/metrics", to: "dashboard#metrics", as: :dashboard_metrics
   get "dashboard/performance", to: "dashboard#performance", as: :dashboard_performance
   get "dashboard/decision_metrics", to: "dashboard#decision_metrics", as: :dashboard_decision_metrics
+  get "dashboard/eligibility_breakdown", to: "dashboard#eligibility_breakdown", as: :dashboard_eligibility_breakdown
   get "dashboard/runner_health", to: "dashboard#runner_health", as: :dashboard_runner_health
   get "dashboard/queue_health", to: "dashboard#queue_health", as: :dashboard_queue_health
   get "dashboard/github_health", to: "dashboard#github_health", as: :dashboard_github_health
@@ -66,6 +67,12 @@ Rails.application.routes.draw do
     post :migrate, on: :member, action: :migrate_from_token
     post :check_access, on: :member
   end
+
+  # GitHub App install/callback lifecycle for the paid-agents App.
+  # The install endpoint 302s to GitHub's install URL with a CSRF state token.
+  # The callback persists the GithubInstallation record asynchronously.
+  get "github_app/install", to: "github_app/installations#install", as: :github_app_install
+  get "github_app/callback", to: "github_app/installations#callback", as: :github_app_callback
 
   # Linear tokens management
   resources :linear_tokens, only: [ :index, :new, :create, :show, :destroy ]
@@ -292,6 +299,11 @@ Rails.application.routes.draw do
     # GitHub webhook receiver for PR reviews, merges, and comments
     post "github_webhooks", to: "github_webhooks#create"
 
+    # GitHub App installation lifecycle webhooks (installation.*,
+    # installation_repositories.*). Authenticated via the shared App
+    # webhook secret, not per-project.
+    post "webhooks/github_app", to: "github_app/webhooks#create", as: :github_app_webhook
+
     # MCP server endpoint for chat agent tool use
     scope :mcp do
       get "sse", to: "mcp#sse", as: :mcp_sse
@@ -326,6 +338,15 @@ Rails.application.routes.draw do
 
   authenticate :user, ->(user) { user.operator? } do
     mount_avo at: "/admin"
+  end
+
+  # Self-hosted GitHub App manifest setup. Must be declared before the
+  # catch-all /admin fallback so that /admin/github_app/setup is routed to
+  # this controller rather than `operator_console_access#show`.
+  scope "/admin/github_app", as: :admin_github_app do
+    get "setup", to: "admin/github_app/setup#show", as: :setup
+    post "setup", to: "admin/github_app/setup#create"
+    get "setup/callback", to: "admin/github_app/setup#callback", as: :setup_callback
   end
 
   match "/admin(/*path)", to: "operator_console_access#show", via: :all

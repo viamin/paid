@@ -6,6 +6,7 @@ RSpec.describe GoodJob, :no_db do
   around do |example|
     original_env = ENV.to_h.slice(
       "GOOD_JOB_EXECUTION_MODE",
+      "GOOD_JOB_BOOTSTRAP_ON_START",
       "GOOD_JOB_MAX_THREADS",
       "GOOD_JOB_POLL_INTERVAL",
       "GOOD_JOB_SHUTDOWN_TIMEOUT",
@@ -14,6 +15,7 @@ RSpec.describe GoodJob, :no_db do
 
     %w[
       GOOD_JOB_EXECUTION_MODE
+      GOOD_JOB_BOOTSTRAP_ON_START
       GOOD_JOB_MAX_THREADS
       GOOD_JOB_POLL_INTERVAL
       GOOD_JOB_SHUTDOWN_TIMEOUT
@@ -24,6 +26,7 @@ RSpec.describe GoodJob, :no_db do
   ensure
     %w[
       GOOD_JOB_EXECUTION_MODE
+      GOOD_JOB_BOOTSTRAP_ON_START
       GOOD_JOB_MAX_THREADS
       GOOD_JOB_POLL_INTERVAL
       GOOD_JOB_SHUTDOWN_TIMEOUT
@@ -35,6 +38,31 @@ RSpec.describe GoodJob, :no_db do
   describe "execution mode" do
     it "defaults to async_server" do
       expect(Paid::GoodJobConfig.execution_mode).to eq(:async_server)
+    end
+  end
+
+  describe "startup bootstrap" do
+    it "runs for the Rails server process" do
+      expect(Paid::GoodJobConfig.bootstrap_startup_jobs?(server_process: true)).to be(true)
+    end
+
+    it "does not run for non-server async_server processes" do
+      ENV["GOOD_JOB_EXECUTION_MODE"] = "async_server"
+
+      expect(Paid::GoodJobConfig.bootstrap_startup_jobs?(server_process: false)).to be(false)
+    end
+
+    it "runs for the dedicated external job role when explicitly enabled" do
+      ENV["GOOD_JOB_EXECUTION_MODE"] = "external"
+      ENV["GOOD_JOB_BOOTSTRAP_ON_START"] = "true"
+
+      expect(Paid::GoodJobConfig.bootstrap_startup_jobs?(server_process: false)).to be(true)
+    end
+
+    it "does not run for unrelated external processes" do
+      ENV["GOOD_JOB_EXECUTION_MODE"] = "external"
+
+      expect(Paid::GoodJobConfig.bootstrap_startup_jobs?(server_process: false)).to be(false)
     end
   end
 
@@ -86,12 +114,36 @@ RSpec.describe GoodJob, :no_db do
         ab_test_analysis process_run_queue auto_pick_queue_backfill
         auto_pick_eligibility_sweep service_container_reconciliation screenshot_cleanup
         knowledge_audit_retention delayed_human_feedback notifications_check_runner_quotas
-        claude_auth_health_check
+        claude_auth_health_check style_guide_evolution
         agent_run_pattern_detector billing_period_management
       ]
 
       expected_jobs.each do |job_key|
         expect(cron).to have_key(job_key), "Expected cron job #{job_key} to be defined"
+      end
+    end
+
+    it "staggers frequent maintenance jobs across minute boundaries" do
+      expected_offsets = {
+        process_run_queue: "*/5 * * * *",
+        poll_workflow_health_check: "1-59/5 * * * *",
+        service_container_reconciliation: "1-59/5 * * * *",
+        dispatch_circuit_breaker_recovery: "1-59/5 * * * *",
+        stale_run_detector: "2-59/5 * * * *",
+        queue_monitor: "2-59/5 * * * *",
+        docker_orphan_cleanup: "3-59/5 * * * *",
+        notifications_check_runner_quotas: "3-59/5 * * * *",
+        container_pool_replenishment: "4-59/5 * * * *",
+        chat_idle_reaper: "4-59/5 * * * *",
+        auto_pick_eligibility_sweep: "7-59/15 * * * *",
+        agent_run_pattern_detector: "11-59/15 * * * *",
+        remediation_decision_outcomes: "13-59/15 * * * *"
+      }
+
+      aggregate_failures do
+        expected_offsets.each do |job_key, schedule|
+          expect(cron.dig(job_key, :cron)).to eq(schedule)
+        end
       end
     end
   end

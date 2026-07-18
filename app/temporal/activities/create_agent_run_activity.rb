@@ -73,7 +73,6 @@ module Activities
             ),
             service_environment.content
           ].reject(&:blank?).join("\n\n")
-          custom_prompt = ProjectConventions::InjectIntoPrompt.call(prompt: custom_prompt, project: project)
         end
       end
 
@@ -99,6 +98,11 @@ module Activities
 
       agent_run = ActiveRecord::Base.transaction do
         created_run = find_or_create_agent_run(attrs)
+        maybe_inject_style_guides!(
+          agent_run: created_run,
+          prompt_version: prompt_version,
+          custom_prompt_provided: input[:custom_prompt].present?
+        )
         attach_marketplace_entries(
           agent_run: created_run,
           manual_entry_ids: manual_marketplace_entry_ids,
@@ -202,6 +206,23 @@ module Activities
         respect_requested: respect_requested,
         logger: logger
       )
+    end
+
+    def maybe_inject_style_guides!(agent_run:, prompt_version:, custom_prompt_provided:)
+      prompt = agent_run.custom_prompt
+      return if prompt.blank?
+      return if custom_prompt_provided || prompt_version.nil?
+
+      prompt = StyleGuides::InjectIntoPrompt.call(
+        prompt: prompt,
+        project: agent_run.project,
+        agent_run: agent_run,
+        source: self.class.name
+      )
+      prompt = ProjectConventions::InjectIntoPrompt.call(prompt: prompt, project: agent_run.project)
+      return if prompt == agent_run.custom_prompt
+
+      agent_run.update!(custom_prompt: prompt)
     end
 
     def resolve_and_validate_runner_selection!(project:, issue:, requested_agent_type:, requested_runner_id:, goal:, respect_requested:)

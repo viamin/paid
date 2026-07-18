@@ -28,6 +28,24 @@ RSpec.describe Activities::RecordPrFollowupActivity do
       end
     end
 
+    context "when no active run exists" do
+      let(:issue) do
+        create(:issue, :pull_request, project: project, github_number: 42, pr_followup_count: 0)
+      end
+
+      it "still records the follow-up attempt" do
+        activity.execute(project_id: project.id, issue_id: issue.id)
+
+        expect(issue.reload.pr_followup_count).to eq(1)
+      end
+
+      it "returns recorded: true" do
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+        expect(result).to include(recorded: true)
+      end
+    end
+
     context "when recording a follow-up" do
       let(:issue) do
         create(:issue, :pull_request,
@@ -35,6 +53,14 @@ RSpec.describe Activities::RecordPrFollowupActivity do
           github_number: 42,
           labels: [ "paid-generated" ],
           pr_followup_count: 0)
+      end
+
+      before do
+        create(:agent_run, :queued,
+          project: project,
+          issue: issue,
+          goal: "create_pr",
+          source_pull_request_number: issue.github_number)
       end
 
       it "increments pr_followup_count" do
@@ -59,6 +85,11 @@ RSpec.describe Activities::RecordPrFollowupActivity do
       end
 
       before do
+        create(:agent_run, :queued,
+          project: project,
+          issue: issue,
+          goal: "create_pr",
+          source_pull_request_number: issue.github_number)
         allow(github_client).to receive(:remove_label_from_issue)
       end
 
@@ -83,6 +114,11 @@ RSpec.describe Activities::RecordPrFollowupActivity do
       end
 
       before do
+        create(:agent_run, :queued,
+          project: project,
+          issue: issue,
+          goal: "create_pr",
+          source_pull_request_number: issue.github_number)
         allow(github_client).to receive(:remove_label_from_issue)
           .and_raise(GithubClient::Error, "label not found")
         allow(Rails.logger).to receive(:warn)
@@ -110,6 +146,14 @@ RSpec.describe Activities::RecordPrFollowupActivity do
           labels: [ "paid-generated" ])
       end
 
+      before do
+        create(:agent_run, :queued,
+          project: project,
+          issue: issue,
+          goal: "create_pr",
+          source_pull_request_number: issue.github_number)
+      end
+
       it "does not attempt to remove labels" do
         result = activity.execute(
           project_id: project.id,
@@ -128,6 +172,14 @@ RSpec.describe Activities::RecordPrFollowupActivity do
           github_number: 42,
           labels: [ "paid-generated" ],
           pr_followup_count: 1)
+      end
+
+      before do
+        create(:agent_run, :queued,
+          project: project,
+          issue: issue,
+          goal: "create_pr",
+          source_pull_request_number: issue.github_number)
       end
 
       it "increments when expected_count matches current count" do
@@ -175,6 +227,14 @@ RSpec.describe Activities::RecordPrFollowupActivity do
           pr_followup_count: 1)
       end
 
+      before do
+        create(:agent_run, :queued,
+          project: project,
+          issue: issue,
+          goal: "create_pr",
+          source_pull_request_number: issue.github_number)
+      end
+
       it "falls back to unconditional increment" do
         activity.execute(
           project_id: project.id,
@@ -182,6 +242,30 @@ RSpec.describe Activities::RecordPrFollowupActivity do
         )
 
         expect(issue.reload.pr_followup_count).to eq(2)
+      end
+    end
+
+    context "when the matching create_pr run already finished" do
+      let(:issue) do
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 42,
+          pr_followup_count: 0)
+      end
+
+      before do
+        create(:agent_run, :completed,
+          project: project,
+          issue: issue,
+          goal: "create_pr",
+          source_pull_request_number: issue.github_number)
+      end
+
+      it "still records the launched follow-up" do
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+        expect(result).to include(recorded: true)
+        expect(issue.reload.pr_followup_count).to eq(1)
       end
     end
   end

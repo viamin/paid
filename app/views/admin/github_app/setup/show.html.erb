@@ -1,0 +1,71 @@
+<% content_for(:title) { "GitHub App setup - Paid" } %>
+
+<div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
+  <h1 class="text-2xl font-bold text-gray-900">Self-hosted GitHub App setup</h1>
+  <p class="mt-2 text-sm text-gray-600">
+    Register the <code><%= Github::AppRegistry.slug %></code> GitHub App for this
+    Paid deployment. Paid will receive the new App's id, private key, and webhook
+    secret on completion; subsequent project creation will offer the App auth path.
+  </p>
+
+  <% if @manual_instructions.present? %>
+    <div class="mt-6 rounded-lg border border-amber-300 bg-amber-50 p-6 shadow-sm">
+      <h2 class="text-lg font-semibold text-amber-900">Finish setup manually</h2>
+      <p class="mt-2 text-sm text-amber-800">
+        The <code><%= @registered_slug %></code> App was registered on GitHub, but this
+        deployment could not write to
+        <code><%= @manual_credentials_path %></code> automatically. GitHub returns the
+        private key and webhook secret only once, so copy the snippet below into your
+        Rails credentials (or expose the matching <code>PAID_AGENT_APP_*</code>
+        environment variables) and restart the app to complete setup.
+      </p>
+      <textarea readonly rows="10"
+        class="mt-4 w-full rounded-md border border-amber-300 bg-white p-3 font-mono text-xs text-gray-800"
+      ><%= @manual_instructions %></textarea>
+    </div>
+  <% end %>
+
+  <div class="mt-6 rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+    <dl class="grid gap-4 text-sm sm:grid-cols-2">
+      <div>
+        <dt class="font-semibold text-gray-900">App slug</dt>
+        <dd class="mt-1 text-gray-700"><code><%= @app_slug %></code></dd>
+      </div>
+      <div>
+        <dt class="font-semibold text-gray-900">Currently configured</dt>
+        <dd class="mt-1 text-gray-700">
+          <% if @configured %>
+            <span class="inline-flex items-center rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700">Yes</span>
+          <% else %>
+            <span class="inline-flex items-center rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700">No</span>
+          <% end %>
+        </dd>
+      </div>
+      <div>
+        <dt class="font-semibold text-gray-900">App id</dt>
+        <dd class="mt-1 text-gray-700"><%= @app_id || "—" %></dd>
+      </div>
+      <div>
+        <dt class="font-semibold text-gray-900">Webhook secret</dt>
+        <dd class="mt-1 text-gray-700">
+          <% if @webhook_secret_configured %>
+            <span class="inline-flex items-center rounded-md bg-green-50 px-2 py-1 text-xs font-medium text-green-700">Configured</span>
+          <% else %>
+            <span class="inline-flex items-center rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-700">Missing</span>
+          <% end %>
+        </dd>
+      </div>
+    </dl>
+
+    <div class="mt-6 flex flex-wrap gap-3">
+      <%= button_to "Register on GitHub", admin_github_app_setup_path, method: :post,
+            class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+    </div>
+
+    <p class="mt-4 text-xs text-gray-500">
+      You will be redirected to GitHub to confirm the App manifest. After GitHub
+      completes registration, it will redirect back to this deployment with the
+      App credentials.
+    </p>
+  </div>
+</div>

@@ -2,6 +2,10 @@
 
 This guide configures Paid to run agent containers on one remote Docker host over TCP with mutual TLS.
 
+The most practical self-hosted case is a laptop or devcontainer running the Paid control plane while a QNAP NAS runs the agent containers over Tailscale. That setup moves container CPU and memory pressure off the development machine without changing Paid's runtime model.
+
+This is a single-host remote backend. `CONTAINER_BACKEND=remote` switches agent provisioning to the configured remote Docker daemon; it does not add the remote host as extra capacity alongside local Docker. Multi-host scheduling is future work.
+
 ## Overview
 
 Paid keeps the existing named-volume plus in-container clone workflow. The only runtime difference is that Docker API calls go to a remote daemon instead of `/var/run/docker.sock`.
@@ -9,12 +13,67 @@ Paid keeps the existing named-volume plus in-container clone workflow. The only 
 Required pieces:
 
 - Remote Docker Engine listening on TCP with client-certificate auth
+- The `paid_agent` and `paid_internal` Docker networks on the remote host
+- The `paid-agent:latest` image available on the remote host
 - A routable proxy address for agent containers via `PAID_PROXY_EXTERNAL_URL`
 - The Paid app configured with `CONTAINER_BACKEND=remote` and remote TLS cert paths
 
-## 1. Configure the Remote Docker Host
+For the QNAP/NAS scenario, Tailscale is a good fit because it gives both machines stable private IPs without exposing the Docker API to the public internet.
 
-Enable the Docker API on the worker host with TLS verification. Docker’s TLS guidance is here:
+## QNAP + Tailscale Topology
+
+```text
+Laptop / devcontainer                    QNAP NAS (Tailscale)
++---------------------+                 +----------------------+
+| Paid Rails app      |                 | Container Station    |
+| Temporal workers    |-- Tailscale --->| dockerd :2376 (mTLS) |
+| GoodJob             |   TCP 2376      |                      |
+|                     |<-- Tailscale ---| Agent containers     |
+| :3000 (proxy)       |   HTTP :3000    | clone, build, run    |
++---------------------+                 +----------------------+
+```
+
+Two directions matter:
+
+- Paid -> NAS on TCP `2376`: Docker API calls to create, start, exec, inspect, and stop containers
+- NAS containers -> Paid on HTTP `:3000`: secrets-proxy traffic for LLM access and proxy-issued credentials
+
+Walkthrough topology:
+
+- Paid runs inside a devcontainer on a laptop or workstation
+- The Paid host has a stable Tailscale IP, shown below as `<paid-host-tailscale-ip>`
+- The QNAP has a stable Tailscale IP, shown below as `<qnap-tailscale-ip>`
+- The QNAP may also have a LAN IP, shown below as `<qnap-lan-ip>`
+- The QNAP may use a nonstandard SSH port, shown below as `<qnap-ssh-port>`
+
+Before troubleshooting Docker connectivity, confirm the configured QNAP SSH port in Control Panel > Network & File Services > Telnet / SSH. Then verify SSH reachability on LAN and Tailscale:
+
+```bash
+nc -vz <qnap-lan-ip> <qnap-ssh-port>
+nc -vz <qnap-tailscale-ip> <qnap-ssh-port>
+ssh -p <qnap-ssh-port> <qnap-user>@<qnap-tailscale-ip>
+```
+
+## Host vs. Devcontainer Commands
+
+Run host-network and Docker CLI transfer commands on the laptop or machine that can reach both Tailscale and the Docker socket:
+
+- `ssh`, `scp`, `nc`, and Tailscale CLI checks
+- `docker save paid-agent:latest | gzip > /tmp/paid-agent.tgz`
+- `docker load` against `DOCKER_HOST=tcp://<qnap-tailscale-ip>:2376`
+
+Run Paid/Rails commands inside the devcontainer:
+
+- `bundle exec rake remote_docker:test_connection`
+- `bundle exec rake remote_docker:generate_certs[...]`
+- `bin/rails runner ...`
+- Environment verification for `CONTAINER_BACKEND`, `REMOTE_DOCKER_*`, and `PAID_PROXY_EXTERNAL_URL`
+
+## 1. Configure the QNAP Docker Host
+
+Enable Container Station on the QNAP so the NAS exposes a Docker-compatible daemon. Then configure the daemon to listen on TCP with TLS verification enabled.
+
+Docker's TLS guidance is here:
 
 - <https://docs.docker.com/engine/security/https/>
 
@@ -30,14 +89,102 @@ dockerd \
   --tlskey=/etc/docker/tls/server-key.pem
 ```
 
-Lock TCP/2376 down to the Paid control plane network only. Do not expose it publicly without network controls.
+If your QNAP uses a JSON daemon config instead of CLI flags, the equivalent fields are:
 
-## 2. Generate Client TLS Material
+```json
+{
+  "hosts": ["unix:///var/run/docker.sock", "tcp://0.0.0.0:2376"],
+  "tlsverify": true,
+  "tlscacert": "/etc/docker/tls/ca.pem",
+  "tlscert": "/etc/docker/tls/server-cert.pem",
+  "tlskey": "/etc/docker/tls/server-key.pem"
+}
+```
 
-Paid ships a helper task:
+In the verified QNAP setup, Container Station already had Docker listening on `tcp://0.0.0.0:2376` with mTLS enabled:
+
+```text
+--tlscacert=/etc/docker/tls/ca.pem
+--tlscert=/etc/docker/tls/server.pem
+--tlskey=/etc/docker/tls/server-key.pem
+```
+
+The QNAP TLS directory included:
+
+```text
+/etc/docker/tls/ca.pem
+/etc/docker/tls/ca-key.pem
+/etc/docker/tls/server.pem
+/etc/docker/tls/server-cert.pem
+/etc/docker/tls/server-key.pem
+/etc/docker/tls/cert.pem
+/etc/docker/tls/key.pem
+```
+
+The existing `/etc/docker/tls/cert.pem` client certificate had `TLS Web Client Authentication`, and `/etc/docker/tls/key.pem` matched it, so we reused the QNAP-provided client cert instead of generating a new client bundle.
+
+Lock TCP `2376` down to Tailscale-only access. Do not expose it on the public LAN or internet.
+
+Create the two Docker networks Paid expects:
 
 ```bash
-bundle exec rake remote_docker:generate_certs[tmp/remote-docker-certs,paid-worker-client]
+docker network create \
+  --driver bridge \
+  --internal \
+  --subnet 172.28.0.0/16 \
+  --opt com.docker.network.bridge.enable_ip_masquerade=false \
+  paid_agent
+
+docker network create \
+  --driver bridge \
+  --subnet 172.29.8.0/22 \
+  paid_internal
+```
+
+`paid_agent` is the restricted proxy-mode network. `paid_internal` is the unrestricted network used for direct-outbound and subscription-auth cases.
+
+## 2. Install Tailscale on Both Sides
+
+Install Tailscale on the QNAP from the QNAP App Center. Install Tailscale on the laptop or the host that runs the devcontainer.
+
+Verify both machines can reach each other over Tailscale:
+
+```bash
+ping <qnap-tailscale-ip>
+ping <laptop-tailscale-ip>
+```
+
+Tailscale IPs are stable enough to use directly in the remote Docker and proxy environment variables.
+
+### QNAP QuFirewall
+
+If Tailscale ping works but the SSH port or Docker TCP `2376` times out, add a QuFirewall allow rule:
+
+- Permission: Allow
+- Interface: `tailscale0` if shown, otherwise All
+- Source: the Paid host Tailscale IP as `/32`, for example `<paid-host-tailscale-ip>/32`
+- Protocol: TCP
+- Ports: `2376,<qnap-ssh-port>`
+
+QuFirewall created an effective rule like:
+
+```text
+ACCEPT tcp -- <paid-host-tailscale-ip> 0.0.0.0/0 multiport dports 2376,<qnap-ssh-port>
+```
+
+Then verify both ports over Tailscale:
+
+```bash
+nc -vz -G 5 <qnap-tailscale-ip> <qnap-ssh-port>
+nc -vz -G 5 <qnap-tailscale-ip> 2376
+```
+
+## 3. Generate and Distribute TLS Certificates
+
+Paid ships a helper task for the CA and client bundle:
+
+```bash
+bundle exec rake remote_docker:generate_certs[tmp/remote-docker-certs,paid-qnap-client]
 ```
 
 This writes:
@@ -47,50 +194,108 @@ This writes:
 - `client-cert.pem`
 - `client-key.pem`
 
-For production, treat `ca-key.pem` as sensitive and store it outside the app host once you have signed the needed certificates.
+Important detail: the task does not generate the server certificate pair for the NAS daemon. You still need to create `server-cert.pem` and `server-key.pem` separately, signed by the generated `ca-key.pem`, or use another server certificate that the generated `ca.pem` will trust. Make sure `server-cert.pem` includes a `subjectAltName` for the exact host clients use in `REMOTE_DOCKER_HOST`. If `REMOTE_DOCKER_HOST` uses the QNAP Tailscale IP, that IP must appear in the certificate SAN list or Docker TLS hostname verification will fail even when the CA and client certs are otherwise correct.
 
-## 3. Provide a Proxy Route
+Distribution model:
 
-Remote agent containers cannot resolve Docker-local names like `paid-proxy`. Set `PAID_PROXY_EXTERNAL_URL` to the address they can reach.
+- Keep `client-cert.pem`, `client-key.pem`, and `ca.pem` on the Paid control-plane host
+- Install `ca.pem`, `server-cert.pem`, and `server-key.pem` on the QNAP Docker daemon
+- Treat `ca-key.pem` as highly sensitive; store it securely offline after signing, or delete it if you do not need to sign additional server certificates
 
-Recommended options:
+At a minimum, the NAS daemon must trust `ca.pem`, and the Paid host must present the client cert pair referenced by `REMOTE_DOCKER_CERT` and `REMOTE_DOCKER_KEY`.
 
-- `WireGuard VPN`: best default for NAS/LAN workers
-- `SSH tunnel`: simplest for one remote host
-- `Cloudflare Tunnel`: useful for VMs without inbound IPs
-- `Load balancer + mTLS`: good cloud baseline when the proxy is internet-routable
+If the QNAP already has a working client certificate, copy it into the Paid workspace instead:
 
-Examples:
-
-```bash
-PAID_PROXY_EXTERNAL_URL=http://10.20.30.40:3000
-PAID_PROXY_EXTERNAL_URL=https://paid-proxy.internal.example.com
+```text
+tmp/remote-docker-certs/ca.pem
+tmp/remote-docker-certs/client-cert.pem
+tmp/remote-docker-certs/client-key.pem
 ```
 
-When the remote backend is active, Paid uses this URL for container proxy env vars and firewall proxy allowlisting.
+For Docker CLI compatibility, also keep copies named exactly:
 
-## 4. Configure Paid
+```text
+tmp/remote-docker-certs/cert.pem
+tmp/remote-docker-certs/key.pem
+```
+
+Docker CLI requires `ca.pem`, `cert.pem`, and `key.pem` under `DOCKER_CERT_PATH`. Paid's env vars can point directly at `client-cert.pem`, `client-key.pem`, and `ca.pem`.
+
+QNAP `scp` may fail because modern `scp` uses SFTP by default and some QNAP SSH setups do not provide the expected SFTP subsystem. Use legacy SCP mode or stream over SSH:
+
+```bash
+scp -O -P <qnap-ssh-port> <qnap-user>@<qnap-tailscale-ip>:/etc/docker/tls/cert.pem tmp/remote-docker-certs/client-cert.pem
+ssh -p <qnap-ssh-port> <qnap-user>@<qnap-tailscale-ip> 'cat /etc/docker/tls/key.pem' > tmp/remote-docker-certs/client-key.pem
+ssh -p <qnap-ssh-port> <qnap-user>@<qnap-tailscale-ip> 'cat /etc/docker/tls/ca.pem' > tmp/remote-docker-certs/ca.pem
+cp tmp/remote-docker-certs/client-cert.pem tmp/remote-docker-certs/cert.pem
+cp tmp/remote-docker-certs/client-key.pem tmp/remote-docker-certs/key.pem
+```
+
+## 4. Make the Agent Image Available on the NAS
+
+The remote daemon must have the `paid-agent:latest` image available before Paid can start runs there.
+
+The supported local build path is:
+
+```bash
+./scripts/build-agent-image.sh
+```
+
+Do not use `docker compose --profile setup build agent-image` for this flow. The agent Dockerfile now requires build arguments extracted from `Gemfile.lock` and `agent-harness`; `scripts/build-agent-image.sh` is the maintained path that computes and passes those values.
+
+Options for getting the image onto the NAS:
+
+- Save and transfer manually:
+
+```bash
+docker save paid-agent:latest | gzip > /tmp/paid-agent.tgz
+gunzip -c /tmp/paid-agent.tgz | \
+  DOCKER_HOST=tcp://<qnap-tailscale-ip>:2376 \
+  DOCKER_TLS_VERIFY=1 \
+  DOCKER_CERT_PATH="$PWD/tmp/remote-docker-certs" \
+  docker load
+```
+
+- Push to a registry the NAS can pull from, such as Docker Hub, GHCR, or a private registry
+- Set up a cron job or deploy hook on the NAS to keep `paid-agent:latest` current
+
+If the image is missing, remote provisioning will fail even if the TLS connection itself is healthy.
+
+For the verified walkthrough, the image was built inside the Paid devcontainer, saved from the laptop Docker context, loaded into the QNAP Docker daemon over mTLS, and verified as `linux/amd64` on both sides. The QNAP was `x86_64`, so no cross-architecture build was needed.
+
+## 5. Configure Paid
 
 Set these environment variables on the Paid control plane:
 
 ```bash
 CONTAINER_BACKEND=remote
-REMOTE_DOCKER_HOST=worker-1.internal:2376
-REMOTE_DOCKER_IDENTIFIER=worker-1
-REMOTE_DOCKER_CERT=/etc/paid/remote-docker/client-cert.pem
-REMOTE_DOCKER_KEY=/etc/paid/remote-docker/client-key.pem
-REMOTE_DOCKER_CA=/etc/paid/remote-docker/ca.pem
-PAID_PROXY_EXTERNAL_URL=https://paid-proxy.internal.example.com
+REMOTE_DOCKER_HOST=<qnap-tailscale-ip>:2376
+REMOTE_DOCKER_IDENTIFIER=qnap-nas
+REMOTE_DOCKER_CERT=/workspaces/paid/tmp/remote-docker-certs/client-cert.pem
+REMOTE_DOCKER_KEY=/workspaces/paid/tmp/remote-docker-certs/client-key.pem
+REMOTE_DOCKER_CA=/workspaces/paid/tmp/remote-docker-certs/ca.pem
+PAID_PROXY_EXTERNAL_URL=http://<paid-host-tailscale-ip>:3000
 ```
 
-Notes:
+What each variable does:
 
-- `REMOTE_DOCKER_IDENTIFIER` is what Paid persists into `agent_runs.container_host` and `container_pool_entries.container_host`.
-- `REMOTE_DOCKER_HOST` may be `host:port` or a full `tcp://host:port` URL.
+- `CONTAINER_BACKEND=remote`: selects `Containers::Backends::RemoteDocker`
+- `REMOTE_DOCKER_HOST`: the NAS Docker API endpoint; `host:port` and `tcp://host:port` both work
+- `REMOTE_DOCKER_IDENTIFIER`: the backend identifier Paid persists into `agent_runs.container_host`
+- `REMOTE_DOCKER_CERT`: client certificate for mTLS auth to the NAS daemon
+- `REMOTE_DOCKER_KEY`: private key for the client certificate
+- `REMOTE_DOCKER_CA`: CA bundle used to verify the NAS daemon certificate
+- `PAID_PROXY_EXTERNAL_URL`: the externally routable URL remote containers use to reach the secrets proxy
 
-## 5. Verify Connectivity
+`PAID_PROXY_EXTERNAL_URL` is mandatory for remote backends. Remote agent containers cannot resolve Docker-local names like `paid-proxy`, so Paid must hand them an address reachable from the NAS over Tailscale.
 
-Run:
+Use the laptop's Tailscale IP in `PAID_PROXY_EXTERNAL_URL` so containers running on the NAS can call back into the Paid app.
+
+Replace `<qnap-tailscale-ip>` with the remote Docker host's Tailscale IP and `<paid-host-tailscale-ip>` with the Paid control-plane host's Tailscale IP.
+
+## 6. Verify Connectivity
+
+First, test raw Docker API connectivity:
 
 ```bash
 bundle exec rake remote_docker:test_connection
@@ -98,18 +303,71 @@ bundle exec rake remote_docker:test_connection
 
 Expected output is an `OK` ping from the configured remote backend.
 
-## 6. Validate Security Expectations
+Verified walkthrough output:
+
+```text
+Remote backend qnap-nas responded with "OK"
+```
+
+You can also test Docker CLI connectivity from the host:
+
+```bash
+DOCKER_HOST=tcp://<qnap-tailscale-ip>:2376 \
+DOCKER_TLS_VERIFY=1 \
+DOCKER_CERT_PATH="$PWD/tmp/remote-docker-certs" \
+docker version
+```
+
+Then verify an actual run:
+
+1. Start Paid with the remote env vars.
+2. Queue a test agent run.
+3. Confirm the created container appears on the QNAP, not on the local Docker daemon.
+4. Confirm the agent can still reach the secrets proxy through `PAID_PROXY_EXTERNAL_URL`.
+
+The walkthrough smoke test created a QNAP container from `paid-agent:latest`, then exec'd:
+
+```bash
+curl -I --max-time 10 http://<paid-host-tailscale-ip>:3000
+```
+
+The request returned `HTTP/1.1 302 Found` with exit status `0`, and container cleanup succeeded.
+
+Operational checks worth doing after the first successful run:
+
+- Metrics collection works against the remote daemon because Paid resolves stats through `Containers.backend_for(agent_run.container_host)`
+- Orphan cleanup scans both local and remote backends because cleanup iterates `Containers.all_backends`
+- Both `paid_agent` and `paid_internal` are present on the NAS and the run lands on the expected network
+
+## 7. Known Constraints
+
+- No host bind mounts. The remote backend reports `supports_host_paths? = false`, so host credential-file mounting does not work. Subscription auth is per provider, not a generic `RunnerCredential` fallback:
+  - Claude: managed credentials stored as `RunnerCredential` records (Claude OAuth) are fetched from the database and written into the container, so subscription auth works without any bind mount.
+  - Gemini and Copilot: still need a local config copy (`oauth_creds.json` / `config.json`) readable on the Paid control plane; there is no DB-managed credential yet.
+  - Codex: requires `auth.json` from a Docker-host bind mount, which the remote backend cannot provide. When the Codex subscription runner is requested without that mount, provisioning raises an error. Use API-key auth mode for Codex on remote Docker.
+- Auto-capacity is conservative. Remote Docker is classified as shared infrastructure for capacity decisions, so use manual concurrency mode if you want predictable scheduling behavior.
+- Recommended setting for predictability:
+
+```text
+run_concurrency_mode=manual
+```
+
+- Clone latency is higher. Fresh git clones happen on the NAS over the Tailscale path; expect roughly 30-60 seconds for larger repositories.
+- Proxy round-trip adds network latency. Every proxied LLM call travels from the NAS container to the Paid app over Tailscale. On the same LAN this is usually single-digit milliseconds; across wider networks expect something more like 20-100 milliseconds.
+
+## 8. Security Checklist
 
 Confirm all of these before enabling production traffic:
 
 - Docker API only accepts mTLS-authenticated clients
-- `PAID_PROXY_EXTERNAL_URL` is encrypted in transit
-- Agent containers still receive proxy-issued credentials, not raw provider API keys
-- Remote containers join the same expected Docker networks and pass network-policy smoke tests
-- The remote host has the `paid-agent:latest` image available, or can pull it
+- TCP `2376` is reachable only through Tailscale or another private tunnel
+- `PAID_PROXY_EXTERNAL_URL` points to an address the NAS can reach
+- The NAS daemon trusts `ca.pem` and uses the matching `server-cert.pem` and `server-key.pem`
+- The Paid control plane keeps `client-key.pem` and `ca-key.pem` out of source control and out of world-readable locations
+- The remote host has the `paid-agent:latest` image available, or can pull it reliably
 
-## Operational Notes
+## Related Docs
 
-- Workspace volumes remain host-local named volumes on the remote daemon.
-- Orphan cleanup now scans all registered backends, so local leftovers can still be reaped after moving to remote execution.
-- Metrics collection follows `container_host`, so agent-run stats are read from the correct daemon.
+- [Agent system overview](../AGENT_SYSTEM.md)
+- [Remote container execution RDR](../rdrs/RDR-019-remote-container-execution.md)
+- [Docker Engine TLS setup](https://docs.docker.com/engine/security/https/)

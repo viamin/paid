@@ -49,6 +49,7 @@ RSpec.describe ApplicationJob, :no_db do
         ScreenshotCleanupJob
         ServiceContainerReconciliationJob
         StaleRunDetectorJob
+        StyleGuideEvolutionJob
         TemporalPatchGuardSweepJob
         WorktreeOrphanCleanupJob
       ],

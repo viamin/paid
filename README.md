@@ -114,7 +114,7 @@ docker compose up --build
 # before using the app. `bin/setup` already runs `bin/rails db:prepare`.
 ```
 
-> **Note**: By default, the checked-in `docker-compose.yml` starts `postgres`, `redis`, `temporal`, `temporal-admin-tools`, `temporal-ui`, `qdrant`, `web`, and `worker` when you run `docker compose up --build`. The compose file wires `DATABASE_URL`, `REDIS_URL`, Temporal, and Qdrant for the app so development-only dashboards such as `rails_performance` work out of the box. The `agent-image` and `agent-test` services are profile-gated, so they only start when their profiles are explicitly enabled. `ANTHROPIC_API_KEY` is passed through today; if you want proxy-based OpenAI or Google auth in Compose, add `OPENAI_API_KEY` and/or `GOOGLE_API_KEY` to the `web` service, and to `worker` as well if you want worker-side flows to see them.
+> **Note**: By default, the checked-in `docker-compose.yml` starts `postgres`, `redis`, `temporal`, `temporal-admin-tools`, `temporal-ui`, `qdrant`, `web`, and `worker` when you run `docker compose up --build`. The compose file wires `DATABASE_URL`, `REDIS_URL`, Temporal, and Qdrant for the app so development-only dashboards such as `rails_performance` work out of the box. The `agent-test` service is profile-gated, so it only starts when its profile is explicitly enabled. Build `paid-agent:latest` with `./scripts/build-agent-image.sh`; that script extracts the Dockerfile build args from `Gemfile.lock` and `agent-harness`. `ANTHROPIC_API_KEY` is passed through today; if you want proxy-based OpenAI or Google auth in Compose, add `OPENAI_API_KEY` and/or `GOOGLE_API_KEY` to the `web` service, and to `worker` as well if you want worker-side flows to see them.
 
 **Database role note**: Compose creates the Rails `paid` role separately from the PostgreSQL admin role so tenant row-level security cannot be bypassed by a superuser connection. If you have an older `postgres-data` volume where `paid` was the bootstrap superuser, recreate that volume before running this branch.
 
@@ -260,7 +260,7 @@ OpenCode and KiloCode direct-outbound API-key entries are the exception: Paid wr
 | `qdrant` | 6333 | Vector database for semantic knowledge search |
 | `temporal-admin-tools` | - | CLI tools for Temporal administration |
 | `worker` | - | Temporal worker process (executes workflows) |
-| `agent-image` | - | Builds the `paid-agent:latest` image (`setup` profile, exits immediately) |
+| `agent-image` | - | Legacy setup profile; use `./scripts/build-agent-image.sh` for supported agent image builds |
 | `agent-test` | - | Agent container for testing the image (`test` profile only) |
 
 ### Networks
