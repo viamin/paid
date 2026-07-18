@@ -53,6 +53,20 @@ module Screenshots
       @url_ttl = url_ttl
     end
 
+    # The S3 bucket screenshots and traces share. Exposed so sibling services
+    # (e.g. {Previews::TraceViewer}) can address the same bucket.
+    attr_reader :bucket
+
+    # The AWS region for the configured bucket.
+    attr_reader :region
+
+    # Underlying S3 client. Exposed so sibling services that operate on the
+    # shared bucket (trace existence checks, trace uploads) can reuse it
+    # instead of constructing a second, potentially divergent client.
+    def s3_client
+      @s3_client ||= Aws::S3::Client.new(client_options)
+    end
+
     # Uploads a PNG screenshot to S3 and returns a presigned URL.
     #
     # @param file_path [String] Path to the local PNG file
@@ -278,10 +292,6 @@ module Screenshots
           delete: { objects: page.contents.map { |obj| { key: obj.key } } }
         )
       end
-    end
-
-    def s3_client
-      @s3_client ||= Aws::S3::Client.new(client_options)
     end
 
     def presigner

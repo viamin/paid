@@ -151,6 +151,79 @@ RSpec.describe Screenshots::ContainerCapture do
     expect(command).not_to include(%q(uri = URI("http://localhost:3000/it's-a-path")))
   end
 
+  it "uses Phoenix startup when mix.exs is present and exposes the port in capture env" do
+    tmpdir = Dir.mktmpdir("phoenix-screenshot")
+    File.write(File.join(tmpdir, "mix.exs"), "defmodule Demo.MixProject do end")
+    service.instance_variable_set(:@tmpdir, tmpdir)
+    allow(service).to receive(:config).and_return(
+      Screenshots::Configuration.from_hash(
+        "base_url" => "http://localhost:4100",
+        "routes" => [ { "path" => "/", "name" => "home" } ]
+      )
+    )
+
+    expect(service.send(:application_start_command)).to eq("MIX_ENV=dev mix phx.server")
+    expect(service.send(:capture_env).fetch("PORT")).to eq("4100")
+  ensure
+    FileUtils.rm_rf(tmpdir)
+  end
+
+  it "overrides Phoenix dev endpoint binding to listen on all interfaces during capture" do
+    tmpdir = Dir.mktmpdir("phoenix-bind")
+    FileUtils.mkdir_p(File.join(tmpdir, "config"))
+    File.write(File.join(tmpdir, "mix.exs"), "defmodule Demo.MixProject do end")
+    File.write(File.join(tmpdir, "config/dev.exs"), <<~EXS)
+      import Config
+
+      config :demo, DemoWeb.Endpoint,
+        http: [ip: {127, 0, 0, 1}, port: String.to_integer(System.get_env("PORT") || "4000")]
+    EXS
+    service.instance_variable_set(:@tmpdir, tmpdir)
+
+    service.send(:prepare_phoenix_endpoint_binding!)
+
+    runtime = File.read(File.join(tmpdir, "config/runtime.exs"))
+    expect(runtime).to include("config :demo, DemoWeb.Endpoint")
+    expect(runtime).to include("http: [ip: {0, 0, 0, 0}, port: String.to_integer(System.get_env(\"PORT\") || \"4000\")]")
+  ensure
+    FileUtils.rm_rf(tmpdir)
+  end
+
+  it "rejects seed configuration for Phoenix projects with a config error" do
+    tmpdir = Dir.mktmpdir("phoenix-seed")
+    File.write(File.join(tmpdir, "mix.exs"), "defmodule Demo.MixProject do end")
+    service.instance_variable_set(:@tmpdir, tmpdir)
+    allow(service).to receive(:config).and_return(
+      Screenshots::Configuration.from_hash(
+        "base_url" => "http://localhost:4100",
+        "routes" => [ { "path" => "/", "name" => "home" } ],
+        "seed" => [ { "key" => "__all__", "runner" => "Screenshots::SeedData::Paid.call" } ]
+      )
+    )
+
+    expect { service.send(:validate_supported_config!) }.to raise_error(
+      Screenshots::ConfigError, /not supported for Phoenix projects yet/
+    )
+  ensure
+    FileUtils.rm_rf(tmpdir)
+  end
+
+  it "allows seedless Phoenix captures through config validation" do
+    tmpdir = Dir.mktmpdir("phoenix-noseed")
+    File.write(File.join(tmpdir, "mix.exs"), "defmodule Demo.MixProject do end")
+    service.instance_variable_set(:@tmpdir, tmpdir)
+    allow(service).to receive(:config).and_return(
+      Screenshots::Configuration.from_hash(
+        "base_url" => "http://localhost:4100",
+        "routes" => [ { "path" => "/", "name" => "home" } ]
+      )
+    )
+
+    expect { service.send(:validate_supported_config!) }.not_to raise_error
+  ensure
+    FileUtils.rm_rf(tmpdir)
+  end
+
   describe "#screenshot_config_json (capture scoping and annotation)" do
     let(:multi_route_config) do
       Screenshots::Configuration.from_hash(
@@ -190,6 +263,69 @@ RSpec.describe Screenshots::ContainerCapture do
       routes = JSON.parse(service.send(:screenshot_config_json)).fetch("routes")
 
       expect(routes.map { |r| r["name"] }).to contain_exactly("dashboard", "settings")
+    end
+  end
+
+  describe "#capture_runner_script (trace recording)" do
+    it "starts and stops Playwright tracing, writing trace.zip" do
+      script = service.send(:capture_runner_script)
+
+      expect(script).to include("context.tracing.start({ screenshots: true, snapshots: true, sources: true })")
+      expect(script).to include("context.tracing.stop({ path: `${outputDir}/trace.zip` })")
+    end
+
+    it "gates video recording on the SCREENSHOT_RECORD_VIDEO env var" do
+      script = service.send(:capture_runner_script)
+
+      expect(script).to include('process.env.SCREENSHOT_RECORD_VIDEO === "1"')
+      expect(script).to include("contextOptions.recordVideo = { dir: `${outputDir}/videos` }")
+    end
+
+    it "closes the context before the browser so recorded videos flush to disk" do
+      script = service.send(:capture_runner_script)
+
+      context_close_index = script.index("await context.close();")
+      browser_close_index = script.index("await browser.close();")
+
+      expect(context_close_index).not_to be_nil
+      expect(browser_close_index).to be > context_close_index
+    end
+  end
+
+  describe "#record_video?" do
+    it "defaults to disabled" do
+      expect(service.send(:record_video?)).to be false
+    end
+
+    it "reflects the project record_video screenshot setting" do
+      allow(project).to receive(:effective_screenshot_settings)
+        .and_return("record_video" => true)
+
+      expect(service.send(:record_video?)).to be true
+    end
+  end
+
+  describe "#collected_video_path" do
+    it "globs the recorded .webm from the videos subdirectory" do
+      tmpdir = service.instance_variable_get(:@tmpdir) || Dir.mktmpdir("screenshots-spec")
+      service.instance_variable_set(:@tmpdir, tmpdir)
+      videos_dir = File.join(tmpdir, Screenshots::ContainerCapture::OUTPUT_DIR, "videos")
+      FileUtils.mkdir_p(videos_dir)
+      written = File.join(videos_dir, "abc.webm")
+      File.write(written, "fake video")
+
+      expect(service.send(:collected_video_path)).to eq(written)
+    ensure
+      FileUtils.rm_rf(tmpdir)
+    end
+
+    it "returns nil when no video was recorded" do
+      tmpdir = Dir.mktmpdir("screenshots-spec")
+      service.instance_variable_set(:@tmpdir, tmpdir)
+
+      expect(service.send(:collected_video_path)).to be_nil
+    ensure
+      FileUtils.rm_rf(tmpdir)
     end
   end
 

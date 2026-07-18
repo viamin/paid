@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_08_034227) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_15_150454) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -483,6 +483,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_08_034227) do
 
   create_table "chat_sessions", force: :cascade do |t|
     t.bigint "account_id", null: false
+    t.boolean "auto_approve", default: false, null: false, comment: "When true, write tool calls (e.g. agent run creation) are auto-approved without a manual confirmation click"
     t.string "container_id"
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
@@ -1660,6 +1661,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_08_034227) do
     t.index ["strategy_type"], name: "index_orchestration_strategies_on_strategy_type"
   end
 
+  create_table "pending_install_claims", comment: "Server-side claims tying a freshly-returned GitHub App installation to a Paid account, so the signed `installation` webhook can finalize the GithubInstallation row for a first-time install into a brand-new org where the existing signals (project owner match, prior installation row) cannot resolve the account.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "expires_at", null: false, comment: "When this claim becomes invalid; a stale claim must never authorize a binding"
+    t.bigint "github_installation_id", null: false, comment: "GitHub installation ID returned by the post-install redirect (callback or setup_url)"
+    t.string "source", null: false, comment: "How the claim was created: callback_with_state (user-initiated SaaS flow with verified CSRF state), operator_setup (self-hosted setup_url redirect, operator-authenticated)"
+    t.string "state_token", comment: "Opaque CSRF state token tied to the user's session at install time; included for audit / forensic value, not used as a binding signal in itself"
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "github_installation_id"], name: "idx_pending_install_claims_on_account_installation", unique: true
+    t.index ["account_id"], name: "index_pending_install_claims_on_account_id"
+    t.index ["expires_at"], name: "index_pending_install_claims_on_expires_at"
+    t.index ["github_installation_id"], name: "index_pending_install_claims_on_github_installation_id"
+  end
+
   create_table "pr_templates", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.text "body", null: false
@@ -1845,6 +1860,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_08_034227) do
     t.string "automation_label_name", default: "paid-automation", null: false
     t.boolean "automation_on_label_enabled", default: true, null: false
     t.integer "code_scanning_interval_hours", default: 24, null: false
+    t.datetime "code_scanning_permission_error_at", comment: "Timestamp of the most recent 403 (missing security_events/code_scanning_alerts:read permission) hit while scanning for code scanning alerts. Used to back off retrying a scan that will fail identically until a human fixes the token/App permission, without waiting the full code_scanning_interval_hours window. Cleared on the next successful scan."
     t.integer "completed_agent_runs_count", default: 0, null: false, comment: "Counter cache for completed agent runs"
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
@@ -1887,6 +1903,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_08_034227) do
     t.integer "poll_interval_seconds", default: 60, null: false
     t.jsonb "pr_action_labels", default: [], null: false
     t.boolean "pr_aggregation_enabled", default: false, null: false
+    t.string "primary_language", comment: "Primary language of the repository as reported by GitHub (e.g. Ruby, Elixir, Swift). Used to detect and badge the project type."
     t.jsonb "priority_labels", default: {"P1" => "P1", "P2" => "P2", "P3" => "P3"}, null: false
     t.jsonb "quality_gate_settings", default: {}, null: false
     t.jsonb "quality_pause_metadata", default: {}, null: false
@@ -2436,12 +2453,119 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_08_034227) do
     t.index ["strategy_id"], name: "index_strategy_versions_one_active_per_strategy", unique: true, where: "(((promotion_state)::text = 'active'::text) AND (retired_at IS NULL))"
   end
 
+  create_table "style_guide_ab_test_assignments", force: :cascade do |t|
+    t.bigint "agent_run_id", null: false
+    t.datetime "created_at", null: false
+    t.decimal "quality_score", precision: 5, scale: 4
+    t.bigint "style_guide_ab_test_id", null: false
+    t.bigint "style_guide_ab_test_variant_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_run_id"], name: "index_style_guide_ab_test_assignments_on_agent_run_id"
+    t.index ["style_guide_ab_test_id", "agent_run_id"], name: "index_style_guide_ab_test_assignments_unique", unique: true
+    t.index ["style_guide_ab_test_id"], name: "idx_on_style_guide_ab_test_id_653b807c99"
+    t.index ["style_guide_ab_test_variant_id"], name: "idx_on_style_guide_ab_test_variant_id_6da5a7dee2"
+  end
+
+  create_table "style_guide_ab_test_variants", force: :cascade do |t|
+    t.decimal "avg_quality_score", precision: 5, scale: 4
+    t.datetime "created_at", null: false
+    t.boolean "is_control", default: false, null: false
+    t.integer "sample_count", default: 0, null: false
+    t.bigint "style_guide_ab_test_id", null: false
+    t.bigint "style_guide_version_id", null: false
+    t.decimal "total_quality_score", precision: 10, scale: 4, default: "0.0", null: false
+    t.datetime "updated_at", null: false
+    t.index ["style_guide_ab_test_id", "style_guide_version_id"], name: "index_style_guide_ab_test_variants_on_test_and_version", unique: true
+    t.index ["style_guide_ab_test_id"], name: "index_style_guide_ab_test_variants_on_control_per_test", unique: true, where: "(is_control = true)"
+    t.index ["style_guide_ab_test_id"], name: "index_style_guide_ab_test_variants_on_style_guide_ab_test_id"
+    t.index ["style_guide_version_id"], name: "index_style_guide_ab_test_variants_on_style_guide_version_id"
+  end
+
+  create_table "style_guide_ab_tests", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "analysis_samples_key"
+    t.jsonb "cached_analysis"
+    t.datetime "completed_at"
+    t.decimal "confidence_threshold", default: "0.95", null: false
+    t.bigint "control_version_id", null: false
+    t.datetime "created_at", null: false
+    t.text "description"
+    t.string "idempotency_key"
+    t.integer "min_samples_per_variant", default: 30, null: false
+    t.string "name", null: false
+    t.datetime "started_at"
+    t.string "status", default: "draft", null: false
+    t.bigint "style_guide_id", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "winner_variant_id"
+    t.index ["account_id"], name: "index_style_guide_ab_tests_on_account_id"
+    t.index ["account_id"], name: "index_style_guide_ab_tests_one_running_per_account", unique: true, where: "((status)::text = 'running'::text)"
+    t.index ["control_version_id"], name: "index_style_guide_ab_tests_on_control_version_id"
+    t.index ["status"], name: "index_style_guide_ab_tests_on_status"
+    t.index ["style_guide_id", "idempotency_key"], name: "idx_on_style_guide_id_idempotency_key_e10519ccd2", unique: true, where: "(idempotency_key IS NOT NULL)"
+    t.index ["style_guide_id", "status"], name: "index_style_guide_ab_tests_on_style_guide_id_and_status"
+    t.index ["style_guide_id"], name: "index_style_guide_ab_tests_on_style_guide_id"
+    t.index ["winner_variant_id"], name: "index_style_guide_ab_tests_on_winner_variant_id"
+  end
+
+  create_table "style_guide_run_exposures", force: :cascade do |t|
+    t.bigint "agent_run_id", null: false
+    t.datetime "created_at", null: false
+    t.string "guide_name", null: false
+    t.text "injected_content"
+    t.string "injected_via", limit: 50, null: false
+    t.integer "position", null: false
+    t.string "source_scope", limit: 20, null: false
+    t.bigint "style_guide_ab_test_assignment_id"
+    t.bigint "style_guide_id"
+    t.bigint "style_guide_version_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_run_id", "guide_name"], name: "index_style_guide_run_exposures_on_run_and_name", unique: true
+    t.index ["agent_run_id"], name: "index_style_guide_run_exposures_on_agent_run_id"
+    t.index ["style_guide_ab_test_assignment_id"], name: "idx_on_style_guide_ab_test_assignment_id_d2bca3fb4e"
+    t.index ["style_guide_ab_test_assignment_id"], name: "index_style_guide_run_exposures_on_assignment_id"
+    t.index ["style_guide_id", "created_at"], name: "idx_on_style_guide_id_created_at_4675f78c23"
+    t.index ["style_guide_id"], name: "index_style_guide_run_exposures_on_style_guide_id"
+    t.index ["style_guide_version_id"], name: "index_style_guide_run_exposures_on_style_guide_version_id"
+  end
+
+  create_table "style_guide_versions", force: :cascade do |t|
+    t.decimal "avg_quality_score", precision: 5, scale: 4
+    t.text "change_notes"
+    t.text "compressed_content"
+    t.jsonb "compression_metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.string "created_by", limit: 50
+    t.bigint "created_by_user_id"
+    t.string "idempotency_key"
+    t.bigint "parent_version_id"
+    t.text "raw_content", null: false
+    t.datetime "retired_at"
+    t.text "review_notes"
+    t.string "review_status", limit: 20
+    t.datetime "reviewed_at"
+    t.bigint "reviewed_by_user_id"
+    t.bigint "style_guide_id", null: false
+    t.datetime "updated_at", null: false
+    t.integer "usage_count", default: 0, null: false
+    t.integer "version", null: false
+    t.index ["created_by_user_id"], name: "index_style_guide_versions_on_created_by_user_id"
+    t.index ["parent_version_id"], name: "index_style_guide_versions_on_parent_version_id"
+    t.index ["retired_at"], name: "index_style_guide_versions_on_retired_at"
+    t.index ["reviewed_by_user_id"], name: "index_style_guide_versions_on_reviewed_by_user_id"
+    t.index ["style_guide_id", "idempotency_key"], name: "idx_on_style_guide_id_idempotency_key_48d30b1e0e", unique: true, where: "(idempotency_key IS NOT NULL)"
+    t.index ["style_guide_id", "review_status"], name: "index_style_guide_versions_on_style_guide_id_and_review_status"
+    t.index ["style_guide_id", "version"], name: "index_style_guide_versions_on_style_guide_id_and_version", unique: true
+    t.index ["style_guide_id"], name: "index_style_guide_versions_on_style_guide_id"
+  end
+
   create_table "style_guides", force: :cascade do |t|
     t.bigint "account_id"
     t.boolean "active", default: true, null: false
     t.text "compressed_content"
     t.jsonb "compression_metadata", default: {}, null: false
     t.datetime "created_at", null: false
+    t.bigint "current_version_id"
     t.string "language", limit: 50
     t.jsonb "log_data"
     t.string "name", limit: 255, null: false
@@ -2450,6 +2574,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_08_034227) do
     t.datetime "updated_at", null: false
     t.index ["account_id"], name: "index_style_guides_on_account_id"
     t.index ["active"], name: "index_style_guides_on_active"
+    t.index ["current_version_id"], name: "index_style_guides_on_current_version_id"
     t.index ["language"], name: "index_style_guides_on_language"
     t.index ["name", "account_id"], name: "index_style_guides_on_name_account", unique: true, where: "((account_id IS NOT NULL) AND (project_id IS NULL))"
     t.index ["name", "project_id"], name: "index_style_guides_on_name_project", unique: true, where: "(project_id IS NOT NULL)"
@@ -2782,6 +2907,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_08_034227) do
   add_foreign_key "orchestration_decisions", "projects", on_delete: :cascade
   add_foreign_key "orchestration_decisions", "strategy_versions", on_delete: :nullify
   add_foreign_key "orchestration_strategies", "accounts"
+  add_foreign_key "pending_install_claims", "accounts"
   add_foreign_key "pr_templates", "accounts", on_delete: :cascade
   add_foreign_key "pr_templates", "projects", on_delete: :cascade
   add_foreign_key "pr_templates", "users", on_delete: :cascade
@@ -2859,8 +2985,25 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_08_034227) do
   add_foreign_key "strategy_versions", "strategy_versions", column: "parent_version_id", on_delete: :nullify
   add_foreign_key "strategy_versions", "users", column: "created_by_user_id", on_delete: :nullify
   add_foreign_key "strategy_versions", "users", column: "promoted_by_user_id", on_delete: :nullify
+  add_foreign_key "style_guide_ab_test_assignments", "agent_runs", on_delete: :cascade
+  add_foreign_key "style_guide_ab_test_assignments", "style_guide_ab_test_variants", on_delete: :cascade
+  add_foreign_key "style_guide_ab_test_assignments", "style_guide_ab_tests", on_delete: :cascade
+  add_foreign_key "style_guide_ab_test_variants", "style_guide_ab_tests", on_delete: :cascade
+  add_foreign_key "style_guide_ab_test_variants", "style_guide_versions", on_delete: :restrict
+  add_foreign_key "style_guide_ab_tests", "accounts", on_delete: :cascade
+  add_foreign_key "style_guide_ab_tests", "style_guide_versions", column: "control_version_id", on_delete: :restrict
+  add_foreign_key "style_guide_ab_tests", "style_guides", on_delete: :cascade
+  add_foreign_key "style_guide_run_exposures", "agent_runs", on_delete: :cascade
+  add_foreign_key "style_guide_run_exposures", "style_guide_ab_test_assignments", on_delete: :nullify
+  add_foreign_key "style_guide_run_exposures", "style_guide_versions", on_delete: :restrict
+  add_foreign_key "style_guide_run_exposures", "style_guides", on_delete: :nullify
+  add_foreign_key "style_guide_versions", "style_guide_versions", column: "parent_version_id", on_delete: :nullify
+  add_foreign_key "style_guide_versions", "style_guides", on_delete: :cascade
+  add_foreign_key "style_guide_versions", "users", column: "created_by_user_id", on_delete: :nullify
+  add_foreign_key "style_guide_versions", "users", column: "reviewed_by_user_id", on_delete: :nullify
   add_foreign_key "style_guides", "accounts", on_delete: :cascade
   add_foreign_key "style_guides", "projects", on_delete: :cascade
+  add_foreign_key "style_guides", "style_guide_versions", column: "current_version_id", on_delete: :nullify
   add_foreign_key "tenant_settings", "accounts"
   add_foreign_key "token_usages", "agent_runs", on_delete: :cascade
   add_foreign_key "token_usages", "chat_sessions", on_delete: :cascade
@@ -3712,10 +3855,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_08_034227) do
       CREATE TRIGGER logidze_on_mcp_server_definitions BEFORE INSERT OR UPDATE ON public.mcp_server_definitions FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{env}')
   SQL
 
-  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
-      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
-  SQL
-
   create_trigger :logidze_on_orchestration_strategies, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_orchestration_strategies BEFORE INSERT OR UPDATE ON public.orchestration_strategies FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
@@ -3782,5 +3921,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_08_034227) do
 
   create_trigger :logidze_on_users, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_users BEFORE INSERT OR UPDATE ON public.users FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{encrypted_password,reset_password_token,reset_password_sent_at,remember_created_at}')
+  SQL
+
+  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
+      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
   SQL
 end

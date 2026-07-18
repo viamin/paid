@@ -14,14 +14,31 @@ module Activities
       source_pull_request_number = input[:source_pull_request_number]
       goal = input[:goal]
       focus = input[:focus] || "general"
+      trigger_type = input[:trigger_type]
       auto_pick = input.fetch(:auto_pick, false)
       count_toward_draft_review_round = input.fetch(:count_toward_draft_review_round, false)
       expected_draft_review_count = input[:expected_draft_review_count]
 
       project = Project.find(project_id)
       goal ||= project.account.tenant_setting&.default_goal || "create_pr"
+      if trigger_type.nil? && goal == "create_pr" && source_pull_request_number.present?
+        trigger_type = AgentRun.retry_trigger_type_for(
+          project: project,
+          source_pull_request_number: source_pull_request_number,
+          goal: goal
+        )
+      end
+      trigger_type ||= "automatic"
       issue = issue_id ? Issue.find(issue_id) : nil
-      if issue_requires_trust?(goal) && issue&.untrusted?
+
+      # PR follow-up runs (source_pull_request_number present) intentionally do
+      # not reuse the issue-trust gate below. They are authorized upstream by
+      # ScanPaidPrsActivity#authorized_for_automation_scan? (trusted authors,
+      # dependency-update bots, or trusted-user-added labels) or by
+      # LabelPolicy#authorized_for_trigger?. BuildForPr still filters comment
+      # bodies independently, so this bypass only affects run creation.
+      pr_followup_run = source_pull_request_number.present?
+      if issue_requires_trust?(goal) && issue&.untrusted? && !pr_followup_run
         logger.info(
           message: "queue_agent_run.untrusted_issue_skipped",
           project_id: project.id,
@@ -66,6 +83,7 @@ module Activities
             source_pull_request_number: source_pull_request_number,
             goal: goal,
             focus: focus,
+            trigger_type: trigger_type,
             auto_pick: auto_pick,
             count_toward_draft_review_round: count_toward_draft_review_round,
             expected_draft_review_count: expected_draft_review_count,

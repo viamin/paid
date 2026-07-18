@@ -157,6 +157,25 @@ RSpec.describe Screenshots::Storage do
       expect(result["dashboard"]).to eq("https://example.test/dashboard.png?X-Amz-Signature=123")
     end
 
+    it "excludes non-PNG artifacts such as trace and video files" do
+      s3_client.stub_responses(:list_objects_v2, {
+        contents: [
+          { key: "screenshots/acme/web/pr-42/old/dashboard.png", last_modified: 1.hour.ago },
+          { key: "screenshots/acme/web/pr-42/old/trace.zip", last_modified: 1.hour.ago },
+          { key: "screenshots/acme/web/pr-42/old/capture.webm", last_modified: 1.hour.ago },
+          { key: "screenshots/acme/web/pr-42/current/dashboard.png", last_modified: 1.minute.ago }
+        ],
+        is_truncated: false
+      })
+      allow(storage).to receive(:signed_url) do |key|
+        "https://example.test/#{File.basename(key)}?X-Amz-Signature=123"
+      end
+
+      result = storage.previous_screenshots(org: "acme", repo: "web", pr_number: 42, exclude_sha: "current")
+
+      expect(result.keys).to contain_exactly("dashboard")
+    end
+
     it "returns empty hash when no previous commits exist" do
       s3_client.stub_responses(:list_objects_v2, {
         contents: [

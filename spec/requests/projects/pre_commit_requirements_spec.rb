@@ -29,7 +29,7 @@ RSpec.describe "Projects::PreCommitRequirements" do
 
       it "renders the default mutation test command hint" do
         get project_pre_commit_requirements_path(project)
-        expect(response.body).to include("bundle exec mutant run --since HEAD~1")
+        expect(response.body).to include("bundle exec mutant run --results-dir .mutant/results --since HEAD~1")
       end
     end
 
