@@ -170,7 +170,11 @@ module Previews
       # Capture only the preview-added IDs so cleanup can still drop any per-run
       # databases the provisioner created before failing, without touching the
       # original service containers that existed before this preview started.
+      # Capture the post-failure environment too so restore_agent_run_service_state!
+      # can tell our additions apart from anything a sibling preview wrote
+      # after ours began.
       @service_container_ids = Array(agent_run.service_container_ids) - Array(@original_service_container_ids)
+      @service_environment = agent_run.service_environment&.deep_dup || {}
       restore_agent_run_service_state!
       raise
     end
@@ -355,12 +359,37 @@ module Previews
       )
     end
 
+    # Reverts this provision's additions to the agent run while preserving
+    # any references/environment that a sibling preview added after this one
+    # started. Wholesale-restore would clobber the sibling's additions and
+    # drop capacity_inflight_agent_run_count below the actual in-flight
+    # count, reintroducing the premature shared-container shutdown race
+    # this service is meant to avoid.
     def restore_agent_run_service_state!
       return unless @original_service_container_ids
 
+      current_ids = Array(agent_run.service_container_ids)
+      preserved_ids = current_ids - Array(@service_container_ids)
+      restored_ids = (Array(@original_service_container_ids) + preserved_ids).uniq
+
+      current_env = agent_run.service_environment&.deep_dup || {}
+      original_env = @original_service_environment || {}
+      my_env = @service_environment || {}
+      all_keys = current_env.keys | original_env.keys
+      restored_env = all_keys.each_with_object({}) do |key, hash|
+        current_value = current_env[key]
+        my_value = my_env[key]
+        original_value = original_env[key]
+        if current_value == my_value
+          hash[key] = original_value if original_value
+        elsif current_value
+          hash[key] = current_value
+        end
+      end
+
       agent_run.update!(
-        service_container_ids: @original_service_container_ids,
-        service_environment: @original_service_environment
+        service_container_ids: restored_ids,
+        service_environment: restored_env
       )
     rescue StandardError => e
       logger.warn(
@@ -371,6 +400,8 @@ module Previews
     ensure
       @original_service_container_ids = nil
       @original_service_environment = nil
+      @service_container_ids = nil
+      @service_environment = nil
     end
 
     def read_file(relative_path)
