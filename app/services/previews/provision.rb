@@ -42,13 +42,17 @@ module Previews
       # covers the gap between expiry and the next cron tick.
       expire_stale_sessions!
 
-      previous = current
-      stop_previous(previous) if previous
+      session = nil
 
-      session = PreviewSession.build_for(project:, branch_name: resolved_branch(branch_name),
-                                         created_by: actor, ttl_seconds: ttl_seconds)
-      session.status = "provisioning"
-      session.save!
+      project.with_lock do
+        previous = current
+        stop_previous(previous) if previous
+
+        session = PreviewSession.build_for(project:, branch_name: resolved_branch(branch_name),
+                                           created_by: actor, ttl_seconds: ttl_seconds)
+        session.status = "provisioning"
+        session.save!
+      end
 
       provision(session)
     rescue StandardError => e

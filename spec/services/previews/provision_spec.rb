@@ -57,6 +57,16 @@ RSpec.describe Previews::Provision do
 
       expect(expired.reload.tunnel_port).to be_nil
     end
+
+    it "serializes the stop-and-create path under the project lock" do
+      allow(project).to receive(:with_lock).and_wrap_original do |method, *args, &block|
+        method.call(*args, &block)
+      end
+
+      service.start(branch_name: "main")
+
+      expect(project).to have_received(:with_lock)
+    end
   end
 
   describe "#stop" do
