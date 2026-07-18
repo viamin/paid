@@ -312,6 +312,7 @@ class Project < ApplicationRecord
   after_update_commit :clear_scheduler_pause_on_token_change, if: :saved_change_to_github_token_id?
   after_update_commit :clear_scheduler_pause_on_installation_change, if: :saved_change_to_github_installation_id?
   after_update_commit :seed_eligible_issues, if: :auto_pick_just_enabled?
+  after_update_commit :ensure_playwright_mcp_definition!, if: :verification_just_enabled?
   after_destroy_commit :stop_github_polling
   after_destroy_commit :cleanup_qdrant_collection
 
@@ -1387,6 +1388,15 @@ class Project < ApplicationRecord
 
   def auto_pick_just_enabled?
     saved_change_to_auto_pick_enabled? && auto_pick_enabled?
+  end
+
+  def verification_just_enabled?
+    return false unless saved_change_to_screenshot_settings?
+
+    previous, current = saved_change_to_screenshot_settings
+    previous_value = previous.is_a?(Hash) ? previous["verification_enabled"] : nil
+    current_value = current.is_a?(Hash) ? current["verification_enabled"] : nil
+    ActiveModel::Type::Boolean.new.cast(current_value) && !ActiveModel::Type::Boolean.new.cast(previous_value)
   end
 
   def seed_eligible_issues
