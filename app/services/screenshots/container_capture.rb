@@ -754,7 +754,15 @@ module Screenshots
     def wait_for_preview_tunnel!
       return if @preview_tunnel.blank?
 
-      Previews::TunnelManager.wait_until_ready!(port: @preview_tunnel.tunnel_port)
+      Previews::TunnelManager.wait_until_ready!(
+        port: @preview_tunnel.tunnel_port,
+        path: preview_tunnel_health_check_path
+      )
+    end
+
+    def preview_tunnel_health_check_path
+      uri = URI.parse(config.base_url)
+      uri.request_uri.presence || "/"
     end
 
     def package_dependency?(name)

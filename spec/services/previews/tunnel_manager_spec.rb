@@ -180,17 +180,39 @@ RSpec.describe Previews::TunnelManager do
   end
 
   describe ".wait_until_ready!" do
-    it "returns when the local tunnel port accepts connections" do
+    it "returns when the local tunnel serves an HTTP response" do
       server = TCPServer.new("127.0.0.1", 0)
       thread = Thread.new do
         client = server.accept
+        client.gets("\r\n")
+        client.write("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
         client.close
       ensure
         server.close
       end
 
-      expect(described_class.wait_until_ready!(host: "127.0.0.1", port: server.addr[1], timeout_seconds: 1)).to be(true)
+      expect(described_class.wait_until_ready!(host: "127.0.0.1", port: server.addr[1], path: "/ready", timeout_seconds: 1)).to be(true)
 
+      thread.join
+    end
+
+    it "does not treat a bare TCP listener as a ready tunnel" do
+      server = TCPServer.new("127.0.0.1", 0)
+      thread = Thread.new do
+        loop do
+          client = server.accept
+          client.close
+        end
+      rescue IOError, Errno::EBADF
+      ensure
+        server.close
+      end
+
+      expect {
+        described_class.wait_until_ready!(host: "127.0.0.1", port: server.addr[1], timeout_seconds: 1)
+      }.to raise_error(described_class::HealthCheckError)
+
+      server.close
       thread.join
     end
   end

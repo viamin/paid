@@ -282,7 +282,7 @@ RSpec.describe Screenshots::ContainerCapture do
       fresh_service.send(:start_application!)
 
       expect(provision).to have_received(:activate_preview_tunnel!).with(app_port: 3000)
-      expect(Previews::TunnelManager).to have_received(:wait_until_ready!).with(port: 8201)
+      expect(Previews::TunnelManager).to have_received(:wait_until_ready!).with(port: 8201, path: "/")
     ensure
       FileUtils.rm_rf(tmpdir)
     end

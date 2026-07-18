@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "digest"
+require "net/http"
 require "set"
 require "socket"
 require "timeout"
@@ -160,13 +161,19 @@ module Previews
         ].join("\n") + "\n"
       end
 
-      def wait_until_ready!(port:, host: DEFAULT_LOCAL_APP_HOST, timeout_seconds: DEFAULT_HEALTH_CHECK_TIMEOUT_SECONDS)
-        Timeout.timeout(timeout_seconds, HealthCheckError, "Timed out waiting for preview tunnel #{host}:#{port}") do
+      def wait_until_ready!(port:, host: DEFAULT_LOCAL_APP_HOST, path: "/", timeout_seconds: DEFAULT_HEALTH_CHECK_TIMEOUT_SECONDS)
+        uri = URI.parse("http://#{host}:#{Integer(port)}#{normalize_health_check_path(path)}")
+
+        Timeout.timeout(timeout_seconds, HealthCheckError, "Timed out waiting for preview tunnel #{uri}") do
           loop do
-            socket = TCPSocket.new(host, port)
-            socket.close
-            return true
-          rescue Errno::ECONNREFUSED, Errno::EHOSTUNREACH, IOError, SocketError
+            response = Net::HTTP.start(uri.host, uri.port, open_timeout: 2, read_timeout: 2) do |http|
+              http.get(uri.request_uri)
+            end
+
+            return true if response.code.to_i < 500
+
+            sleep HEALTH_CHECK_POLL_INTERVAL_SECONDS
+          rescue Errno::ECONNREFUSED, Errno::ECONNRESET, Errno::EHOSTUNREACH, EOFError, IOError, Net::OpenTimeout, Net::ReadTimeout, SocketError
             sleep HEALTH_CHECK_POLL_INTERVAL_SECONDS
           end
         end
@@ -285,6 +292,11 @@ module Previews
 
       def toml_string(value)
         value.to_s.gsub("\\", "\\\\").gsub('"', '\"')
+      end
+
+      def normalize_health_check_path(path)
+        normalized_path = path.to_s.presence || "/"
+        normalized_path.start_with?("/") ? normalized_path : "/#{normalized_path}"
       end
 
       def list_preview_containers(backend:)
