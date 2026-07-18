@@ -1,0 +1,106 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe Previews::Provision do
+  let(:project) { create(:project) }
+  let(:service) { described_class.new(project: project) }
+
+  describe "#start" do
+    it "creates a ready session with a tunnel port and stops nothing else" do
+      result = service.start(branch_name: "feature/x")
+
+      expect(result).to be_success
+      session = result.session.reload
+      expect(session.status).to eq("ready")
+      expect(session.tunnel_port).to be_in(Previews.port_range)
+      expect(session.container_id).to start_with("preview-")
+      expect(session.branch_name).to eq("feature/x")
+    end
+
+    it "stops the previously active session before starting a new one" do
+      first = service.start(branch_name: "main").session
+
+      second = service.start(branch_name: "feature/y").session
+
+      expect(first.reload.status).to eq("stopped")
+      expect(first.tunnel_port).to be_nil
+      expect(second.status).to eq("ready")
+      expect(second.tunnel_port).to be_in(Previews.port_range)
+    end
+
+    it "frees the tunnel port when container backend fails" do
+      backend = Class.new do
+        include Previews::ContainerBackend
+        def self.start(_session)
+          raise "docker unavailable"
+        end
+        def self.stop(_session); true; end
+      end
+
+      result = described_class.new(project: project, container_backend: backend)
+        .start(branch_name: "main")
+
+      expect(result.success?).to be(false)
+      session = result.session.reload
+      expect(session.status).to eq("failed")
+      expect(session.tunnel_port).to be_nil
+    end
+
+    it "reaps expired sessions before acquiring a port" do
+      expired = create(:preview_session, :expired, project: project, tunnel_port: Previews.port_range.min)
+
+      expect do
+        result = service.start(branch_name: "main")
+        expect(result).to be_success
+      end.to change { expired.reload.status }.from("ready").to("stopped")
+
+      expect(expired.reload.tunnel_port).to be_nil
+    end
+  end
+
+  describe "#stop" do
+    it "is a no-op when there is no active session" do
+      expect(service.stop).to be_success
+    end
+
+    it "stops the current active session and releases its tunnel port" do
+      started = service.start(branch_name: "main").session
+      port = started.tunnel_port
+
+      result = service.stop
+
+      expect(result).to be_success
+      expect(started.reload.status).to eq("stopped")
+      expect(started.tunnel_port).to be_nil
+      expect(port).to be_in(Previews.port_range)
+    end
+
+    it "stops a specific session passed in" do
+      session = create(:preview_session, :ready, project: project, tunnel_port: 8250)
+
+      result = service.stop(session: session)
+
+      expect(result).to be_success
+      expect(session.reload.status).to eq("stopped")
+      expect(session.tunnel_port).to be_nil
+    end
+  end
+
+  describe "#status" do
+    it "returns the most recent session for the project (including terminal)" do
+      _old = create(:preview_session, :stopped, project: project, created_at: 2.days.ago)
+      fresh = create(:preview_session, :ready, project: project, created_at: 1.hour.ago)
+
+      expect(service.status.id).to eq(fresh.id)
+    end
+  end
+
+  describe "#current" do
+    it "ignores expired sessions even if their status is still active" do
+      _expired = create(:preview_session, :expired, project: project)
+
+      expect(service.send(:current)).to be_nil
+    end
+  end
+end

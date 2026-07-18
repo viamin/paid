@@ -19,7 +19,6 @@ class PreviewSession < ApplicationRecord
   TOKEN_BYTES = 32
 
   before_validation :generate_token, on: :create
-  before_validation :set_default_expires_at, on: :create
 
   belongs_to :project
   belongs_to :agent_run, optional: true
@@ -31,7 +30,13 @@ class PreviewSession < ApplicationRecord
   validates :expires_at, presence: true
   validate :agent_run_belongs_to_same_project
 
-  scope :active, -> { where(status: ACTIVE_STATUSES) }
+  # `active` filters out expired sessions so port-claim queries and the
+  # `current`/status lookups cannot return a stale row whose TTL has passed
+  # but which has not yet been reaped (RDR-045 review feedback). The
+  # {Previews::Expire} service / reaper job eventually moves expired rows to
+  # the `stopped` terminal state; this scope treats them as inactive in the
+  # meantime so a follow-up start can claim a fresh port.
+  scope :active, -> { where(status: ACTIVE_STATUSES).where("expires_at > ?", Time.current) }
   scope :live, -> { where(status: LIVE_STATUSES) }
   scope :recent, -> { order(created_at: :desc) }
   scope :for_project, ->(project) { where(project_id: project) }
@@ -51,7 +56,7 @@ class PreviewSession < ApplicationRecord
   end
 
   def active?
-    ACTIVE_STATUSES.include?(status)
+    ACTIVE_STATUSES.include?(status) && !expired?
   end
 
   def live?
@@ -80,7 +85,7 @@ class PreviewSession < ApplicationRecord
   def time_remaining
     return 0 if expires_at.nil? || expired?
 
-    [(expires_at - Time.current).to_i, 0].max
+    [ (expires_at - Time.current).to_i, 0 ].max
   end
 
   def expired?
@@ -114,10 +119,6 @@ class PreviewSession < ApplicationRecord
 
   def generate_token
     self.token ||= SecureRandom.hex(TOKEN_BYTES)
-  end
-
-  def set_default_expires_at
-    self.expires_at ||= DEFAULT_TTL_SECONDS.seconds.from_now
   end
 
   def agent_run_belongs_to_same_project

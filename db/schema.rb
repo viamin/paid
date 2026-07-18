@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_10_151421) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_18_023932) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1735,6 +1735,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_10_151421) do
     t.index ["project_id", "status"], name: "index_preview_sessions_on_project_id_and_status"
     t.index ["project_id"], name: "index_preview_sessions_on_project_id"
     t.index ["token"], name: "index_preview_sessions_on_token", unique: true
+    t.index ["tunnel_port"], name: "index_preview_sessions_on_tunnel_port_active", unique: true, where: "((status)::text = ANY ((ARRAY['pending'::character varying, 'provisioning'::character varying, 'starting'::character varying, 'ready'::character varying])::text[]))"
   end
 
   create_table "project_baselines", comment: "Stores per-project historical baselines for run metrics so anomalies can be detected against recent norms.", force: :cascade do |t|

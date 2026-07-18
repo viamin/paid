@@ -211,6 +211,11 @@ Rails.application.configure do
       class: "ChatSessions::IdleReaperJob",
       description: "Close idle chat sessions past their timeout"
     },
+    preview_session_expiry_reaper: {
+      cron: "*/5 * * * *",
+      class: "PreviewSessions::ExpireJob",
+      description: "Stop preview sessions whose TTL has passed so tunnel ports return to the pool (RDR-045)"
+    },
     knowledge_evolution: {
       cron: "0 3 * * 2",
       class: "KnowledgeEvolutionJob",
