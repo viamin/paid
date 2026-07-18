@@ -18,7 +18,6 @@ RSpec.describe Previews::TunnelManager do
   end
 
   let(:original_preview_tunnel_config) { Rails.application.config.x.preview_tunnel }
-  let(:original_preview_tunnel_port_pool) { Rails.application.config.x.preview_tunnel_port_pool }
   let(:default_backend) { instance_double(Containers::Backends::Base, identifier: "local", list_containers: []) }
 
   before do
@@ -26,7 +25,7 @@ RSpec.describe Previews::TunnelManager do
     allow(default_backend).to receive(:list_containers)
       .with(filters: { label: [ "#{described_class::PREVIEW_TUNNEL_LABEL}=true" ] }.to_json)
       .and_return([])
-    Rails.application.config.x.preview_tunnel_port_pool = nil
+    PreviewTunnelPortReservation.delete_all
     described_class.configure!(
       port_range: "8200-8202",
       server_port: 7000,
@@ -37,7 +36,7 @@ RSpec.describe Previews::TunnelManager do
 
   after do
     Rails.application.config.x.preview_tunnel = original_preview_tunnel_config
-    Rails.application.config.x.preview_tunnel_port_pool = original_preview_tunnel_port_pool
+    PreviewTunnelPortReservation.delete_all
   end
 
   describe ".parse_port_range" do
@@ -76,7 +75,7 @@ RSpec.describe Previews::TunnelManager do
   end
 
   describe ".configure!" do
-    it "preserves the existing port pool when the range is unchanged" do
+    it "preserves existing reservations when the range is unchanged" do
       first = described_class.allocate_port(key: "session-a")
 
       described_class.configure!(
@@ -91,15 +90,13 @@ RSpec.describe Previews::TunnelManager do
       expect(described_class.shared_token).to eq("replacement-token")
     end
 
-    it "seeds the port pool from active preview containers when rebuilding it" do
+    it "seeds reservations from active preview containers when allocating" do
       backend = instance_double(Containers::Backends::Base, identifier: "local")
       preview_container = instance_double(Docker::Container, info: preview_container_info(session_token: "active-preview", tunnel_port: 8201))
       allow(Containers).to receive(:backend).and_return(backend)
       allow(backend).to receive(:list_containers)
         .with(filters: { label: [ "#{described_class::PREVIEW_TUNNEL_LABEL}=true" ] }.to_json)
         .and_return([ preview_container ])
-
-      Rails.application.config.x.preview_tunnel_port_pool = nil
 
       described_class.configure!(
         port_range: "8200-8202",
@@ -110,6 +107,19 @@ RSpec.describe Previews::TunnelManager do
 
       expect(described_class.allocate_port(key: "active-preview")).to eq(8201)
       expect(described_class.allocate_port(key: "new-preview")).to eq(8200)
+    end
+
+    it "reconciles conflicting reservations in favor of active preview containers" do
+      PreviewTunnelPortReservation.create!(reservation_key: "stale-preview", tunnel_port: 8201)
+      backend = instance_double(Containers::Backends::Base, identifier: "local")
+      preview_container = instance_double(Docker::Container, info: preview_container_info(session_token: "active-preview", tunnel_port: 8201))
+      allow(Containers).to receive(:backend).and_return(backend)
+      allow(backend).to receive(:list_containers)
+        .with(filters: { label: [ "#{described_class::PREVIEW_TUNNEL_LABEL}=true" ] }.to_json)
+        .and_return([ preview_container ])
+
+      expect(described_class.allocate_port(key: "active-preview")).to eq(8201)
+      expect(described_class.allocate_port(key: "fresh-preview")).to eq(8200)
     end
   end
 

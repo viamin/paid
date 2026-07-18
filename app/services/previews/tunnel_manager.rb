@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "digest"
+require "set"
 require "socket"
 require "timeout"
 require "uri"
@@ -14,6 +15,7 @@ module Previews
     DEFAULT_HEALTH_CHECK_TIMEOUT_SECONDS = 10
     DEFAULT_SERVER_CONFIG_POLL_INTERVAL_SECONDS = 2
     HEALTH_CHECK_POLL_INTERVAL_SECONDS = 0.25
+    RESERVATION_LOCK_KEY = Digest::SHA256.hexdigest(name).to_i(16) % (2**31 - 1)
     PREVIEW_TUNNEL_LABEL = "paid.preview_tunnel"
     PREVIEW_SESSION_TOKEN_LABEL = "paid.preview_session_token"
     PREVIEW_SERVICE_NAME_LABEL = "paid.preview_service_name"
@@ -44,75 +46,9 @@ module Previews
       end
     end
 
-    class PortPool
-      attr_reader :range
-
-      def initialize(range, allocations: {})
-        @range = range
-        @mutex = Mutex.new
-        @key_to_port = {}
-        @port_to_key = {}
-        reserve_allocations!(allocations)
-      end
-
-      def allocate(key:)
-        normalized_key = key.to_s
-
-        @mutex.synchronize do
-          return @key_to_port.fetch(normalized_key) if @key_to_port.key?(normalized_key)
-
-          port = @range.find { |candidate| !@port_to_key.key?(candidate) }
-          raise PortExhaustedError, "No preview tunnel ports available in #{@range.begin}-#{@range.end}" if port.nil?
-
-          @key_to_port[normalized_key] = port
-          @port_to_key[port] = normalized_key
-          port
-        end
-      end
-
-      def release(key: nil, port: nil)
-        @mutex.synchronize do
-          return release_key(key) if key.present?
-          return release_port(port) if port.present?
-
-          raise ArgumentError, "key or port is required"
-        end
-      end
-
-      private
-
-      def reserve_allocations!(allocations)
-        allocations.each do |key, port|
-          reserve_allocation!(key.to_s, Integer(port))
-        end
-      end
-
-      def reserve_allocation!(key, port)
-        raise ConfigurationError, "Preview tunnel port #{port} is outside #{@range.begin}-#{@range.end}" unless @range.cover?(port)
-        raise ConfigurationError, "Preview tunnel port #{port} is already reserved" if @port_to_key.key?(port)
-
-        @key_to_port[key] = port
-        @port_to_key[port] = key
-      end
-
-      def release_key(key)
-        port = @key_to_port.delete(key.to_s)
-        @port_to_key.delete(port) if port
-        port
-      end
-
-      def release_port(port)
-        normalized_port = Integer(port)
-        key = @port_to_key.delete(normalized_port)
-        @key_to_port.delete(key) if key
-        normalized_port if key
-      end
-    end
-
     class << self
       def configure!(port_range:, server_port:, server_bind_host:, shared_token:)
         range = parse_port_range(port_range)
-        existing_pool = Rails.application.config.x.preview_tunnel_port_pool
 
         Rails.application.config.x.preview_tunnel = {
           port_range: range,
@@ -120,24 +56,48 @@ module Previews
           server_bind_host: server_bind_host.to_s,
           shared_token: shared_token.to_s
         }
-        Rails.application.config.x.preview_tunnel_port_pool =
-          if existing_pool.is_a?(PortPool) && existing_pool.range == range
-            existing_pool
-          else
-            PortPool.new(range, allocations: active_tunnel_allocations(range:))
-          end
-      end
-
-      def port_pool
-        Rails.application.config.x.preview_tunnel_port_pool || default_port_pool
       end
 
       def allocate_port(key:)
-        port_pool.allocate(key:)
+        normalized_key = key.to_s
+
+        with_reservation_lock do
+          sync_active_reservations!(range: port_range)
+
+          existing_port = PreviewTunnelPortReservation.where(reservation_key: normalized_key).pick(:tunnel_port)
+          return existing_port if existing_port.present? && port_range.cover?(existing_port)
+
+          PreviewTunnelPortReservation.where(reservation_key: normalized_key).delete_all if existing_port.present?
+
+          reserved_ports = PreviewTunnelPortReservation.where(tunnel_port: port_range).pluck(:tunnel_port).to_set
+          port = port_range.find { |candidate| !reserved_ports.include?(candidate) }
+          raise PortExhaustedError, "No preview tunnel ports available in #{port_range.begin}-#{port_range.end}" if port.nil?
+
+          PreviewTunnelPortReservation.create!(reservation_key: normalized_key, tunnel_port: port)
+          port
+        end
       end
 
       def release_port(key: nil, port: nil)
-        port_pool.release(key:, port:)
+        with_reservation_lock do
+          if key.present?
+            reservation = PreviewTunnelPortReservation.find_by(reservation_key: key.to_s)
+            return unless reservation
+
+            reservation.destroy!
+            return reservation.tunnel_port
+          end
+
+          if port.present?
+            reservation = PreviewTunnelPortReservation.find_by(tunnel_port: Integer(port))
+            return unless reservation
+
+            reservation.destroy!
+            return reservation.tunnel_port
+          end
+
+          raise ArgumentError, "key or port is required"
+        end
       end
 
       def server_port
@@ -150,6 +110,10 @@ module Previews
 
       def shared_token
         config.fetch(:shared_token)
+      end
+
+      def port_range
+        config.fetch(:port_range)
       end
 
       def server_config_toml(bindings: [])
@@ -251,22 +215,33 @@ module Previews
         end
       end
 
-      def default_port_pool
-        configure!(
-          port_range: ENV.fetch("PREVIEW_PORT_RANGE", DEFAULT_PORT_RANGE),
-          server_port: Integer(ENV.fetch("PREVIEW_TUNNEL_SERVER_PORT", DEFAULT_SERVER_PORT)),
-          server_bind_host: ENV.fetch("PREVIEW_TUNNEL_SERVER_BIND_HOST", DEFAULT_SERVER_BIND_HOST),
-          shared_token: derived_shared_token
-        )
-        Rails.application.config.x.preview_tunnel_port_pool
-      end
-
       def active_tunnel_allocations(range:, backend: Containers.backend)
         active_tunnels(backend:).each_with_object({}) do |tunnel, allocations|
           next unless range.cover?(tunnel.tunnel_port)
 
           allocations[tunnel.session_token] = tunnel.tunnel_port
         end
+      end
+
+      def sync_active_reservations!(range:, backend: Containers.backend)
+        active_tunnel_allocations(range:, backend:).each do |reservation_key, tunnel_port|
+          reservation = PreviewTunnelPortReservation.find_or_initialize_by(reservation_key:)
+          next if reservation.persisted? && reservation.tunnel_port == tunnel_port
+
+          PreviewTunnelPortReservation.where(tunnel_port: tunnel_port).where.not(reservation_key:).delete_all
+          reservation.update!(tunnel_port:)
+        end
+      end
+
+      def with_reservation_lock
+        connection.execute("SELECT pg_advisory_lock(#{RESERVATION_LOCK_KEY})")
+        yield
+      ensure
+        connection.execute("SELECT pg_advisory_unlock(#{RESERVATION_LOCK_KEY})")
+      end
+
+      def connection
+        ActiveRecord::Base.connection
       end
 
       def normalize_bindings(bindings)

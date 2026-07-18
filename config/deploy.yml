@@ -6,8 +6,8 @@ image: paid
 
 # Deploy to these servers.
 #
-# Production runs four independent process types, each as its own Docker
-# container with an independent restart boundary. On a single server all four
+# Production runs five independent process types, each as its own Docker
+# container with an independent restart boundary. On a single server all five
 # roles point at the same host; for multi-server deployments move the `job` and
 # `worker_*` roles to dedicated hosts to isolate background/agent load from the
 # web tier.
@@ -15,6 +15,8 @@ image: paid
 #   web          — Puma web server (HTTP/UI). Uses the Dockerfile CMD
 #                  (Thruster + bin/rails server); no cmd: override needed.
 #   job          — GoodJob worker process (background jobs). Runs bin/jobs.
+#   preview_tunnel — Rathole server that accepts preview container connections.
+#                  Runs bin/preview-tunnel-server.
 #   worker_poll  — Temporal worker for the poll queue. Runs bin/temporal_worker
 #                  with TEMPORAL_WORKER_MODE=poll.
 #   worker_agent — Temporal worker for the agent queue. Runs bin/temporal_worker
@@ -57,6 +59,10 @@ servers:
         #         GOOD_JOB_ENABLE_CRON: false
         #
         # GOOD_JOB_ENABLE_CRON: false   # set this on all secondary job hosts
+  preview_tunnel:
+    hosts:
+      - 192.168.0.1
+    cmd: bin/preview-tunnel-server
   worker_poll:
     hosts:
       - 192.168.0.1
