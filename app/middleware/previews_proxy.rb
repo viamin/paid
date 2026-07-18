@@ -111,7 +111,7 @@ class PreviewsProxy
       read_timeout: @read_timeout, open_timeout: @open_timeout, use_ssl: false) do |http|
       http.request(build_net_http_request(request:, session:, proxied_path:))
     end
-    transform_http_response(request:, session:, upstream_response:)
+    transform_http_response(session:, upstream_response:)
   end
 
   def build_net_http_request(request:, session:, proxied_path:)
@@ -139,7 +139,7 @@ class PreviewsProxy
     headers.merge!(
       "host" => "#{CONNECT_HOST}:#{session.tunnel_port}",
       "x-forwarded-host" => original_host(request.env),
-      "x-forwarded-port" => session.tunnel_port.to_s,
+      "x-forwarded-port" => client_facing_port(request.env, request.scheme),
       "x-forwarded-proto" => request.scheme
     ).tap do |merged|
       merged["x-forwarded-for"] = compose_forwarded_for(request, merged["x-forwarded-for"])
@@ -179,20 +179,19 @@ class PreviewsProxy
     body
   end
 
-  def transform_http_response(request:, session:, upstream_response:)
-    proxy_host = original_host(request.env)
-    headers = transform_response_headers(upstream_response, session:, proxy_host:)
+  def transform_http_response(session:, upstream_response:)
+    headers = transform_response_headers(upstream_response, session:)
     body = upstream_response.body || +""
     headers["content-length"] = body.bytesize.to_s
 
     [ upstream_response.code.to_i, headers, [ body ] ]
   end
 
-  def transform_response_headers(upstream_response, session:, proxy_host:)
+  def transform_response_headers(upstream_response, session:)
     transformed = {}
     content_security_policy_seen = false
     upstream_response.get_fields("set-cookie")&.each do |value|
-      append_set_cookie(transformed, rewrite_set_cookie(value, proxy_host:))
+      append_set_cookie(transformed, rewrite_set_cookie(value, session:))
     end
 
     upstream_response.each_header do |name, value|
@@ -247,9 +246,15 @@ class PreviewsProxy
   end
 
   # Removes any Domain= attribute so the cookie scopes to the exact proxy
-  # origin (the browser's current host) instead of the upstream container host.
-  def rewrite_set_cookie(value, _proxy_host)
-    value.to_s.gsub(/\s*;?\s*domain=[^;]+/i, "").strip
+  # origin and rewrites Path= so the browser only sends the cookie back to the
+  # current preview prefix instead of the whole Paid app origin.
+  def rewrite_set_cookie(value, session:)
+    parts = value.to_s.split(/;\s*/)
+    cookie = parts.shift.to_s
+    path = parts.find { |part| part.match?(/\Apath=/i) }&.split("=", 2)&.last
+    attributes = parts.reject { |part| part.match?(/\A(?:domain|path)=/i) }
+
+    [ cookie, "Path=#{rewrite_cookie_path(path, session.proxy_prefix)}", *attributes ].join("; ")
   end
 
   def append_set_cookie(headers, value)
@@ -303,7 +308,7 @@ class PreviewsProxy
     headers["host"] = "#{CONNECT_HOST}:#{session.tunnel_port}"
     headers["x-forwarded-host"] = original_host(request.env)
     headers["x-forwarded-proto"] = request.scheme
-    headers["x-forwarded-port"] = session.tunnel_port.to_s
+    headers["x-forwarded-port"] = client_facing_port(request.env, request.scheme)
     headers["x-forwarded-for"] = compose_forwarded_for(request, headers["x-forwarded-for"])
 
     path = build_upstream_path(proxied_path, request.query_string)
@@ -394,7 +399,33 @@ class PreviewsProxy
   # -------------------------------------------------------------------- helpers
 
   def original_host(env)
-    env["HTTP_X_FORWARDED_HOST"].presence || env["HTTP_HOST"].presence || "localhost"
+    forwarded_host(env) || "localhost"
+  end
+
+  def client_facing_port(env, scheme)
+    env["HTTP_X_FORWARDED_PORT"].presence || port_from_host(forwarded_host(env)) || default_port_for_scheme(scheme)
+  end
+
+  def forwarded_host(env)
+    env["HTTP_X_FORWARDED_HOST"].to_s.split(/\s*,\s*/).first.presence || env["HTTP_HOST"].presence
+  end
+
+  def port_from_host(host)
+    return if host.blank?
+    return Regexp.last_match(1) if host.match(/\A\[[^\]]+\]:(\d+)\z/)
+    return unless host.count(":") == 1
+
+    host[%r{:(\d+)\z}, 1]
+  end
+
+  def default_port_for_scheme(scheme)
+    scheme == "https" ? "443" : "80"
+  end
+
+  def rewrite_cookie_path(path, proxy_prefix)
+    return "#{proxy_prefix}/" if path.blank?
+
+    "#{proxy_prefix}#{dedupe_slash(path)}"
   end
 
   def upstream_origin?(uri)

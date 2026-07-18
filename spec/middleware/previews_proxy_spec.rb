@@ -143,7 +143,7 @@ RSpec.describe PreviewsProxy do
       expect(response.headers["location"]).to eq("/previews/s3cret-token/new")
     end
 
-    it "strips the Set-Cookie domain attribute to scope to the proxy origin" do
+    it "rewrites Set-Cookie scoping to the current preview prefix" do
       stub_request(:get, "http://127.0.0.1:#{port}/")
         .to_return(
           status: 200,
@@ -156,6 +156,7 @@ RSpec.describe PreviewsProxy do
       cookie = response.headers["set-cookie"]
       expect(cookie).to include("session=abc")
       expect(cookie).not_to match(/domain=/i)
+      expect(cookie).to include("Path=/previews/s3cret-token/")
       expect(cookie).to include("HttpOnly")
     end
 
@@ -176,9 +177,22 @@ RSpec.describe PreviewsProxy do
 
       cookies = response.headers["set-cookie"].split("\n")
       expect(cookies).to eq([
-        "session=abc; Path=/; HttpOnly",
-        "csrf=xyz; Path=/; Secure"
+        "session=abc; Path=/previews/s3cret-token/; HttpOnly",
+        "csrf=xyz; Path=/previews/s3cret-token/; Secure"
       ])
+    end
+
+    it "keeps non-root cookie paths scoped beneath the preview prefix" do
+      stub_request(:get, "http://127.0.0.1:#{port}/")
+        .to_return(
+          status: 200,
+          headers: { "Set-Cookie" => "session=abc; Path=/admin; Domain=app.internal; HttpOnly" },
+          body: "ok"
+        )
+
+      response = mock_request.get("/previews/s3cret-token/")
+
+      expect(response.headers["set-cookie"]).to eq("session=abc; Path=/previews/s3cret-token/admin; HttpOnly")
     end
 
     it "sets X-Forwarded-Host to the proxy origin on the forwarded request" do
@@ -189,6 +203,16 @@ RSpec.describe PreviewsProxy do
 
       expect(WebMock).to have_requested(:get, "http://127.0.0.1:#{port}/")
         .with(headers: { "X-Forwarded-Host" => "paid.example" })
+    end
+
+    it "sets X-Forwarded-Port to the client-facing port on the forwarded request" do
+      stub_request(:get, "http://127.0.0.1:#{port}/")
+        .to_return(status: 200, body: "ok")
+
+      mock_request.get("/previews/s3cret-token/", "HTTP_HOST" => "paid.example:8443")
+
+      expect(WebMock).to have_requested(:get, "http://127.0.0.1:#{port}/")
+        .with(headers: { "X-Forwarded-Port" => "8443" })
     end
 
     it "forwards POST bodies" do
@@ -230,6 +254,7 @@ RSpec.describe PreviewsProxy do
         forwarded = upstream_received.call
         expect(forwarded).to include("Upgrade: websocket")
         expect(forwarded).to include("GET /cable")
+        expect(forwarded).to include("X-Forwarded-Port: 80")
 
         client_mirror.close
         thread.join(2)

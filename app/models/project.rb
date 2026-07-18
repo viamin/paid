@@ -172,6 +172,7 @@ class Project < ApplicationRecord
   has_many :members, through: :project_memberships, source: :user
   has_many :issues, dependent: :destroy
   has_many :agent_runs, dependent: :destroy
+  has_many :preview_sessions, dependent: :destroy
   has_many :container_pool_entries, dependent: :destroy
   has_many :worktrees, dependent: :destroy
   has_many :cost_budgets, dependent: :destroy
