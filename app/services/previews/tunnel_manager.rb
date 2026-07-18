@@ -35,6 +35,16 @@ module Previews
         raise PortExhaustedError, "no preview tunnel ports available in #{range.begin}-#{range.end}"
       end
 
+      def reserve_specific_port(port)
+        candidate = port.to_i
+        return if candidate <= 0
+        return unless port_available?(candidate)
+
+        PreviewTunnelReservation.create!(port: candidate).port
+      rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique
+        nil
+      end
+
       def release_port(port)
         return if port.blank?
 
@@ -59,14 +69,15 @@ module Previews
       @backend = backend
       @logger = logger
       @token = token.presence || preview_session_token || DEFAULT_TOKEN
-      @allocated_port = preview_session&.respond_to?(:tunnel_port) ? preview_session.tunnel_port : nil
+      @persisted_port = preview_session&.respond_to?(:tunnel_port) ? preview_session.tunnel_port : nil
+      @allocated_port = nil
     end
 
     def allocate_port!
       return @allocated_port if @allocated_port.present?
 
-      allocated_port = self.class.reserve_port!
-      persist_preview_session!(tunnel_port: allocated_port)
+      allocated_port = reserve_persisted_port || self.class.reserve_port!(exclude: @persisted_port)
+      persist_preview_session!(tunnel_port: allocated_port) if allocated_port != @persisted_port
       @allocated_port = allocated_port
     rescue StandardError
       self.class.release_port(allocated_port) if allocated_port.present?
@@ -180,6 +191,12 @@ module Previews
       return unless preview_session&.respond_to?(:update!)
 
       preview_session.update!(attributes)
+    end
+
+    def reserve_persisted_port
+      return if @persisted_port.blank?
+
+      self.class.reserve_specific_port(@persisted_port)
     end
   end
 end

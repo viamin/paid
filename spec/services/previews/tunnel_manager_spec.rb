@@ -93,10 +93,44 @@ RSpec.describe Previews::TunnelManager do
     end
   end
 
+  describe "#allocate_port!" do
+    around do |example|
+      described_class.release_port(8201)
+      described_class.release_port(8299)
+      example.run
+    ensure
+      described_class.release_port(8201)
+      described_class.release_port(8299)
+    end
+
+    it "re-reserves a persisted port when the preview session still points at it" do
+      manager = described_class.new(backend:, preview_session:)
+      allow(preview_session).to receive(:update!)
+
+      expect(manager.allocate_port!).to eq(8201)
+      expect(preview_session).not_to have_received(:update!)
+      expect(PreviewTunnelReservation.find_by(port: 8201)).to be_present
+    end
+
+    it "allocates a new port when the persisted port is already reserved elsewhere" do
+      PreviewTunnelReservation.create!(port: 8201)
+      manager = described_class.new(backend:, preview_session:)
+      allow(preview_session).to receive(:update!)
+
+      allocated_port = manager.allocate_port!
+
+      expect(allocated_port).not_to eq(8201)
+      expect(preview_session).to have_received(:update!).with(tunnel_port: allocated_port)
+      expect(PreviewTunnelReservation.find_by(port: 8201)).to be_present
+      expect(PreviewTunnelReservation.find_by(port: allocated_port)).to be_present
+    end
+  end
+
   describe "#release_port!" do
     it "releases the reserved port even if preview session persistence fails" do
       PreviewTunnelReservation.create!(port: 8201)
       manager = described_class.new(backend:, preview_session:)
+      manager.instance_variable_set(:@allocated_port, 8201)
       allow(preview_session).to receive(:update!).and_raise("write failed")
       allow(described_class).to receive(:release_port).and_call_original
 
