@@ -4,6 +4,7 @@ require "rails_helper"
 
 RSpec.describe Previews::TunnelPortPool do
   let(:project) { create(:project) }
+  let(:other_project) { create(:project) }
   let(:pool) { described_class.new(range: 9000..9002) }
 
   describe "#acquire" do
@@ -34,6 +35,16 @@ RSpec.describe Previews::TunnelPortPool do
       port = pool.acquire(session)
 
       expect(port).to eq(9000)
+    end
+
+    it "clears expired claims across projects before picking a free port" do
+      _expired = create(:preview_session, :expired, project: other_project, tunnel_port: 9000)
+      session = create(:preview_session, project: project)
+
+      port = pool.acquire(session)
+
+      expect(port).to eq(9000)
+      expect(session.reload.tunnel_port).to eq(9000)
     end
 
     it "raises Exhausted when every port in the range is claimed" do
@@ -71,8 +82,12 @@ RSpec.describe Previews::TunnelPortPool do
   end
 
   describe "concurrency" do
-    it "serializes overlapping acquires for the same project so each gets a unique port" do
-      sessions = Array.new(3) { create(:preview_session, project: project) }
+    it "serializes overlapping acquires across projects so each gets a unique port" do
+      sessions = [
+        create(:preview_session, project: project),
+        create(:preview_session, project: other_project),
+        create(:preview_session, project: project)
+      ]
 
       ports = sessions.map { |s| Thread.new { pool.acquire(s) }.value }
 

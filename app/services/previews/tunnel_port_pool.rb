@@ -5,7 +5,8 @@ module Previews
   #
   # The pool tracks ports already claimed by ready/active preview sessions so
   # two concurrent previews never collide on the same localhost tunnel port.
-  # Allocation is serialized with a per-project PostgreSQL advisory lock
+  # Allocation is serialized with a single PostgreSQL advisory lock protecting
+  # the global port pool
   # around {acquire} / {release}, and the chosen port is persisted to the
   # session row inside the same lock so the partial unique index
   # `index_preview_sessions_on_tunnel_port_active` defends against any
@@ -24,12 +25,11 @@ module Previews
     end
 
     # Reserves the lowest free port for `session` and persists it on the
-    # session row within a per-project advisory lock. Raises {Exhausted} if
+    # session row within a global advisory lock. Raises {Exhausted} if
     # every port in the range is currently held by another active session.
     def acquire(session)
-      project_id = session.project_id
-      with_lock(project_id) do
-        clear_expired_port_claims!(project_id)
+      with_lock do
+        clear_expired_port_claims!
         port = next_free_port
         raise Exhausted, "No preview tunnel ports available in #{range}" if port.nil?
 
@@ -39,12 +39,12 @@ module Previews
     end
 
     # Releases the port held by `session` (no-op when the session has none).
-    # Same per-project advisory lock as {#acquire} so we never observe a
+    # Same global advisory lock as {#acquire} so we never observe a
     # half-released state from a concurrent allocator.
     def release(session)
       return if session.tunnel_port.blank?
 
-      with_lock(session.project_id) do
+      with_lock do
         session.update_column(:tunnel_port, nil)
       end
     end
@@ -66,23 +66,22 @@ module Previews
     # `tunnel_port` (which only filters by status) would still treat the port
     # as taken. Null the column so the port becomes allocatable again; the
     # row is reaped to `stopped` shortly after by {Previews::Expire}.
-    def clear_expired_port_claims!(project_id)
+    def clear_expired_port_claims!
       PreviewSession
-        .where(project_id: project_id, status: PreviewSession::ACTIVE_STATUSES)
+        .where(status: PreviewSession::ACTIVE_STATUSES)
         .where("expires_at <= ?", Time.current)
         .where.not(tunnel_port: nil)
         .update_all(tunnel_port: nil)
     end
 
-    def with_lock(project_id)
+    def with_lock
       connection = ActiveRecord::Base.connection
-      key = project_id % 2_147_483_647
 
-      connection.execute("SELECT pg_advisory_lock(#{LOCK_NAMESPACE}, #{key})")
+      connection.execute("SELECT pg_advisory_lock(#{LOCK_NAMESPACE})")
       yield
     ensure
       begin
-        connection.execute("SELECT pg_advisory_unlock(#{LOCK_NAMESPACE}, #{key})")
+        connection.execute("SELECT pg_advisory_unlock(#{LOCK_NAMESPACE})")
       rescue StandardError
         # Connection may already be closed; releasing the lock is best-effort.
       end
