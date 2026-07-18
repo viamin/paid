@@ -34,9 +34,13 @@ module Screenshots
     #   signed URL from the previous commit's capture, used for before/after comparison
     # @param artifact_name [String, nil] Workflow artifact name when screenshots
     #   were captured but inline storage is unavailable
+    # @param trace_url [String, nil] Presigned URL to a Playwright trace archive
+    #   uploaded alongside the screenshots
+    # @param video_url [String, nil] Presigned URL to a Playwright session video
+    #   (.webm) uploaded alongside the screenshots
     # @param status [String] Comment state: success, no_ui_changes, or capture_failed
     def initialize(github_client:, repo:, pr_number:, commit_sha:, screenshots:,
-      previous_screenshots: {}, artifact_name: nil, status: "success")
+      previous_screenshots: {}, artifact_name: nil, trace_url: nil, video_url: nil, status: "success")
       @github_client = github_client
       @repo = repo
       @pr_number = pr_number
@@ -44,6 +48,8 @@ module Screenshots
       @screenshots = screenshots
       @previous_screenshots = previous_screenshots
       @artifact_name = artifact_name
+      @trace_url = trace_url
+      @video_url = video_url
       @status = status
     end
 
@@ -121,6 +127,14 @@ module Screenshots
       lines << "## UI Screenshots"
       lines << ""
       lines << "This PR includes **UI-facing changes**. Screenshots captured from commit `#{short_sha}`."
+      if @trace_url.present?
+        lines << ""
+        lines << "**[Playwright trace](#{@trace_url})** — interactive DOM snapshots, network requests, and console logs for each step."
+      end
+      if @video_url.present?
+        lines << ""
+        lines << "**[Session video](#{@video_url})** — recorded `.webm` of the full capture session."
+      end
       if annotated
         lines << ""
         lines << "> Pages were scoped by Paid to those this change appears to affect; " \

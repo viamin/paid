@@ -36,6 +36,7 @@ RSpec.describe Screenshots::ContainerCapture do
       cleanup!: true
     )
   end
+  let(:storage) { instance_double(Screenshots::Storage) }
 
   before do
     allow(Screenshots::Storage).to receive(:configured?).and_return(false)
@@ -114,6 +115,75 @@ RSpec.describe Screenshots::ContainerCapture do
     expect(result.error).to include("cuprite")
   end
 
+  describe "#publish_result!" do
+    let(:tmpdir) { Dir.mktmpdir("screenshots-publish") }
+    let(:screenshot_path) { File.join(tmpdir, Screenshots::ContainerCapture::OUTPUT_DIR, "home.png") }
+    let(:trace_path) { File.join(tmpdir, Screenshots::ContainerCapture::OUTPUT_DIR, "trace.zip") }
+    let(:video_path) { File.join(tmpdir, Screenshots::ContainerCapture::OUTPUT_DIR, "videos", "capture.webm") }
+
+    before do
+      allow(service).to receive(:publish_result!).and_call_original
+      FileUtils.mkdir_p(File.dirname(screenshot_path))
+      FileUtils.mkdir_p(File.dirname(video_path))
+      File.write(screenshot_path, "png")
+      File.write(trace_path, "zip")
+      File.write(video_path, "webm")
+      service.instance_variable_set(:@tmpdir, tmpdir)
+      service.instance_variable_set(:@hints, { "home" => { "summary" => "Updated hero" } })
+      service.instance_variable_set(:@trace_path, trace_path)
+      service.instance_variable_set(:@video_path, video_path)
+      allow(Screenshots::Storage).to receive_messages(
+        configured?: true,
+        new: storage
+      )
+      allow(storage).to receive_messages(
+        upload: "https://example.test/home.png",
+        upload_trace: "https://example.test/trace.zip",
+        upload_video: "https://example.test/capture.webm",
+        previous_screenshots: {}
+      )
+    end
+
+    after do
+      FileUtils.rm_rf(tmpdir)
+    end
+
+    it "uploads trace and video artifacts and passes their URLs to the PR comment" do
+      service.send(:publish_result!, [ screenshot_path ])
+
+      expect(storage).to have_received(:upload_trace).with(
+        file_path: trace_path,
+        org: project.owner,
+        repo: project.repo,
+        pr_number: agent_run.pull_request_number,
+        commit_sha: agent_run.result_commit_sha
+      )
+      expect(storage).to have_received(:upload_video).with(
+        file_path: video_path,
+        org: project.owner,
+        repo: project.repo,
+        pr_number: agent_run.pull_request_number,
+        commit_sha: agent_run.result_commit_sha
+      )
+      expect(Screenshots::PrComment).to have_received(:call).with(hash_including(
+        trace_url: "https://example.test/trace.zip",
+        video_url: "https://example.test/capture.webm"
+      ))
+    end
+
+    it "still posts the comment when trace and video uploads fail" do
+      allow(storage).to receive(:upload_trace).and_raise(Screenshots::Storage::StorageError, "boom")
+      allow(storage).to receive(:upload_video).and_raise(Screenshots::Storage::StorageError, "boom")
+
+      expect { service.send(:publish_result!, [ screenshot_path ]) }.not_to raise_error
+
+      expect(Screenshots::PrComment).to have_received(:call).with(hash_including(
+        trace_url: nil,
+        video_url: nil
+      ))
+    end
+  end
+
   describe "#screenshot_config_json (capture scoping and annotation)" do
     let(:multi_route_config) do
       Screenshots::Configuration.from_hash(
@@ -153,6 +223,57 @@ RSpec.describe Screenshots::ContainerCapture do
       routes = JSON.parse(service.send(:screenshot_config_json)).fetch("routes")
 
       expect(routes.map { |r| r["name"] }).to contain_exactly("dashboard", "settings")
+    end
+  end
+
+  describe "#capture_runner_script" do
+    it "records a Playwright trace and gates video recording on the env flag" do
+      script = service.send(:capture_runner_script)
+
+      expect(script).to include('process.env.SCREENSHOT_RECORD_VIDEO === "1"')
+      expect(script).to include("context.tracing.start({ screenshots: true, snapshots: true, sources: true })")
+      expect(script).to include("context.tracing.stop({ path: `${outputDir}/trace.zip` })")
+      expect(script).to include("contextOptions.recordVideo = { dir: `${outputDir}/videos` }")
+    end
+
+    it "closes the Playwright context before the browser so videos flush to disk" do
+      script = service.send(:capture_runner_script)
+
+      expect(script.index("await context.close();")).to be < script.index("await browser.close();")
+    end
+
+    it "stops tracing from a finally block so artifacts still flush on capture errors" do
+      script = service.send(:capture_runner_script)
+
+      expect(script).to include("} finally {")
+      expect(script.index("await context.tracing.stop({ path: `${outputDir}/trace.zip` });"))
+        .to be > script.index("} finally {")
+    end
+  end
+
+  describe "#record_video?" do
+    it "defaults to disabled" do
+      expect(service.send(:record_video?)).to be false
+    end
+
+    it "uses the project screenshot setting" do
+      allow(project).to receive(:effective_screenshot_settings).and_return("record_video" => true)
+
+      expect(service.send(:record_video?)).to be true
+    end
+  end
+
+  describe "#collected_video_path" do
+    it "returns the recorded webm path when present" do
+      tmpdir = Dir.mktmpdir("screenshots-video")
+      service.instance_variable_set(:@tmpdir, tmpdir)
+      video_path = File.join(tmpdir, Screenshots::ContainerCapture::OUTPUT_DIR, "videos", "capture.webm")
+      FileUtils.mkdir_p(File.dirname(video_path))
+      File.write(video_path, "webm")
+
+      expect(service.send(:collected_video_path)).to eq(video_path)
+    ensure
+      FileUtils.rm_rf(tmpdir)
     end
   end
 end
