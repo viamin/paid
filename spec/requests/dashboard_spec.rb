@@ -354,7 +354,46 @@ RSpec.describe "Dashboard" do
         expect(headers).to include("Context")
         expect(headers).not_to include("Created")
         expect(headers).not_to include("Waiting")
+        expect(headers).to include("Actions")
         expect(response.body).not_to include("hidden-owner/hidden-repo")
+      end
+
+      it "renders Cancel and View actions for cancellable queued runs in the upcoming queue" do
+        issue = create(:issue, project: project, github_number: 91, title: "Cancel from the queue")
+        run = create(:agent_run, :queued, project: project, issue: issue, created_at: 2.minutes.ago)
+
+        get dashboard_path
+
+        document = Nokogiri::HTML(response.body)
+        queue_section = document.at_xpath("//h3[normalize-space(text())='Upcoming Queue']/ancestor::div[contains(@class, 'rounded-lg')][1]")
+        row = queue_section.at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(run, :queue_preview_row)}"]))
+
+        expect(row).to be_present
+        expect(row.css("a").map { |a| a["href"] }).to include(project_agent_run_path(project, run))
+        cancel_form = row.at_css("form[action='#{dashboard_cancel_run_path(run)}']")
+        expect(cancel_form).to be_present
+        expect(cancel_form["method"]).to eq("post")
+        expect(cancel_form.at_css("input[name='source']")&.[]("value")).to eq("queue_preview")
+        expect(cancel_form.at_css("button")&.text).to include("Cancel")
+      end
+
+      it "does not render a Cancel button in the upcoming queue for users who cannot run agents" do
+        viewer = create(:user, :viewer, account: account)
+        sign_in viewer
+
+        viewer_project = create(:project, account: account, created_by: viewer, owner: "viewer-octo", repo: "queue")
+        run = create(:agent_run, :queued, project: viewer_project, created_at: 2.minutes.ago)
+
+        get dashboard_path
+
+        document = Nokogiri::HTML(response.body)
+        queue_section = document.at_xpath("//h3[normalize-space(text())='Upcoming Queue']/ancestor::div[contains(@class, 'rounded-lg')][1]")
+        row = queue_section.at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(run, :queue_preview_row)}"]))
+
+        expect(row).to be_present
+        expect(row.css("a").map { |a| a["href"] }).to include(project_agent_run_path(viewer_project, run))
+        expect(row.at_css("form")).to be_nil
+        expect(response.body).not_to include(dashboard_cancel_run_path(run))
       end
 
       it "shows orphaned queued projects for the account fallback owner" do
@@ -1054,7 +1093,7 @@ RSpec.describe "Dashboard" do
   describe "POST /dashboard/cancel_run/:id" do
     let(:account) { create(:account) }
     let(:user) { create(:user, account: account) }
-    let(:project) { create(:project, account: account) }
+    let(:project) { create(:project, account: account, created_by: user) }
 
     before { sign_in user }
 
@@ -1086,6 +1125,121 @@ RSpec.describe "Dashboard" do
       expect(response).to redirect_to(dashboard_path)
       expect(response).to have_http_status(:see_other)
       expect(flash[:notice]).to eq("Agent run is no longer active.")
+    end
+
+    it "bumps the queue preview cache version for queue-preview HTML fallback requests" do
+      agent_run = create(:agent_run, :queued, project: project)
+
+      allow(Dashboard::CacheVersion).to receive(:bump).and_call_original
+
+      post dashboard_cancel_run_path(agent_run), params: { source: "queue_preview" }
+
+      expect(response).to redirect_to(dashboard_path)
+      expect(Dashboard::CacheVersion).to have_received(:bump).with(
+        account,
+        scope: Dashboard::CacheVersion::LISTS_SCOPE
+      )
+    end
+
+    context "with a Turbo Stream request" do
+      it "removes the dashboard row after cancellation" do
+        agent_run = create(:agent_run, project: project, status: "running", started_at: 2.minutes.ago)
+
+        post dashboard_cancel_run_path(agent_run), as: :turbo_stream
+
+        expect(response).to have_http_status(:ok)
+        expect(response.media_type).to eq("text/vnd.turbo-stream.html")
+        expect(response.body).to include(%(action="remove" target="dashboard_row_agent_run_#{agent_run.id}"))
+        expect(agent_run.reload.status).to eq("cancelled")
+      end
+
+      it "removes a queued run row from the upcoming queue" do
+        agent_run = create(:agent_run, :queued, project: project)
+
+        post dashboard_cancel_run_path(agent_run), params: { source: "queue_preview" }, as: :turbo_stream
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include(%(action="replace" target="queue-preview"))
+        expect(response.body).to include("No queued runs for your projects.")
+        expect(agent_run.reload.status).to eq("cancelled")
+      end
+
+      it "re-renders the upcoming queue with refreshed positions after cancelling a queued run" do
+        first_run = create(:agent_run, :queued, project: project, created_at: 3.minutes.ago)
+        second_run = create(:agent_run, :queued, project: project, created_at: 2.minutes.ago)
+        third_run = create(:agent_run, :queued, project: project, created_at: 1.minute.ago)
+
+        post dashboard_cancel_run_path(first_run), params: { source: "queue_preview" }, as: :turbo_stream
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include(%(action="replace" target="queue-preview"))
+        expect(response.body).not_to include(%(queue_preview_row_agent_run_#{first_run.id}))
+        expect(agent_run_rows_in_queue_preview(response.body).pluck(:id)).to contain_exactly(second_run.id, third_run.id)
+        expect(agent_run_rows_in_queue_preview(response.body).pluck(:position)).to eq([ 1, 2 ])
+        expect(first_run.reload.status).to eq("cancelled")
+      end
+
+      it "refreshes the queue preview when the cancel request originated there, even if the run is now running" do
+        agent_run = create(:agent_run, :queued, project: project)
+        agent_run.update!(status: "running", started_at: Time.current)
+
+        post dashboard_cancel_run_path(agent_run), params: { source: "queue_preview" }, as: :turbo_stream
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include(%(action="replace" target="queue-preview"))
+        expect(response.body).not_to include(%(action="remove" target="dashboard_row_agent_run_#{agent_run.id}"))
+        expect(agent_run.reload.status).to eq("cancelled")
+      end
+
+      it "prepends an alert when the run is no longer active" do
+        agent_run = create(:agent_run, project: project, status: "completed", completed_at: Time.current)
+
+        post dashboard_cancel_run_path(agent_run), as: :turbo_stream
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include(%(action="prepend" target="dashboard-alerts"))
+        expect(response.body).to include("Agent run is no longer active.")
+      end
+
+      it "refreshes the queue preview and prepends an alert when the run is no longer active" do
+        agent_run = create(:agent_run, :queued, project: project)
+        agent_run.update!(status: "completed", completed_at: Time.current)
+
+        post dashboard_cancel_run_path(agent_run), params: { source: "queue_preview" }, as: :turbo_stream
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include(%(action="replace" target="queue-preview"))
+        expect(response.body).to include(%(action="prepend" target="dashboard-alerts"))
+        expect(response.body).to include("Agent run is no longer active.")
+        expect(response.body).to include("No queued runs for your projects.")
+        expect(response.body).not_to include(%(queue_preview_row_agent_run_#{agent_run.id}))
+      end
+
+      it "forbids users who cannot run agents" do
+        account_membership = user.account_membership_for(account)
+        account_membership.update!(role: :viewer)
+        agent_run = create(:agent_run, project: project, status: "running", started_at: 2.minutes.ago)
+
+        post dashboard_cancel_run_path(agent_run), as: :turbo_stream
+
+        expect(response).to redirect_to(root_path)
+        expect(response).to have_http_status(:found)
+      end
+    end
+  end
+
+  def agent_run_rows_in_queue_preview(turbo_stream_body)
+    fragment = Nokogiri::HTML.fragment(turbo_stream_body)
+    template = fragment.at_css('turbo-stream[action="replace"][target="queue-preview"] template')
+    return [] if template.nil?
+
+    queue_preview = Nokogiri::HTML.fragment(CGI.unescapeHTML(template.inner_html))
+
+    queue_preview.css("tr[id^='queue_preview_row_agent_run_']").map do |row|
+      {
+        id: row["id"].delete_prefix("queue_preview_row_agent_run_").to_i,
+        position: row.at_css("td")&.text&.strip&.to_i
+      }
     end
   end
 end

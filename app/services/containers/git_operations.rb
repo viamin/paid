@@ -137,6 +137,7 @@ module Containers
       .libyaml_build/
       .libyaml_src/
       # Tool caches
+      .cache-rubocop/
       .rubocop-cache/
       .rubocop_cache/
       .aider*
@@ -237,6 +238,7 @@ module Containers
       .libyaml-src/
       .libyaml_build/
       .libyaml_src/
+      .cache-rubocop/
       .rubocop-cache/
       .rubocop_cache/
       backups/
