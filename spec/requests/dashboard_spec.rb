@@ -1127,6 +1127,20 @@ RSpec.describe "Dashboard" do
       expect(flash[:notice]).to eq("Agent run is no longer active.")
     end
 
+    it "bumps the queue preview cache version for queue-preview HTML fallback requests" do
+      agent_run = create(:agent_run, :queued, project: project)
+
+      allow(Dashboard::CacheVersion).to receive(:bump).and_call_original
+
+      post dashboard_cancel_run_path(agent_run), params: { source: "queue_preview" }
+
+      expect(response).to redirect_to(dashboard_path)
+      expect(Dashboard::CacheVersion).to have_received(:bump).with(
+        account,
+        scope: Dashboard::CacheVersion::LISTS_SCOPE
+      )
+    end
+
     context "with a Turbo Stream request" do
       it "removes the dashboard row after cancellation" do
         agent_run = create(:agent_run, project: project, status: "running", started_at: 2.minutes.ago)
@@ -1185,6 +1199,20 @@ RSpec.describe "Dashboard" do
         expect(response).to have_http_status(:ok)
         expect(response.body).to include(%(action="prepend" target="dashboard-alerts"))
         expect(response.body).to include("Agent run is no longer active.")
+      end
+
+      it "refreshes the queue preview and prepends an alert when the run is no longer active" do
+        agent_run = create(:agent_run, :queued, project: project)
+        agent_run.update!(status: "completed", completed_at: Time.current)
+
+        post dashboard_cancel_run_path(agent_run), params: { source: "queue_preview" }, as: :turbo_stream
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include(%(action="replace" target="queue-preview"))
+        expect(response.body).to include(%(action="prepend" target="dashboard-alerts"))
+        expect(response.body).to include("Agent run is no longer active.")
+        expect(response.body).to include("No queued runs for your projects.")
+        expect(response.body).not_to include(%(queue_preview_row_agent_run_#{agent_run.id}))
       end
 
       it "forbids users who cannot run agents" do
