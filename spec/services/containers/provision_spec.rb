@@ -797,6 +797,19 @@ RSpec.describe Containers::Provision do
         )
       end
 
+      it "allows the preview tunnel server destination through the restricted firewall" do
+        preview_service = build_preview_tunnel_service(agent_run:, worktree_path:)
+        allow(Containers::ProxyUrl).to receive(:resolve).with(backend: preview_service.backend, restricted: true).and_return("http://paid-proxy:3000")
+
+        expect(NetworkPolicy).to receive(:apply_firewall_rules).with(
+          mock_container,
+          service_destinations: [ { ip: "paid-proxy", port: 7000 } ],
+          backend: preview_service.backend
+        )
+
+        preview_service.provision
+      end
+
       it "sets git committer identity environment variables" do
         bot_identity = Github::BotIdentity.new(
           app_slug: "paid-agents",
@@ -3099,6 +3112,17 @@ RSpec.describe Containers::Provision do
         metadata: anything)
 
       service.cleanup
+    end
+
+    it "releases preview tunnel reservations after deleting the container" do
+      preview_service = build_preview_tunnel_service(agent_run:, worktree_path:)
+      allow(Containers::ProxyUrl).to receive(:resolve).with(backend: preview_service.backend, restricted: true).and_return("http://paid-proxy:3000")
+      PreviewTunnelPortReservation.create!(reservation_key: "preview-token", tunnel_port: 8201)
+
+      preview_service.provision
+      preview_service.cleanup
+
+      expect(PreviewTunnelPortReservation.find_by(reservation_key: "preview-token")).to be_nil
     end
   end
 

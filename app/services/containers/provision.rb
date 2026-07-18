@@ -747,19 +747,23 @@ module Containers
       return unless container
 
       log_system("container.cleanup.start", container_id: container.id)
+      preview_tunnel_released = false
 
       begin
         stop_container(force: force)
         backend.delete_container(container, force: force, v: true)
+        preview_tunnel_released = release_preview_tunnel_reservation!
         log_system("container.cleanup.success")
       rescue Docker::Error::DockerError => e
         log_system("container.cleanup.failed", error: e.message)
         begin
           backend.delete_container(container, force: true, v: true)
+          preview_tunnel_released = release_preview_tunnel_reservation!
         rescue Docker::Error::DockerError
           # Container may already be gone
         end
       ensure
+        log_system("container.preview_tunnel_port_released", tunnel_port: preview_tunnel.tunnel_port) if preview_tunnel_released
         @container = nil
         cleanup_workspace_volume
         cleanup_claimed_pool_entry
@@ -1922,6 +1926,16 @@ module Containers
       "rathole --client #{config_path} > #{Shellwords.escape(log_path)} 2>&1 &"
     end
 
+    def release_preview_tunnel_reservation!
+      return false unless preview_tunnel?
+
+      Previews::TunnelManager.release_port(key: preview_tunnel.session_token)
+      true
+    rescue StandardError => e
+      log_system("container.preview_tunnel_port_release_failed", error: e.message)
+      false
+    end
+
     def write_container_file(path, content)
       encoded = Base64.strict_encode64(content)
       cmd = "echo #{Shellwords.escape(encoded)} | base64 -d > #{Shellwords.escape(path)}"
@@ -3031,7 +3045,7 @@ module Containers
 
       NetworkPolicy.apply_firewall_rules(
         container,
-        service_destinations: resolve_service_destinations,
+        service_destinations: firewall_service_destinations,
         backend: backend
       )
       log_system("container.firewall.applied", container_id: container.id)
@@ -3040,6 +3054,17 @@ module Containers
       # Firewall failure is not fatal in development but logged as warning.
       # In production, this should be treated as a hard failure.
       raise ProvisionError, "Firewall setup failed: #{e.message}" if Rails.env.production?
+    end
+
+    def firewall_service_destinations
+      destinations = resolve_service_destinations
+      return destinations unless preview_tunnel?
+
+      remote_destination = Previews::TunnelManager.client_remote_destination(
+        backend:,
+        restricted: network_contract.restricted?
+      )
+      destinations + [ { ip: remote_destination.fetch(:host), port: remote_destination.fetch(:port) } ]
     end
 
     def fetch_exit_code

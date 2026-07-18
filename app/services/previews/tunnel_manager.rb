@@ -143,10 +143,11 @@ module Previews
 
       def client_config(tunnel:, backend:, restricted:)
         definition = normalize_tunnel_definition(tunnel)
+        remote_destination = client_remote_destination(backend:, restricted:)
 
         [
           "[client]",
-          %(remote_addr = "#{remote_addr_for(backend:, restricted:)}"),
+          %(remote_addr = "#{remote_destination.fetch(:host)}:#{remote_destination.fetch(:port)}"),
           %(default_token = "#{toml_string(shared_token)}"),
           "",
           "[client.transport]",
@@ -201,6 +202,16 @@ module Previews
         end.sort_by(&:tunnel_port)
       end
 
+      def client_remote_destination(backend:, restricted:)
+        proxy_url = Containers::ProxyUrl.resolve(backend:, restricted:)
+        uri = URI.parse(proxy_url)
+        raise ConfigurationError, "Preview tunnel proxy URL is missing a host" if uri.host.blank?
+
+        { host: uri.host, port: server_port }
+      rescue URI::InvalidURIError => e
+        raise ConfigurationError, "Invalid preview tunnel proxy URL: #{e.message}"
+      end
+
       private
 
       def config
@@ -231,6 +242,10 @@ module Previews
           PreviewTunnelPortReservation.where(tunnel_port: tunnel_port).where.not(reservation_key:).delete_all
           reservation.update!(tunnel_port:)
         end
+
+        # Cleanup owns releasing reservations for containers that have already
+        # been deleted. Avoid pruning non-active rows here because a freshly
+        # allocated preview may not have created its container yet.
       end
 
       def with_reservation_lock
@@ -265,16 +280,6 @@ module Previews
           tunnel_port: tunnel.fetch(:tunnel_port),
           app_port: tunnel.fetch(:app_port)
         )
-      end
-
-      def remote_addr_for(backend:, restricted:)
-        proxy_url = Containers::ProxyUrl.resolve(backend:, restricted:)
-        uri = URI.parse(proxy_url)
-        raise ConfigurationError, "Preview tunnel proxy URL is missing a host" if uri.host.blank?
-
-        "#{uri.host}:#{server_port}"
-      rescue URI::InvalidURIError => e
-        raise ConfigurationError, "Invalid preview tunnel proxy URL: #{e.message}"
       end
 
       def toml_string(value)
