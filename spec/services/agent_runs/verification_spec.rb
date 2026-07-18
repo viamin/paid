@@ -15,6 +15,7 @@ RSpec.describe AgentRuns::Verification do
   before do
     allow(NetworkPolicy).to receive(:ensure_network!)
     allow(Containers::TcpHealthProbe).to receive(:open?).and_return(true)
+    allow(Containers.backend).to receive(:pull_image)
     allow(Docker::Container).to receive(:create)
   end
 
@@ -31,21 +32,8 @@ RSpec.describe AgentRuns::Verification do
       it "provisions a browser container on the agent network" do
         result = provisioner.call
 
-        expect(Docker::Container).to have_received(:create).with(
-          hash_including(
-            "Image" => AgentRuns::Verification::BROWSER_IMAGE,
-            "name" => browser_container_name,
-            "NetworkingConfig" => {
-              "EndpointsConfig" => {
-                network => { "Aliases" => [ AgentRuns::Verification::BROWSER_HOSTNAME ] }
-              }
-            },
-            "Labels" => hash_including(
-              "paid.verification_browser" => "true",
-              "paid.agent_run_id" => agent_run.id.to_s
-            )
-          )
-        )
+        expect(Containers.backend).to have_received(:pull_image).with("fromImage" => AgentRuns::Verification::BROWSER_IMAGE)
+        expect_browser_container_created
         expect(result).to be_success
         expect(result.container_id).to eq("browser-xyz")
         expect(result.hostname).to eq(AgentRuns::Verification::BROWSER_HOSTNAME)
@@ -78,6 +66,29 @@ RSpec.describe AgentRuns::Verification do
         expect(snapshot.size).to eq(1)
         expect(snapshot.first["name"]).to eq(Project::PLAYWRIGHT_MCP_NAME)
         expect(snapshot.first["env"]).to eq("CDP_URL" => Project::PLAYWRIGHT_MCP_CDP_URL)
+      end
+
+      it "preserves existing run snapshots while appending playwright-mcp" do
+        original_snapshot = [
+          { "name" => "existing-stdio", "command" => "npx", "args" => [ "serve" ] },
+          { "name" => "marketplace-tool", "marketplace_attachment" => true, "command" => "uvx" }
+        ]
+        AgentRun.where(id: agent_run.id).update_all(mcp_server_snapshot: original_snapshot)
+        agent_run.reload
+
+        create(:mcp_server_definition,
+          account: account,
+          name: "late-added-project-server",
+          transport: "stdio",
+          install_type: "npx",
+          command: "late-added")
+        ProjectMcpServer.create!(project: project, mcp_server_definition: account.mcp_server_definitions.find_by!(name: "late-added-project-server"))
+
+        provisioner.call
+
+        expect(agent_run.reload.mcp_server_snapshot).to eq(
+          original_snapshot + [ project.account.mcp_server_definitions.find_by!(name: Project::PLAYWRIGHT_MCP_NAME).to_snapshot ]
+        )
       end
 
       it "materializes playwright-mcp into the existing provisioned stdio servers" do
@@ -261,6 +272,24 @@ RSpec.describe AgentRuns::Verification do
       end
     end
 
+    context "when pulling the browser image fails because it is missing" do
+      before do
+        allow(Docker::Container).to receive(:get)
+          .with(browser_container_name)
+          .and_raise(Docker::Error::NotFoundError)
+        allow(Containers.backend).to receive(:pull_image)
+          .with("fromImage" => AgentRuns::Verification::BROWSER_IMAGE)
+          .and_raise(Docker::Error::NotFoundError)
+      end
+
+      it "raises a non-retryable configuration error" do
+        expect { provisioner.call }.to raise_error(
+          AgentRuns::Verification::Error,
+          "Verification browser image not found: #{AgentRuns::Verification::BROWSER_IMAGE}"
+        )
+      end
+    end
+
     context "when a stale container with the same run-specific name is on the wrong network" do
       let(:stale_container) { instance_double(Docker::Container, id: "browser-stale") }
 
@@ -309,5 +338,23 @@ RSpec.describe AgentRuns::Verification do
       "args" => [],
       "env" => { "CDP_URL" => Project::PLAYWRIGHT_MCP_CDP_URL }
     }
+  end
+
+  def expect_browser_container_created
+    expect(Docker::Container).to have_received(:create).with(
+      hash_including(
+        "Image" => AgentRuns::Verification::BROWSER_IMAGE,
+        "name" => browser_container_name,
+        "NetworkingConfig" => {
+          "EndpointsConfig" => {
+            network => { "Aliases" => [ AgentRuns::Verification::BROWSER_HOSTNAME ] }
+          }
+        },
+        "Labels" => hash_including(
+          "paid.verification_browser" => "true",
+          "paid.agent_run_id" => agent_run.id.to_s
+        )
+      )
+    )
   end
 end

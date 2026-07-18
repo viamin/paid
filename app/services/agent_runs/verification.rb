@@ -80,14 +80,19 @@ module AgentRuns
       @agent_run.project.ensure_playwright_mcp_definition!
     end
 
-    # Rebuilds the agent run's MCP server snapshot from the project's current
-    # enabled definitions and persists it. AgentRun marks the creation-time
-    # snapshot as readonly, so persistence uses `update_all` to bypass the
-    # instance-level guard — mirroring the pattern used by
-    # `MarketplaceEntries::McpSnapshotSync`.
+    # Appends the run-scoped playwright snapshot when it is missing, while
+    # preserving the original creation-time MCP snapshot exactly as created.
+    # That avoids silently picking up unrelated project MCP changes after the
+    # run was created and keeps any marketplace-attached snapshots already
+    # merged onto the run intact.
     def synchronize_snapshot!
-      definitions = @agent_run.project.mcp_server_definitions.enabled.order(:id)
-      new_snapshot = definitions.map(&:to_snapshot)
+      existing_snapshot = Array(@agent_run.mcp_server_snapshot)
+      return if existing_snapshot.any? { |definition| definition["name"] == Project::PLAYWRIGHT_MCP_NAME }
+
+      definition = @agent_run.project.account.mcp_server_definitions.find_by(name: Project::PLAYWRIGHT_MCP_NAME)
+      return unless definition
+
+      new_snapshot = existing_snapshot + [ definition.to_snapshot ]
       return if Array(@agent_run.mcp_server_snapshot) == new_snapshot
 
       AgentRun.where(id: @agent_run.id).update_all(mcp_server_snapshot: new_snapshot)
@@ -156,6 +161,8 @@ module AgentRuns
     end
 
     def create_browser
+      pull_browser_image
+
       Containers.backend.create_container(
         "Image" => BROWSER_IMAGE,
         "name" => browser_container_name,
@@ -182,6 +189,14 @@ module AgentRuns
       )
     rescue Docker::Error::DockerError => e
       raise Error, "Failed to create verification browser container: #{e.message}"
+    end
+
+    def pull_browser_image
+      Containers.backend.pull_image("fromImage" => BROWSER_IMAGE)
+    rescue Docker::Error::NotFoundError
+      raise Error, "Verification browser image not found: #{BROWSER_IMAGE}"
+    rescue Docker::Error::DockerError => e
+      raise Error, "Failed to pull verification browser image #{BROWSER_IMAGE}: #{e.message}"
     end
 
     def wait_for_health!(container)
