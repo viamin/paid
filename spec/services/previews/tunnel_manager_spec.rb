@@ -4,6 +4,7 @@ require "rails_helper"
 
 RSpec.describe Previews::TunnelManager do
   let(:backend) { double(remote?: false) }
+  let(:preview_session) { double(tunnel_port: 8201, token: "preview-token") }
 
   describe "#client_config" do
     it "uses the local proxy host for local backends" do
@@ -89,6 +90,19 @@ RSpec.describe Previews::TunnelManager do
       PreviewTunnelReservation.create!(port: 8298)
 
       expect(described_class.reserve_port!(range: 8298..8299)).to eq(8299)
+    end
+  end
+
+  describe "#release_port!" do
+    it "releases the reserved port even if preview session persistence fails" do
+      PreviewTunnelReservation.create!(port: 8201)
+      manager = described_class.new(backend:, preview_session:)
+      allow(preview_session).to receive(:update!).and_raise("write failed")
+      allow(described_class).to receive(:release_port).and_call_original
+
+      expect { manager.release_port! }.to raise_error("write failed")
+      expect(described_class).to have_received(:release_port).with(8201)
+      expect(PreviewTunnelReservation.find_by(port: 8201)).to be_nil
     end
   end
 end

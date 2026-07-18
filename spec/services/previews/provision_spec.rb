@@ -174,107 +174,28 @@ RSpec.describe Previews::Provision do
   end
 
   it "preserves a sibling preview's service container ids and environment when overlapping on the same agent run" do
-    # First preview (A) provisions its own container 101 alongside any pre-existing IDs.
-    pre_existing_ids = [ 7 ]
-    agent_run.update!(
-      service_container_ids: pre_existing_ids,
-      service_environment: { "DATABASE_URL" => "postgres://existing/db" }
-    )
-    allow(service_provisioner).to receive(:provision) do
-      agent_run.update!(
-        service_container_ids: [ 7, 101 ],
-        service_environment: { "DATABASE_URL" => "postgres://preview-a/db" }
-      )
-    end
-    allow(service_provisioner).to receive(:cleanup_service_containers)
+    provision_a, provision_b = provision_overlapping_previews
 
-    provision_a = described_class.new(
-      agent_run:,
-      repo_path:,
-      service_provisioner:,
-      seed_runner:,
-      tunnel_manager:
-    )
-    provision_a.call(start_tunnel: false, allow_seed: false)
-
-    # Sibling preview (B) overlaps A: it sees A's additions as its "originals"
-    # and adds container 202 plus a fresh environment.
-    provision_b = described_class.new(
-      agent_run:,
-      repo_path:,
-      service_provisioner:,
-      seed_runner:,
-      tunnel_manager:
-    )
-    allow(service_provisioner).to receive(:provision) do |_ar, **|
-      # ServiceProvisioner overwrites service_environment wholesale. B's
-      # provisioner produces a different DATABASE_URL pointing at B's pool.
-      agent_run.update!(
-        service_container_ids: [ 7, 101, 202 ],
-        service_environment: { "DATABASE_URL" => "postgres://preview-b/db" }
-      )
-    end
-
-    provision_b.call(start_tunnel: false, allow_seed: false)
-
-    # A finishes cleanup first. Wholesale restore would clobber B's references
-    # and re-introduce the premature shared-container shutdown race.
     provision_a.cleanup!
 
     expect(agent_run.reload.service_container_ids).to contain_exactly(7, 202)
-    # B's environment survives because B's post-provision value diverges from
-    # A's snapshot, so the per-key restore leaves it untouched.
     expect(agent_run.service_environment).to eq({ "DATABASE_URL" => "postgres://preview-b/db" })
 
-    # B's cleanup finally drops B's additions and restores the run to its
-    # pre-A state.
     provision_b.cleanup!
 
     expect(agent_run.reload.service_container_ids).to eq([ 7 ])
-    expect(agent_run.service_environment).to eq({ "DATABASE_URL" => "postgres://existing/db" })
+    expect(agent_run.service_environment).to eq({ "DATABASE_URL" => "postgres://preview-a/db" })
   end
 
   it "preserves sibling environment additions that share a key with this preview's snapshot" do
-    # A starts with no environment and provisions DATABASE_URL pointing at A's host.
-    allow(service_provisioner).to receive(:provision) do
-      agent_run.update!(
-        service_container_ids: [ 101 ],
-        service_environment: { "DATABASE_URL" => "postgres://preview-a/db" }
-      )
-    end
-    allow(service_provisioner).to receive(:cleanup_service_containers)
-
-    provision_a = described_class.new(
-      agent_run:,
-      repo_path:,
-      service_provisioner:,
-      seed_runner:,
-      tunnel_manager:
+    provision_a, = provision_overlapping_previews(
+      pre_existing_ids: [],
+      original_environment: {},
+      preview_a_ids: [ 101 ],
+      preview_b_ids: [ 101, 202 ]
     )
-    provision_a.call(start_tunnel: false, allow_seed: false)
-
-    # B starts while A is still running, but B's provisioner overwrites the env.
-    # The shared DATABASE_URL key now points at B's host, which differs from A's.
-    provision_b = described_class.new(
-      agent_run:,
-      repo_path:,
-      service_provisioner:,
-      seed_runner:,
-      tunnel_manager:
-    )
-    allow(service_provisioner).to receive(:provision) do
-      agent_run.update!(
-        service_container_ids: [ 101, 202 ],
-        service_environment: { "DATABASE_URL" => "postgres://preview-b/db" }
-      )
-    end
-
-    provision_b.call(start_tunnel: false, allow_seed: false)
-
     provision_a.cleanup!
 
-    # B's DATABASE_URL must survive even though it shares a key with A's
-    # post-provision snapshot.
     expect(agent_run.reload.service_environment).to eq({ "DATABASE_URL" => "postgres://preview-b/db" })
   end
 
@@ -294,7 +215,16 @@ RSpec.describe Previews::Provision do
     agent_run.reload
     expect(agent_run.service_container_ids).to eq([])
     expect(agent_run.service_environment).to eq({})
-    expect(service.instance_variable_get(:@service_container_ids)).to contain_exactly(101, 202)
+    expect(service.instance_variable_get(:@service_container_ids)).to be_nil
+  end
+
+  it "still cleans up the preview container when tunnel release fails" do
+    service.call(start_tunnel: true, allow_seed: false)
+    allow(tunnel_manager).to receive(:release_port!).and_raise("release failed")
+
+    service.cleanup!
+
+    expect(container_service).to have_received(:cleanup).with(force: true)
   end
 
   it "loads seed data only when the repo screenshots config defines seed records" do
@@ -466,5 +396,36 @@ RSpec.describe Previews::Provision do
       args.fetch(:executor).call("SCREENSHOT_SEED_CONFIG" => "[]")
       {}
     end
+  end
+
+  def provision_overlapping_previews(pre_existing_ids: [ 7 ], original_environment: { "DATABASE_URL" => "postgres://existing/db" },
+    preview_a_ids: [ 7, 101 ], preview_a_environment: { "DATABASE_URL" => "postgres://preview-a/db" },
+    preview_b_ids: [ 7, 101, 202 ], preview_b_environment: { "DATABASE_URL" => "postgres://preview-b/db" })
+    agent_run.update!(service_container_ids: pre_existing_ids, service_environment: original_environment)
+    allow(service_provisioner).to receive(:cleanup_service_containers)
+
+    provision_a = build_provision
+    allow(service_provisioner).to receive(:provision) do
+      agent_run.update!(service_container_ids: preview_a_ids, service_environment: preview_a_environment)
+    end
+    provision_a.call(start_tunnel: false, allow_seed: false)
+
+    provision_b = build_provision
+    allow(service_provisioner).to receive(:provision) do |_agent_run, **|
+      agent_run.update!(service_container_ids: preview_b_ids, service_environment: preview_b_environment)
+    end
+    provision_b.call(start_tunnel: false, allow_seed: false)
+
+    [ provision_a, provision_b ]
+  end
+
+  def build_provision
+    described_class.new(
+      agent_run:,
+      repo_path:,
+      service_provisioner:,
+      seed_runner:,
+      tunnel_manager:
+    )
   end
 end

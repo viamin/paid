@@ -76,9 +76,17 @@ module Previews
     def release_port!
       return if @allocated_port.blank?
 
-      persist_preview_session!(tunnel_port: nil)
-      self.class.release_port(@allocated_port)
-      @allocated_port = nil
+      allocated_port = @allocated_port
+
+      begin
+        persist_preview_session!(tunnel_port: nil)
+      ensure
+        begin
+          self.class.release_port(allocated_port)
+        ensure
+          @allocated_port = nil
+        end
+      end
     end
 
     def client_config(local_port:, remote_port: allocate_port!)

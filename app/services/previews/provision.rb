@@ -86,17 +86,18 @@ module Previews
     end
 
     def cleanup!
-      @tunnel_manager.stop_client!(container_service:) if @tunnel_port.present? && container_service.present?
-      @tunnel_manager.release_port!
       begin
+        @tunnel_manager.stop_client!(container_service:) if @tunnel_port.present? && container_service.present?
+        @tunnel_manager.release_port!
         cleanup_services!
+      rescue StandardError => e
+        logger.warn(message: "previews.provision.cleanup_failed", agent_run_id: agent_run.id, error: e.message)
       ensure
         restore_agent_run_service_state!
+        container_service&.cleanup(force: true)
       end
-      container_service&.cleanup(force: true)
     rescue StandardError => e
-      logger.warn(message: "previews.provision.cleanup_failed", agent_run_id: agent_run.id, error: e.message)
-      restore_agent_run_service_state!
+      logger.warn(message: "previews.provision.container_cleanup_failed", agent_run_id: agent_run.id, error: e.message)
     end
 
     def service_environment
@@ -370,7 +371,8 @@ module Previews
 
       current_ids = Array(agent_run.service_container_ids)
       preserved_ids = current_ids - Array(@service_container_ids)
-      restored_ids = (Array(@original_service_container_ids) + preserved_ids).uniq
+      retained_original_ids = Array(@original_service_container_ids) & current_ids
+      restored_ids = (retained_original_ids + preserved_ids).uniq
 
       current_env = agent_run.service_environment&.deep_dup || {}
       original_env = @original_service_environment || {}
