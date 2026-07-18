@@ -1,4 +1,4 @@
-<% can_create_chat_message = policy(ChatMessage.new(chat_session: chat_session)).create? %>
+<% can_create_chat_message = policy(ChatMessage.new(chat_session: chat_session)).create? && !chat_session.archived? %>
 <% popup = local_assigns.fetch(:popup, false) %>
 
 <div class="flex h-full flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white">
@@ -71,7 +71,9 @@
               title: "Skip the approval prompt and run requested actions (like agent runs) automatically" %>
       <% end %>
     <% else %>
-      <p class="text-sm text-gray-500">You have read-only access to this chat.</p>
+      <p class="text-sm text-gray-500">
+        <%= chat_session.archived? ? "This chat is archived. Restore it to continue the conversation." : "You have read-only access to this chat." %>
+      </p>
     <% end %>
   </div>
 </div>

@@ -40,6 +40,7 @@ module ChatSessions
 
     def call
       validate_decision!
+      validate_session_state!
       claim_resolution!
       update_session_activity
 
@@ -55,6 +56,10 @@ module ChatSessions
 
     def validate_decision!
       raise ArgumentError, "decision must be approve or deny" unless DECISIONS.include?(decision)
+    end
+
+    def validate_session_state!
+      raise ArgumentError, "Chat session is archived." if chat_session.archived?
     end
 
     # Atomically transition this tool call from +pending+ to its decision status
