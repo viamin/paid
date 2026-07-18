@@ -111,18 +111,17 @@ RSpec.describe PreviewsProxy do
       response = mock_request.get("/previews/s3cret-token/")
 
       csp = response.headers["content-security-policy"]
-      expect(csp).to include("frame-ancestors *")
-      expect(csp).not_to include("frame-ancestors 'self'")
+      expect(csp).to include("frame-ancestors 'self'")
       expect(csp).to include("default-src 'self'")
     end
 
-    it "adds frame-ancestors * when the upstream has no CSP" do
+    it "adds frame-ancestors 'self' when the upstream has no CSP" do
       stub_request(:get, "http://127.0.0.1:#{port}/")
         .to_return(status: 200, body: "ok")
 
       response = mock_request.get("/previews/s3cret-token/")
 
-      expect(response.headers["content-security-policy"]).to eq("frame-ancestors *")
+      expect(response.headers["content-security-policy"]).to eq("frame-ancestors 'self'")
     end
 
     it "rewrites a relative Location redirect to stay within the proxy" do
@@ -158,6 +157,28 @@ RSpec.describe PreviewsProxy do
       expect(cookie).to include("session=abc")
       expect(cookie).not_to match(/domain=/i)
       expect(cookie).to include("HttpOnly")
+    end
+
+    it "preserves repeated Set-Cookie headers as separate cookies" do
+      upstream_response = instance_double(
+        Net::HTTPOK,
+        body: "ok",
+        code: "200"
+      )
+      allow(upstream_response).to receive(:get_fields).with("set-cookie").and_return([
+        "session=abc; Path=/; Domain=app.internal; HttpOnly",
+        "csrf=xyz; Path=/; Domain=app.internal; Secure"
+      ])
+      allow(upstream_response).to receive(:each_header).and_yield("content-type", "text/plain")
+      allow(Net::HTTP).to receive(:start).and_return(upstream_response)
+
+      response = mock_request.get("/previews/s3cret-token/")
+
+      cookies = response.headers["set-cookie"].split("\n")
+      expect(cookies).to eq([
+        "session=abc; Path=/; HttpOnly",
+        "csrf=xyz; Path=/; Secure"
+      ])
     end
 
     it "sets X-Forwarded-Host to the proxy origin on the forwarded request" do
@@ -232,6 +253,24 @@ RSpec.describe PreviewsProxy do
 
       client_mirror.close
       thread.join(2)
+    end
+  end
+
+  describe "request path filtering" do
+    it "redacts preview tokens from filtered request paths used by request logging" do
+      request = ActionDispatch::Request.new(Rack::MockRequest.env_for(
+        "/previews/s3cret-token/issues/42?token=query-token&view=full"
+      ).merge("action_dispatch.parameter_filter" => Rails.application.config.filter_parameters))
+
+      expect(request.filtered_path).to eq("/previews/[FILTERED]/issues/42?token=[FILTERED]&view=full")
+    end
+
+    it "does not redact the iframe wrapper route without a proxied path" do
+      request = ActionDispatch::Request.new(Rack::MockRequest.env_for("/previews/123").merge(
+        "action_dispatch.parameter_filter" => Rails.application.config.filter_parameters
+      ))
+
+      expect(request.filtered_path).to eq("/previews/123")
     end
   end
 

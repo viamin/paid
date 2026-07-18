@@ -191,18 +191,22 @@ class PreviewsProxy
   def transform_response_headers(upstream_response, session:, proxy_host:)
     transformed = {}
     content_security_policy_seen = false
+    upstream_response.get_fields("set-cookie")&.each do |value|
+      append_set_cookie(transformed, rewrite_set_cookie(value, proxy_host:))
+    end
+
     upstream_response.each_header do |name, value|
       case name.downcase
       when "x-frame-options"
         next # stripped to allow iframe embedding
       when "content-security-policy"
         content_security_policy_seen = true
-        rewritten = rewrite_content_security_policy(value, session:)
+        rewritten = rewrite_content_security_policy(value)
         transformed["content-security-policy"] = rewritten if rewritten
       when "location"
         transformed["location"] = rewrite_location(value, session:)
       when "set-cookie"
-        append_set_cookie(transformed, rewrite_set_cookie(value, proxy_host:))
+        next
       when *HOP_BY_HOP_HEADERS, "content-length"
         next
       else
@@ -211,16 +215,17 @@ class PreviewsProxy
     end
     # Guarantee iframe embedding even when the upstream omits a CSP entirely.
     unless content_security_policy_seen
-      transformed["content-security-policy"] = "frame-ancestors *"
+      transformed["content-security-policy"] = "frame-ancestors 'self'"
     end
     transformed
   end
 
-  def rewrite_content_security_policy(value, session:)
+  def rewrite_content_security_policy(value)
     directives = value.split(/\s*;\s*/).reject(&:empty?)
     filtered = directives.reject { |directive| directive.split.first&.downcase == "frame-ancestors" }
-    # Replace frame-ancestors with the proxy origin so the iframe embeds.
-    filtered << "frame-ancestors *"
+    # The preview iframe is same-origin with the Rails app, so 'self' permits
+    # embedding in the wrapper page without allowing arbitrary third-party sites.
+    filtered << "frame-ancestors 'self'"
     filtered.join("; ")
   end
 

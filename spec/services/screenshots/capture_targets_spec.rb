@@ -526,6 +526,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to eq([ "sign_up" ])
     end
 
+    it "maps previews controller to the preview wrapper page" do
+      targets = described_class.call(changed_files: [ "app/controllers/previews_controller.rb" ])
+
+      expect(targets.map(&:slug)).to eq([ "preview_session_show" ])
+    end
+
     it "covers every current non-api controller that detect_ui_changes can surface" do
       controller_paths = Dir[Rails.root.join("app/controllers/**/*_controller.rb")]
         .map { |path| path.delete_prefix("#{Rails.root}/") }
