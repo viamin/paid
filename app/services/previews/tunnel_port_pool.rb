@@ -28,6 +28,7 @@ module Previews
     def acquire(session)
       with_lock do
         TenantContext.with_system_access do
+          release_expired_claims!
           port = next_free_port
           raise Exhausted, "No preview tunnel ports available in #{range}" if port.nil?
 
@@ -57,9 +58,16 @@ module Previews
       range.find { |port| !claimed.include?(port) }
     end
 
+    def release_expired_claims!
+      PreviewSession
+        .expiring_before(Time.current)
+        .where.not(tunnel_port: nil)
+        .update_all(tunnel_port: nil)
+    end
+
     def claimed_ports
       PreviewSession
-        .where(status: PreviewSession::ACTIVE_STATUSES)
+        .active
         .where.not(tunnel_port: nil)
         .pluck(:tunnel_port)
     end

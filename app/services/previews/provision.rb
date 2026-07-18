@@ -59,7 +59,7 @@ module Previews
     end
 
     def stop(session: nil)
-      session ||= current
+      session ||= latest_non_terminal
       return Result.new(session: nil, success?: true) unless session
       return Result.new(session:, success?: true) if session.terminal?
 
@@ -73,8 +73,9 @@ module Previews
     end
 
     def restart(branch_name: nil, ttl_seconds: PreviewSession::DEFAULT_TTL_SECONDS)
-      target_branch = branch_name.presence || current&.branch_name || project.default_branch
-      stop
+      session = latest_non_terminal
+      target_branch = branch_name.presence || session&.branch_name || project.default_branch
+      stop(session:)
       start(branch_name: target_branch, ttl_seconds: ttl_seconds)
     end
 
@@ -86,6 +87,10 @@ module Previews
 
     def current
       PreviewSession.for_project(project).active.recent.first
+    end
+
+    def latest_non_terminal
+      PreviewSession.for_project(project).non_terminal.recent.first
     end
 
     def provision(session)

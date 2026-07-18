@@ -109,6 +109,17 @@ RSpec.describe Previews::Provision do
       expect(port).to be_in(Previews.port_range)
     end
 
+    it "stops the latest non-terminal session even after its TTL has passed" do
+      session = create(:preview_session, :expired, project: project, tunnel_port: 8250, container_id: "preview-123")
+
+      result = service.stop
+
+      expect(result).to be_success
+      expect(result.session.id).to eq(session.id)
+      expect(session.reload.status).to eq("stopped")
+      expect(session.tunnel_port).to be_nil
+    end
+
     it "stops a specific session passed in" do
       session = create(:preview_session, :ready, project: project, tunnel_port: 8250)
 
@@ -155,6 +166,17 @@ RSpec.describe Previews::Provision do
       _expired = create(:preview_session, :expired, project: project)
 
       expect(service.send(:current)).to be_nil
+    end
+  end
+
+  describe "#restart" do
+    it "reuses the latest non-terminal session branch after expiry" do
+      create(:preview_session, :expired, project: project, branch_name: "feature/keep-me")
+
+      result = service.restart
+
+      expect(result).to be_success
+      expect(result.session.reload.branch_name).to eq("feature/keep-me")
     end
   end
 

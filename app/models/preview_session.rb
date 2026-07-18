@@ -38,6 +38,7 @@ class PreviewSession < ApplicationRecord
   # meantime so a follow-up start can claim a fresh port.
   scope :active, -> { where(status: ACTIVE_STATUSES).where("expires_at > ?", Time.current) }
   scope :live, -> { where(status: LIVE_STATUSES) }
+  scope :non_terminal, -> { where.not(status: TERMINAL_STATUSES) }
   scope :recent, -> { order(created_at: :desc) }
   scope :for_project, ->(project) { where(project_id: project) }
   scope :expiring_before, ->(time) { where(status: ACTIVE_STATUSES).where("expires_at <= ?", time) }
