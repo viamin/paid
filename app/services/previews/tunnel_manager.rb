@@ -15,6 +15,7 @@ module Previews
     DEFAULT_LOCAL_APP_HOST = "127.0.0.1"
     DEFAULT_HEALTH_CHECK_TIMEOUT_SECONDS = 10
     DEFAULT_SERVER_CONFIG_POLL_INTERVAL_SECONDS = 2
+    DEFAULT_STALE_RESERVATION_GRACE_PERIOD = 15.minutes
     HEALTH_CHECK_POLL_INTERVAL_SECONDS = 0.25
     RESERVATION_LOCK_KEY = Digest::SHA256.hexdigest(name).to_i(16) % (2**31 - 1)
     PREVIEW_TUNNEL_LABEL = "paid.preview_tunnel"
@@ -64,6 +65,7 @@ module Previews
 
         with_reservation_lock do
           sync_active_reservations!(range: port_range)
+          prune_stale_reservations!(range: port_range)
 
           existing_port = PreviewTunnelPortReservation.where(reservation_key: normalized_key).pick(:tunnel_port)
           return existing_port if existing_port.present? && port_range.cover?(existing_port)
@@ -99,6 +101,18 @@ module Previews
 
           raise ArgumentError, "key or port is required"
         end
+      end
+
+      def prune_stale_reservations!(range:, backend: Containers.backend, stale_before: DEFAULT_STALE_RESERVATION_GRACE_PERIOD.ago)
+        active_allocations = active_tunnel_allocations(range:, backend:)
+
+        PreviewTunnelPortReservation.where(tunnel_port: range)
+          .where("updated_at < ?", stale_before)
+          .find_each do |reservation|
+            next if active_allocations[reservation.reservation_key] == reservation.tunnel_port
+
+            reservation.destroy!
+          end
       end
 
       def server_port

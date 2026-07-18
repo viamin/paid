@@ -72,6 +72,41 @@ RSpec.describe Previews::TunnelManager do
         described_class.allocate_port(key: "d")
       }.to raise_error(described_class::PortExhaustedError, /No preview tunnel ports available/)
     end
+
+    it "reclaims stale reservations that are no longer backed by a live preview container" do
+      %w[stale-a stale-b stale-c].each.with_index(8200) do |key, port|
+        reservation = PreviewTunnelPortReservation.create!(reservation_key: key, tunnel_port: port)
+        reservation.update_columns(created_at: 20.minutes.ago, updated_at: 20.minutes.ago)
+      end
+
+      expect(described_class.allocate_port(key: "fresh-preview")).to eq(8200)
+    end
+  end
+
+  describe ".prune_stale_reservations!" do
+    it "keeps fresh and active reservations while deleting stale orphaned rows" do
+      stale = PreviewTunnelPortReservation.create!(reservation_key: "stale-preview", tunnel_port: 8200)
+      fresh = PreviewTunnelPortReservation.create!(reservation_key: "fresh-preview", tunnel_port: 8201)
+      active = PreviewTunnelPortReservation.create!(reservation_key: "active-preview", tunnel_port: 8202)
+      stale.update_columns(created_at: 20.minutes.ago, updated_at: 20.minutes.ago)
+      active.update_columns(created_at: 20.minutes.ago, updated_at: 20.minutes.ago)
+
+      backend = instance_double(Containers::Backends::Base, identifier: "local")
+      preview_container = instance_double(Docker::Container, info: preview_container_info(session_token: "active-preview", tunnel_port: 8202))
+      allow(backend).to receive(:list_containers)
+        .with(filters: { label: [ "#{described_class::PREVIEW_TUNNEL_LABEL}=true" ] }.to_json)
+        .and_return([ preview_container ])
+
+      described_class.prune_stale_reservations!(
+        range: described_class.port_range,
+        backend:,
+        stale_before: 15.minutes.ago
+      )
+
+      expect(PreviewTunnelPortReservation.exists?(stale.id)).to be(false)
+      expect(PreviewTunnelPortReservation.exists?(fresh.id)).to be(true)
+      expect(PreviewTunnelPortReservation.exists?(active.id)).to be(true)
+    end
   end
 
   describe ".configure!" do
