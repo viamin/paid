@@ -119,6 +119,7 @@ class DashboardController < ApplicationController
 
   def cancel_run
     authorize @agent_run, :cancel?
+    @queued_run = @agent_run.queued?
     result = cancel_agent_run_result(@agent_run)
 
     respond_to do |format|
@@ -126,6 +127,7 @@ class DashboardController < ApplicationController
       format.turbo_stream do
         Dashboard::CacheVersion.bump(current_account, scope: Dashboard::CacheVersion::LISTS_SCOPE)
         @cancel_result = result
+        load_queue_preview if @queued_run && result.cancelled?
         render "dashboard/cancel_run", formats: :turbo_stream
       end
     end
@@ -139,6 +141,14 @@ class DashboardController < ApplicationController
 
   def set_live_agent_run
     @agent_run = live_agent_runs.find(params[:id])
+  end
+
+  def load_queue_preview
+    @queue_preview = Dashboard::QueuePreview.call(user: current_user)
+    @quality_paused_projects = current_account.projects
+      .where.not(quality_paused_at: nil)
+      .order(quality_paused_at: :desc)
+      .limit(10)
   end
 
   def valid_time_range

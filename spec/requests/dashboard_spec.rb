@@ -1092,7 +1092,7 @@ RSpec.describe "Dashboard" do
   describe "POST /dashboard/cancel_run/:id" do
     let(:account) { create(:account) }
     let(:user) { create(:user, account: account) }
-    let(:project) { create(:project, account: account) }
+    let(:project) { create(:project, account: account, created_by: user) }
 
     before { sign_in user }
 
@@ -1144,8 +1144,24 @@ RSpec.describe "Dashboard" do
         post dashboard_cancel_run_path(agent_run), as: :turbo_stream
 
         expect(response).to have_http_status(:ok)
-        expect(response.body).to include(%(action="remove" target="dashboard_row_agent_run_#{agent_run.id}"))
+        expect(response.body).to include(%(action="replace" target="queue-preview"))
+        expect(response.body).to include("No queued runs for your projects.")
         expect(agent_run.reload.status).to eq("cancelled")
+      end
+
+      it "re-renders the upcoming queue with refreshed positions after cancelling a queued run" do
+        first_run = create(:agent_run, :queued, project: project, created_at: 3.minutes.ago)
+        second_run = create(:agent_run, :queued, project: project, created_at: 2.minutes.ago)
+        third_run = create(:agent_run, :queued, project: project, created_at: 1.minute.ago)
+
+        post dashboard_cancel_run_path(first_run), as: :turbo_stream
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include(%(action="replace" target="queue-preview"))
+        expect(response.body).not_to include(%(dashboard_row_agent_run_#{first_run.id}))
+        expect(agent_run_rows_in_queue_preview(response.body).pluck(:id)).to contain_exactly(second_run.id, third_run.id)
+        expect(agent_run_rows_in_queue_preview(response.body).pluck(:position)).to eq([ 1, 2 ])
+        expect(first_run.reload.status).to eq("cancelled")
       end
 
       it "prepends an alert when the run is no longer active" do
@@ -1168,6 +1184,21 @@ RSpec.describe "Dashboard" do
         expect(response).to redirect_to(root_path)
         expect(response).to have_http_status(:found)
       end
+    end
+  end
+
+  def agent_run_rows_in_queue_preview(turbo_stream_body)
+    fragment = Nokogiri::HTML.fragment(turbo_stream_body)
+    template = fragment.at_css('turbo-stream[action="replace"][target="queue-preview"] template')
+    return [] if template.nil?
+
+    queue_preview = Nokogiri::HTML.fragment(CGI.unescapeHTML(template.inner_html))
+
+    queue_preview.css("tr[id^='dashboard_row_agent_run_']").map do |row|
+      {
+        id: row["id"].delete_prefix("dashboard_row_agent_run_").to_i,
+        position: row.at_css("td")&.text&.strip&.to_i
+      }
     end
   end
 end
