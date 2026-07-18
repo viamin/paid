@@ -161,13 +161,16 @@ module Previews
       end
 
       @service_environment = agent_run.service_environment&.deep_dup || {}
-      @service_container_ids = combined_ids
+      # Track only the preview-added IDs for cleanup so that teardown does not
+      # pass the pre-existing service container IDs to cleanup_service_containers,
+      # which would otherwise drop the original run's per-run database.
+      # combined_ids is persisted on agent_run purely for capacity accounting.
+      @service_container_ids = new_ids
     rescue StandardError
-      # Snapshot whatever IDs the provisioner managed to associate with the
-      # agent run before the failure so cleanup can still drop the per-run
-      # database, then restore the originals so the agent run's persisted
-      # service associations match what was there before this attempt.
-      @service_container_ids = Array(agent_run.service_container_ids)
+      # Capture only the preview-added IDs so cleanup can still drop any per-run
+      # databases the provisioner created before failing, without touching the
+      # original service containers that existed before this preview started.
+      @service_container_ids = Array(agent_run.service_container_ids) - Array(@original_service_container_ids)
       restore_agent_run_service_state!
       raise
     end
@@ -189,6 +192,12 @@ module Previews
     def load_seed_data!
       return unless repo_seed_configured?
       return if config.seed.empty?
+
+      if detected_framework == :phoenix
+        raise Screenshots::ConfigError,
+          "seed configuration is not supported for Phoenix projects yet " \
+          "(seeds run via bin/rails runner, which is unavailable in an Elixir/Phoenix repo)"
+      end
 
       @seed_data = seed_runner.call(
         config:,

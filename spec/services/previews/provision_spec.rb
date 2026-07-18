@@ -129,6 +129,25 @@ RSpec.describe Previews::Provision do
     expect(agent_run.service_environment).to eq({ "DATABASE_URL" => "postgres://existing/db" })
   end
 
+  it "only cleans up preview-added service containers, not pre-existing ones the agent run already had" do
+    agent_run.update!(service_container_ids: [ 7 ])
+    captured_env = { "DATABASE_URL" => "postgres://preview-host/db" }
+    allow(service_provisioner).to receive(:provision) do
+      agent_run.update!(service_container_ids: [ 7, 101, 202 ], service_environment: captured_env)
+    end
+    allow(service_provisioner).to receive(:cleanup_service_containers)
+
+    service.call(start_tunnel: false, allow_seed: false)
+    service.cleanup!
+
+    expect(service_provisioner).to have_received(:cleanup_service_containers)
+      .with(
+        contain_exactly(101, 202),
+        agent_run: agent_run,
+        service_environment: captured_env
+      )
+  end
+
   it "counts the preview against service container capacity while in flight so concurrent cleanup cannot stop the shared container" do
     service_container = create(:service_container, :running)
     create(:project_service_container, project: project, service_container: service_container)
@@ -259,6 +278,17 @@ RSpec.describe Previews::Provision do
       .with(container_service:, local_port: 3000, remote_port: 8201)
     expect(tunnel_manager).to have_received(:wait_until_healthy!)
       .with(port: 8201, path: "/", timeout_seconds: described_class::STARTUP_TIMEOUT_SECONDS)
+  end
+
+  it "raises a config error when a Phoenix project has seed configuration" do
+    allow(Screenshots::DetectFramework).to receive(:detect_framework_only).and_return(:phoenix)
+    seeded_config = seed_enabled_config
+    allow(Screenshots::ConfigParser).to receive(:from_repo_path).and_return(seeded_config)
+    write_repo_seed_config
+
+    expect {
+      service.call(start_tunnel: false, allow_seed: true)
+    }.to raise_error(Screenshots::ConfigError, /seed configuration is not supported for Phoenix/)
   end
 
   it "starts Phoenix apps through mix phx.server with a preview bind override" do
