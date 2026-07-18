@@ -1,5 +1,5 @@
 <% if @cancel_result.cancelled? %>
-  <% if @queued_run %>
+  <% if @queue_preview_request %>
     <%= turbo_stream.replace "queue-preview",
       partial: "dashboard/queue_preview",
       locals: { queue_preview: @queue_preview, paused_projects: @quality_paused_projects } %>

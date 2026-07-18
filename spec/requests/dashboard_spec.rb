@@ -366,13 +366,14 @@ RSpec.describe "Dashboard" do
 
         document = Nokogiri::HTML(response.body)
         queue_section = document.at_xpath("//h3[normalize-space(text())='Upcoming Queue']/ancestor::div[contains(@class, 'rounded-lg')][1]")
-        row = queue_section.at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(run, :dashboard_row)}"]))
+        row = queue_section.at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(run, :queue_preview_row)}"]))
 
         expect(row).to be_present
         expect(row.css("a").map { |a| a["href"] }).to include(project_agent_run_path(project, run))
         cancel_form = row.at_css("form[action='#{dashboard_cancel_run_path(run)}']")
         expect(cancel_form).to be_present
         expect(cancel_form["method"]).to eq("post")
+        expect(cancel_form.at_css("input[name='source']")&.[]("value")).to eq("queue_preview")
         expect(cancel_form.at_css("button")&.text).to include("Cancel")
       end
 
@@ -387,7 +388,7 @@ RSpec.describe "Dashboard" do
 
         document = Nokogiri::HTML(response.body)
         queue_section = document.at_xpath("//h3[normalize-space(text())='Upcoming Queue']/ancestor::div[contains(@class, 'rounded-lg')][1]")
-        row = queue_section.at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(run, :dashboard_row)}"]))
+        row = queue_section.at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(run, :queue_preview_row)}"]))
 
         expect(row).to be_present
         expect(row.css("a").map { |a| a["href"] }).to include(project_agent_run_path(viewer_project, run))
@@ -1141,7 +1142,7 @@ RSpec.describe "Dashboard" do
       it "removes a queued run row from the upcoming queue" do
         agent_run = create(:agent_run, :queued, project: project)
 
-        post dashboard_cancel_run_path(agent_run), as: :turbo_stream
+        post dashboard_cancel_run_path(agent_run), params: { source: "queue_preview" }, as: :turbo_stream
 
         expect(response).to have_http_status(:ok)
         expect(response.body).to include(%(action="replace" target="queue-preview"))
@@ -1154,14 +1155,26 @@ RSpec.describe "Dashboard" do
         second_run = create(:agent_run, :queued, project: project, created_at: 2.minutes.ago)
         third_run = create(:agent_run, :queued, project: project, created_at: 1.minute.ago)
 
-        post dashboard_cancel_run_path(first_run), as: :turbo_stream
+        post dashboard_cancel_run_path(first_run), params: { source: "queue_preview" }, as: :turbo_stream
 
         expect(response).to have_http_status(:ok)
         expect(response.body).to include(%(action="replace" target="queue-preview"))
-        expect(response.body).not_to include(%(dashboard_row_agent_run_#{first_run.id}))
+        expect(response.body).not_to include(%(queue_preview_row_agent_run_#{first_run.id}))
         expect(agent_run_rows_in_queue_preview(response.body).pluck(:id)).to contain_exactly(second_run.id, third_run.id)
         expect(agent_run_rows_in_queue_preview(response.body).pluck(:position)).to eq([ 1, 2 ])
         expect(first_run.reload.status).to eq("cancelled")
+      end
+
+      it "refreshes the queue preview when the cancel request originated there, even if the run is now running" do
+        agent_run = create(:agent_run, :queued, project: project)
+        agent_run.update!(status: "running", started_at: Time.current)
+
+        post dashboard_cancel_run_path(agent_run), params: { source: "queue_preview" }, as: :turbo_stream
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include(%(action="replace" target="queue-preview"))
+        expect(response.body).not_to include(%(action="remove" target="dashboard_row_agent_run_#{agent_run.id}"))
+        expect(agent_run.reload.status).to eq("cancelled")
       end
 
       it "prepends an alert when the run is no longer active" do
@@ -1194,9 +1207,9 @@ RSpec.describe "Dashboard" do
 
     queue_preview = Nokogiri::HTML.fragment(CGI.unescapeHTML(template.inner_html))
 
-    queue_preview.css("tr[id^='dashboard_row_agent_run_']").map do |row|
+    queue_preview.css("tr[id^='queue_preview_row_agent_run_']").map do |row|
       {
-        id: row["id"].delete_prefix("dashboard_row_agent_run_").to_i,
+        id: row["id"].delete_prefix("queue_preview_row_agent_run_").to_i,
         position: row.at_css("td")&.text&.strip&.to_i
       }
     end
