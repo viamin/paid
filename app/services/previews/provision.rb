@@ -127,7 +127,7 @@ module Previews
       begin
         @tunnel_manager.stop_client!(container_service:) if @tunnel_port.present? && container_service.present?
         @tunnel_manager.release_port!
-        cleanup_services!
+        cleanup_preview_service_dependencies!
       rescue StandardError => e
         logger.warn(message: "previews.provision.cleanup_failed", agent_run_id: agent_run.id, error: e.message)
       ensure
@@ -219,15 +219,13 @@ module Previews
       @service_environment = agent_run.service_environment&.deep_dup || {}
 
       begin
-        cleanup_services!
+        cleanup_preview_service_dependencies!
       rescue StandardError => e
         logger.warn(
           message: "previews.provision.service_cleanup_failed",
           agent_run_id: agent_run.id,
           error: e.message
         )
-      ensure
-        restore_agent_run_service_state!
       end
 
       raise
@@ -411,6 +409,26 @@ module Previews
         service_container_ids,
         agent_run: agent_run,
         service_environment: @service_environment || {}
+      )
+    end
+
+    def cleanup_preview_service_dependencies!
+      service_container_ids = Array(@service_container_ids)
+      return if service_container_ids.empty?
+
+      service_environment = (@service_environment || {}).deep_dup
+
+      # cleanup_service_containers decides whether a shared service can stop by
+      # calling ServiceContainer#capacity_inflight_agent_run_count. Restore this
+      # preview's transient references on the agent run first so that count no
+      # longer includes the preview being torn down, while still preserving any
+      # sibling preview references that were added after ours started.
+      restore_agent_run_service_state!
+
+      service_provisioner.cleanup_service_containers(
+        service_container_ids,
+        agent_run: agent_run,
+        service_environment: service_environment
       )
     end
 

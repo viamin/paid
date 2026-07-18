@@ -138,5 +138,16 @@ RSpec.describe Previews::TunnelManager do
       expect(described_class).to have_received(:release_port).with(8201)
       expect(PreviewTunnelReservation.find_by(port: 8201)).to be_nil
     end
+
+    it "falls back to the persisted preview session port when cleanup runs in a new process" do
+      PreviewTunnelReservation.create!(port: 8201)
+      manager = described_class.new(backend:, preview_session:)
+      allow(preview_session).to receive(:update!)
+
+      manager.release_port!
+
+      expect(preview_session).to have_received(:update!).with(tunnel_port: nil)
+      expect(PreviewTunnelReservation.find_by(port: 8201)).to be_nil
+    end
   end
 end

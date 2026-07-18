@@ -85,9 +85,8 @@ module Previews
     end
 
     def release_port!
-      return if @allocated_port.blank?
-
-      allocated_port = @allocated_port
+      allocated_port = release_port_number
+      return if allocated_port.blank?
 
       begin
         persist_preview_session!(tunnel_port: nil)
@@ -96,6 +95,7 @@ module Previews
           self.class.release_port(allocated_port)
         ensure
           @allocated_port = nil
+          @persisted_port = nil
         end
       end
     end
@@ -197,6 +197,10 @@ module Previews
       return if @persisted_port.blank?
 
       self.class.reserve_specific_port(@persisted_port)
+    end
+
+    def release_port_number
+      @allocated_port.presence || preview_session&.tunnel_port || @persisted_port
     end
   end
 end

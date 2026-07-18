@@ -173,6 +173,29 @@ RSpec.describe Previews::Provision do
     expect(service_container.reload.capacity_inflight_agent_run_count).to eq(0)
   end
 
+  it "removes this preview's transient service ids before cleanup evaluates shared container capacity" do
+    service_container = create(:service_container, :running)
+    create(:project_service_container, project: project, service_container: service_container)
+    running_agent_run = create(:agent_run, :running, project: project)
+    preview_provision = described_class.new(
+      agent_run: running_agent_run,
+      repo_path:,
+      service_provisioner:,
+      seed_runner:,
+      tunnel_manager:
+    )
+    allow(service_provisioner).to receive(:provision) do
+      running_agent_run.update!(service_container_ids: [ service_container.id ])
+    end
+    allow(service_provisioner).to receive(:cleanup_service_containers) do
+      expect(service_container.reload.capacity_inflight_agent_run_count).to eq(0)
+      expect(running_agent_run.reload.service_container_ids).to eq([])
+    end
+
+    preview_provision.call(start_tunnel: false, allow_seed: false)
+    preview_provision.cleanup!
+  end
+
   it "preserves a sibling preview's service container ids and environment when overlapping on the same agent run" do
     provision_a, provision_b = provision_overlapping_previews
 
