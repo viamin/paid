@@ -16,17 +16,10 @@ module AgentRuns
   # which is invoked here so the definition is in place even for legacy
   # projects that enabled verification before the MCP wiring landed. The
   # snapshot of MCP servers on the agent run is updated to include the new
-  # definition, then `Containers::McpProvisioner` is re-run to materialize
-  # the stdio server spec with `CDP_URL` env pointing at the browser. This
-  # re-uses the same plumbing that the workflow's MCP-provisioning activity
-  # uses, so the agent sees playwright-mcp in its MCP server list once the
-  # activity completes.
-  #
-  # The browser container's ID is recorded on the agent run via
-  # `mcp_sidecar_container_ids` only after the MCP provisioner re-runs. That
-  # ordering matters because `Containers::McpProvisioner#provision` clears the
-  # current sidecar list before rebuilding it; recording the browser earlier
-  # would make it look stale and get it deleted before the agent starts.
+  # definition, and the materialized stdio server spec is injected directly
+  # into `mcp_provisioned_servers`. This preserves any docker_image sidecars
+  # already provisioned by step 1.6 instead of tearing them down and
+  # rebuilding them just to add playwright-mcp.
   #
   # Idempotency: when this agent run's browser container already exists on the
   # expected network, it is adopted rather than recreated. Re-running with the
@@ -63,7 +56,8 @@ module AgentRuns
       attach_playwright_definition!
       synchronize_snapshot!
       result = provision_browser_container!
-      reprovision_keeping_browser!(result.container_id)
+      track_sidecar_id(result.container_id)
+      publish_playwright_server!
 
       log_info("agent_runs.verification.completed",
         agent_run_id: @agent_run.id,
@@ -117,38 +111,41 @@ module AgentRuns
       raise Error, "Failed to provision verification browser container: #{e.message}"
     end
 
-    # Re-runs the MCP provisioner so the freshly-snapshotted playwright-mcp
-    # definition is materialized into a stdio server spec on the agent run.
-    # `mcp_provisioned_servers` is what `RunAgentActivity` reads when wiring
-    # MCP servers into the agent's harness, so this update must happen before
-    # the agent starts.
-    def republish_provisioned_servers!
-      Containers::McpProvisioner.new.provision(@agent_run, network: @network)
+    # `RunAgentActivity` reads `mcp_provisioned_servers` when wiring MCP
+    # servers into agent-harness. Step 1.6 has already materialized the rest of
+    # the server list, so verification only needs to upsert the playwright-mcp
+    # stdio entry without touching existing sidecars or URLs.
+    def publish_playwright_server!
+      definition = snapshot_playwright_definition
+      return unless definition
+
+      provisioned = @agent_run.mcp_provisioned_servers.presence || {}
+      stdio_servers = Array(provisioned["stdio_servers"])
+      updated_server = materialize_npx_server(definition)
+
+      remaining_servers = stdio_servers.reject { |server| server["name"] == definition["name"] }
+
+      @agent_run.update!(
+        mcp_provisioned_servers: provisioned.merge(
+          "stdio_servers" => remaining_servers + [ updated_server ],
+          "url_servers" => Array(provisioned["url_servers"])
+        )
+      )
     end
 
-    # Re-runs the MCP provisioner while keeping the verification browser out of
-    # `mcp_sidecar_container_ids` for the duration of the call.
-    # `McpProvisioner#provision` clears that list (and deletes those containers)
-    # before rebuilding it, so a browser recorded beforehand would be torn down
-    # as stale and the playwright-mcp `CDP_URL` would resolve to a dead
-    # container. Tracking is restored in `ensure` so a failed reprovision still
-    # leaves the browser recorded for cleanup instead of leaking until the
-    # orphan janitor reaps it.
-    def reprovision_keeping_browser!(browser_container_id)
-      untrack_sidecar_id(browser_container_id)
-      republish_provisioned_servers!
-    ensure
-      track_sidecar_id(browser_container_id)
+    def snapshot_playwright_definition
+      Array(@agent_run.mcp_server_snapshot).find { |definition| definition["name"] == Project::PLAYWRIGHT_MCP_NAME }
     end
 
-    def adopt_or_create_browser
-      container = Containers.backend.get_container(browser_container_name)
-      return container if browser_container_matches_run?(container)
-
-      remove_browser(container)
-      create_browser
-    rescue Docker::Error::NotFoundError
-      create_browser
+    def materialize_npx_server(definition)
+      server = {
+        "name" => definition["name"],
+        "transport" => "stdio",
+        "command" => definition["command"],
+        "args" => definition.fetch("args", [])
+      }
+      server["env"] = definition["env"] if definition["env"].present?
+      server
     end
 
     def container_running?(container)
@@ -213,13 +210,6 @@ module AgentRuns
       @agent_run.update_columns(mcp_sidecar_container_ids: existing + [ container_id ])
     end
 
-    def untrack_sidecar_id(container_id)
-      existing = Array(@agent_run.mcp_sidecar_container_ids)
-      return unless existing.include?(container_id)
-
-      @agent_run.update_columns(mcp_sidecar_container_ids: existing - [ container_id ])
-    end
-
     def browser_container_name
       "#{BROWSER_CONTAINER_NAME_PREFIX}-run#{@agent_run.id}"
     end
@@ -246,6 +236,16 @@ module AgentRuns
       container.json.dig("NetworkSettings", "Networks") || {}
     rescue Docker::Error::DockerError
       {}
+    end
+
+    def adopt_or_create_browser
+      container = Containers.backend.get_container(browser_container_name)
+      return container if browser_container_matches_run?(container)
+
+      remove_browser(container)
+      create_browser
+    rescue Docker::Error::NotFoundError
+      create_browser
     end
 
     def remove_browser(container)

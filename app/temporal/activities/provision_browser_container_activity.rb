@@ -17,11 +17,12 @@ module Activities
   #
   # The service (`AgentRuns::Verification`) defensively attaches the
   # playwright-mcp MCP server definition to the project, refreshes the
-  # MCP snapshot on the agent run, and re-runs `McpProvisioner` so the agent
-  # sees playwright-mcp in its MCP server list. This means legacy projects
-  # that enabled verification before the MCP wiring landed still get a
-  # working setup, and users who toggle verification on without re-saving
-  # the project do not end up with a stranded browser container.
+  # MCP snapshot on the agent run, and upserts the materialized stdio entry
+  # in `mcp_provisioned_servers` so the agent sees playwright-mcp in its MCP
+  # server list. This means legacy projects that enabled verification before
+  # the MCP wiring landed still get a working setup, and users who toggle
+  # verification on without re-saving the project do not end up with a
+  # stranded browser container.
   class ProvisionBrowserContainerActivity < BaseActivity
     activity_name "ProvisionBrowserContainer"
 
@@ -77,8 +78,7 @@ module Activities
     private
 
     NON_RETRYABLE_PATTERNS = [
-      /image not found/i,
-      /not found/i
+      /image not found/i
     ].freeze
 
     def non_retryable_verification_error?(error)

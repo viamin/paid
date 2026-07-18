@@ -1824,6 +1824,12 @@ RSpec.describe Project do
         expect(project.verification_enabled?).to be true
       end
 
+      it "does not attach MCP definitions during attribute assignment" do
+        project = described_class.new
+
+        expect { project.verification_enabled = true }.not_to raise_error
+      end
+
       it "casts string values to booleans" do
         project = build(:project, screenshot_settings: { "verification_enabled" => "true" })
         expect(project.verification_enabled?).to be true

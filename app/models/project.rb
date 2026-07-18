@@ -931,9 +931,7 @@ class Project < ApplicationRecord
   end
 
   def verification_enabled=(value)
-    cast = ActiveModel::Type::Boolean.new.cast(value)
-    write_screenshot_setting("verification_enabled", cast)
-    ensure_playwright_mcp_definition! if cast
+    write_screenshot_setting("verification_enabled", ActiveModel::Type::Boolean.new.cast(value))
   end
 
   def verification_enabled?

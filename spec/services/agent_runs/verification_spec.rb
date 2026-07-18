@@ -80,36 +80,39 @@ RSpec.describe AgentRuns::Verification do
         expect(snapshot.first["env"]).to eq("CDP_URL" => Project::PLAYWRIGHT_MCP_CDP_URL)
       end
 
-      it "re-runs the MCP provisioner so the materialized server spec is on the agent run" do
-        provisioner = instance_double(Containers::McpProvisioner)
-        allow(Containers::McpProvisioner).to receive(:new).and_return(provisioner)
-        allow(provisioner).to receive(:provision).with(agent_run, network: network)
-
-        described_class.new(agent_run: agent_run, network: network).call
-
-        expect(provisioner).to have_received(:provision).with(agent_run, network: network)
-      end
-
-      it "tracks the browser after MCP reprovision resets the sidecar list" do
-        mcp_provisioner = instance_double(Containers::McpProvisioner)
-        allow(Containers::McpProvisioner).to receive(:new).and_return(mcp_provisioner)
-        allow(mcp_provisioner).to receive(:provision) do
-          agent_run.update!(mcp_provisioned_servers: { "stdio_servers" => [], "url_servers" => [] }, mcp_sidecar_container_ids: [])
-        end
+      it "materializes playwright-mcp into the existing provisioned stdio servers" do
+        agent_run.update!(
+          mcp_provisioned_servers: {
+            "stdio_servers" => [ { "name" => "fs", "transport" => "stdio", "command" => "npx-pkg", "args" => [ "/ws" ] } ],
+            "url_servers" => [ { "name" => "github", "transport" => "sse", "url" => "http://mcp/sse" } ]
+          },
+          mcp_sidecar_container_ids: [ "existing-sidecar" ]
+        )
 
         provisioner.call
 
-        expect(agent_run.reload.mcp_sidecar_container_ids).to eq([ "browser-xyz" ])
+        provisioned = agent_run.reload.mcp_provisioned_servers
+        expect(provisioned["stdio_servers"]).to contain_exactly(
+          { "name" => "fs", "transport" => "stdio", "command" => "npx-pkg", "args" => [ "/ws" ] },
+          playwright_stdio_server
+        )
+        expect(provisioned["url_servers"]).to eq([ { "name" => "github", "transport" => "sse", "url" => "http://mcp/sse" } ])
+        expect(agent_run.mcp_sidecar_container_ids).to contain_exactly("existing-sidecar", "browser-xyz")
       end
 
-      it "still tracks the browser when MCP reprovision fails so it can be cleaned up" do
-        mcp_provisioner = instance_double(Containers::McpProvisioner)
-        allow(Containers::McpProvisioner).to receive(:new).and_return(mcp_provisioner)
-        allow(mcp_provisioner).to receive(:provision)
-          .and_raise(Containers::McpProvisioner::Error, "provisioning failed")
+      it "replaces an existing playwright-mcp stdio entry instead of duplicating it" do
+        agent_run.update!(
+          mcp_provisioned_servers: {
+            "stdio_servers" => [
+              { "name" => Project::PLAYWRIGHT_MCP_NAME, "transport" => "stdio", "command" => "stale", "args" => [ "--old" ] }
+            ],
+            "url_servers" => []
+          }
+        )
 
-        expect { provisioner.call }.to raise_error(Containers::McpProvisioner::Error, /provisioning failed/)
-        expect(agent_run.reload.mcp_sidecar_container_ids).to eq([ "browser-xyz" ])
+        provisioner.call
+
+        expect(agent_run.reload.mcp_provisioned_servers["stdio_servers"]).to eq([ playwright_stdio_server ])
       end
     end
 
@@ -296,5 +299,15 @@ RSpec.describe AgentRuns::Verification do
         expect(result.container_id).to eq("browser-xyz")
       end
     end
+  end
+
+  def playwright_stdio_server
+    {
+      "name" => Project::PLAYWRIGHT_MCP_NAME,
+      "transport" => "stdio",
+      "command" => Project::PLAYWRIGHT_MCP_COMMAND,
+      "args" => [],
+      "env" => { "CDP_URL" => Project::PLAYWRIGHT_MCP_CDP_URL }
+    }
   end
 end
