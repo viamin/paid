@@ -71,14 +71,20 @@ class ChatSessionsController < ApplicationController
     locals = {
       sessions: sidebar[:sessions],
       frame_id: request.headers["Turbo-Frame"].presence || sidebar[:frame_id],
-      next_frame_id: sidebar[:next_frame_id],
-      next_params: sidebar[:next_params]
+      sidebar_has_more: sidebar[:next_frame_id].present?,
+      sidebar_next_frame_id: sidebar[:next_frame_id],
+      sidebar_next_params: sidebar[:next_params]
     }
 
     if sidebar_toggle_request?
       render partial: "chat_sessions/sidebar_list", locals: locals.merge(archived_view: archived)
     else
-      render partial: "chat_sessions/sidebar_page", locals: locals
+      render partial: "chat_sessions/sidebar_page", locals: {
+        sessions: locals[:sessions],
+        frame_id: locals[:frame_id],
+        next_frame_id: locals[:sidebar_next_frame_id],
+        next_params: locals[:sidebar_next_params]
+      }
     end
   end
 

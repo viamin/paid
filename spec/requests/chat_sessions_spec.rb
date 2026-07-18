@@ -432,6 +432,21 @@ RSpec.describe "ChatSessions" do
 
       expect(response.body.scan('data-turbo-frame="chat_sessions_list"').size).to eq(2)
     end
+
+    it "keeps lazy loading available after switching filters" do
+      51.times do |index|
+        create(:chat_session, :archived, account: account, created_by: user, title: "Archived #{index}", updated_at: index.minutes.ago)
+      end
+
+      get sidebar_page_chat_sessions_path,
+        params: { archived: "true" },
+        headers: { "Turbo-Frame" => "chat_sessions_list" }
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include('loading="lazy"')
+      expect(response.body).to match(/<turbo-frame[^>]*id="sidebar_page_/)
+      expect(response.body).to include("/chat/sidebar_page?archived=true&amp;before_id=")
+    end
   end
 
   describe "PATCH /chat/:id" do
@@ -578,11 +593,14 @@ RSpec.describe "ChatSessions" do
     end
 
     it "still allows PATCH /chat/:id/unarchive" do
-      patch unarchive_chat_session_path(chat_session, format: :json)
+      freeze_time do
+        patch unarchive_chat_session_path(chat_session, format: :json)
+      end
 
       expect(response).to have_http_status(:ok)
       expect(response.parsed_body["status"]).to eq("active")
       expect(chat_session.reload.status).to eq("active")
+      expect(chat_session.idle_timeout_at).to be_within(5.seconds).of(30.minutes.from_now)
       expect(chat_session.metadata["unarchived_at"]).to be_present
     end
 

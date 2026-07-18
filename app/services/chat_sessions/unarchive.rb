@@ -31,7 +31,7 @@ module ChatSessions
     def restore_attributes
       {
         status: "active",
-        idle_timeout_at: nil,
+        idle_timeout_at: ChatSession::IDLE_TIMEOUT_DURATION.from_now,
         metadata: (chat_session.metadata || {}).merge("unarchived_at" => Time.current.iso8601)
       }
     end
