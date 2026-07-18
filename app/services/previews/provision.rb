@@ -42,6 +42,7 @@ module Previews
       # covers the gap between expiry and the next cron tick.
       expire_stale_sessions!
 
+      session = nil
       project.with_lock do
         previous = current
         stop_previous(previous) if previous
@@ -50,9 +51,9 @@ module Previews
                                            created_by: actor, ttl_seconds: ttl_seconds)
         session.status = "provisioning"
         session.save!
-
-        provision(session)
       end
+
+      provision(session)
     rescue StandardError => e
       failure_result(e)
     end
@@ -88,6 +89,9 @@ module Previews
     end
 
     def provision(session)
+      session.reload
+      return Result.new(session:, success?: true) if session.terminal?
+
       session.update!(status: "starting")
       port = port_pool.acquire(session)
       outcome = container_backend.start(session)

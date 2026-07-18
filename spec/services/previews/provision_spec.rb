@@ -68,7 +68,7 @@ RSpec.describe Previews::Provision do
       expect(project).to have_received(:with_lock)
     end
 
-    it "keeps container start inside the project lock" do
+    it "releases the project lock before container start" do
       observed = []
       backend = build_observing_backend(observed)
       lock_state = instrument_project_lock(project)
@@ -77,7 +77,7 @@ RSpec.describe Previews::Provision do
 
       expect(result).to be_success
       expect(lock_state[:held]).to be(false)
-      expect(observed).to eq([ true ])
+      expect(observed).to eq([ false ])
     end
   end
 
