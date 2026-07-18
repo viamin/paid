@@ -763,6 +763,7 @@ module Containers
           # Container may already be gone
         end
       ensure
+        preview_tunnel_released ||= release_preview_tunnel_reservation!
         log_system("container.preview_tunnel_port_released", tunnel_port: preview_tunnel.tunnel_port) if preview_tunnel_released
         @container = nil
         cleanup_workspace_volume

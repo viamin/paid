@@ -789,7 +789,7 @@ RSpec.describe Containers::Provision do
         preview_service.provision
         expect(preview_service).to have_received(:write_container_file).with(
           "/home/agent/.paid-preview/rathole-client.toml",
-          include('[client.services.preview-preview-token]', "remote_port = 8201")
+          include('[client.services.preview-preview-token]', 'local_addr = "127.0.0.1:4000"')
         )
         expect(mock_container).to have_received(:exec).with(
           [ "sh", "-lc", "rathole --client /home/agent/.paid-preview/rathole-client.toml > /tmp/paid-preview-tunnel-client.log 2>&1 &" ],
@@ -3122,6 +3122,19 @@ RSpec.describe Containers::Provision do
       preview_service.provision
       preview_service.cleanup
 
+      expect(PreviewTunnelPortReservation.find_by(reservation_key: "preview-token")).to be_nil
+    end
+
+    it "releases preview tunnel reservations when both delete attempts fail" do
+      preview_service = build_preview_tunnel_service(agent_run:, worktree_path:)
+      allow(Containers::ProxyUrl).to receive(:resolve).with(backend: preview_service.backend, restricted: true).and_return("http://paid-proxy:3000")
+      PreviewTunnelPortReservation.create!(reservation_key: "preview-token", tunnel_port: 8201)
+      allow(mock_container).to receive(:info).and_return({ "State" => { "Running" => false } })
+      allow(mock_container).to receive(:delete).and_raise(Docker::Error::ServerError.new("Docker error"))
+
+      preview_service.provision
+
+      expect { preview_service.cleanup }.not_to raise_error
       expect(PreviewTunnelPortReservation.find_by(reservation_key: "preview-token")).to be_nil
     end
   end
