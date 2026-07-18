@@ -58,6 +58,7 @@ module ChatSessions
     end
 
     def validate_session_state!
+      raise ArgumentError, "Chat session is archived." if chat_session.status == "archived"
       return if chat_session.status == "active"
       return if resumable_closed_session?
       raise ArgumentError, "workspace chat sessions cannot be resumed" if closed_workspace_session?

@@ -5,6 +5,7 @@ class ChatMessagesController < ApplicationController
 
   skip_after_action :verify_authorized, only: :index
   before_action :set_chat_session
+  before_action :reject_archived_chat_session, only: %i[create resolve]
 
   rate_limit to: ChatMessages::RateLimit::MAX_REQUESTS, within: ChatMessages::RateLimit::PERIOD,
     by: -> { ChatMessages::RateLimit.identifier(user_id: current_user&.id, chat_session_id: params[:chat_session_id]) },
@@ -64,6 +65,12 @@ class ChatMessagesController < ApplicationController
 
   def set_chat_session
     @chat_session = policy_scope(ChatSession).find(params[:chat_session_id])
+  end
+
+  def reject_archived_chat_session
+    return unless @chat_session&.archived?
+
+    render json: { error: "Chat session is archived." }, status: :unprocessable_entity
   end
 
   def sse_requested?

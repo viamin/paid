@@ -418,6 +418,55 @@ RSpec.describe "ChatSessions" do
       expect(response.body).to include("Session 54")
       expect(response.body).not_to include("Session 49")
     end
+
+    it "renders the stable sidebar frame for non-archived sessions" do
+      create(:chat_session, account: account, created_by: user, title: "Active")
+
+      get sidebar_page_chat_sessions_path,
+        params: { archived: "false" },
+        headers: { "Turbo-Frame" => "chat_sessions_list" }
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to match(/<turbo-frame[^>]*id="chat_sessions_list"/)
+      expect(response.body).to match(/<div[^>]*id="chat_sessions_list_active"/)
+      expect(response.body).to include("Active")
+    end
+
+    it "renders the stable sidebar frame for archived sessions" do
+      create(:chat_session, :archived, account: account, created_by: user, title: "Archived")
+
+      get sidebar_page_chat_sessions_path,
+        params: { archived: "true" },
+        headers: { "Turbo-Frame" => "chat_sessions_list" }
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to match(/<turbo-frame[^>]*id="chat_sessions_list"/)
+      expect(response.body).to match(/<div[^>]*id="chat_sessions_list_archived"/)
+      expect(response.body).to include("Archived")
+    end
+
+    it "targets the stable sidebar frame from both filter tabs" do
+      get sidebar_page_chat_sessions_path,
+        params: { archived: "false" },
+        headers: { "Turbo-Frame" => "chat_sessions_list" }
+
+      expect(response.body.scan('data-turbo-frame="chat_sessions_list"').size).to eq(2)
+    end
+
+    it "keeps lazy loading available after switching filters" do
+      51.times do |index|
+        create(:chat_session, :archived, account: account, created_by: user, title: "Archived #{index}", updated_at: index.minutes.ago)
+      end
+
+      get sidebar_page_chat_sessions_path,
+        params: { archived: "true" },
+        headers: { "Turbo-Frame" => "chat_sessions_list" }
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include('loading="lazy"')
+      expect(response.body).to match(/<turbo-frame[^>]*id="sidebar_page_/)
+      expect(response.body).to include("/chat/sidebar_page?archived=true&amp;before_id=")
+    end
   end
 
   describe "PATCH /chat/:id" do
@@ -511,6 +560,26 @@ RSpec.describe "ChatSessions" do
         expect(response).to redirect_to(chat_sessions_path)
         expect(chat_session.reload.status).to eq("archived")
       end
+
+      it "rejects re-archiving an already archived session" do
+        chat_session.update!(status: "archived")
+
+        patch archive_chat_session_path(chat_session, format: :json)
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body["error"]).to eq("Chat session is archived.")
+        expect(chat_session.reload.status).to eq("archived")
+      end
+
+      it "rejects archiving an archived session via html" do
+        chat_session.update!(status: "archived")
+
+        patch archive_chat_session_path(chat_session)
+
+        expect(response).to redirect_to(chat_session_path(chat_session))
+        expect(flash[:alert]).to eq("Chat session is archived.")
+        expect(chat_session.reload.status).to eq("archived")
+      end
     end
   end
 
@@ -526,6 +595,72 @@ RSpec.describe "ChatSessions" do
         expect(response).to have_http_status(:no_content)
         expect(chat_session.reload.status).to eq("closed")
       end
+
+      it "rejects closing an archived session" do
+        chat_session.update!(status: "archived")
+
+        delete chat_session_path(chat_session, format: :json)
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body["error"]).to eq("Chat session is archived.")
+        expect(chat_session.reload.status).to eq("archived")
+      end
+    end
+  end
+
+  describe "archived read-only contract" do
+    let!(:chat_session) { create(:chat_session, :archived, account: account, created_by: user) }
+
+    before { sign_in user }
+
+    it "still allows GET /chat/:id for an archived session" do
+      get chat_session_path(chat_session, format: :json)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body["status"]).to eq("archived")
+    end
+
+    it "still allows PATCH /chat/:id/unarchive" do
+      freeze_time do
+        patch unarchive_chat_session_path(chat_session, format: :json)
+      end
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body["status"]).to eq("active")
+      expect(chat_session.reload.status).to eq("active")
+      expect(chat_session.idle_timeout_at).to be_within(5.seconds).of(30.minutes.from_now)
+      expect(chat_session.metadata["unarchived_at"]).to be_present
+    end
+
+    it "rejects PATCH /chat/:id on an archived session via json" do
+      patch chat_session_path(chat_session, format: :json), params: { title: "Renamed after archive" }
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body["error"]).to eq("Chat session is archived.")
+      expect(chat_session.reload.title).not_to eq("Renamed after archive")
+    end
+
+    it "rejects DELETE /chat/:id on an archived session via json" do
+      delete chat_session_path(chat_session, format: :json)
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body["error"]).to eq("Chat session is archived.")
+      expect(chat_session.reload.status).to eq("archived")
+    end
+
+    it "rejects PATCH /chat/:id/archive on an archived session via json" do
+      patch archive_chat_session_path(chat_session, format: :json)
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body["error"]).to eq("Chat session is archived.")
+      expect(chat_session.reload.status).to eq("archived")
+    end
+
+    it "redirects html mutating requests back to the archived session show page" do
+      patch chat_session_path(chat_session), params: { title: "Renamed after archive" }
+
+      expect(response).to redirect_to(chat_session_path(chat_session))
+      expect(flash[:alert]).to eq("Chat session is archived.")
     end
   end
 end

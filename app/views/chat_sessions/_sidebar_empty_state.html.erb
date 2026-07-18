@@ -1,0 +1,5 @@
+<% archived_view = local_assigns.fetch(:archived_view, false) %>
+
+<p id="chat_sessions_list_<%= archived_view ? "archived" : "active" %>_empty_state" class="py-6 text-center text-xs text-gray-400">
+  <%= archived_view ? "No archived chats." : "No chats yet." %>
+</p>

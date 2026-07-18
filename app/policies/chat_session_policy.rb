@@ -24,4 +24,8 @@ class ChatSessionPolicy < ApplicationPolicy
   def archive?
     has_any_account_role?(:owner, :admin, :member)
   end
+
+  def unarchive?
+    has_any_account_role?(:owner, :admin, :member)
+  end
 end
