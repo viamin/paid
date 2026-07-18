@@ -48,15 +48,17 @@ module Containers
     def provision(agent_run, network: NetworkPolicy::NETWORK_NAME)
       snapshot = agent_run.mcp_server_snapshot
       sidecar_ids = []
+      preserved_sidecar_ids = []
 
       # Clean up stale sidecars from a prior failed attempt to avoid leaks.
-      stale_ids = agent_run.mcp_sidecar_container_ids
+      stale_ids = Array(agent_run.mcp_sidecar_container_ids)
+      preserved_sidecar_ids, stale_ids = partition_preserved_sidecar_ids(agent_run, stale_ids)
       cleanup_containers(stale_ids) if stale_ids.present?
 
       if snapshot.blank?
         agent_run.update!(
           mcp_provisioned_servers: { "stdio_servers" => [], "url_servers" => [] },
-          mcp_sidecar_container_ids: []
+          mcp_sidecar_container_ids: preserved_sidecar_ids
         )
         return { stdio_servers: [], url_servers: [] }
       end
@@ -78,7 +80,7 @@ module Containers
 
       agent_run.update!(
         mcp_provisioned_servers: { "stdio_servers" => stdio_servers, "url_servers" => url_servers },
-        mcp_sidecar_container_ids: sidecar_ids
+        mcp_sidecar_container_ids: preserved_sidecar_ids + sidecar_ids
       )
 
       log_info("mcp_provisioner.provisioned",
@@ -277,6 +279,28 @@ module Containers
       container_ids.each do |cid|
         remove_container_by_id(cid)
       end
+    end
+
+    def partition_preserved_sidecar_ids(agent_run, container_ids)
+      container_ids.partition do |container_id|
+        preserve_sidecar_during_reprovision?(agent_run, container_id)
+      end
+    end
+
+    def preserve_sidecar_during_reprovision?(agent_run, container_id)
+      container = Containers.backend.get_container(container_id)
+      labels = container.json.fetch("Config", {}).fetch("Labels", {})
+
+      labels[AgentRuns::Verification::BROWSER_LABEL] == "true" &&
+        labels[AgentRuns::Verification::AGENT_RUN_LABEL] == agent_run.id.to_s
+    rescue Docker::Error::NotFoundError
+      false
+    rescue Docker::Error::DockerError => e
+      log_warn("mcp_provisioner.sidecar_inspection_failed",
+        agent_run_id: agent_run.id,
+        container_id: container_id,
+        error: e.message)
+      true
     end
 
     def remove_container(container)

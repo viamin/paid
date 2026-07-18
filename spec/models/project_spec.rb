@@ -1866,6 +1866,19 @@ RSpec.describe Project do
         expect(project.project_mcp_servers.exists?(mcp_server_definition: definition)).to be true
       end
 
+      it "repairs an existing stale playwright-mcp definition before attaching it" do
+        account = create(:account)
+        stale_definition = create_stale_playwright_definition(account)
+        project = create(:project, account: account, screenshot_settings: { "verification_enabled" => false })
+
+        expect {
+          project.update!(screenshot_settings: { "verification_enabled" => true })
+        }.not_to change { project.account.mcp_server_definitions.where(name: Project::PLAYWRIGHT_MCP_NAME).count }
+
+        expect(stale_definition.reload).to have_attributes(playwright_mcp_expected_attributes)
+        expect(project.project_mcp_servers.exists?(mcp_server_definition: stale_definition)).to be true
+      end
+
       it "does not re-attach when verification_enabled stays true" do
         account = create(:account)
         project = create(:project, account: account, screenshot_settings: { "verification_enabled" => true })
@@ -1879,6 +1892,29 @@ RSpec.describe Project do
           project.update!(name: project.name + " updated")
         }.not_to change {
           project.account.mcp_server_definitions.where(name: Project::PLAYWRIGHT_MCP_NAME).count
+        }
+      end
+
+      def create_stale_playwright_definition(account)
+        create(:mcp_server_definition,
+          account: account,
+          name: Project::PLAYWRIGHT_MCP_NAME,
+          transport: "stdio",
+          install_type: "npx",
+          command: "stale-command",
+          args: [ "--stale" ],
+          env: {},
+          enabled: false)
+      end
+
+      def playwright_mcp_expected_attributes
+        {
+          transport: "stdio",
+          install_type: "npx",
+          command: Project::PLAYWRIGHT_MCP_COMMAND,
+          args: [],
+          env: { "CDP_URL" => Project::PLAYWRIGHT_MCP_CDP_URL },
+          enabled: true
         }
       end
     end

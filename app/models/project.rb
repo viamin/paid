@@ -947,14 +947,17 @@ class Project < ApplicationRecord
   # that the verification flow provisions on the agent's network. The URL is
   # stable, so it is set at definition time rather than injected per-run.
   def ensure_playwright_mcp_definition!
-    definition = account.mcp_server_definitions.find_or_create_by!(name: PLAYWRIGHT_MCP_NAME) do |record|
-      record.transport = "stdio"
-      record.install_type = "npx"
-      record.command = PLAYWRIGHT_MCP_COMMAND
-      record.args = []
-      record.env = { "CDP_URL" => PLAYWRIGHT_MCP_CDP_URL }
-      record.enabled = true
-    end
+    definition = account.mcp_server_definitions.find_or_initialize_by(name: PLAYWRIGHT_MCP_NAME)
+    definition.assign_attributes(
+      transport: "stdio",
+      install_type: "npx",
+      command: PLAYWRIGHT_MCP_COMMAND,
+      args: [],
+      env: { "CDP_URL" => PLAYWRIGHT_MCP_CDP_URL },
+      enabled: true
+    )
+    definition.save! if definition.new_record? || definition.changed?
+
     project_mcp_servers.find_or_create_by!(mcp_server_definition: definition)
     definition
   end
