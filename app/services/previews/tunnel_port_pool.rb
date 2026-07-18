@@ -10,9 +10,7 @@ module Previews
   # around {acquire} / {release}, and the chosen port is persisted to the
   # session row inside the same lock so the partial unique index
   # `index_preview_sessions_on_tunnel_port_active` defends against any
-  # application-level race we missed. Inside the lock we also null the
-  # `tunnel_port` of any expired-but-not-yet-reaped session so its port is
-  # free for re-allocation and the partial index treats the row as gone.
+  # application-level race we missed.
   class TunnelPortPool
     Exhausted = Class.new(StandardError)
 
@@ -30,7 +28,6 @@ module Previews
     def acquire(session)
       with_lock do
         TenantContext.with_system_access do
-          clear_expired_port_claims!
           port = next_free_port
           raise Exhausted, "No preview tunnel ports available in #{range}" if port.nil?
 
@@ -61,21 +58,10 @@ module Previews
     end
 
     def claimed_ports
-      PreviewSession.active.where.not(tunnel_port: nil).pluck(:tunnel_port)
-    end
-
-    # When a session has expired but not yet been reaped, its `tunnel_port`
-    # is still set in the DB even though the {PreviewSession.active} scope
-    # would skip it. Without this cleanup, the partial unique index on
-    # `tunnel_port` (which only filters by status) would still treat the port
-    # as taken. Null the column so the port becomes allocatable again; the
-    # row is reaped to `stopped` shortly after by {Previews::Expire}.
-    def clear_expired_port_claims!
       PreviewSession
         .where(status: PreviewSession::ACTIVE_STATUSES)
-        .where("expires_at <= ?", Time.current)
         .where.not(tunnel_port: nil)
-        .update_all(tunnel_port: nil)
+        .pluck(:tunnel_port)
     end
 
     def with_lock

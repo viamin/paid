@@ -86,6 +86,17 @@ RSpec.describe Previews::Provision do
       expect(service.stop).to be_success
     end
 
+    it "is a no-op for a session that is already terminal" do
+      session = create(:preview_session, :stopped, project: project, tunnel_port: nil)
+      backend = class_double(Previews::ContainerBackend::Simulated).as_stubbed_const
+      allow(backend).to receive(:stop)
+
+      result = described_class.new(project: project, container_backend: backend).stop(session: session)
+
+      expect(result).to be_success
+      expect(backend).not_to have_received(:stop)
+    end
+
     it "stops the current active session and releases its tunnel port" do
       started = service.start(branch_name: "main").session
       port = started.tunnel_port
@@ -102,6 +113,27 @@ RSpec.describe Previews::Provision do
       session = create(:preview_session, :ready, project: project, tunnel_port: 8250)
 
       result = service.stop(session: session)
+
+      expect(result).to be_success
+      expect(session.reload.status).to eq("stopped")
+      expect(session.tunnel_port).to be_nil
+    end
+
+    it "treats an already-missing container as a successful stop" do
+      backend = Class.new do
+        include Previews::ContainerBackend
+
+        def self.start(_session)
+          raise "not used"
+        end
+
+        def self.stop(_session)
+          raise "Container preview-123 not found"
+        end
+      end
+      session = create(:preview_session, :ready, project: project, tunnel_port: 8250, container_id: "preview-123")
+
+      result = described_class.new(project: project, container_backend: backend).stop(session: session)
 
       expect(result).to be_success
       expect(session.reload.status).to eq("stopped")

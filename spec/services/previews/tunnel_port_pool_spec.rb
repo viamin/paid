@@ -37,9 +37,8 @@ RSpec.describe Previews::TunnelPortPool do
       expect(session.reload.tunnel_port).to eq(9001)
     end
 
-    it "ignores ports held only by expired or terminal sessions" do
-      _expired = create(:preview_session, :expired, project: project, tunnel_port: 9000)
-      _stopped = create(:preview_session, :stopped, project: project, tunnel_port: 9001)
+    it "ignores ports held only by terminal sessions" do
+      _stopped = create(:preview_session, :stopped, project: project, tunnel_port: 9000)
       session = create(:preview_session, project: project)
 
       port = pool.acquire(session)
@@ -47,14 +46,23 @@ RSpec.describe Previews::TunnelPortPool do
       expect(port).to eq(9000)
     end
 
-    it "clears expired claims across projects before picking a free port" do
+    it "keeps ports claimed by expired-but-not-yet-reaped sessions reserved" do
+      _expired = create(:preview_session, :expired, project: project, tunnel_port: 9000)
+      session = create(:preview_session, project: project)
+
+      port = pool.acquire(session)
+
+      expect(port).to eq(9001)
+    end
+
+    it "keeps expired claims in other projects reserved until they are reaped" do
       _expired = create(:preview_session, :expired, project: other_project, tunnel_port: 9000)
       session = create(:preview_session, project: project)
 
       port = pool.acquire(session)
 
-      expect(port).to eq(9000)
-      expect(session.reload.tunnel_port).to eq(9000)
+      expect(port).to eq(9001)
+      expect(session.reload.tunnel_port).to eq(9001)
     end
 
     it "raises Exhausted when every port in the range is claimed" do

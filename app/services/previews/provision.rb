@@ -60,10 +60,13 @@ module Previews
     def stop(session: nil)
       session ||= current
       return Result.new(session: nil, success?: true) unless session
+      return Result.new(session:, success?: true) if session.terminal?
 
       teardown(session)
       Result.new(session:, success?: true)
     rescue StandardError => e
+      return Result.new(session:, success?: true) if missing_container_error?(e)
+
       session&.mark_failed!(e.message)
       Result.new(session:, success?: false, error: e.message)
     end
@@ -113,6 +116,11 @@ module Previews
 
     def expire_stale_sessions!
       Expire.call(project: project)
+    end
+
+    def missing_container_error?(error)
+      error.message.match?(/\AContainer .* not found\z/) ||
+        error.message.match?(Containers::CONTAINER_NOT_RUNNING_PATTERN)
     end
 
     def resolved_branch(branch_name)
