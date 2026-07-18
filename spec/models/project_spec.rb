@@ -1834,7 +1834,6 @@ RSpec.describe Project do
 
         expect(project).to be_valid
       end
-      end
 
       it "rejects unknown screenshot_settings keys" do
         project = build(:project, screenshot_settings: { "enabled" => true, "bogus" => 1 })
