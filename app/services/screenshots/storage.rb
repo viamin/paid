@@ -2,15 +2,26 @@
 
 require "aws-sdk-s3"
 module Screenshots
-  # Uploads screenshot PNG files to S3-compatible object storage and returns
-  # presigned object URLs for inline viewing in PR comments.
+  # Uploads screenshot PNG files (and trace-derived artifacts like `.gif` and
+  # `.webm`) to S3-compatible object storage and returns presigned object URLs
+  # for inline viewing in PR comments and demo content.
   #
-  # Files are organized by: screenshots/{org}/{repo}/pr-{number}/{commit_sha}/{route_name}.png
+  # Files are organized by: screenshots/{org}/{repo}/pr-{number}/{commit_sha}/{route_name}.{ext}
   #
   # @example Upload a screenshot
   #   storage = Screenshots::Storage.new
   #   url = storage.upload(
   #     file_path: "/tmp/screenshots/dashboard.png",
+  #     org: "acme",
+  #     repo: "web",
+  #     pr_number: 42,
+  #     commit_sha: "abc1234",
+  #     route_name: "dashboard"
+  #   )
+  #
+  # @example Upload a trace-derived animated GIF
+  #   storage.upload_artifact(
+  #     file_path: "/tmp/demo.gif",
   #     org: "acme",
   #     repo: "web",
   #     pr_number: 42,
@@ -26,6 +37,15 @@ module Screenshots
     # AWS SigV4 presigned S3 URLs cannot exceed one week.
     MAX_URL_TTL = Aws::S3::Presigner::ONE_WEEK
     DEFAULT_URL_TTL = MAX_URL_TTL
+    PNG_CONTENT_TYPE = "image/png"
+    GIF_CONTENT_TYPE = "image/gif"
+    WEBM_CONTENT_TYPE = "video/webm"
+    SUPPORTED_ARTIFACT_EXTENSIONS = %w[.png .gif .webm].freeze
+    ARTIFACT_CONTENT_TYPES = {
+      ".png" => PNG_CONTENT_TYPE,
+      ".gif" => GIF_CONTENT_TYPE,
+      ".webm" => WEBM_CONTENT_TYPE
+    }.freeze
 
     def initialize(bucket: nil, region: nil, url_ttl: nil)
       @bucket = bucket || configured_bucket
@@ -33,7 +53,7 @@ module Screenshots
       @url_ttl = url_ttl
     end
 
-    # The S3 bucket traces and screenshots share. Exposed so sibling services
+    # The S3 bucket screenshots and traces share. Exposed so sibling services
     # (e.g. {Previews::TraceViewer}) can address the same bucket.
     attr_reader :bucket
 
@@ -47,7 +67,7 @@ module Screenshots
       @s3_client ||= Aws::S3::Client.new(client_options)
     end
 
-    # Uploads a PNG file to S3 and returns a presigned URL.
+    # Uploads a PNG screenshot to S3 and returns a presigned URL.
     #
     # @param file_path [String] Path to the local PNG file
     # @param org [String] GitHub org/owner
@@ -57,43 +77,51 @@ module Screenshots
     # @param route_name [String] Route slug for the screenshot
     # @return [String] Presigned GET URL for the uploaded file
     def upload(file_path:, org:, repo:, pr_number:, commit_sha:, route_name:)
-      key = object_key(org:, repo:, pr_number:, commit_sha:, route_name:)
-      put_object(file_path:, key:, content_type: "image/png")
+      upload_artifact(
+        file_path: file_path,
+        org: org,
+        repo: repo,
+        pr_number: pr_number,
+        commit_sha: commit_sha,
+        route_name: route_name,
+        extension: ".png"
+      )
+    end
+
+    # Uploads a trace-derived artifact (`.png`, `.gif`, or `.webm`) to S3 and
+    # returns a presigned URL. The artifact's content type is inferred from its
+    # extension.
+    #
+    # @param file_path [String] Path to the local artifact file
+    # @param org [String] GitHub org/owner
+    # @param repo [String] Repository name
+    # @param pr_number [Integer] Pull request number
+    # @param commit_sha [String] Commit SHA
+    # @param route_name [String] Route slug for the artifact (used as the
+    #   filename stem; the extension is taken from `extension` when provided)
+    # @param extension [String] File extension including leading dot; defaults
+    #   to the extension of `file_path`. Use this when the local file has a
+    #   different extension than what should be stored in S3.
+    # @return [String] Presigned GET URL for the uploaded file
+    def upload_artifact(file_path:, org:, repo:, pr_number:, commit_sha:, route_name:, extension: nil)
+      resolved_extension = extension || File.extname(file_path).downcase
+      content_type = ARTIFACT_CONTENT_TYPES[resolved_extension]
+      raise StorageError, "unsupported artifact extension #{resolved_extension.inspect}" if content_type.nil?
+
+      key = artifact_key(org:, repo:, pr_number:, commit_sha:, route_name:, extension: resolved_extension)
+
+      File.open(file_path, "rb") do |file|
+        s3_client.put_object(
+          bucket: @bucket,
+          key: key,
+          body: file,
+          content_type: content_type
+        )
+      end
+
       signed_url(key)
     rescue Aws::S3::Errors::ServiceError => e
       raise StorageError, "S3 upload failed: #{e.message}"
-    end
-
-    # Uploads a Playwright trace archive to S3 and returns a presigned URL.
-    #
-    # @param file_path [String] Path to the local trace .zip file
-    # @param org [String] GitHub org/owner
-    # @param repo [String] Repository name
-    # @param pr_number [Integer] Pull request number
-    # @param commit_sha [String] Commit SHA
-    # @return [String] Presigned GET URL for the uploaded trace
-    def upload_trace(file_path:, org:, repo:, pr_number:, commit_sha:)
-      key = trace_object_key(org:, repo:, pr_number:, commit_sha:)
-      put_object(file_path:, key:, content_type: "application/zip")
-      signed_url(key)
-    rescue Aws::S3::Errors::ServiceError => e
-      raise StorageError, "S3 trace upload failed: #{e.message}"
-    end
-
-    # Uploads a Playwright session video to S3 and returns a presigned URL.
-    #
-    # @param file_path [String] Path to the local .webm video file
-    # @param org [String] GitHub org/owner
-    # @param repo [String] Repository name
-    # @param pr_number [Integer] Pull request number
-    # @param commit_sha [String] Commit SHA
-    # @return [String] Presigned GET URL for the uploaded video
-    def upload_video(file_path:, org:, repo:, pr_number:, commit_sha:)
-      key = video_object_key(org:, repo:, pr_number:, commit_sha:)
-      put_object(file_path:, key:, content_type: "video/webm")
-      signed_url(key)
-    rescue Aws::S3::Errors::ServiceError => e
-      raise StorageError, "S3 video upload failed: #{e.message}"
     end
 
     # Generates a signed URL for an existing S3 object.
@@ -123,8 +151,6 @@ module Screenshots
 
       s3_client.list_objects_v2(bucket: @bucket, prefix: prefix).each_page do |page|
         page.contents.each do |obj|
-          next unless obj.key.end_with?(".png")
-
           parts = obj.key.delete_prefix(prefix).split("/", 2)
           next unless parts.size == 2
 
@@ -139,9 +165,60 @@ module Screenshots
 
       latest_sha = commits.max_by { |_, objects| objects.map(&:last_modified).max }.first
       commits[latest_sha].each_with_object({}) do |obj, result|
+        next unless obj.key.end_with?(".png")
+
         route_name = File.basename(obj.key, ".png")
         result[route_name] = signed_url(obj.key)
       end
+    rescue Aws::S3::Errors::ServiceError
+      {}
+    end
+
+    # Returns signed URLs for the most recent previous commit's trace-derived
+    # artifacts (PNG, GIF, WebM), grouped by route_name. Each route may have
+    # multiple formats available (e.g., `:png` and `:gif`). Used to upgrade
+    # PR comments with animated GIFs alongside or instead of static PNGs.
+    #
+    # @param org [String] GitHub org/owner
+    # @param repo [String] Repository name
+    # @param pr_number [Integer] Pull request number
+    # @param exclude_sha [String] Current commit SHA to exclude
+    # @param extensions [Array<String>] File extensions to include; defaults
+    #   to all supported artifact formats (`.png`, `.gif`, `.webm`)
+    # @return [Hash<String, Hash<Symbol, String>>] Mapping of route_name to a
+    #   hash of format symbol (`:png`, `:gif`, `:webm`) to signed URL
+    def previous_artifacts(org:, repo:, pr_number:, exclude_sha:, extensions: SUPPORTED_ARTIFACT_EXTENSIONS)
+      prefix = "screenshots/#{org}/#{repo}/pr-#{pr_number}/"
+      allowed_extensions = Array(extensions).map(&:downcase)
+      commits = Hash.new { |h, k| h[k] = [] }
+
+      s3_client.list_objects_v2(bucket: @bucket, prefix: prefix).each_page do |page|
+        page.contents.each do |obj|
+          parts = obj.key.delete_prefix(prefix).split("/", 2)
+          next unless parts.size == 2
+
+          sha = parts[0]
+          next if sha == exclude_sha
+
+          commits[sha] << obj
+        end
+      end
+
+      return {} if commits.empty?
+
+      latest_sha = commits.max_by { |_, objects| objects.map(&:last_modified).max }.first
+      grouped = Hash.new { |h, k| h[k] = {} }
+
+      commits[latest_sha].each do |obj|
+        ext = File.extname(obj.key).downcase
+        next unless allowed_extensions.include?(ext)
+
+        route_name = File.basename(obj.key, ext)
+        format = ext.delete_prefix(".").to_sym
+        grouped[route_name][format] = signed_url(obj.key)
+      end
+
+      grouped
     rescue Aws::S3::Errors::ServiceError
       {}
     end
@@ -196,27 +273,15 @@ module Screenshots
       "screenshots/#{org}/#{repo}/pr-#{pr_number}/#{commit_sha}/#{route_name}.png"
     end
 
-    # Builds the S3 object key for a Playwright trace archive.
+    # Builds the S3 object key for a trace-derived artifact (PNG/GIF/WebM).
     #
+    # @param extension [String] File extension including leading dot
     # @return [String]
-    def trace_object_key(org:, repo:, pr_number:, commit_sha:)
-      "screenshots/#{org}/#{repo}/pr-#{pr_number}/#{commit_sha}/trace.zip"
-    end
-
-    # Builds the S3 object key for a Playwright session video.
-    #
-    # @return [String]
-    def video_object_key(org:, repo:, pr_number:, commit_sha:)
-      "screenshots/#{org}/#{repo}/pr-#{pr_number}/#{commit_sha}/capture.webm"
+    def artifact_key(org:, repo:, pr_number:, commit_sha:, route_name:, extension:)
+      "screenshots/#{org}/#{repo}/pr-#{pr_number}/#{commit_sha}/#{route_name}#{extension}"
     end
 
     private
-
-    def put_object(file_path:, key:, content_type:)
-      File.open(file_path, "rb") do |file|
-        s3_client.put_object(bucket: @bucket, key: key, body: file, content_type: content_type)
-      end
-    end
 
     def delete_by_prefix(prefix)
       s3_client.list_objects_v2(bucket: @bucket, prefix: prefix).each_page do |page|
