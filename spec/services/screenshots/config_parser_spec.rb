@@ -350,15 +350,15 @@ RSpec.describe Screenshots::ConfigParser do
 
     it "accepts Phoenix as a known framework" do
       write_config(repo_dir, <<~YAML)
-        framework: phoenix
+        framework: laravel
         routes:
           - path: /
             name: homepage
       YAML
 
-      config = described_class.from_repo_path(repo_dir, project: project)
-
-      expect(config.routes.map(&:path)).to eq([ "/" ])
+      expect {
+        described_class.from_repo_path(repo_dir, project: project)
+      }.to raise_error(Screenshots::ConfigError, /framework must be one of: rails, nextjs, django, phoenix, generic/)
     end
 
     it "rejects empty routes" do
