@@ -67,6 +67,18 @@ RSpec.describe Previews::Provision do
 
       expect(project).to have_received(:with_lock)
     end
+
+    it "keeps container start inside the project lock" do
+      observed = []
+      backend = build_observing_backend(observed)
+      lock_state = instrument_project_lock(project)
+
+      result = described_class.new(project: project, container_backend: backend).start(branch_name: "main")
+
+      expect(result).to be_success
+      expect(lock_state[:held]).to be(false)
+      expect(observed).to eq([ true ])
+    end
   end
 
   describe "#stop" do
@@ -112,5 +124,42 @@ RSpec.describe Previews::Provision do
 
       expect(service.send(:current)).to be_nil
     end
+  end
+
+  def build_observing_backend(observed)
+    backend = Class.new do
+      include Previews::ContainerBackend
+
+      class << self
+        attr_accessor :observed
+      end
+
+      def self.start(session)
+        observed << Thread.current[:preview_lock_held]
+        Previews::ContainerBackend::Outcome.new(container_id: "preview-#{session.token[0, 12]}", app_port: 3000)
+      end
+
+      def self.stop(_session)
+        true
+      end
+    end
+
+    backend.observed = observed
+    backend
+  end
+
+  def instrument_project_lock(project)
+    lock_state = { held: false }
+
+    allow(project).to receive(:with_lock).and_wrap_original do |method, *args, &block|
+      lock_state[:held] = true
+      Thread.current[:preview_lock_held] = true
+      method.call(*args, &block)
+    ensure
+      lock_state[:held] = false
+      Thread.current[:preview_lock_held] = false
+    end
+
+    lock_state
   end
 end

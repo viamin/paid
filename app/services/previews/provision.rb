@@ -42,8 +42,6 @@ module Previews
       # covers the gap between expiry and the next cron tick.
       expire_stale_sessions!
 
-      session = nil
-
       project.with_lock do
         previous = current
         stop_previous(previous) if previous
@@ -52,9 +50,9 @@ module Previews
                                            created_by: actor, ttl_seconds: ttl_seconds)
         session.status = "provisioning"
         session.save!
-      end
 
-      provision(session)
+        provision(session)
+      end
     rescue StandardError => e
       failure_result(e)
     end

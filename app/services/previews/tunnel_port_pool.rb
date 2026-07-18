@@ -29,12 +29,14 @@ module Previews
     # every port in the range is currently held by another active session.
     def acquire(session)
       with_lock do
-        clear_expired_port_claims!
-        port = next_free_port
-        raise Exhausted, "No preview tunnel ports available in #{range}" if port.nil?
+        TenantContext.with_system_access do
+          clear_expired_port_claims!
+          port = next_free_port
+          raise Exhausted, "No preview tunnel ports available in #{range}" if port.nil?
 
-        session.update_column(:tunnel_port, port)
-        port
+          session.update_column(:tunnel_port, port)
+          port
+        end
       end
     end
 
@@ -45,7 +47,9 @@ module Previews
       return if session.tunnel_port.blank?
 
       with_lock do
-        session.update_column(:tunnel_port, nil)
+        TenantContext.with_system_access do
+          session.update_column(:tunnel_port, nil)
+        end
       end
     end
 

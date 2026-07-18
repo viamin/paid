@@ -27,6 +27,16 @@ RSpec.describe Previews::TunnelPortPool do
       expect(session.reload.tunnel_port).to eq(9001)
     end
 
+    it "skips ports claimed by active sessions in other accounts" do
+      _other = create(:preview_session, project: other_project, status: "ready", tunnel_port: 9000)
+      session = create(:preview_session, project: project)
+
+      port = pool.acquire(session)
+
+      expect(port).to eq(9001)
+      expect(session.reload.tunnel_port).to eq(9001)
+    end
+
     it "ignores ports held only by expired or terminal sessions" do
       _expired = create(:preview_session, :expired, project: project, tunnel_port: 9000)
       _stopped = create(:preview_session, :stopped, project: project, tunnel_port: 9001)
@@ -54,6 +64,15 @@ RSpec.describe Previews::TunnelPortPool do
 
       expect { pool.acquire(session) }.to raise_error(described_class::Exhausted, /9000..9002/)
     end
+
+    it "uses system access for global allocation queries" do
+      session = create(:preview_session, project: project)
+      allow(TenantContext).to receive(:with_system_access).and_call_original
+
+      pool.acquire(session)
+
+      expect(TenantContext).to have_received(:with_system_access).at_least(:once)
+    end
   end
 
   describe "#release" do
@@ -78,6 +97,15 @@ RSpec.describe Previews::TunnelPortPool do
 
       session_b = create(:preview_session, project: project)
       expect(pool.acquire(session_b)).to eq(9000)
+    end
+
+    it "uses system access when clearing a claimed port" do
+      session = create(:preview_session, project: project, status: "ready", tunnel_port: 9000)
+      allow(TenantContext).to receive(:with_system_access).and_call_original
+
+      pool.release(session)
+
+      expect(TenantContext).to have_received(:with_system_access).at_least(:once)
     end
   end
 
