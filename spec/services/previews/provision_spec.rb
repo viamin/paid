@@ -200,6 +200,7 @@ RSpec.describe Previews::Provision do
   end
 
   it "restores the original service container ids and environment when dependency provisioning fails" do
+    allow(service_provisioner).to receive(:cleanup_service_containers)
     allow(service_provisioner).to receive(:provision) do
       agent_run.update!(
         service_container_ids: [ 101, 202 ],
@@ -215,6 +216,11 @@ RSpec.describe Previews::Provision do
     agent_run.reload
     expect(agent_run.service_container_ids).to eq([])
     expect(agent_run.service_environment).to eq({})
+    expect(service_provisioner).to have_received(:cleanup_service_containers).with(
+      contain_exactly(101, 202),
+      agent_run: agent_run,
+      service_environment: { "DATABASE_URL" => "postgres://preview-host/db" }
+    )
     expect(service.instance_variable_get(:@service_container_ids)).to be_nil
   end
 

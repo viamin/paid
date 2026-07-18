@@ -217,7 +217,19 @@ module Previews
       # after ours began.
       @service_container_ids = Array(agent_run.service_container_ids) - Array(@original_service_container_ids)
       @service_environment = agent_run.service_environment&.deep_dup || {}
-      restore_agent_run_service_state!
+
+      begin
+        cleanup_services!
+      rescue StandardError => e
+        logger.warn(
+          message: "previews.provision.service_cleanup_failed",
+          agent_run_id: agent_run.id,
+          error: e.message
+        )
+      ensure
+        restore_agent_run_service_state!
+      end
+
       raise
     end
 
@@ -385,7 +397,8 @@ module Previews
     end
 
     def cleanup_services!
-      return if @service_container_ids.empty?
+      service_container_ids = Array(@service_container_ids)
+      return if service_container_ids.empty?
 
       # Reuse the service-provisioner cleanup path so per-run databases are
       # dropped (not just the containers stopped). The agent run's persisted
@@ -395,9 +408,9 @@ module Previews
       # than reading from run state — and leave the run-state restore to
       # #restore_agent_run_service_state! once cleanup completes.
       service_provisioner.cleanup_service_containers(
-        @service_container_ids,
+        service_container_ids,
         agent_run: agent_run,
-        service_environment: @service_environment
+        service_environment: @service_environment || {}
       )
     end
 
