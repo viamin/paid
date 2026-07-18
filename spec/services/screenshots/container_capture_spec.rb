@@ -271,7 +271,7 @@ RSpec.describe Screenshots::ContainerCapture do
       script = service.send(:capture_runner_script)
 
       expect(script).to include("context.tracing.start({ screenshots: true, snapshots: true, sources: true })")
-      expect(script).to include("context.tracing.stop({ path: `${outputDir}/trace.zip` })")
+      expect(script).to include("context.tracing.stop({ path: `${outputDir}/${route.name}.trace.zip` })")
     end
 
     it "gates video recording on the SCREENSHOT_RECORD_VIDEO env var" do

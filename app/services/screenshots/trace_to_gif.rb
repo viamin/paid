@@ -2,6 +2,7 @@
 
 require "fileutils"
 require "open3"
+require "pathname"
 require "tmpdir"
 
 module Screenshots
@@ -35,6 +36,9 @@ module Screenshots
     DEFAULT_FRAMERATE = 8
     DEFAULT_WIDTH = 960
     DEFAULT_FRAME_PATTERN = "%05d.png"
+    PALETTEGEN_TEMPLATE = "scale=%<width>d:-1:flags=lanczos,palettegen=stats_mode=diff"
+    PALETTEUSE_TEMPLATE = "scale=%<width>d:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5"
+    VIDEO_FRAME_TEMPLATE = "fps=%<framerate>d,scale=%<width>d:-1:flags=lanczos"
 
     def self.call(...)
       new(...).call
@@ -167,12 +171,12 @@ module Screenshots
       cmd = [
         "ffmpeg",
         "-y",
-        "-i", @video_path,
-        "-vf", "fps=#{@framerate},scale=#{@width}:-1:flags=lanczos",
-        pattern
+        "-i", safe_path(@video_path),
+        "-vf", video_frame_filter,
+        safe_path(pattern)
       ]
 
-      _stdout, stderr, status = Open3.capture3(*cmd)
+      _stdout, stderr, status = execute_ffmpeg(*cmd)
       raise ConversionError, "ffmpeg frame extraction failed: #{stderr}" unless status.success?
 
       frames_dir
@@ -186,30 +190,52 @@ module Screenshots
         "ffmpeg",
         "-y",
         "-framerate", @framerate.to_s,
-        "-i", pattern,
-        "-vf", "scale=#{@width}:-1:flags=lanczos,palettegen=stats_mode=diff",
-        palette
+        "-i", safe_path(pattern),
+        "-vf", palettegen_filter,
+        safe_path(palette)
       ]
 
-      _stdout, stderr, status = Open3.capture3(*palette_cmd)
+      _stdout, stderr, status = execute_ffmpeg(*palette_cmd)
       raise ConversionError, "ffmpeg palettegen failed: #{stderr}" unless status.success?
 
       gif_cmd = [
         "ffmpeg",
         "-y",
         "-framerate", @framerate.to_s,
-        "-i", pattern,
-        "-i", palette,
-        "-lavfi", "scale=#{@width}:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=5",
+        "-i", safe_path(pattern),
+        "-i", safe_path(palette),
+        "-lavfi", paletteuse_filter,
         "-loop", "0",
-        @output_path
+        safe_path(@output_path)
       ]
 
-      _stdout, stderr, status = Open3.capture3(*gif_cmd)
+      _stdout, stderr, status = execute_ffmpeg(*gif_cmd)
       return if status.success?
 
       tail = stderr.to_s.lines.last.to_s.strip
       raise ConversionError, "ffmpeg failed (exit #{status.exitstatus}): #{tail}"
+    end
+
+    def execute_ffmpeg(*cmd)
+      raise ArgumentError, "expected ffmpeg command" unless cmd.first == "ffmpeg"
+
+      Open3.capture3(*cmd)
+    end
+
+    def safe_path(path)
+      Pathname.new(path.to_s).cleanpath.to_s
+    end
+
+    def video_frame_filter
+      format(VIDEO_FRAME_TEMPLATE, framerate: @framerate, width: @width)
+    end
+
+    def palettegen_filter
+      format(PALETTEGEN_TEMPLATE, width: @width)
+    end
+
+    def paletteuse_filter
+      format(PALETTEUSE_TEMPLATE, width: @width)
     end
   end
 end
