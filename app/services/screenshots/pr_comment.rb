@@ -7,6 +7,11 @@ module Screenshots
   # if a comment with that marker already exists, it is updated in place;
   # otherwise a new comment is created.
   #
+  # When a screenshot includes an animated `:gif_url` (produced from multi-frame
+  # capture input), the GIF is rendered inline instead of the static PNG.
+  # The static PNG remains the fallback for screenshot-only captures,
+  # preserving the existing before/after comparison UX.
+  #
   # @example
   #   Screenshots::PrComment.call(
   #     github_client: client,
@@ -14,7 +19,7 @@ module Screenshots
   #     pr_number: 42,
   #     commit_sha: "abc1234",
   #     screenshots: [
-  #       { route_name: "dashboard", url: "https://signed-url..." },
+  #       { route_name: "dashboard", url: "https://signed-url...", gif_url: "https://gif-url..." },
   #       { route_name: "homepage",  url: "https://signed-url..." }
   #     ]
   #   )
@@ -29,22 +34,15 @@ module Screenshots
     # @param repo [String] Repository in "owner/name" format
     # @param pr_number [Integer] Pull request number
     # @param commit_sha [String] Commit SHA for the screenshots
-    # @param screenshots [Array<Hash>] Each hash has :route_name and :url keys
+    # @param screenshots [Array<Hash>] Each hash has :route_name, :url, and
+    #   optional :gif_url, :video_url, :summary, and :video_filename keys
     # @param previous_screenshots [Hash<String, String>] Mapping of route_name to
     #   signed URL from the previous commit's capture, used for before/after comparison
     # @param artifact_name [String, nil] Workflow artifact name when screenshots
     #   were captured but inline storage is unavailable
-    # @param trace_url [String, nil] Presigned URL to a Playwright trace archive
-    #   uploaded alongside the screenshots
-    # @param video_url [String, nil] Presigned URL to a Playwright session video
-    #   (.webm) uploaded alongside the screenshots
     # @param status [String] Comment state: success, no_ui_changes, or capture_failed
-    # @param trace_viewer_url [String, nil] Embeddable Playwright trace viewer
-    #   URL. When present (success status only) a link to the interactive trace
-    #   is appended alongside the screenshots so reviewers can scrub the run.
     def initialize(github_client:, repo:, pr_number:, commit_sha:, screenshots:,
-      previous_screenshots: {}, artifact_name: nil, trace_url: nil, video_url: nil,
-      status: "success", trace_viewer_url: nil)
+      previous_screenshots: {}, artifact_name: nil, status: "success")
       @github_client = github_client
       @repo = repo
       @pr_number = pr_number
@@ -52,10 +50,7 @@ module Screenshots
       @screenshots = screenshots
       @previous_screenshots = previous_screenshots
       @artifact_name = artifact_name
-      @trace_url = trace_url
-      @video_url = video_url
       @status = status
-      @trace_viewer_url = trace_viewer_url
     end
 
     # Posts or updates the PR comment with screenshot images.
@@ -127,18 +122,17 @@ module Screenshots
       grouped = group_by_category(@screenshots)
 
       annotated = @screenshots.any? { |s| s[:summary].present? }
+      animated = @screenshots.any? { |s| s[:gif_url].present? }
+      videos = @screenshots.select { |s| s[:video_url].present? }
 
       lines = [ MARKER ]
       lines << "## UI Screenshots"
       lines << ""
       lines << "This PR includes **UI-facing changes**. Screenshots captured from commit `#{short_sha}`."
-      if @trace_url.present?
+      if animated
         lines << ""
-        lines << "**[Playwright trace](#{@trace_url})** — interactive DOM snapshots, network requests, and console logs for each step."
-      end
-      if @video_url.present?
-        lines << ""
-        lines << "**[Session video](#{@video_url})** — recorded `.webm` of the full capture session."
+        lines << "> Animated GIFs show the captured interaction flow. " \
+                 "Static PNG fallbacks remain in the comparison columns."
       end
       if annotated
         lines << ""
@@ -158,15 +152,7 @@ module Screenshots
           lines << divider
 
           category_screenshots.sort_by { |s| s[:route_name] }.each do |screenshot|
-            name = screenshot[:route_name]
-            after_url = screenshot[:url]
-            before_url = @previous_screenshots[name]
-
-            before_cell = before_url ? "![before-#{name}](#{before_url})" : "_New page_"
-            cells = [ humanize_route(name) ]
-            cells << changed_cell(screenshot) if annotated
-            cells += [ before_cell, "![#{name}](#{after_url})" ]
-            lines << "| #{cells.join(' | ')} |"
+            lines << format_comparison_row(screenshot)
           end
         else
           header = annotated ? "| Page | What changed | Screenshot |" : "| Page | Screenshot |"
@@ -175,20 +161,21 @@ module Screenshots
           lines << divider
 
           category_screenshots.sort_by { |s| s[:route_name] }.each do |screenshot|
-            name = screenshot[:route_name]
-            url = screenshot[:url]
-            cells = [ humanize_route(name) ]
-            cells << changed_cell(screenshot) if annotated
-            cells << "![#{name}](#{url})"
-            lines << "| #{cells.join(' | ')} |"
+            lines << format_capture_row(screenshot, annotated: annotated)
           end
         end
 
         lines << ""
       end
 
-      if @trace_viewer_url.present?
-        lines << trace_viewer_section
+      if videos.any?
+        lines << "### Demo Videos"
+        lines << ""
+        videos.sort_by { |s| s[:route_name] }.each do |screenshot|
+          filename = screenshot[:video_filename].presence || "#{screenshot[:route_name]}.webm"
+          lines << "- [#{escape_markdown_label(filename)}](#{screenshot[:video_url]}) — #{route_label(screenshot[:route_name])}"
+        end
+        lines << ""
       end
 
       lines << "---"
@@ -199,21 +186,6 @@ module Screenshots
     end
 
     private
-
-    # Builds the markdown section linking to the interactive trace viewer. The
-    # URL is application-controlled, so it is rendered as a plain markdown link
-    # rather than an inline image.
-    def trace_viewer_section
-      [
-        "",
-        "### Interactive Trace",
-        "",
-        "Scrub through the agent's interaction step by step — DOM snapshots, network requests, console logs, and screenshots:",
-        "",
-        "[Open Playwright trace viewer](#{@trace_viewer_url})",
-        ""
-      ].join("\n")
-    end
 
     def short_sha
       @commit_sha[0, 7]
@@ -234,7 +206,55 @@ module Screenshots
       summary = screenshot[:summary].to_s.gsub(/\s+/, " ").strip
       return "—" if summary.empty?
 
-      summary.truncate(MAX_SUMMARY_LENGTH).gsub(/[\\`*_{}\[\]()#+\-!<>|~]/) { |char| "\\#{char}" }
+      escape_markdown_text(summary.truncate(MAX_SUMMARY_LENGTH))
+    end
+
+    def format_comparison_row(screenshot)
+      name = screenshot[:route_name]
+      before_url = @previous_screenshots[name]
+
+      before_cell = before_url ? markdown_image("before-#{name}", before_url) : "_New page_"
+      after_cell = capture_cell(screenshot)
+      cells = [ route_label(name) ]
+      cells << changed_cell(screenshot) if annotated?
+      cells += [ before_cell, after_cell ]
+      "| #{cells.join(' | ')} |"
+    end
+
+    def format_capture_row(screenshot, annotated:)
+      cells = [ route_label(screenshot[:route_name]) ]
+      cells << changed_cell(screenshot) if annotated
+      cells << capture_cell(screenshot)
+      "| #{cells.join(' | ')} |"
+    end
+
+    def capture_cell(screenshot)
+      name = screenshot[:route_name]
+      if screenshot[:gif_url].present?
+        markdown_image(name, screenshot[:gif_url])
+      else
+        markdown_image(name, screenshot[:url])
+      end
+    end
+
+    def route_label(route_name)
+      escape_markdown_label(humanize_route(route_name))
+    end
+
+    def markdown_image(alt_text, url)
+      "![#{escape_markdown_label(alt_text)}](#{url})"
+    end
+
+    def escape_markdown_label(text)
+      text.to_s.gsub(/[\\`\[\]()<>|]/) { |char| "\\#{char}" }
+    end
+
+    def escape_markdown_text(text)
+      text.to_s.gsub(/[\\`*_{}\[\]()#+\-!<>|~]/) { |char| "\\#{char}" }
+    end
+
+    def annotated?
+      @screenshots.any? { |s| s[:summary].present? }
     end
 
     def group_by_category(screenshots)

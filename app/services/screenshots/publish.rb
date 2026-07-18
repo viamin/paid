@@ -1,42 +1,35 @@
 # frozen_string_literal: true
 
+require "tmpdir"
+
 module Screenshots
   class Publish
     class PublishError < StandardError; end
+
+    # Sibling of each `{route}.png`; the exporter reads a `{route}.trace.zip`
+    # captured alongside the screenshot when the capture step recorded a trace.
+    TRACE_EXTENSION = ".trace.zip"
 
     def self.call(...)
       new(...).call
     end
 
-    def initialize(github_client:, repo:, pr_number:, commit_sha:, screenshot_paths:, storage: nil, trace_viewer: nil)
+    def initialize(github_client:, repo:, pr_number:, commit_sha:, screenshot_paths:, storage: nil)
       @github_client = github_client
       @repo = repo
       @pr_number = pr_number
       @commit_sha = commit_sha
       @screenshot_paths = screenshot_paths
       @storage = storage
-      @trace_viewer = trace_viewer
     end
 
     def call
       uploaded_screenshots = screenshot_paths.map do |path|
-        route_name = File.basename(path, ".png")
-
-        {
-          route_name: route_name,
-          url: storage.upload(
-            file_path: path,
-            org: owner,
-            repo: name,
-            pr_number: @pr_number,
-            commit_sha: @commit_sha,
-            route_name: route_name
-          )
-        }
+        upload_screenshot(path)
       end
 
-      previous = if uploaded_screenshots.any?
-        storage.previous_screenshots(
+      previous_artifacts = if uploaded_screenshots.any?
+        storage.previous_artifacts(
           org: owner,
           repo: name,
           pr_number: @pr_number,
@@ -52,24 +45,13 @@ module Screenshots
         pr_number: @pr_number,
         commit_sha: @commit_sha,
         screenshots: uploaded_screenshots,
-        previous_screenshots: previous,
-        trace_viewer_url: trace_viewer_url
+        previous_screenshots: previous_artifacts.transform_values { |formats| formats[:png] }.compact
       )
     end
 
     private
 
     attr_reader :screenshot_paths
-
-    # Resolves an embeddable trace viewer URL for this commit when a trace was
-    # recorded (issue #2847) and trace storage is configured. Returns nil when
-    # no trace is available so the PR comment omits the trace link gracefully.
-    def trace_viewer_url
-      trace_params = { org: owner, repo: name, pr_number: @pr_number, commit_sha: @commit_sha }
-      trace_viewer.trace_available?(**trace_params) ? trace_viewer.embed_url(**trace_params) : nil
-    rescue StandardError
-      nil
-    end
 
     def owner
       repo_parts.fetch(0)
@@ -92,8 +74,46 @@ module Screenshots
       @storage ||= Screenshots::Storage.new
     end
 
-    def trace_viewer
-      @trace_viewer ||= Previews::TraceViewer.new
+    def upload_screenshot(path)
+      route_name = File.basename(path, ".png")
+      screenshot = {
+        route_name: route_name,
+        url: storage.upload(
+          file_path: path,
+          org: owner,
+          repo: name,
+          pr_number: @pr_number,
+          commit_sha: @commit_sha,
+          route_name: route_name
+        )
+      }
+
+      screenshot.merge(
+        Screenshots::TraceArtifactExporter.call(
+          storage: storage,
+          org: owner,
+          repo: name,
+          pr_number: @pr_number,
+          commit_sha: @commit_sha,
+          route_name: route_name,
+          trace_path: trace_path_for(path),
+          logger: Rails.logger,
+          log_message: "screenshots.publish.export_failed",
+          log_context: {
+            repo: @repo,
+            pr_number: @pr_number,
+            commit_sha: @commit_sha
+          }
+        )
+      )
+    end
+
+    # Resolves a Playwright trace recorded alongside `screenshot_path`, if any.
+    # Returns nil when no trace is present, so the exporter falls back to the
+    # static PNG.
+    def trace_path_for(screenshot_path)
+      trace_path = "#{File.dirname(screenshot_path)}/#{File.basename(screenshot_path, '.png')}#{TRACE_EXTENSION}"
+      File.exist?(trace_path) ? trace_path : nil
     end
   end
 end
