@@ -161,17 +161,16 @@ RSpec.describe PreviewsProxy do
     end
 
     it "preserves repeated Set-Cookie headers as separate cookies" do
-      upstream_response = instance_double(
-        Net::HTTPOK,
-        body: "ok",
-        code: "200"
+      stub_streaming_http_response(
+        port:,
+        code: "200",
+        headers: { "content-type" => "text/plain" },
+        set_cookies: [
+          "session=abc; Path=/; Domain=app.internal; HttpOnly",
+          "csrf=xyz; Path=/; Domain=app.internal; Secure"
+        ],
+        chunks: [ "ok" ]
       )
-      allow(upstream_response).to receive(:get_fields).with("set-cookie").and_return([
-        "session=abc; Path=/; Domain=app.internal; HttpOnly",
-        "csrf=xyz; Path=/; Domain=app.internal; Secure"
-      ])
-      allow(upstream_response).to receive(:each_header).and_yield("content-type", "text/plain")
-      allow(Net::HTTP).to receive(:start).and_return(upstream_response)
 
       response = mock_request.get("/previews/s3cret-token/")
 
@@ -215,6 +214,19 @@ RSpec.describe PreviewsProxy do
         .with(headers: { "X-Forwarded-Port" => "8443" })
     end
 
+    it "rewrites Origin to the upstream origin on the forwarded request" do
+      stub_request(:post, "http://127.0.0.1:#{port}/users")
+        .to_return(status: 201, body: "created")
+
+      mock_request.post("/previews/s3cret-token/users", {
+        "HTTP_ORIGIN" => "https://paid.example",
+        input: "name=alice"
+      })
+
+      expect(WebMock).to have_requested(:post, "http://127.0.0.1:#{port}/users")
+        .with(headers: { "Origin" => "http://127.0.0.1:#{port}" })
+    end
+
     it "forwards POST bodies" do
       stub_request(:post, "http://127.0.0.1:#{port}/users")
         .to_return(status: 201, body: "created")
@@ -227,11 +239,29 @@ RSpec.describe PreviewsProxy do
     end
 
     it "returns 502 when the upstream is unreachable" do
-      allow(Net::HTTP).to receive(:start).and_raise(Errno::ECONNREFUSED, "Connection refused")
+      allow(Net::HTTP).to receive(:new).with("127.0.0.1", port).and_raise(Errno::ECONNREFUSED, "Connection refused")
 
       response = mock_request.get("/previews/s3cret-token/issues/42")
 
       expect(response.status).to eq(502)
+    end
+
+    it "streams the upstream response body without materializing it in memory" do
+      stub_streaming_http_response(
+        port:,
+        code: "200",
+        headers: { "content-type" => "text/plain", "content-length" => "11" },
+        chunks: [ "hello ", "world" ],
+        forbid_body: true
+      )
+
+      status, headers, body = middleware.call(Rack::MockRequest.env_for("/previews/s3cret-token/stream"))
+      chunks = []
+      body.each { |chunk| chunks << chunk }
+
+      expect(status).to eq(200)
+      expect(headers["content-length"]).to eq("11")
+      expect(chunks).to eq([ "hello ", "world" ])
     end
   end
 
@@ -254,6 +284,7 @@ RSpec.describe PreviewsProxy do
         forwarded = upstream_received.call
         expect(forwarded).to include("Upgrade: websocket")
         expect(forwarded).to include("GET /cable")
+        expect(forwarded).to include("Origin: http://127.0.0.1:#{port}")
         expect(forwarded).to include("X-Forwarded-Port: 80")
 
         client_mirror.close
@@ -303,6 +334,7 @@ RSpec.describe PreviewsProxy do
     env = Rack::MockRequest.env_for("/previews/s3cret-token/cable",
       "HTTP_HOST" => "paid.example",
       "HTTP_CONNECTION" => "Upgrade",
+      "HTTP_ORIGIN" => "https://paid.example",
       "HTTP_UPGRADE" => "websocket",
       "HTTP_SEC_WEBSOCKET_KEY" => "dGhlIHNhbXBsZSBub25jZQ==",
       "HTTP_SEC_WEBSOCKET_VERSION" => "13")
@@ -357,6 +389,27 @@ RSpec.describe PreviewsProxy do
         "HTTP/1.1 101 Switching Protocols\r\n"
       end
     end
+  end
+
+  def stub_streaming_http_response(port:, code:, headers:, chunks:, set_cookies: nil, forbid_body: false)
+    upstream_response = instance_double(Net::HTTPOK, code:)
+    expect(upstream_response).not_to receive(:body) if forbid_body
+    allow(upstream_response).to receive(:get_fields).with("set-cookie").and_return(set_cookies)
+    allow(upstream_response).to receive(:each_header) do |&block|
+      headers.each { |name, value| block.call(name, value) }
+    end
+    allow(upstream_response).to receive(:read_body) do |&block|
+      chunks.each { |chunk| block.call(chunk) }
+    end
+
+    http = instance_double(Net::HTTP, start: true, active?: false)
+    allow(http).to receive(:read_timeout=)
+    allow(http).to receive(:open_timeout=)
+    allow(http).to receive(:use_ssl=)
+    allow(http).to receive(:request) do |_request, &block|
+      block.call(upstream_response)
+    end
+    allow(Net::HTTP).to receive(:new).with("127.0.0.1", port).and_return(http)
   end
 
   def read_until(io, delimiter, timeout:)

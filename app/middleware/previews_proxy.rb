@@ -18,6 +18,30 @@ require "timeout"
 # middleware constant must exist at middleware-registration time, before Zeitwerk
 # autoloading is available (see the QueryMonitor precedent in the same file).
 class PreviewsProxy
+  class StreamingResponseBody
+    def initialize(reader, thread)
+      @reader = reader
+      @thread = thread
+    end
+
+    def each
+      loop do
+        yield @reader.readpartial(BUFFER_SIZE)
+      end
+    rescue EOFError
+      nil
+    ensure
+      close
+    end
+
+    def close
+      @reader.close unless @reader.closed?
+      @thread.join(2)
+    rescue IOError, SystemCallError
+      nil
+    end
+  end
+
   # Matches `/previews/:token/<path>` where <path> is any non-empty segment,
   # including the bare root `/`. The exact `/previews/:token` (no trailing path)
   # intentionally does NOT match — that is served by PreviewsController#show.
@@ -107,11 +131,38 @@ class PreviewsProxy
   # ----------------------------------------------------------------------- http
 
   def forward_http(request:, session:, proxied_path:)
-    upstream_response = Net::HTTP.start(CONNECT_HOST, session.tunnel_port,
-      read_timeout: @read_timeout, open_timeout: @open_timeout, use_ssl: false) do |http|
-      http.request(build_net_http_request(request:, session:, proxied_path:))
+    request_headers = build_net_http_request(request:, session:, proxied_path:)
+    reader, writer = IO.pipe
+    response_queue = Queue.new
+    http = Net::HTTP.new(CONNECT_HOST, session.tunnel_port)
+    http.read_timeout = @read_timeout
+    http.open_timeout = @open_timeout
+    http.use_ssl = false
+    http.start
+
+    stream_thread = Thread.new do
+      Thread.current.abort_on_exception = false
+      begin
+        http.request(request_headers) do |upstream_response|
+          response_queue << upstream_response
+          upstream_response.read_body { |chunk| writer.write(chunk) }
+        end
+      rescue StandardError => e
+        response_queue << e
+      ensure
+        writer.close unless writer.closed?
+        http.finish if http.active?
+      end
     end
-    transform_http_response(session:, upstream_response:)
+
+    upstream_response = response_queue.pop
+    raise upstream_response if upstream_response.is_a?(StandardError)
+
+    transform_http_response(
+      session:,
+      upstream_response:,
+      body: StreamingResponseBody.new(reader, stream_thread)
+    )
   end
 
   def build_net_http_request(request:, session:, proxied_path:)
@@ -143,6 +194,7 @@ class PreviewsProxy
       "x-forwarded-proto" => request.scheme
     ).tap do |merged|
       merged["x-forwarded-for"] = compose_forwarded_for(request, merged["x-forwarded-for"])
+      merged["origin"] = upstream_http_origin(session) if merged.key?("origin")
       merged.delete("content-length")
     end
   end
@@ -179,12 +231,10 @@ class PreviewsProxy
     body
   end
 
-  def transform_http_response(session:, upstream_response:)
+  def transform_http_response(session:, upstream_response:, body:)
     headers = transform_response_headers(upstream_response, session:)
-    body = upstream_response.body || +""
-    headers["content-length"] = body.bytesize.to_s
 
-    [ upstream_response.code.to_i, headers, [ body ] ]
+    [ upstream_response.code.to_i, headers, body ]
   end
 
   def transform_response_headers(upstream_response, session:)
@@ -206,7 +256,7 @@ class PreviewsProxy
         transformed["location"] = rewrite_location(value, session:)
       when "set-cookie"
         next
-      when *HOP_BY_HOP_HEADERS, "content-length"
+      when *HOP_BY_HOP_HEADERS
         next
       else
         transformed[name.downcase] = value
@@ -310,6 +360,7 @@ class PreviewsProxy
     headers["x-forwarded-proto"] = request.scheme
     headers["x-forwarded-port"] = client_facing_port(request.env, request.scheme)
     headers["x-forwarded-for"] = compose_forwarded_for(request, headers["x-forwarded-for"])
+    headers["origin"] = upstream_http_origin(session) if headers.key?("origin")
 
     path = build_upstream_path(proxied_path, request.query_string)
     lines = [ "#{request.request_method} #{path} HTTP/1.1" ]
@@ -426,6 +477,10 @@ class PreviewsProxy
     return "#{proxy_prefix}/" if path.blank?
 
     "#{proxy_prefix}#{dedupe_slash(path)}"
+  end
+
+  def upstream_http_origin(session)
+    "http://#{CONNECT_HOST}:#{session.tunnel_port}"
   end
 
   def upstream_origin?(uri)
