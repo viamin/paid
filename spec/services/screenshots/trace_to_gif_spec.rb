@@ -140,37 +140,60 @@ RSpec.describe Screenshots::TraceToGif do
       }.to raise_error(Screenshots::TraceToGif::ConversionError, /ffmpeg failed/)
     end
 
-    it "raises ConversionError when a trace zip contains no PNGs" do
+    it "raises ConversionError when trace metadata has no screencast frames" do
       trace_zip = File.join(tmpdir, "empty.zip")
       File.write(trace_zip, "")
 
       allow(Open3).to receive(:capture3) do |*cmd|
         next nil unless cmd.first == "unzip"
 
-        dest_index = cmd.index("-d") + 1
-        dest_dir = cmd[dest_index]
-        FileUtils.mkdir_p(dest_dir)
-        File.write(File.join(dest_dir, "metadata.json"), "{}")
+        write_trace_fixture(cmd[cmd.index("-d") + 1], events: [ { "type" => "context-options" } ])
         [ "", "", ffmpeg_success ]
       end
 
       expect {
         described_class.call(trace_path: trace_zip, output_path: output_path)
-      }.to raise_error(Screenshots::TraceToGif::ConversionError, /no PNG frames/)
+      }.to raise_error(Screenshots::TraceToGif::ConversionError, /contains no screencast frames/)
     end
 
-    it "extracts embedded PNGs from a Playwright trace zip" do
+    it "replays Playwright trace resources in screencast metadata order" do
       trace_zip = File.join(tmpdir, "trace.zip")
       File.write(trace_zip, "")
 
-      palette_used, gif_exists = stub_trace_unzip_and_ffmpeg(
-        trace_zip, [ "trace-0.png", "trace-1.png" ], output_path
+      palette_used, gif_exists, ordered_entries = stub_trace_unzip_and_ffmpeg(
+        trace_zip,
+        [
+          { "sha1" => "b-frame", "timestamp" => 2000, "body" => "frame-two" },
+          { "sha1" => "a-frame", "timestamp" => 1000, "body" => "frame-one" }
+        ],
+        output_path
       )
 
       described_class.call(trace_path: trace_zip, output_path: output_path)
 
       expect(palette_used.call).to be true
       expect(gif_exists.call).to be true
+      expect(frame_payloads(ordered_entries.call)).to eq([ "frame-one", "frame-two" ])
+    end
+
+    it "raises ConversionError when trace metadata references a missing resource" do
+      trace_zip = File.join(tmpdir, "missing-resource.zip")
+      File.write(trace_zip, "")
+
+      allow(Open3).to receive(:capture3) do |*cmd|
+        case cmd.first
+        when "unzip"
+          write_trace_fixture(
+            cmd[cmd.index("-d") + 1],
+            frames: [ { "sha1" => "missing-frame", "timestamp" => 1000 } ]
+          )
+          [ "", "", ffmpeg_success ]
+        end
+      end
+
+      expect {
+        described_class.call(trace_path: trace_zip, output_path: output_path)
+      }.to raise_error(Screenshots::TraceToGif::ConversionError, /missing screencast frame resource/)
     end
 
     it "transcodes a video file when video_path is provided" do
@@ -254,30 +277,33 @@ RSpec.describe Screenshots::TraceToGif do
     path
   end
 
-  def stub_trace_unzip_and_ffmpeg(trace_zip, png_names, gif_output_path)
+  def stub_trace_unzip_and_ffmpeg(trace_zip, frames, gif_output_path)
     File.write(trace_zip, "")
     palette_used = false
+    ordered_entries = []
     allow(Open3).to receive(:capture3) do |*cmd|
       case cmd.first
       when "unzip"
-        dest_index = cmd.index("-d") + 1
-        dest_dir = cmd[dest_index]
-        FileUtils.mkdir_p(dest_dir)
-        png_names.each_with_index do |name, idx|
-          File.binwrite(File.join(dest_dir, name), "\x89PNG\r\n\x1a\nfake-#{idx}")
-        end
+        write_trace_fixture(cmd[cmd.index("-d") + 1], frames: frames)
         [ "", "", ffmpeg_success ]
       when "ffmpeg"
         cmd_args = cmd
         if cmd_args.any? { |a| a.include?("palettegen") }
           palette_used = true
+          pattern = cmd_args[cmd_args.index("-i") + 1]
+          ordered_dir = File.dirname(pattern)
+          ordered_entries = Dir.children(ordered_dir).sort.filter_map do |entry|
+            next unless entry.end_with?(".png")
+
+            File.binread(File.join(ordered_dir, entry))
+          end
         else
           File.write(gif_output_path, "GIF89a-fake")
         end
         [ "", "", ffmpeg_success ]
       end
     end
-    [ -> { palette_used }, -> { File.exist?(gif_output_path) } ]
+    [ -> { palette_used }, -> { File.exist?(gif_output_path) }, -> { ordered_entries } ]
   end
 
   def stub_video_to_gif(video_path, gif_output_path)
@@ -298,5 +324,30 @@ RSpec.describe Screenshots::TraceToGif do
       end
     end
     [ -> { frame_extracted }, -> { File.exist?(gif_output_path) } ]
+  end
+
+  def write_trace_fixture(dest_dir, frames: [], events: [])
+    FileUtils.mkdir_p(File.join(dest_dir, "resources"))
+
+    frames.each do |frame|
+      next unless frame["body"]
+
+      File.binwrite(File.join(dest_dir, "resources", frame.fetch("sha1")), "\x89PNG\r\n\x1a\n#{frame.fetch("body")}")
+    end
+
+    trace_events = if events.any?
+      events
+    else
+      [ { "type" => "frame-snapshot", "page.screencastFrames" => frames } ]
+    end
+
+    File.write(
+      File.join(dest_dir, "trace.trace"),
+      trace_events.map { |event| JSON.generate(event) }.join("\n")
+    )
+  end
+
+  def frame_payloads(entries)
+    entries.map { |entry| entry.byteslice(8..) }
   end
 end

@@ -10,8 +10,9 @@ module Screenshots
   #
   # Inputs (use exactly one):
   #
-  # - `trace_path`: a Playwright `trace.zip`. Embedded PNG screenshots are
-  #   extracted, ordered, and stitched into a GIF.
+  # - `trace_path`: a Playwright `trace.zip`. Screencast frame order is
+  #   reconstructed from trace metadata before extracted PNG resources are
+  #   stitched into a GIF.
   # - `frames_dir`: a directory of PNG files in the desired order.
   # - `frames`: an explicit list of PNG paths in the order they should appear.
   # - `video_path`: an existing video file (e.g., the `.webm` produced by
@@ -116,8 +117,7 @@ module Screenshots
       _stdout, stderr, status = Open3.capture3("unzip", "-q", "-o", @trace_path, "-d", extract_dir)
       raise ConversionError, "unzip failed for #{@trace_path}: #{stderr}" unless status.success?
 
-      pngs = Dir.glob(File.join(extract_dir, "**", "*.png")).sort
-      raise ConversionError, "trace #{@trace_path} contains no PNG frames" if pngs.empty?
+      pngs = TraceFrameSequence.ordered_pngs(extract_dir)
 
       ordered_dir = File.join(tmpdir, "ordered")
       FileUtils.mkdir_p(ordered_dir)
@@ -126,6 +126,8 @@ module Screenshots
       end
 
       ordered_dir
+    rescue TraceFrameSequence::Error => e
+      raise ConversionError, "trace #{@trace_path} #{e.message}"
     end
 
     def materialize_frames(tmpdir)

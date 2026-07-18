@@ -158,49 +158,59 @@ RSpec.describe Screenshots::TraceToVideo do
       }.to raise_error(Screenshots::TraceToVideo::ConversionError, /contains no PNG frames/)
     end
 
-    it "extracts embedded PNGs from a Playwright trace zip when given trace_path" do
+    it "replays Playwright trace resources in screencast metadata order" do
       trace_zip = File.join(tmpdir, "trace.zip")
       File.write(trace_zip, "")
 
-      allow(Open3).to receive(:capture3) do |*cmd|
-        case cmd.first
-        when "ffmpeg"
-          File.write(output_path, "fake webm")
-          [ "", "", ffmpeg_success ]
-        when "unzip"
-          dest_index = cmd.index("-d") + 1
-          dest_dir = cmd[dest_index]
-          FileUtils.mkdir_p(dest_dir)
-          %w[trace-0.png trace-1.png].each_with_index do |name, idx|
-            File.binwrite(File.join(dest_dir, name), "\x89PNG\r\n\x1a\nfake-#{idx}")
-          end
-          [ "", "", ffmpeg_success ]
-        end
-      end
+      ordered_entries = stub_trace_unzip_and_ffmpeg(
+        trace_zip,
+        [
+          { "sha1" => "b-frame", "timestamp" => 2000, "body" => "frame-two" },
+          { "sha1" => "a-frame", "timestamp" => 1000, "body" => "frame-one" }
+        ]
+      )
 
       described_class.call(trace_path: trace_zip, output_path: output_path)
 
       expect(File.exist?(output_path)).to be true
+      expect(frame_payloads(ordered_entries.call)).to eq([ "frame-one", "frame-two" ])
     end
 
-    it "raises ConversionError when a trace zip contains no PNGs" do
+    it "raises ConversionError when trace metadata has no screencast frames" do
       trace_zip = File.join(tmpdir, "empty.zip")
       File.write(trace_zip, "")
 
       allow(Open3).to receive(:capture3) do |*cmd|
         case cmd.first
         when "unzip"
-          dest_index = cmd.index("-d") + 1
-          dest_dir = cmd[dest_index]
-          FileUtils.mkdir_p(dest_dir)
-          File.write(File.join(dest_dir, "metadata.json"), "{}")
+          write_trace_fixture(cmd[cmd.index("-d") + 1], events: [ { "type" => "context-options" } ])
           [ "", "", ffmpeg_success ]
         end
       end
 
       expect {
         described_class.call(trace_path: trace_zip, output_path: output_path)
-      }.to raise_error(Screenshots::TraceToVideo::ConversionError, /no PNG frames/)
+      }.to raise_error(Screenshots::TraceToVideo::ConversionError, /contains no screencast frames/)
+    end
+
+    it "raises ConversionError when trace metadata references a missing resource" do
+      trace_zip = File.join(tmpdir, "missing-resource.zip")
+      File.write(trace_zip, "")
+
+      allow(Open3).to receive(:capture3) do |*cmd|
+        case cmd.first
+        when "unzip"
+          write_trace_fixture(
+            cmd[cmd.index("-d") + 1],
+            frames: [ { "sha1" => "missing-frame", "timestamp" => 1000 } ]
+          )
+          [ "", "", ffmpeg_success ]
+        end
+      end
+
+      expect {
+        described_class.call(trace_path: trace_zip, output_path: output_path)
+      }.to raise_error(Screenshots::TraceToVideo::ConversionError, /missing screencast frame resource/)
     end
 
     it "raises ArgumentError when trace file does not exist" do
@@ -242,5 +252,57 @@ RSpec.describe Screenshots::TraceToVideo do
   def write_png(path)
     File.binwrite(path, "\x89PNG\r\n\x1a\nfake-png-bytes")
     path
+  end
+
+  def stub_trace_unzip_and_ffmpeg(trace_zip, frames)
+    ordered_entries = []
+    allow(Open3).to receive(:capture3) do |*cmd|
+      case cmd.first
+      when "ffmpeg"
+        ordered_entries = ordered_png_bodies(cmd[cmd.index("-i") + 1])
+        File.write(output_path, "fake webm")
+        [ "", "", ffmpeg_success ]
+      when "unzip"
+        write_trace_fixture(cmd[cmd.index("-d") + 1], frames: frames)
+        [ "", "", ffmpeg_success ]
+      end
+    end
+
+    -> { ordered_entries }
+  end
+
+  def ordered_png_bodies(pattern)
+    ordered_dir = File.dirname(pattern)
+
+    Dir.children(ordered_dir).sort.filter_map do |entry|
+      next unless entry.end_with?(".png")
+
+      File.binread(File.join(ordered_dir, entry))
+    end
+  end
+
+  def frame_payloads(entries)
+    entries.map { |entry| entry.byteslice(8..) }
+  end
+
+  def write_trace_fixture(dest_dir, frames: [], events: [])
+    FileUtils.mkdir_p(File.join(dest_dir, "resources"))
+
+    frames.each do |frame|
+      next unless frame["body"]
+
+      File.binwrite(File.join(dest_dir, "resources", frame.fetch("sha1")), "\x89PNG\r\n\x1a\n#{frame.fetch("body")}")
+    end
+
+    trace_events = if events.any?
+      events
+    else
+      [ { "type" => "frame-snapshot", "page.screencastFrames" => frames } ]
+    end
+
+    File.write(
+      File.join(dest_dir, "trace.trace"),
+      trace_events.map { |event| JSON.generate(event) }.join("\n")
+    )
   end
 end
