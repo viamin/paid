@@ -63,6 +63,9 @@ servers:
     hosts:
       - 192.168.0.1
     cmd: bin/preview-tunnel-server
+    options:
+      publish:
+        - "7000:7000"
   worker_poll:
     hosts:
       - 192.168.0.1

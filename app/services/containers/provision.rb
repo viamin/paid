@@ -242,6 +242,19 @@ module Containers
       raise
     end
 
+    def activate_preview_tunnel!(app_port:)
+      raise ArgumentError, "app_port is required" if app_port.blank?
+      return unless preview_tunnel?
+
+      @preview_tunnel = Previews::TunnelManager::TunnelDefinition.new(
+        session_token: preview_tunnel.session_token,
+        tunnel_port: preview_tunnel.tunnel_port,
+        app_port: app_port
+      )
+
+      seed_preview_tunnel_config!
+    end
+
     # Executes a command inside the container and captures output.
     #
     # A background watchdog thread monitors output activity when +startup_timeout+
@@ -1865,7 +1878,7 @@ module Containers
         Previews::TunnelManager::TunnelDefinition.new(
           session_token: @preview_tunnel_option.fetch(:session_token),
           tunnel_port: @preview_tunnel_option.fetch(:tunnel_port),
-          app_port: @preview_tunnel_option.fetch(:app_port)
+          app_port: @preview_tunnel_option[:app_port]
         )
       end
     end
@@ -1890,6 +1903,7 @@ module Containers
 
     def seed_preview_tunnel_config!
       return unless preview_tunnel?
+      return unless preview_tunnel.app_port.present?
 
       backend.exec_in_container(container, [ "mkdir", "-p", File.dirname(preview_tunnel_config_path) ], user: "agent")
       write_container_file(preview_tunnel_config_path, preview_tunnel_client_config)

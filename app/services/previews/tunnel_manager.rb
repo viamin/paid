@@ -31,7 +31,7 @@ module Previews
         super(
           session_token: session_token.to_s,
           tunnel_port: Integer(tunnel_port),
-          app_port: Integer(app_port)
+          app_port: app_port.nil? ? nil : Integer(app_port)
         )
       end
 
@@ -143,6 +143,8 @@ module Previews
 
       def client_config(tunnel:, backend:, restricted:)
         definition = normalize_tunnel_definition(tunnel)
+        raise ConfigurationError, "Preview tunnel app port is missing" if definition.app_port.blank?
+
         remote_destination = client_remote_destination(backend:, restricted:)
 
         [

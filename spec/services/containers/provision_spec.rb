@@ -25,14 +25,14 @@ RSpec.describe Containers::Provision do
     preparation_class.new([ preparation_write ])
   end
 
-  def build_preview_tunnel_service(agent_run:, worktree_path:)
+  def build_preview_tunnel_service(agent_run:, worktree_path:, app_port: 4000)
     described_class.new(
       agent_run: agent_run,
       worktree_path: worktree_path,
       preview_tunnel: {
         session_token: "preview-token",
         tunnel_port: 8201,
-        app_port: 4000
+        app_port: app_port
       }
     )
   end
@@ -794,6 +794,25 @@ RSpec.describe Containers::Provision do
         expect(mock_container).to have_received(:exec).with(
           [ "sh", "-lc", "rathole --client /home/agent/.paid-preview/rathole-client.toml > /tmp/paid-preview-tunnel-client.log 2>&1 &" ],
           user: "agent"
+        )
+      end
+
+      it "defers preview tunnel client setup until the app port is known" do
+        preview_service = build_preview_tunnel_service(agent_run:, worktree_path:, app_port: nil)
+        allow(Containers::ProxyUrl).to receive(:resolve).with(backend: preview_service.backend, restricted: true).and_return("http://paid-proxy:3000")
+        allow(mock_container).to receive(:exec).and_return([ [], [], 0 ])
+        allow(preview_service).to receive(:write_container_file).and_call_original
+
+        preview_service.provision
+
+        expect(preview_service).not_to have_received(:write_container_file)
+          .with("/home/agent/.paid-preview/rathole-client.toml", anything)
+
+        preview_service.activate_preview_tunnel!(app_port: 4100)
+
+        expect(preview_service).to have_received(:write_container_file).with(
+          "/home/agent/.paid-preview/rathole-client.toml",
+          include('[client.services.preview-preview-token]', 'local_addr = "127.0.0.1:4100"')
         )
       end
 
