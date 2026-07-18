@@ -31,6 +31,7 @@ RSpec.describe Screenshots::FrameworkPatterns do
 
       expect(result[:patterns]).to be_an(Array)
       expect(result[:patterns]).not_to be_empty
+      expect(result[:exclusions]).to be_an(Array)
     end
 
     it "returns generic patterns" do
@@ -130,13 +131,40 @@ RSpec.describe Screenshots::FrameworkPatterns do
   describe "Phoenix patterns" do
     let(:patterns) { described_class.for(:phoenix) }
 
-    it "matches LiveView modules" do
-      expect(patterns[:patterns].any? { |p| p.match?("lib/color_matching_web/live/match_live.ex") }).to be true
+    it "matches LiveView files" do
+      expect(patterns[:patterns].any? { |p| p.match?("lib/my_app_web/live/dashboard_live.ex") }).to be true
     end
 
-    it "matches Phoenix assets" do
+    it "matches Phoenix controllers" do
+      expect(patterns[:patterns].any? { |p| p.match?("lib/my_app_web/controllers/page_controller.ex") }).to be true
+    end
+
+    it "matches Phoenix components" do
+      expect(patterns[:patterns].any? { |p| p.match?("lib/my_app_web/components/button.ex") }).to be true
+    end
+
+    it "matches Phoenix templates" do
+      expect(patterns[:patterns].any? { |p| p.match?("lib/my_app_web/templates/page/index.html.heex") }).to be true
+    end
+
+    it "matches asset JS" do
       expect(patterns[:patterns].any? { |p| p.match?("assets/js/app.js") }).to be true
+    end
+
+    it "matches asset CSS" do
       expect(patterns[:patterns].any? { |p| p.match?("assets/css/app.css") }).to be true
+    end
+
+    it "matches config files" do
+      expect(patterns[:patterns].any? { |p| p.match?("config/config.exs") }).to be true
+    end
+
+    it "excludes deps directory" do
+      expect(patterns[:exclusions].any? { |p| p.match?("deps/phoenix/lib/phoenix/router.ex") }).to be true
+    end
+
+    it "excludes _build directory" do
+      expect(patterns[:exclusions].any? { |p| p.match?("_build/dev/lib/my_app/ebin/Elixir.MyApp.beam") }).to be true
     end
   end
 end
