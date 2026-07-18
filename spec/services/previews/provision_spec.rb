@@ -184,7 +184,7 @@ RSpec.describe Previews::Provision do
     provision_b.cleanup!
 
     expect(agent_run.reload.service_container_ids).to eq([ 7 ])
-    expect(agent_run.service_environment).to eq({ "DATABASE_URL" => "postgres://preview-a/db" })
+    expect(agent_run.service_environment).to eq({ "DATABASE_URL" => "postgres://existing/db" })
   end
 
   it "preserves sibling environment additions that share a key with this preview's snapshot" do

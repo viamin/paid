@@ -27,6 +27,44 @@ module Previews
       keyword_init: true
     )
 
+    @baseline_state_mutex = Mutex.new
+    @baseline_states = {}
+
+    class << self
+      def register_baseline(agent_run)
+        @baseline_state_mutex.synchronize do
+          state = (@baseline_states[agent_run.id] ||= {
+            count: 0,
+            service_container_ids: Array(agent_run.service_container_ids).dup,
+            service_environment: agent_run.service_environment&.deep_dup || {}
+          })
+          state[:count] += 1
+
+          {
+            count: state[:count],
+            service_container_ids: state[:service_container_ids].dup,
+            service_environment: state[:service_environment].deep_dup
+          }
+        end
+      end
+
+      def release_baseline(agent_run)
+        @baseline_state_mutex.synchronize do
+          state = @baseline_states[agent_run.id]
+          return { count: 0, service_container_ids: [], service_environment: {} } unless state
+
+          state[:count] -= 1
+          snapshot = {
+            count: [ state[:count], 0 ].max,
+            service_container_ids: state[:service_container_ids].dup,
+            service_environment: state[:service_environment].deep_dup
+          }
+          @baseline_states.delete(agent_run.id) if state[:count] <= 0
+          snapshot
+        end
+      end
+    end
+
     attr_reader :agent_run, :project, :repo_path, :logger, :config, :container_service
 
     def initialize(agent_run:, repo_path:, preview_session: nil, logger: Rails.logger,
@@ -142,6 +180,9 @@ module Previews
       service_names = configured_service_dependencies
       return if service_names.empty?
 
+      baseline = self.class.register_baseline(agent_run)
+      @baseline_service_container_ids = baseline[:service_container_ids]
+      @baseline_service_environment = baseline[:service_environment]
       @original_service_container_ids = agent_run.service_container_ids.dup
       @original_service_environment = agent_run.service_environment&.deep_dup
 
@@ -369,6 +410,15 @@ module Previews
     def restore_agent_run_service_state!
       return unless @original_service_container_ids
 
+      baseline = self.class.release_baseline(agent_run)
+      if baseline[:count].zero?
+        agent_run.update!(
+          service_container_ids: Array(@baseline_service_container_ids),
+          service_environment: @baseline_service_environment || {}
+        )
+        return
+      end
+
       current_ids = Array(agent_run.service_container_ids)
       preserved_ids = current_ids - Array(@service_container_ids)
       retained_original_ids = Array(@original_service_container_ids) & current_ids
@@ -400,6 +450,8 @@ module Previews
         error: e.message
       )
     ensure
+      @baseline_service_container_ids = nil
+      @baseline_service_environment = nil
       @original_service_container_ids = nil
       @original_service_environment = nil
       @service_container_ids = nil

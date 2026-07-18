@@ -256,8 +256,8 @@ RSpec.describe Screenshots::ContainerCapture do
       expect(service.send(:record_video?)).to be false
     end
 
-    it "uses the project screenshot setting" do
-      allow(project).to receive(:effective_screenshot_settings).and_return("record_video" => true)
+    it "uses the legacy project screenshot setting" do
+      project.update!(screenshot_settings: project.screenshot_settings.merge("record_video" => true))
 
       expect(service.send(:record_video?)).to be true
     end

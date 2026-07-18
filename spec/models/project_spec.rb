@@ -1598,6 +1598,7 @@ RSpec.describe Project do
           "driver" => "playwright",
           "config_path" => ".paid/screenshots.yml",
           "auto_capture" => true,
+          "record_video" => false,
           "service_dependencies" => [],
           "setup_commands" => [],
           "detection" => {}
@@ -1612,6 +1613,7 @@ RSpec.describe Project do
           "driver" => "playwright",
           "config_path" => ".paid/screenshots.yml",
           "auto_capture" => true,
+          "record_video" => false,
           "service_dependencies" => [],
           "setup_commands" => [],
           "detection" => {}
@@ -1646,6 +1648,7 @@ RSpec.describe Project do
           "driver" => "playwright",
           "config_path" => ".paid/screenshots.yml",
           "auto_capture" => true,
+          "record_video" => false,
           "service_dependencies" => [],
           "setup_commands" => [],
           "detection" => {}
@@ -1687,11 +1690,19 @@ RSpec.describe Project do
         project = build(:project, screenshot_settings: {
           "enabled" => true,
           "driver" => "cuprite",
+          "record_video" => true,
           "framework" => "nextjs",
           "viewport" => { "width" => 1440 }
         })
 
         expect(project).to be_valid
+      end
+
+      it "rejects invalid record_video in screenshot_settings" do
+        project = build(:project, screenshot_settings: { "record_video" => "yes" })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:screenshot_settings].join).to include("record_video must be true or false")
       end
 
       it "rejects non-hash screenshot_settings" do
@@ -1787,6 +1798,7 @@ RSpec.describe Project do
           "driver" => "cuprite",
           "config_path" => ".paid/screenshots.yml",
           "auto_capture" => true,
+          "record_video" => false,
           "service_dependencies" => [],
           "setup_commands" => [],
           "detection" => {},

@@ -32,6 +32,7 @@ class Project < ApplicationRecord
     "driver" => "playwright",
     "config_path" => ".paid/screenshots.yml",
     "auto_capture" => true,
+    "record_video" => false,
     "service_dependencies" => [],
     "setup_commands" => [],
     "detection" => {}
@@ -1241,6 +1242,7 @@ class Project < ApplicationRecord
     settings = settings.deep_stringify_keys
     settings["enabled"] = ActiveModel::Type::Boolean.new.cast(settings["enabled"])
     settings["auto_capture"] = ActiveModel::Type::Boolean.new.cast(settings["auto_capture"])
+    settings["record_video"] = ActiveModel::Type::Boolean.new.cast(settings["record_video"])
     settings["driver"] = normalized_screenshot_driver(settings["driver"])
     settings["config_path"] = settings["config_path"].presence || DEFAULT_SCREENSHOT_SETTINGS["config_path"]
     settings["service_dependencies"] = normalize_string_array(settings["service_dependencies"])
