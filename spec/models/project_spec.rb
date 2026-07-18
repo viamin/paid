@@ -14,6 +14,7 @@ RSpec.describe Project do
     it { is_expected.to have_many(:members).through(:project_memberships).source(:user) }
     it { is_expected.to have_many(:issues).dependent(:destroy) }
     it { is_expected.to have_many(:agent_runs).dependent(:destroy) }
+    it { is_expected.to have_many(:style_guide_ab_tests).through(:account) }
     it { is_expected.to have_many(:orchestration_decisions).dependent(:destroy) }
     it { is_expected.to have_many(:scaling_observations).dependent(:destroy) }
     it { is_expected.to have_many(:scaling_experiments).dependent(:destroy) }
@@ -255,6 +256,39 @@ RSpec.describe Project do
         expect(project).to be_valid
         expect(project.llm_provider_routing_restricted?).to be(false)
       end
+    end
+  end
+
+  describe "#detected_language" do
+    it "normalizes the primary language" do
+      project = build(:project)
+      project.define_singleton_method(:primary_language) { " Ruby " }
+
+      expect(project.detected_language).to eq("ruby")
+    end
+
+    it "returns nil when the primary language is blank" do
+      project = build(:project)
+      project.define_singleton_method(:primary_language) { " " }
+
+      expect(project.detected_language).to be_nil
+    end
+  end
+
+  describe "#project_type_label" do
+    it "returns a friendly label when the language profile knows it" do
+      project = build(:project)
+      project.define_singleton_method(:primary_language) { "Ruby" }
+
+      expect(project.project_type_label).to eq("Ruby on Rails")
+    end
+
+    it "falls back to the primary language when no profile label exists" do
+      allow(Projects::LanguageProfile).to receive(:label_for).with("Elixir").and_return(nil)
+      project = build(:project)
+      project.define_singleton_method(:primary_language) { "Elixir" }
+
+      expect(project.project_type_label).to eq("Elixir")
     end
   end
 
@@ -1347,8 +1381,11 @@ RSpec.describe Project do
 
         allow(project).to receive(:github_credential).and_return("ghs_app_token")
         allow(GithubClient).to receive(:new).with(
-          token: "ghs_app_token",
-          health_endpoint: project.github_health_endpoint
+          hash_including(
+            token: "ghs_app_token",
+            health_endpoint: project.github_health_endpoint,
+            token_refresher: be_a(Proc)
+          )
         ).and_return(github_client)
 
         expect(project.client).to be(github_client)

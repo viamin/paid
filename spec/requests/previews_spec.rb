@@ -11,10 +11,13 @@ RSpec.describe "Previews" do
   end
 
   describe "GET /previews/:id" do
-    context "when the user is an account member" do
-      let(:user) { create(:user, :member, account: account) }
+    context "when the user is a project member" do
+      let(:user) { create(:user, :viewer, account: account) }
 
-      before { sign_in user }
+      before do
+        create(:project_membership, project: project, user: user, role: :member)
+        sign_in user
+      end
 
       it "renders the iframe wrapper page" do
         get preview_session_path(preview_session)
@@ -36,6 +39,32 @@ RSpec.describe "Previews" do
         get preview_session_path(preview_session)
 
         expect(response.body).to include("Stop preview")
+      end
+    end
+
+    context "when the user is an account admin without project membership" do
+      let(:user) { create(:user, :admin, account: account) }
+
+      before { sign_in user }
+
+      it "renders the iframe wrapper page" do
+        get preview_session_path(preview_session)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("/previews/iframe-token/")
+      end
+    end
+
+    context "when the user is an account member without project membership" do
+      let(:user) { create(:user, :member, account: account) }
+
+      before { sign_in user }
+
+      it "does not reveal the session and redirects" do
+        get preview_session_path(preview_session)
+
+        expect(response).not_to have_http_status(:ok)
+        expect(response.body).not_to include("iframe-token")
       end
     end
 
