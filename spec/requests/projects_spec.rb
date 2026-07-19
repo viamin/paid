@@ -548,14 +548,19 @@ RSpec.describe "Projects" do
 
         get project_path(project)
 
-        expect(response.body).to include("Live Preview")
-        expect(response.body).to include("feature/preview")
-        expect(response.body).to include("phoenix")
-        expect(response.body).to include("8242")
-        expect(response.body).to include("Preview session is ready.")
-        expect(response.body).to include(%(src="#{preview_path(session.token)}"))
-        expect(response.body).to include(stop_preview_project_path(project))
-        expect(response.body).to include(restart_preview_project_path(project))
+        expect(response.body).to include(
+          "Live Preview",
+          "feature/preview",
+          "phoenix",
+          "8242",
+          "Preview session is ready.",
+          %(src="#{preview_path(session.token)}"),
+          %(sandbox="allow-forms allow-modals allow-popups allow-presentation allow-scripts"),
+          %(referrerpolicy="no-referrer"),
+          stop_preview_project_path(project),
+          restart_preview_project_path(project)
+        )
+        expect(response.body).not_to include("allow-same-origin")
       end
 
       it "shows the latest terminal preview session instead of an expired active session" do
@@ -1298,6 +1303,23 @@ RSpec.describe "Projects" do
       expect(response.body).to include("/health")
     end
 
+    it "strips sensitive upstream headers while preserving safe caching headers" do
+      project = create(:project, account: account, github_token: github_token)
+      session = create(:preview_session, project: project, branch_name: "feature/proxy", status: "ready",
+        tunnel_port: 8242, container_id: "container-123", expires_at: 20.minutes.from_now)
+      stub_preview_proxy_response
+
+      get preview_path(session.token, path: "health")
+
+      expect(response).to have_http_status(:ok)
+      expect(response.headers["Cache-Control"]).to eq("no-store")
+      expect(response.headers["Etag"]).to eq(%("preview-etag"))
+      expect(response.headers["Set-Cookie"]).not_to include("_paid_session=attacker")
+      expect(response.headers["Connection"]).to be_nil
+      expect(response.headers["X-Frame-Options"]).to eq("SAMEORIGIN")
+      expect(response.body).to eq("<html>ok</html>")
+    end
+
     it "returns not found for expired preview sessions" do
       project = create(:project, account: account, github_token: github_token)
       session = create(:preview_session, :expired, project: project, branch_name: "feature/preview", tunnel_port: 8242)
@@ -1306,6 +1328,21 @@ RSpec.describe "Projects" do
 
       expect(response).to have_http_status(:not_found)
     end
+  end
+
+  def stub_preview_proxy_response
+    upstream_response = instance_double(Net::HTTPResponse, code: "200", content_type: "text/html", body: "<html>ok</html>")
+    http = instance_double(Net::HTTP)
+
+    allow(Net::HTTP).to receive(:new).with("127.0.0.1", 8242).and_return(http)
+    allow(http).to receive(:open_timeout=).with(2)
+    allow(http).to receive(:read_timeout=).with(5)
+    allow(http).to receive(:get).and_return(upstream_response)
+    allow(upstream_response).to receive(:each_header).and_yield("cache-control", "no-store")
+      .and_yield("etag", %("preview-etag"))
+      .and_yield("set-cookie", "_paid_session=attacker")
+      .and_yield("connection", "keep-alive")
+      .and_yield("x-frame-options", "DENY")
   end
 
   describe "GET /projects/:id/edit" do

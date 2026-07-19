@@ -3,6 +3,15 @@
 class PreviewsController < ApplicationController
   require "net/http"
 
+  COPYABLE_PROXY_RESPONSE_HEADERS = %w[
+    cache-control
+    content-language
+    etag
+    expires
+    last-modified
+    vary
+  ].freeze
+
   # Missing/expired preview tokens return 404 before a project record exists to
   # authorize. Successful lookups still call `authorize @preview_session.project`.
   skip_after_action :verify_authorized, only: :show
@@ -86,7 +95,7 @@ class PreviewsController < ApplicationController
             <div class="card">
               <p>Simulated preview</p>
               <h1>#{project_name}</h1>
-              <p>This same-origin iframe is live at <code>/previews/#{@preview_session.token}/</code> while the real container and reverse-proxy integration lands.</p>
+              <p>This sandboxed iframe is live at <code>/previews/#{@preview_session.token}/</code> while the real container and reverse-proxy integration lands.</p>
               <div class="meta">
                 <div><strong>Branch</strong><br><code>#{branch_name}</code></div>
                 <div><strong>Framework</strong><br>#{framework}</div>
@@ -126,7 +135,7 @@ class PreviewsController < ApplicationController
 
   def copy_proxy_headers(upstream_response)
     upstream_response.each_header do |key, value|
-      next if %w[content-length content-security-policy x-frame-options].include?(key)
+      next unless COPYABLE_PROXY_RESPONSE_HEADERS.include?(key)
 
       response.headers[key] = value
     end

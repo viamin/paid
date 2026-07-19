@@ -91,6 +91,8 @@
             title="Preview for <%= preview_session.branch_name %>"
             class="mt-3 h-[32rem] w-full rounded-md border border-gray-200 bg-white"
             loading="lazy"
+            sandbox="allow-forms allow-modals allow-popups allow-presentation allow-scripts"
+            referrerpolicy="no-referrer"
           ></iframe>
         <% elsif preview_session.failed? %>
           <p class="text-sm font-medium text-red-700">Preview provisioning failed.</p>
