@@ -315,13 +315,6 @@ module Previews
 
       def list_preview_containers(backend:)
         backend.list_containers(filters: { label: [ "#{PREVIEW_TUNNEL_LABEL}=true" ] }.to_json)
-      rescue StandardError => e
-        Rails.logger.error(
-          message: "preview_tunnel.list_containers_failed",
-          backend: backend.identifier,
-          error: e.message
-        )
-        []
       end
 
       def build_active_tunnel(container)

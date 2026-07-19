@@ -81,6 +81,24 @@ RSpec.describe Previews::TunnelManager do
 
       expect(described_class.allocate_port(key: "fresh-preview")).to eq(8200)
     end
+
+    it "does not allocate or prune when the backend cannot be queried" do
+      stale = PreviewTunnelPortReservation.create!(reservation_key: "stale-preview", tunnel_port: 8200)
+      stale.update_columns(created_at: 20.minutes.ago, updated_at: 20.minutes.ago)
+
+      backend = instance_double(Containers::Backends::Base, identifier: "local")
+      allow(Containers).to receive(:backend).and_return(backend)
+      allow(backend).to receive(:list_containers)
+        .with(filters: { label: [ "#{described_class::PREVIEW_TUNNEL_LABEL}=true" ] }.to_json)
+        .and_raise(Docker::Error::TimeoutError, "docker unavailable")
+
+      expect {
+        described_class.allocate_port(key: "fresh-preview")
+      }.to raise_error(Docker::Error::TimeoutError, "docker unavailable")
+
+      expect(PreviewTunnelPortReservation.exists?(stale.id)).to be(true)
+      expect(PreviewTunnelPortReservation.exists?(reservation_key: "fresh-preview")).to be(false)
+    end
   end
 
   describe ".prune_stale_reservations!" do
@@ -106,6 +124,26 @@ RSpec.describe Previews::TunnelManager do
       expect(PreviewTunnelPortReservation.exists?(stale.id)).to be(false)
       expect(PreviewTunnelPortReservation.exists?(fresh.id)).to be(true)
       expect(PreviewTunnelPortReservation.exists?(active.id)).to be(true)
+    end
+
+    it "propagates backend lookup failures without deleting stale reservations" do
+      stale = PreviewTunnelPortReservation.create!(reservation_key: "stale-preview", tunnel_port: 8200)
+      stale.update_columns(created_at: 20.minutes.ago, updated_at: 20.minutes.ago)
+
+      backend = instance_double(Containers::Backends::Base, identifier: "local")
+      allow(backend).to receive(:list_containers)
+        .with(filters: { label: [ "#{described_class::PREVIEW_TUNNEL_LABEL}=true" ] }.to_json)
+        .and_raise(Docker::Error::TimeoutError, "docker unavailable")
+
+      expect {
+        described_class.prune_stale_reservations!(
+          range: described_class.port_range,
+          backend:,
+          stale_before: 15.minutes.ago
+        )
+      }.to raise_error(Docker::Error::TimeoutError, "docker unavailable")
+
+      expect(PreviewTunnelPortReservation.exists?(stale.id)).to be(true)
     end
   end
 
