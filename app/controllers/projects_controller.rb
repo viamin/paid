@@ -306,8 +306,9 @@ class ProjectsController < ApplicationController
   def start_preview
     authorize @project, :update?
 
-    result = Previews::Provision.start(project: @project, actor: current_user, branch_name: @project.default_branch)
-    redirect_to_preview(result, success_message: "Preview started for #{@project.default_branch}.", failure_verb: "start preview")
+    result = Previews::Provision.start(project: @project, actor: current_user, branch_name: preview_branch_name_param)
+    branch_name = result.session&.branch_name || preview_branch_name_param || @project.default_branch
+    redirect_to_preview(result, success_message: "Preview started for #{branch_name}.", failure_verb: "start preview")
   end
 
   def stop_preview
@@ -370,6 +371,10 @@ class ProjectsController < ApplicationController
     else
       redirect_to project_path(@project, anchor: "preview"), alert: "Could not #{failure_verb}: #{result.error}"
     end
+  end
+
+  def preview_branch_name_param
+    params[:branch_name].to_s.strip.presence
   end
 
   def apply_nulls_last_ordering(scope)

@@ -14,6 +14,7 @@ Rails.application.routes.draw do
   get "health/services", to: "health#show"
   get "health/liveness", to: "health#liveness"
   get "health/readiness", to: "health#readiness"
+  get "previews/:token(/*path)", to: "previews#show", as: :preview
 
   # Render dynamic PWA files from app/views/pwa/* (remember to link manifest in application.html.erb)
   # get "manifest" => "rails/pwa#manifest", as: :pwa_manifest

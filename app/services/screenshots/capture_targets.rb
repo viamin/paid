@@ -236,6 +236,7 @@ module Screenshots
       "dashboard_controller.rb" => [ :dashboard ],
       "home_controller.rb" => [ :dashboard ],
       "projects_controller.rb" => %i[projects project_new project_show project_edit],
+      "previews_controller.rb" => [ :project_show ],
       "agent_runs_controller.rb" => [ :agent_runs ],
       "prompts_controller.rb" => %i[prompts prompt_new prompt_show prompt_edit prompt_diff],
       "prompt_reviews_controller.rb" => %i[prompt_reviews_queue prompt_reviews prompt_review_show],
