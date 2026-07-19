@@ -178,6 +178,7 @@ module Containers
       @worktree_path = worktree_path
       @pool_entry = pool_entry
       @workspace_volume = workspace_volume
+      @preview_tunnel_option = options.delete(:preview_tunnel)
       @pool_mode = options.delete(:pool_mode) { false }
       @options = DEFAULTS.merge(resolve_user_setting_overrides).merge(options)
       @backend = backend
@@ -214,6 +215,7 @@ module Containers
       seed_gemini_credentials!
       seed_copilot_credentials!
       seed_claude_credentials!
+      seed_preview_tunnel_config!
       apply_network_restrictions!
 
       log_system("container.provision.success", container_id: container.id)
@@ -238,6 +240,19 @@ module Containers
       cleanup
       cleanup_workspace_volume
       raise
+    end
+
+    def activate_preview_tunnel!(app_port:)
+      raise ArgumentError, "app_port is required" if app_port.blank?
+      return unless preview_tunnel?
+
+      @preview_tunnel = Previews::TunnelManager::TunnelDefinition.new(
+        session_token: preview_tunnel.session_token,
+        tunnel_port: preview_tunnel.tunnel_port,
+        app_port: app_port
+      )
+
+      seed_preview_tunnel_config!
     end
 
     # Executes a command inside the container and captures output.
@@ -743,26 +758,32 @@ module Containers
     # @return [void]
     def cleanup(force: false)
       cleanup_heartbeat_dir!
-      return unless container
 
-      log_system("container.cleanup.start", container_id: container.id)
+      log_system("container.cleanup.start", container_id: container&.id)
+      preview_tunnel_released = false
 
-      begin
-        stop_container(force: force)
-        backend.delete_container(container, force: force, v: true)
-        log_system("container.cleanup.success")
-      rescue Docker::Error::DockerError => e
-        log_system("container.cleanup.failed", error: e.message)
+      if container
         begin
-          backend.delete_container(container, force: true, v: true)
-        rescue Docker::Error::DockerError
-          # Container may already be gone
+          stop_container(force: force)
+          backend.delete_container(container, force: force, v: true)
+          preview_tunnel_released = release_preview_tunnel_reservation!
+          log_system("container.cleanup.success")
+        rescue Docker::Error::DockerError => e
+          log_system("container.cleanup.failed", error: e.message)
+          begin
+            backend.delete_container(container, force: true, v: true)
+            preview_tunnel_released = release_preview_tunnel_reservation!
+          rescue Docker::Error::DockerError
+            # Container may already be gone
+          end
         end
-      ensure
-        @container = nil
-        cleanup_workspace_volume
-        cleanup_claimed_pool_entry
       end
+
+      preview_tunnel_released ||= release_preview_tunnel_reservation!
+      log_system("container.preview_tunnel_port_released", tunnel_port: preview_tunnel.tunnel_port) if preview_tunnel_released
+      @container = nil
+      cleanup_workspace_volume
+      cleanup_claimed_pool_entry
     end
 
     # Checks if the container is currently running.
@@ -1849,6 +1870,89 @@ module Containers
       worktree_path
     end
 
+    def preview_tunnel
+      return nil unless @preview_tunnel_option.present?
+      return @preview_tunnel if defined?(@preview_tunnel)
+
+      @preview_tunnel = if @preview_tunnel_option.is_a?(Previews::TunnelManager::TunnelDefinition)
+        @preview_tunnel_option
+      else
+        Previews::TunnelManager::TunnelDefinition.new(
+          session_token: @preview_tunnel_option.fetch(:session_token),
+          tunnel_port: @preview_tunnel_option.fetch(:tunnel_port),
+          app_port: @preview_tunnel_option[:app_port]
+        )
+      end
+    end
+
+    def preview_tunnel?
+      preview_tunnel.present?
+    end
+
+    def preview_tunnel_environment
+      tunnel = preview_tunnel
+
+      [
+        "PAID_PREVIEW_TUNNEL_CONFIG_PATH=#{preview_tunnel_config_path}",
+        "PAID_PREVIEW_TUNNEL_SERVICE_NAME=#{tunnel.service_name}",
+        "PAID_PREVIEW_TUNNEL_PORT=#{tunnel.tunnel_port}"
+      ]
+    end
+
+    def preview_tunnel_config_path
+      "/home/agent/.paid-preview/rathole-client.toml"
+    end
+
+    def seed_preview_tunnel_config!
+      return unless preview_tunnel?
+      return unless preview_tunnel.app_port.present?
+
+      backend.exec_in_container(container, [ "mkdir", "-p", File.dirname(preview_tunnel_config_path) ], user: "agent")
+      write_container_file(preview_tunnel_config_path, preview_tunnel_client_config)
+      start_preview_tunnel_client!
+      log_system(
+        "container.preview_tunnel_config_seeded",
+        service_name: preview_tunnel.service_name,
+        tunnel_port: preview_tunnel.tunnel_port
+      )
+    rescue Docker::Error::DockerError => e
+      log_system("container.preview_tunnel_config_seed_failed", error: e.message)
+      raise
+    end
+
+    def preview_tunnel_client_config
+      Previews::TunnelManager.client_config(
+        tunnel: preview_tunnel,
+        backend: backend,
+        restricted: network_contract.restricted?
+      )
+    end
+
+    def start_preview_tunnel_client!
+      backend.exec_in_container(
+        container,
+        [ "sh", "-lc", preview_tunnel_client_start_command ],
+        user: "agent"
+      )
+    end
+
+    def preview_tunnel_client_start_command
+      log_path = "/tmp/paid-preview-tunnel-client.log"
+      config_path = Shellwords.escape(preview_tunnel_config_path)
+
+      "rathole --client #{config_path} > #{Shellwords.escape(log_path)} 2>&1 &"
+    end
+
+    def release_preview_tunnel_reservation!
+      return false unless preview_tunnel?
+
+      Previews::TunnelManager.release_port(key: preview_tunnel.session_token)
+      true
+    rescue StandardError => e
+      log_system("container.preview_tunnel_port_release_failed", error: e.message)
+      false
+    end
+
     def write_container_file(path, content)
       encoded = Base64.strict_encode64(content)
       cmd = "echo #{Shellwords.escape(encoded)} | base64 -d > #{Shellwords.escape(path)}"
@@ -1963,6 +2067,12 @@ module Containers
       end
 
       labels["paid.heartbeat_dir"] = heartbeat_dir_host if heartbeat_dir_host
+      if preview_tunnel?
+        labels[Previews::TunnelManager::PREVIEW_TUNNEL_LABEL] = "true"
+        labels[Previews::TunnelManager::PREVIEW_SESSION_TOKEN_LABEL] = preview_tunnel.session_token
+        labels[Previews::TunnelManager::PREVIEW_SERVICE_NAME_LABEL] = preview_tunnel.service_name
+        labels[Previews::TunnelManager::PREVIEW_TUNNEL_PORT_LABEL] = preview_tunnel.tunnel_port.to_s
+      end
       labels
     end
 
@@ -2255,6 +2365,7 @@ module Containers
       ]
 
       env.concat(run_scoped_environment(proxy_base)) if agent_run.present?
+      env.concat(preview_tunnel_environment) if preview_tunnel?
 
       env << "PAID_COPILOT_SUBSCRIPTION_AUTH=#{copilot_subscription_auth? ? 1 : 0}"
 
@@ -2951,7 +3062,7 @@ module Containers
 
       NetworkPolicy.apply_firewall_rules(
         container,
-        service_destinations: resolve_service_destinations,
+        service_destinations: firewall_service_destinations,
         backend: backend
       )
       log_system("container.firewall.applied", container_id: container.id)
@@ -2960,6 +3071,17 @@ module Containers
       # Firewall failure is not fatal in development but logged as warning.
       # In production, this should be treated as a hard failure.
       raise ProvisionError, "Firewall setup failed: #{e.message}" if Rails.env.production?
+    end
+
+    def firewall_service_destinations
+      destinations = resolve_service_destinations
+      return destinations unless preview_tunnel?
+
+      remote_destination = Previews::TunnelManager.client_remote_destination(
+        backend:,
+        restricted: network_contract.restricted?
+      )
+      destinations + [ { ip: remote_destination.fetch(:host), port: remote_destination.fetch(:port) } ]
     end
 
     def fetch_exit_code

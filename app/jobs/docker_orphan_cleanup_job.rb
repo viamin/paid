@@ -40,6 +40,7 @@ class DockerOrphanCleanupJob < ApplicationJob
       pool_removed += cleanup_pool_containers(backend: backend)
       collector_removed += cleanup_collector_containers(backend: backend)
       service_removed += cleanup_service_containers(backend: backend)
+      cleanup_preview_tunnel_reservations(backend: backend)
       backend_volume_result = cleanup_volumes(backend: backend)
       volume_result = volume_result.merge(backend_volume_result) { |_key, old_val, new_val| old_val + new_val }
     end
@@ -235,6 +236,20 @@ class DockerOrphanCleanupJob < ApplicationJob
       end
     end
     { found: volumes.size, removed: removed, failed: failed, active: active, retained: retained }
+  end
+
+  def cleanup_preview_tunnel_reservations(backend:)
+    Previews::TunnelManager.prune_stale_reservations!(
+      range: Previews::TunnelManager.port_range,
+      backend: backend
+    )
+  rescue Previews::TunnelManager::Error, ActiveRecord::ActiveRecordError => e
+    Rails.logger.warn(
+      message: "preview_tunnel.reservation_cleanup_failed",
+      backend: backend.identifier,
+      error_class: e.class.name,
+      error: e.message
+    )
   end
 
   def list_containers_by_label(label, backend:)

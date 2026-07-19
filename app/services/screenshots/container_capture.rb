@@ -60,6 +60,7 @@ module Screenshots
       @hints = {}
       @trace_path = nil
       @video_path = nil
+      @preview_tunnel = nil
     end
 
     def call
@@ -156,13 +157,16 @@ module Screenshots
     end
 
     def provision_capture_container(repo_path)
+      @preview_tunnel = build_preview_tunnel_definition
+
       @screenshot_container = Containers::Provision.new(
         project: project,
         worktree_path: repo_path,
         memory_bytes: MEMORY_BYTES,
         cpu_quota: CPU_QUOTA,
         pids_limit: PIDS_LIMIT,
-        timeout_seconds: CAPTURE_TIMEOUT_SECONDS
+        timeout_seconds: CAPTURE_TIMEOUT_SECONDS,
+        preview_tunnel: @preview_tunnel
       )
       @screenshot_container.provision
       @network = @screenshot_container.network_name
@@ -349,6 +353,7 @@ module Screenshots
       prepare_phoenix_endpoint_binding!
       command = application_start_command
       raise Screenshots::ConfigError, "could not determine how to start the application for screenshots" if command.blank?
+      @screenshot_container.activate_preview_tunnel!(app_port: app_port)
 
       launch_command = <<~SH
         set -e
@@ -367,6 +372,8 @@ module Screenshots
         env: capture_env,
         stream: false
       )
+
+      wait_for_preview_tunnel!
     rescue Containers::Provision::ExecutionError => e
       app_log = read_file(APP_LOG_PATH)
       raise "application startup failed: #{e.message}\n#{app_log}".strip
@@ -662,6 +669,33 @@ module Screenshots
     def app_port
       uri = URI.parse(config&.base_url || Screenshots::Configuration::DEFAULT_BASE_URL)
       uri.port || 3000
+    end
+
+    def build_preview_tunnel_definition
+      session_token = preview_tunnel_session_token
+      Previews::TunnelManager::TunnelDefinition.new(
+        session_token: session_token,
+        tunnel_port: Previews::TunnelManager.allocate_port(key: session_token),
+        app_port: nil
+      )
+    end
+
+    def preview_tunnel_session_token
+      "screenshots-agent-run-#{agent_run.id}"
+    end
+
+    def wait_for_preview_tunnel!
+      return if @preview_tunnel.blank?
+
+      Previews::TunnelManager.wait_until_ready!(
+        port: @preview_tunnel.tunnel_port,
+        path: preview_tunnel_health_check_path
+      )
+    end
+
+    def preview_tunnel_health_check_path
+      uri = URI.parse(config.base_url)
+      uri.request_uri.presence || "/"
     end
 
     def package_dependency?(name)

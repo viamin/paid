@@ -1,0 +1,49 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "fileutils"
+require_relative "../config/environment"
+
+config_dir = File.join(ENV.fetch("TMPDIR", "/tmp"), "paid-preview-tunnel")
+config_path = File.join(config_dir, "server.toml")
+poll_interval = Previews::TunnelManager::DEFAULT_SERVER_CONFIG_POLL_INTERVAL_SECONDS
+
+FileUtils.mkdir_p(config_dir)
+
+shutdown = false
+rathole_pid = nil
+
+stop_rathole = lambda do
+  return unless rathole_pid
+
+  Process.kill("TERM", rathole_pid)
+  Process.wait(rathole_pid)
+rescue Errno::ESRCH, Errno::ECHILD
+  nil
+ensure
+  rathole_pid = nil
+end
+
+%w[INT TERM].each do |signal|
+  Signal.trap(signal) { shutdown = true }
+end
+
+last_config = nil
+
+until shutdown
+  config = Previews::TunnelManager.active_server_config_toml
+
+  if config != last_config || rathole_pid.nil?
+    File.write(config_path, config)
+    stop_rathole.call
+    rathole_pid = Process.spawn("rathole", "--server", config_path)
+    last_config = config
+  else
+    exited_pid, = Process.waitpid2(rathole_pid, Process::WNOHANG)
+    rathole_pid = nil if exited_pid
+  end
+
+  sleep poll_interval unless shutdown
+end
+
+stop_rathole.call

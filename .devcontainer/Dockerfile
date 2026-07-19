@@ -83,6 +83,22 @@ RUN set -eu; \
   tar -xzf "$tmpdir/$tarball" -C /usr/local/bin scc; \
   chmod +x /usr/local/bin/scc
 
+# Install rathole for local preview tunnel development.
+ARG RATHOLE_VERSION=0.5.0
+RUN set -eu; \
+  arch="$(dpkg --print-architecture)"; \
+  case "$arch" in \
+    amd64) asset="rathole-x86_64-unknown-linux-gnu.zip"; checksum="3e7d0d0f365120cd3cd351d147d1a12ee960c8068b464d4dd533a3821873b80e" ;; \
+    arm64) asset="rathole-aarch64-unknown-linux-musl.zip"; checksum="fa4a6fc63d86f8f1faa7c103a845e4715ce79a048455c0eec897b27237576564" ;; \
+    *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
+  esac; \
+  tmpdir="$(mktemp -d)"; \
+  trap 'rm -rf "$tmpdir"' EXIT; \
+  curl -fsSL -o "$tmpdir/$asset" "https://github.com/rathole-org/rathole/releases/download/v${RATHOLE_VERSION}/${asset}"; \
+  echo "$checksum  $tmpdir/$asset" | sha256sum -c -; \
+  unzip -j -o "$tmpdir/$asset" rathole -d "$tmpdir"; \
+  install -m 0755 "$tmpdir/rathole" /usr/local/bin/rathole
+
 # Install overmind process manager (requires tmux, installed above)
 RUN gem install overmind
 

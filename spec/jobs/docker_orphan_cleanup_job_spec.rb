@@ -8,6 +8,7 @@ RSpec.describe DockerOrphanCleanupJob do
   let(:pool_filter) { { label: [ "paid.container_pool=true" ] }.to_json }
   let(:collector_filter) { { label: [ "paid.resource=collector_container" ] }.to_json }
   let(:service_filter) { { label: [ "paid.service_container=true" ] }.to_json }
+  let(:preview_filter) { { label: [ "paid.preview_tunnel=true" ] }.to_json }
   let(:backend) { Containers.backend }
 
   def build_backend(identifier:, remote:)
@@ -56,6 +57,12 @@ RSpec.describe DockerOrphanCleanupJob do
       .and_return(containers)
   end
 
+  def stub_preview_containers(*containers)
+    allow(backend).to receive(:list_containers)
+      .with(filters: preview_filter)
+      .and_return(containers)
+  end
+
   # `state_shape: :hash` mirrors the swarm backend (nested { "Running" => bool });
   # `:string` mirrors Docker's list API used by the local/remote backends
   # ("running"/"exited"). Both occur in production and must be handled.
@@ -73,15 +80,20 @@ RSpec.describe DockerOrphanCleanupJob do
       delete: true)
   end
 
-  def stub_backend_resources(target_backend, agent: [], pool: [], collector: [], service: [], volumes: [])
+  def stub_backend_resources(target_backend, agent: [], pool: [], collector: [], service: [], preview: [], volumes: [])
     allow(target_backend).to receive(:list_containers).with(all: true, filters: agent_filter).and_return(agent)
     allow(target_backend).to receive(:list_containers).with(all: true, filters: pool_filter).and_return(pool)
     allow(target_backend).to receive(:list_containers).with(all: true, filters: collector_filter).and_return(collector)
     allow(target_backend).to receive(:list_containers).with(all: true, filters: service_filter).and_return(service)
+    allow(target_backend).to receive(:list_containers).with(filters: preview_filter).and_return(preview)
     allow(target_backend).to receive(:list_volumes).and_return(volumes)
   end
 
   describe "#perform" do
+    before do
+      allow(backend).to receive(:list_containers).and_return([])
+    end
+
     it "cleans up resources across all registered backends" do
       local_backend = build_backend(identifier: "local", remote: false)
       remote_backend = build_backend(identifier: "worker-1", remote: true)
@@ -109,6 +121,7 @@ RSpec.describe DockerOrphanCleanupJob do
         stub_service_containers
         stub_pool_containers
         stub_collector_containers
+        stub_preview_containers
       end
 
       it "removes containers for finished agent runs" do
@@ -241,6 +254,33 @@ RSpec.describe DockerOrphanCleanupJob do
         stub_no_volumes
 
         expect { job.perform }.not_to raise_error
+      end
+    end
+
+    context "with preview tunnel reservations" do
+      before do
+        stub_no_volumes
+        stub_agent_containers
+        stub_service_containers
+        stub_pool_containers
+        stub_collector_containers
+        stub_preview_containers
+
+        Previews::TunnelManager.configure!(
+          port_range: "8200-8202",
+          server_port: 7000,
+          server_bind_host: "0.0.0.0",
+          shared_token: "paid-preview-test-token"
+        )
+      end
+
+      it "prunes stale reservations through the orphan cleanup path" do
+        reservation = PreviewTunnelPortReservation.create!(reservation_key: "stale-preview", tunnel_port: 8200)
+        reservation.update_columns(created_at: 20.minutes.ago, updated_at: 20.minutes.ago)
+
+        job.perform
+
+        expect(PreviewTunnelPortReservation.exists?(reservation.id)).to be(false)
       end
     end
 
