@@ -36,6 +36,14 @@ RSpec.describe PreviewSessionPolicy do
       expect(described_class.new(user, preview_session)).to be_show
     end
 
+    it "permits project viewers" do
+      create(:user, account: account)
+      user = create(:user, :viewer, account: account)
+      user.add_role(:project_viewer, project)
+
+      expect(described_class.new(user, preview_session)).to be_show
+    end
+
     it "permits project admins" do
       create(:user, account: account)
       user = create(:user, :viewer, account: account)
@@ -68,6 +76,19 @@ RSpec.describe PreviewSessionPolicy do
       scope = described_class::Scope.new(user, PreviewSession.all).resolve
 
       expect(scope).to include(member_project_preview)
+      expect(scope).not_to include(other_project_preview)
+    end
+
+    it "returns only project-scoped preview sessions for project viewers" do
+      create(:user, account: account)
+      user = create(:user, :viewer, account: account)
+      viewer_project_preview = preview_session
+      other_project_preview = create(:preview_session, project: create(:project, account: account))
+      user.add_role(:project_viewer, project)
+
+      scope = described_class::Scope.new(user, PreviewSession.all).resolve
+
+      expect(scope).to include(viewer_project_preview)
       expect(scope).not_to include(other_project_preview)
     end
   end

@@ -17,7 +17,7 @@ class PreviewSessionPolicy < ApplicationPolicy
   private
 
   def has_project_role?
-    user.has_any_role?(:project_admin, :project_member, record.project)
+    user.has_any_role?(:project_admin, :project_member, :project_viewer, record.project)
   end
 
   def account_for_record
