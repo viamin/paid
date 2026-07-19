@@ -63,6 +63,11 @@ servers:
     hosts:
       - 192.168.0.1
     cmd: bin/preview-tunnel-server
+    env:
+      clear:
+        # Keep this aligned with the published port range below so browsers can
+        # reach every preview listener that the tunnel server allocates.
+        PREVIEW_PORT_RANGE: 8200-8299
     options:
       # The tunnel server derives live service mappings from Docker-backed
       # preview containers when generating server.toml.
@@ -70,6 +75,7 @@ servers:
         - /var/run/docker.sock:/var/run/docker.sock
       publish:
         - "7000:7000"
+        - "8200-8299:8200-8299"
   worker_poll:
     hosts:
       - 192.168.0.1
