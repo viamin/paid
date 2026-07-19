@@ -176,6 +176,21 @@ RUN SCC_VERSION=3.7.0 \
     && chmod +x /usr/local/bin/scc \
     && rm "${TARBALL}"
 
+# Install rathole (preview tunnel client/server)
+# https://github.com/rathole-org/rathole/releases
+RUN RATHOLE_VERSION=0.5.0 \
+    && DEB_ARCH="$(dpkg --print-architecture)" \
+    && case "$DEB_ARCH" in \
+        amd64) RATHOLE_ASSET="rathole-x86_64-unknown-linux-gnu.zip"; EXPECTED_CHECKSUM="3e7d0d0f365120cd3cd351d147d1a12ee960c8068b464d4dd533a3821873b80e" ;; \
+        arm64) RATHOLE_ASSET="rathole-aarch64-unknown-linux-musl.zip"; EXPECTED_CHECKSUM="fa4a6fc63d86f8f1faa7c103a845e4715ce79a048455c0eec897b27237576564" ;; \
+        *) echo "Unsupported architecture: $DEB_ARCH" >&2; exit 1 ;; \
+    esac \
+    && curl -fsSL -o "${RATHOLE_ASSET}" "https://github.com/rathole-org/rathole/releases/download/v${RATHOLE_VERSION}/${RATHOLE_ASSET}" \
+    && echo "${EXPECTED_CHECKSUM}  ${RATHOLE_ASSET}" | sha256sum -c - \
+    && unzip -j -o "${RATHOLE_ASSET}" rathole -d /usr/local/bin \
+    && chmod +x /usr/local/bin/rathole \
+    && rm "${RATHOLE_ASSET}"
+
 # Create non-root user for security before provider-specific setup. Keeping
 # this separate from any one provider narrows the blast radius of future edits.
 RUN useradd -m -s /bin/bash agent \

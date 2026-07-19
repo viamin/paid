@@ -44,6 +44,10 @@ RSpec.describe Screenshots::ContainerCapture do
     allow(service).to receive(:publish_result!)
     allow(service).to receive(:cleanup!)
     allow(project).to receive(:update!).and_call_original
+    allow(Previews::TunnelManager).to receive_messages(
+      allocate_port: 8201,
+      wait_until_ready!: true
+    )
   end
 
   it "merges project and repo service dependencies for provisioning" do
@@ -222,6 +226,66 @@ RSpec.describe Screenshots::ContainerCapture do
     expect { service.send(:validate_supported_config!) }.not_to raise_error
   ensure
     FileUtils.rm_rf(tmpdir)
+  end
+
+  describe "#provision_capture_container" do
+    it "reserves a preview tunnel port and passes it into container provisioning" do
+      fresh_service = described_class.new(agent_run: agent_run)
+      provision = instance_double(Containers::Provision, provision: true, network_name: "paid-test")
+      allow(Containers::Provision).to receive(:new).and_return(provision)
+
+      fresh_service.send(:provision_capture_container, "/tmp/repo")
+
+      expect(Previews::TunnelManager).to have_received(:allocate_port).with(key: "screenshots-agent-run-#{agent_run.id}")
+      expect(Containers::Provision).to have_received(:new).with(
+        project: project,
+        worktree_path: "/tmp/repo",
+        memory_bytes: described_class::MEMORY_BYTES,
+        cpu_quota: described_class::CPU_QUOTA,
+        pids_limit: described_class::PIDS_LIMIT,
+        timeout_seconds: described_class::CAPTURE_TIMEOUT_SECONDS,
+        preview_tunnel: have_attributes(
+          session_token: "screenshots-agent-run-#{agent_run.id}",
+          tunnel_port: 8201,
+          app_port: nil
+        )
+      )
+    end
+  end
+
+  describe "#start_application!" do
+    def build_started_capture_service(target_service:, tmpdir:, config:, tunnel_port:)
+      target_service.instance_variable_set(:@tmpdir, tmpdir)
+      target_service.instance_variable_set(:@config, config)
+      target_service.instance_variable_set(:@preview_tunnel,
+        Previews::TunnelManager::TunnelDefinition.new(
+          session_token: "screenshots-agent-run-#{agent_run.id}",
+          tunnel_port: tunnel_port,
+          app_port: nil
+        ))
+      provision = instance_double(Containers::Provision)
+      target_service.instance_variable_set(:@screenshot_container, provision)
+      allow(provision).to receive(:activate_preview_tunnel!)
+      allow(provision).to receive(:execute).and_return(double(success?: true, :[] => nil))
+      allow(target_service).to receive_messages(
+        readiness_probe_command: "echo ready",
+        application_start_command: "bin/dev"
+      )
+      provision
+    end
+
+    it "activates the preview tunnel after config parsing and waits for it to come up" do
+      fresh_service = described_class.new(agent_run: agent_run)
+      tmpdir = Dir.mktmpdir("screenshot-start")
+      provision = build_started_capture_service(target_service: fresh_service, tmpdir:, config:, tunnel_port: 8201)
+
+      fresh_service.send(:start_application!)
+
+      expect(provision).to have_received(:activate_preview_tunnel!).with(app_port: 3000)
+      expect(Previews::TunnelManager).to have_received(:wait_until_ready!).with(port: 8201, path: "/")
+    ensure
+      FileUtils.rm_rf(tmpdir)
+    end
   end
 
   describe "#screenshot_config_json (capture scoping and annotation)" do

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_15_150454) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_18_062802) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1724,6 +1724,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_15_150454) do
     t.index ["user_id", "position"], name: "idx_pre_commit_requirements_user_position", where: "(user_id IS NOT NULL)"
     t.index ["user_id"], name: "index_pre_commit_requirements_on_user_id"
     t.check_constraint "NOT (project_id IS NOT NULL AND user_id IS NOT NULL)", name: "chk_pre_commit_requirements_exclusive_scope"
+  end
+
+  create_table "preview_tunnel_port_reservations", comment: "Shared preview tunnel port reservations across Rails processes", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "reservation_key", null: false, comment: "Stable preview session key that owns the reserved port"
+    t.integer "tunnel_port", null: false, comment: "Host-side TCP port reserved for the preview tunnel"
+    t.datetime "updated_at", null: false
+    t.index ["reservation_key"], name: "index_preview_tunnel_port_reservations_on_reservation_key", unique: true
+    t.index ["tunnel_port"], name: "index_preview_tunnel_port_reservations_on_tunnel_port", unique: true
   end
 
   create_table "project_baselines", comment: "Stores per-project historical baselines for run metrics so anomalies can be detected against recent norms.", force: :cascade do |t|

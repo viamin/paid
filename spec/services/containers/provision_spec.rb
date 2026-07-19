@@ -25,6 +25,32 @@ RSpec.describe Containers::Provision do
     preparation_class.new([ preparation_write ])
   end
 
+  def build_preview_tunnel_service(agent_run:, worktree_path:, app_port: 4000)
+    described_class.new(
+      agent_run: agent_run,
+      worktree_path: worktree_path,
+      preview_tunnel: {
+        session_token: "preview-token",
+        tunnel_port: 8201,
+        app_port: app_port
+      }
+    )
+  end
+
+  def expect_preview_tunnel_container_config(config)
+    expect(config["Env"]).to include(
+      "PAID_PREVIEW_TUNNEL_CONFIG_PATH=/home/agent/.paid-preview/rathole-client.toml",
+      "PAID_PREVIEW_TUNNEL_SERVICE_NAME=preview-preview-token",
+      "PAID_PREVIEW_TUNNEL_PORT=8201"
+    )
+    expect(config["Labels"]).to include(
+      "paid.preview_tunnel" => "true",
+      "paid.preview_session_token" => "preview-token",
+      "paid.preview_service_name" => "preview-preview-token",
+      "paid.preview_tunnel_port" => "8201"
+    )
+  end
+
   def stub_exec_with_dead_container_cleanup(mock_container)
     allow(mock_container).to receive(:exec) do |cmd, **_opts, &block|
       script = cmd.is_a?(Array) ? cmd.last.to_s : cmd.to_s
@@ -751,6 +777,58 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
+      it "writes preview tunnel client config when preview metadata is provided" do
+        preview_service = build_preview_tunnel_service(agent_run:, worktree_path:)
+        allow(Containers::ProxyUrl).to receive(:resolve).with(backend: preview_service.backend, restricted: true).and_return("http://paid-proxy:3000")
+        expect(Docker::Container).to receive(:create) do |config|
+          expect_preview_tunnel_container_config(config)
+          mock_container
+        end
+        allow(mock_container).to receive(:exec).and_return([ [], [], 0 ])
+        allow(preview_service).to receive(:write_container_file).and_call_original
+        preview_service.provision
+        expect(preview_service).to have_received(:write_container_file).with(
+          "/home/agent/.paid-preview/rathole-client.toml",
+          include('[client.services.preview-preview-token]', 'local_addr = "127.0.0.1:4000"')
+        )
+        expect(mock_container).to have_received(:exec).with(
+          [ "sh", "-lc", "rathole --client /home/agent/.paid-preview/rathole-client.toml > /tmp/paid-preview-tunnel-client.log 2>&1 &" ],
+          user: "agent"
+        )
+      end
+
+      it "defers preview tunnel client setup until the app port is known" do
+        preview_service = build_preview_tunnel_service(agent_run:, worktree_path:, app_port: nil)
+        allow(Containers::ProxyUrl).to receive(:resolve).with(backend: preview_service.backend, restricted: true).and_return("http://paid-proxy:3000")
+        allow(mock_container).to receive(:exec).and_return([ [], [], 0 ])
+        allow(preview_service).to receive(:write_container_file).and_call_original
+
+        preview_service.provision
+
+        expect(preview_service).not_to have_received(:write_container_file)
+          .with("/home/agent/.paid-preview/rathole-client.toml", anything)
+
+        preview_service.activate_preview_tunnel!(app_port: 4100)
+
+        expect(preview_service).to have_received(:write_container_file).with(
+          "/home/agent/.paid-preview/rathole-client.toml",
+          include('[client.services.preview-preview-token]', 'local_addr = "127.0.0.1:4100"')
+        )
+      end
+
+      it "allows the preview tunnel server destination through the restricted firewall" do
+        preview_service = build_preview_tunnel_service(agent_run:, worktree_path:)
+        allow(Containers::ProxyUrl).to receive(:resolve).with(backend: preview_service.backend, restricted: true).and_return("http://paid-proxy:3000")
+
+        expect(NetworkPolicy).to receive(:apply_firewall_rules).with(
+          mock_container,
+          service_destinations: [ { ip: "paid-proxy", port: 7000 } ],
+          backend: preview_service.backend
+        )
+
+        preview_service.provision
+      end
+
       it "sets git committer identity environment variables" do
         bot_identity = Github::BotIdentity.new(
           app_slug: "paid-agents",
@@ -978,6 +1056,17 @@ RSpec.describe Containers::Provision do
           metadata: hash_including(error: anything))
 
         expect { service.provision }.to raise_error(described_class::ProvisionError)
+      end
+
+      it "releases preview tunnel reservations when create_container fails before assigning the container" do
+        preview_service = build_preview_tunnel_service(agent_run:, worktree_path:)
+        PreviewTunnelPortReservation.create!(reservation_key: "preview-token", tunnel_port: 8201)
+
+        expect {
+          preview_service.provision
+        }.to raise_error(described_class::ProvisionError, /Docker error/)
+
+        expect(PreviewTunnelPortReservation.find_by(reservation_key: "preview-token")).to be_nil
       end
     end
 
@@ -3055,6 +3144,30 @@ RSpec.describe Containers::Provision do
         metadata: anything)
 
       service.cleanup
+    end
+
+    it "releases preview tunnel reservations after deleting the container" do
+      preview_service = build_preview_tunnel_service(agent_run:, worktree_path:)
+      allow(Containers::ProxyUrl).to receive(:resolve).with(backend: preview_service.backend, restricted: true).and_return("http://paid-proxy:3000")
+      PreviewTunnelPortReservation.create!(reservation_key: "preview-token", tunnel_port: 8201)
+
+      preview_service.provision
+      preview_service.cleanup
+
+      expect(PreviewTunnelPortReservation.find_by(reservation_key: "preview-token")).to be_nil
+    end
+
+    it "releases preview tunnel reservations when both delete attempts fail" do
+      preview_service = build_preview_tunnel_service(agent_run:, worktree_path:)
+      allow(Containers::ProxyUrl).to receive(:resolve).with(backend: preview_service.backend, restricted: true).and_return("http://paid-proxy:3000")
+      PreviewTunnelPortReservation.create!(reservation_key: "preview-token", tunnel_port: 8201)
+      allow(mock_container).to receive(:info).and_return({ "State" => { "Running" => false } })
+      allow(mock_container).to receive(:delete).and_raise(Docker::Error::ServerError.new("Docker error"))
+
+      preview_service.provision
+
+      expect { preview_service.cleanup }.not_to raise_error
+      expect(PreviewTunnelPortReservation.find_by(reservation_key: "preview-token")).to be_nil
     end
   end
 
