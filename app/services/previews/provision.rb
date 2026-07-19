@@ -74,7 +74,7 @@ module Previews
 
     def restart(branch_name: nil, ttl_seconds: PreviewSession::DEFAULT_TTL_SECONDS)
       session = latest_non_terminal
-      target_branch = branch_name.presence || session&.branch_name || project.default_branch
+      target_branch = branch_name.presence || latest_session&.branch_name || project.default_branch
       stop(session:)
       start(branch_name: target_branch, ttl_seconds: ttl_seconds)
     end
@@ -91,6 +91,10 @@ module Previews
 
     def latest_non_terminal
       PreviewSession.for_project(project).non_terminal.recent.first
+    end
+
+    def latest_session
+      PreviewSession.for_project(project).recent.first
     end
 
     def provision(session)

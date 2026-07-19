@@ -178,6 +178,15 @@ RSpec.describe Previews::Provision do
       expect(result).to be_success
       expect(result.session.reload.branch_name).to eq("feature/keep-me")
     end
+
+    it "reuses the latest failed session branch when retrying without an explicit branch" do
+      create(:preview_session, :failed, project: project, branch_name: "feature/retry-me")
+
+      result = service.restart
+
+      expect(result).to be_success
+      expect(result.session.reload.branch_name).to eq("feature/retry-me")
+    end
   end
 
   def build_observing_backend(observed)
