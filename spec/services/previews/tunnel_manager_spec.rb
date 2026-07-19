@@ -4,7 +4,7 @@ require "rails_helper"
 
 RSpec.describe Previews::TunnelManager do
   let(:backend) { double(remote?: false) }
-  let(:preview_session) { double(tunnel_port: 8201, token: "preview-token") }
+  let(:preview_session) { double(id: 42, tunnel_port: 8201, token: "preview-token") }
 
   describe "#client_config" do
     it "uses the local proxy host for local backends" do
@@ -75,21 +75,35 @@ RSpec.describe Previews::TunnelManager do
     end
 
     it "reserves and releases a port from the preview pool" do
-      port = described_class.reserve_port!(range: 8298..8299)
+      port = described_class.reserve_port!(range: 8298..8299, owner_key: "spec-owner")
 
       expect(port).to be_between(8298, 8299)
       expect(PreviewTunnelReservation.find_by(port: port)).to be_present
 
       described_class.release_port(port)
 
-      expect { described_class.reserve_port!(range: port..port) }.not_to raise_error
+      expect { described_class.reserve_port!(range: port..port, owner_key: "spec-owner") }.not_to raise_error
       described_class.release_port(port)
     end
 
     it "skips ports that are already reserved in the database" do
       PreviewTunnelReservation.create!(port: 8298)
 
-      expect(described_class.reserve_port!(range: 8298..8299)).to eq(8299)
+      expect(described_class.reserve_port!(range: 8298..8299, owner_key: "spec-owner")).to eq(8299)
+    end
+
+    it "reclaims stale reservations owned by dead worker processes before allocating" do
+      PreviewTunnelReservation.create!(port: 8298, owner_key: "stale-owner", owner_pid: 999_999)
+      allow(Process).to receive(:kill).with(0, 999_999).and_raise(Errno::ESRCH)
+
+      expect(described_class.reserve_port!(range: 8298..8299, owner_key: "spec-owner")).to eq(8298)
+      expect(PreviewTunnelReservation.find_by(port: 8298)&.owner_key).to eq("spec-owner")
+    end
+
+    it "reclaims legacy ownerless reservations after the stale timeout" do
+      PreviewTunnelReservation.create!(port: 8298, owner_key: nil, owner_pid: nil, updated_at: 20.minutes.ago)
+
+      expect(described_class.reserve_port!(range: 8298..8299, owner_key: "spec-owner")).to eq(8298)
     end
   end
 
@@ -110,6 +124,7 @@ RSpec.describe Previews::TunnelManager do
       expect(manager.allocate_port!).to eq(8201)
       expect(preview_session).not_to have_received(:update!)
       expect(PreviewTunnelReservation.find_by(port: 8201)).to be_present
+      expect(PreviewTunnelReservation.find_by(port: 8201)&.owner_key).to eq("preview_session:42")
     end
 
     it "allocates a new port when the persisted port is already reserved elsewhere" do

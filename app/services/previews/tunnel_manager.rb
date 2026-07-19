@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "net/http"
+require "securerandom"
 require "shellwords"
 require "socket"
 require "uri"
@@ -14,20 +15,26 @@ module Previews
     CLIENT_PID_PATH = "tmp/paid-preview-rathole.pid"
     DEFAULT_TOKEN = "paid-preview-development-token"
     HEALTH_CHECK_INTERVAL_SECONDS = 2
+    LEGACY_STALE_RESERVATION_TTL = 15.minutes
 
     class Error < StandardError; end
     class PortExhaustedError < Error; end
     class HealthCheckError < Error; end
 
     class << self
-      def reserve_port!(range: DEFAULT_PORT_RANGE, exclude: [])
+      def reserve_port!(range: DEFAULT_PORT_RANGE, exclude: [], owner_key:, owner_pid: Process.pid)
         excluded_ports = Array(exclude).map(&:to_i)
+        reclaim_stale_reservations!
 
         range.each do |candidate|
           next if excluded_ports.include?(candidate)
           next unless port_available?(candidate)
 
-          return PreviewTunnelReservation.create!(port: candidate).port
+          return PreviewTunnelReservation.create!(
+            port: candidate,
+            owner_key: owner_key,
+            owner_pid: owner_pid
+          ).port
         rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique
           next
         end
@@ -35,12 +42,18 @@ module Previews
         raise PortExhaustedError, "no preview tunnel ports available in #{range.begin}-#{range.end}"
       end
 
-      def reserve_specific_port(port)
+      def reserve_specific_port(port, owner_key:, owner_pid: Process.pid)
         candidate = port.to_i
         return if candidate <= 0
+
+        reclaim_stale_reservations!
         return unless port_available?(candidate)
 
-        PreviewTunnelReservation.create!(port: candidate).port
+        PreviewTunnelReservation.create!(
+          port: candidate,
+          owner_key: owner_key,
+          owner_pid: owner_pid
+        ).port
       rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique
         nil
       end
@@ -52,6 +65,33 @@ module Previews
       end
 
       private
+
+      def reclaim_stale_reservations!
+        PreviewTunnelReservation.find_each do |reservation|
+          next unless stale_reservation?(reservation)
+
+          reservation.destroy!
+        rescue ActiveRecord::RecordNotFound
+          nil
+        end
+      end
+
+      def stale_reservation?(reservation)
+        if reservation.owner_pid.present?
+          !process_alive?(reservation.owner_pid)
+        else
+          reservation.updated_at <= LEGACY_STALE_RESERVATION_TTL.ago
+        end
+      end
+
+      def process_alive?(pid)
+        Process.kill(0, Integer(pid))
+        true
+      rescue Errno::ESRCH
+        false
+      rescue Errno::EPERM
+        true
+      end
 
       def port_available?(port)
         server = TCPServer.new("127.0.0.1", port)
@@ -71,12 +111,16 @@ module Previews
       @token = token.presence || preview_session_token || DEFAULT_TOKEN
       @persisted_port = preview_session&.respond_to?(:tunnel_port) ? preview_session.tunnel_port : nil
       @allocated_port = nil
+      @owner_key = build_owner_key
     end
 
     def allocate_port!
       return @allocated_port if @allocated_port.present?
 
-      allocated_port = reserve_persisted_port || self.class.reserve_port!(exclude: @persisted_port)
+      allocated_port = reserve_persisted_port || self.class.reserve_port!(
+        exclude: @persisted_port,
+        owner_key: @owner_key
+      )
       persist_preview_session!(tunnel_port: allocated_port) if allocated_port != @persisted_port
       @allocated_port = allocated_port
     rescue StandardError
@@ -196,11 +240,18 @@ module Previews
     def reserve_persisted_port
       return if @persisted_port.blank?
 
-      self.class.reserve_specific_port(@persisted_port)
+      self.class.reserve_specific_port(@persisted_port, owner_key: @owner_key)
     end
 
     def release_port_number
       @allocated_port.presence || preview_session&.tunnel_port || @persisted_port
+    end
+
+    def build_owner_key
+      session_id = preview_session.id if preview_session&.respond_to?(:id)
+      return "preview_session:#{session_id}" if session_id.present?
+
+      "preview_tunnel:#{Process.pid}:#{SecureRandom.hex(6)}"
     end
   end
 end

@@ -27,41 +27,66 @@ module Previews
       keyword_init: true
     )
 
-    @baseline_state_mutex = Mutex.new
-    @baseline_states = {}
-
     class << self
       def register_baseline(agent_run)
-        @baseline_state_mutex.synchronize do
-          state = (@baseline_states[agent_run.id] ||= {
-            count: 0,
-            service_container_ids: Array(agent_run.service_container_ids).dup,
-            service_environment: agent_run.service_environment&.deep_dup || {}
-          })
-          state[:count] += 1
+        with_provision_state(agent_run) do |state|
+          state.active_count += 1
+          state.save!
 
-          {
-            count: state[:count],
-            service_container_ids: state[:service_container_ids].dup,
-            service_environment: state[:service_environment].deep_dup
-          }
+          provision_state_snapshot(state)
         end
       end
 
       def release_baseline(agent_run)
-        @baseline_state_mutex.synchronize do
-          state = @baseline_states[agent_run.id]
-          return { count: 0, service_container_ids: [], service_environment: {} } unless state
+        with_provision_state(agent_run) do |state|
+          return empty_provision_state_snapshot unless state
 
-          state[:count] -= 1
-          snapshot = {
-            count: [ state[:count], 0 ].max,
-            service_container_ids: state[:service_container_ids].dup,
-            service_environment: state[:service_environment].deep_dup
-          }
-          @baseline_states.delete(agent_run.id) if state[:count] <= 0
-          snapshot
+          state.active_count -= 1
+          snapshot = provision_state_snapshot(state)
+
+          if state.active_count <= 0
+            state.destroy!
+            snapshot.merge(count: 0)
+          else
+            state.save!
+            snapshot
+          end
         end
+      end
+
+      private
+
+      def with_provision_state(agent_run)
+        PreviewProvisionState.transaction do
+          yield(lock_provision_state(agent_run))
+        end
+      end
+
+      def lock_provision_state(agent_run)
+        PreviewProvisionState.lock.find_by(agent_run_id: agent_run.id) || create_provision_state!(agent_run)
+      end
+
+      def create_provision_state!(agent_run)
+        PreviewProvisionState.create!(
+          agent_run: agent_run,
+          active_count: 0,
+          baseline_service_container_ids: Array(agent_run.service_container_ids),
+          baseline_service_environment: agent_run.service_environment&.deep_dup || {}
+        )
+      rescue ActiveRecord::RecordNotUnique
+        PreviewProvisionState.lock.find_by!(agent_run_id: agent_run.id)
+      end
+
+      def provision_state_snapshot(state)
+        {
+          count: state.active_count,
+          service_container_ids: Array(state.baseline_service_container_ids).dup,
+          service_environment: (state.baseline_service_environment || {}).deep_dup
+        }
+      end
+
+      def empty_provision_state_snapshot
+        { count: 0, service_container_ids: [], service_environment: {} }
       end
     end
 
@@ -432,12 +457,10 @@ module Previews
       )
     end
 
-    # Reverts this provision's additions to the agent run while preserving
-    # any references/environment that a sibling preview added after this one
-    # started. Wholesale-restore would clobber the sibling's additions and
-    # drop capacity_inflight_agent_run_count below the actual in-flight
-    # count, reintroducing the premature shared-container shutdown race
-    # this service is meant to avoid.
+    # Reverts this provision's additions while preserving any sibling preview
+    # state. The pre-overlap baseline and overlap count live in a shared DB
+    # row keyed by agent_run so separate Ruby processes can coordinate the
+    # last-cleanup restore correctly.
     def restore_agent_run_service_state!
       return unless @original_service_container_ids
 

@@ -222,6 +222,23 @@ RSpec.describe Previews::Provision do
     expect(agent_run.reload.service_environment).to eq({ "DATABASE_URL" => "postgres://preview-b/db" })
   end
 
+  it "tracks overlap baselines in shared database state and clears them after the last cleanup" do
+    provision_a, provision_b = provision_overlapping_previews
+
+    shared_state = PreviewProvisionState.find_by!(agent_run: agent_run)
+    expect(shared_state.active_count).to eq(2)
+    expect(shared_state.baseline_service_container_ids).to eq([ 7 ])
+    expect(shared_state.baseline_service_environment).to eq({ "DATABASE_URL" => "postgres://existing/db" })
+
+    provision_a.cleanup!
+
+    expect(PreviewProvisionState.find_by!(agent_run: agent_run).active_count).to eq(1)
+
+    provision_b.cleanup!
+
+    expect(PreviewProvisionState.find_by(agent_run: agent_run)).to be_nil
+  end
+
   it "restores the original service container ids and environment when dependency provisioning fails" do
     allow(service_provisioner).to receive(:cleanup_service_containers)
     allow(service_provisioner).to receive(:provision) do
