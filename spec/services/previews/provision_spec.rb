@@ -159,6 +159,13 @@ RSpec.describe Previews::Provision do
 
       expect(service.status.id).to eq(fresh.id)
     end
+
+    it "ignores expired active sessions and falls back to the latest terminal session" do
+      stopped = create(:preview_session, :stopped, project: project, created_at: 5.minutes.ago)
+      create(:preview_session, :expired, project: project, created_at: 1.minute.ago)
+
+      expect(service.status.id).to eq(stopped.id)
+    end
   end
 
   describe "#current" do

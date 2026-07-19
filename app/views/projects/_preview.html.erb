@@ -1,0 +1,103 @@
+<% status = preview_session&.status || "not_started" %>
+<% status_label = status == "not_started" ? "Not Started" : status.humanize %>
+<% status_classes = case status
+                    when "ready"
+                      "bg-green-100 text-green-700"
+                    when "failed"
+                      "bg-red-100 text-red-700"
+                    when "stopped", "not_started"
+                      "bg-gray-100 text-gray-700"
+                    else
+                      "bg-amber-100 text-amber-700"
+                    end %>
+<% ttl_classes = preview_session&.ttl_warning? ? "text-amber-700" : "text-gray-500" %>
+
+<div id="preview" class="mt-6 overflow-hidden rounded-lg bg-white shadow" data-testid="project-preview-panel">
+  <div class="border-b border-gray-200 px-4 py-5 sm:px-6">
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div>
+        <div class="flex flex-wrap items-center gap-3">
+          <h2 class="text-lg font-medium text-gray-900">Live Preview</h2>
+          <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium <%= status_classes %>" data-testid="project-preview-status">
+            <%= status_label %>
+          </span>
+        </div>
+        <p class="mt-1 text-sm text-gray-500">
+          Start a disposable app preview for this project and track its lifecycle from the project page.
+        </p>
+      </div>
+      <% if policy(project).update? %>
+        <div class="flex flex-wrap items-center gap-2">
+          <% if preview_session&.active? %>
+            <%= button_to "Restart", restart_preview_project_path(project), method: :post,
+              class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 cursor-pointer" %>
+            <%= button_to "Stop", stop_preview_project_path(project), method: :post,
+              class: "inline-flex items-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 cursor-pointer" %>
+          <% else %>
+            <%= button_to "Start Preview", start_preview_project_path(project), method: :post,
+              class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 cursor-pointer" %>
+            <% if preview_session.present? %>
+              <%= button_to "Restart", restart_preview_project_path(project), method: :post,
+                class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 cursor-pointer" %>
+            <% end %>
+          <% end %>
+        </div>
+      <% end %>
+    </div>
+  </div>
+
+  <div class="px-4 py-5 sm:px-6">
+    <% if preview_session.present? %>
+      <dl class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div>
+          <dt class="text-sm font-medium text-gray-500">Branch</dt>
+          <dd class="mt-1 text-sm text-gray-900">
+            <code class="rounded bg-gray-100 px-2 py-1 font-mono text-xs"><%= preview_session.branch_name %></code>
+          </dd>
+        </div>
+        <div>
+          <dt class="text-sm font-medium text-gray-500">Framework</dt>
+          <dd class="mt-1 text-sm text-gray-900"><%= preview_session.framework.presence || "Unknown" %></dd>
+        </div>
+        <div>
+          <dt class="text-sm font-medium text-gray-500">Expires</dt>
+          <dd class="mt-1 text-sm <%= ttl_classes %>">
+            <%= local_time(preview_session.expires_at) %>
+            <% if preview_session.active? %>
+              (<%= distance_of_time_in_words_to_now(preview_session.expires_at) %> remaining)
+            <% end %>
+          </dd>
+        </div>
+        <div>
+          <dt class="text-sm font-medium text-gray-500">Tunnel Port</dt>
+          <dd class="mt-1 text-sm text-gray-900"><%= preview_session.tunnel_port || "Pending" %></dd>
+        </div>
+      </dl>
+
+      <div class="mt-4 rounded-md border border-dashed border-gray-200 bg-gray-50 p-4">
+        <% if preview_session.live? %>
+          <p class="text-sm font-medium text-gray-900">Preview session is ready.</p>
+          <p class="mt-1 text-sm text-gray-500">
+            This branch exposes preview lifecycle controls first. Embedded preview traffic will appear here once proxy support is enabled.
+          </p>
+        <% elsif preview_session.failed? %>
+          <p class="text-sm font-medium text-red-700">Preview provisioning failed.</p>
+          <p class="mt-1 text-sm text-red-600"><%= preview_session.error_message.presence || "Unknown error" %></p>
+        <% elsif preview_session.stopped? %>
+          <p class="text-sm font-medium text-gray-900">Preview session stopped.</p>
+          <p class="mt-1 text-sm text-gray-500">Start a new preview to create a fresh disposable app environment.</p>
+        <% else %>
+          <p class="text-sm font-medium text-amber-700">Preview session is starting.</p>
+          <p class="mt-1 text-sm text-amber-600">Provisioning is in progress. Refresh the page to see the latest state.</p>
+        <% end %>
+      </div>
+    <% else %>
+      <div class="rounded-md border border-dashed border-gray-200 bg-gray-50 p-4">
+        <p class="text-sm font-medium text-gray-900">No preview has been started yet.</p>
+        <p class="mt-1 text-sm text-gray-500">
+          Preview sessions default to the project’s configured branch: <code class="rounded bg-white px-1.5 py-0.5 font-mono text-xs"><%= project.default_branch %></code>.
+        </p>
+      </div>
+    <% end %>
+  </div>
+</div>

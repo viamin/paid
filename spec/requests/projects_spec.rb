@@ -541,6 +541,47 @@ RSpec.describe "Projects" do
         expect(response.body).to include("My Project")
       end
 
+      it "shows the preview panel with current session details" do
+        project = create(:project, account: account, github_token: github_token, name: "My Project")
+        create(:preview_session, :ready, project: project, branch_name: "feature/preview", framework: "phoenix",
+          tunnel_port: 8242, expires_at: 20.minutes.from_now)
+
+        get project_path(project)
+
+        expect(response.body).to include("Live Preview")
+        expect(response.body).to include("feature/preview")
+        expect(response.body).to include("phoenix")
+        expect(response.body).to include("8242")
+        expect(response.body).to include("Preview session is ready.")
+        expect(response.body).to include(stop_preview_project_path(project))
+        expect(response.body).to include(restart_preview_project_path(project))
+      end
+
+      it "shows the latest terminal preview session instead of an expired active session" do
+        project = create(:project, account: account, github_token: github_token)
+        create(:preview_session, :stopped, project: project, branch_name: "feature/old", created_at: 5.minutes.ago)
+        create(:preview_session, :expired, project: project, branch_name: "feature/stale", created_at: 1.minute.ago)
+
+        get project_path(project)
+
+        expect(response.body).to include("feature/old")
+        expect(response.body).not_to include("feature/stale")
+      end
+
+      it "hides preview controls for viewers" do
+        viewer = create(:user, :viewer, account: account)
+        project = create(:project, account: account, github_token: github_token)
+        create(:preview_session, :ready, project: project)
+
+        sign_in viewer
+        get project_path(project)
+
+        expect(response.body).to include("Live Preview")
+        expect(response.body).not_to include(start_preview_project_path(project))
+        expect(response.body).not_to include(stop_preview_project_path(project))
+        expect(response.body).not_to include(restart_preview_project_path(project))
+      end
+
       it "shows project statistics" do
         project = create(:project, :with_metrics, account: account, github_token: github_token)
         create_list(:agent_run, 3, project: project, status: "completed")
@@ -1149,6 +1190,71 @@ RSpec.describe "Projects" do
         get project_path(other_project)
         expect(response).to have_http_status(:not_found)
       end
+    end
+  end
+
+  describe "POST /projects/:id/start_preview" do
+    before { sign_in user }
+
+    it "starts a preview session and redirects back to the preview panel" do
+      project = create(:project, account: account, github_token: github_token, default_branch: "develop")
+
+      post start_preview_project_path(project)
+
+      expect(response).to redirect_to("#{project_path(project)}#preview")
+      expect(flash[:notice]).to eq("Preview started for develop.")
+      session = project.preview_sessions.recent.first
+      expect(session).to be_present
+      expect(session.branch_name).to eq("develop")
+      expect(session.status).to eq("ready")
+    end
+
+    it "forbids viewers from starting a preview" do
+      viewer = create(:user, :viewer, account: account)
+      project = create(:project, account: account, github_token: github_token)
+
+      sign_in viewer
+
+      post start_preview_project_path(project)
+
+      expect(response).to redirect_to(root_path)
+      expect(flash[:alert]).to eq("You are not authorized to perform this action.")
+    end
+  end
+
+  describe "POST /projects/:id/stop_preview" do
+    before { sign_in user }
+
+    it "stops the active preview session" do
+      project = create(:project, account: account, github_token: github_token)
+      session = create(:preview_session, :ready, project: project, tunnel_port: 8251)
+
+      post stop_preview_project_path(project)
+
+      expect(response).to redirect_to("#{project_path(project)}#preview")
+      expect(flash[:notice]).to eq("Preview stopped.")
+      expect(session.reload.status).to eq("stopped")
+      expect(session.tunnel_port).to be_nil
+    end
+  end
+
+  describe "POST /projects/:id/restart_preview" do
+    before { sign_in user }
+
+    it "restarts the latest preview branch and replaces the active session" do
+      project = create(:project, account: account, github_token: github_token)
+      previous = create(:preview_session, :ready, project: project, branch_name: "feature/restart", tunnel_port: 8252)
+
+      post restart_preview_project_path(project)
+
+      expect(response).to redirect_to("#{project_path(project)}#preview")
+      expect(flash[:notice]).to eq("Preview restarted for feature/restart.")
+      expect(previous.reload.status).to eq("stopped")
+
+      current = project.preview_sessions.recent.first
+      expect(current.id).not_to eq(previous.id)
+      expect(current.branch_name).to eq("feature/restart")
+      expect(current.status).to eq("ready")
     end
   end
 

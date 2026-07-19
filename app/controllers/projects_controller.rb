@@ -3,7 +3,7 @@
 class ProjectsController < ApplicationController
   include AuditLogging
 
-  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :toggle_auto_merge, :toggle_pause, :quality_resume, :detect_services, :detect_screenshot_settings, :commit_screenshot_config, :ensure_labels, :cleanup_stale_runs ]
+  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :toggle_auto_merge, :toggle_pause, :quality_resume, :detect_services, :detect_screenshot_settings, :commit_screenshot_config, :ensure_labels, :cleanup_stale_runs, :start_preview, :stop_preview, :restart_preview ]
   skip_after_action :verify_authorized, only: :index
 
   NULLS_LAST_SORT_ATTRIBUTES = %w[last_agent_run_at last_github_activity_at].freeze
@@ -23,6 +23,7 @@ class ProjectsController < ApplicationController
 
   def show
     authorize @project
+    @preview_session = Previews::Provision.status(project: @project)
     tracker_configuration = IssueTrackers::ResolveConfiguration.call(project: @project, user: current_user)
     @external_links = @project.header_external_links(tracker_configuration: tracker_configuration)
     @recent_agent_runs = @project.agent_runs.recent.includes(:runner, :issue, project: [ :created_by, :account ]).limit(10).to_a
@@ -302,6 +303,29 @@ class ProjectsController < ApplicationController
     redirect_to project_path(@project), notice: message
   end
 
+  def start_preview
+    authorize @project, :update?
+
+    result = Previews::Provision.start(project: @project, actor: current_user, branch_name: @project.default_branch)
+    redirect_to_preview(result, success_message: "Preview started for #{@project.default_branch}.", failure_verb: "start preview")
+  end
+
+  def stop_preview
+    authorize @project, :update?
+
+    result = Previews::Provision.stop(project: @project)
+    notice = result.session.present? ? "Preview stopped." : "No preview was running."
+    redirect_to_preview(result, success_message: notice, failure_verb: "stop preview")
+  end
+
+  def restart_preview
+    authorize @project, :update?
+
+    result = Previews::Provision.restart(project: @project, actor: current_user)
+    branch_name = result.session&.branch_name || @project.default_branch
+    redirect_to_preview(result, success_message: "Preview restarted for #{branch_name}.", failure_verb: "restart preview")
+  end
+
   def destroy
     authorize @project
 
@@ -337,6 +361,14 @@ class ProjectsController < ApplicationController
         )
       end
       format.html { redirect_to @project }
+    end
+  end
+
+  def redirect_to_preview(result, success_message:, failure_verb:)
+    if result.success?
+      redirect_to project_path(@project, anchor: "preview"), notice: success_message
+    else
+      redirect_to project_path(@project, anchor: "preview"), alert: "Could not #{failure_verb}: #{result.error}"
     end
   end
 

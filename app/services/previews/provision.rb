@@ -19,20 +19,20 @@ module Previews
       @container_backend = container_backend
     end
 
-    def self.start(...)
-      new(...).start
+    def self.start(project:, branch_name:, ttl_seconds: PreviewSession::DEFAULT_TTL_SECONDS, **options)
+      new(project:, **options).start(branch_name:, ttl_seconds:)
     end
 
-    def self.stop(...)
-      new(...).stop
+    def self.stop(project:, session: nil, **options)
+      new(project:, **options).stop(session:)
     end
 
-    def self.restart(...)
-      new(...).restart
+    def self.restart(project:, branch_name: nil, ttl_seconds: PreviewSession::DEFAULT_TTL_SECONDS, **options)
+      new(project:, **options).restart(branch_name:, ttl_seconds:)
     end
 
-    def self.status(...)
-      new(...).status
+    def self.status(project:, **options)
+      new(project:, **options).status
     end
 
     def start(branch_name:, ttl_seconds: PreviewSession::DEFAULT_TTL_SECONDS)
@@ -80,7 +80,7 @@ module Previews
     end
 
     def status
-      PreviewSession.for_project(project).recent.first
+      current || PreviewSession.for_project(project).where(status: PreviewSession::TERMINAL_STATUSES).recent.first
     end
 
     private

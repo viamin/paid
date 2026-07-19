@@ -194,6 +194,9 @@ Rails.application.routes.draw do
     post :toggle_pause, on: :member
     post :quality_resume, on: :member
     post :cleanup_stale_runs, on: :member
+    post :start_preview, on: :member
+    post :stop_preview, on: :member
+    post :restart_preview, on: :member
     post :detect_screenshot_settings, on: :member
     post :commit_screenshot_config, on: :member
     resource :workflow_status, only: [ :show ] do
