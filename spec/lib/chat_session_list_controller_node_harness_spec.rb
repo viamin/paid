@@ -102,6 +102,10 @@ class ChatSessionListControllerNodeHarness
 
       const controller = Object.create(ChatSessionListController.prototype);
       controller.cardTargets = [];
+      controller.element = {
+        addEventListener() {},
+        removeEventListener() {}
+      };
       controller.hasActiveSessionIdValue = false;
       controller.hasModalTarget = false;
       controller.hasMobileButtonTarget = true;
@@ -110,6 +114,7 @@ class ChatSessionListControllerNodeHarness
       controller.hasMobileOpenLabelTarget = true;
       controller.hasSearchInputTarget = false;
       controller.listTarget = {};
+      controller.hasListTarget = true;
       controller.mobileButtonTarget = button;
       controller.mobileCloseLabelTarget = { classList: closeLabelClassList };
       controller.mobileMenuTarget = menu;
@@ -250,6 +255,10 @@ class ChatSessionListControllerNodeHarness
 
       const controller = Object.create(ChatSessionListController.prototype);
       controller.cardTargets = [];
+      controller.element = {
+        addEventListener() {},
+        removeEventListener() {}
+      };
       controller.hasActiveSessionIdValue = false;
       controller.hasModalTarget = false;
       controller.hasMobileButtonTarget = false;
@@ -258,6 +267,7 @@ class ChatSessionListControllerNodeHarness
       controller.hasMobileOpenLabelTarget = false;
       controller.hasSearchInputTarget = false;
       controller.listTarget = {};
+      controller.hasListTarget = true;
       controller.mobileMenuTarget = {
         attributes: {},
         classList: menuClassList,

@@ -291,31 +291,60 @@ RUN test -f /home/agent/.local/share/kilo/kilo.db \
     && cp -a /home/agent/.local/share/kilo/. /opt/kilo-seed/ \
     && chown -R agent:agent /opt/kilo-seed
 
-# OpenCode CLI: version is owned by agent-harness (installation_contract).
-# OPENCODE_PACKAGE is extracted from agent-harness at build time by
-# build-agent-image.sh / agent-image.yml — Paid no longer pins this version.
-ARG OPENCODE_PACKAGE
-RUN if [ -z "${OPENCODE_PACKAGE}" ]; then \
-        echo "ERROR: OPENCODE_PACKAGE build-arg is required (sourced from agent-harness)" >&2; \
+# OpenCode CLI: install recipe and version are owned by agent-harness
+# (installation_contract). OPENCODE_INSTALL_COMMAND is extracted from
+# agent-harness at build time by build-agent-image.sh / agent-image.yml —
+# Paid no longer pins the version or install recipe.
+#
+# Supply-chain hardening: enforce --ignore-scripts regardless of what the
+# contract returns, matching the policy applied to every other npm install above.
+# The contract's required postinstall (extracting OpenCode's native binary)
+# is appended explicitly so OpenCode can start without re-running the
+# extraction on every container invocation — without that, the first `opencode
+# run` in a fresh tmpfs pays the binary download/extract cost inside the
+# runner smoke preflight and gets SIGKILLed (exit 137) by the OOM killer or
+# the preflight wall-clock timeout (the original symptom: opencode preflight
+# killed by exit 137 on every attempt — see #2913).
+ARG OPENCODE_INSTALL_COMMAND
+RUN if [ -z "${OPENCODE_INSTALL_COMMAND}" ]; then \
+        echo "ERROR: OPENCODE_INSTALL_COMMAND build-arg is required (sourced from agent-harness)" >&2; \
         exit 1; \
     fi \
-    && npm install -g --ignore-scripts "${OPENCODE_PACKAGE}"
+    && case "${OPENCODE_INSTALL_COMMAND}" in \
+        *--ignore-scripts*) ;; \
+        *) echo "ERROR: OPENCODE_INSTALL_COMMAND must include --ignore-scripts for supply-chain safety" >&2; exit 1 ;; \
+    esac \
+    && echo "Installing OpenCode CLI via agent-harness contract: ${OPENCODE_INSTALL_COMMAND}" \
+    && eval "${OPENCODE_INSTALL_COMMAND}"
 
 # Pre-seed the OpenCode SQLite database so the first container invocation does
 # not emit "Performing one time database migration, may take a few minutes..."
-# into stdout, which breaks the Test Agent ping response matching.
-# The opencode binary creates its DB on first run; this step discards the
-# network-dependent output and only keeps the migrated SQLite file.
+# inside the runner smoke preflight, where it exceeds the preflight wall-clock
+# timeout and exhausts the runner (the original symptom: exit 137 after a 60s
+# preflight timeout). The migration is a local SQLite operation that runs on
+# first `opencode run` regardless of model auth, so warming needs no credentials.
+#
+# `opencode run` opens an interactive session that never exits on its own, so
+# we cap it with `timeout`, which cleanly terminates opencode and its child
+# binary once the migration has had time to run (verified: no orphaned
+# processes, DB fully migrated). We deliberately do NOT pattern-kill "opencode":
+# this RUN's own shell argv contains "opencode", so `pkill -f opencode` would
+# also kill the build shell. The window is generous — the migration was ~60s
+# on a heavily loaded runtime host, and build hosts are far less contended —
+# and `timeout` always runs the full window because the session never exits.
+# The next RUN fails loudly if the migrated DB is absent, rather than
+# shipping a regressed (unwarmed) image. Mirrors the Kilocode pre-seed above.
 #
 # The pre-seeded DB is copied to /opt/opencode-seed so it survives the tmpfs
 # mount that Provision#host_config places at /home/agent/.local/share/opencode
-# at runtime. Containers::Provision#seed_opencode_database! copies it from
+# at runtime. Containers::Provision#seed_opencode_database! restores it from
 # /opt into the tmpfs after the container starts.
 USER agent
 RUN mkdir -p /home/agent/.local/share/opencode \
-    && timeout 10s opencode run "OK" > /dev/null 2>&1 || true
+    && timeout -k 10s 120s opencode run "OK" > /dev/null 2>&1 || true
 USER root
-RUN mkdir -p /opt/opencode-seed \
+RUN test -f /home/agent/.local/share/opencode/opencode.db \
+    && mkdir -p /opt/opencode-seed \
     && cp -a /home/agent/.local/share/opencode/. /opt/opencode-seed/ \
     && chown -R agent:agent /opt/opencode-seed
 

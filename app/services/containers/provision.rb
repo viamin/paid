@@ -616,7 +616,8 @@ module Containers
             stderr: stderr,
             exit_code: exit_code,
             oom_killed: oom[:oom_killed] || false,
-            memory_limit_bytes: oom[:memory_limit_bytes]
+            memory_limit_bytes: oom[:memory_limit_bytes],
+            container_running: oom[:container_running]
           )
         end
       rescue OutputAbortError

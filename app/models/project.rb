@@ -194,6 +194,7 @@ class Project < ApplicationRecord
   has_many :prompts, dependent: :destroy
   has_many :strategies, dependent: :destroy
   has_many :style_guides, dependent: :destroy
+  has_many :style_guide_ab_tests, through: :account
   has_many :project_versions, dependent: :destroy
   has_many :knowledge_artifacts, dependent: :destroy
   has_many :knowledge_chunks, through: :knowledge_artifacts

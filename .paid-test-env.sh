@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 export DB_HOST=paid-svc-a3-s1-postgres
 export DB_USERNAME=agent
 export DB_PASSWORD=agent

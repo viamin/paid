@@ -170,6 +170,7 @@ config.status
 /.pgdata/
 /pgdata/
 /.postgres/
+/.cache-rubocop/
 /.rubocop-cache/
 /.rubocop_cache/
 /.local/

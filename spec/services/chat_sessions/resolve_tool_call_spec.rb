@@ -234,6 +234,19 @@ RSpec.describe ChatSessions::ResolveToolCall do
         )
       }.to raise_error(ArgumentError, /approve or deny/)
     end
+
+    it "rejects resolving a tool call when the session is archived" do
+      chat_session.update!(status: "archived")
+
+      expect {
+        described_class.call(
+          chat_session: chat_session, tool_call_message: tool_call_message,
+          decision: :approve, llm_client: llm_client
+        )
+      }.to raise_error(ArgumentError, /archived/)
+
+      expect(tool_call_message.reload.tool_status).to eq("pending")
+    end
   end
 
   describe "concurrent resolution safety" do

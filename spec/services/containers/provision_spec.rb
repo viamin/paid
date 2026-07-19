@@ -2560,6 +2560,7 @@ RSpec.describe Containers::Provision do
         result = service.execute("opencode run 'Reply with exactly OK.'")
 
         expect(result[:oom_killed]).to be false
+        expect(result[:container_running]).to be true
         expect(agent_run).to have_received(:log!).with("system", "container.execute.sigkill",
           metadata: hash_including(exit_code: 137))
       end
@@ -2582,6 +2583,7 @@ RSpec.describe Containers::Provision do
         expect(result).to be_failure
         expect(result[:oom_killed]).to be false
         expect(result[:memory_limit_bytes]).to be_nil
+        expect(result[:container_running]).to be_nil
         expect(agent_run).to have_received(:log!).with("system", "container.execute.exit_state_unavailable",
           metadata: hash_including(error: /No such container/))
         expect(agent_run).to have_received(:log!).with("system", "container.execute.sigkill",
