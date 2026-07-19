@@ -103,6 +103,49 @@ RSpec.describe "Previews" do
     end
   end
 
+  describe "GET /previews/:token/*" do
+    before do
+      stub_request(:get, "http://127.0.0.1:#{preview_session.tunnel_port}/")
+        .to_return(status: 200, body: "proxied app")
+    end
+
+    context "when the user is a project member" do
+      let(:user) { create(:user, :viewer, account: account) }
+
+      before do
+        create(:project_membership, project: project, user: user, role: :member)
+        sign_in user
+      end
+
+      it "serves the proxied preview content" do
+        get "#{preview_session.proxy_prefix}/"
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to eq("proxied app")
+      end
+    end
+
+    context "when the user is not authenticated" do
+      it "returns 404 to avoid revealing that the preview exists" do
+        get "#{preview_session.proxy_prefix}/"
+
+        expect(response).to have_http_status(:not_found)
+      end
+    end
+
+    context "when the user is an account member without project membership" do
+      let(:user) { create(:user, :member, account: account) }
+
+      before { sign_in user }
+
+      it "returns 404 to avoid revealing that the preview exists" do
+        get "#{preview_session.proxy_prefix}/"
+
+        expect(response).to have_http_status(:not_found)
+      end
+    end
+  end
+
   describe "POST /projects/:project_id/preview_sessions/:id/stop" do
     let(:user) { create(:user, :admin, account: account) }
 

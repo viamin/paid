@@ -4,9 +4,10 @@
 #
 # A preview session bridges a tunnel port (exposed on the Rails host by a
 # rathole client running inside the preview container) to the Rails reverse
-# proxy at `/previews/:token/*`. The token is the proxy credential: any holder
-# of the token can view the proxied app. Tokens are therefore random secrets
-# that are only handed out to authorized users by the preview UI.
+# proxy at `/previews/:token/*`. The token addresses the session's proxied path,
+# but the proxy still requires an authenticated, authorized viewer before it
+# forwards traffic. Tokens are therefore random secrets that are only handed out
+# to authorized users by the preview UI.
 #
 # @see PreviewsProxy
 class PreviewSession < ApplicationRecord

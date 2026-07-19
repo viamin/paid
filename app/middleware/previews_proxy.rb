@@ -7,12 +7,13 @@ require "timeout"
 # Rack reverse proxy that exposes a tunnelled web app at `/previews/:token/*`.
 #
 # The middleware validates the preview token against an active {PreviewSession},
-# resolves the localhost tunnel port the rathole client bridged the container's
-# app to, and forwards the request. It strips iframe-blocking headers
-# (`X-Frame-Options`, CSP `frame-ancestors`), rewrites redirect `Location` and
-# `Set-Cookie` scoping so traffic stays within the proxy origin, and handles
-# WebSocket upgrades (`101 Switching Protocols`) via full Rack socket hijack so
-# Phoenix LiveView and Rails Action Cable connections pass through transparently.
+# authorizes the current viewer with {PreviewSessionPolicy}, resolves the
+# localhost tunnel port the rathole client bridged the container's app to, and
+# forwards the request. It strips iframe-blocking headers (`X-Frame-Options`,
+# CSP `frame-ancestors`), rewrites redirect `Location` and `Set-Cookie`
+# scoping so traffic stays within the proxy origin, and handles WebSocket
+# upgrades (`101 Switching Protocols`) via full Rack socket hijack so Phoenix
+# LiveView and Rails Action Cable connections pass through transparently.
 #
 # Loaded eagerly via `require_relative` in `config/application.rb` because the
 # middleware constant must exist at middleware-registration time, before Zeitwerk
@@ -106,6 +107,8 @@ class PreviewsProxy
     return not_found unless session&.proxiable?
 
     request = ActionDispatch::Request.new(env)
+    return not_found unless authorized_viewer?(request, session)
+
     session.touch_last_accessed!
 
     if websocket_upgrade?(request)
@@ -126,6 +129,37 @@ class PreviewsProxy
   rescue ActiveRecord::ConnectionNotEstablished, ActiveRecord::StatementInvalid => e
     log_error("previews_proxy.session_lookup_failed", token:, error: e.message)
     nil
+  end
+
+  def authorized_viewer?(request, session)
+    viewer = current_user_for(request.env)
+    return false unless viewer
+
+    with_current_user(viewer) do
+      TenantContext.with(viewer.account) do
+        PreviewSessionPolicy.new(viewer, session).show?
+      end
+    end
+  rescue ActiveRecord::ConnectionNotEstablished, ActiveRecord::StatementInvalid => e
+    log_error("previews_proxy.authorization_failed", token: session.token, error: e.message)
+    false
+  end
+
+  def current_user_for(env)
+    user_id = env["warden"]&.user&.id
+    return if user_id.blank?
+
+    TenantContext.with_system_access do
+      User.find_by(id: user_id)
+    end
+  end
+
+  def with_current_user(user)
+    previous_user = Current.user
+    Current.user = user
+    yield
+  ensure
+    Current.user = previous_user
   end
 
   # ----------------------------------------------------------------------- http

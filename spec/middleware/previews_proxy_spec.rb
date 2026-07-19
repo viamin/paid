@@ -8,10 +8,20 @@ RSpec.describe PreviewsProxy do
     ->(_env) { [ 200, { "content-type" => "text/plain" }, [ "fallback" ] ] }
   end
   let(:middleware) { described_class.new(fallback_app) }
-  let(:mock_request) { Rack::MockRequest.new(middleware) }
-
   let(:account) { create(:account) }
   let(:project) { create(:project, account: account) }
+  let(:user) do
+    create(:user, :viewer, account: account).tap do |record|
+      record.add_role(:project_member, project)
+    end
+  end
+  let(:warden) { instance_double(Warden::Proxy, user: user) }
+  let(:mock_request) do
+    Rack::MockRequest.new(lambda { |env|
+      env["warden"] = warden
+      middleware.call(env)
+    })
+  end
   let!(:session) do
     create(:preview_session, project: project, status: "active",
       token: "s3cret-token", expires_at: 30.minutes.from_now)
@@ -62,6 +72,42 @@ RSpec.describe PreviewsProxy do
       response = mock_request.get("/previews/no-port/issues/42")
 
       expect(response.status).to eq(404)
+    end
+  end
+
+  describe "authorization" do
+    it "returns 404 for unauthenticated viewers" do
+      response = Rack::MockRequest.new(middleware).get("/previews/s3cret-token/issues/42")
+
+      expect(response.status).to eq(404)
+    end
+
+    it "returns 404 for account members without project access" do
+      unauthorized_user = create(:user, :member, account: account)
+      unauthorized_warden = instance_double(Warden::Proxy, user: unauthorized_user)
+
+      response = Rack::MockRequest.new(lambda { |env|
+        env["warden"] = unauthorized_warden
+        middleware.call(env)
+      }).get("/previews/s3cret-token/issues/42")
+
+      expect(response.status).to eq(404)
+    end
+
+    it "allows account admins without project membership" do
+      admin = create(:user, :admin, account: account)
+      admin_warden = instance_double(Warden::Proxy, user: admin)
+
+      stub_request(:get, "http://127.0.0.1:#{port}/issues/42")
+        .to_return(status: 200, body: "ok")
+
+      response = Rack::MockRequest.new(lambda { |env|
+        env["warden"] = admin_warden
+        middleware.call(env)
+      }).get("/previews/s3cret-token/issues/42")
+
+      expect(response.status).to eq(200)
+      expect(response.body).to eq("ok")
     end
   end
 
@@ -255,7 +301,7 @@ RSpec.describe PreviewsProxy do
         forbid_body: true
       )
 
-      status, headers, body = middleware.call(Rack::MockRequest.env_for("/previews/s3cret-token/stream"))
+      status, headers, body = middleware.call(authorized_env_for("/previews/s3cret-token/stream"))
       chunks = []
       body.each { |chunk| chunks << chunk }
 
@@ -331,7 +377,7 @@ RSpec.describe PreviewsProxy do
   end
 
   def websocket_env_for(client_io)
-    env = Rack::MockRequest.env_for("/previews/s3cret-token/cable",
+    env = authorized_env_for("/previews/s3cret-token/cable",
       "HTTP_HOST" => "paid.example",
       "HTTP_CONNECTION" => "Upgrade",
       "HTTP_ORIGIN" => "https://paid.example",
@@ -341,6 +387,10 @@ RSpec.describe PreviewsProxy do
     env["rack.hijack?"] = true
     env["rack.hijack"] = -> { env["rack.hijack_io"] = client_io }
     env
+  end
+
+  def authorized_env_for(path, env = {})
+    Rack::MockRequest.env_for(path, env.merge("warden" => warden))
   end
 
   # Starts a real TCP server on +port+ that completes a WebSocket handshake

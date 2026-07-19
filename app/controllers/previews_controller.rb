@@ -6,9 +6,9 @@ class PreviewsController < ApplicationController
   before_action :set_preview_session, only: [ :show, :stop ]
 
   # GET /previews/:id — renders the iframe wrapper that embeds the proxied app.
-  # The proxied content itself is served token-gated by the PreviewsProxy
-  # middleware at /previews/:token/*. This page requires an authenticated,
-  # authorized user; the iframe URL it embeds is the token-gated proxy path.
+  # The proxied content itself is served by the PreviewsProxy middleware at
+  # /previews/:token/*. Both this wrapper page and the proxied path require an
+  # authenticated, authorized user; the iframe URL embeds the proxy path.
   def show
     authorize @preview_session
   end
