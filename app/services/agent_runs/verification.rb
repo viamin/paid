@@ -80,19 +80,27 @@ module AgentRuns
       @agent_run.project.ensure_playwright_mcp_definition!
     end
 
-    # Appends the run-scoped playwright snapshot when it is missing, while
-    # preserving the original creation-time MCP snapshot exactly as created.
-    # That avoids silently picking up unrelated project MCP changes after the
-    # run was created and keeps any marketplace-attached snapshots already
-    # merged onto the run intact.
+    # Upserts the run-scoped playwright snapshot while preserving the original
+    # creation-time MCP snapshot order and contents for every other entry. That
+    # avoids silently picking up unrelated project MCP changes after the run was
+    # created and keeps any marketplace-attached snapshots already merged onto
+    # the run intact.
     def synchronize_snapshot!
       existing_snapshot = Array(@agent_run.mcp_server_snapshot)
-      return if existing_snapshot.any? { |definition| definition["name"] == Project::PLAYWRIGHT_MCP_NAME }
-
       definition = @agent_run.project.account.mcp_server_definitions.find_by(name: Project::PLAYWRIGHT_MCP_NAME)
       return unless definition
 
-      new_snapshot = existing_snapshot + [ definition.to_snapshot ]
+      latest_snapshot = definition.to_snapshot
+      playwright_index = existing_snapshot.index { |snapshot_definition| snapshot_definition["name"] == Project::PLAYWRIGHT_MCP_NAME }
+
+      new_snapshot = if playwright_index
+        updated_snapshot = existing_snapshot.dup
+        updated_snapshot[playwright_index] = latest_snapshot
+        updated_snapshot
+      else
+        existing_snapshot + [ latest_snapshot ]
+      end
+
       return if Array(@agent_run.mcp_server_snapshot) == new_snapshot
 
       AgentRun.where(id: @agent_run.id).update_all(mcp_server_snapshot: new_snapshot)

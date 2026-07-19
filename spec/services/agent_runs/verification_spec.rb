@@ -257,6 +257,30 @@ RSpec.describe AgentRuns::Verification do
           project.account.mcp_server_definitions.where(name: Project::PLAYWRIGHT_MCP_NAME).count
         }
       end
+
+      it "replaces a stale playwright snapshot entry with the latest definition snapshot" do
+        stale_snapshot = definition.to_snapshot.deep_dup.tap do |snapshot|
+          snapshot["command"] = "stale-command"
+          snapshot["env"] = {}
+        end
+        preserved_snapshot = { "name" => "existing-stdio", "command" => "npx", "args" => [ "serve" ] }
+        AgentRun.where(id: agent_run.id).update_all(mcp_server_snapshot: [ preserved_snapshot, stale_snapshot ])
+        agent_run.reload
+
+        provisioner.call
+
+        synchronized_snapshot = agent_run.reload.mcp_server_snapshot
+
+        expect(synchronized_snapshot.first).to eq(preserved_snapshot)
+        expect(synchronized_snapshot.second).to include(
+          "name" => Project::PLAYWRIGHT_MCP_NAME,
+          "command" => definition.command,
+          "env" => definition.env,
+          "install_type" => definition.install_type,
+          "metadata" => definition.metadata,
+          "transport" => definition.transport
+        )
+      end
     end
 
     context "when Docker returns an error" do
