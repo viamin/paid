@@ -232,7 +232,8 @@ RSpec.describe AgentRuns::Verification do
           transport: "stdio",
           install_type: "npx",
           command: Project::PLAYWRIGHT_MCP_COMMAND,
-          env: { "CDP_URL" => Project::PLAYWRIGHT_MCP_CDP_URL })
+          env: { "CDP_URL" => Project::PLAYWRIGHT_MCP_CDP_URL },
+          metadata: Project::PLAYWRIGHT_MCP_METADATA)
       end
 
       before do

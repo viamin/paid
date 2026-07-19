@@ -1848,7 +1848,8 @@ RSpec.describe Project do
         expect(definition).to have_attributes(
           transport: "stdio",
           install_type: "npx",
-          command: Project::PLAYWRIGHT_MCP_COMMAND
+          command: Project::PLAYWRIGHT_MCP_COMMAND,
+          metadata: Project::PLAYWRIGHT_MCP_METADATA
         )
         expect(definition.env).to eq("CDP_URL" => Project::PLAYWRIGHT_MCP_CDP_URL)
         expect(project.project_mcp_servers.reload.exists?(mcp_server_definition: definition)).to be true
@@ -1866,7 +1867,7 @@ RSpec.describe Project do
         expect(project.project_mcp_servers.exists?(mcp_server_definition: definition)).to be true
       end
 
-      it "repairs an existing stale playwright-mcp definition before attaching it" do
+      it "repairs an existing system-owned playwright-mcp definition before attaching it" do
         account = create(:account)
         stale_definition = create_stale_playwright_definition(account)
         project = create(:project, account: account, screenshot_settings: { "verification_enabled" => false })
@@ -1879,6 +1880,24 @@ RSpec.describe Project do
         expect(project.project_mcp_servers.exists?(mcp_server_definition: stale_definition)).to be true
       end
 
+      it "does not rewrite a user-managed definition that happens to use the reserved name" do
+        account = create(:account)
+        create(:mcp_server_definition,
+          account: account,
+          name: Project::PLAYWRIGHT_MCP_NAME,
+          transport: "stdio",
+          install_type: "npx",
+          command: "custom-playwright-wrapper",
+          args: [ "--custom" ],
+          env: { "TOKEN" => "secret" },
+          metadata: { "owner" => "user" })
+
+        project = build(:project, account: account, screenshot_settings: { "verification_enabled" => true })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:screenshot_settings]).to include(/reserved MCP definition/)
+      end
+
       it "does not re-attach when verification_enabled stays true" do
         account = create(:account)
         project = create(:project, account: account, screenshot_settings: { "verification_enabled" => true })
@@ -1886,6 +1905,7 @@ RSpec.describe Project do
           record.transport = "stdio"
           record.install_type = "npx"
           record.command = Project::PLAYWRIGHT_MCP_COMMAND
+          record.metadata = Project::PLAYWRIGHT_MCP_METADATA
         end
 
         expect {
@@ -1904,7 +1924,8 @@ RSpec.describe Project do
           command: "stale-command",
           args: [ "--stale" ],
           env: {},
-          enabled: false)
+          enabled: false,
+          metadata: Project::PLAYWRIGHT_MCP_METADATA)
       end
 
       def playwright_mcp_expected_attributes
@@ -1914,6 +1935,7 @@ RSpec.describe Project do
           command: Project::PLAYWRIGHT_MCP_COMMAND,
           args: [],
           env: { "CDP_URL" => Project::PLAYWRIGHT_MCP_CDP_URL },
+          metadata: Project::PLAYWRIGHT_MCP_METADATA,
           enabled: true
         }
       end

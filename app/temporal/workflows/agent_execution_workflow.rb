@@ -194,8 +194,10 @@ module Workflows
         # Must run after ProvisionMcpServersActivity so the playwright-mcp
         # stdio server's `CDP_URL` env points at a live browser container
         # when the agent starts.
-        run_activity(Activities::ProvisionBrowserContainerActivity,
-          { agent_run_id: agent_run_id }, timeout: 180)
+        if Temporalio::Workflow.patched("agent-execution-provision-browser-container-v1")
+          run_activity(Activities::ProvisionBrowserContainerActivity,
+            { agent_run_id: agent_run_id }, timeout: 180)
+        end
 
         # Step 2: Provision container (with empty workspace directory).
         # The activity heartbeats while provisioning so a workflow

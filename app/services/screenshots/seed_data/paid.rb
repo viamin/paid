@@ -111,12 +111,7 @@ module Screenshots
             record.command = "@modelcontextprotocol/server-filesystem"
           end
 
-          playwright_mcp_definition = McpServerDefinition.find_or_create_by!(account: account, name: Project::PLAYWRIGHT_MCP_NAME) do |record|
-            record.transport = "stdio"
-            record.install_type = "npx"
-            record.command = Project::PLAYWRIGHT_MCP_COMMAND
-            record.env = { "CDP_URL" => Project::PLAYWRIGHT_MCP_CDP_URL }
-          end
+          playwright_mcp_definition = project.ensure_playwright_mcp_definition!
 
           agent_run = project.agent_runs.find_or_initialize_by(custom_prompt: "Capture screenshot route coverage")
           reset_agent_run!(agent_run) if agent_run.persisted?
