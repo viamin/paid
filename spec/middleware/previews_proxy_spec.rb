@@ -109,6 +109,19 @@ RSpec.describe PreviewsProxy do
       expect(response.status).to eq(200)
       expect(response.body).to eq("ok")
     end
+
+    it "preloads the viewer account before leaving system access" do
+      viewer = middleware.send(:current_user_for, "warden" => warden)
+
+      expect(viewer.association(:account)).to be_loaded
+    end
+
+    it "preloads the preview session project/account chain for policy checks" do
+      resolved_session = middleware.send(:resolve_session, session.token)
+
+      expect(resolved_session.association(:project)).to be_loaded
+      expect(resolved_session.project.association(:account)).to be_loaded
+    end
   end
 
   describe "HTTP forwarding" do

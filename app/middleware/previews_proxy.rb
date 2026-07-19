@@ -124,7 +124,7 @@ class PreviewsProxy
 
   def resolve_session(token)
     TenantContext.with_system_access do
-      PreviewSession.find_accessible_by_token(token)
+      PreviewSession.includes(project: :account).find_accessible_by_token(token)
     end
   rescue ActiveRecord::ConnectionNotEstablished, ActiveRecord::StatementInvalid => e
     log_error("previews_proxy.session_lookup_failed", token:, error: e.message)
@@ -150,7 +150,7 @@ class PreviewsProxy
     return if user_id.blank?
 
     TenantContext.with_system_access do
-      User.find_by(id: user_id)
+      User.includes(:account).find_by(id: user_id).tap { |user| user&.account }
     end
   end
 
