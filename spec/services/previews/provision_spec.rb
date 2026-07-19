@@ -79,6 +79,31 @@ RSpec.describe Previews::Provision do
       expect(lock_state[:held]).to be(false)
       expect(observed).to eq([ false ])
     end
+
+    it "does not resurrect a session stopped concurrently during backend start" do
+      # Simulate a concurrent teardown that fires while the container backend
+      # start is in-flight (the project lock is not held during that call).
+      concurrent_stop_backend = Class.new do
+        include Previews::ContainerBackend
+
+        def self.start(session)
+          # Mimic what a concurrent stop/restart does: clear the tunnel port
+          # and move the session to the stopped terminal state.
+          session.update_columns(status: "stopped", tunnel_port: nil)
+          Previews::ContainerBackend::Outcome.new(container_id: "preview-concurrent", app_port: 3000)
+        end
+
+        def self.stop(_session); true; end
+      end
+
+      result = described_class.new(project: project, container_backend: concurrent_stop_backend)
+        .start(branch_name: "feature/race")
+
+      expect(result).to be_success
+      session = PreviewSession.where(project: project, branch_name: "feature/race").first
+      expect(session.status).to eq("stopped")
+      expect(session.tunnel_port).to be_nil
+    end
   end
 
   describe "#stop" do

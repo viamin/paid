@@ -104,6 +104,20 @@ module Previews
       session.update!(status: "starting")
       port = port_pool.acquire(session)
       outcome = container_backend.start(session)
+
+      # Re-check terminal state after the (potentially slow) backend call. A
+      # concurrent stop/restart holds no project lock during container start,
+      # so it may have called teardown on this session, moving it to `stopped`.
+      # Overwriting that terminal state with `ready` would violate the
+      # one-active-preview-per-project guarantee and cause tunnel-port reuse
+      # collisions. The teardown already released the port, so release here
+      # is a no-op (tunnel_port is nil after reload).
+      session.reload
+      if session.terminal?
+        port_pool.release(session)
+        return Result.new(session:, success?: true)
+      end
+
       session.mark_ready!(tunnel_port: port, container_id: outcome.container_id)
       Result.new(session:, success?: true)
     rescue StandardError => e
