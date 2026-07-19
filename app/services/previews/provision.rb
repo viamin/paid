@@ -151,7 +151,7 @@ module Previews
     def cleanup!
       begin
         @tunnel_manager.stop_client!(container_service:) if @tunnel_port.present? && container_service.present?
-        @tunnel_manager.release_port!
+        @tunnel_manager.release_port! if @tunnel_port.present?
         cleanup_preview_service_dependencies!
       rescue StandardError => e
         logger.warn(message: "previews.provision.cleanup_failed", agent_run_id: agent_run.id, error: e.message)

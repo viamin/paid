@@ -273,6 +273,14 @@ RSpec.describe Previews::Provision do
     expect(container_service).to have_received(:cleanup).with(force: true)
   end
 
+  it "does not release a persisted tunnel port when cleanup runs before this lifecycle allocates one" do
+    service.prepare_workspace!
+
+    service.cleanup!
+
+    expect(tunnel_manager).not_to have_received(:release_port!)
+  end
+
   it "loads seed data only when the repo screenshots config defines seed records" do
     seeded_config = Screenshots::Configuration.from_hash(
       "base_url" => "http://localhost:3000",
