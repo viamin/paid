@@ -51,7 +51,6 @@ RSpec.describe Screenshots::ContainerCapture do
       run_capture!: []
     )
     allow(service).to receive(:start_chrome!)
-    allow(service).to receive(:publish_result!)
     allow(service).to receive(:cleanup!)
     allow(project).to receive(:update!).and_call_original
   end
@@ -71,16 +70,15 @@ RSpec.describe Screenshots::ContainerCapture do
     expect(result.status).to eq("no_ui_changes")
     expect(preview_provision).not_to have_received(:prepare_workspace!)
     expect(project.reload.effective_screenshot_status["last_capture_status"]).to eq("no_ui_changes")
-    expect(Screenshots::PrComment).to have_received(:call) do |**args|
-      expect(args).to include(
+    expect(Screenshots::PrComment).to have_received(:call).with(
+      hash_including(
         repo: project.full_name,
         pr_number: agent_run.pull_request_number,
         commit_sha: agent_run.result_commit_sha,
         screenshots: [],
         status: "no_ui_changes"
       )
-      expect(args[:github_client]).to be_a(GithubClient)
-    end
+    )
   end
 
   it "refreshes the PR comment when capture fails" do
@@ -89,16 +87,15 @@ RSpec.describe Screenshots::ContainerCapture do
     result = service.call
 
     expect(result.status).to eq("capture_failed")
-    expect(Screenshots::PrComment).to have_received(:call) do |**args|
-      expect(args).to include(
+    expect(Screenshots::PrComment).to have_received(:call).with(
+      hash_including(
         repo: project.full_name,
         pr_number: agent_run.pull_request_number,
         commit_sha: agent_run.result_commit_sha,
         screenshots: [],
         status: "capture_failed"
       )
-      expect(args[:github_client]).to be_a(GithubClient)
-    end
+    )
   end
 
   it "rejects unsupported screenshot drivers with a config error" do
@@ -115,73 +112,23 @@ RSpec.describe Screenshots::ContainerCapture do
     expect(result.error).to include("cuprite")
   end
 
-  describe "#publish_result!" do
-    let(:tmpdir) { Dir.mktmpdir("screenshots-publish") }
-    let(:screenshot_path) { File.join(tmpdir, Screenshots::ContainerCapture::OUTPUT_DIR, "home.png") }
-    let(:trace_path) { File.join(tmpdir, Screenshots::ContainerCapture::OUTPUT_DIR, "trace.zip") }
-    let(:video_path) { File.join(tmpdir, Screenshots::ContainerCapture::OUTPUT_DIR, "videos", "capture.webm") }
-
-    before do
-      allow(service).to receive(:publish_result!).and_call_original
-      FileUtils.mkdir_p(File.dirname(screenshot_path))
-      FileUtils.mkdir_p(File.dirname(video_path))
-      File.write(screenshot_path, "png")
-      File.write(trace_path, "zip")
-      File.write(video_path, "webm")
-      service.instance_variable_set(:@tmpdir, tmpdir)
-      service.instance_variable_set(:@hints, { "home" => { "summary" => "Updated hero" } })
-      service.instance_variable_set(:@trace_path, trace_path)
-      service.instance_variable_set(:@video_path, video_path)
-      allow(Screenshots::Storage).to receive_messages(
-        configured?: true,
-        new: storage
+  it "rejects seed configuration for Phoenix projects with a config error" do
+    tmpdir = Dir.mktmpdir("phoenix-seed")
+    File.write(File.join(tmpdir, "mix.exs"), "defmodule Demo.MixProject do end")
+    service.instance_variable_set(:@tmpdir, tmpdir)
+    allow(service).to receive(:config).and_return(
+      Screenshots::Configuration.from_hash(
+        "base_url" => "http://localhost:4100",
+        "routes" => [ { "path" => "/", "name" => "home" } ],
+        "seed" => [ { "key" => "__all__", "runner" => "Screenshots::SeedData::Paid.call" } ]
       )
-      allow(storage).to receive_messages(
-        upload: "https://example.test/home.png",
-        upload_trace: "https://example.test/trace.zip",
-        upload_video: "https://example.test/capture.webm",
-        previous_screenshots: {}
-      )
-    end
+    )
 
-    after do
-      FileUtils.rm_rf(tmpdir)
-    end
-
-    it "uploads trace and video artifacts and passes their URLs to the PR comment" do
-      service.send(:publish_result!, [ screenshot_path ])
-
-      expect(storage).to have_received(:upload_trace).with(
-        file_path: trace_path,
-        org: project.owner,
-        repo: project.repo,
-        pr_number: agent_run.pull_request_number,
-        commit_sha: agent_run.result_commit_sha
-      )
-      expect(storage).to have_received(:upload_video).with(
-        file_path: video_path,
-        org: project.owner,
-        repo: project.repo,
-        pr_number: agent_run.pull_request_number,
-        commit_sha: agent_run.result_commit_sha
-      )
-      expect(Screenshots::PrComment).to have_received(:call).with(hash_including(
-        trace_url: "https://example.test/trace.zip",
-        video_url: "https://example.test/capture.webm"
-      ))
-    end
-
-    it "still posts the comment when trace and video uploads fail" do
-      allow(storage).to receive(:upload_trace).and_raise(Screenshots::Storage::StorageError, "boom")
-      allow(storage).to receive(:upload_video).and_raise(Screenshots::Storage::StorageError, "boom")
-
-      expect { service.send(:publish_result!, [ screenshot_path ]) }.not_to raise_error
-
-      expect(Screenshots::PrComment).to have_received(:call).with(hash_including(
-        trace_url: nil,
-        video_url: nil
-      ))
-    end
+    expect { service.send(:validate_supported_config!) }.to raise_error(
+      Screenshots::ConfigError, /not supported for Phoenix projects yet/
+    )
+  ensure
+    FileUtils.rm_rf(tmpdir)
   end
 
   describe "#screenshot_config_json (capture scoping and annotation)" do
@@ -226,28 +173,29 @@ RSpec.describe Screenshots::ContainerCapture do
     end
   end
 
-  describe "#capture_runner_script" do
-    it "records a Playwright trace and gates video recording on the env flag" do
+  describe "#capture_runner_script (trace recording)" do
+    it "starts and stops Playwright tracing for each route" do
+      script = service.send(:capture_runner_script)
+
+      expect(script).to include("context.tracing.start({ screenshots: true, snapshots: true, sources: true })")
+      expect(script).to include("context.tracing.stop({ path: `${outputDir}/${route.name}.trace.zip` })")
+    end
+
+    it "gates video recording on the SCREENSHOT_RECORD_VIDEO env var" do
       script = service.send(:capture_runner_script)
 
       expect(script).to include('process.env.SCREENSHOT_RECORD_VIDEO === "1"')
-      expect(script).to include("context.tracing.start({ screenshots: true, snapshots: true, sources: true })")
-      expect(script).to include("context.tracing.stop({ path: `${outputDir}/trace.zip` })")
       expect(script).to include("contextOptions.recordVideo = { dir: `${outputDir}/videos` }")
     end
 
-    it "closes the Playwright context before the browser so videos flush to disk" do
+    it "closes the context before the browser so recorded videos flush to disk" do
       script = service.send(:capture_runner_script)
 
-      expect(script.index("await context.close();")).to be < script.index("await browser.close();")
-    end
+      context_close_index = script.index("await context.close();")
+      browser_close_index = script.index("await browser.close();")
 
-    it "stops tracing from a finally block so artifacts still flush on capture errors" do
-      script = service.send(:capture_runner_script)
-
-      expect(script).to include("} finally {")
-      expect(script.index("await context.tracing.stop({ path: `${outputDir}/trace.zip` });"))
-        .to be > script.index("} finally {")
+      expect(context_close_index).not_to be_nil
+      expect(browser_close_index).to be > context_close_index
     end
   end
 
@@ -256,15 +204,16 @@ RSpec.describe Screenshots::ContainerCapture do
       expect(service.send(:record_video?)).to be false
     end
 
-    it "uses the legacy project screenshot setting" do
-      project.update!(screenshot_settings: project.screenshot_settings.merge("record_video" => true))
+    it "reflects the project record_video screenshot setting" do
+      allow(project).to receive(:effective_screenshot_settings)
+        .and_return("record_video" => true)
 
       expect(service.send(:record_video?)).to be true
     end
   end
 
   describe "#collected_video_path" do
-    it "returns the recorded webm path when present" do
+    it "globs the recorded .webm from the videos subdirectory" do
       tmpdir = Dir.mktmpdir("screenshots-video")
       service.instance_variable_set(:@tmpdir, tmpdir)
       video_path = File.join(tmpdir, Screenshots::ContainerCapture::OUTPUT_DIR, "videos", "capture.webm")
@@ -274,6 +223,135 @@ RSpec.describe Screenshots::ContainerCapture do
       expect(service.send(:collected_video_path)).to eq(video_path)
     ensure
       FileUtils.rm_rf(tmpdir)
+    end
+  end
+
+  describe "#publish_result!" do
+    def build_publish_artifacts
+      tmpdir = Dir.mktmpdir("screenshots-publish")
+      output_dir = File.join(tmpdir, Screenshots::ContainerCapture::OUTPUT_DIR)
+      screenshot_path = File.join(output_dir, "home.png")
+      route_trace_path = File.join(output_dir, "home.trace.zip")
+      global_trace_path = File.join(output_dir, "trace.zip")
+      video_path = File.join(output_dir, "videos", "capture.webm")
+
+      FileUtils.mkdir_p(File.dirname(video_path))
+      File.write(screenshot_path, "png")
+      File.write(route_trace_path, "route trace")
+      File.write(global_trace_path, "global trace")
+      File.write(video_path, "webm")
+
+      {
+        tmpdir: tmpdir,
+        screenshot_path: screenshot_path,
+        route_trace_path: route_trace_path,
+        global_trace_path: global_trace_path,
+        video_path: video_path
+      }
+    end
+
+    def expect_uploaded_supporting_artifacts(storage:, artifacts:)
+      expect(storage).to have_received(:upload_trace).with(
+        file_path: artifacts[:global_trace_path],
+        org: project.owner,
+        repo: project.repo,
+        pr_number: agent_run.pull_request_number,
+        commit_sha: agent_run.result_commit_sha
+      )
+      expect(storage).to have_received(:upload_video).with(
+        file_path: artifacts[:video_path],
+        org: project.owner,
+        repo: project.repo,
+        pr_number: agent_run.pull_request_number,
+        commit_sha: agent_run.result_commit_sha
+      )
+      expect(Screenshots::TraceArtifactExporter).to have_received(:call).with(
+        hash_including(
+          route_name: "home",
+          trace_path: artifacts[:route_trace_path],
+          log_message: "screenshots.export_failed"
+        )
+      )
+    end
+
+    let(:artifacts) { build_publish_artifacts }
+
+    before do
+      allow(service).to receive(:publish_result!).and_call_original
+      service.instance_variable_set(:@tmpdir, artifacts[:tmpdir])
+      service.instance_variable_set(:@hints, { "home" => { "summary" => "Updated hero" } })
+      service.instance_variable_set(:@trace_path, artifacts[:global_trace_path])
+      service.instance_variable_set(:@video_path, artifacts[:video_path])
+      allow(Screenshots::Storage).to receive_messages(
+        configured?: true,
+        new: storage
+      )
+      allow(storage).to receive_messages(
+        upload: "https://example.test/home.png",
+        upload_trace: "https://example.test/trace.zip",
+        upload_video: "https://example.test/capture.webm",
+        previous_artifacts: { "home" => { png: "https://example.test/previous-home.png" } }
+      )
+      allow(Screenshots::TraceArtifactExporter).to receive(:call).and_return(
+        gif_url: "https://example.test/home.gif",
+        video_url: "https://example.test/home.webm",
+        video_filename: "home-demo.webm"
+      )
+    end
+
+    after do
+      FileUtils.rm_rf(artifacts[:tmpdir])
+    end
+
+    it "uploads screenshots, route artifacts, and top-level trace assets" do
+      service.send(:publish_result!, [ artifacts[:screenshot_path] ])
+
+      expect(storage).to have_received(:upload).with(
+        file_path: artifacts[:screenshot_path],
+        org: project.owner,
+        repo: project.repo,
+        pr_number: agent_run.pull_request_number,
+        commit_sha: agent_run.result_commit_sha,
+        route_name: "home"
+      )
+      expect_uploaded_supporting_artifacts(storage:, artifacts:)
+    end
+
+    it "passes previous screenshots plus trace and video links into the PR comment" do
+      service.send(:publish_result!, [ artifacts[:screenshot_path] ])
+
+      expect(Screenshots::PrComment).to have_received(:call).with(
+        hash_including(
+          commit_sha: agent_run.result_commit_sha,
+          previous_screenshots: { "home" => "https://example.test/previous-home.png" },
+          trace_url: "https://example.test/trace.zip",
+          video_url: "https://example.test/capture.webm",
+          screenshots: [
+            {
+              route_name: "home",
+              summary: "Updated hero",
+              url: "https://example.test/home.png",
+              gif_url: "https://example.test/home.gif",
+              video_url: "https://example.test/home.webm",
+              video_filename: "home-demo.webm"
+            }
+          ]
+        )
+      )
+    end
+
+    it "still posts the comment when trace and video uploads fail" do
+      allow(storage).to receive(:upload_trace).and_raise(Screenshots::Storage::StorageError, "boom")
+      allow(storage).to receive(:upload_video).and_raise(Screenshots::Storage::StorageError, "boom")
+
+      expect { service.send(:publish_result!, [ artifacts[:screenshot_path] ]) }.not_to raise_error
+
+      expect(Screenshots::PrComment).to have_received(:call).with(
+        hash_including(
+          trace_url: nil,
+          video_url: nil
+        )
+      )
     end
   end
 end

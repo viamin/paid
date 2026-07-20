@@ -1736,6 +1736,35 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_19_003357) do
     t.index ["agent_run_id"], name: "index_preview_provision_states_on_agent_run_id", unique: true
   end
 
+  create_table "preview_sessions", comment: "Live web app preview sessions bridging a tunnel port to the Rails reverse proxy for human review.", force: :cascade do |t|
+    t.bigint "agent_run_id", comment: "Optional originating agent run that produced the previewed changes."
+    t.string "branch_name", limit: 255, comment: "Git branch (or commit context) checked out in the preview container."
+    t.string "container_id", limit: 128, comment: "Docker container id running the previewed web app behind the tunnel."
+    t.datetime "created_at", null: false
+    t.datetime "expires_at", comment: "Hard TTL after which the preview is stopped and its container/tunnel/port are reclaimed."
+    t.datetime "last_accessed_at", comment: "Last time the proxy served a request for this session; used for idle-based expiry."
+    t.bigint "project_id", null: false, comment: "Project the preview belongs to; drives account-scoped authorization."
+    t.string "status", limit: 50, default: "provisioning", null: false, comment: "Lifecycle state: provisioning, starting, ready, active, expiring, stopped, failed."
+    t.string "token", limit: 64, null: false, comment: "Opaque, random secret embedded in the proxy path /previews/:token/*. Acts as the proxy credential."
+    t.integer "tunnel_port", comment: "Allocated localhost port on the Rails host that the rathole tunnel bridges to the container app."
+    t.datetime "updated_at", null: false
+    t.index ["agent_run_id"], name: "index_preview_sessions_on_agent_run_id"
+    t.index ["project_id", "status"], name: "index_preview_sessions_on_project_and_status"
+    t.index ["project_id"], name: "index_preview_sessions_on_project_id"
+    t.index ["status", "expires_at"], name: "index_preview_sessions_on_status_and_expires_at"
+    t.index ["token"], name: "index_preview_sessions_on_token", unique: true
+    t.index ["tunnel_port"], name: "index_preview_sessions_on_tunnel_port_unique", unique: true, where: "(tunnel_port IS NOT NULL)"
+  end
+
+  create_table "preview_tunnel_port_reservations", comment: "Shared preview tunnel port reservations across Rails processes", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "reservation_key", null: false, comment: "Stable preview session key that owns the reserved port"
+    t.integer "tunnel_port", null: false, comment: "Host-side TCP port reserved for the preview tunnel"
+    t.datetime "updated_at", null: false
+    t.index ["reservation_key"], name: "index_preview_tunnel_port_reservations_on_reservation_key", unique: true
+    t.index ["tunnel_port"], name: "index_preview_tunnel_port_reservations_on_tunnel_port", unique: true
+  end
+
   create_table "preview_tunnel_reservations", comment: "Tracks preview tunnel ports reserved across Ruby processes so concurrent preview boots cannot allocate the same port.", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "owner_key", comment: "Logical owner identifier for the process/session that reserved the preview tunnel port."
@@ -2934,6 +2963,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_19_003357) do
   add_foreign_key "pre_commit_requirements", "projects", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "users", on_delete: :cascade
   add_foreign_key "preview_provision_states", "agent_runs", on_delete: :cascade
+  add_foreign_key "preview_sessions", "agent_runs"
+  add_foreign_key "preview_sessions", "projects"
   add_foreign_key "project_baselines", "projects"
   add_foreign_key "project_convention_detections", "project_versions"
   add_foreign_key "project_convention_detections", "projects"
@@ -3875,10 +3906,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_19_003357) do
       CREATE TRIGGER logidze_on_mcp_server_definitions BEFORE INSERT OR UPDATE ON public.mcp_server_definitions FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{env}')
   SQL
 
-  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
-      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
-  SQL
-
   create_trigger :logidze_on_orchestration_strategies, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_orchestration_strategies BEFORE INSERT OR UPDATE ON public.orchestration_strategies FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
@@ -3945,5 +3972,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_19_003357) do
 
   create_trigger :logidze_on_users, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_users BEFORE INSERT OR UPDATE ON public.users FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{encrypted_password,reset_password_token,reset_password_sent_at,remember_created_at}')
+  SQL
+
+  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
+      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
   SQL
 end

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+export DB_HOST=paid-svc-a3-s1-postgres
+export DB_USERNAME=agent
+export DB_PASSWORD=agent
+export PAID_TEST_DATABASE=agent_run_31169_attempt_0
+export PAID_DEVELOPMENT_DATABASE=agent_run_31169_attempt_0
+export PAID_DEVELOPMENT_CABLE_DATABASE=agent_run_31169_attempt_0
+export PAID_SKIP_DATABASE_RUNTIME_ROLE_GUARD=true
+export RAILS_ENV=test

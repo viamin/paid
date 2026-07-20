@@ -127,6 +127,7 @@ jobs:
             ".libyaml-src/"
             ".libyaml_build/"
             ".libyaml_src/"
+            ".cache-rubocop/"
             ".rubocop-cache/"
             ".rubocop_cache/"
             "backups/"

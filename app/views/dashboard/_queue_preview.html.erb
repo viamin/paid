@@ -1,4 +1,4 @@
-<div class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+<div id="queue-preview" class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
   <div class="flex items-center justify-between gap-4">
     <div>
       <h3 class="text-base font-semibold text-gray-900">Upcoming Queue</h3>
@@ -18,17 +18,12 @@
                 <th scope="col" class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Priority</th>
                 <th scope="col" class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Goal</th>
                 <th scope="col" class="px-3 py-2 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Context</th>
+                <th scope="col" class="px-3 py-2 text-right text-xs font-medium uppercase tracking-wide text-gray-500">Actions</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-200 bg-white">
               <% queue_preview.each do |entry| %>
-                <tr>
-                  <td class="whitespace-nowrap py-3 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-0"><%= entry.position %></td>
-                  <td class="whitespace-nowrap px-3 py-3 text-sm text-gray-900"><%= link_to entry.run.project.full_name, project_member_path(entry.run.project), class: "hover:text-indigo-600" %></td>
-                  <td class="whitespace-nowrap px-3 py-3 text-sm text-gray-500"><%= agent_run_priority_badge(entry.run) %></td>
-                  <td class="whitespace-nowrap px-3 py-3 text-sm text-gray-500"><%= goal_label(entry.run.goal) %></td>
-                  <td class="px-3 py-3 text-sm text-gray-500"><%= agent_run_context_display(entry.run) %></td>
-                </tr>
+                <%= render "dashboard/queue_preview_row", entry: entry %>
               <% end %>
             </tbody>
           </table>

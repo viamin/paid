@@ -4,8 +4,6 @@
 # Sets the cancelled status immediately and enqueues a background job
 # for the slow cleanup (Temporal workflow cancellation + container teardown),
 # so the web UI responds without blocking.
-#
-# Used by Projects::AgentRunsController and DashboardController.
 module AgentRunCancellable
   extend ActiveSupport::Concern
 
@@ -31,10 +29,12 @@ module AgentRunCancellable
   end
 
   def cancel_agent_run(agent_run, redirect_path:)
-    unless agent_run.cancellable?
-      redirect_to redirect_path, status: :see_other, notice: "Agent run is no longer active."
-      return
-    end
+    result = cancel_agent_run_result(agent_run)
+    redirect_to redirect_path, status: :see_other, notice: result.message
+  end
+
+  def cancel_agent_run_result(agent_run)
+    return CancellationResult.new(:inactive, "Agent run is no longer active.") unless agent_run.cancellable?
 
     cancelled = false
 
@@ -48,9 +48,15 @@ module AgentRunCancellable
     if cancelled
       AgentRunCancellationJob.perform_later(agent_run.id)
       record_run_audit_event("agent_run.cancelled", agent_run)
-      redirect_to redirect_path, status: :see_other, notice: "Agent run cancelled."
+      CancellationResult.new(:cancelled, "Agent run cancelled.")
     else
-      redirect_to redirect_path, status: :see_other, notice: "Agent run finished before it could be cancelled."
+      CancellationResult.new(:finished, "Agent run finished before it could be cancelled.")
+    end
+  end
+
+  CancellationResult = Struct.new(:status, :message, keyword_init: false) do
+    def cancelled?
+      status == :cancelled
     end
   end
 end

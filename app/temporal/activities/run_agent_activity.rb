@@ -1553,7 +1553,7 @@ module Activities
       end
 
       # Other execution error
-      raise RunnerExecutionError, "Agent exited with code #{result[:exit_code]}#{oom_annotation(result)}: #{output.truncate(500)}"
+      raise RunnerExecutionError, "Agent exited with code #{result[:exit_code]}#{exit_annotation(result)}: #{output.truncate(500)}"
     rescue Containers::Provision::TimeoutError => e
       # execution_started_at is nil if the timeout fires before execution
       # begins (e.g. during start!/callbacks); recent_timeout_output
@@ -1720,13 +1720,11 @@ module Activities
         raise RunnerRateLimitError.new("Rate limited by #{runner}", reset_at: reset_at)
       end
 
-      reason = if sanitized_output.present?
-        "Agent exited with code #{result[:exit_code]}#{oom_annotation(result)}: #{sanitized_output.truncate(500)}"
-      else
-        base = "No output before exit code #{result[:exit_code]}."
-        oom = oom_annotation(result)
-        oom.present? ? "#{base}#{oom}" : "#{base} Check proxy configuration, auth, and network policy."
+      reason = preflight_exit_reason(result, sanitized_output)
+      if preflight_sigkill_infra_failure?(result)
+        raise_preflight_infra_failure!(agent_run: agent_run, runner: runner, reason: reason)
       end
+
       raise_preflight_failure!(agent_run: agent_run, runner: runner, reason: reason)
     rescue Containers::Provision::OutputAbortError => e
       reset_at = rate_limit_reset_at(runner, e.matched_output.to_s)
@@ -2188,18 +2186,58 @@ module Activities
       )
     end
 
-    # Surfaces a container OOM kill inline in the runner error so the run's
-    # error_message explains a bare exit 137 (cgroup memory limit exceeded)
-    # instead of leaving it cryptic. Returns "" for non-OOM results.
-    def oom_annotation(result)
-      return "" unless result.respond_to?(:[]) && result[:oom_killed]
+    # Surfaces exit-137 diagnostics inline so the run's error_message explains
+    # a bare SIGKILL with the container state we already inspected.
+    def exit_annotation(result)
+      return "" unless result.respond_to?(:[])
 
-      limit = result[:memory_limit_bytes].to_i
-      if limit.positive?
-        " (container OOM-killed; memory limit #{(limit / 1024.0**3).round(1)} GB)"
-      else
-        " (container OOM-killed)"
+      if result[:oom_killed]
+        limit = result[:memory_limit_bytes].to_i
+        return " (container OOM-killed; memory limit #{(limit / 1024.0**3).round(1)} GB)" if limit.positive?
+
+        return " (container OOM-killed)"
       end
+
+      return "" unless sigkill_exit?(result)
+
+      details = []
+      limit = result[:memory_limit_bytes].to_i
+      details << "memory limit #{(limit / 1024.0**3).round(1)} GB" if limit.positive?
+      details << "container_running=#{result[:container_running]}" unless result[:container_running].nil?
+      suffix = details.present? ? "; #{details.join(', ')}" : ""
+
+      " (process killed by SIGKILL#{suffix})"
+    end
+
+    def preflight_exit_reason(result, sanitized_output)
+      if sanitized_output.present?
+        "Agent exited with code #{result[:exit_code]}#{exit_annotation(result)}: #{sanitized_output.truncate(500)}"
+      else
+        base = "No output before exit code #{result[:exit_code]}."
+        annotation = exit_annotation(result)
+        annotation.present? ? "#{base}#{annotation}" : "#{base} Check proxy configuration, auth, and network policy."
+      end
+    end
+
+    def sigkill_exit?(result)
+      result.respond_to?(:[]) && result[:exit_code].to_i == 137
+    end
+
+    # A preflight SIGKILL is an infrastructure failure only when the container
+    # itself was lost — OOM-killed, stopped, or no longer inspectable (the "No
+    # such container" case). When the container is still running the preflight
+    # process was killed in isolation (e.g. a runner whose model crashes its
+    # own smoke check), which is a per-runner fault: it must stay on the normal
+    # preflight failure path so record_runner_failure can open the circuit
+    # breaker instead of being bypassed on every attempt.
+    def preflight_sigkill_infra_failure?(result)
+      sigkill_exit?(result) && container_lost_after_exit?(result)
+    end
+
+    def container_lost_after_exit?(result)
+      return true if result[:oom_killed]
+
+      result[:container_running] != true
     end
 
     def raise_preflight_failure!(agent_run:, runner:, reason:)
@@ -2488,9 +2526,10 @@ module Activities
         )
       end
 
-      @harness_plan_cache[cache_key] = disable_codex_apps_for_review_goal?(runner_key, agent_run) ?
-        disable_codex_apps(plan) :
-        plan
+      plan = allow_codex_bundle_dir(runner_key, plan)
+      plan = disable_codex_apps(plan) if disable_codex_apps_for_review_goal?(runner_key, agent_run)
+
+      @harness_plan_cache[cache_key] = plan
     end
 
     def disable_codex_apps_for_review_goal?(runner_key, agent_run)
@@ -2501,17 +2540,32 @@ module Activities
       false
     end
 
+    def allow_codex_bundle_dir(runner_key, plan)
+      return plan unless RunnerSupport.runner_key_for_agent_type(runner_key) == "codex"
+      return plan if plan.command.each_cons(2).any? { |left, right| left == "--add-dir" && right == "/tmp/bundle" }
+
+      command = plan.command.dup
+      exec_index = command.index("exec") || 0
+      command.insert(exec_index + 1, "--add-dir", "/tmp/bundle")
+
+      Runners::HarnessExecutionPlan::Result.new(
+        command: command,
+        env: plan.env,
+        preparation: plan.preparation
+      )
+    rescue ArgumentError
+      plan
+    end
+
     def disable_codex_apps(plan)
       return plan if plan.command.include?("--disable") && plan.command.each_cons(2).any? { |left, right| left == "--disable" && right == "apps" }
 
-      prompt = plan.command.last
-      command_prefix = plan.command[0..-2]
-      disable_index = command_prefix.index("exec") || 0
-      command = command_prefix.dup
+      command = plan.command.dup
+      disable_index = command.index("exec") || 0
       command.insert(disable_index + 1, "--disable", "apps")
 
       Runners::HarnessExecutionPlan::Result.new(
-        command: command + [ prompt ],
+        command: command,
         env: plan.env,
         preparation: plan.preparation
       )

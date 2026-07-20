@@ -14,6 +14,7 @@ RSpec.describe Project do
     it { is_expected.to have_many(:members).through(:project_memberships).source(:user) }
     it { is_expected.to have_many(:issues).dependent(:destroy) }
     it { is_expected.to have_many(:agent_runs).dependent(:destroy) }
+    it { is_expected.to have_many(:style_guide_ab_tests).through(:account) }
     it { is_expected.to have_many(:orchestration_decisions).dependent(:destroy) }
     it { is_expected.to have_many(:scaling_observations).dependent(:destroy) }
     it { is_expected.to have_many(:scaling_experiments).dependent(:destroy) }
@@ -258,6 +259,39 @@ RSpec.describe Project do
     end
   end
 
+  describe "#detected_language" do
+    it "normalizes the primary language" do
+      project = build(:project)
+      project.define_singleton_method(:primary_language) { " Ruby " }
+
+      expect(project.detected_language).to eq("ruby")
+    end
+
+    it "returns nil when the primary language is blank" do
+      project = build(:project)
+      project.define_singleton_method(:primary_language) { " " }
+
+      expect(project.detected_language).to be_nil
+    end
+  end
+
+  describe "#project_type_label" do
+    it "returns a friendly label when the language profile knows it" do
+      project = build(:project)
+      project.define_singleton_method(:primary_language) { "Ruby" }
+
+      expect(project.project_type_label).to eq("Ruby on Rails")
+    end
+
+    it "falls back to the primary language when no profile label exists" do
+      allow(Projects::LanguageProfile).to receive(:label_for).with("Elixir").and_return(nil)
+      project = build(:project)
+      project.define_singleton_method(:primary_language) { "Elixir" }
+
+      expect(project.project_type_label).to eq("Elixir")
+    end
+  end
+
   describe "LLM provider allowlist/blocklist" do
     describe "#llm_provider_routing" do
       it "returns empty lists when no routing is configured" do
@@ -356,6 +390,42 @@ RSpec.describe Project do
       it "returns owner/repo format" do
         project = build(:project, owner: "viamin", repo: "paid")
         expect(project.full_name).to eq("viamin/paid")
+      end
+    end
+
+    describe "#detected_language" do
+      it "returns the downcased primary language" do
+        project = build(:project, primary_language: "Ruby")
+        expect(project.detected_language).to eq("ruby")
+      end
+
+      it "normalizes surrounding whitespace and casing" do
+        project = build(:project, primary_language: "  TypeScript  ")
+        expect(project.detected_language).to eq("typescript")
+      end
+
+      it "returns nil when no language is set" do
+        expect(build(:project, primary_language: nil).detected_language).to be_nil
+      end
+    end
+
+    describe "#project_type_label" do
+      it "maps known languages to a framework label" do
+        expect(build(:project, primary_language: "Ruby").project_type_label).to eq("Ruby on Rails")
+        expect(build(:project, primary_language: "Elixir").project_type_label).to eq("Phoenix / Elixir")
+        expect(build(:project, primary_language: "Swift").project_type_label).to eq("macOS / Swift")
+      end
+
+      it "is case-insensitive" do
+        expect(build(:project, primary_language: "elixir").project_type_label).to eq("Phoenix / Elixir")
+      end
+
+      it "falls back to the raw language when unmapped" do
+        expect(build(:project, primary_language: "Brainfuck").project_type_label).to eq("Brainfuck")
+      end
+
+      it "returns nil when no language is set" do
+        expect(build(:project, primary_language: nil).project_type_label).to be_nil
       end
     end
 
@@ -880,6 +950,14 @@ RSpec.describe Project do
         expect(project.trusted_github_user?(bot_login)).to be false
       end
 
+      it "does not add dependency-update bot authors to global author trust" do
+        project.auto_merge_mode = "dependabot_only"
+
+        expect(project.trusted_github_author_logins).not_to include("dependabot[bot]", "renovate[bot]")
+        expect(project.trusted_github_author?("dependabot[bot]")).to be false
+        expect(project.trusted_github_user?("dependabot[bot]")).to be false
+      end
+
       it "identifies the app bot as Paid's own author for marker re-admission" do
         expect(project.paid_bot_author?(bot_login)).to be true
         expect(project.paid_bot_author?(bot_login.upcase)).to be true
@@ -911,6 +989,53 @@ RSpec.describe Project do
 
       it "has no Paid bot identity to re-admit (returns false)" do
         expect(project.paid_bot_author?(bot_login)).to be false
+      end
+    end
+
+    context "with Dependabot auto-merge enabled" do
+      let(:project) do
+        build(:project, :with_github_installation,
+          allowed_github_usernames: [ "viamin" ],
+          auto_merge_mode: "dependabot_only")
+      end
+
+      it "does NOT trust dependabot as a global author" do
+        expect(project.trusted_github_author?("dependabot[bot]")).to be false
+        expect(project.trusted_github_author?("renovate[bot]")).to be false
+        expect(project.trusted_github_author?("dependabot-preview[bot]")).to be false
+      end
+
+      it "does NOT trust dependabot as a comment author (prevents prompt injection)" do
+        expect(project.trusted_github_user?("dependabot[bot]")).to be false
+      end
+
+      it "still trusts allowlisted humans for both comments and authorship" do
+        expect(project.trusted_github_author?("viamin")).to be true
+        expect(project.trusted_github_user?("viamin")).to be true
+      end
+
+      context "when auto_merge_mode is 'all'" do
+        let(:project) do
+          build(:project, :with_github_installation,
+            allowed_github_usernames: [ "viamin" ],
+            auto_merge_mode: "all")
+        end
+
+        it "still does not trust dependabot as a global author" do
+          expect(project.trusted_github_author?("dependabot[bot]")).to be false
+        end
+      end
+    end
+
+    context "with Dependabot auto-merge disabled" do
+      let(:project) do
+        build(:project, :with_github_installation,
+          allowed_github_usernames: [ "viamin" ],
+          auto_merge_mode: "off")
+      end
+
+      it "does not trust dependabot as an author" do
+        expect(project.trusted_github_author?("dependabot[bot]")).to be false
       end
     end
   end
@@ -1348,10 +1473,33 @@ RSpec.describe Project do
         allow(project).to receive(:github_credential).and_return("ghs_app_token")
         allow(GithubClient).to receive(:new).with(
           token: "ghs_app_token",
-          health_endpoint: project.github_health_endpoint
+          health_endpoint: project.github_health_endpoint,
+          token_refresher: instance_of(Proc)
         ).and_return(github_client)
 
         expect(project.client).to be(github_client)
+      end
+    end
+
+    describe "#installation_token_refresher" do
+      it "returns a proc that clears cache and re-mints the token" do
+        project = build(:project, :with_github_installation)
+        fresh_token = "ghs_refreshed_token_abc"
+
+        expect(Github::AppInstallation).to receive(:clear_cached_token).with(
+          installation_id: project.github_installation.github_installation_id,
+          repo_full_name: project.full_name
+        )
+        allow(project).to receive(:github_credential).and_return(fresh_token)
+
+        result = project.installation_token_refresher.call
+        expect(result).to eq(fresh_token)
+      end
+
+      it "returns nil for PAT-backed projects" do
+        project = build(:project, github_installation: nil)
+
+        expect(project.installation_token_refresher).to be_nil
       end
     end
 
@@ -1698,13 +1846,6 @@ RSpec.describe Project do
         expect(project).to be_valid
       end
 
-      it "rejects invalid record_video in screenshot_settings" do
-        project = build(:project, screenshot_settings: { "record_video" => "yes" })
-
-        expect(project).not_to be_valid
-        expect(project.errors[:screenshot_settings].join).to include("record_video must be true or false")
-      end
-
       it "rejects non-hash screenshot_settings" do
         project = build(:project, screenshot_settings: "bad")
 
@@ -1720,10 +1861,16 @@ RSpec.describe Project do
       end
 
       it "rejects unknown screenshot frameworks" do
-        project = build(:project, screenshot_settings: { "framework" => "phoenix" })
+        project = build(:project, screenshot_settings: { "framework" => "laravel" })
 
         expect(project).not_to be_valid
-        expect(project.errors[:screenshot_settings].join).to include("framework must be one of: rails, nextjs, django, generic")
+        expect(project.errors[:screenshot_settings].join).to include("framework must be one of: rails, nextjs, django, phoenix, generic")
+      end
+
+      it "accepts Phoenix screenshot frameworks" do
+        project = build(:project, screenshot_settings: { "framework" => "phoenix" })
+
+        expect(project).to be_valid
       end
 
       it "rejects unknown screenshot_settings keys" do
@@ -1731,6 +1878,19 @@ RSpec.describe Project do
 
         expect(project).not_to be_valid
         expect(project.errors[:screenshot_settings].join).to include("unknown keys: bogus")
+      end
+
+      it "accepts the record_video screenshot setting" do
+        project = build(:project, screenshot_settings: { "enabled" => true, "record_video" => true })
+
+        expect(project).to be_valid
+      end
+
+      it "rejects a non-boolean record_video screenshot setting" do
+        project = build(:project, screenshot_settings: { "record_video" => "yes" })
+
+        expect(project).not_to be_valid
+        expect(project.errors[:screenshot_settings].join).to include("record_video must be true or false")
       end
 
       it "rejects invalid viewport in screenshot_settings" do

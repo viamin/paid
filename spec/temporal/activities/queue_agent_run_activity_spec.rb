@@ -171,6 +171,64 @@ RSpec.describe Activities::QueueAgentRunActivity do
       expect(agent_run.goal).to eq("review")
     end
 
+    it "inherits manual priority from the latest unsuccessful PR run" do
+      create(:agent_run, :timeout,
+        project: project,
+        issue: issue,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        trigger_type: "manual",
+        completed_at: 5.minutes.ago)
+
+      result = activity.execute(
+        project_id: project.id,
+        issue_id: issue.id,
+        source_pull_request_number: 42,
+        goal: "create_pr"
+      )
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.trigger_type).to eq("manual")
+    end
+
+    it "does not inherit manual priority for review runs" do
+      create(:agent_run, :timeout,
+        project: project,
+        source_pull_request_number: 42,
+        goal: "review",
+        trigger_type: "manual",
+        completed_at: 5.minutes.ago)
+
+      result = activity.execute(
+        project_id: project.id,
+        source_pull_request_number: 42,
+        goal: "review"
+      )
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.trigger_type).to eq("automatic")
+    end
+
+    it "does not inherit manual priority from a successful PR run" do
+      create(:agent_run, :completed,
+        project: project,
+        issue: issue,
+        source_pull_request_number: 42,
+        goal: "create_pr",
+        trigger_type: "manual",
+        completed_at: 5.minutes.ago)
+
+      result = activity.execute(
+        project_id: project.id,
+        issue_id: issue.id,
+        source_pull_request_number: 42,
+        goal: "create_pr"
+      )
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.trigger_type).to eq("automatic")
+    end
+
     it "stores the focus parameter on the created agent run" do
       result = activity.execute(
         project_id: project.id,
@@ -246,6 +304,25 @@ RSpec.describe Activities::QueueAgentRunActivity do
       expect(result).to eq(queued: false, skipped: true, reason: "untrusted_issue")
       expect(AgentRun.where(project: project, issue: untrusted_issue)).to be_empty
       expect(ProcessRunQueueJob).not_to have_been_enqueued
+    end
+
+    it "allows create_pr follow-up runs on untrusted PRs (source_pull_request_number set)" do
+      untrusted_pr = create(:issue, project: project, is_pull_request: true,
+        github_creator_login: "dependabot[bot]")
+
+      result = activity.execute(
+        project_id: project.id,
+        issue_id: untrusted_pr.id,
+        source_pull_request_number: untrusted_pr.github_number,
+        goal: "create_pr",
+        focus: "merge_conflict"
+      )
+
+      expect(result[:queued]).to be true
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.source_pull_request_number).to eq(untrusted_pr.github_number)
+      expect(agent_run.focus).to eq("merge_conflict")
+      expect(ProcessRunQueueJob).to have_been_enqueued
     end
 
     context "when a duplicate run exists" do

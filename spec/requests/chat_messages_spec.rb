@@ -284,6 +284,34 @@ RSpec.describe "ChatMessages" do
         expect(response.parsed_body).to eq("status" => "paused")
       end
     end
+
+    context "when the chat session is archived" do
+      let(:archived_session) { create(:chat_session, :archived, account: account, created_by: user) }
+
+      before { sign_in user }
+
+      it "rejects the message with a 422 and never invokes the send service" do
+        expect(ChatSessions::SendMessage).not_to receive(:call)
+
+        expect {
+          post chat_session_chat_messages_path(archived_session), params: { content: "Hello" }
+        }.not_to change { archived_session.messages.count }
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body["error"]).to eq("Chat session is archived.")
+      end
+
+      it "rejects SSE requests before opening a stream" do
+        expect(ChatSessions::SendMessage).not_to receive(:call)
+
+        post chat_session_chat_messages_path(archived_session),
+          params: { content: "Hello" }, headers: { "Accept" => "text/event-stream" }
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.media_type).to eq("application/json")
+        expect(response.body).not_to include("event: message_start")
+      end
+    end
   end
 
   describe "POST /chat/:chat_session_id/messages/:id/resolve" do
@@ -358,6 +386,40 @@ RSpec.describe "ChatMessages" do
         expect(body).to include("event: message_tool_resolved")
         expect(body).to include("event: message_chunk")
         expect(body).to include("event: message_complete")
+      end
+    end
+
+    context "when the chat session is archived" do
+      let(:archived_session) { create(:chat_session, :archived, account: account, created_by: user) }
+      let(:pending_tool_call) do
+        create(:chat_message, :tool_call, chat_session: archived_session,
+          tool_call_id: "call_archived", tool_name: "update_user_settings",
+          tool_arguments: { "settings" => {} }, tool_status: "pending")
+      end
+
+      before { sign_in user }
+
+      it "rejects the resolution with a 422 and never invokes the resolve service" do
+        expect(ChatSessions::ResolveToolCall).not_to receive(:call)
+
+        expect {
+          post resolve_chat_session_chat_message_path(archived_session, pending_tool_call),
+            params: { decision: "approve" }
+        }.not_to change { pending_tool_call.reload.tool_status }
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body["error"]).to eq("Chat session is archived.")
+      end
+
+      it "rejects SSE requests before opening a stream" do
+        expect(ChatSessions::ResolveToolCall).not_to receive(:call)
+
+        post resolve_chat_session_chat_message_path(archived_session, pending_tool_call),
+          params: { decision: "approve" }, headers: { "Accept" => "text/event-stream" }
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.media_type).to eq("application/json")
+        expect(response.body).not_to include("event: message_start")
       end
     end
   end

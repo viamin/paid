@@ -17,6 +17,7 @@ RSpec.describe "chat_sessions/_session_card", :no_db, type: :view do
       :mode,
       :project,
       :projects,
+      :archived?,
       keyword_init: true
     ).new(
       id: 42,
@@ -28,7 +29,8 @@ RSpec.describe "chat_sessions/_session_card", :no_db, type: :view do
       status: "active",
       mode: "workspace",
       project: project,
-      projects: [ project ]
+      projects: [ project ],
+      archived?: false
     )
   end
 

@@ -12,6 +12,7 @@ module Screenshots
     CHROME_ALIAS = "paid-screenshot-browser"
     CHROME_URL = "ws://#{CHROME_ALIAS}:3000"
     OUTPUT_DIR = "tmp/screenshots"
+    TRACE_EXTENSION = ".trace.zip"
     CAPTURE_TIMEOUT_SECONDS = 300
     STARTUP_TIMEOUT_SECONDS = 90
     MEMORY_BYTES = 2 * 1024 * 1024 * 1024
@@ -55,10 +56,6 @@ module Screenshots
     def call
       ensure_capture_eligible!
 
-      # Lightweight precheck: fetch changed files via GitHub API and detect
-      # UI-relevant changes *before* paying the Docker/clone/startup cost.
-      # The precheck runs without repo context (no custom config overrides),
-      # so it may be slightly conservative — that is acceptable.
       changed_files = fetch_changed_files
       precheck_ui_files = detect_ui_files(changed_files, nil)
       return finalize_skip("no_ui_changes", changed_files:, ui_files: precheck_ui_files) if precheck_ui_files.empty?
@@ -75,12 +72,9 @@ module Screenshots
         @config = @preview_provision.config
         validate_supported_config!
 
-        # Re-detect with full repo context (custom patterns/exclusions from config)
         ui_files = detect_ui_files(changed_files, repo_path)
         return finalize_skip("no_ui_changes", changed_files:, ui_files:) if ui_files.empty?
 
-        # Derive per-route hints (best-effort) to scope and annotate capture to the
-        # pages the agent actually changed. Empty hints fall back to all routes.
         @hints = Screenshots::DeriveHints.call(
           agent_run: agent_run,
           routes: @config.routes,
@@ -133,6 +127,8 @@ module Screenshots
 
     attr_reader :agent_run, :project, :logger, :config
 
+    SUPPORTED_DRIVERS = %w[playwright].freeze
+
     def ensure_capture_eligible!
       raise Screenshots::ConfigError, "screenshots are disabled for this project" unless project.screenshots_enabled?
       raise Screenshots::ConfigError, "pull request number is required for screenshot capture" if agent_run.pull_request_number.blank?
@@ -144,13 +140,17 @@ module Screenshots
       yield(@tmpdir)
     end
 
-    SUPPORTED_DRIVERS = %w[playwright].freeze
-
     def validate_supported_config!
       unless config.driver.in?(SUPPORTED_DRIVERS)
         raise Screenshots::ConfigError,
           "container screenshot capture only supports drivers: #{SUPPORTED_DRIVERS.join(', ')} " \
           "(configured: #{config.driver})"
+      end
+
+      if phoenix_project? && config.seed.any?
+        raise Screenshots::ConfigError,
+          "seed configuration is not supported for Phoenix projects yet " \
+          "(seeds run via bin/rails runner, which is unavailable in an Elixir/Phoenix repo)"
       end
 
       dynamic_route = config.routes.find do |route|
@@ -186,6 +186,10 @@ module Screenshots
         screenshots_url: nil,
         error: nil
       )
+    end
+
+    def record_video?
+      project.effective_screenshot_settings["record_video"] == true
     end
 
     def start_chrome!
@@ -248,44 +252,63 @@ module Screenshots
       return unless Screenshots::Storage.configured?
 
       storage = Screenshots::Storage.new
-      uploaded = screenshot_paths.map do |path|
-        route_name = File.basename(path, ".png")
-        {
-          route_name: route_name,
-          summary: @hints.dig(route_name, "summary"),
-          url: storage.upload(
-            file_path: path,
-            org: project.owner,
-            repo: project.repo,
-            pr_number: agent_run.pull_request_number,
-            commit_sha: artifact_commit_sha,
-            route_name: route_name
-          )
-        }
-      end
-
+      uploaded = screenshot_paths.map { |path| upload_screenshot(storage, path) }
       trace_url = upload_trace_artifact(storage)
       video_url = upload_video_artifact(storage)
 
-      previous = storage.previous_screenshots(
+      previous_artifacts = storage.previous_artifacts(
         org: project.owner,
         repo: project.repo,
         pr_number: agent_run.pull_request_number,
-        exclude_sha: artifact_commit_sha
+        exclude_sha: commit_sha
       )
 
       Screenshots::PrComment.call(
         github_client: project.client,
         repo: project.full_name,
         pr_number: agent_run.pull_request_number,
-        commit_sha: artifact_commit_sha,
+        commit_sha: commit_sha,
         screenshots: uploaded,
-        previous_screenshots: previous,
+        previous_screenshots: previous_artifacts.transform_values { |formats| formats[:png] }.compact,
         trace_url: trace_url,
         video_url: video_url
       )
 
       @published_url = uploaded.first&.fetch(:url, nil)
+    end
+
+    def upload_screenshot(storage, path)
+      route_name = File.basename(path, ".png")
+      screenshot = {
+        route_name: route_name,
+        summary: @hints.dig(route_name, "summary"),
+        url: storage.upload(
+          file_path: path,
+          org: project.owner,
+          repo: project.repo,
+          pr_number: agent_run.pull_request_number,
+          commit_sha: commit_sha,
+          route_name: route_name
+        )
+      }
+
+      screenshot.merge(
+        Screenshots::TraceArtifactExporter.call(
+          storage: storage,
+          org: project.owner,
+          repo: project.repo,
+          pr_number: agent_run.pull_request_number,
+          commit_sha: commit_sha,
+          route_name: route_name,
+          trace_path: trace_path_for(path),
+          logger: logger,
+          log_message: "screenshots.export_failed",
+          log_context: {
+            project_id: project.id,
+            agent_run_id: agent_run.id
+          }
+        )
+      )
     end
 
     def upload_trace_artifact(storage)
@@ -296,7 +319,7 @@ module Screenshots
         org: project.owner,
         repo: project.repo,
         pr_number: agent_run.pull_request_number,
-        commit_sha: artifact_commit_sha
+        commit_sha: commit_sha
       )
     rescue Screenshots::Storage::StorageError => e
       logger.warn(
@@ -316,7 +339,7 @@ module Screenshots
         org: project.owner,
         repo: project.repo,
         pr_number: agent_run.pull_request_number,
-        commit_sha: artifact_commit_sha
+        commit_sha: commit_sha
       )
     rescue Screenshots::Storage::StorageError => e
       logger.warn(
@@ -328,8 +351,9 @@ module Screenshots
       nil
     end
 
-    def artifact_commit_sha
-      agent_run.result_commit_sha || agent_run.base_commit_sha || agent_run.branch_name
+    def trace_path_for(screenshot_path)
+      trace_path = "#{File.dirname(screenshot_path)}/#{File.basename(screenshot_path, '.png')}#{TRACE_EXTENSION}"
+      File.exist?(trace_path) ? trace_path : nil
     end
 
     def write_capture_runner
@@ -348,7 +372,9 @@ module Screenshots
         const config = JSON.parse(process.env.SCREENSHOT_CONFIG_JSON);
         const outputDir = process.env.SCREENSHOT_OUTPUT_DIR;
         const recordVideo = process.env.SCREENSHOT_RECORD_VIDEO === "1";
+
         await fs.mkdir(outputDir, { recursive: true });
+
         const browser = await playwright.chromium.connectOverCDP(process.env.CHROME_URL);
         const contextOptions = { viewport: config.viewport };
         if (recordVideo) {
@@ -357,14 +383,6 @@ module Screenshots
         }
         const context = await browser.newContext(contextOptions);
         const page = await context.newPage();
-        let tracing = false;
-
-        try {
-          await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
-          tracing = true;
-        } catch (e) {
-          console.error("tracing start failed:", e.message);
-        }
 
         async function authenticate() {
           if (!config.auth || config.auth.strategy === "none") return;
@@ -410,34 +428,42 @@ module Screenshots
           }, annotation);
         }
 
-        try {
-          await authenticate();
+        await authenticate();
 
-          for (const route of config.routes) {
+        for (const route of config.routes) {
+          await captureRoute(route);
+        }
+
+        await context.close();
+        await browser.close();
+
+        async function captureRoute(route) {
+          let tracing = false;
+          try {
+            await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
+            tracing = true;
+          } catch (traceError) {
+            console.error("trace start failed:", traceError.message);
+          }
+
+          try {
             const target = new URL(route.path, config.base_url).toString();
             await page.goto(target, { waitUntil: "networkidle" });
             await annotate(route.annotation);
             await page.screenshot({ path: `${outputDir}/${route.name}.png`, fullPage: true });
-          }
-        } finally {
-          if (tracing) {
-            try {
-              await context.tracing.stop({ path: `${outputDir}/trace.zip` });
-            } catch (e) {
-              console.error("trace stop failed:", e.message);
+          } finally {
+            if (tracing) {
+              try {
+                await context.tracing.stop({ path: `${outputDir}/${route.name}#{TRACE_EXTENSION}` });
+              } catch (traceError) {
+                console.error("trace stop failed:", traceError.message);
+              }
             }
           }
-
-          await context.close();
-          await browser.close();
         }
       JS
     end
 
-    # Scopes capture to the routes the agent's change affected, when hints are
-    # available. Falls back to every configured route when hints are empty or
-    # none of them match a configured route name (conservative — never captures
-    # less than the unscoped behavior would when hints are unusable).
     def routes_for_capture
       return config.routes if @hints.blank?
 
@@ -468,8 +494,10 @@ module Screenshots
       )
     end
 
-    def record_video?
-      project.effective_screenshot_settings["record_video"] == true
+    def phoenix_project?
+      return false if @tmpdir.blank?
+
+      File.exist?(File.join(@tmpdir, "mix.exs"))
     end
 
     def collected_screenshots
@@ -477,12 +505,15 @@ module Screenshots
     end
 
     def collected_trace_path
-      path = File.join(@tmpdir.to_s, OUTPUT_DIR, "trace.zip")
-      File.exist?(path) ? path : nil
+      Dir.glob(File.join(@tmpdir.to_s, OUTPUT_DIR, "trace.zip")).first
     end
 
     def collected_video_path
-      Dir.glob(File.join(@tmpdir.to_s, OUTPUT_DIR, "videos", "*.webm")).sort.first
+      Dir.glob(File.join(@tmpdir.to_s, OUTPUT_DIR, "videos", "*.webm")).first
+    end
+
+    def commit_sha
+      agent_run.result_commit_sha || agent_run.base_commit_sha || agent_run.branch_name
     end
 
     def update_status(status, screenshot_count: 0, screenshots_url: nil)
@@ -508,7 +539,7 @@ module Screenshots
         github_client: project.client,
         repo: project.full_name,
         pr_number: agent_run.pull_request_number,
-        commit_sha: agent_run.result_commit_sha || agent_run.base_commit_sha || agent_run.branch_name,
+        commit_sha: commit_sha,
         screenshots: [],
         status: status
       )
@@ -547,7 +578,6 @@ module Screenshots
       end
 
       @preview_provision&.cleanup!
-
       FileUtils.rm_rf(@tmpdir) if @tmpdir.present?
     end
   end

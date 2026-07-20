@@ -166,6 +166,15 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(activity.send(:dependency_update_bot_author?, "renovate-helper")).to be(false)
     end
 
+    it "scopes dependency-update bot trust to PR scan authorization" do
+      issue = build(:issue, :pull_request,
+        project: project,
+        github_creator_login: "dependabot[bot]")
+
+      expect(activity.send(:authorized_for_automation_scan?, project, issue)).to be(true)
+      expect(project.trusted_github_author?("dependabot[bot]")).to be(false)
+    end
+
     it "treats human authors as neither bot nor agent" do
       expect(activity.send(:third_party_bot_author?, project, "viamin")).to be(false)
       expect(activity.send(:paid_agent_pr_author?, project, "viamin")).to be(false)
@@ -395,6 +404,30 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         expect(automation_scan_results(result)).to eq([])
         expect(github_client).to have_received(:rate_limit_remaining!)
+      end
+    end
+
+    context "when authentication fails" do
+      let(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 77,
+          labels: [ project.generated_label_name, project.automation_label_name ],
+          paid_state: "completed")
+      end
+
+      before { pr_issue }
+
+      it "raises ApplicationError with AuthError type" do
+        allow(activity).to receive(:scan_pr)
+          .and_raise(GithubClient::AuthenticationError.new("Bad credentials"))
+
+        expect {
+          activity.execute(project_id: project.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) do |error|
+          expect(error.type).to eq("AuthError")
+          expect(error.message).to include("GitHub authentication failed")
+        end
       end
     end
 
@@ -4966,6 +4999,65 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(automation_scan_results(result).first[:triggers].map { |t| t[:type] }).to include("ci_failure")
       end
 
+      it "triggers ci_failure without the automation label when Dependabot auto-merge is enabled" do
+        project.update!(auto_merge_mode: "dependabot_only")
+        Issue.find_by!(project: project, github_number: 42).update!(labels: %w[dependencies ruby])
+        expect(github_client).not_to receive(:issue_events)
+        stub_github_for_pr(
+          draft: true,
+          author_login: "dependabot[bot]",
+          checks: [ { name: "ci", conclusion: "failure" } ],
+          review_threads: [],
+          reviews: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result).size).to eq(1)
+        expect(automation_scan_results(result).first[:triggers].map { |t| t[:type] }).to include("ci_failure")
+      end
+
+      it "triggers ci_failure without the automation label when all PR auto-merge is enabled" do
+        project.update!(auto_merge_mode: "all")
+        Issue.find_by!(project: project, github_number: 42).update!(labels: %w[dependencies ruby])
+        expect(github_client).not_to receive(:issue_events)
+        stub_github_for_pr(
+          draft: true,
+          author_login: "dependabot[bot]",
+          checks: [ { name: "ci", conclusion: "failure" } ],
+          review_threads: [],
+          reviews: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result).size).to eq(1)
+        expect(automation_scan_results(result).first[:triggers].map { |t| t[:type] }).to include("ci_failure")
+      end
+
+      it "ignores unlabeled Dependabot PRs when Dependabot auto-merge is disabled" do
+        project.update!(auto_merge_mode: "off")
+        Issue.find_by!(project: project, github_number: 42).update!(labels: %w[dependencies ruby])
+        expect(github_client).not_to receive(:pull_request)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to be_empty
+      end
+
+      it "does not auto-enroll unlabeled Renovate PRs through Dependabot auto-merge" do
+        project.update!(auto_merge_mode: "dependabot_only")
+        Issue.find_by!(project: project, github_number: 42).update!(
+          github_creator_login: "renovate[bot]",
+          labels: %w[dependencies ruby]
+        )
+        expect(github_client).not_to receive(:pull_request)
+
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to be_empty
+      end
+
       it "does not grant the dependency-update bypass to bot-name lookalikes" do
         issue = Issue.find_by!(project: project, github_number: 42)
         issue.update!(github_creator_login: "dependabot-maintainer")
@@ -7331,18 +7423,18 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(unchanged_pr.reload.last_pr_scan_at).to be > 10.seconds.ago
       end
 
-      it "does not bypass skip for stale ready PRs authored by humans (preserves merge-conflict rescan path)" do
+      it "rescans stale ready PRs authored by humans regardless of auto-merge mode" do
         ceiling = described_class::SCAN_STALENESS_MULTIPLIER * project.poll_interval_seconds
         unchanged_pr.update!(pr_review_phase: "ready")
         unchanged_pr.update_columns(
           github_updated_at: (ceiling + 60).seconds.ago,
           last_pr_scan_at: (ceiling + 30).seconds.ago
         )
+        stub_github_for_pr
 
-        result = activity.execute(project_id: project.id)
+        activity.execute(project_id: project.id)
 
-        expect(automation_scan_results(result)).to eq([])
-        expect(unchanged_pr.reload.last_pr_scan_at).to be < ceiling.seconds.ago
+        expect(unchanged_pr.reload.last_pr_scan_at).to be > 10.seconds.ago
       end
 
       it "rescans stale bot-authored ready PRs when Dependabot auto-merge is enabled" do
@@ -7407,7 +7499,37 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(unchanged_pr.reload.last_pr_scan_at).to be > 10.seconds.ago
       end
 
-      it "does not rescan stale human-authored ready PRs when auto-merge is dependabot_only" do
+      it "rescans stale human-authored escalated PRs when auto-merge is dependabot_only" do
+        ceiling = described_class::SCAN_STALENESS_MULTIPLIER * project.poll_interval_seconds
+        project.update!(auto_merge_mode: "dependabot_only")
+        unchanged_pr.update!(pr_review_phase: "escalated")
+        unchanged_pr.update_columns(
+          github_updated_at: (ceiling + 60).seconds.ago,
+          last_pr_scan_at: (ceiling + 30).seconds.ago
+        )
+        stub_github_for_pr
+
+        activity.execute(project_id: project.id)
+
+        expect(unchanged_pr.reload.last_pr_scan_at).to be > 10.seconds.ago
+      end
+
+      it "rescans stale human-authored escalated PRs when auto-merge is off" do
+        ceiling = described_class::SCAN_STALENESS_MULTIPLIER * project.poll_interval_seconds
+        project.update!(auto_merge_mode: "off")
+        unchanged_pr.update!(pr_review_phase: "escalated")
+        unchanged_pr.update_columns(
+          github_updated_at: (ceiling + 60).seconds.ago,
+          last_pr_scan_at: (ceiling + 30).seconds.ago
+        )
+        stub_github_for_pr
+
+        activity.execute(project_id: project.id)
+
+        expect(unchanged_pr.reload.last_pr_scan_at).to be > 10.seconds.ago
+      end
+
+      it "rescans stale human-authored ready PRs when auto-merge is dependabot_only" do
         ceiling = described_class::SCAN_STALENESS_MULTIPLIER * project.poll_interval_seconds
         project.update!(auto_merge_mode: "dependabot_only")
         unchanged_pr.update!(pr_review_phase: "ready")
@@ -7415,14 +7537,14 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           github_updated_at: (ceiling + 60).seconds.ago,
           last_pr_scan_at: (ceiling + 30).seconds.ago
         )
+        stub_github_for_pr
 
-        result = activity.execute(project_id: project.id)
+        activity.execute(project_id: project.id)
 
-        expect(automation_scan_results(result)).to eq([])
-        expect(unchanged_pr.reload.last_pr_scan_at).to be < ceiling.seconds.ago
+        expect(unchanged_pr.reload.last_pr_scan_at).to be > 10.seconds.ago
       end
 
-      it "does not rescan stale human-authored ready PRs when auto-merge is off" do
+      it "rescans stale human-authored ready PRs when auto-merge is off" do
         ceiling = described_class::SCAN_STALENESS_MULTIPLIER * project.poll_interval_seconds
         project.update!(auto_merge_mode: "off")
         unchanged_pr.update!(pr_review_phase: "ready")
@@ -7430,11 +7552,11 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           github_updated_at: (ceiling + 60).seconds.ago,
           last_pr_scan_at: (ceiling + 30).seconds.ago
         )
+        stub_github_for_pr
 
-        result = activity.execute(project_id: project.id)
+        activity.execute(project_id: project.id)
 
-        expect(automation_scan_results(result)).to eq([])
-        expect(unchanged_pr.reload.last_pr_scan_at).to be < ceiling.seconds.ago
+        expect(unchanged_pr.reload.last_pr_scan_at).to be > 10.seconds.ago
       end
 
       it "scans ready PRs for merge conflicts when auto-fix is enabled" do

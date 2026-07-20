@@ -52,7 +52,7 @@ FactoryBot.define do
 
     trait :mutation_test do
       check_type { "mutation_test" }
-      command { "bundle exec mutant run --since HEAD~1 --use rspec --jobs 1" }
+      command { "bundle exec mutant run --results-dir .mutant/results --since HEAD~1 --use rspec --jobs 1" }
     end
   end
 end

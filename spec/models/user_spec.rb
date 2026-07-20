@@ -257,4 +257,17 @@ RSpec.describe User do
       expect(ClaudeLoginSession.exists?(login_session.id)).to be(false)
     end
   end
+
+  describe "#settings" do
+    it "returns existing settings inside a transaction when the association cached nil" do
+      user = create(:user)
+      expect(user.user_setting).to be_nil
+
+      existing = create(:user_setting, user: user)
+
+      ActiveRecord::Base.transaction do
+        expect(user.settings).to eq(existing)
+      end
+    end
+  end
 end

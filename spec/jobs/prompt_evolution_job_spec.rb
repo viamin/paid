@@ -81,6 +81,23 @@ RSpec.describe PromptEvolutionJob do
       )
     end
 
+    def expect_prompt_recovery_workflow(prompt_id:, recovery_action_id:, min_runs_for_evaluation:)
+      expect(temporal_client).to have_received(:start_workflow).with(
+        Workflows::PromptEvolutionWorkflow,
+        hash_including(
+          prompt_id: prompt_id,
+          project_id: project.id,
+          recovery_action_id: recovery_action_id,
+          failure_only: true,
+          min_runs_for_evaluation: min_runs_for_evaluation
+        ),
+        hash_including(
+          id: "quality-recovery-prompt-evolution-#{recovery_action_id}",
+          task_queue: Paid.agent_task_queue
+        )
+      )
+    end
+
     context "with an eligible prompt" do
       before do
         create_completed_runs(
@@ -96,7 +113,10 @@ RSpec.describe PromptEvolutionJob do
         expect(temporal_client).to have_received(:start_workflow).with(
           Workflows::PromptEvolutionWorkflow,
           hash_including(prompt_id: prompt.id),
-          hash_including(id: "prompt-evolution-#{prompt.id}-#{Date.current}")
+          hash_including(
+            id: "prompt-evolution-#{prompt.id}-#{Date.current}",
+            task_queue: Paid.agent_task_queue
+          )
         )
       end
 
@@ -106,7 +126,10 @@ RSpec.describe PromptEvolutionJob do
         expect(temporal_client).to have_received(:start_workflow).with(
           Workflows::PromptEvolutionWorkflow,
           hash_including(prompt_id: prompt.id, project_id: project.id),
-          hash_including(id: "prompt-evolution-#{prompt.id}-#{Date.current}")
+          hash_including(
+            id: "prompt-evolution-#{prompt.id}-#{Date.current}",
+            task_queue: Paid.agent_task_queue
+          )
         )
       end
     end
@@ -127,7 +150,10 @@ RSpec.describe PromptEvolutionJob do
         expect(temporal_client).to have_received(:start_workflow).with(
           Workflows::PromptEvolutionWorkflow,
           hash_including(prompt_id: prompt.id, project_id: project.id, recovery_action_id: 123),
-          hash_including(id: "quality-recovery-prompt-evolution-123")
+          hash_including(
+            id: "quality-recovery-prompt-evolution-123",
+            task_queue: Paid.agent_task_queue
+          )
         )
       end
 
@@ -167,16 +193,10 @@ RSpec.describe PromptEvolutionJob do
 
         perform_targeted_recovery_job(prompt_id: recovery_prompt.id, recovery_action_id: 123)
 
-        expect(temporal_client).to have_received(:start_workflow).with(
-          Workflows::PromptEvolutionWorkflow,
-          hash_including(
-            prompt_id: recovery_prompt.id,
-            project_id: project.id,
-            recovery_action_id: 123,
-            failure_only: true,
-            min_runs_for_evaluation: described_class::TARGETED_MIN_RUNS_FOR_EVOLUTION
-          ),
-          hash_including(id: "quality-recovery-prompt-evolution-123")
+        expect_prompt_recovery_workflow(
+          prompt_id: recovery_prompt.id,
+          recovery_action_id: 123,
+          min_runs_for_evaluation: described_class::TARGETED_MIN_RUNS_FOR_EVOLUTION
         )
       end
     end

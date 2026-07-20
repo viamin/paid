@@ -215,13 +215,15 @@ module Workflows
     # allowed to propagate so automation failures surface immediately,
     # matching evaluate_issues_batch.
     def maybe_scan_paid_prs(project_id)
-      activity_options = poll_activity_options(timeout: 120)
+      activity_options = poll_activity_options(timeout: 300)
       scan_result = begin
         run_activity(Activities::ScanPaidPrsActivity,
           { project_id: project_id }, **activity_options)
       rescue Temporalio::Error::CanceledError
         raise
       rescue => e
+        raise if auth_error_activity_failure?(e)
+
         record_swallowed_non_critical_activity_failure(
           project_id: project_id,
           helper: "maybe_scan_paid_prs",
@@ -238,6 +240,13 @@ module Workflows
 
       handle_pr_scan_results(scan_result, project_id)
       scan_result
+    end
+
+    def auth_error_activity_failure?(error)
+      return false unless error.is_a?(Temporalio::Error::ActivityError)
+
+      error.cause.is_a?(Temporalio::Error::ApplicationError) &&
+        error.cause.type == "AuthError"
     end
 
     # Scan for CodeQL code scanning alerts and create synthetic issues.
