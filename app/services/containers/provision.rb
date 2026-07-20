@@ -2473,27 +2473,117 @@ module Containers
       Containers::ProxyUrl.resolve(backend:, restricted: network_contract.restricted?)
     end
 
+    # Enforces the RDR-041/RDR-048 subscription auth host eligibility contract
+    # (#2963) before provisioning. On backends that cannot mount host paths
+    # (remote Docker, Swarm), host-forwarded subscription auth is rejected with a
+    # named reason, while managed remote-safe credentials (e.g. Claude OAuth
+    # stored as a RunnerCredential) remain eligible because they materialize
+    # inside the container without a bind mount.
     def validate_backend_mount_support!
       return if backend.supports_host_paths?
 
-      unsupported_mounts = []
-      unsupported_mounts << "worktree path #{host_worktree_path}" if host_worktree_path.present?
-      if host_only_auth_source?(claude_config_host_path, ".credentials.json", claude_local_config_path)
-        unsupported_mounts << "Claude subscription auth at #{claude_config_host_path}"
-      end
-      if codex_subscription_auth_host_mount_path.present?
-        unsupported_mounts << "Codex subscription auth at #{codex_subscription_auth_host_mount_path}"
-      end
-      if host_only_auth_source?(gemini_config_host_path, "oauth_creds.json", gemini_local_config_path)
-        unsupported_mounts << "Gemini subscription auth at #{gemini_config_host_path}"
-      end
-      if host_only_auth_source?(copilot_config_host_path, "config.json", copilot_local_config_path)
-        unsupported_mounts << "Copilot subscription auth at #{copilot_config_host_path}"
-      end
-      return if unsupported_mounts.empty?
+      rejections = []
+      rejections << worktree_mount_rejection if host_worktree_path.present?
+      rejections.concat(subscription_auth_mount_rejections)
+      return if rejections.empty?
 
-      raise ProvisionError,
-        "Backend #{backend.identifier} does not support required host paths: #{unsupported_mounts.join(', ')}"
+      raise ProvisionError, format_backend_mount_rejections(rejections)
+    end
+
+    def worktree_mount_rejection
+      {
+        reason: :requires_host_bind_mount,
+        runner_key: nil,
+        message: "worktree path #{host_worktree_path} requires a host bind mount"
+      }
+    end
+
+    # Evaluates each detected host-forwarded subscription auth source against the
+    # backend via Runners::SubscriptionAuthEligibility. Providers whose run is
+    # carried by a managed remote-safe credential are skipped (eligible); the
+    # rest surface a named rejection reason safe for the queue/readiness UI.
+    def subscription_auth_mount_rejections
+      subscription_auth_host_sources.filter_map do |entry|
+        runner_key = entry.fetch(:runner_key)
+        next if managed_remote_safe_for?(runner_key)
+
+        auth_source = Runners::SubscriptionAuthEligibility::AuthSource.new(
+          runner_key: runner_key,
+          auth_mode: :host_forwarded
+        )
+        result = Runners::SubscriptionAuthEligibility.call(
+          backend: backend,
+          auth_source: auth_source,
+          proxy_reachable: backend_proxy_reachable?
+        )
+        next if result.eligible?
+
+        {
+          reason: result.reason,
+          runner_key: runner_key,
+          host_path: entry[:host_path],
+          message: result.message
+        }
+      end
+    end
+
+    def subscription_auth_host_sources
+      [
+        { runner_key: "claude",
+          host_path: claude_config_host_path,
+          detected: host_only_auth_source?(claude_config_host_path, ".credentials.json", claude_local_config_path) },
+        { runner_key: "codex",
+          host_path: codex_subscription_auth_host_mount_path,
+          detected: codex_subscription_auth_host_mount_path.present? },
+        { runner_key: "gemini",
+          host_path: gemini_config_host_path,
+          detected: host_only_auth_source?(gemini_config_host_path, "oauth_creds.json", gemini_local_config_path) },
+        { runner_key: "copilot",
+          host_path: copilot_config_host_path,
+          detected: host_only_auth_source?(copilot_config_host_path, "config.json", copilot_local_config_path) }
+      ].select { |entry| entry[:detected] }
+    end
+
+    # True when a managed RunnerCredential with a remote-safe materializer
+    # carries this provider's subscription auth, so the run does not need a host
+    # bind mount. Today only Claude has a remote-safe managed materializer.
+    def managed_remote_safe_for?(runner_key)
+      return false unless Runners::SubscriptionAuthMaterializers.remote_safe?(runner_key)
+      return false unless project.is_a?(Project)
+
+      managed_subscription_credential_for(runner_key)&.active?
+    end
+
+    def managed_subscription_credential_for(runner_key)
+      account = project.account
+      return nil unless account
+
+      account.runner_credentials.active
+        .for_runner(runner_key)
+        .order(created_at: :desc, id: :desc)
+        .first
+    end
+
+    # Whether the backend's Paid proxy callback is reachable for API-key/proxy
+    # auth. Remote backends require PAID_PROXY_EXTERNAL_URL; if it is missing or
+    # malformed, proxy auth is not eligible. Local backends always reach the
+    # in-process proxy.
+    def backend_proxy_reachable?
+      return true unless backend.respond_to?(:remote?)
+      return true unless backend.remote?
+
+      ENV["PAID_PROXY_EXTERNAL_URL"].present?
+    rescue StandardError
+      false
+    end
+
+    def format_backend_mount_rejections(rejections)
+      details = rejections.map do |rejection|
+        label = rejection[:runner_key].present? ? "#{rejection[:runner_key].capitalize} subscription auth" : "workspace"
+        "#{label} (#{rejection.fetch(:reason)}): #{rejection.fetch(:message)}"
+      end
+      "Backend #{backend.identifier} cannot host this run: #{details.join('; ')}. " \
+        "Use a host-path-capable backend or configure managed subscription credentials."
     end
 
     def host_only_auth_source?(host_path, marker_file, local_path)
