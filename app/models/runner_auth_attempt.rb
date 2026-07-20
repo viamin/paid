@@ -151,6 +151,7 @@ class RunnerAuthAttempt < ApplicationRecord
   belongs_to :runner_credential, optional: true
 
   before_validation :assign_project_from_agent_run
+  before_validation :assign_account_from_project
   before_validation :assign_attempted_at
   before_validation :enforce_secret_safety
   before_validation :strip_unknown_metadata
@@ -169,6 +170,7 @@ class RunnerAuthAttempt < ApplicationRecord
   validate :metadata_is_object
   validate :failure_reason_safe
   validate :project_matches_agent_run
+  validate :account_matches_project
 
   scope :for_account, ->(account) { where(account: account) }
   scope :for_project, ->(project) { where(project: project) }
@@ -225,6 +227,15 @@ class RunnerAuthAttempt < ApplicationRecord
     self.project ||= agent_run&.project
   end
 
+  # Auto-derive account from the resolved project so callers that build a
+  # record with only `project` (or only `agent_run`) don't have to also
+  # remember to thread the matching account through. If account is set
+  # explicitly to a different tenant, account_matches_project below still
+  # rejects it.
+  def assign_account_from_project
+    self.account ||= project&.account
+  end
+
   def assign_attempted_at
     self.attempted_at ||= Time.current
   end
@@ -277,5 +288,17 @@ class RunnerAuthAttempt < ApplicationRecord
     return unless project && agent_run
 
     errors.add(:project, "must match the agent run's project") if project_id != agent_run.project_id
+  end
+
+  # RLS only constrains projects.account_id = paid_current_account_id(); the
+  # denormalized account_id on this row is the actual tenant key used by
+  # Analytics::RunnerAuthAttempts::BaseQuery#account_ids. A caller that builds
+  # `account: a, project: b_owned_by_other_account` would otherwise produce a
+  # row whose account_id belongs to a different tenant than the project's
+  # RLS-guarded lookup, so reject it here before persistence.
+  def account_matches_project
+    return unless account_id.present? && project_id.present? && project.present?
+
+    errors.add(:account, "must match the project's account") if account_id != project.account_id
   end
 end

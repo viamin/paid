@@ -65,11 +65,12 @@ RSpec.describe RunnerAuthAttempt, type: :model do
   end
 
   describe "account/project consistency" do
-    it "requires account and project to belong to the same tenant" do
+    it "rejects an account that belongs to a different tenant than the project" do
       account = create(:account)
       other_project = create(:project)
       record = build(:runner_auth_attempt, account: account, project: other_project)
-      expect(record).to be_valid
+      expect(record).not_to be_valid
+      expect(record.errors[:account]).to include("must match the project's account")
     end
 
     it "derives the project from agent_run when missing" do
@@ -78,6 +79,13 @@ RSpec.describe RunnerAuthAttempt, type: :model do
       record = build(:runner_auth_attempt, project: nil, agent_run: agent_run)
       record.valid?
       expect(record.project).to eq(project)
+    end
+
+    it "derives the account from the resolved project when missing" do
+      project = create(:project)
+      record = build(:runner_auth_attempt, account: nil, project: project)
+      record.valid?
+      expect(record.account).to eq(project.account)
     end
 
     it "rejects mismatched project and agent_run" do

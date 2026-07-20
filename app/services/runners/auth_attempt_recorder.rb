@@ -11,9 +11,11 @@ module Runners
   #   2. Captures the resolved feature-flag state for managed_subscription_runner_auth.
   #   3. Captures backend capability (supports_host_paths?, remote?) from the
   #      Docker backend when one is provided.
-  #   4. Persists a RunnerAuthAttempt row inside a nested transaction so a
-  #      logging failure cannot mask the original exception or poison the
-  #      caller's transaction.
+  #   4. Persists a RunnerAuthAttempt row inside a savepoint (transaction
+  #      requires_new: true) so a validation/insert failure inside the
+  #      recorder cannot poison the caller's outer transaction. Note this
+  #      is partial-rollback isolation, not durability: if the caller's
+  #      outer transaction rolls back, this telemetry row is lost too.
   #
   # Anything that smells like a secret — token, refresh token, auth code, native
   # credential JSON, etc. — is rejected before persistence (see
@@ -94,7 +96,10 @@ module Runners
     def resolved_account
       return project.account if project&.account.present?
 
-      nil
+      # Project may be derived from agent_run by the model's
+      # assign_project_from_agent_run callback; mirror that here so the
+      # NOT NULL account_id column is satisfied when only agent_run is given.
+      agent_run&.project&.account
     end
 
     def resolved_auth_source
@@ -134,19 +139,28 @@ module Runners
     end
 
     def record_in_isolated_transaction(attrs)
+      # Savepoint-isolated from the caller: a failure inside this block rolls
+      # back only the savepoint, not the caller's outer transaction. May still
+      # be lost on outer rollback (requires_new opens a savepoint, not a
+      # separate physical transaction).
       row = RunnerAuthAttempt.transaction(requires_new: true) do
         RunnerAuthAttempt.create!(attrs)
       end
       log_attempt_recorded(row)
       Result.new(recorded: true, error: nil)
     rescue StandardError => e
+      # The recorder is the single seam for runner auth telemetry, so the same
+      # redaction contract that applies to the row applies to its log output.
+      # A RunnerAuthAttempt validation error message echoes the caller's
+      # metadata key/value (e.g. "contains forbidden key #{key.inspect}"), so
+      # logging e.message unsanitized would let caller input reach Rails.logger.
+      # Keep only the class name here; per-attempt context is in the row itself.
       Rails.logger.warn(
         message: "runners.auth_attempt.record_failed",
         runner_key: runner_key,
         attempt_stage: attempt_stage,
         result: result,
-        error_class: e.class.name,
-        error_message: e.message
+        error_class: e.class.name
       )
       Result.new(recorded: false, error: e)
     end

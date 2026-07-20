@@ -1226,7 +1226,7 @@ module Containers
       # so we don't set PAID_CLAUDE_SUBSCRIPTION_AUTH=1 without seeding creds.
       host = claude_config_host_path
       host_source = host.present? && File.file?(File.join(host, ".credentials.json"))
-      if host_source
+      seeded = if host_source
         seed_host_credentials!(
           staging_path: "/home/agent/.claude-host",
           target_path: "/home/agent/.claude",
@@ -1244,12 +1244,16 @@ module Containers
         )
       end
 
+      # Only tag the row as materialized when the seeding path actually wrote
+      # the credential; otherwise the local-copy branch silently no-ops and a
+      # host_forwarded row would lie about its outcome.
       record_auth_attempt!(
         runner_key: "claude",
         attempt_stage: RunnerAuthAttempt::STAGE_MATERIALIZATION,
         auth_source: :host_forwarded,
         materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_HOST_MOUNT,
-        result: RunnerAuthAttempt::RESULT_MATERIALIZED,
+        result: seeded ? RunnerAuthAttempt::RESULT_MATERIALIZED : RunnerAuthAttempt::RESULT_FAILED,
+        failure_reason: seeded ? nil : "no_host_credential_seeded",
         metadata: { source: host_source ? "host_mount" : "local_copy" }
       )
     end
@@ -1298,7 +1302,7 @@ module Containers
             materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_HOST_MOUNT,
             result: RunnerAuthAttempt::RESULT_FAILED,
             failure_reason: "auth_unshared_local_only",
-            metadata: { source_path: unshared_codex_auth_path }
+            metadata: { source: "unshared_host_only" }
           )
           raise_unshared_codex_auth_error!
         end
@@ -1317,7 +1321,7 @@ module Containers
 
       mount = codex_subscription_auth_mount
       log_system("container.codex_credentials_shared", source_path: mount.host_path)
-      seed_local_credentials!(
+      seeded = seed_local_credentials!(
         source_path: mount.config_path,
         target_path: "/home/agent/.codex",
         files: [ "auth.json" ],
@@ -1338,8 +1342,9 @@ module Containers
         attempt_stage: RunnerAuthAttempt::STAGE_MATERIALIZATION,
         auth_source: :host_forwarded,
         materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_HOST_MOUNT,
-        result: RunnerAuthAttempt::RESULT_MATERIALIZED,
-        metadata: { source_path: mount.host_path }
+        result: seeded ? RunnerAuthAttempt::RESULT_MATERIALIZED : RunnerAuthAttempt::RESULT_FAILED,
+        failure_reason: seeded ? nil : "no_host_credential_seeded",
+        metadata: { source: "host_mount" }
       )
     end
 
@@ -1622,7 +1627,7 @@ module Containers
       # set PAID_GEMINI_SUBSCRIPTION_AUTH=1 without seeding creds.
       host = gemini_config_host_path
       host_source = host.present? && File.file?(File.join(host, "oauth_creds.json"))
-      if host_source
+      seeded = if host_source
         seed_host_credentials!(
           staging_path: "/home/agent/.gemini-host",
           target_path: "/home/agent/.gemini",
@@ -1645,7 +1650,8 @@ module Containers
         attempt_stage: RunnerAuthAttempt::STAGE_MATERIALIZATION,
         auth_source: :host_forwarded,
         materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_HOST_MOUNT,
-        result: RunnerAuthAttempt::RESULT_MATERIALIZED,
+        result: seeded ? RunnerAuthAttempt::RESULT_MATERIALIZED : RunnerAuthAttempt::RESULT_FAILED,
+        failure_reason: seeded ? nil : "no_host_credential_seeded",
         metadata: { source: host_source ? "host_mount" : "local_copy" }
       )
     end
@@ -1662,7 +1668,7 @@ module Containers
 
       host = copilot_config_host_path
       host_source = host.present? && File.file?(File.join(host, "config.json"))
-      if host_source
+      seeded = if host_source
         seed_host_credentials!(
           staging_path: "/home/agent/.copilot-host",
           target_path: "/home/agent/.copilot",
@@ -1678,6 +1684,8 @@ module Containers
           success_log_key: "container.copilot_credentials_seeded",
           failure_log_key: "container.copilot_credentials_seed_failed"
         )
+      else
+        false
       end
 
       record_auth_attempt!(
@@ -1685,7 +1693,8 @@ module Containers
         attempt_stage: RunnerAuthAttempt::STAGE_MATERIALIZATION,
         auth_source: :host_forwarded,
         materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_HOST_MOUNT,
-        result: RunnerAuthAttempt::RESULT_MATERIALIZED,
+        result: seeded ? RunnerAuthAttempt::RESULT_MATERIALIZED : RunnerAuthAttempt::RESULT_FAILED,
+        failure_reason: seeded ? nil : "no_host_credential_seeded",
         metadata: { source: host_source ? "host_mount" : "local_copy" }
       )
     end
@@ -1743,11 +1752,15 @@ module Containers
       backend.exec_in_container(container, [ "chown", "-R", "agent:agent", target_path ], user: "root")
       backend.exec_in_container(container, [ "sh", "-c", "#{copy_commands.join('; ')}; true" ], user: "agent")
       log_system(success_log_key)
+      true
     rescue Docker::Error::DockerError => e
       log_system(failure_log_key, error: e.message)
+      false
     end
 
     def seed_local_credentials!(source_path:, target_path:, files:, success_log_key:, failure_log_key:)
+      return false if source_path.blank?
+
       backend.exec_in_container(container, [ "chown", "-R", "agent:agent", target_path ], user: "root")
 
       write_commands = []
@@ -1760,12 +1773,14 @@ module Containers
         write_commands << "echo #{Shellwords.escape(encoded)} | base64 -d > #{dest}"
       end
 
-      if write_commands.any?
-        backend.exec_in_container(container, [ "sh", "-lc", write_commands.join("; ") ], user: "agent")
-        log_system(success_log_key, files_copied: write_commands.size)
-      end
+      return false if write_commands.empty?
+
+      backend.exec_in_container(container, [ "sh", "-lc", write_commands.join("; ") ], user: "agent")
+      log_system(success_log_key, files_copied: write_commands.size)
+      true
     rescue Docker::Error::DockerError, SystemCallError => e
       log_system(failure_log_key, error: e.message)
+      false
     end
 
     def verify_container_file_present!(path:, failure_log_key:, error_message:)
@@ -2678,7 +2693,18 @@ module Containers
           proxy_reachable: backend_proxy_reachable?
         )
 
-        materialization_mode = Runners::SubscriptionAuthMaterializers.for_runner(runner_key)&.materialization_mode
+        # The materializer registry documents the *managed* shape per provider;
+        # for host_forwarded attempts the actual seeding path always uses a
+        # host bind mount regardless of provider, so tag the row with the mode
+        # the seeding path will use. Otherwise a host_forwarded Claude row would
+        # be tagged with the managed materializer's env/native_file mode,
+        # corrupting the managed-vs-host comparison this telemetry exists to
+        # produce.
+        materialization_mode = if auth_source.auth_mode == :managed
+          Runners::SubscriptionAuthMaterializers.for_runner(runner_key)&.materialization_mode
+        else
+          Runners::SubscriptionAuthMaterializers::MATERIALIZE_HOST_MOUNT
+        end
         result = eligibility.eligible? ? RunnerAuthAttempt::RESULT_MATERIALIZED : RunnerAuthAttempt::RESULT_FAILED
 
         record_auth_attempt!(
@@ -2986,7 +3012,7 @@ module Containers
           materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_HOST_MOUNT,
           result: RunnerAuthAttempt::RESULT_SKIPPED,
           failure_reason: "no_rotated_credential",
-          metadata: { source_path: source_path }
+          metadata: { source: "host_mount" }
         )
         return
       end
@@ -3001,9 +3027,12 @@ module Containers
         materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_HOST_MOUNT,
         result: RunnerAuthAttempt::RESULT_HARVESTED,
         duration_ms: duration_ms,
-        metadata: { source_path: source_path }
+        metadata: { source: "host_mount" }
       )
     rescue Docker::Error::DockerError, SystemCallError, ArgumentError => e
+      # The full exception text (which routinely contains absolute host paths,
+      # container IDs, and other host-fingerprint data) is captured in the
+      # agent-run log via log_system below; keep the telemetry row free of it.
       log_system("container.codex_auth_sync_failed", error: e.message, source_path: source_path)
       duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
       record_auth_attempt!(
@@ -3014,7 +3043,7 @@ module Containers
         result: RunnerAuthAttempt::RESULT_HARVEST_FAILED,
         failure_reason: "exec_failed",
         duration_ms: duration_ms,
-        metadata: { source_path: source_path, error: e.message }
+        metadata: { source: "host_mount" }
       )
     end
 
@@ -3183,7 +3212,6 @@ module Containers
       return unless claude_subscription_auth?
       return unless claude_credentials_near_expiry?
 
-      source_path = claude_credentials_source_path
       started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       refresh_state = RunnerAuthAttempt::REFRESH_NOT_NEEDED
 
@@ -3198,7 +3226,7 @@ module Containers
             materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_HOST_MOUNT,
             refresh_state: RunnerAuthAttempt::REFRESH_NOT_NEEDED,
             result: RunnerAuthAttempt::RESULT_SKIPPED,
-            metadata: { source_path: source_path, reason: "already_refreshed" }
+            metadata: { source: "host_mount", reason: "already_refreshed" }
           )
           return
         end
@@ -3215,7 +3243,7 @@ module Containers
           result: outcome ? RunnerAuthAttempt::RESULT_REFRESHED : RunnerAuthAttempt::RESULT_REFRESH_FAILED,
           failure_reason: outcome ? nil : "exchange_refresh_token_failed",
           duration_ms: duration_ms,
-          metadata: { source_path: source_path }
+          metadata: { source: "host_mount" }
         )
       end
     end

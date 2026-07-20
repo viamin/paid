@@ -112,7 +112,7 @@ RSpec.describe Containers::Provision do
       expect(attempt).not_to be_nil
       expect(attempt.attempt_stage).to eq("eligibility")
       expect(attempt.auth_source).to eq("host_forwarded")
-      expect(attempt.materialization_mode).to eq("env")
+      expect(attempt.materialization_mode).to eq("host_mount")
       expect(attempt.container_host).to eq("elguapo")
       expect(attempt.backend_supports_host_paths).to be(false)
       expect(attempt.backend_remote).to be(true)
