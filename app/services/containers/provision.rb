@@ -1196,16 +1196,37 @@ module Containers
       if claude_managed_credentials_json.present?
         write_container_file("/home/agent/.claude/.credentials.json", claude_managed_credentials_json)
         log_system("container.claude_credentials_seeded", source: "managed_json")
+        record_auth_attempt!(
+          runner_key: "claude",
+          attempt_stage: RunnerAuthAttempt::STAGE_MATERIALIZATION,
+          auth_source: :managed,
+          materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_NATIVE_FILE,
+          runner_credential: claude_managed_runner_credential,
+          result: RunnerAuthAttempt::RESULT_MATERIALIZED,
+          metadata: { source: "managed_json" }
+        )
         return
       end
-      return if claude_managed_oauth_token.present?
+      if claude_managed_oauth_token.present?
+        record_auth_attempt!(
+          runner_key: "claude",
+          attempt_stage: RunnerAuthAttempt::STAGE_MATERIALIZATION,
+          auth_source: :managed,
+          materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_ENV,
+          runner_credential: claude_managed_runner_credential,
+          result: RunnerAuthAttempt::RESULT_MATERIALIZED,
+          metadata: { source: "managed_env_token" }
+        )
+        return
+      end
 
       refresh_claude_credentials_if_near_expiry!
 
       # Prefer the source that actually contains the required credential file
       # so we don't set PAID_CLAUDE_SUBSCRIPTION_AUTH=1 without seeding creds.
       host = claude_config_host_path
-      if host.present? && File.file?(File.join(host, ".credentials.json"))
+      host_source = host.present? && File.file?(File.join(host, ".credentials.json"))
+      if host_source
         seed_host_credentials!(
           staging_path: "/home/agent/.claude-host",
           target_path: "/home/agent/.claude",
@@ -1222,6 +1243,15 @@ module Containers
           failure_log_key: "container.claude_credentials_seed_failed"
         )
       end
+
+      record_auth_attempt!(
+        runner_key: "claude",
+        attempt_stage: RunnerAuthAttempt::STAGE_MATERIALIZATION,
+        auth_source: :host_forwarded,
+        materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_HOST_MOUNT,
+        result: RunnerAuthAttempt::RESULT_MATERIALIZED,
+        metadata: { source: host_source ? "host_mount" : "local_copy" }
+      )
     end
 
     # Writes a minimal Codex config into the writable ~/.codex tmpfs so the
@@ -1260,9 +1290,28 @@ module Containers
 
     def seed_codex_credentials!
       unless codex_subscription_auth?
-        raise_unshared_codex_auth_error! if unshared_codex_subscription_auth?
+        if unshared_codex_subscription_auth?
+          record_auth_attempt!(
+            runner_key: "codex",
+            attempt_stage: RunnerAuthAttempt::STAGE_MATERIALIZATION,
+            auth_source: :host_forwarded,
+            materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_HOST_MOUNT,
+            result: RunnerAuthAttempt::RESULT_FAILED,
+            failure_reason: "auth_unshared_local_only",
+            metadata: { source_path: unshared_codex_auth_path }
+          )
+          raise_unshared_codex_auth_error!
+        end
 
         seed_codex_config!
+        record_auth_attempt!(
+          runner_key: "codex",
+          attempt_stage: RunnerAuthAttempt::STAGE_MATERIALIZATION,
+          auth_source: :api_key_proxy,
+          materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_ENV,
+          result: RunnerAuthAttempt::RESULT_MATERIALIZED,
+          metadata: { source: "proxy_config" }
+        )
         return
       end
 
@@ -1283,6 +1332,15 @@ module Containers
       seed_sanitized_codex_config!(source_path: mount.config_path)
 
       seed_codex_notify_hook!
+
+      record_auth_attempt!(
+        runner_key: "codex",
+        attempt_stage: RunnerAuthAttempt::STAGE_MATERIALIZATION,
+        auth_source: :host_forwarded,
+        materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_HOST_MOUNT,
+        result: RunnerAuthAttempt::RESULT_MATERIALIZED,
+        metadata: { source_path: mount.host_path }
+      )
     end
 
     # Writes a Codex config.toml derived from the host config but with
@@ -1412,6 +1470,7 @@ module Containers
 
       lockfile = codex_auth_lockfile_path
       lock_timeout = codex_auth_lock_timeout
+      lease_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
       File.open(lockfile, File::WRONLY | File::CREAT, 0o600) do |f|
         log_system("container.codex_auth_lock.waiting", lockfile: lockfile, lock_timeout_seconds: lock_timeout)
@@ -1421,6 +1480,8 @@ module Containers
 
         if acquired
           log_system("container.codex_auth_lock.acquired", lockfile: lockfile)
+          record_codex_lease_attempt!(state: RunnerAuthAttempt::LEASE_ACQUIRED, started_at: lease_started_at,
+            metadata: { lockfile: lockfile })
           result = yield
           sync_codex_auth_file_to_source!
           result
@@ -1429,6 +1490,8 @@ module Containers
             lockfile: lockfile,
             lock_timeout_seconds: lock_timeout)
           log_system("container.codex_auth_sync_skipped_without_lock", source_path: codex_subscription_auth_source_path)
+          record_codex_lease_attempt!(state: RunnerAuthAttempt::LEASE_TIMEOUT, started_at: lease_started_at,
+            metadata: { lockfile: lockfile, lock_timeout_seconds: lock_timeout })
           yield
         end
       ensure
@@ -1438,6 +1501,27 @@ module Containers
           log_system("container.codex_auth_lock.released", lockfile: lockfile)
         end
       end
+    end
+
+    def record_codex_lease_attempt!(state:, started_at:, metadata: {})
+      duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
+      result = case state
+      when RunnerAuthAttempt::LEASE_ACQUIRED then RunnerAuthAttempt::RESULT_LEASE_ACQUIRED
+      when RunnerAuthAttempt::LEASE_WAITED then RunnerAuthAttempt::RESULT_LEASE_WAITED
+      when RunnerAuthAttempt::LEASE_TIMEOUT then RunnerAuthAttempt::RESULT_LEASE_TIMEOUT
+      else RunnerAuthAttempt::RESULT_FAILED
+      end
+
+      record_auth_attempt!(
+        runner_key: "codex",
+        attempt_stage: RunnerAuthAttempt::STAGE_LEASE,
+        auth_source: :host_forwarded,
+        materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_HOST_MOUNT,
+        lease_state: state,
+        result: result,
+        duration_ms: duration_ms,
+        metadata: metadata
+      )
     end
 
     def acquire_lock_with_timeout(file, timeout)
@@ -1537,7 +1621,8 @@ module Containers
       # Prefer the source that actually contains oauth_creds.json so we don't
       # set PAID_GEMINI_SUBSCRIPTION_AUTH=1 without seeding creds.
       host = gemini_config_host_path
-      if host.present? && File.file?(File.join(host, "oauth_creds.json"))
+      host_source = host.present? && File.file?(File.join(host, "oauth_creds.json"))
+      if host_source
         seed_host_credentials!(
           staging_path: "/home/agent/.gemini-host",
           target_path: "/home/agent/.gemini",
@@ -1554,6 +1639,15 @@ module Containers
           failure_log_key: "container.gemini_credentials_seed_failed"
         )
       end
+
+      record_auth_attempt!(
+        runner_key: "gemini",
+        attempt_stage: RunnerAuthAttempt::STAGE_MATERIALIZATION,
+        auth_source: :host_forwarded,
+        materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_HOST_MOUNT,
+        result: RunnerAuthAttempt::RESULT_MATERIALIZED,
+        metadata: { source: host_source ? "host_mount" : "local_copy" }
+      )
     end
 
     def seed_copilot_credentials!
@@ -1567,7 +1661,8 @@ module Containers
       return unless copilot_subscription_auth?
 
       host = copilot_config_host_path
-      if host.present? && File.file?(File.join(host, "config.json"))
+      host_source = host.present? && File.file?(File.join(host, "config.json"))
+      if host_source
         seed_host_credentials!(
           staging_path: "/home/agent/.copilot-host",
           target_path: "/home/agent/.copilot",
@@ -1584,6 +1679,15 @@ module Containers
           failure_log_key: "container.copilot_credentials_seed_failed"
         )
       end
+
+      record_auth_attempt!(
+        runner_key: "copilot",
+        attempt_stage: RunnerAuthAttempt::STAGE_MATERIALIZATION,
+        auth_source: :host_forwarded,
+        materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_HOST_MOUNT,
+        result: RunnerAuthAttempt::RESULT_MATERIALIZED,
+        metadata: { source: host_source ? "host_mount" : "local_copy" }
+      )
     end
 
     def copilot_config_has_oauth_token?
@@ -2485,6 +2589,7 @@ module Containers
       rejections = []
       rejections << worktree_mount_rejection if host_worktree_path.present?
       rejections.concat(subscription_auth_mount_rejections)
+      record_eligibility_attempts!
       return if rejections.empty?
 
       raise ProvisionError, format_backend_mount_rejections(rejections)
@@ -2542,6 +2647,50 @@ module Containers
           host_path: copilot_config_host_path,
           detected: host_only_auth_source?(copilot_config_host_path, "config.json", copilot_local_config_path) }
       ].select { |entry| entry[:detected] }
+    end
+
+    # RDR-041 / #2960 — record a runner auth attempt for each detected
+    # subscription auth source on the resolved backend. Captures the
+    # auth_source, materialization_mode, container_host, feature-flag state,
+    # and the eligibility outcome so managed-vs-host comparisons can slice by
+    # provider and Docker host.
+    def record_eligibility_attempts!
+      return unless project.is_a?(Project)
+
+      subscription_auth_host_sources.each do |entry|
+        runner_key = entry.fetch(:runner_key)
+        credential = managed_subscription_credential_for(runner_key)
+        auth_source = if credential&.active? && Runners::SubscriptionAuthMaterializers.remote_safe?(runner_key)
+          Runners::SubscriptionAuthEligibility::AuthSource.new(
+            runner_key: runner_key,
+            auth_mode: :managed,
+            credential_state: credential.expired? ? :expired : credential.revoked? ? :revoked : :active
+          )
+        else
+          Runners::SubscriptionAuthEligibility::AuthSource.new(
+            runner_key: runner_key,
+            auth_mode: :host_forwarded
+          )
+        end
+        eligibility = Runners::SubscriptionAuthEligibility.call(
+          backend: backend,
+          auth_source: auth_source,
+          proxy_reachable: backend_proxy_reachable?
+        )
+
+        materialization_mode = Runners::SubscriptionAuthMaterializers.for_runner(runner_key)&.materialization_mode
+        result = eligibility.eligible? ? RunnerAuthAttempt::RESULT_MATERIALIZED : RunnerAuthAttempt::RESULT_FAILED
+
+        record_auth_attempt!(
+          runner_key: runner_key,
+          attempt_stage: RunnerAuthAttempt::STAGE_ELIGIBILITY,
+          auth_source: auth_source,
+          materialization_mode: materialization_mode,
+          runner_credential: credential,
+          result: result,
+          failure_reason: eligibility.reason
+        )
+      end
     end
 
     # True when a managed RunnerCredential with a remote-safe materializer
@@ -2819,6 +2968,7 @@ module Containers
       source_path = codex_subscription_auth_source_path
       return if source_path.blank?
 
+      started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       source_file = File.join(source_path, "auth.json")
       stdout, stderr, status = backend.exec_in_container(
         container,
@@ -2828,12 +2978,44 @@ module Containers
       raise Docker::Error::DockerError, Array(stderr).join if status.to_i != 0
 
       encoded = Array(stdout).join
-      return if encoded.blank?
+      if encoded.blank?
+        record_auth_attempt!(
+          runner_key: "codex",
+          attempt_stage: RunnerAuthAttempt::STAGE_HARVEST,
+          auth_source: :host_forwarded,
+          materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_HOST_MOUNT,
+          result: RunnerAuthAttempt::RESULT_SKIPPED,
+          failure_reason: "no_rotated_credential",
+          metadata: { source_path: source_path }
+        )
+        return
+      end
 
       File.binwrite(source_file, Base64.strict_decode64(encoded))
       log_system("container.codex_auth_synced", source_path: source_path)
+      duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
+      record_auth_attempt!(
+        runner_key: "codex",
+        attempt_stage: RunnerAuthAttempt::STAGE_HARVEST,
+        auth_source: :host_forwarded,
+        materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_HOST_MOUNT,
+        result: RunnerAuthAttempt::RESULT_HARVESTED,
+        duration_ms: duration_ms,
+        metadata: { source_path: source_path }
+      )
     rescue Docker::Error::DockerError, SystemCallError, ArgumentError => e
       log_system("container.codex_auth_sync_failed", error: e.message, source_path: source_path)
+      duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
+      record_auth_attempt!(
+        runner_key: "codex",
+        attempt_stage: RunnerAuthAttempt::STAGE_HARVEST,
+        auth_source: :host_forwarded,
+        materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_HOST_MOUNT,
+        result: RunnerAuthAttempt::RESULT_HARVEST_FAILED,
+        failure_reason: "exec_failed",
+        duration_ms: duration_ms,
+        metadata: { source_path: source_path, error: e.message }
+      )
     end
 
     def codex_harness_provider
@@ -2933,6 +3115,7 @@ module Containers
     def with_claude_auth_lock
       lockfile = claude_auth_lockfile_path
       lock_timeout = CLAUDE_AUTH_LOCK_TIMEOUT
+      lease_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
       File.open(lockfile, File::WRONLY | File::CREAT, 0o600) do |f|
         log_system("container.claude_auth_lock.waiting", lockfile: lockfile, lock_timeout_seconds: lock_timeout)
@@ -2942,6 +3125,8 @@ module Containers
 
         if acquired
           log_system("container.claude_auth_lock.acquired", lockfile: lockfile)
+          record_claude_lease_attempt!(state: RunnerAuthAttempt::LEASE_ACQUIRED, started_at: lease_started_at,
+            metadata: { lockfile: lockfile })
           yield
         else
           log_system("container.claude_auth_lock.timeout",
@@ -2949,6 +3134,8 @@ module Containers
             lock_timeout_seconds: lock_timeout)
           log_system("container.claude_auth_lock_timeout_proceeding_without_lock",
             source_path: claude_credentials_source_path)
+          record_claude_lease_attempt!(state: RunnerAuthAttempt::LEASE_TIMEOUT, started_at: lease_started_at,
+            metadata: { lockfile: lockfile, lock_timeout_seconds: lock_timeout })
           yield
         end
       ensure
@@ -2958,6 +3145,27 @@ module Containers
           log_system("container.claude_auth_lock.released", lockfile: lockfile)
         end
       end
+    end
+
+    def record_claude_lease_attempt!(state:, started_at:, metadata: {})
+      duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
+      result = case state
+      when RunnerAuthAttempt::LEASE_ACQUIRED then RunnerAuthAttempt::RESULT_LEASE_ACQUIRED
+      when RunnerAuthAttempt::LEASE_WAITED then RunnerAuthAttempt::RESULT_LEASE_WAITED
+      when RunnerAuthAttempt::LEASE_TIMEOUT then RunnerAuthAttempt::RESULT_LEASE_TIMEOUT
+      else RunnerAuthAttempt::RESULT_FAILED
+      end
+
+      record_auth_attempt!(
+        runner_key: "claude",
+        attempt_stage: RunnerAuthAttempt::STAGE_LEASE,
+        auth_source: :host_forwarded,
+        materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_HOST_MOUNT,
+        lease_state: state,
+        result: result,
+        duration_ms: duration_ms,
+        metadata: metadata
+      )
     end
 
     # Provision-preflight keep-warm: if the host-forwarded Claude credential is
@@ -2975,12 +3183,40 @@ module Containers
       return unless claude_subscription_auth?
       return unless claude_credentials_near_expiry?
 
+      source_path = claude_credentials_source_path
+      started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      refresh_state = RunnerAuthAttempt::REFRESH_NOT_NEEDED
+
       with_claude_auth_lock do
         # Re-check after acquiring the lock: another Paid instance may have
         # already refreshed this credential while we waited.
-        return unless claude_credentials_near_expiry?
+        unless claude_credentials_near_expiry?
+          record_auth_attempt!(
+            runner_key: "claude",
+            attempt_stage: RunnerAuthAttempt::STAGE_REFRESH,
+            auth_source: :host_forwarded,
+            materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_HOST_MOUNT,
+            refresh_state: RunnerAuthAttempt::REFRESH_NOT_NEEDED,
+            result: RunnerAuthAttempt::RESULT_SKIPPED,
+            metadata: { source_path: source_path, reason: "already_refreshed" }
+          )
+          return
+        end
 
-        exchange_claude_refresh_token!
+        outcome = exchange_claude_refresh_token!
+        refresh_state = outcome ? RunnerAuthAttempt::REFRESH_REFRESHED : RunnerAuthAttempt::REFRESH_REFRESH_FAILED
+        duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
+        record_auth_attempt!(
+          runner_key: "claude",
+          attempt_stage: RunnerAuthAttempt::STAGE_REFRESH,
+          auth_source: :host_forwarded,
+          materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_HOST_MOUNT,
+          refresh_state: refresh_state,
+          result: outcome ? RunnerAuthAttempt::RESULT_REFRESHED : RunnerAuthAttempt::RESULT_REFRESH_FAILED,
+          failure_reason: outcome ? nil : "exchange_refresh_token_failed",
+          duration_ms: duration_ms,
+          metadata: { source_path: source_path }
+        )
       end
     end
 
@@ -3218,6 +3454,47 @@ module Containers
       )
 
       agent_run&.log!("system", message, metadata: metadata)
+    end
+
+    # RDR-041 / #2960 — single seam for writing runner auth attempt telemetry
+    # from the provision flow. Always normalizes to the AuthSource vocabulary so
+    # analytics can group by managed vs host_forwarded vs api_key_proxy.
+    def record_auth_attempt!(runner_key:, attempt_stage:, result:,
+      auth_source: nil, materialization_mode: nil, runner_credential: nil,
+      refresh_state: nil, lease_state: nil, failure_reason: nil,
+      duration_ms: nil, retry_count: 0, metadata: {})
+      resolved_auth_source = if auth_source.is_a?(Runners::SubscriptionAuthEligibility::AuthSource)
+        auth_source
+      elsif auth_source.is_a?(Symbol) || auth_source.is_a?(String)
+        Runners::SubscriptionAuthEligibility::AuthSource.new(
+          runner_key: runner_key,
+          auth_mode: auth_source.to_sym,
+          credential_state: :active
+        )
+      else
+        Runners::SubscriptionAuthEligibility::AuthSource.new(
+          runner_key: runner_key,
+          auth_mode: :host_forwarded
+        )
+      end
+
+      Runners::AuthAttemptRecorder.call(
+        agent_run: agent_run,
+        project: project,
+        backend: backend,
+        runner_key: runner_key,
+        attempt_stage: attempt_stage,
+        auth_source: resolved_auth_source,
+        materialization_mode: materialization_mode,
+        runner_credential: runner_credential,
+        refresh_state: refresh_state,
+        lease_state: lease_state,
+        result: result,
+        failure_reason: failure_reason,
+        duration_ms: duration_ms,
+        retry_count: retry_count,
+        metadata: metadata
+      )
     end
 
     def log_output(type, content)
