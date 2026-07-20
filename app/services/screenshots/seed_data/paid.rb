@@ -116,6 +116,14 @@ module Screenshots
           assign_agent_run_defaults!(agent_run)
           agent_run.save!
 
+          preview_session = project.preview_sessions.find_or_create_by!(token: "screenshots-preview-token") do |record|
+            record.branch_name = "feature/screenshots-preview"
+            record.container_id = "screenshots-preview-container"
+            record.tunnel_port = 8280
+            record.status = "active"
+            record.expires_at = 30.minutes.from_now
+          end
+
           prompt = Prompt.find_or_create_by!(account: account, slug: "screenshots.prompt") do |record|
             record.name = "Screenshots Prompt"
             record.category = "coding"
@@ -340,6 +348,7 @@ module Screenshots
           {
             "user" => { "id" => user.id, "email" => user.email, "password" => password },
             "project" => { "id" => project.id, "name" => project.name, "slug" => project.repo },
+            "preview_session" => { "id" => preview_session.id },
             "clarifying_issue" => { "id" => clarifying_issue.id, "github_number" => clarifying_issue.github_number },
             "runner" => { "id" => provider.id, "name" => provider.display_name },
             "github_installation" => { "id" => github_installation.id, "account_login" => github_installation.account_login },
