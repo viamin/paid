@@ -1,12 +1,12 @@
-<% can_create_chat_message = policy(ChatMessage.new(chat_session: chat_session)).create? %>
+<% can_create_chat_message = policy(ChatMessage.new(chat_session: chat_session)).create? && !chat_session.archived? %>
 <% popup = local_assigns.fetch(:popup, false) %>
 
-<div class="flex h-full flex-col overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
+<div class="flex h-full flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white">
   <div class="flex-1 overflow-y-auto px-4 py-5 sm:px-6 <%= popup ? 'min-h-[20rem]' : '' %>"
        data-chat-target="container"
        data-action="scroll->chat#handleScroll"
        data-controller="chat-stream">
-    <div class="space-y-5"
+    <div class="space-y-6"
          data-chat-target="messages"
          data-chat-stream-target="messageContainer">
       <% if has_older_messages %>
@@ -24,7 +24,7 @@
     <div class="hidden px-2 pt-3"
          data-chat-target="typingIndicator"
          data-chat-stream-target="typingIndicator">
-      <div class="inline-flex items-center gap-2 rounded-md bg-white px-4 py-2 text-sm text-gray-500 shadow-sm ring-1 ring-gray-200">
+      <div class="inline-flex items-center gap-2 rounded-full bg-gray-50 px-3 py-1.5 text-sm text-gray-500 ring-1 ring-gray-200">
         <span class="h-2 w-2 animate-pulse rounded-full bg-indigo-400"></span>
         Assistant is typing...
       </div>
@@ -59,8 +59,21 @@
           </div>
         </div>
       </form>
+
+      <%= form_with model: chat_session, url: chat_session_path(chat_session), method: :patch,
+            class: "mt-3 inline-flex items-center gap-2",
+            data: { action: "change->chat#submitForm" } do |form| %>
+        <%= form.check_box :auto_approve,
+              checked: chat_session.auto_approve?,
+              class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" %>
+        <%= form.label :auto_approve, "Auto-approve actions",
+              class: "text-xs font-medium text-gray-600",
+              title: "Skip the approval prompt and run requested actions (like agent runs) automatically" %>
+      <% end %>
     <% else %>
-      <p class="text-sm text-gray-500">You have read-only access to this chat.</p>
+      <p class="text-sm text-gray-500">
+        <%= chat_session.archived? ? "This chat is archived. Restore it to continue the conversation." : "You have read-only access to this chat." %>
+      </p>
     <% end %>
   </div>
 </div>

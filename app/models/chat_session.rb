@@ -46,6 +46,7 @@ class ChatSession < ApplicationRecord
 
   scope :active, -> { where(status: "active") }
   scope :visible, -> { where.not(status: "archived") }
+  scope :archived_only, -> { where(status: "archived") }
   scope :idle_expired, -> { where(status: "active").where("idle_timeout_at < ?", Time.current) }
   scope :with_preview_content, lambda {
     preview_subquery = ChatMessage.where("chat_messages.chat_session_id = chat_sessions.id")
@@ -65,6 +66,14 @@ class ChatSession < ApplicationRecord
 
   def archived?
     status == "archived"
+  end
+
+  def sidebar_list_target(status: self.status)
+    status == "archived" ? "chat_sessions_list_archived" : "chat_sessions_list_active"
+  end
+
+  def sidebar_empty_state_target(status: self.status)
+    "#{sidebar_list_target(status: status)}_empty_state"
   end
 
   def generate_title_from_content!
@@ -143,26 +152,45 @@ class ChatSession < ApplicationRecord
   end
 
   def broadcast_sidebar_prepend
+    Turbo::StreamsChannel.broadcast_remove_to(
+      [ account, :chat_sessions ],
+      target: sidebar_empty_state_target
+    )
     Turbo::StreamsChannel.broadcast_prepend_to(
       [ account, :chat_sessions ],
-      target: "chat_sessions_list",
+      target: sidebar_list_target,
       partial: "chat_sessions/session_card",
       locals: { chat_session: self }
     )
   end
 
   def broadcast_sidebar_refresh
+    previous_status = saved_change_to_status&.first || status
+
     Turbo::StreamsChannel.broadcast_remove_to(
       [ account, :chat_sessions ],
       target: ActionView::RecordIdentifier.dom_id(self)
     )
-    broadcast_sidebar_prepend unless archived?
+    broadcast_sidebar_append_empty_state(status: previous_status) if previous_status != status
+    broadcast_sidebar_prepend
   end
 
   def broadcast_sidebar_remove
     Turbo::StreamsChannel.broadcast_remove_to(
       [ account, :chat_sessions ],
       target: ActionView::RecordIdentifier.dom_id(self)
+    )
+    broadcast_sidebar_append_empty_state(status: status)
+  end
+
+  def broadcast_sidebar_append_empty_state(status:)
+    return unless self.class.where(account_id: account_id).public_send(status == "archived" ? :archived_only : :visible).none?
+
+    Turbo::StreamsChannel.broadcast_append_to(
+      [ account, :chat_sessions ],
+      target: sidebar_list_target(status: status),
+      partial: "chat_sessions/sidebar_empty_state",
+      locals: { archived_view: status == "archived" }
     )
   end
 end

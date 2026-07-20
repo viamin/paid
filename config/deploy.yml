@@ -5,13 +5,96 @@ service: paid
 image: paid
 
 # Deploy to these servers.
+#
+# Production runs five independent process types, each as its own Docker
+# container with an independent restart boundary. On a single server all five
+# roles point at the same host; for multi-server deployments move the `job` and
+# `worker_*` roles to dedicated hosts to isolate background/agent load from the
+# web tier.
+#
+#   web          — Puma web server (HTTP/UI). Uses the Dockerfile CMD
+#                  (Thruster + bin/rails server); no cmd: override needed.
+#   job          — GoodJob worker process (background jobs). Runs bin/jobs.
+#   preview_tunnel — Rathole server that accepts preview container connections.
+#                  Runs bin/preview-tunnel-server.
+#   worker_poll  — Temporal worker for the poll queue. Runs bin/temporal_worker
+#                  with TEMPORAL_WORKER_MODE=poll.
+#   worker_agent — Temporal worker for the agent queue. Runs bin/temporal_worker
+#                  with TEMPORAL_WORKER_MODE=agent.
+#
+# Target a single role with `bin/kamal <cmd> -r <role>`, e.g.
+# `bin/kamal app exec -r job ...`, `bin/kamal app logs -r worker_agent`,
+# or `bin/kamal app boot -r job`. See docs/SCALING.md for sizing guidance.
 servers:
   web:
     - 192.168.0.1
-  # job:
-  #   hosts:
-  #     - 192.168.0.1
-  #   cmd: bin/jobs
+  job:
+    hosts:
+      - 192.168.0.1
+    cmd: bin/jobs
+    options:
+      # GoodJob runs Docker-backed maintenance/reconciliation jobs in this role.
+      volume:
+        - /var/run/docker.sock:/var/run/docker.sock
+    env:
+      clear:
+        # Preserve startup bootstrap jobs when GoodJob runs out-of-process via bin/jobs.
+        GOOD_JOB_BOOTSTRAP_ON_START: true
+        # GoodJob worker thread pool size (default: 11). Must not exceed DB_POOL.
+        GOOD_JOB_MAX_THREADS: 10
+        # Per-queue thread caps (semicolons create independent pools).
+        # Sums to GOOD_JOB_MAX_THREADS so no queue can starve another.
+        GOOD_JOB_QUEUES: default:3;maintenance:2;metrics:2;knowledge:2;low_priority:1
+        # CRON SAFETY: Only ONE job host may run with cron enabled (the default).
+        # If you add a second job host, set GOOD_JOB_ENABLE_CRON=false on it to
+        # prevent every scheduled entry in config/initializers/good_job.rb from
+        # firing once per host. The primary host keeps the default (true); add:
+        #
+        #   job-secondary:
+        #     hosts:
+        #       - 192.168.0.3
+        #     cmd: bin/jobs
+        #     env:
+        #       clear:
+        #         GOOD_JOB_ENABLE_CRON: false
+        #
+        # GOOD_JOB_ENABLE_CRON: false   # set this on all secondary job hosts
+  preview_tunnel:
+    hosts:
+      - 192.168.0.1
+    cmd: bin/preview-tunnel-server
+    env:
+      clear:
+        # Keep this aligned with the published port range below so browsers can
+        # reach every preview listener that the tunnel server allocates.
+        PREVIEW_PORT_RANGE: 8200-8299
+    options:
+      # The tunnel server derives live service mappings from Docker-backed
+      # preview containers when generating server.toml.
+      volume:
+        - /var/run/docker.sock:/var/run/docker.sock
+      publish:
+        - "7000:7000"
+        - "8200-8299:8200-8299"
+  worker_poll:
+    hosts:
+      - 192.168.0.1
+    cmd: bin/temporal_worker
+    env:
+      clear:
+        TEMPORAL_WORKER_MODE: poll
+  worker_agent:
+    hosts:
+      - 192.168.0.1
+    cmd: bin/temporal_worker
+    options:
+      # RunAgentActivity provisions sibling containers via the local Docker backend
+      # unless CONTAINER_BACKEND points at a remote host.
+      volume:
+        - /var/run/docker.sock:/var/run/docker.sock
+    env:
+      clear:
+        TEMPORAL_WORKER_MODE: agent
 
 # Enable SSL auto certification via Let's Encrypt and allow for multiple apps on a single web server.
 # If used with Cloudflare, set encryption mode in SSL/TLS setting to "Full" to enable CF-to-app encryption.
@@ -37,39 +120,62 @@ registry:
   #   - KAMAL_REGISTRY_PASSWORD
 
 # Inject ENV variables into containers (secrets come from .kamal/secrets).
+#
+# Variables set here apply to EVERY role; per-role `env:` blocks under
+# `servers:` add or override these for that role only.
 env:
   secret:
     - RAILS_MASTER_KEY
   clear:
-    # Run GoodJob in-process for single-server deployments (async_server).
-    # For multi-server, use "external" and run a dedicated GoodJob worker process.
-    # GOOD_JOB_EXECUTION_MODE: async_server
+    # Run GoodJob in a dedicated process (the `job` role) instead of in-process.
+    # Applies to all roles:
+    #   - web:        no in-process job execution (avoids OOM'ing the web server)
+    #   - job:        the external GoodJob worker process consumes the queue
+    #   - worker_*:   harmless; Temporal worker processes never run GoodJob jobs
+    # Development remains unaffected because the Rails server process still
+    # triggers the one-time startup bootstrap in config/initializers/good_job.rb.
+    GOOD_JOB_EXECUTION_MODE: external
 
-    # GoodJob worker thread pool size (default: 10). Must not exceed DB_POOL.
-    # GOOD_JOB_MAX_THREADS: 10
-
-    # Per-queue thread caps (semicolons separate pools).
-    # GOOD_JOB_QUEUES: default:3;maintenance:2;metrics:2;knowledge:2;low_priority:1
-
-    # GoodJob DB polling interval in seconds (default: 3).
+    # GoodJob DB polling interval in seconds (default: 3). Only the job role reads it.
     # GOOD_JOB_POLL_INTERVAL: 3
 
-    # GoodJob graceful shutdown timeout in seconds (default: 25).
+    # GoodJob graceful shutdown timeout in seconds (default: 25). Only the job role reads it.
     # GOOD_JOB_SHUTDOWN_TIMEOUT: 25
 
     # Set number of Puma worker processes (default: 1, "auto" for one per CPU).
+    # Only the web role reads it. Production serving multiple paying users
+    # should run 2+ workers for fault tolerance. Set WEB_CONCURRENCY_AUTO to
+    # pin `auto` to a specific count on hosts where the CPU count overshoots
+    # the desired worker count.
     # WEB_CONCURRENCY: 2
+    # WEB_CONCURRENCY_AUTO: 2
 
-    # Puma threads per worker (default: 3).
+    # Restart a worker that takes longer than this (seconds) to boot or stop
+    # responding to the master's heartbeat (cluster mode only; default: 3600).
+    # WORKER_TIMEOUT: 3600
+
+    # Force-kill a worker that does not shut down within this window during a
+    # deploy (cluster mode only; default: 30).
+    # WORKER_SHUTDOWN_TIMEOUT: 30
+
+    # Preload the app in the master process before forking (copy-on-write memory
+    # savings). Requires workers >= 2. Confirm DB_POOL sizing before enabling.
+    # RAILS_PRELOAD_APP: false
+
+    # Puma threads per worker (default: 3). Only the web role reads it.
     # RAILS_MAX_THREADS: 3
 
-    # Database connection pool size (default: 20). Must be >= RAILS_MAX_THREADS
-    # and accommodate GoodJob threads when running in async_server mode.
+    # Database connection pool size (default: 20). Each role opens its own pool
+    # against the shared PostgreSQL server, so size it per role:
+    #   - web:       >= RAILS_MAX_THREADS
+    #   - job:       >= GOOD_JOB_MAX_THREADS
+    #   - worker_*:  see docs/WORKER_POOL_TUNING.md (bin/temporal_worker
+    #                 auto-corrects an undersized pool at boot)
+    # The sum of all process pools must stay under PostgreSQL max_connections.
     # DB_POOL: 20
 
-    # Temporal worker concurrency — see docs/WORKER_POOL_TUNING.md for sizing.
-    # Set TEMPORAL_WORKER_MODE=agent or TEMPORAL_WORKER_MODE=poll when
-    # running dedicated worker processes.
+    # Temporal worker concurrency — only the worker_* roles read these.
+    # See docs/WORKER_POOL_TUNING.md for sizing.
     # TEMPORAL_WORKFLOW_SLOTS: 20
     # TEMPORAL_ACTIVITY_SLOTS: 4
 

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class PreviewsController < ApplicationController
+<<<<<<< HEAD
   require "net/http"
 
   COPYABLE_PROXY_RESPONSE_HEADERS = %w[
@@ -32,10 +33,32 @@ class PreviewsController < ApplicationController
     head :not_found
   rescue Errno::ECONNREFUSED, SocketError, Net::ReadTimeout, EOFError => e
     render plain: "Preview is unavailable: #{e.message}", status: :bad_gateway
+=======
+  include AuditLogging
+
+  before_action :set_preview_session, only: [ :show, :stop ]
+
+  # GET /previews/:id — renders the iframe wrapper that embeds the proxied app.
+  # The proxied content itself is served by the PreviewsProxy middleware at
+  # /previews/:token/*. Both this wrapper page and the proxied path require an
+  # authenticated, authorized user; the iframe URL embeds the proxy path.
+  def show
+    authorize @preview_session
+  end
+
+  # POST /projects/:project_id/preview_sessions/:id/stop
+  def stop
+    authorize @preview_session, :stop?
+
+    @preview_session.update!(status: "stopped")
+    audit_event("preview.stopped", metadata: { preview_session_id: @preview_session.id })
+    redirect_to @preview_session.project, notice: "Preview stopped."
+>>>>>>> origin/main
   end
 
   private
 
+<<<<<<< HEAD
   def apply_embed_headers
     response.headers["Content-Security-Policy"] = "frame-ancestors 'self'"
     response.headers["X-Frame-Options"] = "SAMEORIGIN"
@@ -139,5 +162,16 @@ class PreviewsController < ApplicationController
 
       response.headers[key] = value
     end
+=======
+  def set_preview_session
+    @preview_session = policy_scope(PreviewSession).find(params[:id])
+  rescue ActiveRecord::RecordNotFound
+    # Mirror the proxy's 404 posture: do not reveal session existence.
+    redirect_to root_path, alert: "Preview not found."
+  end
+
+  def resolve_audit_subject
+    @preview_session
+>>>>>>> origin/main
   end
 end

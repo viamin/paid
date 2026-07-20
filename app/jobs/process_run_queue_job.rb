@@ -32,6 +32,21 @@ class ProcessRunQueueJob < ApplicationJob
   # can't start due to per-user capacity limits.
   MAX_ITERATIONS_PER_PERFORM = 100
 
+  # Temporal priority keys default to the server-configured range 1..5.
+  # Keep Paid's richer 9-tier dequeue ordering internal, then compress it
+  # onto 5 wire priorities when starting workflows.
+  TEMPORAL_PRIORITY_KEYS = {
+    manual: 1,
+    pr_p1: 2,
+    pr_p2: 2,
+    pr_p3: 3,
+    pr_continue: 3,
+    issue_p1: 4,
+    issue_p2: 4,
+    issue_p3: 5,
+    auto_pick: 5
+  }.freeze
+
   def perform
     # Use a PostgreSQL advisory lock to ensure only one job processes the queue at a time.
     # If another instance is already running, this job exits immediately (no-op).
@@ -86,6 +101,17 @@ class ProcessRunQueueJob < ApplicationJob
         )
 
         break unless next_run
+
+        # RDR-032 dequeue-time eligibility recheck: cancel eagerly-seeded
+        # runs whose issue lost eligibility after seeding (skip label,
+        # paid_state skip, new blocking dependency, closed/completed, ...).
+        # Re-enqueue hooks recreate the run if the issue becomes eligible
+        # again. Done before capacity/docker checks so ineligible runs
+        # don't consume expensive admission work.
+        if AgentRuns::RecheckIssueEligibility.call(next_run)
+          skipped_ids.add(next_run.id)
+          next
+        end
 
         if lower_priority_than_inflight_or_started_project_run?(next_run, started_priority_by_project)
           blocked_project_ids.add(next_run.project_id)
@@ -617,7 +643,7 @@ class ProcessRunQueueJob < ApplicationJob
 
   def temporal_priority_for(agent_run)
     Temporalio::Priority.new(
-      priority_key: AgentRun::QUEUE_PRIORITIES.fetch(agent_run.queue_priority_tier).fetch(:indicator),
+      priority_key: TEMPORAL_PRIORITY_KEYS.fetch(agent_run.queue_priority_tier),
       fairness_key: temporal_fairness_key_for(agent_run)
     )
   end

@@ -15,6 +15,7 @@ FROM docker.io/library/ruby:$RUBY_VERSION-slim AS base
 WORKDIR /rails
 
 ARG PGDG_POSTGRESQL_CLIENT_16_PACKAGE=postgresql-client-16=16.14-1.pgdg13+1
+ARG RATHOLE_VERSION=0.5.0
 
 # Install base packages
 # Keep client tools on the exact Postgres version shipped by the pinned server image.
@@ -25,9 +26,19 @@ RUN apt-get update -qq && \
     . /etc/os-release && \
     printf 'Types: deb\nURIs: https://apt.postgresql.org/pub/repos/apt\nSuites: %s-pgdg\nArchitectures: %s\nComponents: main\nSigned-By: /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc\n' "$VERSION_CODENAME" "$(dpkg --print-architecture)" > /etc/apt/sources.list.d/pgdg.sources && \
     apt-get update -qq && \
-    apt-get install --no-install-recommends -y "${PGDG_POSTGRESQL_CLIENT_16_PACKAGE}" && \
+    apt-get install --no-install-recommends -y "${PGDG_POSTGRESQL_CLIENT_16_PACKAGE}" unzip && \
+    arch="$(dpkg --print-architecture)" && \
+    case "$arch" in \
+      amd64) rathole_asset="rathole-x86_64-unknown-linux-gnu.zip"; rathole_checksum="3e7d0d0f365120cd3cd351d147d1a12ee960c8068b464d4dd533a3821873b80e" ;; \
+      arm64) rathole_asset="rathole-aarch64-unknown-linux-musl.zip"; rathole_checksum="fa4a6fc63d86f8f1faa7c103a845e4715ce79a048455c0eec897b27237576564" ;; \
+      *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
+    esac && \
+    curl -fsSL -o "/tmp/${rathole_asset}" "https://github.com/rathole-org/rathole/releases/download/v${RATHOLE_VERSION}/${rathole_asset}" && \
+    echo "${rathole_checksum}  /tmp/${rathole_asset}" | sha256sum -c - && \
+    unzip -j -o "/tmp/${rathole_asset}" rathole -d /usr/local/bin && \
+    chmod +x /usr/local/bin/rathole && \
     ln -s /usr/lib/$(uname -m)-linux-gnu/libjemalloc.so.2 /usr/local/lib/libjemalloc.so && \
-    rm -rf /var/lib/apt/lists /var/cache/apt/archives
+    rm -rf /tmp/${rathole_asset} /var/lib/apt/lists /var/cache/apt/archives
 
 # Set production environment variables and enable jemalloc for reduced memory usage and latency.
 ENV RAILS_ENV="production" \
@@ -45,7 +56,7 @@ RUN apt-get update -qq && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
 # Install JavaScript dependencies
-ARG NODE_VERSION=22.12.0
+ARG NODE_VERSION=24.18.0
 ARG YARN_VERSION=1.22.22
 ENV PATH=/usr/local/node/bin:$PATH
 # Pin node-build to a specific release for supply chain security

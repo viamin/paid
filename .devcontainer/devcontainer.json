@@ -49,7 +49,7 @@
     "AIDER_NO_BROWSER": "1",
     "GEMINI_API_KEY": "${localEnv:GEMINI_API_KEY}",
     "OVERMIND_SOCKET": "${containerWorkspaceFolder}/.overmind.sock",
-    "PATH": "${containerEnv:PATH}:/home/vscode/.local/bin"
+    "PATH": "${containerEnv:PATH}:/home/vscode/.local/bin:/home/vscode/.bun/bin"
   },
   // Agent CLI tool state (auth, config, plugins) is kept container-local in
   // named Docker volumes declared in compose.yaml, not bind-mounted from the
@@ -112,6 +112,7 @@
     "cursor-agent": "bash scripts/install-from-contract.sh cursor",
     "aider": "bash scripts/install-from-contract.sh aider",
     "opencode": "bash scripts/install-from-contract.sh opencode",
+    "oh-my-pi": "bash .devcontainer/install-oh-my-pi.sh",
     // Dev tools
     "markdownlint": "npm install -g --ignore-scripts markdownlint-cli",
     "git-curate": "env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH gem install git_curate"

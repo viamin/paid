@@ -14,6 +14,10 @@ module Screenshots
     CHROME_ALIAS = "paid-screenshot-browser"
     CHROME_URL = "ws://#{CHROME_ALIAS}:3000"
     OUTPUT_DIR = "tmp/screenshots"
+    # Sibling of each `{route}.png`; the capture runner writes a Playwright
+    # trace to `{route}.trace.zip` so the demo video/GIF exporter has a
+    # multi-frame source for the same route.
+    TRACE_EXTENSION = ".trace.zip"
     APP_LOG_PATH = "tmp/paid-screenshot-app.log"
     SEED_SCRIPT_PATH = ".paid-screenshots/seed_runner.rb"
     CAPTURE_TIMEOUT_SECONDS = 300
@@ -54,6 +58,9 @@ module Screenshots
       @network = nil
       @published_url = nil
       @hints = {}
+      @trace_path = nil
+      @video_path = nil
+      @preview_tunnel = nil
     end
 
     def call
@@ -150,13 +157,16 @@ module Screenshots
     end
 
     def provision_capture_container(repo_path)
+      @preview_tunnel = build_preview_tunnel_definition
+
       @screenshot_container = Containers::Provision.new(
         project: project,
         worktree_path: repo_path,
         memory_bytes: MEMORY_BYTES,
         cpu_quota: CPU_QUOTA,
         pids_limit: PIDS_LIMIT,
-        timeout_seconds: CAPTURE_TIMEOUT_SECONDS
+        timeout_seconds: CAPTURE_TIMEOUT_SECONDS,
+        preview_tunnel: @preview_tunnel
       )
       @screenshot_container.provision
       @network = @screenshot_container.network_name
@@ -182,6 +192,12 @@ module Screenshots
         raise Screenshots::ConfigError,
           "container screenshot capture only supports drivers: #{SUPPORTED_DRIVERS.join(', ')} " \
           "(configured: #{config.driver})"
+      end
+
+      if phoenix_project? && config.seed.any?
+        raise Screenshots::ConfigError,
+          "seed configuration is not supported for Phoenix projects yet " \
+          "(seeds run via bin/rails runner, which is unavailable in an Elixir/Phoenix repo)"
       end
 
       dynamic_route = config.routes.find do |route|
@@ -253,6 +269,11 @@ module Screenshots
     def configured_service_dependencies
       db_services = Array(project.effective_screenshot_settings["service_dependencies"])
       (db_services + Array(config.services)).map(&:to_s).map(&:strip).reject(&:blank?).uniq
+    end
+
+    # Video recording is opt-in (resource-heavy); traces are always attempted.
+    def record_video?
+      project.effective_screenshot_settings["record_video"] == true
     end
 
     def start_chrome!
@@ -329,8 +350,10 @@ module Screenshots
     end
 
     def start_application!
+      prepare_phoenix_endpoint_binding!
       command = application_start_command
       raise Screenshots::ConfigError, "could not determine how to start the application for screenshots" if command.blank?
+      @screenshot_container.activate_preview_tunnel!(app_port: app_port)
 
       launch_command = <<~SH
         set -e
@@ -349,6 +372,8 @@ module Screenshots
         env: capture_env,
         stream: false
       )
+
+      wait_for_preview_tunnel!
     rescue Containers::Provision::ExecutionError => e
       app_log = read_file(APP_LOG_PATH)
       raise "application startup failed: #{e.message}\n#{app_log}".strip
@@ -360,6 +385,7 @@ module Screenshots
       env = capture_env.merge(
         "SCREENSHOT_CONFIG_JSON" => screenshot_config_json,
         "SCREENSHOT_OUTPUT_DIR" => OUTPUT_DIR,
+        "SCREENSHOT_RECORD_VIDEO" => record_video? ? "1" : "0",
         "CHANGED_FILES" => ui_files.join("\n")
       )
 
@@ -372,6 +398,8 @@ module Screenshots
         stream: false
       )
 
+      @trace_path = collected_trace_path
+      @video_path = collected_video_path
       collected_screenshots
     rescue Containers::Provision::ExecutionError => e
       raise "screenshot capture failed: #{e.message}"
@@ -382,39 +410,68 @@ module Screenshots
       return unless Screenshots::Storage.configured?
 
       storage = Screenshots::Storage.new
-      uploaded = screenshot_paths.map do |path|
-        route_name = File.basename(path, ".png")
-        {
-          route_name: route_name,
-          summary: @hints.dig(route_name, "summary"),
-          url: storage.upload(
-            file_path: path,
-            org: project.owner,
-            repo: project.repo,
-            pr_number: agent_run.pull_request_number,
-            commit_sha: agent_run.result_commit_sha || agent_run.base_commit_sha || agent_run.branch_name,
-            route_name: route_name
-          )
-        }
-      end
+      uploaded = screenshot_paths.map { |path| upload_screenshot(storage, path) }
 
-      previous = storage.previous_screenshots(
+      previous_artifacts = storage.previous_artifacts(
         org: project.owner,
         repo: project.repo,
         pr_number: agent_run.pull_request_number,
-        exclude_sha: agent_run.result_commit_sha || agent_run.base_commit_sha || agent_run.branch_name
+        exclude_sha: commit_sha
       )
 
       Screenshots::PrComment.call(
         github_client: project.client,
         repo: project.full_name,
         pr_number: agent_run.pull_request_number,
-        commit_sha: agent_run.result_commit_sha || agent_run.base_commit_sha || agent_run.branch_name,
+        commit_sha: commit_sha,
         screenshots: uploaded,
-        previous_screenshots: previous
+        previous_screenshots: previous_artifacts.transform_values { |formats| formats[:png] }.compact
       )
 
       @published_url = uploaded.first&.fetch(:url, nil)
+    end
+
+    def upload_screenshot(storage, path)
+      route_name = File.basename(path, ".png")
+      screenshot = {
+        route_name: route_name,
+        summary: @hints.dig(route_name, "summary"),
+        url: storage.upload(
+          file_path: path,
+          org: project.owner,
+          repo: project.repo,
+          pr_number: agent_run.pull_request_number,
+          commit_sha: commit_sha,
+          route_name: route_name
+        )
+      }
+
+      screenshot.merge(
+        Screenshots::TraceArtifactExporter.call(
+          storage: storage,
+          org: project.owner,
+          repo: project.repo,
+          pr_number: agent_run.pull_request_number,
+          commit_sha: commit_sha,
+          route_name: route_name,
+          trace_path: trace_path_for(path),
+          logger: logger,
+          log_message: "screenshots.export_failed",
+          log_context: {
+            project_id: project.id,
+            agent_run_id: agent_run.id
+          }
+        )
+      )
+    end
+
+    # Resolves the Playwright trace recorded alongside `screenshot_path` by the
+    # capture runner. Returns nil when no trace was produced (e.g. the browser
+    # backend lacks trace support), which makes the exporter fall back to the
+    # static PNG.
+    def trace_path_for(screenshot_path)
+      trace_path = "#{File.dirname(screenshot_path)}/#{File.basename(screenshot_path, '.png')}#{TRACE_EXTENSION}"
+      File.exist?(trace_path) ? trace_path : nil
     end
 
     def write_capture_runner
@@ -432,10 +489,17 @@ module Screenshots
         const playwright = await import("playwright").catch(async () => import("playwright-core"));
         const config = JSON.parse(process.env.SCREENSHOT_CONFIG_JSON);
         const outputDir = process.env.SCREENSHOT_OUTPUT_DIR;
+        const recordVideo = process.env.SCREENSHOT_RECORD_VIDEO === "1";
+
+        await fs.mkdir(outputDir, { recursive: true });
+
         const browser = await playwright.chromium.connectOverCDP(process.env.CHROME_URL);
-        const context = browser.contexts()[0] || await browser.newContext({
-          viewport: config.viewport,
-        });
+        const contextOptions = { viewport: config.viewport };
+        if (recordVideo) {
+          await fs.mkdir(`${outputDir}/videos`, { recursive: true });
+          contextOptions.recordVideo = { dir: `${outputDir}/videos` };
+        }
+        const context = await browser.newContext(contextOptions);
         const page = await context.newPage();
 
         async function authenticate() {
@@ -482,17 +546,42 @@ module Screenshots
           }, annotation);
         }
 
-        await fs.mkdir(outputDir, { recursive: true });
         await authenticate();
 
         for (const route of config.routes) {
-          const target = new URL(route.path, config.base_url).toString();
-          await page.goto(target, { waitUntil: "networkidle" });
-          await annotate(route.annotation);
-          await page.screenshot({ path: `${outputDir}/${route.name}.png`, fullPage: true });
+          await captureRoute(route);
         }
 
+        await context.close();
         await browser.close();
+
+        // Records a route's screenshot plus a Playwright trace. The trace is the
+        // multi-frame source the demo video/GIF exporters need; tracing is
+        // best-effort so a backend without trace support still yields the PNG.
+        async function captureRoute(route) {
+          let tracing = false;
+          try {
+            await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
+            tracing = true;
+          } catch (traceError) {
+            console.error("trace start failed:", traceError.message);
+          }
+
+          try {
+            const target = new URL(route.path, config.base_url).toString();
+            await page.goto(target, { waitUntil: "networkidle" });
+            await annotate(route.annotation);
+            await page.screenshot({ path: `${outputDir}/${route.name}.png`, fullPage: true });
+          } finally {
+            if (tracing) {
+              try {
+                await context.tracing.stop({ path: `${outputDir}/${route.name}#{TRACE_EXTENSION}` });
+              } catch (traceError) {
+                console.error("trace stop failed:", traceError.message);
+              }
+            }
+          }
+        }
       JS
     end
 
@@ -530,6 +619,8 @@ module Screenshots
         "PORT=#{port} bin/dev"
       elsif File.exist?(File.join(@tmpdir, "bin/rails"))
         "bundle exec bin/rails server -b 0.0.0.0 -p #{port}"
+      elsif phoenix_project?
+        "MIX_ENV=dev mix phx.server"
       elsif File.exist?(File.join(@tmpdir, "manage.py"))
         "python3 manage.py runserver 0.0.0.0:#{port}"
       elsif package_dependency?("next")
@@ -570,13 +661,41 @@ module Screenshots
     def capture_env
       @screenshot_service_env.merge(
         "CHROME_URL" => CHROME_URL,
-        "CI" => "1"
+        "CI" => "1",
+        "PORT" => app_port.to_s
       )
     end
 
     def app_port
       uri = URI.parse(config&.base_url || Screenshots::Configuration::DEFAULT_BASE_URL)
       uri.port || 3000
+    end
+
+    def build_preview_tunnel_definition
+      session_token = preview_tunnel_session_token
+      Previews::TunnelManager::TunnelDefinition.new(
+        session_token: session_token,
+        tunnel_port: Previews::TunnelManager.allocate_port(key: session_token),
+        app_port: nil
+      )
+    end
+
+    def preview_tunnel_session_token
+      "screenshots-agent-run-#{agent_run.id}"
+    end
+
+    def wait_for_preview_tunnel!
+      return if @preview_tunnel.blank?
+
+      Previews::TunnelManager.wait_until_ready!(
+        port: @preview_tunnel.tunnel_port,
+        path: preview_tunnel_health_check_path
+      )
+    end
+
+    def preview_tunnel_health_check_path
+      uri = URI.parse(config.base_url)
+      uri.request_uri.presence || "/"
     end
 
     def package_dependency?(name)
@@ -593,6 +712,67 @@ module Screenshots
 
     def collected_screenshots
       Dir.glob(File.join(@tmpdir.to_s, OUTPUT_DIR, "*.png")).sort
+    end
+
+    def collected_trace_path
+      Dir.glob(File.join(@tmpdir.to_s, OUTPUT_DIR, "trace.zip")).first
+    end
+
+    def collected_video_path
+      Dir.glob(File.join(@tmpdir.to_s, OUTPUT_DIR, "videos", "*.webm")).first
+    end
+
+    # Phoenix/Elixir repos are driven by mix.exs. This matches the same signal
+    # application_start_command uses to pick `mix phx.server`, so seed loading
+    # (which runs via bin/rails runner) is gated on the same framework check.
+    def phoenix_project?
+      return false if @tmpdir.blank?
+
+      File.exist?(File.join(@tmpdir, "mix.exs"))
+    end
+
+    def prepare_phoenix_endpoint_binding!
+      return unless phoenix_project?
+
+      endpoint_modules = phoenix_endpoint_modules
+      return if endpoint_modules.empty?
+
+      runtime_path = File.join(@tmpdir, "config/runtime.exs")
+      FileUtils.mkdir_p(File.dirname(runtime_path))
+      runtime_content = File.exist?(runtime_path) ? File.read(runtime_path) : "import Config\n"
+      override = phoenix_endpoint_override(endpoint_modules)
+      return if runtime_content.include?(override)
+
+      runtime_content = "#{runtime_content.rstrip}\n\n#{override}"
+      File.write(runtime_path, runtime_content)
+    end
+
+    def phoenix_endpoint_modules
+      dev_config_path = File.join(@tmpdir, "config/dev.exs")
+      return [] unless File.exist?(dev_config_path)
+
+      File.read(dev_config_path).scan(/config\s+:([a-zA-Z_][\w]*),\s+([A-Z][\w.]*(?:\.Endpoint))/).uniq
+    end
+
+    def phoenix_endpoint_override(endpoint_modules)
+      config_lines = endpoint_modules.map do |application, endpoint_module|
+        <<~EXS.chomp
+          config :#{application}, #{endpoint_module},
+            http: [ip: {0, 0, 0, 0}, port: String.to_integer(System.get_env("PORT") || "4000")]
+        EXS
+      end
+
+      <<~EXS.chomp
+        # Paid screenshot capture override: browserless runs in a separate container,
+        # so Phoenix must bind to all interfaces instead of loopback-only dev defaults.
+        if config_env() == :dev do
+        #{config_lines.join("\n\n").lines.map { |line| "  #{line}" }.join}
+        end
+      EXS
+    end
+
+    def commit_sha
+      agent_run.result_commit_sha || agent_run.base_commit_sha || agent_run.branch_name
     end
 
     def read_file(relative_path)

@@ -148,6 +148,16 @@ class Project < ApplicationRecord
     [ "All PRs", "all" ]
   ].freeze
 
+  # Bots whose PRs may be admitted by scoped automation paths when the project
+  # is configured to auto-merge dependency updates. They are deliberately not
+  # added to #trusted_github_author_logins because that global author trust also
+  # controls issue sync, auto-pick, and prompt-building eligibility.
+  DEPENDENCY_UPDATE_BOT_AUTHORS = %w[
+    dependabot[bot]
+    dependabot-preview[bot]
+    renovate[bot]
+  ].freeze
+
   AUTO_RELEASE_GRANULARITY_OPTIONS = [
     [ "Off", "off" ],
     [ "Patch only", "patch_only" ],
@@ -185,6 +195,7 @@ class Project < ApplicationRecord
   has_many :prompts, dependent: :destroy
   has_many :strategies, dependent: :destroy
   has_many :style_guides, dependent: :destroy
+  has_many :style_guide_ab_tests, through: :account
   has_many :project_versions, dependent: :destroy
   has_many :knowledge_artifacts, dependent: :destroy
   has_many :knowledge_chunks, through: :knowledge_artifacts
@@ -301,6 +312,21 @@ class Project < ApplicationRecord
 
   def full_name
     "#{owner}/#{repo}"
+  end
+
+  # Normalized primary language key (downcased) used by the prompt-building
+  # services (e.g. Prompts::LanguageCommands) to select test/lint commands.
+  # Returns nil when no language has been detected for the repository.
+  def detected_language
+    primary_language&.strip&.downcase&.presence
+  end
+
+  # Human-friendly project-type label (e.g. "Ruby on Rails") shown as a badge
+  # on project tiles. Returns nil when no language has been detected.
+  def project_type_label
+    return if primary_language.blank?
+
+    Projects::LanguageProfile.label_for(primary_language) || primary_language
   end
 
   def flipper_id
@@ -477,9 +503,10 @@ class Project < ApplicationRecord
   # for Paid to pick up and work on it. The human allowlist plus, for GitHub
   # App projects, the app's own bot identity (implicit, never stored in
   # allowed_github_usernames), so Paid can act on issues/PRs its own bot
-  # opens. Broader than #trusted_github_user? on purpose: the bot may author
-  # work Paid acts on, but its comments are never trusted human input. All
-  # logins are downcased for case-insensitive comparison.
+  # opens. Broader than #trusted_github_user? on purpose: author trust controls
+  # pickup/queueing, while comment trust stays human-only. Dependency-update
+  # bots are admitted by scoped PR-scan authorization instead of this global
+  # list. All logins are downcased for case-insensitive comparison.
   #
   # Uses github_author_login (the "[bot]" form, e.g. "paid-agents[bot]"),
   # which is the only login GitHub ever reports as the author of app-created
@@ -1103,10 +1130,32 @@ class Project < ApplicationRecord
   def client
     @client ||= if github_installation_id.present? || github_installation.present?
       credential = github_credential
-      credential.present? ? GithubClient.new(token: credential, health_endpoint: github_health_endpoint) : nil
+      credential.present? ? GithubClient.new(
+        token: credential,
+        health_endpoint: github_health_endpoint,
+        token_refresher: installation_token_refresher
+      ) : nil
     else
       github_token&.client
     end
+  end
+
+  # Returns a proc that clears the cached App installation token and mints
+  # a fresh one. Passed to +GithubClient+ so a 401 mid-request triggers a
+  # transparent re-mint instead of a hard failure (RDR-030).
+  def installation_token_refresher
+    return nil unless github_installation_id.present? || github_installation.present?
+
+    installation = github_installation
+    repo_name = full_name
+
+    -> {
+      Github::AppInstallation.clear_cached_token(
+        installation_id: installation.github_installation_id,
+        repo_full_name: repo_name
+      )
+      github_credential
+    }
   end
 
   def github_health_endpoint

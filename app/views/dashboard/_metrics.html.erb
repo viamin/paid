@@ -85,7 +85,7 @@
           </div>
         </div>
         <div class="mt-4">
-          <%= column_chart stats[:daily_run_status_chart],
+          <%= dashboard_chartkick_chart "ColumnChart", stats[:daily_run_status_chart],
               id: "daily-runs-chart",
               stacked: true,
               height: "320px",
@@ -140,7 +140,7 @@
         <% if outcome_data[:overall_total] > 0 %>
           <%# Stacked column chart of outcomes per day %>
           <div class="mt-4">
-            <%= column_chart outcome_data[:series],
+            <%= dashboard_chartkick_chart "ColumnChart", outcome_data[:series],
                 id: "daily-outcome-chart",
                 stacked: true,
                 height: "280px",
@@ -174,7 +174,7 @@
           <%# Completion rate % line chart %>
           <div class="mt-6">
             <h4 class="text-xs font-medium text-gray-500 uppercase tracking-wider">Daily Completion Rate %</h4>
-            <%= line_chart outcome_data[:completion_rate],
+            <%= dashboard_chartkick_chart "LineChart", outcome_data[:completion_rate],
                 id: "daily-completion-rate-chart",
                 height: "180px",
                 colors: ["#16a34a"],
@@ -295,7 +295,7 @@
               </span>
             </p>
           <% end %>
-          <%= line_chart dtc[:series],
+          <%= dashboard_chartkick_chart "LineChart", dtc[:series],
               id: "duration-trend-chart",
               height: "320px",
               colors: ["#4f46e5", "#059669", "#94a3b8"],

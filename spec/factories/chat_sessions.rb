@@ -19,6 +19,10 @@ FactoryBot.define do
       status { "closed" }
     end
 
+    trait :active do
+      status { "active" }
+    end
+
     trait :archived do
       status { "archived" }
     end

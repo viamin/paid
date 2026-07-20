@@ -1,5 +1,7 @@
 <% page_context = chat_session.page_context %>
-<% can_archive_chat_session = policy(chat_session).archive? && !chat_session.archived? %>
+<% archived_chat_session = chat_session.archived? %>
+<% can_archive_chat_session = policy(chat_session).archive? && !archived_chat_session %>
+<% can_unarchive_chat_session = policy(chat_session).unarchive? && archived_chat_session %>
 <% can_create_chat_session = policy(ChatSession.new(account: current_account)).create? %>
 
 <section class="flex h-full flex-col overflow-hidden rounded-[1.75rem] bg-white shadow-[0_32px_80px_-32px_rgba(15,23,42,0.45)] ring-1 ring-slate-200">
@@ -18,6 +20,13 @@
       </div>
 
       <div class="flex items-center gap-2">
+        <% if can_unarchive_chat_session %>
+          <%= button_to "Unarchive",
+                        unarchive_chat_session_path(chat_session),
+                        method: :patch,
+                        form: { "data-turbo-frame" => "_top" },
+                        class: "inline-flex items-center rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-900 hover:bg-emerald-200" %>
+        <% end %>
         <% if can_create_chat_session && can_archive_chat_session %>
           <button type="button"
                   class="inline-flex items-center rounded-full bg-amber-100 px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-200"

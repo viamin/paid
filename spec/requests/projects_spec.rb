@@ -76,6 +76,24 @@ RSpec.describe "Projects" do
         expect(response.body).to include("Name")
       end
 
+      it "shows the detected project type as a badge" do
+        create(:project, account: account, github_token: github_token, primary_language: "Ruby")
+        get projects_path
+        expect(response.body).to include("Ruby on Rails")
+      end
+
+      it "maps other languages to their project-type label" do
+        create(:project, account: account, github_token: github_token, primary_language: "Elixir")
+        get projects_path
+        expect(response.body).to include("Phoenix / Elixir")
+      end
+
+      it "does not show a project type badge when no language is detected" do
+        create(:project, account: account, github_token: github_token, primary_language: nil)
+        get projects_path
+        expect(response.body).not_to include("Ruby on Rails")
+      end
+
       it "shows auto-pick toggle on project cards" do
         create(:project, account: account, github_token: github_token, auto_pick_enabled: false)
         get projects_path
@@ -379,7 +397,8 @@ RSpec.describe "Projects" do
         OpenStruct.new(
           id: 123456,
           name: "hello-world",
-          default_branch: "main"
+          default_branch: "main",
+          language: "Ruby"
         )
       end
 
@@ -419,6 +438,11 @@ RSpec.describe "Projects" do
           project = Project.last
           expect(project.github_id).to eq(123456)
           expect(project.default_branch).to eq("main")
+        end
+
+        it "stores the detected primary language" do
+          post projects_path, params: valid_params
+          expect(Project.last.primary_language).to eq("Ruby")
         end
 
         it "uses repository name as display name if not provided" do
@@ -2696,6 +2720,8 @@ RSpec.describe "Projects" do
         expect(body["framework"]).to eq("Rails")
         expect(body["confidence"]).to eq("high")
         expect(body["suggested_yaml"]).to include("driver: cuprite")
+        expect(body["suggested_yaml"]).to include("setup:")
+        expect(body["suggested_yaml"]).to include("- bin/setup --skip-server")
         expect(body["service_dependencies"]).to eq([ "postgres" ])
       end
 

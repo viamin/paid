@@ -7,6 +7,11 @@ module Screenshots
   # if a comment with that marker already exists, it is updated in place;
   # otherwise a new comment is created.
   #
+  # When a screenshot includes an animated `:gif_url` (produced from multi-frame
+  # capture input), the GIF is rendered inline instead of the static PNG.
+  # The static PNG remains the fallback for screenshot-only captures,
+  # preserving the existing before/after comparison UX.
+  #
   # @example
   #   Screenshots::PrComment.call(
   #     github_client: client,
@@ -14,7 +19,7 @@ module Screenshots
   #     pr_number: 42,
   #     commit_sha: "abc1234",
   #     screenshots: [
-  #       { route_name: "dashboard", url: "https://signed-url..." },
+  #       { route_name: "dashboard", url: "https://signed-url...", gif_url: "https://gif-url..." },
   #       { route_name: "homepage",  url: "https://signed-url..." }
   #     ]
   #   )
@@ -29,7 +34,8 @@ module Screenshots
     # @param repo [String] Repository in "owner/name" format
     # @param pr_number [Integer] Pull request number
     # @param commit_sha [String] Commit SHA for the screenshots
-    # @param screenshots [Array<Hash>] Each hash has :route_name and :url keys
+    # @param screenshots [Array<Hash>] Each hash has :route_name, :url, and
+    #   optional :gif_url, :video_url, :summary, and :video_filename keys
     # @param previous_screenshots [Hash<String, String>] Mapping of route_name to
     #   signed URL from the previous commit's capture, used for before/after comparison
     # @param artifact_name [String, nil] Workflow artifact name when screenshots
@@ -116,11 +122,18 @@ module Screenshots
       grouped = group_by_category(@screenshots)
 
       annotated = @screenshots.any? { |s| s[:summary].present? }
+      animated = @screenshots.any? { |s| s[:gif_url].present? }
+      videos = @screenshots.select { |s| s[:video_url].present? }
 
       lines = [ MARKER ]
       lines << "## UI Screenshots"
       lines << ""
       lines << "This PR includes **UI-facing changes**. Screenshots captured from commit `#{short_sha}`."
+      if animated
+        lines << ""
+        lines << "> Animated GIFs show the captured interaction flow. " \
+                 "Static PNG fallbacks remain in the comparison columns."
+      end
       if annotated
         lines << ""
         lines << "> Pages were scoped by Paid to those this change appears to affect; " \
@@ -139,15 +152,7 @@ module Screenshots
           lines << divider
 
           category_screenshots.sort_by { |s| s[:route_name] }.each do |screenshot|
-            name = screenshot[:route_name]
-            after_url = screenshot[:url]
-            before_url = @previous_screenshots[name]
-
-            before_cell = before_url ? "![before-#{name}](#{before_url})" : "_New page_"
-            cells = [ humanize_route(name) ]
-            cells << changed_cell(screenshot) if annotated
-            cells += [ before_cell, "![#{name}](#{after_url})" ]
-            lines << "| #{cells.join(' | ')} |"
+            lines << format_comparison_row(screenshot)
           end
         else
           header = annotated ? "| Page | What changed | Screenshot |" : "| Page | Screenshot |"
@@ -156,15 +161,20 @@ module Screenshots
           lines << divider
 
           category_screenshots.sort_by { |s| s[:route_name] }.each do |screenshot|
-            name = screenshot[:route_name]
-            url = screenshot[:url]
-            cells = [ humanize_route(name) ]
-            cells << changed_cell(screenshot) if annotated
-            cells << "![#{name}](#{url})"
-            lines << "| #{cells.join(' | ')} |"
+            lines << format_capture_row(screenshot, annotated: annotated)
           end
         end
 
+        lines << ""
+      end
+
+      if videos.any?
+        lines << "### Demo Videos"
+        lines << ""
+        videos.sort_by { |s| s[:route_name] }.each do |screenshot|
+          filename = screenshot[:video_filename].presence || "#{screenshot[:route_name]}.webm"
+          lines << "- [#{escape_markdown_label(filename)}](#{screenshot[:video_url]}) — #{route_label(screenshot[:route_name])}"
+        end
         lines << ""
       end
 
@@ -196,7 +206,55 @@ module Screenshots
       summary = screenshot[:summary].to_s.gsub(/\s+/, " ").strip
       return "—" if summary.empty?
 
-      summary.truncate(MAX_SUMMARY_LENGTH).gsub(/[\\`*_{}\[\]()#+\-!<>|~]/) { |char| "\\#{char}" }
+      escape_markdown_text(summary.truncate(MAX_SUMMARY_LENGTH))
+    end
+
+    def format_comparison_row(screenshot)
+      name = screenshot[:route_name]
+      before_url = @previous_screenshots[name]
+
+      before_cell = before_url ? markdown_image("before-#{name}", before_url) : "_New page_"
+      after_cell = capture_cell(screenshot)
+      cells = [ route_label(name) ]
+      cells << changed_cell(screenshot) if annotated?
+      cells += [ before_cell, after_cell ]
+      "| #{cells.join(' | ')} |"
+    end
+
+    def format_capture_row(screenshot, annotated:)
+      cells = [ route_label(screenshot[:route_name]) ]
+      cells << changed_cell(screenshot) if annotated
+      cells << capture_cell(screenshot)
+      "| #{cells.join(' | ')} |"
+    end
+
+    def capture_cell(screenshot)
+      name = screenshot[:route_name]
+      if screenshot[:gif_url].present?
+        markdown_image(name, screenshot[:gif_url])
+      else
+        markdown_image(name, screenshot[:url])
+      end
+    end
+
+    def route_label(route_name)
+      escape_markdown_label(humanize_route(route_name))
+    end
+
+    def markdown_image(alt_text, url)
+      "![#{escape_markdown_label(alt_text)}](#{url})"
+    end
+
+    def escape_markdown_label(text)
+      text.to_s.gsub(/[\\`\[\]()<>|]/) { |char| "\\#{char}" }
+    end
+
+    def escape_markdown_text(text)
+      text.to_s.gsub(/[\\`*_{}\[\]()#+\-!<>|~]/) { |char| "\\#{char}" }
+    end
+
+    def annotated?
+      @screenshots.any? { |s| s[:summary].present? }
     end
 
     def group_by_category(screenshots)

@@ -85,10 +85,12 @@ class GithubTokenHealthCheckJob < ApplicationJob
       error: e.message
     )
     # No was_already_failed guard here intentionally: the service is idempotent
-    # (only pauses projects where scheduler_paused_at IS NULL), and new projects
-    # can be associated with a failed token between health-check runs. Skipping
-    # this call when the token was already failed would leave those new projects
-    # unpaused until the token is fixed and fails again.
+    # (scheduler_pause! no-ops if already paused; stop_polling is a safe repeat
+    # cancel), and new projects can be associated with a failed token between
+    # health-check runs. Skipping this call when the token was already failed
+    # would leave those new projects unpaused, and previously auto-paused ones
+    # with a still-running poll workflow, until the token is fixed and fails
+    # again.
     GithubTokens::AutoPauseProjects.call(github_token: token)
     false
   rescue GithubClient::RateLimitError, GithubClient::ApiError => e

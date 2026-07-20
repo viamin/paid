@@ -134,6 +134,16 @@ RSpec.describe ChatSessions::SendMessage do
       }.to raise_error(ArgumentError, /cannot be resumed/)
     end
 
+    it "raises when sending a message to an archived session without persisting anything" do
+      archived_session = create(:chat_session, :archived, account: account, created_by: user)
+
+      expect {
+        described_class.call(chat_session: archived_session, content: "Hello", llm_client: llm_client)
+      }.to raise_error(ArgumentError, /archived/)
+
+      expect(archived_session.messages.where(role: "user", content: "Hello").count).to eq(0)
+    end
+
     it "raises when content is blank" do
       expect {
         described_class.call(chat_session: chat_session, content: "", llm_client: llm_client)

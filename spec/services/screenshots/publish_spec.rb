@@ -20,6 +20,18 @@ RSpec.describe Screenshots::Publish do
   let(:pr_number) { 42 }
   let(:commit_sha) { "abc1234def5678" }
   let(:comment) { Struct.new(:id).new(1) }
+  let(:homepage_artifacts) do
+    {
+      route_name: "homepage",
+      url: "https://s3.example.com/homepage.png?source=homepage.png"
+    }
+  end
+  let(:dashboard_artifacts) do
+    {
+      route_name: "dashboard",
+      url: "https://s3.example.com/dashboard.png?source=dashboard.png"
+    }
+  end
 
   describe "#call" do
     context "with screenshots" do
@@ -31,14 +43,19 @@ RSpec.describe Screenshots::Publish do
       end
 
       let(:previous_screenshots) do
-        { "homepage" => "https://s3.example.com/prev-homepage.png" }
+        { "homepage" => { png: "https://s3.example.com/prev-homepage.png" } }
       end
 
       before do
+        allow(storage).to receive_messages(
+          upload: nil,
+          previous_artifacts: previous_screenshots,
+          upload_artifact: nil
+        )
         allow(storage).to receive(:upload) do |file_path:, route_name:, **|
           "https://s3.example.com/#{route_name}.png?source=#{File.basename(file_path)}"
         end
-        allow(storage).to receive(:previous_screenshots).and_return(previous_screenshots)
+        allow(Screenshots::TraceArtifactExporter).to receive(:call).and_return({})
         allow(Screenshots::PrComment).to receive(:call).and_return(comment)
         service.call
       end
@@ -62,17 +79,36 @@ RSpec.describe Screenshots::Publish do
         )
       end
 
+      it "delegates trace artifact export to the shared exporter" do
+        expect(Screenshots::TraceArtifactExporter).to have_received(:call).with(
+          hash_including(
+            storage: storage,
+            route_name: "homepage",
+            trace_path: nil,
+            log_message: "screenshots.publish.export_failed"
+          )
+        )
+        expect(Screenshots::TraceArtifactExporter).to have_received(:call).with(
+          hash_including(
+            storage: storage,
+            route_name: "dashboard",
+            trace_path: nil,
+            log_message: "screenshots.publish.export_failed"
+          )
+        )
+        expect(storage).not_to have_received(:upload_artifact)
+      end
+
       it "posts the uploaded screenshots with previous screenshots to the PR comment" do
+        expected_screenshots = [ homepage_artifacts, dashboard_artifacts ]
+
         expect(Screenshots::PrComment).to have_received(:call).with(
           github_client: github_client,
           repo: repo,
           pr_number: pr_number,
           commit_sha: commit_sha,
-          screenshots: [
-            { route_name: "homepage", url: "https://s3.example.com/homepage.png?source=homepage.png" },
-            { route_name: "dashboard", url: "https://s3.example.com/dashboard.png?source=dashboard.png" }
-          ],
-          previous_screenshots: previous_screenshots
+          screenshots: expected_screenshots,
+          previous_screenshots: { "homepage" => "https://s3.example.com/prev-homepage.png" }
         )
       end
 
@@ -86,6 +122,8 @@ RSpec.describe Screenshots::Publish do
 
       before do
         allow(storage).to receive(:upload)
+        allow(storage).to receive(:upload_artifact)
+        allow(Screenshots::TraceArtifactExporter).to receive(:call).and_return({})
         allow(Screenshots::PrComment).to receive(:call).and_return(comment)
       end
 
@@ -93,6 +131,7 @@ RSpec.describe Screenshots::Publish do
         service.call
 
         expect(storage).not_to have_received(:upload)
+        expect(storage).not_to have_received(:upload_artifact)
         expect(Screenshots::PrComment).to have_received(:call).with(
           github_client: github_client,
           repo: repo,
@@ -133,6 +172,57 @@ RSpec.describe Screenshots::Publish do
       it "raises a descriptive error" do
         expect { service.call }
           .to raise_error(Screenshots::Publish::PublishError, /owner\/name/)
+      end
+    end
+
+    context "when the shared exporter returns no artifacts" do
+      let(:screenshot_paths) { [ "/tmp/screenshots/homepage.png" ] }
+
+      before do
+        allow(storage).to receive_messages(
+          upload: "https://s3.example.com/homepage.png",
+          previous_artifacts: {}
+        )
+        allow(Screenshots::TraceArtifactExporter).to receive(:call).and_return({})
+        allow(Screenshots::PrComment).to receive(:call).and_return(comment)
+      end
+
+      it "falls back to static PNG publishing" do
+        service.call
+
+        expect(Screenshots::PrComment).to have_received(:call).with(
+          hash_including(
+            screenshots: [ { route_name: "homepage", url: "https://s3.example.com/homepage.png" } ]
+          )
+        )
+      end
+    end
+
+    context "when a Playwright trace was recorded alongside the screenshot" do
+      let(:dir) { Dir.mktmpdir("publish-trace-spec") }
+      let(:screenshot_paths) { [ File.join(dir, "homepage.png") ] }
+
+      before do
+        File.write(File.join(dir, "homepage.png"), "png")
+        File.write(File.join(dir, "homepage.trace.zip"), "fake trace")
+        allow(storage).to receive_messages(
+          upload: "https://s3.example.com/homepage.png",
+          previous_artifacts: {}
+        )
+        allow(storage).to receive(:upload_artifact)
+        allow(Screenshots::TraceArtifactExporter).to receive(:call).and_return({})
+        allow(Screenshots::PrComment).to receive(:call).and_return(comment)
+      end
+
+      it "passes the sibling trace path to the exporter" do
+        service.call
+
+        expect(Screenshots::TraceArtifactExporter).to have_received(:call).with(
+          hash_including(
+            route_name: "homepage",
+            trace_path: File.join(dir, "homepage.trace.zip")
+          )
+        )
       end
     end
   end
