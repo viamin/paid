@@ -105,6 +105,9 @@ RSpec.describe "Previews" do
 
   describe "GET /previews/:token/*" do
     before do
+      # The :ready factory defaults to a simulated container id; this block
+      # exercises the real reverse-proxy path, so swap in a real container id.
+      preview_session.update!(container_id: "container-real")
       stub_request(:get, "http://127.0.0.1:#{preview_session.tunnel_port}/")
         .to_return(status: 200, body: "proxied app")
     end
