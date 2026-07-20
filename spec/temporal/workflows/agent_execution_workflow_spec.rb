@@ -554,6 +554,49 @@ RSpec.describe Workflows::AgentExecutionWorkflow do
     end
   end
 
+  describe "verification browser patch guard" do
+    let(:input) { { project_id: 1, issue_id: 1, goal: "create_pr" } }
+
+    before do
+      allow(Rails.application.config.x).to receive(:agent_timeout).and_return(3600)
+      allow(Temporalio::Workflow).to receive(:logger).and_return(Rails.logger)
+    end
+
+    def execute_create_pr_with_browser_guard(enabled:)
+      activities = []
+      allow(Temporalio::Workflow).to receive(:patched) do |guard_name|
+        next enabled if guard_name == "agent-execution-provision-browser-container-v1"
+
+        true
+      end
+
+      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
+        activities << activity_class
+
+        case activity_class.name
+        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42, runner_attempt_count: 1 }
+        when "Activities::RunAgentActivity" then { success: true, has_changes: false }
+        else {}
+        end
+      end
+
+      workflow.execute(input)
+      activities
+    end
+
+    it "schedules ProvisionBrowserContainerActivity for new histories" do
+      activities = execute_create_pr_with_browser_guard(enabled: true)
+
+      expect(activities).to include(Activities::ProvisionBrowserContainerActivity)
+    end
+
+    it "skips ProvisionBrowserContainerActivity while replaying older histories" do
+      activities = execute_create_pr_with_browser_guard(enabled: false)
+
+      expect(activities).not_to include(Activities::ProvisionBrowserContainerActivity)
+    end
+  end
+
   describe "max_execution_seconds timeout capping" do
     let(:input) { { project_id: 1, issue_id: 1, goal: "create_pr" } }
 

@@ -1480,6 +1480,27 @@ RSpec.describe "Projects" do
         )
       end
 
+      it "persists verification_enabled and attaches the playwright-mcp MCP definition" do
+        project = create(:project, account: account, github_token: github_token)
+
+        patch project_path(project), params: {
+          project: {
+            screenshot_settings: {
+              enabled: "0",
+              auto_capture: "0",
+              verification_enabled: "1"
+            }
+          }
+        }
+
+        expect(response).to redirect_to(project_path(project))
+        expect(project.reload.verification_enabled?).to be true
+
+        definition = project.account.mcp_server_definitions.find_by(name: Project::PLAYWRIGHT_MCP_NAME)
+        expect(definition).to be_present
+        expect(project.project_mcp_servers.exists?(mcp_server_definition: definition)).to be true
+      end
+
       it "re-renders validation errors when screenshot repo config loading fails" do
         project = create(:project, account: account, github_token: github_token)
         allow(Projects::Screenshots::RepoConfig).to receive(:call).and_raise(StandardError, "GitHub is down")

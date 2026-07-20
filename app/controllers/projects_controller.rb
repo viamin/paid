@@ -471,7 +471,7 @@ class ProjectsController < ApplicationController
 
   def build_screenshot_settings
     raw = params.require(:project).permit(
-      screenshot_settings: [ :enabled, :driver, :config_path, :auto_capture, :setup_commands_text, { service_dependencies: [] } ]
+      screenshot_settings: [ :enabled, :driver, :config_path, :auto_capture, :verification_enabled, :setup_commands_text, { service_dependencies: [] } ]
     ).fetch(:screenshot_settings, {})
 
     existing = @project.effective_screenshot_settings
@@ -480,6 +480,7 @@ class ProjectsController < ApplicationController
       "driver" => raw[:driver].presence || existing["driver"],
       "config_path" => raw[:config_path].presence || Project::DEFAULT_SCREENSHOT_SETTINGS["config_path"],
       "auto_capture" => ActiveModel::Type::Boolean.new.cast(raw[:auto_capture]),
+      "verification_enabled" => ActiveModel::Type::Boolean.new.cast(raw[:verification_enabled]),
       "service_dependencies" => Array(raw[:service_dependencies]).map(&:to_s).map(&:strip).reject(&:blank?).uniq,
       "setup_commands" => raw[:setup_commands_text].to_s.lines.map(&:strip).reject(&:blank?).uniq
     )

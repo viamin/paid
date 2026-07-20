@@ -8,6 +8,8 @@ class AgentRunPhase < ApplicationRecord
     "create_agent_run" => "Create Agent Run",
     "provision_services" => "Provision Services",
     "provision_container" => "Provision Container",
+    "provision_mcp_servers" => "Provision MCP Servers",
+    "provision_browser_container" => "Provision Verification Browser",
     "clone_repo" => "Clone Repo",
     "rebase_branch" => "Rebase Branch",
     "prepare_pr_prompt" => "Prepare PR Prompt",

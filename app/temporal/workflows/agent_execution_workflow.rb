@@ -187,6 +187,18 @@ module Workflows
         run_activity(Activities::ProvisionMcpServersActivity,
           { agent_run_id: agent_run_id }, timeout: 120)
 
+        # Step 1.7: Provision the verification browser container (RDR-045
+        # Phase 2). Skipped when the project has not enabled verification.
+        # The activity returns immediately with status="skipped" in that
+        # case so verification-disabled projects incur no Docker overhead.
+        # Must run after ProvisionMcpServersActivity so the playwright-mcp
+        # stdio server's `CDP_URL` env points at a live browser container
+        # when the agent starts.
+        if Temporalio::Workflow.patched("agent-execution-provision-browser-container-v1")
+          run_activity(Activities::ProvisionBrowserContainerActivity,
+            { agent_run_id: agent_run_id }, timeout: 180)
+        end
+
         # Step 2: Provision container (with empty workspace directory).
         # The activity heartbeats while provisioning so a workflow
         # cancellation interrupts an in-flight provision promptly (within one
