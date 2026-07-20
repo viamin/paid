@@ -56,7 +56,6 @@ module AgentRuns
       attach_playwright_definition!
       synchronize_snapshot!
       result = provision_browser_container!
-      track_sidecar_id(result.container_id)
       publish_playwright_server!
 
       log_info("agent_runs.verification.completed",
@@ -78,6 +77,8 @@ module AgentRuns
     # account and is attached to the project. Idempotent.
     def attach_playwright_definition!
       @agent_run.project.ensure_playwright_mcp_definition!
+    rescue ArgumentError => e
+      raise Error, e.message
     end
 
     # Upserts the run-scoped playwright snapshot while preserving the original
@@ -113,6 +114,7 @@ module AgentRuns
       container = adopt_or_create_browser
       Containers.backend.start_container(container) unless container_running?(container)
       wait_for_health!(container)
+      track_sidecar_id(container.id)
 
       Result.new(
         status: "provisioned",

@@ -111,6 +111,16 @@ RSpec.describe AgentRuns::Verification do
         expect(agent_run.mcp_sidecar_container_ids).to contain_exactly("existing-sidecar", "browser-xyz")
       end
 
+      it "tracks the container id before publishing the playwright server" do
+        allow(provisioner).to receive(:publish_playwright_server!) do
+          expect(agent_run.reload.mcp_sidecar_container_ids).to include("browser-xyz")
+          raise ActiveRecord::ActiveRecordError, "write failed"
+        end
+
+        expect { provisioner.call }.to raise_error(ActiveRecord::ActiveRecordError, "write failed")
+        expect(agent_run.reload.mcp_sidecar_container_ids).to include("browser-xyz")
+      end
+
       it "replaces an existing playwright-mcp stdio entry instead of duplicating it" do
         agent_run.update!(
           mcp_provisioned_servers: {
@@ -293,6 +303,26 @@ RSpec.describe AgentRuns::Verification do
       it "wraps the error in an AgentRuns::Verification::Error" do
         expect { provisioner.call }.to raise_error(
           AgentRuns::Verification::Error, /Failed to provision verification browser container/
+        )
+      end
+    end
+
+    context "when the project reserves the playwright definition name for a non-Paid server" do
+      before do
+        create(:mcp_server_definition,
+          account: account,
+          name: Project::PLAYWRIGHT_MCP_NAME,
+          transport: "stdio",
+          install_type: "npx",
+          command: "custom-command",
+          env: {},
+          metadata: {})
+      end
+
+      it "wraps the conflict in an AgentRuns::Verification::Error" do
+        expect { provisioner.call }.to raise_error(
+          AgentRuns::Verification::Error,
+          /Reserved MCP definition name #{Regexp.escape(Project::PLAYWRIGHT_MCP_NAME)} is already used by a non-Paid definition/
         )
       end
     end

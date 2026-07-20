@@ -66,7 +66,7 @@ module Activities
           container_id: result.container_id,
           cdp_url: result.cdp_url
         }
-      rescue AgentRuns::Verification::Error => e
+      rescue AgentRuns::Verification::Error, ArgumentError => e
         raise Temporalio::Error::ApplicationError.new(
           e.message,
           type: "VerificationBrowserProvisioningFailed",
@@ -78,7 +78,8 @@ module Activities
     private
 
     NON_RETRYABLE_PATTERNS = [
-      /image not found/i
+      /image not found/i,
+      /reserved mcp definition name/i
     ].freeze
 
     def non_retryable_verification_error?(error)

@@ -76,6 +76,18 @@ RSpec.describe Activities::ProvisionBrowserContainerActivity do
           expect(error.non_retryable).to be false
         }
       end
+
+      it "marks reserved definition name conflicts as non-retryable" do
+        expect(AgentRuns::Verification).to receive(:call)
+          .and_raise(AgentRuns::Verification::Error, "Reserved MCP definition name playwright-mcp is already used by a non-Paid definition")
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+          expect(error.type).to eq("VerificationBrowserProvisioningFailed")
+          expect(error.non_retryable).to be true
+        }
+      end
     end
   end
 end
