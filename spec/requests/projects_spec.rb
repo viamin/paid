@@ -1357,16 +1357,24 @@ RSpec.describe "Projects" do
   def stub_preview_proxy_response
     upstream_response = instance_double(Net::HTTPResponse, code: "200", content_type: "text/html", body: "<html>ok</html>")
     http = instance_double(Net::HTTP)
+    request = instance_double(Net::HTTP::Get)
 
     allow(Net::HTTP).to receive(:new).with("127.0.0.1", 8242).and_return(http)
     allow(http).to receive(:open_timeout=).with(2)
     allow(http).to receive(:read_timeout=).with(5)
+    allow(http).to receive(:active?).and_return(false)
     allow(http).to receive(:get).and_return(upstream_response)
+    allow(http).to receive(:request).with(request).and_yield(upstream_response)
+    allow(Net::HTTP::Get).to receive(:new).and_return(request)
+    allow(request).to receive(:[]=)
+    allow(request).to receive(:request_body_permitted?).and_return(false)
     allow(upstream_response).to receive(:each_header).and_yield("cache-control", "no-store")
       .and_yield("etag", %("preview-etag"))
       .and_yield("set-cookie", "_paid_session=attacker")
       .and_yield("connection", "keep-alive")
       .and_yield("x-frame-options", "DENY")
+    allow(upstream_response).to receive(:get_fields).with("set-cookie").and_return([ "_paid_session=attacker" ])
+    allow(upstream_response).to receive(:read_body).and_yield("<html>ok</html>")
   end
 
   describe "GET /projects/:id/edit" do

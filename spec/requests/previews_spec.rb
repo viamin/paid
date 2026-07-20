@@ -6,7 +6,7 @@ RSpec.describe "Previews" do
   let(:account) { create(:account) }
   let(:project) { create(:project, account: account) }
   let!(:preview_session) do
-    create(:preview_session, project: project, status: "active",
+    create(:preview_session, :ready, project: project,
       branch_name: "feature/widget", token: "iframe-token")
   end
 
@@ -32,7 +32,7 @@ RSpec.describe "Previews" do
 
         expect(response.body).to include("Live preview")
         expect(response.body).to include("feature/widget")
-        expect(response.body).to include("active")
+        expect(response.body).to include("ready")
       end
 
       it "renders the stop control" do
@@ -165,7 +165,7 @@ RSpec.describe "Previews" do
 
       post stop_project_preview_session_path(project, preview_session)
 
-      expect(preview_session.reload.status).to eq("active")
+      expect(preview_session.reload.status).to eq("ready")
     end
   end
 end

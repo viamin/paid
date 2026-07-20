@@ -1,8 +1,9 @@
 # frozen_string_literal: true
 
+require "net/http"
+
 class PreviewsController < ApplicationController
-<<<<<<< HEAD
-  require "net/http"
+  include AuditLogging
 
   COPYABLE_PROXY_RESPONSE_HEADERS = %w[
     cache-control
@@ -13,52 +14,50 @@ class PreviewsController < ApplicationController
     vary
   ].freeze
 
-  # Missing/expired preview tokens return 404 before a project record exists to
-  # authorize. Successful lookups still call `authorize @preview_session.project`.
   skip_after_action :verify_authorized, only: :show
+  before_action :set_preview_session, only: :stop
 
   def show
-    @preview_session = PreviewSession.active.live.find_by!(token: params[:token])
-    authorize @preview_session.project
+    return show_token_preview if params[:token].present?
+
+    show_wrapper
+  end
+
+  def stop
+    authorize @preview_session, :stop?
+
+    @preview_session.mark_stopped!
+    audit_event("preview.stopped", metadata: { preview_session_id: @preview_session.id })
+
+    redirect_to @preview_session.project, notice: "Preview stopped."
+  end
+
+  private
+
+  def show_wrapper
+    @preview_session = policy_scope(PreviewSession).find(params[:id])
+    authorize @preview_session
+  rescue ActiveRecord::RecordNotFound
+    redirect_to root_path, alert: "Preview not found."
+  end
+
+  def show_token_preview
+    @preview_session = PreviewSession.find_accessible_by_token(params[:token])
+    return show_wrapper_fallback if @preview_session.nil? && params[:path].blank? && params[:token].match?(/\A\d+\z/)
+    return head :not_found unless @preview_session && policy(@preview_session).show?
 
     apply_embed_headers
     @preview_session.touch_last_active!
 
     if simulated_session?
-      render_simulated_preview
+      render html: simulated_preview_markup.html_safe, layout: false
     else
       proxy_preview_request
     end
-  rescue ActiveRecord::RecordNotFound
-    head :not_found
   rescue Errno::ECONNREFUSED, SocketError, Net::ReadTimeout, EOFError => e
     render plain: "Preview is unavailable: #{e.message}", status: :bad_gateway
-=======
-  include AuditLogging
-
-  before_action :set_preview_session, only: [ :show, :stop ]
-
-  # GET /previews/:id — renders the iframe wrapper that embeds the proxied app.
-  # The proxied content itself is served by the PreviewsProxy middleware at
-  # /previews/:token/*. Both this wrapper page and the proxied path require an
-  # authenticated, authorized user; the iframe URL embeds the proxy path.
-  def show
-    authorize @preview_session
   end
 
-  # POST /projects/:project_id/preview_sessions/:id/stop
-  def stop
-    authorize @preview_session, :stop?
-
-    @preview_session.update!(status: "stopped")
-    audit_event("preview.stopped", metadata: { preview_session_id: @preview_session.id })
-    redirect_to @preview_session.project, notice: "Preview stopped."
->>>>>>> origin/main
-  end
-
-  private
-
-<<<<<<< HEAD
   def apply_embed_headers
     response.headers["Content-Security-Policy"] = "frame-ancestors 'self'"
     response.headers["X-Frame-Options"] = "SAMEORIGIN"
@@ -66,10 +65,6 @@ class PreviewsController < ApplicationController
 
   def simulated_session?
     @preview_session.container_id.to_s.start_with?("preview-")
-  end
-
-  def render_simulated_preview
-    render html: simulated_preview_markup.html_safe, layout: false
   end
 
   def simulated_preview_markup
@@ -148,6 +143,7 @@ class PreviewsController < ApplicationController
 
   def preview_uri
     path = params[:path].to_s
+
     URI::HTTP.build(
       host: "127.0.0.1",
       port: @preview_session.tunnel_port,
@@ -162,16 +158,23 @@ class PreviewsController < ApplicationController
 
       response.headers[key] = value
     end
-=======
+  end
+
+  def show_wrapper_fallback
+    @preview_session = policy_scope(PreviewSession).find(params[:token])
+    authorize @preview_session
+    render :show
+  rescue ActiveRecord::RecordNotFound
+    redirect_to root_path, alert: "Preview not found."
+  end
+
   def set_preview_session
     @preview_session = policy_scope(PreviewSession).find(params[:id])
   rescue ActiveRecord::RecordNotFound
-    # Mirror the proxy's 404 posture: do not reveal session existence.
     redirect_to root_path, alert: "Preview not found."
   end
 
   def resolve_audit_subject
     @preview_session
->>>>>>> origin/main
   end
 end

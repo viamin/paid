@@ -10,11 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-<<<<<<< HEAD
-ActiveRecord::Schema[8.1].define(version: 2026_07_18_023932) do
-=======
 ActiveRecord::Schema[8.1].define(version: 2026_07_18_062802) do
->>>>>>> origin/main
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1730,7 +1726,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_18_062802) do
     t.check_constraint "NOT (project_id IS NOT NULL AND user_id IS NOT NULL)", name: "chk_pre_commit_requirements_exclusive_scope"
   end
 
-<<<<<<< HEAD
   create_table "preview_sessions", comment: "Live web-app preview sessions exposed to reviewers via the same-origin /previews/:token reverse proxy (RDR-045).", force: :cascade do |t|
     t.bigint "account_id", null: false, comment: "Owning account for tenant isolation and RLS."
     t.bigint "agent_run_id", comment: "Agent run that produced the branch, when the preview reuses an agent container."
@@ -1756,25 +1751,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_18_062802) do
     t.index ["project_id"], name: "index_preview_sessions_on_project_id"
     t.index ["token"], name: "index_preview_sessions_on_token", unique: true
     t.index ["tunnel_port"], name: "index_preview_sessions_on_tunnel_port_active", unique: true, where: "((status)::text = ANY ((ARRAY['pending'::character varying, 'provisioning'::character varying, 'starting'::character varying, 'ready'::character varying])::text[]))"
-=======
-  create_table "preview_sessions", comment: "Live web app preview sessions bridging a tunnel port to the Rails reverse proxy for human review.", force: :cascade do |t|
-    t.bigint "agent_run_id", comment: "Optional originating agent run that produced the previewed changes."
-    t.string "branch_name", limit: 255, comment: "Git branch (or commit context) checked out in the preview container."
-    t.string "container_id", limit: 128, comment: "Docker container id running the previewed web app behind the tunnel."
-    t.datetime "created_at", null: false
-    t.datetime "expires_at", comment: "Hard TTL after which the preview is stopped and its container/tunnel/port are reclaimed."
-    t.datetime "last_accessed_at", comment: "Last time the proxy served a request for this session; used for idle-based expiry."
-    t.bigint "project_id", null: false, comment: "Project the preview belongs to; drives account-scoped authorization."
-    t.string "status", limit: 50, default: "provisioning", null: false, comment: "Lifecycle state: provisioning, starting, ready, active, expiring, stopped, failed."
-    t.string "token", limit: 64, null: false, comment: "Opaque, random secret embedded in the proxy path /previews/:token/*. Acts as the proxy credential."
-    t.integer "tunnel_port", comment: "Allocated localhost port on the Rails host that the rathole tunnel bridges to the container app."
-    t.datetime "updated_at", null: false
-    t.index ["agent_run_id"], name: "index_preview_sessions_on_agent_run_id"
-    t.index ["project_id", "status"], name: "index_preview_sessions_on_project_and_status"
-    t.index ["project_id"], name: "index_preview_sessions_on_project_id"
-    t.index ["status", "expires_at"], name: "index_preview_sessions_on_status_and_expires_at"
-    t.index ["token"], name: "index_preview_sessions_on_token", unique: true
-    t.index ["tunnel_port"], name: "index_preview_sessions_on_tunnel_port_unique", unique: true, where: "(tunnel_port IS NOT NULL)"
   end
 
   create_table "preview_tunnel_port_reservations", comment: "Shared preview tunnel port reservations across Rails processes", force: :cascade do |t|
@@ -1784,7 +1760,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_18_062802) do
     t.datetime "updated_at", null: false
     t.index ["reservation_key"], name: "index_preview_tunnel_port_reservations_on_reservation_key", unique: true
     t.index ["tunnel_port"], name: "index_preview_tunnel_port_reservations_on_tunnel_port", unique: true
->>>>>>> origin/main
   end
 
   create_table "project_baselines", comment: "Stores per-project historical baselines for run metrics so anomalies can be detected against recent norms.", force: :cascade do |t|
@@ -2975,15 +2950,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_18_062802) do
   add_foreign_key "pre_commit_requirements", "accounts", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "projects", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "users", on_delete: :cascade
-<<<<<<< HEAD
   add_foreign_key "preview_sessions", "accounts", on_delete: :cascade
   add_foreign_key "preview_sessions", "agent_runs", on_delete: :nullify
   add_foreign_key "preview_sessions", "projects", on_delete: :cascade
   add_foreign_key "preview_sessions", "users", column: "created_by_id"
-=======
-  add_foreign_key "preview_sessions", "agent_runs"
-  add_foreign_key "preview_sessions", "projects"
->>>>>>> origin/main
   add_foreign_key "project_baselines", "projects"
   add_foreign_key "project_convention_detections", "project_versions"
   add_foreign_key "project_convention_detections", "projects"
