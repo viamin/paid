@@ -318,15 +318,12 @@ class Project < ApplicationRecord
   # services (e.g. Prompts::LanguageCommands) to select test/lint commands.
   # Returns nil when no language has been detected for the repository.
   def detected_language
-    return unless respond_to?(:primary_language)
-
     primary_language&.strip&.downcase&.presence
   end
 
   # Human-friendly project-type label (e.g. "Ruby on Rails") shown as a badge
   # on project tiles. Returns nil when no language has been detected.
   def project_type_label
-    return unless respond_to?(:primary_language)
     return if primary_language.blank?
 
     Projects::LanguageProfile.label_for(primary_language) || primary_language

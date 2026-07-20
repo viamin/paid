@@ -360,4 +360,159 @@ RSpec.describe Screenshots::PrComment do
       end
     end
   end
+
+  describe "animated GIFs from Playwright traces" do
+    let(:gif_screenshots) do
+      [
+        { route_name: "dashboard", url: "https://s3.example.com/dashboard.png", gif_url: "https://s3.example.com/dashboard.gif" },
+        { route_name: "sign_in", url: "https://s3.example.com/sign_in.png" }
+      ]
+    end
+
+    it "renders the GIF inline instead of the static PNG when :gif_url is present" do
+      service = described_class.new(
+        github_client: github_client,
+        repo: repo,
+        pr_number: pr_number,
+        commit_sha: commit_sha,
+        screenshots: gif_screenshots
+      )
+
+      body = service.build_comment_body
+
+      expect(body).to include("![dashboard](https://s3.example.com/dashboard.gif)")
+      expect(body).not_to include('![dashboard](https://s3.example.com/dashboard.png)')
+    end
+
+    it "falls back to the static PNG when no :gif_url is provided" do
+      service = described_class.new(
+        github_client: github_client,
+        repo: repo,
+        pr_number: pr_number,
+        commit_sha: commit_sha,
+        screenshots: gif_screenshots
+      )
+
+      body = service.build_comment_body
+
+      expect(body).to include("![sign_in](https://s3.example.com/sign_in.png)")
+    end
+
+    it "discloses that GIFs are shown when at least one capture has a :gif_url" do
+      service = described_class.new(
+        github_client: github_client,
+        repo: repo,
+        pr_number: pr_number,
+        commit_sha: commit_sha,
+        screenshots: gif_screenshots
+      )
+
+      expect(service.build_comment_body).to include("Animated GIFs show the captured interaction flow")
+    end
+
+    it "does not disclose GIFs when no capture has a :gif_url" do
+      service = described_class.new(
+        github_client: github_client,
+        repo: repo,
+        pr_number: pr_number,
+        commit_sha: commit_sha,
+        screenshots: screenshots
+      )
+
+      expect(service.build_comment_body).not_to include("Animated GIFs show")
+    end
+
+    it "renders the before PNG alongside the after GIF in the comparison table" do
+      service = described_class.new(
+        github_client: github_client,
+        repo: repo,
+        pr_number: pr_number,
+        commit_sha: commit_sha,
+        screenshots: gif_screenshots,
+        previous_screenshots: { "dashboard" => "https://s3.example.com/prev-dashboard.png" }
+      )
+
+      body = service.build_comment_body
+
+      expect(body).to include("![before-dashboard](https://s3.example.com/prev-dashboard.png)")
+      expect(body).to include("![dashboard](https://s3.example.com/dashboard.gif)")
+    end
+  end
+
+  describe "demo videos" do
+    let(:screenshots_with_video) do
+      [
+        { route_name: "dashboard", url: "https://s3.example.com/dashboard.png", video_url: "https://s3.example.com/dashboard.webm", video_filename: "dashboard-demo.webm" },
+        { route_name: "sign_in", url: "https://s3.example.com/sign_in.png" }
+      ]
+    end
+
+    it "renders a Demo Videos section listing each video download" do
+      service = described_class.new(
+        github_client: github_client,
+        repo: repo,
+        pr_number: pr_number,
+        commit_sha: commit_sha,
+        screenshots: screenshots_with_video
+      )
+
+      body = service.build_comment_body
+
+      expect(body).to include("### Demo Videos")
+      expect(body).to include("[dashboard-demo.webm](https://s3.example.com/dashboard.webm)")
+    end
+
+    it "omits the Demo Videos section when no capture has a :video_url" do
+      service = described_class.new(
+        github_client: github_client,
+        repo: repo,
+        pr_number: pr_number,
+        commit_sha: commit_sha,
+        screenshots: screenshots
+      )
+
+      expect(service.build_comment_body).not_to include("### Demo Videos")
+    end
+
+    it "falls back to route_name-based filename when video_filename is not supplied" do
+      screenshots = [
+        { route_name: "checkout", url: "https://s3.example.com/checkout.png", video_url: "https://s3.example.com/checkout.webm" }
+      ]
+
+      service = described_class.new(
+        github_client: github_client,
+        repo: repo,
+        pr_number: pr_number,
+        commit_sha: commit_sha,
+        screenshots: screenshots
+      )
+
+      expect(service.build_comment_body).to include("[checkout.webm](https://s3.example.com/checkout.webm)")
+    end
+
+    it "escapes markdown-significant characters in video filenames and route labels" do
+      screenshots = [
+        {
+          route_name: "foo](bar)|baz",
+          url: "https://s3.example.com/foo.png",
+          video_url: "https://s3.example.com/foo.webm",
+          video_filename: "demo](bar)|baz.webm"
+        }
+      ]
+
+      service = described_class.new(
+        github_client: github_client,
+        repo: repo,
+        pr_number: pr_number,
+        commit_sha: commit_sha,
+        screenshots: screenshots
+      )
+
+      body = service.build_comment_body
+
+      expect(body).to include("[demo\\]\\(bar\\)\\|baz.webm](https://s3.example.com/foo.webm)")
+      expect(body).to include("Foo\\]\\(Bar\\)\\|Baz")
+      expect(body).not_to include("[demo](bar)")
+    end
+  end
 end

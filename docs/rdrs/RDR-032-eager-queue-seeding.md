@@ -13,7 +13,7 @@
 
 ## Implementation Status
 
-Implemented with follow-up hardening. Paid eagerly enqueues eligible issues through single and bulk enqueue services, issue sync hooks, auto-pick enablement hooks, and dependency-unblock hooks; the queue processor is now dequeue-oriented and dashboard preview reads already queued work. A remaining hardening gap is a general dequeue-time eligibility recheck for queued runs whose issues become ineligible after seeding.
+Implemented with follow-up hardening. Paid eagerly enqueues eligible issues through single and bulk enqueue services, issue sync hooks, auto-pick enablement hooks, and dependency-unblock hooks; the queue processor is now dequeue-oriented and dashboard preview reads already queued work. A dequeue-time eligibility recheck (`AgentRuns::RecheckIssueEligibility`, invoked by `ProcessRunQueueJob`) cancels eagerly-seeded runs whose issues lost eligibility after seeding — skip labels, paid_state skip states, new blocking dependencies, closed/completed, or paused — so the re-enqueue hooks re-seed them if the issue becomes eligible again.
 
 ## Problem Statement
 

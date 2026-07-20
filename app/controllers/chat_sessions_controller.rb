@@ -8,9 +8,10 @@ class ChatSessionsController < ApplicationController
   SIDEBAR_PAGE_SIZE = 50
 
   skip_after_action :verify_authorized, only: %i[index sidebar_page]
-  before_action :set_chat_session, only: %i[show update destroy archive older_messages]
+  before_action :set_chat_session, only: %i[show update destroy archive unarchive older_messages]
+  before_action :reject_archived_chat_session, only: %i[update destroy archive]
   before_action :enforce_create_rate_limit, only: :create
-  before_action :default_request_format_to_json, only: %i[index create show update destroy archive]
+  before_action :default_request_format_to_json, only: %i[index create show update destroy archive unarchive]
 
   def index
     respond_to do |format|
@@ -59,18 +60,32 @@ class ChatSessionsController < ApplicationController
   end
 
   def sidebar_page
+    archived = archived_param?
     sidebar = sidebar_batch(
+      archived: archived,
       before_updated_at: params[:before_updated_at],
       before_id: params[:before_id],
       exclude_id: params[:exclude_id]
     )
 
-    render partial: "chat_sessions/sidebar_page", locals: {
+    locals = {
       sessions: sidebar[:sessions],
       frame_id: request.headers["Turbo-Frame"].presence || sidebar[:frame_id],
-      next_frame_id: sidebar[:next_frame_id],
-      next_params: sidebar[:next_params]
+      sidebar_has_more: sidebar[:next_frame_id].present?,
+      sidebar_next_frame_id: sidebar[:next_frame_id],
+      sidebar_next_params: sidebar[:next_params]
     }
+
+    if sidebar_toggle_request?
+      render partial: "chat_sessions/sidebar_list", locals: locals.merge(archived_view: archived)
+    else
+      render partial: "chat_sessions/sidebar_page", locals: {
+        sessions: locals[:sessions],
+        frame_id: locals[:frame_id],
+        next_frame_id: locals[:sidebar_next_frame_id],
+        next_params: locals[:sidebar_next_params]
+      }
+    end
   end
 
   def create
@@ -155,10 +170,29 @@ class ChatSessionsController < ApplicationController
     end
   end
 
+  def unarchive
+    authorize @chat_session, :unarchive?
+    ChatSessions::Unarchive.call(chat_session: @chat_session)
+
+    respond_to do |format|
+      format.html { redirect_to chat_session_path(@chat_session), notice: "Chat session restored." }
+      format.json { render json: session_json(@chat_session) }
+    end
+  end
+
   private
 
   def set_chat_session
-    @chat_session = session_scope.find(params[:id])
+    @chat_session = member_scope.find(params[:id])
+  end
+
+  def reject_archived_chat_session
+    return unless @chat_session&.archived?
+
+    respond_to do |format|
+      format.html { redirect_to chat_session_path(@chat_session), alert: "Chat session is archived." }
+      format.json { render json: { error: "Chat session is archived." }, status: :unprocessable_entity }
+    end
   end
 
   def regenerate_system_message!
@@ -169,14 +203,14 @@ class ChatSessionsController < ApplicationController
 
   def create_params
     source = params.key?(:chat_session) ? params.require(:chat_session) : params
-    permitted = source.permit(:mode, :model, :runner_id, :provider_id, :project_id, :system_prompt, :title, metadata: {})
+    permitted = source.permit(:mode, :model, :runner_id, :provider_id, :project_id, :system_prompt, :title, :auto_approve, metadata: {})
       .to_h.symbolize_keys
     permitted[:runner_id] ||= permitted.delete(:provider_id)
     permitted
   end
 
   def update_params
-    permitted = params.fetch(:chat_session, params).permit(:title, :model, :project_id, :runner_id, :provider_id, metadata: {})
+    permitted = params.fetch(:chat_session, params).permit(:title, :model, :project_id, :runner_id, :provider_id, :auto_approve, metadata: {})
       .to_h.symbolize_keys
     permitted[:runner_id] ||= permitted.delete(:provider_id)
     permitted
@@ -197,6 +231,7 @@ class ChatSessionsController < ApplicationController
       project_id: session.project_id,
       project_name: session.project&.name || projects.first&.name,
       project_names: projects.map(&:name),
+      auto_approve: session.auto_approve?,
       created_by_id: session.created_by_id,
       created_at: session.created_at,
       updated_at: session.updated_at,
@@ -223,9 +258,15 @@ class ChatSessionsController < ApplicationController
     }
   end
 
-  def session_scope
+  def session_scope(archived: false)
+    scoped = policy_scope(ChatSession).with_preview_content
+    scoped = archived ? scoped.archived_only : scoped.visible
+    scoped.includes(:project, :runner, :chat_session_projects, :projects)
+      .order(updated_at: :desc, id: :desc)
+  end
+
+  def member_scope
     policy_scope(ChatSession)
-      .visible
       .with_preview_content
       .includes(:project, :runner, :chat_session_projects, :projects)
       .order(updated_at: :desc, id: :desc)
@@ -296,9 +337,13 @@ class ChatSessionsController < ApplicationController
   end
 
   def load_sidebar_data(active_session: nil)
-    sidebar = sidebar_batch
-    sidebar = pinned_sidebar_batch(active_session) if active_session_needs_pinning?(active_session:, sessions: sidebar[:sessions])
+    archived = sidebar_view_archived?(active_session)
+    sidebar = sidebar_batch(archived: archived)
+    if active_session_in_view?(active_session, archived) && active_session_needs_pinning?(active_session:, sessions: sidebar[:sessions])
+      sidebar = pinned_sidebar_batch(active_session, archived: archived)
+    end
 
+    @archived_view = archived
     @sessions = sidebar[:sessions]
     @sidebar_has_more = sidebar[:next_frame_id].present?
     @sidebar_next_frame_id = sidebar[:next_frame_id]
@@ -319,8 +364,8 @@ class ChatSessionsController < ApplicationController
     params[:display] == "popup"
   end
 
-  def pinned_sidebar_batch(active_session)
-    sidebar = sidebar_batch(limit: SIDEBAR_PAGE_SIZE - 1, exclude_id: active_session.id)
+  def pinned_sidebar_batch(active_session, archived:)
+    sidebar = sidebar_batch(archived: archived, limit: SIDEBAR_PAGE_SIZE - 1, exclude_id: active_session.id)
 
     {
       sessions: [ active_session ] + sidebar[:sessions],
@@ -333,9 +378,13 @@ class ChatSessionsController < ApplicationController
     active_session.present? && sessions.none? { |session| session.id == active_session.id }
   end
 
-  def sidebar_batch(before_updated_at: nil, before_id: nil, exclude_id: nil, limit: SIDEBAR_PAGE_SIZE)
+  def active_session_in_view?(active_session, archived)
+    active_session.present? && active_session.archived? == archived
+  end
+
+  def sidebar_batch(archived: archived_param?, before_updated_at: nil, before_id: nil, exclude_id: nil, limit: SIDEBAR_PAGE_SIZE)
     sessions = apply_sidebar_cursor(
-      session_scope,
+      session_scope(archived: archived),
       before_updated_at:,
       before_id:,
       exclude_id:
@@ -348,7 +397,7 @@ class ChatSessionsController < ApplicationController
       sessions: visible_sessions,
       frame_id: sidebar_frame_id(before_updated_at:, before_id:),
       next_frame_id: cursor_session ? sidebar_frame_id(before_updated_at: cursor_session.updated_at.iso8601(6), before_id: cursor_session.id) : nil,
-      next_params: cursor_session ? sidebar_cursor_params(cursor_session, exclude_id:) : nil
+      next_params: cursor_session ? sidebar_cursor_params(cursor_session, exclude_id:, archived:) : nil
     }
   end
 
@@ -365,11 +414,12 @@ class ChatSessionsController < ApplicationController
     scoped.none
   end
 
-  def sidebar_cursor_params(session, exclude_id:)
+  def sidebar_cursor_params(session, exclude_id:, archived:)
     {
       before_updated_at: session.updated_at.iso8601(6),
       before_id: session.id,
-      exclude_id:
+      exclude_id:,
+      archived: archived ? "true" : nil
     }.compact
   end
 
@@ -377,6 +427,20 @@ class ChatSessionsController < ApplicationController
     return "sidebar_page_1" if before_updated_at.blank? || before_id.blank?
 
     "sidebar_page_#{before_id}"
+  end
+
+  def archived_param?
+    params[:archived] == "true"
+  end
+
+  def sidebar_view_archived?(active_session)
+    return archived_param? if params.key?(:archived)
+
+    active_session&.archived? || false
+  end
+
+  def sidebar_toggle_request?
+    params[:before_updated_at].blank? && params[:before_id].blank?
   end
 
   def increment_rate_limit_counter(cache:, key:, expires_in:)

@@ -49,10 +49,13 @@
                 </span>
               <% end %>
             </div>
-            <% if project.review_enabled? && project.enabled_review_methods.any? %>
-              <div class="mt-1 flex flex-wrap gap-1">
-                <% project.enabled_review_methods.each do |method| %>
-                  <%= review_method_badge(method) %>
+            <% if project.project_type_label.present? || (project.review_enabled? && project.enabled_review_methods.any?) %>
+              <div class="mt-1 flex flex-wrap items-center gap-1">
+                <%= project_type_badge(project) %>
+                <% if project.review_enabled? %>
+                  <% project.enabled_review_methods.each do |method| %>
+                    <%= review_method_badge(method) %>
+                  <% end %>
                 <% end %>
               </div>
             <% end %>
