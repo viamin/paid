@@ -98,6 +98,60 @@ RSpec.describe ScalingExperiments::AnalyzeScalingLaw, :no_db do
     )
   end
 
+  it "marks agent_launch_success_rate as actionable when its interval is narrow enough" do
+    allow(experiment).to receive(:outcome_metrics).and_return(
+      [
+        { "key" => "agent_launch_success_rate", "primary" => true, "objective" => "maximize" },
+        { "key" => "success_rate", "primary" => false, "objective" => "maximize" },
+        { "key" => "duration_seconds", "primary" => false, "objective" => "minimize" },
+        { "key" => "total_cost_cents", "primary" => false, "objective" => "minimize" }
+      ]
+    )
+
+    result = analyze(
+      build_metric_summary(1, sample_count: 6, primary_value: 0.50, primary_lower: 0.45, primary_upper: 0.55),
+      build_metric_summary(2, sample_count: 6, primary_value: 0.90, primary_lower: 0.85, primary_upper: 0.95)
+    )
+
+    expect(result.dig("allocator_decision", "actionable")).to be(true)
+  end
+
+  it "marks blocked_task_rate as actionable when its interval is narrow enough" do
+    allow(experiment).to receive(:outcome_metrics).and_return(
+      [
+        { "key" => "blocked_task_rate", "primary" => true, "objective" => "minimize" },
+        { "key" => "success_rate", "primary" => false, "objective" => "maximize" },
+        { "key" => "duration_seconds", "primary" => false, "objective" => "minimize" },
+        { "key" => "total_cost_cents", "primary" => false, "objective" => "minimize" }
+      ]
+    )
+
+    result = analyze(
+      build_metric_summary(1, sample_count: 6, primary_value: 0.50, primary_lower: 0.45, primary_upper: 0.55),
+      build_metric_summary(2, sample_count: 6, primary_value: 0.10, primary_lower: 0.08, primary_upper: 0.12)
+    )
+
+    expect(result.dig("allocator_decision", "actionable")).to be(true)
+  end
+
+  it "marks parallelism_observed as actionable when its interval is narrow enough" do
+    allow(experiment).to receive(:outcome_metrics).and_return(
+      [
+        { "key" => "parallelism_observed", "primary" => true, "objective" => "maximize" },
+        { "key" => "success_rate", "primary" => false, "objective" => "maximize" },
+        { "key" => "duration_seconds", "primary" => false, "objective" => "minimize" },
+        { "key" => "total_cost_cents", "primary" => false, "objective" => "minimize" }
+      ]
+    )
+
+    result = analyze(
+      build_metric_summary(1, sample_count: 6, primary_value: 1.0, primary_lower: 0.95, primary_upper: 1.05),
+      build_metric_summary(2, sample_count: 6, primary_value: 2.0, primary_lower: 1.95, primary_upper: 2.05)
+    )
+
+    expect(result.dig("allocator_decision", "actionable")).to be(true)
+  end
+
   def analyze(*value_summaries)
     described_class.call(
       scaling_experiment: experiment,
@@ -153,6 +207,43 @@ RSpec.describe ScalingExperiments::AnalyzeScalingLaw, :no_db do
         "mean" => cost.to_f,
         "lower_bound" => (cost - 10).to_f,
         "upper_bound" => (cost + 10).to_f,
+        "margin_of_error" => 10.0,
+        "sample_count" => sample_count,
+        "confidence_level" => 0.95
+      }
+    }
+  end
+
+  def build_metric_summary(assigned_value, sample_count:, primary_value:, primary_lower:, primary_upper:)
+    primary_field = experiment.outcome_metrics.find { |metric| metric["primary"] }["key"]
+    summary_field = ScalingExperiments::AnalyzeScalingLaw::METRIC_KEY_TO_SUMMARY_FIELD.fetch(primary_field, primary_field)
+
+    {
+      "assigned_value" => assigned_value,
+      "sample_count" => sample_count,
+      summary_field => primary_value,
+      "#{summary_field}_confidence_interval" => {
+        "mean" => primary_value,
+        "lower_bound" => primary_lower,
+        "upper_bound" => primary_upper,
+        "margin_of_error" => (primary_upper - primary_lower).abs.fdiv(2),
+        "sample_count" => sample_count,
+        "confidence_level" => 0.95
+      },
+      "avg_duration_seconds" => 200,
+      "avg_duration_seconds_confidence_interval" => {
+        "mean" => 200.0,
+        "lower_bound" => 190.0,
+        "upper_bound" => 210.0,
+        "margin_of_error" => 10.0,
+        "sample_count" => sample_count,
+        "confidence_level" => 0.95
+      },
+      "avg_cost_cents" => 300,
+      "avg_cost_cents_confidence_interval" => {
+        "mean" => 300.0,
+        "lower_bound" => 290.0,
+        "upper_bound" => 310.0,
         "margin_of_error" => 10.0,
         "sample_count" => sample_count,
         "confidence_level" => 0.95

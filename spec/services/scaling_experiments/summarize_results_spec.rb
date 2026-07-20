@@ -32,7 +32,21 @@ RSpec.describe ScalingExperiments::SummarizeResults, :no_db do
       "agent_launch_success_rate" => 0.75,
       "blocked_task_rate" => 0.25,
       "success_rate_confidence_interval" => hash_including("sample_count" => 2, "confidence_level" => 0.95),
-      "avg_duration_seconds_confidence_interval" => hash_including("sample_count" => 2, "confidence_level" => 0.95)
+      "avg_duration_seconds_confidence_interval" => hash_including("sample_count" => 2, "confidence_level" => 0.95),
+      "agent_launch_success_rate_confidence_interval" => hash_including("sample_count" => 1, "confidence_level" => 0.95),
+      "blocked_task_rate_confidence_interval" => hash_including("sample_count" => 1, "confidence_level" => 0.95)
+    )
+  end
+
+  it "emits confidence intervals for every supported primary metric" do
+    assignments = [
+      build_assignment(2, observation: build_observation(2), outcome_summary: { "cohort_label" => "agent_count-2__tasks-2-3" })
+    ]
+
+    value_summary = summarize(assignments).fetch("values").first
+
+    expect(value_summary["avg_parallelism_observed_confidence_interval"]).to include(
+      "confidence_level" => 0.95
     )
   end
 

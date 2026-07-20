@@ -29,8 +29,8 @@ RSpec.describe "Projects::ScalingDashboards" do
 
       it "renders recommendations and simplifications when summaries exist" do
         experiment = create(:scaling_experiment, project: project, name: "Parallelism Scaling", status: "completed")
-        experiment.update!(cached_summary: cached_summary_payload)
         create(:scaling_observation, project: project)
+        experiment.update!(cached_summary: cached_summary_payload, summary_samples_key: experiment.samples_key)
 
         get project_scaling_dashboard_path(project)
 

@@ -16,12 +16,25 @@ RSpec.describe Projects::ScalingDashboardStats do
 
     it "surfaces recommendations, threshold review, and recent observations" do
       experiment = create(:scaling_experiment, project: project, name: "Agent Count Scaling", status: "completed")
-      experiment.update!(cached_summary: cached_summary_payload)
       create(:scaling_observation, project: project, agent_count_planned: 2, parallelism_observed: 2)
+      experiment.update!(cached_summary: cached_summary_payload, summary_samples_key: experiment.samples_key)
 
       stats = described_class.call(project: project)
 
       expect_scaling_dashboard_stats(stats, experiment)
+    end
+
+    it "refreshes a stale cached summary instead of returning the stale payload" do
+      experiment = create(:scaling_experiment, project: project, name: "Stale Cache", status: "completed")
+      experiment.update!(
+        cached_summary: cached_summary_payload.merge("leading_value" => 99),
+        summary_samples_key: "stale-key"
+      )
+
+      described_class.call(project: project)
+
+      expect(experiment.reload.cached_summary["leading_value"]).not_to eq(99)
+      expect(experiment.summary_samples_key).to eq(experiment.samples_key)
     end
   end
 
