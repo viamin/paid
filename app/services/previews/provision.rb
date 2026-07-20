@@ -75,7 +75,9 @@ module Previews
     def restart(branch_name: nil, ttl_seconds: PreviewSession::DEFAULT_TTL_SECONDS)
       session = latest_non_terminal
       target_branch = branch_name.presence || latest_session&.branch_name || project.default_branch
-      stop(session:)
+      stop_result = stop(session:)
+      return stop_result unless stop_result.success?
+
       start(branch_name: target_branch, ttl_seconds: ttl_seconds)
     end
 

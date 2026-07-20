@@ -73,7 +73,7 @@
           <dd class="mt-1 text-sm <%= ttl_classes %>">
             <%= local_time(preview_session.expires_at) %>
             <% if preview_session.active? %>
-              (<%= distance_of_time_in_words_to_now(preview_session.expires_at) %> remaining)
+              (<%= local_time(preview_session.expires_at, format: :relative) %> remaining)
             <% end %>
           </dd>
         </div>

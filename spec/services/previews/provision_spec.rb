@@ -219,6 +219,29 @@ RSpec.describe Previews::Provision do
       expect(result).to be_success
       expect(result.session.reload.branch_name).to eq("feature/retry-me")
     end
+
+    it "returns the failed stop result without starting a new session when stop fails" do
+      erroring_backend = Class.new do
+        include Previews::ContainerBackend
+
+        def self.start(_session)
+          raise "should not be called"
+        end
+
+        def self.stop(_session)
+          raise "unexpected teardown error"
+        end
+      end
+      create(:preview_session, :ready, project: project, tunnel_port: 8250)
+      svc = described_class.new(project: project, container_backend: erroring_backend)
+
+      result = svc.restart
+
+      expect(result).not_to be_success
+      expect(result.error).to include("unexpected teardown error")
+      # No new session should have been started
+      expect(PreviewSession.for_project(project).count).to eq(1)
+    end
   end
 
   def build_observing_backend(observed)
