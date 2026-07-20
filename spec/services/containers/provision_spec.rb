@@ -4475,4 +4475,133 @@ RSpec.describe Containers::Provision do
       }.to raise_error(Containers::Provision::ExecutionError, /Failed to restore prepared runtime state/)
     end
   end
+
+  # RDR-041/RDR-048: subscription auth host eligibility contract (#2963).
+  describe "subscription auth host eligibility" do
+    let(:remote_backend) do
+      instance_double(
+        Containers::Backends::RemoteDocker,
+        identifier: "elguapo",
+        remote?: true,
+        supports_host_paths?: false
+      )
+    end
+    let(:claude_config_dir) { Dir.mktmpdir("claude-host") }
+
+    after do
+      FileUtils.rm_rf(claude_config_dir) if claude_config_dir && Dir.exist?(claude_config_dir)
+    end
+
+    def remote_service
+      described_class.new(agent_run: agent_run, project: project, backend: remote_backend)
+    end
+
+    context "when a managed Claude credential carries the run" do
+      before do
+        create(
+          :runner_credential,
+          account: project.account,
+          created_by: project.created_by,
+          runner_key: "claude",
+          auth_kind: "oauth_token",
+          token: JSON.generate(
+            "claudeAiOauth" => {
+              "accessToken" => "managed-access",
+              "refreshToken" => "managed-refresh",
+              "expiresAt" => 12.hours.from_now.iso8601
+            }
+          )
+        )
+        # A host .credentials.json also exists, but the managed credential is
+        # remote-safe so it must NOT be rejected on remote Docker.
+        File.write(File.join(claude_config_dir, ".credentials.json"), "{}")
+        allow(ENV).to receive(:fetch).and_call_original
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return(claude_config_dir)
+        allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(nil)
+        allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("COPILOT_HOME").and_return(nil)
+        allow(ENV).to receive(:[]).with("COPILOT_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("PAID_PROXY_EXTERNAL_URL").and_return("http://paid.example:3000")
+      end
+
+      it "does not reject the run on the host-path-incapable backend" do
+        svc = remote_service
+        allow(svc).to receive_messages(
+          claude_local_config_path: nil,
+          codex_local_config_path: nil,
+          gemini_local_config_path: nil,
+          copilot_local_config_path: nil,
+          codex_subscription_auth_host_mount_path: nil
+        )
+
+        expect { svc.send(:validate_backend_mount_support!) }.not_to raise_error
+      end
+    end
+
+    context "when only host-forwarded Claude auth exists" do
+      before do
+        File.write(File.join(claude_config_dir, ".credentials.json"), "{}")
+        allow(ENV).to receive(:fetch).and_call_original
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return(claude_config_dir)
+        allow(ENV).to receive(:[]).with("CODEX_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("CODEX_HOME").and_return(nil)
+        allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("COPILOT_HOME").and_return(nil)
+        allow(ENV).to receive(:[]).with("COPILOT_CONFIG_DIR").and_return(nil)
+      end
+
+      it "rejects with a named requires_host_bind_mount reason and managed-auth guidance" do
+        svc = remote_service
+        allow(svc).to receive_messages(
+          claude_local_config_path: nil,
+          codex_local_config_path: nil,
+          gemini_local_config_path: nil,
+          copilot_local_config_path: nil,
+          codex_subscription_auth_host_mount_path: nil
+        )
+
+        expect {
+          svc.send(:validate_backend_mount_support!)
+        }.to raise_error(
+          Containers::Provision::ProvisionError,
+          /requires_host_bind_mount.*Configure a managed claude credential/
+        )
+      end
+    end
+
+    context "when only host-forwarded Codex auth exists" do
+      before do
+        allow(ENV).to receive(:fetch).and_call_original
+        allow(ENV).to receive(:[]).and_call_original
+        allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("GEMINI_CONFIG_DIR").and_return(nil)
+        allow(ENV).to receive(:[]).with("COPILOT_HOME").and_return(nil)
+        allow(ENV).to receive(:[]).with("COPILOT_CONFIG_DIR").and_return(nil)
+      end
+
+      it "rejects with requires_host_bind_mount and directs to a host-path backend" do
+        svc = remote_service
+        allow(svc).to receive_messages(
+          claude_config_host_path: nil,
+          claude_local_config_path: nil,
+          codex_local_config_path: nil,
+          codex_subscription_auth_host_mount_path: "/host/codex",
+          gemini_config_host_path: nil,
+          gemini_local_config_path: nil,
+          copilot_config_host_path: nil,
+          copilot_local_config_path: nil
+        )
+
+        expect {
+          svc.send(:validate_backend_mount_support!)
+        }.to raise_error(
+          Containers::Provision::ProvisionError,
+          /Codex subscription auth \(requires_host_bind_mount\).*host-path-capable backend/
+        )
+      end
+    end
+  end
 end
