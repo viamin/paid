@@ -46,6 +46,19 @@ RSpec.describe AgentRuns::Verification do
         expect(agent_run.reload.mcp_sidecar_container_ids).to include("browser-xyz")
       end
 
+      it "tracks the container id before the browser health check passes" do
+        allow(provisioner).to receive(:wait_for_health!) do
+          expect(agent_run.reload.mcp_sidecar_container_ids).to include("browser-xyz")
+          raise AgentRuns::Verification::Error, "Verification browser health check timed out"
+        end
+
+        expect { provisioner.call }.to raise_error(
+          AgentRuns::Verification::Error,
+          "Verification browser health check timed out"
+        )
+        expect(agent_run.reload.mcp_sidecar_container_ids).to include("browser-xyz")
+      end
+
       it "ensures the playwright-mcp MCP definition is attached to the project" do
         expect {
           provisioner.call

@@ -113,8 +113,8 @@ module AgentRuns
 
       container = adopt_or_create_browser
       Containers.backend.start_container(container) unless container_running?(container)
-      wait_for_health!(container)
       track_sidecar_id(container.id)
+      wait_for_health!(container)
 
       Result.new(
         status: "provisioned",
