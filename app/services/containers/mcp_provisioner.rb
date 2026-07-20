@@ -40,6 +40,17 @@ module Containers
       pids_limit: 200
     }.freeze
 
+    def self.materialize_npx_server(definition)
+      server = {
+        "name" => definition["name"],
+        "transport" => "stdio",
+        "command" => definition["command"],
+        "args" => definition.fetch("args", [])
+      }
+      server["env"] = definition["env"] if definition["env"].present?
+      server
+    end
+
     # Provisions MCP servers from the agent run's snapshot.
     #
     # @param agent_run [AgentRun] the run whose mcp_server_snapshot to provision
@@ -117,14 +128,7 @@ module Containers
     # Materializes an npx MCP definition into a stdio server spec.
     # The agent execution layer will launch this command inside the container.
     def materialize_npx_server(definition)
-      server = {
-        "name" => definition["name"],
-        "transport" => "stdio",
-        "command" => definition["command"],
-        "args" => definition.fetch("args", [])
-      }
-      server["env"] = definition["env"] if definition["env"].present?
-      server
+      self.class.materialize_npx_server(definition)
     end
 
     # Provisions a Docker sidecar container for a docker_image MCP definition.

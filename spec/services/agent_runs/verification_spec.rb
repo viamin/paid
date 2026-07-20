@@ -376,7 +376,7 @@ RSpec.describe AgentRuns::Verification do
           }
         },
         "Labels" => hash_including(
-          "paid.verification_browser" => "true",
+          AgentRuns::Verification::BROWSER_LABEL => "true",
           "paid.agent_run_id" => agent_run.id.to_s
         )
       )

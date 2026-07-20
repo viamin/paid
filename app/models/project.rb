@@ -913,6 +913,14 @@ class Project < ApplicationRecord
     super
   end
 
+  def reload(*)
+    @effective_interop_settings = nil
+    @effective_screenshot_settings = nil
+    @effective_review_settings = nil
+    @automation_configuration = nil
+    super
+  end
+
   def screenshot_settings=(value)
     @effective_screenshot_settings = nil
     super

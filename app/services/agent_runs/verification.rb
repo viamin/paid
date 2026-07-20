@@ -134,7 +134,7 @@ module AgentRuns
 
       provisioned = @agent_run.mcp_provisioned_servers.presence || {}
       stdio_servers = Array(provisioned["stdio_servers"])
-      updated_server = materialize_npx_server(definition)
+      updated_server = Containers::McpProvisioner.materialize_npx_server(definition)
 
       remaining_servers = stdio_servers.reject { |server| server["name"] == definition["name"] }
 
@@ -148,17 +148,6 @@ module AgentRuns
 
     def snapshot_playwright_definition
       Array(@agent_run.mcp_server_snapshot).find { |definition| definition["name"] == Project::PLAYWRIGHT_MCP_NAME }
-    end
-
-    def materialize_npx_server(definition)
-      server = {
-        "name" => definition["name"],
-        "transport" => "stdio",
-        "command" => definition["command"],
-        "args" => definition.fetch("args", [])
-      }
-      server["env"] = definition["env"] if definition["env"].present?
-      server
     end
 
     def container_running?(container)
@@ -191,7 +180,7 @@ module AgentRuns
           }
         },
         "Labels" => {
-          "paid.verification_browser" => "true",
+          BROWSER_LABEL => "true",
           AGENT_RUN_LABEL => @agent_run.id.to_s
         }
       )
