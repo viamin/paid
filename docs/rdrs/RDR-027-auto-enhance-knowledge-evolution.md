@@ -5,7 +5,7 @@
 ## Metadata
 
 - **Date**: 2026-04-23
-- **Status**: Partially Implemented
+- **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: High
 - **Related RDRs**: [RDR-009](RDR-009-prompt-evolution.md) (Prompt Evolution), [RDR-021](RDR-021-knowledge-base.md) (Knowledge Base), [RDR-023](RDR-023-automation-modularization-architecture.md) (Automation Modularization)
@@ -13,7 +13,7 @@
 
 ## Implementation Status
 
-Partially implemented. Paid implements auto-enhance analysis runs, readiness routing, knowledge usage stats, knowledge evolution workflows, and recommendation UI. The remaining gap is usage attribution coverage: `EnhanceIssueActivity` passes `agent_run_id` into knowledge search/bundles, but `AnalyzeIssueActivity` and `Prompts::BuildForIssue` still have knowledge calls that do not provide an `agent_run_id`, so those paths do not fully feed knowledge usage tracking.
+Implemented. Paid implements auto-enhance analysis runs, readiness routing, knowledge usage stats, knowledge evolution workflows, and recommendation UI. Knowledge usage attribution is now complete: `EnhanceIssueActivity`, `AnalyzeIssueActivity`, and `Prompts::BuildForIssue` all pass `agent_run_id` into their knowledge search/context-bundle calls, so every prompt-build and analysis path feeds knowledge usage tracking. `Prompts::BuildForIssue` forwards `agent_run_id: agent_run&.id`, so runs without an attached `agent_run` (e.g. static preview paths) intentionally skip usage attribution rather than recording spurious rows.
 
 ## Problem Statement
 

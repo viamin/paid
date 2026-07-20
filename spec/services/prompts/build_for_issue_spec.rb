@@ -514,6 +514,42 @@ RSpec.describe Prompts::BuildForIssue do
       end
     end
 
+    context "when an agent_run is provided" do
+      it "forwards agent_run_id to the context bundle so usage is attributed" do
+        real_project = create(:project, allowed_github_usernames: [ "viamin" ])
+        real_issue = create(:issue,
+          project: real_project,
+          title: "Fix login redirect",
+          github_number: 42,
+          body: "Users are redirected to the wrong page after login.",
+          github_creator_login: "viamin")
+        agent_run = build(:agent_run, project: real_project, issue: real_issue, goal: "create_pr")
+        allow(Knowledge::ContextBundle::Build).to receive(:call).and_return(
+          content: "", sections: [], total_tokens: 0, queries_made: 0
+        )
+
+        described_class.call(issue: real_issue, project: real_project, agent_run: agent_run)
+
+        expect(Knowledge::ContextBundle::Build).to have_received(:call).with(
+          hash_including(issue: real_issue, project: real_project, agent_run: agent_run, agent_run_id: agent_run.id)
+        )
+      end
+    end
+
+    context "when no agent_run is provided" do
+      it "does not pass an agent_run_id so usage is not attributed" do
+        allow(Knowledge::ContextBundle::Build).to receive(:call).and_return(
+          content: "", sections: [], total_tokens: 0, queries_made: 0
+        )
+
+        described_class.call(issue: issue, project: project)
+
+        expect(Knowledge::ContextBundle::Build).to have_received(:call).with(
+          hash_including(issue: issue, project: project, agent_run: nil, agent_run_id: nil)
+        )
+      end
+    end
+
     context "when knowledge context bundle is empty" do
       before do
         allow(Knowledge::ContextBundle::Build).to receive(:call).and_return(

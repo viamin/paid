@@ -143,10 +143,11 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       expect(Knowledge::Search).to have_received(:call).with(hash_including(
         project: project,
         mode: "hybrid",
-        limit: described_class::MAX_SEARCH_RESULTS
+        limit: described_class::MAX_SEARCH_RESULTS,
+        agent_run_id: agent_run.id
       ))
       expect(Knowledge::ContextBundle::Build).to have_received(:call).with(
-        issue: issue, project: project, agent_run: agent_run
+        issue: issue, project: project, agent_run: agent_run, agent_run_id: agent_run.id
       )
     end
 
@@ -234,6 +235,56 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       result = activity.execute(agent_run_id: agent_run.id)
 
       expect(result[:missing_context_areas]).to eq([])
+    end
+  end
+
+  describe "knowledge usage attribution" do
+    include_context "without qdrant vector search"
+
+    before do
+      # Disable the global stubs from the outer context so the real
+      # Knowledge::Search and Knowledge::ContextBundle::Build services run.
+      allow(Knowledge::Search).to receive(:call).and_call_original
+      allow(Knowledge::ContextBundle::Build).to receive(:call).and_call_original
+    end
+
+    it "records knowledge usage for both search and bundle channels" do
+      matching_issue = create(:issue, :in_progress,
+        project: project,
+        github_number: 4242,
+        title: "Record user actions",
+        body: "compliance reporting")
+      usage_run = create(:agent_run, project: project, issue: matching_issue, goal: "analyze_issue")
+      allow(client).to receive(:issue_comments).with(project.full_name, matching_issue.github_number).and_return([])
+      create_route_artifact
+
+      expect {
+        activity.execute(agent_run_id: usage_run.id)
+      }.to change(KnowledgeUsageStat, :count)
+
+      stats = KnowledgeUsageStat.where(agent_run: usage_run).order(:context_type, :artifact_type).pluck(
+        :artifact_type, :goal, :context_type
+      )
+      expect(stats).to include([ "route", "analyze_issue", "search" ])
+      expect(stats).to include([ "route", "analyze_issue", "bundle" ])
+    end
+
+    def create_route_artifact
+      project_version = create(:project_version, project: project, commit_sha: "abc123")
+      collector_run = create(:collector_run, project_version: project_version, collector_type: "routes")
+      route_artifact = create(:knowledge_artifact,
+        project: project,
+        collector_run: collector_run,
+        artifact_type: "route",
+        identifier: "POST /audit_logs",
+        content: "POST /audit_logs -> AuditLogsController#create",
+        scope_path: "config/routes.rb",
+        status: "active")
+      create(:knowledge_chunk,
+        knowledge_artifact: route_artifact,
+        project: project,
+        chunk_type: "definition",
+        content: "Route: POST /audit_logs records user actions for compliance reporting")
     end
   end
 end

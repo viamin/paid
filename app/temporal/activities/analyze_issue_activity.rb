@@ -77,7 +77,7 @@ module Activities
     end
 
     def build_context(agent_run, project, issue)
-      search = knowledge_search(project, issue)
+      search = knowledge_search(agent_run, project, issue)
       bundle = context_bundle(agent_run, project, issue)
 
       {
@@ -89,10 +89,16 @@ module Activities
       }
     end
 
-    def knowledge_search(project, issue)
+    def knowledge_search(agent_run, project, issue)
       query = "#{issue.title}\n\n#{issue.body.to_s.truncate(2_000)}"
 
-      Knowledge::Search.call(project: project, query: query, mode: "hybrid", limit: MAX_SEARCH_RESULTS)
+      Knowledge::Search.call(
+        project: project,
+        query: query,
+        mode: "hybrid",
+        limit: MAX_SEARCH_RESULTS,
+        agent_run_id: agent_run.id
+      )
     rescue Temporalio::Error::CanceledError
       raise
     rescue => e
@@ -107,7 +113,12 @@ module Activities
     end
 
     def context_bundle(agent_run, project, issue)
-      Knowledge::ContextBundle::Build.call(issue: issue, project: project, agent_run: agent_run)
+      Knowledge::ContextBundle::Build.call(
+        issue: issue,
+        project: project,
+        agent_run: agent_run,
+        agent_run_id: agent_run.id
+      )
     rescue Temporalio::Error::CanceledError
       raise
     rescue => e
