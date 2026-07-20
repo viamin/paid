@@ -185,7 +185,12 @@ module Prompts
     end
 
     def inject_knowledge_context(prompt)
-      bundle = Knowledge::ContextBundle::Build.call(issue: issue, project: project, agent_run: agent_run)
+      bundle = Knowledge::ContextBundle::Build.call(
+        issue: issue,
+        project: project,
+        agent_run: agent_run,
+        agent_run_id: agent_run&.id
+      )
       return prompt if bundle[:content].blank?
 
       "#{prompt}\n#{bundle[:content]}\n"
