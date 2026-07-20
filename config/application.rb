@@ -34,6 +34,7 @@ end
 # Zeitwerk autoloading is available. The middleware is stateless so the pinned
 # constant is a low-risk trade-off; use to_prepare for install! re-subscription.
 require_relative "../app/services/database/query_monitor"
+require_relative "../app/middleware/previews_proxy"
 
 module Paid
   class Application < Rails::Application
@@ -74,5 +75,6 @@ module Paid
     config.active_job.queue_adapter = :good_job
 
     config.middleware.use Database::QueryMonitor::Middleware
+    config.middleware.use PreviewsProxy
   end
 end

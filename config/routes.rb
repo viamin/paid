@@ -275,7 +275,21 @@ Rails.application.routes.draw do
       get "search", to: "search#project_search", as: :search
       get "search/results", to: "search#project_search_results", as: :search_results
     end
+
+    # Preview session lifecycle. The iframe "show" page is served at /previews/:id
+    # (top-level) below; only lifecycle actions nest here so they never collide
+    # with the PreviewsProxy middleware path /previews/:token/*.
+    resources :preview_sessions, only: [], controller: "previews" do
+      member do
+        post :stop
+      end
+    end
   end
+
+  # Live preview iframe wrapper. The proxied app content lives at
+  # /previews/:token/* (served by the PreviewsProxy middleware); this show page
+  # is the exact /previews/:id which the middleware does not intercept.
+  get "/previews/:id", to: "previews#show", as: :preview_session
 
   # API endpoints for agent containers
   namespace :api do

@@ -169,6 +169,11 @@ module Screenshots
       projects: Target.new(slug: "projects", path_builder: "/projects", requires_auth: true),
       project_new: Target.new(slug: "project_new", path_builder: "/projects/new", requires_auth: true),
       project_show: Target.new(slug: "project_show", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}" }, requires_auth: true),
+      preview_session_show: Target.new(
+        slug: "preview_session_show",
+        path_builder: ->(seed_data) { "/previews/#{seed_data.fetch(:preview_session).id}" },
+        requires_auth: true
+      ),
       project_issue_clarifying_questions: Target.new(
         slug: "project_issue_clarifying_questions",
         path_builder: ->(seed_data) {
@@ -237,6 +242,7 @@ module Screenshots
       "dashboard_controller.rb" => [ :dashboard ],
       "home_controller.rb" => [ :dashboard ],
       "projects_controller.rb" => %i[projects project_new project_show project_edit],
+      "previews_controller.rb" => [ :preview_session_show ],
       "agent_runs_controller.rb" => [ :agent_runs ],
       "prompts_controller.rb" => %i[prompts prompt_new prompt_show prompt_edit prompt_diff],
       "prompt_reviews_controller.rb" => %i[prompt_reviews_queue prompt_reviews prompt_review_show],
@@ -559,6 +565,7 @@ module Screenshots
       when /\Aprojects\/roi_dashboards\// then [ :project_roi_dashboard ]
       when /\Aprojects\/convention_settings\// then [ :project_convention_settings ]
       when /\Aprojects\/knowledge_recommendations\// then [ :project_knowledge_recommendations ]
+      when /\Apreviews\// then [ :preview_session_show ]
       when /\Aprojects\// then projects_targets(relative_path.delete_prefix("projects/"))
       else
         []
