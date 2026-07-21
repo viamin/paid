@@ -174,4 +174,77 @@ RSpec.describe Containers::Provision do
       expect(svc.send(:copilot_subscription_auth?)).to be(true)
     end
   end
+
+  describe "managed remote-safe gating" do
+    before do
+      allow(FeatureFlags).to receive(:enabled?)
+        .with(:managed_subscription_runner_auth, project: project)
+        .and_return(flag_enabled)
+    end
+
+    context "when the rollout flag is disabled" do
+      let(:flag_enabled) { false }
+
+      it "does not treat Gemini and Copilot managed credentials as remote-safe" do
+        create_managed_credential(runner_key: "gemini", token: gemini_payload)
+        create_managed_credential(runner_key: "copilot", token: copilot_payload)
+        svc = described_class.new(agent_run: agent_run, project: project, backend: local_backend)
+
+        expect(svc.send(:managed_remote_safe_for?, "gemini")).to be(false)
+        expect(svc.send(:managed_remote_safe_for?, "copilot")).to be(false)
+      end
+    end
+
+    context "when the rollout flag is enabled" do
+      let(:flag_enabled) { true }
+
+      it "rejects malformed Gemini and Copilot managed payloads as remote-safe" do
+        create_managed_credential(runner_key: "gemini", token: "{\"unexpected\":true}")
+        create_managed_credential(runner_key: "copilot", token: "{\"unexpected\":true}")
+        svc = described_class.new(agent_run: agent_run, project: project, backend: local_backend)
+
+        expect(svc.send(:managed_remote_safe_for?, "gemini")).to be(false)
+        expect(svc.send(:managed_remote_safe_for?, "copilot")).to be(false)
+      end
+    end
+  end
+
+  describe "eligibility telemetry auth source" do
+    before do
+      allow(FeatureFlags).to receive(:enabled?)
+        .with(:managed_subscription_runner_auth, project: project)
+        .and_return(flag_enabled)
+    end
+
+    let(:flag_enabled) { true }
+
+    it "keeps Gemini host-forwarded when the managed payload is malformed" do
+      create_managed_credential(runner_key: "gemini", token: "{\"unexpected\":true}")
+      svc = described_class.new(agent_run: agent_run, project: project, backend: local_backend)
+      allow(svc).to receive(:subscription_auth_host_sources).and_return([ { runner_key: "gemini", host_path: "/host/.gemini", detected: true } ])
+
+      svc.send(:record_eligibility_attempts!)
+
+      attempt = RunnerAuthAttempt.where(attempt_stage: "eligibility", runner_key: "gemini").last
+      expect(attempt).not_to be_nil
+      expect(attempt.auth_source).to eq("host_forwarded")
+      expect(attempt.materialization_mode).to eq("host_mount")
+    end
+
+    it "keeps Copilot host-forwarded while the rollout flag is disabled" do
+      create_managed_credential(runner_key: "copilot", token: copilot_payload)
+      allow(FeatureFlags).to receive(:enabled?)
+        .with(:managed_subscription_runner_auth, project: project)
+        .and_return(false)
+      svc = described_class.new(agent_run: agent_run, project: project, backend: local_backend)
+      allow(svc).to receive(:subscription_auth_host_sources).and_return([ { runner_key: "copilot", host_path: "/host/.copilot", detected: true } ])
+
+      svc.send(:record_eligibility_attempts!)
+
+      attempt = RunnerAuthAttempt.where(attempt_stage: "eligibility", runner_key: "copilot").last
+      expect(attempt).not_to be_nil
+      expect(attempt.auth_source).to eq("host_forwarded")
+      expect(attempt.materialization_mode).to eq("host_mount")
+    end
+  end
 end

@@ -2710,7 +2710,7 @@ module Containers
         # service return `credential_expired` instead of silently falling back
         # to `host_forwarded` (or `managed_auth_missing`).
         credential = managed_subscription_credential_for(runner_key, require_active: false)
-        auth_source = if credential && Runners::SubscriptionAuthMaterializers.remote_safe?(runner_key)
+        auth_source = if credential && managed_subscription_materializable_for?(runner_key, credential: credential)
           Runners::SubscriptionAuthEligibility::AuthSource.new(
             runner_key: runner_key,
             auth_mode: :managed,
@@ -2759,9 +2759,9 @@ module Containers
     # bind mount. Today only Claude has a remote-safe managed materializer.
     def managed_remote_safe_for?(runner_key)
       return false unless Runners::SubscriptionAuthMaterializers.remote_safe?(runner_key)
-      return false unless project.is_a?(Project)
 
-      managed_subscription_credential_for(runner_key)&.active?
+      credential = managed_subscription_credential_for(runner_key)
+      credential&.active? && managed_subscription_materializable_for?(runner_key, credential: credential)
     end
 
     # @param require_active [Boolean] When true (default), only returns active
@@ -2769,12 +2769,64 @@ module Containers
     #   status so callers can distinguish `credential_expired` from
     #   `managed_auth_missing` in telemetry.
     def managed_subscription_credential_for(runner_key, require_active: true)
+      scope = managed_subscription_credential_scope_for(runner_key)
+      return nil unless scope
+
+      scope = scope.active if require_active
+      scope.order(created_at: :desc, id: :desc).first
+    end
+
+    def managed_subscription_credential_scope_for(runner_key)
+      return nil unless project.is_a?(Project)
+
       account = project.account
       return nil unless account
 
       scope = account.runner_credentials.for_runner(runner_key)
-      scope = scope.active if require_active
-      scope.order(created_at: :desc, id: :desc).first
+      return scope.where(auth_kind: "oauth_token") if %w[claude gemini copilot].include?(runner_key.to_s)
+
+      scope
+    end
+
+    def managed_subscription_runner_auth_enabled?
+      project.is_a?(Project) && FeatureFlags.enabled?(:managed_subscription_runner_auth, project: project)
+    end
+
+    def managed_subscription_materializable_for?(runner_key, credential: nil)
+      return false unless managed_subscription_runner_auth_enabled_for?(runner_key)
+
+      parsed = parse_managed_subscription_credential(runner_key, credential: credential)
+      case runner_key.to_s
+      when "claude"
+        parsed.present? && !parsed.blank?
+      when "gemini"
+        parsed&.oauth_credentials? == true
+      when "copilot"
+        parsed&.copilot_config? == true
+      else
+        false
+      end
+    end
+
+    def managed_subscription_runner_auth_enabled_for?(runner_key)
+      return true unless %w[gemini copilot].include?(runner_key.to_s)
+
+      managed_subscription_runner_auth_enabled?
+    end
+
+    def parse_managed_subscription_credential(runner_key, credential: nil)
+      token = credential&.token.to_s.presence ||
+        managed_subscription_credential_for(runner_key, require_active: false)&.token.to_s.presence
+      return nil if token.blank?
+
+      case runner_key.to_s
+      when "claude"
+        ClaudeCredentials::Secret.parse(token)
+      when "gemini"
+        GeminiCredentials::Secret.parse(token)
+      when "copilot"
+        CopilotCredentials::Secret.parse(token)
+      end
     end
 
     # Whether the backend's Paid proxy callback is reachable for API-key/proxy
@@ -2861,14 +2913,8 @@ module Containers
     def claude_managed_runner_credential
       return @claude_managed_runner_credential if defined?(@claude_managed_runner_credential)
 
-      account = project&.account
-      @claude_managed_runner_credential = if account.present?
-        account.runner_credentials.active
-          .for_runner("claude")
-          .where(auth_kind: "oauth_token")
-          .order(created_at: :desc, id: :desc)
-          .first
-      end
+      @claude_managed_runner_credential = managed_subscription_credential_scope_for("claude")&.active
+        &.order(created_at: :desc, id: :desc)&.first
     end
 
     def claude_managed_secret
@@ -2895,14 +2941,8 @@ module Containers
     def gemini_managed_runner_credential
       return @gemini_managed_runner_credential if defined?(@gemini_managed_runner_credential)
 
-      account = project&.account
-      @gemini_managed_runner_credential = if account.present?
-        account.runner_credentials.active
-          .for_runner("gemini")
-          .where(auth_kind: "oauth_token")
-          .order(created_at: :desc, id: :desc)
-          .first
-      end
+      @gemini_managed_runner_credential = managed_subscription_credential_scope_for("gemini")&.active
+        &.order(created_at: :desc, id: :desc)&.first
     end
 
     def gemini_managed_secret
@@ -3396,14 +3436,8 @@ module Containers
     def copilot_managed_runner_credential
       return @copilot_managed_runner_credential if defined?(@copilot_managed_runner_credential)
 
-      account = project&.account
-      @copilot_managed_runner_credential = if account.present?
-        account.runner_credentials.active
-          .for_runner("copilot")
-          .where(auth_kind: "oauth_token")
-          .order(created_at: :desc, id: :desc)
-          .first
-      end
+      @copilot_managed_runner_credential = managed_subscription_credential_scope_for("copilot")&.active
+        &.order(created_at: :desc, id: :desc)&.first
     end
 
     def copilot_managed_secret
