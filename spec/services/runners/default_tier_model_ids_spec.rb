@@ -65,5 +65,23 @@ RSpec.describe Runners::DefaultTierModelIds do
         expect(result["low"]).not_to eq("gemini-fast")
       end
     end
+
+    context "when the highest-capability model is auth-mode-gated" do
+      before do
+        # gpt-5.5-pro is api_key-only per the agent-harness compatibility contract.
+        create(:llm_model, :openai, model_id: "gpt-5.5-pro", tier: "high", capability_score: 9.9)
+        create(:llm_model, :openai, model_id: "gpt-5.2-codex", tier: "high", capability_score: 9.0)
+      end
+
+      it "filters it out under subscription auth" do
+        result = described_class.call(runner_key: "codex", auth_type: "subscription")
+        expect(result["high"]).to eq("gpt-5.2-codex")
+      end
+
+      it "keeps it under the permissive api_key default" do
+        result = described_class.call(runner_key: "codex", auth_type: "api_key")
+        expect(result["high"]).to eq("gpt-5.5-pro")
+      end
+    end
   end
 end

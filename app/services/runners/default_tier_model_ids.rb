@@ -12,12 +12,19 @@ module Runners
 
     DIRECT_OUTBOUND_RUNNER_KEYS = %w[kilocode opencode openrouter_free pi].freeze
 
-    def self.call(runner_key:)
-      new(runner_key: runner_key).call
+    # Compatibility gate applied when callers have no concrete auth context
+    # (e.g. the admin form seeding a brand-new runner). Callers on the dispatch
+    # path (Runners::ResolveTierModel) pass the runner's actual auth_type so
+    # auth-mode-gated models are filtered out before the default is dispatched.
+    DEFAULT_AUTH_TYPE = "api_key"
+
+    def self.call(runner_key:, auth_type: DEFAULT_AUTH_TYPE)
+      new(runner_key: runner_key, auth_type: auth_type).call
     end
 
-    def initialize(runner_key:)
+    def initialize(runner_key:, auth_type: DEFAULT_AUTH_TYPE)
       @runner_key = runner_key.to_s
+      @auth_type = auth_type.to_s.presence || DEFAULT_AUTH_TYPE
     end
 
     def call
@@ -35,6 +42,8 @@ module Runners
 
     private
 
+    attr_reader :runner_key, :auth_type
+
     def tier_defaults_for_standard_provider(model_provider)
       LlmModel::TIERS.each_with_object({}) do |tier, mapping|
         model = LlmModel.active.by_provider(model_provider).by_tier(tier).by_capability
@@ -45,15 +54,16 @@ module Runners
 
     def runner_model_compatible?(model_id)
       result = ModelCompatibility.call(
-        runner_key: @runner_key,
+        runner_key: runner_key,
         model_id: model_id,
-        auth_type: "api_key"
+        auth_type: auth_type
       )
       if result.unsupported?
         Rails.logger.info(
           message: "model_selection.default_model_filtered_incompatible",
-          runner_key: @runner_key,
+          runner_key: runner_key,
           model_id: model_id,
+          auth_type: auth_type,
           incompatibility_type: result.incompatibility_type,
           reason: result.reason
         )
