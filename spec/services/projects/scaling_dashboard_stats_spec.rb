@@ -37,6 +37,44 @@ RSpec.describe Projects::ScalingDashboardStats do
       expect(experiment.reload.cached_summary["leading_value"]).to eq(99)
       expect(experiment.summary_samples_key).to eq("stale-key")
     end
+
+    it "prefers scaling-law recommendation metadata for parallelism experiments" do
+      experiment = create(:scaling_experiment, project: project, dimension: "parallelism", status: "completed")
+      experiment.update!(
+        cached_summary: parallelism_cached_summary_payload,
+        summary_samples_key: experiment.samples_key
+      )
+
+      stats = described_class.call(project: project)
+
+      recommendation = stats.dig(:experiments, 0, :recommendation)
+      expect(recommendation).to include(
+        "confidence" => "high",
+        "actionable" => true,
+        "efficiency_gain_vs_control" => 0.2
+      )
+      expect(recommendation).to have_key("scaling_exponent_confidence_interval")
+    end
+
+    it "counts all observations while limiting the recent observation payload" do
+      travel_to Time.zone.parse("2026-07-21 12:00:00 UTC") do
+        (Projects::ScalingDashboardStats::RECENT_OBSERVATION_LIMIT + 2).times do |index|
+          create(
+            :scaling_observation,
+            project: project,
+            workflow_id: "workflow-#{index}",
+            created_at: index.minutes.ago
+          )
+        end
+      end
+
+      stats = described_class.call(project: project)
+
+      expect(stats.dig(:summary, :observation_count)).to eq(Projects::ScalingDashboardStats::RECENT_OBSERVATION_LIMIT + 2)
+      expect(stats[:recent_observations].size).to eq(Projects::ScalingDashboardStats::RECENT_OBSERVATION_LIMIT)
+      expect(stats[:recent_observations].first.workflow_id).to eq("workflow-0")
+      expect(stats[:recent_observations].last.workflow_id).to eq("workflow-14")
+    end
   end
 
   def expect_scaling_dashboard_stats(stats, experiment)
@@ -94,6 +132,27 @@ RSpec.describe Projects::ScalingDashboardStats do
         }
       },
       "values" => []
+    }
+  end
+
+  def parallelism_cached_summary_payload
+    cached_summary_payload.merge(
+      "dimension" => "parallelism",
+      "allocator_decision" => parallelism_allocator_decision,
+      "scaling_law" => {
+        "allocator_decision" => cached_summary_payload.fetch("allocator_decision")
+      }
+    )
+  end
+
+  def parallelism_allocator_decision
+    {
+      "recommended_value" => 2,
+      "parallelism" => 2,
+      "max_batch_size" => 2,
+      "sample_count" => 6,
+      "confidence" => "medium",
+      "reason" => "best_success_rate_before_threshold"
     }
   end
 end

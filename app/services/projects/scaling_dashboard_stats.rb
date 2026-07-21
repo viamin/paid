@@ -63,7 +63,7 @@ module Projects
       @experiments ||= scaling_experiments.map do |experiment|
         summary = experiment.cached_or_compute_summary(persist: false) || {}
         scaling_law = summary.fetch("scaling_law", {})
-        recommendation = summary["allocator_decision"] || scaling_law["allocator_decision"]
+        recommendation = recommendation_for(summary:, scaling_law:)
 
         {
           experiment: experiment,
@@ -83,7 +83,7 @@ module Projects
     end
 
     def recent_observations
-      scaling_observations.first(RECENT_OBSERVATION_LIMIT)
+      scaling_observations.limit(RECENT_OBSERVATION_LIMIT).to_a
     end
 
     def sparse?
@@ -102,7 +102,14 @@ module Projects
       @scaling_observations ||= ScalingObservation
         .where(project: project)
         .order(created_at: :desc, id: :desc)
-        .to_a
+    end
+
+    def recommendation_for(summary:, scaling_law:)
+      if summary["dimension"] == "parallelism"
+        scaling_law["allocator_decision"] || summary["allocator_decision"]
+      else
+        summary["allocator_decision"] || scaling_law["allocator_decision"]
+      end
     end
   end
 end
