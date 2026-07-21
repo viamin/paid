@@ -167,51 +167,12 @@ module Runners
       end
 
       def status(secret:)
-        value = secret.to_s
-        return blank_status if value.blank?
-
-        parsed = ClaudeCredentials::Secret.parse(value)
-        return malformed_status if malformed_secret?(value, parsed)
-
-        if parsed.long_lived_token?
-          return Status.new(
-            state: :valid,
-            expires_at: nil,
-            refreshable: false,
-            materialization_mode: SubscriptionAuthMaterializers::MATERIALIZE_ENV,
-            rotation_risk: SubscriptionAuthMaterializers::ROTATION_SERVER_REFRESH_ONLY,
-            remote_safe: true,
-            redacted_metadata: {
-              "materialized" => true,
-              "kind" => "long_lived_token",
-              "has_refresh_token" => false,
-              "has_expiry" => false
-            },
-            error: nil
-          )
-        end
-
-        return malformed_status unless parsed.oauth_token.present?
-
-        expires_at = parsed.expires_at
-        expired = expires_at.present? && expires_at <= Time.current
-        Status.new(
-          state: expired ? :expired : :valid,
-          expires_at: expires_at,
-          refreshable: parsed.refresh_token.present?,
-          materialization_mode: SubscriptionAuthMaterializers::MATERIALIZE_NATIVE_FILE,
-          rotation_risk: SubscriptionAuthMaterializers::ROTATION_SERVER_REFRESH_ONLY,
-          remote_safe: true,
-          redacted_metadata: parsed.redacted_metadata,
-          error: expired ? "expired" : nil
-        )
+        classify(secret).first
       end
 
       def materialize(secret:)
-        status = self.status(secret: secret)
+        status, parsed = classify(secret)
         return unsupported_materialization if status.unsupported?
-
-        parsed = ClaudeCredentials::Secret.parse(secret)
         return malformed_materialization(status) unless status.materializable?
 
         if parsed.long_lived_token?
@@ -236,13 +197,14 @@ module Runners
       end
 
       def refresh(provisioner:)
-        # `refresh_claude_credentials_if_near_expiry!` never returns literal
-        # `true`: it returns `nil` on early-exit paths and an
+        # `refresh_claude_subscription_credential!` delegates to
+        # `refresh_claude_credentials_if_near_expiry!` which never returns
+        # literal `true`: it returns `nil` on early-exit paths and an
         # `AuthAttemptRecorder::Result` when a refresh runs. Coerce to a
         # boolean so the contract (and keep-warm telemetry) reflects whether a
         # refresh attempt actually executed, matching the previous `!!refreshed`
         # inline coercion.
-        performed = !!provisioner.send(:refresh_claude_credentials_if_near_expiry!)
+        performed = !!provisioner.refresh_claude_subscription_credential!
         Result.new(
           supported: true,
           performed: performed,
@@ -291,6 +253,50 @@ module Runners
           redacted_metadata: status.redacted_metadata,
           error: status.error
         )
+      end
+
+      # Parses `secret` exactly once and returns `[Status, Parsed]`. Both
+      # `status` and `materialize` delegate here so the credential is never
+      # parsed twice for the same call.
+      def classify(secret)
+        value = secret.to_s
+        return [ blank_status, nil ] if value.blank?
+
+        parsed = ClaudeCredentials::Secret.parse(value)
+        return [ malformed_status, nil ] if malformed_secret?(value, parsed)
+
+        if parsed.long_lived_token?
+          return [ Status.new(
+            state: :valid,
+            expires_at: nil,
+            refreshable: false,
+            materialization_mode: SubscriptionAuthMaterializers::MATERIALIZE_ENV,
+            rotation_risk: SubscriptionAuthMaterializers::ROTATION_SERVER_REFRESH_ONLY,
+            remote_safe: true,
+            redacted_metadata: {
+              "materialized" => true,
+              "kind" => "long_lived_token",
+              "has_refresh_token" => false,
+              "has_expiry" => false
+            },
+            error: nil
+          ), parsed ]
+        end
+
+        return [ malformed_status, nil ] unless parsed.oauth_token.present?
+
+        expires_at = parsed.expires_at
+        expired = expires_at.present? && expires_at <= Time.current
+        [ Status.new(
+          state: expired ? :expired : :valid,
+          expires_at: expires_at,
+          refreshable: parsed.refresh_token.present?,
+          materialization_mode: SubscriptionAuthMaterializers::MATERIALIZE_NATIVE_FILE,
+          rotation_risk: SubscriptionAuthMaterializers::ROTATION_SERVER_REFRESH_ONLY,
+          remote_safe: true,
+          redacted_metadata: parsed.redacted_metadata,
+          error: expired ? "expired" : nil
+        ), parsed ]
       end
 
       def malformed_secret?(value, parsed)

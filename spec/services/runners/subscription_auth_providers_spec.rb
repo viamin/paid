@@ -141,11 +141,12 @@ RSpec.describe Runners::SubscriptionAuthProviders, :no_db do
     let(:provisioner) { instance_double(Containers::Provision) }
 
     it "coerces a truthy non-true refresh outcome into performed: true" do
-      # refresh_claude_credentials_if_near_expiry! returns nil on early exits
-      # and an AuthAttemptRecorder::Result (never literal true) when a refresh
-      # runs. The adapter must coerce that to a boolean so keep-warm telemetry
-      # reports refreshed: true.
-      allow(provisioner).to receive(:refresh_claude_credentials_if_near_expiry!)
+      # refresh_claude_subscription_credential! delegates to
+      # refresh_claude_credentials_if_near_expiry! which returns nil on early
+      # exits and an AuthAttemptRecorder::Result (never literal true) when a
+      # refresh runs. The adapter must coerce that to a boolean so keep-warm
+      # telemetry reports refreshed: true.
+      allow(provisioner).to receive(:refresh_claude_subscription_credential!)
         .and_return(Runners::AuthAttemptRecorder::Result.new(recorded: true, error: nil))
 
       result = claude_provider.refresh(provisioner: provisioner)
@@ -156,7 +157,7 @@ RSpec.describe Runners::SubscriptionAuthProviders, :no_db do
     end
 
     it "reports performed: false when no refresh runs" do
-      allow(provisioner).to receive(:refresh_claude_credentials_if_near_expiry!).and_return(nil)
+      allow(provisioner).to receive(:refresh_claude_subscription_credential!).and_return(nil)
 
       result = claude_provider.refresh(provisioner: provisioner)
 

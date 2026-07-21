@@ -906,6 +906,11 @@ module Containers
       { refreshed: refresh_result.performed?, reason: refresh_result.reason }
     end
 
+    # Public boundary for subscription auth adapter delegation (RDR-041).
+    def refresh_claude_subscription_credential!
+      refresh_claude_credentials_if_near_expiry!
+    end
+
     private
 
     def apply_execution_preparation(preparation, env:)
