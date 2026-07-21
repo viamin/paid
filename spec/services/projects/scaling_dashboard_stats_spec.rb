@@ -24,17 +24,18 @@ RSpec.describe Projects::ScalingDashboardStats do
       expect_scaling_dashboard_stats(stats, experiment)
     end
 
-    it "refreshes a stale cached summary instead of returning the stale payload" do
+    it "keeps GET-style reads read-only when the cached summary is stale" do
       experiment = create(:scaling_experiment, project: project, name: "Stale Cache", status: "completed")
       experiment.update!(
         cached_summary: cached_summary_payload.merge("leading_value" => 99),
         summary_samples_key: "stale-key"
       )
 
-      described_class.call(project: project)
+      stats = described_class.call(project: project)
 
-      expect(experiment.reload.cached_summary["leading_value"]).not_to eq(99)
-      expect(experiment.summary_samples_key).to eq(experiment.samples_key)
+      expect(stats.dig(:experiments, 0, :summary, "leading_value")).to eq(99)
+      expect(experiment.reload.cached_summary["leading_value"]).to eq(99)
+      expect(experiment.summary_samples_key).to eq("stale-key")
     end
   end
 

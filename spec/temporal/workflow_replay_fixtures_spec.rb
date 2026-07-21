@@ -41,7 +41,6 @@ RSpec.describe WorkflowReplayFixtures, :no_db do
 
   described_class.workflow_classes.each do |workflow_class|
     it "replays #{workflow_class.name.demodulize} from its saved history" do
-      GC.start(full_mark: true, immediate_sweep: true)
       history = Temporalio::WorkflowHistory.from_history_json(
         fixture_dir.join("#{workflow_class.name.demodulize.underscore}.json").read
       )
@@ -53,7 +52,6 @@ RSpec.describe WorkflowReplayFixtures, :no_db do
       ).replay_workflow(history, raise_on_replay_failure: false)
 
       expect(result.replay_failure).to be_nil
-      GC.start(full_mark: true, immediate_sweep: true)
     end
   end
 end

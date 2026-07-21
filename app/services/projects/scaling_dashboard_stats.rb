@@ -61,7 +61,7 @@ module Projects
 
     def experiments
       @experiments ||= scaling_experiments.map do |experiment|
-        summary = experiment.cached_or_compute_summary(persist: true)
+        summary = experiment.cached_or_compute_summary(persist: false) || {}
         scaling_law = summary.fetch("scaling_law", {})
         recommendation = summary["allocator_decision"] || scaling_law["allocator_decision"]
 

@@ -84,6 +84,22 @@ RSpec.describe ScalingExperiments::AnalyzeScalingLaw, :no_db do
     expect(result.dig("allocator_decision", "max_iterations")).to eq(2)
   end
 
+  it "omits the exponent confidence interval when only two fitted values are available" do
+    result = analyze(
+      build_summary(1, sample_count: 3, success_rate: 0.50, duration: 300, cost: 100),
+      build_summary(2, sample_count: 3, success_rate: 0.90, duration: 180, cost: 160)
+    )
+
+    expect(result["scaling_exponent"]).not_to be_nil
+    expect(result["scaling_exponent_confidence_interval"]).to include(
+      "estimate" => nil,
+      "lower_bound" => nil,
+      "upper_bound" => nil,
+      "margin_of_error" => nil,
+      "sample_count" => 2
+    )
+  end
+
   it "emits regression signals when the primary metric and efficiency fall below the prior value" do
     result = analyze(
       build_summary(1, sample_count: 3, success_rate: 0.80, duration: 200, cost: 100),

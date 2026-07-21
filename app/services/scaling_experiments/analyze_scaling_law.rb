@@ -286,19 +286,23 @@ module ScalingExperiments
     end
 
     def scaling_exponent
-      scaling_exponent_confidence_interval["estimate"]
+      @scaling_exponent ||= ScalingExperiments::Statistics.log_log_slope(points: scaling_exponent_points)
     end
 
     def scaling_exponent_confidence_interval
       @scaling_exponent_confidence_interval ||= ScalingExperiments::Statistics.log_log_slope_interval(
-        points: viable_values.filter_map do |summary|
-          transformed = summary["transformed_primary_metric"]&.to_f
-          next unless transformed&.positive?
-
-          { x: summary["assigned_value"].to_i, y: transformed }
-        end,
+        points: scaling_exponent_points,
         confidence_level:
       )
+    end
+
+    def scaling_exponent_points
+      @scaling_exponent_points ||= viable_values.filter_map do |summary|
+        transformed = summary["transformed_primary_metric"]&.to_f
+        next unless transformed&.positive?
+
+        { x: summary["assigned_value"].to_i, y: transformed }
+      end
     end
 
     def diminishing_returns_at

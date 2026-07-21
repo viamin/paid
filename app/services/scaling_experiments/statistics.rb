@@ -59,26 +59,15 @@ module ScalingExperiments
     end
 
     def log_log_slope_interval(points:, confidence_level:)
-      normalized = Array(points).filter_map do |point|
-        x = Float(point.fetch(:x))
-        y = Float(point.fetch(:y))
-        next unless x.positive? && y.positive?
-
-        { x: Math.log(x), y: Math.log(y) }
-      rescue ArgumentError, TypeError, KeyError
-        nil
-      end
+      normalized = normalized_log_log_points(points)
       return empty_regression_interval(confidence_level:) if normalized.size < 2
+
+      slope, ss_xx = regression_slope_components(normalized)
+      return empty_regression_interval(confidence_level:) unless slope
+      return unavailable_regression_interval(sample_count: normalized.size, confidence_level:) if normalized.size < 3
 
       x_mean = normalized.sum { |point| point[:x] } / normalized.size
       y_mean = normalized.sum { |point| point[:y] } / normalized.size
-      ss_xx = normalized.sum { |point| (point[:x] - x_mean) ** 2 }
-      return empty_regression_interval(confidence_level:) if ss_xx.zero?
-
-      ss_xy = normalized.sum { |point| (point[:x] - x_mean) * (point[:y] - y_mean) }
-      slope = ss_xy / ss_xx
-      return point_regression_interval(slope:, sample_count: normalized.size, confidence_level:) if normalized.size < 3
-
       intercept = y_mean - (slope * x_mean)
       residual_sum_squares = normalized.sum do |point|
         fitted = intercept + (slope * point[:x])
@@ -95,6 +84,10 @@ module ScalingExperiments
         "sample_count" => normalized.size,
         "confidence_level" => confidence_level.round(2)
       }
+    end
+
+    def log_log_slope(points:)
+      regression_slope(normalized_log_log_points(points))&.round(4)
     end
 
     def relative_width(interval, baseline: nil)
@@ -149,23 +142,44 @@ module ScalingExperiments
       }
     end
 
+    def normalized_log_log_points(points)
+      Array(points).filter_map do |point|
+        x = Float(point.fetch(:x))
+        y = Float(point.fetch(:y))
+        next unless x.positive? && y.positive?
+
+        { x: Math.log(x), y: Math.log(y) }
+      rescue ArgumentError, TypeError, KeyError
+        nil
+      end
+    end
+
+    def regression_slope(normalized_points)
+      regression_slope_components(normalized_points)&.first
+    end
+
+    def regression_slope_components(normalized_points)
+      return nil if normalized_points.size < 2
+
+      x_mean = normalized_points.sum { |point| point[:x] } / normalized_points.size
+      y_mean = normalized_points.sum { |point| point[:y] } / normalized_points.size
+      ss_xx = normalized_points.sum { |point| (point[:x] - x_mean) ** 2 }
+      return nil if ss_xx.zero?
+
+      ss_xy = normalized_points.sum { |point| (point[:x] - x_mean) * (point[:y] - y_mean) }
+      [ ss_xy / ss_xx, ss_xx ]
+    end
+
     def empty_regression_interval(confidence_level:)
+      unavailable_regression_interval(sample_count: 0, confidence_level:)
+    end
+
+    def unavailable_regression_interval(sample_count:, confidence_level:)
       {
         "estimate" => nil,
         "lower_bound" => nil,
         "upper_bound" => nil,
         "margin_of_error" => nil,
-        "sample_count" => 0,
-        "confidence_level" => confidence_level.round(2)
-      }
-    end
-
-    def point_regression_interval(slope:, sample_count:, confidence_level:)
-      {
-        "estimate" => slope.round(4),
-        "lower_bound" => slope.round(4),
-        "upper_bound" => slope.round(4),
-        "margin_of_error" => 0.0,
         "sample_count" => sample_count,
         "confidence_level" => confidence_level.round(2)
       }
