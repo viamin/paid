@@ -102,8 +102,9 @@ module ScalingExperiments
       upper_bound = interval&.fetch("upper_bound", nil)
       return nil unless lower_bound && upper_bound
 
-      denominator = baseline.to_f.nonzero? || interval.fetch("mean", 0).to_f.nonzero?
-      return nil unless denominator
+      denominator = baseline.to_f
+      denominator = interval.fetch("mean", 0).to_f if denominator.zero?
+      return nil if denominator.zero?
 
       ((upper_bound - lower_bound).abs / denominator.abs).round(4)
     end

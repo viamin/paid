@@ -361,12 +361,8 @@ module ScalingExperiments
     end
 
     def confidence_for(summary)
-      interval_width = ScalingExperiments::Statistics.relative_width(
-        summary["primary_metric_confidence_interval"],
-        baseline: summary["primary_metric_value"]
-      )
       return "high" if actionable_recommendation?(summary) && summary["sample_count"].to_i >= (configured_min_samples_per_value * 2)
-      return "medium" if summary["sample_count"].to_i >= configured_min_samples_per_value && interval_width && interval_width <= MAX_ACTIONABLE_INTERVAL_WIDTH_RATIO
+      return "medium" if summary["sample_count"].to_i >= configured_min_samples_per_value
       return "medium" if summary["sample_count"].to_i >= MIN_SAMPLES
 
       "low"
@@ -390,7 +386,7 @@ module ScalingExperiments
 
     def configured_min_samples_per_value
       @configured_min_samples_per_value ||= begin
-        value = scaling_experiment.respond_to?(:min_samples_per_value) ? scaling_experiment.min_samples_per_value.to_i : MIN_SAMPLES
+        value = scaling_experiment.min_samples_per_value.to_i
         [ value, MIN_SAMPLES ].max
       end
     end

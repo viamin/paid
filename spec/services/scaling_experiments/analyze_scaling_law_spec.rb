@@ -7,11 +7,12 @@ RSpec.describe ScalingExperiments::AnalyzeScalingLaw, :no_db do
   let(:values_tested) { [ 1, 2, 4 ] }
   let(:control_value) { 1 }
   let(:experiment) do
-    Struct.new(:dimension, :values_tested, :control_value, :outcome_metrics, keyword_init: true).new(
+    Struct.new(:dimension, :values_tested, :control_value, :outcome_metrics, :min_samples_per_value, keyword_init: true).new(
       dimension: dimension,
       values_tested: values_tested,
       control_value: control_value,
-      outcome_metrics: outcome_metrics
+      outcome_metrics: outcome_metrics,
+      min_samples_per_value: 2
     )
   end
   let(:outcome_metrics) do

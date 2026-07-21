@@ -221,7 +221,7 @@ module ScalingExperiments
     end
 
     def experiment_min_samples_per_value
-      scaling_experiment.respond_to?(:min_samples_per_value) ? scaling_experiment.min_samples_per_value.to_i : 2
+      scaling_experiment.min_samples_per_value.to_i
     end
   end
 end
