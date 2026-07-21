@@ -105,11 +105,7 @@ module Projects
     end
 
     def recommendation_for(summary:, scaling_law:)
-      if summary["dimension"] == "parallelism"
-        scaling_law["allocator_decision"] || summary["allocator_decision"]
-      else
-        summary["allocator_decision"] || scaling_law["allocator_decision"]
-      end
+      summary["allocator_decision"] || scaling_law["allocator_decision"]
     end
   end
 end

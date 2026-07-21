@@ -38,7 +38,7 @@ RSpec.describe Projects::ScalingDashboardStats do
       expect(experiment.summary_samples_key).to eq("stale-key")
     end
 
-    it "prefers scaling-law recommendation metadata for parallelism experiments" do
+    it "surfaces the measured allocator decision the allocator applies for parallelism experiments" do
       experiment = create(:scaling_experiment, project: project, dimension: "parallelism", status: "completed")
       experiment.update!(
         cached_summary: parallelism_cached_summary_payload,
@@ -47,13 +47,16 @@ RSpec.describe Projects::ScalingDashboardStats do
 
       stats = described_class.call(project: project)
 
+      measured = parallelism_allocator_decision
+      scaling_law_decision = cached_summary_payload.fetch("allocator_decision")
       recommendation = stats.dig(:experiments, 0, :recommendation)
       expect(recommendation).to include(
-        "confidence" => "high",
+        "recommended_value" => measured["recommended_value"],
+        "confidence" => measured["confidence"],
         "actionable" => true,
-        "efficiency_gain_vs_control" => 0.2
+        "reason" => measured["reason"]
       )
-      expect(recommendation).to have_key("scaling_exponent_confidence_interval")
+      expect(recommendation["recommended_value"]).not_to eq(scaling_law_decision["recommended_value"])
     end
 
     it "counts all observations while limiting the recent observation payload" do
@@ -147,11 +150,13 @@ RSpec.describe Projects::ScalingDashboardStats do
 
   def parallelism_allocator_decision
     {
-      "recommended_value" => 2,
-      "parallelism" => 2,
-      "max_batch_size" => 2,
-      "sample_count" => 6,
+      "recommended_value" => 4,
+      "parallelism" => 4,
+      "max_batch_size" => 4,
+      "requested_agent_count" => 4,
+      "sample_count" => 12,
       "confidence" => "medium",
+      "actionable" => true,
       "reason" => "best_success_rate_before_threshold"
     }
   end

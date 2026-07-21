@@ -58,7 +58,7 @@ class ScheduledMutationSweepJob < ApplicationJob
   def swept_on_date?(project)
     QualityMetric.by_project(project.id)
       .scheduled_mutation_sweep
-      .where(created_at: sweep_day_utc_range)
+      .where(created_at: sweep_date.all_day)
       .exists?
   end
 
@@ -77,13 +77,6 @@ class ScheduledMutationSweepJob < ApplicationJob
   def enqueue_next_project(attempted_project_ids:)
     if next_project(excluding_project_ids: attempted_project_ids)
       self.class.perform_later(sweep_date: sweep_date.iso8601, attempted_project_ids:)
-    end
-  end
-
-  def sweep_day_utc_range
-    @sweep_day_utc_range ||= begin
-      start_time = Time.utc(sweep_date.year, sweep_date.month, sweep_date.day)
-      start_time...start_time.tomorrow
     end
   end
 end
