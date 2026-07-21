@@ -134,9 +134,13 @@ class RunnerAuthAttempt < ApplicationRecord
 
   # Patterns that look like secret material. If a metadata value matches one of
   # these (after trimming), the recorder raises rather than persisting the row.
+  # GitHub token formats mirror GithubToken::GITHUB_TOKEN_PATTERN so a
+  # `github_pat_` fine-grained PAT is rejected with the same shape the rest of
+  # the app uses to recognize them (classic `ghp_`, fine-grained `github_pat_`,
+  # OAuth `gho_`, user-to-server `ghu_`, server-to-server `ghs_`, refresh `ghr_`).
   SECRET_VALUE_PATTERNS = [
     /\Ask-[A-Za-z0-9_-]{8,}\z/,                # Anthropic / OpenAI style bearer tokens
-    /\Aghp_[A-Za-z0-9]{8,}\z/,                 # GitHub fine-grained PATs
+    /\A(ghp_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,}|gh[ours]_[A-Za-z0-9]{36,})\z/, # GitHub PATs
     /\Axox[abprs]-[A-Za-z0-9-]{8,}\z/,         # Slack tokens
     /\Aya29\.[A-Za-z0-9_-]{8,}\z/,             # Google OAuth bearer
     /\ABearer\s+/i,                            # Authorization header prefix

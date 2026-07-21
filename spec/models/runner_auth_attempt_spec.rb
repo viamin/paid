@@ -117,6 +117,22 @@ RSpec.describe RunnerAuthAttempt, type: :model do
       expect(record.errors[:metadata].join).to include("secret-shaped")
     end
 
+    it "rejects metadata values that look like GitHub fine-grained PATs" do
+      record = build(:runner_auth_attempt,
+        metadata: { trace: "github_pat_11ABCDEFG0_abcdefghijklmnopqrstuvwxyz" })
+      expect(record).not_to be_valid
+      expect(record.errors[:metadata].join).to include("secret-shaped")
+    end
+
+    it "rejects metadata values that look like GitHub OAuth/user-to-server/server-to-server/refresh tokens" do
+      %w[gho ghu ghs ghr].each do |prefix|
+        token = "#{prefix}_abcdef0123456789abcdef0123456789abcd"
+        record = build(:runner_auth_attempt, metadata: { trace: token })
+        expect(record).not_to be_valid
+        expect(record.errors[:metadata].join).to include("secret-shaped")
+      end
+    end
+
     it "rejects metadata values that look like Authorization headers" do
       record = build(:runner_auth_attempt, metadata: { trace: "Bearer eyJhbGciOi..." })
       expect(record).not_to be_valid
@@ -193,8 +209,12 @@ RSpec.describe RunnerAuthAttempt, type: :model do
       expect(described_class.secret_like?("sk-ant-oat01-abcdefghijklmnop")).to be(true)
     end
 
+    it "flags GitHub classic PATs" do
+      expect(described_class.secret_like?("ghp_abcdef0123456789abcdef0123456789abcd")).to be(true)
+    end
+
     it "flags GitHub fine-grained PATs" do
-      expect(described_class.secret_like?("ghp_abcdefghijklmnopqrstuvwxyz0123")).to be(true)
+      expect(described_class.secret_like?("github_pat_11ABCDEFG0_abcdefghijklmnopqrstuvwxyz")).to be(true)
     end
 
     it "flags Authorization headers" do

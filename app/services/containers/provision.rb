@@ -2674,8 +2674,13 @@ module Containers
 
       subscription_auth_host_sources.each do |entry|
         runner_key = entry.fetch(:runner_key)
-        credential = managed_subscription_credential_for(runner_key)
-        auth_source = if credential&.active? && Runners::SubscriptionAuthMaterializers.remote_safe?(runner_key)
+        # Resolve the latest credential regardless of status so an expired or
+        # revoked managed credential still surfaces as `:managed` with
+        # credential_state `:expired`/`:revoked`, letting the eligibility
+        # service return `credential_expired` instead of silently falling back
+        # to `host_forwarded` (or `managed_auth_missing`).
+        credential = managed_subscription_credential_for(runner_key, require_active: false)
+        auth_source = if credential && Runners::SubscriptionAuthMaterializers.remote_safe?(runner_key)
           Runners::SubscriptionAuthEligibility::AuthSource.new(
             runner_key: runner_key,
             auth_mode: :managed,
@@ -2729,14 +2734,17 @@ module Containers
       managed_subscription_credential_for(runner_key)&.active?
     end
 
-    def managed_subscription_credential_for(runner_key)
+    # @param require_active [Boolean] When true (default), only returns active
+    #   credentials. When false, returns the latest credential regardless of
+    #   status so callers can distinguish `credential_expired` from
+    #   `managed_auth_missing` in telemetry.
+    def managed_subscription_credential_for(runner_key, require_active: true)
       account = project.account
       return nil unless account
 
-      account.runner_credentials.active
-        .for_runner(runner_key)
-        .order(created_at: :desc, id: :desc)
-        .first
+      scope = account.runner_credentials.for_runner(runner_key)
+      scope = scope.active if require_active
+      scope.order(created_at: :desc, id: :desc).first
     end
 
     # Whether the backend's Paid proxy callback is reachable for API-key/proxy

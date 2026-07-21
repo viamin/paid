@@ -111,6 +111,42 @@ RSpec.describe Containers::Provision do
       expect(attempt.project).to eq(project)
     end
 
+    it "records a managed eligibility attempt with credential_expired when the latest RunnerCredential is expired" do
+      create_remote_safe_claude_credential
+      RunnerCredential.update_all(expires_at: 1.hour.ago)
+      svc = described_class.new(agent_run: nil, project: project, backend: remote_backend)
+      stub_no_local_or_other_paths(svc)
+
+      expect {
+        svc.send(:validate_backend_mount_support!)
+      }.to raise_error(Containers::Provision::ProvisionError)
+
+      attempt = RunnerAuthAttempt.where(runner_key: "claude").last
+      expect(attempt).not_to be_nil
+      expect(attempt.auth_source).to eq("managed")
+      expect(attempt.materialization_mode).to eq("env")
+      expect(attempt.result).to eq("failed")
+      expect(attempt.failure_reason).to eq("credential_expired")
+    end
+
+    it "records a managed eligibility attempt with credential_expired when the latest RunnerCredential is revoked" do
+      create_remote_safe_claude_credential
+      RunnerCredential.update_all(revoked_at: 1.minute.ago)
+      svc = described_class.new(agent_run: nil, project: project, backend: remote_backend)
+      stub_no_local_or_other_paths(svc)
+
+      expect {
+        svc.send(:validate_backend_mount_support!)
+      }.to raise_error(Containers::Provision::ProvisionError)
+
+      attempt = RunnerAuthAttempt.where(runner_key: "claude").last
+      expect(attempt).not_to be_nil
+      expect(attempt.auth_source).to eq("managed")
+      expect(attempt.materialization_mode).to eq("env")
+      expect(attempt.result).to eq("failed")
+      expect(attempt.failure_reason).to eq("credential_expired")
+    end
+
     it "records a host_forwarded eligibility attempt that ends in a named rejection" do
       svc = described_class.new(agent_run: nil, project: project, backend: remote_backend)
       stub_no_local_or_other_paths(svc)
