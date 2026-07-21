@@ -1,0 +1,7 @@
+{
+  "oauth_token": "tid=managed-copilot-oauth-token;exp=4102444800;slt=abc;apr=t",
+  "refresh_token": "managed-copilot-refresh-token",
+  "expires_at": "2100-01-01T00:00:00Z",
+  "user": "managed-copilot-user",
+  "extra_host_only_field": "should-not-leak-into-container"
+}

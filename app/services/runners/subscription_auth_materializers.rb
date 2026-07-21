@@ -16,11 +16,12 @@ module Runners
   #
   # Today only Claude has a remote-safe managed materializer (env-var injection
   # of `CLAUDE_CODE_OAUTH_TOKEN`, or writing the native `.credentials.json`
-  # directly into the container). Codex, Gemini, and Copilot still depend on a
-  # Docker-host bind mount, so they are NOT remote-safe here. When the Codex
-  # remote-safe materializer (#2962) and the Gemini/Copilot materializers
-  # (#2964) ship, they register themselves as remote-safe and remote placement
-  # opens up automatically.
+  # directly into the container). Gemini and Copilot have remote-safe native
+  # config materializers (#2964) that regenerate only the minimal CLI config
+  # the provider needs from a managed `RunnerCredential`. Codex still depends
+  # on a Docker-host bind mount, so it is NOT remote-safe here. When the Codex
+  # remote-safe materializer (#2962) ships, it registers itself as remote-safe
+  # and remote placement opens up automatically.
   class SubscriptionAuthMaterializers
     MATERIALIZE_ENV = "env"
     MATERIALIZE_NATIVE_FILE = "native_file"
@@ -68,15 +69,15 @@ module Runners
       ),
       "gemini" => Materializer.new(
         runner_key: "gemini",
-        materialization_mode: MATERIALIZE_HOST_MOUNT,
-        rotation_risk: ROTATION_NONE,
-        remote_safe: false
+        materialization_mode: MATERIALIZE_NATIVE_FILE,
+        rotation_risk: ROTATION_CONTAINER_MAY_ROTATE,
+        remote_safe: true
       ),
       "copilot" => Materializer.new(
         runner_key: "copilot",
-        materialization_mode: MATERIALIZE_HOST_MOUNT,
-        rotation_risk: ROTATION_NONE,
-        remote_safe: false
+        materialization_mode: MATERIALIZE_NATIVE_FILE,
+        rotation_risk: ROTATION_CONTAINER_MAY_ROTATE,
+        remote_safe: true
       )
     }.freeze
 
