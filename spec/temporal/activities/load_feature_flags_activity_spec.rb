@@ -21,7 +21,8 @@ RSpec.describe Activities::LoadFeatureFlagsActivity do
     it "returns the registered flags with disabled defaults when none are enabled" do
       expect(activity.execute(project_id: project.id)).to eq(
         flags: {
-          context_intake_agent_questions: false
+          context_intake_agent_questions: false,
+          managed_subscription_runner_auth: false
         },
         project_missing: false
       )

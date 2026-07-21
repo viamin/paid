@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_18_062802) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_20_200906) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2191,6 +2191,41 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_18_062802) do
     t.index ["project_id", "name"], name: "idx_roi_benchmarks_project_name"
   end
 
+  create_table "runner_auth_attempts", comment: "Structured telemetry for runner subscription-auth attempts, used to compare managed RunnerCredential auth with legacy host-mounted local auth before remote cutover (RDR-041 / #2960).", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Owning account; denormalized for account-scoped analytics and reporting."
+    t.bigint "agent_run_id", comment: "Agent run that triggered this attempt, when the attempt is bound to a run."
+    t.string "attempt_stage", limit: 32, null: false, comment: "Lifecycle stage of the attempt: materialization, refresh, lease, harvest, eligibility."
+    t.datetime "attempted_at", null: false, comment: "When the attempt occurred; mirrors created_at but is set explicitly so background recorders can write back-dated rows when telemetry is flushed after the real attempt."
+    t.string "auth_source", limit: 32, null: false, comment: "Resolved auth source: managed, host_forwarded, api_key_proxy, none."
+    t.boolean "backend_remote", comment: "Whether the resolved backend was remote at attempt time."
+    t.boolean "backend_supports_host_paths", comment: "Whether the resolved backend supports host bind mounts at attempt time."
+    t.string "container_host", limit: 64, comment: "Container backend identifier that the attempt was bound to."
+    t.datetime "created_at", null: false
+    t.integer "duration_ms", comment: "Wall-clock duration of the attempt in milliseconds, when measurable."
+    t.string "failure_reason", limit: 64, comment: "UI-safe failure reason code (e.g. credential_expired, refresh_token_reused)."
+    t.string "feature_flag_state", limit: 32, comment: "State of the managed_subscription_runner_auth flag: enabled, disabled, unregistered."
+    t.string "lease_state", limit: 32, comment: "Lease outcome: none, acquired, waited, timeout, not_applicable."
+    t.string "materialization_mode", limit: 32, comment: "Materializer mode: env, native_file, broker, host_mount, unsupported."
+    t.jsonb "metadata", default: {}, null: false, comment: "Non-secret contextual fields such as feature-flag rollout and materializer rotation risk."
+    t.bigint "project_id", null: false, comment: "Owning project; mirrors the agent_run linkage for tenant-isolated reporting."
+    t.string "refresh_state", limit: 32, comment: "Refresh outcome: not_needed, refreshed, refresh_failed, expired, not_applicable."
+    t.string "result", limit: 32, null: false, comment: "Final attempt outcome: materialized, skipped, failed, harvested, harvest_failed, refreshed, refresh_failed, expired, lease_acquired, lease_timeout."
+    t.integer "retry_count", default: 0, null: false, comment: "Number of retries performed before recording this attempt outcome."
+    t.bigint "runner_credential_id", comment: "RunnerCredential record the attempt used, when the attempt is managed."
+    t.string "runner_key", limit: 64, null: false, comment: "Provider key (claude, codex, gemini, copilot)."
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "attempted_at"], name: "idx_runner_auth_attempts_account_attempted"
+    t.index ["account_id"], name: "index_runner_auth_attempts_on_account_id"
+    t.index ["agent_run_id", "attempt_stage", "attempted_at"], name: "idx_runner_auth_attempts_run_stage_attempted"
+    t.index ["agent_run_id"], name: "index_runner_auth_attempts_on_agent_run_id"
+    t.index ["attempt_stage", "result", "attempted_at"], name: "idx_runner_auth_attempts_stage_result_attempted"
+    t.index ["project_id", "attempted_at"], name: "idx_runner_auth_attempts_project_attempted"
+    t.index ["project_id"], name: "index_runner_auth_attempts_on_project_id"
+    t.index ["result", "attempted_at"], name: "idx_runner_auth_attempts_result_attempted"
+    t.index ["runner_credential_id"], name: "index_runner_auth_attempts_on_runner_credential_id"
+    t.index ["runner_key", "auth_source", "container_host", "attempted_at"], name: "idx_runner_auth_attempts_provider_source_host_attempted"
+  end
+
   create_table "runner_credentials", comment: "Account-scoped encrypted credentials for subscription runners (Claude Code, Codex, Gemini, Copilot)", force: :cascade do |t|
     t.bigint "account_id", null: false, comment: "Account that owns this credential"
     t.string "auth_kind", default: "oauth_token", null: false, comment: "Authentication mechanism (oauth_token, api_key, signing_token)"
@@ -2988,6 +3023,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_18_062802) do
   add_foreign_key "remediation_decisions", "accounts"
   add_foreign_key "remediation_decisions", "users", column: "applied_by_id"
   add_foreign_key "roi_benchmarks", "projects", on_delete: :cascade
+  add_foreign_key "runner_auth_attempts", "accounts"
+  add_foreign_key "runner_auth_attempts", "agent_runs", on_delete: :nullify
+  add_foreign_key "runner_auth_attempts", "projects", on_delete: :cascade
+  add_foreign_key "runner_auth_attempts", "runner_credentials", on_delete: :nullify
   add_foreign_key "runner_credentials", "accounts"
   add_foreign_key "runner_credentials", "users", column: "created_by_id", on_delete: :nullify
   add_foreign_key "runner_states", "users", on_delete: :cascade
@@ -3886,6 +3925,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_18_062802) do
       CREATE TRIGGER logidze_on_mcp_server_definitions BEFORE INSERT OR UPDATE ON public.mcp_server_definitions FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{env}')
   SQL
 
+  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
+      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
+  SQL
+
   create_trigger :logidze_on_orchestration_strategies, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_orchestration_strategies BEFORE INSERT OR UPDATE ON public.orchestration_strategies FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
@@ -3952,9 +3995,5 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_18_062802) do
 
   create_trigger :logidze_on_users, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_users BEFORE INSERT OR UPDATE ON public.users FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{encrypted_password,reset_password_token,reset_password_sent_at,remember_created_at}')
-  SQL
-
-  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
-      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
   SQL
 end

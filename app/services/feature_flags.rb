@@ -14,6 +14,13 @@ class FeatureFlags
       intent: "Enable LLM-generated follow-up questions during the business context wizard",
       rollout_plan: "Per-tenant opt-in via tenant_settings.features, then percentage-of-actors rollout",
       cleanup_criteria: "Remove when AI-generated questions are the default for all tenants"
+    ),
+    managed_subscription_runner_auth: Definition.new(
+      name: :managed_subscription_runner_auth,
+      owner: "runner-auth",
+      intent: "Gate the rollout of managed RunnerCredential auth for subscription runners (Claude, Codex, Gemini, Copilot) ahead of remote cutover (RDR-041 / #2959 / #2960).",
+      rollout_plan: "Shadow read-only by default; opt-in per tenant via tenant_settings.features; default-on after telemetry proves reliability versus legacy host-mounted auth.",
+      cleanup_criteria: "Remove once managed auth is the default for all subscription runners and legacy host-mounted paths are documented as local-only escape hatches."
     )
   }.freeze
 
