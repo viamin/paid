@@ -23,13 +23,13 @@ Shipped:
 - Managed Claude setup tokens are injected as `CLAUDE_CODE_OAUTH_TOKEN`; when present, provisioning skips host `.credentials.json` seeding.
 - Browser-completed Claude login captures native `.credentials.json` into a `RunnerCredential`.
 - Claude keep-warm can refresh host-forwarded native credentials and write the rotated credential back under a lock.
+- Gemini and Copilot have remote-safe native config materializers (#2964): a managed `RunnerCredential` materializes the minimal `~/.gemini/oauth_creds.json` or `~/.copilot/config.json` directly into the container, so neither needs a host bind mount.
 
 The original Claude-focused issue chain (#2690, #2683, #2685, #2684, #2686, #2687, #2688, #2689) is closed/completed. This RDR remains **Partially Implemented** because the revised scope now covers provider-neutral managed auth and RDR-048 remote-host eligibility, not only Claude.
 
 Still open:
 
-- Provider-neutral managed auth for Codex, Gemini, and Copilot.
-- Remote-safe Codex subscription auth. Codex still depends on a Docker-host-bind-mountable `auth.json` and cannot run on a backend where `supports_host_paths? == false` unless it uses API-key/proxy mode.
+- Provider-neutral managed auth for Codex. Gemini and Copilot now have remote-safe native config materializers (#2964); Codex still depends on a Docker-host-bind-mountable `auth.json` and cannot run on a backend where `supports_host_paths? == false` unless it uses API-key/proxy mode.
 - A canonical materialization contract that says how each provider turns an encrypted `RunnerCredential` into container runtime state.
 - Refresh ownership for providers whose CLI may rotate credentials during a run.
 - Feature-flagged rollout is not implemented; `FeatureFlags::DEFINITIONS` does not yet include `managed_subscription_runner_auth`.
@@ -80,8 +80,8 @@ RDR-048 makes this urgent. Multi-host Docker placement can only send a subscript
 |----------|------------------------|--------------------------|---------------------|--------------------|
 | Claude Code | Host `.credentials.json`, managed `CLAUDE_CODE_OAUTH_TOKEN`, or captured native credential | Works when managed `RunnerCredential` exists; host file is not required | Partially implemented | Keep, harden, and place behind the same provider-neutral contract as other providers |
 | Codex | Host `auth.json` bind mount with lock/writeback | Not supported unless that auth file exists on the remote Docker host or the runner uses API-key/proxy mode | Not implemented | Add Codex login, refresh/writeback, and native `auth.json` materialization from `RunnerCredential` |
-| Gemini | Host `oauth_creds.json`/config copy | Local-copy only; no DB-managed credential | Not implemented | Add managed credential shape and native config materializer |
-| Copilot | Host `config.json`/local config copy | Local-copy only; no DB-managed credential | Not implemented | Add managed credential shape and native config materializer |
+| Gemini | Host `oauth_creds.json`/config copy, or managed native `oauth_creds.json` from `RunnerCredential` | Works when managed `RunnerCredential` exists; host file is not required | Implemented (#2964) | Add provider login flow and lease-through-run harvest once telemetry proves reliability |
+| Copilot | Host `config.json`/local config copy, or managed native `config.json` from `RunnerCredential` | Works when managed `RunnerCredential` exists; host file is not required | Implemented (#2964) | Add provider login flow and lease-through-run harvest once telemetry proves reliability |
 
 ## External Prior Art: Oh My Pi
 

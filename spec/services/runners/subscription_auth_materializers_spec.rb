@@ -22,12 +22,14 @@ RSpec.describe Runners::SubscriptionAuthMaterializers, :no_db do
       expect(materializer.requires_host_paths?).to be(true)
     end
 
-    it "marks Gemini and Copilot as host-mount and not remote-safe" do
+    it "marks Gemini and Copilot as remote-safe native-file materializers (#2964)" do
       %w[gemini copilot].each do |runner_key|
         materializer = described_class.for_runner(runner_key)
 
-        expect(materializer.remote_safe?).to be(false)
-        expect(materializer.requires_host_paths?).to be(true)
+        expect(materializer.remote_safe?).to be(true)
+        expect(materializer.materialization_mode).to eq("native_file")
+        expect(materializer.rotation_risk).to eq("container_may_rotate")
+        expect(materializer.requires_host_paths?).to be(false)
       end
     end
 
@@ -38,11 +40,11 @@ RSpec.describe Runners::SubscriptionAuthMaterializers, :no_db do
   end
 
   describe ".remote_safe?" do
-    it "is true only for Claude today" do
+    it "is true for Claude, Gemini, and Copilot today" do
       expect(described_class.remote_safe?("claude")).to be(true)
       expect(described_class.remote_safe?("codex")).to be(false)
-      expect(described_class.remote_safe?("gemini")).to be(false)
-      expect(described_class.remote_safe?("copilot")).to be(false)
+      expect(described_class.remote_safe?("gemini")).to be(true)
+      expect(described_class.remote_safe?("copilot")).to be(true)
     end
 
     it "coerces symbols" do

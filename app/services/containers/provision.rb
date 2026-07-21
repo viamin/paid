@@ -1612,6 +1612,22 @@ module Containers
     end
 
     def seed_gemini_credentials!
+      return unless gemini_subscription_auth?
+      if managed_subscription_runner_auth_enabled_for?("gemini") && gemini_managed_oauth_creds_json.present?
+        write_container_file("/home/agent/.gemini/oauth_creds.json", gemini_managed_oauth_creds_json)
+        log_system("container.gemini_credentials_seeded", source: "managed_native_config")
+        record_auth_attempt!(
+          runner_key: "gemini",
+          attempt_stage: RunnerAuthAttempt::STAGE_MATERIALIZATION,
+          auth_source: :managed,
+          materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_NATIVE_FILE,
+          runner_credential: gemini_managed_runner_credential,
+          result: RunnerAuthAttempt::RESULT_MATERIALIZED,
+          metadata: gemini_managed_secret.redacted_metadata.merge("source" => "managed_native_config")
+        )
+        return
+      end
+
       source_files = %w[
         oauth_creds.json
         google_accounts.json
@@ -1621,7 +1637,6 @@ module Containers
         trustedFolders.json
         projects.json
       ]
-      return unless gemini_subscription_auth?
 
       # Prefer the source that actually contains oauth_creds.json so we don't
       # set PAID_GEMINI_SUBSCRIPTION_AUTH=1 without seeding creds.
@@ -1657,6 +1672,22 @@ module Containers
     end
 
     def seed_copilot_credentials!
+      return unless copilot_subscription_auth?
+      if managed_subscription_runner_auth_enabled_for?("copilot") && copilot_managed_config_json.present?
+        write_container_file("/home/agent/.copilot/config.json", copilot_managed_config_json)
+        log_system("container.copilot_credentials_seeded", source: "managed_native_config")
+        record_auth_attempt!(
+          runner_key: "copilot",
+          attempt_stage: RunnerAuthAttempt::STAGE_MATERIALIZATION,
+          auth_source: :managed,
+          materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_NATIVE_FILE,
+          runner_credential: copilot_managed_runner_credential,
+          result: RunnerAuthAttempt::RESULT_MATERIALIZED,
+          metadata: copilot_managed_secret.redacted_metadata.merge("source" => "managed_native_config")
+        )
+        return
+      end
+
       source_files = %w[
         config.json
         settings.json
@@ -1664,7 +1695,6 @@ module Containers
         mcp-config.json
         lsp-config.json
       ]
-      return unless copilot_subscription_auth?
 
       host = copilot_config_host_path
       host_source = host.present? && File.file?(File.join(host, "config.json"))
@@ -2680,7 +2710,7 @@ module Containers
         # service return `credential_expired` instead of silently falling back
         # to `host_forwarded` (or `managed_auth_missing`).
         credential = managed_subscription_credential_for(runner_key, require_active: false)
-        auth_source = if credential && Runners::SubscriptionAuthMaterializers.remote_safe?(runner_key)
+        auth_source = if credential && managed_subscription_materializable_for?(runner_key, credential: credential)
           Runners::SubscriptionAuthEligibility::AuthSource.new(
             runner_key: runner_key,
             auth_mode: :managed,
@@ -2729,9 +2759,9 @@ module Containers
     # bind mount. Today only Claude has a remote-safe managed materializer.
     def managed_remote_safe_for?(runner_key)
       return false unless Runners::SubscriptionAuthMaterializers.remote_safe?(runner_key)
-      return false unless project.is_a?(Project)
 
-      managed_subscription_credential_for(runner_key)&.active?
+      credential = managed_subscription_credential_for(runner_key)
+      credential&.active? && managed_subscription_materializable_for?(runner_key, credential: credential)
     end
 
     # @param require_active [Boolean] When true (default), only returns active
@@ -2739,12 +2769,64 @@ module Containers
     #   status so callers can distinguish `credential_expired` from
     #   `managed_auth_missing` in telemetry.
     def managed_subscription_credential_for(runner_key, require_active: true)
+      scope = managed_subscription_credential_scope_for(runner_key)
+      return nil unless scope
+
+      scope = scope.active if require_active
+      scope.order(created_at: :desc, id: :desc).first
+    end
+
+    def managed_subscription_credential_scope_for(runner_key)
+      return nil unless project.is_a?(Project)
+
       account = project.account
       return nil unless account
 
       scope = account.runner_credentials.for_runner(runner_key)
-      scope = scope.active if require_active
-      scope.order(created_at: :desc, id: :desc).first
+      return scope.where(auth_kind: "oauth_token") if %w[claude gemini copilot].include?(runner_key.to_s)
+
+      scope
+    end
+
+    def managed_subscription_runner_auth_enabled?
+      project.is_a?(Project) && FeatureFlags.enabled?(:managed_subscription_runner_auth, project: project)
+    end
+
+    def managed_subscription_materializable_for?(runner_key, credential: nil)
+      return false unless managed_subscription_runner_auth_enabled_for?(runner_key)
+
+      parsed = parse_managed_subscription_credential(runner_key, credential: credential)
+      case runner_key.to_s
+      when "claude"
+        parsed.present? && !parsed.blank?
+      when "gemini"
+        parsed&.oauth_credentials? == true
+      when "copilot"
+        parsed&.copilot_config? == true
+      else
+        false
+      end
+    end
+
+    def managed_subscription_runner_auth_enabled_for?(runner_key)
+      return true unless %w[gemini copilot].include?(runner_key.to_s)
+
+      managed_subscription_runner_auth_enabled?
+    end
+
+    def parse_managed_subscription_credential(runner_key, credential: nil)
+      token = credential&.token.to_s.presence ||
+        managed_subscription_credential_for(runner_key, require_active: false)&.token.to_s.presence
+      return nil if token.blank?
+
+      case runner_key.to_s
+      when "claude"
+        ClaudeCredentials::Secret.parse(token)
+      when "gemini"
+        GeminiCredentials::Secret.parse(token)
+      when "copilot"
+        CopilotCredentials::Secret.parse(token)
+      end
     end
 
     # Whether the backend's Paid proxy callback is reachable for API-key/proxy
@@ -2831,14 +2913,8 @@ module Containers
     def claude_managed_runner_credential
       return @claude_managed_runner_credential if defined?(@claude_managed_runner_credential)
 
-      account = project&.account
-      @claude_managed_runner_credential = if account.present?
-        account.runner_credentials.active
-          .for_runner("claude")
-          .where(auth_kind: "oauth_token")
-          .order(created_at: :desc, id: :desc)
-          .first
-      end
+      @claude_managed_runner_credential = managed_subscription_credential_scope_for("claude")&.active
+        &.order(created_at: :desc, id: :desc)&.first
     end
 
     def claude_managed_secret
@@ -2849,8 +2925,33 @@ module Containers
     end
 
     def gemini_subscription_auth?
+      if managed_subscription_runner_auth_enabled_for?("gemini")
+        return true if gemini_managed_secret && !gemini_managed_secret.blank?
+      end
+
       paths = [ gemini_config_host_path, gemini_local_config_path ].compact
       paths.any? { |base| File.file?(File.join(base, "oauth_creds.json")) }
+    end
+
+    def gemini_managed_oauth_creds_json
+      parsed = gemini_managed_secret
+      return unless parsed&.oauth_credentials?
+
+      parsed.oauth_creds_json
+    end
+
+    def gemini_managed_runner_credential
+      return @gemini_managed_runner_credential if defined?(@gemini_managed_runner_credential)
+
+      @gemini_managed_runner_credential = managed_subscription_credential_scope_for("gemini")&.active
+        &.order(created_at: :desc, id: :desc)&.first
+    end
+
+    def gemini_managed_secret
+      return @gemini_managed_secret if defined?(@gemini_managed_secret)
+
+      secret = gemini_managed_runner_credential&.token.to_s
+      @gemini_managed_secret = secret.present? ? GeminiCredentials::Secret.parse(secret) : nil
     end
 
     def codex_subscription_auth?
@@ -3321,8 +3422,33 @@ module Containers
     end
 
     def copilot_subscription_auth?
+      if managed_subscription_runner_auth_enabled_for?("copilot")
+        return true if copilot_managed_secret && !copilot_managed_secret.blank?
+      end
+
       paths = [ copilot_config_host_path, copilot_local_config_path ].compact
       paths.any? { |base| File.file?(File.join(base, "config.json")) }
+    end
+
+    def copilot_managed_config_json
+      parsed = copilot_managed_secret
+      return unless parsed&.copilot_config?
+
+      parsed.config_json
+    end
+
+    def copilot_managed_runner_credential
+      return @copilot_managed_runner_credential if defined?(@copilot_managed_runner_credential)
+
+      @copilot_managed_runner_credential = managed_subscription_credential_scope_for("copilot")&.active
+        &.order(created_at: :desc, id: :desc)&.first
+    end
+
+    def copilot_managed_secret
+      return @copilot_managed_secret if defined?(@copilot_managed_secret)
+
+      secret = copilot_managed_runner_credential&.token.to_s
+      @copilot_managed_secret = secret.present? ? CopilotCredentials::Secret.parse(secret) : nil
     end
 
     def detect_host_config_path(suffix)

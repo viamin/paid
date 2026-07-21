@@ -69,6 +69,31 @@ RSpec.describe Runners::SubscriptionAuthEligibility, :no_db do
       expect(result.auth_mode).to eq(:managed)
     end
 
+    it "is eligible on a remote backend for Gemini and Copilot managed credentials (#2964)" do
+      %w[gemini copilot].each do |runner_key|
+        result = described_class.call(
+          backend: remote_backend,
+          auth_source: auth_source(runner_key: runner_key, auth_mode: :managed, credential_state: :active)
+        )
+
+        expect(result).to be_eligible
+        expect(result.auth_mode).to eq(:managed)
+      end
+    end
+
+    it "directs Gemini and Copilot host-forwarded operators to the managed credential flow" do
+      %w[gemini copilot].each do |runner_key|
+        result = described_class.call(
+          backend: remote_backend,
+          auth_source: auth_source(runner_key: runner_key, auth_mode: :host_forwarded)
+        )
+
+        expect(result).to be_ineligible
+        expect(result.reason).to eq(:requires_host_bind_mount)
+        expect(result.message).to include("managed #{runner_key} credential")
+      end
+    end
+
     it "is rejected with credential_expired when the managed credential is expired" do
       result = described_class.call(
         backend: remote_backend,

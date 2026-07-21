@@ -12,7 +12,10 @@ RSpec.describe SpecHelperCoverage, :no_db do
       require "bundler/setup"
       require "rspec/core"
       require_relative "spec/spec_helper"
-      SimpleCov.minimum_coverage 0 if Object.const_defined?(:SimpleCov)
+      if Object.const_defined?(:SimpleCov)
+        SimpleCov.command_name("spec_helper_coverage_probe-\#{Process.pid}")
+        SimpleCov.minimum_coverage 0
+      end
       puts Object.const_defined?(:SimpleCov)
     RUBY
   end

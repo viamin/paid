@@ -1,0 +1,8 @@
+{
+  "access_token": "ya29.managed-gemini-access-token",
+  "refresh_token": "1//managed-gemini-refresh-token",
+  "scope": "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email",
+  "token_type": "Bearer",
+  "expiry_date": 4102444800000,
+  "extra_host_only_field": "should-not-leak-into-container"
+}
