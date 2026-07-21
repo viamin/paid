@@ -201,6 +201,14 @@ RSpec.describe RunnerAuthAttempt, type: :model do
       expect(described_class.secret_like?("Bearer abcdefghijklmnop")).to be(true)
     end
 
+    it "flags Basic auth headers with base64 payloads" do
+      expect(described_class.secret_like?("Basic ZGVtbzpzZWNyZXQ=")).to be(true)
+    end
+
+    it "does not flag benign prose that starts with Basic" do
+      expect(described_class.secret_like?("Basic assertions on the runner")).to be(false)
+    end
+
     it "does not flag benign short strings" do
       expect(described_class.secret_like?("credential_expired")).to be(false)
       expect(described_class.secret_like?("host_mount")).to be(false)

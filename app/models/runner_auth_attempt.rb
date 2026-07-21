@@ -39,12 +39,10 @@ class RunnerAuthAttempt < ApplicationRecord
   MATERIALIZE_ENV = Runners::SubscriptionAuthMaterializers::MATERIALIZE_ENV
   MATERIALIZE_NATIVE_FILE = Runners::SubscriptionAuthMaterializers::MATERIALIZE_NATIVE_FILE
   MATERIALIZE_HOST_MOUNT = Runners::SubscriptionAuthMaterializers::MATERIALIZE_HOST_MOUNT
-  MATERIALIZE_BROKER = "broker".freeze
   MATERIALIZE_UNSUPPORTED = Runners::SubscriptionAuthMaterializers::MATERIALIZE_UNSUPPORTED
   MATERIALIZATION_MODES = [
     MATERIALIZE_ENV,
     MATERIALIZE_NATIVE_FILE,
-    MATERIALIZE_BROKER,
     MATERIALIZE_HOST_MOUNT,
     MATERIALIZE_UNSUPPORTED
   ].freeze
@@ -142,7 +140,7 @@ class RunnerAuthAttempt < ApplicationRecord
     /\Axox[abprs]-[A-Za-z0-9-]{8,}\z/,         # Slack tokens
     /\Aya29\.[A-Za-z0-9_-]{8,}\z/,             # Google OAuth bearer
     /\ABearer\s+/i,                            # Authorization header prefix
-    /\ABasic\s+/i                              # Basic auth header prefix
+    /\ABasic\s+[A-Za-z0-9+\/=]{8,}\z/i         # HTTP Basic auth header
   ].freeze
 
   belongs_to :account

@@ -183,5 +183,26 @@ RSpec.describe Runners::AuthAttemptRecorder do
 
       expect(result.recorded?).to be(true)
     end
+
+    it "rolls back only the savepoint when validation fails inside an outer transaction" do
+      created_project = nil
+      recorder_result = nil
+
+      ActiveRecord::Base.transaction do
+        recorder_result = described_class.call(
+          agent_run: agent_run, project: project, backend: backend,
+          runner_key: "claude", attempt_stage: "materialization",
+          auth_source: :managed, materialization_mode: "env",
+          result: "materialized",
+          metadata: { token: "x" }
+        )
+        created_project = create(:project, account: account)
+      end
+
+      expect(recorder_result.recorded?).to be(false)
+      expect(recorder_result.error).to be_a(ActiveRecord::RecordInvalid)
+      expect(created_project).to be_persisted
+      expect(Project.exists?(created_project.id)).to be(true)
+    end
   end
 end
