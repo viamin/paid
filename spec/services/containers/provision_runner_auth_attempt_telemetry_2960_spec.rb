@@ -71,19 +71,23 @@ RSpec.describe Containers::Provision do
   end
 
   def create_remote_safe_claude_credential
+    create_claude_credential(token: JSON.generate(
+      "claudeAiOauth" => {
+        "accessToken" => "managed-access",
+        "refreshToken" => "managed-refresh",
+        "expiresAt" => 12.hours.from_now.iso8601
+      }
+    ))
+  end
+
+  def create_claude_credential(token:)
     create(
       :runner_credential,
       account: project.account,
       created_by: project.created_by,
       runner_key: "claude",
       auth_kind: "oauth_token",
-      token: JSON.generate(
-        "claudeAiOauth" => {
-          "accessToken" => "managed-access",
-          "refreshToken" => "managed-refresh",
-          "expiresAt" => 12.hours.from_now.iso8601
-        }
-      )
+      token: token
     )
   end
 
@@ -143,6 +147,28 @@ RSpec.describe Containers::Provision do
       expect(attempt).not_to be_nil
       expect(attempt.auth_source).to eq("managed")
       expect(attempt.materialization_mode).to eq("env")
+      expect(attempt.result).to eq("failed")
+      expect(attempt.failure_reason).to eq("credential_expired")
+    end
+
+    it "classifies an internally-expired non-refreshable Claude credential as managed, not host_forwarded" do
+      # Expired token (past expiresAt) + no refreshToken. Eligibility must keep
+      # it `:managed` with credential_state `:expired` (-> credential_expired)
+      # rather than reclassifying as host_forwarded (-> requires_host_bind_mount).
+      create_claude_credential(token: JSON.generate(
+        "claudeAiOauth" => { "accessToken" => "expired-unrefreshable-access", "expiresAt" => "2000-01-01T00:00:00Z" }
+      ))
+      RunnerCredential.update_all(expires_at: 1.hour.ago)
+      svc = described_class.new(agent_run: nil, project: project, backend: remote_backend)
+      stub_no_local_or_other_paths(svc)
+
+      expect {
+        svc.send(:validate_backend_mount_support!)
+      }.to raise_error(Containers::Provision::ProvisionError)
+
+      attempt = RunnerAuthAttempt.where(runner_key: "claude").last
+      expect(attempt).not_to be_nil
+      expect(attempt.auth_source).to eq("managed")
       expect(attempt.result).to eq("failed")
       expect(attempt.failure_reason).to eq("credential_expired")
     end

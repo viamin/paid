@@ -64,6 +64,32 @@ module ClaudeCredentials
 
         JSON.generate(payload)
       end
+
+      def refreshable?
+        refresh_token.present?
+      end
+
+      def redacted_metadata
+        return { "materialized" => false } if blank?
+
+        if long_lived_token?
+          return {
+            "materialized" => true,
+            "kind" => "long_lived_token",
+            "has_refresh_token" => false,
+            "has_expiry" => false
+          }
+        end
+
+        {
+          "materialized" => true,
+          "kind" => "native_credentials_json",
+          "has_refresh_token" => refreshable?,
+          "has_expiry" => expires_at.present?,
+          "subscription_type_present" => subscription_type.present?,
+          "scopes_present" => scopes.any?
+        }
+      end
     end
 
     def self.parse(secret)

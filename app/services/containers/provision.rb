@@ -902,8 +902,13 @@ module Containers
         return { refreshed: false, reason: "not_near_expiry", expiry: claude_native_credential_expiry }
       end
 
-      refreshed = refresh_claude_credentials_if_near_expiry!
-      { refreshed: !!refreshed, reason: refreshed ? "refreshed" : "refresh_failed" }
+      refresh_result = claude_subscription_auth_provider.refresh(provisioner: self)
+      { refreshed: refresh_result.performed?, reason: refresh_result.reason }
+    end
+
+    # Public boundary for subscription auth adapter delegation (RDR-041).
+    def refresh_claude_subscription_credential!
+      refresh_claude_credentials_if_near_expiry!
     end
 
     private
@@ -1193,30 +1198,8 @@ module Containers
     def seed_claude_credentials!
       source_files = %w[.credentials.json]
       return unless claude_subscription_auth?
-      if claude_managed_credentials_json.present?
-        write_container_file("/home/agent/.claude/.credentials.json", claude_managed_credentials_json)
-        log_system("container.claude_credentials_seeded", source: "managed_json")
-        record_auth_attempt!(
-          runner_key: "claude",
-          attempt_stage: RunnerAuthAttempt::STAGE_MATERIALIZATION,
-          auth_source: :managed,
-          materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_NATIVE_FILE,
-          runner_credential: claude_managed_runner_credential,
-          result: RunnerAuthAttempt::RESULT_MATERIALIZED,
-          metadata: { source: "managed_json" }
-        )
-        return
-      end
-      if claude_managed_oauth_token.present?
-        record_auth_attempt!(
-          runner_key: "claude",
-          attempt_stage: RunnerAuthAttempt::STAGE_MATERIALIZATION,
-          auth_source: :managed,
-          materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_ENV,
-          runner_credential: claude_managed_runner_credential,
-          result: RunnerAuthAttempt::RESULT_MATERIALIZED,
-          metadata: { source: "managed_env_token" }
-        )
+
+      if materialize_managed_claude_credentials!
         return
       end
 
@@ -2795,17 +2778,26 @@ module Containers
     def managed_subscription_materializable_for?(runner_key, credential: nil)
       return false unless managed_subscription_runner_auth_enabled_for?(runner_key)
 
-      parsed = parse_managed_subscription_credential(runner_key, credential: credential)
-      case runner_key.to_s
-      when "claude"
-        parsed.present? && !parsed.blank?
-      when "gemini"
-        parsed&.oauth_credentials? == true
-      when "copilot"
-        parsed&.copilot_config? == true
-      else
-        false
+      provider = subscription_auth_provider_for(runner_key)
+      secret = credential&.token.to_s.presence ||
+        managed_subscription_credential_for(runner_key, require_active: false)&.token.to_s.presence
+      if provider && secret.present?
+        status = provider.status(secret: secret)
+        # Eligibility classification tracks credential *presence*, not
+        # materializability: an expired/non-refreshable managed credential
+        # must still surface as `:managed` with credential_state `:expired` so
+        # `record_eligibility_attempts!` reports `credential_expired` instead
+        # of silently falling back to `host_forwarded`. Providers without a
+        # concrete adapter (unsupported status) defer to their legacy
+        # parsed-credential checks below.
+        return status.present? unless status.unsupported?
       end
+
+      parsed = parse_managed_subscription_credential(runner_key, credential: credential)
+      return parsed&.oauth_credentials? == true if runner_key.to_s == "gemini"
+      return parsed&.copilot_config? == true if runner_key.to_s == "copilot"
+
+      parsed.present? && !parsed.blank?
     end
 
     def managed_subscription_runner_auth_enabled_for?(runner_key)
@@ -2897,17 +2889,10 @@ module Containers
     end
 
     def claude_managed_oauth_token
-      parsed = claude_managed_secret
-      return unless parsed&.long_lived_token?
+      materialization = claude_managed_materialization
+      return unless materialization&.supported?
 
-      parsed.oauth_token.to_s.presence
-    end
-
-    def claude_managed_credentials_json
-      parsed = claude_managed_secret
-      return unless parsed&.native_credentials_json?
-
-      parsed.credentials_json
+      materialization.env["CLAUDE_CODE_OAUTH_TOKEN"].to_s.presence
     end
 
     def claude_managed_runner_credential
@@ -2922,6 +2907,43 @@ module Containers
 
       secret = claude_managed_runner_credential&.token.to_s
       @claude_managed_secret = secret.present? ? ClaudeCredentials::Secret.parse(secret) : nil
+    end
+
+    def claude_managed_materialization
+      return @claude_managed_materialization if defined?(@claude_managed_materialization)
+
+      secret = claude_managed_runner_credential&.token.to_s
+      @claude_managed_materialization =
+        if secret.present?
+          claude_subscription_auth_provider.materialize(secret: secret)
+        end
+    end
+
+    def materialize_managed_claude_credentials!
+      materialization = claude_managed_materialization
+      return false unless materialization&.supported?
+
+      materialization.files.each do |path, content|
+        write_container_file(path, content)
+      end
+
+      source = if materialization.mode == Runners::SubscriptionAuthMaterializers::MATERIALIZE_ENV
+        "managed_env_token"
+      else
+        "managed_json"
+      end
+
+      log_system("container.claude_credentials_seeded", source: source)
+      record_auth_attempt!(
+        runner_key: "claude",
+        attempt_stage: RunnerAuthAttempt::STAGE_MATERIALIZATION,
+        auth_source: :managed,
+        materialization_mode: materialization.mode,
+        runner_credential: claude_managed_runner_credential,
+        result: RunnerAuthAttempt::RESULT_MATERIALIZED,
+        metadata: materialization.redacted_metadata.merge("source" => source)
+      )
+      true
     end
 
     def gemini_subscription_auth?
@@ -3399,6 +3421,14 @@ module Containers
       yield
     ensure
       previous.nil? ? ENV.delete(key) : ENV[key] = previous
+    end
+
+    def subscription_auth_provider_for(runner_key)
+      Runners::SubscriptionAuthProviders.for_runner(runner_key)
+    end
+
+    def claude_subscription_auth_provider
+      subscription_auth_provider_for("claude")
     end
 
     # Single source of truth for the Codex heartbeat notify line used in both
