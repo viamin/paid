@@ -623,10 +623,17 @@ class RunnersController < ApplicationController
   end
 
   def preferred_auth_type_for_runner(runner_key, fallback:)
+    return "subscription" if active_managed_runner_credential_exists?(runner_key)
     return "api_key" if @api_key_runner_options.include?(runner_key) && !@subscription_runner_options.include?(runner_key)
     return "subscription" if @subscription_runner_options.include?(runner_key) && !@api_key_runner_options.include?(runner_key)
 
     fallback
+  end
+
+  def active_managed_runner_credential_exists?(runner_key)
+    return false if runner_key.blank?
+
+    current_user.account.runner_credentials.active.for_runner(runner_key).exists?
   end
 
   def apply_new_runner_defaults(runner)

@@ -112,6 +112,15 @@ RSpec.describe "Runners" do
         end
       end
 
+      it "describes managed Claude auth as preferred and local subscription mounts as local-only" do
+        get runners_path
+
+        expect(response.body).to include("Preferred: capture a managed Claude credential in Paid")
+        expect(response.body).to include("Host-mounted Codex subscription auth is local-only today")
+        expect(response.body).to include("follow-up issue <code>#2962</code>")
+        expect(response.body).to include("follow-up issue <code>#2964</code>")
+      end
+
       it "includes a KiloCode instructions block" do
         get runners_path
 
@@ -743,6 +752,18 @@ RSpec.describe "Runners" do
       expect(response.body).to include('value="api_key"')
       expect(response.body).to include('id="runner_runner_key_api_key"')
       expect(response.body).to include('option value="aider"')
+    end
+
+    it "defaults back to subscription when the requested runner already has an active managed credential" do
+      create(:provider_api_key, user: user, api_service_type: "anthropic", name: "Anthropic")
+      create(:runner_credential, account: user.account, created_by: user, runner_key: "claude", long_lived: true)
+
+      get new_runner_path(form_variant: "api_key", runner_key: "claude")
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include('value="subscription" checked="checked"')
+      expect(response.body).not_to include('value="api_key" checked="checked"')
+      expect(response.body).to include("Paid prefers it over host-mounted Claude auth")
     end
 
     it "hides openrouter_free once the user already has one configured" do

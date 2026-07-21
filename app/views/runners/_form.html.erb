@@ -87,7 +87,7 @@
     <p class="mt-2 text-xs text-gray-500">
       Need a real Claude subscription login? Use the
       <%= link_to "browser-completed Claude login flow", new_claude_login_session_path(return_to: request.fullpath), class: "font-medium text-indigo-600 hover:text-indigo-500" %>
-      to capture a managed Claude credential without host shell access.
+      to capture a managed Claude credential without host shell access. When that credential is active, Paid prefers it over host-mounted Claude auth.
     </p>
   </div>
 
