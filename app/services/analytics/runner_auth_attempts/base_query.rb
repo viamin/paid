@@ -126,16 +126,14 @@ module Analytics
         )
       end
 
-      def success_rate_sql
-        <<~SQL.squish
-          CASE WHEN COUNT(*) = 0 THEN NULL
-               ELSE (SUM(CASE WHEN result IN (#{quoted_list(RunnerAuthAttempt::SUCCESS_RESULTS)}) THEN 1 ELSE 0 END)::float / COUNT(*))
-          END
-        SQL
-      end
+      # Computes success_rate from already-aggregated success / total counts so
+      # callers don't have to drop a hand-built SQL CASE INTO the SELECT list.
+      # A zero total returns nil rather than 0/0 so dashboards can distinguish
+      # "no attempts" from "every attempt failed".
+      def success_rate(success_count:, total_count:)
+        return nil if total_count.to_i.zero?
 
-      def quoted_list(values)
-        values.map { |value| "'#{value.to_s.gsub("'", "''")}'" }.join(", ")
+        success_count.to_f / total_count
       end
     end
   end

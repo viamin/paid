@@ -22,19 +22,19 @@ module Analytics
             total_count,
             success_count,
             failure_count,
-            average_duration_ms,
-            Arel.sql(success_rate_sql).as("success_rate")
+            average_duration_ms
           )
 
-        rows.map do |runner_key, auth_source, total, success, failure, avg_duration, success_rate|
+        rows.map do |runner_key, auth_source, total, success, failure, avg_duration|
+          total_count = total.to_i
           {
             runner_key: runner_key,
             auth_source: auth_source,
-            total_count: total.to_i,
+            total_count: total_count,
             success_count: success.to_i,
             failure_count: failure.to_i,
             avg_duration_ms: avg_duration&.to_f,
-            success_rate: success_rate&.to_f
+            success_rate: success_rate(success_count: success.to_i, total_count: total_count)
           }
         end
       end

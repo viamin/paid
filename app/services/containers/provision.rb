@@ -2648,7 +2648,7 @@ module Containers
     end
 
     def subscription_auth_host_sources
-      [
+      @subscription_auth_host_sources ||= [
         { runner_key: "claude",
           host_path: claude_config_host_path,
           detected: host_only_auth_source?(claude_config_host_path, ".credentials.json", claude_local_config_path) },

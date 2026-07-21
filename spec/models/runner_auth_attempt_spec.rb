@@ -171,6 +171,21 @@ RSpec.describe RunnerAuthAttempt, type: :model do
       expect(record).not_to be_valid
       expect(record.errors[:metadata].join).to include("secret-shaped")
     end
+
+    it "flags forbidden keys at any nesting depth" do
+      record = build(:runner_auth_attempt,
+        metadata: { details: { session: "deadbeef" } })
+      expect(record).not_to be_valid
+      expect(record.errors[:metadata].join).to include("forbidden key")
+      expect(record.errors[:metadata].join).to include("details.session")
+    end
+
+    it "scans scalar leaves inside Arrays" do
+      record = build(:runner_auth_attempt,
+        metadata: { tags: [ "safe", "ghp_abcdef0123456789abcdef0123456789abcd" ] })
+      expect(record).not_to be_valid
+      expect(record.errors[:metadata].join).to include("secret-shaped")
+    end
   end
 
   describe ".secret_like?" do

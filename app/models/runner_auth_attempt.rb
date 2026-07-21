@@ -210,10 +210,11 @@ class RunnerAuthAttempt < ApplicationRecord
 
   # Returns true if `value` looks like a secret that must never be persisted
   # in runner auth telemetry. Exposed so callers (and tests) can preflight
-  # metadata before passing it in.
+  # metadata before passing it in. Expects a scalar; structured values are
+  # walked recursively by `enforce_secret_safety` before this is called, so
+  # treating a Hash/Array as "secret-like" would mask scalars nested inside.
   def self.secret_like?(value)
     return false if value.nil?
-    return true if value.is_a?(Hash) || value.is_a?(Array)
 
     text = value.to_s
     return false if text.empty?
@@ -253,35 +254,61 @@ class RunnerAuthAttempt < ApplicationRecord
   end
 
   def enforce_secret_safety
-    metadata.each do |key, value|
-      if FORBIDDEN_METADATA_KEYS.include?(key.to_s)
-        errors.add(:metadata, "contains forbidden key #{key.inspect}")
-        next
-      end
-
-      if self.class.secret_like?(value)
-        errors.add(:metadata, "contains a secret-shaped value at key #{key.inspect}")
-      end
-    end
+    scan_metadata(metadata)
   end
 
   def strip_unknown_metadata
     return unless metadata.is_a?(Hash)
 
-    self.metadata = metadata.each_with_object({}) do |(key, value), memo|
-      memo[key.to_s] = sanitize_metadata_value(value)
+    self.metadata = stringify_metadata(metadata)
+  end
+
+  # Recursively walks metadata at every key level so secret-shaped values
+  # nested inside Hashes/Arrays are caught at validation time. Iterates in two
+  # phases: every key is checked against the forbidden list, and every leaf
+  # scalar value is checked against the secret patterns. The keys themselves
+  # are matched as strings so symbol keys (the common caller convention) get
+  # the same treatment as string keys.
+  def scan_metadata(node, path: [])
+    case node
+    when Hash
+      node.each do |key, value|
+        child_path = path + [ key.to_s ]
+        if FORBIDDEN_METADATA_KEYS.include?(key.to_s)
+          errors.add(:metadata, "contains forbidden key #{format_path(child_path)}")
+        end
+        scan_metadata(value, path: child_path)
+      end
+    when Array
+      node.each_with_index do |element, index|
+        child_path = path + [ index.to_s ]
+        scan_metadata(element, path: child_path)
+      end
+    else
+      if self.class.secret_like?(node)
+        errors.add(:metadata, "contains a secret-shaped value at key #{format_path(path)}")
+      end
     end
   end
 
-  def sanitize_metadata_value(value)
-    case value
+  # Recursively stringifies metadata keys, preserving the original Hash/Array
+  # shape so nested structures round-trip unchanged. Mirrors `scan_metadata` so
+  # the two passes never disagree about what counts as a leaf.
+  def stringify_metadata(node)
+    case node
     when Hash
-      value.each_with_object({}) { |(k, v), memo| memo[k.to_s] = sanitize_metadata_value(v) }
+      node.each_with_object({}) do |(key, value), memo|
+        memo[key.to_s] = stringify_metadata(value)
+      end
     when Array
-      value.map { |element| sanitize_metadata_value(element) }
+      node.map { |element| stringify_metadata(element) }
     else
-      value
+      node
     end
+  end
+
+  def format_path(path)
+    path.join(".")
   end
 
   def project_matches_agent_run

@@ -18,8 +18,7 @@ module Analytics
             distinct_container_host_count.as("container_host_count"),
             average_duration_ms.as("avg_duration_ms"),
             Arel.sql("COUNT(DISTINCT agent_run_id) AS linked_agent_run_count"),
-            Arel.sql("COUNT(DISTINCT runner_credential_id) AS linked_runner_credential_count"),
-            Arel.sql(success_rate_sql).as("success_rate")
+            Arel.sql("COUNT(DISTINCT runner_credential_id) AS linked_runner_credential_count")
           )
           .take
 
@@ -36,7 +35,10 @@ module Analytics
           linked_agent_run_count: row.linked_agent_run_count.to_i,
           linked_runner_credential_count: row.linked_runner_credential_count.to_i,
           avg_duration_ms: row.avg_duration_ms&.to_f,
-          success_rate: row.success_rate&.to_f
+          success_rate: success_rate(
+            success_count: row.success_count.to_i,
+            total_count: row.total_count.to_i
+          )
         }
       end
 
