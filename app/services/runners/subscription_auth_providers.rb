@@ -41,7 +41,7 @@ module Runners
       end
 
       def materializable?
-        valid?
+        valid? || (expired? && refreshable?)
       end
 
       def refreshable?

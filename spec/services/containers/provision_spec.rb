@@ -4437,6 +4437,31 @@ RSpec.describe Containers::Provision do
         expect(service).not_to have_received(:seed_host_credentials!)
         expect(service).not_to have_received(:seed_local_credentials!)
       end
+
+      it "materializes expired but refreshable managed native credentials into the container" do
+        create(
+          :runner_credential,
+          account: project.account,
+          created_by: project.created_by,
+          runner_key: "claude",
+          auth_kind: "oauth_token",
+          token: file_fixture("claude_credentials_expired.json").read
+        )
+        allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return(nil)
+        allow(service).to receive(:claude_local_config_path).and_return(nil)
+        allow(service).to receive(:write_container_file)
+        allow(service).to receive(:log_system)
+
+        service.send(:seed_claude_credentials!)
+
+        expect(service).not_to have_received(:refresh_claude_credentials_if_near_expiry!)
+        expect(service).not_to have_received(:seed_host_credentials!)
+        expect(service).not_to have_received(:seed_local_credentials!)
+        expect(service).to have_received(:write_container_file).with(
+          "/home/agent/.claude/.credentials.json",
+          include("expired-access-token")
+        )
+      end
     end
   end
 

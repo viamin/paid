@@ -59,15 +59,18 @@ RSpec.describe Runners::SubscriptionAuthProviders, :no_db do
       expect(materialization.files.fetch("/home/agent/.claude/.credentials.json")).to include("valid-access-token")
     end
 
-    it "classifies expired native credentials as expired" do
+    it "classifies expired native credentials as expired but still materializable when refreshable" do
       status = claude_provider.status(secret: expired_credentials)
       materialization = claude_provider.materialize(secret: expired_credentials)
 
       expect(status).to be_expired
       expect(status.refreshable?).to be(true)
       expect(status.error).to eq("expired")
-      expect(materialization.supported?).to be(false)
-      expect(materialization.error).to eq("expired")
+      expect(status.materializable?).to be(true)
+      expect(materialization.supported?).to be(true)
+      expect(materialization.mode).to eq("native_file")
+      expect(materialization.files.keys).to contain_exactly("/home/agent/.claude/.credentials.json")
+      expect(materialization.files.fetch("/home/agent/.claude/.credentials.json")).to include("expired-access-token")
     end
 
     it "classifies native credentials without a refresh token as unrefreshable but still valid" do
