@@ -14,6 +14,7 @@ module Runners
 
     def call
       provider = user&.provider_for(runner)
+      auth_type = effective_auth_type_for(provider)
 
       # Resolve, in priority order:
       #   1. runner.tier_models   — structured tier→{model_id, provider_id}
@@ -25,45 +26,46 @@ module Runners
       #      the capability_score default (#2968).
       #   4. DefaultTierModelIds — highest capability_score in the LlmModel
       #      catalog, gated by the runner's actual auth_type.
-      resolve_tier_models_entry(runner.tier_models[tier], source: "runner") ||
-        resolve_tier_models_entry(provider&.tier_models&.dig(tier), source: "provider") ||
-        resolve_tier_model_id(runner.tier_model_ids&.dig(tier), provider_id: provider&.id, source: "runner") ||
-        resolve_tier_model_id(provider&.tier_model_ids&.dig(tier), provider_id: provider&.id, source: "provider") ||
-        resolve_default(provider)
+      resolve_tier_models_entry(runner.tier_models[tier], source: "runner", auth_type: auth_type) ||
+        resolve_tier_models_entry(provider&.tier_models&.dig(tier), source: "provider", auth_type: auth_type) ||
+        resolve_tier_model_id(runner.tier_model_ids&.dig(tier), provider_id: provider&.id, source: "runner", auth_type: auth_type) ||
+        resolve_tier_model_id(provider&.tier_model_ids&.dig(tier), provider_id: provider&.id, source: "provider", auth_type: auth_type) ||
+        resolve_default(provider, auth_type: auth_type)
     end
 
     private
 
     attr_reader :runner, :tier, :user
 
-    def resolve_tier_models_entry(entry, source:)
+    def resolve_tier_models_entry(entry, source:, auth_type:)
       return nil if entry.blank?
 
       resolve_candidate(
         model_id: entry.fetch("model_id"),
         provider_id: entry["provider_id"],
-        source: source
+        source: source,
+        auth_type: auth_type
       )
     end
 
-    def resolve_tier_model_id(model_id, provider_id:, source:)
+    def resolve_tier_model_id(model_id, provider_id:, source:, auth_type:)
       return nil if model_id.blank?
 
-      resolve_candidate(model_id: model_id, provider_id: provider_id, source: source)
+      resolve_candidate(model_id: model_id, provider_id: provider_id, source: source, auth_type: auth_type)
     end
 
-    def resolve_candidate(model_id:, provider_id:, source:)
-      compat = compatibility_for(model_id)
-      log_incompatibility_if_unsupported(compat, model_id: model_id, source: source)
+    def resolve_candidate(model_id:, provider_id:, source:, auth_type:)
+      compat = compatibility_for(model_id, auth_type: auth_type)
+      log_incompatibility_if_unsupported(compat, model_id: model_id, source: source, auth_type: auth_type)
       return failure_result(incompatibility_message(model_id, compat)) if compat.unsupported?
 
       Result.new(model_id: model_id, provider_id: provider_id, source: source)
     end
 
-    def resolve_default(provider)
+    def resolve_default(provider, auth_type:)
       default_model_id = DefaultTierModelIds.call(
         runner_key: runner.runner_key,
-        auth_type: runner.auth_type
+        auth_type: auth_type
       )[tier]
       return failure_result("no model configured for #{runner.runner_key} at #{tier}") if default_model_id.blank?
 
@@ -74,15 +76,15 @@ module Runners
       )
     end
 
-    def compatibility_for(model_id)
+    def compatibility_for(model_id, auth_type:)
       ModelCompatibility.call(
         runner_key: runner.runner_key,
         model_id: model_id,
-        auth_type: runner.auth_type
+        auth_type: auth_type
       )
     end
 
-    def log_incompatibility_if_unsupported(compat, model_id:, source:)
+    def log_incompatibility_if_unsupported(compat, model_id:, source:, auth_type:)
       return unless compat.unsupported?
 
       Rails.logger.warn(
@@ -90,13 +92,17 @@ module Runners
         runner_key: runner.runner_key,
         runner_id: runner.id,
         model_id: model_id,
-        auth_type: runner.auth_type,
+        auth_type: auth_type,
         tier: tier,
         source: source,
         incompatibility_type: compat.incompatibility_type,
         reason: compat.reason,
         replacement_model_id: compat.replacement_model_id
       )
+    end
+
+    def effective_auth_type_for(provider)
+      provider&.auth_type.presence || runner.auth_type.to_s.presence || DefaultTierModelIds::DEFAULT_AUTH_TYPE
     end
 
     def incompatibility_message(model_id, compat)

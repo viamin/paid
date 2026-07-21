@@ -119,6 +119,18 @@ RSpec.describe Runners::ResolveTierModel do
         expect(result.model_id).to eq("gpt-5.2-codex")
         expect(result.source).to eq("default")
       end
+
+      it "uses the matched provider auth_type for bare runner candidates" do
+        create(:provider, user: user, provider_key: "codex", auth_type: "subscription", tier_models: {}, tier_model_ids: {})
+        create(:llm_model, :openai, model_id: "gpt-5.5-pro", tier: "high", capability_score: 9.9)
+        create(:llm_model, :openai, model_id: "gpt-5.2-codex", tier: "high", capability_score: 9.0)
+
+        result = described_class.call(runner: Runner.new(runner_key: "codex"), tier: "high", user: user)
+
+        expect(result).to be_success
+        expect(result.model_id).to eq("gpt-5.2-codex")
+        expect(result.source).to eq("default")
+      end
     end
 
     context "when the runner tier mapping specifies a gpt-5.5 model" do

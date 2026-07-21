@@ -925,8 +925,12 @@ module Activities
       return true if runner_entry&.supports_tier?(tier)
 
       resolution_runner = runner_entry || Runner.new(runner_key: runner_key)
-      return true if user&.provider_for(resolution_runner)&.supports_tier?(tier)
-      return true if Runners::DefaultTierModelIds.call(runner_key: runner_key)[tier].present?
+      provider = user&.provider_for(resolution_runner)
+      return true if provider&.supports_tier?(tier)
+
+      effective_auth_type = provider&.auth_type.presence || resolution_runner.auth_type.to_s.presence ||
+        Runners::DefaultTierModelIds::DEFAULT_AUTH_TYPE
+      return true if Runners::DefaultTierModelIds.call(runner_key: runner_key, auth_type: effective_auth_type)[tier].present?
 
       false
     end
