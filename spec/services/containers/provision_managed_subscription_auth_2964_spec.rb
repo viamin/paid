@@ -51,8 +51,36 @@ RSpec.describe Containers::Provision do
     )
   end
 
+  def stub_managed_subscription_runner_auth(enabled)
+    allow(FeatureFlags).to receive(:enabled?)
+      .with(:managed_subscription_runner_auth, project: project)
+      .and_return(enabled)
+  end
+
+  def with_temp_config_dir(prefix:, file_name:)
+    dir = Dir.mktmpdir(prefix)
+    File.write(File.join(dir, file_name), "{}")
+    yield dir
+  ensure
+    FileUtils.rm_rf(dir) if dir
+  end
+
+  def expect_host_forwarded_materialization(svc:, seed_method:, runner_key:)
+    allow(svc).to receive(:write_container_file)
+
+    svc.send(seed_method)
+
+    expect(svc).not_to have_received(:write_container_file)
+    attempt = RunnerAuthAttempt.where(attempt_stage: "materialization", runner_key: runner_key).last
+    expect(attempt).not_to be_nil
+    expect(attempt.auth_source).to eq("host_forwarded")
+    expect(attempt.materialization_mode).to eq("host_mount")
+    expect(attempt.result).to eq("materialized")
+  end
+
   shared_examples "managed native-file materialization" do |runner_key:, seed_method:, native_path:, token_value:|
     it "writes the minimal native config and records a managed materialization row" do
+      stub_managed_subscription_runner_auth(true)
       credential = create_managed_credential(runner_key: runner_key, token: send("#{runner_key}_payload"))
 
       svc = described_class.new(agent_run: agent_run, project: project, backend: local_backend)
@@ -75,6 +103,7 @@ RSpec.describe Containers::Provision do
     end
 
     it "records no secrets in the materialization telemetry row" do
+      stub_managed_subscription_runner_auth(true)
       create_managed_credential(runner_key: runner_key, token: send("#{runner_key}_payload"))
 
       svc = described_class.new(agent_run: agent_run, project: project, backend: local_backend)
@@ -99,9 +128,8 @@ RSpec.describe Containers::Provision do
       token_value: "ya29.managed-gemini-access"
 
     it "falls back to host_forwarded telemetry when no managed credential exists" do
-      host_dir = Dir.mktmpdir("gemini-host")
-      begin
-        File.write(File.join(host_dir, "oauth_creds.json"), "{}")
+      stub_managed_subscription_runner_auth(true)
+      with_temp_config_dir(prefix: "gemini-host", file_name: "oauth_creds.json") do |host_dir|
         svc = described_class.new(agent_run: agent_run, project: project, backend: local_backend)
         allow(svc).to receive_messages(
           gemini_managed_secret: nil,
@@ -111,15 +139,31 @@ RSpec.describe Containers::Provision do
           log_system: nil
         )
 
-        svc.send(:seed_gemini_credentials!)
+        expect_host_forwarded_materialization(
+          svc: svc,
+          seed_method: :seed_gemini_credentials!,
+          runner_key: "gemini"
+        )
+      end
+    end
 
-        attempt = RunnerAuthAttempt.where(attempt_stage: "materialization", runner_key: "gemini").last
-        expect(attempt).not_to be_nil
-        expect(attempt.auth_source).to eq("host_forwarded")
-        expect(attempt.materialization_mode).to eq("host_mount")
-        expect(attempt.result).to eq("materialized")
-      ensure
-        FileUtils.rm_rf(host_dir)
+    it "keeps the legacy host-forwarded path when the rollout flag is disabled" do
+      stub_managed_subscription_runner_auth(false)
+      create_managed_credential(runner_key: "gemini", token: gemini_payload)
+      with_temp_config_dir(prefix: "gemini-host", file_name: "oauth_creds.json") do |host_dir|
+        svc = described_class.new(agent_run: agent_run, project: project, backend: local_backend)
+        allow(svc).to receive_messages(
+          gemini_config_host_path: host_dir,
+          gemini_local_config_path: nil,
+          seed_host_credentials!: true,
+          log_system: nil
+        )
+
+        expect_host_forwarded_materialization(
+          svc: svc,
+          seed_method: :seed_gemini_credentials!,
+          runner_key: "gemini"
+        )
       end
     end
   end
@@ -132,9 +176,8 @@ RSpec.describe Containers::Provision do
       token_value: "tid=managed-copilot-oauth"
 
     it "falls back to host_forwarded telemetry when no managed credential exists" do
-      host_dir = Dir.mktmpdir("copilot-host")
-      begin
-        File.write(File.join(host_dir, "config.json"), "{}")
+      stub_managed_subscription_runner_auth(true)
+      with_temp_config_dir(prefix: "copilot-host", file_name: "config.json") do |host_dir|
         svc = described_class.new(agent_run: agent_run, project: project, backend: local_backend)
         allow(svc).to receive_messages(
           copilot_managed_secret: nil,
@@ -144,21 +187,38 @@ RSpec.describe Containers::Provision do
           log_system: nil
         )
 
-        svc.send(:seed_copilot_credentials!)
+        expect_host_forwarded_materialization(
+          svc: svc,
+          seed_method: :seed_copilot_credentials!,
+          runner_key: "copilot"
+        )
+      end
+    end
 
-        attempt = RunnerAuthAttempt.where(attempt_stage: "materialization", runner_key: "copilot").last
-        expect(attempt).not_to be_nil
-        expect(attempt.auth_source).to eq("host_forwarded")
-        expect(attempt.materialization_mode).to eq("host_mount")
-        expect(attempt.result).to eq("materialized")
-      ensure
-        FileUtils.rm_rf(host_dir)
+    it "keeps the legacy host-forwarded path when the rollout flag is disabled" do
+      stub_managed_subscription_runner_auth(false)
+      create_managed_credential(runner_key: "copilot", token: copilot_payload)
+      with_temp_config_dir(prefix: "copilot-host", file_name: "config.json") do |host_dir|
+        svc = described_class.new(agent_run: agent_run, project: project, backend: local_backend)
+        allow(svc).to receive_messages(
+          copilot_config_host_path: host_dir,
+          copilot_local_config_path: nil,
+          seed_host_credentials!: true,
+          log_system: nil
+        )
+
+        expect_host_forwarded_materialization(
+          svc: svc,
+          seed_method: :seed_copilot_credentials!,
+          runner_key: "copilot"
+        )
       end
     end
   end
 
   describe "subscription_auth? predicate" do
     it "treats a managed Gemini credential as subscription auth even without host files" do
+      stub_managed_subscription_runner_auth(true)
       create_managed_credential(runner_key: "gemini", token: gemini_payload)
       svc = described_class.new(agent_run: agent_run, project: project, backend: local_backend)
       allow(svc).to receive_messages(gemini_config_host_path: nil, gemini_local_config_path: nil)
@@ -167,19 +227,36 @@ RSpec.describe Containers::Provision do
     end
 
     it "treats a managed Copilot credential as subscription auth even without host files" do
+      stub_managed_subscription_runner_auth(true)
       create_managed_credential(runner_key: "copilot", token: copilot_payload)
       svc = described_class.new(agent_run: agent_run, project: project, backend: local_backend)
       allow(svc).to receive_messages(copilot_config_host_path: nil, copilot_local_config_path: nil)
 
       expect(svc.send(:copilot_subscription_auth?)).to be(true)
     end
+
+    it "does not treat a managed Gemini credential as subscription auth while the rollout flag is disabled" do
+      stub_managed_subscription_runner_auth(false)
+      create_managed_credential(runner_key: "gemini", token: gemini_payload)
+      svc = described_class.new(agent_run: agent_run, project: project, backend: local_backend)
+      allow(svc).to receive_messages(gemini_config_host_path: nil, gemini_local_config_path: nil)
+
+      expect(svc.send(:gemini_subscription_auth?)).to be(false)
+    end
+
+    it "does not treat a managed Copilot credential as subscription auth while the rollout flag is disabled" do
+      stub_managed_subscription_runner_auth(false)
+      create_managed_credential(runner_key: "copilot", token: copilot_payload)
+      svc = described_class.new(agent_run: agent_run, project: project, backend: local_backend)
+      allow(svc).to receive_messages(copilot_config_host_path: nil, copilot_local_config_path: nil)
+
+      expect(svc.send(:copilot_subscription_auth?)).to be(false)
+    end
   end
 
   describe "managed remote-safe gating" do
     before do
-      allow(FeatureFlags).to receive(:enabled?)
-        .with(:managed_subscription_runner_auth, project: project)
-        .and_return(flag_enabled)
+      stub_managed_subscription_runner_auth(flag_enabled)
     end
 
     context "when the rollout flag is disabled" do
@@ -211,9 +288,7 @@ RSpec.describe Containers::Provision do
 
   describe "eligibility telemetry auth source" do
     before do
-      allow(FeatureFlags).to receive(:enabled?)
-        .with(:managed_subscription_runner_auth, project: project)
-        .and_return(flag_enabled)
+      stub_managed_subscription_runner_auth(flag_enabled)
     end
 
     let(:flag_enabled) { true }
@@ -233,9 +308,7 @@ RSpec.describe Containers::Provision do
 
     it "keeps Copilot host-forwarded while the rollout flag is disabled" do
       create_managed_credential(runner_key: "copilot", token: copilot_payload)
-      allow(FeatureFlags).to receive(:enabled?)
-        .with(:managed_subscription_runner_auth, project: project)
-        .and_return(false)
+      stub_managed_subscription_runner_auth(false)
       svc = described_class.new(agent_run: agent_run, project: project, backend: local_backend)
       allow(svc).to receive(:subscription_auth_host_sources).and_return([ { runner_key: "copilot", host_path: "/host/.copilot", detected: true } ])
 

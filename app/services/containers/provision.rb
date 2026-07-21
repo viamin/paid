@@ -1613,7 +1613,7 @@ module Containers
 
     def seed_gemini_credentials!
       return unless gemini_subscription_auth?
-      if gemini_managed_oauth_creds_json.present?
+      if managed_subscription_runner_auth_enabled_for?("gemini") && gemini_managed_oauth_creds_json.present?
         write_container_file("/home/agent/.gemini/oauth_creds.json", gemini_managed_oauth_creds_json)
         log_system("container.gemini_credentials_seeded", source: "managed_native_config")
         record_auth_attempt!(
@@ -1673,7 +1673,7 @@ module Containers
 
     def seed_copilot_credentials!
       return unless copilot_subscription_auth?
-      if copilot_managed_config_json.present?
+      if managed_subscription_runner_auth_enabled_for?("copilot") && copilot_managed_config_json.present?
         write_container_file("/home/agent/.copilot/config.json", copilot_managed_config_json)
         log_system("container.copilot_credentials_seeded", source: "managed_native_config")
         record_auth_attempt!(
@@ -2925,7 +2925,9 @@ module Containers
     end
 
     def gemini_subscription_auth?
-      return true if gemini_managed_secret && !gemini_managed_secret.blank?
+      if managed_subscription_runner_auth_enabled_for?("gemini")
+        return true if gemini_managed_secret && !gemini_managed_secret.blank?
+      end
 
       paths = [ gemini_config_host_path, gemini_local_config_path ].compact
       paths.any? { |base| File.file?(File.join(base, "oauth_creds.json")) }
@@ -3420,7 +3422,9 @@ module Containers
     end
 
     def copilot_subscription_auth?
-      return true if copilot_managed_secret && !copilot_managed_secret.blank?
+      if managed_subscription_runner_auth_enabled_for?("copilot")
+        return true if copilot_managed_secret && !copilot_managed_secret.blank?
+      end
 
       paths = [ copilot_config_host_path, copilot_local_config_path ].compact
       paths.any? { |base| File.file?(File.join(base, "config.json")) }
