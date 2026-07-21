@@ -2890,13 +2890,6 @@ module Containers
       materialization.env["CLAUDE_CODE_OAUTH_TOKEN"].to_s.presence
     end
 
-    def claude_managed_credentials_json
-      materialization = claude_managed_materialization
-      return unless materialization&.supported?
-
-      materialization.files["/home/agent/.claude/.credentials.json"].to_s.presence
-    end
-
     def claude_managed_runner_credential
       return @claude_managed_runner_credential if defined?(@claude_managed_runner_credential)
 
