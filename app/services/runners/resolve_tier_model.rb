@@ -14,27 +14,57 @@ module Runners
 
     def call
       provider = user&.provider_for(runner)
-      runner_entry = runner.tier_models[tier]
-      if runner_entry.present?
-        model_id = runner_entry.fetch("model_id")
-        compat = compatibility_for(model_id)
-        log_incompatibility_if_unsupported(compat, model_id: model_id, source: "runner")
-        return failure_result(incompatibility_message(model_id, compat)) if compat.unsupported?
 
-        return success_result(runner_entry, source: "runner")
-      end
+      # Resolve, in priority order:
+      #   1. runner.tier_models   — structured tier→{model_id, provider_id}
+      #   2. provider.tier_models — same shape on the user's provider entry
+      #   3. runner.tier_model_ids / provider.tier_model_ids — the only tier→model
+      #      column the admin UI writes. Must be honored for ALL runner types,
+      #      not just direct-outbound runners whose tier_models was backfilled,
+      #      otherwise admin edits are silently ignored and resolution drifts to
+      #      the capability_score default (#2968).
+      #   4. DefaultTierModelIds — highest capability_score in the LlmModel
+      #      catalog, gated by the runner's actual auth_type.
+      resolve_tier_models_entry(runner.tier_models[tier], source: "runner") ||
+        resolve_tier_models_entry(provider&.tier_models&.dig(tier), source: "provider") ||
+        resolve_tier_model_id(runner.tier_model_ids&.dig(tier), provider_id: provider&.id, source: "runner") ||
+        resolve_tier_model_id(provider&.tier_model_ids&.dig(tier), provider_id: provider&.id, source: "provider") ||
+        resolve_default(provider)
+    end
 
-      provider_entry = provider&.tier_models&.dig(tier)
-      if provider_entry.present?
-        model_id = provider_entry.fetch("model_id")
-        compat = compatibility_for(model_id)
-        log_incompatibility_if_unsupported(compat, model_id: model_id, source: "provider")
-        return failure_result(incompatibility_message(model_id, compat)) if compat.unsupported?
+    private
 
-        return success_result(provider_entry, source: "provider")
-      end
+    attr_reader :runner, :tier, :user
 
-      default_model_id = DefaultTierModelIds.call(runner_key: runner.runner_key)[tier]
+    def resolve_tier_models_entry(entry, source:)
+      return nil if entry.blank?
+
+      resolve_candidate(
+        model_id: entry.fetch("model_id"),
+        provider_id: entry["provider_id"],
+        source: source
+      )
+    end
+
+    def resolve_tier_model_id(model_id, provider_id:, source:)
+      return nil if model_id.blank?
+
+      resolve_candidate(model_id: model_id, provider_id: provider_id, source: source)
+    end
+
+    def resolve_candidate(model_id:, provider_id:, source:)
+      compat = compatibility_for(model_id)
+      log_incompatibility_if_unsupported(compat, model_id: model_id, source: source)
+      return failure_result(incompatibility_message(model_id, compat)) if compat.unsupported?
+
+      Result.new(model_id: model_id, provider_id: provider_id, source: source)
+    end
+
+    def resolve_default(provider)
+      default_model_id = DefaultTierModelIds.call(
+        runner_key: runner.runner_key,
+        auth_type: runner.auth_type
+      )[tier]
       return failure_result("no model configured for #{runner.runner_key} at #{tier}") if default_model_id.blank?
 
       Result.new(
@@ -43,10 +73,6 @@ module Runners
         source: "default"
       )
     end
-
-    private
-
-    attr_reader :runner, :tier, :user
 
     def compatibility_for(model_id)
       ModelCompatibility.call(
@@ -76,14 +102,6 @@ module Runners
     def incompatibility_message(model_id, compat)
       base = "model '#{model_id}' is not compatible with runner '#{runner.runner_key}' at tier '#{tier}'"
       compat.reason.present? ? "#{base}: #{compat.reason}" : base
-    end
-
-    def success_result(entry, source:)
-      Result.new(
-        model_id: entry.fetch("model_id"),
-        provider_id: entry.fetch("provider_id"),
-        source: source
-      )
     end
 
     def failure_result(error)

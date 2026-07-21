@@ -68,6 +68,59 @@ RSpec.describe Runners::ResolveTierModel do
       expect(result.error).to eq("no model configured for #{runner_key} at high")
     end
 
+    context "when tier_models is empty but tier_model_ids is configured" do
+      it "honors the runner tier_model_ids mapping instead of drifting to the default" do
+        create(:llm_model, :openai, model_id: "gpt-5-codex", tier: "high", capability_score: 8.0)
+        # A higher-capability default candidate that must NOT win over the
+        # admin-configured value.
+        create(:llm_model, :openai, model_id: "gpt-5.5-pro", tier: "high", capability_score: 9.9)
+        runner.update!(tier_model_ids: { "high" => "gpt-5-codex" })
+
+        result = described_class.call(runner: runner, tier: "high", user: user)
+
+        expect(result).to be_success
+        expect(result.model_id).to eq("gpt-5-codex")
+        expect(result.source).to eq("runner")
+      end
+
+      it "honors the provider tier_model_ids mapping when the runner has none" do
+        create(:llm_model, :openai, model_id: "gpt-5-codex", tier: "high", capability_score: 8.0)
+        provider_runner = Runner.new(runner_key: runner_key)
+        provider = create(
+          :provider,
+          user: user,
+          provider_key: runner_key,
+          auth_type: "subscription",
+          tier_model_ids: { "high" => "gpt-5-codex" }
+        )
+
+        result = described_class.call(runner: provider_runner, tier: "high", user: user)
+
+        expect(result).to be_success
+        expect(result.model_id).to eq("gpt-5-codex")
+        expect(result.source).to eq("provider")
+        expect(result.provider_id).to eq(provider.id)
+      end
+    end
+
+    context "when falling back to the default under subscription auth" do
+      it "filters auth-mode-incompatible default models using the runner's actual auth_type" do
+        subscription_runner = create(:provider, user: user, provider_key: "codex",
+                                                auth_type: "subscription", tier_models: {},
+                                                tier_model_ids: {})
+        # gpt-5.5-pro is api_key-only; it must be filtered under subscription
+        # so the run does not dispatch an incompatible model (#2968).
+        create(:llm_model, :openai, model_id: "gpt-5.5-pro", tier: "high", capability_score: 9.9)
+        create(:llm_model, :openai, model_id: "gpt-5.2-codex", tier: "high", capability_score: 9.0)
+
+        result = described_class.call(runner: subscription_runner, tier: "high", user: user)
+
+        expect(result).to be_success
+        expect(result.model_id).to eq("gpt-5.2-codex")
+        expect(result.source).to eq("default")
+      end
+    end
+
     context "when the runner tier mapping specifies a gpt-5.5 model" do
       before do
         runner.update_columns(tier_models: {
