@@ -40,6 +40,21 @@ module Runners
         state == :unsupported
       end
 
+      def blank?
+        state == :blank
+      end
+
+      # Tracks credential *presence* rather than materializability. Eligibility
+      # classification (Containers::Provision#record_eligibility_attempts!)
+      # needs any non-blank managed credential to surface as `:managed` so an
+      # expired/non-refreshable credential still reports `credential_state:
+      # :expired` instead of silently falling back to `host_forwarded`. A
+      # malformed credential is present-but-unusable, so it is included here;
+      # the materialization path still rejects it via `materializable?`.
+      def present?
+        !blank? && !unsupported?
+      end
+
       def materializable?
         valid? || (expired? && refreshable?)
       end
@@ -221,10 +236,16 @@ module Runners
       end
 
       def refresh(provisioner:)
-        performed = provisioner.send(:refresh_claude_credentials_if_near_expiry!)
+        # `refresh_claude_credentials_if_near_expiry!` never returns literal
+        # `true`: it returns `nil` on early-exit paths and an
+        # `AuthAttemptRecorder::Result` when a refresh runs. Coerce to a
+        # boolean so the contract (and keep-warm telemetry) reflects whether a
+        # refresh attempt actually executed, matching the previous `!!refreshed`
+        # inline coercion.
+        performed = !!provisioner.send(:refresh_claude_credentials_if_near_expiry!)
         Result.new(
           supported: true,
-          performed: performed == true,
+          performed: performed,
           reason: performed ? "refreshed" : "refresh_failed"
         )
       end

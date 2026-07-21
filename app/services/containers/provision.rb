@@ -2774,17 +2774,25 @@ module Containers
       return false unless managed_subscription_runner_auth_enabled_for?(runner_key)
 
       provider = subscription_auth_provider_for(runner_key)
-      if provider
-        secret = credential&.token.to_s.presence ||
-          managed_subscription_credential_for(runner_key, require_active: false)&.token.to_s.presence
-        return provider.status(secret: secret).materializable? if secret.present?
+      secret = credential&.token.to_s.presence ||
+        managed_subscription_credential_for(runner_key, require_active: false)&.token.to_s.presence
+      if provider && secret.present?
+        status = provider.status(secret: secret)
+        # Eligibility classification tracks credential *presence*, not
+        # materializability: an expired/non-refreshable managed credential
+        # must still surface as `:managed` with credential_state `:expired` so
+        # `record_eligibility_attempts!` reports `credential_expired` instead
+        # of silently falling back to `host_forwarded`. Providers without a
+        # concrete adapter (unsupported status) defer to their legacy
+        # parsed-credential checks below.
+        return status.present? unless status.unsupported?
       end
 
       parsed = parse_managed_subscription_credential(runner_key, credential: credential)
       return parsed&.oauth_credentials? == true if runner_key.to_s == "gemini"
       return parsed&.copilot_config? == true if runner_key.to_s == "copilot"
 
-      false
+      parsed.present? && !parsed.blank?
     end
 
     def managed_subscription_runner_auth_enabled_for?(runner_key)
