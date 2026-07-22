@@ -5,8 +5,10 @@ require "docker-api"
 module Containers
   module Backends
     class LocalDocker < Base
-      def identifier
-        "local"
+      attr_reader :identifier
+
+      def initialize(identifier: Containers::LOCAL_BACKEND_KEY.to_s)
+        @identifier = identifier.to_s
       end
 
       def ping

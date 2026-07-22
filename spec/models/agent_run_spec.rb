@@ -1861,6 +1861,7 @@ RSpec.describe AgentRun do
           expect(Containers::Provision).to receive(:new).with(
             agent_run: agent_run,
             worktree_path: worktree_path,
+            backend: Containers.backend_for(agent_run.container_host),
             memory_bytes: 1024 * 1024 * 1024
           ).and_call_original
 

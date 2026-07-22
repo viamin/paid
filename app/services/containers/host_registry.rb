@@ -116,7 +116,7 @@ module Containers
     def build_backend(identifier, raw_config)
       case raw_config.fetch("type", nil).to_s
       when "local"
-        Containers::Backends::LocalDocker.new
+        Containers::Backends::LocalDocker.new(identifier: identifier.to_s)
       when "remote"
         Containers::Backends::RemoteDocker.new(
           host: raw_config.fetch("host"),
