@@ -11,6 +11,17 @@ services:
     volumes:
       - ./prometheus:/etc/prometheus:ro
       - prometheus-data:/prometheus
+    # /etc/prometheus/metrics_token is consumed by the `paid` scrape job's
+      # `authorization.credentials_file`. The token file at
+      # ${METRICS_TOKEN_FILE:-./prometheus/metrics_token} is created from the
+      # host's METRICS_TOKEN environment variable; when METRICS_TOKEN is
+      # unset the file is empty so the Bearer header is sent blank and the
+      # Rails side (which only enforces the token when METRICS_TOKEN is
+      # set) accepts the scrape unauthenticated.
+    secrets:
+      - source: metrics_token
+        target: /etc/prometheus/metrics_token
+        mode: 0444
     ports:
       - "9090:9090"
     networks:
@@ -99,6 +110,15 @@ services:
 volumes:
   prometheus-data:
   grafana-data:
+
+secrets:
+  # `docker compose` requires the source file to exist on the host when the
+  # stack starts. ./prometheus/metrics_token is committed as an empty file
+  # so the default `docker compose --profile observability up` flow works
+  # without any operator action. bin/setup materializes the real token into
+  # this path from the host's METRICS_TOKEN environment variable.
+  metrics_token:
+    file: ${METRICS_TOKEN_FILE:-./prometheus/metrics_token}
 
 networks:
   paid_internal:

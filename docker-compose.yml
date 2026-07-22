@@ -80,6 +80,12 @@ services:
       REDIS_URL: redis://redis:6379/0
       TEMPORAL_HOST: temporal:7233
       PAID_PROXY_PORT: "3000"
+      # Optional bearer token for /api/metrics. When set, the Rails app
+      # requires `Authorization: Bearer ${METRICS_TOKEN}` on the metrics
+      # endpoint. The docker-compose.observability.yml overlay wires the
+      # same value into the Prometheus scraper via a secret mount, so the
+      # two stay in sync.
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
       # Set CLAUDE_CONFIG_DIR to the Docker-host path to ~/.claude/ for subscription auth.
       # When set, agent containers mount this directory and use native Claude Code auth.
       # When unset, falls back to API key mode (set ANTHROPIC_API_KEY in Rails credentials).

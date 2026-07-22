@@ -67,6 +67,17 @@ FileUtils.chdir APP_ROOT do
   puts "\n== Checking Qdrant connectivity =="
   system "bin/rails qdrant:check"
 
+  puts "\n== Materializing Prometheus metrics token =="
+  # docker-compose.observability.yml binds ./prometheus/metrics_token into
+  # the Prometheus container as a `secrets:` source. The Rails app reads
+  # METRICS_TOKEN from the environment to decide whether /api/metrics
+  # requires a Bearer header. When METRICS_TOKEN is set, mirror it into
+  # the file so the scraper picks up the same value. When unset, leave the
+  # file empty so Prometheus sends a blank Bearer header (which the Rails
+  # side accepts because the auth check is gated on ENV presence).
+  token_path = File.join(APP_ROOT, "prometheus", "metrics_token")
+  File.write(token_path, ENV.fetch("METRICS_TOKEN", ""))
+
   puts "\n== Building agent container image =="
   system! "scripts/build-agent-image.sh"
 

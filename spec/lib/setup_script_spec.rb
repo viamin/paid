@@ -38,6 +38,41 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "writes the metrics token file from METRICS_TOKEN so Prometheus scrape auth stays in sync" do
+    # Regression guard: docker-compose.observability.yml mounts
+    # ./prometheus/metrics_token into the Prometheus container at the path
+    # referenced by the `paid` scrape job's authorization.credentials_file.
+    # bin/setup materializes that file from the host's METRICS_TOKEN env var
+    # so the value matches what docker-compose.yml propagates into the web
+    # service (which the Rails side reads to decide whether to enforce auth).
+    Dir.mktmpdir("setup-script-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+      env = setup_script_env(dir).merge("METRICS_TOKEN" => "test-scraper-token")
+
+      Open3.capture3(env, script_path, "--skip-server", chdir: dir)
+
+      token_path = File.join(dir, "prometheus", "metrics_token")
+      expect(File.read(token_path)).to eq("test-scraper-token")
+    end
+  end
+
+  it "leaves the metrics token file empty when METRICS_TOKEN is unset" do
+    # When METRICS_TOKEN is unset the scraper sends a blank Bearer header
+    # and the Rails side skips its auth check, so the token file must be
+    # empty (not absent — docker compose secrets: with a file source
+    # requires the source path to exist).
+    Dir.mktmpdir("setup-script-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+      env = setup_script_env(dir)
+
+      Open3.capture3(env, script_path, "--skip-server", chdir: dir)
+
+      token_path = File.join(dir, "prometheus", "metrics_token")
+      expect(File.exist?(token_path)).to be(true)
+      expect(File.read(token_path)).to eq("")
+    end
+  end
+
   it "installs the lockfile Bundler version before running bundle when missing" do
     Dir.mktmpdir("setup-script-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, installed_bundler_versions: [])
@@ -57,6 +92,7 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
     FileUtils.mkdir_p(File.join(dir, "stubbin"))
     FileUtils.mkdir_p(File.join(dir, "log", "dev-update"))
     FileUtils.mkdir_p(File.join(dir, "workspace-root"))
+    FileUtils.mkdir_p(File.join(dir, "prometheus"))
     File.write(File.join(dir, "Gemfile.lock"), "BUNDLED WITH\n   4.0.12\n")
     File.write(File.join(dir, "installed-bundlers.txt"), installed_bundler_versions.join("\n"))
 

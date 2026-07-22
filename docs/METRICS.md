@@ -64,13 +64,20 @@ Container resource metrics (CPU, memory) are derived from the most recent sample
 
 ## Scrape Configuration
 
-Example Prometheus `scrape_configs` entry:
+Example Prometheus `scrape_configs` entry (matches the checked-in `prometheus/prometheus.yml`):
 
 ```yaml
 scrape_configs:
   - job_name: paid
     scrape_interval: 30s
     metrics_path: /api/metrics
+    # Optional Bearer auth. When METRICS_TOKEN is set on the Rails app, the
+    # scraper must include `Authorization: Bearer <token>`. The token value
+    # is read from this file at scrape time; docker-compose.observability.yml
+    # wires the file path to the host's METRICS_TOKEN via a `secrets:` mount.
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/metrics_token
     static_configs:
       - targets: ["paid-host:3000"]
   - job_name: paid-temporal-worker
