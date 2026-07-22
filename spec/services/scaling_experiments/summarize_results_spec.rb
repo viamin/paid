@@ -13,16 +13,10 @@ RSpec.describe ScalingExperiments::SummarizeResults, :no_db do
     ]
   end
 
-  it "excludes missing rollout summary metrics from aggregate averages" do
+  it "excludes assignments with missing orchestration counts from aggregate rates" do
     assignments = [
-      build_assignment(2, observation: build_observation(2), outcome_summary: { "cohort_label" => "agent_count-2__tasks-2-3" }),
-      build_assignment(2,
-        observation: build_observation(2),
-        outcome_summary: {
-          "cohort_label" => "agent_count-2__tasks-2-3",
-          "agent_launch_success_rate" => 0.75,
-          "blocked_task_rate" => 0.25
-        })
+      assignment_with_missing_orchestration_counts(2),
+      assignment_with_recorded_orchestration_counts(2, launched: 4, succeeded: 3, blocked: 1, task_count: 4)
     ]
 
     summary = summarize(assignments)
@@ -33,9 +27,25 @@ RSpec.describe ScalingExperiments::SummarizeResults, :no_db do
       "blocked_task_rate" => 0.25,
       "success_rate_confidence_interval" => hash_including("sample_count" => 2, "confidence_level" => 0.95),
       "avg_duration_seconds_confidence_interval" => hash_including("sample_count" => 2, "confidence_level" => 0.95),
-      "agent_launch_success_rate_confidence_interval" => hash_including("sample_count" => 1, "confidence_level" => 0.95),
-      "blocked_task_rate_confidence_interval" => hash_including("sample_count" => 1, "confidence_level" => 0.95)
+      "agent_launch_success_rate_confidence_interval" => hash_including("sample_count" => 4, "confidence_level" => 0.95),
+      "blocked_task_rate_confidence_interval" => hash_including("sample_count" => 4, "confidence_level" => 0.95)
     )
+  end
+
+  it "derives orchestration rate intervals from aggregated underlying counts" do
+    assignments = [
+      assignment_with_recorded_orchestration_counts(2, launched: 1, succeeded: 1, blocked: 0, task_count: 1),
+      assignment_with_recorded_orchestration_counts(2, launched: 100, succeeded: 90, blocked: 10, task_count: 100)
+    ]
+
+    value_summary = summarize(assignments).fetch("values").find { |value| value["assigned_value"] == 2 }
+
+    expect(value_summary["agent_launch_success_rate"]).to eq(0.901)
+    expect(value_summary.dig("agent_launch_success_rate_confidence_interval", "mean")).to eq(0.901)
+    expect(value_summary.dig("agent_launch_success_rate_confidence_interval", "sample_count")).to eq(101)
+    expect(value_summary["blocked_task_rate"]).to eq(0.099)
+    expect(value_summary.dig("blocked_task_rate_confidence_interval", "mean")).to eq(0.099)
+    expect(value_summary.dig("blocked_task_rate_confidence_interval", "sample_count")).to eq(101)
   end
 
   it "emits confidence intervals for every supported primary metric" do
@@ -134,7 +144,34 @@ RSpec.describe ScalingExperiments::SummarizeResults, :no_db do
     )
   end
 
-  def build_observation(agent_count, success: true, duration: 120, cost: 300)
+  def assignment_with_missing_orchestration_counts(assigned_value)
+    build_assignment(
+      assigned_value,
+      observation: build_observation(assigned_value, launched: 0, succeeded: 0, blocked: 0, task_count: 0),
+      outcome_summary: { "cohort_label" => "agent_count-#{assigned_value}__tasks-#{assigned_value}-3" }
+    )
+  end
+
+  def assignment_with_recorded_orchestration_counts(assigned_value, launched:, succeeded:, blocked:, task_count:)
+    build_assignment(
+      assigned_value,
+      observation: build_observation(
+        assigned_value,
+        launched: launched,
+        succeeded: succeeded,
+        blocked: blocked,
+        task_count: task_count
+      ),
+      outcome_summary: {
+        "cohort_label" => "agent_count-#{assigned_value}__tasks-#{task_count}",
+        "agent_count_launched" => launched,
+        "agent_count_succeeded" => succeeded,
+        "agent_count_blocked" => blocked
+      }
+    )
+  end
+
+  def build_observation(agent_count, success: true, duration: 120, cost: 300, launched: agent_count, succeeded: launched, blocked: 0, task_count: agent_count)
     Struct.new(
       :success,
       :total_iterations,
@@ -143,11 +180,13 @@ RSpec.describe ScalingExperiments::SummarizeResults, :no_db do
       :total_cost_cents,
       :parallelism_observed,
       :agent_count_launched,
+      :agent_count_succeeded,
       :status,
       :parallel_execution,
       :parallelism_planned,
       :agent_count_planned,
       :agent_count_blocked,
+      :task_count,
       keyword_init: true
     ).new(
       success: success,
@@ -156,12 +195,14 @@ RSpec.describe ScalingExperiments::SummarizeResults, :no_db do
       duration_seconds: duration,
       total_cost_cents: cost,
       parallelism_observed: agent_count,
-      agent_count_launched: agent_count,
+      agent_count_launched: launched,
+      agent_count_succeeded: succeeded,
       status: "completed",
       parallel_execution: true,
       parallelism_planned: agent_count,
       agent_count_planned: agent_count,
-      agent_count_blocked: 0
+      agent_count_blocked: blocked,
+      task_count: task_count
     )
   end
 end

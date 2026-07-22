@@ -66,10 +66,18 @@ module ScalingExperiments
           "avg_duration_seconds_confidence_interval" => mean_confidence_interval(observations, &:duration_seconds),
           "avg_cost_cents" => average(observations, &:total_cost_cents),
           "avg_cost_cents_confidence_interval" => mean_confidence_interval(observations, &:total_cost_cents),
-          "agent_launch_success_rate" => average_from_summaries(assignments, "agent_launch_success_rate"),
-          "agent_launch_success_rate_confidence_interval" => mean_confidence_interval_from_summaries(assignments, "agent_launch_success_rate"),
-          "blocked_task_rate" => average_from_summaries(assignments, "blocked_task_rate"),
-          "blocked_task_rate_confidence_interval" => mean_confidence_interval_from_summaries(assignments, "blocked_task_rate"),
+          "agent_launch_success_rate" => aggregated_proportion(assignments, numerator_key: "agent_count_succeeded", denominator_key: "agent_count_launched"),
+          "agent_launch_success_rate_confidence_interval" => aggregated_proportion_confidence_interval(
+            assignments,
+            numerator_key: "agent_count_succeeded",
+            denominator_key: "agent_count_launched"
+          ),
+          "blocked_task_rate" => aggregated_proportion(assignments, numerator_key: "agent_count_blocked", denominator_key: "task_count"),
+          "blocked_task_rate_confidence_interval" => aggregated_proportion_confidence_interval(
+            assignments,
+            numerator_key: "agent_count_blocked",
+            denominator_key: "task_count"
+          ),
           "avg_quality_score" => average_quality_score(assignments),
           "avg_quality_score_confidence_interval" => mean_confidence_interval_from_summaries(assignments, "avg_quality_score"),
           "quality_metric_sample_count" => quality_metric_sample_count(assignments),
@@ -172,11 +180,42 @@ module ScalingExperiments
       (quality_scores.sum / quality_scores.size).round(4)
     end
 
-    def average_from_summaries(assignments, key)
-      values = assignments.filter_map { |assignment| assignment.outcome_summary[key]&.to_f }
-      return nil if values.empty?
+    def aggregated_proportion(assignments, numerator_key:, denominator_key:)
+      successes, trials = aggregated_counts(assignments, numerator_key:, denominator_key:)
+      return nil unless successes
+      return 0.0 if trials.zero?
 
-      (values.sum / values.size).round(4)
+      (successes.to_f / trials).round(4)
+    end
+
+    def aggregated_proportion_confidence_interval(assignments, numerator_key:, denominator_key:)
+      successes, trials = aggregated_counts(assignments, numerator_key:, denominator_key:)
+      return ScalingExperiments::Statistics.proportion_interval(successes: 0, trials: 0, confidence_level: CONFIDENCE_LEVEL) unless successes
+
+      ScalingExperiments::Statistics.proportion_interval(
+        successes:,
+        trials:,
+        confidence_level: CONFIDENCE_LEVEL
+      )
+    end
+
+    def aggregated_counts(assignments, numerator_key:, denominator_key:)
+      counts = assignments.filter_map do |assignment|
+        numerator = count_metric_for(assignment, numerator_key)
+        denominator = count_metric_for(assignment, denominator_key)
+        next if numerator.nil? || denominator.nil?
+
+        [ numerator, denominator ]
+      end
+      return unless counts.any?
+
+      [ counts.sum(&:first), counts.sum(&:last) ]
+    end
+
+    def count_metric_for(assignment, key)
+      summary = assignment.outcome_summary
+
+      summary[key] || summary.dig("observation", key) || assignment.scaling_observation&.public_send(key)
     end
 
     def mean_confidence_interval(observations)
