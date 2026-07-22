@@ -14,6 +14,19 @@ class EnforcePreviewSessionConstraints < ActiveRecord::Migration[8.1]
       unless foreign_key_exists?(:preview_sessions, :users, column: :created_by_id)
         add_foreign_key :preview_sessions, :users, column: :created_by_id, on_delete: :nullify
       end
+
+      execute <<~SQL
+        ALTER TABLE preview_sessions ENABLE ROW LEVEL SECURITY;
+        ALTER TABLE preview_sessions FORCE ROW LEVEL SECURITY;
+        DROP POLICY IF EXISTS tenant_isolation ON preview_sessions;
+        CREATE POLICY tenant_isolation ON preview_sessions
+          USING (
+            paid_tenant_bypass() OR preview_sessions.account_id = paid_current_account_id()
+          )
+          WITH CHECK (
+            paid_tenant_bypass() OR preview_sessions.account_id = paid_current_account_id()
+          );
+      SQL
     end
   end
 
