@@ -25,8 +25,8 @@ RSpec.describe Runners::SubscriptionAuthHostPaths, :no_db do
       expect(described_class.requires?(runner_key: "copilot", auth_mode: :api_key_proxy)).to be(false)
     end
 
-    it "is true for Codex managed auth because the registered materializer requires a host mount (#2962)" do
-      expect(described_class.requires?(runner_key: "codex", auth_mode: :managed)).to be(true)
+    it "is false for Codex managed auth because the registered materializer is remote-safe (#2962)" do
+      expect(described_class.requires?(runner_key: "codex", auth_mode: :managed)).to be(false)
     end
 
     it "is false for Gemini and Copilot managed auth (native-file materializer is remote-safe #2964)" do

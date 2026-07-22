@@ -6,6 +6,38 @@ RSpec.describe "CodexLoginSessions" do
   let(:account) { create(:account) }
   let(:owner_user) { create(:user, :owner, account: account) }
 
+  describe "GET /codex_login_sessions/new" do
+    before { sign_in owner_user }
+
+    it "renders the form" do
+      get new_codex_login_session_path
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Connect Codex")
+    end
+  end
+
+  describe "POST /codex_login_sessions" do
+    before do
+      sign_in owner_user
+      allow(CodexLoginSessions::DeviceFlow).to receive(:call)
+    end
+
+    it "creates a session and starts the device flow" do
+      expect {
+        post codex_login_sessions_path, params: {
+          codex_login_session: {
+            credential_name: "Codex Connect Login"
+          }
+        }
+      }.to change(CodexLoginSession, :count).by(1)
+
+      session = CodexLoginSession.order(:id).last
+      expect(CodexLoginSessions::DeviceFlow).to have_received(:call).with(session: session)
+      expect(response).to redirect_to(codex_login_session_path(session.external_id))
+    end
+  end
+
   describe "PATCH /codex_login_sessions/:id" do
     let!(:session_record) do
       create(

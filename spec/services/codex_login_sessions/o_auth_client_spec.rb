@@ -59,6 +59,17 @@ RSpec.describe CodexLoginSessions::OAuthClient, :no_db do
       expect(response.tokens).to include("access_token" => "access-1", "refresh_token" => "refresh-1")
     end
 
+    it "leaves account_id unset when the token response omits it" do
+      body = JSON.generate(
+        "access_token" => "access-1",
+        "refresh_token" => "refresh-1",
+        "id_token" => "id-1"
+      )
+      response = client_with([ body ]).poll_token("dev-123")
+
+      expect(response.tokens).not_to have_key("account_id")
+    end
+
     it "reports pending on authorization_pending" do
       body = JSON.generate("error" => "authorization_pending")
       response = client_with([ body ]).poll_token("dev-123")

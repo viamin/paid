@@ -82,7 +82,7 @@ module CodexLoginSessions
         "id_token" => payload["id_token"],
         "access_token" => payload["access_token"],
         "refresh_token" => payload["refresh_token"],
-        "account_id" => payload["account_id"] || payload.dig("id_token")
+        "account_id" => payload["account_id"]
       }.compact
     end
 
