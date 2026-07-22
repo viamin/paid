@@ -8,6 +8,10 @@ module Configuration
     module ManualOnLabel
       include Base
 
+      def self.description
+        "On-demand posture that runs only when a human explicitly applies the automation label."
+      end
+
       def self.targets
         {
           "active" => true,

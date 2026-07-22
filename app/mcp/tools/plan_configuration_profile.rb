@@ -16,24 +16,27 @@ module Tools
         type: "object",
         properties: {
           profile_id: { type: "string", description: "The configuration profile to plan" },
-          project_id: { type: "integer", description: "The project to scope the plan to" }
+          project_id: { type: "integer", description: "The project to scope the plan to" },
+          overrides: { type: "object", description: "Optional answers to the profile's clarifying questions" }
         },
         required: %w[profile_id project_id]
       }
     end
 
-    def perform(profile_id:, project_id:)
+    def perform(profile_id:, project_id:, overrides: {})
       project = project_for(project_id)
-      profile = ConfigurationProfiles::Registry.find!(profile_id)
-      plan = ConfigurationProfiles::Planner.for_profile(project, profile)
+      profile = Configuration::Profiles::Registry.fetch(profile_id)
+      plan = Configuration::Profiles::Planner.call(profile:, project:, overrides:)
 
       {
-        profile_id: profile.key.to_s,
+        profile_id: profile.name,
+        profile_name: profile.display_name,
         project_id: project.id,
-        label: plan.label,
-        source: plan.source.to_s,
-        changes: plan.changes.map { |change| { field: change.field.to_s, from: change.from, to: change.to } },
-        applied_fields: plan.applied_fields.map(&:to_s)
+        changes: plan.changes.map { |change| { key: change.key, from: change.from, to: change.to } },
+        blocked: plan.blocked?,
+        no_op: plan.no_op?,
+        unmet_prerequisites: plan.unmet_prerequisites,
+        applied_overrides: plan.applied_overrides
       }
     end
 
