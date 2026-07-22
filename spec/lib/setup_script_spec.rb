@@ -38,6 +38,23 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "skips database preparation when --skip-database is provided" do
+    Dir.mktmpdir("setup-script-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+      env = setup_script_env(dir)
+
+      stdout, stderr, status = Open3.capture3(env, script_path, "--skip-server", "--skip-database", chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(stdout).not_to include("== Preparing database ==")
+      database_log = File.join(dir, "database-calls.log")
+      database_calls = File.exist?(database_log) ? File.read(database_log) : ""
+      expect(database_calls).not_to include("ensure-worktree-databases")
+      expect(database_calls).not_to include("rails db:prepare")
+      expect(database_calls).not_to include("rails qdrant:check")
+    end
+  end
+
   it "installs the lockfile Bundler version before running bundle when missing" do
     Dir.mktmpdir("setup-script-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, installed_bundler_versions: [])
@@ -69,6 +86,7 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
       File.join(dir, "bin", "ensure-worktree-databases"),
       <<~BASH
         #!/usr/bin/env bash
+        printf 'ensure-worktree-databases\\n' >> "#{dir}/database-calls.log"
         exit 0
       BASH
     )
@@ -94,6 +112,7 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
       File.join(dir, "bin", "rails"),
       <<~BASH
         #!/usr/bin/env bash
+        printf 'rails %s\\n' "$*" >> "#{dir}/database-calls.log"
         exit 0
       BASH
     )
