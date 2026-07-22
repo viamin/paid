@@ -86,6 +86,24 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "does not overwrite an existing metrics token file when METRICS_TOKEN is empty string (compose-style)" do
+    # Regression guard: docker-compose.yml injects METRICS_TOKEN: ${METRICS_TOKEN:-},
+    # so the variable is always present in compose environments but may be an empty
+    # string when the host variable is unset. An empty value must be treated the same
+    # as an absent variable so the worker's bin/setup --skip-server does not clobber
+    # a token that the web/bootstrap path already materialized.
+    Dir.mktmpdir("setup-script-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+      token_path = File.join(dir, "prometheus", "metrics_token")
+      File.write(token_path, "bootstrap-token")
+      env = setup_script_env(dir).merge("METRICS_TOKEN" => "")
+
+      Open3.capture3(env, script_path, "--skip-server", chdir: dir)
+
+      expect(File.read(token_path)).to eq("bootstrap-token")
+    end
+  end
+
   it "installs the lockfile Bundler version before running bundle when missing" do
     Dir.mktmpdir("setup-script-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, installed_bundler_versions: [])

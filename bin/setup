@@ -77,7 +77,12 @@ FileUtils.chdir APP_ROOT do
   # helper processes like the worker do not clobber a token that a
   # separate bootstrap path already materialized.
   token_path = File.join(APP_ROOT, "prometheus", "metrics_token")
-  File.write(token_path, ENV.fetch("METRICS_TOKEN")) if ENV.key?("METRICS_TOKEN")
+  # Guard on a non-blank value so that the compose-style empty-string case
+  # (docker-compose.yml injects METRICS_TOKEN: ${METRICS_TOKEN:-}, which is
+  # always present but empty when the host var is unset) does not clobber a
+  # token that a separate bootstrap path already materialized.
+  token = ENV.fetch("METRICS_TOKEN", "")
+  File.write(token_path, token) unless token.empty?
 
   puts "\n== Building agent container image =="
   system! "scripts/build-agent-image.sh"
