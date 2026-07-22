@@ -6,10 +6,9 @@ module Previews
   # The pool tracks ports already claimed by ready/active preview sessions so
   # two concurrent previews never collide on the same localhost tunnel port.
   # Allocation is serialized with a single PostgreSQL advisory lock protecting
-  # the global port pool
-  # around {acquire} / {release}, and the chosen port is persisted to the
-  # session row inside the same lock so the partial unique index
-  # `index_preview_sessions_on_tunnel_port_active` defends against any
+  # the global port pool around {acquire} / {release}, and the chosen port is
+  # persisted to the session row inside the same lock so the partial unique
+  # index `index_preview_sessions_on_tunnel_port_active` defends against any
   # application-level race we missed.
   class TunnelPortPool
     Exhausted = Class.new(StandardError)
