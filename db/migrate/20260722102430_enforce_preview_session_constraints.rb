@@ -32,9 +32,11 @@ class EnforcePreviewSessionConstraints < ActiveRecord::Migration[8.1]
 
   def down
     safety_assured do
-      execute "DROP POLICY IF EXISTS tenant_isolation ON preview_sessions"
-      execute "ALTER TABLE preview_sessions NO FORCE ROW LEVEL SECURITY"
-      execute "ALTER TABLE preview_sessions DISABLE ROW LEVEL SECURITY"
+      # Do not disable RLS here — CreatePreviewSessions already established the
+      # tenant_isolation policy and RLS on this table. Rolling back only this
+      # migration must leave the prior state (RLS enabled + forced + policy)
+      # intact so that db:rollback STEP=1 on a normal install does not remove
+      # tenant isolation that the preceding migration version still relies on.
 
       if foreign_key_exists?(:preview_sessions, :users, column: :created_by_id)
         remove_foreign_key :preview_sessions, :users, column: :created_by_id
