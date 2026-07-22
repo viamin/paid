@@ -311,7 +311,7 @@ RSpec.describe ProcessRunQueueJob do
       expect(create_pr_run.reload.temporal_workflow_id).to be_nil
     end
 
-    it "does not start lower-priority work from the same project after claiming a manual run" do
+    it "uses spare capacity for lower-priority work after claiming a manual run" do
       project = create(:project)
       project.created_by.settings.update!(max_concurrent_runs: 2)
       manual = create(:agent_run, :queued, :manual, project: project, goal: "review", source_pull_request_number: 42,
@@ -327,12 +327,12 @@ RSpec.describe ProcessRunQueueJob do
 
       described_class.new.perform
 
-      expect(started_ids).to eq([ manual.id ])
+      expect(started_ids).to eq([ manual.id, p1_run.id ])
       expect(manual.reload.temporal_workflow_id).to be_present
-      expect(p1_run.reload.temporal_workflow_id).to be_nil
+      expect(p1_run.reload.temporal_workflow_id).to be_present
     end
 
-    it "does not start lower-priority work while a manual run from the same project is claimed" do
+    it "uses spare capacity while higher-priority work from the same project is claimed" do
       project = create(:project)
       project.created_by.settings.update!(max_concurrent_runs: 2)
       create(:agent_run, :queued, :manual, project: project, goal: "review", source_pull_request_number: 42,
@@ -340,17 +340,42 @@ RSpec.describe ProcessRunQueueJob do
       p1_issue = create(:issue, project: project, labels: [ "P1" ])
       p1_run = create(:agent_run, :queued, :automatic, project: project, issue: p1_issue)
 
-      expect(temporal_client).not_to receive(:start_workflow)
+      expect(temporal_client).to receive(:start_workflow).with(
+        Workflows::AgentExecutionWorkflow,
+        hash_including(agent_run_id: p1_run.id),
+        hash_including(task_queue: "paid-agent-tasks")
+      ).and_return(workflow_handle)
 
       described_class.new.perform
 
-      expect(p1_run.reload.temporal_workflow_id).to be_nil
+      expect(p1_run.reload.temporal_workflow_id).to be_present
     end
 
-    it "does not start lower-priority work while higher-priority work from the same project is running" do
+    it "uses spare capacity for lower-priority work while higher-priority work from the same project is running" do
       project = create(:project)
       user = project.created_by
       user.settings.update!(max_concurrent_runs: 10)
+
+      p1_issue = create(:issue, project: project, github_number: 100, labels: [ "P1" ])
+      create(:agent_run, :running, project: project, trigger_type: "automatic", issue: p1_issue)
+      p2_issue = create(:issue, project: project, github_number: 200, labels: [ "P2" ])
+      p2_run = create(:agent_run, :queued, project: project, trigger_type: "automatic", issue: p2_issue)
+
+      expect(temporal_client).to receive(:start_workflow).with(
+        Workflows::AgentExecutionWorkflow,
+        hash_including(agent_run_id: p2_run.id),
+        hash_including(task_queue: "paid-agent-tasks")
+      ).and_return(workflow_handle)
+
+      described_class.new.perform
+
+      expect(p2_run.reload.temporal_workflow_id).to be_present
+    end
+
+    it "does not start lower-priority work when the same project is at its concurrency cap" do
+      project = create(:project)
+      user = project.created_by
+      user.settings.update!(max_concurrent_runs: 10, max_parallel_agents_per_project: 3)
 
       3.times do |i|
         p1_issue = create(:issue, project: project, github_number: 100 + i, labels: [ "P1" ])
@@ -414,14 +439,11 @@ RSpec.describe ProcessRunQueueJob do
       expect(p2_run.reload.temporal_workflow_id).to be_present
     end
 
-    it "does not block equal-priority queued work (a running P1 allows another queued P1 to start)" do
+    it "uses spare capacity for equal-priority queued work from the same project" do
       project = create(:project)
       user = project.created_by
       user.settings.update!(max_concurrent_runs: 10)
 
-      # The guard blocks only STRICTLY higher-priority in-flight work (`<`), so
-      # a second P1 must still be allowed to start alongside a running P1 —
-      # otherwise a project could never run two same-tier items concurrently.
       running_p1 = create(:issue, project: project, github_number: 10, labels: [ "P1" ])
       create(:agent_run, :running, project: project, trigger_type: "automatic", issue: running_p1)
       queued_p1 = create(:issue, project: project, github_number: 11, labels: [ "P1" ])

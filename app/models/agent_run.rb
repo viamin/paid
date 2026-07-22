@@ -1242,16 +1242,6 @@ class AgentRun < ApplicationRecord
       )
   }
 
-  # Scope over in-flight runs (running + claimed-queued) exposing the same
-  # queue_priority expression as queued_with_priority via QUEUE_LATERAL_JOIN.
-  # Used by the queue processor to keep a lower-priority run from starting
-  # while a higher-priority run for the same project is still in flight —
-  # whether merely claimed or already running. No fair-share CTEs are joined
-  # because callers filter on queue_priority alone (not the full QUEUE_ORDER).
-  scope :inflight_with_priority, -> {
-    capacity_inflight.joins(QUEUE_LATERAL_JOIN)
-  }
-
   def self.project_active_counts_cte
     capacity_inflight
       .select("project_id, COUNT(*) AS project_active_count")
