@@ -3,6 +3,7 @@
 require "net/http"
 require "socket"
 require "timeout"
+require "erb"
 
 # Rack reverse proxy that exposes a tunnelled web app at `/previews/:token/*`.
 #
@@ -72,8 +73,8 @@ class PreviewsProxy
   }.freeze
 
   BUFFER_SIZE = 16_384
-  DEFAULT_READ_TIMEOUT = 300
-  DEFAULT_OPEN_TIMEOUT = 10
+  DEFAULT_READ_TIMEOUT = 5
+  DEFAULT_OPEN_TIMEOUT = 2
   CONNECT_HOST = "127.0.0.1"
 
   def initialize(app, read_timeout: DEFAULT_READ_TIMEOUT, open_timeout: DEFAULT_OPEN_TIMEOUT)
@@ -110,6 +111,7 @@ class PreviewsProxy
     return not_found unless authorized_viewer?(request, session)
 
     session.touch_last_accessed!
+    return simulated_response(session, proxied_path) if simulated_session?(session)
 
     if websocket_upgrade?(request)
       hijack_websocket(env, request:, session:, proxied_path:)
@@ -171,8 +173,6 @@ class PreviewsProxy
     http = Net::HTTP.new(CONNECT_HOST, session.tunnel_port)
     http.read_timeout = @read_timeout
     http.open_timeout = @open_timeout
-    http.use_ssl = false
-    http.start
 
     stream_thread = Thread.new do
       Thread.current.abort_on_exception = false
@@ -217,6 +217,47 @@ class PreviewsProxy
     path = proxied_path.to_s
     path = "/" if path.empty?
     query_string.to_s.empty? ? path : "#{path}?#{query_string}"
+  end
+
+  def simulated_session?(session)
+    session.container_id.to_s.start_with?("preview-")
+  end
+
+  def simulated_response(session, proxied_path)
+    current_path = proxied_path.presence || "/"
+    project_name = ERB::Util.html_escape(session.project.full_name)
+    branch_name = ERB::Util.html_escape(session.branch_name)
+    framework = ERB::Util.html_escape(session.framework.presence || "unknown")
+
+    body = <<~HTML
+      <!DOCTYPE html>
+      <html lang="en">
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>Preview for #{project_name}</title>
+        </head>
+        <body>
+          <main>
+            <p>Simulated preview</p>
+            <h1>#{project_name}</h1>
+            <p>Branch: #{branch_name}</p>
+            <p>Framework: #{framework}</p>
+            <p>Path: #{ERB::Util.html_escape(current_path)}</p>
+          </main>
+        </body>
+      </html>
+    HTML
+
+    [
+      200,
+      {
+        "content-type" => "text/html; charset=utf-8",
+        "content-security-policy" => "frame-ancestors 'self'",
+        "x-frame-options" => "SAMEORIGIN"
+      },
+      [ body ]
+    ]
   end
 
   def build_upstream_headers(request:, session:)
@@ -300,6 +341,7 @@ class PreviewsProxy
     unless content_security_policy_seen
       transformed["content-security-policy"] = "frame-ancestors 'self'"
     end
+    transformed["x-frame-options"] = "SAMEORIGIN"
     transformed
   end
 

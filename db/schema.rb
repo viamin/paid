@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_20_200906) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_22_102430) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1737,23 +1737,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_200906) do
   end
 
   create_table "preview_sessions", comment: "Live web app preview sessions bridging a tunnel port to the Rails reverse proxy for human review.", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Owning account for tenant isolation and RLS."
     t.bigint "agent_run_id", comment: "Optional originating agent run that produced the previewed changes."
-    t.string "branch_name", limit: 255, comment: "Git branch (or commit context) checked out in the preview container."
+    t.string "branch_name", limit: 255, null: false, comment: "Git branch (or commit context) checked out in the preview container."
     t.string "container_id", limit: 128, comment: "Docker container id running the previewed web app behind the tunnel."
     t.datetime "created_at", null: false
-    t.datetime "expires_at", comment: "Hard TTL after which the preview is stopped and its container/tunnel/port are reclaimed."
+    t.bigint "created_by_id", comment: "User who started the preview."
+    t.text "error_message", comment: "Human-readable failure reason shown in the UI error state when status is failed."
+    t.datetime "expires_at", null: false, comment: "Hard TTL after which the preview is stopped and its container/tunnel/port are reclaimed."
+    t.string "framework", limit: 64, comment: "Detected web framework (rails, phoenix, django, nextjs, etc.) shown as preview metadata."
     t.datetime "last_accessed_at", comment: "Last time the proxy served a request for this session; used for idle-based expiry."
+    t.datetime "last_active_at", comment: "Most recent time the preview was confirmed reachable/interacted with."
     t.bigint "project_id", null: false, comment: "Project the preview belongs to; drives account-scoped authorization."
-    t.string "status", limit: 50, default: "provisioning", null: false, comment: "Lifecycle state: provisioning, starting, ready, active, expiring, stopped, failed."
+    t.string "status", limit: 50, default: "pending", null: false, comment: "Lifecycle state: provisioning, starting, ready, active, expiring, stopped, failed."
     t.string "token", limit: 64, null: false, comment: "Opaque, random secret embedded in the proxy path /previews/:token/*. Acts as the proxy credential."
     t.integer "tunnel_port", comment: "Allocated localhost port on the Rails host that the rathole tunnel bridges to the container app."
     t.datetime "updated_at", null: false
+    t.index ["account_id", "status", "expires_at"], name: "idx_preview_sessions_on_account_status_expires"
     t.index ["agent_run_id"], name: "index_preview_sessions_on_agent_run_id"
+    t.index ["project_id", "created_at"], name: "index_preview_sessions_on_project_id_and_created_at", order: { created_at: :desc }
     t.index ["project_id", "status"], name: "index_preview_sessions_on_project_and_status"
     t.index ["project_id"], name: "index_preview_sessions_on_project_id"
     t.index ["status", "expires_at"], name: "index_preview_sessions_on_status_and_expires_at"
     t.index ["token"], name: "index_preview_sessions_on_token", unique: true
-    t.index ["tunnel_port"], name: "index_preview_sessions_on_tunnel_port_unique", unique: true, where: "(tunnel_port IS NOT NULL)"
+    t.index ["tunnel_port"], name: "index_preview_sessions_on_tunnel_port_active", unique: true, where: "((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('provisioning'::character varying)::text, ('starting'::character varying)::text, ('ready'::character varying)::text]))"
   end
 
   create_table "preview_tunnel_port_reservations", comment: "Shared preview tunnel port reservations across Rails processes", force: :cascade do |t|
@@ -2998,8 +3005,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_200906) do
   add_foreign_key "pre_commit_requirements", "projects", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "users", on_delete: :cascade
   add_foreign_key "preview_provision_states", "agent_runs", on_delete: :cascade
+  add_foreign_key "preview_sessions", "accounts", on_delete: :cascade
   add_foreign_key "preview_sessions", "agent_runs"
   add_foreign_key "preview_sessions", "projects"
+  add_foreign_key "preview_sessions", "users", column: "created_by_id", on_delete: :nullify
   add_foreign_key "project_baselines", "projects"
   add_foreign_key "project_convention_detections", "project_versions"
   add_foreign_key "project_convention_detections", "projects"

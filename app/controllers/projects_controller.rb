@@ -3,7 +3,7 @@
 class ProjectsController < ApplicationController
   include AuditLogging
 
-  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :toggle_auto_merge, :toggle_pause, :quality_resume, :detect_services, :detect_screenshot_settings, :commit_screenshot_config, :ensure_labels, :cleanup_stale_runs ]
+  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :toggle_auto_merge, :toggle_pause, :quality_resume, :detect_services, :detect_screenshot_settings, :commit_screenshot_config, :ensure_labels, :cleanup_stale_runs, :start_preview, :stop_preview, :restart_preview ]
   skip_after_action :verify_authorized, only: :index
 
   NULLS_LAST_SORT_ATTRIBUTES = %w[last_agent_run_at last_github_activity_at].freeze
@@ -23,6 +23,8 @@ class ProjectsController < ApplicationController
 
   def show
     authorize @project
+    @preview_session = PreviewSession.for_project(@project).active.recent.first ||
+      PreviewSession.for_project(@project).where(status: PreviewSession::TERMINAL_STATUSES).recent.first
     tracker_configuration = IssueTrackers::ResolveConfiguration.call(project: @project, user: current_user)
     @external_links = @project.header_external_links(tracker_configuration: tracker_configuration)
     @recent_agent_runs = @project.agent_runs.recent.includes(:runner, :issue, project: [ :created_by, :account ]).limit(10).to_a
@@ -302,6 +304,57 @@ class ProjectsController < ApplicationController
     redirect_to project_path(@project), notice: message
   end
 
+  def start_preview
+    authorize @project, :update?
+
+    branch_name = preview_branch_name_param.presence || @project.default_branch
+    PreviewSession.transaction do
+      @project.with_lock do
+        PreviewSession.for_project(@project).non_terminal.find_each(&:mark_stopped!)
+        session = PreviewSession.build_for(
+          project: @project,
+          branch_name: branch_name,
+          created_by: current_user
+        )
+        session.save!
+        session.mark_ready!(tunnel_port: nil)
+      end
+    end
+
+    redirect_to project_path(@project, anchor: "preview"), notice: "Preview started for #{branch_name}."
+  end
+
+  def stop_preview
+    authorize @project, :update?
+
+    sessions = PreviewSession.for_project(@project).non_terminal.to_a
+    sessions.each(&:mark_stopped!)
+    notice = sessions.empty? ? "No preview was running." : "Preview stopped."
+
+    redirect_to project_path(@project, anchor: "preview"), notice: notice
+  end
+
+  def restart_preview
+    authorize @project, :update?
+
+    last_branch = PreviewSession.for_project(@project).recent.first&.branch_name
+    branch_name = preview_branch_name_param.presence || last_branch.presence || @project.default_branch
+    PreviewSession.transaction do
+      @project.with_lock do
+        PreviewSession.for_project(@project).non_terminal.find_each(&:mark_stopped!)
+        session = PreviewSession.build_for(
+          project: @project,
+          branch_name: branch_name,
+          created_by: current_user
+        )
+        session.save!
+        session.mark_ready!(tunnel_port: nil)
+      end
+    end
+
+    redirect_to project_path(@project, anchor: "preview"), notice: "Preview restarted for #{branch_name}."
+  end
+
   def destroy
     authorize @project
 
@@ -338,6 +391,10 @@ class ProjectsController < ApplicationController
       end
       format.html { redirect_to @project }
     end
+  end
+
+  def preview_branch_name_param
+    params[:branch_name].to_s.strip.presence
   end
 
   def apply_nulls_last_ordering(scope)
