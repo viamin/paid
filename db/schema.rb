@@ -1726,6 +1726,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_200906) do
     t.check_constraint "NOT (project_id IS NOT NULL AND user_id IS NOT NULL)", name: "chk_pre_commit_requirements_exclusive_scope"
   end
 
+  create_table "preview_provision_states", comment: "Shared baseline snapshots for overlapping preview/screenshot provisioning on the same agent run.", force: :cascade do |t|
+    t.integer "active_count", default: 0, null: false, comment: "Number of in-flight preview provisions currently sharing this baseline snapshot."
+    t.bigint "agent_run_id", null: false
+    t.jsonb "baseline_service_container_ids", default: [], null: false, comment: "Agent run service container ids before the first overlapping preview mutated the run state."
+    t.jsonb "baseline_service_environment", default: {}, null: false, comment: "Agent run service environment before the first overlapping preview mutated the run state."
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_run_id"], name: "index_preview_provision_states_on_agent_run_id", unique: true
+  end
+
   create_table "preview_sessions", comment: "Live web app preview sessions bridging a tunnel port to the Rails reverse proxy for human review.", force: :cascade do |t|
     t.bigint "agent_run_id", comment: "Optional originating agent run that produced the previewed changes."
     t.string "branch_name", limit: 255, comment: "Git branch (or commit context) checked out in the preview container."
@@ -1753,6 +1763,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_200906) do
     t.datetime "updated_at", null: false
     t.index ["reservation_key"], name: "index_preview_tunnel_port_reservations_on_reservation_key", unique: true
     t.index ["tunnel_port"], name: "index_preview_tunnel_port_reservations_on_tunnel_port", unique: true
+  end
+
+  create_table "preview_tunnel_reservations", comment: "Tracks preview tunnel ports reserved across Ruby processes so concurrent preview boots cannot allocate the same port.", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "owner_key", comment: "Logical owner identifier for the process/session that reserved the preview tunnel port."
+    t.integer "owner_pid", comment: "PID of the worker process that created the reservation so dead-worker leases can be reclaimed."
+    t.integer "port", null: false, comment: "TCP port reserved for a preview tunnel listener on the control-plane host."
+    t.datetime "updated_at", null: false
+    t.index ["port"], name: "index_preview_tunnel_reservations_on_port", unique: true
   end
 
   create_table "project_baselines", comment: "Stores per-project historical baselines for run metrics so anomalies can be detected against recent norms.", force: :cascade do |t|
@@ -2978,6 +2997,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_200906) do
   add_foreign_key "pre_commit_requirements", "accounts", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "projects", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "users", on_delete: :cascade
+  add_foreign_key "preview_provision_states", "agent_runs", on_delete: :cascade
   add_foreign_key "preview_sessions", "agent_runs"
   add_foreign_key "preview_sessions", "projects"
   add_foreign_key "project_baselines", "projects"

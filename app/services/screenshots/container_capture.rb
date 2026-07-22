@@ -4,9 +4,7 @@ require "docker-api"
 require "fileutils"
 require "json"
 require "securerandom"
-require "shellwords"
 require "tmpdir"
-require "uri"
 
 module Screenshots
   class ContainerCapture
@@ -14,12 +12,7 @@ module Screenshots
     CHROME_ALIAS = "paid-screenshot-browser"
     CHROME_URL = "ws://#{CHROME_ALIAS}:3000"
     OUTPUT_DIR = "tmp/screenshots"
-    # Sibling of each `{route}.png`; the capture runner writes a Playwright
-    # trace to `{route}.trace.zip` so the demo video/GIF exporter has a
-    # multi-frame source for the same route.
     TRACE_EXTENSION = ".trace.zip"
-    APP_LOG_PATH = "tmp/paid-screenshot-app.log"
-    SEED_SCRIPT_PATH = ".paid-screenshots/seed_runner.rb"
     CAPTURE_TIMEOUT_SECONDS = 300
     STARTUP_TIMEOUT_SECONDS = 90
     MEMORY_BYTES = 2 * 1024 * 1024 * 1024
@@ -48,11 +41,9 @@ module Screenshots
       @agent_run = agent_run
       @project = agent_run.project
       @logger = logger
-      @service_provisioner = nil
+      @preview_provision = nil
       @screenshot_container = nil
       @chrome_container = nil
-      @screenshot_service_container_ids = []
-      @screenshot_service_env = {}
       @tmpdir = nil
       @config = nil
       @network = nil
@@ -60,32 +51,30 @@ module Screenshots
       @hints = {}
       @trace_path = nil
       @video_path = nil
-      @preview_tunnel = nil
     end
 
     def call
       ensure_capture_eligible!
 
-      # Lightweight precheck: fetch changed files via GitHub API and detect
-      # UI-relevant changes *before* paying the Docker/clone/startup cost.
-      # The precheck runs without repo context (no custom config overrides),
-      # so it may be slightly conservative — that is acceptable.
       changed_files = fetch_changed_files
       precheck_ui_files = detect_ui_files(changed_files, nil)
       return finalize_skip("no_ui_changes", changed_files:, ui_files: precheck_ui_files) if precheck_ui_files.empty?
 
       with_workspace do |repo_path|
-        provision_capture_container(repo_path)
-        checkout_branch!
-        @config = Screenshots::ConfigParser.from_repo_path(repo_path, project: project)
+        @preview_provision = Previews::Provision.new(
+          agent_run:,
+          repo_path:,
+          logger:
+        )
+        @preview_provision.prepare_workspace!
+        @screenshot_container = @preview_provision.container_service
+        @network = @preview_provision.network_name
+        @config = @preview_provision.config
         validate_supported_config!
 
-        # Re-detect with full repo context (custom patterns/exclusions from config)
         ui_files = detect_ui_files(changed_files, repo_path)
         return finalize_skip("no_ui_changes", changed_files:, ui_files:) if ui_files.empty?
 
-        # Derive per-route hints (best-effort) to scope and annotate capture to the
-        # pages the agent actually changed. Empty hints fall back to all routes.
         @hints = Screenshots::DeriveHints.call(
           agent_run: agent_run,
           routes: @config.routes,
@@ -93,11 +82,8 @@ module Screenshots
           logger: logger
         )
 
-        provision_service_dependencies!
         start_chrome!
-        run_setup_commands!
-        run_seed!
-        start_application!
+        @preview_provision.boot!(start_tunnel: false, allow_seed: true)
         screenshot_paths = run_capture!(ui_files)
         publish_result!(screenshot_paths)
 
@@ -141,9 +127,7 @@ module Screenshots
 
     attr_reader :agent_run, :project, :logger, :config
 
-    def service_provisioner
-      @service_provisioner ||= Containers::ServiceProvisioner.new
-    end
+    SUPPORTED_DRIVERS = %w[playwright].freeze
 
     def ensure_capture_eligible!
       raise Screenshots::ConfigError, "screenshots are disabled for this project" unless project.screenshots_enabled?
@@ -155,37 +139,6 @@ module Screenshots
       @tmpdir = Dir.mktmpdir("paid-screenshots-#{agent_run.id}-")
       yield(@tmpdir)
     end
-
-    def provision_capture_container(repo_path)
-      @preview_tunnel = build_preview_tunnel_definition
-
-      @screenshot_container = Containers::Provision.new(
-        project: project,
-        worktree_path: repo_path,
-        memory_bytes: MEMORY_BYTES,
-        cpu_quota: CPU_QUOTA,
-        pids_limit: PIDS_LIMIT,
-        timeout_seconds: CAPTURE_TIMEOUT_SECONDS,
-        preview_tunnel: @preview_tunnel
-      )
-      @screenshot_container.provision
-      @network = @screenshot_container.network_name
-    end
-
-    def checkout_branch!
-      git_ops = Containers::GitOperations.new(
-        container_service: @screenshot_container,
-        agent_run: agent_run
-      )
-      git_ops.clone_and_checkout_branch(
-        branch_name: agent_run.branch_name,
-        pull_request_number: agent_run.pull_request_number,
-        persist: false
-      )
-      git_ops.install_artifact_excludes
-    end
-
-    SUPPORTED_DRIVERS = %w[playwright].freeze
 
     def validate_supported_config!
       unless config.driver.in?(SUPPORTED_DRIVERS)
@@ -235,43 +188,6 @@ module Screenshots
       )
     end
 
-    def provision_service_dependencies!
-      service_names = configured_service_dependencies
-      return if service_names.empty?
-
-      # Snapshot the original service_container_ids and service_environment so
-      # we can restore them after provisioning. ServiceProvisioner#provision
-      # overwrites both fields, which would orphan the main workflow's service
-      # containers and leave stale DATABASE_URL/REDIS_URL pointing at the
-      # screenshot network's (now torn-down) services during cleanup.
-      original_ids = agent_run.service_container_ids.dup
-      original_env = agent_run.service_environment&.deep_dup
-
-      service_provisioner.provision(agent_run, network: @network, service_names: service_names)
-
-      # Capture the screenshot-specific service env for use in capture_env,
-      # then restore the agent_run to its original state so the main workflow's
-      # service references are not corrupted.
-      @screenshot_service_env = agent_run.service_environment&.deep_dup || {}
-    ensure
-      current_ids = agent_run.service_container_ids
-      @screenshot_service_container_ids |= current_ids - (original_ids || current_ids)
-
-      needs_restore = original_ids && (current_ids != original_ids || agent_run.service_environment != original_env)
-      if needs_restore
-        agent_run.update!(
-          service_container_ids: original_ids,
-          service_environment: original_env
-        )
-      end
-    end
-
-    def configured_service_dependencies
-      db_services = Array(project.effective_screenshot_settings["service_dependencies"])
-      (db_services + Array(config.services)).map(&:to_s).map(&:strip).reject(&:blank?).uniq
-    end
-
-    # Video recording is opt-in (resource-heavy); traces are always attempted.
     def record_video?
       project.effective_screenshot_settings["record_video"] == true
     end
@@ -303,80 +219,6 @@ module Screenshots
       Containers.backend.start_container(@chrome_container)
     rescue Docker::Error::DockerError => e
       raise Screenshots::ConfigError, "unable to start Chrome service container: #{e.message}"
-    end
-
-    def run_setup_commands!
-      config.setup_commands.each do |command|
-        result = @screenshot_container.execute(command, timeout: CAPTURE_TIMEOUT_SECONDS, env: capture_env, stream: false)
-        next if result.success?
-
-        raise "setup command failed: #{command}\n#{result[:stderr].presence || result[:stdout]}"
-      end
-    end
-
-    # Loads repo-defined seed data (.paid/screenshots.yml) into the per-run
-    # isolated database before the application starts. Seed commands run inside
-    # the screenshot container via Screenshots::SeedRunner so only repo-defined
-    # seeds are used — never production data. No-op when no seed config is
-    # present, so capture behavior is unchanged for unseeded repos.
-    def run_seed!
-      return if config.seed.empty?
-
-      Screenshots::SeedRunner.new.call(
-        config: config,
-        repo_path: @tmpdir,
-        driver_name: config.driver,
-        executor: method(:execute_seed_script)
-      )
-    end
-
-    def execute_seed_script(env)
-      write_seed_script
-      result = @screenshot_container.execute(
-        "bin/rails runner #{Shellwords.escape(SEED_SCRIPT_PATH)}",
-        timeout: CAPTURE_TIMEOUT_SECONDS,
-        env: capture_env.merge(env),
-        stream: false
-      )
-
-      [ result[:stdout].to_s, result[:stderr].to_s, result.success? ]
-    end
-
-    def write_seed_script
-      path = File.join(@tmpdir, SEED_SCRIPT_PATH)
-      FileUtils.mkdir_p(File.dirname(path))
-      File.write(path, Screenshots::SeedRunner::SCRIPT)
-      path
-    end
-
-    def start_application!
-      prepare_phoenix_endpoint_binding!
-      command = application_start_command
-      raise Screenshots::ConfigError, "could not determine how to start the application for screenshots" if command.blank?
-      @screenshot_container.activate_preview_tunnel!(app_port: app_port)
-
-      launch_command = <<~SH
-        set -e
-        mkdir -p tmp
-        (#{command}) > #{Shellwords.escape(APP_LOG_PATH)} 2>&1 &
-        echo $! > tmp/paid-screenshot-app.pid
-      SH
-      @screenshot_container.execute(launch_command, timeout: 30, env: capture_env, stream: false)
-
-      wait_command = readiness_probe_command
-      @screenshot_container.execute(
-        wait_command,
-        timeout: STARTUP_TIMEOUT_SECONDS,
-        startup_timeout: STARTUP_TIMEOUT_SECONDS,
-        idle_timeout: STARTUP_TIMEOUT_SECONDS,
-        env: capture_env,
-        stream: false
-      )
-
-      wait_for_preview_tunnel!
-    rescue Containers::Provision::ExecutionError => e
-      app_log = read_file(APP_LOG_PATH)
-      raise "application startup failed: #{e.message}\n#{app_log}".strip
     end
 
     def run_capture!(ui_files)
@@ -411,6 +253,8 @@ module Screenshots
 
       storage = Screenshots::Storage.new
       uploaded = screenshot_paths.map { |path| upload_screenshot(storage, path) }
+      trace_url = upload_trace_artifact(storage)
+      video_url = upload_video_artifact(storage)
 
       previous_artifacts = storage.previous_artifacts(
         org: project.owner,
@@ -425,7 +269,9 @@ module Screenshots
         pr_number: agent_run.pull_request_number,
         commit_sha: commit_sha,
         screenshots: uploaded,
-        previous_screenshots: previous_artifacts.transform_values { |formats| formats[:png] }.compact
+        previous_screenshots: previous_artifacts.transform_values { |formats| formats[:png] }.compact,
+        trace_url: trace_url,
+        video_url: video_url
       )
 
       @published_url = uploaded.first&.fetch(:url, nil)
@@ -465,10 +311,46 @@ module Screenshots
       )
     end
 
-    # Resolves the Playwright trace recorded alongside `screenshot_path` by the
-    # capture runner. Returns nil when no trace was produced (e.g. the browser
-    # backend lacks trace support), which makes the exporter fall back to the
-    # static PNG.
+    def upload_trace_artifact(storage)
+      return nil if @trace_path.blank?
+
+      storage.upload_trace(
+        file_path: @trace_path,
+        org: project.owner,
+        repo: project.repo,
+        pr_number: agent_run.pull_request_number,
+        commit_sha: commit_sha
+      )
+    rescue Screenshots::Storage::StorageError => e
+      logger.warn(
+        message: "screenshots.trace_upload_failed",
+        project_id: project.id,
+        agent_run_id: agent_run.id,
+        error: e.message
+      )
+      nil
+    end
+
+    def upload_video_artifact(storage)
+      return nil if @video_path.blank?
+
+      storage.upload_video(
+        file_path: @video_path,
+        org: project.owner,
+        repo: project.repo,
+        pr_number: agent_run.pull_request_number,
+        commit_sha: commit_sha
+      )
+    rescue Screenshots::Storage::StorageError => e
+      logger.warn(
+        message: "screenshots.video_upload_failed",
+        project_id: project.id,
+        agent_run_id: agent_run.id,
+        error: e.message
+      )
+      nil
+    end
+
     def trace_path_for(screenshot_path)
       trace_path = "#{File.dirname(screenshot_path)}/#{File.basename(screenshot_path, '.png')}#{TRACE_EXTENSION}"
       File.exist?(trace_path) ? trace_path : nil
@@ -555,9 +437,6 @@ module Screenshots
         await context.close();
         await browser.close();
 
-        // Records a route's screenshot plus a Playwright trace. The trace is the
-        // multi-frame source the demo video/GIF exporters need; tracing is
-        // best-effort so a backend without trace support still yields the PNG.
         async function captureRoute(route) {
           let tracing = false;
           try {
@@ -585,10 +464,6 @@ module Screenshots
       JS
     end
 
-    # Scopes capture to the routes the agent's change affected, when hints are
-    # available. Falls back to every configured route when hints are empty or
-    # none of them match a configured route name (conservative — never captures
-    # less than the unscoped behavior would when hints are unusable).
     def routes_for_capture
       return config.routes if @hints.blank?
 
@@ -612,102 +487,17 @@ module Screenshots
       }.to_json
     end
 
-    def application_start_command
-      port = app_port
-
-      if File.exist?(File.join(@tmpdir, "bin/dev"))
-        "PORT=#{port} bin/dev"
-      elsif File.exist?(File.join(@tmpdir, "bin/rails"))
-        "bundle exec bin/rails server -b 0.0.0.0 -p #{port}"
-      elsif phoenix_project?
-        "MIX_ENV=dev mix phx.server"
-      elsif File.exist?(File.join(@tmpdir, "manage.py"))
-        "python3 manage.py runserver 0.0.0.0:#{port}"
-      elsif package_dependency?("next")
-        "yarn next dev --hostname 0.0.0.0 --port #{port}"
-      elsif package_dependency?("vite")
-        "yarn vite --host 0.0.0.0 --port #{port}"
-      elsif File.exist?(File.join(@tmpdir, "package.json"))
-        "yarn dev --host 0.0.0.0 --port #{port}"
-      end
-    end
-
-    def readiness_probe_command
-      uri = URI.parse(config.base_url)
-      host = uri.host.presence || "127.0.0.1"
-      path = uri.path.presence || "/"
-      port = uri.port || app_port
-
-      <<~SH.squish
-        SCREENSHOT_APP_HOST=#{Shellwords.escape(host)}
-        SCREENSHOT_APP_PORT=#{Shellwords.escape(port.to_s)}
-        SCREENSHOT_APP_PATH=#{Shellwords.escape(path)}
-        ruby -rnet/http -ruri -e '
-          deadline = Time.now + #{STARTUP_TIMEOUT_SECONDS};
-          uri = URI("http://\#{ENV.fetch("SCREENSHOT_APP_HOST")}:\#{ENV.fetch("SCREENSHOT_APP_PORT")}\#{ENV.fetch("SCREENSHOT_APP_PATH")}");
-          loop do
-            begin
-              response = Net::HTTP.start(uri.host, uri.port, open_timeout: 2, read_timeout: 2) { |http| http.get(uri.request_uri) };
-              exit 0 if response.code.to_i < 500;
-            rescue StandardError
-            end
-            raise "timeout" if Time.now >= deadline;
-            sleep 2;
-          end
-        '
-      SH
-    end
-
     def capture_env
-      @screenshot_service_env.merge(
+      @preview_provision.service_environment.merge(
         "CHROME_URL" => CHROME_URL,
-        "CI" => "1",
-        "PORT" => app_port.to_s
+        "CI" => "1"
       )
     end
 
-    def app_port
-      uri = URI.parse(config&.base_url || Screenshots::Configuration::DEFAULT_BASE_URL)
-      uri.port || 3000
-    end
+    def phoenix_project?
+      return false if @tmpdir.blank?
 
-    def build_preview_tunnel_definition
-      session_token = preview_tunnel_session_token
-      Previews::TunnelManager::TunnelDefinition.new(
-        session_token: session_token,
-        tunnel_port: Previews::TunnelManager.allocate_port(key: session_token),
-        app_port: nil
-      )
-    end
-
-    def preview_tunnel_session_token
-      "screenshots-agent-run-#{agent_run.id}"
-    end
-
-    def wait_for_preview_tunnel!
-      return if @preview_tunnel.blank?
-
-      Previews::TunnelManager.wait_until_ready!(
-        port: @preview_tunnel.tunnel_port,
-        path: preview_tunnel_health_check_path
-      )
-    end
-
-    def preview_tunnel_health_check_path
-      uri = URI.parse(config.base_url)
-      uri.request_uri.presence || "/"
-    end
-
-    def package_dependency?(name)
-      package_json_path = File.join(@tmpdir, "package.json")
-      return false unless File.exist?(package_json_path)
-
-      package_json = JSON.parse(File.read(package_json_path))
-      [ "dependencies", "devDependencies" ].any? do |key|
-        package_json.fetch(key, {}).key?(name)
-      end
-    rescue JSON::ParserError
-      false
+      File.exist?(File.join(@tmpdir, "mix.exs"))
     end
 
     def collected_screenshots
@@ -715,69 +505,23 @@ module Screenshots
     end
 
     def collected_trace_path
-      Dir.glob(File.join(@tmpdir.to_s, OUTPUT_DIR, "trace.zip")).first
+      top_level_trace_path || route_trace_paths.first
     end
 
     def collected_video_path
       Dir.glob(File.join(@tmpdir.to_s, OUTPUT_DIR, "videos", "*.webm")).first
     end
 
-    # Phoenix/Elixir repos are driven by mix.exs. This matches the same signal
-    # application_start_command uses to pick `mix phx.server`, so seed loading
-    # (which runs via bin/rails runner) is gated on the same framework check.
-    def phoenix_project?
-      return false if @tmpdir.blank?
-
-      File.exist?(File.join(@tmpdir, "mix.exs"))
+    def top_level_trace_path
+      Dir.glob(File.join(@tmpdir.to_s, OUTPUT_DIR, "trace.zip")).first
     end
 
-    def prepare_phoenix_endpoint_binding!
-      return unless phoenix_project?
-
-      endpoint_modules = phoenix_endpoint_modules
-      return if endpoint_modules.empty?
-
-      runtime_path = File.join(@tmpdir, "config/runtime.exs")
-      FileUtils.mkdir_p(File.dirname(runtime_path))
-      runtime_content = File.exist?(runtime_path) ? File.read(runtime_path) : "import Config\n"
-      override = phoenix_endpoint_override(endpoint_modules)
-      return if runtime_content.include?(override)
-
-      runtime_content = "#{runtime_content.rstrip}\n\n#{override}"
-      File.write(runtime_path, runtime_content)
-    end
-
-    def phoenix_endpoint_modules
-      dev_config_path = File.join(@tmpdir, "config/dev.exs")
-      return [] unless File.exist?(dev_config_path)
-
-      File.read(dev_config_path).scan(/config\s+:([a-zA-Z_][\w]*),\s+([A-Z][\w.]*(?:\.Endpoint))/).uniq
-    end
-
-    def phoenix_endpoint_override(endpoint_modules)
-      config_lines = endpoint_modules.map do |application, endpoint_module|
-        <<~EXS.chomp
-          config :#{application}, #{endpoint_module},
-            http: [ip: {0, 0, 0, 0}, port: String.to_integer(System.get_env("PORT") || "4000")]
-        EXS
-      end
-
-      <<~EXS.chomp
-        # Paid screenshot capture override: browserless runs in a separate container,
-        # so Phoenix must bind to all interfaces instead of loopback-only dev defaults.
-        if config_env() == :dev do
-        #{config_lines.join("\n\n").lines.map { |line| "  #{line}" }.join}
-        end
-      EXS
+    def route_trace_paths
+      Dir.glob(File.join(@tmpdir.to_s, OUTPUT_DIR, "*#{TRACE_EXTENSION}")).sort
     end
 
     def commit_sha
       agent_run.result_commit_sha || agent_run.base_commit_sha || agent_run.branch_name
-    end
-
-    def read_file(relative_path)
-      path = File.join(@tmpdir.to_s, relative_path)
-      File.exist?(path) ? File.read(path) : ""
     end
 
     def update_status(status, screenshot_count: 0, screenshots_url: nil)
@@ -803,7 +547,7 @@ module Screenshots
         github_client: project.client,
         repo: project.full_name,
         pr_number: agent_run.pull_request_number,
-        commit_sha: agent_run.result_commit_sha || agent_run.base_commit_sha || agent_run.branch_name,
+        commit_sha: commit_sha,
         screenshots: [],
         status: status
       )
@@ -841,34 +585,8 @@ module Screenshots
         logger.warn(message: "screenshots.chrome_cleanup_failed", agent_run_id: agent_run.id, error: e.message)
       end
 
-      cleanup_screenshot_services!
-
-      begin
-        @screenshot_container&.cleanup(force: true)
-      rescue StandardError => e
-        logger.warn(message: "screenshots.container_cleanup_failed", agent_run_id: agent_run.id, error: e.message)
-      end
-
+      @preview_provision&.cleanup!
       FileUtils.rm_rf(@tmpdir) if @tmpdir.present?
-    end
-
-    def cleanup_screenshot_services!
-      return if @screenshot_service_container_ids.empty?
-
-      ServiceContainer.where(id: @screenshot_service_container_ids).find_each do |sc|
-        sc.with_lock do
-          next unless sc.capacity_inflight_agent_run_count.zero?
-
-          docker = Containers.backend.get_container(sc.docker_container_id)
-          Containers.backend.stop_container(docker, timeout: 10)
-          Containers.backend.delete_container(docker, force: true, v: true)
-          sc.update!(status: "stopped", docker_container_id: nil)
-        end
-      rescue Docker::Error::DockerError => e
-        logger.warn(message: "screenshots.services_cleanup_failed", agent_run_id: agent_run.id, service_container: sc.name, error: e.message)
-      rescue StandardError => e
-        logger.warn(message: "screenshots.services_cleanup_failed", agent_run_id: agent_run.id, error: e.message)
-      end
     end
   end
 end

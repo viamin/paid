@@ -20,6 +20,14 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
     subject(:prompt) { described_class.new(chat_session: chat_session).call }
 
     describe "base identity" do
+      subject(:prompt) { prompt_builder.call }
+
+      let(:prompt_builder) { described_class.new(chat_session: chat_session) }
+
+      before do
+        allow(prompt_builder).to receive(:resolve_prompt).and_return(nil)
+      end
+
       it "is always present" do
         expect(prompt).to include("AI assistant helping manage software projects via Paid")
       end
