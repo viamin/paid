@@ -177,6 +177,24 @@ RSpec.describe Containers::Provision do
       expect(attempt.result).to eq("harvest_failed")
       expect(attempt.failure_reason).to eq("malformed_rotated_credential")
     end
+
+    it "records a harvest failure when the rotated payload has no access token" do
+      original_token = credential.token
+      svc = build_service(credential: credential)
+      refresh_only = JSON.parse(valid_codex_auth)
+      refresh_only["tokens"].delete("access_token")
+      encoded = Base64.strict_encode64(JSON.generate(refresh_only))
+      allow(local_backend).to receive(:exec_in_container).and_return([ [ encoded ], [], 0 ])
+
+      result = svc.send(:harvest_codex_managed_credential!)
+
+      expect(result.performed?).to be(false)
+      expect(result.reason).to eq("rotated_credential_missing_access_token")
+      expect(credential.reload.token).to eq(original_token)
+      attempt = RunnerAuthAttempt.where(runner_key: "codex", attempt_stage: "harvest").last
+      expect(attempt.result).to eq("harvest_failed")
+      expect(attempt.failure_reason).to eq("rotated_credential_missing_access_token")
+    end
   end
 
   describe "per-credential lease serialization (AC3)" do
@@ -273,6 +291,44 @@ RSpec.describe Containers::Provision do
 
       parsed = JSON.parse(credential.reload.token)
       expect(parsed["tokens"]["access_token"]).to eq("eyJserver-refreshed-access")
+    end
+
+    it "does not brick the credential when the refresh response is not a Codex auth" do
+      svc = build_service(credential: credential)
+      allow(svc).to receive_messages(
+        codex_managed_runner_credential: credential,
+        codex_refresh_exchange_supported?: true
+      )
+      credential.update!(revoked_at: 1.hour.ago)
+      original_token = credential.token
+      allow(AgentHarness::Authentication).to receive(:exchange_refresh_token)
+        .and_return({ "error" => "invalid_grant", "error_description" => "bad refresh token" })
+
+      svc.send(:refresh_codex_managed_credential_if_needed!, provision: true)
+
+      expect(credential.reload.token).to eq(original_token)
+      # The old code cleared revoked_at on any response; the fix leaves it intact.
+      expect(credential.reload.revoked_at).to be_within(1.second).of(1.hour.ago)
+      attempt = RunnerAuthAttempt.where(runner_key: "codex", attempt_stage: "refresh").last
+      expect(attempt.result).to eq("refresh_failed")
+    end
+
+    it "rejects a refresh response that carries no access token" do
+      svc = build_service(credential: credential)
+      allow(svc).to receive_messages(
+        codex_managed_runner_credential: credential,
+        codex_refresh_exchange_supported?: true
+      )
+      original_token = credential.token
+      refresh_only = JSON.parse(valid_codex_auth)
+      refresh_only["tokens"].delete("access_token")
+      allow(AgentHarness::Authentication).to receive(:exchange_refresh_token).and_return(refresh_only)
+
+      svc.send(:refresh_codex_managed_credential_if_needed!, provision: true)
+
+      expect(credential.reload.token).to eq(original_token)
+      attempt = RunnerAuthAttempt.where(runner_key: "codex", attempt_stage: "refresh").last
+      expect(attempt.result).to eq("refresh_failed")
     end
   end
 

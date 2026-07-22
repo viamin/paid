@@ -102,6 +102,20 @@ module Containers
       end
     end
 
+    # Raised when a server-side Codex refresh response cannot be materialized
+    # into a usable Codex auth.json (blank/non-Codex payload, or missing the
+    # access token a refresh must yield). Raised before the canonical
+    # RunnerCredential is touched so a malformed upstream exchange is treated as
+    # a failed refresh instead of bricking the stored credential (#2962 review).
+    class InvalidCodexRefreshResponse < Error
+      attr_reader :reason
+
+      def initialize(msg = "Codex refresh response is not a usable auth.json", reason: nil)
+        @reason = reason
+        super(msg)
+      end
+    end
+
     # Bundles watchdog shared state (mutex, refs, timeouts) into a single
     # object to keep start_watchdog's parameter list under 4.
     WatchdogContext = Struct.new(
@@ -3486,6 +3500,15 @@ module Containers
         credential_id: credential.id,
         note: "classify as auth_expired via refresh_token_reused pattern if applicable")
       false
+    rescue InvalidCodexRefreshResponse => e
+      # Refresh returned a non-Codex payload (or one without an access token).
+      # The canonical credential is left untouched; classify as a failed refresh
+      # rather than persisting an unusable token (#2962 review).
+      log_system("container.codex_auth_refresh_failed",
+        error: e.message,
+        credential_id: credential.id,
+        note: "refresh response rejected: #{e.reason || 'unusable'}; credential unchanged")
+      false
     rescue AgentHarness::Error, JSON::ParserError, SystemCallError => e
       log_system("container.codex_auth_refresh_failed", error: e.message, credential_id: credential.id)
       false
@@ -3500,6 +3523,17 @@ module Containers
     def apply_codex_refresh_result!(credential, refreshed_payload)
       token = refreshed_payload.is_a?(Hash) ? refreshed_payload.dig(:token) || JSON.generate(refreshed_payload) : refreshed_payload.to_s
       parsed = CodexCredentials::Secret.parse(token.to_s)
+      # A successful refresh must yield a usable Codex auth.json (an access
+      # token). Reject blank/non-Codex payloads or refresh-token-only responses
+      # before touching the canonical credential, otherwise an unexpected
+      # upstream exchange overwrites the stored token with garbage (#2962 review).
+      unless valid_codex_refresh_response?(parsed)
+        raise InvalidCodexRefreshResponse.new(
+          "Codex refresh response is not a usable auth.json",
+          reason: parsed.codex_auth? ? "missing_access_token" : "not_codex_auth"
+        )
+      end
+
       credential.assign_attributes(
         token: token.to_s,
         expires_at: parsed.expires_at || credential.expires_at,
@@ -3511,6 +3545,10 @@ module Containers
         ).compact
       )
       credential.save!
+    end
+
+    def valid_codex_refresh_response?(parsed)
+      parsed.codex_auth? && parsed.access_token.present?
     end
 
     def record_codex_refresh_attempt!(credential, started_at, refresh_state:, result:, failure_reason: nil)
@@ -3561,6 +3599,17 @@ module Containers
         return codex_harvest_result(performed: false, reason: "malformed_rotated_credential")
       end
 
+      # CodexCredentials::Secret treats a refresh-token-only payload as a valid
+      # Codex auth, but a rotation without an access token is not harvestable:
+      # persisting it would brick the next materialization (no token for the CLI,
+      # and a nil expiry skips the pre-run refresh). Treat it as a harvest
+      # failure so telemetry matches what was actually persisted (#2962 review).
+      unless parsed.access_token.present?
+        record_codex_harvest_attempt!(credential, started_at,
+          result: RunnerAuthAttempt::RESULT_HARVEST_FAILED, failure_reason: "rotated_credential_missing_access_token")
+        return codex_harvest_result(performed: false, reason: "rotated_credential_missing_access_token")
+      end
+
       update_codex_managed_credential_from_rotation!(credential, rotated, parsed)
       log_system("container.codex_managed_auth_harvested", credential_id: credential.id)
       record_codex_harvest_attempt!(credential, started_at, result: RunnerAuthAttempt::RESULT_HARVESTED)
@@ -3573,9 +3622,11 @@ module Containers
       codex_harvest_result(performed: false, reason: "harvest_failed")
     end
 
+    # Persists the harvested rotation. The caller (harvest_codex_managed_credential_impl!)
+    # validates that `parsed` is a Codex auth carrying an access token before
+    # reaching here, so this method applies directly rather than silently no-op'ing
+    # on an unusable payload (#2962 review).
     def update_codex_managed_credential_from_rotation!(credential, rotated_auth_json, parsed)
-      return unless parsed.codex_auth? && parsed.access_token.present?
-
       credential.assign_attributes(
         token: rotated_auth_json,
         expires_at: parsed.expires_at || credential.expires_at,
