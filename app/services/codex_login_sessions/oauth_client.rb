@@ -35,7 +35,7 @@ module CodexLoginSessions
 
       payload = post(@config.device_url, "client_id" => @config.client_id, "scope" => @config.scopes)
       DeviceResponse.from_payload(payload)
-    rescue Net::HTTPError, Net::OpenTimeout, Errno::ECONNREFUSED => e
+    rescue Net::HTTPError, Net::OpenTimeout, Net::ReadTimeout, Net::WriteTimeout, Errno::ECONNREFUSED => e
       raise DeviceRequestError, "Codex device-code request failed: #{e.message}"
     end
 
@@ -48,7 +48,7 @@ module CodexLoginSessions
         "device_code" => device_code)
 
       TokenResponse.new(status: token_status(payload), tokens: success_tokens(payload), error: payload["error"])
-    rescue Net::HTTPError, Net::OpenTimeout, Errno::ECONNREFUSED => e
+    rescue Net::HTTPError, Net::OpenTimeout, Net::ReadTimeout, Net::WriteTimeout, Errno::ECONNREFUSED => e
       TokenResponse.new(status: :error, tokens: nil, error: "token_request_failed: #{e.message}")
     end
 
@@ -86,12 +86,23 @@ module CodexLoginSessions
       }.compact
     end
 
+    # Default timeouts for blocking OAuth HTTP calls. Puma threads call these
+    # synchronously, so unbounded waits would exhaust the thread pool if the
+    # OpenAI auth endpoint stalls.
+    OPEN_TIMEOUT = 5   # seconds to establish TCP connection
+    READ_TIMEOUT = 10  # seconds to receive response headers/body
+
     def net_http_post(url, params)
       uri = URI(url)
-      response = Net::HTTP.post_form(uri, params)
-      raise Net::HTTPError.new("OAuth endpoint returned #{response.code}", response) unless response.is_a?(Net::HTTPSuccess)
+      Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https",
+        open_timeout: OPEN_TIMEOUT, read_timeout: READ_TIMEOUT) do |http|
+        request = Net::HTTP::Post.new(uri)
+        request.set_form_data(params)
+        response = http.request(request)
+        raise Net::HTTPError.new("OAuth endpoint returned #{response.code}", response) unless response.is_a?(Net::HTTPSuccess)
 
-      response.body
+        response.body
+      end
     end
   end
 end

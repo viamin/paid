@@ -3416,14 +3416,18 @@ module Containers
     CODEX_CREDENTIAL_REFRESH_WINDOW = 10 * 60 # 10 minutes
 
     def refresh_codex_managed_credential_with_lease!(credential, provision: false)
-      return nil unless codex_managed_credential_near_expiry?(credential) || provision
+      return nil unless codex_managed_credential_near_expiry?(credential)
 
       started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       refresh_state = RunnerAuthAttempt::REFRESH_NOT_NEEDED
 
       with_codex_managed_refresh_lease(credential) do
         # Re-check after acquiring the lock: another Paid instance may have
-        # already refreshed this credential while we waited.
+        # already refreshed this credential while we waited. When called from
+        # materialize_managed_codex_credentials! (provision: true) we bypass
+        # this re-check so the materialized auth.json always reflects the token
+        # that was current when we entered the near-expiry window, not a stale
+        # read from another concurrent refresh attempt.
         unless provision || codex_managed_credential_near_expiry?(credential.reload)
           record_codex_refresh_attempt!(credential, started_at,
             refresh_state: RunnerAuthAttempt::REFRESH_NOT_NEEDED,
