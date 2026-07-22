@@ -4,6 +4,12 @@ Paid exports worker and infrastructure metrics at `GET /api/metrics` in Promethe
 
 Temporal SDK worker metrics are exported separately by `bin/temporal_worker` on `TEMPORAL_PROMETHEUS_BIND_ADDRESS` (default `0.0.0.0:9464`). That endpoint includes built-in Temporal queue latency/retry/saturation metrics plus Paid's replay-safe workflow counter `temporal_paid_swallowed_non_critical_activity_failures_total`.
 
+The checked-in observability stack assets use that split explicitly:
+
+- `prometheus/prometheus.yml` scrapes `web:3000/api/metrics`
+- `prometheus/prometheus.yml` scrapes `worker:9464` for Temporal SDK metrics
+- `docker-compose.observability.yml` provisions Prometheus, Grafana, Alertmanager, `postgres-exporter`, `node-exporter`, and `cadvisor`
+
 ## Agent Run Metrics
 
 | Metric | Type | Labels | Description |
@@ -89,3 +95,9 @@ Recommended auto-scaling signals:
 - **Scale up containers** when `paid_containers_avg_cpu_percent > 75` or `paid_containers_avg_memory_percent > 80`
 - **Scale down** when `paid_temporal_workflow_utilization_percent < 20` and `paid_agent_runs_queued == 0`
 - **Alert on queue backlog** when `paid_goodjob_queue_depth{queue="default"} > 50`
+
+## Collector Design
+
+The original observability RDR proposed adopting the `prometheus-client` Ruby gem. Paid instead ships a hand-rolled collector in `Metrics::PrometheusCollector`, and the checked-in Prometheus rules and Grafana dashboards now target that collector as the source of truth.
+
+That design choice has a direct consequence: some example metrics from the original RDR, such as cost counters or quality-score histograms, do not exist yet and therefore are not referenced by the shipped alert rules or dashboard panels. If Paid later adds counter or histogram-style instrumentation, those assets can be expanded without changing the deployment shape.
