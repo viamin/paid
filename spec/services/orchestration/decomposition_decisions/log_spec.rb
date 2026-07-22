@@ -241,6 +241,22 @@ RSpec.describe Orchestration::DecompositionDecisions::Log do
         expect(orchestration_decision.strategy_version).to eq(learned_version)
       end
 
+      it "matches learned strategy rules against enriched issue context" do
+        _, learned_version = create_global_strategy_with_active_version(
+          decision_type: "planning_outcome",
+          selection_rules: {
+            "issue" => {
+              "github_number" => issue.github_number
+            }
+          }
+        )
+
+        described_class.call(**payload)
+
+        orchestration_decision = orchestration_decision_for(payload[:decision_key])
+        expect(orchestration_decision.strategy_version).to eq(learned_version)
+      end
+
       it "falls back to the baseline strategy version when no learned strategy matches" do
         # Strategy with rules that do not match the payload's input_context
         create_global_strategy_with_active_version(

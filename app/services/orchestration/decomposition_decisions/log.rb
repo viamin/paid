@@ -165,7 +165,7 @@ module Orchestration
       def resolved_strategy_version
         result = Strategies::Select.call(
           decision_type: decision_type,
-          context: input_context,
+          context: enriched_input_context,
           project: project
         )
         return result.strategy_version if result.found?
