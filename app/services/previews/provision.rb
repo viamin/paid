@@ -90,7 +90,8 @@ module Previews
       end
     end
 
-    attr_reader :agent_run, :project, :repo_path, :logger, :config, :container_service
+    attr_reader :agent_run, :project, :repo_path, :logger, :config, :container_service,
+      :service_environment, :network_name
 
     def initialize(agent_run:, repo_path:, preview_session: nil, logger: Rails.logger,
       service_provisioner: Containers::ServiceProvisioner.new, seed_runner: Screenshots::SeedRunner.new,
@@ -161,14 +162,6 @@ module Previews
       end
     rescue StandardError => e
       logger.warn(message: "previews.provision.container_cleanup_failed", agent_run_id: agent_run.id, error: e.message)
-    end
-
-    def service_environment
-      @service_environment
-    end
-
-    def network_name
-      @network_name
     end
 
     private
