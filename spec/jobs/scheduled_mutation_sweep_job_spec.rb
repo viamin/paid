@@ -47,6 +47,24 @@ RSpec.describe ScheduledMutationSweepJob do
       expect(MutationSweeps::Run).not_to have_received(:call)
     end
 
+    it "scopes the sweep window to the configured zone day, not the UTC day" do
+      project = create(:project, account: account)
+      create(:pre_commit_requirement, :mutation_test, project: project, account: account, name: "mutant")
+      metric_run = create(:agent_run, :completed, project: project)
+      # 2026-05-26 20:30 Pacific falls on 2026-05-27 in UTC; a UTC-day lookup
+      # would wrongly treat the project as already swept for 2026-05-27.
+      create(:quality_metric,
+        agent_run: metric_run,
+        source: QualityMetric::SCHEDULED_MUTATION_SWEEP_SOURCE,
+        mutation_kill_rate: 0.8,
+        scores: { "mutation_kill_rate" => 0.8 },
+        created_at: Time.zone.local(2026, 5, 26, 20, 30))
+
+      job.perform(sweep_date: "2026-05-27")
+
+      expect(MutationSweeps::Run).to have_received(:call).with(project: project, sweep_date: Date.new(2026, 5, 27)).once
+    end
+
     it "treats failed sweep markers as already attempted for the date" do
       failed_project = create(:project, account: account)
       next_project = create(:project, account: account)

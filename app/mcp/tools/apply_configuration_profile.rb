@@ -17,25 +17,27 @@ module Tools
         properties: {
           profile_id: { type: "string", description: "The configuration profile to apply" },
           project_id: { type: "integer", description: "The project to apply the profile to" },
+          overrides: { type: "object", description: "Optional answers to the profile's clarifying questions" },
           confirmed: { type: "boolean" }
         },
         required: %w[profile_id project_id confirmed]
       }
     end
 
-    def perform(profile_id:, project_id:, confirmed:)
+    def perform(profile_id:, project_id:, overrides: {}, confirmed:)
       raise ArgumentError, "Confirmation required: set confirmed=true to apply a configuration profile" unless confirmed
 
       project = project_for(project_id)
-      profile = ConfigurationProfiles::Registry.find!(profile_id)
-      plan = ConfigurationProfiles::Planner.for_profile(project, profile)
-      result = ConfigurationProfiles::Applier.call(project, plan, actor: user)
+      profile = Configuration::Profiles::Registry.fetch(profile_id)
+      plan = Configuration::Profiles::Planner.call(profile:, project:, overrides:)
+      result = Configuration::Profiles::Applier.call(plan:, project:, actor: user)
 
       {
-        profile_id: profile.key.to_s,
+        profile_id: profile.name,
+        profile_name: profile.display_name,
         project_id: project.id,
-        applied_fields: result.changes.map { |change| change.field.to_s },
-        activity_id: result.activity&.id
+        applied_changes: result,
+        applied_overrides: plan.applied_overrides
       }
     end
 

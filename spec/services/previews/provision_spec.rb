@@ -3,281 +3,483 @@
 require "rails_helper"
 
 RSpec.describe Previews::Provision do
-  let(:project) { create(:project) }
-  let(:service) { described_class.new(project: project) }
+  let(:project) do
+    create(:project, screenshot_settings: {
+      "enabled" => true,
+      "service_dependencies" => [ "postgres" ]
+    })
+  end
+  let(:agent_run) do
+    create(:agent_run,
+      project:,
+      branch_name: "paid/test-branch",
+      pull_request_number: 99)
+  end
+  let(:repo_path) { Dir.mktmpdir("preview-provision-spec") }
+  let(:config) do
+    Screenshots::Configuration.from_hash(
+      "base_url" => "http://localhost:3000",
+      "routes" => [ { "path" => "/", "name" => "home" } ],
+      "services" => [ "redis" ]
+    )
+  end
+  let(:service_provisioner) { instance_double(Containers::ServiceProvisioner) }
+  let(:seed_runner) { instance_double(Screenshots::SeedRunner, call: { user: OpenStruct.new(id: 1) }) }
+  let(:tunnel_manager) do
+    instance_double(
+      Previews::TunnelManager,
+      allocate_port!: 8201,
+      start_client!: true,
+      wait_until_healthy!: true,
+      stop_client!: true,
+      release_port!: true,
+      token: "preview-token"
+    )
+  end
+  let(:service) do
+    described_class.new(
+      agent_run:,
+      repo_path:,
+      service_provisioner:,
+      seed_runner:,
+      tunnel_manager:
+    )
+  end
 
-  describe "#start" do
-    it "creates a ready session with a tunnel port and stops nothing else" do
-      result = service.start(branch_name: "feature/x")
+  before do
+    allow(container_result).to receive(:[]).and_return("")
+    allow(Containers::Provision).to receive(:new).and_return(container_service)
+    allow(Containers::GitOperations).to receive(:new).and_return(git_ops)
+    allow(container_service).to receive(:execute).and_return(container_result)
+    allow(service_provisioner).to receive(:provision)
+    allow(Screenshots::ConfigParser).to receive_messages(from_repo_path: config, ui_detection_overrides: {})
+    allow(Screenshots::DetectFramework).to receive(:detect_framework_only).and_return(:rails)
 
-      expect(result).to be_success
-      session = result.session.reload
-      expect(session.status).to eq("ready")
-      expect(session.tunnel_port).to be_in(Previews.port_range)
-      expect(session.container_id).to start_with("preview-")
-      expect(session.branch_name).to eq("feature/x")
+    FileUtils.mkdir_p(File.join(repo_path, "bin"))
+    File.write(File.join(repo_path, "bin/rails"), "#!/bin/sh\n")
+  end
+
+  after do
+    FileUtils.rm_rf(repo_path)
+  end
+
+  it "merges project and repo service dependencies for provisioning" do
+    service.call(start_tunnel: false, allow_seed: false)
+
+    expect(service_provisioner).to have_received(:provision)
+      .with(agent_run, network: "paid-test", service_names: contain_exactly("postgres", "redis"))
+  end
+
+  it "cleans up provisioned service containers and per-run databases via the service provisioner" do
+    captured_env = { "DATABASE_URL" => "postgres://agent:agent@paid-svc/agent_run_preview" }
+    allow(service_provisioner).to receive(:provision) do
+      agent_run.update!(service_container_ids: [ 101, 202 ], service_environment: captured_env)
+    end
+    allow(service_provisioner).to receive(:cleanup_service_containers)
+
+    service.call(start_tunnel: false, allow_seed: false)
+    service.cleanup!
+
+    expect(service_provisioner).to have_received(:cleanup_service_containers)
+      .with(
+        contain_exactly(101, 202),
+        agent_run: agent_run,
+        service_environment: captured_env
+      )
+  end
+
+  it "leaves the preview's service container ids on the agent run while in flight" do
+    captured_env = { "DATABASE_URL" => "postgres://agent:agent@paid-svc/agent_run_preview" }
+    allow(service_provisioner).to receive(:provision) do
+      agent_run.update!(service_container_ids: [ 101, 202 ], service_environment: captured_env)
+    end
+    allow(service_provisioner).to receive(:cleanup_service_containers)
+
+    service.call(start_tunnel: false, allow_seed: false)
+
+    expect(agent_run.reload.service_container_ids).to contain_exactly(101, 202)
+  end
+
+  it "preserves any pre-existing service container ids when persisting preview references" do
+    agent_run.update!(service_container_ids: [ 7 ])
+    allow(service_provisioner).to receive(:provision) do
+      agent_run.update!(service_container_ids: [ 7, 101, 202 ])
+    end
+    allow(service_provisioner).to receive(:cleanup_service_containers)
+
+    service.call(start_tunnel: false, allow_seed: false)
+
+    expect(agent_run.reload.service_container_ids).to contain_exactly(7, 101, 202)
+  end
+
+  it "restores the agent run's pre-existing service container ids on cleanup" do
+    agent_run.update!(service_container_ids: [ 7 ], service_environment: { "DATABASE_URL" => "postgres://existing/db" })
+    allow(service_provisioner).to receive(:provision) do
+      agent_run.update!(
+        service_container_ids: [ 7, 101, 202 ],
+        service_environment: { "DATABASE_URL" => "postgres://preview-host/db" }
+      )
+    end
+    allow(service_provisioner).to receive(:cleanup_service_containers)
+
+    service.call(start_tunnel: false, allow_seed: false)
+    service.cleanup!
+
+    expect(agent_run.reload.service_container_ids).to eq([ 7 ])
+    expect(agent_run.service_environment).to eq({ "DATABASE_URL" => "postgres://existing/db" })
+  end
+
+  it "only cleans up preview-added service containers, not pre-existing ones the agent run already had" do
+    agent_run.update!(service_container_ids: [ 7 ])
+    captured_env = { "DATABASE_URL" => "postgres://preview-host/db" }
+    allow(service_provisioner).to receive(:provision) do
+      agent_run.update!(service_container_ids: [ 7, 101, 202 ], service_environment: captured_env)
+    end
+    allow(service_provisioner).to receive(:cleanup_service_containers)
+
+    service.call(start_tunnel: false, allow_seed: false)
+    service.cleanup!
+
+    expect(service_provisioner).to have_received(:cleanup_service_containers)
+      .with(
+        contain_exactly(101, 202),
+        agent_run: agent_run,
+        service_environment: captured_env
+      )
+  end
+
+  it "counts the preview against service container capacity while in flight so concurrent cleanup cannot stop the shared container" do
+    service_container = create(:service_container, :running)
+    create(:project_service_container, project: project, service_container: service_container)
+    running_agent_run = create(:agent_run, :running, project: project)
+    preview_provision = described_class.new(
+      agent_run: running_agent_run,
+      repo_path:,
+      service_provisioner:,
+      seed_runner:,
+      tunnel_manager:
+    )
+    allow(service_provisioner).to receive(:provision) do
+      running_agent_run.update!(service_container_ids: [ service_container.id ])
+    end
+    allow(service_provisioner).to receive(:cleanup_service_containers)
+
+    preview_provision.call(start_tunnel: false, allow_seed: false)
+
+    expect(service_container.capacity_inflight_agent_run_count).to eq(1)
+
+    preview_provision.cleanup!
+
+    expect(service_container.reload.capacity_inflight_agent_run_count).to eq(0)
+  end
+
+  it "removes this preview's transient service ids before cleanup evaluates shared container capacity" do
+    service_container = create(:service_container, :running)
+    create(:project_service_container, project: project, service_container: service_container)
+    running_agent_run = create(:agent_run, :running, project: project)
+    preview_provision = described_class.new(
+      agent_run: running_agent_run,
+      repo_path:,
+      service_provisioner:,
+      seed_runner:,
+      tunnel_manager:
+    )
+    allow(service_provisioner).to receive(:provision) do
+      running_agent_run.update!(service_container_ids: [ service_container.id ])
+    end
+    allow(service_provisioner).to receive(:cleanup_service_containers) do
+      expect(service_container.reload.capacity_inflight_agent_run_count).to eq(0)
+      expect(running_agent_run.reload.service_container_ids).to eq([])
     end
 
-    it "stops the previously active session before starting a new one" do
-      first = service.start(branch_name: "main").session
+    preview_provision.call(start_tunnel: false, allow_seed: false)
+    preview_provision.cleanup!
+  end
 
-      second = service.start(branch_name: "feature/y").session
+  it "preserves a sibling preview's service container ids and environment when overlapping on the same agent run" do
+    provision_a, provision_b = provision_overlapping_previews
 
-      expect(first.reload.status).to eq("stopped")
-      expect(first.tunnel_port).to be_nil
-      expect(second.status).to eq("ready")
-      expect(second.tunnel_port).to be_in(Previews.port_range)
+    provision_a.cleanup!
+
+    expect(agent_run.reload.service_container_ids).to contain_exactly(7, 202)
+    expect(agent_run.service_environment).to eq({ "DATABASE_URL" => "postgres://preview-b/db" })
+
+    provision_b.cleanup!
+
+    expect(agent_run.reload.service_container_ids).to eq([ 7 ])
+    expect(agent_run.service_environment).to eq({ "DATABASE_URL" => "postgres://existing/db" })
+  end
+
+  it "preserves sibling environment additions that share a key with this preview's snapshot" do
+    provision_a, = provision_overlapping_previews(
+      pre_existing_ids: [],
+      original_environment: {},
+      preview_a_ids: [ 101 ],
+      preview_b_ids: [ 101, 202 ]
+    )
+    provision_a.cleanup!
+
+    expect(agent_run.reload.service_environment).to eq({ "DATABASE_URL" => "postgres://preview-b/db" })
+  end
+
+  it "tracks overlap baselines in shared database state and clears them after the last cleanup" do
+    provision_a, provision_b = provision_overlapping_previews
+
+    shared_state = PreviewProvisionState.find_by!(agent_run: agent_run)
+    expect(shared_state.active_count).to eq(2)
+    expect(shared_state.baseline_service_container_ids).to eq([ 7 ])
+    expect(shared_state.baseline_service_environment).to eq({ "DATABASE_URL" => "postgres://existing/db" })
+
+    provision_a.cleanup!
+
+    expect(PreviewProvisionState.find_by!(agent_run: agent_run).active_count).to eq(1)
+
+    provision_b.cleanup!
+
+    expect(PreviewProvisionState.find_by(agent_run: agent_run)).to be_nil
+  end
+
+  it "restores the original service container ids and environment when dependency provisioning fails" do
+    allow(service_provisioner).to receive(:cleanup_service_containers)
+    allow(service_provisioner).to receive(:provision) do
+      agent_run.update!(
+        service_container_ids: [ 101, 202 ],
+        service_environment: { "DATABASE_URL" => "postgres://preview-host/db" }
+      )
+      raise Containers::Provision::TimeoutError, "timed out"
     end
 
-    it "frees the tunnel port when container backend fails" do
-      backend = Class.new do
-        include Previews::ContainerBackend
-        def self.start(_session)
-          raise "docker unavailable"
-        end
-        def self.stop(_session); true; end
-      end
+    expect {
+      service.call(start_tunnel: false, allow_seed: false)
+    }.to raise_error(Containers::Provision::TimeoutError, "timed out")
 
-      result = described_class.new(project: project, container_backend: backend)
-        .start(branch_name: "main")
+    agent_run.reload
+    expect(agent_run.service_container_ids).to eq([])
+    expect(agent_run.service_environment).to eq({})
+    expect(service_provisioner).to have_received(:cleanup_service_containers).with(
+      contain_exactly(101, 202),
+      agent_run: agent_run,
+      service_environment: { "DATABASE_URL" => "postgres://preview-host/db" }
+    )
+    expect(service.instance_variable_get(:@service_container_ids)).to be_nil
+  end
 
-      expect(result.success?).to be(false)
-      session = result.session.reload
-      expect(session.status).to eq("failed")
-      expect(session.tunnel_port).to be_nil
-    end
+  it "still cleans up the preview container when tunnel release fails" do
+    service.call(start_tunnel: true, allow_seed: false)
+    allow(tunnel_manager).to receive(:release_port!).and_raise("release failed")
 
-    it "reaps expired sessions before acquiring a port" do
-      expired = create(:preview_session, :expired, project: project, tunnel_port: Previews.port_range.min)
+    service.cleanup!
 
-      expect do
-        result = service.start(branch_name: "main")
-        expect(result).to be_success
-      end.to change { expired.reload.status }.from("ready").to("stopped")
+    expect(container_service).to have_received(:cleanup).with(force: true)
+  end
 
-      expect(expired.reload.tunnel_port).to be_nil
-    end
+  it "does not release a persisted tunnel port when cleanup runs before this lifecycle allocates one" do
+    service.prepare_workspace!
 
-    it "serializes the stop-and-create path under the project lock" do
-      allow(project).to receive(:with_lock).and_wrap_original do |method, *args, &block|
-        method.call(*args, &block)
-      end
+    service.cleanup!
 
-      service.start(branch_name: "main")
+    expect(tunnel_manager).not_to have_received(:release_port!)
+  end
 
-      expect(project).to have_received(:with_lock)
-    end
+  it "loads seed data only when the repo screenshots config defines seed records" do
+    seeded_config = Screenshots::Configuration.from_hash(
+      "base_url" => "http://localhost:3000",
+      "routes" => [ { "path" => "/", "name" => "home" } ],
+      "seed" => [
+        { "key" => "user", "runner" => "Screenshots::SeedData::Paid.call" }
+      ]
+    )
+    allow(Screenshots::ConfigParser).to receive(:from_repo_path).and_return(seeded_config)
+    write_repo_seed_config
 
-    it "releases the project lock before container start" do
-      observed = []
-      backend = build_observing_backend(observed)
-      lock_state = instrument_project_lock(project)
+    service.call(start_tunnel: false, allow_seed: true)
 
-      result = described_class.new(project: project, container_backend: backend).start(branch_name: "main")
+    expect(seed_runner).to have_received(:call).with(
+      config: seeded_config,
+      repo_path:,
+      driver_name: seeded_config.driver,
+      force: true,
+      executor: an_object_responding_to(:call)
+    )
+  end
 
-      expect(result).to be_success
-      expect(lock_state[:held]).to be(false)
-      expect(observed).to eq([ false ])
-    end
+  it "loads seed data from the configured project screenshot config path" do
+    project.update!(screenshot_settings: project.screenshot_settings.merge("config_path" => ".paid/custom-screenshots.yml"))
+    seeded_config = seed_enabled_config
+    allow(Screenshots::ConfigParser).to receive(:from_repo_path).and_return(seeded_config)
+    write_repo_seed_config(path: ".paid/custom-screenshots.yml")
 
-    it "does not resurrect a session stopped concurrently during backend start" do
-      # Simulate a concurrent teardown that fires while the container backend
-      # start is in-flight (the project lock is not held during that call).
-      concurrent_stop_backend = Class.new do
-        include Previews::ContainerBackend
+    service.call(start_tunnel: false, allow_seed: true)
 
-        def self.start(session)
-          # Mimic what a concurrent stop/restart does: clear the tunnel port
-          # and move the session to the stopped terminal state.
-          session.update_columns(status: "stopped", tunnel_port: nil)
-          Previews::ContainerBackend::Outcome.new(container_id: "preview-concurrent", app_port: 3000)
-        end
+    expect(seed_runner).to have_received(:call).with(
+      config: seeded_config,
+      repo_path:,
+      driver_name: seeded_config.driver,
+      force: true,
+      executor: an_object_responding_to(:call)
+    )
+  end
 
-        def self.stop(_session); true; end
-      end
+  it "executes screenshot seeds inside the preview container with the preview environment" do
+    seeded_config = seed_enabled_config
+    allow(Screenshots::ConfigParser).to receive(:from_repo_path).and_return(seeded_config)
+    provision_preview_database
+    write_repo_seed_config
+    stub_seed_runner_executor_probe
 
-      result = described_class.new(project: project, container_backend: concurrent_stop_backend)
-        .start(branch_name: "feature/race")
+    service.call(start_tunnel: false, allow_seed: true)
 
-      expect(result).to be_success
-      session = PreviewSession.where(project: project, branch_name: "feature/race").first
-      expect(session.status).to eq("stopped")
-      expect(session.tunnel_port).to be_nil
+    expect(container_service).to have_received(:execute).with(
+      a_string_including("bin/rails runner"),
+      hash_including(
+        timeout: described_class::PROVISION_TIMEOUT_SECONDS,
+        stream: false,
+        env: hash_including(
+          "CI" => "1",
+          "DATABASE_URL" => "postgres://preview-host/db",
+          "SCREENSHOT_SEED_CONFIG" => "[]"
+        )
+      )
+    )
+  end
+
+  it "shell-escapes readiness probe url parts before building the probe command" do
+    allow(service).to receive(:config).and_return(
+      Screenshots::Configuration.from_hash(
+        "base_url" => "http://localhost:3000/it's-a-path",
+        "routes" => [ { "path" => "/", "name" => "home" } ]
+      )
+    )
+
+    command = service.send(:readiness_probe_command)
+
+    expect(command).to include("PREVIEW_APP_HOST=localhost")
+    expect(command).to include("PREVIEW_APP_PORT=3000")
+    expect(command).to include("PREVIEW_APP_PATH=/it\\'s-a-path")
+    expect(command).to include('ENV.fetch("PREVIEW_APP_PATH")')
+    expect(command).not_to include(%q(uri = URI("http://localhost:3000/it's-a-path")))
+  end
+
+  it "starts the rathole client and waits for tunnel health when tunnel startup is enabled" do
+    service.call(start_tunnel: true, allow_seed: false)
+
+    expect(tunnel_manager).to have_received(:start_client!)
+      .with(container_service:, local_port: 3000, remote_port: 8201)
+    expect(tunnel_manager).to have_received(:wait_until_healthy!)
+      .with(port: 8201, path: "/", timeout_seconds: described_class::STARTUP_TIMEOUT_SECONDS)
+  end
+
+  it "raises a config error when a Phoenix project has seed configuration" do
+    allow(Screenshots::DetectFramework).to receive(:detect_framework_only).and_return(:phoenix)
+    seeded_config = seed_enabled_config
+    allow(Screenshots::ConfigParser).to receive(:from_repo_path).and_return(seeded_config)
+    write_repo_seed_config
+
+    expect {
+      service.call(start_tunnel: false, allow_seed: true)
+    }.to raise_error(Screenshots::ConfigError, /seed configuration is not supported for Phoenix/)
+  end
+
+  it "starts Phoenix apps through mix phx.server with a preview bind override" do
+    allow(Screenshots::DetectFramework).to receive(:detect_framework_only).and_return(:phoenix)
+
+    File.write(File.join(repo_path, "mix.exs"), "defmodule Demo.MixProject do\nend\n")
+    FileUtils.mkdir_p(File.join(repo_path, "config"))
+    File.write(File.join(repo_path, "config/dev.exs"), "import Config\n")
+
+    service.call(start_tunnel: false, allow_seed: false)
+
+    expect(container_service).to have_received(:execute).with(
+      a_string_including("PORT=3000 MIX_ENV=dev mix phx.server"),
+      hash_including(timeout: 30, env: hash_including("CI" => "1"), stream: false)
+    )
+    expect(File.read(File.join(repo_path, "config/dev.exs"))).to include(%(import_config "paid_preview.exs"))
+    expect(File.read(File.join(repo_path, "config/paid_preview.exs"))).to include("Keyword.put(:ip, {0, 0, 0, 0})")
+  end
+
+  def container_result
+    @container_result ||= double(success?: true)
+  end
+
+  def container_service
+    @container_service ||= instance_double(
+      Containers::Provision,
+      provision: true,
+      network_name: "paid-test",
+      container: instance_double(Docker::Container, id: "container-123"),
+      cleanup: true
+    )
+  end
+
+  def git_ops
+    @git_ops ||= instance_double(
+      Containers::GitOperations,
+      clone_and_checkout_branch: true,
+      install_artifact_excludes: true
+    )
+  end
+
+  def write_repo_seed_config(path: ".paid/screenshots.yml")
+    full_path = File.join(repo_path, path)
+    FileUtils.mkdir_p(File.dirname(full_path))
+    File.write(full_path, <<~YAML)
+      seed:
+        - key: user
+          runner: Screenshots::SeedData::Paid.call
+    YAML
+  end
+
+  def seed_enabled_config
+    Screenshots::Configuration.from_hash(
+      "base_url" => "http://localhost:3000",
+      "routes" => [ { "path" => "/", "name" => "home" } ],
+      "seed" => [
+        { "key" => "user", "runner" => "Screenshots::SeedData::Paid.call" }
+      ]
+    )
+  end
+
+  def provision_preview_database
+    allow(service_provisioner).to receive(:provision) do
+      agent_run.update!(service_environment: { "DATABASE_URL" => "postgres://preview-host/db" })
     end
   end
 
-  describe "#stop" do
-    it "is a no-op when there is no active session" do
-      expect(service.stop).to be_success
-    end
-
-    it "is a no-op for a session that is already terminal" do
-      session = create(:preview_session, :stopped, project: project, tunnel_port: nil)
-      backend = class_double(Previews::ContainerBackend::Simulated).as_stubbed_const
-      allow(backend).to receive(:stop)
-
-      result = described_class.new(project: project, container_backend: backend).stop(session: session)
-
-      expect(result).to be_success
-      expect(backend).not_to have_received(:stop)
-    end
-
-    it "stops the current active session and releases its tunnel port" do
-      started = service.start(branch_name: "main").session
-      port = started.tunnel_port
-
-      result = service.stop
-
-      expect(result).to be_success
-      expect(started.reload.status).to eq("stopped")
-      expect(started.tunnel_port).to be_nil
-      expect(port).to be_in(Previews.port_range)
-    end
-
-    it "stops the latest non-terminal session even after its TTL has passed" do
-      session = create(:preview_session, :expired, project: project, tunnel_port: 8250, container_id: "preview-123")
-
-      result = service.stop
-
-      expect(result).to be_success
-      expect(result.session.id).to eq(session.id)
-      expect(session.reload.status).to eq("stopped")
-      expect(session.tunnel_port).to be_nil
-    end
-
-    it "stops a specific session passed in" do
-      session = create(:preview_session, :ready, project: project, tunnel_port: 8250)
-
-      result = service.stop(session: session)
-
-      expect(result).to be_success
-      expect(session.reload.status).to eq("stopped")
-      expect(session.tunnel_port).to be_nil
-    end
-
-    it "treats an already-missing container as a successful stop" do
-      backend = Class.new do
-        include Previews::ContainerBackend
-
-        def self.start(_session)
-          raise "not used"
-        end
-
-        def self.stop(_session)
-          raise "Container preview-123 not found"
-        end
-      end
-      session = create(:preview_session, :ready, project: project, tunnel_port: 8250, container_id: "preview-123")
-
-      result = described_class.new(project: project, container_backend: backend).stop(session: session)
-
-      expect(result).to be_success
-      expect(session.reload.status).to eq("stopped")
-      expect(session.tunnel_port).to be_nil
+  def stub_seed_runner_executor_probe
+    allow(seed_runner).to receive(:call) do |**args|
+      args.fetch(:executor).call("SCREENSHOT_SEED_CONFIG" => "[]")
+      {}
     end
   end
 
-  describe "#status" do
-    it "returns the most recent session for the project (including terminal)" do
-      _old = create(:preview_session, :stopped, project: project, created_at: 2.days.ago)
-      fresh = create(:preview_session, :ready, project: project, created_at: 1.hour.ago)
+  def provision_overlapping_previews(pre_existing_ids: [ 7 ], original_environment: { "DATABASE_URL" => "postgres://existing/db" },
+    preview_a_ids: [ 7, 101 ], preview_a_environment: { "DATABASE_URL" => "postgres://preview-a/db" },
+    preview_b_ids: [ 7, 101, 202 ], preview_b_environment: { "DATABASE_URL" => "postgres://preview-b/db" })
+    agent_run.update!(service_container_ids: pre_existing_ids, service_environment: original_environment)
+    allow(service_provisioner).to receive(:cleanup_service_containers)
 
-      expect(service.status.id).to eq(fresh.id)
+    provision_a = build_provision
+    allow(service_provisioner).to receive(:provision) do
+      agent_run.update!(service_container_ids: preview_a_ids, service_environment: preview_a_environment)
     end
+    provision_a.call(start_tunnel: false, allow_seed: false)
 
-    it "ignores expired active sessions and falls back to the latest terminal session" do
-      stopped = create(:preview_session, :stopped, project: project, created_at: 5.minutes.ago)
-      create(:preview_session, :expired, project: project, created_at: 1.minute.ago)
-
-      expect(service.status.id).to eq(stopped.id)
+    provision_b = build_provision
+    allow(service_provisioner).to receive(:provision) do |_agent_run, **|
+      agent_run.update!(service_container_ids: preview_b_ids, service_environment: preview_b_environment)
     end
+    provision_b.call(start_tunnel: false, allow_seed: false)
+
+    [ provision_a, provision_b ]
   end
 
-  describe "#current" do
-    it "ignores expired sessions even if their status is still active" do
-      _expired = create(:preview_session, :expired, project: project)
-
-      expect(service.send(:current)).to be_nil
-    end
-  end
-
-  describe "#restart" do
-    it "reuses the latest non-terminal session branch after expiry" do
-      create(:preview_session, :expired, project: project, branch_name: "feature/keep-me")
-
-      result = service.restart
-
-      expect(result).to be_success
-      expect(result.session.reload.branch_name).to eq("feature/keep-me")
-    end
-
-    it "reuses the latest failed session branch when retrying without an explicit branch" do
-      create(:preview_session, :failed, project: project, branch_name: "feature/retry-me")
-
-      result = service.restart
-
-      expect(result).to be_success
-      expect(result.session.reload.branch_name).to eq("feature/retry-me")
-    end
-
-    it "returns the failed stop result without starting a new session when stop fails" do
-      erroring_backend = Class.new do
-        include Previews::ContainerBackend
-
-        def self.start(_session)
-          raise "should not be called"
-        end
-
-        def self.stop(_session)
-          raise "unexpected teardown error"
-        end
-      end
-      create(:preview_session, :ready, project: project, tunnel_port: 8250)
-      svc = described_class.new(project: project, container_backend: erroring_backend)
-
-      result = svc.restart
-
-      expect(result).not_to be_success
-      expect(result.error).to include("unexpected teardown error")
-      # No new session should have been started
-      expect(PreviewSession.for_project(project).count).to eq(1)
-    end
-  end
-
-  def build_observing_backend(observed)
-    backend = Class.new do
-      include Previews::ContainerBackend
-
-      class << self
-        attr_accessor :observed
-      end
-
-      def self.start(session)
-        observed << Thread.current[:preview_lock_held]
-        Previews::ContainerBackend::Outcome.new(container_id: "preview-#{session.token[0, 12]}", app_port: 3000)
-      end
-
-      def self.stop(_session)
-        true
-      end
-    end
-
-    backend.observed = observed
-    backend
-  end
-
-  def instrument_project_lock(project)
-    lock_state = { held: false }
-
-    allow(project).to receive(:with_lock).and_wrap_original do |method, *args, &block|
-      lock_state[:held] = true
-      Thread.current[:preview_lock_held] = true
-      method.call(*args, &block)
-    ensure
-      lock_state[:held] = false
-      Thread.current[:preview_lock_held] = false
-    end
-
-    lock_state
+  def build_provision
+    described_class.new(
+      agent_run:,
+      repo_path:,
+      service_provisioner:,
+      seed_runner:,
+      tunnel_manager:
+    )
   end
 end

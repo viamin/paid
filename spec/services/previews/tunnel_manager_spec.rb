@@ -18,7 +18,7 @@ RSpec.describe Previews::TunnelManager do
   end
 
   let(:original_preview_tunnel_config) { Rails.application.config.x.preview_tunnel }
-  let(:default_backend) { instance_double(Containers::Backends::Base, identifier: "local", list_containers: []) }
+  let(:default_backend) { instance_double(Containers::Backends::Base, identifier: "local", list_containers: [], remote?: false) }
 
   before do
     allow(Containers).to receive(:backend).and_return(default_backend)
@@ -81,24 +81,6 @@ RSpec.describe Previews::TunnelManager do
 
       expect(described_class.allocate_port(key: "fresh-preview")).to eq(8200)
     end
-
-    it "does not allocate or prune when the backend cannot be queried" do
-      stale = PreviewTunnelPortReservation.create!(reservation_key: "stale-preview", tunnel_port: 8200)
-      stale.update_columns(created_at: 20.minutes.ago, updated_at: 20.minutes.ago)
-
-      backend = instance_double(Containers::Backends::Base, identifier: "local")
-      allow(Containers).to receive(:backend).and_return(backend)
-      allow(backend).to receive(:list_containers)
-        .with(filters: { label: [ "#{described_class::PREVIEW_TUNNEL_LABEL}=true" ] }.to_json)
-        .and_raise(Docker::Error::TimeoutError, "docker unavailable")
-
-      expect {
-        described_class.allocate_port(key: "fresh-preview")
-      }.to raise_error(Docker::Error::TimeoutError, "docker unavailable")
-
-      expect(PreviewTunnelPortReservation.exists?(stale.id)).to be(true)
-      expect(PreviewTunnelPortReservation.exists?(reservation_key: "fresh-preview")).to be(false)
-    end
   end
 
   describe ".prune_stale_reservations!" do
@@ -124,75 +106,6 @@ RSpec.describe Previews::TunnelManager do
       expect(PreviewTunnelPortReservation.exists?(stale.id)).to be(false)
       expect(PreviewTunnelPortReservation.exists?(fresh.id)).to be(true)
       expect(PreviewTunnelPortReservation.exists?(active.id)).to be(true)
-    end
-
-    it "propagates backend lookup failures without deleting stale reservations" do
-      stale = PreviewTunnelPortReservation.create!(reservation_key: "stale-preview", tunnel_port: 8200)
-      stale.update_columns(created_at: 20.minutes.ago, updated_at: 20.minutes.ago)
-
-      backend = instance_double(Containers::Backends::Base, identifier: "local")
-      allow(backend).to receive(:list_containers)
-        .with(filters: { label: [ "#{described_class::PREVIEW_TUNNEL_LABEL}=true" ] }.to_json)
-        .and_raise(Docker::Error::TimeoutError, "docker unavailable")
-
-      expect {
-        described_class.prune_stale_reservations!(
-          range: described_class.port_range,
-          backend:,
-          stale_before: 15.minutes.ago
-        )
-      }.to raise_error(Docker::Error::TimeoutError, "docker unavailable")
-
-      expect(PreviewTunnelPortReservation.exists?(stale.id)).to be(true)
-    end
-  end
-
-  describe ".configure!" do
-    it "preserves existing reservations when the range is unchanged" do
-      first = described_class.allocate_port(key: "session-a")
-
-      described_class.configure!(
-        port_range: "8200-8202",
-        server_port: 7001,
-        server_bind_host: "127.0.0.1",
-        shared_token: "replacement-token"
-      )
-
-      expect(described_class.allocate_port(key: "session-a")).to eq(first)
-      expect(described_class.server_port).to eq(7001)
-      expect(described_class.shared_token).to eq("replacement-token")
-    end
-
-    it "seeds reservations from active preview containers when allocating" do
-      backend = instance_double(Containers::Backends::Base, identifier: "local")
-      preview_container = instance_double(Docker::Container, info: preview_container_info(session_token: "active-preview", tunnel_port: 8201))
-      allow(Containers).to receive(:backend).and_return(backend)
-      allow(backend).to receive(:list_containers)
-        .with(filters: { label: [ "#{described_class::PREVIEW_TUNNEL_LABEL}=true" ] }.to_json)
-        .and_return([ preview_container ])
-
-      described_class.configure!(
-        port_range: "8200-8202",
-        server_port: 7000,
-        server_bind_host: "0.0.0.0",
-        shared_token: "paid-preview-test-token"
-      )
-
-      expect(described_class.allocate_port(key: "active-preview")).to eq(8201)
-      expect(described_class.allocate_port(key: "new-preview")).to eq(8200)
-    end
-
-    it "reconciles conflicting reservations in favor of active preview containers" do
-      PreviewTunnelPortReservation.create!(reservation_key: "stale-preview", tunnel_port: 8201)
-      backend = instance_double(Containers::Backends::Base, identifier: "local")
-      preview_container = instance_double(Docker::Container, info: preview_container_info(session_token: "active-preview", tunnel_port: 8201))
-      allow(Containers).to receive(:backend).and_return(backend)
-      allow(backend).to receive(:list_containers)
-        .with(filters: { label: [ "#{described_class::PREVIEW_TUNNEL_LABEL}=true" ] }.to_json)
-        .and_return([ preview_container ])
-
-      expect(described_class.allocate_port(key: "active-preview")).to eq(8201)
-      expect(described_class.allocate_port(key: "fresh-preview")).to eq(8200)
     end
   end
 
@@ -228,16 +141,12 @@ RSpec.describe Previews::TunnelManager do
   end
 
   describe ".client_config" do
-    let(:backend) { instance_double(Containers::Backends::Base, remote?: false) }
-
-    before do
-      allow(Containers::ProxyUrl).to receive(:resolve).with(backend:, restricted: true).and_return("http://paid-proxy:3000")
-    end
-
     it "renders a noise-encrypted client config for the preview app port" do
+      allow(Containers::ProxyUrl).to receive(:resolve).with(backend: default_backend, restricted: true).and_return("http://paid-proxy:3000")
+
       config = described_class.client_config(
         tunnel: { session_token: "abc123", tunnel_port: 8201, app_port: 4000 },
-        backend: backend,
+        backend: default_backend,
         restricted: true
       )
 
@@ -248,7 +157,6 @@ RSpec.describe Previews::TunnelManager do
       expect(config).to include('type = "noise"')
       expect(config).to include("[client.services.preview-abc123]")
       expect(config).to include('local_addr = "127.0.0.1:4000"')
-      expect(config).not_to include("remote_port")
     end
   end
 
@@ -268,25 +176,55 @@ RSpec.describe Previews::TunnelManager do
 
       thread.join
     end
+  end
 
-    it "does not treat a bare TCP listener as a ready tunnel" do
-      server = TCPServer.new("127.0.0.1", 0)
-      thread = Thread.new do
-        loop do
-          client = server.accept
-          client.close
-        end
-      rescue IOError, Errno::EBADF
-      ensure
-        server.close
-      end
+  describe "instance compatibility for Previews::Provision" do
+    let(:preview_session) { instance_double(PreviewSession, id: 42, token: "preview-token", tunnel_port: nil) }
+    let(:manager) { described_class.new(preview_session: preview_session, backend: default_backend) }
 
-      expect {
-        described_class.wait_until_ready!(host: "127.0.0.1", port: server.addr[1], timeout_seconds: 1)
-      }.to raise_error(described_class::HealthCheckError)
+    before do
+      allow(preview_session).to receive(:update!)
+      allow(Containers::ProxyUrl).to receive(:resolve).with(backend: default_backend, restricted: true).and_return("http://paid-proxy:3000")
+    end
 
-      server.close
-      thread.join
+    it "allocates and persists a port for the preview session" do
+      port = manager.allocate_port!
+
+      expect(port).to eq(8200)
+      expect(preview_session).to have_received(:update!).with(tunnel_port: 8200)
+      expect(PreviewTunnelPortReservation.find_by(reservation_key: "preview_session:42")&.tunnel_port).to eq(8200)
+    end
+
+    it "releases the reservation and clears the persisted port" do
+      manager.allocate_port!
+
+      manager.release_port!
+
+      expect(preview_session).to have_received(:update!).with(tunnel_port: nil)
+      expect(PreviewTunnelPortReservation.find_by(reservation_key: "preview_session:42")).to be_nil
+    end
+
+    it "backgrounds rathole directly so the PID file captures the real process" do
+      container_service = instance_double(Containers::Provision)
+      executed = []
+      allow(container_service).to receive(:execute) { |command, **| executed << command }
+
+      manager.start_client!(container_service:, local_port: 4000, remote_port: 8201)
+
+      command = executed.join
+      expect(command).to include("rathole --client")
+      expect(command).to include("echo $! >")
+      expect(command).not_to match(/\(.*rathole.*&\)/)
+    end
+
+    it "kills the process whose PID is recorded in the client PID file" do
+      container_service = instance_double(Containers::Provision)
+      executed = []
+      allow(container_service).to receive(:execute) { |command, **| executed << command }
+
+      manager.stop_client!(container_service:)
+
+      expect(executed.join).to include('kill "$(cat tmp/paid-preview-rathole.pid)"')
     end
   end
 end

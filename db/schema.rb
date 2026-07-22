@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_20_200906) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_22_102430) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1726,31 +1726,41 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_200906) do
     t.check_constraint "NOT (project_id IS NOT NULL AND user_id IS NOT NULL)", name: "chk_pre_commit_requirements_exclusive_scope"
   end
 
-  create_table "preview_sessions", comment: "Live web-app preview sessions exposed to reviewers via the same-origin /previews/:token reverse proxy (RDR-045).", force: :cascade do |t|
+  create_table "preview_provision_states", comment: "Shared baseline snapshots for overlapping preview/screenshot provisioning on the same agent run.", force: :cascade do |t|
+    t.integer "active_count", default: 0, null: false, comment: "Number of in-flight preview provisions currently sharing this baseline snapshot."
+    t.bigint "agent_run_id", null: false
+    t.jsonb "baseline_service_container_ids", default: [], null: false, comment: "Agent run service container ids before the first overlapping preview mutated the run state."
+    t.jsonb "baseline_service_environment", default: {}, null: false, comment: "Agent run service environment before the first overlapping preview mutated the run state."
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_run_id"], name: "index_preview_provision_states_on_agent_run_id", unique: true
+  end
+
+  create_table "preview_sessions", comment: "Live web app preview sessions bridging a tunnel port to the Rails reverse proxy for human review.", force: :cascade do |t|
     t.bigint "account_id", null: false, comment: "Owning account for tenant isolation and RLS."
-    t.bigint "agent_run_id", comment: "Agent run that produced the branch, when the preview reuses an agent container."
-    t.string "branch_name", limit: 255, null: false, comment: "Git branch checked out in the preview container (PR branch or default branch)."
-    t.string "container_id", limit: 128, comment: "Docker container id hosting the previewed app."
+    t.bigint "agent_run_id", comment: "Optional originating agent run that produced the previewed changes."
+    t.string "branch_name", limit: 255, null: false, comment: "Git branch (or commit context) checked out in the preview container."
+    t.string "container_id", limit: 128, comment: "Docker container id running the previewed web app behind the tunnel."
     t.datetime "created_at", null: false
     t.bigint "created_by_id", comment: "User who started the preview."
     t.text "error_message", comment: "Human-readable failure reason shown in the UI error state when status is failed."
-    t.datetime "expires_at", null: false, comment: "TTL deadline after which the preview is auto-stopped and cleaned up."
+    t.datetime "expires_at", null: false, comment: "Hard TTL after which the preview is stopped and its container/tunnel/port are reclaimed."
     t.string "framework", limit: 64, comment: "Detected web framework (rails, phoenix, django, nextjs, etc.) shown as preview metadata."
+    t.datetime "last_accessed_at", comment: "Last time the proxy served a request for this session; used for idle-based expiry."
     t.datetime "last_active_at", comment: "Most recent time the preview was confirmed reachable/interacted with."
-    t.bigint "project_id", null: false, comment: "Project whose branch is being previewed."
-    t.string "status", limit: 32, default: "pending", null: false, comment: "Lifecycle state: pending, provisioning, starting, ready, stopped, or failed."
-    t.string "token", limit: 64, null: false, comment: "Opaque, URL-safe token used as the /previews/:token path segment and auth credential."
-    t.integer "tunnel_port", comment: "Allocated localhost port the reverse proxy forwards /previews/:token traffic to."
+    t.bigint "project_id", null: false, comment: "Project the preview belongs to; drives account-scoped authorization."
+    t.string "status", limit: 50, default: "pending", null: false, comment: "Lifecycle state: provisioning, starting, ready, active, expiring, stopped, failed."
+    t.string "token", limit: 64, null: false, comment: "Opaque, random secret embedded in the proxy path /previews/:token/*. Acts as the proxy credential."
+    t.integer "tunnel_port", comment: "Allocated localhost port on the Rails host that the rathole tunnel bridges to the container app."
     t.datetime "updated_at", null: false
     t.index ["account_id", "status", "expires_at"], name: "idx_preview_sessions_on_account_status_expires"
-    t.index ["account_id"], name: "index_preview_sessions_on_account_id"
     t.index ["agent_run_id"], name: "index_preview_sessions_on_agent_run_id"
-    t.index ["created_by_id"], name: "index_preview_sessions_on_created_by_id"
     t.index ["project_id", "created_at"], name: "index_preview_sessions_on_project_id_and_created_at", order: { created_at: :desc }
-    t.index ["project_id", "status"], name: "index_preview_sessions_on_project_id_and_status"
+    t.index ["project_id", "status"], name: "index_preview_sessions_on_project_and_status"
     t.index ["project_id"], name: "index_preview_sessions_on_project_id"
+    t.index ["status", "expires_at"], name: "index_preview_sessions_on_status_and_expires_at"
     t.index ["token"], name: "index_preview_sessions_on_token", unique: true
-    t.index ["tunnel_port"], name: "index_preview_sessions_on_tunnel_port_active", unique: true, where: "((status)::text = ANY ((ARRAY['pending'::character varying, 'provisioning'::character varying, 'starting'::character varying, 'ready'::character varying])::text[]))"
+    t.index ["tunnel_port"], name: "index_preview_sessions_on_tunnel_port_active", unique: true, where: "((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('provisioning'::character varying)::text, ('starting'::character varying)::text, ('ready'::character varying)::text]))"
   end
 
   create_table "preview_tunnel_port_reservations", comment: "Shared preview tunnel port reservations across Rails processes", force: :cascade do |t|
@@ -1760,6 +1770,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_200906) do
     t.datetime "updated_at", null: false
     t.index ["reservation_key"], name: "index_preview_tunnel_port_reservations_on_reservation_key", unique: true
     t.index ["tunnel_port"], name: "index_preview_tunnel_port_reservations_on_tunnel_port", unique: true
+  end
+
+  create_table "preview_tunnel_reservations", comment: "Tracks preview tunnel ports reserved across Ruby processes so concurrent preview boots cannot allocate the same port.", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "owner_key", comment: "Logical owner identifier for the process/session that reserved the preview tunnel port."
+    t.integer "owner_pid", comment: "PID of the worker process that created the reservation so dead-worker leases can be reclaimed."
+    t.integer "port", null: false, comment: "TCP port reserved for a preview tunnel listener on the control-plane host."
+    t.datetime "updated_at", null: false
+    t.index ["port"], name: "index_preview_tunnel_reservations_on_port", unique: true
   end
 
   create_table "project_baselines", comment: "Stores per-project historical baselines for run metrics so anomalies can be detected against recent norms.", force: :cascade do |t|
@@ -2985,10 +3004,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_20_200906) do
   add_foreign_key "pre_commit_requirements", "accounts", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "projects", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "users", on_delete: :cascade
+  add_foreign_key "preview_provision_states", "agent_runs", on_delete: :cascade
   add_foreign_key "preview_sessions", "accounts", on_delete: :cascade
-  add_foreign_key "preview_sessions", "agent_runs", on_delete: :nullify
-  add_foreign_key "preview_sessions", "projects", on_delete: :cascade
-  add_foreign_key "preview_sessions", "users", column: "created_by_id"
+  add_foreign_key "preview_sessions", "agent_runs"
+  add_foreign_key "preview_sessions", "projects"
+  add_foreign_key "preview_sessions", "users", column: "created_by_id", on_delete: :nullify
   add_foreign_key "project_baselines", "projects"
   add_foreign_key "project_convention_detections", "project_versions"
   add_foreign_key "project_convention_detections", "projects"

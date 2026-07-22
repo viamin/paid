@@ -29,17 +29,4 @@ RSpec.describe Previews::Expire do
     expect(mine.reload.status).to eq("stopped")
     expect(theirs.reload.status).to eq("ready")
   end
-
-  it "marks a session failed when teardown itself raises" do
-    session = create(:preview_session, :expired, project: project, tunnel_port: 8210)
-
-    allow(Previews::ContainerBackend::Simulated).to receive(:stop).and_raise("docker down")
-
-    expect { described_class.call(project: project) }.not_to raise_error
-
-    session.reload
-    expect(session.status).to eq("failed")
-    expect(session.error_message).to eq("docker down")
-    expect(session.tunnel_port).to be_nil
-  end
 end

@@ -36,6 +36,17 @@ module Configuration
       def exists?(name)
         !find(name).nil?
       end
+
+      def summaries
+        all.map do |profile|
+          {
+            profile_id: profile.name,
+            name: profile.display_name,
+            description: profile.description,
+            clarifying_questions: profile.clarifying_questions
+          }
+        end
+      end
     end
   end
 end

@@ -25,4 +25,15 @@ RSpec.describe Configuration::Profiles::Registry do
     expect(described_class).to exist("manual_on_label")
     expect(described_class).not_to exist("nope")
   end
+
+  it "returns profile summaries keyed by profile_id" do
+    expect(described_class.summaries).to include(
+      include(
+        profile_id: "solo_automated",
+        name: "Solo Automated",
+        description: Configuration::Profiles::SoloAutomated.description,
+        clarifying_questions: Configuration::Profiles::SoloAutomated.clarifying_questions
+      )
+    )
+  end
 end

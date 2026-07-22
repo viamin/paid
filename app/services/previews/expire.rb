@@ -3,10 +3,10 @@
 module Previews
   # Stops preview sessions whose TTL has passed (RDR-045).
   #
-  # Without this reaper, expired `active` rows would keep their tunnel ports
-  # claimed indefinitely, starving the pool. Called opportunistically from
-  # {Provision.start} (so the very next request cleans up) and from the
-  # {PreviewSessions::ExpireJob} cron (so idle projects get reaped too).
+  # Releases tunnel ports back to the pool by transitioning the session to
+  # {PreviewSession::TERMINAL_STATUSES} via {PreviewSession#mark_stopped!}.
+  # Runs as a periodic job (see {PreviewSessions::ExpireJob}) and can also be
+  # invoked scoped to a single project as an opportunistic cleanup.
   class Expire
     def self.call(...)
       new(...).call
@@ -31,7 +31,8 @@ module Previews
     end
 
     def stop_session(session)
-      Provision.new(project: session.project).stop(session: session)
+      session.mark_stopped!
+      true
     rescue StandardError => e
       Rails.logger.warn(
         message: "previews.expire_failed",
@@ -39,6 +40,7 @@ module Previews
         error: e.message
       )
       session.mark_failed!(e.message) unless session.failed?
+      false
     end
   end
 end

@@ -31,7 +31,7 @@ RSpec.describe Tools::Registry do
         ui_call: ->(user) {
           raise Tools::UnauthorizedError, "Tool calls require an authenticated user" if user.blank?
 
-          ConfigurationProfiles::Registry.all.map { |profile| { key: profile.key.to_s, name: profile.name, description: profile.description } }
+          Configuration::Profiles::Registry.summaries
         }
       },
       {
@@ -41,7 +41,10 @@ RSpec.describe Tools::Registry do
         ui_call: ->(user) {
           Pundit.policy_scope!(user, Project).find(project.id)
           project_record = Pundit.policy_scope!(user, Project).find(project.id)
-          ConfigurationProfiles::Planner.for_profile(project_record, ConfigurationProfiles::Registry.find!(:observe_only))
+          Configuration::Profiles::Planner.call(
+            profile: Configuration::Profiles::Registry.fetch("observe_only"),
+            project: project_record
+          )
         }
       },
       {
@@ -51,9 +54,9 @@ RSpec.describe Tools::Registry do
         ui_call: ->(user) {
           Pundit.policy_scope!(user, Project).find(project.id)
           project_record = Pundit.policy_scope!(user, Project).find(project.id)
-          profile = ConfigurationProfiles::Registry.find!(:observe_only)
-          plan = ConfigurationProfiles::Planner.for_profile(project_record, profile)
-          ConfigurationProfiles::Applier.call(project_record, plan, actor: user)
+          profile = Configuration::Profiles::Registry.fetch("observe_only")
+          plan = Configuration::Profiles::Planner.call(profile:, project: project_record)
+          Configuration::Profiles::Applier.call(plan:, project: project_record, actor: user)
         }
       },
       {

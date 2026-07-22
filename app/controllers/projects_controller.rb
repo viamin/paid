@@ -23,7 +23,8 @@ class ProjectsController < ApplicationController
 
   def show
     authorize @project
-    @preview_session = Previews::Provision.status(project: @project)
+    @preview_session = PreviewSession.for_project(@project).active.recent.first ||
+      PreviewSession.for_project(@project).where(status: PreviewSession::TERMINAL_STATUSES).recent.first
     tracker_configuration = IssueTrackers::ResolveConfiguration.call(project: @project, user: current_user)
     @external_links = @project.header_external_links(tracker_configuration: tracker_configuration)
     @recent_agent_runs = @project.agent_runs.recent.includes(:runner, :issue, project: [ :created_by, :account ]).limit(10).to_a
@@ -306,25 +307,52 @@ class ProjectsController < ApplicationController
   def start_preview
     authorize @project, :update?
 
-    result = Previews::Provision.start(project: @project, actor: current_user, branch_name: preview_branch_name_param)
-    branch_name = result.session&.branch_name || preview_branch_name_param || @project.default_branch
-    redirect_to_preview(result, success_message: "Preview started for #{branch_name}.", failure_verb: "start preview")
+    branch_name = preview_branch_name_param.presence || @project.default_branch
+    PreviewSession.transaction do
+      @project.with_lock do
+        PreviewSession.for_project(@project).non_terminal.find_each(&:mark_stopped!)
+        session = PreviewSession.build_for(
+          project: @project,
+          branch_name: branch_name,
+          created_by: current_user
+        )
+        session.save!
+        session.mark_ready!(tunnel_port: nil)
+      end
+    end
+
+    redirect_to project_path(@project, anchor: "preview"), notice: "Preview started for #{branch_name}."
   end
 
   def stop_preview
     authorize @project, :update?
 
-    result = Previews::Provision.stop(project: @project)
-    notice = result.session.present? ? "Preview stopped." : "No preview was running."
-    redirect_to_preview(result, success_message: notice, failure_verb: "stop preview")
+    sessions = PreviewSession.for_project(@project).non_terminal.to_a
+    sessions.each(&:mark_stopped!)
+    notice = sessions.empty? ? "No preview was running." : "Preview stopped."
+
+    redirect_to project_path(@project, anchor: "preview"), notice: notice
   end
 
   def restart_preview
     authorize @project, :update?
 
-    result = Previews::Provision.restart(project: @project, actor: current_user)
-    branch_name = result.session&.branch_name || @project.default_branch
-    redirect_to_preview(result, success_message: "Preview restarted for #{branch_name}.", failure_verb: "restart preview")
+    last_branch = PreviewSession.for_project(@project).recent.first&.branch_name
+    branch_name = preview_branch_name_param.presence || last_branch.presence || @project.default_branch
+    PreviewSession.transaction do
+      @project.with_lock do
+        PreviewSession.for_project(@project).non_terminal.find_each(&:mark_stopped!)
+        session = PreviewSession.build_for(
+          project: @project,
+          branch_name: branch_name,
+          created_by: current_user
+        )
+        session.save!
+        session.mark_ready!(tunnel_port: nil)
+      end
+    end
+
+    redirect_to project_path(@project, anchor: "preview"), notice: "Preview restarted for #{branch_name}."
   end
 
   def destroy
@@ -362,14 +390,6 @@ class ProjectsController < ApplicationController
         )
       end
       format.html { redirect_to @project }
-    end
-  end
-
-  def redirect_to_preview(result, success_message:, failure_verb:)
-    if result.success?
-      redirect_to project_path(@project, anchor: "preview"), notice: success_message
-    else
-      redirect_to project_path(@project, anchor: "preview"), alert: "Could not #{failure_verb}: #{result.error}"
     end
   end
 

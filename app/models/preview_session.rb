@@ -112,7 +112,7 @@ class PreviewSession < ApplicationRecord
   end
 
   def mark_stopped!
-    update!(status: "stopped")
+    update!(status: "stopped", tunnel_port: nil)
   end
 
   def touch_last_active!

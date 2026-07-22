@@ -13,7 +13,13 @@
 
 ## Implementation Status
 
-Implemented with follow-up gaps. Paid records scaling observations, assigns scaling experiments, analyzes scaling behavior, integrates learned allocation into feature orchestration, and uses `Scaling::ResourceAllocator` for dynamic allocation. Confidence interval reporting, a dedicated scaling experiment dashboard, and stronger statistical sample thresholds remain follow-up work.
+Implemented with follow-up gaps. Paid records scaling observations, assigns scaling experiments, analyzes scaling behavior, integrates learned allocation into feature orchestration, and uses `Scaling::ResourceAllocator` for dynamic allocation. Confidence interval reporting and a dedicated scaling experiment dashboard are now present. The remaining gap versus the original proposal is statistical ambition: Paid currently uses descriptive confidence intervals, log-log slope intervals, and explicit threshold reporting rather than the full comparative regression suite originally proposed.
+
+### Current Simplifications
+
+- Confidence intervals use Wilson intervals for rates and normal-approximation intervals for means.
+- Scaling exponent confidence uses a log-log linear fit on aggregated arm summaries rather than the full power-law/logarithmic/linear regression comparison suite.
+- Experiment reporting flags experiments configured below the 30-sample-per-arm RDR target instead of enforcing that threshold retroactively on existing experiments.
 
 ## Problem Statement
 

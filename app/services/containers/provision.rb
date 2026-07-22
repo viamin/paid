@@ -1215,7 +1215,8 @@ module Containers
           target_path: "/home/agent/.claude",
           files: source_files,
           success_log_key: "container.claude_credentials_seeded",
-          failure_log_key: "container.claude_credentials_seed_failed"
+          failure_log_key: "container.claude_credentials_seed_failed",
+          auth_source: RunnerAuthAttempt::AUTH_SOURCE_HOST_FORWARDED
         )
       else
         seed_local_credentials!(
@@ -1223,7 +1224,8 @@ module Containers
           target_path: "/home/agent/.claude",
           files: source_files,
           success_log_key: "container.claude_credentials_seeded",
-          failure_log_key: "container.claude_credentials_seed_failed"
+          failure_log_key: "container.claude_credentials_seed_failed",
+          auth_source: RunnerAuthAttempt::AUTH_SOURCE_HOST_FORWARDED
         )
       end
 
@@ -1245,7 +1247,7 @@ module Containers
     # CLI uses API-key auth against Paid's OpenAI proxy instead of cached
     # ChatGPT credentials. This keeps containerized runs aligned with Paid's
     # runner configuration.
-    def seed_codex_config!
+    def seed_codex_config!(auth_source: RunnerAuthAttempt::AUTH_SOURCE_API_KEY_PROXY)
       config_toml = codex_harness_provider.config_file_content(
         model_provider: "paid",
         base_url: "#{proxy_base_url}/api/proxy/openai",
@@ -1261,9 +1263,9 @@ module Containers
       content = [ codex_notify_line, codex_model_config_line, config_toml ].compact.join("\n\n")
 
       write_container_file("/home/agent/.codex/config.toml", content)
-      log_system("container.codex_config_seeded")
+      log_system("container.codex_config_seeded", auth_source: auth_source)
     rescue Docker::Error::DockerError => e
-      log_system("container.codex_config_seed_failed", error: e.message)
+      log_system("container.codex_config_seed_failed", error: e.message, auth_source: auth_source)
     end
 
     # Returns a top-level `model = "..."` TOML line for the Paid-selected Codex
@@ -1303,18 +1305,22 @@ module Containers
       end
 
       mount = codex_subscription_auth_mount
-      log_system("container.codex_credentials_shared", source_path: mount.host_path)
+      log_system("container.codex_credentials_shared",
+        source_path: mount.host_path,
+        auth_source: RunnerAuthAttempt::AUTH_SOURCE_HOST_FORWARDED)
       seeded = seed_local_credentials!(
         source_path: mount.config_path,
         target_path: "/home/agent/.codex",
         files: [ "auth.json" ],
         success_log_key: "container.codex_credentials_seeded",
-        failure_log_key: "container.codex_credentials_seed_failed"
+        failure_log_key: "container.codex_credentials_seed_failed",
+        auth_source: RunnerAuthAttempt::AUTH_SOURCE_HOST_FORWARDED
       )
       verify_container_file_present!(
         path: "/home/agent/.codex/auth.json",
         failure_log_key: "container.codex_credentials_seed_failed",
-        error_message: "Codex subscription auth.json was not copied into the container"
+        error_message: "Codex subscription auth.json was not copied into the container",
+        auth_source: RunnerAuthAttempt::AUTH_SOURCE_HOST_FORWARDED
       )
       seed_sanitized_codex_config!(source_path: mount.config_path)
 
@@ -1598,7 +1604,9 @@ module Containers
       return unless gemini_subscription_auth?
       if managed_subscription_runner_auth_enabled_for?("gemini") && gemini_managed_oauth_creds_json.present?
         write_container_file("/home/agent/.gemini/oauth_creds.json", gemini_managed_oauth_creds_json)
-        log_system("container.gemini_credentials_seeded", source: "managed_native_config")
+        log_system("container.gemini_credentials_seeded",
+          source: "managed_native_config",
+          auth_source: RunnerAuthAttempt::AUTH_SOURCE_MANAGED)
         record_auth_attempt!(
           runner_key: "gemini",
           attempt_stage: RunnerAuthAttempt::STAGE_MATERIALIZATION,
@@ -1631,7 +1639,8 @@ module Containers
           target_path: "/home/agent/.gemini",
           files: source_files,
           success_log_key: "container.gemini_credentials_seeded",
-          failure_log_key: "container.gemini_credentials_seed_failed"
+          failure_log_key: "container.gemini_credentials_seed_failed",
+          auth_source: RunnerAuthAttempt::AUTH_SOURCE_HOST_FORWARDED
         )
       else
         seed_local_credentials!(
@@ -1639,7 +1648,8 @@ module Containers
           target_path: "/home/agent/.gemini",
           files: source_files,
           success_log_key: "container.gemini_credentials_seeded",
-          failure_log_key: "container.gemini_credentials_seed_failed"
+          failure_log_key: "container.gemini_credentials_seed_failed",
+          auth_source: RunnerAuthAttempt::AUTH_SOURCE_HOST_FORWARDED
         )
       end
 
@@ -1658,7 +1668,9 @@ module Containers
       return unless copilot_subscription_auth?
       if managed_subscription_runner_auth_enabled_for?("copilot") && copilot_managed_config_json.present?
         write_container_file("/home/agent/.copilot/config.json", copilot_managed_config_json)
-        log_system("container.copilot_credentials_seeded", source: "managed_native_config")
+        log_system("container.copilot_credentials_seeded",
+          source: "managed_native_config",
+          auth_source: RunnerAuthAttempt::AUTH_SOURCE_MANAGED)
         record_auth_attempt!(
           runner_key: "copilot",
           attempt_stage: RunnerAuthAttempt::STAGE_MATERIALIZATION,
@@ -1687,7 +1699,8 @@ module Containers
           target_path: "/home/agent/.copilot",
           files: source_files,
           success_log_key: "container.copilot_credentials_seeded",
-          failure_log_key: "container.copilot_credentials_seed_failed"
+          failure_log_key: "container.copilot_credentials_seed_failed",
+          auth_source: RunnerAuthAttempt::AUTH_SOURCE_HOST_FORWARDED
         )
       elsif copilot_local_config_path.present?
         seed_local_credentials!(
@@ -1695,7 +1708,8 @@ module Containers
           target_path: "/home/agent/.copilot",
           files: source_files,
           success_log_key: "container.copilot_credentials_seeded",
-          failure_log_key: "container.copilot_credentials_seed_failed"
+          failure_log_key: "container.copilot_credentials_seed_failed",
+          auth_source: RunnerAuthAttempt::AUTH_SOURCE_HOST_FORWARDED
         )
       else
         false
@@ -1757,21 +1771,21 @@ module Containers
       nil
     end
 
-    def seed_host_credentials!(staging_path:, target_path:, files:, success_log_key:, failure_log_key:)
+    def seed_host_credentials!(staging_path:, target_path:, files:, success_log_key:, failure_log_key:, auth_source: nil)
       copy_commands = files.map do |filename|
         "cp #{Shellwords.escape("#{staging_path}/#{filename}")} #{Shellwords.escape("#{target_path}/#{filename}")} 2>/dev/null"
       end
 
       backend.exec_in_container(container, [ "chown", "-R", "agent:agent", target_path ], user: "root")
       backend.exec_in_container(container, [ "sh", "-c", "#{copy_commands.join('; ')}; true" ], user: "agent")
-      log_system(success_log_key)
+      log_system(success_log_key, **auth_source_log_payload(auth_source))
       true
     rescue Docker::Error::DockerError => e
-      log_system(failure_log_key, error: e.message)
+      log_system(failure_log_key, error: e.message, **auth_source_log_payload(auth_source))
       false
     end
 
-    def seed_local_credentials!(source_path:, target_path:, files:, success_log_key:, failure_log_key:)
+    def seed_local_credentials!(source_path:, target_path:, files:, success_log_key:, failure_log_key:, auth_source: nil)
       return false if source_path.blank?
 
       backend.exec_in_container(container, [ "chown", "-R", "agent:agent", target_path ], user: "root")
@@ -1789,14 +1803,14 @@ module Containers
       return false if write_commands.empty?
 
       backend.exec_in_container(container, [ "sh", "-lc", write_commands.join("; ") ], user: "agent")
-      log_system(success_log_key, files_copied: write_commands.size)
+      log_system(success_log_key, files_copied: write_commands.size, **auth_source_log_payload(auth_source))
       true
     rescue Docker::Error::DockerError, SystemCallError => e
-      log_system(failure_log_key, error: e.message)
+      log_system(failure_log_key, error: e.message, **auth_source_log_payload(auth_source))
       false
     end
 
-    def verify_container_file_present!(path:, failure_log_key:, error_message:)
+    def verify_container_file_present!(path:, failure_log_key:, error_message:, auth_source: nil)
       _stdout, stderr, status = backend.exec_in_container(
         container,
         [ "sh", "-lc", "test -s #{Shellwords.escape(path)}" ],
@@ -1804,10 +1818,11 @@ module Containers
       )
       return if status.to_i.zero?
 
-      log_system(failure_log_key, error: [ error_message, Array(stderr).join.presence ].compact.join(": "), path: path)
+      log_system(failure_log_key, error: [ error_message, Array(stderr).join.presence ].compact.join(": "),
+        path: path, **auth_source_log_payload(auth_source))
       raise ProvisionError, error_message
     rescue Docker::Error::DockerError => e
-      log_system(failure_log_key, error: e.message, path: path)
+      log_system(failure_log_key, error: e.message, path: path, **auth_source_log_payload(auth_source))
       raise ProvisionError, error_message
     end
 
@@ -2933,7 +2948,9 @@ module Containers
         "managed_json"
       end
 
-      log_system("container.claude_credentials_seeded", source: source)
+      log_system("container.claude_credentials_seeded",
+        source: source,
+        auth_source: RunnerAuthAttempt::AUTH_SOURCE_MANAGED)
       record_auth_attempt!(
         runner_key: "claude",
         attempt_stage: RunnerAuthAttempt::STAGE_MATERIALIZATION,
@@ -3646,6 +3663,17 @@ module Containers
       )
 
       agent_run&.log!("system", message, metadata: metadata)
+    end
+
+    # RDR-041 / #2959 — emits an explicit `auth_source` field in provisioning
+    # log payloads so operators can group credential-seeding events by managed
+    # vs host_forwarded vs api_key_proxy without joining against runner_auth_attempts.
+    # Returns {} when no auth_source is supplied so the helper can be safely
+    # splatted into any log call.
+    def auth_source_log_payload(auth_source)
+      return {} if auth_source.blank?
+
+      { auth_source: auth_source.to_s }
     end
 
     # RDR-041 / #2960 — single seam for writing runner auth attempt telemetry

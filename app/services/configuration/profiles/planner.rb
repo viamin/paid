@@ -2,10 +2,6 @@
 
 module Configuration
   module Profiles
-    # Raised when an override references a key no profile declared as a
-    # clarifying question. Arbitrary setting keys are never accepted (RDR-044).
-    class UnknownOverrideError < ArgumentError; end
-
     # Deterministically diffs a project's current resolved state against a
     # profile's (override-merged) targets and produces a {Plan}.
     #
@@ -51,7 +47,9 @@ module Configuration
       end
 
       def applied_overrides
-        @applied_overrides ||= overrides.slice(*profile.override_keys)
+        @applied_overrides ||= overrides.slice(*profile.override_keys).to_h do |key, value|
+          [ key, Settings.normalize(key, value) ]
+        end
       end
 
       def build_changes(targets)
@@ -64,7 +62,7 @@ module Configuration
       end
 
       def stringify(overrides)
-        return {} unless overrides.is_a?(Hash)
+        raise ArgumentError, "overrides must be a Hash, got #{overrides.class}" unless overrides.is_a?(Hash)
 
         overrides.deep_stringify_keys
       end

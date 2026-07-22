@@ -4,7 +4,8 @@ module PreviewSessions
   # Reaps expired preview sessions across all tenants (RDR-045).
   #
   # Scheduled to run every 5 minutes via GoodJob cron; complements the
-  # opportunistic cleanup that runs from {Previews::Provision#start}.
+  # opportunistic cleanup that runs from the project preview lifecycle
+  # actions.
   class ExpireJob < ApplicationJob
     include GoodJob::ActiveJobExtensions::Concurrency
 
@@ -35,10 +36,10 @@ module PreviewSessions
 
     def reap_session(session)
       TenantContext.with(session.account) do
-        Previews::Provision.new(project: session.project).stop(session: session)
+        session.mark_stopped!
       end
       true
-    rescue => e
+    rescue StandardError => e
       Rails.logger.error(
         message: "preview_session.expire_failed",
         preview_session_id: session.id,
