@@ -911,6 +911,18 @@ module Containers
       refresh_claude_credentials_if_near_expiry!
     end
 
+    # Public boundary for Codex managed subscription auth adapter delegation
+    # (RDR-041 / #2962). The Codex adapter delegates refresh and harvest to the
+    # provisioner so provider-specific execution stays owned here while the
+    # contract stays provider-neutral.
+    def refresh_codex_managed_credential!(provision: false)
+      refresh_codex_managed_credential_if_needed!(provision: provision)
+    end
+
+    def harvest_codex_managed_credential!
+      harvest_codex_managed_credential_impl!
+    end
+
     private
 
     def apply_execution_preparation(preparation, env:)
@@ -1278,7 +1290,15 @@ module Containers
     end
 
     def seed_codex_credentials!
-      unless codex_subscription_auth?
+      # Managed path (RDR-041 / #2962): materialize auth.json from the canonical
+      # encrypted RunnerCredential. No host bind mount is required.
+      if codex_managed_credential_active? && materialize_managed_codex_credentials!
+        seed_codex_managed_config!
+        seed_codex_notify_hook!
+        return
+      end
+
+      unless codex_subscription_auth_mount.present?
         if unshared_codex_subscription_auth?
           record_auth_attempt!(
             runner_key: "codex",
@@ -1335,6 +1355,20 @@ module Containers
         failure_reason: seeded ? nil : "no_host_credential_seeded",
         metadata: { source: "host_mount" }
       )
+    end
+
+    # Writes a minimal Codex config.toml for the managed subscription path: only
+    # the model pin the CLI should use. The notify hook is appended separately by
+    # seed_codex_notify_hook!. No proxy/model_provider block — subscription auth
+    # authenticates via the materialized auth.json.
+    def seed_codex_managed_config!
+      model_line = codex_model_config_line
+      return if model_line.blank?
+
+      write_container_file("/home/agent/.codex/config.toml", model_line)
+      log_system("container.codex_config_seeded")
+    rescue Docker::Error::DockerError => e
+      log_system("container.codex_config_seed_failed", error: e.message)
     end
 
     # Writes a Codex config.toml derived from the host config but with
@@ -1449,19 +1483,32 @@ module Containers
       SH
     end
 
-    # Serializes only Codex CLI executions that share a host-backed auth.json.
-    # Other container commands keep full parallelism, and different credential
-    # directories map to different lockfiles.
+    # Serializes only Codex CLI executions that share a rotation-risk credential.
+    # Other container commands keep full parallelism, and different credentials
+    # map to different lockfiles.
     #
     # Uses a non-blocking lock with retries instead of indefinite blocking to
     # prevent a hung container from stalling all other runs sharing the same
-    # auth.json. After lock_timeout_seconds, logs a warning and proceeds
+    # credential. After lock_timeout_seconds, logs a warning and proceeds
     # without the lock — a concurrent OAuth refresh may fail with
     # refresh_token_reused, which Paid classifies as auth_expired and handles
     # via the standard runner fallback path.
+    #
+    # For a managed RunnerCredential (#2962) the lease is keyed on the
+    # credential id and the rotated auth.json is harvested back into the
+    # canonical credential after the run. For a host-backed auth.json the lease
+    # is keyed on the source path and the rotated file is synced back to disk.
     def with_codex_auth_lock(command)
       return yield unless codex_auth_lock_required?(command)
 
+      if codex_managed_credential_active?
+        with_codex_managed_auth_lock { yield }
+      else
+        with_codex_host_auth_lock { yield }
+      end
+    end
+
+    def with_codex_host_auth_lock
       lockfile = codex_auth_lockfile_path
       lock_timeout = codex_auth_lock_timeout
       lease_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
@@ -1475,6 +1522,8 @@ module Containers
         if acquired
           log_system("container.codex_auth_lock.acquired", lockfile: lockfile)
           record_codex_lease_attempt!(state: RunnerAuthAttempt::LEASE_ACQUIRED, started_at: lease_started_at,
+            auth_source: :host_forwarded,
+            materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_HOST_MOUNT,
             metadata: { lockfile: lockfile })
           result = yield
           sync_codex_auth_file_to_source!
@@ -1485,6 +1534,8 @@ module Containers
             lock_timeout_seconds: lock_timeout)
           log_system("container.codex_auth_sync_skipped_without_lock", source_path: codex_subscription_auth_source_path)
           record_codex_lease_attempt!(state: RunnerAuthAttempt::LEASE_TIMEOUT, started_at: lease_started_at,
+            auth_source: :host_forwarded,
+            materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_HOST_MOUNT,
             metadata: { lockfile: lockfile, lock_timeout_seconds: lock_timeout })
           yield
         end
@@ -1497,7 +1548,56 @@ module Containers
       end
     end
 
-    def record_codex_lease_attempt!(state:, started_at:, metadata: {})
+    # Managed-credential lease (RDR-041 / #2962). The Codex CLI may rotate
+    # auth.json in-container (ROTATION_CONTAINER_MAY_ROTATE), so runs sharing a
+    # managed credential serialize on a per-credential lockfile and harvest the
+    # rotated state back into the canonical RunnerCredential before releasing.
+    def with_codex_managed_auth_lock
+      lockfile = codex_managed_auth_lockfile_path
+      lock_timeout = codex_auth_lock_timeout
+      lease_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+      File.open(lockfile, File::WRONLY | File::CREAT, 0o600) do |f|
+        log_system("container.codex_auth_lock.waiting", lockfile: lockfile, lock_timeout_seconds: lock_timeout)
+
+        acquired = false
+        acquired = acquire_lock_with_timeout(f, lock_timeout)
+
+        if acquired
+          log_system("container.codex_auth_lock.acquired", lockfile: lockfile)
+          record_codex_lease_attempt!(state: RunnerAuthAttempt::LEASE_ACQUIRED, started_at: lease_started_at,
+            auth_source: :managed,
+            materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_NATIVE_FILE,
+            runner_credential: codex_managed_runner_credential,
+            metadata: { lockfile: lockfile })
+          result = yield
+          harvest_codex_managed_credential!
+          result
+        else
+          log_system("container.codex_auth_lock.timeout",
+            lockfile: lockfile,
+            lock_timeout_seconds: lock_timeout)
+          log_system("container.codex_managed_harvest_skipped_without_lock",
+            credential_id: codex_managed_runner_credential&.id)
+          record_codex_lease_attempt!(state: RunnerAuthAttempt::LEASE_TIMEOUT, started_at: lease_started_at,
+            auth_source: :managed,
+            materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_NATIVE_FILE,
+            runner_credential: codex_managed_runner_credential,
+            metadata: { lockfile: lockfile, lock_timeout_seconds: lock_timeout })
+          yield
+        end
+      ensure
+        if acquired
+          f.flock(File::LOCK_UN)
+          acquired = false
+          log_system("container.codex_auth_lock.released", lockfile: lockfile)
+        end
+      end
+    end
+
+    def record_codex_lease_attempt!(state:, started_at:, auth_source: :host_forwarded,
+      materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_HOST_MOUNT,
+      runner_credential: nil, metadata: {})
       duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
       result = case state
       when RunnerAuthAttempt::LEASE_ACQUIRED then RunnerAuthAttempt::RESULT_LEASE_ACQUIRED
@@ -1509,8 +1609,9 @@ module Containers
       record_auth_attempt!(
         runner_key: "codex",
         attempt_stage: RunnerAuthAttempt::STAGE_LEASE,
-        auth_source: :host_forwarded,
-        materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_HOST_MOUNT,
+        auth_source: auth_source,
+        materialization_mode: materialization_mode,
+        runner_credential: runner_credential,
         lease_state: state,
         result: result,
         duration_ms: duration_ms,
@@ -2781,7 +2882,7 @@ module Containers
       return nil unless account
 
       scope = account.runner_credentials.for_runner(runner_key)
-      return scope.where(auth_kind: "oauth_token") if %w[claude gemini copilot].include?(runner_key.to_s)
+      return scope.where(auth_kind: "oauth_token") if %w[claude codex gemini copilot].include?(runner_key.to_s)
 
       scope
     end
@@ -2811,6 +2912,7 @@ module Containers
       parsed = parse_managed_subscription_credential(runner_key, credential: credential)
       return parsed&.oauth_credentials? == true if runner_key.to_s == "gemini"
       return parsed&.copilot_config? == true if runner_key.to_s == "copilot"
+      return parsed&.codex_auth? == true if runner_key.to_s == "codex"
 
       parsed.present? && !parsed.blank?
     end
@@ -2829,6 +2931,8 @@ module Containers
       case runner_key.to_s
       when "claude"
         ClaudeCredentials::Secret.parse(token)
+      when "codex"
+        CodexCredentials::Secret.parse(token)
       when "gemini"
         GeminiCredentials::Secret.parse(token)
       when "copilot"
@@ -2963,6 +3067,41 @@ module Containers
       true
     end
 
+    # Materializes the managed Codex `auth.json` directly into the container from
+    # the canonical encrypted `RunnerCredential` (RDR-041 / #2962). No host bind
+    # mount is required, so the run can authenticate on any backend once remote
+    # placement is enabled. Before materializing, performs a refresh-before-run
+    # under a per-credential lease so the rotated access token — not a stale one
+    # — is what the Codex CLI reads.
+    def materialize_managed_codex_credentials!
+      credential = codex_managed_runner_credential
+      return false unless credential
+
+      refresh_codex_managed_credential!(provision: true)
+
+      # Re-resolve materialization after a refresh may have rotated the token.
+      reset_codex_managed_caches
+      materialization = codex_managed_materialization
+      return false unless materialization&.supported?
+
+      materialization.files.each do |path, content|
+        write_container_file(path, content)
+      end
+      credential.update_column(:last_used_at, Time.current)
+
+      log_system("container.codex_credentials_seeded", source: "managed_json")
+      record_auth_attempt!(
+        runner_key: "codex",
+        attempt_stage: RunnerAuthAttempt::STAGE_MATERIALIZATION,
+        auth_source: :managed,
+        materialization_mode: materialization.mode,
+        runner_credential: credential,
+        result: RunnerAuthAttempt::RESULT_MATERIALIZED,
+        metadata: materialization.redacted_metadata.merge("source" => "managed_json")
+      )
+      true
+    end
+
     def gemini_subscription_auth?
       if managed_subscription_runner_auth_enabled_for?("gemini")
         return true if gemini_managed_secret && !gemini_managed_secret.blank?
@@ -2994,7 +3133,54 @@ module Containers
     end
 
     def codex_subscription_auth?
+      return true if codex_managed_credential_active?
+
       codex_subscription_auth_mount.present?
+    end
+
+    def codex_managed_credential_active?
+      codex_managed_runner_credential.present? && codex_managed_materializable?
+    end
+
+    def codex_managed_materializable?
+      materialization = codex_managed_materialization
+      materialization&.supported?
+    end
+
+    def codex_managed_runner_credential
+      return @codex_managed_runner_credential if defined?(@codex_managed_runner_credential)
+
+      @codex_managed_runner_credential = managed_subscription_credential_scope_for("codex")&.active
+        &.order(created_at: :desc, id: :desc)&.first
+    end
+
+    def codex_managed_secret
+      return @codex_managed_secret if defined?(@codex_managed_secret)
+
+      secret = codex_managed_runner_credential&.token.to_s
+      @codex_managed_secret = secret.present? ? CodexCredentials::Secret.parse(secret) : nil
+    end
+
+    def codex_managed_materialization
+      return @codex_managed_materialization if defined?(@codex_managed_materialization)
+
+      secret = codex_managed_runner_credential&.token.to_s
+      @codex_managed_materialization =
+        if secret.present?
+          codex_subscription_auth_provider.materialize(secret: secret)
+        end
+    end
+
+    def codex_subscription_auth_provider
+      @codex_subscription_auth_provider ||= Runners::SubscriptionAuthProviders.for_runner("codex")
+    end
+
+    # Clears the memoized managed Codex caches so a refresh/rotation is picked up
+    # on the next read. Required because the memo guards use `defined?`, which
+    # stays truthy after an explicit `= nil` assignment.
+    def reset_codex_managed_caches
+      remove_instance_variable(:@codex_managed_secret) if defined?(@codex_managed_secret)
+      remove_instance_variable(:@codex_managed_materialization) if defined?(@codex_managed_materialization)
     end
 
     def unshared_codex_subscription_auth?
@@ -3197,6 +3383,230 @@ module Containers
 
     def codex_harness_provider
       AgentHarness.provider(:codex)
+    end
+
+    # Deterministic, per-credential lockfile for the managed Codex lease. Keyed
+    # on the RunnerCredential id so runs sharing a credential serialize while
+    # independent credentials stay fully parallel. Mirrors the host-path
+    # codex_auth_lockfile_path shape for the managed path.
+    CODEX_MANAGED_AUTH_LOCK_BASE_PATH = "/tmp/codex-managed-auth"
+
+    def codex_managed_auth_lockfile_path
+      credential_id = codex_managed_runner_credential&.id
+      return "#{CODEX_MANAGED_AUTH_LOCK_BASE_PATH}-missing.lock" unless credential_id
+
+      digest = Digest::SHA256.hexdigest("codex-managed:#{credential_id}")[0, 16]
+      "#{CODEX_MANAGED_AUTH_LOCK_BASE_PATH}-#{digest}.lock"
+    end
+
+    # Public boundary for the Codex managed refresh (RDR-041 / #2962). Refreshes
+    # the canonical RunnerCredential under a per-credential lease when the access
+    # token is near expiry. Returns truthy when a refresh ran, nil otherwise.
+    #
+    # When `provision:` is true, the refresh is forced ahead of materialization
+    # even when a near-expiry refresh already ran this tick, so the materialized
+    # auth.json always reflects the freshest server-side state.
+    def refresh_codex_managed_credential_if_needed!(provision: false)
+      credential = codex_managed_runner_credential
+      return nil unless credential
+
+      refresh_codex_managed_credential_with_lease!(credential, provision: provision)
+    end
+
+    CODEX_CREDENTIAL_REFRESH_WINDOW = 10 * 60 # 10 minutes
+
+    def refresh_codex_managed_credential_with_lease!(credential, provision: false)
+      return nil unless codex_managed_credential_near_expiry?(credential) || provision
+
+      started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      refresh_state = RunnerAuthAttempt::REFRESH_NOT_NEEDED
+
+      with_codex_managed_refresh_lease(credential) do
+        # Re-check after acquiring the lock: another Paid instance may have
+        # already refreshed this credential while we waited.
+        unless provision || codex_managed_credential_near_expiry?(credential.reload)
+          record_codex_refresh_attempt!(credential, started_at,
+            refresh_state: RunnerAuthAttempt::REFRESH_NOT_NEEDED,
+            result: RunnerAuthAttempt::RESULT_SKIPPED,
+            failure_reason: "already_refreshed")
+          return nil
+        end
+
+        outcome = exchange_codex_refresh_token!(credential)
+        refresh_state = outcome ? RunnerAuthAttempt::REFRESH_REFRESHED : RunnerAuthAttempt::REFRESH_REFRESH_FAILED
+        record_codex_refresh_attempt!(credential, started_at,
+          refresh_state: refresh_state,
+          result: outcome ? RunnerAuthAttempt::RESULT_REFRESHED : RunnerAuthAttempt::RESULT_REFRESH_FAILED,
+          failure_reason: outcome ? nil : "exchange_refresh_token_unsupported")
+        outcome
+      end
+    end
+
+    def codex_managed_credential_near_expiry?(credential = codex_managed_runner_credential)
+      return false unless credential
+
+      expiry = credential.expires_at
+      expiry = codex_managed_secret&.expires_at if expiry.nil?
+      return false if expiry.nil?
+
+      expiry <= (Time.now + CODEX_CREDENTIAL_REFRESH_WINDOW)
+    end
+
+    # Serializes concurrent refresh attempts on the same managed credential.
+    # Uses the RunnerCredential row lock so refresh is safe across hosts once
+    # remote placement is enabled; pairs with the file-based exec lease.
+    def with_codex_managed_refresh_lease(credential)
+      credential.with_lock { yield }
+    end
+
+    # Performs the actual Codex refresh-token exchange and writes the rotated
+    # auth.json back into the canonical RunnerCredential. Delegates to
+    # `AgentHarness::Authentication.exchange_refresh_token` when the upstream
+    # Codex exchange is supported (viamin/agent-harness#265); until then logs
+    # unsupported and returns false so the lease and telemetry stay wired while
+    # the harvest path remains the source of rotated state.
+    def exchange_codex_refresh_token!(credential)
+      unless codex_refresh_exchange_supported?
+        log_system("container.codex_auth_refresh.unsupported",
+          note: "agent-harness codex refresh not yet available; skipping server-side exchange")
+        return false
+      end
+
+      refreshed = AgentHarness::Authentication.exchange_refresh_token(:codex)
+      apply_codex_refresh_result!(credential, refreshed.to_h)
+      log_system("container.codex_auth_refreshed", credential_id: credential.id)
+      true
+    rescue AgentHarness::AuthenticationError => e
+      log_system("container.codex_auth_refresh_failed",
+        error: e.message,
+        credential_id: credential.id,
+        note: "classify as auth_expired via refresh_token_reused pattern if applicable")
+      false
+    rescue AgentHarness::Error, JSON::ParserError, SystemCallError => e
+      log_system("container.codex_auth_refresh_failed", error: e.message, credential_id: credential.id)
+      false
+    end
+
+    def codex_refresh_exchange_supported?
+      AgentHarness::Authentication.respond_to?(:exchange_refresh_token) &&
+        AgentHarness::Authentication.respond_to?(:exchange_refresh_token_supported?) &&
+        AgentHarness::Authentication.exchange_refresh_token_supported?(:codex)
+    end
+
+    def apply_codex_refresh_result!(credential, refreshed_payload)
+      token = refreshed_payload.is_a?(Hash) ? refreshed_payload.dig(:token) || JSON.generate(refreshed_payload) : refreshed_payload.to_s
+      parsed = CodexCredentials::Secret.parse(token.to_s)
+      credential.assign_attributes(
+        token: token.to_s,
+        expires_at: parsed.expires_at || credential.expires_at,
+        revoked_at: nil,
+        metadata: credential.metadata.to_h.merge(
+          "source" => "server_refresh",
+          "storage_format" => "codex_auth_json",
+          "access_token_expires_at" => (parsed.expires_at || credential.expires_at)&.iso8601
+        ).compact
+      )
+      credential.save!
+    end
+
+    def record_codex_refresh_attempt!(credential, started_at, refresh_state:, result:, failure_reason: nil)
+      duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
+      record_auth_attempt!(
+        runner_key: "codex",
+        attempt_stage: RunnerAuthAttempt::STAGE_REFRESH,
+        auth_source: :managed,
+        materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_NATIVE_FILE,
+        runner_credential: credential,
+        refresh_state: refresh_state,
+        result: result,
+        failure_reason: failure_reason,
+        duration_ms: duration_ms,
+        metadata: { source: "managed" }
+      )
+    end
+
+    # Harvests the rotated `/home/agent/.codex/auth.json` from the container back
+    # into the canonical managed RunnerCredential after a run (RDR-041 / #2962).
+    # The Codex CLI may rotate auth.json in-container, so without this writeback
+    # the canonical credential would go stale after the first successful run.
+    # Returns the provider Result contract so the adapter can report harvest state.
+    def harvest_codex_managed_credential_impl!
+      credential = codex_managed_runner_credential
+      return unsupported_codex_harvest_result unless credential
+
+      started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      stdout, stderr, status = backend.exec_in_container(
+        container,
+        [ "sh", "-lc", "base64 -w0 /home/agent/.codex/auth.json" ],
+        user: "agent"
+      )
+      raise Docker::Error::DockerError, Array(stderr).join if status.to_i != 0
+
+      encoded = Array(stdout).join
+      if encoded.blank?
+        record_codex_harvest_attempt!(credential, started_at,
+          result: RunnerAuthAttempt::RESULT_SKIPPED, failure_reason: "no_rotated_credential")
+        return codex_harvest_result(performed: false, reason: "no_rotated_credential")
+      end
+
+      rotated = Base64.strict_decode64(encoded)
+      parsed = CodexCredentials::Secret.parse(rotated)
+      unless parsed.codex_auth?
+        record_codex_harvest_attempt!(credential, started_at,
+          result: RunnerAuthAttempt::RESULT_HARVEST_FAILED, failure_reason: "malformed_rotated_credential")
+        return codex_harvest_result(performed: false, reason: "malformed_rotated_credential")
+      end
+
+      update_codex_managed_credential_from_rotation!(credential, rotated, parsed)
+      log_system("container.codex_managed_auth_harvested", credential_id: credential.id)
+      record_codex_harvest_attempt!(credential, started_at, result: RunnerAuthAttempt::RESULT_HARVESTED)
+      codex_harvest_result(performed: true, reason: "harvested")
+    rescue Docker::Error::DockerError, SystemCallError, ArgumentError => e
+      log_system("container.codex_managed_auth_harvest_failed",
+        error: e.message, credential_id: credential&.id)
+      record_codex_harvest_attempt!(credential, started_at,
+        result: RunnerAuthAttempt::RESULT_HARVEST_FAILED, failure_reason: "exec_failed")
+      codex_harvest_result(performed: false, reason: "harvest_failed")
+    end
+
+    def update_codex_managed_credential_from_rotation!(credential, rotated_auth_json, parsed)
+      return unless parsed.codex_auth? && parsed.access_token.present?
+
+      credential.assign_attributes(
+        token: rotated_auth_json,
+        expires_at: parsed.expires_at || credential.expires_at,
+        last_used_at: Time.current,
+        revoked_at: nil,
+        metadata: credential.metadata.to_h.merge(
+          "source" => "container_rotation_harvest",
+          "storage_format" => "codex_auth_json",
+          "access_token_expires_at" => (parsed.expires_at || credential.expires_at)&.iso8601
+        ).compact
+      )
+      credential.save!
+    end
+
+    def record_codex_harvest_attempt!(credential, started_at, result:, failure_reason: nil)
+      duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
+      record_auth_attempt!(
+        runner_key: "codex",
+        attempt_stage: RunnerAuthAttempt::STAGE_HARVEST,
+        auth_source: :managed,
+        materialization_mode: Runners::SubscriptionAuthMaterializers::MATERIALIZE_NATIVE_FILE,
+        runner_credential: credential,
+        result: result,
+        failure_reason: failure_reason,
+        duration_ms: duration_ms,
+        metadata: { source: "managed" }
+      )
+    end
+
+    def codex_harvest_result(performed:, reason:)
+      Runners::SubscriptionAuthProviders::Result.new(supported: true, performed: performed, reason: reason)
+    end
+
+    def unsupported_codex_harvest_result
+      Runners::SubscriptionAuthProviders::Result.new(supported: false, performed: false, reason: "no_managed_credential")
     end
 
     # Phase 3 — Claude credential keep-warm (RDR-041).

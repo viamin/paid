@@ -14,12 +14,13 @@ RSpec.describe Runners::SubscriptionAuthMaterializers, :no_db do
       expect(materializer.requires_host_paths?).to be(false)
     end
 
-    it "marks Codex as host-mount and not remote-safe (pending #2962)" do
+    it "marks Codex as a native-file materializer that is not yet remote-safe (#2962)" do
       materializer = described_class.for_runner("codex")
 
       expect(materializer.remote_safe?).to be(false)
-      expect(materializer.materialization_mode).to eq("host_mount")
-      expect(materializer.requires_host_paths?).to be(true)
+      expect(materializer.materialization_mode).to eq("native_file")
+      expect(materializer.rotation_risk).to eq("container_may_rotate")
+      expect(materializer.requires_host_paths?).to be(false)
     end
 
     it "marks Gemini and Copilot as remote-safe native-file materializers (#2964)" do
