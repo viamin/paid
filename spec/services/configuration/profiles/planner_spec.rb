@@ -73,6 +73,24 @@ RSpec.describe Configuration::Profiles::Planner do
       end
     end
 
+    context "when a GitHub login override is supplied" do
+      let(:profile) { Configuration::Profiles::TeamReviewed }
+
+      it "normalizes the login before returning the plan" do
+        allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
+
+        plan = described_class.call(profile:, project:, overrides: { "owner_reviewer_login" => " octocat " })
+
+        expect(plan.applied_overrides).to include("owner_reviewer_login" => "octocat")
+      end
+
+      it "rejects non-string GitHub login overrides" do
+        expect {
+          described_class.call(profile:, project:, overrides: { "owner_reviewer_login" => { "login" => "octocat" } })
+        }.to raise_error(ArgumentError, /Invalid GitHub login override/)
+      end
+    end
+
     context "when an undeclared override key is supplied" do
       it "rejects the override" do
         expect {

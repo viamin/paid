@@ -35,6 +35,13 @@ module Configuration
         raise ArgumentError,
               "Invalid boolean override #{value.inspect}; expected true, false, \"true\", \"false\", 1, or 0"
       end
+      GITHUB_LOGIN = lambda do |value|
+        unless value.is_a?(String)
+          raise ArgumentError, "Invalid GitHub login override #{value.inspect}; expected a string"
+        end
+
+        value.strip
+      end
 
       DESCRIPTORS = {
         "active" => Descriptor.new(
@@ -59,7 +66,8 @@ module Configuration
         "owner_reviewer_login" => Descriptor.new(
           key: "owner_reviewer_login", attribute: "owner_reviewer_login", label: "Owner reviewer login",
           read: ->(project) { project.owner_reviewer_login },
-          write: ->(project, value) { project.owner_reviewer_login = value }
+          write: ->(project, value) { project.owner_reviewer_login = value },
+          coerce: GITHUB_LOGIN
         ),
         "adoption_mode" => Descriptor.new(
           key: "adoption_mode", attribute: "interop_settings", label: "Adoption mode",
