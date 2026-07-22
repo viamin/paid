@@ -133,6 +133,7 @@ module Activities
         select_model(agent_run)
         policy_evaluation = apply_policy_controls(agent_run)
         assign_configuration_bundle(agent_run)
+        select_and_log_orchestration_strategy(agent_run)
 
         log_scope_analysis(agent_run, scope_result)
 
@@ -297,6 +298,7 @@ module Activities
       )
       policy_evaluation = apply_policy_controls(agent_run)
       assign_configuration_bundle(agent_run)
+      select_and_log_orchestration_strategy(agent_run)
 
       logger.info(
         message: "agent_execution.queued_run_resumed",
@@ -434,6 +436,47 @@ module Activities
 
     def assign_configuration_bundle(agent_run)
       ConfigurationBundles::AssignToRun.call(agent_run: agent_run)
+    end
+
+    def select_and_log_orchestration_strategy(agent_run)
+      result = Strategies::Select.call(
+        decision_type: "issue_execution",
+        project: agent_run.project,
+        task_type: agent_run.goal,
+        context: {
+          "goal" => agent_run.goal,
+          "agent_type" => agent_run.agent_type,
+          "focus" => agent_run.focus
+        }
+      )
+
+      OrchestrationDecision.create!(
+        project: agent_run.project,
+        agent_run: agent_run,
+        decision_type: "issue_execution",
+        actor: self.class.name,
+        strategy_version: result.strategy_version,
+        context: {
+          "decision_status" => result.found? ? "applied" : "noop",
+          "scope" => result.scope.to_s,
+          "strategy" => result.to_s,
+          "matched_rule_count" => result.matched_rule_count
+        },
+        inputs: {
+          "goal" => agent_run.goal,
+          "agent_type" => agent_run.agent_type,
+          "focus" => agent_run.focus
+        },
+        outputs: result.content,
+        outcome_references: []
+      )
+    rescue => e
+      logger.warn(
+        message: "agent_execution.orchestration_strategy_selection_failed",
+        agent_run_id: agent_run.id,
+        error_class: e.class.name,
+        error: e.message
+      )
     end
 
     def apply_policy_controls(agent_run)

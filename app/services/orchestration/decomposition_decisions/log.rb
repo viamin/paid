@@ -163,6 +163,14 @@ module Orchestration
       end
 
       def resolved_strategy_version
+        result = Strategies::Select.call(
+          decision_type: decision_type,
+          context: input_context,
+          project: project
+        )
+        return result.strategy_version if result.found?
+
+        # Fall back to baseline slug resolution when no learned strategy matches the context
         slug = Strategies::BaselineOrchestration.slug_for_decision_type(decision_type)
         return if slug.blank?
 
