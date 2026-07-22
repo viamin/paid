@@ -466,7 +466,7 @@ class ProcessRunQueueJob < ApplicationJob
       host_available_slots: admission[:host_available_slots],
       selection_source: host_selection.selection_source,
       fallback_policy: host_selection.fallback_policy,
-      fallback_hosts_considered: host_selection.candidate_hosts,
+      candidate_hosts: host_selection.candidate_hosts,
       reason: admission[:reason],
       mode: admission[:mode],
       available_slots: admission[:available_slots],
