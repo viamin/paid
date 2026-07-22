@@ -32,6 +32,10 @@ class EnforcePreviewSessionConstraints < ActiveRecord::Migration[8.1]
 
   def down
     safety_assured do
+      execute "DROP POLICY IF EXISTS tenant_isolation ON preview_sessions"
+      execute "ALTER TABLE preview_sessions NO FORCE ROW LEVEL SECURITY"
+      execute "ALTER TABLE preview_sessions DISABLE ROW LEVEL SECURITY"
+
       if foreign_key_exists?(:preview_sessions, :users, column: :created_by_id)
         remove_foreign_key :preview_sessions, :users, column: :created_by_id
       end
