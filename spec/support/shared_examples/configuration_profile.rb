@@ -21,7 +21,7 @@ RSpec.shared_examples "a configuration profile" do
   end
 
   it "uses registered labels for each target key" do
-    described_class.targets.keys.each do |key|
+    described_class.targets.each_key do |key|
       expect(Configuration::Profiles::Settings.fetch(key).label).to be_present
     end
   end
