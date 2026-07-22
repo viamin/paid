@@ -690,6 +690,10 @@ class AgentRun < ApplicationRecord
     capacity_inflight.where(project_id: project.id).count
   end
 
+  def self.active_count_for_host(container_host)
+    capacity_inflight.where(container_host: host_scope_for(container_host)).count
+  end
+
   # Returns the count of active create_pr runs for the given account.
   # Used to enforce the account-level create_pr concurrency cap.
   def self.active_create_pr_count_for_account(account)
@@ -730,6 +734,11 @@ class AgentRun < ApplicationRecord
   # for shared, deterministic resolution matching Project#effective_owner.
   def self.orphaned_project_owner?(user)
     user.account.fallback_owner_id == user.id
+  end
+
+  def container_host_selection
+    raw = external_metadata.fetch("container_host_selection", {})
+    raw.is_a?(Hash) ? raw.stringify_keys : {}
   end
 
   def self.stale_running?(agent_run, now: Time.current)
@@ -2637,6 +2646,7 @@ class AgentRun < ApplicationRecord
     @container_service = Containers::Provision.new(
       agent_run: self,
       worktree_path: worktree_path.presence,
+      backend: Containers.backend_for(container_host),
       **options
     )
     result = @container_service.provision
@@ -2664,6 +2674,17 @@ class AgentRun < ApplicationRecord
     @container_service = nil
     update_column(:container_id, nil) if container_id.present?
   end
+
+  def self.host_scope_for(container_host)
+    backend = Containers.backend_for(container_host)
+    identifiers = backend.all_host_identifiers.map(&:to_s)
+    return [ nil, "" ] + identifiers if identifiers.include?(Containers::LOCAL_BACKEND_KEY.to_s)
+
+    identifiers
+  rescue Containers::Backends::Resolver::UnknownBackendError
+    [ container_host.to_s ]
+  end
+  private_class_method :host_scope_for
 
   def issue_belongs_to_same_project
     return if issue.project_id == project_id

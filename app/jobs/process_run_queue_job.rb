@@ -175,27 +175,48 @@ class ProcessRunQueueJob < ApplicationJob
         admission_uses_auto = forced_admission_mode != UserSetting::RUN_CONCURRENCY_MODE_MANUAL &&
           user.settings.run_concurrency_auto?
         docker_snapshot ||= Capacity::DockerSnapshot.fetch if admission_uses_auto
-        admission = run_admission_for(
-          next_run,
-          user,
-          mode: forced_admission_mode,
-          docker_snapshot: docker_snapshot,
-          reserved_agent_memory_bytes: queue_reserved_agent_memory_bytes(
+        host_selection = Containers::BackendScheduler.call(agent_run: next_run)
+        unless host_selection.candidate_hosts.any?
+          log_host_selection_skip(next_run, host_selection)
+          skipped_ids.add(next_run.id)
+          next
+        end
+
+        admission = nil
+        selected_host = nil
+        host_selection.candidate_hosts.each do |candidate_host|
+          admission = run_admission_for(
+            next_run,
             user,
-            base_reserved_agent_memory_bytes,
-            started_reserved_agent_memory_bytes,
-            mode: forced_admission_mode
+            mode: forced_admission_mode,
+            docker_snapshot: docker_snapshot,
+            reserved_agent_memory_bytes: queue_reserved_agent_memory_bytes(
+              user,
+              base_reserved_agent_memory_bytes,
+              started_reserved_agent_memory_bytes,
+              mode: forced_admission_mode
+            ),
+            selected_host: candidate_host,
+            selected_host_limit: Containers.host_registry.host_limit_for(candidate_host)
           )
-        )
+          if admission[:allowed]
+            selected_host = candidate_host
+            break
+          end
+
+          break unless admission[:reason] == "host_hard_ceiling" && host_selection.fallback_enabled?
+        end
         if admission[:snapshot_available]
           base_reserved_agent_memory_bytes ||= admission[:reserved_agent_memory_bytes].to_i - started_reserved_agent_memory_bytes
         end
         unless admission[:allowed]
-          log_capacity_skip(next_run, admission)
+          log_capacity_skip(next_run, admission, host_selection: host_selection)
 
           case admission[:reason]
           when "insufficient_docker_capacity"
             blocked_user_ids.add(user.id)
+          when "host_hard_ceiling"
+            skipped_ids.add(next_run.id)
           when "project_hard_ceiling"
             blocked_project_ids.add(next_run.project_id)
           when "create_pr_hard_ceiling"
@@ -252,6 +273,7 @@ class ProcessRunQueueJob < ApplicationJob
           skipped_ids.add(next_run.id)
           next
         end
+        agent_run.update!(container_host: selected_host) if selected_host.present? && agent_run.container_host != selected_host
 
         result = start_claimed_run(agent_run)
         if result == :budget_blocked
@@ -391,14 +413,16 @@ class ProcessRunQueueJob < ApplicationJob
     )
   end
 
-  def run_admission_for(agent_run, user, mode:, docker_snapshot:, reserved_agent_memory_bytes:)
+  def run_admission_for(agent_run, user, mode:, docker_snapshot:, reserved_agent_memory_bytes:, selected_host:, selected_host_limit:)
     Capacity::RunAdmission.call(
       user: user,
       project: agent_run.project,
       goal: agent_run.goal,
       mode: mode,
       docker_snapshot: docker_snapshot,
-      reserved_agent_memory_bytes: reserved_agent_memory_bytes
+      reserved_agent_memory_bytes: reserved_agent_memory_bytes,
+      selected_host: selected_host,
+      selected_host_limit: selected_host_limit
     )
   end
 
@@ -430,12 +454,19 @@ class ProcessRunQueueJob < ApplicationJob
     base_reserved_agent_memory_bytes.to_i + started_reserved_agent_memory_bytes
   end
 
-  def log_capacity_skip(agent_run, admission)
+  def log_capacity_skip(agent_run, admission, host_selection:)
     Rails.logger.info(
       message: "process_run_queue.capacity_denied",
       agent_run_id: agent_run.id,
       project_id: agent_run.project_id,
       goal: agent_run.goal,
+      selected_host: admission[:selected_host],
+      host_active_count: admission[:host_active_count],
+      host_max_concurrent_runs: admission[:host_max_concurrent_runs],
+      host_available_slots: admission[:host_available_slots],
+      selection_source: host_selection.selection_source,
+      fallback_policy: host_selection.fallback_policy,
+      fallback_hosts_considered: host_selection.candidate_hosts,
       reason: admission[:reason],
       mode: admission[:mode],
       available_slots: admission[:available_slots],
@@ -445,6 +476,18 @@ class ProcessRunQueueJob < ApplicationJob
       reserved_agent_memory_bytes: admission[:reserved_agent_memory_bytes],
       docker_reason: admission[:docker_reason],
       degraded: admission[:degraded] == true
+    )
+  end
+
+  def log_host_selection_skip(agent_run, host_selection)
+    Rails.logger.info(
+      message: "process_run_queue.host_unavailable",
+      agent_run_id: agent_run.id,
+      project_id: agent_run.project_id,
+      requested_host: host_selection.requested_host,
+      selection_source: host_selection.selection_source,
+      fallback_policy: host_selection.fallback_policy,
+      compatibility_failures: host_selection.compatibility_failures
     )
   end
 

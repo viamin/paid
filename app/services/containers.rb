@@ -12,6 +12,10 @@ module Containers
       )
     end
 
+    def host_registry
+      @host_registry ||= HostRegistry.load
+    end
+
     # Resolves the backend that owns a given container host.
     # Reuses the process-global backend when the host is blank or already
     # matches the active backend's identifier.
@@ -25,6 +29,10 @@ module Containers
     end
 
     def all_backends
+      if ENV.fetch("CONTAINER_BACKEND", "local").to_s == "multi"
+        return host_registry.hosts.map(&:backend).uniq
+      end
+
       active_backend = backend
       backends = { active_backend.identifier => active_backend }
 

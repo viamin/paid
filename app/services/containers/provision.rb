@@ -32,6 +32,8 @@ module Containers
   #   end
   #
   class Provision
+    CompatibilityResult = Data.define(:compatible, :error_message)
+
     CODEX_NOTIFY_LINE = 'notify = ["sh", "-lc", "date +%s > /paid-heartbeat/.paid-heartbeat"]'
     HEARTBEAT_MOUNT_POINT = "/paid-heartbeat"
     MAX_STREAMING_LINE_BUFFER_BYTES = 64 * 1024
@@ -163,6 +165,14 @@ module Containers
 
     def self.codex_notify_line
       CODEX_NOTIFY_LINE
+    end
+
+    def self.compatibility_for(agent_run:, backend:, worktree_path: nil)
+      service = new(agent_run: agent_run, worktree_path: worktree_path, backend: backend)
+      service.send(:validate_backend_mount_support!)
+      CompatibilityResult.new(compatible: true, error_message: nil)
+    rescue ProvisionError => e
+      CompatibilityResult.new(compatible: false, error_message: e.message)
     end
 
     # @param agent_run [AgentRun] The agent run to associate logs with
