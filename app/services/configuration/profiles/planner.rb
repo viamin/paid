@@ -62,7 +62,7 @@ module Configuration
       end
 
       def stringify(overrides)
-        return {} unless overrides.is_a?(Hash)
+        raise ArgumentError, "overrides must be a Hash, got #{overrides.class}" unless overrides.is_a?(Hash)
 
         overrides.deep_stringify_keys
       end

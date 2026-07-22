@@ -104,6 +104,26 @@ RSpec.describe Configuration::Profiles::Planner do
         described_class.call(profile:, project:, overrides: { bogus: 1 })
       }.to raise_error(Configuration::Profiles::UnknownOverrideError)
     end
+
+    context "when overrides is not a Hash" do
+      it "raises ArgumentError for a string" do
+        expect {
+          described_class.call(profile:, project:, overrides: "quality_gate_enabled=true")
+        }.to raise_error(ArgumentError, /overrides must be a Hash/)
+      end
+
+      it "raises ArgumentError for an array" do
+        expect {
+          described_class.call(profile:, project:, overrides: [ "quality_gate_enabled" ])
+        }.to raise_error(ArgumentError, /overrides must be a Hash/)
+      end
+
+      it "raises ArgumentError for nil" do
+        expect {
+          described_class.call(profile:, project:, overrides: nil)
+        }.to raise_error(ArgumentError, /overrides must be a Hash/)
+      end
+    end
   end
 
   describe "prerequisites" do
