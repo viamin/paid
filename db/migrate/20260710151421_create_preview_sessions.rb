@@ -50,10 +50,19 @@ class CreatePreviewSessions < ActiveRecord::Migration[8.1]
   end
 
   def down
-    if table_exists?(:preview_sessions)
-      disable_preview_sessions_rls
-      drop_table :preview_sessions
-    end
+    return unless table_exists?(:preview_sessions)
+
+    # If the named index we create in `up` is absent, the table predated this
+    # migration record (legacy-table path). Dropping it would destroy data that
+    # this migration never created, so treat the rollback as a no-op in that case.
+    return unless index_exists?(
+      :preview_sessions,
+      %i[account_id status expires_at],
+      name: "idx_preview_sessions_on_account_status_expires"
+    )
+
+    disable_preview_sessions_rls
+    drop_table :preview_sessions
   end
 
   private
