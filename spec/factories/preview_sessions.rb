@@ -2,21 +2,28 @@
 
 FactoryBot.define do
   factory :preview_session do
-    project
-    branch_name { "feature/preview" }
-    container_id { "container-abc123" }
-    sequence(:tunnel_port) { |n| 8200 + (n % 90) }
-    status { "active" }
+    project { association :project }
+    account { project.account }
+    branch_name { "main" }
+    framework { "rails" }
+    status { "pending" }
     expires_at { 30.minutes.from_now }
-
-    trait :ready do
-      status { "ready" }
-    end
 
     trait :provisioning do
       status { "provisioning" }
-      tunnel_port { nil }
-      container_id { nil }
+    end
+
+    trait :ready do
+      status { "ready" }
+      sequence(:tunnel_port) { |n| 8200 + (n % 90) }
+      container_id { "preview-abc123" }
+      last_active_at { Time.current }
+    end
+
+    trait :expired do
+      status { "ready" }
+      sequence(:tunnel_port) { |n| 8300 + (n % 90) }
+      expires_at { 1.minute.ago }
     end
 
     trait :stopped do
@@ -25,11 +32,7 @@ FactoryBot.define do
 
     trait :failed do
       status { "failed" }
-    end
-
-    trait :expired do
-      status { "active" }
-      expires_at { 5.minutes.ago }
+      error_message { "boom" }
     end
 
     trait :without_port do

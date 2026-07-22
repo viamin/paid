@@ -281,6 +281,8 @@
       </div>
     <% end %>
 
+    <%= render "projects/preview", project: @project, preview_session: @preview_session %>
+
     <%= render "projects/stats", project: @project, budgets: @cost_budgets %>
     <%= turbo_frame_tag dom_id(@project, :cost_snapshot), src: project_cost_snapshot_path(@project), loading: :lazy do %>
       <div class="mt-4 h-14 animate-pulse rounded-lg bg-gray-100"></div>

@@ -14,6 +14,7 @@ Rails.application.routes.draw do
   get "health/services", to: "health#show"
   get "health/liveness", to: "health#liveness"
   get "health/readiness", to: "health#readiness"
+  get "previews/:token(/*path)", to: "previews#show", as: :preview
 
   # Render dynamic PWA files from app/views/pwa/* (remember to link manifest in application.html.erb)
   # get "manifest" => "rails/pwa#manifest", as: :pwa_manifest
@@ -201,6 +202,9 @@ Rails.application.routes.draw do
     post :toggle_pause, on: :member
     post :quality_resume, on: :member
     post :cleanup_stale_runs, on: :member
+    post :start_preview, on: :member
+    post :stop_preview, on: :member
+    post :restart_preview, on: :member
     post :detect_screenshot_settings, on: :member
     post :commit_screenshot_config, on: :member
     resource :workflow_status, only: [ :show ] do

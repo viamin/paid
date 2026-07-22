@@ -118,13 +118,19 @@ module Screenshots
           assign_agent_run_defaults!(agent_run)
           agent_run.save!
 
-          preview_session = project.preview_sessions.find_or_create_by!(token: "screenshots-preview-token") do |record|
-            record.branch_name = "feature/screenshots-preview"
-            record.container_id = "screenshots-preview-container"
-            record.tunnel_port = 8280
-            record.status = "active"
-            record.expires_at = 30.minutes.from_now
-          end
+          preview_session = project.preview_sessions.find_or_initialize_by(token: "screenshots-preview-token")
+          preview_session.assign_attributes(
+            account: account,
+            agent_run: agent_run,
+            branch_name: "feature/screenshots-preview",
+            container_id: "screenshots-preview-container",
+            created_by: user,
+            framework: project.detected_framework,
+            tunnel_port: 8280,
+            status: "ready",
+            expires_at: 30.minutes.from_now
+          )
+          preview_session.save!
 
           prompt = Prompt.find_or_create_by!(account: account, slug: "screenshots.prompt") do |record|
             record.name = "Screenshots Prompt"

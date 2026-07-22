@@ -23,8 +23,8 @@ RSpec.describe PreviewsProxy do
     })
   end
   let!(:session) do
-    create(:preview_session, project: project, status: "active",
-      token: "s3cret-token", expires_at: 30.minutes.from_now)
+    create(:preview_session, :ready, project: project,
+      token: "s3cret-token", container_id: "container-123", expires_at: 30.minutes.from_now)
   end
   let(:port) { session.tunnel_port }
 
@@ -67,7 +67,7 @@ RSpec.describe PreviewsProxy do
     end
 
     it "returns 404 for a session without an allocated tunnel port" do
-      create(:preview_session, :without_port, status: "active", token: "no-port", project: project)
+      create(:preview_session, :ready, :without_port, token: "no-port", project: project)
 
       response = mock_request.get("/previews/no-port/issues/42")
 
@@ -149,14 +149,13 @@ RSpec.describe PreviewsProxy do
       expect(response.status).to eq(200)
     end
 
-    it "deletes the X-Frame-Options header" do
+    it "replaces X-Frame-Options with SAMEORIGIN" do
       stub_request(:get, "http://127.0.0.1:#{port}/")
         .to_return(status: 200, headers: { "X-Frame-Options" => "DENY" }, body: "ok")
 
       response = mock_request.get("/previews/s3cret-token/")
 
-      expect(response.headers).not_to have_key("x-frame-options")
-      expect(response.headers).not_to have_key("X-Frame-Options")
+      expect(response.headers["x-frame-options"]).to eq("SAMEORIGIN")
     end
 
     it "rewrites Content-Security-Policy frame-ancestors to allow embedding" do
