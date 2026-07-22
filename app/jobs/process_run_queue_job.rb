@@ -80,7 +80,6 @@ class ProcessRunQueueJob < ApplicationJob
       reroute_cache = {}
       blocked_account_create_pr_ids = Set.new
       blocked_account_dispatch_ids = Set.new
-      started_priority_by_project = {}
       docker_snapshot = nil
       base_reserved_agent_memory_bytes = nil
       started_reserved_agent_memory_bytes = 0
@@ -110,11 +109,6 @@ class ProcessRunQueueJob < ApplicationJob
         # don't consume expensive admission work.
         if AgentRuns::RecheckIssueEligibility.call(next_run)
           skipped_ids.add(next_run.id)
-          next
-        end
-
-        if lower_priority_than_inflight_or_started_project_run?(next_run, started_priority_by_project)
-          blocked_project_ids.add(next_run.project_id)
           next
         end
 
@@ -274,7 +268,6 @@ class ProcessRunQueueJob < ApplicationJob
           consecutive_failures = 0
           starts_count += 1
           started_reserved_agent_memory_bytes += admission[:estimated_memory_per_run_bytes].to_i if docker_snapshot&.[](:available)
-          record_started_project_priority(next_run, started_priority_by_project)
           break if starts_count >= MAX_STARTS_PER_PERFORM
         else
           consecutive_failures += 1
@@ -496,36 +489,6 @@ class ProcessRunQueueJob < ApplicationJob
     ::AgentRuns::DispatchCircuitBreaker
       .new(agent_run.project.account)
       .mark_probe_dispatched!(agent_run_id: agent_run.id)
-  end
-
-  def record_started_project_priority(agent_run, started_priority_by_project)
-    priority = queue_priority_for(agent_run)
-    existing = started_priority_by_project[agent_run.project_id]
-    started_priority_by_project[agent_run.project_id] = priority if existing.nil? || priority < existing
-  end
-
-  # Blocks a queued run from starting when the same project still has
-  # higher-priority work in flight — whether already running or merely
-  # claimed-but-not-yet-started — or started higher-priority work earlier in
-  # this pass. This keeps priority strict within a project: e.g. a P2 must
-  # wait while any P1 for the project is running or queued-and-claimed.
-  def lower_priority_than_inflight_or_started_project_run?(agent_run, started_priority_by_project)
-    current_priority = queue_priority_for(agent_run)
-    started_priority = started_priority_by_project[agent_run.project_id]
-    return true if started_priority && current_priority > started_priority
-
-    AgentRun
-      .inflight_with_priority
-      .where(project_id: agent_run.project_id)
-      .where("#{AgentRun::QUEUE_PRIORITY_CASE_SQL} < ?", current_priority)
-      .exists?
-  end
-
-  def queue_priority_for(agent_run)
-    value = agent_run.read_attribute(:queue_priority)
-    return value.to_i unless value.nil?
-
-    AgentRun::QUEUE_PRIORITIES.keys.index(agent_run.queue_priority_tier) || AgentRun::QUEUE_PRIORITIES.size
   end
 
   def start_claimed_run(agent_run)
