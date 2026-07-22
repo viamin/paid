@@ -45,4 +45,10 @@ RSpec.describe Tools::PlanConfigurationProfile do
       call(profile_id: "observe_only", overrides: { owner_reviewer_login: "octocat" })
     }.to raise_error(Configuration::Profiles::UnknownOverrideError)
   end
+
+  it "rejects invalid boolean overrides" do
+    expect {
+      call(profile_id: "observe_only", overrides: { active: "no" })
+    }.to raise_error(ArgumentError, /Invalid boolean override/)
+  end
 end

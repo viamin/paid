@@ -33,6 +33,12 @@ RSpec.describe Tools::ApplyConfigurationProfile do
     expect(project.reload.quality_gate_settings["enabled"]).to be(true)
   end
 
+  it "rejects invalid boolean overrides before persisting changes" do
+    expect {
+      call(profile_id: "solo_automated", overrides: { quality_gate_enabled: "no" })
+    }.to raise_error(ArgumentError, /Invalid boolean override/)
+  end
+
   it "requires confirmation" do
     expect {
       call(profile_id: "observe_only", confirmed: false)

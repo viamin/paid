@@ -23,7 +23,18 @@ module Configuration
     module Settings
       module_function
 
-      BOOLEAN = ->(value) { ActiveModel::Type::Boolean.new.cast(value) }
+      BOOLEAN_TRUE_VALUES = [ true, 1, "1", "true" ].freeze
+      BOOLEAN_FALSE_VALUES = [ false, 0, "0", "false" ].freeze
+      BOOLEAN = lambda do |value|
+        return value if value == true || value == false
+
+        normalized = value.is_a?(String) ? value.strip.downcase : value
+        return true if BOOLEAN_TRUE_VALUES.include?(normalized)
+        return false if BOOLEAN_FALSE_VALUES.include?(normalized)
+
+        raise ArgumentError,
+              "Invalid boolean override #{value.inspect}; expected true, false, \"true\", \"false\", 1, or 0"
+      end
 
       DESCRIPTORS = {
         "active" => Descriptor.new(
