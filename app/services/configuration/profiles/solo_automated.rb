@@ -7,6 +7,10 @@ module Configuration
     module SoloAutomated
       include Base
 
+      def self.description
+        "Single-user posture with auto-pick and full execution enabled, without a review gate."
+      end
+
       def self.targets
         {
           "active" => true,

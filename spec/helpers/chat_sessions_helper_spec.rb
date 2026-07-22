@@ -101,8 +101,8 @@ RSpec.describe ChatSessionsHelper do
           profile_id: "solo_automated",
           project_id: 42,
           changes: [
-            { field: "auto_pick_enabled", from: false, to: true },
-            { field: "auto_merge_mode", from: "off", to: "all" }
+            { key: "auto_pick_enabled", from: false, to: true },
+            { key: "adoption_mode", from: "observe_only", to: "full_execution" }
           ]
         })
 
@@ -123,13 +123,13 @@ RSpec.describe ChatSessionsHelper do
       payload = {
         profile_id: "solo_automated",
         changes: [
-          { field: "auto_pick_enabled", from: false, to: true },
-          { field: "auto_merge_mode", from: "off", to: "all" }
+          { key: "auto_pick_enabled", from: false, to: true },
+          { key: "adoption_mode", from: "observe_only", to: "full_execution" }
         ]
       }
 
-      expect(helper.chat_configuration_profile_plan_changes(payload).map { |c| c[:field] })
-        .to eq(%w[auto_pick_enabled auto_merge_mode])
+      expect(helper.chat_configuration_profile_plan_changes(payload).map { |c| c[:key] })
+        .to eq(%w[auto_pick_enabled adoption_mode])
     end
 
     it "returns an empty list when the payload is not a configuration profile plan" do
@@ -137,7 +137,7 @@ RSpec.describe ChatSessionsHelper do
       expect(helper.chat_configuration_profile_plan_changes(nil)).to eq([])
     end
 
-    it "uses the canonical FieldSet label for known fields" do
+    it "uses the canonical descriptor label for known fields" do
       expect(helper.configuration_profile_field_label("auto_pick_enabled")).to eq("Auto-pick issues")
     end
 

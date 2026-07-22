@@ -191,8 +191,9 @@ module ChatSessionsHelper
   def configuration_profile_field_label(field)
     return "" if field.blank?
 
-    profile_field = ConfigurationProfiles::FieldSet.all.find { |candidate| candidate.key.to_s == field.to_s }
-    profile_field&.label || field.to_s.humanize
+    Configuration::Profiles::Settings.fetch(field).label
+  rescue ArgumentError
+    field.to_s.humanize
   end
 
   def chat_configuration_profile_plan_title(payload)

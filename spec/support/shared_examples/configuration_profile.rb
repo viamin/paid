@@ -16,6 +16,12 @@ RSpec.shared_examples "a configuration profile" do
     expect(ids).to all(be_in(Configuration::Profiles::Settings::DESCRIPTORS.keys))
   end
 
+  it "uses registered labels for each target key" do
+    described_class.targets.keys.each do |key|
+      expect(Configuration::Profiles::Settings.fetch(key).label).to be_present
+    end
+  end
+
   it "derives override keys from clarifying-question ids only" do
     expected = described_class.clarifying_questions.map { |question| question[:id].to_s }
     expect(described_class.override_keys).to eq(expected)

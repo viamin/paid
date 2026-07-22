@@ -7,7 +7,7 @@ module Configuration
     # declares its authorization +level+ (today only +:project+) so {Applier}
     # can authorize per level, and the +attribute+ name surfaced in activity
     # metadata.
-    class Descriptor < Struct.new(:key, :attribute, :level, :read, :write, keyword_init: true)
+    class Descriptor < Struct.new(:key, :attribute, :level, :label, :read, :write, keyword_init: true)
       def level
         super || :project
       end
@@ -21,41 +21,46 @@ module Configuration
 
       DESCRIPTORS = {
         "active" => Descriptor.new(
-          key: "active", attribute: "active",
+          key: "active", attribute: "active", label: "Project active",
           read: ->(project) { project.active },
           write: ->(project, value) { project.active = value }
         ),
         "auto_pick_enabled" => Descriptor.new(
-          key: "auto_pick_enabled", attribute: "auto_pick_enabled",
+          key: "auto_pick_enabled", attribute: "auto_pick_enabled", label: "Auto-pick issues",
           read: ->(project) { project.auto_pick_enabled },
           write: ->(project, value) { project.auto_pick_enabled = value }
         ),
         "automation_on_label_enabled" => Descriptor.new(
           key: "automation_on_label_enabled", attribute: "automation_on_label_enabled",
+          label: "Automation on label",
           read: ->(project) { project.automation_on_label_enabled },
           write: ->(project, value) { project.automation_on_label_enabled = value }
         ),
         "owner_reviewer_login" => Descriptor.new(
-          key: "owner_reviewer_login", attribute: "owner_reviewer_login",
+          key: "owner_reviewer_login", attribute: "owner_reviewer_login", label: "Owner reviewer login",
           read: ->(project) { project.owner_reviewer_login },
           write: ->(project, value) { project.owner_reviewer_login = value }
         ),
         "adoption_mode" => Descriptor.new(
-          key: "adoption_mode", attribute: "interop_settings",
+          key: "adoption_mode", attribute: "interop_settings", label: "Adoption mode",
           read: ->(project) { project.adoption_mode },
           write: ->(project, value) { merge_jsonb(project, :interop_settings, "adoption_mode", value) }
         ),
         "review_enabled" => Descriptor.new(
-          key: "review_enabled", attribute: "review_settings",
+          key: "review_enabled", attribute: "review_settings", label: "Review enabled",
           read: ->(project) { project.effective_review_settings["enabled"] },
           write: ->(project, value) { merge_jsonb(project, :review_settings, "enabled", value) }
         ),
         "quality_gate_enabled" => Descriptor.new(
-          key: "quality_gate_enabled", attribute: "quality_gate_settings",
+          key: "quality_gate_enabled", attribute: "quality_gate_settings", label: "Quality gate enabled",
           read: ->(project) { project.effective_quality_gate_settings["enabled"] },
           write: ->(project, value) { merge_jsonb(project, :quality_gate_settings, "enabled", value) }
         )
       }.freeze
+
+      def all
+        DESCRIPTORS.values
+      end
 
       def fetch(key)
         DESCRIPTORS.fetch(key.to_s)

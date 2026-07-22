@@ -9,6 +9,10 @@ module Configuration
     module ObserveOnly
       include Base
 
+      def self.description
+        "Observation-only posture that disables automation while still allowing the project to stay active."
+      end
+
       def self.targets
         {
           "adoption_mode" => "observe_only",

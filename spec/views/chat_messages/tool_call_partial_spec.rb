@@ -28,12 +28,11 @@ RSpec.describe "chat_messages/_tool_call", :no_db, type: :view do
       tool_result: {
         "profile_id" => "solo_automated",
         "project_id" => 42,
-        "label" => "Apply Solo Automated posture",
-        "source" => "configuration_profile",
         "changes" => [
-          { "field" => "auto_pick_enabled", "from" => false, "to" => true }
+          { "key" => "auto_pick_enabled", "from" => false, "to" => true }
         ],
-        "applied_fields" => [ "auto_pick_enabled" ]
+        "unmet_prerequisites" => [],
+        "applied_overrides" => {}
       },
       tool_arguments: nil
     )
