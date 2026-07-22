@@ -40,7 +40,7 @@ module Configuration
       def summaries
         all.map do |profile|
           {
-            id: profile.name,
+            profile_id: profile.name,
             name: profile.display_name,
             description: profile.description,
             clarifying_questions: profile.clarifying_questions

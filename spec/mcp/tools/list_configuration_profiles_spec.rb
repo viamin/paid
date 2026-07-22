@@ -11,10 +11,10 @@ RSpec.describe Tools::ListConfigurationProfiles do
     result = described_class.new(user:, session:).call
 
     expect(result[:profiles]).to match([
-      hash_including(id: "solo_automated", name: "Solo Automated"),
-      hash_including(id: "team_reviewed", name: "Team Reviewed"),
-      hash_including(id: "observe_only", name: "Observe Only"),
-      hash_including(id: "manual_on_label", name: "Manual On Label")
+      hash_including(profile_id: "solo_automated", name: "Solo Automated"),
+      hash_including(profile_id: "team_reviewed", name: "Team Reviewed"),
+      hash_including(profile_id: "observe_only", name: "Observe Only"),
+      hash_including(profile_id: "manual_on_label", name: "Manual On Label")
     ])
   end
 end
