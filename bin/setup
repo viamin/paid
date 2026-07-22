@@ -68,15 +68,23 @@ FileUtils.chdir APP_ROOT do
   system "bin/rails qdrant:check"
 
   puts "\n== Materializing Prometheus metrics token =="
-  # docker-compose.observability.yml binds ./prometheus/metrics_token into
-  # the Prometheus container as a `secrets:` source. The Rails app reads
-  # METRICS_TOKEN from the environment to decide whether /api/metrics
-  # requires a Bearer header. When METRICS_TOKEN is present in this
-  # process environment, mirror it into the file so the scraper picks up
-  # the same value. When absent, leave the checked-in file untouched so
-  # helper processes like the worker do not clobber a token that a
-  # separate bootstrap path already materialized.
-  token_path = File.join(APP_ROOT, "prometheus", "metrics_token")
+  # docker-compose.observability.yml mounts the host file at
+  # ${METRICS_TOKEN_FILE:-./prometheus/metrics_token} into Prometheus as a
+  # Docker secret, and the Rails app reads METRICS_TOKEN to decide whether
+  # /api/metrics requires a Bearer header. Both sides must use the same
+  # token file path; we resolve it the same way the compose overlay does —
+  # honouring METRICS_TOKEN_FILE when set, falling back to the checked-in
+  # default path. When METRICS_TOKEN is present in this process environment,
+  # we write it into the resolved file so the scraper picks up the same
+  # value. When absent, we leave the file untouched so helper processes like
+  # the worker do not clobber a token that a separate bootstrap path already
+  # materialized.
+  metrics_token_file = ENV.fetch("METRICS_TOKEN_FILE", "")
+  token_path = if metrics_token_file.empty?
+    File.join(APP_ROOT, "prometheus", "metrics_token")
+  else
+    File.expand_path(metrics_token_file, APP_ROOT)
+  end
   # Guard on a non-blank value so that the compose-style empty-string case
   # (docker-compose.yml injects METRICS_TOKEN: ${METRICS_TOKEN:-}, which is
   # always present but empty when the host var is unset) does not clobber a
