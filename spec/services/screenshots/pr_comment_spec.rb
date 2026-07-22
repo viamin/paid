@@ -225,6 +225,32 @@ RSpec.describe Screenshots::PrComment do
       expect(body).not_to include("| Page |")
     end
 
+    it "includes a Playwright trace link when one is available" do
+      body = described_class.new(
+        github_client: github_client,
+        repo: repo,
+        pr_number: pr_number,
+        commit_sha: commit_sha,
+        screenshots: screenshots,
+        trace_url: "https://s3.example.com/trace.zip"
+      ).build_comment_body
+
+      expect(body).to include("[Playwright trace](https://s3.example.com/trace.zip)")
+    end
+
+    it "includes a session video link when one is available" do
+      body = described_class.new(
+        github_client: github_client,
+        repo: repo,
+        pr_number: pr_number,
+        commit_sha: commit_sha,
+        screenshots: screenshots,
+        video_url: "https://s3.example.com/capture.webm"
+      ).build_comment_body
+
+      expect(body).to include("[Session video](https://s3.example.com/capture.webm)")
+    end
+
     it "renders artifact fallback instructions when inline uploads are unavailable" do
       service = described_class.new(
         github_client: github_client,

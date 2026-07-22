@@ -1746,6 +1746,7 @@ RSpec.describe Project do
           "driver" => "playwright",
           "config_path" => ".paid/screenshots.yml",
           "auto_capture" => true,
+          "record_video" => false,
           "service_dependencies" => [],
           "setup_commands" => [],
           "detection" => {},
@@ -1761,6 +1762,7 @@ RSpec.describe Project do
           "driver" => "playwright",
           "config_path" => ".paid/screenshots.yml",
           "auto_capture" => true,
+          "record_video" => false,
           "service_dependencies" => [],
           "setup_commands" => [],
           "detection" => {},
@@ -1796,6 +1798,7 @@ RSpec.describe Project do
           "driver" => "playwright",
           "config_path" => ".paid/screenshots.yml",
           "auto_capture" => true,
+          "record_video" => false,
           "service_dependencies" => [],
           "setup_commands" => [],
           "detection" => {},
@@ -1965,6 +1968,7 @@ RSpec.describe Project do
         project = build(:project, screenshot_settings: {
           "enabled" => true,
           "driver" => "cuprite",
+          "record_video" => true,
           "framework" => "nextjs",
           "viewport" => { "width" => 1440 }
         })
@@ -2084,6 +2088,7 @@ RSpec.describe Project do
           "driver" => "cuprite",
           "config_path" => ".paid/screenshots.yml",
           "auto_capture" => true,
+          "record_video" => false,
           "service_dependencies" => [],
           "setup_commands" => [],
           "detection" => {},

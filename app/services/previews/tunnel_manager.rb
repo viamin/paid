@@ -2,7 +2,9 @@
 
 require "digest"
 require "net/http"
+require "securerandom"
 require "set"
+require "shellwords"
 require "socket"
 require "timeout"
 require "uri"
@@ -22,6 +24,9 @@ module Previews
     PREVIEW_SESSION_TOKEN_LABEL = "paid.preview_session_token"
     PREVIEW_SERVICE_NAME_LABEL = "paid.preview_service_name"
     PREVIEW_TUNNEL_PORT_LABEL = "paid.preview_tunnel_port"
+    CLIENT_CONFIG_PATH = "tmp/paid-preview-rathole.toml"
+    CLIENT_LOG_PATH = "tmp/paid-preview-rathole.log"
+    CLIENT_PID_PATH = "tmp/paid-preview-rathole.pid"
 
     class Error < StandardError; end
     class ConfigurationError < Error; end
@@ -264,10 +269,6 @@ module Previews
           PreviewTunnelPortReservation.where(tunnel_port: tunnel_port).where.not(reservation_key:).delete_all
           reservation.update!(tunnel_port:)
         end
-
-        # Cleanup owns releasing reservations for containers that have already
-        # been deleted. Avoid pruning non-active rows here because a freshly
-        # allocated preview may not have created its container yet.
       end
 
       def with_reservation_lock
@@ -352,6 +353,122 @@ module Previews
       def preview_container_labels(container)
         container.info.dig("Config", "Labels").presence || container.info["Labels"] || {}
       end
+    end
+
+    attr_reader :preview_session, :backend, :logger, :token
+
+    def initialize(preview_session: nil, backend: Containers.backend, logger: Rails.logger, token: nil)
+      @preview_session = preview_session
+      @backend = backend
+      @logger = logger
+      @token = token.presence || preview_session_token || self.class.shared_token
+      @allocation_key = build_allocation_key
+      @allocated_port = nil
+    end
+
+    def allocate_port!
+      return @allocated_port if @allocated_port.present?
+
+      @allocated_port = self.class.allocate_port(key: @allocation_key)
+      persist_preview_session!(tunnel_port: @allocated_port) if preview_session_tunnel_port != @allocated_port
+      @allocated_port
+    rescue StandardError
+      self.class.release_port(key: @allocation_key) if @allocated_port.present?
+      @allocated_port = nil
+      raise
+    end
+
+    def release_port!
+      reserved_port = @allocated_port.presence || preview_session_tunnel_port
+      return if reserved_port.blank?
+
+      begin
+        persist_preview_session!(tunnel_port: nil)
+      ensure
+        self.class.release_port(key: @allocation_key, port: reserved_port)
+        @allocated_port = nil
+      end
+    end
+
+    def client_config(local_port:, remote_port: allocate_port!)
+      self.class.client_config(
+        tunnel: {
+          session_token: tunnel_session_token,
+          tunnel_port: remote_port,
+          app_port: local_port
+        },
+        backend: backend,
+        restricted: true
+      )
+    end
+
+    def start_client!(container_service:, local_port:, remote_port: allocate_port!)
+      config = client_config(local_port:, remote_port:)
+      command = <<~SH
+        set -e
+        mkdir -p tmp
+        cat > #{Shellwords.escape(CLIENT_CONFIG_PATH)} <<'TOML'
+        #{config}
+        TOML
+        rathole --client #{Shellwords.escape(CLIENT_CONFIG_PATH)} > #{Shellwords.escape(CLIENT_LOG_PATH)} 2>&1 &
+        echo $! > #{Shellwords.escape(CLIENT_PID_PATH)}
+      SH
+
+      container_service.execute(command, timeout: 30, stream: false)
+    rescue Containers::Provision::ExecutionError => e
+      raise Error, "failed to start rathole client: #{e.message}"
+    end
+
+    def stop_client!(container_service:)
+      command = <<~SH
+        if [ -f #{Shellwords.escape(CLIENT_PID_PATH)} ]; then
+          kill "$(cat #{Shellwords.escape(CLIENT_PID_PATH)})" 2>/dev/null || true
+          rm -f #{Shellwords.escape(CLIENT_PID_PATH)}
+        fi
+      SH
+
+      container_service.execute(command, timeout: 10, stream: false)
+    rescue Containers::Provision::ExecutionError
+      nil
+    end
+
+    def wait_until_healthy!(port:, path:, timeout_seconds:)
+      self.class.wait_until_ready!(
+        port: port,
+        path: path,
+        timeout_seconds: timeout_seconds
+      )
+    end
+
+    private
+
+    def preview_session_token
+      return unless preview_session&.respond_to?(:token)
+
+      preview_session.token
+    end
+
+    def preview_session_tunnel_port
+      return unless preview_session&.respond_to?(:tunnel_port)
+
+      preview_session.tunnel_port
+    end
+
+    def persist_preview_session!(attributes)
+      return unless preview_session&.respond_to?(:update!)
+
+      preview_session.update!(attributes)
+    end
+
+    def build_allocation_key
+      session_id = preview_session.id if preview_session&.respond_to?(:id)
+      return "preview_session:#{session_id}" if session_id.present?
+
+      tunnel_session_token
+    end
+
+    def tunnel_session_token
+      preview_session_token.presence || "preview-tunnel-#{Process.pid}-#{SecureRandom.hex(6)}"
     end
   end
 end

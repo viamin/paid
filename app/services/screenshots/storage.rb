@@ -118,10 +118,25 @@ module Screenshots
           content_type: content_type
         )
       end
-
       signed_url(key)
     rescue Aws::S3::Errors::ServiceError => e
       raise StorageError, "S3 upload failed: #{e.message}"
+    end
+
+    def upload_trace(file_path:, org:, repo:, pr_number:, commit_sha:)
+      key = trace_object_key(org:, repo:, pr_number:, commit_sha:)
+      put_object(file_path:, key:, content_type: "application/zip")
+      signed_url(key)
+    rescue Aws::S3::Errors::ServiceError => e
+      raise StorageError, "S3 trace upload failed: #{e.message}"
+    end
+
+    def upload_video(file_path:, org:, repo:, pr_number:, commit_sha:)
+      key = video_object_key(org:, repo:, pr_number:, commit_sha:)
+      put_object(file_path:, key:, content_type: "video/webm")
+      signed_url(key)
+    rescue Aws::S3::Errors::ServiceError => e
+      raise StorageError, "S3 video upload failed: #{e.message}"
     end
 
     # Generates a signed URL for an existing S3 object.
@@ -151,6 +166,8 @@ module Screenshots
 
       s3_client.list_objects_v2(bucket: @bucket, prefix: prefix).each_page do |page|
         page.contents.each do |obj|
+          next unless obj.key.end_with?(".png")
+
           parts = obj.key.delete_prefix(prefix).split("/", 2)
           next unless parts.size == 2
 
@@ -281,7 +298,26 @@ module Screenshots
       "screenshots/#{org}/#{repo}/pr-#{pr_number}/#{commit_sha}/#{route_name}#{extension}"
     end
 
+    def trace_object_key(org:, repo:, pr_number:, commit_sha:)
+      "screenshots/#{org}/#{repo}/pr-#{pr_number}/#{commit_sha}/trace.zip"
+    end
+
+    def video_object_key(org:, repo:, pr_number:, commit_sha:)
+      "screenshots/#{org}/#{repo}/pr-#{pr_number}/#{commit_sha}/capture.webm"
+    end
+
     private
+
+    def put_object(file_path:, key:, content_type:)
+      File.open(file_path, "rb") do |file|
+        s3_client.put_object(
+          bucket: @bucket,
+          key: key,
+          body: file,
+          content_type: content_type
+        )
+      end
+    end
 
     def delete_by_prefix(prefix)
       s3_client.list_objects_v2(bucket: @bucket, prefix: prefix).each_page do |page|

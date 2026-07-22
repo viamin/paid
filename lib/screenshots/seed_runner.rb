@@ -122,10 +122,10 @@ module Screenshots
     #
     # executor - optional callable invoked as +executor.call(env)+ that returns
     #            +[stdout, stderr, success]+. When omitted, seeds run locally
-    #            and only for the cuprite driver.
-    def call(config:, repo_path:, driver_name:, executor: nil)
+    #            and only for the cuprite driver (or when +force+ is true).
+    def call(config:, repo_path:, driver_name:, force: false, executor: nil)
       return {} if config.seed.empty?
-      return {} if executor.nil? && driver_name != "cuprite"
+      return {} if !force && executor.nil? && driver_name != "cuprite"
 
       env = seed_env(config)
       stdout, stderr, success = executor ? executor.call(env) : run_locally(env, repo_path)
