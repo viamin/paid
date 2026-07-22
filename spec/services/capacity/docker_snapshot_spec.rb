@@ -133,7 +133,7 @@ RSpec.describe Capacity::DockerSnapshot do
     end
 
     it "preserves classification of unrelated containers even with slow per-container sampling" do
-      threshold = described_class::DOCKER_SAMPLING_BUDGET - 0.05
+      stub_const("Capacity::DockerSnapshot::DOCKER_SAMPLING_BUDGET", 0.05)
       slow_backend = build_backend_double(
         identifier: "local",
         remote: false,
@@ -141,7 +141,7 @@ RSpec.describe Capacity::DockerSnapshot do
         containers: containers
       )
       allow(slow_backend).to receive(:container_stats) do |_container, **_opts|
-        sleep threshold
+        sleep 1
         {}
       end
 
