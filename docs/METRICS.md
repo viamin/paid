@@ -74,7 +74,9 @@ scrape_configs:
     # Optional Bearer auth. When METRICS_TOKEN is set on the Rails app, the
     # scraper must include `Authorization: Bearer <token>`. The token value
     # is read from this file at scrape time; docker-compose.observability.yml
-    # wires the file path to the host's METRICS_TOKEN via a `secrets:` mount.
+    # wires the file path to the host's METRICS_TOKEN via a `secrets:` mount,
+    # and bin/setup only rewrites the file when METRICS_TOKEN is present in
+    # the current process environment.
     authorization:
       type: Bearer
       credentials_file: /etc/prometheus/metrics_token

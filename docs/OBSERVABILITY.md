@@ -125,7 +125,7 @@ end
 
 Authentication uses a `METRICS_TOKEN` bearer token. When the `METRICS_TOKEN` environment variable is set, scrapers must send `Authorization: Bearer <token>`. If `METRICS_TOKEN` is not set, the endpoint is unauthenticated (intended for VPC-internal use only).
 
-The checked-in `prometheus/prometheus.yml` reads the token from `/etc/prometheus/metrics_token` via the `authorization.credentials_file` field on the `paid` scrape job. The file is mounted by `docker-compose.observability.yml` from the host path `${METRICS_TOKEN_FILE:-./prometheus/metrics_token}`, and `bin/setup` writes the value of the host's `METRICS_TOKEN` environment variable into that file so the scraper stays in sync with the Rails app. When `METRICS_TOKEN` is unset the file is empty, Prometheus sends a blank `Bearer` header, and the Rails side skips its token check.
+The checked-in `prometheus/prometheus.yml` reads the token from `/etc/prometheus/metrics_token` via the `authorization.credentials_file` field on the `paid` scrape job. The file is mounted by `docker-compose.observability.yml` from the host path `${METRICS_TOKEN_FILE:-./prometheus/metrics_token}`, and `bin/setup` writes the value of the host's `METRICS_TOKEN` environment variable into that file when `METRICS_TOKEN` is present in the current process environment. When `METRICS_TOKEN` is absent, `bin/setup` leaves the checked-in file untouched so helper processes do not clobber a token that a separate bootstrap path already materialized. In the default checked-in-empty case, the file remains empty, Prometheus sends a blank `Bearer` header, and the Rails side skips its token check.
 
 ### Prometheus Configuration [IMPLEMENTED]
 
@@ -485,7 +485,7 @@ Notes:
 
 - The overlay scrapes the Rails app (`web:3000`) and Temporal SDK worker (`worker:9464`) because those are the metrics endpoints Paid exports today.
 - Temporal server metrics are not included here because the current Compose topology does not enable a dedicated Prometheus listener on the Temporal server container.
-- The `paid` scrape job reads its Bearer token from `/etc/prometheus/metrics_token` (a `secrets:` mount of the host file at `${METRICS_TOKEN_FILE:-./prometheus/metrics_token}`). `bin/setup` materializes this file from the host's `METRICS_TOKEN` environment variable, and the `web` service propagates `METRICS_TOKEN` into the Rails container so the two stay in sync. When `METRICS_TOKEN` is unset the file is empty, the Bearer header is sent blank, and the Rails side accepts the scrape because its auth check is gated on `ENV["METRICS_TOKEN"].present?`.
+- The `paid` scrape job reads its Bearer token from `/etc/prometheus/metrics_token` (a `secrets:` mount of the host file at `${METRICS_TOKEN_FILE:-./prometheus/metrics_token}`). `bin/setup` materializes this file from the host's `METRICS_TOKEN` environment variable when that variable is present in the current process environment, and the `web` service propagates `METRICS_TOKEN` into the Rails container so the two stay in sync. When `METRICS_TOKEN` is absent, helper processes leave the file untouched; in the default checked-in-empty case the Bearer header is sent blank, and the Rails side accepts the scrape because its auth check is gated on `ENV["METRICS_TOKEN"].present?`.
 - Loki/Promtail remain out of scope for this stack. Paid already emits structured logs, but log aggregation is still an optional follow-up rather than part of the required RDR-011 asset set.
 
 ---

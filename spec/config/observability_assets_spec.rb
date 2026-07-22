@@ -64,6 +64,7 @@ RSpec.describe ObservabilityAssets, :no_db do
 
     secrets_block = compose.fetch("secrets").fetch("metrics_token")
     expect(secrets_block.fetch("file")).to eq("${METRICS_TOKEN_FILE:-./prometheus/metrics_token}")
+    expect(compose.fetch("networks", {})).not_to have_key("paid_internal")
 
     web_environment = base_compose.fetch("services").fetch("web").fetch("environment")
     expect(web_environment).to have_key("METRICS_TOKEN")

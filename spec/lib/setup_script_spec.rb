@@ -56,11 +56,11 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
-  it "leaves the metrics token file empty when METRICS_TOKEN is unset" do
-    # When METRICS_TOKEN is unset the scraper sends a blank Bearer header
-    # and the Rails side skips its auth check, so the token file must be
-    # empty (not absent — docker compose secrets: with a file source
-    # requires the source path to exist).
+  it "preserves the checked-in empty metrics token file when METRICS_TOKEN is unset" do
+    # When METRICS_TOKEN is absent from the process environment, bin/setup
+    # must leave the shared token file untouched. This prevents a worker
+    # container running bin/setup --skip-server from erasing a token that
+    # the web/bootstrap path already materialized for Prometheus.
     Dir.mktmpdir("setup-script-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir)
       env = setup_script_env(dir)
@@ -70,6 +70,19 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
       token_path = File.join(dir, "prometheus", "metrics_token")
       expect(File.exist?(token_path)).to be(true)
       expect(File.read(token_path)).to eq("")
+    end
+  end
+
+  it "does not overwrite an existing metrics token file when METRICS_TOKEN is unset" do
+    Dir.mktmpdir("setup-script-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+      token_path = File.join(dir, "prometheus", "metrics_token")
+      File.write(token_path, "bootstrap-token")
+      env = setup_script_env(dir)
+
+      Open3.capture3(env, script_path, "--skip-server", chdir: dir)
+
+      expect(File.read(token_path)).to eq("bootstrap-token")
     end
   end
 
@@ -93,6 +106,7 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
     FileUtils.mkdir_p(File.join(dir, "log", "dev-update"))
     FileUtils.mkdir_p(File.join(dir, "workspace-root"))
     FileUtils.mkdir_p(File.join(dir, "prometheus"))
+    File.write(File.join(dir, "prometheus", "metrics_token"), "")
     File.write(File.join(dir, "Gemfile.lock"), "BUNDLED WITH\n   4.0.12\n")
     File.write(File.join(dir, "installed-bundlers.txt"), installed_bundler_versions.join("\n"))
 

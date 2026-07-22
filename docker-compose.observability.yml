@@ -119,8 +119,3 @@ secrets:
   # this path from the host's METRICS_TOKEN environment variable.
   metrics_token:
     file: ${METRICS_TOKEN_FILE:-./prometheus/metrics_token}
-
-networks:
-  paid_internal:
-    external: true
-    name: paid_internal
