@@ -27,13 +27,13 @@ RSpec.describe "chat_messages/_tool_call", :no_db, type: :view do
       tool_name: "plan_configuration_profile",
       tool_result: {
         "profile_id" => "solo_automated",
+        "profile_name" => "Solo Automated",
         "project_id" => 42,
-        "label" => "Apply Solo Automated posture",
-        "source" => "configuration_profile",
         "changes" => [
-          { "field" => "auto_pick_enabled", "from" => false, "to" => true }
+          { "key" => "auto_pick_enabled", "from" => false, "to" => true }
         ],
-        "applied_fields" => [ "auto_pick_enabled" ]
+        "unmet_prerequisites" => [],
+        "applied_overrides" => {}
       },
       tool_arguments: nil
     )
@@ -67,7 +67,7 @@ RSpec.describe "chat_messages/_tool_call", :no_db, type: :view do
     render partial: "chat_messages/tool_call", locals: { message: configuration_profile_tool_message }
 
     expect(rendered).to include("Configuration Profile Plan")
-    expect(rendered).to include("Solo automated for project #42")
+    expect(rendered).to include("Solo Automated for project #42")
     expect(rendered).to include("Auto-pick issues")
     expect(rendered).to include("From:")
     expect(rendered).to include("To:")

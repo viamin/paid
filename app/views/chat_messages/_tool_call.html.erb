@@ -26,7 +26,8 @@
 
         <% chat_configuration_profile_plan_changes(payload).each do |change| %>
           <div class="mt-3 rounded-md border border-gray-200 bg-white px-3 py-2">
-            <div class="text-xs font-medium text-gray-700"><%= configuration_profile_field_label(change[:field]) %></div>
+            <% field_key = change[:key] || change[:field] %>
+            <div class="text-xs font-medium text-gray-700"><%= configuration_profile_field_label(field_key) %></div>
             <div class="mt-1 text-xs text-gray-600">
               <span class="font-medium text-gray-900">From:</span>
               <code><%= format_configuration_profile_change_value(change[:from]) %></code>

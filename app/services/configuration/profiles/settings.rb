@@ -7,9 +7,13 @@ module Configuration
     # declares its authorization +level+ (today only +:project+) so {Applier}
     # can authorize per level, and the +attribute+ name surfaced in activity
     # metadata.
-    class Descriptor < Struct.new(:key, :attribute, :level, :read, :write, keyword_init: true)
+    class Descriptor < Struct.new(:key, :attribute, :level, :label, :read, :write, :coerce, keyword_init: true)
       def level
         super || :project
+      end
+
+      def coerce
+        super || ->(value) { value }
       end
     end
 
@@ -19,43 +23,74 @@ module Configuration
     module Settings
       module_function
 
+      BOOLEAN_TRUE_VALUES = [ true, 1, "1", "true" ].freeze
+      BOOLEAN_FALSE_VALUES = [ false, 0, "0", "false" ].freeze
+      BOOLEAN = lambda do |value|
+        return value if value == true || value == false
+
+        normalized = value.is_a?(String) ? value.strip.downcase : value
+        return true if BOOLEAN_TRUE_VALUES.include?(normalized)
+        return false if BOOLEAN_FALSE_VALUES.include?(normalized)
+
+        raise ArgumentError,
+              "Invalid boolean override #{value.inspect}; expected true, false, \"true\", \"false\", 1, or 0"
+      end
+      GITHUB_LOGIN = lambda do |value|
+        unless value.is_a?(String)
+          raise ArgumentError, "Invalid GitHub login override #{value.inspect}; expected a string"
+        end
+
+        value.strip
+      end
+
       DESCRIPTORS = {
         "active" => Descriptor.new(
-          key: "active", attribute: "active",
+          key: "active", attribute: "active", label: "Project active",
           read: ->(project) { project.active },
-          write: ->(project, value) { project.active = value }
+          write: ->(project, value) { project.active = value },
+          coerce: BOOLEAN
         ),
         "auto_pick_enabled" => Descriptor.new(
-          key: "auto_pick_enabled", attribute: "auto_pick_enabled",
+          key: "auto_pick_enabled", attribute: "auto_pick_enabled", label: "Auto-pick issues",
           read: ->(project) { project.auto_pick_enabled },
-          write: ->(project, value) { project.auto_pick_enabled = value }
+          write: ->(project, value) { project.auto_pick_enabled = value },
+          coerce: BOOLEAN
         ),
         "automation_on_label_enabled" => Descriptor.new(
           key: "automation_on_label_enabled", attribute: "automation_on_label_enabled",
+          label: "Automation on label",
           read: ->(project) { project.automation_on_label_enabled },
-          write: ->(project, value) { project.automation_on_label_enabled = value }
+          write: ->(project, value) { project.automation_on_label_enabled = value },
+          coerce: BOOLEAN
         ),
         "owner_reviewer_login" => Descriptor.new(
-          key: "owner_reviewer_login", attribute: "owner_reviewer_login",
+          key: "owner_reviewer_login", attribute: "owner_reviewer_login", label: "Owner reviewer login",
           read: ->(project) { project.owner_reviewer_login },
-          write: ->(project, value) { project.owner_reviewer_login = value }
+          write: ->(project, value) { project.owner_reviewer_login = value },
+          coerce: GITHUB_LOGIN
         ),
         "adoption_mode" => Descriptor.new(
-          key: "adoption_mode", attribute: "interop_settings",
+          key: "adoption_mode", attribute: "interop_settings", label: "Adoption mode",
           read: ->(project) { project.adoption_mode },
           write: ->(project, value) { merge_jsonb(project, :interop_settings, "adoption_mode", value) }
         ),
         "review_enabled" => Descriptor.new(
-          key: "review_enabled", attribute: "review_settings",
+          key: "review_enabled", attribute: "review_settings", label: "Review enabled",
           read: ->(project) { project.effective_review_settings["enabled"] },
-          write: ->(project, value) { merge_jsonb(project, :review_settings, "enabled", value) }
+          write: ->(project, value) { merge_jsonb(project, :review_settings, "enabled", value) },
+          coerce: BOOLEAN
         ),
         "quality_gate_enabled" => Descriptor.new(
-          key: "quality_gate_enabled", attribute: "quality_gate_settings",
+          key: "quality_gate_enabled", attribute: "quality_gate_settings", label: "Quality gate enabled",
           read: ->(project) { project.effective_quality_gate_settings["enabled"] },
-          write: ->(project, value) { merge_jsonb(project, :quality_gate_settings, "enabled", value) }
+          write: ->(project, value) { merge_jsonb(project, :quality_gate_settings, "enabled", value) },
+          coerce: BOOLEAN
         )
       }.freeze
+
+      def all
+        DESCRIPTORS.values
+      end
 
       def fetch(key)
         DESCRIPTORS.fetch(key.to_s)
@@ -68,7 +103,13 @@ module Configuration
       end
 
       def write(project, key, value)
-        fetch(key).write.call(project, value)
+        descriptor = fetch(key)
+        descriptor.write.call(project, descriptor.coerce.call(value))
+      end
+
+      def normalize(key, value)
+        descriptor = fetch(key)
+        descriptor.coerce.call(value)
       end
 
       # Deep-merges a single key into a JSONB-backed column, preserving the

@@ -12,13 +12,7 @@ module Tools
 
     def perform
       {
-        profiles: ConfigurationProfiles::Registry.all.map do |profile|
-          {
-            key: profile.key.to_s,
-            name: profile.name,
-            description: profile.description
-          }
-        end
+        profiles: Configuration::Profiles::Registry.summaries
       }
     end
   end

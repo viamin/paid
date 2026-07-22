@@ -8,6 +8,10 @@ module Configuration
     module TeamReviewed
       include Base
 
+      def self.description
+        "Team posture that requires review before shipping and keeps execution in review-only mode."
+      end
+
       def self.targets
         {
           "active" => true,

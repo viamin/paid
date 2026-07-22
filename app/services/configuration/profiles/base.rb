@@ -26,6 +26,10 @@ module Configuration
           @display_name ||= to_s.demodulize.titleize
         end
 
+        def description
+          ""
+        end
+
         def targets
           raise NotImplementedError, "#{name} must declare its targets"
         end

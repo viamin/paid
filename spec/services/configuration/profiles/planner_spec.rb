@@ -56,6 +56,39 @@ RSpec.describe Configuration::Profiles::Planner do
         plan = described_class.call(profile:, project:, overrides: { "quality_gate_enabled" => false })
         expect(plan.changes.map(&:key)).not_to include("quality_gate_enabled")
       end
+
+      it "coerces boolean overrides before comparing current and target values" do
+        project.update!(quality_gate_settings: { "enabled" => false })
+
+        plan = described_class.call(profile:, project:, overrides: { "quality_gate_enabled" => "false" })
+
+        expect(plan.applied_overrides).to include("quality_gate_enabled" => false)
+        expect(plan.changes.map(&:key)).not_to include("quality_gate_enabled")
+      end
+
+      it "rejects invalid boolean overrides" do
+        expect {
+          described_class.call(profile:, project:, overrides: { "quality_gate_enabled" => "no" })
+        }.to raise_error(ArgumentError, /Invalid boolean override/)
+      end
+    end
+
+    context "when a GitHub login override is supplied" do
+      let(:profile) { Configuration::Profiles::TeamReviewed }
+
+      it "normalizes the login before returning the plan" do
+        allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
+
+        plan = described_class.call(profile:, project:, overrides: { "owner_reviewer_login" => " octocat " })
+
+        expect(plan.applied_overrides).to include("owner_reviewer_login" => "octocat")
+      end
+
+      it "rejects non-string GitHub login overrides" do
+        expect {
+          described_class.call(profile:, project:, overrides: { "owner_reviewer_login" => { "login" => "octocat" } })
+        }.to raise_error(ArgumentError, /Invalid GitHub login override/)
+      end
     end
 
     context "when an undeclared override key is supplied" do
@@ -70,6 +103,26 @@ RSpec.describe Configuration::Profiles::Planner do
       expect {
         described_class.call(profile:, project:, overrides: { bogus: 1 })
       }.to raise_error(Configuration::Profiles::UnknownOverrideError)
+    end
+
+    context "when overrides is not a Hash" do
+      it "raises ArgumentError for a string" do
+        expect {
+          described_class.call(profile:, project:, overrides: "quality_gate_enabled=true")
+        }.to raise_error(ArgumentError, /overrides must be a Hash/)
+      end
+
+      it "raises ArgumentError for an array" do
+        expect {
+          described_class.call(profile:, project:, overrides: [ "quality_gate_enabled" ])
+        }.to raise_error(ArgumentError, /overrides must be a Hash/)
+      end
+
+      it "raises ArgumentError for nil" do
+        expect {
+          described_class.call(profile:, project:, overrides: nil)
+        }.to raise_error(ArgumentError, /overrides must be a Hash/)
+      end
     end
   end
 
