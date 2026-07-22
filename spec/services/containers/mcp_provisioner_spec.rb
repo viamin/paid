@@ -243,8 +243,11 @@ RSpec.describe Containers::McpProvisioner do
         before do
           agent_run.update_columns(mcp_sidecar_container_ids: [ "stale-abc" ])
           allow(Docker::Container).to receive(:get).with("stale-abc").and_return(stale_container)
-          allow(stale_container).to receive(:stop)
-          allow(stale_container).to receive(:delete)
+          allow(stale_container).to receive_messages(
+            json: { "Config" => { "Labels" => {} } },
+            stop: nil,
+            delete: nil
+          )
         end
 
         it "cleans up stale containers before provisioning" do
@@ -252,6 +255,38 @@ RSpec.describe Containers::McpProvisioner do
 
           expect(stale_container).to have_received(:stop)
           expect(stale_container).to have_received(:delete)
+        end
+      end
+
+      context "when a verification browser is already tracked on the run" do
+        let(:verification_container) { instance_double(Docker::Container, id: "browser-keep") }
+        let(:verification_container_json) do
+          {
+            "Config" => {
+              "Labels" => {
+                AgentRuns::Verification::BROWSER_LABEL => "true",
+                AgentRuns::Verification::AGENT_RUN_LABEL => agent_run.id.to_s
+              }
+            }
+          }
+        end
+
+        before do
+          agent_run.update_columns(mcp_sidecar_container_ids: [ "browser-keep" ])
+          allow(Docker::Container).to receive(:get).with("browser-keep").and_return(verification_container)
+          allow(verification_container).to receive_messages(
+            json: verification_container_json,
+            stop: nil,
+            delete: nil
+          )
+        end
+
+        it "preserves the verification browser during reprovision" do
+          provisioner.provision(agent_run)
+
+          expect(verification_container).not_to have_received(:stop)
+          expect(verification_container).not_to have_received(:delete)
+          expect(agent_run.reload.mcp_sidecar_container_ids).to eq([ "browser-keep", "mcp-abc123" ])
         end
       end
 
