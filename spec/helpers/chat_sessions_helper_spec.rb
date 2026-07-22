@@ -137,6 +137,27 @@ RSpec.describe ChatSessionsHelper do
       expect(helper.chat_configuration_profile_plan_changes(nil)).to eq([])
     end
 
+    it "prefers the curated profile name in plan titles" do
+      payload = {
+        profile_id: "solo_automated",
+        profile_name: "Solo Automated",
+        project_id: 42,
+        changes: []
+      }
+
+      expect(helper.chat_configuration_profile_plan_title(payload)).to eq("Solo Automated for project #42")
+    end
+
+    it "falls back to the humanized profile id when a curated name is absent" do
+      payload = {
+        profile_id: "solo_automated",
+        project_id: 42,
+        changes: []
+      }
+
+      expect(helper.chat_configuration_profile_plan_title(payload)).to eq("Solo automated for project #42")
+    end
+
     it "uses the canonical descriptor label for known fields" do
       expect(helper.configuration_profile_field_label("auto_pick_enabled")).to eq("Auto-pick issues")
     end

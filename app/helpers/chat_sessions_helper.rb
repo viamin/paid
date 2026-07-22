@@ -200,9 +200,9 @@ module ChatSessionsHelper
     plan = chat_configuration_profile_plan(payload)
     return unless plan
 
-    profile_id = plan[:profile_id].to_s.humanize
+    profile_name = plan[:profile_name].presence || plan[:profile_id].to_s.humanize
     project_id = plan[:project_id]
-    [ profile_id, ("project ##{project_id}" if project_id.present?) ].compact.join(" for ")
+    [ profile_name, ("project ##{project_id}" if project_id.present?) ].compact.join(" for ")
   end
 
   def format_configuration_profile_change_value(value)
