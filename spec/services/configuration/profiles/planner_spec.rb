@@ -56,6 +56,15 @@ RSpec.describe Configuration::Profiles::Planner do
         plan = described_class.call(profile:, project:, overrides: { "quality_gate_enabled" => false })
         expect(plan.changes.map(&:key)).not_to include("quality_gate_enabled")
       end
+
+      it "coerces boolean overrides before comparing current and target values" do
+        project.update!(quality_gate_settings: { "enabled" => false })
+
+        plan = described_class.call(profile:, project:, overrides: { "quality_gate_enabled" => "false" })
+
+        expect(plan.applied_overrides).to include("quality_gate_enabled" => false)
+        expect(plan.changes.map(&:key)).not_to include("quality_gate_enabled")
+      end
     end
 
     context "when an undeclared override key is supplied" do

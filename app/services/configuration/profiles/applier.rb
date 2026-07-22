@@ -2,11 +2,6 @@
 
 module Configuration
   module Profiles
-    # Raised by {Applier} when the plan has unmet prerequisites.
-    class BlockedError < StandardError; end
-    # Raised by {Applier} when the actor is not authorized at a needed level.
-    class UnauthorizedError < StandardError; end
-
     # Applies a {Plan} to a {Project} transactionally and idempotently.
     #
     # Guarantees (RDR-044):

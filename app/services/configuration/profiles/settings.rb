@@ -7,9 +7,13 @@ module Configuration
     # declares its authorization +level+ (today only +:project+) so {Applier}
     # can authorize per level, and the +attribute+ name surfaced in activity
     # metadata.
-    class Descriptor < Struct.new(:key, :attribute, :level, :label, :read, :write, keyword_init: true)
+    class Descriptor < Struct.new(:key, :attribute, :level, :label, :read, :write, :coerce, keyword_init: true)
       def level
         super || :project
+      end
+
+      def coerce
+        super || ->(value) { value }
       end
     end
 
@@ -19,22 +23,27 @@ module Configuration
     module Settings
       module_function
 
+      BOOLEAN = ->(value) { ActiveModel::Type::Boolean.new.cast(value) }
+
       DESCRIPTORS = {
         "active" => Descriptor.new(
           key: "active", attribute: "active", label: "Project active",
           read: ->(project) { project.active },
-          write: ->(project, value) { project.active = value }
+          write: ->(project, value) { project.active = value },
+          coerce: BOOLEAN
         ),
         "auto_pick_enabled" => Descriptor.new(
           key: "auto_pick_enabled", attribute: "auto_pick_enabled", label: "Auto-pick issues",
           read: ->(project) { project.auto_pick_enabled },
-          write: ->(project, value) { project.auto_pick_enabled = value }
+          write: ->(project, value) { project.auto_pick_enabled = value },
+          coerce: BOOLEAN
         ),
         "automation_on_label_enabled" => Descriptor.new(
           key: "automation_on_label_enabled", attribute: "automation_on_label_enabled",
           label: "Automation on label",
           read: ->(project) { project.automation_on_label_enabled },
-          write: ->(project, value) { project.automation_on_label_enabled = value }
+          write: ->(project, value) { project.automation_on_label_enabled = value },
+          coerce: BOOLEAN
         ),
         "owner_reviewer_login" => Descriptor.new(
           key: "owner_reviewer_login", attribute: "owner_reviewer_login", label: "Owner reviewer login",
@@ -49,12 +58,14 @@ module Configuration
         "review_enabled" => Descriptor.new(
           key: "review_enabled", attribute: "review_settings", label: "Review enabled",
           read: ->(project) { project.effective_review_settings["enabled"] },
-          write: ->(project, value) { merge_jsonb(project, :review_settings, "enabled", value) }
+          write: ->(project, value) { merge_jsonb(project, :review_settings, "enabled", value) },
+          coerce: BOOLEAN
         ),
         "quality_gate_enabled" => Descriptor.new(
           key: "quality_gate_enabled", attribute: "quality_gate_settings", label: "Quality gate enabled",
           read: ->(project) { project.effective_quality_gate_settings["enabled"] },
-          write: ->(project, value) { merge_jsonb(project, :quality_gate_settings, "enabled", value) }
+          write: ->(project, value) { merge_jsonb(project, :quality_gate_settings, "enabled", value) },
+          coerce: BOOLEAN
         )
       }.freeze
 
@@ -73,7 +84,13 @@ module Configuration
       end
 
       def write(project, key, value)
-        fetch(key).write.call(project, value)
+        descriptor = fetch(key)
+        descriptor.write.call(project, descriptor.coerce.call(value))
+      end
+
+      def normalize(key, value)
+        descriptor = fetch(key)
+        descriptor.coerce.call(value)
       end
 
       # Deep-merges a single key into a JSONB-backed column, preserving the

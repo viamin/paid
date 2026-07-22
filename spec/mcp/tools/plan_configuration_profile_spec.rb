@@ -31,6 +31,15 @@ RSpec.describe Tools::PlanConfigurationProfile do
     expect(result[:changes]).to include(include(key: "active", to: false))
   end
 
+  it "coerces boolean overrides before diffing and returning the plan payload" do
+    project.update!(active: false)
+
+    result = call(profile_id: "observe_only", overrides: { active: "false" })
+
+    expect(result[:applied_overrides]).to eq({ "active" => false })
+    expect(result[:changes]).not_to include(include(key: "active"))
+  end
+
   it "rejects undeclared overrides" do
     expect {
       call(profile_id: "observe_only", overrides: { owner_reviewer_login: "octocat" })

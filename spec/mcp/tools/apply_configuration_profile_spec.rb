@@ -26,6 +26,13 @@ RSpec.describe Tools::ApplyConfigurationProfile do
     expect(project.adoption_mode).to eq("observe_only")
   end
 
+  it "coerces boolean overrides before persisting JSON-backed settings" do
+    result = call(profile_id: "solo_automated", overrides: { quality_gate_enabled: "true" })
+
+    expect(result[:applied_overrides]).to eq({ "quality_gate_enabled" => true })
+    expect(project.reload.quality_gate_settings["enabled"]).to be(true)
+  end
+
   it "requires confirmation" do
     expect {
       call(profile_id: "observe_only", confirmed: false)
