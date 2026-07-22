@@ -207,6 +207,24 @@ RSpec.describe Containers::Provision do
     end
   end
 
+  describe "#auth_source_log_payload (RDR-041 #2959)" do
+    let(:service) { described_class.new(agent_run: agent_run, project: project) }
+
+    it "returns an empty hash when no auth_source is supplied" do
+      expect(service.send(:auth_source_log_payload, nil)).to eq({})
+      expect(service.send(:auth_source_log_payload, "")).to eq({})
+    end
+
+    it "stringifies the auth_source into the log payload" do
+      expect(service.send(:auth_source_log_payload, RunnerAuthAttempt::AUTH_SOURCE_MANAGED))
+        .to eq(auth_source: "managed")
+      expect(service.send(:auth_source_log_payload, RunnerAuthAttempt::AUTH_SOURCE_HOST_FORWARDED))
+        .to eq(auth_source: "host_forwarded")
+      expect(service.send(:auth_source_log_payload, RunnerAuthAttempt::AUTH_SOURCE_API_KEY_PROXY))
+        .to eq(auth_source: "api_key_proxy")
+    end
+  end
+
   describe "#initialize" do
     it "stores agent_run and worktree_path" do
       expect(service.agent_run).to eq(agent_run)
@@ -435,7 +453,7 @@ RSpec.describe Containers::Provision do
         expect(agent_run).to receive(:log!).with("system", "container.ownership_batch_fixed",
           metadata: hash_including(dirs_count: 12)).ordered
         expect(agent_run).to receive(:log!).with("system", "container.codex_config_seeded",
-          metadata: {}).ordered
+          metadata: hash_including(auth_source: "api_key_proxy")).ordered
         expect(agent_run).to receive(:log!).with("system", "container.firewall.applied",
           metadata: hash_including(container_id: "abc123container")).ordered
         expect(agent_run).to receive(:log!).with("system", "container.provision.success",
@@ -4460,6 +4478,38 @@ RSpec.describe Containers::Provision do
         expect(service).to have_received(:write_container_file).with(
           "/home/agent/.claude/.credentials.json",
           include("expired-access-token")
+        )
+      end
+
+      it "tags host and local credential seeding with auth_source: host_forwarded (#2959)" do
+        allow(service).to receive(:seed_host_credentials!).and_return(true)
+
+        service.send(:seed_claude_credentials!)
+
+        expect(service).to have_received(:seed_host_credentials!).with(
+          hash_including(auth_source: RunnerAuthAttempt::AUTH_SOURCE_HOST_FORWARDED)
+        )
+      end
+
+      it "tags the managed credential materialization log with auth_source: managed (#2959)" do
+        create(
+          :runner_credential,
+          account: project.account,
+          created_by: project.created_by,
+          runner_key: "claude",
+          auth_kind: "oauth_token",
+          token: file_fixture("claude_credentials_expired.json").read
+        )
+        allow(ENV).to receive(:[]).with("CLAUDE_CONFIG_DIR").and_return(nil)
+        allow(service).to receive(:claude_local_config_path).and_return(nil)
+        allow(service).to receive(:write_container_file)
+        allow(service).to receive(:log_system)
+
+        service.send(:seed_claude_credentials!)
+
+        expect(service).to have_received(:log_system).with(
+          "container.claude_credentials_seeded",
+          hash_including(auth_source: RunnerAuthAttempt::AUTH_SOURCE_MANAGED)
         )
       end
     end
