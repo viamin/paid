@@ -11,7 +11,7 @@ module PerformanceBenchmarks
 
     def to_h
       {
-        generated_at: generated_at.iso8601,
+        generated_at: generated_at.utc.iso8601,
         environment: environment,
         summary: summary,
         metrics: measurements.map(&:to_h)
@@ -22,7 +22,7 @@ module PerformanceBenchmarks
       lines = [
         "# Performance Benchmark Report",
         "",
-        "- Generated at: #{generated_at.iso8601}",
+        "- Generated at: #{generated_at.utc.iso8601}",
         "- Rails environment: #{Rails.env}",
         "- Git SHA: #{git_sha}",
         "",

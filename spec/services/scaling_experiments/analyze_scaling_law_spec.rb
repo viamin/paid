@@ -7,11 +7,12 @@ RSpec.describe ScalingExperiments::AnalyzeScalingLaw, :no_db do
   let(:values_tested) { [ 1, 2, 4 ] }
   let(:control_value) { 1 }
   let(:experiment) do
-    Struct.new(:dimension, :values_tested, :control_value, :outcome_metrics, keyword_init: true).new(
+    Struct.new(:dimension, :values_tested, :control_value, :outcome_metrics, :min_samples_per_value, keyword_init: true).new(
       dimension: dimension,
       values_tested: values_tested,
       control_value: control_value,
-      outcome_metrics: outcome_metrics
+      outcome_metrics: outcome_metrics,
+      min_samples_per_value: 2
     )
   end
   let(:outcome_metrics) do
@@ -29,21 +30,7 @@ RSpec.describe ScalingExperiments::AnalyzeScalingLaw, :no_db do
       build_summary(4, sample_count: 3, success_rate: 0.95, duration: 170, cost: 360)
     )
 
-    expect(result).to include(
-      "status" => "ready",
-      "dimension" => "agent_count",
-      "control_value" => 1,
-      "recommended_value" => 2,
-      "leading_value" => 4,
-      "diminishing_returns_at" => 4
-    )
-    expect(result["scaling_exponent"]).to be > 0
-    expect(result.dig("allocator_decision", "requested_agent_count")).to eq(2)
-    expect(result.dig("allocator_decision", "max_batch_size")).to eq(2)
-    expect(result.dig("allocator_decision", "efficiency_gain_vs_control")).to be >= 0.10
-    expect(result.fetch("values")).to include(
-      hash_including("assigned_value" => 4, "signals" => include("diminishing_returns"))
-    )
+    expect_recommended_agent_count_analysis(result)
   end
 
   it "maps validated metric keys to summary field names (total_cost_cents -> avg_cost_cents)" do
@@ -97,6 +84,22 @@ RSpec.describe ScalingExperiments::AnalyzeScalingLaw, :no_db do
     expect(result.dig("allocator_decision", "max_iterations")).to eq(2)
   end
 
+  it "omits the exponent confidence interval when only two fitted values are available" do
+    result = analyze(
+      build_summary(1, sample_count: 3, success_rate: 0.50, duration: 300, cost: 100),
+      build_summary(2, sample_count: 3, success_rate: 0.90, duration: 180, cost: 160)
+    )
+
+    expect(result["scaling_exponent"]).not_to be_nil
+    expect(result["scaling_exponent_confidence_interval"]).to include(
+      "estimate" => nil,
+      "lower_bound" => nil,
+      "upper_bound" => nil,
+      "margin_of_error" => nil,
+      "sample_count" => 2
+    )
+  end
+
   it "emits regression signals when the primary metric and efficiency fall below the prior value" do
     result = analyze(
       build_summary(1, sample_count: 3, success_rate: 0.80, duration: 200, cost: 100),
@@ -112,6 +115,60 @@ RSpec.describe ScalingExperiments::AnalyzeScalingLaw, :no_db do
     )
   end
 
+  it "marks agent_launch_success_rate as actionable when its interval is narrow enough" do
+    allow(experiment).to receive(:outcome_metrics).and_return(
+      [
+        { "key" => "agent_launch_success_rate", "primary" => true, "objective" => "maximize" },
+        { "key" => "success_rate", "primary" => false, "objective" => "maximize" },
+        { "key" => "duration_seconds", "primary" => false, "objective" => "minimize" },
+        { "key" => "total_cost_cents", "primary" => false, "objective" => "minimize" }
+      ]
+    )
+
+    result = analyze(
+      build_metric_summary(1, sample_count: 6, primary_value: 0.50, primary_lower: 0.45, primary_upper: 0.55),
+      build_metric_summary(2, sample_count: 6, primary_value: 0.90, primary_lower: 0.85, primary_upper: 0.95)
+    )
+
+    expect(result.dig("allocator_decision", "actionable")).to be(true)
+  end
+
+  it "marks blocked_task_rate as actionable when its interval is narrow enough" do
+    allow(experiment).to receive(:outcome_metrics).and_return(
+      [
+        { "key" => "blocked_task_rate", "primary" => true, "objective" => "minimize" },
+        { "key" => "success_rate", "primary" => false, "objective" => "maximize" },
+        { "key" => "duration_seconds", "primary" => false, "objective" => "minimize" },
+        { "key" => "total_cost_cents", "primary" => false, "objective" => "minimize" }
+      ]
+    )
+
+    result = analyze(
+      build_metric_summary(1, sample_count: 6, primary_value: 0.50, primary_lower: 0.45, primary_upper: 0.55),
+      build_metric_summary(2, sample_count: 6, primary_value: 0.10, primary_lower: 0.08, primary_upper: 0.12)
+    )
+
+    expect(result.dig("allocator_decision", "actionable")).to be(true)
+  end
+
+  it "marks parallelism_observed as actionable when its interval is narrow enough" do
+    allow(experiment).to receive(:outcome_metrics).and_return(
+      [
+        { "key" => "parallelism_observed", "primary" => true, "objective" => "maximize" },
+        { "key" => "success_rate", "primary" => false, "objective" => "maximize" },
+        { "key" => "duration_seconds", "primary" => false, "objective" => "minimize" },
+        { "key" => "total_cost_cents", "primary" => false, "objective" => "minimize" }
+      ]
+    )
+
+    result = analyze(
+      build_metric_summary(1, sample_count: 6, primary_value: 1.0, primary_lower: 0.95, primary_upper: 1.05),
+      build_metric_summary(2, sample_count: 6, primary_value: 2.0, primary_lower: 1.95, primary_upper: 2.05)
+    )
+
+    expect(result.dig("allocator_decision", "actionable")).to be(true)
+  end
+
   def analyze(*value_summaries)
     described_class.call(
       scaling_experiment: experiment,
@@ -119,13 +176,95 @@ RSpec.describe ScalingExperiments::AnalyzeScalingLaw, :no_db do
     ).to_h
   end
 
+  def expect_recommended_agent_count_analysis(result)
+    expect(result).to include(
+      "status" => "ready",
+      "dimension" => "agent_count",
+      "control_value" => 1,
+      "recommended_value" => 2,
+      "leading_value" => 4,
+      "diminishing_returns_at" => 4
+    )
+    expect(result["scaling_exponent"]).to be > 0
+    expect(result.dig("allocator_decision", "requested_agent_count")).to eq(2)
+    expect(result.dig("allocator_decision", "max_batch_size")).to eq(2)
+    expect(result.dig("allocator_decision", "efficiency_gain_vs_control")).to be >= 0.10
+    expect(result.dig("allocator_decision", "actionable")).to be(true)
+    expect(result.dig("scaling_exponent_confidence_interval", "estimate")).to eq(result["scaling_exponent"])
+    expect(result.dig("sample_threshold_review", "rdr_target_min_samples_per_value")).to eq(30)
+    expect(result.fetch("values")).to include(
+      hash_including("assigned_value" => 4, "signals" => include("diminishing_returns"))
+    )
+  end
+
   def build_summary(assigned_value, sample_count:, success_rate:, duration:, cost:)
     {
       "assigned_value" => assigned_value,
       "sample_count" => sample_count,
       "success_rate" => success_rate,
+      "success_rate_confidence_interval" => {
+        "mean" => success_rate,
+        "lower_bound" => [ success_rate - 0.05, 0.0 ].max.round(4),
+        "upper_bound" => [ success_rate + 0.05, 1.0 ].min.round(4),
+        "margin_of_error" => 0.05,
+        "sample_count" => sample_count,
+        "confidence_level" => 0.95
+      },
       "avg_duration_seconds" => duration,
-      "avg_cost_cents" => cost
+      "avg_duration_seconds_confidence_interval" => {
+        "mean" => duration.to_f,
+        "lower_bound" => (duration - 10).to_f,
+        "upper_bound" => (duration + 10).to_f,
+        "margin_of_error" => 10.0,
+        "sample_count" => sample_count,
+        "confidence_level" => 0.95
+      },
+      "avg_cost_cents" => cost,
+      "avg_cost_cents_confidence_interval" => {
+        "mean" => cost.to_f,
+        "lower_bound" => (cost - 10).to_f,
+        "upper_bound" => (cost + 10).to_f,
+        "margin_of_error" => 10.0,
+        "sample_count" => sample_count,
+        "confidence_level" => 0.95
+      }
+    }
+  end
+
+  def build_metric_summary(assigned_value, sample_count:, primary_value:, primary_lower:, primary_upper:)
+    primary_field = experiment.outcome_metrics.find { |metric| metric["primary"] }["key"]
+    summary_field = ScalingExperiments::AnalyzeScalingLaw::METRIC_KEY_TO_SUMMARY_FIELD.fetch(primary_field, primary_field)
+
+    {
+      "assigned_value" => assigned_value,
+      "sample_count" => sample_count,
+      summary_field => primary_value,
+      "#{summary_field}_confidence_interval" => {
+        "mean" => primary_value,
+        "lower_bound" => primary_lower,
+        "upper_bound" => primary_upper,
+        "margin_of_error" => (primary_upper - primary_lower).abs.fdiv(2),
+        "sample_count" => sample_count,
+        "confidence_level" => 0.95
+      },
+      "avg_duration_seconds" => 200,
+      "avg_duration_seconds_confidence_interval" => {
+        "mean" => 200.0,
+        "lower_bound" => 190.0,
+        "upper_bound" => 210.0,
+        "margin_of_error" => 10.0,
+        "sample_count" => sample_count,
+        "confidence_level" => 0.95
+      },
+      "avg_cost_cents" => 300,
+      "avg_cost_cents_confidence_interval" => {
+        "mean" => 300.0,
+        "lower_bound" => 290.0,
+        "upper_bound" => 310.0,
+        "margin_of_error" => 10.0,
+        "sample_count" => sample_count,
+        "confidence_level" => 0.95
+      }
     }
   end
 end
