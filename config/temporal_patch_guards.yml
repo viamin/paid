@@ -16,3 +16,6 @@ workflows:
   Workflows::GitHubPollWorkflow:
     github-poll-activity-heartbeats-v1:
       introduced_on: "2026-07-08"
+  Workflows::AgentExecutionWorkflow:
+    agent-execution-provision-browser-container-v1:
+      introduced_on: "2026-07-19"

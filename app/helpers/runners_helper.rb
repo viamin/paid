@@ -5,25 +5,25 @@ module RunnersHelper
     "claude" => {
       summary: "Use one of these:",
       items: [
-        "Set <code>ANTHROPIC_API_KEY</code> on the <code>web</code> service for proxy-based auth.",
-        "Or sign in with <code>claude login</code> and make <code>~/.claude/.credentials.json</code> visible to Paid.",
-        "If Claude creds live elsewhere, set <code>CLAUDE_CONFIG_DIR</code>."
+        "Preferred: capture a managed Claude credential in Paid with the browser-completed Claude login flow; Paid will use that managed credential by default when it is active.",
+        "Set <code>ANTHROPIC_API_KEY</code> on the <code>web</code> service for proxy-based auth when you want an API-key runner instead.",
+        "Host-mounted <code>~/.claude/.credentials.json</code> remains a local-only fallback. If Claude creds live elsewhere, set <code>CLAUDE_CONFIG_DIR</code>."
       ]
     },
     "codex" => {
       summary: "Use one of these:",
       items: [
         "Set <code>OPENAI_API_KEY</code> on the <code>web</code> service for proxy-based auth.",
-        "Or sign in with the Codex CLI and make <code>~/.codex/auth.json</code> visible to Paid.",
-        "If Codex creds live elsewhere, set <code>CODEX_CONFIG_DIR</code> or <code>CODEX_HOME</code>."
+        "Host-mounted Codex subscription auth is local-only today: sign in with the Codex CLI and make <code>~/.codex/auth.json</code> visible to Paid on a host-path-capable backend.",
+        "Remote-safe managed Codex subscription auth is still tracked separately in follow-up issue <code>#2962</code>. If Codex creds live elsewhere, set <code>CODEX_CONFIG_DIR</code> or <code>CODEX_HOME</code>."
       ]
     },
     "gemini" => {
       summary: "Use one of these:",
       items: [
         "Set <code>GOOGLE_API_KEY</code> on the <code>web</code> service for proxy-based auth.",
-        "Or run <code>gemini auth login</code> and make <code>~/.gemini/oauth_creds.json</code> visible to Paid.",
-        "If Gemini creds live elsewhere, set <code>GEMINI_CONFIG_DIR</code>."
+        "Host-mounted Gemini subscription auth is local-only today: run <code>gemini auth login</code> and make <code>~/.gemini/oauth_creds.json</code> visible to Paid on a host-path-capable backend.",
+        "Remote-safe managed Gemini subscription auth is still tracked in follow-up issue <code>#2964</code>. If Gemini creds live elsewhere, set <code>GEMINI_CONFIG_DIR</code>."
       ]
     },
     "opencode" => {
@@ -45,8 +45,8 @@ module RunnersHelper
     "copilot" => {
       summary: "GitHub Copilot currently uses subscription auth in Paid:",
       items: [
-        "Sign in with the GitHub Copilot CLI and make <code>~/.copilot/config.json</code> visible to Paid.",
-        "If Copilot creds live elsewhere, set <code>COPILOT_HOME</code> (or Paid's legacy <code>COPILOT_CONFIG_DIR</code> override).",
+        "Host-mounted Copilot subscription auth is local-only today: sign in with the GitHub Copilot CLI and make <code>~/.copilot/config.json</code> visible to Paid on a host-path-capable backend.",
+        "Remote-safe managed Copilot subscription auth is still tracked in follow-up issue <code>#2964</code>. If Copilot creds live elsewhere, set <code>COPILOT_HOME</code> (or Paid's legacy <code>COPILOT_CONFIG_DIR</code> override).",
         "Restart the <code>web</code> and <code>worker</code> services after changing credential mounts."
       ]
     },

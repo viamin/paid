@@ -37,7 +37,7 @@ jobs:
       has_tests: ${{ steps.check.outputs.has_tests }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Check for test files
         id: check
@@ -95,7 +95,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
 
       - name: Normalize test master key
         if: env.RAILS_TEST_KEY == ''
@@ -110,7 +110,7 @@ jobs:
         run: mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME" "$npm_config_cache" "$PLAYWRIGHT_BROWSERS_PATH"
 
       - name: Set up Ruby
-        uses: ruby/setup-ruby@003a5c4d8d6321bd302e38f6f0ec593f77f06600
+        uses: ruby/setup-ruby@a30dfa457ad68707b8b910ac3a244714b61c0626
         with:
           ruby-version: .tool-versions
           bundler-cache: true

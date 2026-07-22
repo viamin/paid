@@ -35,7 +35,15 @@ class Project < ApplicationRecord
     "record_video" => false,
     "service_dependencies" => [],
     "setup_commands" => [],
-    "detection" => {}
+    "detection" => {},
+    "verification_enabled" => false
+  }.freeze
+  PLAYWRIGHT_MCP_NAME = "paid-system-playwright-browser".freeze
+  PLAYWRIGHT_MCP_COMMAND = "@executeautomation/playwright-mcp-server".freeze
+  PLAYWRIGHT_MCP_BROWSER_HOST = "paid-screenshot-browser".freeze
+  PLAYWRIGHT_MCP_CDP_URL = "ws://#{PLAYWRIGHT_MCP_BROWSER_HOST}:3000".freeze
+  PLAYWRIGHT_MCP_METADATA = {
+    "paid_system" => "playwright_verification_browser"
   }.freeze
   DEFAULT_SCREENSHOT_STATUS = {
     "last_capture_at" => nil,
@@ -287,6 +295,7 @@ class Project < ApplicationRecord
   validate :created_by_belongs_to_same_account, if: -> { created_by.present? }
   validate :review_settings_valid
   validate :screenshot_settings_valid
+  validate :verification_mcp_definition_name_available, if: :verification_will_be_enabled?
   validate :priority_labels_valid
   validate :interop_settings_valid
   validate :llm_provider_routing_valid
@@ -308,6 +317,7 @@ class Project < ApplicationRecord
   after_update_commit :clear_scheduler_pause_on_token_change, if: :saved_change_to_github_token_id?
   after_update_commit :clear_scheduler_pause_on_installation_change, if: :saved_change_to_github_installation_id?
   after_update_commit :seed_eligible_issues, if: :auto_pick_just_enabled?
+  after_update_commit :ensure_playwright_mcp_definition!, if: :verification_just_enabled?
   after_destroy_commit :stop_github_polling
   after_destroy_commit :cleanup_qdrant_collection
 
@@ -904,6 +914,14 @@ class Project < ApplicationRecord
     super
   end
 
+  def reload(*)
+    @effective_interop_settings = nil
+    @effective_screenshot_settings = nil
+    @effective_review_settings = nil
+    @automation_configuration = nil
+    super
+  end
+
   def screenshot_settings=(value)
     @effective_screenshot_settings = nil
     super
@@ -919,6 +937,47 @@ class Project < ApplicationRecord
 
   def screenshots_enabled?
     screenshot_enabled
+  end
+
+  def verification_enabled
+    effective_screenshot_settings["verification_enabled"] == true
+  end
+
+  def verification_enabled=(value)
+    write_screenshot_setting("verification_enabled", ActiveModel::Type::Boolean.new.cast(value))
+  end
+
+  def verification_enabled?
+    verification_enabled
+  end
+
+  # Ensures the account-scoped playwright-mcp MCP server definition exists and is
+  # attached to this project. Idempotent — safe to call on every verification
+  # run. Returns the attached definition record.
+  #
+  # The npx definition is materialized by `Containers::McpProvisioner` at run
+  # time. The CDP URL env points at the `paid-screenshot-browser` container
+  # that the verification flow provisions on the agent's network. The URL is
+  # stable, so it is set at definition time rather than injected per-run.
+  def ensure_playwright_mcp_definition!
+    definition = account.mcp_server_definitions.find_or_initialize_by(name: PLAYWRIGHT_MCP_NAME)
+    if definition.persisted? && !playwright_mcp_definition?(definition)
+      raise ArgumentError, "Reserved MCP definition name #{PLAYWRIGHT_MCP_NAME} is already used by a non-Paid definition"
+    end
+
+    definition.assign_attributes(
+      transport: "stdio",
+      install_type: "npx",
+      command: PLAYWRIGHT_MCP_COMMAND,
+      args: [],
+      env: { "CDP_URL" => PLAYWRIGHT_MCP_CDP_URL },
+      metadata: normalized_metadata(definition.metadata).merge(PLAYWRIGHT_MCP_METADATA),
+      enabled: true
+    )
+    definition.save! if definition.new_record? || definition.changed?
+
+    project_mcp_servers.find_or_create_by!(mcp_server_definition: definition)
+    definition
   end
 
   def screenshot_driver
@@ -1293,6 +1352,7 @@ class Project < ApplicationRecord
     settings["enabled"] = ActiveModel::Type::Boolean.new.cast(settings["enabled"])
     settings["auto_capture"] = ActiveModel::Type::Boolean.new.cast(settings["auto_capture"])
     settings["record_video"] = ActiveModel::Type::Boolean.new.cast(settings["record_video"])
+    settings["verification_enabled"] = ActiveModel::Type::Boolean.new.cast(settings["verification_enabled"])
     settings["driver"] = normalized_screenshot_driver(settings["driver"])
     settings["config_path"] = settings["config_path"].presence || DEFAULT_SCREENSHOT_SETTINGS["config_path"]
     settings["service_dependencies"] = normalize_string_array(settings["service_dependencies"])
@@ -1348,6 +1408,49 @@ class Project < ApplicationRecord
 
   def auto_pick_just_enabled?
     saved_change_to_auto_pick_enabled? && auto_pick_enabled?
+  end
+
+  def verification_just_enabled?
+    return false unless saved_change_to_screenshot_settings?
+
+    previous, current = saved_change_to_screenshot_settings
+    previous_value = previous.is_a?(Hash) ? previous["verification_enabled"] : nil
+    current_value = current.is_a?(Hash) ? current["verification_enabled"] : nil
+    ActiveModel::Type::Boolean.new.cast(current_value) && !ActiveModel::Type::Boolean.new.cast(previous_value)
+  end
+
+  def verification_will_be_enabled?
+    verification_enabled? && screenshot_settings_change_to_verification_enabled?
+  end
+
+  def screenshot_settings_change_to_verification_enabled?
+    return true if new_record?
+    return false unless will_save_change_to_screenshot_settings?
+
+    previous_value = effective_screenshot_settings_from(screenshot_settings_in_database)["verification_enabled"]
+    ActiveModel::Type::Boolean.new.cast(previous_value) == false
+  end
+
+  def verification_mcp_definition_name_available
+    definition = account&.mcp_server_definitions&.find_by(name: PLAYWRIGHT_MCP_NAME)
+    return if definition.blank? || playwright_mcp_definition?(definition)
+
+    errors.add(:screenshot_settings, "verification cannot use reserved MCP definition #{PLAYWRIGHT_MCP_NAME} because that name is already taken")
+  end
+
+  def playwright_mcp_definition?(definition)
+    normalized_metadata(definition.metadata).slice(*PLAYWRIGHT_MCP_METADATA.keys) == PLAYWRIGHT_MCP_METADATA
+  end
+
+  def normalized_metadata(value)
+    metadata = value.is_a?(Hash) ? value : {}
+    metadata.deep_stringify_keys
+  end
+
+  def effective_screenshot_settings_from(value)
+    settings = value.is_a?(Hash) ? value : {}
+    settings = settings.deep_stringify_keys if settings.respond_to?(:deep_stringify_keys)
+    DEFAULT_SCREENSHOT_SETTINGS.deep_merge(settings)
   end
 
   def seed_eligible_issues

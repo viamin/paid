@@ -119,7 +119,7 @@ jobs:
         # Check out the base branch (not the PR head) so that config files
         # (CLAUDE.md, etc.) come from trusted code. The action retrieves
         # PR diffs via the GitHub API, so it does not need the PR ref.
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
         with:
           fetch-depth: 1
           ref: ${{ steps.pr.outputs.base_sha }}
@@ -136,7 +136,7 @@ jobs:
       - name: Run Claude Code Review
         if: steps.pr.outputs.head_repo_fork != 'true' && steps.trust.outputs.allowed == 'true'
         id: claude-review
-        uses: anthropics/claude-code-action@700e7f8316990de46bed556429765647af760efc # v1
+        uses: anthropics/claude-code-action@fa7e2f0a29a126f0b81cdcf360561b36e44cf608 # v1
         with:
           # IMPORTANT: Authentication uses an OAuth token, NOT an API key.
           # Create the CLAUDE_CODE_OAUTH_TOKEN secret (not an Anthropic API key)

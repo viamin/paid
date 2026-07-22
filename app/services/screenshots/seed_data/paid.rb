@@ -111,6 +111,8 @@ module Screenshots
             record.command = "@modelcontextprotocol/server-filesystem"
           end
 
+          playwright_mcp_definition = project.ensure_playwright_mcp_definition!
+
           agent_run = project.agent_runs.find_or_initialize_by(custom_prompt: "Capture screenshot route coverage")
           reset_agent_run!(agent_run) if agent_run.persisted?
           assign_agent_run_defaults!(agent_run)
@@ -360,6 +362,7 @@ module Screenshots
             "provider_api_key" => { "id" => provider_api_key.id, "name" => provider_api_key.name },
             "service_container" => { "id" => service_container.id, "name" => service_container.name },
             "mcp_server_definition" => { "id" => mcp_server_definition.id, "name" => mcp_server_definition.name },
+            "playwright_mcp_definition" => { "id" => playwright_mcp_definition.id, "name" => playwright_mcp_definition.name },
             "agent_run" => { "id" => agent_run.id },
             "prompt" => { "id" => prompt.id, "name" => prompt.name },
             "pending_prompt_version" => { "id" => pending_prompt_version.id },
