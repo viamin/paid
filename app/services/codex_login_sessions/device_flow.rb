@@ -57,8 +57,9 @@ module CodexLoginSessions
     # Polls the token endpoint once. Returns a result hash the controller can
     # branch on without reaching into private state.
     # @return [Hash] { status: Symbol, completed: Boolean, error: String|nil }
-    def poll!
-      return pending_result if session.expired?
+    def poll!(session_token: nil)
+      return invalid_session_token_result unless valid_session_token?(session_token)
+      return expired_result if session.expired?
       return terminal_result if session.terminal?
 
       response = client.poll_token(session.device_code)
@@ -80,6 +81,23 @@ module CodexLoginSessions
     private
 
     attr_reader :session, :client
+
+    def valid_session_token?(candidate)
+      return false if candidate.blank?
+
+      ActiveSupport::SecurityUtils.secure_compare(session.session_token.to_s, candidate.to_s)
+    rescue StandardError
+      false
+    end
+
+    def invalid_session_token_result
+      { status: :failed, completed: false, error: "The Connect Codex login session token is invalid." }
+    end
+
+    def expired_result
+      fail_session!("This Connect Codex login session has expired.")
+      { status: :failed, completed: false, error: session.error_message }
+    end
 
     def complete!(tokens)
       credential = persist_credential!(tokens)

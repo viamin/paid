@@ -64,7 +64,7 @@ RSpec.describe CodexLoginSessions::DeviceFlow do
       client = fake_client(token_responses: [
         CodexLoginSessions::OAuthClient::TokenResponse.new(status: :success, tokens: tokens, error: nil)
       ])
-      result = described_class.new(session: session, client: client).poll!
+      result = described_class.new(session: session, client: client).poll!(session_token: session.session_token)
 
       expect(result[:completed]).to be(true)
       session.reload
@@ -82,7 +82,7 @@ RSpec.describe CodexLoginSessions::DeviceFlow do
       client = fake_client(token_responses: [
         CodexLoginSessions::OAuthClient::TokenResponse.new(status: :pending, tokens: nil, error: nil)
       ])
-      result = described_class.new(session: session, client: client).poll!
+      result = described_class.new(session: session, client: client).poll!(session_token: session.session_token)
 
       expect(result[:completed]).to be(false)
       expect(result[:status]).to eq(:pending)
@@ -93,7 +93,7 @@ RSpec.describe CodexLoginSessions::DeviceFlow do
       client = fake_client(token_responses: [
         CodexLoginSessions::OAuthClient::TokenResponse.new(status: :slow_down, tokens: nil, error: nil)
       ])
-      described_class.new(session: session, client: client).poll!
+      described_class.new(session: session, client: client).poll!(session_token: session.session_token)
 
       expect(session.reload.poll_interval).to be > 5
     end
@@ -102,7 +102,7 @@ RSpec.describe CodexLoginSessions::DeviceFlow do
       client = fake_client(token_responses: [
         CodexLoginSessions::OAuthClient::TokenResponse.new(status: :denied, tokens: nil, error: "access_denied")
       ])
-      result = described_class.new(session: session, client: client).poll!
+      result = described_class.new(session: session, client: client).poll!(session_token: session.session_token)
 
       expect(result[:status]).to eq(:failed)
       expect(session.reload).to be_failed

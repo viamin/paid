@@ -33,7 +33,9 @@ class CodexLoginSessionsController < ApplicationController
 
   def update
     authorize @codex_login_session
-    result = CodexLoginSessions::DeviceFlow.new(session: @codex_login_session).poll!
+    result = CodexLoginSessions::DeviceFlow.new(session: @codex_login_session).poll!(
+      session_token: params[:session_token]
+    )
 
     if result[:completed]
       redirect_to codex_login_session_path(@codex_login_session.external_id),
