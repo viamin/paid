@@ -226,33 +226,44 @@ RSpec.describe Screenshots::ContainerCapture do
     end
   end
 
+  describe "#collected_trace_path" do
+    it "falls back to a per-route trace archive when no top-level trace.zip exists" do
+      tmpdir = Dir.mktmpdir("screenshots-trace")
+      service.instance_variable_set(:@tmpdir, tmpdir)
+      route_trace_path = File.join(tmpdir, Screenshots::ContainerCapture::OUTPUT_DIR, "home.trace.zip")
+      FileUtils.mkdir_p(File.dirname(route_trace_path))
+      File.write(route_trace_path, "trace")
+
+      expect(service.send(:collected_trace_path)).to eq(route_trace_path)
+    ensure
+      FileUtils.rm_rf(tmpdir)
+    end
+  end
+
   describe "#publish_result!" do
     def build_publish_artifacts
       tmpdir = Dir.mktmpdir("screenshots-publish")
       output_dir = File.join(tmpdir, Screenshots::ContainerCapture::OUTPUT_DIR)
       screenshot_path = File.join(output_dir, "home.png")
       route_trace_path = File.join(output_dir, "home.trace.zip")
-      global_trace_path = File.join(output_dir, "trace.zip")
       video_path = File.join(output_dir, "videos", "capture.webm")
 
       FileUtils.mkdir_p(File.dirname(video_path))
       File.write(screenshot_path, "png")
       File.write(route_trace_path, "route trace")
-      File.write(global_trace_path, "global trace")
       File.write(video_path, "webm")
 
       {
         tmpdir: tmpdir,
         screenshot_path: screenshot_path,
         route_trace_path: route_trace_path,
-        global_trace_path: global_trace_path,
         video_path: video_path
       }
     end
 
     def expect_uploaded_supporting_artifacts(storage:, artifacts:)
       expect(storage).to have_received(:upload_trace).with(
-        file_path: artifacts[:global_trace_path],
+        file_path: artifacts[:route_trace_path],
         org: project.owner,
         repo: project.repo,
         pr_number: agent_run.pull_request_number,
@@ -280,7 +291,7 @@ RSpec.describe Screenshots::ContainerCapture do
       allow(service).to receive(:publish_result!).and_call_original
       service.instance_variable_set(:@tmpdir, artifacts[:tmpdir])
       service.instance_variable_set(:@hints, { "home" => { "summary" => "Updated hero" } })
-      service.instance_variable_set(:@trace_path, artifacts[:global_trace_path])
+      service.instance_variable_set(:@trace_path, artifacts[:route_trace_path])
       service.instance_variable_set(:@video_path, artifacts[:video_path])
       allow(Screenshots::Storage).to receive_messages(
         configured?: true,
@@ -303,7 +314,7 @@ RSpec.describe Screenshots::ContainerCapture do
       FileUtils.rm_rf(artifacts[:tmpdir])
     end
 
-    it "uploads screenshots, route artifacts, and top-level trace assets" do
+    it "uploads screenshots, route artifacts, and the selected trace asset" do
       service.send(:publish_result!, [ artifacts[:screenshot_path] ])
 
       expect(storage).to have_received(:upload).with(

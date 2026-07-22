@@ -290,7 +290,10 @@ module Containers
     def cleanup_service_container(service_container, agent_run:, service_environment:, stale_requeue_count:)
       if service_container.image.include?("postgres")
         db_name = database_name_for(agent_run, service_environment, stale_requeue_count: stale_requeue_count)
-        drop_per_run_database(service_container, db_name) if droppable_per_run_database?(agent_run, service_container, db_name)
+        if droppable_per_run_database?(agent_run, service_container, db_name) &&
+            no_overlapping_preview_provisions?(agent_run, service_container, db_name)
+          drop_per_run_database(service_container, db_name)
+        end
       end
 
       stop_container!(service_container) if service_container.capacity_inflight_agent_run_count.zero?
@@ -677,6 +680,16 @@ module Containers
         db_name: db_name,
         service_container: service_container.name,
         reason: "non_matching_database_name")
+      false
+    end
+
+    def no_overlapping_preview_provisions?(agent_run, service_container, db_name)
+      return true unless PreviewProvisionState.where(agent_run_id: agent_run.id).where("active_count > 0").exists?
+
+      log_info("service_provisioner.database_drop_skipped",
+        db_name: db_name,
+        service_container: service_container.name,
+        reason: "preview_overlap_active")
       false
     end
 

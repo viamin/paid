@@ -505,11 +505,19 @@ module Screenshots
     end
 
     def collected_trace_path
-      Dir.glob(File.join(@tmpdir.to_s, OUTPUT_DIR, "trace.zip")).first
+      top_level_trace_path || route_trace_paths.first
     end
 
     def collected_video_path
       Dir.glob(File.join(@tmpdir.to_s, OUTPUT_DIR, "videos", "*.webm")).first
+    end
+
+    def top_level_trace_path
+      Dir.glob(File.join(@tmpdir.to_s, OUTPUT_DIR, "trace.zip")).first
+    end
+
+    def route_trace_paths
+      Dir.glob(File.join(@tmpdir.to_s, OUTPUT_DIR, "*#{TRACE_EXTENSION}")).sort
     end
 
     def commit_sha

@@ -805,6 +805,25 @@ RSpec.describe Containers::ServiceProvisioner do
       expect(service_container.reload.status).to eq("running")
     end
 
+    it "does not drop the shared per-run database while an overlapping preview on the same agent run is still active" do
+      agent_run = create(:agent_run, :completed, project: project, issue: issue,
+        service_container_ids: [ service_container.id ])
+      PreviewProvisionState.create!(agent_run: agent_run, active_count: 1)
+
+      docker_container = instance_double(Docker::Container)
+      allow(Docker::Container).to receive(:get)
+        .with(service_container.docker_container_id).and_return(docker_container)
+      allow(docker_container).to receive(:exec)
+      allow(docker_container).to receive(:stop)
+      allow(docker_container).to receive(:delete)
+
+      provisioner.cleanup(agent_run)
+
+      expect(docker_container).not_to have_received(:exec)
+      expect(docker_container).to have_received(:delete).with(force: true, v: true)
+      expect(service_container.reload.status).to eq("stopped")
+    end
+
     it "handles empty service_container_ids gracefully" do
       agent_run = create(:agent_run, project: project, issue: issue,
         service_container_ids: [])
@@ -922,6 +941,23 @@ RSpec.describe Containers::ServiceProvisioner do
       )
 
       expect(commands.last.last).to eq("DROP DATABASE IF EXISTS \"#{captured_db}\"")
+    end
+
+    it "skips dropping the per-run database while an overlapping preview state remains active" do
+      PreviewProvisionState.create!(agent_run: agent_run, active_count: 1)
+      docker_container = instance_double(Docker::Container)
+      allow(Docker::Container).to receive(:get)
+        .with(service_container.docker_container_id).and_return(docker_container)
+      allow(docker_container).to receive(:exec)
+      allow(docker_container).to receive_messages(stop: true, delete: true)
+
+      provisioner.cleanup_service_containers(
+        [ service_container.id ],
+        agent_run: agent_run,
+        service_environment: { "DATABASE_URL" => "postgres://agent:agent@pg:5432/#{provisioner.send(:per_run_db_name, agent_run)}" }
+      )
+
+      expect(docker_container).not_to have_received(:exec)
     end
 
     it "logs and continues cleaning up remaining containers when one raises" do
