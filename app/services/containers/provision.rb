@@ -3191,8 +3191,13 @@ module Containers
 
     # Clears the memoized managed Codex caches so a refresh/rotation is picked up
     # on the next read. Required because the memo guards use `defined?`, which
-    # stays truthy after an explicit `= nil` assignment.
+    # stays truthy after an explicit `= nil` assignment. The cached credential
+    # itself must also be dropped because `codex_managed_secret` and
+    # `codex_managed_materialization` derive from `credential.token`; an in-memory
+    # AR object that survived `with_lock` could still hold the pre-refresh token
+    # until a reload, leaving the re-derived caches stale (#2990 review).
     def reset_codex_managed_caches
+      remove_instance_variable(:@codex_managed_runner_credential) if defined?(@codex_managed_runner_credential)
       remove_instance_variable(:@codex_managed_secret) if defined?(@codex_managed_secret)
       remove_instance_variable(:@codex_managed_materialization) if defined?(@codex_managed_materialization)
     end
@@ -3611,6 +3616,7 @@ module Containers
       end
 
       update_codex_managed_credential_from_rotation!(credential, rotated, parsed)
+      reset_codex_managed_caches
       log_system("container.codex_managed_auth_harvested", credential_id: credential.id)
       record_codex_harvest_attempt!(credential, started_at, result: RunnerAuthAttempt::RESULT_HARVESTED)
       codex_harvest_result(performed: true, reason: "harvested")

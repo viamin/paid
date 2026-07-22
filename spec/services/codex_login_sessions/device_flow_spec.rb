@@ -107,5 +107,17 @@ RSpec.describe CodexLoginSessions::DeviceFlow do
       expect(result[:status]).to eq(:failed)
       expect(session.reload).to be_failed
     end
+
+    it "fails the session when the OAuth response carries no usable tokens" do
+      client = fake_client(token_responses: [
+        CodexLoginSessions::OAuthClient::TokenResponse.new(status: :success, tokens: {}, error: nil)
+      ])
+      result = described_class.new(session: session, client: client).poll!(session_token: session.session_token)
+
+      expect(result[:status]).to eq(:failed)
+      expect(result[:error]).to include("Connect Codex login did not return a usable OAuth session")
+      expect(session.reload).to be_failed
+      expect(session.runner_credential).to be_nil
+    end
   end
 end

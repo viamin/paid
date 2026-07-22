@@ -1,8 +1,5 @@
 # frozen_string_literal: true
 
-require "json"
-require "time"
-
 module CodexLoginSessions
   # Orchestrates the OpenAI device-code Connect Codex flow (RDR-041 / #2962).
   #
@@ -100,7 +97,10 @@ module CodexLoginSessions
     end
 
     def complete!(tokens)
-      credential = persist_credential!(tokens)
+      auth_json = CodexCredentials::Secret.build(tokens)
+      return fail_session!("Connect Codex login did not return a usable OAuth session.") if auth_json.blank?
+
+      credential = persist_credential!(auth_json)
       session.update!(
         runner_credential: credential,
         status: "completed",
@@ -119,8 +119,7 @@ module CodexLoginSessions
       { status: :completed, completed: true, error: nil }
     end
 
-    def persist_credential!(tokens)
-      auth_json = build_auth_json(tokens)
+    def persist_credential!(auth_json)
       parsed = CodexCredentials::Secret.parse(auth_json)
 
       credential = session.account.runner_credentials.find_or_initialize_by(
@@ -137,20 +136,11 @@ module CodexLoginSessions
         metadata: credential.metadata.to_h.merge(
           "source" => "device_code_login",
           "storage_format" => "codex_auth_json",
-          "access_token_expires_at" => parsed.expires_at&.iso8601,
-          "has_refresh_token" => parsed.refresh_token.present?
+          "access_token_expires_at" => parsed.expires_at&.iso8601
         ).compact
       )
       credential.save!
       credential
-    end
-
-    def build_auth_json(tokens)
-      JSON.generate(
-        "OPENAI_API_KEY" => nil,
-        "tokens" => tokens,
-        "last_refresh" => Time.now.utc.iso8601
-      )
     end
 
     def mark_polling
