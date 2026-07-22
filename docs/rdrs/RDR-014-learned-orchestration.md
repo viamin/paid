@@ -13,7 +13,26 @@
 
 ## Implementation Status
 
-Implemented with follow-up gaps. Paid has strategy/version models, orchestration decision logging, strategy selection services, baseline extraction, strategy evolution workflows, experiments, human review gates, and coordination policy paths. The generic `Strategies::Select` path is not yet fully wired into every active orchestration decision point, and the promotion loop remains intentionally guarded by review workflows.
+Implemented. Paid has strategy/version models, orchestration decision logging,
+strategy selection services, baseline extraction, strategy evolution workflows,
+experiments, human review gates, and coordination policy paths.
+`Strategies::Select` is wired into all active orchestration decision points:
+
+| Decision type | Caller | Notes |
+|---|---|---|
+| `issue_execution` | `Activities::CreateAgentRunActivity` | Called on every new and resumed run; logs an `OrchestrationDecision` and links the matching strategy version |
+| `auto_continue` / `auto_merge` | `Automation::StrategyCoordinator` | Called alongside the in-memory registry path for each PR-lifecycle evaluation, with scan/lifecycle runtime context passed into selector matching |
+| `decomposition_strategy` / `planning_outcome` / `parallelization_outcome` | `Orchestration::DecompositionDecisions::Log` | Wired via `resolved_strategy_version` in the decomposition log service |
+
+### Strategy Promotion Decision
+
+**Promotion remains human-reviewed.** `StrategyVersion#activation_requires_promotion_metadata`
+enforces that every version activation must carry an explicit `promoted_at`
+timestamp and `promoted_by_user` reference. Automatic promotion with guardrails
+is deferred — anomaly alerting is the preferred oversight mechanism once
+strategy evolution matures and statistical confidence in learned strategies is
+higher. Until then, human sign-off on promotion prevents learned strategies
+from silently degrading orchestration quality.
 
 ## Problem Statement
 

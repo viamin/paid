@@ -2,15 +2,25 @@
 
 module Strategies
   # Public API for context-aware strategy selection from database-backed
-  # OrchestrationStrategy records. Wraps OrchestrationStrategySelector with
-  # enriched context (task_type injection) and a structured Result that
-  # includes fallback semantics.
+  # Strategy records. Wraps OrchestrationStrategySelector with enriched
+  # context (task_type injection) and a structured Result that includes
+  # fallback semantics.
   #
-  # Not yet wired into orchestration flows — Automation::Strategies::Select
-  # (registry-based class selection) remains the active path. A follow-up
-  # PR will integrate this service into the orchestration decision points
-  # (issue execution, auto-continue, auto-merge) so that database-backed
-  # strategy configuration takes effect at runtime.
+  # Called at active orchestration decision points so that learned strategy
+  # configuration takes effect at runtime:
+  #
+  # - issue_execution — Activities::CreateAgentRunActivity, on every new run
+  #   and resumed-run path, to select and log a strategy governing the run.
+  # - auto_continue / auto_merge — Automation::StrategyCoordinator, alongside
+  #   the in-memory registry path, to select against PR lifecycle runtime
+  #   context and log DB-backed strategy selection for each evaluation.
+  # - decomposition_strategy / planning_outcome / parallelization_outcome —
+  #   feature-orchestration
+  #   workflows, via Orchestration::DecompositionDecisions::Log.
+  #
+  # Always returns a Result (never raises). When no learned strategy matches
+  # the context, the result is a fallback with empty content so callers can
+  # proceed with baseline behaviour. Decision logging happens in the caller.
   class Select
     Result = Data.define(:strategy, :strategy_version, :scope, :fallback, :matched_rule_count) do
       def content

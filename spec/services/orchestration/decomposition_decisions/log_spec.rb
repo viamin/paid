@@ -216,6 +216,61 @@ RSpec.describe Orchestration::DecompositionDecisions::Log do
       ).to eq(1)
     end
 
+    describe "runtime strategy selection" do
+      # Only global strategies (account_id: nil) can be safely attached in tests;
+      # the DB trigger validate_orchestration_decision_strategy_version_scope
+      # enforces same-tenant scope for account/project strategies, which requires a
+      # live tenant session variable not available in system-access test context.
+      def create_global_strategy_with_active_version(**attributes)
+        strategy = create(:strategy, :global, **attributes)
+        version = create(:strategy_version, :active, strategy: strategy)
+        strategy.update!(current_version: version)
+        [ strategy, version ]
+      end
+
+      it "attaches a context-matched learned strategy version instead of the baseline" do
+        # A global strategy with empty selection_rules is a catch-all
+        _, learned_version = create_global_strategy_with_active_version(
+          decision_type: "planning_outcome",
+          selection_rules: {}
+        )
+
+        described_class.call(**payload)
+
+        orchestration_decision = orchestration_decision_for(payload[:decision_key])
+        expect(orchestration_decision.strategy_version).to eq(learned_version)
+      end
+
+      it "matches learned strategy rules against enriched issue context" do
+        _, learned_version = create_global_strategy_with_active_version(
+          decision_type: "planning_outcome",
+          selection_rules: {
+            "issue" => {
+              "github_number" => issue.github_number
+            }
+          }
+        )
+
+        described_class.call(**payload)
+
+        orchestration_decision = orchestration_decision_for(payload[:decision_key])
+        expect(orchestration_decision.strategy_version).to eq(learned_version)
+      end
+
+      it "falls back to the baseline strategy version when no learned strategy matches" do
+        # Strategy with rules that do not match the payload's input_context
+        create_global_strategy_with_active_version(
+          decision_type: "planning_outcome",
+          selection_rules: { "language" => "python" }
+        )
+
+        described_class.call(**payload)
+
+        orchestration_decision = orchestration_decision_for(payload[:decision_key])
+        expect(orchestration_decision.strategy_version).to eq(baseline_strategy_version_for("planning_outcome"))
+      end
+    end
+
     it "does not mask the decomposition decision when orchestration mirroring fails" do
       allow(OrchestrationDecision).to receive(:create!).and_raise(ActiveRecord::StatementInvalid, "boom")
       allow(Rails.logger).to receive(:warn)
