@@ -49,10 +49,11 @@ RSpec.describe ObservabilityAssets, :no_db do
   it "wires the metrics token secret and propagates METRICS_TOKEN to the web service" do
     # Regression guard for the docker-compose wiring: the Prometheus service
     # must mount the token file at the path the scrape config reads from,
-    # the top-level `secrets:` block must default to the checked-in token
-    # file so `docker compose up` works without operator setup, and the web
-    # service must receive METRICS_TOKEN so the Rails side enforces the same
-    # token that Prometheus sends.
+    # the top-level `secrets:` block must default to an untracked location
+    # (./tmp/prometheus/metrics_token, gitignored via /tmp/*) so a live
+    # token never lands in the tracked working tree, and the web service
+    # must receive METRICS_TOKEN so the Rails side enforces the same token
+    # that Prometheus sends.
     compose = YAML.safe_load_file(repo_root.join("docker-compose.observability.yml"))
     base_compose = YAML.safe_load_file(repo_root.join("docker-compose.yml"))
 
@@ -63,7 +64,7 @@ RSpec.describe ObservabilityAssets, :no_db do
     expect(token_secret.fetch("target")).to eq("/etc/prometheus/metrics_token")
 
     secrets_block = compose.fetch("secrets").fetch("metrics_token")
-    expect(secrets_block.fetch("file")).to eq("${METRICS_TOKEN_FILE:-./prometheus/metrics_token}")
+    expect(secrets_block.fetch("file")).to eq("${METRICS_TOKEN_FILE:-./tmp/prometheus/metrics_token}")
     expect(compose.fetch("networks", {})).not_to have_key("paid_internal")
 
     web_environment = base_compose.fetch("services").fetch("web").fetch("environment")

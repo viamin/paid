@@ -69,28 +69,40 @@ FileUtils.chdir APP_ROOT do
 
   puts "\n== Materializing Prometheus metrics token =="
   # docker-compose.observability.yml mounts the host file at
-  # ${METRICS_TOKEN_FILE:-./prometheus/metrics_token} into Prometheus as a
-  # Docker secret, and the Rails app reads METRICS_TOKEN to decide whether
-  # /api/metrics requires a Bearer header. Both sides must use the same
-  # token file path; we resolve it the same way the compose overlay does —
-  # honouring METRICS_TOKEN_FILE when set, falling back to the checked-in
-  # default path. When METRICS_TOKEN is present in this process environment,
-  # we write it into the resolved file so the scraper picks up the same
-  # value. When absent, we leave the file untouched so helper processes like
-  # the worker do not clobber a token that a separate bootstrap path already
-  # materialized.
+  # ${METRICS_TOKEN_FILE:-./tmp/prometheus/metrics_token} into Prometheus
+  # as a Docker secret, and the Rails app reads METRICS_TOKEN to decide
+  # whether /api/metrics requires a Bearer header. Both sides must use
+  # the same token file path; we resolve it the same way the compose
+  # overlay does — honouring METRICS_TOKEN_FILE when set, falling back
+  # to the default untracked location (./tmp/prometheus/metrics_token).
+  # The default lives under ./tmp/ so it is gitignored and a live token
+  # never ends up in the tracked working tree. We ensure the file exists
+  # (creating an empty one when missing) so `docker compose --profile
+  # observability up` does not fail on a fresh checkout; the empty
+  # content makes Prometheus send a blank Bearer header, which the Rails
+  # side accepts because its auth check is gated on the env var.
+  # When METRICS_TOKEN is present in this process environment, we write
+  # it into the resolved file so the scraper picks up the same value.
+  # When absent, we leave any pre-existing content alone so helper
+  # processes like the worker do not clobber a token that a separate
+  # bootstrap path already materialized.
   metrics_token_file = ENV.fetch("METRICS_TOKEN_FILE", "")
   token_path = if metrics_token_file.empty?
-    File.join(APP_ROOT, "prometheus", "metrics_token")
+    File.join(APP_ROOT, "tmp", "prometheus", "metrics_token")
   else
     File.expand_path(metrics_token_file, APP_ROOT)
   end
+  FileUtils.mkdir_p(File.dirname(token_path))
   # Guard on a non-blank value so that the compose-style empty-string case
   # (docker-compose.yml injects METRICS_TOKEN: ${METRICS_TOKEN:-}, which is
   # always present but empty when the host var is unset) does not clobber a
   # token that a separate bootstrap path already materialized.
   token = ENV.fetch("METRICS_TOKEN", "")
-  File.write(token_path, token) unless token.empty?
+  if token.empty?
+    File.write(token_path, "") unless File.exist?(token_path)
+  else
+    File.write(token_path, token)
+  end
 
   puts "\n== Building agent container image =="
   system! "scripts/build-agent-image.sh"

@@ -13,8 +13,8 @@ services:
       - prometheus-data:/prometheus
     # /etc/prometheus/metrics_token is consumed by the `paid` scrape job's
       # `authorization.credentials_file`. The token file at
-      # ${METRICS_TOKEN_FILE:-./prometheus/metrics_token} is created from the
-      # host's METRICS_TOKEN environment variable; when METRICS_TOKEN is
+      # ${METRICS_TOKEN_FILE:-./tmp/prometheus/metrics_token} is created from
+      # the host's METRICS_TOKEN environment variable; when METRICS_TOKEN is
       # unset the file is empty so the Bearer header is sent blank and the
       # Rails side (which only enforces the token when METRICS_TOKEN is
       # set) accepts the scrape unauthenticated.
@@ -113,9 +113,15 @@ volumes:
 
 secrets:
   # `docker compose` requires the source file to exist on the host when the
-  # stack starts. ./prometheus/metrics_token is committed as an empty file
-  # so the default `docker compose --profile observability up` flow works
-  # without any operator action. bin/setup materializes the real token into
-  # this path from the host's METRICS_TOKEN environment variable.
+  # stack starts. ./tmp/prometheus/metrics_token (created on demand by
+  # bin/setup) is the default location so the token never lands in the
+  # tracked working tree — operators that set METRICS_TOKEN in their
+  # environment end up writing a live secret into ./tmp/, which is
+  # gitignored and cannot accidentally be committed. bin/setup ensures the
+  # file exists before the stack starts so the default
+  # `docker compose --profile observability up` flow works without any
+  # additional operator action. Operators that prefer a different
+  # filesystem location can point METRICS_TOKEN_FILE at it; the file does
+  # not need to live inside the repo.
   metrics_token:
-    file: ${METRICS_TOKEN_FILE:-./prometheus/metrics_token}
+    file: ${METRICS_TOKEN_FILE:-./tmp/prometheus/metrics_token}

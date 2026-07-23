@@ -39,35 +39,39 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
   end
 
   it "writes the metrics token file from METRICS_TOKEN so Prometheus scrape auth stays in sync" do
-    # Regression guard: docker-compose.observability.yml mounts
-    # ./prometheus/metrics_token into the Prometheus container at the path
+    # Regression guard: docker-compose.observability.yml mounts the host
+    # metrics token file into the Prometheus container at the path
     # referenced by the `paid` scrape job's authorization.credentials_file.
     # bin/setup materializes that file from the host's METRICS_TOKEN env var
     # so the value matches what docker-compose.yml propagates into the web
     # service (which the Rails side reads to decide whether to enforce auth).
+    # The default location is ./tmp/prometheus/metrics_token so a live
+    # token never lands in the tracked working tree.
     Dir.mktmpdir("setup-script-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir)
       env = setup_script_env(dir).merge("METRICS_TOKEN" => "test-scraper-token")
 
       Open3.capture3(env, script_path, "--skip-server", chdir: dir)
 
-      token_path = File.join(dir, "prometheus", "metrics_token")
+      token_path = File.join(dir, "tmp", "prometheus", "metrics_token")
       expect(File.read(token_path)).to eq("test-scraper-token")
     end
   end
 
-  it "preserves the checked-in empty metrics token file when METRICS_TOKEN is unset" do
+  it "creates an empty metrics token file when METRICS_TOKEN is unset so docker compose can start" do
     # When METRICS_TOKEN is absent from the process environment, bin/setup
-    # must leave the shared token file untouched. This prevents a worker
-    # container running bin/setup --skip-server from erasing a token that
-    # the web/bootstrap path already materialized for Prometheus.
+    # still needs to ensure the token file exists because
+    # `docker compose --profile observability up` refuses to start when the
+    # secret source file is missing. The file must be empty so Prometheus
+    # sends a blank Bearer header, which the Rails side accepts because
+    # its auth check is gated on the env var.
     Dir.mktmpdir("setup-script-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir)
       env = setup_script_env(dir)
 
       Open3.capture3(env, script_path, "--skip-server", chdir: dir)
 
-      token_path = File.join(dir, "prometheus", "metrics_token")
+      token_path = File.join(dir, "tmp", "prometheus", "metrics_token")
       expect(File.exist?(token_path)).to be(true)
       expect(File.read(token_path)).to eq("")
     end
@@ -76,7 +80,8 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
   it "does not overwrite an existing metrics token file when METRICS_TOKEN is unset" do
     Dir.mktmpdir("setup-script-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir)
-      token_path = File.join(dir, "prometheus", "metrics_token")
+      token_path = File.join(dir, "tmp", "prometheus", "metrics_token")
+      FileUtils.mkdir_p(File.dirname(token_path))
       File.write(token_path, "bootstrap-token")
       env = setup_script_env(dir)
 
@@ -94,7 +99,8 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
     # a token that the web/bootstrap path already materialized.
     Dir.mktmpdir("setup-script-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir)
-      token_path = File.join(dir, "prometheus", "metrics_token")
+      token_path = File.join(dir, "tmp", "prometheus", "metrics_token")
+      FileUtils.mkdir_p(File.dirname(token_path))
       File.write(token_path, "bootstrap-token")
       env = setup_script_env(dir).merge("METRICS_TOKEN" => "")
 
@@ -123,8 +129,6 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
     FileUtils.mkdir_p(File.join(dir, "stubbin"))
     FileUtils.mkdir_p(File.join(dir, "log", "dev-update"))
     FileUtils.mkdir_p(File.join(dir, "workspace-root"))
-    FileUtils.mkdir_p(File.join(dir, "prometheus"))
-    File.write(File.join(dir, "prometheus", "metrics_token"), "")
     File.write(File.join(dir, "Gemfile.lock"), "BUNDLED WITH\n   4.0.12\n")
     File.write(File.join(dir, "installed-bundlers.txt"), installed_bundler_versions.join("\n"))
 

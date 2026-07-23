@@ -71,6 +71,11 @@ spec/.examples.txt
 # Ignore agent workspace directory (used for Docker container testing)
 /agent-workspace/
 
+# Ignore the Prometheus metrics token file. bin/setup writes the host's
+# METRICS_TOKEN into tmp/prometheus/metrics_token by default; legacy
+# configurations may still materialize the token at this in-repo path.
+/prometheus/metrics_token
+
 # Local git worktrees (per-developer scratch checkouts; never tracked)
 /.worktrees/
 
