@@ -24,6 +24,9 @@ class AccountActivityEvent < ApplicationRecord
     "runner.claude_login_started" => "runner",
     "runner.claude_login_completed" => "runner",
     "runner.claude_login_failed" => "runner",
+    "runner.codex_login_started" => "runner",
+    "runner.codex_login_completed" => "runner",
+    "runner.codex_login_failed" => "runner",
     "self_heal.remediation_applied" => "runner",
     "self_heal.remediation_reverted" => "runner",
     "agent_run.created" => "run",
@@ -126,6 +129,12 @@ class AccountActivityEvent < ApplicationRecord
       "Completed Claude browser login for #{metadata_value('credential_name')}"
     when "runner.claude_login_failed"
       "Claude browser login failed for #{metadata_value('credential_name')}"
+    when "runner.codex_login_started"
+      "Started Connect Codex login for #{metadata_value('credential_name')}"
+    when "runner.codex_login_completed"
+      "Completed Connect Codex login for #{metadata_value('credential_name')}"
+    when "runner.codex_login_failed"
+      "Connect Codex login failed for #{metadata_value('credential_name')}"
     when "self_heal.remediation_applied"
       "Auto-applied #{metadata_value('remediation_action').to_s.humanize.downcase} for #{metadata_value('target_label')}"
     when "self_heal.remediation_reverted"
@@ -167,7 +176,9 @@ class AccountActivityEvent < ApplicationRecord
       Array(metadata.to_h["changed_fields"]).map { |field| "#{field.to_s.humanize} changed" }
     when "project.created"
       Array(metadata.to_h["github_url"]).compact
-    when "runner.created", "runner.updated", "runner.claude_login_started", "runner.claude_login_completed", "runner.claude_login_failed"
+    when "runner.created", "runner.updated",
+      "runner.claude_login_started", "runner.claude_login_completed", "runner.claude_login_failed",
+      "runner.codex_login_started", "runner.codex_login_completed", "runner.codex_login_failed"
       Array(metadata.to_h["details"]).compact
     when "self_heal.remediation_applied", "self_heal.remediation_reverted"
       Array(metadata.to_h["details"]).compact
