@@ -2206,7 +2206,9 @@ module Activities
 
       details = []
       limit = result[:memory_limit_bytes].to_i
-      details << "memory limit #{(limit / 1024.0**3).round(1)} GB" if limit.positive?
+      if limit.positive?
+        details << "container OOM not reported; memory limit #{(limit / 1024.0**3).round(1)} GB was not hit"
+      end
       details << "container_running=#{result[:container_running]}" unless result[:container_running].nil?
       suffix = details.present? ? "; #{details.join(', ')}" : ""
 
