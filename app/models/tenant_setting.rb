@@ -145,6 +145,7 @@ class TenantSetting < ApplicationRecord
   DEPLOYMENT_ASSURANCE_VERSION_SUPPORT_POLICIES = %w[latest n_minus_one lts].freeze
   ENTERPRISE_OPERATIONS_RELEASE_CHANNELS = %w[stable canary lts].freeze
   ENTERPRISE_OPERATIONS_REMEDIATION_MODES = %w[approval_required operator_applied observe_only].freeze
+  DOCKER_HOST_FALLBACK_BEHAVIORS = %w[disabled first_healthy].freeze
   DEFAULT_WORKER_SETTINGS = {
     "temporal_workflow_slots" => 20,
     "temporal_activity_slots" => 4,
@@ -192,10 +193,12 @@ class TenantSetting < ApplicationRecord
   validate :validate_quality_thresholds
   validate :validate_deployment_assurance
   validate :validate_enterprise_operations
+  validate :validate_preferred_docker_host_identifier
   validates :self_repo_full_name,
     format: { with: REPO_NAME_FORMAT, message: "must be in owner/repo format" },
     allow_nil: true,
     if: -> { self_repo_full_name.present? }
+  validates :docker_host_fallback_behavior, inclusion: { in: DOCKER_HOST_FALLBACK_BEHAVIORS }
 
   def provider_preferences = runner_preferences
 
@@ -339,6 +342,10 @@ class TenantSetting < ApplicationRecord
     [ limit, max_tokens_per_run ].compact.min
   end
 
+  def effective_preferred_docker_host_identifier
+    preferred_docker_host_identifier.to_s.presence
+  end
+
   def effective_worker_settings
     DEFAULT_WORKER_SETTINGS.deep_dup.merge(
       worker_settings.is_a?(Hash) ? worker_settings.deep_stringify_keys : {}
@@ -390,6 +397,8 @@ class TenantSetting < ApplicationRecord
     self.worker_settings = normalize_worker_settings(worker_settings)
     self.features = normalize_hash(features)
     apply_guardrail_columns
+    self.preferred_docker_host_identifier = preferred_docker_host_identifier.to_s.strip.presence
+    self.docker_host_fallback_behavior = docker_host_fallback_behavior.to_s.strip.presence || "disabled"
   end
 
   def validate_features_is_hash
@@ -614,6 +623,13 @@ class TenantSetting < ApplicationRecord
       path: "capacity_management.monthly_budget_alert_percent",
       max: 100
     )
+  end
+
+  def validate_preferred_docker_host_identifier
+    return if preferred_docker_host_identifier.blank?
+    return if account&.docker_hosts&.enabled&.exists?(identifier: preferred_docker_host_identifier)
+
+    errors.add(:preferred_docker_host_identifier, "must reference an enabled Docker host")
   end
 
   def normalize_budget_hash(value)

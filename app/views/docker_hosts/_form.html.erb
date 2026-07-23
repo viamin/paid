@@ -1,0 +1,110 @@
+<%= form_with model: docker_host, class: "space-y-6" do |form| %>
+  <% if docker_host.errors.any? %>
+    <div class="rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-800">
+      <%= docker_host.errors.full_messages.to_sentence %>
+    </div>
+  <% end %>
+
+  <div class="grid gap-4 md:grid-cols-2">
+    <div>
+      <%= form.label :display_name, "Display name", class: "block text-sm font-medium text-gray-700" %>
+      <%= form.text_field :display_name, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm" %>
+    </div>
+
+    <div>
+      <%= form.label :identifier, "Identifier", class: "block text-sm font-medium text-gray-700" %>
+      <%= form.text_field :identifier, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm" %>
+    </div>
+
+    <div>
+      <%= form.label :backend_type, "Backend type", class: "block text-sm font-medium text-gray-700" %>
+      <%= form.select :backend_type,
+        options_for_select(DockerHost::BACKEND_TYPES.map { |value| [ value.humanize, value ] }, docker_host.backend_type),
+        {},
+        class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm" %>
+    </div>
+
+    <div>
+      <%= form.label :manual_concurrency_limit, "Manual concurrency limit", class: "block text-sm font-medium text-gray-700" %>
+      <%= form.number_field :manual_concurrency_limit, min: 1, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm" %>
+    </div>
+
+    <div class="md:col-span-2">
+      <%= form.label :endpoint, "Docker endpoint", class: "block text-sm font-medium text-gray-700" %>
+      <%= form.text_field :endpoint, placeholder: "tcp://docker.example.com:2376", class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm" %>
+    </div>
+
+    <div class="md:col-span-2">
+      <%= form.label :callback_url, "Proxy callback URL", class: "block text-sm font-medium text-gray-700" %>
+      <%= form.url_field :callback_url, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm" %>
+    </div>
+
+    <div>
+      <%= form.label :image_tag, "Image tag", class: "block text-sm font-medium text-gray-700" %>
+      <%= form.text_field :image_tag, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm" %>
+    </div>
+
+    <div>
+      <%= form.label :daemon_architecture, "Architecture", class: "block text-sm font-medium text-gray-700" %>
+      <%= form.text_field :daemon_architecture, placeholder: "arm64", class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm" %>
+    </div>
+
+    <div>
+      <%= form.label :daemon_summary, "Daemon summary", class: "block text-sm font-medium text-gray-700" %>
+      <%= form.text_field :daemon_summary, placeholder: "Docker 28.3", class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm" %>
+    </div>
+
+    <div>
+      <%= form.label :failing_check, "Failing readiness check", class: "block text-sm font-medium text-gray-700" %>
+      <%= form.text_field :failing_check, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm" %>
+    </div>
+
+    <div>
+      <%= form.label :readiness_status, "Readiness status", class: "block text-sm font-medium text-gray-700" %>
+      <%= form.select :readiness_status,
+        options_for_select(DockerHost::READINESS_STATUSES.map { |value| [ value.humanize, value ] }, docker_host.readiness_status),
+        {},
+        class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm" %>
+    </div>
+
+    <div>
+      <%= form.label :image_status, "Image status", class: "block text-sm font-medium text-gray-700" %>
+      <%= form.select :image_status,
+        options_for_select(DockerHost::STATUS_TYPES.map { |value| [ value.humanize, value ] }, docker_host.image_status),
+        {},
+        class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm" %>
+    </div>
+
+    <div>
+      <%= form.label :required_network_status, "Required network status", class: "block text-sm font-medium text-gray-700" %>
+      <%= form.select :required_network_status,
+        options_for_select(DockerHost::STATUS_TYPES.map { |value| [ value.humanize, value ] }, docker_host.required_network_status),
+        {},
+        class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm" %>
+    </div>
+
+    <div class="md:col-span-2">
+      <%= form.label :last_error, "Last error", class: "block text-sm font-medium text-gray-700" %>
+      <%= form.text_area :last_error, rows: 3, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm" %>
+    </div>
+  </div>
+
+  <div class="flex flex-wrap items-center gap-6">
+    <label class="inline-flex items-center gap-2 text-sm text-gray-700">
+      <%= form.check_box :enabled, class: "rounded border-gray-300 text-amber-600 focus:ring-amber-600" %>
+      Enabled for placement
+    </label>
+    <label class="inline-flex items-center gap-2 text-sm text-gray-700">
+      <%= form.check_box :fallback_eligible, class: "rounded border-gray-300 text-amber-600 focus:ring-amber-600" %>
+      Eligible for fallback
+    </label>
+  </div>
+
+  <div class="flex justify-end gap-3">
+    <% if docker_host.persisted? %>
+      <%= link_to "Cancel", docker_host_path(docker_host), class: "rounded-full border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50" %>
+    <% end %>
+    <%= form.submit docker_host.persisted? ? "Save Docker host" : "Create Docker host",
+      class: "rounded-full bg-amber-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-amber-500" %>
+  </div>
+<% end %>

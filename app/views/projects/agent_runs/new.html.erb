@@ -186,6 +186,19 @@
         </div>
 
         <div>
+          <h2 class="text-base font-semibold text-gray-900">Docker Host</h2>
+          <p class="mt-1 text-sm text-gray-500">Optionally place this manual run on a specific enabled host. Leaving this on inherit uses the saved project/account preference when present; otherwise the existing scheduler path stays unchanged.</p>
+
+          <div class="mt-4">
+            <select name="container_host" id="container_host" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+              <% @available_docker_host_options.each do |label, identifier| %>
+                <option value="<%= identifier %>" <% if params[:container_host].to_s == identifier.to_s %>selected<% end %>><%= label %></option>
+              <% end %>
+            </select>
+          </div>
+        </div>
+
+        <div>
           <h2 class="text-base font-semibold text-gray-900">Marketplace Entries</h2>
           <p class="mt-1 text-sm text-gray-500">Optionally attach shared team skills, agents, prompt packs, plugins, MCP servers, provider presets, and enhancements to this run. Automatic and team-default matches will still apply.</p>
 

@@ -299,6 +299,7 @@ class Project < ApplicationRecord
   validate :priority_labels_valid
   validate :interop_settings_valid
   validate :llm_provider_routing_valid
+  validate :preferred_docker_host_identifier_valid
 
   scope :active, -> { where(active: true) }
   scope :inactive, -> { where(active: false) }
@@ -570,6 +571,11 @@ class Project < ApplicationRecord
     return account_cap.to_i if account_cap.present?
 
     Issue::DEFAULT_MAX_RUNNER_FAILURES
+  end
+
+  def effective_preferred_docker_host_identifier
+    preferred_docker_host_identifier.presence ||
+      account&.tenant_setting&.effective_preferred_docker_host_identifier
   end
 
   # Returns the absolute token count at which a warning should be emitted.
@@ -1324,6 +1330,13 @@ class Project < ApplicationRecord
   end
 
   private
+
+  def preferred_docker_host_identifier_valid
+    return if preferred_docker_host_identifier.blank?
+    return if account&.docker_hosts&.enabled&.exists?(identifier: preferred_docker_host_identifier)
+
+    errors.add(:preferred_docker_host_identifier, "must reference an enabled Docker host")
+  end
 
   def agent_run_marketplace_entries_table_exists?
     ActiveRecord::Base.connection.data_source_exists?("agent_run_marketplace_entries")

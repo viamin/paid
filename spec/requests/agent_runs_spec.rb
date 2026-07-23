@@ -776,14 +776,10 @@ RSpec.describe "AgentRuns" do
 
         get project_agent_run_path(project, agent_run)
 
-        expect(response.body).to include("Retry with Anthropic Claude CLI")
-        expect(response.body).to include("Retry with Cursor AI")
-        expect(response.body).to include('name="runner"')
-        expect(response.body).to include('value="runner:')
-        expect(response.body).to include("Current")
-        expect(response.body).to include('aria-haspopup="menu"')
-        expect(response.body).to include("aria-controls=")
-        expect(response.body).to include("aria-labelledby=")
+        expect(response.body).to include('select name="runner"')
+        expect(response.body).to include("Anthropic Claude CLI (current)")
+        expect(response.body).to include("Cursor AI")
+        expect(response.body).to include('select name="container_host"')
       end
 
       it "marks only one retry option current for legacy runs without runner_id" do
@@ -796,9 +792,9 @@ RSpec.describe "AgentRuns" do
 
         get project_agent_run_path(project, agent_run)
 
-        expect(response.body).to include("Retry with Kimi K2.5")
-        expect(response.body).to include("Retry with Opus via OpenCode")
-        expect(response.body.scan("Current").size).to eq(1)
+        expect(response.body).to include("Kimi K2.5 (current)")
+        expect(response.body).to include("Opus via OpenCode")
+        expect(response.body.scan("(current)").size).to eq(1)
       end
 
       it "shows a single retry button when no alternate providers are configured" do
@@ -806,9 +802,10 @@ RSpec.describe "AgentRuns" do
 
         get project_agent_run_path(project, agent_run)
 
-        expect(response.body).to include(">Retry</button>")
-        expect(response.body).not_to include("Retry options")
-        expect(response.body).not_to include('aria-label="Retry options"')
+        expect(response.body).to include('input type="submit"')
+        expect(response.body).to include('value="Retry"')
+        expect(response.body).to include('select name="runner"')
+        expect(response.body).to include("Anthropic Claude CLI (current)")
       end
 
       it "shows a deleted runner entry label for missing routed fallback attempts" do

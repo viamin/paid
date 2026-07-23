@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_22_102430) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_23_024333) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -950,6 +950,36 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_22_102430) do
     t.index ["account_id"], name: "index_dispatch_circuit_breakers_on_account_id", unique: true
   end
 
+  create_table "docker_hosts", comment: "Persisted Docker backend targets and readiness metadata for account-level run placement.", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Account that owns and may place runs onto this Docker host."
+    t.string "backend_type", null: false, comment: "Docker backend type, such as local, remote, or swarm."
+    t.string "callback_url", comment: "Paid proxy callback URL that containers on this host must reach."
+    t.datetime "created_at", null: false
+    t.string "daemon_architecture", comment: "Docker daemon architecture reported by readiness checks."
+    t.string "daemon_summary", comment: "Short Docker daemon summary surfaced to operators."
+    t.datetime "disabled_at", comment: "When the host was disabled for new placements while retaining historical ownership."
+    t.string "display_name", null: false, comment: "Operator-facing label shown in the account admin UI."
+    t.boolean "enabled", default: true, null: false, comment: "Whether new manual or automatic placements may target this host."
+    t.string "endpoint", comment: "Docker daemon endpoint for remote hosts; blank for the local host."
+    t.string "failing_check", comment: "Named readiness check currently failing, if any."
+    t.boolean "fallback_eligible", default: true, null: false, comment: "Whether first-healthy fallback may use this host when the preferred host is unavailable."
+    t.string "identifier", null: false, comment: "Stable host identifier persisted onto agent_runs.container_host for historical ownership."
+    t.string "image_status", default: "unknown", null: false, comment: "Whether the required agent image is present and compatible."
+    t.string "image_tag", default: "paid-agent:latest", null: false, comment: "Expected agent image tag for readiness checks and setup guidance."
+    t.datetime "last_checked_at", comment: "Most recent readiness probe time."
+    t.text "last_error", comment: "Last readiness or provisioning error surfaced to operators."
+    t.datetime "last_ready_at", comment: "Most recent successful readiness probe time."
+    t.integer "manual_concurrency_limit", default: 1, null: false, comment: "Independent host-level run cap enforced separately from account, user, and project guardrails."
+    t.jsonb "metadata", default: {}, null: false, comment: "Extensible host-scoped readiness and setup metadata."
+    t.string "readiness_status", default: "unknown", null: false, comment: "Cached host readiness state shown in the admin control plane."
+    t.string "required_network_status", default: "unknown", null: false, comment: "Whether the required Docker network exists on the host."
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "enabled"], name: "index_docker_hosts_on_account_id_and_enabled"
+    t.index ["account_id", "fallback_eligible"], name: "index_docker_hosts_on_account_id_and_fallback_eligible"
+    t.index ["account_id", "identifier"], name: "index_docker_hosts_on_account_id_and_identifier", unique: true
+    t.index ["account_id"], name: "index_docker_hosts_on_account_id"
+  end
+
   create_table "exception_incidents", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "action_taken", default: "logged", null: false
@@ -1762,29 +1792,29 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_22_102430) do
     t.index ["agent_run_id"], name: "index_preview_provision_states_on_agent_run_id", unique: true
   end
 
-  create_table "preview_sessions", comment: "Live web app preview sessions bridging a tunnel port to the Rails reverse proxy for human review.", force: :cascade do |t|
+  create_table "preview_sessions", comment: "Live web-app preview sessions exposed to reviewers via the same-origin /previews/:token reverse proxy (RDR-045).", force: :cascade do |t|
     t.bigint "account_id", null: false, comment: "Owning account for tenant isolation and RLS."
-    t.bigint "agent_run_id", comment: "Optional originating agent run that produced the previewed changes."
-    t.string "branch_name", limit: 255, null: false, comment: "Git branch (or commit context) checked out in the preview container."
-    t.string "container_id", limit: 128, comment: "Docker container id running the previewed web app behind the tunnel."
+    t.bigint "agent_run_id", comment: "Agent run that produced the branch, when the preview reuses an agent container."
+    t.string "branch_name", limit: 255, null: false, comment: "Git branch checked out in the preview container (PR branch or default branch)."
+    t.string "container_id", limit: 128, comment: "Docker container id hosting the previewed app."
     t.datetime "created_at", null: false
     t.bigint "created_by_id", comment: "User who started the preview."
     t.text "error_message", comment: "Human-readable failure reason shown in the UI error state when status is failed."
-    t.datetime "expires_at", null: false, comment: "Hard TTL after which the preview is stopped and its container/tunnel/port are reclaimed."
+    t.datetime "expires_at", null: false, comment: "TTL deadline after which the preview is auto-stopped and cleaned up."
     t.string "framework", limit: 64, comment: "Detected web framework (rails, phoenix, django, nextjs, etc.) shown as preview metadata."
-    t.datetime "last_accessed_at", comment: "Last time the proxy served a request for this session; used for idle-based expiry."
     t.datetime "last_active_at", comment: "Most recent time the preview was confirmed reachable/interacted with."
-    t.bigint "project_id", null: false, comment: "Project the preview belongs to; drives account-scoped authorization."
-    t.string "status", limit: 50, default: "pending", null: false, comment: "Lifecycle state: provisioning, starting, ready, active, expiring, stopped, failed."
-    t.string "token", limit: 64, null: false, comment: "Opaque, random secret embedded in the proxy path /previews/:token/*. Acts as the proxy credential."
-    t.integer "tunnel_port", comment: "Allocated localhost port on the Rails host that the rathole tunnel bridges to the container app."
+    t.bigint "project_id", null: false, comment: "Project whose branch is being previewed."
+    t.string "status", limit: 32, default: "pending", null: false, comment: "Lifecycle state: pending, provisioning, starting, ready, stopped, or failed."
+    t.string "token", limit: 64, null: false, comment: "Opaque, URL-safe token used as the /previews/:token path segment and auth credential."
+    t.integer "tunnel_port", comment: "Allocated localhost port the reverse proxy forwards /previews/:token traffic to."
     t.datetime "updated_at", null: false
     t.index ["account_id", "status", "expires_at"], name: "idx_preview_sessions_on_account_status_expires"
+    t.index ["account_id"], name: "index_preview_sessions_on_account_id"
     t.index ["agent_run_id"], name: "index_preview_sessions_on_agent_run_id"
+    t.index ["created_by_id"], name: "index_preview_sessions_on_created_by_id"
     t.index ["project_id", "created_at"], name: "index_preview_sessions_on_project_id_and_created_at", order: { created_at: :desc }
-    t.index ["project_id", "status"], name: "index_preview_sessions_on_project_and_status"
+    t.index ["project_id", "status"], name: "index_preview_sessions_on_project_id_and_status"
     t.index ["project_id"], name: "index_preview_sessions_on_project_id"
-    t.index ["status", "expires_at"], name: "index_preview_sessions_on_status_and_expires_at"
     t.index ["token"], name: "index_preview_sessions_on_token", unique: true
     t.index ["tunnel_port"], name: "index_preview_sessions_on_tunnel_port_active", unique: true, where: "((status)::text = ANY (ARRAY[('pending'::character varying)::text, ('provisioning'::character varying)::text, ('starting'::character varying)::text, ('ready'::character varying)::text]))"
   end
@@ -1984,6 +2014,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_22_102430) do
     t.integer "poll_interval_seconds", default: 60, null: false
     t.jsonb "pr_action_labels", default: [], null: false
     t.boolean "pr_aggregation_enabled", default: false, null: false
+    t.string "preferred_docker_host_identifier", comment: "Optional project-level Docker host preference overriding the account default for manual placement."
     t.string "primary_language", comment: "Primary language of the repository as reported by GitHub (e.g. Ruby, Elixir, Swift). Used to detect and badge the project type."
     t.jsonb "priority_labels", default: {"P1" => "P1", "P2" => "P2", "P3" => "P3"}, null: false
     t.jsonb "quality_gate_settings", default: {}, null: false
@@ -2706,6 +2737,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_22_102430) do
     t.jsonb "auto_pick_skip_labels", comment: "Optional tenant-level override for labels that make auto-pick skip an issue. Null means use built-in defaults."
     t.datetime "created_at", null: false
     t.jsonb "default_budgets", default: {}, null: false
+    t.string "docker_host_fallback_behavior", default: "disabled", null: false, comment: "Fallback behavior when the preferred Docker host is unavailable: disabled or first_healthy."
     t.jsonb "features", default: {}, null: false
     t.jsonb "guardrails", default: {}, null: false
     t.jsonb "log_data"
@@ -2715,6 +2747,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_22_102430) do
     t.integer "max_projects", default: 50, null: false
     t.integer "max_tokens_per_run", default: 10000000, null: false
     t.integer "max_users", default: 25, null: false
+    t.string "preferred_docker_host_identifier", comment: "Account-wide preferred Docker host identifier for manual placement defaults."
     t.jsonb "quality_thresholds", default: {}, null: false
     t.jsonb "runner_preferences", default: {}, null: false
     t.string "self_repo_full_name"
@@ -2977,6 +3010,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_22_102430) do
   add_foreign_key "decomposition_decisions", "projects", on_delete: :cascade
   add_foreign_key "dispatch_circuit_breakers", "accounts"
   add_foreign_key "dispatch_circuit_breakers", "agent_runs", column: "last_probe_run_id", on_delete: :nullify, validate: false
+  add_foreign_key "docker_hosts", "accounts"
   add_foreign_key "exception_incidents", "accounts"
   add_foreign_key "exception_incidents", "projects"
   add_foreign_key "external_connector_events", "accounts"
@@ -3035,9 +3069,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_22_102430) do
   add_foreign_key "pre_commit_requirements", "users", on_delete: :cascade
   add_foreign_key "preview_provision_states", "agent_runs", on_delete: :cascade
   add_foreign_key "preview_sessions", "accounts", on_delete: :cascade
-  add_foreign_key "preview_sessions", "agent_runs"
-  add_foreign_key "preview_sessions", "projects"
-  add_foreign_key "preview_sessions", "users", column: "created_by_id", on_delete: :nullify
+  add_foreign_key "preview_sessions", "agent_runs", on_delete: :nullify
+  add_foreign_key "preview_sessions", "projects", on_delete: :cascade
+  add_foreign_key "preview_sessions", "users", column: "created_by_id"
   add_foreign_key "project_baselines", "projects"
   add_foreign_key "project_convention_detections", "project_versions"
   add_foreign_key "project_convention_detections", "projects"

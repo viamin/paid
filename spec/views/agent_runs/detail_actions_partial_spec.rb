@@ -35,7 +35,7 @@ RSpec.describe "agent_runs/_detail_actions", :no_db, type: :view do
     allow(view).to receive(:diagnose_error_project_agent_run_path).with(project, agent_run).and_return("/projects/1/agent_runs/123/diagnose_error")
   end
 
-  it "posts the selected retry runner identifier from the dropdown" do
+  it "renders retry runner values in the select control" do
     render partial: "agent_runs/detail_actions", locals: {
       agent_run: agent_run,
       show_retry: true,
@@ -43,10 +43,11 @@ RSpec.describe "agent_runs/_detail_actions", :no_db, type: :view do
     }
 
     fragment = Nokogiri::HTML.fragment(rendered)
-    retry_forms = fragment.css('form[action="/projects/1/agent_runs/123/retry"]')
-    runner_values = retry_forms.css('input[name="runner"]').map { |input| input["value"] }
+    runner_values = fragment.css('form[action="/projects/1/agent_runs/123/retry"] select[name="runner"] option')
+      .map { |option| option["value"] }
 
-    expect(rendered).to include("Retry with Cursor AI")
+    expect(rendered).to include("Cursor AI")
+    expect(rendered).to include("Anthropic Claude CLI (current)")
     expect(runner_values).to include("cursor")
     expect(runner_values).to include("claude")
   end

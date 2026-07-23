@@ -6,6 +6,7 @@ module Projects
     include AuditLogging
 
     NoRunnableRunnerError = Class.new(StandardError)
+    InvalidDockerHostSelectionError = Class.new(StandardError)
 
     before_action :set_project
     before_action :set_agent_run, only: [ :show, :cancel, :retry, :refresh_auth, :diagnose_error, :resume, :terminate, :provenance ]
@@ -26,6 +27,7 @@ module Projects
     def show
       authorize @agent_run
       @retry_runner_options = retry_runner_options_for(@agent_run)
+      @retry_docker_host_options = available_docker_host_options(include_inherit: true)
       @quality_metrics = @agent_run.quality_metrics.with_composite_score.load
       @logs = @agent_run.agent_run_logs.order(created_at: :asc).limit(500).load
       @phase_timeline = @agent_run.agent_run_phases.load
@@ -58,6 +60,7 @@ module Projects
       end.compact
       @default_runner_identifier = @default_runner_identifiers_by_goal[selected_goal]
       @available_run_runner_options = available_run_runner_options
+      @available_docker_host_options = available_docker_host_options(include_inherit: true)
       @marketplace_entries = marketplace_entries_for_new_run.to_a
       @issues = @project.issues
         .issues_only
@@ -402,6 +405,7 @@ module Projects
         custom_prompt: prompt_for_retry(@agent_run),
         source_pull_request_number: @agent_run.source_pull_request_number,
         goal: @agent_run.goal,
+        container_host: resolve_container_host_identifier,
         trigger_type: "manual",
         status: "queued"
       )
@@ -437,6 +441,8 @@ module Projects
         "An agent run is already queued or in progress for this issue."
       end
       redirect_to project_agent_run_path(@project, @agent_run), alert: alert
+    rescue InvalidDockerHostSelectionError => e
+      redirect_to project_agent_run_path(@project, @agent_run), alert: e.message
     end
 
     def refresh_auth
@@ -488,6 +494,7 @@ module Projects
         custom_prompt: prompt_for_retry(@agent_run),
         source_pull_request_number: @agent_run.source_pull_request_number,
         goal: @agent_run.goal,
+        container_host: resolve_container_host_identifier,
         trigger_type: "manual",
         status: "queued"
       )
@@ -543,6 +550,8 @@ module Projects
         "An agent run is already queued or in progress for this issue."
       end
       redirect_to project_agent_run_path(@project, @agent_run), alert: alert
+    rescue InvalidDockerHostSelectionError => e
+      redirect_to project_agent_run_path(@project, @agent_run), alert: e.message
     end
 
     private
@@ -667,6 +676,7 @@ module Projects
           custom_prompt: custom_prompt,
           source_pull_request_number: source_pull_request_number,
           goal: goal,
+          container_host: resolve_container_host_identifier,
           trigger_type: trigger_type,
           status: "queued",
           priority_tier: priority_tier,
@@ -805,6 +815,8 @@ module Projects
 
       redirect_to project_path(@project), notice: notice
     rescue NoRunnableRunnerError => e
+      redirect_to on_error_path, alert: e.message
+    rescue InvalidDockerHostSelectionError => e
       redirect_to on_error_path, alert: e.message
     rescue ActiveRecord::RecordInvalid => e
       redirect_to on_error_path, alert: e.message
@@ -1047,6 +1059,8 @@ module Projects
       redirect_to project_path(@project), notice: notice
     rescue NoRunnableRunnerError => e
       redirect_to on_error_path, alert: e.message
+    rescue InvalidDockerHostSelectionError => e
+      redirect_to on_error_path, alert: e.message
     rescue ActiveRecord::RecordNotUnique
       # Only proxy_token has a unique index; duplicate PR runs are caught
       # server-side above (active_pr_numbers filter) rather than by a DB constraint.
@@ -1104,6 +1118,8 @@ module Projects
       redirect_to project_path(@project), notice: notice
     rescue NoRunnableRunnerError => e
       redirect_to on_error_path, alert: e.message
+    rescue InvalidDockerHostSelectionError => e
+      redirect_to on_error_path, alert: e.message
     rescue ActiveRecord::RecordNotUnique
       redirect_to on_error_path, alert: "An unexpected error occurred. Please try again."
     end
@@ -1123,6 +1139,42 @@ module Projects
       enabled_retry_runner_entries.map do |identifier, runner|
         [ runner.display_name, identifier ]
       end
+    end
+
+    def available_docker_host_options(include_inherit: false)
+      options = []
+      options << [ "Inherit saved placement preference", "" ] if include_inherit
+
+      active_runs_by_host = AgentRun.joins(:project)
+        .where(projects: { account_id: @project.account_id }, status: AgentRun::UNFINISHED_STATUSES)
+        .group(:container_host)
+        .count
+
+      options + current_account.docker_hosts.enabled.ordered.map do |host|
+        active_runs = active_runs_by_host.fetch(host.identifier, 0)
+        [ "#{host.display_name} (#{host.backend_type}, #{host.available_slots(active_run_count: active_runs)} slots free)", host.identifier ]
+      end
+    end
+
+    def resolve_container_host_identifier
+      requested_identifier = params[:container_host].to_s.presence
+      enabled_hosts = current_account.docker_hosts.enabled.ordered.index_by(&:identifier)
+
+      if requested_identifier.present?
+        requested_host = enabled_hosts[requested_identifier]
+        raise InvalidDockerHostSelectionError, "Please choose an enabled Docker host." unless requested_host
+
+        return requested_host.identifier
+      end
+
+      preferred_identifier = @project.effective_preferred_docker_host_identifier
+      preferred_host = enabled_hosts[preferred_identifier]
+      return preferred_host.identifier if preferred_host
+
+      fallback_behavior = current_account.tenant_setting&.docker_host_fallback_behavior
+      return nil unless preferred_identifier.present? && fallback_behavior == "first_healthy"
+
+      enabled_hosts.values.find(&:fallback_eligible?)&.identifier
     end
   end
 end
