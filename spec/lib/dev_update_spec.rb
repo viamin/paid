@@ -241,6 +241,96 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "runs migrations before restarting when trigger context includes migration files" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, start_overmind_running: true)
+      create_stale_socket(dir)
+
+      stdout, stderr, status = run_with_migration_trigger(dir, script_path, "--full")
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect_calls(dir, migration_restart_calls("overmind quit"))
+
+      updater_log = read_updater_log(dir)
+      expect(updater_log).to include("stopping Overmind before pulling")
+      expect(updater_log).to include("Migration files changed; running bin/rails db:migrate before restart...")
+      expect(updater_log).to include("Database migrations are current.")
+    end
+  end
+
+  it "runs migrations before restarting when pull brings in migration files" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, pull_diff_files: %w[
+        app/models/user.rb
+        db/migrate/20260722000000_add_widgets.rb
+      ])
+
+      result = Open3.capture3(
+        trigger_context_env(dir,
+          "DEV_UPDATE_TRIGGER_MODE" => "lightweight",
+          "DEV_UPDATE_CHANGED_FILES" => "app/models/user.rb"),
+        script_path,
+        "--lightweight",
+        chdir: dir
+      )
+      stdout, stderr, status = result
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect_calls(dir, migration_restart_calls)
+    end
+  end
+
+  it "fails before restart when explicit migration run fails" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, rails_migrate_exit_status: 1)
+
+      stdout, stderr, status = run_with_migration_trigger(dir, script_path, "--full")
+
+      expect(status.success?).to be(false), -> { "expected failure but got success\nstdout: #{stdout}\nstderr: #{stderr}" }
+      expect_calls(dir, migration_restart_calls[0...-1])
+
+      updater_log = read_updater_log(dir)
+      expect(updater_log).to include("db:migrate: migration failed")
+      expect(updater_log).to include("ERROR: bin/rails db:migrate failed. Fix the migration and rerun bin/dev-update --full.")
+    end
+  end
+
+  it "recovers Overmind when a migration-triggered update stops before a failed pull" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, start_overmind_running: true, pull_exit_status: 1)
+      create_stale_socket(dir)
+
+      stdout, stderr, status = Open3.capture3(
+        trigger_context_env(dir,
+          "DEV_UPDATE_TRIGGER_MODE" => "full",
+          "DEV_UPDATE_CHANGED_FILES" => "db/migrate/20260722000000_add_widgets.rb",
+          "DEV_UPDATE_RESTART_TRIGGER_FILES" => "db/migrate/20260722000000_add_widgets.rb"),
+        script_path,
+        "--full",
+        chdir: dir
+      )
+
+      expect(status.success?).to be(false), -> { "expected failure but got success\nstdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.exist?(File.join(dir, "dev-ran"))).to be(true)
+      expect(read_updater_log(dir)).to include("Recovery start succeeded.")
+      expect(read_updater_log(dir)).to include("ERROR: git pull --ff-only failed.")
+    end
+  end
+
+  it "recovers Overmind when a migration-triggered update stops before a dirty branch abort" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, start_overmind_running: true, current_branch: "feature/fix", dirty_tree: true)
+      create_stale_socket(dir)
+
+      stdout, stderr, status = run_with_migration_trigger(dir, script_path, "--full")
+
+      expect(status.success?).to be(false), -> { "expected failure but got success\nstdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.exist?(File.join(dir, "dev-ran"))).to be(true)
+      expect(read_updater_log(dir)).to include("Recovery start succeeded.")
+      expect(read_updater_log(dir)).to include("ERROR: Cannot update while the current branch has uncommitted changes.")
+    end
+  end
+
   it "stays lightweight when pull brings in only autoloadable files" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, pull_diff_files: %w[
@@ -557,6 +647,10 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     File.read(File.join(dir, "log", "dev-update", "dev-update.log"))
   end
 
+  def expect_calls(dir, expected)
+    expect(File.read(File.join(dir, "calls.log")).lines.map(&:chomp)).to eq(expected)
+  end
+
   def expect_trigger_context_log(dir)
     updater_log = read_updater_log(dir)
     expect(updater_log).to include("Trigger source: Activities::TriggerDevEnvironmentUpdateActivity")
@@ -575,6 +669,28 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
         "DEV_UPDATE_TRIGGER_SOURCE" => "Activities::TriggerDevEnvironmentUpdateActivity"
       }.merge(overrides)
     )
+  end
+
+  def migration_trigger_env(dir)
+    trigger_context_env(dir,
+      "DEV_UPDATE_TRIGGER_MODE" => "full",
+      "DEV_UPDATE_CHANGED_FILES" => "db/migrate/20260722000000_add_widgets.rb",
+      "DEV_UPDATE_RESTART_TRIGGER_FILES" => "db/migrate/20260722000000_add_widgets.rb")
+  end
+
+  def run_with_migration_trigger(dir, script_path, mode)
+    Open3.capture3(migration_trigger_env(dir), script_path, mode, chdir: dir)
+  end
+
+  def migration_restart_calls(*prefix)
+    [
+      *prefix,
+      "git pull",
+      "setup --skip-server --skip-database",
+      "ensure-worktree-databases",
+      "rails db:migrate",
+      "dev"
+    ]
   end
 
   def failure_lock_env(dir)
@@ -632,6 +748,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     stash_pop_exit_status: 0,
     stash_pop_output: "Applied stash",
     pull_diff_files: [],
+    rails_migrate_exit_status: 0,
     status_successes_after_start: nil
   )
     FileUtils.mkdir_p(File.join(dir, "bin"))
@@ -660,9 +777,36 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       <<~BASH
         #!/usr/bin/env bash
         touch "#{dir}/setup-ran"
+        printf 'setup %s\\n' "$*" >> "#{dir}/calls.log"
         printf '%s\n' "${STARTUP_CLEANUP_KILL_ALL:-}" > "#{dir}/setup-env.log"
         #{capture_setup_bundler_line}
         exit #{setup_exit_status}
+      BASH
+    )
+
+    write_executable(
+      File.join(dir, "bin", "ensure-worktree-databases"),
+      <<~BASH
+        #!/usr/bin/env bash
+        printf 'ensure-worktree-databases\\n' >> "#{dir}/calls.log"
+        exit 0
+      BASH
+    )
+
+    write_executable(
+      File.join(dir, "bin", "rails"),
+      <<~BASH
+        #!/usr/bin/env bash
+        printf 'rails %s\\n' "$*" >> "#{dir}/calls.log"
+        if [ "$*" = "db:migrate" ]; then
+          if [ "#{rails_migrate_exit_status}" -eq 0 ]; then
+            echo "migrated"
+          else
+            echo "migration failed" >&2
+          fi
+          exit #{rails_migrate_exit_status}
+        fi
+        exit 0
       BASH
     )
 
@@ -671,6 +815,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       <<~BASH
         #!/usr/bin/env bash
         touch "#{dir}/dev-ran"
+        printf 'dev\\n' >> "#{dir}/calls.log"
         #{capture_port_line}
         #{capture_kill_all_line}
         #{capture_dev_bundler_line}
@@ -719,6 +864,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
             ;;
           pull)
             touch "#{dir}/pull-ran"
+            printf 'git pull\\n' >> "#{dir}/calls.log"
             exit #{pull_exit_status}
             ;;
           diff)
@@ -767,6 +913,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
             exit 0
             ;;
           quit)
+            printf 'overmind quit\\n' >> "#{dir}/calls.log"
             touch "#{dir}/overmind-quit-ran"
             rm -f "#{dir}/overmind-running"
             exit 0

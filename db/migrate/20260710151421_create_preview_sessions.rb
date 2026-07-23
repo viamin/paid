@@ -1,7 +1,12 @@
 # frozen_string_literal: true
 
 class CreatePreviewSessions < ActiveRecord::Migration[8.1]
-  def change
+  def up
+    if table_exists?(:preview_sessions)
+      enable_preview_sessions_rls if column_exists?(:preview_sessions, :account_id)
+      return
+    end
+
     create_table :preview_sessions,
       comment: "Live web-app preview sessions exposed to reviewers via the same-origin " \
                "/previews/:token reverse proxy (RDR-045)." do |t|
@@ -41,30 +46,35 @@ class CreatePreviewSessions < ActiveRecord::Migration[8.1]
     add_index :preview_sessions, [ :account_id, :status, :expires_at ],
       name: "idx_preview_sessions_on_account_status_expires"
 
-    reversible do |dir|
-      dir.up do
-        safety_assured do
-          execute <<~SQL
-            ALTER TABLE preview_sessions ENABLE ROW LEVEL SECURITY;
-            ALTER TABLE preview_sessions FORCE ROW LEVEL SECURITY;
-            CREATE POLICY tenant_isolation ON preview_sessions
-              USING (
-                paid_tenant_bypass() OR preview_sessions.account_id = paid_current_account_id()
-              )
-              WITH CHECK (
-                paid_tenant_bypass() OR preview_sessions.account_id = paid_current_account_id()
-              );
-          SQL
-        end
-      end
+    enable_preview_sessions_rls
+  end
 
-      dir.down do
-        safety_assured do
-          execute "DROP POLICY IF EXISTS tenant_isolation ON preview_sessions"
-          execute "ALTER TABLE preview_sessions NO FORCE ROW LEVEL SECURITY"
-          execute "ALTER TABLE preview_sessions DISABLE ROW LEVEL SECURITY"
-        end
-      end
+  def down
+    # Always a no-op. `20260722102221_add_extended_fields_to_preview_sessions`
+    # creates the same `idx_preview_sessions_on_account_status_expires` index on
+    # the legacy-table upgrade path, so that index cannot reliably distinguish
+    # a table this migration created from a pre-existing legacy table. Dropping
+    # the table during rollback would destroy legacy data, so we leave the table
+    # in place regardless. The `up` path is idempotent and handles a
+    # pre-existing table gracefully.
+  end
+
+  private
+
+  def enable_preview_sessions_rls
+    safety_assured do
+      execute <<~SQL
+        ALTER TABLE preview_sessions ENABLE ROW LEVEL SECURITY;
+        ALTER TABLE preview_sessions FORCE ROW LEVEL SECURITY;
+        DROP POLICY IF EXISTS tenant_isolation ON preview_sessions;
+        CREATE POLICY tenant_isolation ON preview_sessions
+          USING (
+            paid_tenant_bypass() OR preview_sessions.account_id = paid_current_account_id()
+          )
+          WITH CHECK (
+            paid_tenant_bypass() OR preview_sessions.account_id = paid_current_account_id()
+          );
+      SQL
     end
   end
 end

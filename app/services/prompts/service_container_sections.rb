@@ -68,6 +68,9 @@ module Prompts
           to match a new migration — running the migration is what catches
           `strong_migrations` violations (unsafe index adds, blocking column
           rewrites, etc.) and keeps the schema dump in sync.
+        - Make migrations safe to rerun after a partial failure. Use defensive
+          guards such as `table_exists?`, `column_exists?`, and `index_exists?`
+          where rerunning against a partially changed database could otherwise fail.
         - Commit the migration file and the regenerated `db/schema.rb` together.
       SECTION
     end
