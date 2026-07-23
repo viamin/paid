@@ -69,6 +69,10 @@ module Containers
         Docker::Image.create(config)
       end
 
+      def get_image(name)
+        Docker::Image.get(name)
+      end
+
       def list_volumes
         Docker::Volume.all
       end

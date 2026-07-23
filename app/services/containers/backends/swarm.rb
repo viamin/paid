@@ -198,6 +198,10 @@ module Containers
         end
       end
 
+      def get_image(name)
+        Docker::Image.get(name, {}, manager_connection)
+      end
+
       def list_volumes
         healthy_nodes.flat_map do |node|
           Docker::Volume.all({}, node_connection(node)).map do |volume|
