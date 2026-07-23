@@ -103,6 +103,15 @@ FileUtils.chdir APP_ROOT do
   else
     File.write(token_path, token)
   end
+  # Tighten the file mode so another local user on a shared dev host
+  # cannot read the Bearer credential Prometheus sends to /api/metrics.
+  # File.write creates the file with the process umask (typically 022 ->
+  # 0644 on Linux), which would otherwise leak the token. We chmod
+  # unconditionally — on Windows the mode bits are ignored, on Linux
+  # this narrows the read set to the owning user. The parent directory
+  # is left at the umask default (0755) which matches common Linux
+  # expectations; we only flag it for the multi-tenant threat model.
+  File.chmod(0o600, token_path)
 
   puts "\n== Building agent container image =="
   system! "scripts/build-agent-image.sh"

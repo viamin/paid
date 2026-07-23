@@ -58,6 +58,23 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "tightens the metrics token file mode to owner-only so the bearer credential is not leaked on shared hosts" do
+    # The metrics token is the Bearer credential Prometheus sends to
+    # /api/metrics. File.write creates files with the process umask
+    # (typically 022 -> 0644 on Linux), which would let another local
+    # user read it on a shared dev box. bin/setup must chmod the file
+    # to 0o600 after writing so only the owning user can read it.
+    Dir.mktmpdir("setup-script-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+      env = setup_script_env(dir).merge("METRICS_TOKEN" => "test-scraper-token")
+
+      Open3.capture3(env, script_path, "--skip-server", chdir: dir)
+
+      token_path = File.join(dir, "tmp", "prometheus", "metrics_token")
+      expect(File.stat(token_path).mode & 0o777).to eq(0o600)
+    end
+  end
+
   it "creates an empty metrics token file when METRICS_TOKEN is unset so docker compose can start" do
     # When METRICS_TOKEN is absent from the process environment, bin/setup
     # still needs to ensure the token file exists because
