@@ -33,6 +33,10 @@ module Containers
           .map(&:identifier)
           .reject { |candidate| candidate == identifier.to_s }
       end
+
+      def multi_host?
+        hosts.length > 1
+      end
     end
 
     class << self

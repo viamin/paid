@@ -8,6 +8,7 @@ module Containers
       :selection_source,
       :requested_host,
       :compatibility_failures,
+      :health_failures,
       keyword_init: true
     ) do
       def explicit?
@@ -34,11 +35,13 @@ module Containers
       requested_host, selection_source = requested_host_and_source
       fallback_policy = selection_fallback_policy(selection_source)
       compatibility_failures = {}
+      health_failures = {}
       candidate_hosts = compatible_candidates_for(
         requested_host,
         fallback_policy: fallback_policy,
         selection_source: selection_source,
-        compatibility_failures: compatibility_failures
+        compatibility_failures: compatibility_failures,
+        health_failures: health_failures
       )
 
       Result.new(
@@ -46,7 +49,8 @@ module Containers
         fallback_policy: fallback_policy,
         selection_source: selection_source,
         requested_host: requested_host,
-        compatibility_failures: compatibility_failures
+        compatibility_failures: compatibility_failures,
+        health_failures: health_failures
       )
     end
 
@@ -73,16 +77,41 @@ module Containers
       selection["fallback"].presence || registry.fallback_policy
     end
 
-    def compatible_candidates_for(requested_host, fallback_policy:, selection_source:, compatibility_failures:)
+    def compatible_candidates_for(requested_host, fallback_policy:, selection_source:, compatibility_failures:, health_failures:)
       candidates = [ requested_host.to_s ]
       if fallback_policy == HostRegistry::FALLBACK_FIRST_HEALTHY && selection_source != "explicit"
         candidates.concat(registry.fallback_candidates_for(requested_host))
       end
 
+      # RDR-048 first_healthy contract: when fallback is disabled, only the
+      # requested host is a candidate. Without fallbacks there is nothing
+      # for a health check to enable/disable, so skip the ping and let the
+      # selected host's Docker calls surface a reachable/unreachable error
+      # later in the workflow. When fallback is enabled (or the run is
+      # explicit-pinned), the ping is required — see the comment below.
+      skip_health_check = fallback_policy == HostRegistry::FALLBACK_DISABLED
+
       candidates.filter do |host|
         compatibility = backend_compatibility_for(host)
-        compatibility_failures[host] = compatibility[:error] unless compatibility[:compatible]
-        compatibility[:compatible]
+        unless compatibility[:compatible]
+          compatibility_failures[host] = compatibility[:error]
+          next false
+        end
+
+        # The FALLBACK_FIRST_HEALTHY contract requires filtering by Docker
+        # daemon health, not just by mount/auth compatibility. Without this,
+        # an unreachable preferred host is selected over a reachable
+        # alternative, and a saturated preferred daemon cannot fall back.
+        next true if selection_source == "explicit"
+        next true if skip_health_check
+
+        health = backend_health_for(host)
+        if health.healthy?
+          true
+        else
+          health_failures[host] = health.error_message
+          false
+        end
       end
     end
 
@@ -99,6 +128,21 @@ module Containers
       return { compatible: true } if compatibility.compatible
 
       { compatible: false, error: compatibility.error_message }
+    end
+
+    def backend_health_for(host)
+      host_definition = registry.host(host)
+      # An unconfigured host is already filtered by the compatibility pass;
+      # treat it as unhealthy so a stale candidate in a fallback list still
+      # gets skipped without paying another ping.
+      return Containers::HealthCheck::Result.new(
+        backend_identifier: host.to_s,
+        healthy: false,
+        pinged_at: Time.current,
+        error_message: "Host #{host} is not configured"
+      ) unless host_definition
+
+      Containers::HealthCheck.ping(host_definition.backend)
     end
   end
 end

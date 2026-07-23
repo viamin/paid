@@ -2636,17 +2636,36 @@ class AgentRun < ApplicationRecord
   # Provisions a brand-new container when there is no existing container to
   # reuse. Tries the warm pool first, then falls back to a fresh provision.
   def provision_new_container(**options)
-    pooled_result = Containers::PoolManager.new(project: project).acquire(agent_run: self, **options)
+    # RDR-048 (#2947): a caller (e.g. the queue processor) may know which
+    # Docker host this run was admitted against before any container
+    # resource exists. The container_host column on the run is intentionally
+    # left nil until a backend creates or claims a real resource, so that
+    # budget rejection, workflow-start failure, or warm-pool fallback do not
+    # leave an ownership field pointing at a host that never owned the run.
+    # Accept the planned host as a separate kwarg and thread it through
+    # warm-pool scoping and backend selection; the persisted container_host
+    # is only updated from the actual provision/pool result below.
+    planned_container_host = options.delete(:container_host)
+    pool_host_scope = planned_container_host.presence || container_host.presence
+
+    pooled_result = Containers::PoolManager.new(project: project).acquire(
+      agent_run: self,
+      container_host: pool_host_scope,
+      **options
+    )
     if pooled_result&.success?
       @container_service = pooled_result[:service]
       update!(container_id: pooled_result[:container_id], container_host: pooled_result[:container_host])
       return pooled_result
     end
 
+    backend_host = pool_host_scope.presence
+    backend_host ||= container_host if container_host.present?
+
     @container_service = Containers::Provision.new(
       agent_run: self,
       worktree_path: worktree_path.presence,
-      backend: Containers.backend_for(container_host),
+      backend: Containers.backend_for(backend_host),
       **options
     )
     result = @container_service.provision

@@ -172,6 +172,20 @@ class ProcessRunQueueJob < ApplicationJob
           log_capacity_policy_manual_mode(user, policy_decision)
         end
 
+        # RDR-048 (#2947) scope: per-host Docker memory capacity across multiple
+        # backends is intentionally out of scope here — auto mode still consults
+        # one DockerSnapshot per queue pass, which is bound to the default
+        # backend. In multi-host mode that snapshot does not reflect each
+        # candidate host's daemon, so a saturated default backend can block an
+        # otherwise available remote host (and vice versa). Downgrade auto
+        # admission to manual when multiple hosts are configured so admission
+        # is purely host-ceiling-based until per-backend snapshots land.
+        if Containers.host_registry.multi_host? &&
+            forced_admission_mode != UserSetting::RUN_CONCURRENCY_MODE_MANUAL &&
+            user.settings.run_concurrency_auto?
+          forced_admission_mode = UserSetting::RUN_CONCURRENCY_MODE_MANUAL
+        end
+
         admission_uses_auto = forced_admission_mode != UserSetting::RUN_CONCURRENCY_MODE_MANUAL &&
           user.settings.run_concurrency_auto?
         docker_snapshot ||= Capacity::DockerSnapshot.fetch if admission_uses_auto
@@ -273,9 +287,15 @@ class ProcessRunQueueJob < ApplicationJob
           skipped_ids.add(next_run.id)
           next
         end
-        agent_run.update!(container_host: selected_host) if selected_host.present? && agent_run.container_host != selected_host
 
-        result = start_claimed_run(agent_run)
+        # RDR-048 (#2947): do not persist container_host here. The planned
+        # placement is forwarded into the workflow input and then into
+        # Provision/ProvisionContainerActivity as a separate kwarg so the
+        # container_host column is updated *only* once a backend creates
+        # or claims a real resource. This avoids leaving the run pointing
+        # at a host that never owned it when the budget check, workflow
+        # start, or pool/provision step fails after this point.
+        result = start_claimed_run(agent_run, planned_container_host: selected_host)
         if result == :budget_blocked
           # Budget-blocked is not a workflow failure and not a real start —
           # skip capacity accounting and continue processing the queue.
@@ -534,7 +554,7 @@ class ProcessRunQueueJob < ApplicationJob
       .mark_probe_dispatched!(agent_run_id: agent_run.id)
   end
 
-  def start_claimed_run(agent_run)
+  def start_claimed_run(agent_run, planned_container_host: nil)
     ConfigurationBundles::AssignToRun.call(agent_run: agent_run) if agent_run.configuration_bundle.blank?
 
     budget_result = CostBudgets::Check.call(agent_run.project)
@@ -557,6 +577,7 @@ class ProcessRunQueueJob < ApplicationJob
     workflow_input[:issue_id] = agent_run.issue_id if agent_run.issue_id
     workflow_input[:custom_prompt] = agent_run.custom_prompt if agent_run.custom_prompt.present?
     workflow_input[:source_pull_request_number] = agent_run.source_pull_request_number if agent_run.source_pull_request_number
+    workflow_input[:container_host] = planned_container_host if planned_container_host.present?
 
     workflow_id = "queued-#{agent_run.project_id}-#{agent_run.id}-#{Time.current.to_i}"
 

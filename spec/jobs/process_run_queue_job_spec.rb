@@ -26,9 +26,9 @@ RSpec.describe ProcessRunQueueJob do
   end
 
   def build_host_registry
-    local_backend = instance_double(Containers::Backends::LocalDocker, identifier: "local", all_host_identifiers: [ "local" ])
-    elguapo_backend = instance_double(Containers::Backends::RemoteDocker, identifier: "elguapo", all_host_identifiers: [ "elguapo" ])
-    aws_backend = instance_double(Containers::Backends::RemoteDocker, identifier: "aws-runner-1", all_host_identifiers: [ "aws-runner-1" ])
+    local_backend = instance_double(Containers::Backends::LocalDocker, identifier: "local", all_host_identifiers: [ "local" ], remote?: false, ping: true)
+    elguapo_backend = instance_double(Containers::Backends::RemoteDocker, identifier: "elguapo", all_host_identifiers: [ "elguapo" ], remote?: true, ping: true)
+    aws_backend = instance_double(Containers::Backends::RemoteDocker, identifier: "aws-runner-1", all_host_identifiers: [ "aws-runner-1" ], remote?: true, ping: true)
     registry = Containers::HostRegistry::Registry.new(
       default_host: "local",
       fallback_policy: "first_healthy",
@@ -86,10 +86,22 @@ RSpec.describe ProcessRunQueueJob do
       create_host_saturation_runs("elguapo" => 4, "local" => 2)
       stub_multi_host_registry(build_host_registry)
 
+      captured_input = nil
+      allow(temporal_client).to receive(:start_workflow) do |_wf, input, **_opts|
+        captured_input = input
+        workflow_handle
+      end
+
       described_class.new.perform
 
-      expect(queued_run.reload.container_host).to eq("aws-runner-1")
+      # RDR-048 (#2947): the queue no longer eagerly persists container_host.
+      # The planned placement is forwarded through the workflow input so the
+      # provisioning activity can route to the right backend *before* a
+      # container resource exists; container_host is updated only once the
+      # backend creates/claims the resource.
+      expect(queued_run.reload.container_host).to be_nil
       expect(queued_run.temporal_workflow_id).to be_present
+      expect(captured_input[:container_host]).to eq("aws-runner-1")
     end
 
     it "keeps a host-saturated run queued without blocking other host candidates for the user" do
