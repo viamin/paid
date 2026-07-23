@@ -581,10 +581,28 @@ class ProcessRunQueueJob < ApplicationJob
 
     workflow_id = "queued-#{agent_run.project_id}-#{agent_run.id}-#{Time.current.to_i}"
 
+    # RDR-048 (#2947): record the host this run was admitted against and clear
+    # any default container_host so AgentRun.active_count_for_host attributes
+    # this claimed run to the correct per-host ceiling before a backend creates
+    # or claims a real resource. The container_host column is restored only by
+    # a real provision/pool result (see AgentRun#provision_new_container); the
+    # planned host in external_metadata is the source of truth for capacity
+    # accounting until then. Without this, a run admitted for a remote host
+    # would be charged to the local bucket (via its blank container_host) and
+    # not to the remote host, allowing the queue to over-admit remotes while
+    # starving the local host in a single pass.
+    update_columns = { temporal_workflow_id: workflow_id }
+    if planned_container_host.present?
+      update_columns[:container_host] = nil
+      update_columns[:external_metadata] = agent_run.external_metadata.merge(
+        "planned_container_host" => planned_container_host
+      )
+    end
+
     # Write the planned workflow_id before starting the workflow so
     # StaleRunDetectorJob can cancel an orphaned workflow even if the
     # process crashes between start_workflow and the DB write.
-    agent_run.update_columns(temporal_workflow_id: workflow_id)
+    agent_run.update_columns(**update_columns)
 
     # Keep temporal_workflow_id set on failure — if start_workflow raises
     # due to a network timeout, the workflow may have started server-side.

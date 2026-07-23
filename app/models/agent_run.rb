@@ -690,8 +690,23 @@ class AgentRun < ApplicationRecord
     capacity_inflight.where(project_id: project.id).count
   end
 
+  # RDR-048 (#2947): count inflight runs against a per-host ceiling. A run's
+  # container_host stays blank from claim time until provisioning commits a
+  # real backend resource, so the host it was admitted against is recorded in
+  # external_metadata["planned_container_host"] (see
+  # ProcessRunQueueJob#start_claimed_run). Attribute such not-yet-provisioned
+  # rows to their planned host instead of charging every blank row to the
+  # local bucket — otherwise a single queue pass over-admits remote hosts
+  # (their count stays 0 during the claim window) while starving the local
+  # host with runs admitted elsewhere. Once container_host is set by a real
+  # provision/pool result it is authoritative and the planned value is ignored.
   def self.active_count_for_host(container_host)
-    capacity_inflight.where(container_host: host_scope_for(container_host)).count
+    scope = host_scope_for(container_host)
+    capacity_inflight.where(
+      "COALESCE(NULLIF(container_host, ''), " \
+      "COALESCE(external_metadata->>'planned_container_host', '')) IN (:scope)",
+      scope: scope
+    ).count
   end
 
   # Returns the count of active create_pr runs for the given account.
@@ -2697,9 +2712,11 @@ class AgentRun < ApplicationRecord
   def self.host_scope_for(container_host)
     backend = Containers.backend_for(container_host)
     identifiers = backend.all_host_identifiers.map(&:to_s)
-    return [ nil, "" ] + identifiers unless backend.remote?
-
-    identifiers
+    # The COALESCE'd host expression in active_count_for_host is never NULL,
+    # so a local backend matches its concrete identifiers plus the empty
+    # string (legacy/blank rows whose planned host is also blank). A remote
+    # backend matches only its concrete identifiers.
+    backend.remote? ? identifiers : identifiers + [ "" ]
   rescue Containers::Backends::Resolver::UnknownBackendError
     [ container_host.to_s ]
   end

@@ -51,6 +51,25 @@ RSpec.describe Capacity::RunAdmission do
       expect(aws_result[:host_available_slots]).to eq(8)
     end
 
+    it "counts claimed runs against their planned host before provisioning commits" do
+      # Claimed run admitted for elguapo but not yet provisioned: container_host
+      # is blank and the planned host is recorded in external_metadata, exactly
+      # as ProcessRunQueueJob#start_claimed_run leaves it.
+      create(:agent_run, :queued, project: project, container_host: nil,
+                                  temporal_workflow_id: "claimed",
+                                  external_metadata: { "planned_container_host" => "elguapo" })
+      create(:agent_run, :running, project: project, container_host: "elguapo")
+
+      elguapo_result = admission_for(host: "elguapo", limit: 4)
+      local_result = admission_for(host: "local", limit: 2)
+
+      # The claimed run charges elguapo (its planned host), not local, so a
+      # remote host cannot be over-admitted during the claim window.
+      expect(elguapo_result[:host_active_count]).to eq(2)
+      expect(elguapo_result[:host_available_slots]).to eq(2)
+      expect(local_result[:host_active_count]).to eq(0)
+    end
+
     it "returns a host concurrency denial when the selected host is full" do
       4.times { create(:agent_run, :running, project: project, container_host: "elguapo") }
 

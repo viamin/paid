@@ -98,8 +98,11 @@ RSpec.describe ProcessRunQueueJob do
       # The planned placement is forwarded through the workflow input so the
       # provisioning activity can route to the right backend *before* a
       # container resource exists; container_host is updated only once the
-      # backend creates/claims the resource.
+      # backend creates/claims the resource. The admitted host is recorded in
+      # external_metadata so active_count_for_host can attribute this claimed
+      # run to the correct per-host ceiling during the claim window.
       expect(queued_run.reload.container_host).to be_nil
+      expect(queued_run.reload.external_metadata["planned_container_host"]).to eq("aws-runner-1")
       expect(queued_run.temporal_workflow_id).to be_present
       expect(captured_input[:container_host]).to eq("aws-runner-1")
     end

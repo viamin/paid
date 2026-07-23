@@ -2212,6 +2212,38 @@ RSpec.describe AgentRun do
 
       expect(described_class.active_count_for_host("qnap")).to eq(3)
     end
+
+    it "attributes claimed runs to their planned host before provisioning commits" do
+      elguapo_backend = instance_double(
+        Containers::Backends::RemoteDocker,
+        remote?: true,
+        all_host_identifiers: [ "elguapo" ]
+      )
+      local_backend = instance_double(
+        Containers::Backends::LocalDocker,
+        remote?: false,
+        all_host_identifiers: [ "local" ]
+      )
+
+      allow(Containers).to receive(:backend_for).with("elguapo").and_return(elguapo_backend)
+      allow(Containers).to receive(:backend_for).with("local").and_return(local_backend)
+
+      # Claimed run admitted for elguapo but not yet provisioned: container_host
+      # is intentionally blank and the planned host is recorded in
+      # external_metadata (see ProcessRunQueueJob#start_claimed_run).
+      create(:agent_run, :queued, container_host: nil, temporal_workflow_id: "claimed",
+                                  external_metadata: { "planned_container_host" => "elguapo" })
+      # Provisioned run actually running on elguapo.
+      create(:agent_run, :running, container_host: "elguapo")
+      # Local run with no planned host.
+      create(:agent_run, :running, container_host: "local")
+
+      # The claimed run counts against elguapo (its planned host), not local,
+      # so a remote host cannot be over-admitted during the claim window and
+      # the local host is not starved by runs admitted elsewhere.
+      expect(described_class.active_count_for_host("elguapo")).to eq(2)
+      expect(described_class.active_count_for_host("local")).to eq(1)
+    end
   end
 
   describe ".active_create_pr_count_for_account" do
