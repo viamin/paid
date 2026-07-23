@@ -85,6 +85,12 @@ class Runner < ApplicationRecord
 
   KILOCODE_API_PROVIDER_KEYS = DIRECT_OUTBOUND_API_PROVIDERS.keys.freeze
   KILOCODE_DEFAULT_API_PROVIDER = "anthropic"
+  # TODO(viamin/paid#3002): remove once agent-harness merges default KiloCode
+  # external_directory permissions with Paid's generated runtime config.
+  KILOCODE_EXTERNAL_DIRECTORY_PERMISSIONS = {
+    "/tmp/**" => "allow",
+    "/usr/local/lib/ruby/gems/*/gems/agent-harness-*/**" => "allow"
+  }.freeze
   MIN_PREFLIGHT_TIMEOUT_SECONDS = 1
 
   AIDER_API_PROVIDER_KEYS = DIRECT_OUTBOUND_API_PROVIDERS.keys.freeze
@@ -436,9 +442,7 @@ class Runner < ApplicationRecord
       },
       model: kilocode_qualified_model(kilocode_provider_id, model_id),
       permission: {
-        external_directory: {
-          "/tmp/**": "allow"
-        }
+        external_directory: KILOCODE_EXTERNAL_DIRECTORY_PERMISSIONS
       }
     }.to_json
   end
