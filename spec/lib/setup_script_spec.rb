@@ -38,6 +38,95 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "writes the metrics token file from METRICS_TOKEN so Prometheus scrape auth stays in sync" do
+    # Regression guard: docker-compose.observability.yml mounts the host
+    # metrics token file into the Prometheus container at the path
+    # referenced by the `paid` scrape job's authorization.credentials_file.
+    # bin/setup materializes that file from the host's METRICS_TOKEN env var
+    # so the value matches what docker-compose.yml propagates into the web
+    # service (which the Rails side reads to decide whether to enforce auth).
+    # The default location is ./tmp/prometheus/metrics_token so a live
+    # token never lands in the tracked working tree.
+    Dir.mktmpdir("setup-script-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+      env = setup_script_env(dir).merge("METRICS_TOKEN" => "test-scraper-token")
+
+      Open3.capture3(env, script_path, "--skip-server", chdir: dir)
+
+      token_path = File.join(dir, "tmp", "prometheus", "metrics_token")
+      expect(File.read(token_path)).to eq("test-scraper-token")
+    end
+  end
+
+  it "tightens the metrics token file mode to owner-only so the bearer credential is not leaked on shared hosts" do
+    # The metrics token is the Bearer credential Prometheus sends to
+    # /api/metrics. File.write creates files with the process umask
+    # (typically 022 -> 0644 on Linux), which would let another local
+    # user read it on a shared dev box. bin/setup must chmod the file
+    # to 0o600 after writing so only the owning user can read it.
+    Dir.mktmpdir("setup-script-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+      env = setup_script_env(dir).merge("METRICS_TOKEN" => "test-scraper-token")
+
+      Open3.capture3(env, script_path, "--skip-server", chdir: dir)
+
+      token_path = File.join(dir, "tmp", "prometheus", "metrics_token")
+      expect(File.stat(token_path).mode & 0o777).to eq(0o600)
+    end
+  end
+
+  it "creates an empty metrics token file when METRICS_TOKEN is unset so docker compose can start" do
+    # When METRICS_TOKEN is absent from the process environment, bin/setup
+    # still needs to ensure the token file exists because
+    # `docker compose --profile observability up` refuses to start when the
+    # secret source file is missing. The file must be empty so Prometheus
+    # sends a blank Bearer header, which the Rails side accepts because
+    # its auth check is gated on the env var.
+    Dir.mktmpdir("setup-script-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+      env = setup_script_env(dir)
+
+      Open3.capture3(env, script_path, "--skip-server", chdir: dir)
+
+      token_path = File.join(dir, "tmp", "prometheus", "metrics_token")
+      expect(File.exist?(token_path)).to be(true)
+      expect(File.read(token_path)).to eq("")
+    end
+  end
+
+  it "does not overwrite an existing metrics token file when METRICS_TOKEN is unset" do
+    Dir.mktmpdir("setup-script-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+      token_path = File.join(dir, "tmp", "prometheus", "metrics_token")
+      FileUtils.mkdir_p(File.dirname(token_path))
+      File.write(token_path, "bootstrap-token")
+      env = setup_script_env(dir)
+
+      Open3.capture3(env, script_path, "--skip-server", chdir: dir)
+
+      expect(File.read(token_path)).to eq("bootstrap-token")
+    end
+  end
+
+  it "does not overwrite an existing metrics token file when METRICS_TOKEN is empty string (compose-style)" do
+    # Regression guard: docker-compose.yml injects METRICS_TOKEN: ${METRICS_TOKEN:-},
+    # so the variable is always present in compose environments but may be an empty
+    # string when the host variable is unset. An empty value must be treated the same
+    # as an absent variable so the worker's bin/setup --skip-server does not clobber
+    # a token that the web/bootstrap path already materialized.
+    Dir.mktmpdir("setup-script-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+      token_path = File.join(dir, "tmp", "prometheus", "metrics_token")
+      FileUtils.mkdir_p(File.dirname(token_path))
+      File.write(token_path, "bootstrap-token")
+      env = setup_script_env(dir).merge("METRICS_TOKEN" => "")
+
+      Open3.capture3(env, script_path, "--skip-server", chdir: dir)
+
+      expect(File.read(token_path)).to eq("bootstrap-token")
+    end
+  end
+
   it "skips database preparation when --skip-database is provided" do
     Dir.mktmpdir("setup-script-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir)
