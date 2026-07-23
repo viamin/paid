@@ -986,6 +986,80 @@ RSpec.describe Activities::CreateAgentRunActivity do
     end
   end
 
+  describe "orchestration strategy selection" do
+    def create_issue_execution_strategy(**attrs)
+      strategy = create(:strategy, :global, decision_type: "issue_execution", selection_rules: {}, **attrs)
+      reviewer = create(:user, account: strategy.account || create(:account))
+      version = strategy.create_version!(
+        content: { "focus_override" => "ci_fix" },
+        provenance: { "source" => "seed" },
+        promotion_state: "active",
+        created_by: "seed",
+        promoted_at: Time.current,
+        promoted_by_user: reviewer
+      )
+      strategy.update!(current_version: version)
+      strategy
+    end
+
+    it "logs an OrchestrationDecision with fallback status when no strategy matches" do
+      result = activity.execute(project_id: project.id, issue_id: issue.id)
+      agent_run = AgentRun.find(result[:agent_run_id])
+
+      decision = agent_run.orchestration_decisions.find_by(decision_type: "issue_execution")
+      expect(decision).to be_present
+      expect(decision.actor).to eq("Activities::CreateAgentRunActivity")
+      expect(decision.context["decision_status"]).to eq("noop")
+      expect(decision.context["scope"]).to eq("fallback")
+      expect(decision.strategy_version).to be_nil
+    end
+
+    it "logs an OrchestrationDecision linking the matched strategy version" do
+      strategy = create_issue_execution_strategy
+
+      result = activity.execute(project_id: project.id, issue_id: issue.id)
+      agent_run = AgentRun.find(result[:agent_run_id])
+
+      decision = agent_run.orchestration_decisions.find_by(decision_type: "issue_execution")
+      expect(decision).to be_present
+      expect(decision.context["decision_status"]).to eq("applied")
+      expect(decision.context["scope"]).to eq("global")
+      expect(decision.strategy_version).to eq(strategy.current_version)
+      expect(decision.outputs).to eq({ "focus_override" => "ci_fix" })
+    end
+
+    it "records inputs capturing the run context" do
+      result = activity.execute(project_id: project.id, issue_id: issue.id)
+      agent_run = AgentRun.find(result[:agent_run_id])
+
+      decision = agent_run.orchestration_decisions.find_by(decision_type: "issue_execution")
+      expect(decision.inputs).to include(
+        "goal" => agent_run.goal,
+        "agent_type" => agent_run.agent_type,
+        "focus" => agent_run.focus
+      )
+    end
+
+    it "continues run creation even if strategy selection raises" do
+      allow(Strategies::Select).to receive(:call).and_raise(RuntimeError, "strategy db error")
+
+      expect { activity.execute(project_id: project.id, issue_id: issue.id) }.not_to raise_error
+      expect(AgentRun.where(project: project)).to exist
+    end
+
+    context "when resuming a queued run" do
+      it "logs an OrchestrationDecision for the resumed run" do
+        queued_run = create(:agent_run, :queued, project: project, issue: issue)
+
+        activity.execute(agent_run_id: queued_run.id)
+
+        decision = queued_run.orchestration_decisions.find_by(decision_type: "issue_execution")
+        expect(decision).to be_present
+        expect(decision.actor).to eq("Activities::CreateAgentRunActivity")
+      end
+    end
+  end
+
   def expect_requested_provider_decision(decision:, runner_id:, runner_key:, agent_type:)
     expect(decision).to be_present
     expect(decision.context).to include(

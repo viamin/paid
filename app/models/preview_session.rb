@@ -1,76 +1,85 @@
 # frozen_string_literal: true
 
-# Encapsulates a single live preview of a web app running in a container.
-#
-# A preview session bridges a tunnel port (exposed on the Rails host by a
-# rathole client running inside the preview container) to the Rails reverse
-# proxy at `/previews/:token/*`. The token addresses the session's proxied path,
-# but the proxy still requires an authenticated, authorized viewer before it
-# forwards traffic. Tokens are therefore random secrets that are only handed out
-# to authorized users by the preview UI.
-#
-# @see PreviewsProxy
 class PreviewSession < ApplicationRecord
-  STATUSES = %w[
-    provisioning
-    starting
-    ready
-    active
-    expiring
-    stopped
-    failed
-  ].freeze
+  include TenantScoped
 
-  # Statuses that grant proxy access. The proxy serves traffic only while the
-  # session is in one of these states and has not expired.
-  ACCESSIBLE_STATUSES = %w[ready active expiring].freeze
+  STATUSES = %w[pending provisioning starting ready stopped failed].freeze
+  ACTIVE_STATUSES = %w[pending provisioning starting ready].freeze
+  LIVE_STATUSES = %w[ready].freeze
+  TERMINAL_STATUSES = %w[stopped failed].freeze
 
-  DEFAULT_TTL_SECONDS = 30.minutes.freeze
-  TOKEN_LENGTH = 32
+  DEFAULT_TTL_SECONDS = 30.minutes.to_i
+  EXPIRY_WARNING_SECONDS = 5.minutes.to_i
+  TOKEN_BYTES = 32
 
   belongs_to :project
   belongs_to :agent_run, optional: true
+  belongs_to :created_by, class_name: "User", optional: true
 
-  validates :token, presence: true, uniqueness: { case_sensitive: true }, length: { maximum: 64 }
-  validates :status, inclusion: { in: STATUSES }
-  validates :tunnel_port, numericality: { only_integer: true, greater_than: 0, less_than: 65_536 },
-    allow_nil: true
+  before_validation :generate_token, on: :create
+
+  validates :token, presence: true, uniqueness: true, length: { maximum: 64 }
+  validates :branch_name, presence: true
+  validates :status, presence: true, inclusion: { in: STATUSES }
+  validates :expires_at, presence: true
   validates :project, presence: true
+  validates :tunnel_port,
+    numericality: { only_integer: true, greater_than: 0, less_than: 65_536 },
+    allow_nil: true
+  validate :agent_run_belongs_to_same_project
 
-  before_validation :ensure_token, on: :create
-  before_validation :ensure_expires_at, on: :create
-
-  scope :accessible, -> { where(status: ACCESSIBLE_STATUSES) }
-  scope :active, -> { accessible.where("expires_at IS NULL OR expires_at > ?", Time.current) }
+  scope :active, -> { where(status: ACTIVE_STATUSES).where("expires_at > ?", Time.current) }
+  scope :live, -> { where(status: LIVE_STATUSES) }
+  scope :non_terminal, -> { where.not(status: TERMINAL_STATUSES) }
+  scope :recent, -> { order(created_at: :desc) }
+  scope :for_project, ->(project) { where(project_id: project) }
+  scope :expiring_before, ->(time) { where(status: ACTIVE_STATUSES).where("expires_at <= ?", time) }
 
   class << self
-    # Looks up an accessible, non-expired session by its proxy token.
-    # Returns nil when the token is unknown, inactive, or expired so callers
-    # can uniformly respond with a 404 and avoid leaking session existence.
+    def build_for(project:, branch_name:, created_by: nil, agent_run: nil, ttl_seconds: DEFAULT_TTL_SECONDS)
+      new(
+        project:,
+        account: project.account,
+        branch_name:,
+        created_by:,
+        agent_run:,
+        framework: project.detected_framework,
+        status: "pending",
+        expires_at: ttl_seconds.to_i.seconds.from_now
+      )
+    end
+
     def find_accessible_by_token(token)
       return nil if token.blank?
 
-      where(token: token).accessible.first&.tap do |session|
-        return nil if session.expired?
-      end
+      where(token:).active.live.first
     end
   end
 
-  def ready?
-    status == "ready"
-  end
-
   def active?
-    status == "active"
+    ACTIVE_STATUSES.include?(status) && !expired?
   end
 
-  # True when the session is in an accessible status and has not expired.
+  def live?
+    LIVE_STATUSES.include?(status)
+  end
+
+  def terminal?
+    TERMINAL_STATUSES.include?(status)
+  end
+
+  def failed?
+    status == "failed"
+  end
+
+  def stopped?
+    status == "stopped"
+  end
+
   def accessible?
-    ACCESSIBLE_STATUSES.include?(status) && !expired?
+    live? && !expired?
   end
 
-  # True when the proxy can actually serve traffic for this session: it must be
-  # accessible and have an allocated tunnel port to forward to.
   def proxiable?
     accessible? && tunnel_port.present?
   end
@@ -79,20 +88,41 @@ class PreviewSession < ApplicationRecord
     expires_at.present? && expires_at <= Time.current
   end
 
-  # Records a proxy access for idle-expiry accounting. Throttled to one write
-  # per minute so a busy preview (many asset requests) does not amplify DB
-  # writes. Best-effort: failures must never break a proxied response.
-  #
-  # Called from PreviewsProxy, which sits before ApplicationController in the
-  # Rack stack and therefore has no tenant context set (bypass_tenant_rls=
-  # false, current_account_id=NULL). With FORCE ROW LEVEL SECURITY on this
-  # table, an un-bypassed UPDATE would match 0 rows and `last_accessed_at`
-  # would silently never advance — so the write MUST run under system access,
-  # mirroring how resolve_session looks up the session.
-  def touch_last_accessed!
-    return if last_accessed_at.present? && last_accessed_at > 1.minute.ago
+  def time_remaining
+    return 0 if expires_at.nil? || expired?
 
-    TenantContext.with_system_access { update_column(:last_accessed_at, Time.current) }
+    [ (expires_at - Time.current).to_i, 0 ].max
+  end
+
+  def ttl_warning?
+    active? && time_remaining <= EXPIRY_WARNING_SECONDS
+  end
+
+  def mark_ready!(tunnel_port:, container_id: nil)
+    update!(
+      status: "ready",
+      tunnel_port:,
+      container_id: container_id || self.container_id,
+      last_active_at: Time.current
+    )
+  end
+
+  def mark_failed!(message)
+    update!(status: "failed", error_message: message)
+  end
+
+  def mark_stopped!
+    update!(status: "stopped", tunnel_port: nil)
+  end
+
+  def touch_last_active!
+    update_column(:last_active_at, Time.current) if persisted?
+  end
+
+  def touch_last_accessed!
+    return if last_active_at.present? && last_active_at > 1.minute.ago
+
+    TenantContext.with_system_access { update_column(:last_active_at, Time.current) }
   rescue ActiveRecord::StatementInvalid, ActiveRecord::ActiveRecordError
     true
   end
@@ -101,13 +131,20 @@ class PreviewSession < ApplicationRecord
     "/previews/#{token}"
   end
 
-  private
-
-  def ensure_token
-    self.token ||= SecureRandom.hex(TOKEN_LENGTH)
+  def status=(value)
+    super
+    self.error_message = nil if value != "failed" && error_message.present?
   end
 
-  def ensure_expires_at
-    self.expires_at ||= DEFAULT_TTL_SECONDS.from_now
+  private
+
+  def generate_token
+    self.token ||= SecureRandom.hex(TOKEN_BYTES)
+  end
+
+  def agent_run_belongs_to_same_project
+    return unless agent_run && agent_run.project_id != project_id
+
+    errors.add(:agent_run, "must belong to the same project")
   end
 end
