@@ -52,6 +52,18 @@ RSpec.describe Screenshots::SeedData::Paid do
     expect(installation).to be_active
   end
 
+  it "returns seeded Codex login session metadata for screenshot routes" do
+    result = described_class.call
+
+    login_session = CodexLoginSession.find(result.dig("codex_login_session", "id"))
+
+    expect(result.fetch("codex_login_session")).to eq(
+      "id" => login_session.id,
+      "external_id" => login_session.external_id
+    )
+    expect(login_session).to be_awaiting_authorization
+  end
+
   it "returns marketplace entry metadata for marketplace screenshot targets" do
     result = described_class.call
 
