@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class DockerHost < ApplicationRecord
+  has_logidze
+
   BACKEND_TYPES = %w[local remote swarm].freeze
   READINESS_STATUSES = %w[unknown ready failing disabled draining].freeze
   STATUS_TYPES = %w[unknown ready missing failing].freeze

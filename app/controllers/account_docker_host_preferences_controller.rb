@@ -9,7 +9,10 @@ class AccountDockerHostPreferencesController < ApplicationController
       redirect_to docker_hosts_path, notice: "Account Docker host preferences updated."
     else
       @docker_hosts = current_account.docker_hosts.ordered
-      @projects = current_account.projects.order(:name)
+      @enabled_docker_host_options = @docker_hosts.select(&:enabled?).map { |host| [ host.display_name, host.identifier ] }
+      @projects = current_account.projects
+        .includes(account: [ :tenant_setting, :docker_hosts ])
+        .order(:name)
       @active_runs_by_host = AgentRun.joins(:project)
         .where(projects: { account_id: current_account.id }, status: AgentRun::UNFINISHED_STATUSES)
         .group(:container_host)

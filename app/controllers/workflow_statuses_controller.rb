@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "temporalio/error"
+
 class WorkflowStatusesController < ApplicationController
   def show
     @project = policy_scope(Project).find(params[:project_id])

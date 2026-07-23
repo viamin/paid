@@ -65,7 +65,10 @@ class DockerHostsController < ApplicationController
 
   def load_index_data
     @docker_hosts = policy_scope(DockerHost).where(account: current_account).ordered
-    @projects = current_account.projects.order(:name)
+    @enabled_docker_host_options = @docker_hosts.select(&:enabled?).map { |host| [ host.display_name, host.identifier ] }
+    @projects = current_account.projects
+      .includes(account: [ :tenant_setting, :docker_hosts ])
+      .order(:name)
     @active_runs_by_host = AgentRun.joins(:project)
       .where(projects: { account_id: current_account.id }, status: AgentRun::UNFINISHED_STATUSES)
       .group(:container_host)
@@ -94,16 +97,7 @@ class DockerHostsController < ApplicationController
       :image_tag,
       :fallback_eligible,
       :manual_concurrency_limit,
-      :enabled,
-      :readiness_status,
-      :failing_check,
-      :last_checked_at,
-      :last_ready_at,
-      :last_error,
-      :daemon_architecture,
-      :daemon_summary,
-      :image_status,
-      :required_network_status
+      :enabled
     )
   end
 end

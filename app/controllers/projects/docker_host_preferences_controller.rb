@@ -12,7 +12,11 @@ module Projects
       else
         @tenant_setting = current_account.tenant_setting!
         @docker_hosts = current_account.docker_hosts.ordered
-        @projects = current_account.projects.order(:name).to_a
+        @enabled_docker_host_options = @docker_hosts.select(&:enabled?).map { |host| [ host.display_name, host.identifier ] }
+        @projects = current_account.projects
+          .includes(account: [ :tenant_setting, :docker_hosts ])
+          .order(:name)
+          .to_a
         existing_index = @projects.index { |project| project.id == @project.id }
         @projects[existing_index] = @project if existing_index
         @active_runs_by_host = AgentRun.joins(:project)

@@ -1,0 +1,78 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe "DockerHosts", type: :request do
+  let(:account) { create(:account) }
+  let(:user) { create(:user, :owner, account: account) }
+
+  before do
+    create(:tenant_setting, account: account)
+    sign_in user
+  end
+
+  it "ignores readiness fields on create" do
+    post docker_hosts_path, params: { docker_host: docker_host_params }
+
+    host = account.docker_hosts.find_by!(identifier: "edge-builder")
+
+    expect(response).to redirect_to(docker_host_path(host))
+    expect_readiness_fields_to_remain_system_managed(host)
+  end
+
+  it "ignores readiness fields on update" do
+    host = create(:docker_host, account: account, readiness_status: "failing", failing_check: "image")
+
+    patch docker_host_path(host), params: {
+      docker_host: {
+        display_name: "Updated Host",
+        readiness_status: "ready",
+        failing_check: "spoofed",
+        daemon_summary: "Spoofed daemon"
+      }
+    }
+
+    expect(response).to redirect_to(docker_host_path(host))
+
+    host.reload
+    expect(host.display_name).to eq("Updated Host")
+    expect(host.readiness_status).to eq("failing")
+    expect(host.failing_check).to eq("image")
+    expect(host.daemon_summary).not_to eq("Spoofed daemon")
+  end
+
+  def docker_host_params
+    {
+      display_name: "Edge Builder",
+      identifier: "edge-builder",
+      backend_type: "remote",
+      endpoint: "tcp://docker.example.test:2376",
+      callback_url: "https://paid.example.test/health/services",
+      image_tag: "paid-agent:stable",
+      fallback_eligible: "1",
+      manual_concurrency_limit: "3",
+      enabled: "1",
+      readiness_status: "ready",
+      failing_check: "spoofed",
+      last_checked_at: 1.day.ago.iso8601,
+      last_ready_at: Time.current.iso8601,
+      last_error: "spoofed error",
+      daemon_architecture: "arm64",
+      daemon_summary: "Docker 99.9",
+      image_status: "ready",
+      required_network_status: "ready"
+    }
+  end
+
+  def expect_readiness_fields_to_remain_system_managed(host)
+    expect(host.readiness_status).to eq("unknown")
+    expect(host.failing_check).to be_nil
+    expect(host.last_checked_at).to be_nil
+    expect(host.last_ready_at).to be_nil
+    expect(host.last_error).to be_nil
+    expect(host.daemon_architecture).to be_nil
+    expect(host.daemon_summary).to be_nil
+    expect(host.image_status).to eq("unknown")
+    expect(host.required_network_status).to eq("unknown")
+  end
+end
