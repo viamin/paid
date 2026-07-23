@@ -39,6 +39,8 @@ Observability in Paid has three pillars:
 | `Metrics::PrometheusCollector` | Hand-rolled Ruby metrics exposition (`app/services/metrics/prometheus_collector.rb`) |
 | Temporal metrics | Workflow and activity metrics |
 
+The original RDR sketched a `prometheus-client` gem integration, but the implementation that shipped uses a hand-rolled collector instead. That is now the authoritative design: Paid exports a Prometheus-compatible snapshot of database-backed operational state from `Metrics::PrometheusCollector`, while Temporal worker runtime metrics continue to come from Temporal's native Prometheus exporter.
+
 ### Metrics Definitions [IMPLEMENTED]
 
 Metrics are defined in `Metrics::PrometheusCollector` and rendered in Prometheus text exposition format. The collector queries the database directly and caches results for 15 seconds.
@@ -123,7 +125,9 @@ end
 
 Authentication uses a `METRICS_TOKEN` bearer token. When the `METRICS_TOKEN` environment variable is set, scrapers must send `Authorization: Bearer <token>`. If `METRICS_TOKEN` is not set, the endpoint is unauthenticated (intended for VPC-internal use only).
 
-### Prometheus Configuration
+The checked-in `prometheus/prometheus.yml` reads the token from `/etc/prometheus/metrics_token` via the `authorization.credentials_file` field on the `paid` scrape job. The file is mounted by `docker-compose.observability.yml` from the host path `${METRICS_TOKEN_FILE:-./tmp/prometheus/metrics_token}`. The default location lives under `./tmp/` (gitignored) so a live token never lands in the tracked working tree. `bin/setup` writes the value of the host's `METRICS_TOKEN` environment variable into that file when `METRICS_TOKEN` is present in the current process environment, and creates an empty file when it is absent (so `docker compose --profile observability up` can start on a fresh checkout). When `METRICS_TOKEN` is absent, `bin/setup` leaves any pre-existing token content untouched so helper processes do not clobber a token that a separate bootstrap path already materialized. With the default empty file, Prometheus sends a blank `Bearer` header and the Rails side skips its token check.
+
+### Prometheus Configuration [IMPLEMENTED]
 
 ```yaml
 # prometheus/prometheus.yml
@@ -144,13 +148,16 @@ scrape_configs:
   # Paid Rails app
   - job_name: 'paid'
     static_configs:
-      - targets: ['paid-web:3000']
+      - targets: ['web:3000']
     metrics_path: '/api/metrics'
+    authorization:
+      type: Bearer
+      credentials_file: /etc/prometheus/metrics_token
 
-  # Temporal server
-  - job_name: 'temporal'
+  # Temporal SDK worker metrics
+  - job_name: 'paid-temporal-worker'
     static_configs:
-      - targets: ['temporal:8000']
+      - targets: ['worker:9464']
 
   # PostgreSQL (via postgres_exporter)
   - job_name: 'postgresql'
@@ -257,7 +264,21 @@ end
 
 ---
 
-## Dashboards (Grafana) [PLANNED]
+## Dashboards (Grafana) [IMPLEMENTED]
+
+Grafana provisioning and a starter dashboard are checked in under:
+
+- `grafana/provisioning/datasources/prometheus.yml`
+- `grafana/provisioning/dashboards/dashboards.yml`
+- `grafana/dashboards/paid-overview.json`
+
+The dashboard intentionally uses only metrics that exist today:
+
+- Agent run active/queued gauges
+- GoodJob backlog gauges
+- Temporal workflow utilization gauges
+- Container and service-container resource gauges
+- Temporal SDK `schedule_to_start` latency histograms
 
 ### Dashboard Structure
 
@@ -323,119 +344,48 @@ Panels:
 
 ---
 
-## Alerting [PLANNED]
+## Alerting [IMPLEMENTED]
 
-### Alert Rules [PLANNED]
+### Alert Rules [IMPLEMENTED]
 
 ```yaml
 # prometheus/rules/paid.yml
 groups:
   - name: paid
     rules:
-      # High error rate
-      - alert: HighAgentFailureRate
-        expr: |
-          rate(paid_agent_runs_total{status="failed"}[1h])
-          / rate(paid_agent_runs_total[1h]) > 0.3
-        for: 15m
-        labels:
-          severity: warning
-        annotations:
-          summary: "High agent failure rate ({{ $value | humanizePercentage }})"
-
-      # Budget exceeded
-      - alert: ProjectBudgetExceeded
-        expr: paid_cost_cents_total > paid_budget_limit_cents
-        for: 1m
-        labels:
-          severity: critical
-        annotations:
-          summary: "Project {{ $labels.project_id }} exceeded budget"
-
-      # GitHub rate limit low
-      - alert: GitHubRateLimitLow
-        expr: paid_github_rate_limit_remaining < 100
-        for: 5m
-        labels:
-          severity: warning
-        annotations:
-          summary: "GitHub rate limit low ({{ $value }} remaining)"
-
-      # Container startup slow
-      - alert: SlowContainerStartup
-        expr: |
-          histogram_quantile(0.95, rate(paid_container_startup_seconds_bucket[1h])) > 30
-        for: 15m
-        labels:
-          severity: warning
-        annotations:
-          summary: "Container startup p95 is {{ $value }}s"
-
-      # Disk space low
-      - alert: DiskSpaceLow
-        expr: paid_disk_usage_bytes{type="total"} / paid_disk_capacity_bytes > 0.85
-        for: 10m
-        labels:
-          severity: critical
-        annotations:
-          summary: "Disk usage above 85%"
-
-      # Workflow queue backing up
-      - alert: WorkflowQueueBacklog
-        expr: temporal_workflow_task_schedule_to_start_latency_seconds > 60
-        for: 10m
-        labels:
-          severity: warning
-        annotations:
-          summary: "Temporal workflow queue backing up"
-
-      # Quality degradation
-      - alert: QualityDegradation
-        expr: |
-          avg_over_time(paid_quality_score[1h])
-          < avg_over_time(paid_quality_score[7d]) * 0.8
-        for: 30m
-        labels:
-          severity: warning
-        annotations:
-          summary: "Quality score dropped significantly"
+      - alert: PaidMetricsEndpointDown
+        expr: up{job="paid"} == 0
+      - alert: PaidQueuedRunsBacklog
+        expr: paid_agent_runs_queued > 10
+      - alert: PaidGoodJobBacklog
+        expr: sum(paid_goodjob_queue_depth) > 50
+      - alert: PaidTemporalWorkflowSlotsSaturated
+        expr: paid_temporal_workflow_utilization_percent > 90
 ```
 
-### Alert Routing [PLANNED]
+The shipped rules are constrained to metrics that Paid currently exports. Older examples in this document that referenced `paid_cost_cents_total`, `paid_quality_score`, or other unimplemented counters/histograms were removed to avoid publishing broken alert expressions.
+
+### Alert Routing [IMPLEMENTED]
 
 ```yaml
 # alertmanager/alertmanager.yml
-global:
-  slack_api_url: '${SLACK_WEBHOOK_URL}'
-
 route:
-  receiver: 'default'
-  group_by: ['alertname', 'severity']
+  receiver: 'null'
+  group_by: ['alertname', 'severity', 'service']
   group_wait: 30s
   group_interval: 5m
   repeat_interval: 4h
 
   routes:
-    - match:
-        severity: critical
-      receiver: 'critical'
-      continue: true
+    - matchers:
+        - severity="critical"
+      receiver: 'null'
 
 receivers:
-  - name: 'default'
-    slack_configs:
-      - channel: '#paid-alerts'
-        title: '{{ .GroupLabels.alertname }}'
-        text: '{{ range .Alerts }}{{ .Annotations.summary }}{{ end }}'
-
-  - name: 'critical'
-    slack_configs:
-      - channel: '#paid-critical'
-        title: 'CRITICAL: {{ .GroupLabels.alertname }}'
-    # Optional: PagerDuty for critical alerts
-    # pagerduty_configs:
-    #   - service_key: '${PAGERDUTY_KEY}'
+  - name: 'null'
 ```
+
+The checked-in Alertmanager config is intentionally safe by default: it groups and classifies alerts but routes them to a no-op receiver until an operator replaces that receiver with Slack, PagerDuty, or another destination appropriate to the deployment.
 
 ---
 
@@ -497,80 +447,46 @@ end
 
 ---
 
-## Docker Compose (Observability Stack) [PLANNED]
+## Docker Compose (Observability Stack) [IMPLEMENTED]
 
 ```yaml
 # docker-compose.observability.yml
-version: '3.8'
-
 services:
   prometheus:
-    image: prom/prometheus:latest
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./prometheus:/etc/prometheus
-      - prometheus-data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.retention.time=30d'
+    profiles: ["observability"]
 
   grafana:
-    image: grafana/grafana:latest
-    ports:
-      - "3001:3000"
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
-      - GF_USERS_ALLOW_SIGN_UP=false
-    volumes:
-      - grafana-data:/var/lib/grafana
-      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
-      - ./grafana/datasources:/etc/grafana/provisioning/datasources
-
-  loki:
-    image: grafana/loki:latest
-    ports:
-      - "3100:3100"
-    volumes:
-      - loki-data:/loki
-      - ./loki/loki-config.yml:/etc/loki/local-config.yaml
-
-  promtail:
-    image: grafana/promtail:latest
-    volumes:
-      - /var/log:/var/log:ro
-      - ./promtail/promtail-config.yml:/etc/promtail/config.yml
-    command: -config.file=/etc/promtail/config.yml
+    profiles: ["observability"]
 
   alertmanager:
-    image: prom/alertmanager:latest
-    ports:
-      - "9093:9093"
-    volumes:
-      - ./alertmanager:/etc/alertmanager
+    profiles: ["observability"]
 
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:latest
-    ports:
-      - "8081:8080"
-    volumes:
-      - /:/rootfs:ro
-      - /var/run:/var/run:ro
-      - /sys:/sys:ro
-      - /var/lib/docker/:/var/lib/docker:ro
+    profiles: ["observability"]
 
   postgres-exporter:
-    image: prometheuscommunity/postgres-exporter:latest
-    environment:
-      - DATA_SOURCE_NAME=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/paid?sslmode=disable
-    ports:
-      - "9187:9187"
+    profiles: ["observability"]
+
+  node-exporter:
+    profiles: ["observability"]
 
 volumes:
   prometheus-data:
   grafana-data:
-  loki-data:
 ```
+
+Bring the stack up as an overlay on top of the normal development environment:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.observability.yml --profile observability up -d
+```
+
+Notes:
+
+- The overlay scrapes the Rails app (`web:3000`) and Temporal SDK worker (`worker:9464`) because those are the metrics endpoints Paid exports today.
+- Temporal server metrics are not included here because the current Compose topology does not enable a dedicated Prometheus listener on the Temporal server container.
+- The `paid` scrape job reads its Bearer token from `/etc/prometheus/metrics_token` (a `secrets:` mount of the host file at `${METRICS_TOKEN_FILE:-./tmp/prometheus/metrics_token}`). `bin/setup` materializes this file from the host's `METRICS_TOKEN` environment variable when that variable is present in the current process environment, and creates an empty file when it is absent (so `docker compose --profile observability up` can start on a fresh checkout). The default path lives under `./tmp/` so a live token never lands in the tracked working tree. The `web` service propagates `METRICS_TOKEN` into the Rails container so the two stay in sync; when `METRICS_TOKEN` is absent, helper processes leave the existing token file untouched, and the Rails side accepts the scrape because its auth check is gated on `ENV["METRICS_TOKEN"].present?`.
+- Loki/Promtail remain out of scope for this stack. Paid already emits structured logs, but log aggregation is still an optional follow-up rather than part of the required RDR-011 asset set.
 
 ---
 

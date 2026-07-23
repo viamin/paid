@@ -13,7 +13,9 @@
 
 ## Implementation Status
 
-Partially implemented. Paid exposes Prometheus-compatible metrics at `/api/metrics`, collects application metrics through `Metrics::PrometheusCollector`, and includes in-app queue monitoring/alerts. The full stack described here is not yet checked in: Prometheus configuration/rules, Grafana dashboards/provisioning, AlertManager routing, exporter configuration, and Compose observability services remain follow-up work.
+Implemented with targeted follow-up scope reductions. Paid exposes Prometheus-compatible metrics at `/api/metrics`, collects application metrics through `Metrics::PrometheusCollector`, includes in-app queue monitoring/alerts, and now checks in Prometheus configuration/rules, Grafana provisioning assets, Alertmanager routing, exporter definitions, and a Compose observability overlay.
+
+The design was reconciled away from the original `prometheus-client` gem sketch. The shipped implementation keeps the current hand-rolled collector as the Rails metrics source of truth and uses Temporal's native Prometheus exporter for worker runtime telemetry.
 
 ## Problem Statement
 
@@ -98,7 +100,7 @@ Industry-standard, self-hosted observability stack:
                         └─────────────┘
 ```
 
-**Rails Metrics (prometheus-client gem):**
+**Rails Metrics (`prometheus-client` gem, superseded during implementation):**
 
 ```ruby
 # config/initializers/prometheus.rb
@@ -177,6 +179,16 @@ Implement **Prometheus + Grafana** observability stack:
 3. **AlertManager**: Route alerts to appropriate channels
 4. **Custom metrics**: Application-specific instrumentation
 5. **Structured logging**: Complement metrics with logs
+
+### Implementation Reconciliation
+
+The RDR originally proposed `prometheus-client` middleware and in-process counters/histograms. Paid shipped a different but still Prometheus-compatible design:
+
+- Rails app metrics come from `Metrics::PrometheusCollector`, which renders snapshot metrics in Prometheus text exposition format.
+- Temporal worker metrics come from `Paid::TemporalObservability` and Temporal's native Prometheus exporter on `TEMPORAL_PROMETHEUS_BIND_ADDRESS`.
+- Prometheus alert rules and Grafana dashboards must therefore target the metrics that actually exist today rather than the hypothetical counters in the initial sketch.
+
+This keeps the observability stack aligned with the current application architecture and avoids checking in broken alerts or dashboards that depend on unimplemented metrics.
 
 ### Technical Design
 
@@ -577,33 +589,23 @@ groups:
 ### Prerequisites
 
 - [ ] Docker Compose environment set up
-- [ ] prometheus-client gem added
-- [ ] Rails metrics endpoint exposed
+- [x] Rails metrics endpoint exposed
+- [x] Prometheus/Grafana/Alertmanager assets checked in
 
 ### Step-by-Step Implementation
 
-#### Step 1: Add Gems
+#### Step 1: Reconcile the Metrics Source
 
-```ruby
-# Gemfile
-gem "prometheus-client"
-```
+Completed. The `prometheus-client` gem approach from the original draft was superseded by `Metrics::PrometheusCollector`, which is now the supported Rails metrics implementation.
 
-#### Step 2: Configure Prometheus Client
+#### Step 2: Expand the Shipped Metrics Surface as Needed
 
-Create `config/initializers/prometheus.rb` as shown above.
+Partially complete. Paid ships operational gauges for agent runs, GoodJob, container usage, service containers, and Temporal worker capacity. Additional counters and histograms can be added later if new alerting or dashboard needs require them.
 
-#### Step 3: Add Metrics Middleware
-
-```ruby
-# config/application.rb
-config.middleware.use Prometheus::Middleware::Exporter
-```
-
-#### Step 4: Docker Compose Services
+#### Step 3: Docker Compose Services
 
 ```yaml
-# docker-compose.yml
+# docker-compose.observability.yml
 services:
   prometheus:
     image: prom/prometheus:v2.47.0
@@ -663,24 +665,22 @@ volumes:
   grafana_data:
 ```
 
-#### Step 5: Create Grafana Dashboards
+#### Step 4: Create Grafana Dashboards
 
-Create JSON dashboard definitions in `grafana/provisioning/dashboards/`.
+Complete. Dashboard provisioning now lives under `grafana/provisioning/`, and the starter dashboard JSON is checked in under `grafana/dashboards/`.
 
 ### Files to Create/Modify
 
-- `Gemfile` - Add prometheus-client
-- `config/initializers/prometheus.rb`
-- `app/services/metrics_recorder.rb`
-- `docker-compose.yml` - Add monitoring services
+- `app/services/metrics/prometheus_collector.rb`
+- `docker-compose.observability.yml`
 - `prometheus/prometheus.yml`
 - `prometheus/rules/paid.yml`
 - `alertmanager/alertmanager.yml`
 - `grafana/provisioning/` - Dashboards and datasources
+- `grafana/dashboards/paid-overview.json`
 
 ### Dependencies
 
-- `prometheus-client` gem (~> 4.0)
 - Prometheus server
 - Grafana
 - AlertManager
