@@ -2678,7 +2678,7 @@ class AgentRun < ApplicationRecord
   def self.host_scope_for(container_host)
     backend = Containers.backend_for(container_host)
     identifiers = backend.all_host_identifiers.map(&:to_s)
-    return [ nil, "" ] + identifiers if identifiers.include?(Containers::LOCAL_BACKEND_KEY.to_s)
+    return [ nil, "" ] + identifiers unless backend.remote?
 
     identifiers
   rescue Containers::Backends::Resolver::UnknownBackendError

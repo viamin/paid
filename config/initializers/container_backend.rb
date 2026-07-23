@@ -5,6 +5,7 @@ Rails.application.config.to_prepare do
   resolver.reset!
 
   backend_type = ENV.fetch("CONTAINER_BACKEND", "local").to_sym
+  remote_backend_configured = false
 
   if backend_type == :multi
     registry = Containers::HostRegistry.load
@@ -15,6 +16,7 @@ Rails.application.config.to_prepare do
       raise ArgumentError, "CONTAINER_BACKENDS_CONFIG must define at least one host under 'multi' backend mode"
     end
     Rails.application.config.x.container_backend = resolver.for(registry.default_host.to_sym)
+    remote_backend_configured = registry.hosts.any? { |host| host.backend.remote? }
   else
     resolver.register(:local, -> { Containers::Backends::LocalDocker.new })
     if (remote_backend = Containers::Backends::RemoteDocker.from_env)
@@ -32,11 +34,12 @@ Rails.application.config.to_prepare do
       )
     })
     Rails.application.config.x.container_backend = resolver.for(backend_type)
+    remote_backend_configured = Rails.application.config.x.container_backend.remote?
   end
 
   Containers.instance_variable_set(:@host_registry, nil)
 
-  if Rails.application.config.x.container_backend.remote? && ENV["PAID_PROXY_EXTERNAL_URL"].blank?
+  if remote_backend_configured && ENV["PAID_PROXY_EXTERNAL_URL"].blank?
     Rails.logger.warn(
       "Remote Docker backend is active but PAID_PROXY_EXTERNAL_URL is not set; remote containers will be unable to reach the secrets proxy"
     )

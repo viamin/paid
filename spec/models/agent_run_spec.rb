@@ -2195,6 +2195,25 @@ RSpec.describe AgentRun do
     end
   end
 
+  describe ".active_count_for_host" do
+    it "counts legacy blank container_host rows for renamed local hosts" do
+      local_backend = instance_double(
+        Containers::Backends::LocalDocker,
+        remote?: false,
+        all_host_identifiers: [ "qnap" ]
+      )
+
+      allow(Containers).to receive(:backend_for).with("qnap").and_return(local_backend)
+
+      create(:agent_run, :running, container_host: nil)
+      create(:agent_run, :running, container_host: "")
+      create(:agent_run, :running, container_host: "qnap")
+      create(:agent_run, :running, container_host: "remote")
+
+      expect(described_class.active_count_for_host("qnap")).to eq(3)
+    end
+  end
+
   describe ".active_create_pr_count_for_account" do
     it "counts running and claimed create_pr runs for the account" do
       account = create(:account)
