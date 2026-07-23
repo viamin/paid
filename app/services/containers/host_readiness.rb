@@ -181,14 +181,7 @@ module Containers
     def proxy_callback_check(backend)
       return healthy_check(name: "proxy_callback", details: { required: false }) unless backend.remote?
 
-      callback_url = configured_callback_url_for(backend)
-      return failure_check(
-        name: "proxy_callback",
-        error: ArgumentError.new("missing callback url"),
-        remediation_hint: "Set PAID_PROXY_EXTERNAL_URL for remote Docker hosts so containers can call back to Paid."
-      ) if callback_url.blank?
-
-      Containers::ProxyUrl.validate_external_url!(callback_url)
+      callback_url = Containers::ProxyUrl.resolve(backend:, restricted: true)
       reachable = callback_reachable?(callback_url)
       return healthy_check(name: "proxy_callback", details: { url: callback_url, reachable: true }) if reachable
 
@@ -201,7 +194,7 @@ module Containers
       failure_check(
         name: "proxy_callback",
         error: error,
-        remediation_hint: "Configure a valid PAID_PROXY_EXTERNAL_URL reachable from #{backend.identifier} containers."
+        remediation_hint: "Configure a valid PAID_PROXY_EXTERNAL_URL or PAID_PROXY_EXTERNAL_URL_<HOST> reachable from #{backend.identifier} containers."
       )
     end
 
@@ -292,14 +285,9 @@ module Containers
         http.get(uri.request_uri.presence || "/")
       end
 
-      response.present?
+      response.is_a?(Net::HTTPSuccess)
     rescue StandardError
       false
-    end
-
-    def configured_callback_url_for(backend)
-      specific_key = "PAID_PROXY_EXTERNAL_URL_#{backend.identifier.to_s.upcase.tr('-', '_')}"
-      ENV[specific_key].presence || ENV["PAID_PROXY_EXTERNAL_URL"].presence
     end
 
     def normalize_architecture(value)

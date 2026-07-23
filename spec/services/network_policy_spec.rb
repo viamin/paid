@@ -155,9 +155,11 @@ RSpec.describe NetworkPolicy, :no_db do
   describe ".apply_firewall_rules" do
     around do |example|
       original_proxy_external_url = ENV["PAID_PROXY_EXTERNAL_URL"]
+      original_host_proxy_external_url = ENV["PAID_PROXY_EXTERNAL_URL_WORKER_1"]
       example.run
     ensure
       ENV["PAID_PROXY_EXTERNAL_URL"] = original_proxy_external_url
+      ENV["PAID_PROXY_EXTERNAL_URL_WORKER_1"] = original_host_proxy_external_url
     end
 
     context "when rules apply successfully" do
@@ -229,11 +231,34 @@ RSpec.describe NetworkPolicy, :no_db do
       end
 
       it "uses PAID_PROXY_EXTERNAL_URL for remote backends" do
-        remote_backend = instance_double(Containers::Backends::Base, remote?: true, exec_in_container: [ [], [], 0 ])
+        remote_backend = instance_double(
+          Containers::Backends::Base,
+          identifier: "worker-1",
+          remote?: true,
+          exec_in_container: [ [], [], 0 ]
+        )
         ENV["PAID_PROXY_EXTERNAL_URL"] = "https://proxy.example.test:3443"
 
         expect(remote_backend).to receive(:exec_in_container).with(mock_container, kind_of(Array)) do |_container, cmd|
           expect(cmd[2]).to include("-d proxy.example.test -p tcp --dport 3443")
+          [ [], [], 0 ]
+        end
+
+        described_class.apply_firewall_rules(mock_container, backend: remote_backend)
+      end
+
+      it "prefers PAID_PROXY_EXTERNAL_URL_<HOST> for remote backends" do
+        remote_backend = instance_double(
+          Containers::Backends::Base,
+          identifier: "worker-1",
+          remote?: true,
+          exec_in_container: [ [], [], 0 ]
+        )
+        ENV["PAID_PROXY_EXTERNAL_URL"] = "https://proxy.example.test:3443"
+        ENV["PAID_PROXY_EXTERNAL_URL_WORKER_1"] = "https://worker-1-proxy.example.test:3555"
+
+        expect(remote_backend).to receive(:exec_in_container).with(mock_container, kind_of(Array)) do |_container, cmd|
+          expect(cmd[2]).to include("-d worker-1-proxy.example.test -p tcp --dport 3555")
           [ [], [], 0 ]
         end
 
@@ -277,7 +302,7 @@ RSpec.describe NetworkPolicy, :no_db do
       end
 
       it "raises NetworkPolicy::Error for invalid PAID_PROXY_EXTERNAL_URL" do
-        remote_backend = instance_double(Containers::Backends::Base, remote?: true)
+        remote_backend = instance_double(Containers::Backends::Base, identifier: "worker-1", remote?: true)
         ENV["PAID_PROXY_EXTERNAL_URL"] = "not a url"
 
         expect { described_class.apply_firewall_rules(mock_container, backend: remote_backend) }
@@ -285,15 +310,16 @@ RSpec.describe NetworkPolicy, :no_db do
       end
 
       it "raises NetworkPolicy::Error when the remote backend has no external proxy URL" do
-        remote_backend = instance_double(Containers::Backends::Base, remote?: true)
+        remote_backend = instance_double(Containers::Backends::Base, identifier: "worker-1", remote?: true)
         ENV.delete("PAID_PROXY_EXTERNAL_URL")
+        ENV.delete("PAID_PROXY_EXTERNAL_URL_WORKER_1")
 
         expect { described_class.apply_firewall_rules(mock_container, backend: remote_backend) }
-          .to raise_error(described_class::Error, /PAID_PROXY_EXTERNAL_URL is required/)
+          .to raise_error(described_class::Error, /PAID_PROXY_EXTERNAL_URL.*is required/)
       end
 
       it "raises NetworkPolicy::Error for an invalid PAID_PROXY_EXTERNAL_URL port" do
-        remote_backend = instance_double(Containers::Backends::Base, remote?: true)
+        remote_backend = instance_double(Containers::Backends::Base, identifier: "worker-1", remote?: true)
         ENV["PAID_PROXY_EXTERNAL_URL"] = "https://proxy.example.test:99999"
 
         expect { described_class.apply_firewall_rules(mock_container, backend: remote_backend) }
@@ -301,7 +327,7 @@ RSpec.describe NetworkPolicy, :no_db do
       end
 
       it "raises NetworkPolicy::Error for an unsupported PAID_PROXY_EXTERNAL_URL scheme" do
-        remote_backend = instance_double(Containers::Backends::Base, remote?: true)
+        remote_backend = instance_double(Containers::Backends::Base, identifier: "worker-1", remote?: true)
         ENV["PAID_PROXY_EXTERNAL_URL"] = "ssh://proxy.example.test:3443"
 
         expect { described_class.apply_firewall_rules(mock_container, backend: remote_backend) }

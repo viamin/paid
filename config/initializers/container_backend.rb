@@ -22,9 +22,10 @@ Rails.application.config.to_prepare do
   backend_type = ENV.fetch("CONTAINER_BACKEND", "local").to_sym
   Rails.application.config.x.container_backend = resolver.for(backend_type)
 
-  if Rails.application.config.x.container_backend.remote? && ENV["PAID_PROXY_EXTERNAL_URL"].blank?
+  if Rails.application.config.x.container_backend.remote? &&
+      Containers::ProxyUrl.external_url_for(Rails.application.config.x.container_backend).blank?
     Rails.logger.warn(
-      "Remote Docker backend is active but PAID_PROXY_EXTERNAL_URL is not set; remote containers will be unable to reach the secrets proxy"
+      "Remote Docker backend is active but PAID_PROXY_EXTERNAL_URL or PAID_PROXY_EXTERNAL_URL_<HOST> is not set; remote containers will be unable to reach the secrets proxy"
     )
   end
 end
