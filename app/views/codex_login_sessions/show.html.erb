@@ -1,0 +1,61 @@
+<% content_for(:title) { "Connect Codex - Paid" } %>
+
+<div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="overflow-hidden rounded-lg bg-white shadow">
+    <div class="px-6 py-5">
+      <h1 class="text-xl font-semibold text-gray-900">Connect Codex</h1>
+      <p class="mt-1 text-sm text-gray-500">Session status: <span class="font-medium text-gray-900"><%= @codex_login_session.status.humanize %></span></p>
+
+      <% if flash[:alert].present? %>
+        <div class="mt-4 rounded-md bg-red-50 p-4 text-sm text-red-700"><%= flash[:alert] %></div>
+      <% end %>
+
+      <% if flash[:notice].present? %>
+        <div class="mt-4 rounded-md bg-green-50 p-4 text-sm text-green-700"><%= flash[:notice] %></div>
+      <% end %>
+
+      <% if @codex_login_session.awaiting_authorization? || @codex_login_session.polling? %>
+        <div class="mt-6 rounded-md border border-gray-200 bg-gray-50 p-4">
+          <h2 class="text-sm font-semibold text-gray-900">1. Authorize the device</h2>
+          <% if @codex_login_session.verification_uri.present? %>
+            <p class="mt-2 break-all rounded bg-white p-3 font-mono text-xs text-gray-700 ring-1 ring-inset ring-gray-200"><%= @codex_login_session.verification_uri %></p>
+          <% end %>
+          <% if @codex_login_session.user_code.present? %>
+            <p class="mt-2 text-sm text-gray-700">Enter code: <span class="rounded bg-white px-2 py-1 font-mono text-sm tracking-widest text-gray-900 ring-1 ring-inset ring-gray-200"><%= @codex_login_session.user_code %></span></p>
+          <% end %>
+          <p class="mt-2 text-xs text-gray-500">Open the link in your browser, enter the code, and approve the Codex login. Then check authorization below.</p>
+        </div>
+
+        <div class="mt-6">
+          <h2 class="text-sm font-semibold text-gray-900">2. Check authorization</h2>
+          <%= form_with url: codex_login_session_path(@codex_login_session.external_id), method: :patch, class: "mt-4 space-y-4" do |form| %>
+            <%= hidden_field_tag :session_token, @codex_login_session.session_token %>
+            <div class="flex items-center gap-3">
+              <%= form.submit "Check Authorization", class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+              <%= link_to "Refresh Status", codex_login_session_path(@codex_login_session.external_id), class: "text-sm font-semibold text-gray-900 hover:text-gray-700" %>
+            </div>
+          <% end %>
+        </div>
+      <% elsif @codex_login_session.starting? %>
+        <div class="mt-6 rounded-md border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+          Starting the device-code login. Refresh this page if the verification link does not appear within a few seconds.
+        </div>
+      <% elsif @codex_login_session.completed? %>
+        <div class="mt-6 rounded-md border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+          Captured and stored the Codex credential as <strong><%= @codex_login_session.credential_name %></strong>.
+        </div>
+      <% else %>
+        <div class="mt-6 rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          <%= @codex_login_session.error_message.presence || "Codex login failed before a credential was captured." %>
+        </div>
+      <% end %>
+
+      <div class="mt-6 flex items-center gap-3">
+        <%= link_to "Back to Credentials", integration_credentials_path(category: "llm_provider", service_key: "openai"), class: "text-sm font-semibold text-gray-900 hover:text-gray-700" %>
+        <% if @return_to_path.present? %>
+          <%= link_to "Return to Previous Page", safe_return_path_or(@return_to_path, integration_credentials_path(category: "llm_provider", service_key: "openai")), class: "text-sm font-semibold text-gray-900 hover:text-gray-700" %>
+        <% end %>
+      </div>
+    </div>
+  </div>
+</div>

@@ -537,6 +537,32 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_22_102430) do
     t.index ["session_token"], name: "index_claude_login_sessions_on_session_token", unique: true
   end
 
+  create_table "codex_login_sessions", comment: "Device-code Connect Codex login sessions (RDR-041 / #2962).", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Account that owns this Connect Codex login session."
+    t.datetime "completed_at"
+    t.datetime "created_at", null: false
+    t.bigint "created_by_id", null: false, comment: "User who initiated the Connect Codex login."
+    t.string "credential_name", null: false, comment: "RunnerCredential name to create or replace on successful capture."
+    t.text "device_code", comment: "Encrypted device_code used to poll the OAuth token endpoint."
+    t.text "error_message"
+    t.datetime "expires_at", comment: "Device-code expiry; replaced with credential expiry after capture."
+    t.uuid "external_id", null: false, comment: "Opaque public identifier used in user-facing URLs."
+    t.datetime "failed_at"
+    t.jsonb "metadata", default: {}, null: false, comment: "Structured runtime details such as return paths and parsed Codex metadata."
+    t.integer "poll_interval", comment: "Seconds between token-endpoint polls."
+    t.bigint "runner_credential_id", comment: "Managed Codex credential captured when the login completes."
+    t.string "session_token", null: false, comment: "Time-boxed shared secret required to advance the device-code poll."
+    t.string "status", default: "starting", null: false, comment: "Device-code login lifecycle state."
+    t.datetime "updated_at", null: false
+    t.string "user_code", comment: "Short code the user enters at the verification URI."
+    t.text "verification_uri", comment: "URI the user visits to authorize the device."
+    t.index ["account_id"], name: "index_codex_login_sessions_on_account_id"
+    t.index ["created_by_id"], name: "index_codex_login_sessions_on_created_by_id"
+    t.index ["external_id"], name: "index_codex_login_sessions_on_external_id", unique: true
+    t.index ["runner_credential_id"], name: "index_codex_login_sessions_on_runner_credential_id"
+    t.index ["session_token"], name: "index_codex_login_sessions_on_session_token", unique: true
+  end
+
   create_table "collector_runs", force: :cascade do |t|
     t.integer "artifacts_count", default: 0
     t.string "collector_type", limit: 100, null: false
@@ -2908,6 +2934,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_22_102430) do
   add_foreign_key "claude_login_sessions", "integration_credentials"
   add_foreign_key "claude_login_sessions", "runner_credentials"
   add_foreign_key "claude_login_sessions", "users", column: "created_by_id"
+  add_foreign_key "codex_login_sessions", "accounts"
+  add_foreign_key "codex_login_sessions", "runner_credentials"
+  add_foreign_key "codex_login_sessions", "users", column: "created_by_id"
   add_foreign_key "collector_runs", "project_versions"
   add_foreign_key "configuration_bundles", "accounts", on_delete: :cascade
   add_foreign_key "configuration_bundles", "llm_models", on_delete: :nullify

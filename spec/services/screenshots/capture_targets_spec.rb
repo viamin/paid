@@ -48,6 +48,19 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to eq([ "prompt_review_show" ])
     end
 
+    it "maps Codex login session screens instead of treating them as unmapped UI" do
+      controller_targets = described_class.call(changed_files: [ "app/controllers/codex_login_sessions_controller.rb" ])
+      new_view_targets = described_class.call(changed_files: [ "app/views/codex_login_sessions/new.html.erb" ])
+      show_view_targets = described_class.call(changed_files: [ "app/views/codex_login_sessions/show.html.erb" ])
+
+      expect(controller_targets.map(&:slug)).to contain_exactly(
+        "codex_login_session_new",
+        "codex_login_session_show"
+      )
+      expect(new_view_targets.map(&:slug)).to eq([ "codex_login_session_new" ])
+      expect(show_view_targets.map(&:slug)).to eq([ "codex_login_session_show" ])
+    end
+
     it "maps strategy review screens instead of treating them as unmapped UI" do
       targets = described_class.call(changed_files: [ "app/views/strategy_reviews/show.html.erb" ])
 

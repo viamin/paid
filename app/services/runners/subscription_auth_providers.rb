@@ -308,9 +308,118 @@ module Runners
       end
     end
 
+    # Codex managed subscription auth (RDR-041 / #2962). The stored secret is the
+    # Codex CLI's native `auth.json` (OAuth state nested under `tokens`). The CLI
+    # may rotate `auth.json` in-container, so refresh and harvest ownership is
+    # delegated to the provisioner, which holds a per-credential lease through
+    # the run and writes rotated state back into the canonical `RunnerCredential`.
+    #
+    # Remote placement stays gated by the materializer registry (`remote_safe?
+    # == false`) until refresh/writeback is proven by tests and telemetry.
+    class Codex < Base
+      AUTH_PATH = "/home/agent/.codex/auth.json"
+
+      def initialize
+        super(runner_key: "codex")
+      end
+
+      def status(secret:)
+        classify(secret).first
+      end
+
+      def materialize(secret:)
+        status, parsed = classify(secret)
+        return unsupported_materialization if status.unsupported?
+        return malformed_materialization(status) unless status.materializable?
+
+        Materialization.new(
+          supported: true,
+          mode: SubscriptionAuthMaterializers::MATERIALIZE_NATIVE_FILE,
+          env: {},
+          files: { AUTH_PATH => parsed.auth_json },
+          redacted_metadata: status.redacted_metadata,
+          error: nil
+        )
+      end
+
+      def refresh(provisioner:)
+        performed = !!provisioner.refresh_codex_managed_credential!
+        Result.new(
+          supported: true,
+          performed: performed,
+          reason: performed ? "refreshed" : "refresh_skipped"
+        )
+      end
+
+      def harvest(provisioner:)
+        provisioner.harvest_codex_managed_credential!
+      end
+
+      private
+
+      def blank_status
+        Status.new(
+          state: :blank,
+          expires_at: nil,
+          refreshable: false,
+          materialization_mode: materialization_mode,
+          rotation_risk: rotation_risk,
+          remote_safe: remote_safe?,
+          redacted_metadata: { "materialized" => false },
+          error: "blank"
+        )
+      end
+
+      def malformed_status
+        Status.new(
+          state: :malformed,
+          expires_at: nil,
+          refreshable: false,
+          materialization_mode: SubscriptionAuthMaterializers::MATERIALIZE_UNSUPPORTED,
+          rotation_risk: SubscriptionAuthMaterializers::ROTATION_UNSUPPORTED,
+          remote_safe: false,
+          redacted_metadata: { "materialized" => false },
+          error: "malformed"
+        )
+      end
+
+      def malformed_materialization(status)
+        Materialization.new(
+          supported: false,
+          mode: status.materialization_mode,
+          env: {},
+          files: {},
+          redacted_metadata: status.redacted_metadata,
+          error: status.error
+        )
+      end
+
+      def classify(secret)
+        value = secret.to_s
+        return [ blank_status, nil ] if value.blank?
+
+        parsed = CodexCredentials::Secret.parse(value)
+        return [ malformed_status, nil ] unless parsed.codex_auth?
+        return [ malformed_status, nil ] if parsed.access_token.blank? && parsed.refresh_token.blank?
+
+        expires_at = parsed.expires_at
+        expired = expires_at.present? && expires_at <= Time.current
+        [ Status.new(
+          state: expired ? :expired : :valid,
+          expires_at: expires_at,
+          refreshable: parsed.refresh_token.present?,
+          materialization_mode: SubscriptionAuthMaterializers::MATERIALIZE_NATIVE_FILE,
+          rotation_risk: SubscriptionAuthMaterializers::ROTATION_CONTAINER_MAY_ROTATE,
+          remote_safe: remote_safe?,
+          redacted_metadata: parsed.redacted_metadata,
+          error: expired ? "expired" : nil
+        ), parsed ]
+      end
+    end
+
     REGISTRY = {
       "claude" => Claude.new,
-      "codex" => Base.new(runner_key: "codex"),
+      "codex" => Codex.new,
       "gemini" => Base.new(runner_key: "gemini"),
       "copilot" => Base.new(runner_key: "copilot")
     }.freeze

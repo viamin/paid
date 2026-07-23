@@ -220,6 +220,17 @@ module Screenshots
             record.metadata = {}
           end
 
+          codex_login_session = account.codex_login_sessions.find_or_create_by!(
+            credential_name: "Screenshot Codex Browser Login",
+            created_by: user
+          ) do |record|
+            record.status = "awaiting_authorization"
+            record.device_code = "screenshot-codex-device-code"
+            record.user_code = "SCRE-EN01"
+            record.verification_uri = "https://auth.openai.com/device?user_code=SCRE-EN01"
+            record.metadata = {}
+          end
+
           runner_credential = account.runner_credentials.find_or_create_by!(
             runner_key: provider.runner_key,
             name: "Screenshot #{Runner.display_name_for(provider.runner_key)} Setup Token"
@@ -363,6 +374,7 @@ module Screenshots
             "github_token" => { "id" => github_token.id, "name" => github_token.name },
             "integration_credential" => { "id" => integration_credential.id, "name" => integration_credential.name },
             "claude_login_session" => { "id" => claude_login_session.id, "external_id" => claude_login_session.external_id },
+            "codex_login_session" => { "id" => codex_login_session.id, "external_id" => codex_login_session.external_id },
             "runner_credential" => { "id" => runner_credential.id, "name" => runner_credential.name },
             "linear_token" => { "id" => linear_token.id, "name" => linear_token.name },
             "provider_api_key" => { "id" => provider_api_key.id, "name" => provider_api_key.name },
