@@ -1027,10 +1027,7 @@ RSpec.describe Runner do
       expect(config["permission"]).to eq({
         "external_directory" => {
           "/tmp/**" => "allow",
-<<<<<<< HEAD
-=======
           "/home/agent/**" => "allow",
->>>>>>> origin/main
           "/usr/local/lib/ruby/gems/*/gems/agent-harness-*/**" => "allow"
         }
       })

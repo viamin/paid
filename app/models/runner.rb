@@ -85,18 +85,11 @@ class Runner < ApplicationRecord
 
   KILOCODE_API_PROVIDER_KEYS = DIRECT_OUTBOUND_API_PROVIDERS.keys.freeze
   KILOCODE_DEFAULT_API_PROVIDER = "anthropic"
-<<<<<<< HEAD
-  # TODO(viamin/paid#3002): remove once agent-harness merges default KiloCode
-  # external_directory permissions with Paid's generated runtime config.
-  KILOCODE_EXTERNAL_DIRECTORY_PERMISSIONS = {
-    "/tmp/**" => "allow",
-=======
   # Paid-specific KiloCode addition: containerized runs need read access to the
   # installed agent-harness gem path. Upstream KiloCode defaults own the common
   # non-interactive allowlist (/tmp, /home/agent); Paid only layers this narrow
   # extra path on top.
   KILOCODE_EXTERNAL_DIRECTORY_PERMISSIONS = {
->>>>>>> origin/main
     "/usr/local/lib/ruby/gems/*/gems/agent-harness-*/**" => "allow"
   }.freeze
   MIN_PREFLIGHT_TIMEOUT_SECONDS = 1
@@ -430,36 +423,8 @@ class Runner < ApplicationRecord
       provider_runtime: kilocode_runner_runtime
     ).fetch(:preparation)
 
-<<<<<<< HEAD
-    api_config = DIRECT_OUTBOUND_API_PROVIDERS.fetch(kilocode_api_provider, DIRECT_OUTBOUND_API_PROVIDERS["anthropic"])
-    kilocode_provider_id = api_config[:kilocode_provider_id] || "openai-compatible"
-    options = { "apiKey" => "{env:#{kilocode_api_key_env_var}}" }
-    base_url = api_config[:base_url]
-    default_openai_url = DIRECT_OUTBOUND_API_PROVIDERS.dig("openai", :base_url)
-    options["baseURL"] = base_url if base_url.present? && base_url != default_openai_url
-
-    {
-      provider: {
-        kilocode_provider_id => {
-          options: options,
-          models: {
-            model_id => {
-              name: model_id,
-              id: model_id,
-              tool_call: true
-            }
-          }
-        }
-      },
-      model: kilocode_qualified_model(kilocode_provider_id, model_id),
-      permission: {
-        external_directory: KILOCODE_EXTERNAL_DIRECTORY_PERMISSIONS
-      }
-    }.to_json
-=======
     preparation&.file_writes&.find { |file| file.path == "~/.config/kilocode/kilo.json" }&.content ||
       raise("agent-harness did not generate a KiloCode config file")
->>>>>>> origin/main
   end
 
   def kilocode_qualified_model(provider_id, model_id)
