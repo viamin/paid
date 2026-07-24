@@ -104,6 +104,29 @@ jobs:
               | head -n 1
           }
 
+          extract_lockfile_git_revision() {
+            local sha="$1"
+            local dependency="$2"
+
+            git show "${sha}:Gemfile.lock" 2>/dev/null \
+              | awk -v dependency="$dependency" '
+                  /^GIT$/ { in_git = 1; has_dependency = 0; next }
+                  /^$/ {
+                    if (in_git && has_dependency && revision != "") {
+                      print revision
+                      exit
+                    }
+                    in_git = 0
+                    has_dependency = 0
+                    revision = ""
+                    next
+                  }
+                  in_git && /^  revision: / { revision = $2; next }
+                  in_git && $0 ~ "^    " dependency " \\(" { has_dependency = 1 }
+                ' \
+              | head -n 1
+          }
+
           extract_lockfile_bundler_version() {
             local sha="$1"
 
@@ -113,6 +136,8 @@ jobs:
 
           previous_agent_harness_version=$(extract_lockfile_dependency_version "${BASE_SHA}" "agent-harness")
           current_agent_harness_version=$(extract_lockfile_dependency_version "${HEAD_SHA}" "agent-harness")
+          previous_agent_harness_revision=$(extract_lockfile_git_revision "${BASE_SHA}" "agent-harness")
+          current_agent_harness_revision=$(extract_lockfile_git_revision "${HEAD_SHA}" "agent-harness")
           previous_ruby_maat_version=$(extract_lockfile_dependency_version "${BASE_SHA}" "ruby-maat")
           current_ruby_maat_version=$(extract_lockfile_dependency_version "${HEAD_SHA}" "ruby-maat")
           previous_bundler_version=$(extract_lockfile_bundler_version "${BASE_SHA}")
@@ -121,6 +146,9 @@ jobs:
           lockfile_contract_changes=""
           if [ "${previous_agent_harness_version}" != "${current_agent_harness_version}" ]; then
             lockfile_contract_changes="${lockfile_contract_changes}agent-harness: ${previous_agent_harness_version:-missing} -> ${current_agent_harness_version:-missing}\n"
+          fi
+          if [ "${previous_agent_harness_revision}" != "${current_agent_harness_revision}" ]; then
+            lockfile_contract_changes="${lockfile_contract_changes}agent-harness revision: ${previous_agent_harness_revision:-rubygems} -> ${current_agent_harness_revision:-rubygems}\n"
           fi
           if [ "${previous_ruby_maat_version}" != "${current_ruby_maat_version}" ]; then
             lockfile_contract_changes="${lockfile_contract_changes}ruby-maat: ${previous_ruby_maat_version:-missing} -> ${current_ruby_maat_version:-missing}\n"
@@ -165,7 +193,27 @@ jobs:
             echo "Failed to extract agent-harness version from Gemfile.lock" >&2
             exit 1
           fi
+
+          git_ref=$(
+            awk '
+              /^GIT$/ { in_git = 1; has_dependency = 0; next }
+              /^$/ {
+                if (in_git && has_dependency && revision != "") {
+                  print revision
+                  exit
+                }
+                in_git = 0
+                has_dependency = 0
+                revision = ""
+                next
+              }
+              in_git && /^  revision: / { revision = $2; next }
+              in_git && /^    agent-harness \(/ { has_dependency = 1 }
+            ' Gemfile.lock | head -n 1
+          )
+
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "git_ref=$git_ref" >> "$GITHUB_OUTPUT"
 
       - name: Extract Bundler version from Gemfile.lock
         if: steps.changes.outputs.image_relevant == 'true'
@@ -344,6 +392,7 @@ jobs:
             BUNDLER_VERSION=${{ steps.bundler-version.outputs.version }}
             RUBY_MAAT_VERSION=${{ steps.ruby-maat.outputs.version }}
             AGENT_HARNESS_VERSION=${{ steps.agent-harness.outputs.version }}
+            AGENT_HARNESS_GIT_REF=${{ steps.agent-harness.outputs.git_ref }}
             CLAUDE_INSTALL_COMMAND=${{ steps.claude-contract.outputs.install_command }}
             CLAUDE_POST_INSTALL_BINARY_PATH=${{ steps.claude-contract.outputs.post_install_binary_path }}
             CURSOR_ARTIFACT_URL=${{ steps.cursor-contract.outputs.artifact_url }}
