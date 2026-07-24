@@ -842,7 +842,10 @@ RSpec.describe Activities::RunAgentActivity do
         config_json = JSON.parse(Base64.strict_decode64(env.fetch("PAID_KILOCODE_CONFIG_B64")))
 
         expect(config_json.dig("permission", "external_directory")).to include("/tmp/**" => "allow")
-        expect(config_json.dig("permission", "external_directory")).not_to have_key("/home/agent/**")
+        expect(config_json.dig("permission", "external_directory")).to include("/home/agent/**" => "allow")
+        expect(config_json.dig("permission", "external_directory")).to include(
+          "/usr/local/lib/ruby/gems/*/gems/agent-harness-*/**" => "allow"
+        )
       end
 
       it "does not include PAID_KILOCODE_CONFIG_B64 for subscription kilocode runners" do

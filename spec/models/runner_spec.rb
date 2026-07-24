@@ -1026,7 +1026,9 @@ RSpec.describe Runner do
       expect(config["model"]).to eq("anthropic/claude-sonnet-4-20250514")
       expect(config["permission"]).to eq({
         "external_directory" => {
-          "/tmp/**" => "allow"
+          "/tmp/**" => "allow",
+          "/home/agent/**" => "allow",
+          "/usr/local/lib/ruby/gems/*/gems/agent-harness-*/**" => "allow"
         }
       })
     end
@@ -1055,27 +1057,48 @@ RSpec.describe Runner do
       expect(runner.runner_preflight_timeout_seconds).to eq(45)
     end
 
-    it "uses the native zai-coding-plan runner id for z.ai coding plan backends" do
-      zai_key = create(:provider_api_key, user: user, api_service_type: "zai_coding")
-      runner.update!(
-        provider_api_key: zai_key,
-        config: { "kilocode" => { "api_provider" => "zai_coding", "model" => "glm-5.1" } }
-      )
+    context "with a z.ai coding-plan backend" do
+      before do
+        zai_key = create(:provider_api_key, user: user, api_service_type: "zai_coding")
+        runner.update!(
+          provider_api_key: zai_key,
+          config: { "kilocode" => { "api_provider" => "zai_coding", "model" => "glm-5.1" } }
+        )
+      end
 
-      config = JSON.parse(runner.kilocode_config_json)
+      it "uses the native zai-coding-plan runner id for z.ai coding plan backends" do
+        config = JSON.parse(runner.kilocode_config_json)
 
-      expect(config["provider"]).to eq({
-        "zai-coding-plan" => {
-          "options" => {
-            "apiKey" => "{env:ZAI_CODING_API_KEY}",
-            "baseURL" => "https://api.z.ai/api/coding/paas/v4"
-          },
-          "models" => {
-            "glm-5.1" => expected_zai_model_entry
+        expect(config["provider"]).to eq({
+          "zai-coding-plan" => {
+            "options" => {
+              "apiKey" => "{env:ZAI_CODING_API_KEY}",
+              "baseURL" => "https://api.z.ai/api/coding/paas/v4"
+            },
+            "models" => {
+              "glm-5.1" => expected_zai_model_entry
+            }
           }
-        }
-      })
-      expect(config["model"]).to eq("zai-coding-plan/glm-5.1")
+        })
+      end
+
+      it "qualifies the z.ai coding-plan model id" do
+        config = JSON.parse(runner.kilocode_config_json)
+
+        expect(config["model"]).to eq("zai-coding-plan/glm-5.1")
+      end
+
+      it "keeps the upstream KiloCode defaults plus the Paid harness gem path" do
+        config = JSON.parse(runner.kilocode_config_json)
+
+        expect(config["permission"]).to eq({
+          "external_directory" => {
+            "/tmp/**" => "allow",
+            "/home/agent/**" => "allow",
+            "/usr/local/lib/ruby/gems/*/gems/agent-harness-*/**" => "allow"
+          }
+        })
+      end
     end
   end
 
