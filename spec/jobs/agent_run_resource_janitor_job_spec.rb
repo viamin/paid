@@ -32,12 +32,34 @@ RSpec.describe AgentRunResourceJanitorJob do
       it "removes the workspace volume for non-worktree runs" do
         volume = instance_double(Docker::Volume, remove: true)
         allow(backend).to receive(:get_volume)
-          .with("paid-workspace-#{agent_run.id}", host: agent_run.container_host)
+          .with("paid-workspace-#{agent_run.id}", host: agent_run.workspace_volume_host)
           .and_return(volume)
         allow(backend).to receive(:delete_volume).with(volume)
 
         described_class.new.perform(agent_run.id)
 
+        expect(backend).to have_received(:delete_volume).with(volume)
+      end
+
+      it "cleans up the volume on the planned host when container_host is blank" do
+        agent_run.update_columns(
+          container_id: nil,
+          container_host: nil,
+          external_metadata: { "planned_container_host" => "remote" }
+        )
+
+        volume = instance_double(Docker::Volume, remove: true)
+        allow(Containers).to receive(:backend_for).with("remote").and_return(backend)
+        allow(backend).to receive(:get_volume)
+          .with("paid-workspace-#{agent_run.id}", host: "remote")
+          .and_return(volume)
+        allow(backend).to receive(:delete_volume).with(volume)
+
+        described_class.new.perform(agent_run.id)
+
+        expect(Containers).to have_received(:backend_for).with("remote")
+        expect(backend).to have_received(:get_volume)
+          .with("paid-workspace-#{agent_run.id}", host: "remote")
         expect(backend).to have_received(:delete_volume).with(volume)
       end
 

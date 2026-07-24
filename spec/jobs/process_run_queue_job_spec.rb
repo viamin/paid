@@ -25,7 +25,110 @@ RSpec.describe ProcessRunQueueJob do
     job.send(:temporal_priority_for, run)
   end
 
+  def build_host_registry
+    local_backend = instance_double(Containers::Backends::LocalDocker, identifier: "local", all_host_identifiers: [ "local" ], remote?: false, ping: true)
+    elguapo_backend = instance_double(Containers::Backends::RemoteDocker, identifier: "elguapo", all_host_identifiers: [ "elguapo" ], remote?: true, ping: true)
+    aws_backend = instance_double(Containers::Backends::RemoteDocker, identifier: "aws-runner-1", all_host_identifiers: [ "aws-runner-1" ], remote?: true, ping: true)
+    registry = Containers::HostRegistry::Registry.new(
+      default_host: "local",
+      fallback_policy: "first_healthy",
+      hosts: [
+        Containers::HostRegistry::HostDefinition.new(identifier: "local", backend: local_backend, max_concurrent_runs: 2, fallback_enabled: true),
+        Containers::HostRegistry::HostDefinition.new(identifier: "elguapo", backend: elguapo_backend, max_concurrent_runs: 4, fallback_enabled: true),
+        Containers::HostRegistry::HostDefinition.new(identifier: "aws-runner-1", backend: aws_backend, max_concurrent_runs: 8, fallback_enabled: true)
+      ]
+    )
+
+    { registry: registry, local_backend: local_backend, elguapo_backend: elguapo_backend, aws_backend: aws_backend }
+  end
+
+  def stub_multi_host_registry(registry_bundle)
+    allow(Containers).to receive_messages(
+      host_registry: registry_bundle.fetch(:registry),
+      backend: registry_bundle.fetch(:local_backend)
+    )
+    allow(Containers).to receive(:backend_for).with("local").and_return(registry_bundle.fetch(:local_backend))
+    allow(Containers).to receive(:backend_for).with("elguapo").and_return(registry_bundle.fetch(:elguapo_backend))
+    allow(Containers).to receive(:backend_for).with("aws-runner-1").and_return(registry_bundle.fetch(:aws_backend))
+    allow(Containers::Provision).to receive(:compatibility_for)
+      .and_return(Containers::Provision::CompatibilityResult.new(compatible: true, error_message: nil))
+  end
+
+  def create_host_saturation_runs(host_counts)
+    other_account = create(:account)
+    other_user = create(:user, account: other_account)
+
+    host_counts.each do |host, count|
+      count.times do
+        create(:agent_run, :running, project: create(:project, account: other_account, created_by: other_user), container_host: host)
+      end
+    end
+  end
+
+  def create_host_selected_run(project:, host:, created_at:)
+    create(:agent_run, :queued, project: project, created_at: created_at, external_metadata: {
+      "container_host_selection" => {
+        "explicit_host" => host
+      }
+    })
+  end
+
   describe "#perform" do
+    it "falls back to another host with free slots when the preferred host is full" do
+      project = create(:project)
+      project.created_by.settings.update!(max_concurrent_runs: 20, max_parallel_agents_per_project: 20)
+      queued_run = create(:agent_run, :queued, project: project, external_metadata: {
+        "container_host_selection" => {
+          "preferred_host" => "elguapo",
+          "fallback" => "first_healthy"
+        }
+      })
+      create_host_saturation_runs("elguapo" => 4, "local" => 2)
+      stub_multi_host_registry(build_host_registry)
+
+      captured_input = nil
+      allow(temporal_client).to receive(:start_workflow) do |_wf, input, **_opts|
+        captured_input = input
+        workflow_handle
+      end
+
+      described_class.new.perform
+
+      # RDR-048 (#2947): the queue no longer eagerly persists container_host.
+      # The planned placement is forwarded through the workflow input so the
+      # provisioning activity can route to the right backend *before* a
+      # container resource exists; container_host is updated only once the
+      # backend creates/claims the resource. The admitted host is recorded in
+      # external_metadata so active_count_for_host can attribute this claimed
+      # run to the correct per-host ceiling during the claim window.
+      expect(queued_run.reload.container_host).to be_nil
+      expect(queued_run.reload.external_metadata["planned_container_host"]).to eq("aws-runner-1")
+      expect(queued_run.temporal_workflow_id).to be_present
+      expect(captured_input[:container_host]).to eq("aws-runner-1")
+    end
+
+    it "keeps a host-saturated run queued without blocking other host candidates for the user" do
+      project = create(:project)
+      project.created_by.settings.update!(max_concurrent_runs: 20, max_parallel_agents_per_project: 20)
+      blocked_run = create_host_selected_run(project: project, host: "elguapo", created_at: 2.minutes.ago)
+      eligible_run = create_host_selected_run(project: project, host: "aws-runner-1", created_at: 1.minute.ago)
+      create_host_saturation_runs("elguapo" => 4)
+      stub_multi_host_registry(build_host_registry)
+      allow(Rails.logger).to receive(:info)
+
+      described_class.new.perform
+
+      expect(blocked_run.reload.temporal_workflow_id).to be_nil
+      expect(eligible_run.reload.temporal_workflow_id).to be_present
+      expect(Rails.logger).to have_received(:info).with(
+        hash_including(
+          message: "process_run_queue.capacity_denied",
+          reason: "host_hard_ceiling",
+          selected_host: "elguapo"
+        )
+      )
+    end
+
     it "starts the oldest queued run when capacity is available" do
       queued_run = create(:agent_run, :queued, created_at: 2.minutes.ago)
       create(:agent_run, :queued, created_at: 1.minute.ago)

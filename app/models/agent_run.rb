@@ -690,6 +690,25 @@ class AgentRun < ApplicationRecord
     capacity_inflight.where(project_id: project.id).count
   end
 
+  # RDR-048 (#2947): count inflight runs against a per-host ceiling. A run's
+  # container_host stays blank from claim time until provisioning commits a
+  # real backend resource, so the host it was admitted against is recorded in
+  # external_metadata["planned_container_host"] (see
+  # ProcessRunQueueJob#start_claimed_run). Attribute such not-yet-provisioned
+  # rows to their planned host instead of charging every blank row to the
+  # local bucket — otherwise a single queue pass over-admits remote hosts
+  # (their count stays 0 during the claim window) while starving the local
+  # host with runs admitted elsewhere. Once container_host is set by a real
+  # provision/pool result it is authoritative and the planned value is ignored.
+  def self.active_count_for_host(container_host)
+    scope = host_scope_for(container_host)
+    capacity_inflight.where(
+      "COALESCE(NULLIF(container_host, ''), " \
+      "COALESCE(external_metadata->>'planned_container_host', '')) IN (:scope)",
+      scope: scope
+    ).count
+  end
+
   # Returns the count of active create_pr runs for the given account.
   # Used to enforce the account-level create_pr concurrency cap.
   def self.active_create_pr_count_for_account(account)
@@ -730,6 +749,25 @@ class AgentRun < ApplicationRecord
   # for shared, deterministic resolution matching Project#effective_owner.
   def self.orphaned_project_owner?(user)
     user.account.fallback_owner_id == user.id
+  end
+
+  def container_host_selection
+    raw = external_metadata.fetch("container_host_selection", {})
+    raw.is_a?(Hash) ? raw.stringify_keys : {}
+  end
+
+  # Resolves the Docker host that owns this run's named workspace volume for
+  # cleanup. ProcessRunQueueJob clears container_host at claim time and only
+  # restores it from a real provision/pool result (see start_claimed_run), so
+  # in multi-host mode a worker that dies mid-provision — after
+  # prepare_workspace! created a remote paid-workspace-* volume but before a
+  # backend recorded container_host — still carries its admission host in
+  # external_metadata["planned_container_host"]. Fall back to that so volume
+  # cleanup probes the backend that actually owns the volume instead of the
+  # local default, which would leak the remote volume. Mirrors the COALESCE
+  # fallback used by active_count_for_host.
+  def workspace_volume_host
+    container_host.presence || external_metadata["planned_container_host"].presence
   end
 
   def self.stale_running?(agent_run, now: Time.current)
@@ -2558,8 +2596,13 @@ class AgentRun < ApplicationRecord
     return if worktree_path.present? # bind-mount runs don't use named volumes
 
     volume_name = "paid-workspace-#{id}"
-    backend = Containers.backend_for(container_host)
-    volume = backend.get_volume(volume_name, host: container_host)
+    # container_host is blank from claim time until a backend records a real
+    # resource, so resolve the owning host via workspace_volume_host — which
+    # falls back to the planned admission host — to avoid probing the local
+    # backend and leaking a remote volume when a worker died mid-provision.
+    host = workspace_volume_host
+    backend = Containers.backend_for(host)
+    volume = backend.get_volume(volume_name, host: host)
     backend.delete_volume(volume)
   rescue Docker::Error::NotFoundError
     # Volume already removed, nothing to do
@@ -2627,16 +2670,36 @@ class AgentRun < ApplicationRecord
   # Provisions a brand-new container when there is no existing container to
   # reuse. Tries the warm pool first, then falls back to a fresh provision.
   def provision_new_container(**options)
-    pooled_result = Containers::PoolManager.new(project: project).acquire(agent_run: self, **options)
+    # RDR-048 (#2947): a caller (e.g. the queue processor) may know which
+    # Docker host this run was admitted against before any container
+    # resource exists. The container_host column on the run is intentionally
+    # left nil until a backend creates or claims a real resource, so that
+    # budget rejection, workflow-start failure, or warm-pool fallback do not
+    # leave an ownership field pointing at a host that never owned the run.
+    # Accept the planned host as a separate kwarg and thread it through
+    # warm-pool scoping and backend selection; the persisted container_host
+    # is only updated from the actual provision/pool result below.
+    planned_container_host = options.delete(:container_host)
+    pool_host_scope = planned_container_host.presence || container_host.presence
+
+    pooled_result = Containers::PoolManager.new(project: project).acquire(
+      agent_run: self,
+      container_host: pool_host_scope,
+      **options
+    )
     if pooled_result&.success?
       @container_service = pooled_result[:service]
       update!(container_id: pooled_result[:container_id], container_host: pooled_result[:container_host])
       return pooled_result
     end
 
+    backend_host = pool_host_scope.presence
+    backend_host ||= container_host if container_host.present?
+
     @container_service = Containers::Provision.new(
       agent_run: self,
       worktree_path: worktree_path.presence,
+      backend: Containers.backend_for(backend_host),
       **options
     )
     result = @container_service.provision
@@ -2664,6 +2727,19 @@ class AgentRun < ApplicationRecord
     @container_service = nil
     update_column(:container_id, nil) if container_id.present?
   end
+
+  def self.host_scope_for(container_host)
+    backend = Containers.backend_for(container_host)
+    identifiers = backend.all_host_identifiers.map(&:to_s)
+    # The COALESCE'd host expression in active_count_for_host is never NULL,
+    # so a local backend matches its concrete identifiers plus the empty
+    # string (legacy/blank rows whose planned host is also blank). A remote
+    # backend matches only its concrete identifiers.
+    backend.remote? ? identifiers : identifiers + [ "" ]
+  rescue Containers::Backends::Resolver::UnknownBackendError
+    [ container_host.to_s ]
+  end
+  private_class_method :host_scope_for
 
   def issue_belongs_to_same_project
     return if issue.project_id == project_id

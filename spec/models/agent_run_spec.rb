@@ -1861,6 +1861,7 @@ RSpec.describe AgentRun do
           expect(Containers::Provision).to receive(:new).with(
             agent_run: agent_run,
             worktree_path: worktree_path,
+            backend: Containers.backend_for(agent_run.container_host),
             memory_bytes: 1024 * 1024 * 1024
           ).and_call_original
 
@@ -2191,6 +2192,57 @@ RSpec.describe AgentRun do
       create(:agent_run, :completed, project: project)
 
       expect(described_class.active_count_for_project(project)).to eq(0)
+    end
+  end
+
+  describe ".active_count_for_host" do
+    it "counts legacy blank container_host rows for renamed local hosts" do
+      local_backend = instance_double(
+        Containers::Backends::LocalDocker,
+        remote?: false,
+        all_host_identifiers: [ "qnap" ]
+      )
+
+      allow(Containers).to receive(:backend_for).with("qnap").and_return(local_backend)
+
+      create(:agent_run, :running, container_host: nil)
+      create(:agent_run, :running, container_host: "")
+      create(:agent_run, :running, container_host: "qnap")
+      create(:agent_run, :running, container_host: "remote")
+
+      expect(described_class.active_count_for_host("qnap")).to eq(3)
+    end
+
+    it "attributes claimed runs to their planned host before provisioning commits" do
+      elguapo_backend = instance_double(
+        Containers::Backends::RemoteDocker,
+        remote?: true,
+        all_host_identifiers: [ "elguapo" ]
+      )
+      local_backend = instance_double(
+        Containers::Backends::LocalDocker,
+        remote?: false,
+        all_host_identifiers: [ "local" ]
+      )
+
+      allow(Containers).to receive(:backend_for).with("elguapo").and_return(elguapo_backend)
+      allow(Containers).to receive(:backend_for).with("local").and_return(local_backend)
+
+      # Claimed run admitted for elguapo but not yet provisioned: container_host
+      # is intentionally blank and the planned host is recorded in
+      # external_metadata (see ProcessRunQueueJob#start_claimed_run).
+      create(:agent_run, :queued, container_host: nil, temporal_workflow_id: "claimed",
+                                  external_metadata: { "planned_container_host" => "elguapo" })
+      # Provisioned run actually running on elguapo.
+      create(:agent_run, :running, container_host: "elguapo")
+      # Local run with no planned host.
+      create(:agent_run, :running, container_host: "local")
+
+      # The claimed run counts against elguapo (its planned host), not local,
+      # so a remote host cannot be over-admitted during the claim window and
+      # the local host is not starved by runs admitted elsewhere.
+      expect(described_class.active_count_for_host("elguapo")).to eq(2)
+      expect(described_class.active_count_for_host("local")).to eq(1)
     end
   end
 
@@ -4678,6 +4730,45 @@ RSpec.describe AgentRun do
         expect(Containers).to have_received(:backend_for).with("remote")
         expect(backend).to have_received(:get_volume).with("paid-workspace-#{agent_run.id}", host: "remote")
         expect(backend).to have_received(:delete_volume).with(volume)
+      end
+
+      it "falls back to the planned host when container_host is blank" do
+        agent_run.update_columns(
+          container_host: nil,
+          external_metadata: { "planned_container_host" => "remote" }
+        )
+
+        allow(Containers).to receive(:backend_for).with("remote").and_return(backend)
+        allow(backend).to receive(:get_volume).with("paid-workspace-#{agent_run.id}", host: "remote").and_return(volume)
+        allow(backend).to receive(:delete_volume).with(volume)
+
+        agent_run.send(:cleanup_orphaned_workspace_volume)
+
+        expect(Containers).to have_received(:backend_for).with("remote")
+        expect(backend).to have_received(:get_volume).with("paid-workspace-#{agent_run.id}", host: "remote")
+        expect(backend).to have_received(:delete_volume).with(volume)
+      end
+    end
+
+    describe "#workspace_volume_host" do
+      it "returns the persisted container_host when present" do
+        agent_run = create(:agent_run, container_host: "remote",
+                                        external_metadata: { "planned_container_host" => "other" })
+
+        expect(agent_run.workspace_volume_host).to eq("remote")
+      end
+
+      it "falls back to the planned host when container_host is blank" do
+        agent_run = create(:agent_run, container_host: nil,
+                                        external_metadata: { "planned_container_host" => "remote" })
+
+        expect(agent_run.workspace_volume_host).to eq("remote")
+      end
+
+      it "returns nil when neither host is recorded" do
+        agent_run = create(:agent_run, container_host: nil, external_metadata: {})
+
+        expect(agent_run.workspace_volume_host).to be_nil
       end
     end
   end

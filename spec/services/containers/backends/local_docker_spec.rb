@@ -13,6 +13,14 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
     expect(backend.identifier).to eq("local")
   end
 
+  it "preserves a configured host identifier" do
+    backend = described_class.new(identifier: "qnap")
+
+    expect(backend.identifier).to eq("qnap")
+    expect(backend.all_host_identifiers).to eq([ "qnap" ])
+    expect(backend.container_host_for(container)).to eq("qnap")
+  end
+
   it "delegates container creation and lookup to docker-api" do
     allow(Docker::Container).to receive(:create).and_return(container)
     allow(Docker::Container).to receive(:get).with("abc123").and_return(container)

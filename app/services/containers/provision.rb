@@ -32,6 +32,8 @@ module Containers
   #   end
   #
   class Provision
+    CompatibilityResult = Data.define(:compatible, :error_message)
+
     CODEX_NOTIFY_LINE = 'notify = ["sh", "-lc", "date +%s > /paid-heartbeat/.paid-heartbeat"]'
     HEARTBEAT_MOUNT_POINT = "/paid-heartbeat"
     MAX_STREAMING_LINE_BUFFER_BYTES = 64 * 1024
@@ -163,6 +165,19 @@ module Containers
 
     def self.codex_notify_line
       CODEX_NOTIFY_LINE
+    end
+
+    def self.compatibility_for(agent_run:, backend:, worktree_path: nil)
+      service = new(agent_run: agent_run, worktree_path: worktree_path, backend: backend)
+      # record_telemetry: false — compatibility_for is called for every candidate
+      # host during queue scheduling (before any run is claimed), so skipping
+      # RunnerAuthAttempt writes and the associated filesystem probes avoids
+      # N × (DB writes + filesystem probes) per queue pass. Telemetry is still
+      # recorded during the actual provision call.
+      service.send(:validate_backend_mount_support!, record_telemetry: false)
+      CompatibilityResult.new(compatible: true, error_message: nil)
+    rescue ProvisionError => e
+      CompatibilityResult.new(compatible: false, error_message: e.message)
     end
 
     # @param agent_run [AgentRun] The agent run to associate logs with
@@ -2741,13 +2756,18 @@ module Containers
     # named reason, while managed remote-safe credentials (e.g. Claude OAuth
     # stored as a RunnerCredential) remain eligible because they materialize
     # inside the container without a bind mount.
-    def validate_backend_mount_support!
+    #
+    # record_telemetry controls whether RunnerAuthAttempt rows are written.
+    # Pass record_telemetry: false when checking compatibility speculatively
+    # (e.g. during queue scheduling) to avoid N × DB-write + filesystem-probe
+    # overhead per queue pass. The provision path always records telemetry.
+    def validate_backend_mount_support!(record_telemetry: true)
       return if backend.supports_host_paths?
 
       rejections = []
       rejections << worktree_mount_rejection if host_worktree_path.present?
       rejections.concat(subscription_auth_mount_rejections)
-      record_eligibility_attempts!
+      record_eligibility_attempts! if record_telemetry
       return if rejections.empty?
 
       raise ProvisionError, format_backend_mount_rejections(rejections)

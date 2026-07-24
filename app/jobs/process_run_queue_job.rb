@@ -172,30 +172,65 @@ class ProcessRunQueueJob < ApplicationJob
           log_capacity_policy_manual_mode(user, policy_decision)
         end
 
+        # RDR-048 (#2947) scope: per-host Docker memory capacity across multiple
+        # backends is intentionally out of scope here — auto mode still consults
+        # one DockerSnapshot per queue pass, which is bound to the default
+        # backend. In multi-host mode that snapshot does not reflect each
+        # candidate host's daemon, so a saturated default backend can block an
+        # otherwise available remote host (and vice versa). Downgrade auto
+        # admission to manual when multiple hosts are configured so admission
+        # is purely host-ceiling-based until per-backend snapshots land.
+        if Containers.host_registry.multi_host? &&
+            forced_admission_mode != UserSetting::RUN_CONCURRENCY_MODE_MANUAL &&
+            user.settings.run_concurrency_auto?
+          forced_admission_mode = UserSetting::RUN_CONCURRENCY_MODE_MANUAL
+        end
+
         admission_uses_auto = forced_admission_mode != UserSetting::RUN_CONCURRENCY_MODE_MANUAL &&
           user.settings.run_concurrency_auto?
         docker_snapshot ||= Capacity::DockerSnapshot.fetch if admission_uses_auto
-        admission = run_admission_for(
-          next_run,
-          user,
-          mode: forced_admission_mode,
-          docker_snapshot: docker_snapshot,
-          reserved_agent_memory_bytes: queue_reserved_agent_memory_bytes(
+        host_selection = Containers::BackendScheduler.call(agent_run: next_run)
+        unless host_selection.candidate_hosts.any?
+          log_host_selection_skip(next_run, host_selection)
+          skipped_ids.add(next_run.id)
+          next
+        end
+
+        admission = nil
+        selected_host = nil
+        host_selection.candidate_hosts.each do |candidate_host|
+          admission = run_admission_for(
+            next_run,
             user,
-            base_reserved_agent_memory_bytes,
-            started_reserved_agent_memory_bytes,
-            mode: forced_admission_mode
+            mode: forced_admission_mode,
+            docker_snapshot: docker_snapshot,
+            reserved_agent_memory_bytes: queue_reserved_agent_memory_bytes(
+              user,
+              base_reserved_agent_memory_bytes,
+              started_reserved_agent_memory_bytes,
+              mode: forced_admission_mode
+            ),
+            selected_host: candidate_host,
+            selected_host_limit: Containers.host_registry.host_limit_for(candidate_host)
           )
-        )
+          if admission[:allowed]
+            selected_host = candidate_host
+            break
+          end
+
+          break unless admission[:reason] == "host_hard_ceiling" && host_selection.fallback_enabled?
+        end
         if admission[:snapshot_available]
           base_reserved_agent_memory_bytes ||= admission[:reserved_agent_memory_bytes].to_i - started_reserved_agent_memory_bytes
         end
         unless admission[:allowed]
-          log_capacity_skip(next_run, admission)
+          log_capacity_skip(next_run, admission, host_selection: host_selection)
 
           case admission[:reason]
           when "insufficient_docker_capacity"
             blocked_user_ids.add(user.id)
+          when "host_hard_ceiling"
+            skipped_ids.add(next_run.id)
           when "project_hard_ceiling"
             blocked_project_ids.add(next_run.project_id)
           when "create_pr_hard_ceiling"
@@ -253,7 +288,14 @@ class ProcessRunQueueJob < ApplicationJob
           next
         end
 
-        result = start_claimed_run(agent_run)
+        # RDR-048 (#2947): do not persist container_host here. The planned
+        # placement is forwarded into the workflow input and then into
+        # Provision/ProvisionContainerActivity as a separate kwarg so the
+        # container_host column is updated *only* once a backend creates
+        # or claims a real resource. This avoids leaving the run pointing
+        # at a host that never owned it when the budget check, workflow
+        # start, or pool/provision step fails after this point.
+        result = start_claimed_run(agent_run, planned_container_host: selected_host)
         if result == :budget_blocked
           # Budget-blocked is not a workflow failure and not a real start —
           # skip capacity accounting and continue processing the queue.
@@ -391,14 +433,16 @@ class ProcessRunQueueJob < ApplicationJob
     )
   end
 
-  def run_admission_for(agent_run, user, mode:, docker_snapshot:, reserved_agent_memory_bytes:)
+  def run_admission_for(agent_run, user, mode:, docker_snapshot:, reserved_agent_memory_bytes:, selected_host:, selected_host_limit:)
     Capacity::RunAdmission.call(
       user: user,
       project: agent_run.project,
       goal: agent_run.goal,
       mode: mode,
       docker_snapshot: docker_snapshot,
-      reserved_agent_memory_bytes: reserved_agent_memory_bytes
+      reserved_agent_memory_bytes: reserved_agent_memory_bytes,
+      selected_host: selected_host,
+      selected_host_limit: selected_host_limit
     )
   end
 
@@ -430,12 +474,19 @@ class ProcessRunQueueJob < ApplicationJob
     base_reserved_agent_memory_bytes.to_i + started_reserved_agent_memory_bytes
   end
 
-  def log_capacity_skip(agent_run, admission)
+  def log_capacity_skip(agent_run, admission, host_selection:)
     Rails.logger.info(
       message: "process_run_queue.capacity_denied",
       agent_run_id: agent_run.id,
       project_id: agent_run.project_id,
       goal: agent_run.goal,
+      selected_host: admission[:selected_host],
+      host_active_count: admission[:host_active_count],
+      host_max_concurrent_runs: admission[:host_max_concurrent_runs],
+      host_available_slots: admission[:host_available_slots],
+      selection_source: host_selection.selection_source,
+      fallback_policy: host_selection.fallback_policy,
+      candidate_hosts: host_selection.candidate_hosts,
       reason: admission[:reason],
       mode: admission[:mode],
       available_slots: admission[:available_slots],
@@ -445,6 +496,18 @@ class ProcessRunQueueJob < ApplicationJob
       reserved_agent_memory_bytes: admission[:reserved_agent_memory_bytes],
       docker_reason: admission[:docker_reason],
       degraded: admission[:degraded] == true
+    )
+  end
+
+  def log_host_selection_skip(agent_run, host_selection)
+    Rails.logger.info(
+      message: "process_run_queue.host_unavailable",
+      agent_run_id: agent_run.id,
+      project_id: agent_run.project_id,
+      requested_host: host_selection.requested_host,
+      selection_source: host_selection.selection_source,
+      fallback_policy: host_selection.fallback_policy,
+      compatibility_failures: host_selection.compatibility_failures
     )
   end
 
@@ -491,7 +554,7 @@ class ProcessRunQueueJob < ApplicationJob
       .mark_probe_dispatched!(agent_run_id: agent_run.id)
   end
 
-  def start_claimed_run(agent_run)
+  def start_claimed_run(agent_run, planned_container_host: nil)
     ConfigurationBundles::AssignToRun.call(agent_run: agent_run) if agent_run.configuration_bundle.blank?
 
     budget_result = CostBudgets::Check.call(agent_run.project)
@@ -514,13 +577,32 @@ class ProcessRunQueueJob < ApplicationJob
     workflow_input[:issue_id] = agent_run.issue_id if agent_run.issue_id
     workflow_input[:custom_prompt] = agent_run.custom_prompt if agent_run.custom_prompt.present?
     workflow_input[:source_pull_request_number] = agent_run.source_pull_request_number if agent_run.source_pull_request_number
+    workflow_input[:container_host] = planned_container_host if planned_container_host.present?
 
     workflow_id = "queued-#{agent_run.project_id}-#{agent_run.id}-#{Time.current.to_i}"
+
+    # RDR-048 (#2947): record the host this run was admitted against and clear
+    # any default container_host so AgentRun.active_count_for_host attributes
+    # this claimed run to the correct per-host ceiling before a backend creates
+    # or claims a real resource. The container_host column is restored only by
+    # a real provision/pool result (see AgentRun#provision_new_container); the
+    # planned host in external_metadata is the source of truth for capacity
+    # accounting until then. Without this, a run admitted for a remote host
+    # would be charged to the local bucket (via its blank container_host) and
+    # not to the remote host, allowing the queue to over-admit remotes while
+    # starving the local host in a single pass.
+    update_columns = { temporal_workflow_id: workflow_id }
+    if planned_container_host.present?
+      update_columns[:container_host] = nil
+      update_columns[:external_metadata] = agent_run.external_metadata.merge(
+        "planned_container_host" => planned_container_host
+      )
+    end
 
     # Write the planned workflow_id before starting the workflow so
     # StaleRunDetectorJob can cancel an orphaned workflow even if the
     # process crashes between start_workflow and the DB write.
-    agent_run.update_columns(temporal_workflow_id: workflow_id)
+    agent_run.update_columns(**update_columns)
 
     # Keep temporal_workflow_id set on failure — if start_workflow raises
     # due to a network timeout, the workflow may have started server-side.
