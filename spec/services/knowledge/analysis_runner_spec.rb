@@ -132,6 +132,7 @@ RSpec.describe Knowledge::AnalysisRunner, :no_db do
     let(:remote_backend) do
       instance_double(
         Containers::Backends::Base,
+        identifier: "worker-1",
         remote?: true,
         create_container: mock_container,
         start_container: true,

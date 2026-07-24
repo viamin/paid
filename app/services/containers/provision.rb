@@ -2982,7 +2982,7 @@ module Containers
       return true unless backend.respond_to?(:remote?)
       return true unless backend.remote?
 
-      ENV["PAID_PROXY_EXTERNAL_URL"].present?
+      Containers::ProxyUrl.resolve(backend:, restricted: true).present?
     rescue StandardError
       false
     end

@@ -90,6 +90,10 @@ module Containers
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end
 
+      def get_image(_name)
+        raise NotImplementedError, "#{self.class} must implement ##{__method__}"
+      end
+
       def list_volumes
         raise NotImplementedError, "#{self.class} must implement ##{__method__}"
       end

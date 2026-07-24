@@ -119,6 +119,37 @@ RSpec.describe Containers::Backends::Swarm, :no_db do
     expect(backend.system_info).to eq("NCPU" => 12, "MemTotal" => 24_000)
   end
 
+  it "verifies an image is present on every healthy swarm node" do
+    second_node = build_node_payload(id: "node-2", host: "worker-2", addr: "10.0.0.26")
+    image = instance_double(Docker::Image)
+
+    stub_manager_get("/nodes", [ node_payload, second_node ])
+    allow(Docker::Image).to receive(:get)
+      .with("paid-agent:latest", {}, kind_of(Docker::Connection))
+      .and_return(image, image)
+
+    expect(backend.get_image("paid-agent:latest")).to eq(image)
+    expect(Docker::Image).to have_received(:get).twice
+  end
+
+  it "raises when a healthy swarm node is missing the image" do
+    second_node = build_node_payload(id: "node-2", host: "worker-2", addr: "10.0.0.26")
+    image = instance_double(Docker::Image)
+    call_count = 0
+
+    stub_manager_get("/nodes", [ node_payload, second_node ])
+    allow(Docker::Image).to receive(:get).with("paid-agent:latest", {}, kind_of(Docker::Connection)) do
+      call_count += 1
+      raise Docker::Error::NotFoundError, "No such image: paid-agent:latest" if call_count == 2
+
+      image
+    end
+
+    expect {
+      backend.get_image("paid-agent:latest")
+    }.to raise_error(Docker::Error::NotFoundError, /worker-2/)
+  end
+
   it "keeps recognizing persisted node hostnames even when the node is not ready" do
     down_node = node_payload.deep_dup
     down_node["Status"]["State"] = "down"

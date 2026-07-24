@@ -350,13 +350,12 @@ class NetworkPolicy
 
     def default_proxy_destination(backend: Containers.backend)
       if backend.remote?
-        external_url = ENV["PAID_PROXY_EXTERNAL_URL"].presence
-        raise Error, "PAID_PROXY_EXTERNAL_URL is required when CONTAINER_BACKEND is remote" if external_url.blank?
-
-        return external_proxy_destination(external_url)
+        return external_proxy_destination(Containers::ProxyUrl.resolve(backend:, restricted: true))
       end
 
       { host: "paid-proxy", port: SECRETS_PROXY_PORT }
+    rescue ArgumentError => e
+      raise Error, e.message
     end
 
     def external_proxy_destination(url)
