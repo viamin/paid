@@ -310,6 +310,62 @@ RSpec.describe AgentRuns::RunnerResolver do
           )
         )
       end
+
+      it "uses the tenant preference when an effective_runner is supplied" do
+        account = create(:account, slug: "rdr040-tenant-#{SecureRandom.hex(4)}")
+        owner = create(:user, :owner, account: account, email: "rdr040-tenant-#{SecureRandom.hex(4)}@example.com")
+        github_token = create(:github_token, account: account, created_by: owner)
+        project = create(:project, account: account, created_by: owner, github_token: github_token)
+        # Only an openai runner is runnable. The tenant preference for the
+        # cursor runner keys an openai model under "cursor" — the resolver
+        # must look the tenant preference up by runner_key (cursor), not by
+        # goal, and pick an openai-compatible runner for the run.
+        codex_runner = create(:runner, user: owner, runner_key: "codex", auth_type: "subscription")
+        create(:runner, user: owner, runner_key: "cursor", auth_type: "subscription")
+        create(:llm_model, :openai, model_id: "gpt-4o", tier: "high")
+        create(:tenant_setting, account: account,
+          runner_preferences: {
+            "model_preferences" => { "codex" => "gpt-4o" }
+          })
+
+        runner_id, _ = described_class.call(
+          project: project,
+          goal: "create_pr",
+          effective_runner: "codex"
+        )
+        runner = Runner.find(runner_id)
+
+        expect(runner.runner_key).to eq("codex")
+        expect(runner.id).to eq(codex_runner.id)
+      end
+
+      it "ignores the tenant preference when no effective_runner is supplied" do
+        account = create(:account, slug: "rdr040-tenant-skip-#{SecureRandom.hex(4)}")
+        owner = create(:user, :owner, account: account, email: "rdr040-tenant-skip-#{SecureRandom.hex(4)}@example.com")
+        github_token = create(:github_token, account: account, created_by: owner)
+        project = create(:project, account: account, created_by: owner, github_token: github_token)
+        # Without an effective_runner, the resolver cannot key the tenant
+        # preference by runner_key, so it must skip the tenant branch
+        # entirely. A tenant preference keyed to "create_pr" (the goal)
+        # should not accidentally drive fallback runner selection.
+        create(:runner, user: owner, runner_key: "codex", auth_type: "subscription")
+        create(:runner, user: owner, runner_key: "cursor", auth_type: "subscription")
+        create(:llm_model, :openai, model_id: "gpt-4o", tier: "high")
+        create(:tenant_setting, account: account,
+          runner_preferences: {
+            "model_preferences" => { "create_pr" => "gpt-4o" }
+          })
+
+        allow(Rails.logger).to receive(:warn)
+
+        runner_id, _ = described_class.call(project: project, goal: "create_pr")
+        runner = Runner.find(runner_id)
+
+        expect(runner.runner_key).not_to eq("codex")
+        expect(Rails.logger).not_to have_received(:warn).with(
+          hash_including(message: "agent_execution.no_compatible_runner_for_override")
+        )
+      end
     end
   end
 end

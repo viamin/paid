@@ -17,14 +17,25 @@ module AgentRuns
     # The resolver treats them as unavailable so a queued run is never pinned
     # back to a runner known-unhealthy this pass; it falls through to a
     # healthy alternative instead. Empty for all other callers.
+    #
+    # +effective_runner+ is the runner_key used to look up tenant-level model
+    # preferences (see TenantSetting#model_preference_for, which is keyed by
+    # runner_key). Call sites that already have an AgentRun should pass
+    # `agent_run.effective_runner` so the tenant branch in
+    # +override_model_id_for+ matches the same lookup used by
+    # Models::Select#tenant_model_preference_result. Call sites that resolve
+    # a runner for the first time (before any AgentRun exists) may leave this
+    # nil; in that case the tenant-preference branch is skipped because no
+    # runner_key has been chosen yet.
     def initialize(project:, goal:, requested_agent_type: nil, requested_runner_id: nil, respect_requested: true,
-                   exclude_runner_ids: [], logger: nil)
+                   exclude_runner_ids: [], effective_runner: nil, logger: nil)
       @project = project
       @goal = goal
       @requested_agent_type = requested_agent_type
       @requested_runner_id = requested_runner_id
       @respect_requested = respect_requested
       @exclude_runner_ids = Array(exclude_runner_ids)
+      @effective_runner = effective_runner
       @logger = logger
     end
 
@@ -43,7 +54,8 @@ module AgentRuns
 
     private
 
-    attr_reader :project, :goal, :requested_agent_type, :requested_runner_id, :respect_requested, :exclude_runner_ids, :logger
+    attr_reader :project, :goal, :requested_agent_type, :requested_runner_id, :respect_requested, :exclude_runner_ids,
+                :effective_runner, :logger
 
     # True when this runner instance already failed preflight during the
     # current dequeue pass and must not be re-selected.
@@ -172,9 +184,14 @@ module AgentRuns
     end
 
     # RDR-040: returns the model_id implied by the project's preference chain
-    # (required > first preferred > tenant preference for the goal), or nil
-    # when no preference is configured. Used to inform the runner fallback
-    # chain so we don't pick a runner that the model can't run on.
+    # (required > first preferred > tenant preference for the effective
+    # runner), or nil when no preference is configured. Used to inform the
+    # runner fallback chain so we don't pick a runner that the model can't
+    # run on. The tenant branch uses +effective_runner+ as the lookup key to
+    # match TenantSetting#model_preference_for (keyed by runner_key, not
+    # goal); when no +effective_runner+ has been resolved yet (e.g. before
+    # any AgentRun exists) the tenant branch is skipped because no runner
+    # has been chosen to scope the preference to.
     def override_model_id_for(project)
       prefs = project.model_preferences || {}
       explicit = prefs["required_model_id"].presence
@@ -183,7 +200,9 @@ module AgentRuns
       preferred = Array(prefs["preferred_model_ids"]).first
       return preferred if preferred
 
-      tenant = project.account.tenant_setting&.model_preference_for(goal.to_s)
+      return nil if effective_runner.blank?
+
+      tenant = project.account.tenant_setting&.model_preference_for(effective_runner)
       tenant.presence
     end
 
