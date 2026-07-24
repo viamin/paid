@@ -4731,6 +4731,45 @@ RSpec.describe AgentRun do
         expect(backend).to have_received(:get_volume).with("paid-workspace-#{agent_run.id}", host: "remote")
         expect(backend).to have_received(:delete_volume).with(volume)
       end
+
+      it "falls back to the planned host when container_host is blank" do
+        agent_run.update_columns(
+          container_host: nil,
+          external_metadata: { "planned_container_host" => "remote" }
+        )
+
+        allow(Containers).to receive(:backend_for).with("remote").and_return(backend)
+        allow(backend).to receive(:get_volume).with("paid-workspace-#{agent_run.id}", host: "remote").and_return(volume)
+        allow(backend).to receive(:delete_volume).with(volume)
+
+        agent_run.send(:cleanup_orphaned_workspace_volume)
+
+        expect(Containers).to have_received(:backend_for).with("remote")
+        expect(backend).to have_received(:get_volume).with("paid-workspace-#{agent_run.id}", host: "remote")
+        expect(backend).to have_received(:delete_volume).with(volume)
+      end
+    end
+
+    describe "#workspace_volume_host" do
+      it "returns the persisted container_host when present" do
+        agent_run = create(:agent_run, container_host: "remote",
+                                        external_metadata: { "planned_container_host" => "other" })
+
+        expect(agent_run.workspace_volume_host).to eq("remote")
+      end
+
+      it "falls back to the planned host when container_host is blank" do
+        agent_run = create(:agent_run, container_host: nil,
+                                        external_metadata: { "planned_container_host" => "remote" })
+
+        expect(agent_run.workspace_volume_host).to eq("remote")
+      end
+
+      it "returns nil when neither host is recorded" do
+        agent_run = create(:agent_run, container_host: nil, external_metadata: {})
+
+        expect(agent_run.workspace_volume_host).to be_nil
+      end
     end
   end
 end

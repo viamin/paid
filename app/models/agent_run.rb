@@ -756,6 +756,20 @@ class AgentRun < ApplicationRecord
     raw.is_a?(Hash) ? raw.stringify_keys : {}
   end
 
+  # Resolves the Docker host that owns this run's named workspace volume for
+  # cleanup. ProcessRunQueueJob clears container_host at claim time and only
+  # restores it from a real provision/pool result (see start_claimed_run), so
+  # in multi-host mode a worker that dies mid-provision — after
+  # prepare_workspace! created a remote paid-workspace-* volume but before a
+  # backend recorded container_host — still carries its admission host in
+  # external_metadata["planned_container_host"]. Fall back to that so volume
+  # cleanup probes the backend that actually owns the volume instead of the
+  # local default, which would leak the remote volume. Mirrors the COALESCE
+  # fallback used by active_count_for_host.
+  def workspace_volume_host
+    container_host.presence || external_metadata["planned_container_host"].presence
+  end
+
   def self.stale_running?(agent_run, now: Time.current)
     agent_run.status == "running" &&
       agent_run.started_at.present? &&
@@ -2582,8 +2596,13 @@ class AgentRun < ApplicationRecord
     return if worktree_path.present? # bind-mount runs don't use named volumes
 
     volume_name = "paid-workspace-#{id}"
-    backend = Containers.backend_for(container_host)
-    volume = backend.get_volume(volume_name, host: container_host)
+    # container_host is blank from claim time until a backend records a real
+    # resource, so resolve the owning host via workspace_volume_host — which
+    # falls back to the planned admission host — to avoid probing the local
+    # backend and leaking a remote volume when a worker died mid-provision.
+    host = workspace_volume_host
+    backend = Containers.backend_for(host)
+    volume = backend.get_volume(volume_name, host: host)
     backend.delete_volume(volume)
   rescue Docker::Error::NotFoundError
     # Volume already removed, nothing to do
