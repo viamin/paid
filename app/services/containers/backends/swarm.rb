@@ -199,7 +199,17 @@ module Containers
       end
 
       def get_image(name)
-        Docker::Image.get(name, {}, manager_connection)
+        nodes = healthy_nodes
+        raise Docker::Error::NotFoundError, "Image #{name} not found: no healthy swarm nodes available" if nodes.empty?
+
+        image = nil
+        nodes.each do |node|
+          current_image = Docker::Image.get(name, {}, node_connection(node))
+          image ||= current_image
+        rescue Docker::Error::NotFoundError => error
+          raise Docker::Error::NotFoundError, "Image #{name} not found on swarm node #{node_hostname(node) || node.fetch('ID', 'unknown')}: #{error.message}"
+        end
+        image
       end
 
       def list_volumes

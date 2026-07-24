@@ -31,8 +31,12 @@ module Containers
     end
 
     def external_url_for(backend)
-      specific_key = "PAID_PROXY_EXTERNAL_URL_#{backend.identifier.to_s.upcase.tr('-', '_')}"
+      specific_key = "PAID_PROXY_EXTERNAL_URL_#{env_key_suffix(backend.identifier)}"
       ENV[specific_key].presence || ENV["PAID_PROXY_EXTERNAL_URL"].presence
+    end
+
+    def env_key_suffix(identifier)
+      identifier.to_s.upcase.gsub(/[^A-Z0-9]+/, "_").gsub(/\A_+|_+\z/, "")
     end
   end
 end
