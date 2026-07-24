@@ -91,11 +91,12 @@ module Models
     #   - all direct-outbound runners, because those are configured per-model
     #     and their compatibility is set by the user's tier_model_ids / config
     def runner_keys_for_model(model)
-      provider_to_runner = Runners::DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER.invert
-      standard_runner = provider_to_runner[model.provider]
+      standard_runners = Runners::DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER
+        .select { |_, provider| provider == model.provider }
+        .keys
 
       matches = []
-      matches << standard_runner if standard_runner && @runner_keys.include?(standard_runner)
+      matches.concat(standard_runners & @runner_keys)
       matches.concat(@runner_keys & Runners::DefaultTierModelIds::DIRECT_OUTBOUND_RUNNER_KEYS)
       matches.uniq
     end
