@@ -198,6 +198,20 @@ module Containers
         end
       end
 
+      def get_image(name)
+        nodes = healthy_nodes
+        raise Docker::Error::NotFoundError, "Image #{name} not found: no healthy swarm nodes available" if nodes.empty?
+
+        image = nil
+        nodes.each do |node|
+          current_image = Docker::Image.get(name, {}, node_connection(node))
+          image ||= current_image
+        rescue Docker::Error::NotFoundError => error
+          raise Docker::Error::NotFoundError, "Image #{name} not found on swarm node #{node_hostname(node) || node.fetch('ID', 'unknown')}: #{error.message}"
+        end
+        image
+      end
+
       def list_volumes
         healthy_nodes.flat_map do |node|
           Docker::Volume.all({}, node_connection(node)).map do |volume|
