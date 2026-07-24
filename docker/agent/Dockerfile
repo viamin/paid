@@ -117,11 +117,13 @@ RUN if [ -z "${BUNDLER_VERSION}" ]; then \
 #
 # When agent-harness is pinned to a git ref in Gemfile.lock (e.g. an
 # unreleased upstream fix published as a commit), set AGENT_HARNESS_GIT_REF
-# instead of AGENT_HARNESS_VERSION. The build then clones the upstream repo,
-# checks out the resolved revision from the lockfile, builds the .gem from
-# source, and installs it. RubyGems has no `--git` install option, so the
-# clone-and-build pattern is the simplest way to install a gem straight from
-# a git ref without invoking Bundler.
+# instead of AGENT_HARNESS_VERSION. The build then fetches only the pinned
+# commit (a shallow, --depth 1 fetch so the full repository history is never
+# downloaded), builds the .gem from source, and installs it. RubyGems has no
+# `--git` install option, so the fetch-and-build pattern is the simplest way to
+# install a gem straight from a git ref without invoking Bundler. The gemspec
+# resolves its file list via `git ls-files`, so a checkout (which populates the
+# index) is required rather than a bare tarball download.
 ARG AGENT_HARNESS_VERSION
 ARG AGENT_HARNESS_GIT_REF
 RUN if [ -z "${AGENT_HARNESS_VERSION}" ] && [ -z "${AGENT_HARNESS_GIT_REF}" ]; then \
@@ -131,10 +133,12 @@ RUN if [ -z "${AGENT_HARNESS_VERSION}" ] && [ -z "${AGENT_HARNESS_GIT_REF}" ]; t
     fi \
     && if [ -n "${AGENT_HARNESS_GIT_REF}" ]; then \
         echo "Installing agent-harness from git ref: ${AGENT_HARNESS_GIT_REF}"; \
-        cd /tmp \
-        && git clone "https://github.com/viamin/agent-harness.git" agent-harness-src \
-        && cd agent-harness-src \
-        && git checkout "${AGENT_HARNESS_GIT_REF}" \
+        mkdir -p /tmp/agent-harness-src \
+        && cd /tmp/agent-harness-src \
+        && git init \
+        && git remote add origin "https://github.com/viamin/agent-harness.git" \
+        && git fetch --depth 1 origin "${AGENT_HARNESS_GIT_REF}" \
+        && git checkout FETCH_HEAD \
         && gem build agent-harness.gemspec \
         && gem install --no-document agent-harness-*.gem \
         && cd / \
