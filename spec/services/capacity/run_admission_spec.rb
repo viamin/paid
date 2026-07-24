@@ -24,7 +24,87 @@ RSpec.describe Capacity::RunAdmission do
     )
   end
 
+  def admission_for(host:, limit:)
+    described_class.call(
+      user: user,
+      project: project,
+      docker_snapshot: docker_snapshot,
+      selected_host: host,
+      selected_host_limit: limit
+    )
+  end
+
   describe ".call" do
+    it "counts active runs against the selected host limit only" do
+      create(:agent_run, :running, project: project, container_host: "local")
+      3.times { create(:agent_run, :running, project: project, container_host: "elguapo") }
+
+      local_result = admission_for(host: "local", limit: 2)
+      elguapo_result = admission_for(host: "elguapo", limit: 4)
+      aws_result = admission_for(host: "aws-runner-1", limit: 8)
+
+      expect(local_result[:host_active_count]).to eq(1)
+      expect(local_result[:host_available_slots]).to eq(1)
+      expect(elguapo_result[:host_active_count]).to eq(3)
+      expect(elguapo_result[:host_available_slots]).to eq(1)
+      expect(aws_result[:host_active_count]).to eq(0)
+      expect(aws_result[:host_available_slots]).to eq(8)
+    end
+
+    it "counts claimed runs against their planned host before provisioning commits" do
+      # Claimed run admitted for elguapo but not yet provisioned: container_host
+      # is blank and the planned host is recorded in external_metadata, exactly
+      # as ProcessRunQueueJob#start_claimed_run leaves it.
+      create(:agent_run, :queued, project: project, container_host: nil,
+                                  temporal_workflow_id: "claimed",
+                                  external_metadata: { "planned_container_host" => "elguapo" })
+      create(:agent_run, :running, project: project, container_host: "elguapo")
+
+      elguapo_result = admission_for(host: "elguapo", limit: 4)
+      local_result = admission_for(host: "local", limit: 2)
+
+      # The claimed run charges elguapo (its planned host), not local, so a
+      # remote host cannot be over-admitted during the claim window.
+      expect(elguapo_result[:host_active_count]).to eq(2)
+      expect(elguapo_result[:host_available_slots]).to eq(2)
+      expect(local_result[:host_active_count]).to eq(0)
+    end
+
+    it "returns a host concurrency denial when the selected host is full" do
+      4.times { create(:agent_run, :running, project: project, container_host: "elguapo") }
+
+      result = described_class.call(
+        user: user,
+        project: project,
+        docker_snapshot: docker_snapshot,
+        selected_host: "elguapo",
+        selected_host_limit: 4
+      )
+
+      expect(result[:allowed]).to be false
+      expect(result[:reason]).to eq("host_hard_ceiling")
+      expect(result[:selected_host]).to eq("elguapo")
+      expect(result[:host_active_count]).to eq(4)
+      expect(result[:host_available_slots]).to eq(0)
+    end
+
+    it "still enforces user guardrails across all hosts" do
+      user.settings.update!(run_concurrency_mode: "manual", max_concurrent_runs: 2)
+      create(:agent_run, :running, project: project, container_host: "local")
+      create(:agent_run, :running, project: project, container_host: "aws-runner-1")
+
+      result = described_class.call(
+        user: user,
+        project: project,
+        selected_host: "elguapo",
+        selected_host_limit: 4
+      )
+
+      expect(result[:allowed]).to be false
+      expect(result[:reason]).to eq("user_hard_ceiling")
+      expect(result[:host_active_count]).to eq(0)
+    end
+
     it "uses account tenant caps when the user has no explicit manual limit" do
       user.settings.update!(run_concurrency_mode: "manual", max_concurrent_runs: 2)
       allow(user.settings).to receive(:max_concurrent_runs).and_return(nil)

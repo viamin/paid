@@ -5,7 +5,28 @@ require "rails_helper"
 RSpec.describe Containers::Backends::Resolver, :no_db do
   let(:initializer_path) { Rails.root.join("config/initializers/container_backend.rb") }
   let(:remote_backend) { instance_double(Containers::Backends::RemoteDocker, identifier: "worker-1", remote?: true) }
-  let(:local_backend) { instance_double(Containers::Backends::LocalDocker, remote?: false) }
+  let(:local_backend) { instance_double(Containers::Backends::LocalDocker, identifier: "local", remote?: false) }
+  let(:qnap_backend) { instance_double(Containers::Backends::LocalDocker, identifier: "qnap", remote?: false) }
+  let(:multi_host_registry) do
+    Containers::HostRegistry::Registry.new(
+      default_host: "qnap",
+      fallback_policy: Containers::HostRegistry::FALLBACK_DISABLED,
+      hosts: [
+        Containers::HostRegistry::HostDefinition.new(
+          identifier: "qnap",
+          backend: qnap_backend,
+          max_concurrent_runs: 2,
+          fallback_enabled: true
+        ),
+        Containers::HostRegistry::HostDefinition.new(
+          identifier: "worker-1",
+          backend: remote_backend,
+          max_concurrent_runs: 4,
+          fallback_enabled: true
+        )
+      ]
+    )
+  end
 
   around do |example|
     original_backend = ENV["CONTAINER_BACKEND"]
@@ -65,6 +86,34 @@ RSpec.describe Containers::Backends::Resolver, :no_db do
 
     allow(Containers::Backends::RemoteDocker).to receive(:from_env).and_return(remote_backend)
     allow(described_class).to receive(:for).with(:remote).and_return(remote_backend)
+
+    expect(Rails.logger).not_to receive(:warn)
+
+    run_initializer
+  end
+
+  it "warns in multi-host mode when any configured host is remote without an external proxy URL" do
+    ENV["CONTAINER_BACKEND"] = "multi"
+    ENV.delete("PAID_PROXY_EXTERNAL_URL")
+    ENV.delete("PAID_PROXY_EXTERNAL_URL_WORKER_1")
+
+    allow(Containers::HostRegistry).to receive(:load).and_return(multi_host_registry)
+    allow(described_class).to receive(:for).with(:qnap).and_return(qnap_backend)
+
+    expect(Rails.logger).to receive(:warn).with(
+      "Remote Docker backend is active but PAID_PROXY_EXTERNAL_URL or PAID_PROXY_EXTERNAL_URL_<HOST> is not set; remote containers will be unable to reach the secrets proxy"
+    )
+
+    run_initializer
+  end
+
+  it "does not warn in multi-host mode when a remote host has a per-host external proxy URL" do
+    ENV["CONTAINER_BACKEND"] = "multi"
+    ENV.delete("PAID_PROXY_EXTERNAL_URL")
+    ENV["PAID_PROXY_EXTERNAL_URL_WORKER_1"] = "https://worker-1-proxy.example.test:3443"
+
+    allow(Containers::HostRegistry).to receive(:load).and_return(multi_host_registry)
+    allow(described_class).to receive(:for).with(:qnap).and_return(qnap_backend)
 
     expect(Rails.logger).not_to receive(:warn)
 

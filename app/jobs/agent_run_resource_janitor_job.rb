@@ -69,8 +69,13 @@ class AgentRunResourceJanitorJob < ApplicationJob
     return false if agent_run.worktree_path.present?
 
     volume_name = "#{VOLUME_PREFIX}#{agent_run.id}"
-    backend = Containers.backend_for(agent_run.container_host)
-    backend.delete_volume(backend.get_volume(volume_name, host: agent_run.container_host))
+    # container_host is blank from claim time until a backend records a real
+    # resource, so resolve the owning host via workspace_volume_host — which
+    # falls back to the planned admission host — to avoid probing the local
+    # backend and leaking a remote volume when a worker died mid-provision.
+    host = agent_run.workspace_volume_host
+    backend = Containers.backend_for(host)
+    backend.delete_volume(backend.get_volume(volume_name, host: host))
     true
   rescue Docker::Error::NotFoundError
     true # Volume already removed — treat as successfully cleaned
