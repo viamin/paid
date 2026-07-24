@@ -41,14 +41,20 @@ module Runners
       gpt-5.5-pro
     ].freeze
 
-    def self.call(runner_key:, model_id:, auth_type:)
-      new(runner_key: runner_key, model_id: model_id, auth_type: auth_type).call
+    def self.call(runner_key:, model_id:, auth_type:, provider_runtime: nil)
+      new(
+        runner_key: runner_key,
+        model_id: model_id,
+        auth_type: auth_type,
+        provider_runtime: provider_runtime
+      ).call
     end
 
-    def initialize(runner_key:, model_id:, auth_type:)
+    def initialize(runner_key:, model_id:, auth_type:, provider_runtime: nil)
       @runner_key = runner_key.to_s
       @model_id = model_id.to_s
       @auth_type = auth_type.to_s
+      @provider_runtime = provider_runtime
     end
 
     def call
@@ -57,7 +63,7 @@ module Runners
 
     private
 
-    attr_reader :runner_key, :model_id, :auth_type
+    attr_reader :runner_key, :model_id, :auth_type, :provider_runtime
 
     # ---------------------------------------------------------------------------
     # agent-harness delegation

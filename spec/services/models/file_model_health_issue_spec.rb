@@ -35,6 +35,16 @@ RSpec.describe Models::FileModelHealthIssue do
     )
   end
 
+  def contract_drift_result(findings: [], fingerprint: "contract-fp")
+    instance_double(
+      Models::DetectContractDrift::Result,
+      drift?: findings.any?,
+      findings: findings,
+      total_affected_models: findings.sum { |f| f[:models].size },
+      fingerprint: fingerprint
+    )
+  end
+
   before do
     allow(client).to receive(:create_label)
     allow(client).to receive(:add_comment)
@@ -46,6 +56,7 @@ RSpec.describe Models::FileModelHealthIssue do
       project: project,
       drift: drift_result(new_models: {}),
       broken: broken_result(findings: []),
+      contract_drift: contract_drift_result(findings: []),
       client: client
     )
 
@@ -56,7 +67,13 @@ RSpec.describe Models::FileModelHealthIssue do
   it "creates a labelled, auto-pick issue when no open issue exists" do
     allow(client).to receive_messages(issues: [], create_issue: OpenStruct.new(number: 7))
 
-    result = described_class.call(project: project, drift: drift_result, broken: broken_result, client: client)
+    result = described_class.call(
+      project: project,
+      drift: drift_result,
+      broken: broken_result,
+      contract_drift: contract_drift_result,
+      client: client
+    )
 
     expect(result.action).to eq(:created)
     expect(client).to have_received(:create_issue).with(
@@ -73,17 +90,29 @@ RSpec.describe Models::FileModelHealthIssue do
       OpenStruct.new(number: 7)
     end
 
-    described_class.call(project: project, drift: drift_result, broken: broken_result, client: client)
+    described_class.call(
+      project: project,
+      drift: drift_result,
+      broken: broken_result,
+      contract_drift: contract_drift_result,
+      client: client
+    )
 
     expect(client).to have_received(:create_issue)
   end
 
   it "skips when an open issue already carries the same fingerprint" do
-    existing_fp = Digest::SHA256.hexdigest("drift-fp|broken-fp")
+    existing_fp = Digest::SHA256.hexdigest("drift-fp|contract-fp|broken-fp")
     existing = OpenStruct.new(number: 7, body: "<!-- model-health-fingerprint: #{existing_fp} -->")
     allow(client).to receive(:issues).and_return([ existing ])
 
-    result = described_class.call(project: project, drift: drift_result, broken: broken_result, client: client)
+    result = described_class.call(
+      project: project,
+      drift: drift_result,
+      broken: broken_result,
+      contract_drift: contract_drift_result,
+      client: client
+    )
 
     expect(result.action).to eq(:skipped)
     expect(client).not_to have_received(:add_comment)
@@ -93,10 +122,16 @@ RSpec.describe Models::FileModelHealthIssue do
     stale = OpenStruct.new(number: 7, body: "<!-- model-health-fingerprint: old -->")
     allow(client).to receive(:issues).and_return([ stale ])
 
-    result = described_class.call(project: project, drift: drift_result, broken: broken_result, client: client)
+    result = described_class.call(
+      project: project,
+      drift: drift_result,
+      broken: broken_result,
+      contract_drift: contract_drift_result,
+      client: client
+    )
 
     expect(result.action).to eq(:commented)
-    new_fp = Digest::SHA256.hexdigest("drift-fp|broken-fp")
+    new_fp = Digest::SHA256.hexdigest("drift-fp|contract-fp|broken-fp")
     # Body update must land before the notification comment so that a transient
     # comment-post failure doesn't leave a stale fingerprint (duplicate loop).
     expect(client).to have_received(:update_issue).with(

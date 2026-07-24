@@ -91,7 +91,27 @@ module AgentRuns
       selected_runner = selected_runner_from_settings(settings, owner)
       configured_runner = configured_runner_from_raw_settings(settings)
       base_runner = runnable_runner(selected_runner) || runnable_runner(configured_runner)
-      fallback_runner = Runner.first_enabled_for_owner(owner) || Runner.ensure_default_for(owner)
+
+      # RDR-040: when the project has a model override (required / preferred /
+      # tenant), the base runner and the fallback must be runners that can
+      # actually execute that model — otherwise Models::Select will
+      # short-circuit to a no-selection outcome and waste a queue cycle
+      # discovering the mismatch. Prefer a compatible runner over the
+      # setting-derived base; fall through to the existing chain when no
+      # override is configured or no compatible runner is available.
+      override_model_id = override_model_id_for(project)
+      compat_runner = compatibility_aware_fallback(owner)
+      if compat_runner && (base_runner.nil? || !runner_compatible_with_model?(base_runner, override_model_id))
+        # Override the setting-derived base with a compatible runner so the
+        # run lands on a runner that can actually execute the override
+        # model. Without this, a project-required Anthropic model would
+        # still be pinned to the default Codex runner (which can't run it)
+        # and Models::Select would short-circuit to a no-selection.
+        base_runner = compat_runner
+      end
+      fallback_runner = compat_runner ||
+        Runner.first_enabled_for_owner(owner) ||
+        Runner.ensure_default_for(owner)
 
       # Walk the preference chain in priority order but skip any candidate
       # that failed preflight this dequeue pass, so the run lands on a
@@ -103,6 +123,81 @@ module AgentRuns
         account_managed_runner(fallback_runner, owner),
         fallback_runner
       ) || first_enabled_for_owner(owner)
+    end
+
+    # RDR-040: When the project has a model override, scan the runnable
+    # runner pool and return the first runner that is compatible with the
+    # override model. The pool order follows +ordered+ (declaration order
+    # from APP_RUNNER_KEYS) so the same preference is honored as the
+    # non-override fallback. Returns nil when no override is set or when no
+    # compatible runner is in the pool, in which case the caller falls back
+    # to the existing chain. Always excludes runners that already failed
+    # preflight this dequeue pass.
+    def compatibility_aware_fallback(owner)
+      return nil unless owner
+
+      override_model_id = override_model_id_for(project)
+      return nil if override_model_id.blank?
+
+      scope = owner.runners.kept_only.for_agent_runs
+        .where(runner_key: container_executable_runner_keys)
+        .where.not(id: exclude_runner_ids)
+        .ordered
+
+      matched = nil
+      scope.each do |candidate|
+        if runner_compatible_with_model?(candidate, override_model_id)
+          matched = candidate
+          break
+        end
+      end
+
+      # When no runner in the pool is compatible with the override, log so
+      # operators can see the eventual no-selection outcome traceable to a
+      # missing compatible runner — not to a generic "no fallback".
+      if matched.nil?
+        candidate_keys = scope.pluck(:runner_key)
+        if candidate_keys.any?
+          Rails.logger.warn(
+            message: "agent_execution.no_compatible_runner_for_override",
+            project_id: project.id,
+            goal: goal,
+            override_model_id: override_model_id,
+            candidate_runner_keys: candidate_keys
+          )
+        end
+      end
+
+      matched
+    end
+
+    # RDR-040: returns the model_id implied by the project's preference chain
+    # (required > first preferred > tenant preference for the goal), or nil
+    # when no preference is configured. Used to inform the runner fallback
+    # chain so we don't pick a runner that the model can't run on.
+    def override_model_id_for(project)
+      prefs = project.model_preferences || {}
+      explicit = prefs["required_model_id"].presence
+      return explicit if explicit
+
+      preferred = Array(prefs["preferred_model_ids"]).first
+      return preferred if preferred
+
+      tenant = project.account.tenant_setting&.model_preference_for(goal.to_s)
+      tenant.presence
+    end
+
+    def runner_compatible_with_model?(runner, model_id)
+      return true if runner.blank?
+      return true if model_id.blank?
+
+      result = Runners::ModelCompatibility.call(
+        runner_key: runner.runner_key,
+        model_id: model_id,
+        auth_type: runner.auth_type,
+        provider_runtime: runner.agent_harness_runner_runtime
+      )
+      !result.unsupported?
     end
 
     def selected_runner_from_settings(settings, owner)

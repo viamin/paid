@@ -257,5 +257,59 @@ RSpec.describe AgentRuns::RunnerResolver do
       expect(runner_id).to be_nil
       expect(agent_type).to eq("codex")
     end
+
+    context "with RDR-040 compatibility-aware fallback ordering" do
+      it "picks a runner compatible with the project's required model" do
+        account = create(:account, slug: "rdr040-pref-#{SecureRandom.hex(4)}")
+        owner = create(:user, :owner, account: account, email: "rdr040-pref-#{SecureRandom.hex(4)}@example.com")
+        github_token = create(:github_token, account: account, created_by: owner)
+        project = create(:project, account: account, created_by: owner, github_token: github_token)
+        # Create an openai runner (incompatible) and an anthropic runner (compatible).
+        # The project requires an anthropic model; the resolver must not pin
+        # the run to the openai runner. Either the user-created anthropic
+        # runner or the default (claude) — both compatible — is acceptable.
+        create(:runner, user: owner, runner_key: "codex", auth_type: "subscription")
+        anthropic_runner = create(:runner, user: owner, runner_key: "cursor", auth_type: "subscription")
+        create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic", tier: "high")
+        project.update!(model_preferences: project.model_preferences.merge("required_model_id" => "claude-sonnet-4-6"))
+
+        runner_id, _ = described_class.call(project: project, goal: "create_pr")
+        runner = Runner.find(runner_id)
+
+        # The runner picked must be compatible with anthropic (the model's
+        # provider); the codex runner is openai-only and must NOT be chosen.
+        expect(runner.runner_key).not_to eq("codex")
+        # Either the user-created cursor runner or the default claude runner
+        # is acceptable, as long as the runner is compatible with anthropic.
+        compatible = [ "cursor", "claude" ].include?(runner.runner_key)
+        expect(compatible).to be(true), "expected a runner compatible with anthropic, got #{runner.runner_key.inspect}"
+        expect(runner.id).to be_a(Integer)
+        expect(anthropic_runner.id).to be_a(Integer) # sanity — factory created
+      end
+
+      it "logs a warning when no runner in the chain is compatible with the override" do
+        account = create(:account, slug: "rdr040-warn-#{SecureRandom.hex(4)}")
+        owner = create(:user, :owner, account: account, email: "rdr040-warn-#{SecureRandom.hex(4)}@example.com")
+        github_token = create(:github_token, account: account, created_by: owner)
+        project = create(:project, account: account, created_by: owner, github_token: github_token)
+        # Only an anthropic (cursor) runner exists, but the project requires
+        # an openai model. The resolver must not silently drop the chain.
+        create(:runner, user: owner, runner_key: "cursor", auth_type: "subscription")
+        create(:llm_model, :openai, model_id: "gpt-4o", tier: "high")
+        project.update!(model_preferences: project.model_preferences.merge("required_model_id" => "gpt-4o"))
+
+        allow(Rails.logger).to receive(:warn)
+
+        described_class.call(project: project, goal: "create_pr")
+
+        expect(Rails.logger).to have_received(:warn).with(
+          hash_including(
+            message: "agent_execution.no_compatible_runner_for_override",
+            project_id: project.id,
+            override_model_id: "gpt-4o"
+          )
+        )
+      end
+    end
   end
 end

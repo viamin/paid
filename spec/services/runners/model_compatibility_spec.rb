@@ -229,6 +229,16 @@ RSpec.describe Runners::ModelCompatibility do
   end
 
   describe "Result" do
+    it "accepts an optional provider_runtime parameter (RDR-040)" do
+      runtime = AgentHarness::ProviderRuntime.new(model: "gpt-4o")
+      expect {
+        described_class.call(
+          runner_key: "codex", model_id: "gpt-4o",
+          auth_type: "api_key", provider_runtime: runtime
+        )
+      }.not_to raise_error
+    end
+
     it "supported? returns true when supported is true" do
       r = described_class::Result.new(supported: true, source: "test")
       expect(r).to be_supported

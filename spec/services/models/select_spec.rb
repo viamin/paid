@@ -865,5 +865,99 @@ RSpec.describe Models::Select do
         expect(selection.selector_type).to eq("override")
       end
     end
+
+    context "with RDR-040 runner compatibility checks for override paths" do
+      # Use the cursor runner (anthropic provider) so an openai override
+      # model triggers a :provider_mismatch incompatibility. Cursor is the
+      # default factory runner_key so it won't collide with the
+      # subscription-uniqueness validation. The account/project need unique
+      # slugs/owner-repo pairs because the test database is shared.
+      let(:account) do
+        create(:account, slug: "rdr040-sel-#{SecureRandom.hex(4)}")
+      end
+      let(:user) { create(:user, account: account, email: "rdr040-sel-#{SecureRandom.hex(4)}@example.com") }
+      let(:github_token) { create(:github_token, account: account, created_by: user) }
+      let(:project) { create(:project, account: account, created_by: user, github_token: github_token) }
+
+      let(:cursor_runner) do
+        create(:runner, user: project.created_by, runner_key: "cursor", auth_type: "subscription")
+      end
+      let(:cursor_agent_run) do
+        run = create(:agent_run, project: project)
+        run.update!(runner: cursor_runner)
+        run
+      end
+
+      context "when the project required model is incompatible with the bound runner" do
+        before do
+          # openai model — incompatible with the cursor runner (anthropic).
+          create(:llm_model, :openai, model_id: "gpt-4o", provider: "openai", tier: "high")
+          project.update!(model_preferences: { "required_model_id" => "gpt-4o" })
+        end
+
+        it "returns no selection instead of persisting the incompatible override" do
+          expect(described_class.call(agent_run: cursor_agent_run)).to be_nil
+          expect(cursor_agent_run.model_selection).to be_nil
+        end
+
+        it "records the no-selection outcome with the rejected model surfaced" do
+          described_class.call(agent_run: cursor_agent_run)
+
+          log = cursor_agent_run.agent_run_logs.where(log_type: "system").order(:id).last
+
+          expect(log.metadata).to include("outcome" => "no_selection")
+          # The selection metadata should still show which model was
+          # rejected so an admin can see why no model was selected.
+          expect(log.metadata.dig("selection", "model_id")).to eq("gpt-4o")
+        end
+      end
+
+      context "when the project required model is compatible with the bound runner" do
+        before do
+          create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic", tier: "high")
+          project.update!(model_preferences: { "required_model_id" => "claude-sonnet-4-6" })
+        end
+
+        it "selects the override model" do
+          selection = described_class.call(agent_run: cursor_agent_run)
+
+          expect(selection).to be_a(ModelSelection)
+          expect(selection.llm_model.model_id).to eq("claude-sonnet-4-6")
+        end
+      end
+
+      context "when a preferred model is incompatible with the bound runner" do
+        before do
+          # openai model — incompatible with cursor runner (anthropic).
+          create(:llm_model, :openai, model_id: "gpt-4o", tier: "high")
+          project.update!(model_preferences: { "preferred_model_ids" => [ "gpt-4o" ] })
+        end
+
+        it "skips the incompatible preferred model and falls through" do
+          selection = described_class.call(agent_run: cursor_agent_run)
+
+          # No override selected because the only preferred model is incompatible.
+          if selection
+            expect(selection.llm_model.model_id).not_to eq("gpt-4o")
+          end
+        end
+      end
+
+      context "when the tenant-preferred model is incompatible with the bound runner" do
+        before do
+          create(:llm_model, :openai, model_id: "gpt-4o", tier: "high")
+          create(:tenant_setting, account: project.account,
+            provider_preferences: { "model_preferences" => { "cursor" => "gpt-4o" } })
+        end
+
+        it "skips the incompatible tenant model" do
+          selection = described_class.call(agent_run: cursor_agent_run)
+
+          if selection
+            expect(selection.llm_model.model_id).not_to eq("gpt-4o")
+          end
+        end
+      end
+    end
   end
 end
