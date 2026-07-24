@@ -1,13 +1,9 @@
 # frozen_string_literal: true
 
-require "net/http"
-require "uri"
-
 module Containers
   class HostReadiness
     CACHE_TTL = 30.seconds
     CACHE_VERSION = "v1"
-    CALLBACK_TIMEOUT = 2
     SUPPORTED_AGENT_ARCHITECTURES = %w[amd64 arm64].freeze
 
     Check = Struct.new(:name, :healthy, :details, :remediation_hint, keyword_init: true) do
@@ -196,20 +192,21 @@ module Containers
     def proxy_callback_check(backend)
       return healthy_check(name: "proxy_callback", details: { required: false }) unless backend.remote?
 
+      # Configuration-only validation: resolving the callback URL confirms that
+      # PAID_PROXY_EXTERNAL_URL(_HOST) is present and well-formed for this
+      # backend. This probe runs on the control plane, so it cannot prove that
+      # containers on the remote host can actually reach the URL (a control-plane
+      # request would produce false positives when only the control plane has
+      # connectivity, and false negatives when only the container network does).
+      # Actual reachability is enforced at runtime when the container connects to
+      # the proxy; this check only surfaces a missing or malformed callback URL.
       callback_url = Containers::ProxyUrl.resolve(backend:, restricted: true)
-      reachable = callback_reachable?(callback_url)
-      return healthy_check(name: "proxy_callback", details: { url: callback_url, reachable: true }) if reachable
-
-      failure_check(
-        name: "proxy_callback",
-        error: StandardError.new("callback unreachable"),
-        remediation_hint: "Ensure containers on #{backend.identifier} can reach #{callback_url} and that /health/liveness responds."
-      )
+      healthy_check(name: "proxy_callback", details: { url: callback_url, validated: "configuration" })
     rescue StandardError => error
       failure_check(
         name: "proxy_callback",
         error: error,
-        remediation_hint: "Configure a valid PAID_PROXY_EXTERNAL_URL or PAID_PROXY_EXTERNAL_URL_<HOST> reachable from #{backend.identifier} containers."
+        remediation_hint: "Configure a valid PAID_PROXY_EXTERNAL_URL or PAID_PROXY_EXTERNAL_URL_<HOST> for #{backend.identifier} containers."
       )
     end
 
@@ -287,29 +284,6 @@ module Containers
 
     def failed_check?(payload, name)
       payload.fetch(:checks).any? { |check| check[:name] == name && check[:healthy] == false }
-    end
-
-    def callback_reachable?(callback_url)
-      uri = URI.parse(callback_url)
-      uri.path = liveness_path_for(uri.path)
-      uri.query = nil
-      uri.fragment = nil
-
-      response = Net::HTTP.start(uri.host, uri.port, use_ssl: uri.scheme == "https",
-        open_timeout: CALLBACK_TIMEOUT, read_timeout: CALLBACK_TIMEOUT) do |http|
-        http.get(uri.request_uri.presence || "/")
-      end
-
-      response.is_a?(Net::HTTPSuccess)
-    rescue StandardError
-      false
-    end
-
-    def liveness_path_for(base_path)
-      # PAID_PROXY_EXTERNAL_URL may carry a path prefix (for example when Paid is
-      # served behind a reverse proxy under /paid). Append the liveness path to
-      # the configured base path instead of overwriting it.
-      "#{base_path.to_s.chomp('/')}/health/liveness"
     end
 
     def normalize_architecture(value)
