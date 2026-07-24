@@ -1210,25 +1210,40 @@ module Projects
     end
 
     def subscription_auth_source_for(runner)
-      credential = managed_subscription_credential_for(runner.runner_key)
+      runner_key = runner.runner_key.to_s
+      credential = managed_subscription_credential_for(runner_key, require_active: false)
 
       if credential
         return Runners::SubscriptionAuthEligibility::AuthSource.new(
-          runner_key: runner.runner_key,
+          runner_key: runner_key,
           auth_mode: :managed,
-          credential_state: managed_credential_state_for(runner.runner_key, credential)
+          credential_state: managed_credential_state_for(runner_key, credential)
+        )
+      end
+
+      if api_key_proxy_subscription_auth_for?(runner_key)
+        return Runners::SubscriptionAuthEligibility::AuthSource.new(
+          runner_key: runner_key,
+          auth_mode: :api_key_proxy
         )
       end
 
       Runners::SubscriptionAuthEligibility::AuthSource.new(
-        runner_key: runner.runner_key,
+        runner_key: runner_key,
         auth_mode: :host_forwarded
       )
     end
 
-    def managed_subscription_credential_for(runner_key)
+    API_KEY_PROXY_SUBSCRIPTION_RUNNERS = %w[codex].freeze
+
+    def api_key_proxy_subscription_auth_for?(runner_key)
+      API_KEY_PROXY_SUBSCRIPTION_RUNNERS.include?(runner_key)
+    end
+
+    def managed_subscription_credential_for(runner_key, require_active: true)
       scope = current_account.runner_credentials.for_runner(runner_key)
       scope = scope.where(auth_kind: "oauth_token") if %w[claude codex gemini copilot].include?(runner_key.to_s)
+      scope = scope.active if require_active
       scope.order(created_at: :desc, id: :desc).first
     end
 

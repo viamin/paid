@@ -13,7 +13,12 @@
 
     <div>
       <%= form.label :identifier, "Identifier", class: "block text-sm font-medium text-gray-700" %>
-      <%= form.text_field :identifier, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm" %>
+      <%= form.text_field :identifier,
+        class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm",
+        disabled: docker_host.persisted? %>
+      <% if docker_host.persisted? %>
+        <p class="mt-1 text-xs text-gray-500">Identifiers are fixed after create to preserve historical run ownership.</p>
+      <% end %>
     </div>
 
     <div>

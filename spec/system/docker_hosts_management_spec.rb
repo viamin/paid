@@ -48,6 +48,7 @@ RSpec.describe "Docker host management", type: :system do
   it "updates a host from the edit form" do
     visit edit_docker_host_path(docker_host)
 
+    expect(page).to have_field("Identifier", with: "elguapo", disabled: true)
     fill_in "Display name", with: "Edge Builder"
     fill_in "Manual concurrency limit", with: "6"
     click_button "Save Docker host"

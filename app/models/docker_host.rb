@@ -27,6 +27,7 @@ class DockerHost < ApplicationRecord
   validates :readiness_status, inclusion: { in: READINESS_STATUSES }
   validates :image_status, inclusion: { in: STATUS_TYPES }
   validates :required_network_status, inclusion: { in: STATUS_TYPES }
+  validate :identifier_immutable, if: -> { persisted? && will_save_change_to_identifier? }
   validate :local_backend_endpoint_rules
 
   def local?
@@ -95,5 +96,9 @@ class DockerHost < ApplicationRecord
     elsif !local? && endpoint.blank?
       errors.add(:endpoint, "can't be blank for remote Docker hosts")
     end
+  end
+
+  def identifier_immutable
+    errors.add(:identifier, "can't be changed after creation")
   end
 end

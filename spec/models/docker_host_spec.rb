@@ -20,4 +20,13 @@ RSpec.describe DockerHost, type: :model do
     expect(host).not_to be_valid
     expect(host.errors[:endpoint]).to include("must be blank for the local Docker host")
   end
+
+  it "does not allow identifier changes after create" do
+    host = create(:docker_host)
+
+    host.identifier = "renamed-host"
+
+    expect(host).not_to be_valid
+    expect(host.errors[:identifier]).to include("can't be changed after creation")
+  end
 end

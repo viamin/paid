@@ -1585,6 +1585,32 @@ RSpec.describe "AgentRuns" do
         expect(AgentRun.last.container_host).to eq("healthy-host")
       end
 
+      it "allows explicit remote host selection for Codex when proxy auth is the available fallback" do
+        create_placement_ready_remote_host(project: project, identifier: "remote-host")
+        codex = configure_codex_create_pr_default!(project)
+
+        post project_agent_runs_path(project), params: { issue_id: issue.id, container_host: "remote-host" }
+
+        expect(response).to redirect_to(project_path(project))
+        expect(AgentRun.last.runner).to eq(codex)
+        expect(AgentRun.last.container_host).to eq("remote-host")
+      end
+
+      it "keeps a preferred remote host eligible for Codex when proxy auth is the available fallback" do
+        create_placement_ready_remote_host(project: project, identifier: "preferred-host")
+        codex = configure_codex_create_pr_default!(project)
+        project.account.tenant_setting!.update!(
+          preferred_docker_host_identifier: "preferred-host",
+          docker_host_fallback_behavior: "first_healthy"
+        )
+
+        post project_agent_runs_path(project), params: { issue_id: issue.id }
+
+        expect(response).to redirect_to(project_path(project))
+        expect(AgentRun.last.runner).to eq(codex)
+        expect(AgentRun.last.container_host).to eq("preferred-host")
+      end
+
       it "redirects with an error when no runnable runner can be resolved" do
         owner = project.effective_owner
         allow(UserSetting).to receive(:enabled_agent_runners).with(owner, identifiers: true).and_return([])
@@ -2853,5 +2879,24 @@ RSpec.describe "AgentRuns" do
 
   def column_index(document, header_text)
     document.css("table thead th").find_index { |header| header.text.squish == header_text }
+  end
+
+  def create_placement_ready_remote_host(project:, identifier:)
+    create(:docker_host, account: project.account,
+      identifier: identifier, display_name: identifier.humanize,
+      backend_type: "remote", fallback_eligible: true,
+      readiness_status: "ready", image_status: "ready", required_network_status: "ready")
+  end
+
+  def configure_codex_create_pr_default!(project)
+    owner = project.created_by
+    codex = owner.runners.create!(
+      runner_key: "codex",
+      auth_type: "subscription",
+      enabled_for_agent_runs: true,
+      enabled_for_fallback: true
+    )
+    owner.settings.update!(default_agent_runners_by_goal: { "create_pr" => codex.routing_key })
+    codex
   end
 end

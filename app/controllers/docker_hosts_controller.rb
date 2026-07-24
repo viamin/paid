@@ -100,9 +100,8 @@ class DockerHostsController < ApplicationController
   end
 
   def docker_host_params
-    params.require(:docker_host).permit(
+    permitted = [
       :display_name,
-      :identifier,
       :backend_type,
       :endpoint,
       :callback_url,
@@ -110,6 +109,9 @@ class DockerHostsController < ApplicationController
       :fallback_eligible,
       :manual_concurrency_limit,
       :enabled
-    )
+    ]
+    permitted.unshift(:identifier) unless action_name == "update"
+
+    params.require(:docker_host).permit(*permitted)
   end
 end

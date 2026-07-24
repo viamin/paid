@@ -41,6 +41,23 @@ RSpec.describe "DockerHosts", type: :request do
     expect(host.daemon_summary).not_to eq("Spoofed daemon")
   end
 
+  it "keeps identifiers unchanged on update" do
+    host = create(:docker_host, account: account, identifier: "edge-builder")
+
+    patch docker_host_path(host), params: {
+      docker_host: {
+        identifier: "renamed-host",
+        display_name: "Updated Host"
+      }
+    }
+
+    expect(response).to redirect_to(docker_host_path(host))
+
+    host.reload
+    expect(host.identifier).to eq("edge-builder")
+    expect(host.display_name).to eq("Updated Host")
+  end
+
   it "clears saved account and project preferences when a host is disabled" do
     host = create(:docker_host, account: account, identifier: "elguapo")
     tenant_setting = account.tenant_setting || create(:tenant_setting, account: account)
