@@ -84,6 +84,13 @@ module Workflows
       custom_prompt = input[:custom_prompt]
       source_pull_request_number = input[:source_pull_request_number]
       agent_run_id = input[:agent_run_id]
+      # RDR-048 (#2947): the queue admits each run against a planned
+      # container_host. The host is forwarded through the workflow input so
+      # ProvisionContainerActivity can route provisioning to the right
+      # backend *before* a container resource exists; the agent_run row's
+      # container_host is updated only once that backend creates/claims
+      # the resource.
+      planned_container_host = input[:container_host].presence
       goal = input.fetch(:goal, "create_pr")
 
       Temporalio::Workflow.logger.info(
@@ -216,7 +223,7 @@ module Workflows
         # idempotent, so a retry after a start_to_close timeout reuses any
         # live container instead of creating a duplicate.
         run_activity(Activities::ProvisionContainerActivity,
-          { agent_run_id: agent_run_id }, timeout: 60)
+          { agent_run_id: agent_run_id, container_host: planned_container_host }.compact, timeout: 60)
 
         # Step 2b: Verify the credential proxy is healthy before git operations.
         # Clone and push depend on the proxy for git authentication. When the

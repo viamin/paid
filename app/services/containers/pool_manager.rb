@@ -46,11 +46,11 @@ module Containers
       @target_size = target_size
     end
 
-    def acquire(agent_run:, **options)
+    def acquire(agent_run:, container_host: nil, **options)
       return unless enabled_for?(agent_run)
       return unless pool_compatible_options?(options)
 
-      entry = claim_entry(agent_run, options: options)
+      entry = claim_entry(agent_run, options: options, container_host: container_host)
       return unless entry
 
       unless container_running?(entry.container_id, backend: Containers.backend_for(entry.container_host))
@@ -108,9 +108,9 @@ module Containers
       (options.keys - SUPPORTED_ACQUIRE_OPTIONS).empty?
     end
 
-    def claim_entry(agent_run, options:)
+    def claim_entry(agent_run, options:, container_host:)
       ContainerPoolEntry.transaction do
-        entry = warm_scope(options: options).lock("FOR UPDATE SKIP LOCKED").order(:warmed_at, :id).first
+        entry = warm_scope(options: options, container_host: container_host).lock("FOR UPDATE SKIP LOCKED").order(:warmed_at, :id).first
         next unless entry
 
         entry.update!(status: "claimed", agent_run: agent_run, claimed_at: Time.current)
@@ -118,11 +118,19 @@ module Containers
       end
     end
 
-    def warm_scope(options:)
-      project.container_pool_entries.warm.where(
+    def warm_scope(options:, container_host:)
+      scope = project.container_pool_entries.warm.where(
         image: options.fetch(:image, Provision::DEFAULTS[:image]),
         network: pool_network_name
       )
+      return scope if container_host.blank?
+
+      # RDR-048 (#2947): scope warm claims to the planned host so a run
+      # admitted against host A never claims a warm container on host B.
+      # Without this filter, warm-pool acquisition would override explicit
+      # placement and could exceed the configured per-host ceiling, since
+      # ceiling accounting counts runs by their persisted container_host.
+      scope.where(container_host: container_host)
     end
 
     def missing_count
