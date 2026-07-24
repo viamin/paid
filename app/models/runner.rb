@@ -283,7 +283,6 @@ class Runner < ApplicationRecord
   end
 
   def quota_check_runtime
-    return direct_outbound_quota_runtime if api_key?
     return subscription_quota_runtime if subscription?
 
     nil
@@ -309,12 +308,6 @@ class Runner < ApplicationRecord
     config.is_a?(Hash) ? config.fetch("opencode", {}) : {}
   end
 
-  def direct_outbound_quota_runtime
-    return kilocode_quota_runtime if runner_key == "kilocode" && requires_direct_outbound?
-
-    agent_harness_runner_runtime
-  end
-
   def subscription_quota_runtime
     unset_vars = RunnerSupport.subscription_auth_unset_vars_for(runner_key)
     return nil if unset_vars.empty?
@@ -323,11 +316,6 @@ class Runner < ApplicationRecord
     unset_vars.delete("COPILOT_GITHUB_TOKEN") if runner_key == "copilot"
     AgentHarness::ProviderRuntime.new(unset_env: unset_vars)
   end
-
-  def kilocode_quota_runtime
-    AgentHarness::ProviderRuntime.new(env: kilocode_runtime_env)
-  end
-
   def opencode_api_provider
     return nil unless runner_key == "opencode"
 

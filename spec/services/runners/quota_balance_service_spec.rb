@@ -44,6 +44,16 @@ RSpec.describe Runners::QuotaBalanceService do
       )
     end
 
+    it "caps auto-balanced weights at the runner maximum" do
+      high = build_api_runner(key: "opencode", budget: 20_000, weight: 1)
+      low = build_api_runner(key: "kilocode", budget: 20, weight: 1)
+
+      described_class.call(user: user)
+
+      expect(high.reload.weight).to eq(Runner::MAX_WEIGHT)
+      expect(low.reload.weight).to eq(1)
+    end
+
     it "leaves runners without a monthly budget unchanged and marks them unavailable" do
       runner = create(
         :runner,

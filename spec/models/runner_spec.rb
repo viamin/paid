@@ -1623,23 +1623,21 @@ RSpec.describe Runner do
       expect(runtime.unset_env).to include("ANTHROPIC_API_KEY")
     end
 
-    it "returns a direct-outbound runtime for api-key runners" do
+    it "returns nil for api-key runners" do
       user = create(:user)
-      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret")
       create(:llm_model, model_id: "moonshotai/kimi-k2-0905", provider: "openrouter", tier: "mid")
       runner = create(
         :runner,
         user: user,
         runner_key: "opencode",
         auth_type: "api_key",
-        provider_api_key: api_key,
+        provider_api_key: create(:provider_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret"),
         config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } }
       )
 
       runtime = runner.quota_check_runtime
 
-      expect(runtime).to be_a(AgentHarness::ProviderRuntime)
-      expect(runtime.env).to include("OPENROUTER_API_KEY" => "sk-openrouter-secret")
+      expect(runtime).to be_nil
     end
   end
 

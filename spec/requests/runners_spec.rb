@@ -413,8 +413,8 @@ RSpec.describe "Runners" do
       expect(cursor.reload.weight).to eq(5)
     end
 
-    it "persists auto_weight_enabled and triggers an immediate rebalance when enabling it" do
-      allow(Runners::QuotaBalanceService).to receive(:call)
+    it "persists auto_weight_enabled and enqueues an immediate rebalance when enabling it" do
+      allow(RunnerQuotaBalanceJob).to receive(:perform_later)
 
       patch settings_runners_path, params: {
         user_setting: {
@@ -426,7 +426,7 @@ RSpec.describe "Runners" do
 
       expect(response).to redirect_to(runners_path)
       expect(user.reload.settings.auto_weight_enabled).to be(true)
-      expect(Runners::QuotaBalanceService).to have_received(:call).with(user: user)
+      expect(RunnerQuotaBalanceJob).to have_received(:perform_later).with(user.id)
     end
 
     it "ignores submitted manual weights while auto-weighting is enabled" do

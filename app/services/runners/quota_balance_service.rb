@@ -192,7 +192,7 @@ module Runners
       updated_runner_ids = eligible.filter_map do |entry|
         runner = entry[:runner]
         previous_weight = runner.weight
-        target_weight = [ 1, ((entry[:remaining].to_f / min_remaining) * BASE_WEIGHT).round ].max
+        target_weight = [ [ 1, ((entry[:remaining].to_f / min_remaining) * BASE_WEIGHT).round ].max, Runner::MAX_WEIGHT ].min
         next if previous_weight == target_weight
 
         runner.update_columns(weight: target_weight, updated_at: Time.current)

@@ -15,6 +15,17 @@ RSpec.describe RunnerQuotaBalanceJob do
       expect(Runners::QuotaBalanceService).to have_received(:call).once
     end
 
+    it "can rebalance a single user" do
+      enabled = create(:user_setting, auto_weight_enabled: true)
+      other = create(:user_setting, auto_weight_enabled: true)
+      allow(Runners::QuotaBalanceService).to receive(:call)
+
+      described_class.perform_now(enabled.user.id)
+
+      expect(Runners::QuotaBalanceService).to have_received(:call).with(user: enabled.user)
+      expect(Runners::QuotaBalanceService).not_to have_received(:call).with(user: other.user)
+    end
+
     it "uses the maintenance queue" do
       expect(described_class.new.queue_name).to eq("maintenance")
     end

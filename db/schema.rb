@@ -2471,16 +2471,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_24_035127) do
     t.index ["account_id"], name: "index_service_containers_on_account_id"
   end
 
-  create_table "solid_cable_messages", force: :cascade do |t|
-    t.binary "channel", null: false
-    t.bigint "channel_hash", null: false
-    t.datetime "created_at", null: false
-    t.binary "payload", null: false
-    t.index ["channel"], name: "index_solid_cable_messages_on_channel"
-    t.index ["channel_hash"], name: "index_solid_cable_messages_on_channel_hash"
-    t.index ["created_at"], name: "index_solid_cable_messages_on_created_at"
-  end
-
   create_table "strategies", comment: "Scoped orchestration strategies selected for workflow decisions.", force: :cascade do |t|
     t.bigint "account_id", comment: "Owning account for account-scoped and project-scoped strategies."
     t.datetime "created_at", null: false

@@ -621,7 +621,7 @@ class RunnersController < ApplicationController
   end
 
   def trigger_quota_rebalance!
-    Runners::QuotaBalanceService.call(user: current_user)
+    RunnerQuotaBalanceJob.perform_later(current_user.id)
   rescue => e
     Rails.logger.warn(
       message: "runners.settings_auto_weight_rebalance_failed",
