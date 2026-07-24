@@ -56,6 +56,13 @@ RSpec.describe Containers::HostReadiness, :no_db do
     described_class.call(backends: backends, image: image, requirements: requirements, force_refresh: force_refresh)
   end
 
+  def stub_http_get(response)
+    http = instance_double(Net::HTTP)
+    allow(http).to receive(:get).and_return(response)
+    allow(Net::HTTP).to receive(:start).and_yield(http)
+    http
+  end
+
   it "returns healthy readiness for local Docker" do
     result = call(backends: [ local_backend ]).fetch(local_backend)
 
@@ -86,6 +93,24 @@ RSpec.describe Containers::HostReadiness, :no_db do
     expect(result[:healthy]).to be(false)
     expect(result[:failing_check]).to eq("proxy_callback")
     expect(result[:remediation_hint]).to include("/health/liveness")
+  end
+
+  it "requests the liveness path when PAID_PROXY_EXTERNAL_URL has no path prefix" do
+    allow(ENV).to receive(:[]).with("PAID_PROXY_EXTERNAL_URL_WORKER_1").and_return("http://paid.example:3000")
+    yielded_http = stub_http_get(Net::HTTPOK.new("1.1", "200", "OK"))
+
+    call(backends: [ remote_backend ], force_refresh: true).fetch(remote_backend)
+
+    expect(yielded_http).to have_received(:get).with("/health/liveness")
+  end
+
+  it "preserves a path prefix in PAID_PROXY_EXTERNAL_URL when checking liveness" do
+    allow(ENV).to receive(:[]).with("PAID_PROXY_EXTERNAL_URL_WORKER_1").and_return("http://paid.example:3000/paid")
+    yielded_http = stub_http_get(Net::HTTPOK.new("1.1", "200", "OK"))
+
+    call(backends: [ remote_backend ], force_refresh: true).fetch(remote_backend)
+
+    expect(yielded_http).to have_received(:get).with("/paid/health/liveness")
   end
 
   it "reports a missing network with the failing check name" do

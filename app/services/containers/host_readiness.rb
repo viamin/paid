@@ -276,7 +276,7 @@ module Containers
 
     def callback_reachable?(callback_url)
       uri = URI.parse(callback_url)
-      uri.path = "/health/liveness"
+      uri.path = liveness_path_for(uri.path)
       uri.query = nil
       uri.fragment = nil
 
@@ -288,6 +288,13 @@ module Containers
       response.is_a?(Net::HTTPSuccess)
     rescue StandardError
       false
+    end
+
+    def liveness_path_for(base_path)
+      # PAID_PROXY_EXTERNAL_URL may carry a path prefix (for example when Paid is
+      # served behind a reverse proxy under /paid). Append the liveness path to
+      # the configured base path instead of overwriting it.
+      "#{base_path.to_s.chomp('/')}/health/liveness"
     end
 
     def normalize_architecture(value)

@@ -4,7 +4,7 @@ require "rails_helper"
 
 RSpec.describe Knowledge::EmbeddingRunner, :no_db do
   let(:project) { Struct.new(:id).new(42) }
-  let(:remote_backend) { instance_double(Containers::Backends::Base, remote?: true) }
+  let(:remote_backend) { instance_double(Containers::Backends::Base, identifier: "worker-1", remote?: true) }
   let(:local_backend) { instance_double(Containers::Backends::Base, supports_host_paths?: true, ping: "OK") }
   let(:knowledge_run) do
     Struct.new(:id) do
