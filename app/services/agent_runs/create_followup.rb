@@ -56,7 +56,11 @@ module AgentRuns
         return [ agent_run.runner, Runner.agent_type_for(agent_run.runner.runner_key) ]
       end
 
-      runner_id, agent_type = AgentRuns::RunnerResolver.call(project: agent_run.project, goal: goal)
+      runner_id, agent_type = AgentRuns::RunnerResolver.call(
+        project: agent_run.project,
+        goal: goal,
+        effective_runner: agent_run.effective_runner
+      )
       runner = Runner.kept_only.find_by(id: runner_id) if runner_id
       agent_type ||= runner ? Runner.agent_type_for(runner.runner_key) : fallback_agent_type
 

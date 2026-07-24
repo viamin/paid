@@ -27,8 +27,9 @@ module Models
       selected = select_model
       duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_time) * 1000).round
       block_reason = llm_provider_block_reason(selected)
-      unless selected && compatible_selection?(selected) && block_reason.nil?
-        persist_decision_log(outcome: "no_selection", duration_ms: duration_ms, selected: selected, no_selection_reason: block_reason)
+      no_selection_reason = block_reason || no_selection_reason_for(selected)
+      unless selected && compatible_selection?(selected) && no_selection_reason.nil?
+        persist_decision_log(outcome: "no_selection", duration_ms: duration_ms, selected: selected, no_selection_reason: no_selection_reason)
         return nil
       end
 
@@ -80,7 +81,16 @@ module Models
       # Check for project-level model override
       if project.model_preferences["required_model_id"].present?
         model = LlmModel.active.find_by(model_id: project.model_preferences["required_model_id"])
-        return override_result(model, "Project requires specific model") if model
+        candidate = override_compatible_or_nil(model)
+        if candidate.is_a?(Hash) && candidate[:incompatibility_reason]
+          # RDR-040: surface an explicit "incompatible with runner" outcome so
+          # the no-selection decision log can record both the model and the
+          # rejection reason. Returning the hash (with the sentinel) lets
+          # `call` continue to the no-selection branch without losing the
+          # model id from the log.
+          return candidate
+        end
+        return override_result(candidate, "Project requires specific model") if candidate
       end
 
       quality_escalation = quality_escalation_result(project)
@@ -96,6 +106,35 @@ module Models
       # Try meta-agent selection, fall back to rules-based
       Models::MetaAgentSelector.call(agent_run: agent_run) ||
         Models::RulesBasedSelector.call(agent_run: agent_run)
+    end
+
+    # RDR-040: When a runner is already bound to the run (e.g. a pinned or
+    # late-bound runner), the override paths must additionally validate the
+    # candidate against the runner's compatibility contract — not just the
+    # catalog — before declaring success. Returns the model (so the
+    # override_result carries the model_id into the decision log) but marks
+    # it with an :incompatibility_reason sentinel so the no-selection path
+    # can record the rejection with a clear reason. The unauthenticated/
+    # no-runner case is left permissive so Models::Select can still produce
+    # a selection that later Runners::ResolveTierModel validates against
+    # the resolved runner.
+    def override_compatible_or_nil(model)
+      return model if !model || !agent_run.runner
+
+      result = runner_compatibility_result(model)
+      return model unless result&.unsupported?
+
+      runner = agent_run.runner
+      reason = result.reason || "model '#{model.model_id}' is not compatible with runner '#{runner.runner_key}'"
+      {
+        model: model,
+        selector_type: "override",
+        reasoning: "Project requires specific model",
+        candidates: [ model ],
+        complexity_score: nil,
+        tier: model.tier,
+        incompatibility_reason: "model '#{model.model_id}' is not compatible with runner '#{runner.runner_key}' (#{reason})"
+      }
     end
 
     def quality_escalation_result(project)
@@ -126,12 +165,15 @@ module Models
       return nil unless preferred_ids.is_a?(Array) && preferred_ids.any?
 
       # Respect preference list ordering: select the first active, project-permitted
-      # model in the provided order (skip models whose provider the project blocks).
+      # model in the provided order (skip models whose provider the project blocks
+      # and skip models incompatible with the bound runner when one is present).
       models_by_id = LlmModel.active.where(model_id: preferred_ids).index_by(&:model_id)
       model = preferred_ids
         .map { |id| models_by_id[id] }
         .compact
-        .find { |candidate| project.llm_provider_allowed?(candidate.provider) }
+        .find do |candidate|
+          project.llm_provider_allowed?(candidate.provider) && runner_compatible?(candidate)
+        end
       return nil unless model
 
       override_result(model, "Project preferred model: #{model.display_name}")
@@ -144,6 +186,7 @@ module Models
       model = LlmModel.active.find_by(model_id: model_id)
       return nil unless model
       return nil if project.llm_provider_blocked?(model.provider)
+      return nil unless runner_compatible?(model)
 
       override_result(model, "Tenant preferred model: #{model.display_name}")
     end
@@ -231,6 +274,32 @@ module Models
       model.provider == compatible_provider
     end
 
+    # RDR-040: Use the broader runner compatibility contract to validate the
+    # selected model. The direct-outbound checks in #compatible_selection? only
+    # catch wrong-provider mistakes; they miss CLI-version-gated models,
+    # auth-mode-gated models, and unknown runner/model mismatches that the
+    # agent-harness contract would catch statically. Applies to ALL runners
+    # (subscription, api_key, direct-outbound) so override paths can fail
+    # loudly before burning queue time.
+    def runner_compatible?(model)
+      result = runner_compatibility_result(model)
+      return true unless result
+
+      !result.unsupported?
+    end
+
+    def runner_compatibility_result(model)
+      runner = agent_run.runner
+      return nil unless model && runner
+
+      Runners::ModelCompatibility.call(
+        runner_key: runner.runner_key,
+        model_id: model.model_id,
+        auth_type: runner.auth_type,
+        provider_runtime: runner.agent_harness_runner_runtime
+      )
+    end
+
     def constrained_runner_selection?(runner)
       runner.requires_direct_outbound? ||
         (runner.runner_key == "pi" && runner.api_key? && runner.pi_required_api_service_type.present?)
@@ -255,6 +324,31 @@ module Models
       mode = project.llm_provider_routing_mode
       "LLM provider '#{model.provider}' is not permitted for this project " \
         "(#{mode} restriction)"
+    end
+
+    # RDR-040: Surfaces a runner/model compatibility failure for override
+    # paths so the no-selection log shows a clear reason instead of the
+    # generic "Agent selection found no eligible models". Returns the
+    # override path's pre-computed reason when available (set by
+    # override_compatible_or_nil) so the decision log can include the
+    # specific model and runner names. The override selectors above
+    # already filter candidates against runner compatibility (so an
+    # override result is normally runner-compatible), but a late change
+    # to the catalog or the runner between resolve and dispatch can
+    # still produce a stale selection. This is the final consistency
+    # check.
+    def no_selection_reason_for(selected)
+      return selected[:incompatibility_reason] if selected.is_a?(Hash) && selected[:incompatibility_reason].present?
+
+      model = selected&.dig(:model)
+      return nil unless model
+
+      result = runner_compatibility_result(model)
+      return nil unless result&.unsupported?
+
+      runner = agent_run.runner
+      reason = result.reason || "model '#{model.model_id}' is not compatible with runner '#{runner.runner_key}'"
+      "model '#{model.model_id}' is not compatible with runner '#{runner.runner_key}' (#{reason})"
     end
 
     def normalize_candidate(candidate, rank:, selected_model_id:)
