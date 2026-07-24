@@ -36,9 +36,11 @@ class CoordinationExperiment < ApplicationRecord
 
   def complete!(winner_variant:)
     raise ArgumentError, "winner_variant must belong to this experiment" unless winner_variant.coordination_experiment_id == id
-    raise ArgumentError, "experiment is not running" unless running?
 
-    transaction do
+    with_lock do
+      reload
+      raise_invalid_status!("complete") unless running?
+
       update!(
         status: "completed",
         completed_at: Time.current,
@@ -70,6 +72,11 @@ class CoordinationExperiment < ApplicationRecord
   end
 
   private
+
+  def raise_invalid_status!(action)
+    errors.add(:base, "cannot #{action} an experiment that is #{status}")
+    raise ActiveRecord::RecordInvalid, self
+  end
 
   def winner_variant_belongs_to_experiment
     return if winner_variant.nil?

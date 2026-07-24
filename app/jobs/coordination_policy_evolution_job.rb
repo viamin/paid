@@ -81,6 +81,7 @@ class CoordinationPolicyEvolutionJob < ApplicationJob
     if type == "decomposition"
       DecompositionDecision
         .joins(:project)
+        .where(decision_type: DecompositionDecision::POLICY_OUTCOME_DECISION_TYPES)
         .where(created_at: LOOKBACK_DAYS.days.ago..)
         .group("projects.account_id")
         .having("COUNT(*) >= ?", MIN_DECISIONS)

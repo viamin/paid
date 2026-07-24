@@ -94,6 +94,21 @@ RSpec.describe CoordinationPolicyEvolutionJob do
       end
     end
 
+    context "with an account that has only decomposition_strategy decisions (not policy outcome types)" do
+      before do
+        issue = create(:issue, project: project)
+        described_class::MIN_DECISIONS.times do
+          create(:decomposition_decision, project: project, issue: issue, decision_type: "decomposition_strategy")
+        end
+      end
+
+      it "does not start any workflows because decomposition_strategy is excluded from the eligibility count" do
+        job.perform(account_id: account.id, policy_type: "decomposition")
+
+        expect(temporal_client).not_to have_received(:start_workflow)
+      end
+    end
+
     context "with decisions older than the lookback window" do
       before do
         create_decomposition_decisions(project, count: described_class::MIN_DECISIONS,

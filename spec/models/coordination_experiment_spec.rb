@@ -42,7 +42,7 @@ RSpec.describe CoordinationExperiment do
       experiment.update!(status: "completed")
 
       expect { experiment.complete!(winner_variant: variant) }
-        .to raise_error(ArgumentError, /not running/)
+        .to raise_error(ActiveRecord::RecordInvalid, /cannot complete an experiment that is completed/)
     end
 
     it "raises when the winner variant belongs to a different experiment" do
