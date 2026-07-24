@@ -232,15 +232,14 @@ export default class extends Controller {
 
   populateDockerHostSelect(payload) {
     const select = this.dockerHostSelectTarget
-    const requestedValue = select.value
-    const previousSelection = requestedValue && requestedValue !== ""
-      ? requestedValue
-      : null
-
     const options = Array.isArray(payload?.options) ? payload.options : []
+    const previousSelection = select.value
     const selectedHostIdentifier = payload?.selected_host_identifier
-    const previousStillVisible = previousSelection &&
-      options.some(([, value]) => value === previousSelection)
+    const previousStillVisible = options.some(
+      ([, value]) => value === previousSelection
+    )
+    const selectedHostStillVisible = selectedHostIdentifier &&
+      options.some(([, value]) => value === selectedHostIdentifier)
 
     select.innerHTML = ""
 
@@ -253,8 +252,7 @@ export default class extends Controller {
 
     if (previousStillVisible) {
       select.value = previousSelection
-    } else if (selectedHostIdentifier &&
-        options.some(([, value]) => value === selectedHostIdentifier)) {
+    } else if (selectedHostStillVisible) {
       select.value = selectedHostIdentifier
     }
   }

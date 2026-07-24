@@ -74,12 +74,16 @@ export default class extends Controller {
 
   populateDockerHostSelect(payload) {
     const select = this.dockerHostSelectTarget
-    const previousSelection = select.dataset.previousSelection || select.value || null
-
     const options = Array.isArray(payload?.options) ? payload.options : []
+    const previousSelection = Object.prototype.hasOwnProperty.call(select.dataset, "previousSelection")
+      ? select.dataset.previousSelection
+      : select.value
     const selectedHostIdentifier = payload?.selected_host_identifier
-    const previousStillVisible = previousSelection &&
-      options.some(([, value]) => value === previousSelection)
+    const previousStillVisible = options.some(
+      ([, value]) => value === previousSelection
+    )
+    const selectedHostStillVisible = selectedHostIdentifier &&
+      options.some(([, value]) => value === selectedHostIdentifier)
 
     select.innerHTML = ""
 
@@ -93,8 +97,7 @@ export default class extends Controller {
     let nextSelection
     if (previousStillVisible) {
       nextSelection = previousSelection
-    } else if (selectedHostIdentifier &&
-        options.some(([, value]) => value === selectedHostIdentifier)) {
+    } else if (selectedHostStillVisible) {
       nextSelection = selectedHostIdentifier
     } else {
       nextSelection = ""
