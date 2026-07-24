@@ -95,8 +95,12 @@ jobs:
             local sha="$1"
             local dependency="$2"
 
+            # Gemfile.lock lists each dependency inside either a `GEM` (RubyGems)
+            # or a `GIT` (git source) section. Search both so the helper keeps
+            # working when a dependency is pinned to a git ref instead of a
+            # published version.
             git show "${sha}:Gemfile.lock" 2>/dev/null \
-              | sed -n "/^GEM$/,/^$/s/^  *${dependency} (\\(.*\\))/\\1/p" \
+              | sed -n "/^\\(GEM\\|GIT\\)$/,/^$/s/^  *${dependency} (\\(.*\\))/\\1/p" \
               | head -n 1
           }
 
@@ -153,7 +157,10 @@ jobs:
         if: steps.changes.outputs.image_relevant == 'true'
         id: agent-harness
         run: |
-          version=$(sed -n '/^GEM$/,/^$/s/^  *agent-harness (\(.*\))/\1/p' Gemfile.lock | head -n 1)
+          # Search both GEM and GIT sections so the helper keeps working when
+          # agent-harness is pinned to a git ref (e.g. unreleased upstream fix)
+          # instead of a published RubyGems version.
+          version=$(sed -n '/^\(GEM\|GIT\)$/,/^$/s/^  *agent-harness (\(.*\))/\1/p' Gemfile.lock | head -n 1)
           if [ -z "$version" ]; then
             echo "Failed to extract agent-harness version from Gemfile.lock" >&2
             exit 1

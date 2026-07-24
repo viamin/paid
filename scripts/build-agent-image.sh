@@ -40,7 +40,10 @@ if [ -z "${RUBY_MAAT_VERSION}" ]; then
 fi
 
 # Extract agent-harness version from Gemfile.lock (single source of truth).
-AGENT_HARNESS_VERSION=$(sed -n '/^GEM$/,/^$/s/^  *agent-harness (\(.*\))/\1/p' "${PROJECT_ROOT}/Gemfile.lock" | head -n 1)
+# Search both GEM and GIT sections so the helper keeps working when
+# agent-harness is pinned to a git ref (e.g. unreleased upstream fix)
+# instead of a published RubyGems version.
+AGENT_HARNESS_VERSION=$(sed -n '/^\(GEM\|GIT\)$/,/^$/s/^  *agent-harness (\(.*\))/\1/p' "${PROJECT_ROOT}/Gemfile.lock" | head -n 1)
 if [ -z "${AGENT_HARNESS_VERSION}" ]; then
     echo "ERROR: Could not extract agent-harness version from Gemfile.lock" >&2
     exit 1
