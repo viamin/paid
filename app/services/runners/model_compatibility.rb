@@ -76,12 +76,7 @@ module Runners
     end
 
     def harness_compat_result
-      raw = AgentHarness.model_compatibility(
-        runner: harness_key,
-        model_id: model_id,
-        auth_mode: auth_type_symbol,
-        cli_version: harness_cli_version
-      )
+      raw = AgentHarness.model_compatibility(**harness_compatibility_args)
 
       Result.new(
         supported: raw.supported,
@@ -114,6 +109,25 @@ module Runners
         .dig(:runtime, :installation, :resolved_version)
     rescue AgentHarness::ConfigurationError, KeyError
       nil
+    end
+
+    def harness_compatibility_args
+      {
+        runner: harness_key,
+        model_id: model_id,
+        auth_mode: auth_type_symbol,
+        cli_version: harness_cli_version
+      }.tap do |args|
+        args[:runtime] = provider_runtime if harness_supports_runtime_kwarg?
+      end
+    end
+
+    def harness_supports_runtime_kwarg?
+      AgentHarness.method(:model_compatibility)
+        .parameters
+        .any? { |type, name| [ :key, :keyreq ].include?(type) && name == :runtime }
+    rescue NameError
+      false
     end
 
     def incompatibility_type_for(raw)

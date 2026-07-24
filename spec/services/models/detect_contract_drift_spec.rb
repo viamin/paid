@@ -129,6 +129,43 @@ RSpec.describe Models::DetectContractDrift do
       second = described_class.call
       expect(first.fingerprint).to eq(second.fingerprint)
     end
+
+    it "changes the fingerprint when incompatibility guidance changes" do
+      id = "fingerprint-guidance-#{SecureRandom.hex(4)}"
+      create(:llm_model, :openai, model_id: id, tier: "high", active: true)
+
+      allow(AgentHarness).to receive(:model_compatibility) do |args|
+        next unknown_result(args) unless args[:auth_mode] == :subscription
+
+        unsupported_result(args, AgentHarness::ModelCompatibility::UNSUPPORTED_CLI_VERSION_REASON)
+      end
+      cli_gated = described_class.call
+
+      allow(AgentHarness).to receive(:model_compatibility) do |args|
+        next unknown_result(args) unless args[:auth_mode] == :subscription
+
+        AgentHarness::ModelCompatibility::Result.new(
+          runner: args[:runner],
+          model_id: args[:model_id],
+          auth_mode: args[:auth_mode],
+          supported: false,
+          reason: AgentHarness::ModelCompatibility::UNSUPPORTED_AUTH_MODE_FOR_MODEL_REASON,
+          fallback_model_id: "gpt-5.4"
+        )
+      end
+      auth_gated = described_class.call
+
+      expect(cli_gated.fingerprint).not_to eq(auth_gated.fingerprint)
+    end
+
+    it "changes the fingerprint when the replacement model changes" do
+      id = "fingerprint-replacement-#{SecureRandom.hex(4)}"
+      create(:llm_model, :openai, model_id: id, tier: "high", active: true)
+      first = contract_drift_fingerprint_for(id, fallback_model_id: "gpt-5-codex")
+      second = contract_drift_fingerprint_for(id, fallback_model_id: "gpt-5.4")
+
+      expect(first).not_to eq(second)
+    end
   end
 
   # Helpers to keep individual examples under the RSpec line budget.
@@ -138,7 +175,8 @@ RSpec.describe Models::DetectContractDrift do
       model_id: args[:model_id],
       auth_mode: args[:auth_mode],
       supported: false,
-      reason: reason
+      reason: reason,
+      fallback_model_id: "gpt-5-codex"
     )
   end
 
@@ -149,5 +187,22 @@ RSpec.describe Models::DetectContractDrift do
       auth_mode: args[:auth_mode],
       supported: nil
     )
+  end
+
+  def contract_drift_fingerprint_for(model_id, fallback_model_id:)
+    allow(AgentHarness).to receive(:model_compatibility) do |args|
+      next unknown_result(args) unless args[:model_id] == model_id && args[:auth_mode] == :subscription
+
+      AgentHarness::ModelCompatibility::Result.new(
+        runner: args[:runner],
+        model_id: args[:model_id],
+        auth_mode: args[:auth_mode],
+        supported: false,
+        reason: AgentHarness::ModelCompatibility::UNSUPPORTED_AUTH_MODE_FOR_MODEL_REASON,
+        fallback_model_id: fallback_model_id
+      )
+    end
+
+    described_class.call.fingerprint
   end
 end

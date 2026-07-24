@@ -50,7 +50,7 @@ module Models
     private
 
     # Keys: [ provider, runner_key, auth_type ]
-    # Values: Array<{ model_id, model_provider, incompatibility_type, reason }>
+    # Values: Array<{ model_id, model_provider, incompatibility_type, reason, replacement_model_id }>
     def scan
       grouped = {}
 
@@ -73,7 +73,8 @@ module Models
               model_id: model.model_id,
               model_provider: model.provider,
               incompatibility_type: result.incompatibility_type,
-              reason: result.reason
+              reason: result.reason,
+              replacement_model_id: result.replacement_model_id
             }
           end
         end
@@ -107,7 +108,8 @@ module Models
         auth_type: auth_type,
         models: entries.map { |entry| entry[:model_id] }.sort,
         sample_reasons: entries.first(3).map { |entry| entry[:reason] }.compact,
-        incompatibility_types: entries.map { |entry| entry[:incompatibility_type] }.uniq.compact
+        incompatibility_types: entries.map { |entry| entry[:incompatibility_type] }.uniq.compact,
+        replacements: entries.filter_map { |entry| entry[:replacement_model_id] }.uniq.sort
       }
     end
 
@@ -131,7 +133,11 @@ module Models
       # Stable digest of the finding set, used to dedup the filed issue.
       def fingerprint
         tokens = @findings.flat_map do |finding|
-          finding[:models].map { |id| "drift:#{finding[:runner_key]}:#{finding[:auth_type]}:#{id}" }
+          replacements_token = finding[:replacements].join(",")
+          type_tokens = finding[:incompatibility_types].sort.map(&:to_s).join(",")
+          finding[:models].map do |id|
+            "drift:#{finding[:runner_key]}:#{finding[:auth_type]}:#{id}:#{type_tokens}:#{replacements_token}"
+          end
         end
         Digest::SHA256.hexdigest(tokens.sort.join("|"))
       end
