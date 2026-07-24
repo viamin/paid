@@ -11,6 +11,7 @@ Rails.application.config.to_prepare do
     registry = Containers::HostRegistry.load
     registry.hosts.each do |host|
       resolver.register(host.identifier, -> { host.backend })
+      resolver.register(:local, -> { host.backend }) unless host.backend.remote?
     end
     if registry.default_host.blank?
       raise ArgumentError, "CONTAINER_BACKENDS_CONFIG must define at least one host under 'multi' backend mode"
