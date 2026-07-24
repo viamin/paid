@@ -215,6 +215,24 @@ RSpec.describe "Runners" do
         expect(response.body).to include("Runner Weights")
       end
 
+      it "renders the auto-balance toggle and warning for API-key runners without a monthly budget" do
+        api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+        user.runners.create!(
+          runner_key: "opencode",
+          auth_type: "api_key",
+          provider_api_key: api_key,
+          enabled_for_agent_runs: true,
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } }
+        )
+        user.settings.update!(auto_weight_enabled: true)
+
+        get runners_path
+
+        expect(response.body).to include("Auto-balance weights based on usage quotas")
+        expect(response.body).to include("has no monthly budget set. Its weight will not be auto-balanced.")
+        expect(response.body).to match(/name="user_setting\[runner_weights\]\[[0-9]+\]".*disabled/m)
+      end
+
       it "still shows canonical runner state for subscription fallback entries" do
         cursor = user.runners.create!(
           runner_key: "cursor",
@@ -393,6 +411,38 @@ RSpec.describe "Runners" do
       expect(response).to redirect_to(runners_path)
       expect(user.reload.settings.runner_selection_mode).to eq("round_robin")
       expect(cursor.reload.weight).to eq(5)
+    end
+
+    it "persists auto_weight_enabled and triggers an immediate rebalance when enabling it" do
+      allow(Runners::QuotaBalanceService).to receive(:call)
+
+      patch settings_runners_path, params: {
+        user_setting: {
+          auto_weight_enabled: "1",
+          fallback_enabled: false,
+          fallback_runners: [].to_json
+        }
+      }
+
+      expect(response).to redirect_to(runners_path)
+      expect(user.reload.settings.auto_weight_enabled).to be(true)
+      expect(Runners::QuotaBalanceService).to have_received(:call).with(user: user)
+    end
+
+    it "ignores submitted manual weights while auto-weighting is enabled" do
+      cursor = user.runners.create!(runner_key: "cursor", enabled_for_agent_runs: true, weight: 2)
+
+      patch settings_runners_path, params: {
+        user_setting: {
+          auto_weight_enabled: "1",
+          runner_weights: { cursor.id.to_s => "9" },
+          fallback_enabled: false,
+          fallback_runners: [].to_json
+        }
+      }
+
+      expect(response).to redirect_to(runners_path)
+      expect(cursor.reload.weight).to eq(2)
     end
 
     it "sets single mode and default_agent_runner from combined runner_mode" do
@@ -966,6 +1016,22 @@ RSpec.describe "Runners" do
       expect(response).to have_http_status(:ok)
       expect(response.body).to include('data-runner-form-auth-type-value="api_key"')
       expect(response.body).not_to include('name="runner[auth_type]"')
+    end
+
+    it "renders the monthly token budget field for API-key runners" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+      runner = user.runners.create!(
+        runner_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } }
+      )
+
+      get edit_runner_path(runner)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Monthly Token Budget")
+      expect(response.body).to include("Leave empty for unlimited")
     end
 
     it "renders OpenCode config inputs disabled for non-OpenCode providers" do

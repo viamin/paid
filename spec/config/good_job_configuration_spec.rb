@@ -106,25 +106,8 @@ RSpec.describe GoodJob, :no_db do
 
   describe "cron schedule" do
     let(:cron) { Rails.application.config.good_job.cron }
-
-    it "defines expected cron jobs" do
-      expected_jobs = %i[
-        worktree_cleanup poll_workflow_health_check stale_run_detector
-        docker_orphan_cleanup recover_missing_pull_request_labels models_sync
-        ab_test_analysis process_run_queue auto_pick_queue_backfill
-        auto_pick_eligibility_sweep service_container_reconciliation screenshot_cleanup
-        knowledge_audit_retention delayed_human_feedback notifications_check_runner_quotas
-        claude_auth_health_check style_guide_evolution
-        agent_run_pattern_detector billing_period_management
-      ]
-
-      expected_jobs.each do |job_key|
-        expect(cron).to have_key(job_key), "Expected cron job #{job_key} to be defined"
-      end
-    end
-
-    it "staggers frequent maintenance jobs across minute boundaries" do
-      expected_offsets = {
+    let(:staggered_offsets) do
+      {
         process_run_queue: "*/5 * * * *",
         poll_workflow_health_check: "1-59/5 * * * *",
         service_container_reconciliation: "1-59/5 * * * *",
@@ -136,13 +119,33 @@ RSpec.describe GoodJob, :no_db do
         container_pool_replenishment: "4-59/5 * * * *",
         chat_idle_reaper: "4-59/5 * * * *",
         auto_pick_eligibility_sweep: "7-59/15 * * * *",
+        runner_quota_balance: "9-59/15 * * * *",
         agent_run_pattern_detector: "11-59/15 * * * *",
         remediation_decision_outcomes: "13-59/15 * * * *"
       }
+    end
 
+    it "defines expected cron jobs" do
+      expected_jobs = %i[
+        worktree_cleanup poll_workflow_health_check stale_run_detector
+        docker_orphan_cleanup recover_missing_pull_request_labels models_sync
+        ab_test_analysis process_run_queue auto_pick_queue_backfill
+        auto_pick_eligibility_sweep service_container_reconciliation screenshot_cleanup
+        knowledge_audit_retention delayed_human_feedback notifications_check_runner_quotas
+        runner_quota_balance
+        claude_auth_health_check style_guide_evolution
+        agent_run_pattern_detector billing_period_management
+      ]
+
+      expected_jobs.each do |job_key|
+        expect(cron).to have_key(job_key), "Expected cron job #{job_key} to be defined"
+      end
+    end
+
+    it "staggers frequent maintenance jobs across minute boundaries" do
       aggregate_failures do
-        expected_offsets.each do |job_key, schedule|
-          expect(cron.dig(job_key, :cron)).to eq(schedule)
+        staggered_offsets.each do |job_key, schedule|
+          expect(cron.fetch(job_key)).to include(cron: schedule)
         end
       end
     end

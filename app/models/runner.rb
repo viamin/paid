@@ -149,6 +149,9 @@ class Runner < ApplicationRecord
   after_commit :invalidate_agent_run_runner_option_caches, if: :agent_run_runner_option_cache_invalidation_needed?
 
   validates :weight, numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: MAX_WEIGHT }
+  validates :monthly_token_budget,
+    numericality: { only_integer: true, greater_than: 0, less_than_or_equal_to: 2_147_483_647 },
+    allow_nil: true
   validates :runner_key, presence: true, length: { maximum: 50 }
   validates :runner_key, inclusion: { in: ->(_) { supported_runner_keys }, message: "is not supported" },
     allow_blank: true, if: -> { new_record? || will_save_change_to_runner_key? }
@@ -275,6 +278,17 @@ class Runner < ApplicationRecord
     subscription? ? runner_key.to_s : routing_key
   end
 
+  def monthly_budget_configured?
+    monthly_token_budget.to_i.positive?
+  end
+
+  def quota_check_runtime
+    return direct_outbound_quota_runtime if api_key?
+    return subscription_quota_runtime if subscription?
+
+    nil
+  end
+
   def tier_models
     normalize_tier_models(self[:tier_models])
   end
@@ -293,6 +307,25 @@ class Runner < ApplicationRecord
 
   def opencode_config
     config.is_a?(Hash) ? config.fetch("opencode", {}) : {}
+  end
+
+  def direct_outbound_quota_runtime
+    return kilocode_quota_runtime if runner_key == "kilocode" && requires_direct_outbound?
+
+    agent_harness_runner_runtime
+  end
+
+  def subscription_quota_runtime
+    unset_vars = RunnerSupport.subscription_auth_unset_vars_for(runner_key)
+    return nil if unset_vars.empty?
+
+    unset_vars = unset_vars.dup
+    unset_vars.delete("COPILOT_GITHUB_TOKEN") if runner_key == "copilot"
+    AgentHarness::ProviderRuntime.new(unset_env: unset_vars)
+  end
+
+  def kilocode_quota_runtime
+    AgentHarness::ProviderRuntime.new(env: kilocode_runtime_env)
   end
 
   def opencode_api_provider
