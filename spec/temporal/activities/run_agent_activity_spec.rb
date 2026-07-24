@@ -2845,7 +2845,7 @@ expect(container_service).to receive(:execute).with(
           )
         }.to raise_error(
           described_class::RunnerInfraExecutionError,
-          /Preflight check failed: Agent exited with code 137 \(process killed by SIGKILL; container OOM not reported; memory limit 4.0 GB was not hit, container_running=false\): > build · MiniMax-M3/
+          /Preflight check failed: Agent exited with code 137 \(process killed by SIGKILL; container OOM not reported; configured memory limit 4.0 GB, container_running=false\): > build · MiniMax-M3/
         )
       end
 
@@ -2881,7 +2881,7 @@ expect(container_service).to receive(:execute).with(
           )
         }.to raise_error(
           described_class::RunnerExecutionError,
-          /Preflight check failed: Agent exited with code 137 \(process killed by SIGKILL; container OOM not reported; memory limit 4.0 GB was not hit, container_running=true\): > build · MiniMax-M3/
+          /Preflight check failed: Agent exited with code 137 \(process killed by SIGKILL; container OOM not reported; configured memory limit 4.0 GB, container_running=true\): > build · MiniMax-M3/
         )
       end
 
@@ -3031,7 +3031,7 @@ expect(container_service).to receive(:execute).with(
         )
         allow(activity).to receive(:run_agent_with_runner).and_raise(
           described_class::RunnerInfraExecutionError,
-          "Preflight check failed: Agent exited with code 137 (process killed by SIGKILL; container OOM not reported; memory limit 4.0 GB was not hit, container_running=false): > build · MiniMax-M3"
+          "Preflight check failed: Agent exited with code 137 (process killed by SIGKILL; container OOM not reported; configured memory limit 4.0 GB, container_running=false): > build · MiniMax-M3"
         )
         allow(Containers::Provision).to receive(:reconnect).and_return(container_service)
         allow(container_service).to receive(:container_running?).and_return(true)
@@ -3054,7 +3054,7 @@ expect(container_service).to receive(:execute).with(
         )
         allow(activity).to receive(:run_agent_with_runner).and_raise(
           described_class::RunnerExecutionError,
-          "Preflight check failed: Agent exited with code 137 (process killed by SIGKILL; container OOM not reported; memory limit 4.0 GB was not hit, container_running=true): > build · MiniMax-M3"
+          "Preflight check failed: Agent exited with code 137 (process killed by SIGKILL; container OOM not reported; configured memory limit 4.0 GB, container_running=true): > build · MiniMax-M3"
         )
         allow(Containers::Provision).to receive(:reconnect).and_return(container_service)
         allow(container_service).to receive(:container_running?).and_return(true)
@@ -4108,7 +4108,7 @@ expect(container_service).to receive(:execute).with(
           hash_including(
             "runner" => "claude_code", "success" => false,
             "error_message" => include(
-              "process killed by SIGKILL; container OOM not reported; memory limit 4.0 GB was not hit, container_running=false"
+              "process killed by SIGKILL; container OOM not reported; configured memory limit 4.0 GB, container_running=false"
             )
           )
         )
