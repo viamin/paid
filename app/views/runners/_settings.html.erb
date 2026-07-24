@@ -64,7 +64,24 @@
         <% if enabled_agent_runners.length > 1 %>
           <div>
             <h3 class="block text-sm font-medium leading-6 text-gray-900">Runner Weights</h3>
+            <div class="mt-3 rounded-md border border-gray-200 bg-gray-50 px-3 py-3">
+              <label class="flex items-start gap-3">
+                <%= form.check_box :auto_weight_enabled, class: "mt-1 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
+                <span>
+                  <span class="block text-sm font-medium text-gray-900">Auto-balance weights based on usage quotas</span>
+                  <span class="mt-1 block text-xs text-gray-500">When enabled, runner weights are automatically recalculated every 15 minutes based on remaining quotas. The goal is for all runners to exhaust their quotas at the same rate.</span>
+                </span>
+              </label>
+            </div>
             <p class="mt-1 text-xs text-gray-500">A runner with weight N is picked N times more often in Random mode and used N consecutive times in Round Robin mode. Default is 1.</p>
+            <% if user_setting.auto_weight_enabled? %>
+              <p class="mt-2 text-xs font-medium text-amber-700">Auto-weighting is active. Manual weight inputs are read-only until you turn it off.</p>
+            <% end %>
+            <% auto_weight_budget_warnings.each do |runr| %>
+              <div class="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                &#9888; <%= runr.display_name %> has no monthly budget set. Its weight will not be auto-balanced. Set a monthly budget to enable quota-based weighting for this runner.
+              </div>
+            <% end %>
             <% total_weight = run_enabled_runners.sum { |runr| runr.weight || Runner::DEFAULT_WEIGHT } %>
             <div class="mt-3 space-y-2">
               <% run_enabled_runners.each do |runr| %>
@@ -79,6 +96,7 @@
                         min: 1,
                         max: Runner::MAX_WEIGHT,
                         step: 1,
+                        disabled: user_setting.auto_weight_enabled?,
                         class: "w-20 rounded-md border-0 px-2 py-1 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600",
                         aria: { label: "Weight for #{runr.display_name}" } %>
                   </div>

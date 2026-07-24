@@ -46,6 +46,7 @@ RSpec.describe ApplicationJob, :no_db do
         RemediationDecisionOutcomeJob
         RecoverMissingPullRequestLabelsJob
         RevertRemediationDecisionJob
+        RunnerQuotaBalanceJob
         ScreenshotCleanupJob
         ServiceContainerReconciliationJob
         StaleRunDetectorJob

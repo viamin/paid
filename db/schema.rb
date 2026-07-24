@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_22_102430) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_24_035127) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2329,6 +2329,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_22_102430) do
     t.string "fallback_role", limit: 30, default: "standard", null: false
     t.bigint "integration_credential_id"
     t.jsonb "log_data"
+    t.integer "monthly_token_budget", comment: "Optional per-runner monthly token budget used to auto-balance API-key runner weights. Null means unlimited or unknown."
     t.string "name", limit: 100, default: "", null: false
     t.jsonb "no_progress_thresholds", default: {"min_input_tokens" => 100000, "max_output_tokens" => 100}, null: false, comment: "Per-runner thresholds for no-progress early termination. min_input_tokens: minimum input tokens consumed before checking; max_output_tokens: maximum output tokens that qualifies as no progress."
     t.bigint "provider_api_key_id"
@@ -2772,6 +2773,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_22_102430) do
     t.string "agent_update_comment_mode", default: "off", null: false, comment: "Controls whether existing-PR agent followups post no comment or generate a paid summary comment."
     t.jsonb "allowed_service_images", default: ["postgres:16.13", "redis:7-alpine", "selenium/standalone-chromium:latest"]
     t.jsonb "auto_pick_skip_labels", comment: "Optional user-level override for labels that make auto-pick skip an issue. Null means inherit tenant or built-in defaults."
+    t.boolean "auto_weight_enabled", default: false, null: false, comment: "Whether automated runner weights are recalculated from observed remaining quota instead of edited manually."
     t.integer "circuit_breaker_failure_threshold", default: 5, null: false
     t.integer "circuit_breaker_timeout_seconds", default: 300, null: false
     t.bigint "container_memory_auto_ceiling_bytes", default: 17179869184, null: false, comment: "Upper bound (bytes) for the auto-tuned agent container memory limit so capacity-blocked workloads stop requesting unbounded memory."

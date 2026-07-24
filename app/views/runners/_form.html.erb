@@ -141,6 +141,18 @@
     <p class="mt-1 text-xs text-gray-500">Rate-limit fallback entries will be used when the subscription runner for the same key is rate-limited. (Automatic fallback execution is planned; currently these entries are tracked but not yet auto-invoked.)</p>
   </div>
 
+  <div <% unless is_api_key %>hidden<% end %>>
+    <%= form.label :monthly_token_budget, "Monthly Token Budget", class: "block text-sm font-medium text-gray-900" %>
+    <div class="mt-2">
+      <%= form.number_field :monthly_token_budget,
+          min: 1,
+          step: 1,
+          class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6",
+          placeholder: "Leave empty for unlimited" %>
+    </div>
+    <p class="mt-1 text-xs text-gray-500">Set a monthly token budget for automatic weight balancing. Leave empty for unlimited (quota balancing will be disabled for this runner).</p>
+  </div>
+
   <% opencode_settings_enabled = is_api_key && runner.runner_key == "opencode" %>
   <% opencode_api_provider = runner.opencode_api_provider || Runner::OPENCODE_DEFAULT_API_PROVIDER %>
   <div data-runner-form-target="opencodeSettings" <% unless opencode_settings_enabled %>hidden<% end %>>
