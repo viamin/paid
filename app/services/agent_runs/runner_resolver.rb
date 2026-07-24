@@ -112,7 +112,7 @@ module AgentRuns
       # setting-derived base; fall through to the existing chain when no
       # override is configured or no compatible runner is available.
       override_model_id = override_model_id_for(project)
-      compat_runner = compatibility_aware_fallback(owner)
+      compat_runner = compatibility_aware_fallback(owner, override_model_id: override_model_id)
       if compat_runner && (base_runner.nil? || !runner_compatible_with_model?(base_runner, override_model_id))
         # Override the setting-derived base with a compatible runner so the
         # run lands on a runner that can actually execute the override
@@ -139,16 +139,15 @@ module AgentRuns
 
     # RDR-040: When the project has a model override, scan the runnable
     # runner pool and return the first runner that is compatible with the
-    # override model. The pool order follows +ordered+ (declaration order
-    # from APP_RUNNER_KEYS) so the same preference is honored as the
-    # non-override fallback. Returns nil when no override is set or when no
-    # compatible runner is in the pool, in which case the caller falls back
-    # to the existing chain. Always excludes runners that already failed
-    # preflight this dequeue pass.
-    def compatibility_aware_fallback(owner)
+    # override model. The pool is sorted by +ordered+ (alphabetical by
+    # runner_key, then auth_type, name, id). Returns nil when no override
+    # is set or when no compatible runner is in the pool, in which case
+    # the caller falls back to the existing chain. Always excludes runners
+    # that already failed preflight this dequeue pass.
+    def compatibility_aware_fallback(owner, override_model_id: nil)
       return nil unless owner
 
-      override_model_id = override_model_id_for(project)
+      override_model_id ||= override_model_id_for(project)
       return nil if override_model_id.blank?
 
       scope = owner.runners.kept_only.for_agent_runs

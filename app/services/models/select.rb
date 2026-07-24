@@ -120,9 +120,12 @@ module Models
     # the resolved runner.
     def override_compatible_or_nil(model)
       return model if !model || !agent_run.runner
-      return model if runner_compatible?(model)
 
-      reason = runner_incompatibility_reason(model)
+      result = runner_compatibility_result(model)
+      return model unless result&.unsupported?
+
+      runner = agent_run.runner
+      reason = result.reason || "model '#{model.model_id}' is not compatible with runner '#{runner.runner_key}'"
       {
         model: model,
         selector_type: "override",
@@ -130,7 +133,7 @@ module Models
         candidates: [ model ],
         complexity_score: nil,
         tier: model.tier,
-        incompatibility_reason: reason
+        incompatibility_reason: "model '#{model.model_id}' is not compatible with runner '#{runner.runner_key}' (#{reason})"
       }
     end
 
@@ -279,31 +282,22 @@ module Models
     # (subscription, api_key, direct-outbound) so override paths can fail
     # loudly before burning queue time.
     def runner_compatible?(model)
-      runner = agent_run.runner
-      return true unless model && runner
+      result = runner_compatibility_result(model)
+      return true unless result
 
-      result = Runners::ModelCompatibility.call(
-        runner_key: runner.runner_key,
-        model_id: model.model_id,
-        auth_type: runner.auth_type,
-        provider_runtime: runner.agent_harness_runner_runtime
-      )
       !result.unsupported?
     end
 
-    def runner_incompatibility_reason(model)
+    def runner_compatibility_result(model)
       runner = agent_run.runner
       return nil unless model && runner
 
-      result = Runners::ModelCompatibility.call(
+      Runners::ModelCompatibility.call(
         runner_key: runner.runner_key,
         model_id: model.model_id,
         auth_type: runner.auth_type,
         provider_runtime: runner.agent_harness_runner_runtime
       )
-      return nil unless result.unsupported?
-
-      result.reason || "model '#{model.model_id}' is not compatible with runner '#{runner.runner_key}'"
     end
 
     def constrained_runner_selection?(runner)
@@ -348,13 +342,13 @@ module Models
 
       model = selected&.dig(:model)
       return nil unless model
-      return nil if runner_compatible?(model)
+
+      result = runner_compatibility_result(model)
+      return nil unless result&.unsupported?
 
       runner = agent_run.runner
-      return nil unless runner
-
-      "model '#{model.model_id}' is not compatible with runner '#{runner.runner_key}' " \
-        "(#{runner_incompatibility_reason(model)})"
+      reason = result.reason || "model '#{model.model_id}' is not compatible with runner '#{runner.runner_key}'"
+      "model '#{model.model_id}' is not compatible with runner '#{runner.runner_key}' (#{reason})"
     end
 
     def normalize_candidate(candidate, rank:, selected_model_id:)

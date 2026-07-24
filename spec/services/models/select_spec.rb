@@ -946,13 +946,19 @@ RSpec.describe Models::Select do
       context "when the tenant-preferred model is incompatible with the bound runner" do
         before do
           create(:llm_model, :openai, model_id: "gpt-4o", tier: "high")
+          # Key preference under "claude" — the effective_runner for a
+          # claude_code agent_type — so the tenant preference branch is
+          # actually reached before the runner_compatible? guard fires.
           create(:tenant_setting, account: project.account,
-            provider_preferences: { "model_preferences" => { "cursor" => "gpt-4o" } })
+            provider_preferences: { "model_preferences" => { "claude" => "gpt-4o" } })
         end
 
         it "skips the incompatible tenant model" do
           selection = described_class.call(agent_run: cursor_agent_run)
 
+          # The tenant-preferred gpt-4o is incompatible with the cursor
+          # runner (anthropic), so it must be skipped — either no selection
+          # or a different model.
           if selection
             expect(selection.llm_model.model_id).not_to eq("gpt-4o")
           end
