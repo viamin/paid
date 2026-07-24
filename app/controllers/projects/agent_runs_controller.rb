@@ -50,6 +50,22 @@ module Projects
       end
     end
 
+    # Returns docker host select options filtered by the supplied runner
+    # identifier. The new and retry forms call this on runner change so the
+    # visible host list stays in sync with runner compatibility, since the
+    # server is the authoritative source for credential-aware eligibility.
+    def docker_host_options
+      authorize @project, :run_agent?
+      runner = runner_for_docker_host_param
+      options = available_docker_host_options(include_inherit: true, runner: runner)
+
+      render json: {
+        runner_identifier: params[:runner].to_s.presence,
+        selected_host_identifier: current_eligible_host_identifier(runner: runner),
+        options: options
+      }
+    end
+
     def cancel
       authorize @agent_run
       cancel_agent_run(@agent_run, redirect_path: project_agent_run_path(@project, @agent_run))
@@ -1160,6 +1176,21 @@ module Projects
         active_runs = active_runs_by_host.fetch(host.identifier, 0)
         [ "#{host.display_name} (#{host.backend_type}, #{host.available_slots(active_run_count: active_runs)} slots free)", host.identifier ]
       end
+    end
+
+    def runner_for_docker_host_param
+      identifier = params[:runner].to_s.presence
+      return if identifier.blank?
+
+      runner_for_identifier(identifier)
+    end
+
+    def current_eligible_host_identifier(runner:)
+      preferred_identifier = @project.effective_preferred_docker_host_identifier
+      return nil if preferred_identifier.blank?
+
+      eligible_hosts = eligible_docker_hosts_for_manual_selection(runner: runner)
+      eligible_hosts.find { |host| host.identifier == preferred_identifier }&.identifier
     end
 
     def resolve_container_host_identifier(runner: nil)

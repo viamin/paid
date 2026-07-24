@@ -40,16 +40,23 @@
 
 <% if show_retry %>
   <div class="mt-3 flex justify-end" data-when-finished <% unless agent_run.finished? %>hidden<% end %>>
-    <%= form_with url: retry_project_agent_run_path(agent_run.project, agent_run), method: :post, class: "flex flex-wrap items-center justify-end gap-2" do %>
+    <%= form_with url: retry_project_agent_run_path(agent_run.project, agent_run), method: :post, class: "flex flex-wrap items-center justify-end gap-2", data: {
+      controller: "retry-docker-host",
+      retry_docker_host_docker_host_options_url_value: docker_host_options_project_agent_runs_path(agent_run.project, format: :json),
+      retry_docker_host_initial_runner_identifier_value: selected_retry_runner_key.to_s,
+      retry_docker_host_initial_selected_host_identifier_value: params[:container_host].to_s
+    } do %>
       <% if retry_runner_options.any? %>
         <%= select_tag :runner,
           options_for_select(retry_runner_select_options, selected_retry_runner_key),
-          class: "rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500" %>
+          class: "rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500",
+          data: { retry_docker_host_target: "runnerSelect", action: "change->retry-docker-host#runnerChanged" } %>
       <% end %>
       <% if retry_docker_host_options.any? %>
         <%= select_tag :container_host,
-          options_for_select(retry_docker_host_options),
-          class: "rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500" %>
+          options_for_select(retry_docker_host_options, params[:container_host]),
+          class: "rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500",
+          data: { retry_docker_host_target: "dockerHostSelect" } %>
       <% end %>
       <%= submit_tag "Retry", class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600" %>
     <% end %>

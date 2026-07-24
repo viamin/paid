@@ -246,6 +246,7 @@ Rails.application.routes.draw do
       post :quick_create, on: :collection
       post :bump_priority, on: :collection
       post :toggle_auto_continue_pause, on: :collection
+      get :docker_host_options, on: :collection
     end
     resources :pre_commit_requirements, only: [ :index, :show, :create, :update, :destroy ],
       controller: "projects/pre_commit_requirements"

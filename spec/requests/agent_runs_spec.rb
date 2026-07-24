@@ -1135,6 +1135,86 @@ RSpec.describe "AgentRuns" do
         expect(issue_dropdown.attribute("hidden")).to be_present
         expect(pr_section.attribute("hidden")).to be_present
       end
+
+      it "exposes the docker host options URL to the goal toggle controller" do
+        get new_project_agent_run_path(project)
+
+        doc = Nokogiri::HTML(response.body)
+        form = doc.at_css("form[data-controller='goal-toggle']")
+        url = form["data-goal-toggle-docker-host-options-url-value"]
+
+        expect(url).to eq(docker_host_options_project_agent_runs_path(project, format: :json))
+
+        docker_host_select = form.at_css("select[name='container_host']")
+        expect(docker_host_select["data-goal-toggle-target"]).to eq("dockerHostSelect")
+      end
+    end
+  end
+
+  describe "GET /projects/:project_id/agent_runs/docker_host_options" do
+    context "when not authenticated" do
+      it "redirects to the sign in page" do
+        get docker_host_options_project_agent_runs_path(project)
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
+
+    context "when authenticated" do
+      before { sign_in user }
+
+      it "returns the docker host options filtered by the supplied runner" do
+        create_placement_ready_remote_host(project: project, identifier: "remote-host")
+        codex = configure_codex_create_pr_default!(project)
+
+        get docker_host_options_project_agent_runs_path(project, runner: codex.routing_key, format: :json)
+
+        expect(response).to have_http_status(:ok)
+        payload = JSON.parse(response.body)
+        identifiers = payload.fetch("options").map { |entry| entry.last }
+        labels = payload.fetch("options").map { |entry| entry.first }
+
+        expect(identifiers).to include("", "remote-host")
+        expect(labels.first).to eq("Inherit saved placement preference")
+      end
+
+      it "reports the project/account preferred host when it is eligible for the runner" do
+        create_placement_ready_remote_host(project: project, identifier: "preferred-host")
+        codex = configure_codex_create_pr_default!(project)
+        project.account.tenant_setting!.update!(
+          preferred_docker_host_identifier: "preferred-host",
+          docker_host_fallback_behavior: "first_healthy"
+        )
+
+        get docker_host_options_project_agent_runs_path(project, runner: codex.routing_key, format: :json)
+
+        payload = JSON.parse(response.body)
+        expect(payload.fetch("selected_host_identifier")).to eq("preferred-host")
+      end
+
+      it "leaves the saved preference out when it is ineligible for the runner" do
+        create(:docker_host, :local, account: project.account,
+          identifier: "local-only", display_name: "Local Only",
+          readiness_status: "ready", image_status: "ready", required_network_status: "ready")
+        create_placement_ready_remote_host(project: project, identifier: "remote-only")
+        project.account.tenant_setting!.update!(
+          preferred_docker_host_identifier: "remote-only",
+          docker_host_fallback_behavior: "first_healthy"
+        )
+        owner = project.created_by
+        claude_runner = owner.runners.find_by(runner_key: "claude", auth_type: "subscription")
+        # Subscription runners without managed/api-key credentials resolve to
+        # host_forwarded auth, which only backends with supports_host_paths?
+        # (local hosts) can use. The remote-only host should not be eligible.
+        claude_runner.runner_credentials.destroy_all
+        claude_runner.update!(auth_type: "subscription")
+
+        get docker_host_options_project_agent_runs_path(project, runner: claude_runner.routing_key, format: :json)
+
+        payload = JSON.parse(response.body)
+        identifiers = payload.fetch("options").map { |entry| entry.last }
+        expect(identifiers).not_to include("remote-only")
+        expect(payload.fetch("selected_host_identifier")).to be_nil
+      end
     end
   end
 
