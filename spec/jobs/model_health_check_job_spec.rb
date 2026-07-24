@@ -12,12 +12,17 @@ RSpec.describe ModelHealthCheckJob do
     )
   end
 
+  def contract_drift_double(drift: false)
+    instance_double(Models::DetectContractDrift::Result, drift?: drift, findings: drift ? [ {} ] : [])
+  end
+
   def broken_double(broken: false)
     instance_double(Models::DetectBrokenRunnerModels::Result, broken?: broken, findings: broken ? [ {} ] : [])
   end
 
   before do
     allow(Models::DetectCatalogDrift).to receive(:call).and_return(drift_double)
+    allow(Models::DetectContractDrift).to receive(:call).and_return(contract_drift_double)
     allow(Models::DetectBrokenRunnerModels).to receive(:call).and_return(broken_double)
     allow(Models::FileModelHealthIssue).to receive(:call)
   end

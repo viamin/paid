@@ -198,13 +198,15 @@ module Activities
       end
     end
 
-    def resolve_runner_selection(project:, requested_agent_type:, requested_runner_id:, goal:, respect_requested: true)
+    def resolve_runner_selection(project:, requested_agent_type:, requested_runner_id:, goal:, respect_requested: true,
+                                effective_runner: nil)
       AgentRuns::RunnerResolver.call(
         project: project,
         goal: goal,
         requested_agent_type: requested_agent_type,
         requested_runner_id: requested_runner_id,
         respect_requested: respect_requested,
+        effective_runner: effective_runner,
         logger: logger
       )
     end
@@ -269,7 +271,8 @@ module Activities
         requested_agent_type: nil,
         requested_runner_id: nil,
         goal: agent_run.goal,
-        respect_requested: false
+        respect_requested: false,
+        effective_runner: agent_run.effective_runner
       )
     end
 

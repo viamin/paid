@@ -45,6 +45,7 @@ module AgentRuns
         project: agent_run.project,
         goal: agent_run.goal,
         exclude_runner_ids: exclude_runner_ids,
+        effective_runner: agent_run.effective_runner,
         logger: logger
       )
 
