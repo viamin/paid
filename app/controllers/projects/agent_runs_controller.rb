@@ -27,7 +27,10 @@ module Projects
     def show
       authorize @agent_run
       @retry_runner_options = retry_runner_options_for(@agent_run)
-      @retry_docker_host_options = available_docker_host_options(include_inherit: true)
+      @retry_docker_host_options = available_docker_host_options(
+        include_inherit: true,
+        runner: @agent_run.runner || current_retry_runner_for(@agent_run)
+      )
       @quality_metrics = @agent_run.quality_metrics.with_composite_score.load
       @logs = @agent_run.agent_run_logs.order(created_at: :asc).limit(500).load
       @phase_timeline = @agent_run.agent_run_phases.load
@@ -60,7 +63,10 @@ module Projects
       end.compact
       @default_runner_identifier = @default_runner_identifiers_by_goal[selected_goal]
       @available_run_runner_options = available_run_runner_options
-      @available_docker_host_options = available_docker_host_options(include_inherit: true)
+      @available_docker_host_options = available_docker_host_options(
+        include_inherit: true,
+        runner: default_runner_for_goal(selected_goal)
+      )
       @marketplace_entries = marketplace_entries_for_new_run.to_a
       @issues = @project.issues
         .issues_only
@@ -405,7 +411,7 @@ module Projects
         custom_prompt: prompt_for_retry(@agent_run),
         source_pull_request_number: @agent_run.source_pull_request_number,
         goal: @agent_run.goal,
-        container_host: resolve_container_host_identifier,
+        container_host: resolve_container_host_identifier(runner: retry_runner),
         trigger_type: "manual",
         status: "queued"
       )
@@ -494,7 +500,7 @@ module Projects
         custom_prompt: prompt_for_retry(@agent_run),
         source_pull_request_number: @agent_run.source_pull_request_number,
         goal: @agent_run.goal,
-        container_host: resolve_container_host_identifier,
+        container_host: resolve_container_host_identifier(runner: @agent_run.runner),
         trigger_type: "manual",
         status: "queued"
       )
@@ -676,7 +682,7 @@ module Projects
           custom_prompt: custom_prompt,
           source_pull_request_number: source_pull_request_number,
           goal: goal,
-          container_host: resolve_container_host_identifier,
+          container_host: resolve_container_host_identifier(runner: resolved_runner),
           trigger_type: trigger_type,
           status: "queued",
           priority_tier: priority_tier,
@@ -1141,7 +1147,7 @@ module Projects
       end
     end
 
-    def available_docker_host_options(include_inherit: false)
+    def available_docker_host_options(include_inherit: false, runner: nil)
       options = []
       options << [ "Inherit saved placement preference", "" ] if include_inherit
 
@@ -1150,31 +1156,98 @@ module Projects
         .group(:container_host)
         .count
 
-      options + current_account.docker_hosts.enabled.ordered.map do |host|
+      options + eligible_docker_hosts_for_manual_selection(runner: runner).map do |host|
         active_runs = active_runs_by_host.fetch(host.identifier, 0)
         [ "#{host.display_name} (#{host.backend_type}, #{host.available_slots(active_run_count: active_runs)} slots free)", host.identifier ]
       end
     end
 
-    def resolve_container_host_identifier
+    def resolve_container_host_identifier(runner: nil)
       requested_identifier = params[:container_host].to_s.presence
-      enabled_hosts = current_account.docker_hosts.enabled.ordered.index_by(&:identifier)
+      eligible_hosts = eligible_docker_hosts_for_manual_selection(runner: runner).index_by(&:identifier)
 
       if requested_identifier.present?
-        requested_host = enabled_hosts[requested_identifier]
-        raise InvalidDockerHostSelectionError, "Please choose an enabled Docker host." unless requested_host
+        requested_host = eligible_hosts[requested_identifier]
+        raise InvalidDockerHostSelectionError, "Please choose a healthy compatible Docker host." unless requested_host
 
         return requested_host.identifier
       end
 
       preferred_identifier = @project.effective_preferred_docker_host_identifier
-      preferred_host = enabled_hosts[preferred_identifier]
+      preferred_host = eligible_hosts[preferred_identifier]
       return preferred_host.identifier if preferred_host
 
       fallback_behavior = current_account.tenant_setting&.docker_host_fallback_behavior
       return nil unless preferred_identifier.present? && fallback_behavior == "first_healthy"
 
-      enabled_hosts.values.find(&:fallback_eligible?)&.identifier
+      eligible_hosts.values.find(&:fallback_eligible?)&.identifier
+    end
+
+    def eligible_docker_hosts_for_manual_selection(runner: nil)
+      current_account.docker_hosts.enabled.ordered.select do |host|
+        docker_host_eligible_for_manual_selection?(host, runner: runner)
+      end
+    end
+
+    def docker_host_eligible_for_manual_selection?(host, runner: nil)
+      return false unless host.placement_ready?
+      return true if runner.blank?
+      return true unless runner.subscription?
+
+      subscription_auth_eligibility_for(host, runner: runner).eligible?
+    end
+
+    def subscription_auth_eligibility_for(host, runner:)
+      Runners::SubscriptionAuthEligibility.call(
+        backend: docker_host_backend_capabilities(host),
+        auth_source: subscription_auth_source_for(runner),
+        proxy_reachable: host.required_network_status == "ready"
+      )
+    end
+
+    def docker_host_backend_capabilities(host)
+      Struct.new(:identifier, :supports_host_paths?).new(host.identifier, host.local?)
+    end
+
+    def subscription_auth_source_for(runner)
+      credential = managed_subscription_credential_for(runner.runner_key)
+
+      if credential
+        return Runners::SubscriptionAuthEligibility::AuthSource.new(
+          runner_key: runner.runner_key,
+          auth_mode: :managed,
+          credential_state: managed_credential_state_for(runner.runner_key, credential)
+        )
+      end
+
+      Runners::SubscriptionAuthEligibility::AuthSource.new(
+        runner_key: runner.runner_key,
+        auth_mode: :host_forwarded
+      )
+    end
+
+    def managed_subscription_credential_for(runner_key)
+      scope = current_account.runner_credentials.for_runner(runner_key)
+      scope = scope.where(auth_kind: "oauth_token") if %w[claude codex gemini copilot].include?(runner_key.to_s)
+      scope.order(created_at: :desc, id: :desc).first
+    end
+
+    def managed_credential_state_for(runner_key, credential)
+      return :expired if credential.revoked?
+      return :expired unless credential.active?
+
+      provider = Runners::SubscriptionAuthProviders.for_runner(runner_key)
+      status = provider&.status(secret: credential.token.to_s)
+      return :expired if status&.expired?
+
+      :active
+    end
+
+    def default_runner_for_goal(goal)
+      identifier = settings_owner&.settings&.default_runner_identifier_for_goal(goal)
+      return if identifier.blank?
+
+      Runner.for_identifier(settings_owner, identifier)
     end
   end
 end

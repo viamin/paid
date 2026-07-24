@@ -49,7 +49,10 @@ class DockerHostsController < ApplicationController
 
   def disable
     authorize current_account, :update?
-    @docker_host.disable!
+    ActiveRecord::Base.transaction do
+      clear_saved_preferences_for(@docker_host.identifier)
+      @docker_host.disable!
+    end
     redirect_to docker_host_path(@docker_host), notice: "Docker host disabled. Historical run ownership is preserved."
   end
 
@@ -85,6 +88,15 @@ class DockerHostsController < ApplicationController
 
   def default_callback_url
     "/health/services"
+  end
+
+  def clear_saved_preferences_for(identifier)
+    current_time = Time.current
+
+    TenantSetting.where(account_id: current_account.id, preferred_docker_host_identifier: identifier)
+      .update_all(preferred_docker_host_identifier: nil, updated_at: current_time)
+    current_account.projects.where(preferred_docker_host_identifier: identifier)
+      .update_all(preferred_docker_host_identifier: nil, updated_at: current_time)
   end
 
   def docker_host_params

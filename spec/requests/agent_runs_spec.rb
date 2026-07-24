@@ -1553,6 +1553,38 @@ RSpec.describe "AgentRuns" do
         expect(AgentRun.last.agent_type).to eq("cursor")
       end
 
+      it "rejects explicitly selecting a host that is not placement-ready" do
+        create(:docker_host, :local, account: project.account,
+          identifier: "failing-host", display_name: "Failing Host",
+          readiness_status: "failing", image_status: "ready", required_network_status: "ready")
+
+        expect {
+          post project_agent_runs_path(project), params: { issue_id: issue.id, container_host: "failing-host" }
+        }.not_to change(AgentRun, :count)
+
+        expect(response).to redirect_to(new_project_agent_run_path(project, goal: "create_pr"))
+        expect(flash[:alert]).to eq("Please choose a healthy compatible Docker host.")
+      end
+
+      it "falls back to the first healthy compatible host when the preferred host is not placement-ready" do
+        create(:docker_host, :local, account: project.account,
+          identifier: "preferred-host", display_name: "Preferred Host",
+          fallback_eligible: true, readiness_status: "failing", image_status: "ready", required_network_status: "ready")
+        create(:docker_host, :local, account: project.account,
+          identifier: "healthy-host", display_name: "Healthy Host",
+          fallback_eligible: true, readiness_status: "ready", image_status: "ready", required_network_status: "ready")
+
+        project.account.tenant_setting!.update!(
+          preferred_docker_host_identifier: "preferred-host",
+          docker_host_fallback_behavior: "first_healthy"
+        )
+
+        post project_agent_runs_path(project), params: { issue_id: issue.id }
+
+        expect(response).to redirect_to(project_path(project))
+        expect(AgentRun.last.container_host).to eq("healthy-host")
+      end
+
       it "redirects with an error when no runnable runner can be resolved" do
         owner = project.effective_owner
         allow(UserSetting).to receive(:enabled_agent_runners).with(owner, identifiers: true).and_return([])

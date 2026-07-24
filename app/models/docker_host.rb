@@ -49,6 +49,10 @@ class DockerHost < ApplicationRecord
     [ manual_concurrency_limit - active_run_count.to_i, 0 ].max
   end
 
+  def placement_ready?
+    enabled? && ready? && image_status == "ready" && required_network_status == "ready"
+  end
+
   def disable!
     update!(enabled: false)
   end
