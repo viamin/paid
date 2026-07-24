@@ -74,6 +74,27 @@ RSpec.describe Runner do
       end
     end
 
+    describe "monthly_token_budget" do
+      it "allows nil" do
+        runner.monthly_token_budget = nil
+
+        expect(runner).to be_valid
+      end
+
+      it "accepts positive integers" do
+        runner.monthly_token_budget = 100_000
+
+        expect(runner).to be_valid
+      end
+
+      it "rejects zero" do
+        runner.monthly_token_budget = 0
+
+        expect(runner).not_to be_valid
+        expect(runner.errors[:monthly_token_budget]).to be_present
+      end
+    end
+
     describe "complexity_thresholds" do
       let(:runner) { build(:runner, runner_key: "cursor") }
 
@@ -1635,6 +1656,34 @@ RSpec.describe Runner do
       runner = create(:runner, :api_key, user: user, runner_key: "claude", provider_api_key: api_key)
 
       expect(runner.state_key).to eq(runner.routing_key)
+    end
+  end
+
+  describe "#quota_check_runtime" do
+    it "returns a subscription runtime for subscription runners with host auth support" do
+      runner = build(:runner, runner_key: "claude", auth_type: "subscription")
+
+      runtime = runner.quota_check_runtime
+
+      expect(runtime).to be_a(AgentHarness::ProviderRuntime)
+      expect(runtime.unset_env).to include("ANTHROPIC_API_KEY")
+    end
+
+    it "returns nil for api-key runners" do
+      user = create(:user)
+      create(:llm_model, model_id: "moonshotai/kimi-k2-0905", provider: "openrouter", tier: "mid")
+      runner = create(
+        :runner,
+        user: user,
+        runner_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: create(:provider_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret"),
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } }
+      )
+
+      runtime = runner.quota_check_runtime
+
+      expect(runtime).to be_nil
     end
   end
 

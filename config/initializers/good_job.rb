@@ -203,6 +203,11 @@ Rails.application.configure do
       class: "Notifications::CheckRunnerQuotasJob",
       description: "Publish runner quota exhaustion notifications"
     },
+    runner_quota_balance: {
+      cron: "9-59/15 * * * *",
+      class: "RunnerQuotaBalanceJob",
+      description: "Recalculate automated runner weights from remaining quota"
+    },
     llm_output_metric_feedback: {
       cron: "0 */6 * * *",
       class: "LlmOutputMetricFeedbackCollectionJob",

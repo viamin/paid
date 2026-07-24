@@ -147,12 +147,14 @@ class RunnersController < ApplicationController
     authorize @user_setting, :update?
 
     update_fallback_runner_flags!
-    weights_ok = update_runner_weights!
-
     attrs = runner_settings_params
+    auto_weight_requested = auto_weight_requested?(attrs)
+    weights_ok = auto_weight_requested ? true : update_runner_weights!
     attrs[:default_agent_runners_by_goal] = goal_default_runner_attrs(attrs)
+    rebalancing_just_enabled = auto_weight_requested && !@user_setting.auto_weight_enabled?
 
     if weights_ok && @user_setting.update(attrs)
+      trigger_quota_rebalance! if rebalancing_just_enabled
       redirect_to resource_index_path, notice: resource_settings_saved_notice
     else
       load_index_context
@@ -175,7 +177,16 @@ class RunnersController < ApplicationController
 
   def runner_params
     raw_params = params.fetch(:runner)
-    permitted = [ :enabled_for_agent_runs, :enabled_for_chat, :enabled_for_fallback, :name, :fallback_role, :agent_co_author_trailer, :weight ]
+    permitted = [
+      :enabled_for_agent_runs,
+      :enabled_for_chat,
+      :enabled_for_fallback,
+      :name,
+      :fallback_role,
+      :agent_co_author_trailer,
+      :monthly_token_budget,
+      :weight
+    ]
     if action_name == "create"
       permitted.push(:runner_key, :provider_key, :auth_type, :provider_api_key_id)
     end
@@ -479,6 +490,11 @@ class RunnersController < ApplicationController
       aliases[runner.routing_key] = runner.runner_key
     end
     @usage_stats = resource_usage_stats_service.call(user: current_user)
+    @auto_weight_budget_warnings = if @user_setting.auto_weight_enabled?
+      @run_enabled_runners.select(&:api_key?).reject(&:monthly_budget_configured?)
+    else
+      []
+    end
     # Pre-index stats per runner to avoid duplicate lookups in views
     @runner_stats_by_id = @runners.each_with_object({}) do |runner, hash|
       stats = @usage_stats[runner.routing_key] || @usage_stats[runner.runner_key]
@@ -521,6 +537,7 @@ class RunnersController < ApplicationController
 
   def runner_settings_params
     permitted = params.require(:user_setting).permit(
+      :auto_weight_enabled,
       :default_agent_runner,
       :fallback_enabled,
       :fallback_runners,
@@ -595,6 +612,22 @@ class RunnersController < ApplicationController
     end
 
     !invalid
+  end
+
+  def auto_weight_requested?(attrs)
+    return @user_setting.auto_weight_enabled unless attrs.key?(:auto_weight_enabled)
+
+    ActiveModel::Type::Boolean.new.cast(attrs[:auto_weight_enabled])
+  end
+
+  def trigger_quota_rebalance!
+    RunnerQuotaBalanceJob.perform_later(current_user.id)
+  rescue => e
+    Rails.logger.warn(
+      message: "runners.settings_auto_weight_rebalance_failed",
+      user_id: current_user.id,
+      error: e.message
+    )
   end
 
   def cached_runner_states
