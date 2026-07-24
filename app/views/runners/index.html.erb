@@ -30,6 +30,7 @@
           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Usage (7d)</th>
           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Fallback Rate</th>
           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Rate Limits</th>
+          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Quota</th>
           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Status</th>
           <th class="px-4 py-3"></th>
         </tr>
@@ -90,6 +91,23 @@
                 <span class="text-orange-700"><%= stats[:rate_limit_events_7d] %> events</span>
               <% else %>
                 <span class="text-gray-400">0</span>
+              <% end %>
+            </td>
+            <% quota_state = @runner_states[runner.state_key] %>
+            <% quota_state ||= @runner_states[runner.runner_key] if runner.subscription? %>
+            <td class="px-4 py-3 text-sm text-gray-700">
+              <% if quota_state&.quota_available? %>
+                <% pct = quota_state.quota_headroom_pct %>
+                <% quota_color = pct >= 50 ? "text-green-700" : pct >= 20 ? "text-yellow-700" : "text-red-700" %>
+                <span class="font-medium <%= quota_color %>"><%= pct %>%</span>
+                <span class="text-xs text-gray-500">remaining</span>
+                <% if quota_state.quota_checked_at %>
+                  <p class="mt-0.5 text-xs text-gray-400">checked <%= local_time(quota_state.quota_checked_at, format: :relative) %></p>
+                <% end %>
+              <% elsif quota_state&.quota_source == "monthly_budget_missing" %>
+                <span class="text-xs text-gray-500">No budget set</span>
+              <% else %>
+                <span class="text-gray-400">&mdash;</span>
               <% end %>
             </td>
             <td data-test-agent-target="status" class="px-4 py-3 text-sm">

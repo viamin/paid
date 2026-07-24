@@ -208,6 +208,11 @@ Rails.application.configure do
       class: "RunnerQuotaBalanceJob",
       description: "Recalculate automated runner weights from remaining quota"
     },
+    runner_refresh_quota_snapshots: {
+      cron: "12-59/15 * * * *",
+      class: "Runners::RefreshQuotaSnapshotsJob",
+      description: "Proactively refresh upstream quota snapshots for all runners (RDR-025)"
+    },
     llm_output_metric_feedback: {
       cron: "0 */6 * * *",
       class: "LlmOutputMetricFeedbackCollectionJob",

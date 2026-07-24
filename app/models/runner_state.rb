@@ -142,6 +142,24 @@ class RunnerState < ApplicationRecord
     raw.deep_dup
   end
 
+  # Canonical headroom computation shared by RunnerState instances,
+  # Runners::QuotaScore, and RunnersController::CachedState.
+  # Returns a fraction 0.0–1.0 (remaining / limit), or nil when the snapshot
+  # is absent, quota is unavailable, or the limit is zero/missing.
+  def self.headroom_from_snapshot(snapshot)
+    return nil unless snapshot.is_a?(Hash) && snapshot["available"] == true
+
+    remaining = snapshot["remaining"]&.to_i
+    limit = snapshot["limit"]&.to_i
+    return nil unless remaining && limit&.positive?
+
+    (remaining.to_f / limit).clamp(0.0, 1.0)
+  end
+
+  def quota_headroom
+    self.class.headroom_from_snapshot(quota_status_snapshot)
+  end
+
   def quota_status_checked_at
     parse_snapshot_time(quota_status_snapshot&.fetch("checked_at", nil))
   end
