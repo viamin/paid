@@ -7,10 +7,56 @@ class RunnersController < ApplicationController
   # method.  Caching full ActiveRecord objects is brittle across deploys and
   # bloats the cache payload; this struct holds only the primitive attributes
   # the views actually read.
-  CachedState = Struct.new(:circuit_state, :rate_limited_until, keyword_init: true) do
-    def rate_limited?  = rate_limited_until.present? && rate_limited_until > Time.current
-    def circuit_open?  = circuit_state == "open"
-    def circuit_half_open? = circuit_state == "half_open"
+  CachedState = Struct.new(:circuit_state, :rate_limited_until, :quota_snapshot, keyword_init: true) do
+    def rate_limited?       = rate_limited_until.present? && rate_limited_until > Time.current
+    def circuit_open?       = circuit_state == "open"
+    def circuit_half_open?  = circuit_state == "half_open"
+
+    def quota_available?
+      quota_snapshot.is_a?(Hash) && quota_snapshot["available"] == true
+    end
+
+    def quota_headroom
+      return nil unless quota_available?
+
+      remaining = quota_snapshot["remaining"]&.to_i
+      limit = quota_snapshot["limit"]&.to_i
+      return nil unless remaining && limit&.positive?
+
+      (remaining.to_f / limit).clamp(0.0, 1.0)
+    end
+
+    def quota_headroom_pct
+      return nil unless quota_headroom
+
+      (quota_headroom * 100).round
+    end
+
+    def quota_checked_at
+      return nil unless quota_snapshot.is_a?(Hash)
+
+      raw = quota_snapshot["checked_at"]
+      return nil if raw.blank?
+
+      Time.zone.parse(raw.to_s)
+    rescue ArgumentError
+      nil
+    end
+
+    def quota_reset_at
+      return nil unless quota_snapshot.is_a?(Hash)
+
+      raw = quota_snapshot["reset_at"]
+      return nil if raw.blank?
+
+      Time.zone.parse(raw.to_s)
+    rescue ArgumentError
+      nil
+    end
+
+    def quota_source
+      quota_snapshot.is_a?(Hash) ? quota_snapshot["source"] : nil
+    end
   end
   before_action :set_runner, only: [ :edit, :update, :destroy, :test_agent, :toggle_agent_runs, :toggle_fallback ]
   before_action :load_runner_options, only: [ :new, :create, :edit, :update ]
@@ -635,7 +681,8 @@ class RunnersController < ApplicationController
       resource_states.each_with_object({}) do |state, hash|
         hash[state.runner_name] = CachedState.new(
           circuit_state: state.circuit_state,
-          rate_limited_until: state.rate_limited_until
+          rate_limited_until: state.rate_limited_until,
+          quota_snapshot: state.quota_status_snapshot
         )
       end
     end
