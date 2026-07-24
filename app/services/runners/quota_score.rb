@@ -84,14 +84,7 @@ module Runners
     def compute_headroom(state)
       return nil unless state
 
-      snapshot = state.quota_status_snapshot
-      return nil unless snapshot.is_a?(Hash) && snapshot["available"] == true
-
-      remaining = snapshot["remaining"]&.to_i
-      limit = snapshot["limit"]&.to_i
-      return nil unless remaining && limit&.positive?
-
-      (remaining.to_f / limit).clamp(0.0, 1.0)
+      state.quota_headroom
     end
   end
 end

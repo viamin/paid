@@ -211,7 +211,7 @@ Rails.application.configure do
     runner_refresh_quota_snapshots: {
       cron: "12-59/15 * * * *",
       class: "Runners::RefreshQuotaSnapshotsJob",
-      description: "Proactively refresh upstream quota snapshots for all subscription runners (RDR-025)"
+      description: "Proactively refresh upstream quota snapshots for all runners (RDR-025)"
     },
     llm_output_metric_feedback: {
       cron: "0 */6 * * *",

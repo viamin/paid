@@ -17,13 +17,7 @@ class RunnersController < ApplicationController
     end
 
     def quota_headroom
-      return nil unless quota_available?
-
-      remaining = quota_snapshot["remaining"]&.to_i
-      limit = quota_snapshot["limit"]&.to_i
-      return nil unless remaining && limit&.positive?
-
-      (remaining.to_f / limit).clamp(0.0, 1.0)
+      RunnerState.headroom_from_snapshot(quota_snapshot)
     end
 
     def quota_headroom_pct
