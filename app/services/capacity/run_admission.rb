@@ -10,13 +10,16 @@ module Capacity
       end
     end
 
-    def initialize(user:, project: nil, goal: nil, docker_snapshot: nil, reserved_agent_memory_bytes: nil, mode: nil)
+    def initialize(user:, project: nil, goal: nil, docker_snapshot: nil, reserved_agent_memory_bytes: nil, mode: nil,
+      selected_host: nil, selected_host_limit: nil)
       @user = user
       @project = project
       @goal = goal
       @docker_snapshot = docker_snapshot
       @reserved_agent_memory_bytes = reserved_agent_memory_bytes
       @mode = mode
+      @selected_host = selected_host
+      @selected_host_limit = selected_host_limit
     end
 
     def call
@@ -30,13 +33,17 @@ module Capacity
 
     private
 
-    attr_reader :docker_snapshot, :goal, :project, :reserved_agent_memory_bytes, :user
+    attr_reader :docker_snapshot, :goal, :project, :reserved_agent_memory_bytes, :selected_host, :selected_host_limit, :user
 
     def owner_missing_result
       {
         allowed: false,
         mode: nil,
         reason: "owner_not_found",
+        selected_host: selected_host,
+        host_active_count: nil,
+        host_max_concurrent_runs: selected_host_limit,
+        host_available_slots: nil,
         user_active_count: nil,
         project_active_count: nil,
         create_pr_active_count: nil,
@@ -50,12 +57,16 @@ module Capacity
     end
 
     def manual_result(mode:)
-      remaining_slots = [ user_available_slots, project_available_slots, create_pr_available_slots ].compact.min
+      remaining_slots = [ host_available_slots, user_available_slots, project_available_slots, create_pr_available_slots ].compact.min
 
       {
         allowed: remaining_slots.positive?,
         mode: mode,
         reason: denial_reason(remaining_memory_slots: nil),
+        selected_host: selected_host,
+        host_active_count: host_active_count,
+        host_max_concurrent_runs: selected_host_limit,
+        host_available_slots: host_available_slots,
         user_active_count: user_active_count,
         project_active_count: project_active_count,
         create_pr_active_count: create_pr_active_count,
@@ -82,6 +93,7 @@ module Capacity
       ].compact.min
       remaining_slots = [
         remaining_memory_slots,
+        host_available_slots,
         user_available_slots,
         project_available_slots,
         create_pr_available_slots
@@ -91,6 +103,10 @@ module Capacity
         allowed: remaining_slots.positive?,
         mode: UserSetting::RUN_CONCURRENCY_MODE_AUTO,
         reason: denial_reason(remaining_memory_slots: remaining_memory_slots),
+        selected_host: selected_host,
+        host_active_count: host_active_count,
+        host_max_concurrent_runs: selected_host_limit,
+        host_available_slots: host_available_slots,
         user_active_count: user_active_count,
         project_active_count: project_active_count,
         create_pr_active_count: create_pr_active_count,
@@ -128,11 +144,13 @@ module Capacity
 
     def denial_reason(remaining_memory_slots:)
       return nil if user_available_slots.positive? &&
+        slot_available?(host_available_slots) &&
         slot_available?(project_available_slots) &&
         slot_available?(create_pr_available_slots) &&
         (remaining_memory_slots.nil? || remaining_memory_slots.positive?)
 
       return "insufficient_docker_capacity" if !remaining_memory_slots.nil? && remaining_memory_slots <= 0
+      return "host_hard_ceiling" if selected_host_limit && host_available_slots.to_i <= 0
       return "user_hard_ceiling" if user_available_slots <= 0
       return "project_hard_ceiling" if project && project_available_slots <= 0
       return "create_pr_hard_ceiling" if goal == "create_pr" && create_pr_available_slots.to_i <= 0
@@ -191,6 +209,18 @@ module Capacity
 
     def user_available_slots
       @user_available_slots ||= [ user_hard_ceiling - user_active_count, 0 ].max
+    end
+
+    def host_active_count
+      return nil unless selected_host_limit
+
+      @host_active_count ||= AgentRun.active_count_for_host(selected_host)
+    end
+
+    def host_available_slots
+      return nil unless selected_host_limit
+
+      @host_available_slots ||= [ selected_host_limit - host_active_count, 0 ].max
     end
 
     def project_available_slots

@@ -8,8 +8,8 @@ module Containers
 
     def resolve(backend:, restricted:)
       if backend.remote?
-        external_url = ENV["PAID_PROXY_EXTERNAL_URL"].presence
-        raise ArgumentError, "PAID_PROXY_EXTERNAL_URL is required when CONTAINER_BACKEND is remote" if external_url.blank?
+        external_url = external_url_for(backend)
+        raise ArgumentError, "PAID_PROXY_EXTERNAL_URL or PAID_PROXY_EXTERNAL_URL_<HOST> is required when CONTAINER_BACKEND is remote" if external_url.blank?
 
         return validate_external_url!(external_url)
       end
@@ -28,6 +28,15 @@ module Containers
       url
     rescue URI::InvalidURIError => e
       raise ArgumentError, "Invalid PAID_PROXY_EXTERNAL_URL: #{e.message}"
+    end
+
+    def external_url_for(backend)
+      specific_key = "PAID_PROXY_EXTERNAL_URL_#{env_key_suffix(backend.identifier)}"
+      ENV[specific_key].presence || ENV["PAID_PROXY_EXTERNAL_URL"].presence
+    end
+
+    def env_key_suffix(identifier)
+      identifier.to_s.upcase.gsub(/[^A-Z0-9]+/, "_").gsub(/\A_+|_+\z/, "")
     end
   end
 end

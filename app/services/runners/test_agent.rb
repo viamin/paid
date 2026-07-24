@@ -434,7 +434,7 @@ module Runners
 
     # Builds a ProviderRuntime for kilocode direct-outbound smoke tests.
     #
-    # Kilocode reads its model/provider config from ~/.config/kilo/config.json
+    # Kilocode reads its model/provider config from ~/.config/kilocode/kilo.json
     # (materialized by prepare_kilocode_config!) and picks up the upstream API
     # key from environment variables. This runtime passes the API key through
     # the env var referenced by the generated config.
@@ -456,8 +456,8 @@ module Runners
       config_json = runner.kilocode_config_json
       run.execute_in_container(
         [ "sh", "-c",
-          "mkdir -p /home/agent/.config/kilo && " \
-          "printf '%s' \"$KILOCODE_CONFIG_B64\" | base64 -d > /home/agent/.config/kilo/config.json" ],
+          "mkdir -p /home/agent/.config/kilocode && " \
+          "printf '%s' \"$KILOCODE_CONFIG_B64\" | base64 -d > /home/agent/.config/kilocode/kilo.json" ],
         timeout: 30,
         env: { "KILOCODE_CONFIG_B64" => Base64.strict_encode64(config_json) }
       )

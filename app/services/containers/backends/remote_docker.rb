@@ -102,6 +102,10 @@ module Containers
         Docker::Image.create(config, nil, connection)
       end
 
+      def get_image(name)
+        Docker::Image.get(name, {}, connection)
+      end
+
       def list_volumes
         Docker::Volume.all({}, connection)
       end

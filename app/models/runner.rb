@@ -85,10 +85,18 @@ class Runner < ApplicationRecord
 
   KILOCODE_API_PROVIDER_KEYS = DIRECT_OUTBOUND_API_PROVIDERS.keys.freeze
   KILOCODE_DEFAULT_API_PROVIDER = "anthropic"
+<<<<<<< HEAD
   # TODO(viamin/paid#3002): remove once agent-harness merges default KiloCode
   # external_directory permissions with Paid's generated runtime config.
   KILOCODE_EXTERNAL_DIRECTORY_PERMISSIONS = {
     "/tmp/**" => "allow",
+=======
+  # Paid-specific KiloCode addition: containerized runs need read access to the
+  # installed agent-harness gem path. Upstream KiloCode defaults own the common
+  # non-interactive allowlist (/tmp, /home/agent); Paid only layers this narrow
+  # extra path on top.
+  KILOCODE_EXTERNAL_DIRECTORY_PERMISSIONS = {
+>>>>>>> origin/main
     "/usr/local/lib/ruby/gems/*/gems/agent-harness-*/**" => "allow"
   }.freeze
   MIN_PREFLIGHT_TIMEOUT_SECONDS = 1
@@ -417,9 +425,12 @@ class Runner < ApplicationRecord
   end
 
   def kilocode_config_json
-    model_id = kilocode_model_id
-    raise ArgumentError, "Missing KiloCode model id for runner #{id || runner_key}" if model_id.blank?
+    preparation = kilocode_harness_provider.plan_execution(
+      prompt: "ping",
+      provider_runtime: kilocode_runner_runtime
+    ).fetch(:preparation)
 
+<<<<<<< HEAD
     api_config = DIRECT_OUTBOUND_API_PROVIDERS.fetch(kilocode_api_provider, DIRECT_OUTBOUND_API_PROVIDERS["anthropic"])
     kilocode_provider_id = api_config[:kilocode_provider_id] || "openai-compatible"
     options = { "apiKey" => "{env:#{kilocode_api_key_env_var}}" }
@@ -445,6 +456,10 @@ class Runner < ApplicationRecord
         external_directory: KILOCODE_EXTERNAL_DIRECTORY_PERMISSIONS
       }
     }.to_json
+=======
+    preparation&.file_writes&.find { |file| file.path == "~/.config/kilocode/kilo.json" }&.content ||
+      raise("agent-harness did not generate a KiloCode config file")
+>>>>>>> origin/main
   end
 
   def kilocode_qualified_model(provider_id, model_id)
@@ -500,6 +515,42 @@ class Runner < ApplicationRecord
     { kilocode_api_key_env_var => api_key }
   end
 
+  def kilocode_runner_runtime
+    model_id = kilocode_model_id
+    raise ArgumentError, "Missing KiloCode model id for runner #{id || runner_key}" if model_id.blank?
+
+    api_config = DIRECT_OUTBOUND_API_PROVIDERS.fetch(kilocode_api_provider, DIRECT_OUTBOUND_API_PROVIDERS["anthropic"])
+    kilocode_provider_id = api_config[:kilocode_provider_id] || "openai-compatible"
+    options = { "apiKey" => "{env:#{kilocode_api_key_env_var}}" }
+    base_url = api_config[:base_url]
+    default_openai_url = DIRECT_OUTBOUND_API_PROVIDERS.dig("openai", :base_url)
+    options["baseURL"] = base_url if base_url.present? && base_url != default_openai_url
+
+    AgentHarness::ProviderRuntime.new(
+      model: kilocode_qualified_model(kilocode_provider_id, model_id),
+      env: kilocode_runtime_env,
+      metadata: {
+        config: {
+          "provider" => {
+            kilocode_provider_id => {
+              "options" => options,
+              "models" => {
+                model_id => {
+                  "name" => model_id,
+                  "id" => model_id,
+                  "tool_call" => true
+                }
+              }
+            }
+          },
+          "permission" => {
+            "external_directory" => KILOCODE_EXTERNAL_DIRECTORY_PERMISSIONS
+          }
+        }
+      }
+    )
+  end
+
   def direct_outbound_exec_env
     if kilocode_direct_outbound?
       kilocode_runtime_env.merge("PAID_KILOCODE_CONFIG_B64" => Base64.strict_encode64(kilocode_config_json))
@@ -514,8 +565,8 @@ class Runner < ApplicationRecord
     command = "#{command_prefix.shelljoin} \"$1\""
 
     script = <<~SH.squish
-      mkdir -p /home/agent/.config/kilo &&
-      printf '%s' "$PAID_KILOCODE_CONFIG_B64" | base64 -d > /home/agent/.config/kilo/config.json &&
+      mkdir -p /home/agent/.config/kilocode &&
+      printf '%s' "$PAID_KILOCODE_CONFIG_B64" | base64 -d > /home/agent/.config/kilocode/kilo.json &&
       #{command}
     SH
 
@@ -1671,4 +1722,13 @@ class Runner < ApplicationRecord
     )
   end
   private :openrouter_provider_runtime
+
+  def kilocode_harness_provider
+    klass = AgentHarness.provider_class(:kilocode)
+    config = AgentHarness.build_config(:kilocode)
+    config.externally_sandboxed = true
+
+    klass.new(config: config)
+  end
+  private :kilocode_harness_provider
 end

@@ -15,6 +15,7 @@ RSpec.describe AgentRun, :no_db do
         run.define_singleton_method(:project_id) { project_record.id }
         run.define_singleton_method(:worktree_path) { nil }
         run.define_singleton_method(:container_id) { container_id }
+        run.define_singleton_method(:container_host) { nil }
         run.define_singleton_method(:persisted_updates) { @persisted_updates ||= [] }
         run.define_singleton_method(:update!) do |**attrs|
           persisted_updates << attrs

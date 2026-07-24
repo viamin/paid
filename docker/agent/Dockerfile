@@ -114,13 +114,39 @@ RUN if [ -z "${BUNDLER_VERSION}" ]; then \
 # AGENT_HARNESS_VERSION is extracted from Gemfile.lock at build time by
 # scripts/build-agent-image.sh and .github/workflows/agent-image.yml so the
 # agent image stays in lockstep with the control plane.
+#
+# When agent-harness is pinned to a git ref in Gemfile.lock (e.g. an
+# unreleased upstream fix published as a commit), set AGENT_HARNESS_GIT_REF
+# instead of AGENT_HARNESS_VERSION. The build then fetches only the pinned
+# commit (a shallow, --depth 1 fetch so the full repository history is never
+# downloaded), builds the .gem from source, and installs it. RubyGems has no
+# `--git` install option, so the fetch-and-build pattern is the simplest way to
+# install a gem straight from a git ref without invoking Bundler. The gemspec
+# resolves its file list via `git ls-files`, so a checkout (which populates the
+# index) is required rather than a bare tarball download.
 ARG AGENT_HARNESS_VERSION
-RUN if [ -z "${AGENT_HARNESS_VERSION}" ]; then \
-        echo "ERROR: AGENT_HARNESS_VERSION build-arg is required." >&2; \
+ARG AGENT_HARNESS_GIT_REF
+RUN if [ -z "${AGENT_HARNESS_VERSION}" ] && [ -z "${AGENT_HARNESS_GIT_REF}" ]; then \
+        echo "ERROR: AGENT_HARNESS_VERSION or AGENT_HARNESS_GIT_REF build-arg is required." >&2; \
         echo "Use scripts/build-agent-image.sh, which extracts it from Gemfile.lock." >&2; \
         exit 1; \
     fi \
-    && gem install --no-document "agent-harness:${AGENT_HARNESS_VERSION}"
+    && if [ -n "${AGENT_HARNESS_GIT_REF}" ]; then \
+        echo "Installing agent-harness from git ref: ${AGENT_HARNESS_GIT_REF}"; \
+        mkdir -p /tmp/agent-harness-src \
+        && cd /tmp/agent-harness-src \
+        && git init \
+        && git remote add origin "https://github.com/viamin/agent-harness.git" \
+        && git fetch --depth 1 origin "${AGENT_HARNESS_GIT_REF}" \
+        && git checkout FETCH_HEAD \
+        && gem build agent-harness.gemspec \
+        && gem install --no-document agent-harness-*.gem \
+        && cd / \
+        && rm -rf /tmp/agent-harness-src; \
+    else \
+        echo "Installing agent-harness version: ${AGENT_HARNESS_VERSION}"; \
+        gem install --no-document "agent-harness:${AGENT_HARNESS_VERSION}"; \
+    fi
 
 # Install ruby-maat (VCS mining tool for churn/hotspot analysis)
 # https://github.com/viamin/ruby-maat

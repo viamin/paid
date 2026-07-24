@@ -835,6 +835,15 @@ RSpec.describe Activities::RunAgentActivity do
         expect(config_json["provider"]).to eq(expected_kilocode_model_config)
       end
 
+      it "writes the direct-outbound kilocode config to the upstream path" do
+        context = build_kilocode_context(user)
+
+        command = activity.send(:build_command, context, "ping")
+
+        expect(command[2]).to include("mkdir -p /home/agent/.config/kilocode")
+        expect(command[2]).to include("/home/agent/.config/kilocode/kilo.json")
+      end
+
       it "allows Kilocode to inspect container support paths" do
         context = build_kilocode_context(user)
 
@@ -842,9 +851,16 @@ RSpec.describe Activities::RunAgentActivity do
         config_json = JSON.parse(Base64.strict_decode64(env.fetch("PAID_KILOCODE_CONFIG_B64")))
 
         expect(config_json.dig("permission", "external_directory")).to include("/tmp/**" => "allow")
+<<<<<<< HEAD
         expect(config_json.dig("permission", "external_directory")).to include("/usr/local/lib/ruby/gems/*/gems/agent-harness-*/**" => "allow")
         expect(config_json.dig("permission", "external_directory")).not_to have_key("/usr/local/lib/ruby/gems/**")
         expect(config_json.dig("permission", "external_directory")).not_to have_key("/home/agent/**")
+=======
+        expect(config_json.dig("permission", "external_directory")).to include("/home/agent/**" => "allow")
+        expect(config_json.dig("permission", "external_directory")).to include(
+          "/usr/local/lib/ruby/gems/*/gems/agent-harness-*/**" => "allow"
+        )
+>>>>>>> origin/main
       end
 
       it "does not include PAID_KILOCODE_CONFIG_B64 for subscription kilocode runners" do
@@ -2847,7 +2863,7 @@ expect(container_service).to receive(:execute).with(
           )
         }.to raise_error(
           described_class::RunnerInfraExecutionError,
-          /Preflight check failed: Agent exited with code 137 \(process killed by SIGKILL; memory limit 4.0 GB, container_running=false\): > build · MiniMax-M3/
+          /Preflight check failed: Agent exited with code 137 \(process killed by SIGKILL; container OOM not reported; configured memory limit 4.0 GB, container_running=false\): > build · MiniMax-M3/
         )
       end
 
@@ -2883,7 +2899,7 @@ expect(container_service).to receive(:execute).with(
           )
         }.to raise_error(
           described_class::RunnerExecutionError,
-          /Preflight check failed: Agent exited with code 137 \(process killed by SIGKILL; memory limit 4.0 GB, container_running=true\): > build · MiniMax-M3/
+          /Preflight check failed: Agent exited with code 137 \(process killed by SIGKILL; container OOM not reported; configured memory limit 4.0 GB, container_running=true\): > build · MiniMax-M3/
         )
       end
 
@@ -3033,7 +3049,7 @@ expect(container_service).to receive(:execute).with(
         )
         allow(activity).to receive(:run_agent_with_runner).and_raise(
           described_class::RunnerInfraExecutionError,
-          "Preflight check failed: Agent exited with code 137 (process killed by SIGKILL; memory limit 4.0 GB, container_running=false): > build · MiniMax-M3"
+          "Preflight check failed: Agent exited with code 137 (process killed by SIGKILL; container OOM not reported; configured memory limit 4.0 GB, container_running=false): > build · MiniMax-M3"
         )
         allow(Containers::Provision).to receive(:reconnect).and_return(container_service)
         allow(container_service).to receive(:container_running?).and_return(true)
@@ -3056,7 +3072,7 @@ expect(container_service).to receive(:execute).with(
         )
         allow(activity).to receive(:run_agent_with_runner).and_raise(
           described_class::RunnerExecutionError,
-          "Preflight check failed: Agent exited with code 137 (process killed by SIGKILL; memory limit 4.0 GB, container_running=true): > build · MiniMax-M3"
+          "Preflight check failed: Agent exited with code 137 (process killed by SIGKILL; container OOM not reported; configured memory limit 4.0 GB, container_running=true): > build · MiniMax-M3"
         )
         allow(Containers::Provision).to receive(:reconnect).and_return(container_service)
         allow(container_service).to receive(:container_running?).and_return(true)
@@ -4090,6 +4106,28 @@ expect(container_service).to receive(:execute).with(
           hash_including(
             "runner" => "claude_code", "success" => false,
             "error_message" => include("container OOM-killed; memory limit 4.0 GB")
+          )
+        )
+      end
+
+      it "annotates bare SIGKILL without implying the container memory limit fired" do
+        sigkill_failure = Containers::Provision::Result.failure(
+          error: "exit 137", stdout: "", stderr: "Killed",
+          exit_code: 137, oom_killed: false,
+          memory_limit_bytes: 4 * 1024 * 1024 * 1024,
+          container_running: false
+        )
+        allow(container_service).to receive(:execute).and_return(sigkill_failure, exec_success)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:success]).to be true
+        expect(agent_run.reload.runners_attempted).to include(
+          hash_including(
+            "runner" => "claude_code", "success" => false,
+            "error_message" => include(
+              "process killed by SIGKILL; container OOM not reported; configured memory limit 4.0 GB, container_running=false"
+            )
           )
         )
       end

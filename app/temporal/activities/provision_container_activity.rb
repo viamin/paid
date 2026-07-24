@@ -44,7 +44,7 @@ module Activities
       agent_run = AgentRun.find(agent_run_id)
       track_phase(agent_run_id: agent_run_id, phase_key: "provision_container", phase_group: "setup", agent_run: agent_run) do
         agent_run.ensure_proxy_token!
-        provision_with_heartbeat(agent_run)
+        provision_with_heartbeat(agent_run, planned_container_host: input[:container_host])
 
         # worktree_path is not yet populated at provision time — git clone
         # happens later in CloneRepoActivity. log_container_context in
@@ -82,12 +82,12 @@ module Activities
     # still alive) so the propagating CanceledError is not masked by a worker
     # Interrupt.
     def provision_with_heartbeat(agent_run, interval: HEARTBEAT_INTERVAL_SECONDS,
-                                 grace_seconds: CANCEL_GRACE_SECONDS)
+                                 grace_seconds: CANCEL_GRACE_SECONDS, planned_container_host: nil)
       context = Temporalio::Activity::Context.current_or_nil
-      return agent_run.provision_container unless context
+      return agent_run.provision_container(container_host: planned_container_host) unless context
 
       tenant_account_id = Current.account&.id
-      worker = Thread.new { run_provision_in_context(agent_run, tenant_account_id) }
+      worker = Thread.new { run_provision_in_context(agent_run, tenant_account_id, planned_container_host: planned_container_host) }
       worker.report_on_exception = false
       canceled = false
 
@@ -112,8 +112,8 @@ module Activities
     # Runs the provisioning work on the background thread with the Rails
     # executor, tenant RLS context, and a scoped DB connection so the worker
     # thread does not share the activity thread's thread-local state.
-    def run_provision_in_context(agent_run, tenant_account_id)
-      work = proc { agent_run.provision_container }
+    def run_provision_in_context(agent_run, tenant_account_id, planned_container_host: nil)
+      work = proc { agent_run.provision_container(container_host: planned_container_host) }
 
       db_scoped = proc do
         if defined?(ActiveRecord::Base) && ActiveRecord::Base.respond_to?(:connection_pool)

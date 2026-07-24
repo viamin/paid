@@ -78,6 +78,10 @@ RSpec.describe Runners::TestAgent do
       "permission" => {
         "external_directory" => {
           "/tmp/**" => "allow",
+<<<<<<< HEAD
+=======
+          "/home/agent/**" => "allow",
+>>>>>>> origin/main
           "/usr/local/lib/ruby/gems/*/gems/agent-harness-*/**" => "allow"
         }
       }
@@ -789,7 +793,10 @@ RSpec.describe Runners::TestAgent do
         described_class.call(runner: provider)
 
         expect(test_run).to have_received(:execute_in_container).with(
-          [ "sh", "-c", a_string_including("mkdir -p /home/agent/.config/kilo") ],
+          [ "sh", "-c", satisfy { |script|
+            script.include?("mkdir -p /home/agent/.config/kilocode") &&
+              script.include?("/home/agent/.config/kilocode/kilo.json")
+          } ],
           hash_including(timeout: 30, env: hash_including("KILOCODE_CONFIG_B64"))
         )
       end
@@ -797,7 +804,7 @@ RSpec.describe Runners::TestAgent do
       it "generates a v7.1.3-compatible config with provider as a record" do
         captured_env = nil
         allow(test_run).to receive(:execute_in_container) do |cmd, **kwargs|
-          captured_env = kwargs[:env] if cmd.is_a?(Array) && cmd.join.include?("config.json")
+          captured_env = kwargs[:env] if cmd.is_a?(Array) && cmd.join.include?("kilo.json")
           prep_result
         end
 
