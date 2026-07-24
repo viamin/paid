@@ -34,6 +34,19 @@ class CoordinationExperiment < ApplicationRecord
     status == "running"
   end
 
+  def complete!(winner_variant:)
+    raise ArgumentError, "winner_variant must belong to this experiment" unless winner_variant.coordination_experiment_id == id
+    raise ArgumentError, "experiment is not running" unless running?
+
+    transaction do
+      update!(
+        status: "completed",
+        completed_at: Time.current,
+        winner_variant: winner_variant
+      )
+    end
+  end
+
   def control_variant
     coordination_experiment_variants.find_by(is_control: true)
   end
