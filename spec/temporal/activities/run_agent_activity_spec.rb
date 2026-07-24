@@ -835,6 +835,15 @@ RSpec.describe Activities::RunAgentActivity do
         expect(config_json["provider"]).to eq(expected_kilocode_model_config)
       end
 
+      it "writes the direct-outbound kilocode config to the upstream path" do
+        context = build_kilocode_context(user)
+
+        command = activity.send(:build_command, context, "ping")
+
+        expect(command[2]).to include("mkdir -p /home/agent/.config/kilocode")
+        expect(command[2]).to include("/home/agent/.config/kilocode/kilo.json")
+      end
+
       it "allows Kilocode to inspect container support paths" do
         context = build_kilocode_context(user)
 

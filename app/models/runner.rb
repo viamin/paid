@@ -530,8 +530,8 @@ class Runner < ApplicationRecord
     command = "#{command_prefix.shelljoin} \"$1\""
 
     script = <<~SH.squish
-      mkdir -p /home/agent/.config/kilo &&
-      printf '%s' "$PAID_KILOCODE_CONFIG_B64" | base64 -d > /home/agent/.config/kilo/config.json &&
+      mkdir -p /home/agent/.config/kilocode &&
+      printf '%s' "$PAID_KILOCODE_CONFIG_B64" | base64 -d > /home/agent/.config/kilocode/kilo.json &&
       #{command}
     SH
 

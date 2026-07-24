@@ -1599,6 +1599,29 @@ RSpec.describe Runner do
     end
   end
 
+  describe "#direct_outbound_exec_command" do
+    it "materializes direct-outbound kilocode config at the upstream path" do
+      user = create(:user)
+      api_key = create(:provider_api_key, user: user, api_service_type: "anthropic", api_key: "sk-test")
+      runner = build(
+        :runner,
+        user: user,
+        runner_key: "kilocode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "kilocode" => { "api_provider" => "anthropic", "model" => "claude-sonnet-4-20250514" } }
+      )
+
+      command = runner.direct_outbound_exec_command(command_prefix: %w[kilo run --format json], prompt: "ping")
+
+      expect(command[0, 2]).to eq([ "sh", "-lc" ])
+      expect(command[2]).to include("mkdir -p /home/agent/.config/kilocode")
+      expect(command[2]).to include("/home/agent/.config/kilocode/kilo.json")
+      expect(command[2]).to include("kilo run --format json \"$1\"")
+      expect(command[3..]).to eq([ "--", "ping" ])
+    end
+  end
+
   describe "#state_key" do
     it "uses the canonical runner key for subscription entries" do
       runner = build(:runner, runner_key: "claude", auth_type: "subscription")
