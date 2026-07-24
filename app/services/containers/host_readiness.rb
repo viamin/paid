@@ -142,7 +142,10 @@ module Containers
 
     def architecture_check(_backend, daemon_info)
       architecture = normalize_architecture(daemon_info&.[]("Architecture"))
-      compatible = SUPPORTED_AGENT_ARCHITECTURES.include?(architecture)
+      # Backends that aggregate multiple nodes (e.g. Swarm) may not report a
+      # single Architecture. Treat an undeterminable architecture as compatible
+      # rather than false-negating those hosts with a misleading hint.
+      compatible = architecture.nil? || SUPPORTED_AGENT_ARCHITECTURES.include?(architecture)
       check = Check.new(
         name: "docker_architecture",
         healthy: compatible,
@@ -165,6 +168,12 @@ module Containers
         error: error,
         remediation_hint: "Create the #{network_name} Docker network on #{backend.identifier}."
       )
+    rescue StandardError => error
+      failure_check(
+        name: "docker_network:#{network_name}",
+        error: error,
+        remediation_hint: "Docker network #{network_name} is unreachable on #{backend.identifier} (#{error.class})."
+      )
     end
 
     def image_check(backend)
@@ -175,6 +184,12 @@ module Containers
         name: "docker_image",
         error: error,
         remediation_hint: "Load or build #{image} on #{backend.identifier} before scheduling runs there."
+      )
+    rescue StandardError => error
+      failure_check(
+        name: "docker_image",
+        error: error,
+        remediation_hint: "Docker image #{image} is unreachable on #{backend.identifier} (#{error.class})."
       )
     end
 

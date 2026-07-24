@@ -124,6 +124,17 @@ RSpec.describe Containers::HostReadiness, :no_db do
     expect(result[:remediation_hint]).to include("paid_internal")
   end
 
+  it "attributes a non-NotFound network failure to the network check, not docker_ping" do
+    allow(local_backend).to receive(:get_network).with(NetworkPolicy::NETWORK_NAME)
+      .and_raise(Excon::Error::Socket.new(StandardError.new("connection refused")))
+
+    result = call(backends: [ local_backend ], force_refresh: true).fetch(local_backend)
+
+    expect(result[:healthy]).to be(false)
+    expect(result[:failing_check]).to eq("docker_network:#{NetworkPolicy::NETWORK_NAME}")
+    expect(result[:remediation_hint]).to include("unreachable")
+  end
+
   it "reports a missing image distinctly" do
     allow(local_backend).to receive(:get_image).with(image)
       .and_raise(Docker::Error::NotFoundError.new("missing image"))
@@ -133,6 +144,29 @@ RSpec.describe Containers::HostReadiness, :no_db do
     expect(result[:healthy]).to be(false)
     expect(result[:failing_check]).to eq("docker_image")
     expect(result[:remediation_hint]).to include(image)
+  end
+
+  it "attributes a non-NotFound image failure to the image check, not docker_ping" do
+    allow(local_backend).to receive(:get_image).with(image)
+      .and_raise(Excon::Error::Socket.new(StandardError.new("timeout")))
+
+    result = call(backends: [ local_backend ], force_refresh: true).fetch(local_backend)
+
+    expect(result[:healthy]).to be(false)
+    expect(result[:failing_check]).to eq("docker_image")
+    expect(result[:remediation_hint]).to include("unreachable")
+  end
+
+  it "treats an undeterminable architecture as compatible (e.g. Swarm)" do
+    allow(local_backend).to receive(:system_info).and_return({ "NCPU" => 4, "MemTotal" => 8_000_000 })
+
+    result = call(backends: [ local_backend ], force_refresh: true).fetch(local_backend)
+
+    expect(result[:healthy]).to be(true)
+    expect(result[:checks]).to include(hash_including(
+      name: "docker_architecture", healthy: true,
+      details: { architecture: nil, compatible: true, image: image }
+    ))
   end
 
   it "classifies bad remote TLS distinctly" do
