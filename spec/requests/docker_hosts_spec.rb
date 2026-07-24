@@ -58,13 +58,27 @@ RSpec.describe "DockerHosts", type: :request do
     expect(host.display_name).to eq("Updated Host")
   end
 
-  it "clears saved account and project preferences when a host is disabled" do
+  it "clears saved account and project preferences when a host is disabled via the disable action" do
     host = create(:docker_host, account: account, identifier: "elguapo")
     tenant_setting = account.tenant_setting || create(:tenant_setting, account: account)
     project = create(:project, account: account, created_by: user, preferred_docker_host_identifier: "elguapo")
     tenant_setting.update!(preferred_docker_host_identifier: "elguapo")
 
     patch disable_docker_host_path(host)
+
+    expect(response).to redirect_to(docker_host_path(host))
+    expect(host.reload).to be_disabled
+    expect(tenant_setting.reload.preferred_docker_host_identifier).to be_nil
+    expect(project.reload.preferred_docker_host_identifier).to be_nil
+  end
+
+  it "clears saved account and project preferences when a host is disabled via the update form" do
+    host = create(:docker_host, account: account, identifier: "formpath")
+    tenant_setting = account.tenant_setting || create(:tenant_setting, account: account)
+    project = create(:project, account: account, created_by: user, preferred_docker_host_identifier: "formpath")
+    tenant_setting.update!(preferred_docker_host_identifier: "formpath")
+
+    patch docker_host_path(host), params: { docker_host: { display_name: host.display_name, enabled: "0" } }
 
     expect(response).to redirect_to(docker_host_path(host))
     expect(host.reload).to be_disabled

@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class AccountDockerHostPreferencesController < ApplicationController
+  include DockerHostsIndexPage
+
   def update
     authorize current_account, :update?
     @tenant_setting = current_account.tenant_setting!
@@ -8,19 +10,7 @@ class AccountDockerHostPreferencesController < ApplicationController
     if @tenant_setting.update(account_docker_host_preferences_params)
       redirect_to docker_hosts_path, notice: "Account Docker host preferences updated."
     else
-      @docker_hosts = current_account.docker_hosts.ordered
-      @enabled_docker_host_options = @docker_hosts.select(&:enabled?).map { |host| [ host.display_name, host.identifier ] }
-      @projects = current_account.projects
-        .includes(account: [ :tenant_setting, :docker_hosts ])
-        .order(:name)
-      @active_runs_by_host = AgentRun.joins(:project)
-        .where(projects: { account_id: current_account.id }, status: AgentRun::UNFINISHED_STATUSES)
-        .group(:container_host)
-        .count
-      @docker_host = current_account.docker_hosts.new(
-        backend_type: "local",
-        callback_url: "/health/services"
-      )
+      load_docker_hosts_index_data
       flash.now[:alert] = "Unable to save account Docker host preferences."
       render "docker_hosts/index", status: :unprocessable_content
     end

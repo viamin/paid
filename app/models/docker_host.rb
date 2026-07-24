@@ -14,6 +14,7 @@ class DockerHost < ApplicationRecord
 
   before_validation :normalize_fields
   before_validation :sync_disabled_state
+  after_save :clear_stale_host_preferences, if: -> { saved_change_to_enabled?(from: true, to: false) }
 
   validates :identifier, presence: true, uniqueness: { scope: :account_id }, length: { maximum: 64 },
     format: { with: /\A[a-z0-9][a-z0-9_-]*\z/, message: "must use lowercase letters, numbers, dashes, or underscores" }
@@ -100,5 +101,12 @@ class DockerHost < ApplicationRecord
 
   def identifier_immutable
     errors.add(:identifier, "can't be changed after creation")
+  end
+
+  def clear_stale_host_preferences
+    TenantSetting.where(account_id: account_id, preferred_docker_host_identifier: identifier)
+      .update_all(preferred_docker_host_identifier: nil, updated_at: Time.current)
+    Project.where(account_id: account_id, preferred_docker_host_identifier: identifier)
+      .update_all(preferred_docker_host_identifier: nil, updated_at: Time.current)
   end
 end

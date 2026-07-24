@@ -1215,23 +1215,23 @@ module Projects
     end
 
     def eligible_docker_hosts_for_manual_selection(runner: nil)
+      auth_source = runner&.subscription? ? subscription_auth_source_for(runner) : nil
       current_account.docker_hosts.enabled.ordered.select do |host|
-        docker_host_eligible_for_manual_selection?(host, runner: runner)
+        docker_host_eligible_for_manual_selection?(host, auth_source: auth_source)
       end
     end
 
-    def docker_host_eligible_for_manual_selection?(host, runner: nil)
+    def docker_host_eligible_for_manual_selection?(host, auth_source: nil)
       return false unless host.placement_ready?
-      return true if runner.blank?
-      return true unless runner.subscription?
+      return true if auth_source.nil?
 
-      subscription_auth_eligibility_for(host, runner: runner).eligible?
+      subscription_auth_eligibility_for(host, auth_source: auth_source).eligible?
     end
 
-    def subscription_auth_eligibility_for(host, runner:)
+    def subscription_auth_eligibility_for(host, auth_source:)
       Runners::SubscriptionAuthEligibility.call(
         backend: docker_host_backend_capabilities(host),
-        auth_source: subscription_auth_source_for(runner),
+        auth_source: auth_source,
         proxy_reachable: host.required_network_status == "ready"
       )
     end
