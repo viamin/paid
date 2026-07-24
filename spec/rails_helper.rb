@@ -90,14 +90,6 @@ RSpec.configure do |config|
   config.filter_run_excluding :provider_smoke unless ENV["RUN_PROVIDER_SMOKE"] == "true"
   config.filter_run_excluding :chat_e2e unless ENV["RUN_CHAT_E2E"] == "true"
 
-  config.before do
-    next unless database_available
-
-    # Some specs seed users with explicit ids, which can leave the sequence
-    # behind the table max in later randomized runs.
-    ActiveRecord::Base.connection.reset_pk_sequence!("users")
-  end
-
   config.around(:each, :provider_smoke) do |example|
     WebMock.allow_net_connect!
     example.run

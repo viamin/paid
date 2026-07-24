@@ -45,6 +45,12 @@ RSpec.describe "Docker host management", type: :system do
     expect(page).to have_content("Docker 28.3")
   end
 
+  it "renders the relative proxy callback default in the create form" do
+    visit docker_hosts_path
+
+    expect(page).to have_field("Proxy callback URL", with: "/health/services")
+  end
+
   it "updates a host from the edit form" do
     visit edit_docker_host_path(docker_host)
 
