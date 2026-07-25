@@ -47,6 +47,9 @@ RSpec.describe Activities::RunAgentActivity do
     # about preflight behaviour aren't affected by the smoke exec call.
     # Tests that verify preflight paths override this stub.
     allow(activity).to receive(:run_runner_preflight!)
+
+    # Stub rtk init so existing execute-call counts aren't affected.
+    allow(Containers::TokenOptimization).to receive(:rtk_init_for_runner)
   end
 
   def create_ab_test_assignment(slug:, agent_run:, variant_template:, status: "running")
@@ -1940,6 +1943,15 @@ expect(container_service).to receive(:execute).with(
         allow(git_ops).to receive(:has_changes_since?).and_return(false)
 
         expect(git_ops).to receive(:head_sha).and_return("pre_agent_sha_abc123")
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "initializes rtk for the runner before preflight" do
+        allow(git_ops).to receive(:has_changes_since?).and_return(false)
+
+        expect(Containers::TokenOptimization).to receive(:rtk_init_for_runner)
+          .with(container_service: container_service, runner_key: anything)
 
         activity.execute(agent_run_id: agent_run.id)
       end

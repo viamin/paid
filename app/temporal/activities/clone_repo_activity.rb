@@ -39,6 +39,10 @@ module Activities
         git_ops.install_artifact_excludes
         install_quality_hooks(git_ops, agent_run)
         git_ops.install_co_author_hook
+
+        heartbeat("clone_repo.codegraph_setup", agent_run_id: agent_run_id)
+        Containers::TokenOptimization.codegraph_setup(container_service: container_service)
+
         create_worktree_record(agent_run)
 
         { agent_run_id: agent_run_id, branch_name: agent_run.branch_name }
