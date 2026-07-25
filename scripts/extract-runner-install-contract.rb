@@ -46,7 +46,7 @@ if runner == "cursor"
 end
 
 begin
-  contract = AgentHarness.install_contract(runner.to_sym)
+  contract = InstallContractHelpers.contract_for(runner)
 rescue AgentHarness::ConfigurationError
   # Some runners expose install metadata via their canonical class contract
   # even when the alias-based registry lookup does not implement
@@ -55,11 +55,13 @@ rescue AgentHarness::ConfigurationError
     runner_class = AgentHarness.provider(runner.to_sym).class
     if runner_class.respond_to?(:installation_contract)
       contract = runner_class.installation_contract
+    elsif (contract = InstallContractHelpers.metadata_installation_for(runner))
+      contract
     else
       warn "No install contract found for runner: #{runner}"
       exit 1
     end
-  rescue KeyError, NameError => e
+  rescue AgentHarness::ConfigurationError, KeyError, NameError => e
     warn "No install contract found for runner: #{runner} (#{e.message})"
     exit 1
   end

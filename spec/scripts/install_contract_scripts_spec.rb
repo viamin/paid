@@ -43,6 +43,16 @@ RSpec.describe InstallContractScripts, :no_db do
     expect(stdout).to include("node $(npm root -g)/opencode-ai/postinstall.mjs")
   end
 
+  it "falls back to runtime installation metadata for omp" do
+    stdout, stderr, status = run_script("scripts/extract-runner-install-contract.rb", "omp")
+
+    expect(status.success?).to be(true), -> { stderr }
+    expect(stdout).to include("SOURCE=npm")
+    expect(stdout).to include("PACKAGE=@oh-my-pi/pi-coding-agent")
+    expect(stdout).to include("INSTALL_COMMAND=npm install -g --ignore-scripts @oh-my-pi/pi-coding-agent@")
+    expect(stdout).to include("BUN_VERSION=")
+  end
+
   it "verifies npm install commands stay scriptless before eval" do
     expect(install_wrapper_source).to include('case "$INSTALL_COMMAND" in')
     expect(install_wrapper_source).to include("must include --ignore-scripts")
