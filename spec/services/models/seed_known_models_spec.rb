@@ -181,6 +181,12 @@ RSpec.describe Models::SeedKnownModels do
 
       expect(model.reload.active).to be(true)
     end
+
+    it "honors seeded inactive models from the snapshot" do
+      described_class.call
+
+      expect(LlmModel.find_by!(model_id: "gpt-5.5-pro").active).to be(false)
+    end
   end
 
   def registry_model(id:, name: id, provider:, family: "test-family", context_window: 123_456,
