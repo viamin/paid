@@ -212,6 +212,9 @@ __pycache__/
 # Paid heartbeat file (touched by agent CLI hooks during container execution)
 .paid-heartbeat
 
+# CodeGraph index (built per-run by Containers::TokenOptimization)
+.codegraph/
+
 # Claude Code plan files (local scratch; should not be committed)
 .claude/plans/
 

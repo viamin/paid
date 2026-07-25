@@ -99,6 +99,32 @@ RUN set -eu; \
   unzip -j -o "$tmpdir/$asset" rathole -d "$tmpdir"; \
   install -m 0755 "$tmpdir/rathole" /usr/local/bin/rathole
 
+# Install rtk (Rust Token Killer) for compressed AI agent shell output.
+# rtk intercepts shell commands from AI agents and compresses the output 60-90%,
+# reducing context window consumption.
+# https://github.com/rtk-ai/rtk/releases
+ARG RTK_VERSION=0.43.0
+RUN set -eu; \
+  arch="$(dpkg --print-architecture)"; \
+  case "$arch" in \
+    amd64) asset="rtk-x86_64-unknown-linux-musl.tar.gz"; checksum="ff8a1e7766496e175291a85aeca1dc97c9ff6df33e51e5893d1fbc78fea2a609" ;; \
+    arm64) asset="rtk-aarch64-unknown-linux-gnu.tar.gz"; checksum="5519f7ca12e5c143a609f0d28a0a77b97413a8dce31c2681f1a41c24519a8731" ;; \
+    *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
+  esac; \
+  tmpdir="$(mktemp -d)"; \
+  trap 'rm -rf "$tmpdir"' EXIT; \
+  curl -fsSL -o "$tmpdir/$asset" "https://github.com/rtk-ai/rtk/releases/download/v${RTK_VERSION}/${asset}"; \
+  echo "$checksum  $tmpdir/$asset" | sha256sum -c -; \
+  tar -xzf "$tmpdir/$asset" -C "$tmpdir"; \
+  install -m 0755 "$tmpdir/rtk" /usr/local/bin/rtk
+
+# Install CodeGraph for local-first code intelligence via MCP.
+# Builds a code knowledge graph that agents query instead of grepping/reading
+# files one at a time, reducing tool calls and tokens.
+# https://github.com/colbymchenry/codegraph
+ARG CODEGRAPH_VERSION=1.5.0
+RUN npm install -g @colbymchenry/codegraph@${CODEGRAPH_VERSION} --ignore-scripts
+
 # Install overmind process manager (requires tmux, installed above)
 RUN gem install overmind
 
