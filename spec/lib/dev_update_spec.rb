@@ -17,7 +17,11 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     {
       "DEV_UPDATE_OVERMIND_STOP_POLL_COUNT" => "3",
       "DEV_UPDATE_OVERMIND_START_POLL_COUNT" => "3",
-      "DEV_UPDATE_OVERMIND_POLL_INTERVAL" => "0.01"
+      "DEV_UPDATE_OVERMIND_POLL_INTERVAL" => "0.01",
+      # Require only 1 consecutive healthy poll (instead of the default 2) so
+      # tests are resilient to CI timing variance when nohup bin/dev starts up
+      # asynchronously and may not be visible on the very first poll.
+      "DEV_UPDATE_OVERMIND_HEALTHY_CONFIRM_COUNT" => "1"
     }
   end
 
