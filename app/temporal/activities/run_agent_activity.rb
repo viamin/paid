@@ -1446,6 +1446,8 @@ module Activities
 
       raise RunnerExecutionError, "Agent run already finished with status #{agent_run.status}" if agent_run.finished?
 
+      Containers::TokenOptimization.rtk_init_for_runner(container_service: container_service, runner_key: runner)
+
       pre_agent_sha = capture_head_sha(container_service, agent_run)
 
       run_runner_preflight!(

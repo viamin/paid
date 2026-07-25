@@ -21,6 +21,7 @@ RSpec.describe Activities::CloneRepoActivity do
       allow(git_ops).to receive(:install_artifact_excludes)
       allow(git_ops).to receive(:install_git_hooks)
       allow(git_ops).to receive(:install_co_author_hook)
+      allow(container_service).to receive(:execute)
 
       # Simulate what clone_and_setup_branch does to agent_run
       agent_run.update!(
@@ -61,6 +62,13 @@ RSpec.describe Activities::CloneRepoActivity do
       expect(git_ops).to receive(:install_artifact_excludes).ordered
       expect(git_ops).to receive(:install_git_hooks).ordered
       expect(git_ops).to receive(:install_co_author_hook).ordered
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "sets up codegraph after clone and hooks" do
+      expect(Containers::TokenOptimization).to receive(:codegraph_setup)
+        .with(container_service: container_service)
 
       activity.execute(agent_run_id: agent_run.id)
     end
@@ -119,7 +127,8 @@ RSpec.describe Activities::CloneRepoActivity do
         allow(git_ops).to receive(:clone_and_checkout_branch)
         allow(git_ops).to receive(:install_artifact_excludes)
         allow(git_ops).to receive(:install_git_hooks)
-        allow(git_ops).to receive(:install_co_author_hook)
+      allow(git_ops).to receive(:install_co_author_hook)
+      allow(container_service).to receive(:execute)
 
         agent_run.update!(
           branch_name: "existing-feature-branch",

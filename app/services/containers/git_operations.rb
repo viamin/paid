@@ -145,6 +145,8 @@ module Containers
       backups/
       # Paid heartbeat file (touched by agent CLI hooks)
       .paid-heartbeat
+      # CodeGraph index (built per-run by Containers::TokenOptimization)
+      .codegraph/
     PATTERNS
 
     # Maximum number of files allowed in the auto-commit safety net.

@@ -217,6 +217,33 @@ RUN RATHOLE_VERSION=0.5.0 \
     && chmod +x /usr/local/bin/rathole \
     && rm "${RATHOLE_ASSET}"
 
+# Install rtk (Rust Token Killer) for compressed AI agent shell output.
+# rtk intercepts shell commands from AI agents and compresses the output 60-90%,
+# reducing context window consumption.
+# https://github.com/rtk-ai/rtk/releases
+RUN RTK_VERSION=0.43.0 \
+    && DEB_ARCH="$(dpkg --print-architecture)" \
+    && case "$DEB_ARCH" in \
+        amd64) RTK_ASSET="rtk-x86_64-unknown-linux-musl.tar.gz"; EXPECTED_CHECKSUM="ff8a1e7766496e175291a85aeca1dc97c9ff6df33e51e5893d1fbc78fea2a609" ;; \
+        arm64) RTK_ASSET="rtk-aarch64-unknown-linux-gnu.tar.gz"; EXPECTED_CHECKSUM="5519f7ca12e5c143a609f0d28a0a77b97413a8dce31c2681f1a41c24519a8731" ;; \
+        *) echo "Unsupported architecture: $DEB_ARCH" >&2; exit 1 ;; \
+    esac \
+    && TARBALL="${RTK_ASSET}" \
+    && curl -fsSL -o "${TARBALL}" "https://github.com/rtk-ai/rtk/releases/download/v${RTK_VERSION}/${RTK_ASSET}" \
+    && echo "${EXPECTED_CHECKSUM}  ${TARBALL}" | sha256sum -c - \
+    && tar -xzf "${TARBALL}" -C /usr/local/bin rtk \
+    && chmod +x /usr/local/bin/rtk \
+    && rm "${TARBALL}"
+
+# Install CodeGraph for local-first code intelligence via MCP.
+# Builds a code knowledge graph that agents query instead of grepping/reading
+# files one at a time, reducing tool calls and tokens.
+# Supply-chain hardening: --ignore-scripts — the package has no lifecycle scripts;
+# platform-specific native binaries are resolved via npm optionalDependencies.
+# https://github.com/colbymchenry/codegraph
+RUN CODEGRAPH_VERSION=1.5.0 \
+    && npm install -g --ignore-scripts "@colbymchenry/codegraph@${CODEGRAPH_VERSION}"
+
 # Create non-root user for security before provider-specific setup. Keeping
 # this separate from any one provider narrows the blast radius of future edits.
 RUN useradd -m -s /bin/bash agent \

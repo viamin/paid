@@ -135,6 +135,7 @@ jobs:
             ".ruby_env.sh"
             ".aider*"
             ".paid-heartbeat"
+            ".codegraph/"
             "vendor/bundle/"
             "vendor/gems/"
             "node_modules/"
