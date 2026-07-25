@@ -11,13 +11,13 @@ module RunnerSupport
   #
   # NOTE: Inclusion here does NOT mean the runner's CLI is installed in the
   # agent Docker container. For container execution, see CONTAINER_EXECUTABLE_RUNNER_KEYS.
-  APP_RUNNER_KEYS = %w[claude cursor codex copilot aider gemini opencode openrouter_free openrouter_pareto kilocode pi].freeze
+  APP_RUNNER_KEYS = %w[claude cursor codex copilot aider gemini opencode openrouter_free openrouter_pareto kilocode pi omp].freeze
 
   # Runner keys whose CLIs are actually installed in the agent Docker container
   # and can execute repository-changing agent tasks. GitHub Copilot CLI is
   # included via its --autopilot mode which enables fully autonomous,
   # non-interactive agent execution.
-  CONTAINER_EXECUTABLE_RUNNER_KEYS = Set.new(%w[aider claude codex copilot cursor gemini kilocode opencode openrouter_free openrouter_pareto pi]).freeze
+  CONTAINER_EXECUTABLE_RUNNER_KEYS = Set.new(%w[aider claude codex copilot cursor gemini kilocode opencode openrouter_free openrouter_pareto pi omp]).freeze
 
   APP_RUNNER_TO_HARNESS_KEY = {
     "openrouter_free" => "opencode",
@@ -223,7 +223,7 @@ module RunnerSupport
   # Maps each runner key to the upstream API service type its CLI tool
   # communicates with. Runners with a single, fixed API key type are listed
   # here. Runners that support multiple upstream API providers (opencode,
-  # kilocode) determine their required key type dynamically — see
+  # kilocode, pi, omp) determine their required key type dynamically — see
   # Runner#required_api_service_type.
   #
   # Runners NOT listed here (e.g. copilot, opencode, kilocode) either have

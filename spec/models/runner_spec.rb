@@ -855,6 +855,7 @@ RSpec.describe Runner do
     it "maps app runner keys to agent harness runner keys" do
       expect(described_class.harness_runner_key_for("copilot")).to eq("github_copilot")
       expect(described_class.harness_runner_key_for("gemini")).to eq("gemini")
+      expect(described_class.harness_runner_key_for("omp")).to eq("omp")
     end
   end
 
@@ -930,6 +931,7 @@ RSpec.describe Runner do
     it "uses agent harness runner display names when available" do
       expect(described_class.display_name("codex")).to eq("OpenAI Codex CLI")
       expect(described_class.display_name("copilot")).to eq("GitHub Copilot CLI")
+      expect(described_class.display_name("omp")).to eq("Oh My Pi")
     end
 
     it "falls back to titleized keys for unknown runners" do
@@ -992,6 +994,18 @@ RSpec.describe Runner do
       )
 
       expect(runner.display_name).to eq("#{described_class.display_name_for("opencode")} moonshotai/kimi-k2-0905 (API Key)")
+    end
+
+    it "includes the model id for unnamed Oh My Pi entries" do
+      runner = build(
+        :runner,
+        runner_key: "omp",
+        auth_type: "api_key",
+        name: nil,
+        config: { "omp" => { "api_provider" => "deepseek", "model" => "deepseek-chat" } }
+      )
+
+      expect(runner.display_name).to eq("Oh My Pi deepseek-chat (API Key)")
     end
   end
 
@@ -1232,6 +1246,51 @@ RSpec.describe Runner do
 
       runner.valid?
       expect(runner.errors[:config]).to be_empty
+    end
+  end
+
+  describe "Oh My Pi config infrastructure" do
+    let(:account) { create(:account, slug: "runner-omp-#{SecureRandom.hex(6)}") }
+    let(:user) { create(:user, account: account, email: "runner-omp-#{SecureRandom.hex(6)}@example.com") }
+    let(:api_key) { create(:provider_api_key, user: user, api_service_type: "deepseek", api_key: "sk-omp-test") }
+
+    it "reads OMP config accessors from the config hash" do
+      runner = build(
+        :runner,
+        user: user,
+        runner_key: "omp",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "omp" => { "api_provider" => "deepseek", "model" => "deepseek-chat" } }
+      )
+
+      expect(runner.omp_api_provider).to eq("deepseek")
+      expect(runner.omp_model_id).to eq("deepseek-chat")
+      expect(runner.omp_required_api_service_type).to eq("deepseek")
+    end
+
+    it "defaults api_provider to deepseek when unset" do
+      runner = build(:runner, runner_key: "omp", auth_type: "api_key",
+        user: user, provider_api_key: api_key, config: { "omp" => { "model" => "deepseek-chat" } })
+
+      expect(runner.omp_api_provider).to eq("deepseek")
+    end
+
+    it "builds an agent-harness runtime with the backend API key in env" do
+      runner = build(
+        :runner,
+        user: user,
+        runner_key: "omp",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "omp" => { "api_provider" => "deepseek", "model" => "deepseek-chat" } }
+      )
+
+      runtime = runner.agent_harness_runner_runtime
+
+      expect(runtime.model).to eq("deepseek-chat")
+      expect(runtime.api_provider).to eq("deepseek")
+      expect(runtime.env).to eq("DEEPSEEK_API_KEY" => "sk-omp-test")
     end
   end
 
@@ -1601,6 +1660,22 @@ RSpec.describe Runner do
         auth_type: "api_key",
         provider_api_key: api_key,
         config: { "pi" => { "api_provider" => "minimax", "model" => "MiniMax-M2.7" } }
+      )
+
+      expect(runner.agent_harness_runtime?).to be(true)
+      expect(runner.requires_direct_outbound?).to be(true)
+    end
+
+    it "returns true for Oh My Pi API-key runners" do
+      user = create(:user)
+      api_key = create(:provider_api_key, user: user, api_service_type: "deepseek", api_key: "sk-test")
+      runner = build(
+        :runner,
+        user: user,
+        runner_key: "omp",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "omp" => { "api_provider" => "deepseek", "model" => "deepseek-chat" } }
       )
 
       expect(runner.agent_harness_runtime?).to be(true)

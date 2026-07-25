@@ -323,6 +323,24 @@ jobs:
           fi
           echo "package=$package" >> "$GITHUB_OUTPUT"
 
+      - name: Extract Oh My Pi package from agent-harness
+        if: steps.changes.outputs.image_relevant == 'true'
+        id: omp-contract
+        run: |
+          contract=$(bundle exec ruby scripts/extract-runner-install-contract.rb omp)
+          package=$(echo "$contract" | sed -n 's/^PACKAGE=//p')
+          bun_version=$(echo "$contract" | sed -n 's/^BUN_VERSION=//p')
+          if [ -z "$package" ]; then
+            echo "Failed to extract Oh My Pi package from agent-harness" >&2
+            exit 1
+          fi
+          if [ -z "$bun_version" ]; then
+            echo "Failed to extract Oh My Pi Bun version from agent-harness" >&2
+            exit 1
+          fi
+          echo "package=$package" >> "$GITHUB_OUTPUT"
+          echo "bun_version=$bun_version" >> "$GITHUB_OUTPUT"
+
       - name: Extract Kilocode CLI install contract from agent-harness
         if: steps.changes.outputs.image_relevant == 'true'
         id: kilocode-contract
@@ -402,6 +420,8 @@ jobs:
             CODEX_PACKAGE=${{ steps.codex-contract.outputs.package }}
             OPENCODE_INSTALL_COMMAND=${{ steps.opencode-contract.outputs.install_command }}
             PI_PACKAGE=${{ steps.pi-contract.outputs.package }}
+            OMP_PACKAGE=${{ steps.omp-contract.outputs.package }}
+            OMP_BUN_VERSION=${{ steps.omp-contract.outputs.bun_version }}
             KILOCODE_INSTALL_COMMAND=${{ steps.kilocode-contract.outputs.install_command }}
             GEMINI_CLI_INSTALL_COMMAND=${{ steps.gemini-contract.outputs.install_command }}
             AIDER_INSTALL_COMMAND=${{ steps.aider-contract.outputs.install_command }}

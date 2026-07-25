@@ -315,6 +315,43 @@
     </div>
   </div>
 
+  <% omp_settings_enabled = is_api_key && runner.runner_key == "omp" %>
+  <% omp_api_provider = runner.omp_api_provider || Runner::OMP_DEFAULT_API_PROVIDER %>
+  <div data-runner-form-target="ompSettings" <% unless omp_settings_enabled %>hidden<% end %>>
+    <div class="rounded-lg border border-gray-200 p-4">
+      <h3 class="text-sm font-semibold text-gray-900">Oh My Pi API Key Settings</h3>
+      <p class="mt-1 text-xs text-gray-500">Choose the upstream Oh My Pi provider to pair with this API key. Model selection is optional.</p>
+
+      <div class="mt-4">
+        <label for="runner_config_omp_api_provider" class="block text-sm font-medium text-gray-900">API Provider</label>
+        <select id="runner_config_omp_api_provider"
+                name="runner[config][omp][api_provider]"
+                <% unless omp_settings_enabled %>disabled<% end %>
+                class="mt-2 block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
+                data-runner-form-target="directOutboundApiProviderSelect"
+                data-runner-key="omp"
+                data-action="change->runner-form#refreshRunnerSpecificFields">
+          <% Runner::OMP_API_PROVIDERS.each do |slug, cfg| %>
+            <option value="<%= slug %>" data-service-type="<%= cfg[:service_type] %>" <% if omp_api_provider == slug %>selected<% end %>><%= cfg[:label] %></option>
+          <% end %>
+        </select>
+      </div>
+
+      <div class="mt-4">
+        <label for="runner_config_omp_model" class="block text-sm font-medium text-gray-900">Model ID</label>
+        <input id="runner_config_omp_model"
+               name="runner[config][omp][model]"
+               type="text"
+               value="<%= runner.omp_model_id %>"
+               placeholder="Optional: deepseek-chat"
+               autocomplete="off"
+                <% unless omp_settings_enabled %>disabled<% end %>
+               class="mt-2 block w-full rounded-md border-0 px-3 py-1.5 font-mono text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
+        <p class="mt-1 text-xs text-gray-500">Optional. Leave blank to let Oh My Pi use its default or previously selected model for the chosen provider.</p>
+      </div>
+    </div>
+  </div>
+
   <% tier_model_provider = Runners::DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER[runner.runner_key.to_s] %>
   <% tier_models = if runner.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
        LlmModel.free.active.by_provider(Runner::OPENROUTER_FREE_MODEL_PROVIDER).order(:display_name)

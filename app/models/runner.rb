@@ -113,6 +113,9 @@ class Runner < ApplicationRecord
   }.freeze
   PI_API_PROVIDER_KEYS = PI_API_PROVIDERS.keys.freeze
   PI_DEFAULT_API_PROVIDER = "deepseek"
+  OMP_API_PROVIDERS = PI_API_PROVIDERS
+  OMP_API_PROVIDER_KEYS = OMP_API_PROVIDERS.keys.freeze
+  OMP_DEFAULT_API_PROVIDER = PI_DEFAULT_API_PROVIDER
 
   belongs_to :user
   belongs_to :provider_api_key, optional: true
@@ -186,6 +189,7 @@ class Runner < ApplicationRecord
   validate :kilocode_api_key_config_must_be_valid
   validate :aider_api_key_config_must_be_valid
   validate :pi_api_key_config_must_be_valid
+  validate :omp_api_key_config_must_be_valid
   validate :direct_outbound_config_models_must_exist_in_catalog
   validate :openrouter_free_requires_api_key_auth
   validate :openrouter_pareto_requires_api_key_auth
@@ -236,6 +240,7 @@ class Runner < ApplicationRecord
     when "kilocode" then kilocode_model_id
     when "aider" then aider_model_id
     when "pi" then pi_model_id
+    when "omp" then omp_model_id
     end
     label += " #{model_id}" if model_id.present?
     label += " (API Key)" if api_key?
@@ -417,6 +422,28 @@ class Runner < ApplicationRecord
     PI_API_PROVIDERS.dig(pi_api_provider, :service_type)
   end
 
+  def omp_config
+    config.is_a?(Hash) ? config.fetch("omp", {}) : {}
+  end
+
+  def omp_api_provider
+    return nil unless runner_key == "omp"
+
+    omp_config["api_provider"].presence || OMP_DEFAULT_API_PROVIDER
+  end
+
+  def omp_model_id
+    return nil unless runner_key == "omp"
+
+    omp_config["model"].to_s.presence
+  end
+
+  def omp_required_api_service_type
+    return nil unless runner_key == "omp"
+
+    OMP_API_PROVIDERS.dig(omp_api_provider, :service_type)
+  end
+
   def aider_required_api_service_type
     return nil unless runner_key == "aider"
 
@@ -429,7 +456,7 @@ class Runner < ApplicationRecord
   # (aider_config, aider_api_provider, aider_model_id) exists as prep work;
   # add aider_direct_outbound? here once the runtime path is implemented.
   def requires_direct_outbound?
-    opencode_direct_outbound? || kilocode_direct_outbound? || pi_direct_outbound? || openrouter_free_direct_outbound? || openrouter_pareto_direct_outbound?
+    opencode_direct_outbound? || kilocode_direct_outbound? || pi_direct_outbound? || omp_direct_outbound? || openrouter_free_direct_outbound? || openrouter_pareto_direct_outbound?
   end
 
   def opencode_required_api_service_type
@@ -562,12 +589,13 @@ class Runner < ApplicationRecord
   def agent_harness_runner_runtime
     return opencode_runner_runtime if opencode_direct_outbound?
     return pi_runner_runtime if pi_agent_harness_runtime?
+    return omp_runner_runtime if omp_agent_harness_runtime?
 
     nil
   end
 
   def agent_harness_runtime?
-    opencode_agent_harness_runtime? || copilot_agent_harness_runtime? || pi_agent_harness_runtime? || openrouter_free_agent_harness_runtime? || openrouter_pareto_agent_harness_runtime?
+    opencode_agent_harness_runtime? || copilot_agent_harness_runtime? || pi_agent_harness_runtime? || omp_agent_harness_runtime? || openrouter_free_agent_harness_runtime? || openrouter_pareto_agent_harness_runtime?
   end
 
   def opencode_agent_harness_runtime?
@@ -584,6 +612,12 @@ class Runner < ApplicationRecord
       PI_API_PROVIDER_KEYS.include?(pi_api_provider)
   end
 
+  def omp_agent_harness_runtime?
+    runner_key == "omp" &&
+      api_key? &&
+      OMP_API_PROVIDER_KEYS.include?(omp_api_provider)
+  end
+
   def openrouter_free_agent_harness_runtime?
     openrouter_free_direct_outbound?
   end
@@ -598,6 +632,7 @@ class Runner < ApplicationRecord
     when "opencode" then opencode_model_id
     when "aider" then aider_model_id
     when "pi" then pi_model_id
+    when "omp" then omp_model_id
     end
   end
 
@@ -607,6 +642,7 @@ class Runner < ApplicationRecord
     when "opencode" then opencode_required_api_service_type
     when "aider" then aider_required_api_service_type
     when "pi" then pi_required_api_service_type
+    when "omp" then omp_required_api_service_type
     end
   end
 
@@ -721,7 +757,7 @@ class Runner < ApplicationRecord
   # instance of. Such keys are hidden from the "Add Runner" UI once the user
   # already has one, and free-model rotation is scoped to them. Today only
   # the openrouter_free runner is single-instance; other api_key runners
-  # (opencode, kilocode, aider, pi) legitimately allow duplicates when their
+  # (opencode, kilocode, aider, pi, omp) legitimately allow duplicates when their
   # API key or name differs.
   def self.single_instance_runner_key?(runner_key)
     runner_key.to_s == OPENROUTER_FREE_RUNNER_KEY
@@ -907,7 +943,7 @@ class Runner < ApplicationRecord
     # Anthropic runner in DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER,
     # so including it here would cause clear_stale_direct_outbound_tier_models
     # to erase its valid standard tier mappings on every save.
-    %w[kilocode opencode openrouter_free openrouter_pareto pi].include?(runner_key)
+    %w[kilocode opencode openrouter_free openrouter_pareto pi omp].include?(runner_key)
   end
 
   def direct_outbound_api_key_env_var(api_provider)
@@ -1016,6 +1052,8 @@ class Runner < ApplicationRecord
       config.dig("aider", "model")
     when "pi"
       config.dig("pi", "model")
+    when "omp"
+      config.dig("omp", "model")
     end
   end
 
@@ -1457,6 +1495,15 @@ class Runner < ApplicationRecord
     end
   end
 
+  def omp_api_key_config_must_be_valid
+    return unless runner_key == "omp"
+    return unless api_key?
+
+    unless OMP_API_PROVIDER_KEYS.include?(omp_api_provider)
+      errors.add(:config, "must include a supported Oh My Pi API provider")
+    end
+  end
+
   # Validates that an existing catalog row for the configured model id belongs
   # to the runner's expected service_type. New explicit user-entered model ids
   # are NOT rejected here — the before_save hook
@@ -1484,6 +1531,7 @@ class Runner < ApplicationRecord
     return kilocode_required_api_service_type if runner_key == "kilocode"
     return aider_required_api_service_type if runner_key == "aider"
     return pi_required_api_service_type if runner_key == "pi"
+    return omp_required_api_service_type if runner_key == "omp"
 
     self.class.api_service_type_for(runner_key)
   end
@@ -1517,6 +1565,13 @@ class Runner < ApplicationRecord
       pi_model_id.present?
   end
 
+  def omp_direct_outbound?
+    runner_key == "omp" &&
+      api_key? &&
+      OMP_API_PROVIDER_KEYS.include?(omp_api_provider) &&
+      omp_model_id.present?
+  end
+
   def openrouter_free?
     runner_key == "openrouter_free"
   end
@@ -1538,7 +1593,7 @@ class Runner < ApplicationRecord
   end
 
   # NOTE: Aider is intentionally absent — only direct_outbound_capable_runner?
-  # runners (kilocode/opencode/openrouter_free/pi) reach this method via
+  # runners (kilocode/opencode/openrouter_free/pi/omp) reach this method via
   # direct_outbound_config_models_must_exist_in_catalog. If aider joins that
   # set in the future, add the case branch back so the validation error names
   # "Aider" instead of the raw runner_key.
@@ -1547,6 +1602,7 @@ class Runner < ApplicationRecord
     when "opencode" then "OpenCode"
     when "kilocode" then "KiloCode"
     when "pi" then "Pi"
+    when "omp" then "Oh My Pi"
     else runner_key.to_s
     end
   end
@@ -1675,6 +1731,14 @@ class Runner < ApplicationRecord
     )
   end
 
+  def omp_runner_runtime
+    AgentHarness::ProviderRuntime.new(
+      model: omp_model_id,
+      api_provider: omp_api_provider,
+      env: omp_runtime_env
+    )
+  end
+
   def openrouter_free_runner_runtime(project:, model_id:)
     config = Runners::FreeModelExecutionPlan.call(runner: self, model_id: model_id, project: project).config
     openrouter_provider_runtime(config)
@@ -1708,6 +1772,20 @@ class Runner < ApplicationRecord
     )
   end
   private :openrouter_provider_runtime
+
+  def omp_api_key_env_var
+    api_config = OMP_API_PROVIDERS[omp_api_provider.to_s]
+    return "OPENAI_API_KEY" if api_config.blank?
+
+    api_config[:env_var].presence || "#{api_config[:service_type].upcase.tr('-', '_')}_API_KEY"
+  end
+
+  def omp_runtime_env
+    api_key = effective_api_secret.to_s
+    return {} if api_key.blank?
+
+    { omp_api_key_env_var => api_key }
+  end
 
   def kilocode_harness_provider
     klass = AgentHarness.provider_class(:kilocode)

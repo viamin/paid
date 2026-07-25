@@ -60,6 +60,8 @@ check_tool "   OpenAI Codex CLI" codex --help
 check_tool "   Gemini CLI" gemini --help
 check_tool "   Kilocode CLI" kilo --help
 check_tool "   Pi CLI" pi --help
+check_tool "   Oh My Pi CLI" omp --help
+check_tool "   Bun" bun --version
 check_tool "   Cursor agent CLI" cursor-agent --version
 check_tool "   Aider CLI" aider --help
 

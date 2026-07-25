@@ -150,6 +150,19 @@ if [ -z "${PI_PACKAGE}" ]; then
     exit 1
 fi
 
+# Extract Oh My Pi CLI package + Bun runtime pin from agent-harness.
+OMP_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-runner-install-contract.rb" omp)
+OMP_PACKAGE=$(echo "${OMP_CONTRACT}" | sed -n 's/^PACKAGE=//p')
+OMP_BUN_VERSION=$(echo "${OMP_CONTRACT}" | sed -n 's/^BUN_VERSION=//p')
+if [ -z "${OMP_PACKAGE}" ]; then
+    echo "ERROR: Could not extract Oh My Pi package from agent-harness" >&2
+    exit 1
+fi
+if [ -z "${OMP_BUN_VERSION}" ]; then
+    echo "ERROR: Could not extract Oh My Pi Bun version from agent-harness" >&2
+    exit 1
+fi
+
 # Extract Kilocode CLI install command from agent-harness (single source of truth).
 KILOCODE_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-runner-install-contract.rb" kilocode)
 KILOCODE_INSTALL_COMMAND=$(echo "${KILOCODE_CONTRACT}" | sed -n 's/^INSTALL_COMMAND=//p')
@@ -201,6 +214,7 @@ echo "  cursor-install: via agent-harness contract"
 echo "  codex: ${CODEX_PACKAGE}"
 echo "  opencode: via agent-harness contract"
 echo "  pi: ${PI_PACKAGE}"
+echo "  omp: ${OMP_PACKAGE} (bun ${OMP_BUN_VERSION})"
 echo "  kilocode-cli: ${KILOCODE_INSTALL_COMMAND}"
 echo "  gemini-cli: ${GEMINI_CLI_INSTALL_COMMAND}"
 echo "  aider-cli: via agent-harness contract"
@@ -222,6 +236,8 @@ echo "  copilot-cli: ${COPILOT_INSTALL_COMMAND}"
     --build-arg "CODEX_PACKAGE=${CODEX_PACKAGE}" \
     --build-arg "OPENCODE_INSTALL_COMMAND=${OPENCODE_INSTALL_COMMAND}" \
     --build-arg "PI_PACKAGE=${PI_PACKAGE}" \
+    --build-arg "OMP_PACKAGE=${OMP_PACKAGE}" \
+    --build-arg "OMP_BUN_VERSION=${OMP_BUN_VERSION}" \
     --build-arg "KILOCODE_INSTALL_COMMAND=${KILOCODE_INSTALL_COMMAND}" \
     --build-arg "GEMINI_CLI_INSTALL_COMMAND=${GEMINI_CLI_INSTALL_COMMAND}" \
     --build-arg "AIDER_INSTALL_COMMAND=${AIDER_INSTALL_COMMAND}" \

@@ -9,7 +9,7 @@
 # Usage (called by test-agent-runner-contracts.sh):
 #   docker run --rm \
 #     -v ./scripts/test-agent-runner-contracts-inner.sh:/tmp/contract-test.sh:ro \
-#     -e CONTAINER_EXECUTABLE_KEYS="aider claude codex cursor gemini kilocode opencode openrouter_free pi" \
+#     -e CONTAINER_EXECUTABLE_KEYS="aider claude codex cursor gemini kilocode opencode openrouter_free pi omp" \
 #     -e CODEX_NOTIFY_LINE='notify = ["sh", "-lc", "date +%s > /workspace/.paid-heartbeat"]' \
 #     -e CODEX_CONFIG_TOML_BODY='[chatgpt]...' \
 #     paid-agent:latest bash /tmp/contract-test.sh
@@ -44,6 +44,7 @@ RUNNER_CLI_BINARY=(
     [openrouter_free]=opencode
     [openrouter_pareto]=opencode
     [pi]=pi
+    [omp]=omp
 )
 
 echo "=== Runner-contract smoke test ==="

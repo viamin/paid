@@ -411,6 +411,40 @@ RUN if [ -z "${PI_PACKAGE}" ]; then \
     fi \
     && npm install -g --ignore-scripts "${PI_PACKAGE}"
 
+# Install Oh My Pi plus its Bun runtime from the agent-harness contract.
+ARG OMP_PACKAGE
+ARG OMP_BUN_VERSION
+RUN if [ -z "${OMP_PACKAGE}" ]; then \
+        echo "ERROR: OMP_PACKAGE build-arg is required (sourced from agent-harness)" >&2; \
+        exit 1; \
+    fi \
+    && if [ -z "${OMP_BUN_VERSION}" ]; then \
+        echo "ERROR: OMP_BUN_VERSION build-arg is required (sourced from agent-harness)" >&2; \
+        exit 1; \
+    fi \
+    && DEB_ARCH="$(dpkg --print-architecture)" \
+    && case "$DEB_ARCH" in \
+        amd64) OMP_BUN_ASSET="bun-linux-x64.zip"; if ! grep -qm1 avx2 /proc/cpuinfo; then OMP_BUN_ASSET="bun-linux-x64-baseline.zip"; fi ;; \
+        arm64) OMP_BUN_ASSET="bun-linux-aarch64.zip" ;; \
+        *) echo "Unsupported architecture for Bun: $DEB_ARCH" >&2; exit 1 ;; \
+    esac \
+    && OMP_BUN_BASE_URL="https://github.com/oven-sh/bun/releases/download/bun-v${OMP_BUN_VERSION}" \
+    && mkdir -p /root/.bun/bin /tmp/omp-bun \
+    && curl -fsSL "${OMP_BUN_BASE_URL}/SHASUMS256.txt" -o /tmp/omp-bun/SHASUMS256.txt \
+    && OMP_BUN_SHA256="$(awk -v asset="$OMP_BUN_ASSET" '$2 == asset { print $1 }' /tmp/omp-bun/SHASUMS256.txt)" \
+    && test -n "${OMP_BUN_SHA256}" \
+    && curl -fsSL "${OMP_BUN_BASE_URL}/${OMP_BUN_ASSET}" -o "/tmp/omp-bun/${OMP_BUN_ASSET}" \
+    && echo "${OMP_BUN_SHA256}  /tmp/omp-bun/${OMP_BUN_ASSET}" | sha256sum -c - \
+    && unzip -oq "/tmp/omp-bun/${OMP_BUN_ASSET}" -d /tmp/omp-bun \
+    && install -m 0755 "/tmp/omp-bun/${OMP_BUN_ASSET%.zip}/bun" /root/.bun/bin/bun \
+    && ln -sf /root/.bun/bin/bun /root/.bun/bin/bunx \
+    && export PATH="/root/.bun/bin:${PATH}" \
+    && bun install -g "${OMP_PACKAGE}" \
+    && ln -sf /root/.bun/bin/bun /usr/local/bin/bun \
+    && ln -sf /root/.bun/bin/bunx /usr/local/bin/bunx \
+    && ln -sf /root/.bun/bin/omp /usr/local/bin/omp \
+    && rm -rf /tmp/omp-bun
+
 # Install GitHub Copilot CLI via agent-harness install contract.
 # The modern `copilot` binary supports --autopilot mode for fully autonomous,
 # non-interactive agent execution. Install recipe is owned by agent-harness.

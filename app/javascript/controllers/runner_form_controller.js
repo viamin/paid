@@ -27,7 +27,7 @@ function loadRunnerApiServiceType() {
 
 const RUNNER_API_SERVICE_TYPE = loadRunnerApiServiceType()
 
-// OpenCode, KiloCode, Aider, and Pi support multiple upstream API providers, each with its
+// OpenCode, KiloCode, Aider, Pi, and Oh My Pi support multiple upstream API providers, each with its
 // own API key type. The mapping is derived from data-service-type attributes on
 // the <option> elements rendered by the backend (Runner::DIRECT_OUTBOUND_API_PROVIDERS),
 // keeping the backend as the single source of truth.
@@ -53,7 +53,7 @@ function loadDirectOutboundApiProviderServiceTypes() {
 }
 
 // Runner keys that use dynamic api_provider selection.
-const DYNAMIC_API_RUNNER_KEYS = new Set(["opencode", "kilocode", "aider", "pi"])
+const DYNAMIC_API_RUNNER_KEYS = new Set(["opencode", "kilocode", "aider", "pi", "omp"])
 
 export default class extends Controller {
   static values = {
@@ -72,6 +72,7 @@ export default class extends Controller {
     "kilocodeSettings",
     "aiderSettings",
     "piSettings",
+    "ompSettings",
     "directOutboundApiProviderSelect",
     "tierSettings",
     "tierSelect",
@@ -124,6 +125,7 @@ export default class extends Controller {
     const showKiloCodeSettings = isApiKey && runnerKey === "kilocode"
     const showAiderSettings = isApiKey && runnerKey === "aider"
     const showPiSettings = isApiKey && runnerKey === "pi"
+    const showOmpSettings = isApiKey && runnerKey === "omp"
 
     this.opencodeSettingsTargets.forEach((el) => {
       el.hidden = !showOpenCodeSettings
@@ -150,6 +152,13 @@ export default class extends Controller {
       el.hidden = !showPiSettings
       el.querySelectorAll("select, input").forEach((control) => {
         control.disabled = !showPiSettings
+      })
+    })
+
+    this.ompSettingsTargets.forEach((el) => {
+      el.hidden = !showOmpSettings
+      el.querySelectorAll("select, input").forEach((control) => {
+        control.disabled = !showOmpSettings
       })
     })
 
@@ -209,7 +218,7 @@ export default class extends Controller {
   requiredApiServiceTypeFor(runnerKey) {
     if (!runnerKey) return null
 
-    // OpenCode, KiloCode, Aider, and Pi determine their required API key type from
+    // OpenCode, KiloCode, Aider, Pi, and Oh My Pi determine their required API key type from
     // the selected api_provider dropdown.
     if (DYNAMIC_API_RUNNER_KEYS.has(runnerKey)) {
       const apiProvider = this.currentDirectOutboundApiProvider(runnerKey)
