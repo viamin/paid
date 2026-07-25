@@ -345,6 +345,24 @@ module Capacity
         )
       end
 
+      # A fully successful sample only reflects the container list as it
+      # existed before sampling started. Widening the sampling budget also
+      # widened the window in which a new agent-run, chat-session, or MCP
+      # sidecar container can start without ever being measured -- silently
+      # overstating available_memory_bytes to Capacity::Policy. Re-listing
+      # after sampling is cheap (bounded by DOCKER_LIST_TIMEOUT) and catches
+      # that drift before a stale-but-confident snapshot reaches admission.
+      if degraded_reasons.empty?
+        drift_check = container_list_drift_during_sampling(inventory, running_containers)
+        if drift_check[:changed]
+          log_container_list_drift(
+            original_container_count: running_containers.size,
+            drift_check: drift_check
+          )
+          degraded_reasons << "container_list_changed_during_sampling"
+        end
+      end
+
       available_memory_bytes = degraded_reasons.empty? ? remaining_memory(system_info: system_info, buckets: buckets) : 0
 
       Snapshot.new(
@@ -365,6 +383,37 @@ module Capacity
 
     def docker_info
       with_timeout(DOCKER_INFO_TIMEOUT) { backend.system_info }
+    end
+
+    def container_list_drift_during_sampling(inventory, original_containers)
+      current_containers = inventory.list_running_containers(timeout: DOCKER_LIST_TIMEOUT)
+      current_ids = current_containers.map(&:id).to_set
+      original_ids = original_containers.map(&:id).to_set
+      return { changed: true, current_container_count: current_containers.size } if (current_ids - original_ids).any?
+
+      { changed: false }
+    rescue Timeout::Error, Docker::Error::DockerError, Docker::Error::ExconError, Excon::Error => error
+      {
+        changed: true,
+        current_container_count: nil,
+        error_class: error.class.name,
+        error_message: error.message
+      }
+    end
+
+    def log_container_list_drift(original_container_count:, drift_check:)
+      payload = {
+        message: "container_manager.container_list_changed_during_sampling",
+        backend_identifier: backend.identifier,
+        original_container_count: original_container_count,
+        current_container_count: drift_check[:current_container_count]
+      }
+      if drift_check[:error_class]
+        payload[:error_class] = drift_check[:error_class]
+        payload[:error_message] = drift_check[:error_message]
+      end
+
+      Rails.logger.warn(payload)
     end
 
     def docker_container_inventory
