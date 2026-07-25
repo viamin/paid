@@ -229,6 +229,27 @@ RSpec.describe Runners::ModelCompatibility do
   end
 
   describe "Result" do
+    it "forwards an optional provider_runtime parameter when agent-harness supports it (RDR-040)" do
+      runtime = AgentHarness::ProviderRuntime.new(model: "gpt-4o")
+      harness_calls = []
+
+      with_runtime_aware_harness_stub(harness_calls:) do
+        expect {
+          described_class.call(
+            runner_key: "codex", model_id: "gpt-4o",
+            auth_type: "api_key", provider_runtime: runtime
+          )
+        }.not_to raise_error
+      end
+
+      expect(harness_calls.first).to include(
+        runner: :codex,
+        model_id: "gpt-4o",
+        auth_mode: :api_key,
+        runtime: runtime
+      )
+    end
+
     it "supported? returns true when supported is true" do
       r = described_class::Result.new(supported: true, source: "test")
       expect(r).to be_supported
@@ -248,6 +269,36 @@ RSpec.describe Runners::ModelCompatibility do
       expect(r).to be_unknown
       expect(r).not_to be_supported
       expect(r).not_to be_unsupported
+    end
+  end
+
+  def with_runtime_aware_harness_stub(harness_calls:)
+    singleton = AgentHarness.singleton_class
+    original_method = singleton.instance_method(:model_compatibility)
+    original_lookup = AgentHarness.method(:method)
+
+    singleton.send(:remove_method, :model_compatibility)
+    singleton.send(:define_method, :model_compatibility) do |**args|
+      harness_calls << args
+      AgentHarness::ModelCompatibility::Result.new(
+        runner: args[:runner],
+        model_id: args[:model_id],
+        auth_mode: args[:auth_mode],
+        supported: nil
+      )
+    end
+
+    allow(AgentHarness).to receive(:method).and_call_original
+    allow(AgentHarness).to receive(:method).with(:model_compatibility).and_return(
+      instance_double(Method, parameters: [ [ :keyreq, :runner ], [ :keyreq, :model_id ], [ :key, :auth_mode ], [ :key, :cli_version ], [ :key, :runtime ] ])
+    )
+
+    yield
+  ensure
+    singleton.send(:remove_method, :model_compatibility)
+    singleton.send(:define_method, :model_compatibility, original_method)
+    allow(AgentHarness).to receive(:method).and_wrap_original do |_m, *args|
+      original_lookup.call(*args)
     end
   end
 end

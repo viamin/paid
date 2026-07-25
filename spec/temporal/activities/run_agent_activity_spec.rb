@@ -47,6 +47,9 @@ RSpec.describe Activities::RunAgentActivity do
     # about preflight behaviour aren't affected by the smoke exec call.
     # Tests that verify preflight paths override this stub.
     allow(activity).to receive(:run_runner_preflight!)
+
+    # Stub rtk init so existing execute-call counts aren't affected.
+    allow(Containers::TokenOptimization).to receive(:rtk_init_for_runner)
   end
 
   def create_ab_test_assignment(slug:, agent_run:, variant_template:, status: "running")
@@ -835,6 +838,15 @@ RSpec.describe Activities::RunAgentActivity do
         expect(config_json["provider"]).to eq(expected_kilocode_model_config)
       end
 
+      it "writes the direct-outbound kilocode config to the upstream path" do
+        context = build_kilocode_context(user)
+
+        command = activity.send(:build_command, context, "ping")
+
+        expect(command[2]).to include("mkdir -p /home/agent/.config/kilocode")
+        expect(command[2]).to include("/home/agent/.config/kilocode/kilo.json")
+      end
+
       it "allows Kilocode to inspect container support paths" do
         context = build_kilocode_context(user)
 
@@ -842,7 +854,10 @@ RSpec.describe Activities::RunAgentActivity do
         config_json = JSON.parse(Base64.strict_decode64(env.fetch("PAID_KILOCODE_CONFIG_B64")))
 
         expect(config_json.dig("permission", "external_directory")).to include("/tmp/**" => "allow")
-        expect(config_json.dig("permission", "external_directory")).not_to have_key("/home/agent/**")
+        expect(config_json.dig("permission", "external_directory")).to include("/home/agent/**" => "allow")
+        expect(config_json.dig("permission", "external_directory")).to include(
+          "/usr/local/lib/ruby/gems/*/gems/agent-harness-*/**" => "allow"
+        )
       end
 
       it "does not include PAID_KILOCODE_CONFIG_B64 for subscription kilocode runners" do
@@ -1928,6 +1943,15 @@ expect(container_service).to receive(:execute).with(
         allow(git_ops).to receive(:has_changes_since?).and_return(false)
 
         expect(git_ops).to receive(:head_sha).and_return("pre_agent_sha_abc123")
+
+        activity.execute(agent_run_id: agent_run.id)
+      end
+
+      it "initializes rtk for the runner before preflight" do
+        allow(git_ops).to receive(:has_changes_since?).and_return(false)
+
+        expect(Containers::TokenOptimization).to receive(:rtk_init_for_runner)
+          .with(container_service: container_service, runner_key: anything)
 
         activity.execute(agent_run_id: agent_run.id)
       end

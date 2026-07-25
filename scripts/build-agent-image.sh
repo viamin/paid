@@ -40,11 +40,36 @@ if [ -z "${RUBY_MAAT_VERSION}" ]; then
 fi
 
 # Extract agent-harness version from Gemfile.lock (single source of truth).
-AGENT_HARNESS_VERSION=$(sed -n '/^GEM$/,/^$/s/^  *agent-harness (\(.*\))/\1/p' "${PROJECT_ROOT}/Gemfile.lock" | head -n 1)
+# Search both GEM and GIT sections so the helper keeps working when
+# agent-harness is pinned to a git ref (e.g. unreleased upstream fix)
+# instead of a published RubyGems version.
+AGENT_HARNESS_VERSION=$(sed -n '/^\(GEM\|GIT\)$/,/^$/s/^  *agent-harness (\(.*\))/\1/p' "${PROJECT_ROOT}/Gemfile.lock" | head -n 1)
 if [ -z "${AGENT_HARNESS_VERSION}" ]; then
     echo "ERROR: Could not extract agent-harness version from Gemfile.lock" >&2
     exit 1
 fi
+
+# Extract the resolved git revision when agent-harness comes from a GIT source.
+# The revision is the true source of truth for unreleased pins because the
+# nested gem version may match a published RubyGems release while pointing at
+# different code.
+AGENT_HARNESS_GIT_REF=$(
+    awk '
+        /^GIT$/ { in_git = 1; has_dependency = 0; next }
+        /^$/ {
+            if (in_git && has_dependency && revision != "") {
+                print revision
+                exit
+            }
+            in_git = 0
+            has_dependency = 0
+            revision = ""
+            next
+        }
+        in_git && /^  revision: / { revision = $2; next }
+        in_git && /^    agent-harness \(/ { has_dependency = 1 }
+    ' "${PROJECT_ROOT}/Gemfile.lock" | head -n 1
+)
 
 BUNDLER_VERSION=$(awk '/^BUNDLED WITH$/{getline; gsub(/^ +/, "", $0); print $0}' "${PROJECT_ROOT}/Gemfile.lock")
 if [ -z "${BUNDLER_VERSION}" ]; then
@@ -168,6 +193,9 @@ echo "  Context: ${PROJECT_ROOT}/docker/agent"
 echo "  bundler: ${BUNDLER_VERSION}"
 echo "  ruby-maat: ${RUBY_MAAT_VERSION}"
 echo "  agent-harness: ${AGENT_HARNESS_VERSION}"
+if [ -n "${AGENT_HARNESS_GIT_REF}" ]; then
+    echo "  agent-harness git ref: ${AGENT_HARNESS_GIT_REF}"
+fi
 echo "  claude-install: via agent-harness contract"
 echo "  cursor-install: via agent-harness contract"
 echo "  codex: ${CODEX_PACKAGE}"
@@ -184,6 +212,7 @@ echo "  copilot-cli: ${COPILOT_INSTALL_COMMAND}"
     --build-arg "BUNDLER_VERSION=${BUNDLER_VERSION}" \
     --build-arg "RUBY_MAAT_VERSION=${RUBY_MAAT_VERSION}" \
     --build-arg "AGENT_HARNESS_VERSION=${AGENT_HARNESS_VERSION}" \
+    --build-arg "AGENT_HARNESS_GIT_REF=${AGENT_HARNESS_GIT_REF}" \
     --build-arg "CLAUDE_INSTALL_COMMAND=${CLAUDE_INSTALL_COMMAND}" \
     --build-arg "CLAUDE_POST_INSTALL_BINARY_PATH=${CLAUDE_POST_INSTALL_BINARY_PATH}" \
     --build-arg "CURSOR_ARTIFACT_URL=${CURSOR_ARTIFACT_URL}" \

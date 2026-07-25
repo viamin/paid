@@ -44,6 +44,7 @@ class RunnerState < ApplicationRecord
   # whose reset_at is in the past are pruned on read so rotation only sees
   # currently active windows.
   RATE_LIMITED_MODELS_METADATA_KEY = "rate_limited_models"
+  QUOTA_STATUS_METADATA_KEY = "quota_status"
 
   # Returns the set of model ids that currently have an active per-model
   # rate-limit window. Stale entries (reset_at in the past) are dropped.
@@ -132,6 +133,61 @@ class RunnerState < ApplicationRecord
       result[tier.to_s] = model_id.to_s
     end
     snapshot.empty? ? nil : snapshot
+  end
+
+  def quota_status_snapshot
+    raw = metadata.is_a?(Hash) ? metadata[QUOTA_STATUS_METADATA_KEY] : nil
+    return nil unless raw.is_a?(Hash)
+
+    raw.deep_dup
+  end
+
+  # Canonical headroom computation shared by RunnerState instances,
+  # Runners::QuotaScore, and RunnersController::CachedState.
+  # Returns a fraction 0.0–1.0 (remaining / limit), or nil when the snapshot
+  # is absent, quota is unavailable, or the limit is zero/missing.
+  def self.headroom_from_snapshot(snapshot)
+    return nil unless snapshot.is_a?(Hash) && snapshot["available"] == true
+
+    remaining = snapshot["remaining"]&.to_i
+    limit = snapshot["limit"]&.to_i
+    return nil unless remaining && limit&.positive?
+
+    (remaining.to_f / limit).clamp(0.0, 1.0)
+  end
+
+  def quota_headroom
+    self.class.headroom_from_snapshot(quota_status_snapshot)
+  end
+
+  def quota_status_checked_at
+    parse_snapshot_time(quota_status_snapshot&.fetch("checked_at", nil))
+  end
+
+  def record_quota_status!(remaining:, limit:, reset_at:, unit:, available:, source:)
+    snapshot = {
+      "remaining" => integer_or_nil(remaining),
+      "limit" => integer_or_nil(limit),
+      "reset_at" => reset_at&.iso8601,
+      "unit" => unit.to_s.presence,
+      "available" => ActiveModel::Type::Boolean.new.cast(available),
+      "source" => source.to_s,
+      "checked_at" => Time.current.iso8601
+    }.compact
+
+    with_lock do
+      update!(metadata: metadata.merge(QUOTA_STATUS_METADATA_KEY => snapshot))
+    end
+  end
+
+  def clear_quota_status!
+    return unless metadata.is_a?(Hash) && metadata.key?(QUOTA_STATUS_METADATA_KEY)
+
+    with_lock do
+      next_metadata = metadata.dup
+      next_metadata.delete(QUOTA_STATUS_METADATA_KEY)
+      update!(metadata: next_metadata)
+    end
   end
 
   # Snapshots the given tier_model_ids mapping as the recovery point, but
@@ -263,6 +319,22 @@ class RunnerState < ApplicationRecord
       true
     end
   end
+
+  private
+
+  def parse_snapshot_time(value)
+    return nil if value.blank?
+
+    Time.iso8601(value.to_s)
+  rescue ArgumentError
+    nil
+  end
+
+  def integer_or_nil(value)
+    Integer(value, exception: false)
+  end
+
+  public
 
   # Returns true if the circuit is open (runner should not be used).
   def circuit_open?

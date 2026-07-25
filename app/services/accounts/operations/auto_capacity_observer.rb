@@ -129,23 +129,33 @@ module Accounts
         references = inventory.build_references
         containers = inventory.list_running_containers(timeout: DOCKER_LIST_TIMEOUT)
 
-        containers.each_with_index do |container, index|
-          if sampling_budget_exceeded?(deadline)
-            unsampled = containers.length - index
-            warnings << sampling_budget_warning(unsampled)
-            usage[:other][:container_count] += unsampled
-            break
+        results = Capacity::ConcurrentStatsSampler.call(
+          containers: containers,
+          monotonic_deadline: deadline,
+          per_container_timeout: DOCKER_CONTAINER_TIMEOUT
+        ) { |container| backend.container_stats(container, stream: false) }
+
+        unsampled = results.count(&:skipped)
+        if unsampled.positive?
+          warnings << sampling_budget_warning(unsampled)
+          usage[:other][:container_count] += unsampled
+        end
+
+        results.each do |result|
+          next if result.skipped
+
+          if result.error
+            warnings << sampling_warning(result.error)
+            next
           end
 
-          stats = Containers::DockerStatsParser.parse_stats(
-            with_timeout(per_container_timeout(deadline)) { backend.container_stats(container, stream: false) }
-          )
-          bucket = usage_bucket_for(inventory.classify_container(container:, references:))
+          stats = Containers::DockerStatsParser.parse_stats(result.raw_stats)
+          bucket = usage_bucket_for(inventory.classify_container(container: result.container, references:))
 
           usage[bucket][:container_count] += 1
           usage[bucket][:cpu_percent] += stats[:cpu_percent]
           usage[bucket][:memory_bytes] += stats[:memory_bytes]
-          running_agent_count += 1 if inventory.running_paid_agent_container?(container:, references:)
+          running_agent_count += 1 if inventory.running_paid_agent_container?(container: result.container, references:)
         rescue StandardError => error
           warnings << sampling_warning(error)
         end
@@ -185,14 +195,6 @@ module Accounts
 
       def monotonic_now
         Process.clock_gettime(Process::CLOCK_MONOTONIC)
-      end
-
-      def sampling_budget_exceeded?(deadline)
-        monotonic_now >= deadline
-      end
-
-      def per_container_timeout(deadline)
-        [ DOCKER_CONTAINER_TIMEOUT, deadline - monotonic_now ].min
       end
 
       def sampling_warning(error)

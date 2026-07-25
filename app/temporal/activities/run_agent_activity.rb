@@ -1081,7 +1081,40 @@ module Activities
       # run cleanly.
       runners = apply_issue_runner_retry_cap(runners, agent_run, user_settings.user)
 
+      # Incorporate upstream quota headroom: if the primary runner has < 20%
+      # remaining and a fallback has ≥ 50%, prefer the fallback to avoid
+      # routing into an almost-exhausted provider.
+      runners = apply_quota_aware_ordering(runners, agent_run, user_settings.user)
+
       runners
+    end
+
+    # Reorders runners so the candidate with the most quota headroom is
+    # preferred when the primary runner is near exhaustion. Only fires when
+    # stored quota data indicates the primary is below LOW_HEADROOM_THRESHOLD
+    # and a fallback exceeds FALLBACK_PREFERRED_THRESHOLD. Returns the
+    # original list unchanged when no quota data is available.
+    def apply_quota_aware_ordering(runners, agent_run, user)
+      return runners if runners.size <= 1
+      return runners unless user
+
+      quota_result = Runners::QuotaScore.call(runners: runners, user: user)
+      primary = runners.first
+      better = quota_result.better_fallback_for(primary, runners)
+      return runners unless better
+
+      reordered = [ better ] + runners.reject { |r| r == better }
+
+      logger.info(
+        message: "agent_execution.quota_aware_runner_reorder",
+        agent_run_id: agent_run.id,
+        primary_runner: canonical_runner_candidate(primary, user),
+        preferred_runner: canonical_runner_candidate(better, user),
+        primary_headroom: quota_result.headroom_for(primary),
+        preferred_headroom: quota_result.headroom_for(better)
+      )
+
+      reordered
     end
 
     # Reorders runners based on per-issue failure history.
@@ -1412,6 +1445,8 @@ module Activities
       end
 
       raise RunnerExecutionError, "Agent run already finished with status #{agent_run.status}" if agent_run.finished?
+
+      Containers::TokenOptimization.rtk_init_for_runner(container_service: container_service, runner_key: runner)
 
       pre_agent_sha = capture_head_sha(container_service, agent_run)
 

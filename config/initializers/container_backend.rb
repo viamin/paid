@@ -5,9 +5,8 @@ Rails.application.config.to_prepare do
   resolver.reset!
 
   backend_type = ENV.fetch("CONTAINER_BACKEND", "local").to_sym
-  remote_backend_configured = false
 
-  if backend_type == :multi
+  remote_backends = if backend_type == :multi
     registry = Containers::HostRegistry.load
     registry.hosts.each do |host|
       resolver.register(host.identifier, -> { host.backend })
@@ -17,7 +16,7 @@ Rails.application.config.to_prepare do
       raise ArgumentError, "CONTAINER_BACKENDS_CONFIG must define at least one host under 'multi' backend mode"
     end
     Rails.application.config.x.container_backend = resolver.for(registry.default_host.to_sym)
-    remote_backend_configured = registry.hosts.any? { |host| host.backend.remote? }
+    registry.hosts.filter_map { |host| host.backend if host.backend.remote? }
   else
     resolver.register(:local, -> { Containers::Backends::LocalDocker.new })
     if (remote_backend = Containers::Backends::RemoteDocker.from_env)
@@ -34,15 +33,16 @@ Rails.application.config.to_prepare do
         node_scheme: ENV.fetch("SWARM_NODE_DOCKER_SCHEME", Containers::Backends::Swarm::DEFAULT_NODE_SCHEME)
       )
     })
-    Rails.application.config.x.container_backend = resolver.for(backend_type)
-    remote_backend_configured = Rails.application.config.x.container_backend.remote?
+    active_backend = resolver.for(backend_type)
+    Rails.application.config.x.container_backend = active_backend
+    active_backend.remote? ? [ active_backend ] : []
   end
 
   Containers.instance_variable_set(:@host_registry, nil)
 
-  if remote_backend_configured && ENV["PAID_PROXY_EXTERNAL_URL"].blank?
+  if remote_backends.any? { |backend| Containers::ProxyUrl.external_url_for(backend).blank? }
     Rails.logger.warn(
-      "Remote Docker backend is active but PAID_PROXY_EXTERNAL_URL is not set; remote containers will be unable to reach the secrets proxy"
+      "Remote Docker backend is active but PAID_PROXY_EXTERNAL_URL or PAID_PROXY_EXTERNAL_URL_<HOST> is not set; remote containers will be unable to reach the secrets proxy"
     )
   end
 end

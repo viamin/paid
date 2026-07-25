@@ -1968,7 +1968,7 @@ module Containers
         "/home/agent/.gemini",
         "/home/agent/.cursor-agent",
         "/home/agent/.kilocode",
-        "/home/agent/.config/kilo",
+        "/home/agent/.config/kilocode",
         "/home/agent/.local/share/kilo",
         "/home/agent/.config/opencode",
         "/home/agent/.local/share/opencode",
@@ -2064,10 +2064,10 @@ module Containers
       fix_tmpfs_ownership!(".kilocode")
     end
 
-    # Fixes ownership of the ~/.config/kilo tmpfs so the non-root agent user
+    # Fixes ownership of the ~/.config/kilocode tmpfs so the non-root agent user
     # can write to it. Tmpfs mounts are created as root-owned.
     def fix_kilocode_config_tmpfs_ownership!
-      fix_tmpfs_ownership!(".config/kilo")
+      fix_tmpfs_ownership!(".config/kilocode")
     end
 
     # Fixes ownership of the ~/.local/share/kilo tmpfs so the non-root agent
@@ -2370,7 +2370,9 @@ module Containers
     #   /home/agent/.codex    - tmpfs (256MB, for Codex CLI config/session data)
     #   /home/agent/.gemini   - tmpfs (64MB, for Gemini CLI config/session data)
     #   /home/agent/.cursor-agent - tmpfs (64MB, for Cursor agent CLI config/session data)
-    #   /home/agent/.kilocode - tmpfs (64MB, for Kilocode CLI config/session data)
+    #   /home/agent/.kilocode - tmpfs (64MB, for Kilocode CLI plugin/session data)
+    #   /home/agent/.config/kilocode - tmpfs (64MB, for Kilocode CLI config)
+    #   /home/agent/.local/share/kilo - tmpfs (64MB, for Kilocode CLI data)
     #   /home/agent/.config/opencode         - tmpfs (64MB, for OpenCode CLI config)
     #   /home/agent/.local/share/opencode    - tmpfs (64MB, for OpenCode CLI data)
     #   /home/agent/.copilot                 - tmpfs (64MB, for GitHub Copilot CLI config)
@@ -2478,18 +2480,18 @@ module Containers
 
       # Writable directories inside the container for Kilocode CLI:
       # - ~/.kilocode (plugin data)
-      # - ~/.config/kilo (config.json)
+      # - ~/.config/kilocode (kilo.json)
       # - ~/.local/share/kilo (auth.json, kilo.db)
       # Ownership is fixed by:
       # - fix_kilocode_tmpfs_ownership! (for ~/.kilocode)
-      # - fix_kilocode_config_tmpfs_ownership! (for ~/.config/kilo)
+      # - fix_kilocode_config_tmpfs_ownership! (for ~/.config/kilocode)
       # - fix_kilocode_data_tmpfs_ownership! (for ~/.local/share/kilo)
       # after container start.
       tmpfs["/home/agent/.kilocode"] = "size=#{64 * 1024 * 1024},mode=0700"
 
-      # Kilocode CLI stores config under ~/.config/kilo (config.json) and data
+      # Kilocode CLI stores config under ~/.config/kilocode (kilo.json) and data
       # under ~/.local/share/kilo (auth.json, kilo.db).
-      tmpfs["/home/agent/.config/kilo"] = "size=#{64 * 1024 * 1024},mode=0700"
+      tmpfs["/home/agent/.config/kilocode"] = "size=#{64 * 1024 * 1024},mode=0700"
       tmpfs["/home/agent/.local/share/kilo"] = "size=#{64 * 1024 * 1024},mode=0700"
 
       # OpenCode CLI stores config under ~/.config/opencode and data under
@@ -2982,7 +2984,7 @@ module Containers
       return true unless backend.respond_to?(:remote?)
       return true unless backend.remote?
 
-      ENV["PAID_PROXY_EXTERNAL_URL"].present?
+      Containers::ProxyUrl.resolve(backend:, restricted: true).present?
     rescue StandardError
       false
     end

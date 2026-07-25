@@ -31,11 +31,13 @@ RSpec.describe Containers::Backends::Resolver, :no_db do
   around do |example|
     original_backend = ENV["CONTAINER_BACKEND"]
     original_proxy_external_url = ENV["PAID_PROXY_EXTERNAL_URL"]
+    original_host_proxy_external_url = ENV["PAID_PROXY_EXTERNAL_URL_WORKER_1"]
     original_config_backend = Rails.application.config.x.container_backend
     example.run
   ensure
     ENV["CONTAINER_BACKEND"] = original_backend
     ENV["PAID_PROXY_EXTERNAL_URL"] = original_proxy_external_url
+    ENV["PAID_PROXY_EXTERNAL_URL_WORKER_1"] = original_host_proxy_external_url
     Rails.application.config.x.container_backend = original_config_backend
   end
 
@@ -50,15 +52,16 @@ RSpec.describe Containers::Backends::Resolver, :no_db do
     Rails.application.reloader.prepare!
   end
 
-  it "warns when the remote backend is active without PAID_PROXY_EXTERNAL_URL" do
+  it "warns when the remote backend is active without an external proxy URL override" do
     ENV["CONTAINER_BACKEND"] = "remote"
     ENV.delete("PAID_PROXY_EXTERNAL_URL")
+    ENV.delete("PAID_PROXY_EXTERNAL_URL_WORKER_1")
 
     allow(Containers::Backends::RemoteDocker).to receive(:from_env).and_return(remote_backend)
     allow(described_class).to receive(:for).with(:remote).and_return(remote_backend)
 
     expect(Rails.logger).to receive(:warn).with(
-      "Remote Docker backend is active but PAID_PROXY_EXTERNAL_URL is not set; remote containers will be unable to reach the secrets proxy"
+      "Remote Docker backend is active but PAID_PROXY_EXTERNAL_URL or PAID_PROXY_EXTERNAL_URL_<HOST> is not set; remote containers will be unable to reach the secrets proxy"
     )
 
     run_initializer
@@ -76,16 +79,43 @@ RSpec.describe Containers::Backends::Resolver, :no_db do
     run_initializer
   end
 
-  it "warns in multi-host mode when any configured host is remote without PAID_PROXY_EXTERNAL_URL" do
+  it "does not warn when the remote backend has a per-host external proxy URL" do
+    ENV["CONTAINER_BACKEND"] = "remote"
+    ENV.delete("PAID_PROXY_EXTERNAL_URL")
+    ENV["PAID_PROXY_EXTERNAL_URL_WORKER_1"] = "https://worker-1-proxy.example.test:3443"
+
+    allow(Containers::Backends::RemoteDocker).to receive(:from_env).and_return(remote_backend)
+    allow(described_class).to receive(:for).with(:remote).and_return(remote_backend)
+
+    expect(Rails.logger).not_to receive(:warn)
+
+    run_initializer
+  end
+
+  it "warns in multi-host mode when any configured host is remote without an external proxy URL" do
     ENV["CONTAINER_BACKEND"] = "multi"
     ENV.delete("PAID_PROXY_EXTERNAL_URL")
+    ENV.delete("PAID_PROXY_EXTERNAL_URL_WORKER_1")
 
     allow(Containers::HostRegistry).to receive(:load).and_return(multi_host_registry)
     allow(described_class).to receive(:for).with(:qnap).and_return(qnap_backend)
 
     expect(Rails.logger).to receive(:warn).with(
-      "Remote Docker backend is active but PAID_PROXY_EXTERNAL_URL is not set; remote containers will be unable to reach the secrets proxy"
+      "Remote Docker backend is active but PAID_PROXY_EXTERNAL_URL or PAID_PROXY_EXTERNAL_URL_<HOST> is not set; remote containers will be unable to reach the secrets proxy"
     )
+
+    run_initializer
+  end
+
+  it "does not warn in multi-host mode when a remote host has a per-host external proxy URL" do
+    ENV["CONTAINER_BACKEND"] = "multi"
+    ENV.delete("PAID_PROXY_EXTERNAL_URL")
+    ENV["PAID_PROXY_EXTERNAL_URL_WORKER_1"] = "https://worker-1-proxy.example.test:3443"
+
+    allow(Containers::HostRegistry).to receive(:load).and_return(multi_host_registry)
+    allow(described_class).to receive(:for).with(:qnap).and_return(qnap_backend)
+
+    expect(Rails.logger).not_to receive(:warn)
 
     run_initializer
   end

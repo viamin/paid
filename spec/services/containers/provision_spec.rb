@@ -137,6 +137,14 @@ RSpec.describe Containers::Provision do
     )
   end
 
+  def expect_remote_proxy_env(env, base_url)
+    expect(env).to include(
+      "PAID_PROXY_URL=#{base_url}",
+      "OPENAI_BASE_URL=#{base_url}/api/proxy/openai",
+      "GOOGLE_GEMINI_BASE_URL=#{base_url}/api/proxy/google"
+    )
+  end
+
   let(:project) { create(:project) }
   let(:agent_run) { create(:agent_run, project: project) }
   let(:worktree_path) { Dir.mktmpdir("worktree") }
@@ -895,16 +903,38 @@ RSpec.describe Containers::Provision do
         remote_service = described_class.new(agent_run: agent_run, backend: remote_backend)
 
         expect(remote_backend).to receive(:create_container) do |config|
-          env = config["Env"]
-          expect(env).to include("PAID_PROXY_URL=https://proxy.example.test:3443")
-          expect(env).to include("OPENAI_BASE_URL=https://proxy.example.test:3443/api/proxy/openai")
-          expect(env).to include("GOOGLE_GEMINI_BASE_URL=https://proxy.example.test:3443/api/proxy/google")
+          expect_remote_proxy_env(config["Env"], "https://proxy.example.test:3443")
           mock_container
         end
 
         remote_service.provision
       ensure
         ENV["PAID_PROXY_EXTERNAL_URL"] = original_proxy_external_url
+      end
+
+      it "prefers a per-host PAID_PROXY_EXTERNAL_URL when a remote backend is active" do
+        remote_backend = stub_remote_backend_proxy_support(
+          mock_network: mock_network,
+          mock_volume: mock_volume,
+          mock_container: mock_container
+        )
+
+        original_proxy_external_url = ENV["PAID_PROXY_EXTERNAL_URL"]
+        original_host_proxy_external_url = ENV["PAID_PROXY_EXTERNAL_URL_WORKER_1"]
+        ENV["PAID_PROXY_EXTERNAL_URL"] = "https://proxy.example.test:3443"
+        ENV["PAID_PROXY_EXTERNAL_URL_WORKER_1"] = "https://worker-1-proxy.example.test:3443"
+
+        remote_service = described_class.new(agent_run: agent_run, backend: remote_backend)
+
+        expect(remote_backend).to receive(:create_container) do |config|
+          expect_remote_proxy_env(config["Env"], "https://worker-1-proxy.example.test:3443")
+          mock_container
+        end
+
+        remote_service.provision
+      ensure
+        ENV["PAID_PROXY_EXTERNAL_URL"] = original_proxy_external_url
+        ENV["PAID_PROXY_EXTERNAL_URL_WORKER_1"] = original_host_proxy_external_url
       end
 
       it "includes runner CLI env overrides from agent-harness" do

@@ -75,6 +75,25 @@ RSpec.describe Accounts::Operations::AutoCapacityObserver do
     expect(payload.dig(:usage, :agent, :memory_bytes)).to eq(1.gigabyte)
   end
 
+  it "isolates a per-container parse failure instead of losing data for the whole batch" do
+    create_recent_run_profile!
+    healthy_container = docker_container(labels: { "paid.agent_run_id" => "123" }, memory_bytes: 1.gigabyte, cpu_percent: 55.0)
+    malformed_container = instance_double(
+      Docker::Container,
+      id: SecureRandom.hex(6),
+      info: { "State" => "running", "Config" => { "Labels" => {} } }
+    )
+    allow(backend).to receive(:container_stats).with(malformed_container, stream: false).and_return(nil)
+
+    allow(backend).to receive(:list_containers).with(no_args).and_return([ healthy_container, malformed_container ])
+
+    payload = described_class.call(account: account, manual_limit: 5, backend: backend, cache: cache)
+
+    expect(payload[:status]).to eq(:degraded)
+    expect(payload[:warnings]).not_to be_empty
+    expect(payload.dig(:usage, :agent, :memory_bytes)).to eq(1.gigabyte)
+  end
+
   it "clears agent headroom when the sampling budget exhausts before every container is inspected" do
     create_recent_run_profile!
     stub_const("Accounts::Operations::AutoCapacityObserver::DOCKER_SAMPLING_BUDGET", 0)

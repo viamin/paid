@@ -114,13 +114,39 @@ RUN if [ -z "${BUNDLER_VERSION}" ]; then \
 # AGENT_HARNESS_VERSION is extracted from Gemfile.lock at build time by
 # scripts/build-agent-image.sh and .github/workflows/agent-image.yml so the
 # agent image stays in lockstep with the control plane.
+#
+# When agent-harness is pinned to a git ref in Gemfile.lock (e.g. an
+# unreleased upstream fix published as a commit), set AGENT_HARNESS_GIT_REF
+# instead of AGENT_HARNESS_VERSION. The build then fetches only the pinned
+# commit (a shallow, --depth 1 fetch so the full repository history is never
+# downloaded), builds the .gem from source, and installs it. RubyGems has no
+# `--git` install option, so the fetch-and-build pattern is the simplest way to
+# install a gem straight from a git ref without invoking Bundler. The gemspec
+# resolves its file list via `git ls-files`, so a checkout (which populates the
+# index) is required rather than a bare tarball download.
 ARG AGENT_HARNESS_VERSION
-RUN if [ -z "${AGENT_HARNESS_VERSION}" ]; then \
-        echo "ERROR: AGENT_HARNESS_VERSION build-arg is required." >&2; \
+ARG AGENT_HARNESS_GIT_REF
+RUN if [ -z "${AGENT_HARNESS_VERSION}" ] && [ -z "${AGENT_HARNESS_GIT_REF}" ]; then \
+        echo "ERROR: AGENT_HARNESS_VERSION or AGENT_HARNESS_GIT_REF build-arg is required." >&2; \
         echo "Use scripts/build-agent-image.sh, which extracts it from Gemfile.lock." >&2; \
         exit 1; \
     fi \
-    && gem install --no-document "agent-harness:${AGENT_HARNESS_VERSION}"
+    && if [ -n "${AGENT_HARNESS_GIT_REF}" ]; then \
+        echo "Installing agent-harness from git ref: ${AGENT_HARNESS_GIT_REF}"; \
+        mkdir -p /tmp/agent-harness-src \
+        && cd /tmp/agent-harness-src \
+        && git init \
+        && git remote add origin "https://github.com/viamin/agent-harness.git" \
+        && git fetch --depth 1 origin "${AGENT_HARNESS_GIT_REF}" \
+        && git checkout FETCH_HEAD \
+        && gem build agent-harness.gemspec \
+        && gem install --no-document agent-harness-*.gem \
+        && cd / \
+        && rm -rf /tmp/agent-harness-src; \
+    else \
+        echo "Installing agent-harness version: ${AGENT_HARNESS_VERSION}"; \
+        gem install --no-document "agent-harness:${AGENT_HARNESS_VERSION}"; \
+    fi
 
 # Install ruby-maat (VCS mining tool for churn/hotspot analysis)
 # https://github.com/viamin/ruby-maat
@@ -190,6 +216,33 @@ RUN RATHOLE_VERSION=0.5.0 \
     && unzip -j -o "${RATHOLE_ASSET}" rathole -d /usr/local/bin \
     && chmod +x /usr/local/bin/rathole \
     && rm "${RATHOLE_ASSET}"
+
+# Install rtk (Rust Token Killer) for compressed AI agent shell output.
+# rtk intercepts shell commands from AI agents and compresses the output 60-90%,
+# reducing context window consumption.
+# https://github.com/rtk-ai/rtk/releases
+RUN RTK_VERSION=0.43.0 \
+    && DEB_ARCH="$(dpkg --print-architecture)" \
+    && case "$DEB_ARCH" in \
+        amd64) RTK_ASSET="rtk-x86_64-unknown-linux-musl.tar.gz"; EXPECTED_CHECKSUM="ff8a1e7766496e175291a85aeca1dc97c9ff6df33e51e5893d1fbc78fea2a609" ;; \
+        arm64) RTK_ASSET="rtk-aarch64-unknown-linux-gnu.tar.gz"; EXPECTED_CHECKSUM="5519f7ca12e5c143a609f0d28a0a77b97413a8dce31c2681f1a41c24519a8731" ;; \
+        *) echo "Unsupported architecture: $DEB_ARCH" >&2; exit 1 ;; \
+    esac \
+    && TARBALL="${RTK_ASSET}" \
+    && curl -fsSL -o "${TARBALL}" "https://github.com/rtk-ai/rtk/releases/download/v${RTK_VERSION}/${RTK_ASSET}" \
+    && echo "${EXPECTED_CHECKSUM}  ${TARBALL}" | sha256sum -c - \
+    && tar -xzf "${TARBALL}" -C /usr/local/bin rtk \
+    && chmod +x /usr/local/bin/rtk \
+    && rm "${TARBALL}"
+
+# Install CodeGraph for local-first code intelligence via MCP.
+# Builds a code knowledge graph that agents query instead of grepping/reading
+# files one at a time, reducing tool calls and tokens.
+# Supply-chain hardening: --ignore-scripts — the package has no lifecycle scripts;
+# platform-specific native binaries are resolved via npm optionalDependencies.
+# https://github.com/colbymchenry/codegraph
+RUN CODEGRAPH_VERSION=1.5.0 \
+    && npm install -g --ignore-scripts "@colbymchenry/codegraph@${CODEGRAPH_VERSION}"
 
 # Create non-root user for security before provider-specific setup. Keeping
 # this separate from any one provider narrows the blast radius of future edits.

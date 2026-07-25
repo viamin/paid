@@ -115,7 +115,9 @@
     "oh-my-pi": "bash .devcontainer/install-oh-my-pi.sh",
     // Dev tools
     "markdownlint": "npm install -g --ignore-scripts markdownlint-cli",
-    "git-curate": "env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH gem install git_curate"
+    "git-curate": "env PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH gem install git_curate",
+    // Token optimization tools (must run after agent CLIs are installed)
+    "token-optimization": "bash .devcontainer/setup-token-optimization.sh"
     // NOTE: Compound Engineering plugin install + configure-llm-tools.sh run at
     // the end of the "setup" chain above (ordering-sensitive), not here.
   },
