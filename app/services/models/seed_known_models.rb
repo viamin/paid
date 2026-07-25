@@ -105,6 +105,22 @@ module Models
         tier: "high"
       },
       {
+        model_id: "claude-opus-5",
+        display_name: "Claude Opus 5",
+        provider: "anthropic",
+        family: "claude-5",
+        category: "coding",
+        context_window: 200_000,
+        max_output_tokens: 32_000,
+        input_cost_per_million: 15.0,
+        output_cost_per_million: 75.0,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 10.0,
+        tier: "high"
+      },
+      {
         model_id: "gpt-5.1",
         display_name: "GPT-5.1",
         provider: "openai",
@@ -294,7 +310,8 @@ module Models
         supports_tools: true,
         supports_json_output: true,
         capability_score: 10.0,
-        tier: "high"
+        tier: "high",
+        active: false
       },
       {
         model_id: "gpt-5-mini",
@@ -397,6 +414,38 @@ module Models
         capability_score: 8.2,
         tier: "mid"
       },
+      {
+        model_id: "gemini-3.5-flash-lite",
+        display_name: "Gemini 3.5 Flash Lite",
+        provider: "google",
+        family: "gemini-3",
+        category: "general",
+        context_window: 1_000_000,
+        max_output_tokens: 65_536,
+        input_cost_per_million: 0.10,
+        output_cost_per_million: 0.40,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 7.3,
+        tier: "low"
+      },
+      {
+        model_id: "gemini-3.6-flash",
+        display_name: "Gemini 3.6 Flash",
+        provider: "google",
+        family: "gemini-3",
+        category: "general",
+        context_window: 1_000_000,
+        max_output_tokens: 65_536,
+        input_cost_per_million: 0.30,
+        output_cost_per_million: 1.50,
+        supports_vision: true,
+        supports_tools: true,
+        supports_json_output: true,
+        capability_score: 8.3,
+        tier: "mid"
+      },
       # Catalog completeness for the custom Anthropic-compatible MiniMax
       # direct-outbound endpoint: opencode/pi runners reference this row via
       # `Runner#direct_outbound_config_models_must_exist_in_catalog`. MiniMax is
@@ -433,7 +482,7 @@ module Models
         model = LlmModel.find_or_initialize_by(model_id: snapshot_attrs[:model_id])
         model.assign_attributes(merged_attributes(snapshot_attrs, registry_models))
         model.tier ||= snapshot_attrs[:tier]
-        model.active = true
+        model.active = snapshot_attrs.fetch(:active, true)
         model.save!
         synced += 1
       end
