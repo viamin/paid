@@ -132,7 +132,7 @@ RSpec.describe Capacity::DockerSnapshot do
       expect(snapshot.available_memory_bytes).to eq(0)
     end
 
-    it "preserves classification of unrelated containers even with slow per-container sampling" do
+    it "degrades safely when every container sample runs past the shared budget" do
       stub_const("Capacity::DockerSnapshot::DOCKER_SAMPLING_BUDGET", 0.05)
       slow_backend = build_backend_double(
         identifier: "local",
@@ -148,7 +148,34 @@ RSpec.describe Capacity::DockerSnapshot do
       snapshot = described_class.call(backend: slow_backend, now: now, cache: cache)
 
       expect(snapshot).to be_degraded
+      expect(snapshot.available_memory_bytes).to eq(0)
+      expect(snapshot.degraded_reasons).to include("container_sample_failed")
+      expect(snapshot.usage_buckets.values.sum(&:container_count)).to eq(container_rows.size)
+    end
+
+    it "cuts off remaining containers once the shared sampling budget is exhausted" do
+      stub_const("Capacity::DockerSnapshot::DOCKER_SAMPLING_BUDGET", 0.05)
+      stub_const("Capacity::ConcurrentStatsSampler::MAX_THREADS", 1)
+      slow_backend = build_backend_double(
+        identifier: "local",
+        remote: false,
+        host_identifiers: [ "local" ],
+        containers: containers
+      )
+      call_count = 0
+      allow(slow_backend).to receive(:container_stats) do |_container, **_opts|
+        call_count += 1
+        sleep 1
+        {}
+      end
+
+      snapshot = described_class.call(backend: slow_backend, now: now, cache: cache)
+
+      expect(snapshot).to be_degraded
+      expect(snapshot.available_memory_bytes).to eq(0)
       expect(snapshot.degraded_reasons).to include("container_sampling_budget_exceeded")
+      expect(call_count).to be < container_rows.size
+      expect(snapshot.usage_buckets.values.sum(&:container_count)).to eq(container_rows.size)
     end
 
     it "classifies containers from fixtures into paid buckets and aggregates unrelated usage" do
@@ -274,26 +301,6 @@ RSpec.describe Capacity::DockerSnapshot do
       expect(snapshot.bucket(:paid_agents)).to have_attributes(container_count: 2, memory_bytes: 3_500)
       expect(snapshot.bucket(:paid_service_containers)).to have_attributes(container_count: 1, memory_bytes: 1_200)
       expect(snapshot.bucket(:paid_control_plane)).to have_attributes(container_count: 3, memory_bytes: 3_400)
-    end
-
-    it "cuts off container sampling once the shared deadline is exhausted" do
-      monotonic_times = [
-        100.0,
-        100.0,
-        100.2,
-        100.4,
-        103.1
-      ]
-      snapshotter = described_class.new(backend: backend, now: now, cache: cache, force_refresh: true)
-      allow(snapshotter).to receive(:monotonic_now) { monotonic_times.shift || 103.1 }
-
-      snapshot = snapshotter.call
-
-      expect(snapshot).to be_degraded
-      expect(snapshot.available_memory_bytes).to eq(0)
-      expect(snapshot.degraded_reasons).to include("container_sampling_budget_exceeded")
-      expect(snapshot.bucket(:paid_agents)).to have_attributes(container_count: 1, memory_bytes: 3_000, cpu_percent: 22.0)
-      expect(snapshot.bucket(:other_docker)).to have_attributes(container_count: 6, memory_bytes: 0, cpu_percent: 0.0)
     end
 
     it "only treats compose workdirs with an exact paid basename as control plane containers" do

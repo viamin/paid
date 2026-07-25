@@ -144,8 +144,14 @@ module Capacity
     STALE_CACHE_TTL = 2.minutes
     DOCKER_INFO_TIMEOUT = 2.seconds
     DOCKER_LIST_TIMEOUT = 2.seconds
-    DOCKER_CONTAINER_TIMEOUT = 1.second
-    DOCKER_SAMPLING_BUDGET = 3.seconds
+    # Docker's non-streaming stats endpoint samples two CPU counters across
+    # an interval, so a single call routinely takes 1-2s alone and measurably
+    # longer once several calls are in flight at once against the same
+    # daemon. Sampling runs concurrently (see ConcurrentStatsSampler) bounded
+    # by ConcurrentStatsSampler::MAX_THREADS, so this budget covers a couple
+    # of worker batches rather than scaling with total container count.
+    DOCKER_CONTAINER_TIMEOUT = 4.seconds
+    DOCKER_SAMPLING_BUDGET = 10.seconds
     PAID_COMPOSE_PROJECT = "paid"
 
     PAID_COMPOSE_SERVICES = %w[
@@ -305,28 +311,37 @@ module Capacity
       sampling_deadline = monotonic_now + DOCKER_SAMPLING_BUDGET
       running_containers = inventory.list_running_containers(timeout: DOCKER_LIST_TIMEOUT)
 
-      running_containers.each_with_index do |container, index|
-        if sampling_budget_exceeded?(sampling_deadline)
+      results = ConcurrentStatsSampler.call(
+        containers: running_containers,
+        monotonic_deadline: sampling_deadline,
+        per_container_timeout: DOCKER_CONTAINER_TIMEOUT
+      ) { |container| backend.container_stats(container, stream: false) }
+
+      results.each do |result|
+        if result.skipped
           degraded_reasons << "container_sampling_budget_exceeded"
-          classify_remaining_containers_as_other_docker(
-            containers: running_containers.drop(index),
-            bucket: buckets.fetch(:other_docker)
+          accumulate_bucket(buckets.fetch(:other_docker), memory_bytes: 0, cpu_percent: 0.0)
+          next
+        end
+
+        if result.error
+          Rails.logger.warn(
+            message: "container_manager.docker_stats_sample_failed",
+            backend_identifier: backend.identifier,
+            error_class: result.error.class.name,
+            error_message: result.error.message
           )
-          break
-        end
-
-        classification = inventory.classify_container(container:, references:)
-        stats = sample_container(container, deadline: sampling_deadline)
-
-        if stats.nil?
           degraded_reasons << "container_sample_failed"
-          classification = :other_docker
+          accumulate_bucket(buckets.fetch(:other_docker), memory_bytes: 0, cpu_percent: 0.0)
+          next
         end
 
+        classification = inventory.classify_container(container: result.container, references:)
+        parsed = Containers::DockerStatsParser.parse_stats(result.raw_stats)
         accumulate_bucket(
           buckets.fetch(classification),
-          memory_bytes: stats&.fetch(:memory_bytes, 0) || 0,
-          cpu_percent: stats&.fetch(:cpu_percent, 0.0) || 0.0
+          memory_bytes: parsed.fetch(:memory_bytes, 0).to_i,
+          cpu_percent: parsed.fetch(:cpu_percent, 0.0).to_f.round(2)
         )
       end
 
@@ -352,23 +367,6 @@ module Capacity
       with_timeout(DOCKER_INFO_TIMEOUT) { backend.system_info }
     end
 
-    def sample_container(container, deadline:)
-      remaining_budget = deadline - monotonic_now
-      return nil if remaining_budget <= 0
-
-      raw = with_timeout([ DOCKER_CONTAINER_TIMEOUT, remaining_budget ].min) do
-        backend.container_stats(container, stream: false)
-      end
-      parsed = Containers::DockerStatsParser.parse_stats(raw)
-
-      {
-        memory_bytes: parsed.fetch(:memory_bytes, 0).to_i,
-        cpu_percent: parsed.fetch(:cpu_percent, 0.0).to_f.round(2)
-      }
-    rescue Timeout::Error, Docker::Error::DockerError, Docker::Error::ExconError, Excon::Error
-      nil
-    end
-
     def docker_container_inventory
       @docker_container_inventory ||= DockerContainerInventory.new(backend: backend)
     end
@@ -377,12 +375,6 @@ module Capacity
       bucket.container_count += 1
       bucket.memory_bytes += memory_bytes
       bucket.cpu_percent = (bucket.cpu_percent + cpu_percent).round(2)
-    end
-
-    def classify_remaining_containers_as_other_docker(containers:, bucket:)
-      containers.each do |_container|
-        accumulate_bucket(bucket, memory_bytes: 0, cpu_percent: 0.0)
-      end
     end
 
     def remaining_memory(system_info:, buckets:)
@@ -447,10 +439,6 @@ module Capacity
 
     def monotonic_now
       Process.clock_gettime(Process::CLOCK_MONOTONIC)
-    end
-
-    def sampling_budget_exceeded?(deadline)
-      monotonic_now >= deadline
     end
 
     def deep_dup_buckets
