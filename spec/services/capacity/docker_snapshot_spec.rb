@@ -178,6 +178,53 @@ RSpec.describe Capacity::DockerSnapshot do
       expect(snapshot.usage_buckets.values.sum(&:container_count)).to eq(container_rows.size)
     end
 
+    it "reports container_list_changed_during_sampling when a container starts mid-sample" do
+      late_arrival = build_container(id: "late-arrival", labels: {})
+      allow(backend).to receive(:list_containers).and_return(containers, containers + [ late_arrival ])
+      allow(Rails.logger).to receive(:warn)
+
+      snapshot = described_class.call(backend: backend, now: now, cache: cache, force_refresh: true)
+
+      expect(snapshot).to be_degraded
+      expect(snapshot.available_memory_bytes).to eq(0)
+      expect(snapshot.degraded_reasons).to include("container_list_changed_during_sampling")
+      expect(Rails.logger).to have_received(:warn).with(
+        hash_including(
+          message: "container_manager.container_list_changed_during_sampling",
+          backend_identifier: "local",
+          original_container_count: containers.size,
+          current_container_count: containers.size + 1
+        )
+      )
+    end
+
+    it "keeps the snapshot healthy when a container stops mid-sample" do
+      allow(backend).to receive(:list_containers).and_return(containers, containers.drop(1))
+      allow(Rails.logger).to receive(:warn)
+
+      snapshot = described_class.call(backend: backend, now: now, cache: cache, force_refresh: true)
+
+      expect(snapshot).not_to be_degraded
+      expect(snapshot.available_memory_bytes).to eq(7_400)
+      expect(snapshot.degraded_reasons).to be_empty
+      expect(Rails.logger).not_to have_received(:warn).with(
+        hash_including(message: "container_manager.container_list_changed_during_sampling")
+      )
+    end
+
+    it "does not re-list containers when the sample is already degraded" do
+      stub_const("Capacity::DockerSnapshot::DOCKER_SAMPLING_BUDGET", 0.05)
+      stub_const("Capacity::ConcurrentStatsSampler::MAX_THREADS", 1)
+      allow(backend).to receive(:container_stats) do |_container, **_opts|
+        sleep 1
+        {}
+      end
+
+      described_class.call(backend: backend, now: now, cache: cache, force_refresh: true)
+
+      expect(backend).to have_received(:list_containers).once
+    end
+
     it "classifies containers from fixtures into paid buckets and aggregates unrelated usage" do
       snapshot = described_class.call(backend: backend, now: now, cache: cache)
 

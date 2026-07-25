@@ -10,7 +10,16 @@ module Accounts
       DOCKER_INFO_TIMEOUT = Capacity::DockerSnapshot::DOCKER_INFO_TIMEOUT
       DOCKER_LIST_TIMEOUT = Capacity::DockerSnapshot::DOCKER_LIST_TIMEOUT
       DOCKER_CONTAINER_TIMEOUT = Capacity::DockerSnapshot::DOCKER_CONTAINER_TIMEOUT
-      DOCKER_SAMPLING_BUDGET = Capacity::DockerSnapshot::DOCKER_SAMPLING_BUDGET
+      # Deliberately smaller than Capacity::DockerSnapshot::DOCKER_SAMPLING_BUDGET
+      # (10s). DockerSnapshot's budget is sized for a background job
+      # (ProcessRunQueueJob); this class runs synchronously in the Operations
+      # Dashboard's request/response cycle, so its worst-case latency is a
+      # request-thread-blocking concern, not just a data-freshness one. 6s
+      # comfortably covers realistic container counts under the shared
+      # ConcurrentStatsSampler's concurrency (empirically ~4s for 10-11
+      # containers at 8-way concurrency) while capping the worst case well
+      # below DockerSnapshot's budget.
+      DOCKER_SAMPLING_BUDGET = 6.seconds
       DEFAULT_ESTIMATED_RUN_MEMORY_BYTES = Containers::Provision::DEFAULTS[:memory_bytes]
       ESTIMATED_RUN_MEMORY_MULTIPLIER = 1.25
       MIN_CONTROL_PLANE_MARGIN_BYTES = 512.megabytes

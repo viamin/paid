@@ -24,6 +24,14 @@ RSpec.describe Accounts::Operations::AutoCapacityObserver do
     )
   end
 
+  it "uses a smaller sampling budget than the background admission path" do
+    # This class runs synchronously in the Operations Dashboard request cycle;
+    # DockerSnapshot's budget is sized for a background job. If these are ever
+    # re-aliased together, the dashboard's worst-case request latency silently
+    # grows back to the background job's budget -- guard against that here.
+    expect(described_class::DOCKER_SAMPLING_BUDGET).to be < Capacity::DockerSnapshot::DOCKER_SAMPLING_BUDGET
+  end
+
   it "summarizes docker usage into paid, agent, service, and other buckets" do
     create_recent_run_profile!
     allow(backend).to receive(:list_containers).with(no_args).and_return(sampled_containers)
