@@ -112,6 +112,7 @@ elsif is_npm
   puts "INSTALL_COMMAND=#{install_command.join(" ")}"
   puts "SUPPORTED_VERSION=#{contract[:version] || contract[:default_version]}"
   puts "BUN_VERSION=#{bun_requirement[:pinned_version]}" if bun_requirement
+  puts "BUN_INSTALL_COMMAND=#{bun_requirement[:install_command_string]}" if bun_requirement
 else
   install_command = contract.dig(:install, :command) || contract[:install_command_string]
   post_install_path = contract.dig(:install, :post_install_binary_path)

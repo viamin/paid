@@ -415,6 +415,7 @@ RUN if [ -z "${PI_PACKAGE}" ]; then \
 ARG OMP_PACKAGE
 ARG OMP_INSTALL_COMMAND
 ARG OMP_BUN_VERSION
+ARG OMP_BUN_INSTALL_COMMAND
 RUN if [ -z "${OMP_PACKAGE}" ]; then \
         echo "ERROR: OMP_PACKAGE build-arg is required (sourced from agent-harness)" >&2; \
         exit 1; \
@@ -427,22 +428,14 @@ RUN if [ -z "${OMP_PACKAGE}" ]; then \
         echo "ERROR: OMP_BUN_VERSION build-arg is required (sourced from agent-harness)" >&2; \
         exit 1; \
     fi \
-    && DEB_ARCH="$(dpkg --print-architecture)" \
-    && case "$DEB_ARCH" in \
-        amd64) OMP_BUN_ASSET="bun-linux-x64.zip"; if ! grep -qm1 avx2 /proc/cpuinfo; then OMP_BUN_ASSET="bun-linux-x64-baseline.zip"; fi ;; \
-        arm64) OMP_BUN_ASSET="bun-linux-aarch64.zip" ;; \
-        *) echo "Unsupported architecture for Bun: $DEB_ARCH" >&2; exit 1 ;; \
-    esac \
-    && OMP_BUN_BASE_URL="https://github.com/oven-sh/bun/releases/download/bun-v${OMP_BUN_VERSION}" \
+    && if [ -z "${OMP_BUN_INSTALL_COMMAND}" ]; then \
+        echo "ERROR: OMP_BUN_INSTALL_COMMAND build-arg is required (sourced from agent-harness)" >&2; \
+        exit 1; \
+    fi \
     && export BUN_INSTALL="/usr/local/bun" \
-    && mkdir -p "${BUN_INSTALL}/bin" /tmp/omp-bun \
-    && curl -fsSL "${OMP_BUN_BASE_URL}/SHASUMS256.txt" -o /tmp/omp-bun/SHASUMS256.txt \
-    && OMP_BUN_SHA256="$(awk -v asset="$OMP_BUN_ASSET" '$2 == asset { print $1 }' /tmp/omp-bun/SHASUMS256.txt)" \
-    && test -n "${OMP_BUN_SHA256}" \
-    && curl -fsSL "${OMP_BUN_BASE_URL}/${OMP_BUN_ASSET}" -o "/tmp/omp-bun/${OMP_BUN_ASSET}" \
-    && echo "${OMP_BUN_SHA256}  /tmp/omp-bun/${OMP_BUN_ASSET}" | sha256sum -c - \
-    && unzip -oq "/tmp/omp-bun/${OMP_BUN_ASSET}" -d /tmp/omp-bun \
-    && install -m 0755 "/tmp/omp-bun/${OMP_BUN_ASSET%.zip}/bun" "${BUN_INSTALL}/bin/bun" \
+    && mkdir -p "${BUN_INSTALL}/bin" \
+    && sh -c "${OMP_BUN_INSTALL_COMMAND}" \
+    && test -x "${BUN_INSTALL}/bin/bun" \
     && ln -sf "${BUN_INSTALL}/bin/bun" "${BUN_INSTALL}/bin/bunx" \
     && export PATH="${BUN_INSTALL}/bin:${PATH}" \
     && ln -sf "${BUN_INSTALL}/bin/bun" /usr/local/bin/bun \
@@ -451,7 +444,7 @@ RUN if [ -z "${OMP_PACKAGE}" ]; then \
     && OMP_BINARY_PATH="$(command -v omp || true)" \
     && test -n "${OMP_BINARY_PATH}" \
     && test -x "${OMP_BINARY_PATH}" \
-    && rm -rf /tmp/omp-bun
+    && bun --version | grep -Fx "${OMP_BUN_VERSION}"
 
 # Install GitHub Copilot CLI via agent-harness install contract.
 # The modern `copilot` binary supports --autopilot mode for fully autonomous,

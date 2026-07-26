@@ -34,6 +34,11 @@ RSpec.describe AgentImageBuildScript, :no_db do
       expect(script_source).to include('OMP_BUN_VERSION=$(echo "${OMP_CONTRACT}" | sed -n \'s/^BUN_VERSION=//p\')')
       expect(script_source).to include('--build-arg "OMP_BUN_VERSION=${OMP_BUN_VERSION}"')
     end
+
+    it "passes the oh-my-pi Bun install command through from agent-harness" do
+      expect(script_source).to include('OMP_BUN_INSTALL_COMMAND=$(echo "${OMP_CONTRACT}" | sed -n \'s/^BUN_INSTALL_COMMAND=//p\')')
+      expect(script_source).to include('--build-arg "OMP_BUN_INSTALL_COMMAND=${OMP_BUN_INSTALL_COMMAND}"')
+    end
   end
 
   describe AgentImageWorkflow do
@@ -50,6 +55,12 @@ RSpec.describe AgentImageBuildScript, :no_db do
       expect(workflow_source).to include("- scripts/lib/install_contract_helpers.rb")
       expect(workflow_source).to include("scripts/lib/install_contract_helpers.rb|\\")
     end
+
+    it "passes the oh-my-pi Bun install command through to the docker build" do
+      expect(workflow_source).to include('bun_install_command=$(echo "$contract" | sed -n \'s/^BUN_INSTALL_COMMAND=//p\')')
+      expect(workflow_source).to include('echo "bun_install_command<<PAID_EOF" >> "$GITHUB_OUTPUT"')
+      expect(workflow_source).to include("OMP_BUN_INSTALL_COMMAND=${{ steps.omp-contract.outputs.bun_install_command }}")
+    end
   end
 
   describe AgentImageDockerfile do
@@ -63,7 +74,10 @@ RSpec.describe AgentImageBuildScript, :no_db do
 
     it "uses the agent-harness omp install command after provisioning Bun" do
       expect(dockerfile_source).to include("ARG OMP_INSTALL_COMMAND")
+      expect(dockerfile_source).to include("ARG OMP_BUN_INSTALL_COMMAND")
       expect(dockerfile_source).to include('echo "ERROR: OMP_INSTALL_COMMAND build-arg is required')
+      expect(dockerfile_source).to include('echo "ERROR: OMP_BUN_INSTALL_COMMAND build-arg is required')
+      expect(dockerfile_source).to include('sh -c "${OMP_BUN_INSTALL_COMMAND}"')
       expect(dockerfile_source).to include('sh -c "${OMP_INSTALL_COMMAND}"')
       expect(dockerfile_source).not_to include('bun install -g "${OMP_PACKAGE}"')
     end

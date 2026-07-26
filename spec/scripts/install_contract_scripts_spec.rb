@@ -51,6 +51,7 @@ RSpec.describe InstallContractScripts, :no_db do
     expect(stdout).to include("PACKAGE=@oh-my-pi/pi-coding-agent")
     expect(stdout).to include("INSTALL_COMMAND=npm install -g --ignore-scripts @oh-my-pi/pi-coding-agent@")
     expect(stdout).to include("BUN_VERSION=")
+    expect(stdout).to include("BUN_INSTALL_COMMAND=curl -fsSL https://bun.sh/install | BUN_VERSION=")
   end
 
   it "verifies npm install commands stay scriptless before eval" do
