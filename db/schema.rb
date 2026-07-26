@@ -950,6 +950,37 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_24_035127) do
     t.index ["account_id"], name: "index_dispatch_circuit_breakers_on_account_id", unique: true
   end
 
+  create_table "docker_hosts", comment: "Persisted Docker backend targets and readiness metadata for account-level run placement.", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Account that owns and may place runs onto this Docker host."
+    t.string "backend_type", null: false, comment: "Docker backend type, such as local, remote, or swarm."
+    t.string "callback_url", comment: "Paid proxy callback URL that containers on this host must reach."
+    t.datetime "created_at", null: false
+    t.string "daemon_architecture", comment: "Docker daemon architecture reported by readiness checks."
+    t.string "daemon_summary", comment: "Short Docker daemon summary surfaced to operators."
+    t.datetime "disabled_at", comment: "When the host was disabled for new placements while retaining historical ownership."
+    t.string "display_name", null: false, comment: "Operator-facing label shown in the account admin UI."
+    t.boolean "enabled", default: true, null: false, comment: "Whether new manual or automatic placements may target this host."
+    t.string "endpoint", comment: "Docker daemon endpoint for remote hosts; blank for the local host."
+    t.string "failing_check", comment: "Named readiness check currently failing, if any."
+    t.boolean "fallback_eligible", default: true, null: false, comment: "Whether first-healthy fallback may use this host when the preferred host is unavailable."
+    t.string "identifier", null: false, comment: "Stable host identifier persisted onto agent_runs.container_host for historical ownership."
+    t.string "image_status", default: "unknown", null: false, comment: "Whether the required agent image is present and compatible."
+    t.string "image_tag", default: "paid-agent:latest", null: false, comment: "Expected agent image tag for readiness checks and setup guidance."
+    t.datetime "last_checked_at", comment: "Most recent readiness probe time."
+    t.text "last_error", comment: "Last readiness or provisioning error surfaced to operators."
+    t.datetime "last_ready_at", comment: "Most recent successful readiness probe time."
+    t.jsonb "log_data"
+    t.integer "manual_concurrency_limit", default: 1, null: false, comment: "Independent host-level run cap enforced separately from account, user, and project guardrails."
+    t.jsonb "metadata", default: {}, null: false, comment: "Extensible host-scoped readiness and setup metadata."
+    t.string "readiness_status", default: "unknown", null: false, comment: "Cached host readiness state shown in the admin control plane."
+    t.string "required_network_status", default: "unknown", null: false, comment: "Whether the required Docker network exists on the host."
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "enabled"], name: "index_docker_hosts_on_account_id_and_enabled"
+    t.index ["account_id", "fallback_eligible"], name: "index_docker_hosts_on_account_id_and_fallback_eligible"
+    t.index ["account_id", "identifier"], name: "index_docker_hosts_on_account_id_and_identifier", unique: true
+    t.index ["account_id"], name: "index_docker_hosts_on_account_id"
+  end
+
   create_table "exception_incidents", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "action_taken", default: "logged", null: false
@@ -1984,6 +2015,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_24_035127) do
     t.integer "poll_interval_seconds", default: 60, null: false
     t.jsonb "pr_action_labels", default: [], null: false
     t.boolean "pr_aggregation_enabled", default: false, null: false
+    t.string "preferred_docker_host_identifier", comment: "Optional project-level Docker host preference overriding the account default for manual placement."
     t.string "primary_language", comment: "Primary language of the repository as reported by GitHub (e.g. Ruby, Elixir, Swift). Used to detect and badge the project type."
     t.jsonb "priority_labels", default: {"P1" => "P1", "P2" => "P2", "P3" => "P3"}, null: false
     t.jsonb "quality_gate_settings", default: {}, null: false
@@ -2707,6 +2739,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_24_035127) do
     t.jsonb "auto_pick_skip_labels", comment: "Optional tenant-level override for labels that make auto-pick skip an issue. Null means use built-in defaults."
     t.datetime "created_at", null: false
     t.jsonb "default_budgets", default: {}, null: false
+    t.string "docker_host_fallback_behavior", default: "disabled", null: false, comment: "Fallback behavior when the preferred Docker host is unavailable: disabled or first_healthy."
     t.jsonb "features", default: {}, null: false
     t.jsonb "guardrails", default: {}, null: false
     t.jsonb "log_data"
@@ -2716,6 +2749,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_24_035127) do
     t.integer "max_projects", default: 50, null: false
     t.integer "max_tokens_per_run", default: 10000000, null: false
     t.integer "max_users", default: 25, null: false
+    t.string "preferred_docker_host_identifier", comment: "Account-wide preferred Docker host identifier for manual placement defaults."
     t.jsonb "quality_thresholds", default: {}, null: false
     t.jsonb "runner_preferences", default: {}, null: false
     t.string "self_repo_full_name"
@@ -2979,6 +3013,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_24_035127) do
   add_foreign_key "decomposition_decisions", "projects", on_delete: :cascade
   add_foreign_key "dispatch_circuit_breakers", "accounts"
   add_foreign_key "dispatch_circuit_breakers", "agent_runs", column: "last_probe_run_id", on_delete: :nullify, validate: false
+  add_foreign_key "docker_hosts", "accounts"
   add_foreign_key "exception_incidents", "accounts"
   add_foreign_key "exception_incidents", "projects"
   add_foreign_key "external_connector_events", "accounts"
@@ -4055,5 +4090,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_24_035127) do
 
   create_trigger :logidze_on_users, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_users BEFORE INSERT OR UPDATE ON public.users FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{encrypted_password,reset_password_token,reset_password_sent_at,remember_created_at}')
+  SQL
+
+  create_trigger :logidze_on_docker_hosts, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_docker_hosts BEFORE INSERT OR UPDATE ON public.docker_hosts FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 end

@@ -85,6 +85,9 @@ application.register("runner-form", RunnerFormController)
 import RepositorySelectorController from "./repository_selector_controller"
 application.register("repository-selector", RepositorySelectorController)
 
+import RetryDockerHostController from "./retry_docker_host_controller"
+application.register("retry-docker-host", RetryDockerHostController)
+
 import ScreenshotConfigController from "./screenshot_config_controller"
 application.register("screenshot-config", ScreenshotConfigController)
 

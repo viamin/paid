@@ -13,12 +13,14 @@ export default class extends Controller {
     "prTable",
     "prioritySection",
     "runnerSelect",
+    "dockerHostSelect",
     "blockedBySection",
   ]
   static values = {
     currentGoal: String,
     runnerDefaults: Object,
     runnerManuallySelected: { type: Boolean, default: false },
+    dockerHostOptionsUrl: String,
   }
 
   connect() {
@@ -27,6 +29,7 @@ export default class extends Controller {
 
   runnerChanged() {
     this.runnerManuallySelectedValue = true
+    this.refreshDockerHostOptions()
   }
 
   toggle() {
@@ -146,6 +149,7 @@ export default class extends Controller {
 
     this.syncRunnerDefault(previousGoal, goal)
     this.currentGoalValue = goal
+    this.refreshDockerHostOptions()
   }
 
   syncRunnerDefault(previousGoal, goal) {
@@ -172,5 +176,88 @@ export default class extends Controller {
     if (!this.hasRunnerDefaultsValue) return null
 
     return this.runnerDefaultsValue[goal] || null
+  }
+
+  // Re-fetch the docker host options whenever the resolved runner changes
+  // (either via goal default or manual override). The server is the source of
+  // truth for credential-aware runner compatibility, so we don't try to
+  // filter the existing options client-side.
+  async refreshDockerHostOptions() {
+    if (!this.hasDockerHostSelectTarget || !this.hasDockerHostOptionsUrlValue) return
+    if (this._dockerHostRequestInFlight) return
+
+    const url = new URL(this.dockerHostOptionsUrlValue, window.location.origin)
+    const runnerIdentifier = this.runnerIdentifierForRequest()
+    if (runnerIdentifier) {
+      url.searchParams.set("runner", runnerIdentifier)
+    } else {
+      url.searchParams.delete("runner")
+    }
+
+    this._dockerHostRequestInFlight = true
+    this.dockerHostSelectTarget.dataset.loading = "true"
+
+    try {
+      const response = await fetch(url, {
+        headers: {
+          "Accept": "application/json",
+          "X-CSRF-Token": this.csrfToken()
+        },
+        credentials: "same-origin"
+      })
+
+      if (!response.ok) {
+        console.error("Failed to refresh docker host options", {
+          status: response.status,
+          statusText: response.statusText
+        })
+        return
+      }
+
+      const payload = await response.json()
+      this.populateDockerHostSelect(payload)
+    } catch (error) {
+      console.error("Unexpected error refreshing docker host options", error)
+    } finally {
+      this._dockerHostRequestInFlight = false
+      delete this.dockerHostSelectTarget.dataset.loading
+    }
+  }
+
+  runnerIdentifierForRequest() {
+    if (!this.hasRunnerSelectTarget) return null
+    const value = this.runnerSelectTarget.value
+    return value === "" ? null : value
+  }
+
+  populateDockerHostSelect(payload) {
+    const select = this.dockerHostSelectTarget
+    const options = Array.isArray(payload?.options) ? payload.options : []
+    const previousSelection = select.value
+    const selectedHostIdentifier = payload?.selected_host_identifier
+    const previousStillVisible = options.some(
+      ([, value]) => value === previousSelection
+    )
+    const selectedHostStillVisible = selectedHostIdentifier &&
+      options.some(([, value]) => value === selectedHostIdentifier)
+
+    select.innerHTML = ""
+
+    options.forEach(([label, value]) => {
+      const option = document.createElement("option")
+      option.value = value
+      option.textContent = label
+      select.appendChild(option)
+    })
+
+    if (previousStillVisible) {
+      select.value = previousSelection
+    } else if (selectedHostStillVisible) {
+      select.value = selectedHostIdentifier
+    }
+  }
+
+  csrfToken() {
+    return document.querySelector("meta[name='csrf-token']")?.content || ""
   }
 }

@@ -105,6 +105,23 @@ module Screenshots
             record.status = "stopped"
           end
 
+          docker_host = account.docker_hosts.find_or_create_by!(identifier: "screenshots-local") do |record|
+            record.display_name = "Screenshot Local Host"
+            record.backend_type = "local"
+            record.callback_url = "/health/services"
+            record.image_tag = "paid-agent:latest"
+            record.enabled = true
+            record.fallback_eligible = true
+            record.manual_concurrency_limit = 3
+            record.readiness_status = "ready"
+            record.last_checked_at = Time.current
+            record.last_ready_at = Time.current
+            record.daemon_architecture = "linux/amd64"
+            record.daemon_summary = "Docker Engine 27.0"
+            record.image_status = "ready"
+            record.required_network_status = "ready"
+          end
+
           mcp_server_definition = McpServerDefinition.find_or_create_by!(account: account, name: "Screenshot MCP Server") do |record|
             record.transport = "stdio"
             record.install_type = "npx"
@@ -379,6 +396,7 @@ module Screenshots
             "linear_token" => { "id" => linear_token.id, "name" => linear_token.name },
             "provider_api_key" => { "id" => provider_api_key.id, "name" => provider_api_key.name },
             "service_container" => { "id" => service_container.id, "name" => service_container.name },
+            "docker_host" => { "id" => docker_host.id, "name" => docker_host.display_name },
             "mcp_server_definition" => { "id" => mcp_server_definition.id, "name" => mcp_server_definition.name },
             "playwright_mcp_definition" => { "id" => playwright_mcp_definition.id, "name" => playwright_mcp_definition.name },
             "agent_run" => { "id" => agent_run.id },

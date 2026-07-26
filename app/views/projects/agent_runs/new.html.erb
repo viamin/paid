@@ -32,7 +32,8 @@
       <%= form_with url: project_agent_runs_path(@project), method: :post, class: "space-y-6", data: {
         controller: "goal-toggle",
         goal_toggle_current_goal_value: selected_goal,
-        goal_toggle_runner_defaults_value: @default_runner_identifiers_by_goal.to_json
+        goal_toggle_runner_defaults_value: @default_runner_identifiers_by_goal.to_json,
+        goal_toggle_docker_host_options_url_value: docker_host_options_project_agent_runs_path(@project, format: :json)
       } do |f| %>
 
         <fieldset>
@@ -180,6 +181,19 @@
                 <option value="<%= identifier %>">
                   <%= label %>
                 </option>
+              <% end %>
+            </select>
+          </div>
+        </div>
+
+        <div>
+          <h2 class="text-base font-semibold text-gray-900">Docker Host</h2>
+          <p class="mt-1 text-sm text-gray-500">Optionally place this manual run on a specific enabled host. Leaving this on inherit uses the saved project/account preference when present; otherwise the existing scheduler path stays unchanged.</p>
+
+          <div class="mt-4">
+            <select name="container_host" id="container_host" data-goal-toggle-target="dockerHostSelect" class="block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm">
+              <% @available_docker_host_options.each do |label, identifier| %>
+                <option value="<%= identifier %>" <% if params[:container_host].to_s == identifier.to_s %>selected<% end %>><%= label %></option>
               <% end %>
             </select>
           </div>
