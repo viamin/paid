@@ -137,17 +137,21 @@ RSpec.describe CoordinationExperimentResolutionJob do
         variant.coordination_experiment_assignments.update_all(coordination_score: 0.4)
       end
 
-      it "does not complete the experiment" do
+      it "completes the experiment with the control variant as winner" do
         job.perform
 
-        expect(experiment.reload.status).to eq("running")
+        experiment.reload
+        expect(experiment.status).to eq("completed")
+        expect(experiment.winner_variant).to eq(control)
+        expect(experiment.completed_at).to be_present
       end
 
       it "logs the guardrail failures" do
         expect(Rails.logger).to receive(:info).with(
           hash_including(
             message: "coordination_experiment_resolution.guardrail_failed",
-            experiment_id: experiment.id
+            experiment_id: experiment.id,
+            winner_variant_id: control.id
           )
         )
 

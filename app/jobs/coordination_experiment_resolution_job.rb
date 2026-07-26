@@ -49,10 +49,15 @@ class CoordinationExperimentResolutionJob < ApplicationJob
     when :more_data_needed
       log_pending(experiment, result)
     when :guardrail_failed
+      experiment.complete!(winner_variant: control_variant_for!(experiment))
       log_guardrail_failure(experiment, result)
     when :no_candidate
       log_no_candidate(experiment, result)
     end
+  end
+
+  def control_variant_for!(experiment)
+    experiment.control_variant || raise(ActiveRecord::RecordInvalid.new(experiment), "control variant missing")
   end
 
   def log_completed(experiment, result)
@@ -77,6 +82,7 @@ class CoordinationExperimentResolutionJob < ApplicationJob
     Rails.logger.info(
       message: "coordination_experiment_resolution.guardrail_failed",
       experiment_id: experiment.id,
+      winner_variant_id: experiment.winner_variant_id,
       reasons: result.reasons,
       candidate_summary: result.candidate_summary,
       control_summary: result.control_summary
