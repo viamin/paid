@@ -23,6 +23,10 @@ env:
   DB_USERNAME: postgres
   DB_PASSWORD: postgres
   MUTANT_OUTPUT_FILE: tmp/mutant.log
+  # Mutation sweeps only exercise the configured subjects, so whole-codebase
+  # line coverage is near zero. Disable SimpleCov so its minimum_coverage gate
+  # can't fail the run and its per-fork instrumentation can't stall workers.
+  COVERAGE: "false"
 
 jobs:
   incremental:
