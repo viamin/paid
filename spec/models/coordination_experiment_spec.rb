@@ -26,6 +26,34 @@ RSpec.describe CoordinationExperiment do
     end
   end
 
+  describe "#complete!" do
+    let(:experiment) { create(:coordination_experiment) }
+    let!(:variant) { create(:coordination_experiment_variant, coordination_experiment: experiment) }
+
+    it "transitions the experiment to completed and records the winner" do
+      experiment.complete!(winner_variant: variant)
+
+      expect(experiment.reload.status).to eq("completed")
+      expect(experiment.reload.winner_variant).to eq(variant)
+      expect(experiment.reload.completed_at).to be_present
+    end
+
+    it "raises when the experiment is not running" do
+      experiment.update!(status: "completed")
+
+      expect { experiment.complete!(winner_variant: variant) }
+        .to raise_error(ActiveRecord::RecordInvalid, /cannot complete an experiment that is completed/)
+    end
+
+    it "raises when the winner variant belongs to a different experiment" do
+      other_experiment = create(:coordination_experiment)
+      other_variant = create(:coordination_experiment_variant, coordination_experiment: other_experiment)
+
+      expect { experiment.complete!(winner_variant: other_variant) }
+        .to raise_error(ArgumentError, /must belong to this experiment/)
+    end
+  end
+
   describe "#effective_policy_for" do
     it "merges variant overrides onto the experiment baseline policy" do
       experiment = create(:coordination_experiment,

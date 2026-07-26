@@ -248,6 +248,16 @@ Rails.application.configure do
       class: "KnowledgeEvolutionJob",
       description: "Analyze knowledge gaps and recommend collector improvements (weekly)"
     },
+    coordination_policy_evolution: {
+      cron: "0 4 * * 3",
+      class: "CoordinationPolicyEvolutionJob",
+      description: "Generate coordination policy candidates for decomposition, recovery, and escalation (weekly)"
+    },
+    coordination_experiment_resolution: {
+      cron: "0 */4 * * *",
+      class: "CoordinationExperimentResolutionJob",
+      description: "Check running coordination experiments for promotion readiness and mark winners"
+    },
     agent_run_pattern_detector: {
       cron: "11-59/15 * * * *",
       class: "AgentRunPatternDetectorJob",
