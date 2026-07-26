@@ -6,8 +6,6 @@ class AddLogidzeToDockerHosts < ActiveRecord::Migration[8.1]
 
     reversible do |dir|
       dir.up do
-        next if trigger_exists?(:docker_hosts, :logidze_on_docker_hosts)
-
         create_trigger :logidze_on_docker_hosts, on: :docker_hosts
       end
 
