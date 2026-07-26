@@ -64,6 +64,15 @@ RSpec.describe TenantSetting do
       expect(setting).not_to be_valid
       expect(setting.errors[:agent_settings]).to include("default_goal is unsupported")
     end
+
+    it "rejects a preferred host identifier that is not enabled for the account" do
+      account = create(:account)
+      create(:docker_host, account: account, identifier: "disabled-host", enabled: false)
+      setting = build(:tenant_setting, account: account, preferred_docker_host_identifier: "disabled-host")
+
+      expect(setting).not_to be_valid
+      expect(setting.errors[:preferred_docker_host_identifier]).to include("must reference an enabled Docker host")
+    end
   end
 
   describe "defaults" do

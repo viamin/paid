@@ -59,7 +59,7 @@ class DockerHostsController < ApplicationController
   end
 
   def set_docker_host
-    @docker_host = policy_scope(DockerHost).where(account: current_account).find(params[:id])
+    @docker_host = policy_scope(DockerHost).find(params[:id])
   end
 
   def recent_runs_for(docker_host)

@@ -57,12 +57,15 @@ module Projects
     def docker_host_options
       authorize @project, :run_agent?
       runner = runner_for_docker_host_param
-      options = available_docker_host_options(include_inherit: true, runner: runner)
+      placement_context = docker_host_selection_context(runner: runner)
 
       render json: {
         runner_identifier: params[:runner].to_s.presence,
-        selected_host_identifier: current_eligible_host_identifier(runner: runner),
-        options: options
+        selected_host_identifier: current_eligible_host_identifier(eligible_hosts: placement_context[:eligible_hosts]),
+        options: available_docker_host_options(
+          include_inherit: true,
+          eligible_hosts: placement_context[:eligible_hosts]
+        )
       }
     end
 
@@ -1163,7 +1166,7 @@ module Projects
       end
     end
 
-    def available_docker_host_options(include_inherit: false, runner: nil)
+    def available_docker_host_options(include_inherit: false, runner: nil, eligible_hosts: nil)
       options = []
       options << [ "Inherit saved placement preference", "" ] if include_inherit
 
@@ -1172,7 +1175,9 @@ module Projects
         .group(:container_host)
         .count
 
-      options + eligible_docker_hosts_for_manual_selection(runner: runner).map do |host|
+      eligible_hosts ||= docker_host_selection_context(runner: runner)[:eligible_hosts]
+
+      options + eligible_hosts.map do |host|
         active_runs = active_runs_by_host.fetch(host.identifier, 0)
         [ "#{host.display_name} (#{host.backend_type}, #{host.available_slots(active_run_count: active_runs)} slots free)", host.identifier ]
       end
@@ -1185,17 +1190,17 @@ module Projects
       runner_for_identifier(identifier)
     end
 
-    def current_eligible_host_identifier(runner:)
+    def current_eligible_host_identifier(runner: nil, eligible_hosts: nil)
       preferred_identifier = @project.effective_preferred_docker_host_identifier
       return nil if preferred_identifier.blank?
 
-      eligible_hosts = eligible_docker_hosts_for_manual_selection(runner: runner)
+      eligible_hosts ||= docker_host_selection_context(runner: runner)[:eligible_hosts]
       eligible_hosts.find { |host| host.identifier == preferred_identifier }&.identifier
     end
 
     def resolve_container_host_identifier(runner: nil)
       requested_identifier = params[:container_host].to_s.presence
-      eligible_hosts = eligible_docker_hosts_for_manual_selection(runner: runner).index_by(&:identifier)
+      eligible_hosts = docker_host_selection_context(runner: runner)[:eligible_hosts].index_by(&:identifier)
 
       if requested_identifier.present?
         requested_host = eligible_hosts[requested_identifier]
@@ -1214,8 +1219,19 @@ module Projects
       eligible_hosts.values.find(&:fallback_eligible?)&.identifier
     end
 
-    def eligible_docker_hosts_for_manual_selection(runner: nil)
-      auth_source = runner&.subscription? ? subscription_auth_source_for(runner) : nil
+    def docker_host_selection_context(runner: nil)
+      @docker_host_selection_contexts ||= {}
+      cache_key = runner&.id || runner&.runner_key || :none
+      @docker_host_selection_contexts[cache_key] ||= begin
+        auth_source = runner&.subscription? ? subscription_auth_source_for(runner) : nil
+        {
+          auth_source: auth_source,
+          eligible_hosts: eligible_docker_hosts_for_manual_selection(auth_source: auth_source)
+        }
+      end
+    end
+
+    def eligible_docker_hosts_for_manual_selection(auth_source: nil)
       current_account.docker_hosts.enabled.ordered.select do |host|
         docker_host_eligible_for_manual_selection?(host, auth_source: auth_source)
       end

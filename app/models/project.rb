@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class Project < ApplicationRecord
+  include PreferredDockerHostIdentifierValidation
+
   EXTERNAL_ISSUE_TRACKER_LINK_LABELS = {
     "linear" => "Linear Issues",
     "jira" => "Jira",
@@ -299,7 +301,7 @@ class Project < ApplicationRecord
   validate :priority_labels_valid
   validate :interop_settings_valid
   validate :llm_provider_routing_valid
-  validate :preferred_docker_host_identifier_valid
+  validate :validate_preferred_docker_host_identifier
 
   scope :active, -> { where(active: true) }
   scope :inactive, -> { where(active: false) }
@@ -1330,22 +1332,6 @@ class Project < ApplicationRecord
   end
 
   private
-
-  def preferred_docker_host_identifier_valid
-    return if preferred_docker_host_identifier.blank?
-    return if enabled_docker_host_identifier?(preferred_docker_host_identifier)
-
-    errors.add(:preferred_docker_host_identifier, "must reference an enabled Docker host")
-  end
-
-  def enabled_docker_host_identifier?(identifier)
-    return false unless account
-
-    docker_hosts = account.docker_hosts
-    return docker_hosts.enabled.exists?(identifier: identifier) unless docker_hosts.loaded?
-
-    docker_hosts.any? { |host| host.enabled? && host.identifier == identifier }
-  end
 
   def agent_run_marketplace_entries_table_exists?
     ActiveRecord::Base.connection.data_source_exists?("agent_run_marketplace_entries")
