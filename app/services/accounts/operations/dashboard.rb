@@ -46,6 +46,10 @@ module Accounts
           .where(projects: { account_id: account.id }, agent_runs: { created_at: time_window })
       end
 
+      def recent_run_rows
+        @recent_run_rows ||= recent_runs.pluck(:created_at, :started_at, :status)
+      end
+
       def queue_monitor
         @queue_monitor ||= Scaling::QueueMonitor.cached_for_account(account)
       end
@@ -179,11 +183,11 @@ module Accounts
       end
 
       def monitored_run_count
-        @monitored_run_count ||= recent_runs.where.not(started_at: nil).count
+        @monitored_run_count ||= recent_run_rows.count { |_, started_at, _| started_at.present? }
       end
 
       def completed_run_count
-        @completed_run_count ||= recent_runs.where(status: "completed").count
+        @completed_run_count ||= recent_run_rows.count { |_, _, status| status == "completed" }
       end
 
       def uptime_actual_percent
@@ -201,7 +205,11 @@ module Accounts
 
       def queue_health_actual_percent
         @queue_health_actual_percent ||= begin
-          rows = recent_runs.where.not(started_at: nil).pluck(:created_at, :started_at)
+          rows = recent_run_rows.filter_map do |created_at, started_at, _|
+            next unless started_at.present?
+
+            [ created_at, started_at ]
+          end
           if rows.empty?
             100.0
           else
