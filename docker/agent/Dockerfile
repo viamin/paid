@@ -429,20 +429,21 @@ RUN if [ -z "${OMP_PACKAGE}" ]; then \
         *) echo "Unsupported architecture for Bun: $DEB_ARCH" >&2; exit 1 ;; \
     esac \
     && OMP_BUN_BASE_URL="https://github.com/oven-sh/bun/releases/download/bun-v${OMP_BUN_VERSION}" \
-    && mkdir -p /root/.bun/bin /tmp/omp-bun \
+    && export BUN_INSTALL="/usr/local/bun" \
+    && mkdir -p "${BUN_INSTALL}/bin" /tmp/omp-bun \
     && curl -fsSL "${OMP_BUN_BASE_URL}/SHASUMS256.txt" -o /tmp/omp-bun/SHASUMS256.txt \
     && OMP_BUN_SHA256="$(awk -v asset="$OMP_BUN_ASSET" '$2 == asset { print $1 }' /tmp/omp-bun/SHASUMS256.txt)" \
     && test -n "${OMP_BUN_SHA256}" \
     && curl -fsSL "${OMP_BUN_BASE_URL}/${OMP_BUN_ASSET}" -o "/tmp/omp-bun/${OMP_BUN_ASSET}" \
     && echo "${OMP_BUN_SHA256}  /tmp/omp-bun/${OMP_BUN_ASSET}" | sha256sum -c - \
     && unzip -oq "/tmp/omp-bun/${OMP_BUN_ASSET}" -d /tmp/omp-bun \
-    && install -m 0755 "/tmp/omp-bun/${OMP_BUN_ASSET%.zip}/bun" /root/.bun/bin/bun \
-    && ln -sf /root/.bun/bin/bun /root/.bun/bin/bunx \
-    && export PATH="/root/.bun/bin:${PATH}" \
+    && install -m 0755 "/tmp/omp-bun/${OMP_BUN_ASSET%.zip}/bun" "${BUN_INSTALL}/bin/bun" \
+    && ln -sf "${BUN_INSTALL}/bin/bun" "${BUN_INSTALL}/bin/bunx" \
+    && export PATH="${BUN_INSTALL}/bin:${PATH}" \
     && bun install -g "${OMP_PACKAGE}" \
-    && ln -sf /root/.bun/bin/bun /usr/local/bin/bun \
-    && ln -sf /root/.bun/bin/bunx /usr/local/bin/bunx \
-    && ln -sf /root/.bun/bin/omp /usr/local/bin/omp \
+    && ln -sf "${BUN_INSTALL}/bin/bun" /usr/local/bin/bun \
+    && ln -sf "${BUN_INSTALL}/bin/bunx" /usr/local/bin/bunx \
+    && ln -sf "${BUN_INSTALL}/bin/omp" /usr/local/bin/omp \
     && rm -rf /tmp/omp-bun
 
 # Install GitHub Copilot CLI via agent-harness install contract.

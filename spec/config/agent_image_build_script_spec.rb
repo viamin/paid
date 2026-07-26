@@ -8,6 +8,9 @@ end
 class AgentImageWorkflow < Pathname
 end
 
+class AgentImageDockerfile < Pathname
+end
+
 RSpec.describe AgentImageBuildScript, :no_db do
   describe "build script" do
     subject(:script_source) { Rails.root.join("scripts/build-agent-image.sh").read }
@@ -31,6 +34,18 @@ RSpec.describe AgentImageBuildScript, :no_db do
       expect(workflow_source).to include('current_bundler_version=$(extract_lockfile_bundler_version "${HEAD_SHA}")')
       expect(workflow_source).to include('bundler: ${previous_bundler_version:-missing} -> ${current_bundler_version:-missing}\n')
       expect(workflow_source).not_to include('| grep -E')
+    end
+  end
+
+  describe AgentImageDockerfile do
+    subject(:dockerfile_source) { Rails.root.join("docker/agent/Dockerfile").read }
+
+    it "installs the oh-my-pi Bun runtime into a non-root shared path" do
+      expect(dockerfile_source).to include('export BUN_INSTALL="/usr/local/bun"')
+      expect(dockerfile_source).to include('ln -sf "${BUN_INSTALL}/bin/omp" /usr/local/bin/omp')
+      expect(dockerfile_source).to include('ln -sf "${BUN_INSTALL}/bin/bun" /usr/local/bin/bun')
+      expect(dockerfile_source).not_to include('ln -sf /root/.bun/bin/omp /usr/local/bin/omp')
+      expect(dockerfile_source).not_to include('ln -sf /root/.bun/bin/bun /usr/local/bin/bun')
     end
   end
 end
