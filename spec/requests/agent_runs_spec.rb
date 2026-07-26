@@ -1170,8 +1170,8 @@ RSpec.describe "AgentRuns" do
 
         expect(response).to have_http_status(:ok)
         payload = JSON.parse(response.body)
-        identifiers = payload.fetch("options").map { |entry| entry.last }
-        labels = payload.fetch("options").map { |entry| entry.first }
+        identifiers = payload.fetch("options").map(&:last)
+        labels = payload.fetch("options").map(&:first)
 
         expect(identifiers).to include("", "remote-host")
         expect(labels.first).to eq("Inherit saved placement preference")
@@ -1211,7 +1211,7 @@ RSpec.describe "AgentRuns" do
         get docker_host_options_project_agent_runs_path(project, runner: claude_runner.routing_key, format: :json)
 
         payload = JSON.parse(response.body)
-        identifiers = payload.fetch("options").map { |entry| entry.last }
+        identifiers = payload.fetch("options").map(&:last)
         expect(identifiers).not_to include("remote-only")
         expect(payload.fetch("selected_host_identifier")).to be_nil
       end
