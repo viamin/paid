@@ -26,6 +26,7 @@ module Tools
       issue_goal_idle_timeout_seconds
       review_goal_idle_timeout_seconds
       git_clone_timeout_seconds
+      git_unshallow_timeout_seconds
       git_push_timeout_seconds
       max_prompt_comments
       max_comment_length

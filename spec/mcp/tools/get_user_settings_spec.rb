@@ -48,6 +48,20 @@ RSpec.describe Tools::GetUserSettings do
       expect(user.settings.max_concurrent_runs).to be_nil
     end
 
+    it "updates git unshallow timeout" do
+      account = create(:account)
+      user = create(:user, :member, account:)
+      session = create(:chat_session, account:, created_by: user)
+
+      result = described_class.new(user:, session:).call(
+        settings: { git_unshallow_timeout_seconds: 2400 },
+        confirmed: true
+      )
+
+      expect(result["git_unshallow_timeout_seconds"]).to eq(2400)
+      expect(user.settings.reload.git_unshallow_timeout_seconds).to eq(2400)
+    end
+
     it "updates knowledge fallback runners" do
       account = create(:account)
       user = create(:user, :member, account:)
