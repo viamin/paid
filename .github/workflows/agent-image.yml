@@ -8,6 +8,7 @@ on:
       - Gemfile.lock
       - scripts/build-agent-image.sh
       - scripts/extract-runner-install-contract.rb
+      - scripts/lib/install_contract_helpers.rb
       - scripts/test-agent-image.sh
       - scripts/test-agent-image-inner.sh
       - scripts/test-agent-runner-contracts.sh
@@ -22,6 +23,7 @@ on:
       - Gemfile.lock
       - scripts/build-agent-image.sh
       - scripts/extract-runner-install-contract.rb
+      - scripts/lib/install_contract_helpers.rb
       - scripts/test-agent-image.sh
       - scripts/test-agent-image-inner.sh
       - scripts/test-agent-runner-contracts.sh
@@ -72,6 +74,7 @@ jobs:
                 docker/agent/*|\
                 scripts/build-agent-image.sh|\
                 scripts/extract-runner-install-contract.rb|\
+                scripts/lib/install_contract_helpers.rb|\
                 scripts/test-agent-image.sh|\
                 scripts/test-agent-image-inner.sh|\
                 scripts/test-agent-runner-contracts.sh|\

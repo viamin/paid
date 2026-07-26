@@ -448,6 +448,9 @@ RUN if [ -z "${OMP_PACKAGE}" ]; then \
     && ln -sf "${BUN_INSTALL}/bin/bun" /usr/local/bin/bun \
     && ln -sf "${BUN_INSTALL}/bin/bunx" /usr/local/bin/bunx \
     && sh -c "${OMP_INSTALL_COMMAND}" \
+    && OMP_BINARY_PATH="$(command -v omp || true)" \
+    && test -n "${OMP_BINARY_PATH}" \
+    && test -x "${OMP_BINARY_PATH}" \
     && rm -rf /tmp/omp-bun
 
 # Install GitHub Copilot CLI via agent-harness install contract.

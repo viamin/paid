@@ -29,6 +29,11 @@ RSpec.describe AgentImageBuildScript, :no_db do
       expect(script_source).to include('OMP_INSTALL_COMMAND=$(echo "${OMP_CONTRACT}" | sed -n \'s/^INSTALL_COMMAND=//p\')')
       expect(script_source).to include('--build-arg "OMP_INSTALL_COMMAND=${OMP_INSTALL_COMMAND}"')
     end
+
+    it "passes the oh-my-pi Bun runtime pin through from agent-harness" do
+      expect(script_source).to include('OMP_BUN_VERSION=$(echo "${OMP_CONTRACT}" | sed -n \'s/^BUN_VERSION=//p\')')
+      expect(script_source).to include('--build-arg "OMP_BUN_VERSION=${OMP_BUN_VERSION}"')
+    end
   end
 
   describe AgentImageWorkflow do
@@ -39,6 +44,11 @@ RSpec.describe AgentImageBuildScript, :no_db do
       expect(workflow_source).to include('current_bundler_version=$(extract_lockfile_bundler_version "${HEAD_SHA}")')
       expect(workflow_source).to include('bundler: ${previous_bundler_version:-missing} -> ${current_bundler_version:-missing}\n')
       expect(workflow_source).not_to include('| grep -E')
+    end
+
+    it "treats the shared install-contract helper as agent-image relevant" do
+      expect(workflow_source).to include("- scripts/lib/install_contract_helpers.rb")
+      expect(workflow_source).to include("scripts/lib/install_contract_helpers.rb|\\")
     end
   end
 
@@ -56,6 +66,11 @@ RSpec.describe AgentImageBuildScript, :no_db do
       expect(dockerfile_source).to include('echo "ERROR: OMP_INSTALL_COMMAND build-arg is required')
       expect(dockerfile_source).to include('sh -c "${OMP_INSTALL_COMMAND}"')
       expect(dockerfile_source).not_to include('bun install -g "${OMP_PACKAGE}"')
+    end
+
+    it "verifies the omp launcher exists after installation" do
+      expect(dockerfile_source).to include('OMP_BINARY_PATH="$(command -v omp || true)"')
+      expect(dockerfile_source).to include('test -x "${OMP_BINARY_PATH}"')
     end
   end
 end
