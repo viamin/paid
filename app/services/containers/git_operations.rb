@@ -24,6 +24,7 @@ module Containers
     # Default timeouts used when user settings are unavailable.
     # Runtime code resolves per-user values via UserSetting.
     DEFAULT_CLONE_TIMEOUT = 600
+    DEFAULT_UNSHALLOW_TIMEOUT = 1800
     DEFAULT_PUSH_TIMEOUT = 60
     NETWORK_GIT_ENV = {
       # Disable interactive auth fallback so proxy/credential failures surface
@@ -836,7 +837,7 @@ module Containers
       check = execute_git("rev-parse", "--is-shallow-repository")
       return if check.success? && check[:stdout].to_s.strip == "false"
 
-      result = execute_network_git("fetch", "--unshallow", timeout: clone_timeout)
+      result = execute_network_git("fetch", "--unshallow", timeout: unshallow_timeout)
       return if result.success?
 
       raise Error, "Failed to unshallow repository: #{error_with_stderr(result)}"
@@ -1380,6 +1381,10 @@ module Containers
 
     def clone_timeout
       user_settings&.git_clone_timeout_seconds || DEFAULT_CLONE_TIMEOUT
+    end
+
+    def unshallow_timeout
+      user_settings&.git_unshallow_timeout_seconds || DEFAULT_UNSHALLOW_TIMEOUT
     end
 
     def push_timeout

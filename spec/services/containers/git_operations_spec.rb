@@ -1561,7 +1561,7 @@ RSpec.describe Containers::GitOperations do
         .and_return(shallow_true_result)
 
       allow(container_service).to receive(:execute)
-        .with([ "git", "fetch", "--unshallow" ], timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false, env: described_class::NETWORK_GIT_ENV)
+        .with([ "git", "fetch", "--unshallow" ], timeout: described_class::DEFAULT_UNSHALLOW_TIMEOUT, stream: false, env: described_class::NETWORK_GIT_ENV)
         .and_return(success_result)
 
       allow(container_service).to receive(:execute)
@@ -1587,7 +1587,7 @@ RSpec.describe Containers::GitOperations do
           .ordered
 
         expect(container_service).to receive(:execute)
-          .with([ "git", "fetch", "--unshallow" ], timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false, env: described_class::NETWORK_GIT_ENV)
+          .with([ "git", "fetch", "--unshallow" ], timeout: described_class::DEFAULT_UNSHALLOW_TIMEOUT, stream: false, env: described_class::NETWORK_GIT_ENV)
           .and_return(success_result)
           .ordered
 
@@ -1694,7 +1694,7 @@ RSpec.describe Containers::GitOperations do
 
       it "skips unshallow and proceeds with rebase" do
         expect(container_service).not_to receive(:execute)
-          .with([ "git", "fetch", "--unshallow" ], timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false, env: described_class::NETWORK_GIT_ENV)
+          .with([ "git", "fetch", "--unshallow" ], timeout: described_class::DEFAULT_UNSHALLOW_TIMEOUT, stream: false, env: described_class::NETWORK_GIT_ENV)
 
         expect(git_ops.rebase_onto("main")).to be true
       end
@@ -1703,7 +1703,7 @@ RSpec.describe Containers::GitOperations do
     context "when unshallow fails" do
       before do
         allow(container_service).to receive(:execute)
-          .with([ "git", "fetch", "--unshallow" ], timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false, env: described_class::NETWORK_GIT_ENV)
+          .with([ "git", "fetch", "--unshallow" ], timeout: described_class::DEFAULT_UNSHALLOW_TIMEOUT, stream: false, env: described_class::NETWORK_GIT_ENV)
           .and_return(failure_result)
       end
 
