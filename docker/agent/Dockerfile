@@ -413,9 +413,14 @@ RUN if [ -z "${PI_PACKAGE}" ]; then \
 
 # Install Oh My Pi plus its Bun runtime from the agent-harness contract.
 ARG OMP_PACKAGE
+ARG OMP_INSTALL_COMMAND
 ARG OMP_BUN_VERSION
 RUN if [ -z "${OMP_PACKAGE}" ]; then \
         echo "ERROR: OMP_PACKAGE build-arg is required (sourced from agent-harness)" >&2; \
+        exit 1; \
+    fi \
+    && if [ -z "${OMP_INSTALL_COMMAND}" ]; then \
+        echo "ERROR: OMP_INSTALL_COMMAND build-arg is required (sourced from agent-harness)" >&2; \
         exit 1; \
     fi \
     && if [ -z "${OMP_BUN_VERSION}" ]; then \
@@ -440,10 +445,9 @@ RUN if [ -z "${OMP_PACKAGE}" ]; then \
     && install -m 0755 "/tmp/omp-bun/${OMP_BUN_ASSET%.zip}/bun" "${BUN_INSTALL}/bin/bun" \
     && ln -sf "${BUN_INSTALL}/bin/bun" "${BUN_INSTALL}/bin/bunx" \
     && export PATH="${BUN_INSTALL}/bin:${PATH}" \
-    && bun install -g "${OMP_PACKAGE}" \
     && ln -sf "${BUN_INSTALL}/bin/bun" /usr/local/bin/bun \
     && ln -sf "${BUN_INSTALL}/bin/bunx" /usr/local/bin/bunx \
-    && ln -sf "${BUN_INSTALL}/bin/omp" /usr/local/bin/omp \
+    && sh -c "${OMP_INSTALL_COMMAND}" \
     && rm -rf /tmp/omp-bun
 
 # Install GitHub Copilot CLI via agent-harness install contract.

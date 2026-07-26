@@ -24,6 +24,11 @@ RSpec.describe AgentImageBuildScript, :no_db do
       expect(script_source).to include("BUNDLER_VERSION=$(awk '/^BUNDLED WITH$/{getline; gsub(/^ +/, \"\", $0); print $0}'")
       expect(script_source).to include('--build-arg "BUNDLER_VERSION=${BUNDLER_VERSION}"')
     end
+
+    it "passes the oh-my-pi install command through from agent-harness" do
+      expect(script_source).to include('OMP_INSTALL_COMMAND=$(echo "${OMP_CONTRACT}" | sed -n \'s/^INSTALL_COMMAND=//p\')')
+      expect(script_source).to include('--build-arg "OMP_INSTALL_COMMAND=${OMP_INSTALL_COMMAND}"')
+    end
   end
 
   describe AgentImageWorkflow do
@@ -42,10 +47,15 @@ RSpec.describe AgentImageBuildScript, :no_db do
 
     it "installs the oh-my-pi Bun runtime into a non-root shared path" do
       expect(dockerfile_source).to include('export BUN_INSTALL="/usr/local/bun"')
-      expect(dockerfile_source).to include('ln -sf "${BUN_INSTALL}/bin/omp" /usr/local/bin/omp')
       expect(dockerfile_source).to include('ln -sf "${BUN_INSTALL}/bin/bun" /usr/local/bin/bun')
-      expect(dockerfile_source).not_to include('ln -sf /root/.bun/bin/omp /usr/local/bin/omp')
       expect(dockerfile_source).not_to include('ln -sf /root/.bun/bin/bun /usr/local/bin/bun')
+    end
+
+    it "uses the agent-harness omp install command after provisioning Bun" do
+      expect(dockerfile_source).to include("ARG OMP_INSTALL_COMMAND")
+      expect(dockerfile_source).to include('echo "ERROR: OMP_INSTALL_COMMAND build-arg is required')
+      expect(dockerfile_source).to include('sh -c "${OMP_INSTALL_COMMAND}"')
+      expect(dockerfile_source).not_to include('bun install -g "${OMP_PACKAGE}"')
     end
   end
 end
