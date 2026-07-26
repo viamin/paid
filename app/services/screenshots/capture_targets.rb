@@ -28,6 +28,7 @@ module Screenshots
       notifications
       exception_incidents
       service_containers
+      docker_hosts
       mcp_server_definitions
       onboarding
       user_settings
@@ -133,6 +134,9 @@ module Screenshots
       service_container_new: Target.new(slug: "service_container_new", path_builder: "/service_containers/new", requires_auth: true),
       service_container_show: Target.new(slug: "service_container_show", path_builder: ->(seed_data) { "/service_containers/#{seed_data.fetch(:service_container).id}" }, requires_auth: true),
       service_container_edit: Target.new(slug: "service_container_edit", path_builder: ->(seed_data) { "/service_containers/#{seed_data.fetch(:service_container).id}/edit" }, requires_auth: true),
+      docker_hosts: Target.new(slug: "docker_hosts", path_builder: "/docker_hosts", requires_auth: true),
+      docker_host_show: Target.new(slug: "docker_host_show", path_builder: ->(seed_data) { "/docker_hosts/#{seed_data.fetch(:docker_host).id}" }, requires_auth: true),
+      docker_host_edit: Target.new(slug: "docker_host_edit", path_builder: ->(seed_data) { "/docker_hosts/#{seed_data.fetch(:docker_host).id}/edit" }, requires_auth: true),
       mcp_server_definitions: Target.new(slug: "mcp_server_definitions", path_builder: "/mcp_server_definitions", requires_auth: true),
       mcp_server_definition_new: Target.new(slug: "mcp_server_definition_new", path_builder: "/mcp_server_definitions/new", requires_auth: true),
       mcp_server_definition_show: Target.new(slug: "mcp_server_definition_show", path_builder: ->(seed_data) { "/mcp_server_definitions/#{seed_data.fetch(:mcp_server_definition).id}" }, requires_auth: true),
@@ -281,6 +285,8 @@ module Screenshots
       "account_lifecycles_controller.rb" => [ :account ],
       "tenant_configurations_controller.rb" => [ :tenant_configuration ],
       "service_containers_controller.rb" => %i[service_containers service_container_new service_container_show service_container_edit],
+      "docker_hosts_controller.rb" => %i[docker_hosts docker_host_show docker_host_edit],
+      "account_docker_host_preferences_controller.rb" => [ :docker_hosts ],
       "mcp_server_definitions_controller.rb" => %i[mcp_server_definitions mcp_server_definition_new mcp_server_definition_show mcp_server_definition_edit],
       "style_guides_controller.rb" => %i[style_guides style_guide_new style_guide_show style_guide_edit],
       "chat_sessions_controller.rb" => %i[chat_sessions chat_session_show],
@@ -325,6 +331,7 @@ module Screenshots
       "projects/pre_commit_requirements_controller.rb" => [ :project_edit ],
       "projects/quality_thresholds_controller.rb" => [ :project_quality_dashboard ],
       "projects/service_containers_controller.rb" => [ :project_edit ],
+      "projects/docker_host_preferences_controller.rb" => [ :docker_hosts ],
       "projects/mcp_servers_controller.rb" => [ :project_edit ],
       "projects/mutation_test_requirements_controller.rb" => [ :project_edit ],
       "projects/knowledge_recommendations_controller.rb" => [ :project_knowledge_recommendations ],
@@ -542,6 +549,7 @@ module Screenshots
       when /\Aproviders\// then providers_targets(relative_path.delete_prefix("providers/"))
       when /\Arunners\// then providers_targets(relative_path.delete_prefix("runners/"))
       when /\Aservice_containers\// then rest_resource_targets(relative_path, "service_containers", index: :service_containers, new: :service_container_new, show: :service_container_show, edit: :service_container_edit)
+      when /\Adocker_hosts\// then rest_resource_targets(relative_path, "docker_hosts", index: :docker_hosts, new: :docker_hosts, show: :docker_host_show, edit: :docker_host_edit)
       when /\Amarketplace_entries\// then rest_resource_targets(relative_path, "marketplace_entries", index: :marketplace_entries, new: :marketplace_entry_new, show: :marketplace_entry_show, edit: :marketplace_entry_edit)
       when /\Amarketplace_entry_pdf_imports\// then [ :marketplace_entry_pdf_import_new ]
       when /\Amcp_server_definitions\// then rest_resource_targets(relative_path, "mcp_server_definitions", index: :mcp_server_definitions, new: :mcp_server_definition_new, show: :mcp_server_definition_show, edit: :mcp_server_definition_edit)

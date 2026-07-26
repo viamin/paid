@@ -102,6 +102,10 @@ Rails.application.routes.draw do
   resources :account_memberships, only: [ :create, :update, :destroy ]
   resource :account_ownership_transfer, only: [ :create ]
   resource :account_lifecycle, only: [ :update ]
+  resources :docker_hosts, except: [ :new, :destroy ] do
+    patch :disable, on: :member
+  end
+  resource :account_docker_host_preferences, only: [ :update ]
 
   # Account audit log
   resources :account_audit_logs, only: [ :index ] do
@@ -222,6 +226,7 @@ Rails.application.routes.draw do
     resource :quality_thresholds, only: [ :update ], controller: "projects/quality_thresholds"
     resource :cost_snapshot, only: [ :show ], controller: "projects/cost_snapshots"
     resource :cost_dashboard, only: [ :show ], controller: "projects/cost_dashboards"
+    resource :docker_host_preference, only: [ :update ], controller: "projects/docker_host_preferences"
     resource :interop_settings, only: [ :update ], controller: "projects/interop_settings"
     resources :roi_benchmarks, only: [ :create, :destroy ], controller: "projects/roi_benchmarks"
     resource :screenshot_config, only: [], controller: "projects/screenshot_configs" do
@@ -241,6 +246,7 @@ Rails.application.routes.draw do
       post :quick_create, on: :collection
       post :bump_priority, on: :collection
       post :toggle_auto_continue_pause, on: :collection
+      get :docker_host_options, on: :collection
     end
     resources :pre_commit_requirements, only: [ :index, :show, :create, :update, :destroy ],
       controller: "projects/pre_commit_requirements"
