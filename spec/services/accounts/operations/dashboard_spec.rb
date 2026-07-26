@@ -108,6 +108,21 @@ RSpec.describe Accounts::Operations::Dashboard do
       dashboard.send(:service_levels_payload)
     end
 
+    it "memoizes recent-run aggregates used across service-level metrics" do
+      configure_operations!
+      create(:agent_run, project: project, created_at: 5.days.ago, started_at: 5.days.ago + 3.minutes, status: "completed")
+      create(:agent_run, project: project, created_at: 4.days.ago, started_at: 4.days.ago + 12.minutes, status: "failed")
+      dashboard = described_class.new(account: account, tenant_setting: tenant_setting, billing_visible: true)
+
+      dashboard.send(:monitored_run_count)
+      dashboard.send(:completed_run_count)
+      dashboard.send(:queue_health_actual_percent)
+
+      expect(count_queries { dashboard.send(:monitored_run_count) }).to eq(0)
+      expect(count_queries { dashboard.send(:completed_run_count) }).to eq(0)
+      expect(count_queries { dashboard.send(:queue_health_actual_percent) }).to eq(0)
+    end
+
     def configure_operations!
       tenant_setting.enterprise_operations_configuration = {
         "service_levels" => { "queue_start_slo_minutes" => 10 },

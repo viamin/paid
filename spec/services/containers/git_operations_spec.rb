@@ -1561,6 +1561,10 @@ RSpec.describe Containers::GitOperations do
         .and_return(shallow_true_result)
 
       allow(container_service).to receive(:execute)
+        .with([ "sh", "-c", "rm -f .git/shallow.lock" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      allow(container_service).to receive(:execute)
         .with([ "git", "fetch", "--unshallow" ], timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false, env: described_class::NETWORK_GIT_ENV)
         .and_return(success_result)
 
@@ -1581,21 +1585,7 @@ RSpec.describe Containers::GitOperations do
       end
 
       it "checks shallow status, unshallows, then fetches before rebasing" do
-        expect(container_service).to receive(:execute)
-          .with([ "git", "rev-parse", "--is-shallow-repository" ], timeout: nil, stream: false)
-          .and_return(shallow_true_result)
-          .ordered
-
-        expect(container_service).to receive(:execute)
-          .with([ "git", "fetch", "--unshallow" ], timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false, env: described_class::NETWORK_GIT_ENV)
-          .and_return(success_result)
-          .ordered
-
-        expect(container_service).to receive(:execute)
-          .with([ "git", "fetch", "origin", "refs/heads/main:refs/remotes/origin/main" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
-          .and_return(success_result)
-          .ordered
-
+        expect_unshallow_sequence
         expect_git_identity_config(ordered: true)
 
         expect(container_service).to receive(:execute)
@@ -1711,6 +1701,44 @@ RSpec.describe Containers::GitOperations do
         expect { git_ops.rebase_onto("main") }
           .to raise_error(described_class::Error, /Failed to unshallow/)
       end
+    end
+
+    context "when clearing a stale shallow lock fails" do
+      before do
+        allow(container_service).to receive(:execute)
+          .with([ "sh", "-c", "rm -f .git/shallow.lock" ], timeout: nil, stream: false)
+          .and_return(failure_result)
+      end
+
+      it "raises Error before attempting the fetch" do
+        expect(container_service).not_to receive(:execute)
+          .with([ "git", "fetch", "--unshallow" ], timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false, env: described_class::NETWORK_GIT_ENV)
+
+        expect { git_ops.rebase_onto("main") }
+          .to raise_error(described_class::Error, /Failed to remove stale shallow\.lock/)
+      end
+    end
+
+    def expect_unshallow_sequence
+      expect(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "--is-shallow-repository" ], timeout: nil, stream: false)
+        .and_return(shallow_true_result)
+        .ordered
+
+      expect(container_service).to receive(:execute)
+        .with([ "sh", "-c", "rm -f .git/shallow.lock" ], timeout: nil, stream: false)
+        .and_return(success_result)
+        .ordered
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "fetch", "--unshallow" ], timeout: described_class::DEFAULT_CLONE_TIMEOUT, stream: false, env: described_class::NETWORK_GIT_ENV)
+        .and_return(success_result)
+        .ordered
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "fetch", "origin", "refs/heads/main:refs/remotes/origin/main" ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
+        .and_return(success_result)
+        .ordered
     end
   end
 
