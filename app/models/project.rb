@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 class Project < ApplicationRecord
+  include PreferredDockerHostIdentifierValidation
+
   EXTERNAL_ISSUE_TRACKER_LINK_LABELS = {
     "linear" => "Linear Issues",
     "jira" => "Jira",
@@ -299,6 +301,7 @@ class Project < ApplicationRecord
   validate :priority_labels_valid
   validate :interop_settings_valid
   validate :llm_provider_routing_valid
+  validate :validate_preferred_docker_host_identifier
 
   scope :active, -> { where(active: true) }
   scope :inactive, -> { where(active: false) }
@@ -570,6 +573,11 @@ class Project < ApplicationRecord
     return account_cap.to_i if account_cap.present?
 
     Issue::DEFAULT_MAX_RUNNER_FAILURES
+  end
+
+  def effective_preferred_docker_host_identifier
+    preferred_docker_host_identifier.presence ||
+      account&.tenant_setting&.effective_preferred_docker_host_identifier
   end
 
   # Returns the absolute token count at which a warning should be emitted.

@@ -776,14 +776,10 @@ RSpec.describe "AgentRuns" do
 
         get project_agent_run_path(project, agent_run)
 
-        expect(response.body).to include("Retry with Anthropic Claude CLI")
-        expect(response.body).to include("Retry with Cursor AI")
-        expect(response.body).to include('name="runner"')
-        expect(response.body).to include('value="runner:')
-        expect(response.body).to include("Current")
-        expect(response.body).to include('aria-haspopup="menu"')
-        expect(response.body).to include("aria-controls=")
-        expect(response.body).to include("aria-labelledby=")
+        expect(response.body).to include('select name="runner"')
+        expect(response.body).to include("Anthropic Claude CLI (current)")
+        expect(response.body).to include("Cursor AI")
+        expect(response.body).to include('select name="container_host"')
       end
 
       it "marks only one retry option current for legacy runs without runner_id" do
@@ -796,9 +792,9 @@ RSpec.describe "AgentRuns" do
 
         get project_agent_run_path(project, agent_run)
 
-        expect(response.body).to include("Retry with Kimi K2.5")
-        expect(response.body).to include("Retry with Opus via OpenCode")
-        expect(response.body.scan("Current").size).to eq(1)
+        expect(response.body).to include("Kimi K2.5 (current)")
+        expect(response.body).to include("Opus via OpenCode")
+        expect(response.body.scan("(current)").size).to eq(1)
       end
 
       it "shows a single retry button when no alternate providers are configured" do
@@ -806,9 +802,10 @@ RSpec.describe "AgentRuns" do
 
         get project_agent_run_path(project, agent_run)
 
-        expect(response.body).to include(">Retry</button>")
-        expect(response.body).not_to include("Retry options")
-        expect(response.body).not_to include('aria-label="Retry options"')
+        expect(response.body).to include('input type="submit"')
+        expect(response.body).to include('value="Retry"')
+        expect(response.body).to include('select name="runner"')
+        expect(response.body).to include("Anthropic Claude CLI (current)")
       end
 
       it "shows a deleted runner entry label for missing routed fallback attempts" do
@@ -1137,6 +1134,86 @@ RSpec.describe "AgentRuns" do
         expect(issue_table.at_css("input[type='checkbox'][name='issue_ids[]'][value='#{issue.id}']")).to be_present
         expect(issue_dropdown.attribute("hidden")).to be_present
         expect(pr_section.attribute("hidden")).to be_present
+      end
+
+      it "exposes the docker host options URL to the goal toggle controller" do
+        get new_project_agent_run_path(project)
+
+        doc = Nokogiri::HTML(response.body)
+        form = doc.at_css("form[data-controller='goal-toggle']")
+        url = form["data-goal-toggle-docker-host-options-url-value"]
+
+        expect(url).to eq(docker_host_options_project_agent_runs_path(project, format: :json))
+
+        docker_host_select = form.at_css("select[name='container_host']")
+        expect(docker_host_select["data-goal-toggle-target"]).to eq("dockerHostSelect")
+      end
+    end
+  end
+
+  describe "GET /projects/:project_id/agent_runs/docker_host_options" do
+    context "when not authenticated" do
+      it "redirects to the sign in page" do
+        get docker_host_options_project_agent_runs_path(project)
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
+
+    context "when authenticated" do
+      before { sign_in user }
+
+      it "returns the docker host options filtered by the supplied runner" do
+        create_placement_ready_remote_host(project: project, identifier: "remote-host")
+        codex = configure_codex_create_pr_default!(project)
+
+        get docker_host_options_project_agent_runs_path(project, runner: codex.routing_key, format: :json)
+
+        expect(response).to have_http_status(:ok)
+        payload = JSON.parse(response.body)
+        identifiers = payload.fetch("options").map(&:last)
+        labels = payload.fetch("options").map(&:first)
+
+        expect(identifiers).to include("", "remote-host")
+        expect(labels.first).to eq("Inherit saved placement preference")
+      end
+
+      it "reports the project/account preferred host when it is eligible for the runner" do
+        create_placement_ready_remote_host(project: project, identifier: "preferred-host")
+        codex = configure_codex_create_pr_default!(project)
+        project.account.tenant_setting!.update!(
+          preferred_docker_host_identifier: "preferred-host",
+          docker_host_fallback_behavior: "first_healthy"
+        )
+
+        get docker_host_options_project_agent_runs_path(project, runner: codex.routing_key, format: :json)
+
+        payload = JSON.parse(response.body)
+        expect(payload.fetch("selected_host_identifier")).to eq("preferred-host")
+      end
+
+      it "leaves the saved preference out when it is ineligible for the runner" do
+        create(:docker_host, :local, account: project.account,
+          identifier: "local-only", display_name: "Local Only",
+          readiness_status: "ready", image_status: "ready", required_network_status: "ready")
+        create_placement_ready_remote_host(project: project, identifier: "remote-only")
+        project.account.tenant_setting!.update!(
+          preferred_docker_host_identifier: "remote-only",
+          docker_host_fallback_behavior: "first_healthy"
+        )
+        owner = project.created_by
+        claude_runner = owner.runners.find_by(runner_key: "claude", auth_type: "subscription")
+        # Subscription runners without managed/api-key credentials resolve to
+        # host_forwarded auth, which only backends with supports_host_paths?
+        # (local hosts) can use. The remote-only host should not be eligible.
+        claude_runner.runner_credentials.destroy_all
+        claude_runner.update!(auth_type: "subscription")
+
+        get docker_host_options_project_agent_runs_path(project, runner: claude_runner.routing_key, format: :json)
+
+        payload = JSON.parse(response.body)
+        identifiers = payload.fetch("options").map(&:last)
+        expect(identifiers).not_to include("remote-only")
+        expect(payload.fetch("selected_host_identifier")).to be_nil
       end
     end
   end
@@ -1554,6 +1631,71 @@ RSpec.describe "AgentRuns" do
 
         expect(AgentRun.last.runner).to eq(owner_cursor)
         expect(AgentRun.last.agent_type).to eq("cursor")
+      end
+
+      it "rejects explicitly selecting a host that is not placement-ready" do
+        create(:docker_host, :local, account: project.account,
+          identifier: "failing-host", display_name: "Failing Host",
+          readiness_status: "failing", image_status: "ready", required_network_status: "ready")
+
+        expect {
+          post project_agent_runs_path(project), params: { issue_id: issue.id, container_host: "failing-host" }
+        }.not_to change(AgentRun, :count)
+
+        expect(response).to redirect_to(new_project_agent_run_path(project, goal: "create_pr"))
+        expect(flash[:alert]).to eq("Please choose a healthy compatible Docker host.")
+      end
+
+      it "falls back to the first healthy compatible host when the preferred host is not placement-ready" do
+        create(:docker_host, :local, account: project.account,
+          identifier: "preferred-host", display_name: "Preferred Host",
+          fallback_eligible: true, readiness_status: "failing", image_status: "ready", required_network_status: "ready")
+        create(:docker_host, :local, account: project.account,
+          identifier: "healthy-host", display_name: "Healthy Host",
+          fallback_eligible: true, readiness_status: "ready", image_status: "ready", required_network_status: "ready")
+
+        project.account.tenant_setting!.update!(
+          preferred_docker_host_identifier: "preferred-host",
+          docker_host_fallback_behavior: "first_healthy"
+        )
+
+        post project_agent_runs_path(project), params: { issue_id: issue.id }
+
+        expect(response).to redirect_to(project_path(project))
+        expect(AgentRun.last.container_host).to eq("healthy-host")
+      end
+
+      it "allows explicit remote host selection for Codex when proxy auth is the available fallback" do
+        create_placement_ready_remote_host(project: project, identifier: "remote-host")
+        codex = configure_codex_create_pr_default!(project)
+
+        post project_agent_runs_path(project), params: { issue_id: issue.id, container_host: "remote-host" }
+
+        expect(response).to redirect_to(project_path(project))
+        expect(AgentRun.last).to have_attributes(runner: codex, container_host: "remote-host")
+        expect(AgentRun.last.external_metadata).to include(
+          "container_host_selection" => include("explicit_host" => "remote-host")
+        )
+      end
+
+      it "keeps a preferred remote host eligible for Codex when proxy auth is the available fallback" do
+        create_placement_ready_remote_host(project: project, identifier: "preferred-host")
+        codex = configure_codex_create_pr_default!(project)
+        project.account.tenant_setting!.update!(
+          preferred_docker_host_identifier: "preferred-host",
+          docker_host_fallback_behavior: "first_healthy"
+        )
+
+        post project_agent_runs_path(project), params: { issue_id: issue.id }
+
+        expect(response).to redirect_to(project_path(project))
+        expect(AgentRun.last).to have_attributes(runner: codex, container_host: "preferred-host")
+        expect(AgentRun.last.external_metadata).to include(
+          "container_host_selection" => include(
+            "preferred_host" => "preferred-host",
+            "fallback" => "first_healthy"
+          )
+        )
       end
 
       it "redirects with an error when no runnable runner can be resolved" do
@@ -2331,6 +2473,20 @@ RSpec.describe "AgentRuns" do
         expect(response).to redirect_to(project_agent_run_path(project, new_run))
       end
 
+      it "persists explicit host selection metadata on retries" do
+        create_placement_ready_remote_host(project: project, identifier: "remote-host")
+        codex = configure_codex_create_pr_default!(project)
+        agent_run = create(:agent_run, :failed, project: project, agent_type: "codex", runner: codex)
+
+        post retry_project_agent_run_path(project, agent_run), params: { container_host: "remote-host" }
+
+        expect(response).to redirect_to(project_agent_run_path(project, AgentRun.last))
+        expect(AgentRun.last.container_host).to eq("remote-host")
+        expect(AgentRun.last.external_metadata).to include(
+          "container_host_selection" => include("explicit_host" => "remote-host")
+        )
+      end
+
       it "rejects retrying with an unavailable explicit runner" do
         user.runners.create!(runner_key: "cursor", enabled_for_agent_runs: false)
         agent_run = create(:agent_run, :failed, project: project, agent_type: "claude_code")
@@ -2559,6 +2715,21 @@ RSpec.describe "AgentRuns" do
         expect(response).to redirect_to(project_agent_run_path(project, new_run))
         expect(OrchestrationDecision.last.actor).to eq("refresh_auth_retry")
         without_partial_double_verification { expect(AgentHarness).to have_received(:refresh_auth).with(:claude, token: "valid-token") }
+      end
+
+      it "persists explicit host selection metadata on refresh-auth retries" do
+        create_placement_ready_remote_host(project: project, identifier: "remote-host")
+        codex = configure_codex_create_pr_default!(project)
+        agent_run = create(:agent_run, :auth_expired, project: project, agent_type: "codex", runner: codex, auth_provider: "codex")
+        without_partial_double_verification { allow(AgentHarness).to receive(:refresh_auth) }
+
+        post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_token: "valid-token", container_host: "remote-host" }
+
+        expect(response).to redirect_to(project_agent_run_path(project, AgentRun.last))
+        expect(AgentRun.last.container_host).to eq("remote-host")
+        expect(AgentRun.last.external_metadata).to include(
+          "container_host_selection" => include("explicit_host" => "remote-host")
+        )
       end
 
       it "binds refresh-auth retries to the current user" do
@@ -2824,5 +2995,24 @@ RSpec.describe "AgentRuns" do
 
   def column_index(document, header_text)
     document.css("table thead th").find_index { |header| header.text.squish == header_text }
+  end
+
+  def create_placement_ready_remote_host(project:, identifier:)
+    create(:docker_host, account: project.account,
+      identifier: identifier, display_name: identifier.humanize,
+      backend_type: "remote", fallback_eligible: true,
+      readiness_status: "ready", image_status: "ready", required_network_status: "ready")
+  end
+
+  def configure_codex_create_pr_default!(project)
+    owner = project.created_by
+    codex = owner.runners.create!(
+      runner_key: "codex",
+      auth_type: "subscription",
+      enabled_for_agent_runs: true,
+      enabled_for_fallback: true
+    )
+    owner.settings.update!(default_agent_runners_by_goal: { "create_pr" => codex.routing_key })
+    codex
   end
 end

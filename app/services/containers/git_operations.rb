@@ -837,6 +837,7 @@ module Containers
       check = execute_git("rev-parse", "--is-shallow-repository")
       return if check.success? && check[:stdout].to_s.strip == "false"
 
+      clear_shallow_lock!
       result = execute_network_git("fetch", "--unshallow", timeout: unshallow_timeout)
       return if result.success?
 
@@ -1368,6 +1369,17 @@ module Containers
     def execute_network_git(*args, timeout: nil)
       cmd = [ "git" ] + args
       container_service.execute(cmd, timeout: timeout, stream: false, env: NETWORK_GIT_ENV)
+    end
+
+    def clear_shallow_lock!
+      result = container_service.execute(
+        [ "sh", "-c", "rm -f .git/shallow.lock" ],
+        timeout: nil,
+        stream: false
+      )
+      return if result.success?
+
+      raise Error, "Failed to remove stale shallow.lock: #{error_with_stderr(result)}"
     end
 
     def user_settings

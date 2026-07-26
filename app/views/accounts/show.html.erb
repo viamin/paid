@@ -317,6 +317,7 @@
           </div>
           <div class="flex flex-wrap gap-3">
             <%= link_to "Open dashboard", account_operations_dashboard_path, class: "rounded-full bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-500" %>
+            <%= link_to "Docker hosts", docker_hosts_path, class: "rounded-full border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-900" %>
             <% if policy(current_account).update? %>
               <%= link_to "Export report", export_account_operations_dashboard_path(format: :json), class: "rounded-full border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-900" %>
             <% end %>

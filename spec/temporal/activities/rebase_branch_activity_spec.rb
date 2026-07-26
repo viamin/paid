@@ -109,6 +109,10 @@ RSpec.describe Activities::RebaseBranchActivity do
           .and_return(Containers::Provision::Result.success(stdout: "true\n", stderr: "", exit_code: 0))
 
         allow(container_service).to receive(:execute)
+          .with([ "sh", "-c", "rm -f .git/shallow.lock" ], timeout: nil, stream: false)
+          .and_return(success_result)
+
+        allow(container_service).to receive(:execute)
           .with(
             [ "git", "fetch", "--unshallow" ],
             timeout: Containers::GitOperations::DEFAULT_UNSHALLOW_TIMEOUT,
