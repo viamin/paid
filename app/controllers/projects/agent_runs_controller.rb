@@ -430,7 +430,7 @@ module Projects
         custom_prompt: prompt_for_retry(@agent_run),
         source_pull_request_number: @agent_run.source_pull_request_number,
         goal: @agent_run.goal,
-        container_host: resolve_container_host_identifier(runner: retry_runner),
+        **resolved_container_host_attributes(runner: retry_runner),
         trigger_type: "manual",
         status: "queued"
       )
@@ -519,7 +519,7 @@ module Projects
         custom_prompt: prompt_for_retry(@agent_run),
         source_pull_request_number: @agent_run.source_pull_request_number,
         goal: @agent_run.goal,
-        container_host: resolve_container_host_identifier(runner: @agent_run.runner),
+        **resolved_container_host_attributes(runner: @agent_run.runner),
         trigger_type: "manual",
         status: "queued"
       )
@@ -701,7 +701,7 @@ module Projects
           custom_prompt: custom_prompt,
           source_pull_request_number: source_pull_request_number,
           goal: goal,
-          container_host: resolve_container_host_identifier(runner: resolved_runner),
+          **resolved_container_host_attributes(runner: resolved_runner),
           trigger_type: trigger_type,
           status: "queued",
           priority_tier: priority_tier,
@@ -1217,6 +1217,35 @@ module Projects
       return nil unless preferred_identifier.present? && fallback_behavior == "first_healthy"
 
       eligible_hosts.values.find(&:fallback_eligible?)&.identifier
+    end
+
+    def resolved_container_host_attributes(runner: nil)
+      selected_host = resolve_container_host_identifier(runner: runner)
+      external_metadata = container_host_selection_metadata(selected_host)
+
+      attributes = { container_host: selected_host }
+      attributes[:external_metadata] = external_metadata if external_metadata.present?
+      attributes
+    end
+
+    def container_host_selection_metadata(selected_host)
+      requested_identifier = params[:container_host].to_s.presence
+      if requested_identifier.present?
+        return {
+          "container_host_selection" => {
+            "explicit_host" => selected_host
+          }
+        }
+      end
+
+      preferred_identifier = @project.effective_preferred_docker_host_identifier.presence
+      return {} if preferred_identifier.blank?
+
+      selection = { "preferred_host" => preferred_identifier }
+      fallback_behavior = current_account.tenant_setting&.docker_host_fallback_behavior
+      selection["fallback"] = fallback_behavior if fallback_behavior.present?
+
+      { "container_host_selection" => selection }
     end
 
     def docker_host_selection_context(runner: nil)

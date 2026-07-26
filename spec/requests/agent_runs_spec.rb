@@ -1672,8 +1672,10 @@ RSpec.describe "AgentRuns" do
         post project_agent_runs_path(project), params: { issue_id: issue.id, container_host: "remote-host" }
 
         expect(response).to redirect_to(project_path(project))
-        expect(AgentRun.last.runner).to eq(codex)
-        expect(AgentRun.last.container_host).to eq("remote-host")
+        expect(AgentRun.last).to have_attributes(runner: codex, container_host: "remote-host")
+        expect(AgentRun.last.external_metadata).to include(
+          "container_host_selection" => include("explicit_host" => "remote-host")
+        )
       end
 
       it "keeps a preferred remote host eligible for Codex when proxy auth is the available fallback" do
@@ -1687,8 +1689,13 @@ RSpec.describe "AgentRuns" do
         post project_agent_runs_path(project), params: { issue_id: issue.id }
 
         expect(response).to redirect_to(project_path(project))
-        expect(AgentRun.last.runner).to eq(codex)
-        expect(AgentRun.last.container_host).to eq("preferred-host")
+        expect(AgentRun.last).to have_attributes(runner: codex, container_host: "preferred-host")
+        expect(AgentRun.last.external_metadata).to include(
+          "container_host_selection" => include(
+            "preferred_host" => "preferred-host",
+            "fallback" => "first_healthy"
+          )
+        )
       end
 
       it "redirects with an error when no runnable runner can be resolved" do
@@ -2466,6 +2473,20 @@ RSpec.describe "AgentRuns" do
         expect(response).to redirect_to(project_agent_run_path(project, new_run))
       end
 
+      it "persists explicit host selection metadata on retries" do
+        create_placement_ready_remote_host(project: project, identifier: "remote-host")
+        codex = configure_codex_create_pr_default!(project)
+        agent_run = create(:agent_run, :failed, project: project, agent_type: "codex", runner: codex)
+
+        post retry_project_agent_run_path(project, agent_run), params: { container_host: "remote-host" }
+
+        expect(response).to redirect_to(project_agent_run_path(project, AgentRun.last))
+        expect(AgentRun.last.container_host).to eq("remote-host")
+        expect(AgentRun.last.external_metadata).to include(
+          "container_host_selection" => include("explicit_host" => "remote-host")
+        )
+      end
+
       it "rejects retrying with an unavailable explicit runner" do
         user.runners.create!(runner_key: "cursor", enabled_for_agent_runs: false)
         agent_run = create(:agent_run, :failed, project: project, agent_type: "claude_code")
@@ -2694,6 +2715,21 @@ RSpec.describe "AgentRuns" do
         expect(response).to redirect_to(project_agent_run_path(project, new_run))
         expect(OrchestrationDecision.last.actor).to eq("refresh_auth_retry")
         without_partial_double_verification { expect(AgentHarness).to have_received(:refresh_auth).with(:claude, token: "valid-token") }
+      end
+
+      it "persists explicit host selection metadata on refresh-auth retries" do
+        create_placement_ready_remote_host(project: project, identifier: "remote-host")
+        codex = configure_codex_create_pr_default!(project)
+        agent_run = create(:agent_run, :auth_expired, project: project, agent_type: "codex", runner: codex, auth_provider: "codex")
+        without_partial_double_verification { allow(AgentHarness).to receive(:refresh_auth) }
+
+        post refresh_auth_project_agent_run_path(project, agent_run), params: { auth_token: "valid-token", container_host: "remote-host" }
+
+        expect(response).to redirect_to(project_agent_run_path(project, AgentRun.last))
+        expect(AgentRun.last.container_host).to eq("remote-host")
+        expect(AgentRun.last.external_metadata).to include(
+          "container_host_selection" => include("explicit_host" => "remote-host")
+        )
       end
 
       it "binds refresh-auth retries to the current user" do
