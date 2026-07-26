@@ -16,7 +16,11 @@
 # This follows the human-review promotion model established by the
 # evolution workflow (approval_state: {required: true, auto_promote: false}).
 class CoordinationExperimentResolutionJob < ApplicationJob
+  include GoodJob::ActiveJobExtensions::Concurrency
+
   queue_as :maintenance
+
+  good_job_control_concurrency_with(total_limit: 1)
 
   def perform
     CoordinationExperiment.running.find_each do |experiment|

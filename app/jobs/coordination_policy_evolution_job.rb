@@ -101,6 +101,7 @@ class CoordinationPolicyEvolutionJob < ApplicationJob
     case type
     when "recovery" then "coordination_failure_recovery"
     when "escalation" then "coordination_escalation_service"
+    else raise ArgumentError, "unsupported orchestration policy type: #{type.inspect}"
     end
   end
 

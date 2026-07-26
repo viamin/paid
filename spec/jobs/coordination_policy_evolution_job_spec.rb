@@ -214,6 +214,13 @@ RSpec.describe CoordinationPolicyEvolutionJob do
       end
     end
 
+    context "when the policy type is unsupported" do
+      it "raises an argument error instead of querying with a nil actor" do
+        expect { job.perform(policy_type: "unexpected") }
+          .to raise_error(ArgumentError, 'unsupported orchestration policy type: "unexpected"')
+      end
+    end
+
     context "when using idempotent workflow IDs" do
       before { create_decomposition_decisions(project, count: described_class::MIN_DECISIONS) }
 

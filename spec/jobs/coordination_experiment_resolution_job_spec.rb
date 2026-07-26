@@ -227,4 +227,10 @@ RSpec.describe CoordinationExperimentResolutionJob do
       end
     end
   end
+
+  describe "GoodJob concurrency" do
+    it "limits the job to one concurrent execution" do
+      expect(described_class.good_job_concurrency_config[:total_limit]).to eq(1)
+    end
+  end
 end
