@@ -115,7 +115,7 @@ RSpec.describe Activities::RebaseBranchActivity do
         allow(container_service).to receive(:execute)
           .with(
             [ "git", "fetch", "--unshallow" ],
-            timeout: Containers::GitOperations::DEFAULT_CLONE_TIMEOUT,
+            timeout: Containers::GitOperations::DEFAULT_UNSHALLOW_TIMEOUT,
             stream: false,
             env: Containers::GitOperations::NETWORK_GIT_ENV
           )

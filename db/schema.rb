@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_24_035127) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_26_042949) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2828,6 +2828,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_24_035127) do
     t.jsonb "fallback_runners", default: [], null: false
     t.integer "git_clone_timeout_seconds", default: 600, null: false
     t.integer "git_push_timeout_seconds", default: 60, null: false
+    t.integer "git_unshallow_timeout_seconds", default: 1800, null: false
     t.integer "github_token_cache_ttl_minutes", default: 60, null: false
     t.integer "issue_goal_idle_timeout_seconds", default: 120, null: false
     t.integer "issue_goal_timeout_seconds", default: 600, null: false
