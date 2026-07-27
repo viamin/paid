@@ -140,7 +140,6 @@ module Containers
       .cache-rubocop/
       .rubocop-cache/
       .rubocop_cache/
-      .aider*
       # Database backups
       backups/
       # Paid heartbeat file (touched by agent CLI hooks)
@@ -246,7 +245,6 @@ module Containers
       backups/
       .pg_log.txt
       .ruby_env.sh
-      .aider*
       .paid-heartbeat
       vendor/bundle/
       vendor/gems/

@@ -159,29 +159,6 @@ RSpec.describe AgentRuns::RunnerResolver do
       expect(agent_type).to eq("claude_code")
     end
 
-    it "uses the runner's required API service type for dynamic aider tenant API-key selection" do
-      project = create(:project)
-      owner = project.created_by
-      aider_runner = create(:runner, user: owner, runner_key: "aider", auth_type: "subscription",
-        config: { "aider" => { "api_provider" => "zai", "model" => "glm-5.1" } })
-      owner.settings.update!(default_agent_runner: aider_runner.routing_key)
-
-      api_key = create(:provider_api_key, user: owner, api_service_type: "zai")
-      create(:tenant_setting, account: project.account,
-        runner_preferences: { "api_key_ids" => { "zai" => api_key.id } })
-
-      runner_id, agent_type = described_class.call(project: project, goal: "create_pr")
-      runner = Runner.find(runner_id)
-
-      expect(agent_type).to eq("aider")
-      expect(runner).to have_attributes(
-        user: owner,
-        runner_key: "aider",
-        auth_type: "api_key",
-        provider_api_key: api_key
-      )
-    end
-
     it "falls back to an account integration credential when no tenant API key is selected" do
       account = create(:account)
       owner = create(:user, :owner, account: account)

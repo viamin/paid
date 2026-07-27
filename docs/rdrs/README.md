@@ -157,7 +157,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 
 ### Agent Execution
 
-- **CLI Abstraction**: agent-harness gem with providers for Claude Code, Cursor, Gemini CLI, GitHub Copilot, Codex, Aider, OpenCode, Kilocode, Pi
+- **CLI Abstraction**: agent-harness gem with providers for Claude Code, Cursor, Gemini CLI, GitHub Copilot, Codex, OpenCode, Kilocode, Pi
 - **Model Selection**: LLM-based meta-agent with rules fallback
 - **Prompts**: Database-stored with A/B testing and automated evolution
 
