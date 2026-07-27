@@ -3,6 +3,12 @@
 require "rails_helper"
 
 RSpec.describe Containers::HostRegistry, :no_db do
+  let(:credentials_class) do
+    Class.new do
+      def dig(*); end
+    end
+  end
+  let(:credentials) { instance_double(credentials_class, dig: nil) }
   let(:env) do
     {
       "CONTAINER_BACKEND" => "multi",
@@ -37,11 +43,17 @@ RSpec.describe Containers::HostRegistry, :no_db do
   end
 
   before do
+    allow(Rails.application).to receive(:credentials).and_return(credentials)
     allow(Containers::Backends::LocalDocker).to receive(:new) do |identifier: "local"|
       instance_double(Containers::Backends::LocalDocker, identifier: identifier)
     end
-    allow(Containers::Backends::RemoteDocker).to receive(:new) do |host:, identifier:, **_kwargs|
-      instance_double(Containers::Backends::RemoteDocker, docker_url: host, identifier: identifier)
+    allow(Containers::Backends::RemoteDocker).to receive(:new) do |host:, identifier:, proxy_external_url: nil, **_kwargs|
+      instance_double(
+        Containers::Backends::RemoteDocker,
+        docker_url: host,
+        identifier: identifier,
+        proxy_external_url: proxy_external_url
+      )
     end
   end
 
@@ -71,5 +83,109 @@ RSpec.describe Containers::HostRegistry, :no_db do
     expect(registry.default_host).to eq("qnap")
     expect(registry.host("qnap").backend.identifier).to eq("qnap")
     expect(registry.host_limit_for("qnap")).to eq(3)
+  end
+
+  it "supports Rails credentials references for remote TLS settings" do
+    env["CONTAINER_BACKENDS_CONFIG"] = credential_backed_remote_config
+    stub_tls_credentials
+
+    registry = described_class.load(env: env)
+
+    expect(registry.default_host).to eq("elguapo")
+    expect(Containers::Backends::RemoteDocker).to have_received(:new).with(
+      host: "tcp://100.113.201.1:2376",
+      identifier: "elguapo",
+      proxy_external_url: "https://paid.example.test",
+      tls_config: {
+        client_cert: "/secure/elguapo/cert.pem",
+        client_key: "/secure/elguapo/key.pem",
+        ssl_ca_file: "/secure/elguapo/ca.pem"
+      }
+    )
+  end
+
+  it "fails clearly when a remote host has an invalid configured proxy external URL" do
+    env["CONTAINER_BACKENDS_CONFIG"] = <<~YAML
+      default_host: elguapo
+      hosts:
+        elguapo:
+          type: remote
+          host: tcp://100.113.201.1:2376
+          proxy_external_url: not a url
+          tls:
+            ca_file: /tmp/elguapo-ca.pem
+            client_cert: /tmp/elguapo-cert.pem
+            client_key: /tmp/elguapo-key.pem
+    YAML
+
+    expect {
+      described_class.load(env: env)
+    }.to raise_error(
+      ArgumentError,
+      /Docker host "elguapo" is invalid: Invalid proxy_external_url for Docker host "elguapo"/
+    )
+  end
+
+  it "fails clearly when a remote host has incomplete TLS configuration" do
+    env["CONTAINER_BACKENDS_CONFIG"] = <<~YAML
+      default_host: local
+      hosts:
+        local:
+          type: local
+        elguapo:
+          type: remote
+          host: tcp://100.113.201.1:2376
+          tls:
+            client_cert: /tmp/elguapo-cert.pem
+    YAML
+    allow(Containers::Backends::RemoteDocker).to receive(:new)
+      .and_raise(ArgumentError, "Remote Docker TLS config requires REMOTE_DOCKER_KEY, REMOTE_DOCKER_CA")
+
+    expect {
+      described_class.load(env: env)
+    }.to raise_error(
+      ArgumentError,
+      /Docker host "elguapo" is invalid: Remote Docker TLS config requires REMOTE_DOCKER_KEY, REMOTE_DOCKER_CA/
+    )
+  end
+
+  it "fails clearly when default_host is not defined" do
+    env["CONTAINER_BACKENDS_CONFIG"] = <<~YAML
+      default_host: elguapo
+      hosts:
+        local:
+          type: local
+    YAML
+
+    expect {
+      described_class.load(env: env)
+    }.to raise_error(
+      ArgumentError,
+      /CONTAINER_BACKENDS_CONFIG default_host "elguapo" is not defined under hosts/
+    )
+  end
+
+  def credential_backed_remote_config
+    <<~YAML
+      default_host: elguapo
+      hosts:
+        elguapo:
+          type: remote
+          host: tcp://100.113.201.1:2376
+          proxy_external_url: https://paid.example.test
+          tls:
+            ca_file:
+              credentials: [docker_hosts, elguapo, ca_file]
+            client_cert:
+              credential: docker_hosts.elguapo.client_cert
+            client_key:
+              credential: docker_hosts.elguapo.client_key
+    YAML
+  end
+
+  def stub_tls_credentials
+    allow(credentials).to receive(:dig).with(:docker_hosts, :elguapo, :ca_file).and_return("/secure/elguapo/ca.pem")
+    allow(credentials).to receive(:dig).with(:docker_hosts, :elguapo, :client_cert).and_return("/secure/elguapo/cert.pem")
+    allow(credentials).to receive(:dig).with(:docker_hosts, :elguapo, :client_key).and_return("/secure/elguapo/key.pem")
   end
 end

@@ -7,6 +7,7 @@ RSpec.describe Containers::Backends::Resolver, :no_db do
   let(:remote_backend) { instance_double(Containers::Backends::RemoteDocker, identifier: "worker-1", remote?: true) }
   let(:local_backend) { instance_double(Containers::Backends::LocalDocker, identifier: "local", remote?: false) }
   let(:qnap_backend) { instance_double(Containers::Backends::LocalDocker, identifier: "qnap", remote?: false) }
+  let(:swarm_backend) { instance_double(Containers::Backends::Swarm, identifier: "swarm", remote?: false) }
   let(:multi_host_registry) do
     Containers::HostRegistry::Registry.new(
       default_host: "qnap",
@@ -52,6 +53,27 @@ RSpec.describe Containers::Backends::Resolver, :no_db do
     Rails.application.reloader.prepare!
   end
 
+  def registry_with_local_and_elguapo(default_host:)
+    Containers::HostRegistry::Registry.new(
+      default_host: default_host,
+      fallback_policy: Containers::HostRegistry::FALLBACK_DISABLED,
+      hosts: [
+        Containers::HostRegistry::HostDefinition.new(
+          identifier: "local",
+          backend: local_backend,
+          max_concurrent_runs: 2,
+          fallback_enabled: true
+        ),
+        Containers::HostRegistry::HostDefinition.new(
+          identifier: "elguapo",
+          backend: instance_double(Containers::Backends::RemoteDocker, identifier: "elguapo", remote?: true),
+          max_concurrent_runs: 4,
+          fallback_enabled: true
+        )
+      ]
+    )
+  end
+
   it "warns when the remote backend is active without an external proxy URL override" do
     ENV["CONTAINER_BACKEND"] = "remote"
     ENV.delete("PAID_PROXY_EXTERNAL_URL")
@@ -65,6 +87,62 @@ RSpec.describe Containers::Backends::Resolver, :no_db do
     )
 
     run_initializer
+  end
+
+  it "keeps local mode behavior unchanged" do
+    ENV["CONTAINER_BACKEND"] = "local"
+
+    allow(described_class).to receive(:for).with(:local).and_return(local_backend)
+    allow(Containers::Backends::RemoteDocker).to receive(:from_env).and_return(nil)
+
+    run_initializer
+
+    expect(described_class).to have_received(:register).with(:local, kind_of(Proc))
+    expect(described_class).to have_received(:register).with(:swarm, kind_of(Proc))
+    expect(Rails.application.config.x.container_backend).to eq(local_backend)
+  end
+
+  it "keeps swarm mode behavior unchanged" do
+    ENV["CONTAINER_BACKEND"] = "swarm"
+
+    allow(described_class).to receive(:for).with(:swarm).and_return(swarm_backend)
+    allow(Containers::Backends::RemoteDocker).to receive(:from_env).and_return(nil)
+
+    run_initializer
+
+    expect(described_class).to have_received(:register).with(:local, kind_of(Proc))
+    expect(described_class).to have_received(:register).with(:swarm, kind_of(Proc))
+    expect(Rails.application.config.x.container_backend).to eq(swarm_backend)
+  end
+
+  it "registers stable named hosts in multi-host mode and uses the configured default" do
+    multi_host_registry = registry_with_local_and_elguapo(default_host: "local")
+    ENV["CONTAINER_BACKEND"] = "multi"
+    ENV["PAID_PROXY_EXTERNAL_URL_ELGUAPO"] = "https://elguapo.example.test:3443"
+
+    allow(Containers::HostRegistry).to receive(:load).and_return(multi_host_registry)
+    allow(described_class).to receive(:for).with(:local).and_return(local_backend)
+
+    run_initializer
+
+    expect(described_class).to have_received(:register).with("local", kind_of(Proc))
+    expect(described_class).to have_received(:register).with("elguapo", kind_of(Proc))
+    expect(described_class).to have_received(:register).with(:local, kind_of(Proc))
+    expect(Rails.application.config.x.container_backend).to eq(local_backend)
+  end
+
+  it "fails clearly when multi-host mode has no configured hosts" do
+    ENV["CONTAINER_BACKEND"] = "multi"
+    allow(Containers::HostRegistry).to receive(:load).and_return(
+      Containers::HostRegistry::Registry.new(
+        default_host: nil,
+        fallback_policy: Containers::HostRegistry::FALLBACK_DISABLED,
+        hosts: []
+      )
+    )
+
+    expect { run_initializer }
+      .to raise_error(ArgumentError, /CONTAINER_BACKENDS_CONFIG must define at least one host/)
   end
 
   it "does not warn when the remote backend has an external proxy URL" do

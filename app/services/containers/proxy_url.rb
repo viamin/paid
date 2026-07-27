@@ -20,17 +20,28 @@ module Containers
     end
 
     def validate_external_url!(url)
+      validate_external_url_from!(url, source: "PAID_PROXY_EXTERNAL_URL")
+    end
+
+    def validate_external_url_from!(url, source:)
       uri = URI.parse(url)
-      raise ArgumentError, "PAID_PROXY_EXTERNAL_URL must include scheme and host" if uri.scheme.blank? || uri.host.blank?
-      raise ArgumentError, "PAID_PROXY_EXTERNAL_URL must use http or https" unless uri.scheme.in?(%w[http https])
-      raise ArgumentError, "PAID_PROXY_EXTERNAL_URL port must be between 1 and 65535" unless uri.port.between?(1, 65_535)
+      raise ArgumentError, "#{source} must include scheme and host" if uri.scheme.blank? || uri.host.blank?
+      raise ArgumentError, "#{source} must use http or https" unless uri.scheme.in?(%w[http https])
+      raise ArgumentError, "#{source} port must be between 1 and 65535" unless uri.port.between?(1, 65_535)
 
       url
     rescue URI::InvalidURIError => e
-      raise ArgumentError, "Invalid PAID_PROXY_EXTERNAL_URL: #{e.message}"
+      raise ArgumentError, "Invalid #{source}: #{e.message}"
     end
 
     def external_url_for(backend)
+      if backend.respond_to?(:proxy_external_url) && backend.proxy_external_url.present?
+        return validate_external_url_from!(
+          backend.proxy_external_url,
+          source: "proxy_external_url for backend #{backend.identifier.inspect}"
+        )
+      end
+
       specific_key = "PAID_PROXY_EXTERNAL_URL_#{env_key_suffix(backend.identifier)}"
       ENV[specific_key].presence || ENV["PAID_PROXY_EXTERNAL_URL"].presence
     end
