@@ -103,6 +103,7 @@ RSpec.describe Containers::Provision do
   def build_remote_backend_without_host_paths(container, &create_container)
     backend = instance_double(
       Containers::Backends::Base,
+      identifier: "worker-1",
       remote?: false,
       supports_host_paths?: false,
       start_container: true,
@@ -453,7 +454,7 @@ RSpec.describe Containers::Provision do
 
       it "logs the provision start and success" do
         expect(agent_run).to receive(:log!).with("system", "container.provision.start",
-          metadata: hash_including(image: "paid-agent:latest")).ordered
+          metadata: hash_including(image: "paid-agent:latest", backend: "local")).ordered
         expect(agent_run).to receive(:log!).with("system", "container.heartbeat_dir_prepared",
           metadata: hash_including(:path)).ordered
         expect(agent_run).to receive(:log!).with("system", "container.network.ready",
@@ -1099,7 +1100,7 @@ RSpec.describe Containers::Provision do
       it "logs the failure" do
         allow(agent_run).to receive(:log!)
         expect(agent_run).to receive(:log!).with("system", "container.provision.start",
-          metadata: hash_including(image: anything))
+          metadata: hash_including(image: anything, backend: "local"))
         expect(agent_run).to receive(:log!).with("system", "container.provision.failed",
           metadata: hash_including(error: anything))
 
