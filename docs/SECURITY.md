@@ -443,8 +443,8 @@ Agent-run provider auth modes have the following runtime secret contract:
 
 | Auth mode | Providers | Runtime material | Notes |
 | --- | --- | --- | --- |
-| Paid-managed proxy key | Claude, Codex, Gemini, Cursor, Aider | Run id, proxy token, provider proxy base URL | Provider key stays on the Rails service and is added by the secrets proxy. |
-| Stored provider API key | Claude, Codex, Gemini, Cursor, Aider | Run-scoped proxy credential plus provider entry id | Provider key stays server-side; the proxy validates the provider belongs to the run owner before forwarding. |
+| Paid-managed proxy key | Claude, Codex, Gemini, Cursor | Run id, proxy token, provider proxy base URL | Provider key stays on the Rails service and is added by the secrets proxy. |
+| Stored provider API key | Claude, Codex, Gemini, Cursor | Run-scoped proxy credential plus provider entry id | Provider key stays server-side; the proxy validates the provider belongs to the run owner before forwarding. |
 | Subscription auth | Claude, Codex, Gemini, Copilot | CLI login state mounted or copied into the runtime | Explicit exception: the CLI needs native account session files. |
 | Direct-outbound API key | OpenCode, KiloCode | Provider API key in runtime env or config | Explicit exception: these entries can target upstream APIs outside the proxy coverage. |
 

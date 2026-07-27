@@ -103,6 +103,7 @@ RSpec.describe Containers::Provision do
   def build_remote_backend_without_host_paths(container, &create_container)
     backend = instance_double(
       Containers::Backends::Base,
+      identifier: "worker-1",
       remote?: false,
       supports_host_paths?: false,
       start_container: true,
@@ -453,13 +454,13 @@ RSpec.describe Containers::Provision do
 
       it "logs the provision start and success" do
         expect(agent_run).to receive(:log!).with("system", "container.provision.start",
-          metadata: hash_including(image: "paid-agent:latest")).ordered
+          metadata: hash_including(image: "paid-agent:latest", backend: "local")).ordered
         expect(agent_run).to receive(:log!).with("system", "container.heartbeat_dir_prepared",
           metadata: hash_including(:path)).ordered
         expect(agent_run).to receive(:log!).with("system", "container.network.ready",
           metadata: hash_including(network: NetworkPolicy::NETWORK_NAME)).ordered
         expect(agent_run).to receive(:log!).with("system", "container.ownership_batch_fixed",
-          metadata: hash_including(dirs_count: 12)).ordered
+          metadata: hash_including(dirs_count: 11)).ordered
         expect(agent_run).to receive(:log!).with("system", "container.codex_config_seeded",
           metadata: hash_including(auth_source: "api_key_proxy")).ordered
         expect(agent_run).to receive(:log!).with("system", "container.firewall.applied",
@@ -488,7 +489,6 @@ RSpec.describe Containers::Provision do
               script.include?("/home/agent/.cache") &&
               script.include?("/home/agent/.gemini") &&
               script.include?("/home/agent/.cursor-agent") &&
-              script.include?("/home/agent/.aider") &&
               script.include?("chown agent:agent /home/agent/.codex")
           } ],
           user: "root"
@@ -724,18 +724,6 @@ RSpec.describe Containers::Provision do
           expect(tmpfs).to have_key("/home/agent/.copilot")
           expect(tmpfs["/home/agent/.copilot"]).to include("mode=0700")
           expect(tmpfs["/home/agent/.copilot"]).to include("size=#{64 * 1024 * 1024}")
-          mock_container
-        end
-
-        service.provision
-      end
-
-      it "configures a writable tmpfs for Aider CLI config" do
-        expect(Docker::Container).to receive(:create) do |config|
-          tmpfs = config["HostConfig"]["Tmpfs"]
-          expect(tmpfs).to have_key("/home/agent/.aider")
-          expect(tmpfs["/home/agent/.aider"]).to include("mode=0700")
-          expect(tmpfs["/home/agent/.aider"]).to include("size=#{64 * 1024 * 1024}")
           mock_container
         end
 
@@ -1099,7 +1087,7 @@ RSpec.describe Containers::Provision do
       it "logs the failure" do
         allow(agent_run).to receive(:log!)
         expect(agent_run).to receive(:log!).with("system", "container.provision.start",
-          metadata: hash_including(image: anything))
+          metadata: hash_including(image: anything, backend: "local"))
         expect(agent_run).to receive(:log!).with("system", "container.provision.failed",
           metadata: hash_including(error: anything))
 

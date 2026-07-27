@@ -5,7 +5,6 @@ module Runners
     RUNNER_KEY_TO_MODEL_PROVIDER = {
       "claude" => "anthropic",
       "cursor" => "anthropic",
-      "aider" => "anthropic",
       "codex" => "openai",
       "gemini" => "google"
     }.freeze

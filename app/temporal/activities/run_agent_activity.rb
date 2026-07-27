@@ -2936,7 +2936,7 @@ module Activities
         ]
       when "codex"
         [ %(OPENAI_HEADER_X_PAID_PROVIDER_ID="$PAID_PROVIDER_ID") ]
-      when "claude", "cursor", "aider"
+      when "claude", "cursor"
         [
           %(ANTHROPIC_BASE_URL="$PAID_PROXY_URL/api/proxy/anthropic"),
           %(ANTHROPIC_HEADER_X_AGENT_RUN_ID="$AGENT_RUN_ID"),

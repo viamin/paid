@@ -295,6 +295,7 @@ class ProcessRunQueueJob < ApplicationJob
         # or claims a real resource. This avoids leaving the run pointing
         # at a host that never owned it when the budget check, workflow
         # start, or pool/provision step fails after this point.
+        log_host_selection(agent_run, host_selection, selected_host, admission)
         result = start_claimed_run(agent_run, planned_container_host: selected_host)
         if result == :budget_blocked
           # Budget-blocked is not a workflow failure and not a real start —
@@ -480,6 +481,7 @@ class ProcessRunQueueJob < ApplicationJob
       agent_run_id: agent_run.id,
       project_id: agent_run.project_id,
       goal: agent_run.goal,
+      requested_host: host_selection.requested_host,
       selected_host: admission[:selected_host],
       host_active_count: admission[:host_active_count],
       host_max_concurrent_runs: admission[:host_max_concurrent_runs],
@@ -487,6 +489,7 @@ class ProcessRunQueueJob < ApplicationJob
       selection_source: host_selection.selection_source,
       fallback_policy: host_selection.fallback_policy,
       candidate_hosts: host_selection.candidate_hosts,
+      fallback_chain: host_selection_fallback_chain(host_selection),
       reason: admission[:reason],
       mode: admission[:mode],
       available_slots: admission[:available_slots],
@@ -507,8 +510,46 @@ class ProcessRunQueueJob < ApplicationJob
       requested_host: host_selection.requested_host,
       selection_source: host_selection.selection_source,
       fallback_policy: host_selection.fallback_policy,
-      compatibility_failures: host_selection.compatibility_failures
+      fallback_chain: host_selection_fallback_chain(host_selection),
+      compatibility_failures: host_selection.compatibility_failures,
+      health_failures: host_selection.health_failures
     )
+  end
+
+  def log_host_selection(agent_run, host_selection, selected_host, admission)
+    Rails.logger.info(
+      message: "process_run_queue.host_selected",
+      agent_run_id: agent_run.id,
+      project_id: agent_run.project_id,
+      goal: agent_run.goal,
+      requested_host: host_selection.requested_host,
+      selected_host: selected_host,
+      selection_source: host_selection.selection_source,
+      selection_reason: host_selection_reason(host_selection, selected_host),
+      fallback_policy: host_selection.fallback_policy,
+      fallback_chain: host_selection_fallback_chain(host_selection),
+      candidate_hosts: host_selection.candidate_hosts,
+      compatibility_failures: host_selection.compatibility_failures,
+      health_failures: host_selection.health_failures,
+      host_active_count: admission[:host_active_count],
+      host_max_concurrent_runs: admission[:host_max_concurrent_runs],
+      host_available_slots: admission[:host_available_slots]
+    )
+  end
+
+  def host_selection_reason(host_selection, selected_host)
+    return "fallback" if selected_host.to_s != host_selection.requested_host.to_s
+
+    host_selection.selection_source
+  end
+
+  def host_selection_fallback_chain(host_selection)
+    [
+      host_selection.requested_host,
+      *host_selection.candidate_hosts,
+      *host_selection.compatibility_failures.keys,
+      *host_selection.health_failures.keys
+    ].compact_blank.uniq
   end
 
   # Returns the dispatch circuit-breaker decision for the next queued run:

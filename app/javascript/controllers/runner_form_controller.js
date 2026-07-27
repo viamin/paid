@@ -18,7 +18,6 @@ function loadRunnerApiServiceType() {
     claude: "anthropic",
     cursor: "anthropic",
     codex: "openai",
-    aider: "anthropic",
     gemini: "google",
     openrouter_free: "openrouter",
     openrouter_pareto: "openrouter",
@@ -27,7 +26,7 @@ function loadRunnerApiServiceType() {
 
 const RUNNER_API_SERVICE_TYPE = loadRunnerApiServiceType()
 
-// OpenCode, KiloCode, Aider, Pi, and Oh My Pi support multiple upstream API providers, each with its
+// OpenCode, KiloCode, Pi, and Oh My Pi support multiple upstream API providers, each with its
 // own API key type. The mapping is derived from data-service-type attributes on
 // the <option> elements rendered by the backend (Runner::DIRECT_OUTBOUND_API_PROVIDERS),
 // keeping the backend as the single source of truth.
@@ -53,7 +52,7 @@ function loadDirectOutboundApiProviderServiceTypes() {
 }
 
 // Runner keys that use dynamic api_provider selection.
-const DYNAMIC_API_RUNNER_KEYS = new Set(["opencode", "kilocode", "aider", "pi", "omp"])
+const DYNAMIC_API_RUNNER_KEYS = new Set(["opencode", "kilocode", "pi", "omp"])
 
 export default class extends Controller {
   static values = {
@@ -70,7 +69,6 @@ export default class extends Controller {
     "apiKeyOption",
     "opencodeSettings",
     "kilocodeSettings",
-    "aiderSettings",
     "piSettings",
     "ompSettings",
     "directOutboundApiProviderSelect",
@@ -123,7 +121,6 @@ export default class extends Controller {
     const isApiKey = this.runnerApiKeyMode()
     const showOpenCodeSettings = isApiKey && runnerKey === "opencode"
     const showKiloCodeSettings = isApiKey && runnerKey === "kilocode"
-    const showAiderSettings = isApiKey && runnerKey === "aider"
     const showPiSettings = isApiKey && runnerKey === "pi"
     const showOmpSettings = isApiKey && runnerKey === "omp"
 
@@ -138,13 +135,6 @@ export default class extends Controller {
       el.hidden = !showKiloCodeSettings
       el.querySelectorAll("select, input").forEach((control) => {
         control.disabled = !showKiloCodeSettings
-      })
-    })
-
-    this.aiderSettingsTargets.forEach((el) => {
-      el.hidden = !showAiderSettings
-      el.querySelectorAll("select, input").forEach((control) => {
-        control.disabled = !showAiderSettings
       })
     })
 
@@ -218,7 +208,7 @@ export default class extends Controller {
   requiredApiServiceTypeFor(runnerKey) {
     if (!runnerKey) return null
 
-    // OpenCode, KiloCode, Aider, Pi, and Oh My Pi determine their required API key type from
+    // OpenCode, KiloCode, Pi, and Oh My Pi determine their required API key type from
     // the selected api_provider dropdown.
     if (DYNAMIC_API_RUNNER_KEYS.has(runnerKey)) {
       const apiProvider = this.currentDirectOutboundApiProvider(runnerKey)

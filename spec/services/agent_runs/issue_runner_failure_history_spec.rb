@@ -191,12 +191,12 @@ RSpec.describe AgentRuns::IssueRunnerFailureHistory do
           { "runner" => "claude_code", "success" => false, "error_type" => "error" },
           { "runner" => "codex", "success" => false, "error_type" => "timeout" },
           { "runner" => "cursor", "success" => false, "error_type" => "infinite_loop" },
-          { "runner" => "aider", "success" => false, "error_type" => "preflight_timeout" }
+          { "runner" => "gemini", "success" => false, "error_type" => "preflight_timeout" }
         ])
     end
 
     it "counts all execution failure types" do
-      expect(call).to eq("claude" => 1, "codex" => 1, "cursor" => 1, "aider" => 1)
+      expect(call).to eq("claude" => 1, "codex" => 1, "cursor" => 1, "gemini" => 1)
     end
   end
 end

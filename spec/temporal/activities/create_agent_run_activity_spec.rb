@@ -100,10 +100,10 @@ RSpec.describe Activities::CreateAgentRunActivity do
     end
 
     it "accepts a custom agent_type" do
-      result = activity.execute(project_id: project.id, issue_id: issue.id, agent_type: "aider")
+      result = activity.execute(project_id: project.id, issue_id: issue.id, agent_type: "gemini")
 
       agent_run = AgentRun.find(result[:agent_run_id])
-      expect(agent_run.agent_type).to eq("aider")
+      expect(agent_run.agent_type).to eq("gemini")
       expect(result[:runner_attempt_count]).to eq(1)
     end
 
@@ -476,10 +476,10 @@ RSpec.describe Activities::CreateAgentRunActivity do
     end
 
     it "returns deduplicated runner_attempt_count when fallback is enabled" do
-      allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor aider])
+      allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor codex])
       project.created_by.runners.find_or_create_by!(runner_key: "cursor")
-      project.created_by.runners.find_or_create_by!(runner_key: "aider")
-      project.created_by.settings.update!(fallback_enabled: true, fallback_runners: %w[claude cursor aider])
+      project.created_by.runners.find_or_create_by!(runner_key: "codex")
+      project.created_by.settings.update!(fallback_enabled: true, fallback_runners: %w[claude cursor codex])
 
       result = activity.execute(project_id: project.id, issue_id: issue.id, agent_type: "claude_code")
 
@@ -487,7 +487,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
     end
 
     it "counts configured fallback-only providers even when not explicitly ordered yet" do
-      allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor aider])
+      allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor codex])
       project.created_by.runners.find_or_create_by!(
         runner_key: "cursor",
         enabled_for_agent_runs: false,
@@ -511,7 +511,7 @@ RSpec.describe Activities::CreateAgentRunActivity do
 
     it "counts fallbacks for an explicitly selected runner only when fallback is enabled" do
       primary_provider = create(:runner, user: project.created_by, runner_key: "cursor")
-      fallback_provider = create(:runner, user: project.created_by, runner_key: "aider")
+      fallback_provider = create(:runner, user: project.created_by, runner_key: "codex")
       project.created_by.runners.find_by!(runner_key: "claude").update!(enabled_for_fallback: false)
       project.created_by.settings.update!(fallback_enabled: true, fallback_runners: [ fallback_provider.routing_key ])
 

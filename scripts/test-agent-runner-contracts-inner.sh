@@ -9,7 +9,7 @@
 # Usage (called by test-agent-runner-contracts.sh):
 #   docker run --rm \
 #     -v ./scripts/test-agent-runner-contracts-inner.sh:/tmp/contract-test.sh:ro \
-#     -e CONTAINER_EXECUTABLE_KEYS="aider claude codex cursor gemini kilocode opencode openrouter_free pi omp" \
+#     -e CONTAINER_EXECUTABLE_KEYS="claude codex cursor gemini kilocode opencode openrouter_free pi omp" \
 #     -e CODEX_NOTIFY_LINE='notify = ["sh", "-lc", "date +%s > /workspace/.paid-heartbeat"]' \
 #     -e CODEX_CONFIG_TOML_BODY='[chatgpt]...' \
 #     paid-agent:latest bash /tmp/contract-test.sh
@@ -33,7 +33,6 @@ pass() {
 # This mapping must stay in sync with docker/agent/Dockerfile installs.
 declare -A RUNNER_CLI_BINARY
 RUNNER_CLI_BINARY=(
-    [aider]=aider
     [claude]=claude
     [codex]=codex
     [copilot]=copilot

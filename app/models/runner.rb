@@ -94,9 +94,6 @@ class Runner < ApplicationRecord
   }.freeze
   MIN_PREFLIGHT_TIMEOUT_SECONDS = 1
 
-  AIDER_API_PROVIDER_KEYS = DIRECT_OUTBOUND_API_PROVIDERS.keys.freeze
-  AIDER_DEFAULT_API_PROVIDER = "openrouter"
-
   # Pi supports multiple upstream API-key providers selected via --provider.
   # Keep this list aligned to providers Paid can represent as ProviderApiKey
   # records and that Pi documents as built-in API-key auth targets.
@@ -187,7 +184,6 @@ class Runner < ApplicationRecord
   validate :api_key_entry_must_be_unique
   validate :opencode_api_key_config_must_be_valid
   validate :kilocode_api_key_config_must_be_valid
-  validate :aider_api_key_config_must_be_valid
   validate :pi_api_key_config_must_be_valid
   validate :omp_api_key_config_must_be_valid
   validate :direct_outbound_config_models_must_exist_in_catalog
@@ -238,7 +234,6 @@ class Runner < ApplicationRecord
     model_id = case runner_key
     when "opencode" then opencode_model_id
     when "kilocode" then kilocode_model_id
-    when "aider" then aider_model_id
     when "pi" then pi_model_id
     when "omp" then omp_model_id
     end
@@ -384,22 +379,6 @@ class Runner < ApplicationRecord
     DIRECT_OUTBOUND_API_PROVIDERS.dig(kilocode_api_provider, :service_type)
   end
 
-  def aider_config
-    config.is_a?(Hash) ? config.fetch("aider", {}) : {}
-  end
-
-  def aider_api_provider
-    return nil unless runner_key == "aider"
-
-    aider_config["api_provider"].presence || AIDER_DEFAULT_API_PROVIDER
-  end
-
-  def aider_model_id
-    return nil unless runner_key == "aider"
-
-    aider_config["model"].to_s.presence
-  end
-
   def pi_config
     config.is_a?(Hash) ? config.fetch("pi", {}) : {}
   end
@@ -444,17 +423,6 @@ class Runner < ApplicationRecord
     OMP_API_PROVIDERS.dig(omp_api_provider, :service_type)
   end
 
-  def aider_required_api_service_type
-    return nil unless runner_key == "aider"
-
-    DIRECT_OUTBOUND_API_PROVIDERS.dig(aider_api_provider, :service_type)
-  end
-
-  # NOTE: Aider is excluded here because the execution path does not yet have
-  # direct-outbound plumbing (no agent_harness_runner_runtime, no
-  # direct_outbound_exec_env/exec_command support). The config infrastructure
-  # (aider_config, aider_api_provider, aider_model_id) exists as prep work;
-  # add aider_direct_outbound? here once the runtime path is implemented.
   def requires_direct_outbound?
     opencode_direct_outbound? || kilocode_direct_outbound? || pi_direct_outbound? || omp_direct_outbound? || openrouter_free_direct_outbound? || openrouter_pareto_direct_outbound?
   end
@@ -630,7 +598,6 @@ class Runner < ApplicationRecord
     case runner_key
     when "kilocode" then kilocode_model_id
     when "opencode" then opencode_model_id
-    when "aider" then aider_model_id
     when "pi" then pi_model_id
     when "omp" then omp_model_id
     end
@@ -640,7 +607,6 @@ class Runner < ApplicationRecord
     case runner_key
     when "kilocode" then kilocode_required_api_service_type
     when "opencode" then opencode_required_api_service_type
-    when "aider" then aider_required_api_service_type
     when "pi" then pi_required_api_service_type
     when "omp" then omp_required_api_service_type
     end
@@ -757,7 +723,7 @@ class Runner < ApplicationRecord
   # instance of. Such keys are hidden from the "Add Runner" UI once the user
   # already has one, and free-model rotation is scoped to them. Today only
   # the openrouter_free runner is single-instance; other api_key runners
-  # (opencode, kilocode, aider, pi, omp) legitimately allow duplicates when their
+  # (opencode, kilocode, pi, omp) legitimately allow duplicates when their
   # API key or name differs.
   def self.single_instance_runner_key?(runner_key)
     runner_key.to_s == OPENROUTER_FREE_RUNNER_KEY
@@ -939,10 +905,6 @@ class Runner < ApplicationRecord
   end
 
   def direct_outbound_capable_runner?
-    # NOTE: Aider is intentionally excluded — it is still mapped as a standard
-    # Anthropic runner in DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER,
-    # so including it here would cause clear_stale_direct_outbound_tier_models
-    # to erase its valid standard tier mappings on every save.
     %w[kilocode opencode openrouter_free openrouter_pareto pi omp].include?(runner_key)
   end
 
@@ -1048,8 +1010,6 @@ class Runner < ApplicationRecord
       config.dig("opencode", "model")
     when "kilocode"
       config.dig("kilocode", "model")
-    when "aider"
-      config.dig("aider", "model")
     when "pi"
       config.dig("pi", "model")
     when "omp"
@@ -1465,27 +1425,6 @@ class Runner < ApplicationRecord
     end
   end
 
-  # NOTE: The runner UI/controller does not yet permit nested aider config
-  # keys (api_provider, model). This validation is prep work for when the
-  # controller is updated to support Aider API-key runners.
-  #
-  # Guard: RunnerResolver#tenant_api_key_runner auto-materializes api_key
-  # runners without config. Those tenant-key entries must remain valid —
-  # only enforce config requirements when aider-specific config is present.
-  def aider_api_key_config_must_be_valid
-    return unless runner_key == "aider"
-    return unless api_key?
-    return unless config.is_a?(Hash) && config.key?("aider")
-
-    unless AIDER_API_PROVIDER_KEYS.include?(aider_api_provider)
-      errors.add(:config, "must include a supported Aider API provider")
-    end
-
-    if aider_model_id.blank?
-      errors.add(:config, "must include an Aider model id")
-    end
-  end
-
   def pi_api_key_config_must_be_valid
     return unless runner_key == "pi"
     return unless api_key?
@@ -1529,7 +1468,6 @@ class Runner < ApplicationRecord
   def required_api_service_type
     return opencode_required_api_service_type if runner_key == "opencode"
     return kilocode_required_api_service_type if runner_key == "kilocode"
-    return aider_required_api_service_type if runner_key == "aider"
     return pi_required_api_service_type if runner_key == "pi"
     return omp_required_api_service_type if runner_key == "omp"
 
@@ -1549,13 +1487,6 @@ class Runner < ApplicationRecord
       api_key? &&
       KILOCODE_API_PROVIDER_KEYS.include?(kilocode_api_provider) &&
       kilocode_model_id.present?
-  end
-
-  def aider_direct_outbound?
-    runner_key == "aider" &&
-      api_key? &&
-      AIDER_API_PROVIDER_KEYS.include?(aider_api_provider) &&
-      aider_model_id.present?
   end
 
   def pi_direct_outbound?
@@ -1592,11 +1523,6 @@ class Runner < ApplicationRecord
       required_api_service_type == "openrouter"
   end
 
-  # NOTE: Aider is intentionally absent — only direct_outbound_capable_runner?
-  # runners (kilocode/opencode/openrouter_free/pi/omp) reach this method via
-  # direct_outbound_config_models_must_exist_in_catalog. If aider joins that
-  # set in the future, add the case branch back so the validation error names
-  # "Aider" instead of the raw runner_key.
   def direct_outbound_runner_label
     case runner_key
     when "opencode" then "OpenCode"

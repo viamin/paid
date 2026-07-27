@@ -78,12 +78,6 @@ module ProviderSmokeHelpers
       auth_type: "subscription",
       label: "Gemini subscription"
     ),
-    "aider-subscription" => Scenario.new(
-      name: "aider-subscription",
-      provider_key: "aider",
-      auth_type: "subscription",
-      label: "Aider subscription"
-    ),
     "opencode-openrouter" => Scenario.new(
       name: "opencode-openrouter",
       provider_key: "opencode",

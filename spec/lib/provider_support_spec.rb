@@ -37,10 +37,6 @@ RSpec.describe ProviderSupport do
       expect(described_class::CONTAINER_EXECUTABLE_PROVIDER_KEYS).to include("copilot")
     end
 
-    it "includes aider" do
-      expect(described_class::CONTAINER_EXECUTABLE_PROVIDER_KEYS).to include("aider")
-    end
-
     it "includes pi" do
       expect(described_class::CONTAINER_EXECUTABLE_PROVIDER_KEYS).to include("pi")
     end
@@ -73,11 +69,6 @@ RSpec.describe ProviderSupport do
       expect(keys).to include("copilot")
     end
 
-    it "includes aider when backed by the agent harness registry" do
-      keys = described_class.container_executable_provider_keys
-      expect(keys).to include("aider")
-    end
-
     it "includes pi when backed by the agent harness registry" do
       keys = described_class.container_executable_provider_keys
       expect(keys).to include("pi")
@@ -107,10 +98,6 @@ RSpec.describe ProviderSupport do
 
     it "returns true for copilot" do
       expect(described_class.container_executable_provider_key?("copilot")).to be true
-    end
-
-    it "returns true for aider" do
-      expect(described_class.container_executable_provider_key?("aider")).to be true
     end
 
     it "returns true for pi" do
@@ -346,7 +333,6 @@ RSpec.describe ProviderSupport do
     describe "CLI binary mapping completeness" do
       it "has a CLI binary mapping for every container-executable provider" do
         cli_binary_for = {
-          "aider" => "aider",
           "claude" => "claude",
           "codex" => "codex",
           "copilot" => "copilot",

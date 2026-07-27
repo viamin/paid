@@ -485,17 +485,6 @@ RUN if [ -z "${CURSOR_ARTIFACT_URL}" ]; then echo "ERROR: CURSOR_ARTIFACT_URL bu
     && ln -sf "/opt/cursor-agent/${CURSOR_BINARY_NAME}" "${CURSOR_GLOBAL_PATH}" \
     && rm -rf /tmp/cursor-artifact.tar.gz /tmp/dist-package
 
-# Install Aider CLI via agent-harness install contract.
-# agent-harness owns the Aider install recipe, uv bootstrap, and version pin.
-# The install command is extracted at build time by
-# scripts/build-agent-image.sh / agent-image.yml — Paid no longer pins these versions.
-ARG AIDER_INSTALL_COMMAND
-RUN if [ -z "${AIDER_INSTALL_COMMAND}" ]; then \
-        echo "ERROR: AIDER_INSTALL_COMMAND build-arg is required (sourced from agent-harness)" >&2; \
-        exit 1; \
-    fi \
-    && eval "${AIDER_INSTALL_COMMAND}"
-
 # Install git credential helper for proxy-based authentication.
 # This allows git clone/push inside the container without exposing GitHub tokens.
 COPY scripts/git-credential-paid /usr/local/bin/git-credential-paid

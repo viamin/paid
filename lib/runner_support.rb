@@ -11,13 +11,13 @@ module RunnerSupport
   #
   # NOTE: Inclusion here does NOT mean the runner's CLI is installed in the
   # agent Docker container. For container execution, see CONTAINER_EXECUTABLE_RUNNER_KEYS.
-  APP_RUNNER_KEYS = %w[claude cursor codex copilot aider gemini opencode openrouter_free openrouter_pareto kilocode pi omp].freeze
+  APP_RUNNER_KEYS = %w[claude cursor codex copilot gemini opencode openrouter_free openrouter_pareto kilocode pi omp].freeze
 
   # Runner keys whose CLIs are actually installed in the agent Docker container
   # and can execute repository-changing agent tasks. GitHub Copilot CLI is
   # included via its --autopilot mode which enables fully autonomous,
   # non-interactive agent execution.
-  CONTAINER_EXECUTABLE_RUNNER_KEYS = Set.new(%w[aider claude codex copilot cursor gemini kilocode opencode openrouter_free openrouter_pareto pi omp]).freeze
+  CONTAINER_EXECUTABLE_RUNNER_KEYS = Set.new(%w[claude codex copilot cursor gemini kilocode opencode openrouter_free openrouter_pareto pi omp]).freeze
 
   APP_RUNNER_TO_HARNESS_KEY = {
     "openrouter_free" => "opencode",
@@ -233,7 +233,6 @@ module RunnerSupport
     "claude" => "anthropic",
     "cursor" => "anthropic",
     "codex" => "openai",
-    "aider" => "anthropic",
     "gemini" => "google",
     "openrouter_free" => "openrouter",
     "openrouter_pareto" => "openrouter"

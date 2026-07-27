@@ -256,12 +256,12 @@ RSpec.describe "Runners" do
   describe "PATCH /runners/settings" do
     before do
       sign_in user
-      allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor aider])
+      allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor codex])
     end
 
     it "updates runner priority settings from the providers page" do
       cursor = user.runners.create!(runner_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: true)
-      aider = user.runners.create!(runner_key: "aider", enabled_for_agent_runs: false, enabled_for_fallback: true)
+      codex = user.runners.create!(runner_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: true)
       claude = user.runners.find_by!(runner_key: "claude")
 
       patch settings_runners_path, params: {
@@ -269,7 +269,7 @@ RSpec.describe "Runners" do
           default_agent_runner: "cursor",
           default_agent_runners_by_goal: { create_pr: "cursor", review: "claude" },
           fallback_enabled: true,
-          fallback_runners: %w[claude aider].to_json
+          fallback_runners: %w[claude codex].to_json
         }
       }
 
@@ -278,7 +278,7 @@ RSpec.describe "Runners" do
       expect(settings.default_agent_runner).to eq(cursor.routing_key)
       expect(settings.default_agent_runners_by_goal).to eq("create_pr" => cursor.routing_key, "review" => claude.routing_key)
       expect(settings.fallback_enabled).to be(true)
-      expect(settings.fallback_runners).to eq([ claude.routing_key, aider.routing_key ])
+      expect(settings.fallback_runners).to eq([ claude.routing_key, codex.routing_key ])
     end
 
     it "drops goal-specific defaults whose providers are no longer enabled during reconciliation" do
@@ -331,7 +331,7 @@ RSpec.describe "Runners" do
 
     it "disables fallback for providers not in enabled_fallback_runner_keys" do
       user.runners.create!(runner_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: true)
-      user.runners.create!(runner_key: "aider", enabled_for_agent_runs: true, enabled_for_fallback: true)
+      user.runners.create!(runner_key: "codex", enabled_for_agent_runs: true, enabled_for_fallback: true)
 
       patch settings_runners_path, params: {
         user_setting: {
@@ -345,7 +345,7 @@ RSpec.describe "Runners" do
       expect(response).to redirect_to(runners_path)
       expect(user.runners.find_by(runner_key: "claude").enabled_for_fallback).to be(true)
       expect(user.runners.find_by(runner_key: "cursor").enabled_for_fallback).to be(true)
-      expect(user.runners.find_by(runner_key: "aider").enabled_for_fallback).to be(false)
+      expect(user.runners.find_by(runner_key: "codex").enabled_for_fallback).to be(false)
     end
 
     it "enables fallback for providers in enabled_fallback_runner_keys" do
@@ -522,7 +522,7 @@ RSpec.describe "Runners" do
       allow(UserSetting).to receive(:enabled_agent_runners).with(user).and_return([], [ "claude" ])
       allow(RunnerSupport).to receive(:addable_runner_key?).and_return(true)
 
-      post runners_path, params: { runner: { runner_key: "aider", enabled_for_agent_runs: true, enabled_for_fallback: true } }
+      post runners_path, params: { runner: { runner_key: "codex", enabled_for_agent_runs: true, enabled_for_fallback: true } }
 
       expect(response).to redirect_to(runners_path)
     end
@@ -760,13 +760,6 @@ RSpec.describe "Runners" do
       expect(response.body).to include("must include an OpenCode model id")
     end
 
-    it "creates an aider runner successfully" do
-      post runners_path, params: { runner: { runner_key: "aider", enabled_for_agent_runs: true, enabled_for_fallback: true } }
-
-      expect(response).to redirect_to(runners_path)
-      expect(user.runners.find_by(runner_key: "aider")).to be_present
-    end
-
     it "persists nested Oh My Pi config for API-key providers" do
       KnownDirectOutboundModels.seed_model(model_id: "deepseek-chat", provider: "deepseek")
       api_key = create(:provider_api_key, user: user, api_service_type: "deepseek")
@@ -812,16 +805,16 @@ RSpec.describe "Runners" do
       expect(response.body).to include("No additional runners are installed in paid-agent yet")
     end
 
-    it "offers aider in the API-key runner list when a compatible key exists" do
+    it "offers kilocode in the API-key runner list when a compatible key exists" do
       create(:provider_api_key, user: user, api_service_type: "openrouter", name: "OpenRouter")
-      allow(RunnerSupport).to receive(:addable_runner_keys).and_return(%w[claude aider])
+      allow(RunnerSupport).to receive(:addable_runner_keys).and_return(%w[claude kilocode])
 
       get new_runner_path(form_variant: "api_key")
 
       expect(response).to have_http_status(:ok)
       expect(response.body).to include('value="api_key"')
       expect(response.body).to include('id="runner_runner_key_api_key"')
-      expect(response.body).to include('option value="aider"')
+      expect(response.body).to include('option value="kilocode"')
     end
 
     it "offers Oh My Pi in the API-key runner list when a compatible key exists" do
@@ -856,7 +849,7 @@ RSpec.describe "Runners" do
         provider_api_key: user.provider_api_keys.first,
         tier_model_ids: LlmModel::TIERS.index_with { free_model.model_id }
       )
-      allow(RunnerSupport).to receive(:addable_runner_keys).and_return(%w[claude openrouter_free aider])
+      allow(RunnerSupport).to receive(:addable_runner_keys).and_return(%w[claude openrouter_free kilocode])
 
       get new_runner_path(form_variant: "api_key")
 
@@ -864,7 +857,7 @@ RSpec.describe "Runners" do
       # Single-instance runner is hidden once added...
       expect(response.body).not_to include('option value="openrouter_free"')
       # ...but other API-key runners remain available.
-      expect(response.body).to include('option value="aider"')
+      expect(response.body).to include('option value="kilocode"')
     end
 
     it "keeps offering duplicate-capable API-key runners after one is added" do
@@ -897,10 +890,10 @@ RSpec.describe "Runners" do
         provider_api_key: user.provider_api_keys.first,
         tier_model_ids: LlmModel::TIERS.index_with { free_model.model_id }
       )
-      # openrouter_free is hidden (single-instance, already added) but aider
+      # openrouter_free is hidden (single-instance, already added) but kilocode
       # is a duplicate-capable API-key runner with a compatible key, so the
       # "Add Runner" CTA must remain instead of showing "No More Runners Yet".
-      allow(RunnerSupport).to receive(:addable_runner_keys).and_return(%w[claude openrouter_free aider])
+      allow(RunnerSupport).to receive(:addable_runner_keys).and_return(%w[claude openrouter_free kilocode])
 
       get runners_path
 

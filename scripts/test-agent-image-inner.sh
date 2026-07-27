@@ -63,7 +63,6 @@ check_tool "   Pi CLI" pi --help
 check_tool "   Oh My Pi CLI" omp --help
 check_tool "   Bun" bun --version
 check_tool "   Cursor agent CLI" cursor-agent --version
-check_tool "   Aider CLI" aider --help
 
 echo ""
 echo "3. User check (should be agent, not root):"

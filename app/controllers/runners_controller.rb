@@ -232,7 +232,7 @@ class RunnersController < ApplicationController
     end
     attrs = raw_params.permit(
       *permitted,
-      config: { opencode: [ :api_provider, :model ], kilocode: [ :api_provider, :model, :preflight_timeout_seconds ], aider: [ :api_provider, :model ],
+      config: { opencode: [ :api_provider, :model ], kilocode: [ :api_provider, :model, :preflight_timeout_seconds ],
                 pi: [ :api_provider, :model ], omp: [ :api_provider, :model ] },
       tier_model_ids: LlmModel::TIERS,
       complexity_thresholds: Runner::COMPLEXITY_THRESHOLD_KEYS
@@ -277,7 +277,7 @@ class RunnersController < ApplicationController
     addable_keys = resource_addable_keys
     existing_subscription_keys = resource_records.kept_only.subscription.pluck(:runner_key)
     # Only single-instance api_key runners (e.g. openrouter_free) are hidden
-    # once added. Other api_key runners (opencode, kilocode, aider, pi, omp) allow
+    # once added. Other api_key runners (opencode, kilocode, pi, omp) allow
     # legitimate duplicates when the API key or name differs, so they must
     # keep appearing in the "Add Runner" options.
     existing_single_instance_keys = resource_records.kept_only.api_key.pluck(:runner_key)
@@ -685,7 +685,7 @@ class RunnersController < ApplicationController
   def compatible_api_key_for_runner?(api_key:, runner_key:)
     # Direct-outbound runners support multiple API key types depending on the
     # selected api_provider, so check against all compatible service types.
-    if %w[opencode kilocode aider].include?(runner_key)
+    if %w[opencode kilocode].include?(runner_key)
       return resource_model_class::DIRECT_OUTBOUND_SERVICE_TYPES.include?(api_key.api_service_type)
     end
     if runner_key == "pi"

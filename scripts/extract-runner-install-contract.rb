@@ -76,7 +76,7 @@ end
 # - npm-based (Codex):    {source: :npm, package:, install_command: [...], version:}
 # - npm-nested (Kilocode): {source: {type: :npm, package:}, install_command: [...], default_version:}
 # - Flat (Gemini):        {install_command_string:, default_version:}
-# - uv-tool (Aider):      {source: :uv_tool, bootstrap_commands: [...], install_environment: {...},
+# - uv-tool:              {source: :uv_tool, bootstrap_commands: [...], install_environment: {...},
 #                           install_command: [...], package:, version:}
 source = contract[:source]
 is_npm = source == :npm || (source.is_a?(Hash) && source[:type] == :npm)
@@ -84,7 +84,7 @@ if source == :uv_tool
   # Compose a single install command string from the structured contract:
   #   1. Create directories referenced by install_environment
   #   2. Run bootstrap commands (e.g., install uv via pip)
-  #   3. Run the install command (e.g., uv tool install aider-chat)
+  #   3. Run the install command (e.g., uv tool install <package>)
   # Environment variables are inlined per-command so no persistent ENV is needed.
   env_hash = contract[:install_environment] || {}
   env_prefix = env_hash.map { |k, v| "#{k}=#{v}" }.join(" ")

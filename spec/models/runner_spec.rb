@@ -1137,118 +1137,6 @@ RSpec.describe Runner do
     end
   end
 
-  describe "Aider config infrastructure" do
-    let(:account) { create(:account, slug: "runner-aider-#{SecureRandom.hex(6)}") }
-    let(:user) { create(:user, account: account, email: "runner-aider-#{SecureRandom.hex(6)}@example.com") }
-    let(:api_key) { create(:provider_api_key, user: user, api_service_type: "zai") }
-
-    it "reads aider config accessors from the config hash" do
-      runner = build(
-        :runner,
-        user: user,
-        runner_key: "aider",
-        auth_type: "api_key",
-        provider_api_key: api_key,
-        config: { "aider" => { "api_provider" => "zai", "model" => "glm-5.1" } }
-      )
-
-      expect(runner.aider_api_provider).to eq("zai")
-      expect(runner.aider_model_id).to eq("glm-5.1")
-      expect(runner.aider_required_api_service_type).to eq("zai")
-    end
-
-    it "defaults api_provider to openrouter when unset" do
-      runner = build(:runner, runner_key: "aider", auth_type: "api_key",
-        user: user, provider_api_key: api_key, config: { "aider" => { "model" => "glm-5.1" } })
-
-      expect(runner.aider_api_provider).to eq("openrouter")
-    end
-
-    it "returns nil accessors for non-aider providers" do
-      runner = build(:runner, runner_key: "claude")
-
-      expect(runner.aider_api_provider).to be_nil
-      expect(runner.aider_model_id).to be_nil
-    end
-
-    it "is not direct-outbound even when fully configured (no execution plumbing yet)" do
-      runner = build(
-        :runner,
-        user: user,
-        runner_key: "aider",
-        auth_type: "api_key",
-        provider_api_key: api_key,
-        config: { "aider" => { "api_provider" => "zai", "model" => "glm-5.1" } }
-      )
-
-      expect(runner.requires_direct_outbound?).to be(false)
-    end
-
-    it "validates model presence for API-key aider providers when api_provider is set" do
-      runner = build(
-        :runner,
-        user: user,
-        runner_key: "aider",
-        auth_type: "api_key",
-        provider_api_key: api_key,
-        config: { "aider" => { "api_provider" => "zai" } }
-      )
-
-      expect(runner).not_to be_valid
-      expect(runner.errors[:config].join).to include("Aider model id")
-    end
-
-    it "validates model presence for API-key aider providers" do
-      runner = build(
-        :runner,
-        user: user,
-        runner_key: "aider",
-        auth_type: "api_key",
-        provider_api_key: api_key,
-        config: { "aider" => {} }
-      )
-
-      expect(runner).not_to be_valid
-      expect(runner.errors[:config].join).to include("Aider model id")
-    end
-
-    it "accepts a fully configured API-key aider runner" do
-      runner = build(
-        :runner,
-        user: user,
-        runner_key: "aider",
-        auth_type: "api_key",
-        provider_api_key: api_key,
-        config: { "aider" => { "api_provider" => "zai", "model" => "glm-5.1" } }
-      )
-
-      expect(runner).to be_valid
-    end
-
-    it "skips aider config validation for subscription runners" do
-      runner = build(:runner, runner_key: "aider", auth_type: "subscription")
-
-      runner.valid?
-      expect(runner.errors[:config]).to be_empty
-    end
-
-    it "skips aider config validation for tenant-key providers with no config" do
-      user = create(:user)
-      api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
-      runner = build(
-        :runner,
-        user: user,
-        runner_key: "aider",
-        auth_type: "api_key",
-        provider_api_key: api_key,
-        config: nil
-      )
-
-      runner.valid?
-      expect(runner.errors[:config]).to be_empty
-    end
-  end
-
   describe "Oh My Pi config infrastructure" do
     let(:account) { create(:account, slug: "runner-omp-#{SecureRandom.hex(6)}") }
     let(:user) { create(:user, account: account, email: "runner-omp-#{SecureRandom.hex(6)}@example.com") }
@@ -1874,7 +1762,7 @@ RSpec.describe Runner do
     end
 
     it "returns false for runners that allow duplicates" do
-      %w[opencode kilocode aider pi claude cursor].each do |key|
+      %w[opencode kilocode pi claude cursor].each do |key|
         expect(described_class.single_instance_runner_key?(key)).to be false
       end
     end
