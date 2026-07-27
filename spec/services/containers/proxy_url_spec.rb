@@ -40,6 +40,20 @@ RSpec.describe Containers::ProxyUrl, :no_db do
         .to eq("https://worker-1-proxy.example.test:3443")
     end
 
+    it "prefers a backend-configured external URL before environment fallbacks" do
+      remote_backend = instance_double(
+        Containers::Backends::RemoteDocker,
+        remote?: true,
+        identifier: backend_identifier,
+        proxy_external_url: "https://configured.example.test:3443"
+      )
+      ENV["PAID_PROXY_EXTERNAL_URL"] = "https://proxy.example.test:3443"
+      ENV[specific_key] = "https://worker-1-proxy.example.test:3443"
+
+      expect(described_class.resolve(backend: remote_backend, restricted: true))
+        .to eq("https://configured.example.test:3443")
+    end
+
     it "normalizes non-alphanumeric characters in the per-host key" do
       remote_backend = instance_double(Containers::Backends::Base, remote?: true, identifier: "worker-1.internal")
       ENV["PAID_PROXY_EXTERNAL_URL"] = "https://proxy.example.test:3443"

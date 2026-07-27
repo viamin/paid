@@ -31,6 +31,10 @@ module Containers
     end
 
     def external_url_for(backend)
+      if backend.respond_to?(:proxy_external_url) && backend.proxy_external_url.present?
+        return backend.proxy_external_url
+      end
+
       specific_key = "PAID_PROXY_EXTERNAL_URL_#{env_key_suffix(backend.identifier)}"
       ENV[specific_key].presence || ENV["PAID_PROXY_EXTERNAL_URL"].presence
     end

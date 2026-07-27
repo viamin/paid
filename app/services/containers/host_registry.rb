@@ -54,7 +54,13 @@ module Containers
 
       parsed_config = config_payload
       host_entries = build_hosts(parsed_config.fetch("hosts", {}))
+      raise ArgumentError, "CONTAINER_BACKENDS_CONFIG must define at least one host under 'multi' backend mode" if host_entries.empty?
+
       default_host = parsed_config["default_host"].presence || host_entries.first&.identifier
+      unless host_entries.any? { |host| host.identifier == default_host }
+        raise ArgumentError, "CONTAINER_BACKENDS_CONFIG default_host #{default_host.inspect} is not defined under hosts"
+      end
+
       fallback_policy = normalize_fallback_policy(parsed_config["fallback"])
 
       Registry.new(
@@ -122,18 +128,14 @@ module Containers
       when "local"
         Containers::Backends::LocalDocker.new(identifier: identifier.to_s)
       when "remote"
-        Containers::Backends::RemoteDocker.new(
-          host: raw_config.fetch("host"),
-          identifier: identifier.to_s,
-          tls_config: {
-            client_cert: raw_config.dig("tls", "client_cert"),
-            client_key: raw_config.dig("tls", "client_key"),
-            ssl_ca_file: raw_config.dig("tls", "ca_file")
-          }
-        )
+        build_remote_backend(identifier, raw_config)
       else
         raise ArgumentError, "Unsupported Docker host type for #{identifier.inspect}"
       end
+    rescue KeyError => e
+      raise ArgumentError, "Docker host #{identifier.inspect} is missing required config: #{e.key}"
+    rescue ArgumentError => e
+      raise ArgumentError, "Docker host #{identifier.inspect} is invalid: #{e.message}"
     end
 
     def normalize_fallback_policy(value)
@@ -141,6 +143,48 @@ module Containers
       return normalized if FALLBACK_POLICIES.include?(normalized)
 
       FALLBACK_DISABLED
+    end
+
+    def build_remote_backend(identifier, raw_config)
+      Containers::Backends::RemoteDocker.new(
+        host: raw_config.fetch("host"),
+        identifier: identifier.to_s,
+        proxy_external_url: raw_config["proxy_external_url"],
+        tls_config: {
+          client_cert: resolve_tls_value(identifier, "client_cert", raw_config.dig("tls", "client_cert")),
+          client_key: resolve_tls_value(identifier, "client_key", raw_config.dig("tls", "client_key")),
+          ssl_ca_file: resolve_tls_value(identifier, "ca_file", raw_config.dig("tls", "ca_file"))
+        }
+      )
+    end
+
+    def resolve_tls_value(identifier, key, value)
+      return value if value.is_a?(String)
+      return credential_value_for(identifier, key, value) if value.is_a?(Hash)
+
+      value
+    end
+
+    def credential_value_for(identifier, key, value)
+      reference = value["credentials"] || value["credential"]
+      credential_path = normalize_credential_path(reference)
+      raise ArgumentError, "tls.#{key} must be a string or a credentials reference" if credential_path.empty?
+
+      resolved = Rails.application.credentials.dig(*credential_path)
+      return resolved if resolved.present?
+
+      raise ArgumentError, "Rails credentials #{credential_path.join('.')} are blank for tls.#{key}"
+    end
+
+    def normalize_credential_path(reference)
+      case reference
+      when Array
+        reference.map { |segment| segment.to_s.to_sym }
+      when String
+        reference.split(".").reject(&:blank?).map(&:to_sym)
+      else
+        []
+      end
     end
   end
 end
