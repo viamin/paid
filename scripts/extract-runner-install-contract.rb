@@ -46,23 +46,22 @@ if runner == "cursor"
 end
 
 begin
-  contract = AgentHarness.install_contract(runner.to_sym)
+  contract = InstallContractHelpers.contract_for(runner)
 rescue AgentHarness::ConfigurationError
-  metadata = AgentHarness.provider_metadata(runner.to_sym)
-  runner_class_name = metadata.fetch(:canonical_provider).to_s.split("_").map(&:capitalize).join
-
   # Some runners expose install metadata via their canonical class contract
   # even when the alias-based registry lookup does not implement
   # AgentHarness.install_contract(runner_alias).
   begin
-    runner_class = AgentHarness::Providers.const_get(runner_class_name)
+    runner_class = AgentHarness.provider(runner.to_sym).class
     if runner_class.respond_to?(:installation_contract)
       contract = runner_class.installation_contract
+    elsif (contract = InstallContractHelpers.metadata_installation_for(runner))
+      contract
     else
       warn "No install contract found for runner: #{runner}"
       exit 1
     end
-  rescue KeyError, NameError => e
+  rescue AgentHarness::ConfigurationError, KeyError, NameError => e
     warn "No install contract found for runner: #{runner} (#{e.message})"
     exit 1
   end
@@ -107,10 +106,13 @@ if source == :uv_tool
 elsif is_npm
   package = contract[:package] || (source.is_a?(Hash) && source[:package])
   install_command = InstallContractHelpers.normalized_install_command(contract)
+  bun_requirement = Array(contract[:runtime_requirements]).find { |requirement| requirement[:name] == :bun }
   puts "SOURCE=npm"
   puts "PACKAGE=#{package}"
   puts "INSTALL_COMMAND=#{install_command.join(" ")}"
   puts "SUPPORTED_VERSION=#{contract[:version] || contract[:default_version]}"
+  puts "BUN_VERSION=#{bun_requirement[:pinned_version]}" if bun_requirement
+  puts "BUN_INSTALL_SCRIPT_URL=#{bun_requirement[:install_script_url]}" if bun_requirement
 else
   install_command = contract.dig(:install, :command) || contract[:install_command_string]
   post_install_path = contract.dig(:install, :post_install_binary_path)

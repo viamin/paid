@@ -233,7 +233,7 @@ class RunnersController < ApplicationController
     attrs = raw_params.permit(
       *permitted,
       config: { opencode: [ :api_provider, :model ], kilocode: [ :api_provider, :model, :preflight_timeout_seconds ],
-                pi: [ :api_provider, :model ] },
+                pi: [ :api_provider, :model ], omp: [ :api_provider, :model ] },
       tier_model_ids: LlmModel::TIERS,
       complexity_thresholds: Runner::COMPLEXITY_THRESHOLD_KEYS
     )
@@ -277,7 +277,7 @@ class RunnersController < ApplicationController
     addable_keys = resource_addable_keys
     existing_subscription_keys = resource_records.kept_only.subscription.pluck(:runner_key)
     # Only single-instance api_key runners (e.g. openrouter_free) are hidden
-    # once added. Other api_key runners (opencode, kilocode, pi) allow
+    # once added. Other api_key runners (opencode, kilocode, pi, omp) allow
     # legitimate duplicates when the API key or name differs, so they must
     # keep appearing in the "Add Runner" options.
     existing_single_instance_keys = resource_records.kept_only.api_key.pluck(:runner_key)
@@ -690,6 +690,9 @@ class RunnersController < ApplicationController
     end
     if runner_key == "pi"
       return resource_model_class::PI_API_PROVIDERS.values.any? { |config| config[:service_type] == api_key.api_service_type }
+    end
+    if runner_key == "omp"
+      return resource_model_class::OMP_API_PROVIDERS.values.any? { |config| config[:service_type] == api_key.api_service_type }
     end
     return api_key.api_service_type == "openrouter" if runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
 

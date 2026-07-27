@@ -44,6 +44,10 @@ RSpec.describe RunnerSupport do
     it "includes pi" do
       expect(described_class::CONTAINER_EXECUTABLE_RUNNER_KEYS).to include("pi")
     end
+
+    it "includes omp" do
+      expect(described_class::CONTAINER_EXECUTABLE_RUNNER_KEYS).to include("omp")
+    end
   end
 
   describe ".container_executable_runner_keys" do
@@ -82,6 +86,11 @@ RSpec.describe RunnerSupport do
       keys = described_class.container_executable_runner_keys
       expect(keys).to include("pi")
     end
+
+    it "includes omp when backed by the agent harness registry" do
+      keys = described_class.container_executable_runner_keys
+      expect(keys).to include("omp")
+    end
   end
 
   describe ".container_executable_runner_key?" do
@@ -115,6 +124,10 @@ RSpec.describe RunnerSupport do
 
     it "returns true for pi" do
       expect(described_class.container_executable_runner_key?("pi")).to be true
+    end
+
+    it "returns true for omp" do
+      expect(described_class.container_executable_runner_key?("omp")).to be true
     end
 
     it "returns false for unsupported providers" do
@@ -351,7 +364,8 @@ RSpec.describe RunnerSupport do
           "opencode" => "opencode",
           "openrouter_free" => "opencode",
           "openrouter_pareto" => "opencode",
-          "pi" => "pi"
+          "pi" => "pi",
+          "omp" => "omp"
         }
 
         described_class::CONTAINER_EXECUTABLE_RUNNER_KEYS.each do |key|

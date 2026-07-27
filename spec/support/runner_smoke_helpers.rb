@@ -133,6 +133,24 @@ module RunnerSmokeHelpers
       default_model: "MiniMax-M2.7",
       label: "Pi with MiniMax Token Plan API key"
     ),
+    "omp-deepseek" => Scenario.new(
+      name: "omp-deepseek",
+      runner_key: "omp",
+      auth_type: "api_key",
+      api_provider: "deepseek",
+      model_env: "PAID_SMOKE_OMP_DEEPSEEK_MODEL",
+      default_model: "deepseek-chat",
+      label: "Oh My Pi with DeepSeek API key"
+    ),
+    "omp-minimax" => Scenario.new(
+      name: "omp-minimax",
+      runner_key: "omp",
+      auth_type: "api_key",
+      api_provider: "minimax",
+      model_env: "PAID_SMOKE_OMP_MINIMAX_MODEL",
+      default_model: "MiniMax-M2.7",
+      label: "Oh My Pi with MiniMax Token Plan API key"
+    ),
     "copilot-subscription" => Scenario.new(
       name: "copilot-subscription",
       runner_key: "copilot",
@@ -211,6 +229,8 @@ module RunnerSmokeHelpers
       Runner::DIRECT_OUTBOUND_API_PROVIDERS
     when "pi"
       Runner::PI_API_PROVIDERS
+    when "omp"
+      Runner::OMP_API_PROVIDERS
     else
       {}
     end
