@@ -17,6 +17,17 @@ RSpec.describe Containers::PoolManager do
   end
 
   describe ".metrics" do
+    let(:backends) do
+      [
+        instance_double(Containers::Backends::Base, identifier: "local"),
+        instance_double(Containers::Backends::Base, identifier: "worker-1")
+      ]
+    end
+
+    before do
+      allow(Containers).to receive(:all_backends).and_return(backends)
+    end
+
     it "returns counts for each status and zero-defaults missing statuses" do
       other_project = create(:project)
       create(:container_pool_entry, project: project)
@@ -34,7 +45,7 @@ RSpec.describe Containers::PoolManager do
         warming: 1,
         claimed: 1,
         error: 1,
-        target: described_class.target_size * 1
+        target: described_class.target_size * backends.count
       )
     end
 
@@ -50,7 +61,7 @@ RSpec.describe Containers::PoolManager do
           warming: 1,
           claimed: 0,
           error: 0,
-          target: described_class.target_size * 1
+          target: described_class.target_size * backends.count
         )
       end
 
@@ -65,7 +76,7 @@ RSpec.describe Containers::PoolManager do
         warming: 0,
         claimed: 0,
         error: 0,
-        target: described_class.target_size * 1
+        target: described_class.target_size * backends.count
       )
     end
   end

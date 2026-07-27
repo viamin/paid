@@ -30,15 +30,19 @@ module Containers
     def self.metrics(projects:)
       scope = ContainerPoolEntry.where(project_id: projects.select(:id))
       counts = scope.group(:status).count
-      active_projects = projects.active.count
 
       {
         warm: counts["warm"].to_i,
         warming: counts["warming"].to_i,
         claimed: counts["claimed"].to_i,
         error: counts["error"].to_i,
-        target: target_size * active_projects
+        target: effective_target_size(projects: projects)
       }
+    end
+
+    def self.effective_target_size(projects:, backend_count: Containers.all_backends.count)
+      active_projects = projects.active.count
+      target_size * active_projects * backend_count
     end
 
     def initialize(project:, target_size: self.class.target_size, container_host: nil)
