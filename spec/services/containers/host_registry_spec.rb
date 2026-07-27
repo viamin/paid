@@ -104,6 +104,28 @@ RSpec.describe Containers::HostRegistry, :no_db do
     )
   end
 
+  it "fails clearly when a remote host has an invalid configured proxy external URL" do
+    env["CONTAINER_BACKENDS_CONFIG"] = <<~YAML
+      default_host: elguapo
+      hosts:
+        elguapo:
+          type: remote
+          host: tcp://100.113.201.1:2376
+          proxy_external_url: not a url
+          tls:
+            ca_file: /tmp/elguapo-ca.pem
+            client_cert: /tmp/elguapo-cert.pem
+            client_key: /tmp/elguapo-key.pem
+    YAML
+
+    expect {
+      described_class.load(env: env)
+    }.to raise_error(
+      ArgumentError,
+      /Docker host "elguapo" is invalid: Invalid proxy_external_url for Docker host "elguapo"/
+    )
+  end
+
   it "fails clearly when a remote host has incomplete TLS configuration" do
     env["CONTAINER_BACKENDS_CONFIG"] = <<~YAML
       default_host: local

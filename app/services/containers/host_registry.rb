@@ -146,10 +146,13 @@ module Containers
     end
 
     def build_remote_backend(identifier, raw_config)
+      proxy_external_url = raw_config["proxy_external_url"]
+      proxy_external_url = validate_proxy_external_url!(identifier, proxy_external_url) if proxy_external_url.present?
+
       Containers::Backends::RemoteDocker.new(
         host: raw_config.fetch("host"),
         identifier: identifier.to_s,
-        proxy_external_url: raw_config["proxy_external_url"],
+        proxy_external_url: proxy_external_url,
         tls_config: {
           client_cert: resolve_tls_value(identifier, "client_cert", raw_config.dig("tls", "client_cert")),
           client_key: resolve_tls_value(identifier, "client_key", raw_config.dig("tls", "client_key")),
@@ -163,6 +166,13 @@ module Containers
       return credential_value_for(identifier, key, value) if value.is_a?(Hash)
 
       value
+    end
+
+    def validate_proxy_external_url!(identifier, url)
+      Containers::ProxyUrl.validate_external_url_from!(
+        url,
+        source: "proxy_external_url for Docker host #{identifier.inspect}"
+      )
     end
 
     def credential_value_for(identifier, key, value)
