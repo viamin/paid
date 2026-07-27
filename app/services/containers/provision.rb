@@ -229,7 +229,7 @@ module Containers
     #
     # @return [Result] Result object with success/failure status
     def provision
-      log_system("container.provision.start", image: options[:image])
+      log_system("container.provision.start", image: options[:image], backend: backend.identifier)
 
       validate_backend_mount_support!
       prepare_heartbeat_dir! if backend.supports_host_paths?

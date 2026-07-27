@@ -73,16 +73,60 @@ RSpec.describe ProcessRunQueueJob do
     })
   end
 
+  def create_preferred_host_run(project:, host: "elguapo", fallback: "first_healthy")
+    create(:agent_run, :queued, project: project, external_metadata: {
+      "container_host_selection" => {
+        "preferred_host" => host,
+        "fallback" => fallback
+      }
+    })
+  end
+
+  def expect_host_selected_log(run_id:, requested_host:, selected_host:, selection_source:, selection_reason:, fallback_policy:, fallback_chain:)
+    expect(Rails.logger).to have_received(:info).with(
+      hash_including(
+        message: "process_run_queue.host_selected",
+        agent_run_id: run_id,
+        requested_host: requested_host,
+        selected_host: selected_host,
+        selection_source: selection_source,
+        selection_reason: selection_reason,
+        fallback_policy: fallback_policy,
+        fallback_chain: fallback_chain
+      )
+    )
+  end
+
+  def expect_host_unavailable_log(run_id:, requested_host:, fallback_chain:, compatibility_failures:, health_failures:)
+    expect(Rails.logger).to have_received(:info).with(
+      hash_including(
+        message: "process_run_queue.host_unavailable",
+        agent_run_id: run_id,
+        requested_host: requested_host,
+        fallback_chain: fallback_chain,
+        compatibility_failures: compatibility_failures,
+        health_failures: health_failures
+      )
+    )
+  end
+
+  def stub_unavailable_fallback_hosts(run, registry_bundle)
+    disallowed = Containers::Provision::CompatibilityResult.new(
+      compatible: false,
+      error_message: "bind mounts unsupported"
+    )
+    allow(Containers::Provision).to receive(:compatibility_for)
+      .with(agent_run: run, backend: registry_bundle.fetch(:elguapo_backend), worktree_path: nil)
+      .and_return(disallowed)
+    allow(registry_bundle.fetch(:local_backend)).to receive(:ping).and_raise(Docker::Error::DockerError, "local down")
+    allow(registry_bundle.fetch(:aws_backend)).to receive(:ping).and_raise(Docker::Error::DockerError, "aws down")
+  end
+
   describe "#perform" do
     it "falls back to another host with free slots when the preferred host is full" do
       project = create(:project)
       project.created_by.settings.update!(max_concurrent_runs: 20, max_parallel_agents_per_project: 20)
-      queued_run = create(:agent_run, :queued, project: project, external_metadata: {
-        "container_host_selection" => {
-          "preferred_host" => "elguapo",
-          "fallback" => "first_healthy"
-        }
-      })
+      queued_run = create_preferred_host_run(project: project)
       create_host_saturation_runs("elguapo" => 4, "local" => 2)
       stub_multi_host_registry(build_host_registry)
 
@@ -107,6 +151,27 @@ RSpec.describe ProcessRunQueueJob do
       expect(captured_input[:container_host]).to eq("aws-runner-1")
     end
 
+    it "logs the selected host, selection reason, and fallback chain" do
+      project = create(:project)
+      project.created_by.settings.update!(max_concurrent_runs: 20, max_parallel_agents_per_project: 20)
+      queued_run = create_preferred_host_run(project: project)
+      create_host_saturation_runs("elguapo" => 4, "local" => 2)
+      stub_multi_host_registry(build_host_registry)
+      allow(Rails.logger).to receive(:info)
+
+      described_class.new.perform
+
+      expect_host_selected_log(
+        run_id: queued_run.id,
+        requested_host: "elguapo",
+        selected_host: "aws-runner-1",
+        selection_source: "preferred",
+        selection_reason: "fallback",
+        fallback_policy: "first_healthy",
+        fallback_chain: [ "elguapo", "local", "aws-runner-1" ]
+      )
+    end
+
     it "keeps a host-saturated run queued without blocking other host candidates for the user" do
       project = create(:project)
       project.created_by.settings.update!(max_concurrent_runs: 20, max_parallel_agents_per_project: 20)
@@ -125,6 +190,28 @@ RSpec.describe ProcessRunQueueJob do
           message: "process_run_queue.capacity_denied",
           reason: "host_hard_ceiling",
           selected_host: "elguapo"
+        )
+      )
+    end
+
+    it "logs compatibility and health failures when no host can be selected" do
+      project = create(:project)
+      queued_run = create_preferred_host_run(project: project)
+      registry_bundle = build_host_registry
+      stub_multi_host_registry(registry_bundle)
+      stub_unavailable_fallback_hosts(queued_run, registry_bundle)
+      allow(Rails.logger).to receive(:info)
+
+      described_class.new.perform
+
+      expect_host_unavailable_log(
+        run_id: queued_run.id,
+        requested_host: "elguapo",
+        fallback_chain: [ "elguapo", "local", "aws-runner-1" ],
+        compatibility_failures: hash_including("elguapo" => "bind mounts unsupported"),
+        health_failures: hash_including(
+          "local" => a_string_including("local down"),
+          "aws-runner-1" => a_string_including("aws down")
         )
       )
     end
