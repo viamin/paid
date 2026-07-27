@@ -46,7 +46,7 @@ if provider == "cursor"
 end
 
 begin
-  contract = AgentHarness.install_contract(provider.to_sym)
+  contract = InstallContractHelpers.contract_for(provider)
 rescue AgentHarness::ConfigurationError
   metadata = AgentHarness.provider_metadata(provider.to_sym)
   provider_class_name = metadata.fetch(:canonical_provider).to_s.split("_").map(&:capitalize).join
@@ -58,11 +58,13 @@ rescue AgentHarness::ConfigurationError
     provider_class = AgentHarness::Providers.const_get(provider_class_name)
     if provider_class.respond_to?(:installation_contract)
       contract = provider_class.installation_contract
+    elsif (contract = InstallContractHelpers.metadata_installation_for(provider))
+      contract
     else
       warn "No install contract found for provider: #{provider}"
       exit 1
     end
-  rescue KeyError, NameError => e
+  rescue AgentHarness::ConfigurationError, KeyError, NameError => e
     warn "No install contract found for provider: #{provider} (#{e.message})"
     exit 1
   end

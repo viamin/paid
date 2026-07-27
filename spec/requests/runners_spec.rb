@@ -759,6 +759,26 @@ RSpec.describe "Runners" do
       expect(response).to have_http_status(:unprocessable_content)
       expect(response.body).to include("must include an OpenCode model id")
     end
+
+    it "persists nested Oh My Pi config for API-key providers" do
+      KnownDirectOutboundModels.seed_model(model_id: "deepseek-chat", provider: "deepseek")
+      api_key = create(:provider_api_key, user: user, api_service_type: "deepseek")
+
+      post runners_path, params: {
+        runner: direct_outbound_runner_params(
+          runner_key: "omp",
+          api_key_id: api_key.id,
+          api_provider: "deepseek",
+          model: "deepseek-chat"
+        )
+      }
+
+      expect(response).to redirect_to(runners_path)
+      runner = user.runners.find_by!(runner_key: "omp", auth_type: "api_key")
+      expect(runner.omp_api_provider).to eq("deepseek")
+      expect(runner.omp_model_id).to eq("deepseek-chat")
+      expect(runner.display_name).to eq("Oh My Pi deepseek-chat (API Key)")
+    end
   end
 
   describe "GET /runners/new" do
@@ -795,6 +815,17 @@ RSpec.describe "Runners" do
       expect(response.body).to include('value="api_key"')
       expect(response.body).to include('id="runner_runner_key_api_key"')
       expect(response.body).to include('option value="kilocode"')
+    end
+
+    it "offers Oh My Pi in the API-key runner list when a compatible key exists" do
+      create(:provider_api_key, user: user, api_service_type: "deepseek", name: "DeepSeek")
+      allow(RunnerSupport).to receive(:addable_runner_keys).and_return(%w[claude omp])
+
+      get new_runner_path(form_variant: "api_key")
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include('option value="omp"')
+      expect(response.body).to include("Oh My Pi")
     end
 
     it "defaults back to subscription when the requested runner already has an active managed credential" do
@@ -1035,6 +1066,24 @@ RSpec.describe "Runners" do
       expect(response).to have_http_status(:ok)
       expect(response.body).to match(/name="runner\[config\]\[opencode\]\[api_provider\]".*disabled/m)
       expect(response.body).to match(/name="runner\[config\]\[opencode\]\[model\]".*disabled/m)
+    end
+
+    it "renders Oh My Pi config inputs for persisted OMP API-key runners" do
+      KnownDirectOutboundModels.seed_model(model_id: "deepseek-chat", provider: "deepseek")
+      api_key = create(:provider_api_key, user: user, api_service_type: "deepseek")
+      runner = user.runners.create!(
+        runner_key: "omp",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "omp" => { "api_provider" => "deepseek", "model" => "deepseek-chat" } }
+      )
+
+      get edit_runner_path(runner)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Oh My Pi API Key Settings")
+      expect(response.body).to include('name="runner[config][omp][api_provider]"')
+      expect(response.body).to include('name="runner[config][omp][model]"')
     end
 
     it "renders complexity_thresholds inputs with balanced bracket names so Rack parses them as a nested hash" do

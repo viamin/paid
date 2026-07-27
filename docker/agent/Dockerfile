@@ -411,6 +411,41 @@ RUN if [ -z "${PI_PACKAGE}" ]; then \
     fi \
     && npm install -g --ignore-scripts "${PI_PACKAGE}"
 
+# Install Oh My Pi plus its Bun runtime from the agent-harness contract.
+ARG OMP_PACKAGE
+ARG OMP_INSTALL_COMMAND
+ARG OMP_BUN_VERSION
+ARG OMP_BUN_INSTALL_SCRIPT_URL
+RUN if [ -z "${OMP_PACKAGE}" ]; then \
+        echo "ERROR: OMP_PACKAGE build-arg is required (sourced from agent-harness)" >&2; \
+        exit 1; \
+    fi \
+    && if [ -z "${OMP_INSTALL_COMMAND}" ]; then \
+        echo "ERROR: OMP_INSTALL_COMMAND build-arg is required (sourced from agent-harness)" >&2; \
+        exit 1; \
+    fi \
+    && if [ -z "${OMP_BUN_VERSION}" ]; then \
+        echo "ERROR: OMP_BUN_VERSION build-arg is required (sourced from agent-harness)" >&2; \
+        exit 1; \
+    fi \
+    && if [ -z "${OMP_BUN_INSTALL_SCRIPT_URL}" ]; then \
+        echo "ERROR: OMP_BUN_INSTALL_SCRIPT_URL build-arg is required (sourced from agent-harness)" >&2; \
+        exit 1; \
+    fi \
+    && export BUN_INSTALL="/usr/local/bun" \
+    && mkdir -p "${BUN_INSTALL}/bin" \
+    && curl -fsSL "${OMP_BUN_INSTALL_SCRIPT_URL}" | BUN_VERSION="${OMP_BUN_VERSION}" bash \
+    && test -x "${BUN_INSTALL}/bin/bun" \
+    && ln -sf "${BUN_INSTALL}/bin/bun" "${BUN_INSTALL}/bin/bunx" \
+    && export PATH="${BUN_INSTALL}/bin:${PATH}" \
+    && ln -sf "${BUN_INSTALL}/bin/bun" /usr/local/bin/bun \
+    && ln -sf "${BUN_INSTALL}/bin/bunx" /usr/local/bin/bunx \
+    && sh -c "${OMP_INSTALL_COMMAND}" \
+    && OMP_BINARY_PATH="$(command -v omp || true)" \
+    && test -n "${OMP_BINARY_PATH}" \
+    && test -x "${OMP_BINARY_PATH}" \
+    && bun --version | grep -Fx "${OMP_BUN_VERSION}"
+
 # Install GitHub Copilot CLI via agent-harness install contract.
 # The modern `copilot` binary supports --autopilot mode for fully autonomous,
 # non-interactive agent execution. Install recipe is owned by agent-harness.

@@ -8,6 +8,7 @@ on:
       - Gemfile.lock
       - scripts/build-agent-image.sh
       - scripts/extract-runner-install-contract.rb
+      - scripts/lib/install_contract_helpers.rb
       - scripts/test-agent-image.sh
       - scripts/test-agent-image-inner.sh
       - scripts/test-agent-runner-contracts.sh
@@ -22,6 +23,7 @@ on:
       - Gemfile.lock
       - scripts/build-agent-image.sh
       - scripts/extract-runner-install-contract.rb
+      - scripts/lib/install_contract_helpers.rb
       - scripts/test-agent-image.sh
       - scripts/test-agent-image-inner.sh
       - scripts/test-agent-runner-contracts.sh
@@ -72,6 +74,7 @@ jobs:
                 docker/agent/*|\
                 scripts/build-agent-image.sh|\
                 scripts/extract-runner-install-contract.rb|\
+                scripts/lib/install_contract_helpers.rb|\
                 scripts/test-agent-image.sh|\
                 scripts/test-agent-image-inner.sh|\
                 scripts/test-agent-runner-contracts.sh|\
@@ -323,6 +326,38 @@ jobs:
           fi
           echo "package=$package" >> "$GITHUB_OUTPUT"
 
+      - name: Extract Oh My Pi package from agent-harness
+        if: steps.changes.outputs.image_relevant == 'true'
+        id: omp-contract
+        run: |
+          contract=$(bundle exec ruby scripts/extract-runner-install-contract.rb omp)
+          package=$(echo "$contract" | sed -n 's/^PACKAGE=//p')
+          install_command=$(echo "$contract" | sed -n 's/^INSTALL_COMMAND=//p')
+          bun_version=$(echo "$contract" | sed -n 's/^BUN_VERSION=//p')
+          bun_install_script_url=$(echo "$contract" | sed -n 's/^BUN_INSTALL_SCRIPT_URL=//p')
+          if [ -z "$package" ]; then
+            echo "Failed to extract Oh My Pi package from agent-harness" >&2
+            exit 1
+          fi
+          if [ -z "$install_command" ]; then
+            echo "Failed to extract Oh My Pi install command from agent-harness" >&2
+            exit 1
+          fi
+          if [ -z "$bun_version" ]; then
+            echo "Failed to extract Oh My Pi Bun version from agent-harness" >&2
+            exit 1
+          fi
+          if [ -z "$bun_install_script_url" ]; then
+            echo "Failed to extract Oh My Pi Bun install script URL from agent-harness" >&2
+            exit 1
+          fi
+          echo "package=$package" >> "$GITHUB_OUTPUT"
+          echo "install_command<<PAID_EOF" >> "$GITHUB_OUTPUT"
+          echo "$install_command" >> "$GITHUB_OUTPUT"
+          echo "PAID_EOF" >> "$GITHUB_OUTPUT"
+          echo "bun_version=$bun_version" >> "$GITHUB_OUTPUT"
+          echo "bun_install_script_url=$bun_install_script_url" >> "$GITHUB_OUTPUT"
+
       - name: Extract Kilocode CLI install contract from agent-harness
         if: steps.changes.outputs.image_relevant == 'true'
         id: kilocode-contract
@@ -388,6 +423,10 @@ jobs:
             CODEX_PACKAGE=${{ steps.codex-contract.outputs.package }}
             OPENCODE_INSTALL_COMMAND=${{ steps.opencode-contract.outputs.install_command }}
             PI_PACKAGE=${{ steps.pi-contract.outputs.package }}
+            OMP_PACKAGE=${{ steps.omp-contract.outputs.package }}
+            OMP_INSTALL_COMMAND=${{ steps.omp-contract.outputs.install_command }}
+            OMP_BUN_VERSION=${{ steps.omp-contract.outputs.bun_version }}
+            OMP_BUN_INSTALL_SCRIPT_URL=${{ steps.omp-contract.outputs.bun_install_script_url }}
             KILOCODE_INSTALL_COMMAND=${{ steps.kilocode-contract.outputs.install_command }}
             GEMINI_CLI_INSTALL_COMMAND=${{ steps.gemini-contract.outputs.install_command }}
             COPILOT_INSTALL_COMMAND=${{ steps.copilot-contract.outputs.install_command }}

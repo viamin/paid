@@ -12,6 +12,31 @@ module InstallContractHelpers
 
   module_function
 
+  def contract_for(provider_key)
+    AgentHarness.install_contract(provider_key.to_sym)
+  rescue AgentHarness::ConfigurationError
+    metadata_installation_for(provider_key)
+  end
+
+  def metadata_installation_for(provider_key)
+    metadata = AgentHarness.provider_metadata(provider_key.to_sym)
+    installation = metadata.dig(:runtime, :installation)
+    return normalize_metadata_installation(installation) if installation
+
+    raise AgentHarness::ConfigurationError, "Provider #{provider_key} does not expose install metadata"
+  end
+
+  def normalize_metadata_installation(installation)
+    source = installation[:source_type]
+    contract = installation.dup
+    contract[:source] ||= source if source
+    contract[:package] ||= installation[:package_name] if installation[:package_name]
+    contract[:version] ||= installation[:resolved_version] || installation[:default_version]
+    contract[:default_version] ||= installation[:default_version] || installation[:resolved_version]
+    contract[:install_command] ||= installation[:install_command]
+    contract
+  end
+
   def normalized_install_command(contract)
     command = Array(contract[:install_command]).dup
     return command if command.empty?
