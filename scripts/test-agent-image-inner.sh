@@ -61,7 +61,6 @@ check_tool "   Gemini CLI" gemini --help
 check_tool "   Kilocode CLI" kilo --help
 check_tool "   Pi CLI" pi --help
 check_tool "   Cursor agent CLI" cursor-agent --version
-check_tool "   Aider CLI" aider --help
 
 echo ""
 echo "3. User check (should be agent, not root):"

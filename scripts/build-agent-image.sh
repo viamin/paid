@@ -168,16 +168,6 @@ if [ -z "${GEMINI_CLI_INSTALL_COMMAND}" ]; then
     exit 1
 fi
 
-# Extract Aider CLI install command from agent-harness (single source of truth).
-# agent-harness owns the uv bootstrap, aider-chat version pin, and install recipe.
-AIDER_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-runner-install-contract.rb" aider)
-AIDER_INSTALL_COMMAND=$(echo "${AIDER_CONTRACT}" | sed -n 's/^INSTALL_COMMAND=//p')
-
-if [ -z "${AIDER_INSTALL_COMMAND}" ]; then
-    echo "ERROR: Could not extract Aider CLI install command from agent-harness" >&2
-    exit 1
-fi
-
 # Extract Copilot CLI install command from agent-harness (single source of truth).
 COPILOT_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-runner-install-contract.rb" copilot)
 COPILOT_INSTALL_COMMAND=$(echo "${COPILOT_CONTRACT}" | sed -n 's/^INSTALL_COMMAND=//p')
@@ -203,7 +193,6 @@ echo "  opencode: via agent-harness contract"
 echo "  pi: ${PI_PACKAGE}"
 echo "  kilocode-cli: ${KILOCODE_INSTALL_COMMAND}"
 echo "  gemini-cli: ${GEMINI_CLI_INSTALL_COMMAND}"
-echo "  aider-cli: via agent-harness contract"
 echo "  copilot-cli: ${COPILOT_INSTALL_COMMAND}"
 
 "${DOCKER_BUILD_ENV[@]}" docker build \
@@ -224,7 +213,6 @@ echo "  copilot-cli: ${COPILOT_INSTALL_COMMAND}"
     --build-arg "PI_PACKAGE=${PI_PACKAGE}" \
     --build-arg "KILOCODE_INSTALL_COMMAND=${KILOCODE_INSTALL_COMMAND}" \
     --build-arg "GEMINI_CLI_INSTALL_COMMAND=${GEMINI_CLI_INSTALL_COMMAND}" \
-    --build-arg "AIDER_INSTALL_COMMAND=${AIDER_INSTALL_COMMAND}" \
     --build-arg "COPILOT_INSTALL_COMMAND=${COPILOT_INSTALL_COMMAND}" \
     "${PROJECT_ROOT}/docker/agent/"
 

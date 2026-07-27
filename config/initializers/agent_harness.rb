@@ -355,7 +355,7 @@ AgentHarness.configure do |config|
   end
 
   config.default_provider = default_key if default_key
-  config.fallback_providers = %w[cursor aider].filter_map do |runner_key|
+  config.fallback_providers = %w[cursor].filter_map do |runner_key|
     next unless supported_runner_keys.include?(runner_key)
 
     harness_runner_key = RunnerSupport.harness_runner_key_for(runner_key).to_sym

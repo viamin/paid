@@ -10,7 +10,7 @@ This glossary defines terms specific to the Paid platform that are not industry-
 |------|-----------|
 | **Agent Run** | A single execution of a runner against a task (issue, PR review, etc.). Tracks lifecycle from queued to running to completed/failed. Core domain object (`AgentRun` model). |
 | **Focused Agent Run** | An agent run scoped to a single, narrow problem class (e.g., CI fix, review response) rather than all PR problems at once. See RDR-031. |
-| **Runner** | A code execution backend (e.g., Claude Code, Copilot, Aider, OpenCode, Kilocode) that performs agent work. Formerly called "Provider" in code. Renamed in #1950. NOT the same as an LLM provider. |
+| **Runner** | A code execution backend (e.g., Claude Code, Copilot, OpenCode, Kilocode) that performs agent work. Formerly called "Provider" in code. Renamed in #1950. NOT the same as an LLM provider. |
 | **Runner State** | The operational status record for a runner (healthy, degraded, circuit-open, etc.). This remains implemented through legacy `ProviderState` / `provider_states` identifiers even though the domain concept is runner health. |
 | **Runner Key** | The unique identifier string for a specific runner (e.g., `claude_code`, `copilot`). Formerly `provider_key`. Renamed in #1950. |
 | **Agent Harness** | The shared execution framework (`agent_harness` gem) that wraps individual runners, providing plan-only APIs, heartbeats, and lifecycle management. All LLM calls must go through this gem. |

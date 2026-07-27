@@ -21,7 +21,6 @@ services:
     - agent-opencode-data:/home/vscode/.local/share/opencode
     - agent-copilot:/home/vscode/.copilot
     - agent-kilocode:/home/vscode/.kilocode
-    - agent-aider:/home/vscode/.aider
     - agent-cursor:/home/vscode/.cursor
     - agent-omp:/home/vscode/.omp
 
@@ -121,6 +120,5 @@ volumes:
   agent-opencode-data:
   agent-copilot:
   agent-kilocode:
-  agent-aider:
   agent-cursor:
   agent-omp:

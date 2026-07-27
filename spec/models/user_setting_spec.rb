@@ -158,7 +158,7 @@ RSpec.describe UserSetting do
     it "returns user-configured run-enabled runners filtered to container-executable" do
       allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor])
       user.runners.create!(runner_key: "cursor", enabled_for_agent_runs: true)
-      user.runners.create!(runner_key: "aider", enabled_for_agent_runs: true)
+      user.runners.create!(runner_key: "codex", enabled_for_agent_runs: true)
 
       expect(described_class.enabled_agent_runners(user)).to contain_exactly("claude", "cursor")
     end
@@ -195,7 +195,7 @@ RSpec.describe UserSetting do
     it "returns configured fallback runners filtered to container-executable" do
       allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor])
       user.runners.create!(runner_key: "cursor", enabled_for_agent_runs: false, enabled_for_fallback: true)
-      user.runners.create!(runner_key: "aider", enabled_for_agent_runs: false, enabled_for_fallback: true)
+      user.runners.create!(runner_key: "codex", enabled_for_agent_runs: false, enabled_for_fallback: true)
 
       expect(described_class.fallback_candidate_providers(user)).to contain_exactly("claude", "cursor")
     end
@@ -530,36 +530,36 @@ RSpec.describe UserSetting do
     let(:user) { create(:user) }
 
     before do
-      allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor aider])
+      allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor codex])
       user.runners.create!(runner_key: "cursor")
-      user.runners.create!(runner_key: "aider")
+      user.runners.create!(runner_key: "codex")
     end
 
     it "returns default runner first, then fallbacks" do
-      setting = build(:user_setting, user: user, default_agent_runner: "claude", fallback_runners: %w[cursor aider])
-      expect(setting.provider_priority).to eq(%w[claude cursor aider])
+      setting = build(:user_setting, user: user, default_agent_runner: "claude", fallback_runners: %w[cursor codex])
+      expect(setting.provider_priority).to eq(%w[claude cursor codex])
     end
 
     it "excludes the default runner from fallback list" do
       setting = build(:user_setting, user: user, default_agent_runner: "claude", fallback_runners: %w[claude cursor])
-      expect(setting.provider_priority).to eq(%w[claude cursor aider])
+      expect(setting.provider_priority).to eq(%w[claude cursor codex])
     end
 
     it "handles empty fallback_runners" do
       setting = build(:user_setting, user: user, default_agent_runner: "claude", fallback_runners: [])
-      expect(setting.provider_priority).to eq(%w[claude aider cursor])
+      expect(setting.provider_priority).to eq(%w[claude codex cursor])
     end
 
     it "handles nil fallback_runners" do
       setting = build(:user_setting, user: user, default_agent_runner: "claude")
       setting.fallback_runners = nil
-      expect(setting.provider_priority).to eq(%w[claude aider cursor])
+      expect(setting.provider_priority).to eq(%w[claude codex cursor])
     end
 
     it "appends configured fallback runners missing from saved order" do
       setting = build(:user_setting, user: user, default_agent_runner: "claude", fallback_runners: [ "cursor" ])
 
-      expect(setting.provider_priority).to eq(%w[claude cursor aider])
+      expect(setting.provider_priority).to eq(%w[claude cursor codex])
     end
 
     it "includes fallback-only runners in the runtime priority" do
@@ -570,7 +570,7 @@ RSpec.describe UserSetting do
 
       setting = build(:user_setting, user: user, default_agent_runner: "claude", fallback_runners: [])
 
-      expect(setting.provider_priority).to eq(%w[claude aider cursor])
+      expect(setting.provider_priority).to eq(%w[claude codex cursor])
     end
   end
 
@@ -578,11 +578,11 @@ RSpec.describe UserSetting do
     let(:user) { create(:user) }
     let(:claude) { user.runners.find_by!(runner_key: "claude") }
     let!(:cursor) { user.runners.create!(runner_key: "cursor", enabled_for_agent_runs: true) }
-    let!(:aider) { user.runners.create!(runner_key: "aider", enabled_for_agent_runs: true) }
+    let!(:codex) { user.runners.create!(runner_key: "codex", enabled_for_agent_runs: true) }
     let(:settings) { user.settings }
 
     before do
-      allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor aider])
+      allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor codex])
     end
 
     it "returns the goal-specific default in single mode" do
@@ -592,7 +592,7 @@ RSpec.describe UserSetting do
 
     it "returns the only enabled runner when fewer than two are enabled" do
       cursor.update!(enabled_for_agent_runs: false)
-      aider.update!(enabled_for_agent_runs: false)
+      codex.update!(enabled_for_agent_runs: false)
       settings.update!(runner_selection_mode: "round_robin")
 
       expect(settings.select_automated_provider_identifier).to eq(claude.routing_key)
@@ -601,46 +601,46 @@ RSpec.describe UserSetting do
     describe "round_robin mode" do
       it "cycles through runners in alphabetical-key order, repeating each weight times" do
         # Providers iterate in `ordered` scope (provider_key ASC):
-        # aider, claude, cursor.
-        aider.update!(weight: 1)
-        claude.update!(weight: 3)
+        # claude, codex, cursor.
+        claude.update!(weight: 1)
+        codex.update!(weight: 3)
         cursor.update!(weight: 1)
         settings.update!(runner_selection_mode: "round_robin")
 
         sequence = Array.new(10) { settings.select_automated_provider_identifier }
         expected_cycle = [
-          aider.routing_key,
-          claude.routing_key, claude.routing_key, claude.routing_key,
+          claude.routing_key,
+          codex.routing_key, codex.routing_key, codex.routing_key,
           cursor.routing_key
         ]
         expect(sequence).to eq(expected_cycle + expected_cycle)
       end
 
       it "resets the cursor when runner weights change" do
-        aider.update!(weight: 5)
+        claude.update!(weight: 5)
         settings.update!(runner_selection_mode: "round_robin")
 
         2.times { settings.select_automated_provider_identifier }
-        aider.update!(weight: 1)
+        claude.update!(weight: 1)
 
         first_after_change = settings.select_automated_provider_identifier
-        expect(first_after_change).to eq(aider.routing_key)
+        expect(first_after_change).to eq(claude.routing_key)
       end
     end
 
     describe "random mode" do
       it "respects weights when picking a runner" do
-        # Ordered candidates: aider (1), claude (3), cursor (1)
-        # Cumulative weights: aider [0..0], claude [1..3], cursor [4..4]
-        aider.update!(weight: 1)
-        claude.update!(weight: 3)
+        # Ordered candidates: claude (1), codex (3), cursor (1)
+        # Cumulative weights: claude [0..0], codex [1..3], cursor [4..4]
+        claude.update!(weight: 1)
+        codex.update!(weight: 3)
         cursor.update!(weight: 1)
         settings.update!(runner_selection_mode: "random")
 
         allow(SecureRandom).to receive(:random_number).with(5).and_return(0, 1, 3, 4)
 
         results = Array.new(4) { settings.select_automated_provider_identifier }
-        expect(results).to eq([ aider.routing_key, claude.routing_key, claude.routing_key, cursor.routing_key ])
+        expect(results).to eq([ claude.routing_key, codex.routing_key, codex.routing_key, cursor.routing_key ])
       end
     end
   end
@@ -649,51 +649,51 @@ RSpec.describe UserSetting do
     let(:user) { create(:user) }
 
     before do
-      allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor aider])
+      allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor codex])
       user.runners.create!(runner_key: "cursor")
-      user.runners.create!(runner_key: "aider")
+      user.runners.create!(runner_key: "codex")
     end
 
     it "respects saved order before appending remaining configured runners" do
-      setting = build(:user_setting, user: user, fallback_runners: [ "aider" ])
+      setting = build(:user_setting, user: user, fallback_runners: [ "codex" ])
 
-      expect(setting.fallback_priority_for(primary_provider: "claude")).to eq(%w[aider cursor])
+      expect(setting.fallback_priority_for(primary_provider: "claude")).to eq(%w[codex cursor])
     end
 
     it "wraps configured order after the current primary runner" do
-      setting = build(:user_setting, user: user, fallback_runners: %w[claude cursor aider])
+      setting = build(:user_setting, user: user, fallback_runners: %w[claude cursor codex])
 
-      expect(setting.fallback_priority_for(primary_provider: "cursor")).to eq(%w[aider claude])
+      expect(setting.fallback_priority_for(primary_provider: "cursor")).to eq(%w[codex claude])
     end
   end
 
   describe "#available_providers" do
     let(:user) { create(:user) }
-    let(:setting) { create(:user_setting, user: user, fallback_runners: %w[cursor aider]) }
+    let(:setting) { create(:user_setting, user: user, fallback_runners: %w[cursor codex]) }
 
     before do
-      allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor aider])
+      allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor codex])
       user.runners.create!(runner_key: "cursor")
-      user.runners.create!(runner_key: "aider")
+      user.runners.create!(runner_key: "codex")
     end
 
     it "returns all runners when none are unavailable" do
-      expect(setting.available_providers).to eq(%w[claude cursor aider])
+      expect(setting.available_providers).to eq(%w[claude cursor codex])
     end
 
     it "excludes rate-limited runners" do
       create(:runner_state, user: user, runner_name: "cursor", rate_limited_until: 1.hour.from_now)
-      expect(setting.available_providers).to eq(%w[claude aider])
+      expect(setting.available_providers).to eq(%w[claude codex])
     end
 
     it "excludes runners with open circuits" do
       create(:runner_state, :circuit_open, user: user, runner_name: "claude")
-      expect(setting.available_providers).to eq(%w[cursor aider])
+      expect(setting.available_providers).to eq(%w[cursor codex])
     end
 
     it "includes runners with half-open circuits" do
       create(:runner_state, :circuit_half_open, user: user, runner_name: "cursor")
-      expect(setting.available_providers).to eq(%w[claude cursor aider])
+      expect(setting.available_providers).to eq(%w[claude cursor codex])
     end
   end
 
@@ -734,7 +734,7 @@ RSpec.describe UserSetting do
     let(:user) { create(:user) }
 
     before do
-      allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor aider])
+      allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor codex])
     end
 
     it "is valid with known runners" do
@@ -824,16 +824,16 @@ RSpec.describe UserSetting do
     let(:setting) { build(:user_setting, user: user) }
 
     before do
-      allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor aider])
+      allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor codex])
     end
 
     it "resolves runner-key tokens without calling Runner.for_identifier per candidate" do
       cursor = user.runners.create!(runner_key: "cursor", enabled_for_agent_runs: true, enabled_for_fallback: true)
-      aider = user.runners.create!(runner_key: "aider", enabled_for_agent_runs: true, enabled_for_fallback: true)
+      codex = user.runners.create!(runner_key: "codex", enabled_for_agent_runs: true, enabled_for_fallback: true)
 
       expect(Runner).not_to receive(:for_identifier)
 
-      result = setting.send(:identifiers_for_provider_token, "cursor", candidates: [ cursor.routing_key, aider.routing_key ])
+      result = setting.send(:identifiers_for_provider_token, "cursor", candidates: [ cursor.routing_key, codex.routing_key ])
 
       expect(result).to eq([ cursor.routing_key ])
     end
@@ -885,21 +885,21 @@ RSpec.describe UserSetting do
 
   describe "new-record runner availability" do
     before do
-      allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor aider])
+      allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor codex])
     end
 
     it "uses the new user when resolving agent-run runners" do
       new_user = build(:user)
       setting = build(:user_setting, user: new_user)
 
-      expect(setting.send(:allowed_runner_identifiers_for_agent_runs)).to match_array(%w[claude cursor aider])
+      expect(setting.send(:allowed_runner_identifiers_for_agent_runs)).to match_array(%w[claude cursor codex])
     end
 
     it "uses the new user when resolving fallback runners" do
       new_user = build(:user)
       setting = build(:user_setting, user: new_user)
 
-      expect(setting.send(:allowed_runner_identifiers_for_fallback)).to match_array(%w[claude cursor aider])
+      expect(setting.send(:allowed_runner_identifiers_for_fallback)).to match_array(%w[claude cursor codex])
     end
   end
 end

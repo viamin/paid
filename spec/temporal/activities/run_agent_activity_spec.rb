@@ -445,7 +445,7 @@ RSpec.describe Activities::RunAgentActivity do
       result = described_class.runner_order(
         agent_type: "claude_code",
         fallback_enabled: false,
-        fallback_runners: %w[cursor aider]
+        fallback_runners: %w[cursor gemini]
       )
 
       expect(result).to eq([ "claude_code" ])
@@ -455,10 +455,10 @@ RSpec.describe Activities::RunAgentActivity do
       result = described_class.runner_order(
         agent_type: "claude_code",
         fallback_enabled: true,
-        fallback_runners: %w[claude cursor aider]
+        fallback_runners: %w[claude cursor gemini]
       )
 
-      expect(result).to eq(%w[claude_code cursor aider])
+      expect(result).to eq(%w[claude_code cursor gemini])
     end
 
     it "includes codex in fallback order when listed" do
@@ -517,7 +517,7 @@ RSpec.describe Activities::RunAgentActivity do
       count = described_class.runner_attempt_count(
         agent_type: "claude_code",
         fallback_enabled: true,
-        fallback_runners: %w[claude cursor aider]
+        fallback_runners: %w[claude cursor gemini]
       )
 
       expect(count).to eq(3)
@@ -1370,15 +1370,15 @@ RSpec.describe Activities::RunAgentActivity do
     it "wraps saved fallback order after the active primary runner entry" do
       claude = user.runners.find_by!(runner_key: "claude")
       cursor = create(:runner, user: user, runner_key: "cursor")
-      aider = create(:runner, user: user, runner_key: "aider")
+      gemini = create(:runner, user: user, runner_key: "gemini")
       provider_run = create(:agent_run, :with_git_context, project: project,
         issue: create(:issue, project: project), runner: cursor, agent_type: "cursor", container_id: "abc123")
       user.settings.update!(fallback_enabled: true,
-        fallback_runners: [ claude.routing_key, cursor.routing_key, aider.routing_key ])
+        fallback_runners: [ claude.routing_key, cursor.routing_key, gemini.routing_key ])
 
       runners = activity.send(:build_runner_order, provider_run, user.settings)
 
-      expect(runners).to eq([ cursor.routing_key, aider.routing_key, claude.routing_key ])
+      expect(runners).to eq([ cursor.routing_key, gemini.routing_key, claude.routing_key ])
     end
 
     it "filters an explicitly selected runner that is no longer container executable" do
@@ -1566,13 +1566,13 @@ RSpec.describe Activities::RunAgentActivity do
 
       it "uses stable sort: runners with equal failure counts keep original order" do
         codex_runner = create(:runner, user: user, runner_key: "codex")
-        aider_runner = create(:runner, user: user, runner_key: "aider")
+        gemini_runner = create(:runner, user: user, runner_key: "gemini")
         user.settings.update!(
           fallback_enabled: true,
-          fallback_runners: [ codex_runner.routing_key, aider_runner.routing_key ]
+          fallback_runners: [ codex_runner.routing_key, gemini_runner.routing_key ]
         )
 
-        # Both claude_code and codex have failed once; aider is untried
+        # Both claude_code and codex have failed once; gemini is untried
         create(:agent_run, :failed, project: project, issue: issue, goal: "create_pr",
           runners_attempted: [
             { "runner" => "claude_code", "success" => false, "error_type" => "error" },
@@ -1581,8 +1581,8 @@ RSpec.describe Activities::RunAgentActivity do
 
         runners = activity.send(:build_runner_order, agent_run, user.settings)
 
-        # aider (0 failures) should come first
-        expect(runners.first).to eq(aider_runner.routing_key)
+        # gemini (0 failures) should come first
+        expect(runners.first).to eq(gemini_runner.routing_key)
         # claude_code and codex (1 failure each) follow in their original order
         expect(runners[1]).to eq("claude_code")
         expect(runners[2]).to eq(codex_runner.routing_key)
@@ -4048,10 +4048,10 @@ expect(container_service).to receive(:execute).with(
       end
 
       before do
-        allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor aider])
+        allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor copilot])
         user.runners.find_or_create_by!(runner_key: "cursor")
-        user.runners.find_or_create_by!(runner_key: "aider")
-        user.settings.update!(fallback_enabled: true, fallback_runners: %w[claude cursor aider])
+        user.runners.find_or_create_by!(runner_key: "copilot")
+        user.settings.update!(fallback_enabled: true, fallback_runners: %w[claude cursor copilot])
         allow(git_ops).to receive_messages(head_sha: "sha123", commit_uncommitted_changes: false, has_changes_since?: false)
       end
 
@@ -4200,7 +4200,7 @@ expect(container_service).to receive(:execute).with(
         result = activity.execute(agent_run_id: agent_run.id)
 
         expect(result[:success]).to be true
-        expect(result[:final_runner]).to eq("aider")
+        expect(result[:final_runner]).to eq("copilot")
       end
 
       it "records runner switch when falling back" do
@@ -4281,7 +4281,7 @@ expect(container_service).to receive(:execute).with(
         expect(agent_run.status).to eq("timeout")
         expect(agent_run.error_message).to include("wall_clock_timeout")
         expect(agent_run.runners_attempted.map { |attempt| attempt["runner"] }).to eq(
-          %w[claude_code cursor aider]
+          %w[claude_code cursor copilot]
         )
         expect(agent_run.final_runner).to be_nil
       end
@@ -4742,7 +4742,7 @@ expect(container_service).to receive(:execute).with(
       end
 
       it "executes routing-key fallbacks with the runner entry config intact" do
-        allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor aider opencode])
+        allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor copilot opencode])
         api_key = create(:runner_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret")
         opencode_runner = create_opencode_runner_entry(
           user: user,
@@ -4759,7 +4759,7 @@ expect(container_service).to receive(:execute).with(
         reset_time = 2.hours.from_now
 
         # Pre-set all runner states as rate limited so runner_unavailable? skips them
-        %w[claude cursor aider].each do |provider_name|
+        %w[claude cursor copilot].each do |provider_name|
           user.runner_states.find_or_create_by!(runner_name: provider_name).tap do |state|
             state.update!(rate_limited_until: reset_time)
           end

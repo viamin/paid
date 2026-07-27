@@ -39,10 +39,10 @@ RSpec.describe Activities::QueueAgentRunActivity do
     end
 
     it "accepts a custom agent_type" do
-      result = activity.execute(project_id: project.id, issue_id: issue.id, agent_type: "aider")
+      result = activity.execute(project_id: project.id, issue_id: issue.id, agent_type: "gemini")
 
       agent_run = AgentRun.find(result[:agent_run_id])
-      expect(agent_run.agent_type).to eq("aider")
+      expect(agent_run.agent_type).to eq("gemini")
       expect(agent_run.runner_id).to be_nil
     end
 

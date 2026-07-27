@@ -351,20 +351,6 @@ jobs:
           echo "$install_command" >> "$GITHUB_OUTPUT"
           echo "PAID_EOF" >> "$GITHUB_OUTPUT"
 
-      - name: Extract Aider CLI install contract from agent-harness
-        if: steps.changes.outputs.image_relevant == 'true'
-        id: aider-contract
-        run: |
-          contract=$(bundle exec ruby scripts/extract-runner-install-contract.rb aider)
-          install_command=$(echo "$contract" | sed -n 's/^INSTALL_COMMAND=//p')
-          if [ -z "$install_command" ]; then
-            echo "Failed to extract Aider CLI install command from agent-harness" >&2
-            exit 1
-          fi
-          echo "install_command<<PAID_EOF" >> "$GITHUB_OUTPUT"
-          echo "$install_command" >> "$GITHUB_OUTPUT"
-          echo "PAID_EOF" >> "$GITHUB_OUTPUT"
-
       - name: Extract Copilot CLI install contract from agent-harness
         if: steps.changes.outputs.image_relevant == 'true'
         id: copilot-contract
@@ -404,7 +390,6 @@ jobs:
             PI_PACKAGE=${{ steps.pi-contract.outputs.package }}
             KILOCODE_INSTALL_COMMAND=${{ steps.kilocode-contract.outputs.install_command }}
             GEMINI_CLI_INSTALL_COMMAND=${{ steps.gemini-contract.outputs.install_command }}
-            AIDER_INSTALL_COMMAND=${{ steps.aider-contract.outputs.install_command }}
             COPILOT_INSTALL_COMMAND=${{ steps.copilot-contract.outputs.install_command }}
           cache-from: type=gha,scope=paid-agent
           cache-to: type=gha,mode=max,scope=paid-agent

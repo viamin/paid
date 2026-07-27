@@ -5,13 +5,10 @@ module Providers
     PROVIDER_KEY_TO_MODEL_PROVIDER = {
       "claude" => "anthropic",
       "cursor" => "anthropic",
-      "aider" => "anthropic",
       "codex" => "openai",
       "gemini" => "google"
     }.freeze
 
-    # Aider is excluded until its execution path supports direct-outbound
-    # plumbing (see Provider#requires_direct_outbound? for details).
     DIRECT_OUTBOUND_PROVIDER_KEYS = %w[kilocode opencode].freeze
 
     def self.call(provider_key:)

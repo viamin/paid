@@ -76,7 +76,7 @@ Paid is composed of four main subsystems that work together to orchestrate AI-dr
 | Component | Technology | Rationale |
 |-----------|------------|-----------|
 | Containers | Docker | Industry standard, aidp compatibility |
-| Agent CLIs | Claude Code, Cursor, Gemini CLI, GitHub Copilot, Codex, Aider, OpenCode, Kilocode, MistralVibe | Extracted to shared gem |
+| Agent CLIs | Claude Code, Cursor, Gemini CLI, GitHub Copilot, Codex, OpenCode, Kilocode, MistralVibe | Extracted to shared gem |
 | API Calls | agent-harness gem | Unified LLM interface, model registry |
 | Isolation | Git worktrees | Parallel work without conflicts |
 
@@ -212,7 +212,7 @@ Each agent runs in an isolated Docker container with:
 Based on aidp's devcontainer approach:
 
 - Base: Ruby + Node + common dev tools
-- Pre-installed: Agent CLIs (Claude Code, Cursor, Gemini CLI, GitHub Copilot, Codex, Aider, OpenCode, Kilocode, MistralVibe)
+- Pre-installed: Agent CLIs (Claude Code, Cursor, Gemini CLI, GitHub Copilot, Codex, OpenCode, Kilocode, MistralVibe)
 - Firewall: Allowlist-only network access
 - No secrets: API keys not passed to container
 
@@ -331,7 +331,7 @@ Two modes of agent execution:
 
 **CLI Mode** (via agent-harness gem):
 
-- Claude Code, Cursor, Gemini CLI, GitHub Copilot, Codex, Aider, OpenCode, Kilocode, MistralVibe
+- Claude Code, Cursor, Gemini CLI, GitHub Copilot, Codex, OpenCode, Kilocode, MistralVibe
 - Runs in container with proxied API access
 - Orchestration handles fallbacks, rate limits, and health checks
 - Output and token usage captured via `AgentHarness::Response`/token tracker

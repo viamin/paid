@@ -43,7 +43,7 @@ RSpec.describe Containers::TokenOptimization do
     end
 
     context "with unsupported runners" do
-      %w[kilocode pi aider unknown_runner].each do |runner|
+      %w[kilocode pi unknown_runner].each do |runner|
         it "does not call execute for #{runner}" do
           expect(container_service).not_to receive(:execute)
 

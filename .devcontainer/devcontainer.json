@@ -46,7 +46,6 @@
     "GITHUB_TOKEN": "${localEnv:GITHUB_TOKEN}"
   },
   "remoteEnv": {
-    "AIDER_NO_BROWSER": "1",
     "GEMINI_API_KEY": "${localEnv:GEMINI_API_KEY}",
     "OVERMIND_SOCKET": "${containerWorkspaceFolder}/.overmind.sock",
     "PATH": "${containerEnv:PATH}:/home/vscode/.local/bin:/home/vscode/.bun/bin"
@@ -110,7 +109,6 @@
     "github-copilot-cli": "bash scripts/install-from-contract.sh copilot",
     "kilocode": "bash scripts/install-from-contract.sh kilocode",
     "cursor-agent": "bash scripts/install-from-contract.sh cursor",
-    "aider": "bash scripts/install-from-contract.sh aider",
     "opencode": "bash scripts/install-from-contract.sh opencode",
     "oh-my-pi": "bash .devcontainer/install-oh-my-pi.sh",
     // Dev tools

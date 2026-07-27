@@ -25,9 +25,9 @@ class ProviderApiKey < ApplicationRecord
   # Returns true when this API key's service type is compatible with the
   # given provider. Providers with a fixed service type (claude → anthropic)
   # are checked against ProviderSupport::PROVIDER_API_SERVICE_TYPE. Providers
-  # that support multiple upstream API providers (opencode, kilocode, aider, pi)
+  # that support multiple upstream API providers (opencode, kilocode, pi)
   # resolve compatibility from their provider-specific service-type sets.
-  DYNAMIC_API_PROVIDER_KEYS = %w[opencode kilocode aider pi].to_set.freeze
+  DYNAMIC_API_PROVIDER_KEYS = %w[opencode kilocode pi].to_set.freeze
 
   def compatible_with?(provider_key)
     if DYNAMIC_API_PROVIDER_KEYS.include?(provider_key.to_s)

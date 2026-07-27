@@ -286,7 +286,6 @@ module AgentRuns
     end
 
     def account_credential_service_type_for(base_runner)
-      return base_runner.aider_required_api_service_type if base_runner.runner_key == "aider"
       return base_runner.pi_required_api_service_type if base_runner.runner_key == "pi"
 
       static = support_module.api_service_type_for(base_runner.runner_key)
@@ -310,13 +309,6 @@ module AgentRuns
       api_service_type = credential.provider_api_key&.api_service_type || account_credential_service_type_for(base_runner)
 
       case base_runner.runner_key
-      when "aider"
-        {
-          "aider" => {
-            "api_provider" => api_service_type,
-            "model" => base_runner.aider_model_id
-          }.compact
-        }
       when "pi"
         config = {
           "pi" => {

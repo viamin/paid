@@ -59,7 +59,6 @@ RSpec.describe Knowledge::AnalysisRunner, :no_db do
     it "returns true for anthropic-backed providers" do
       expect(described_class.supported_provider?("claude")).to be true
       expect(described_class.supported_provider?("cursor")).to be true
-      expect(described_class.supported_provider?("aider")).to be true
     end
 
     it "returns true for openai-backed providers" do

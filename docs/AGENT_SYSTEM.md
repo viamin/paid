@@ -31,7 +31,7 @@ The agent system has four layers:
 │  ┌────────────────────────────────────────────────────────────────────────┐ │
 │  │ 4. AGENT LAYER (agent-harness gem)                                       │ │
 │  │    Unified interface to CLI agents (Claude Code, Cursor, Gemini CLI,   │ │
-│  │    GitHub Copilot, Codex, Aider, OpenCode, Kilocode)                   │ │
+│  │    GitHub Copilot, Codex, OpenCode, Kilocode)                          │ │
 │  └────────────────────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -618,7 +618,7 @@ Paid adopts the existing `agent-harness` gem for CLI agent orchestration and pro
 
 ### Provider Registry
 
-Built-in providers include Claude Code, Cursor, Gemini CLI, GitHub Copilot, Codex, Aider, OpenCode, and Kilocode. Providers expose capabilities (streaming, file_upload, vision, tool_use, json_mode, mcp, dangerous_mode), firewall requirements, and instruction file paths. The registry also supports aliases (e.g., `:anthropic` → `:claude`, `:copilot` → `:github_copilot`).
+Built-in providers include Claude Code, Cursor, Gemini CLI, GitHub Copilot, Codex, OpenCode, and Kilocode. Providers expose capabilities (streaming, file_upload, vision, tool_use, json_mode, mcp, dangerous_mode), firewall requirements, and instruction file paths. The registry also supports aliases (e.g., `:anthropic` → `:claude`, `:copilot` → `:github_copilot`).
 
 ### Response Shape
 

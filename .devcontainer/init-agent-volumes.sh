@@ -22,7 +22,6 @@ AGENT_DIRS=(
   "$HOME/.local/share/opencode"
   "$HOME/.copilot"
   "$HOME/.kilocode"
-  "$HOME/.aider"
   "$HOME/.cursor"
   "$HOME/.omp"
 )
