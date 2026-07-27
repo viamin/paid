@@ -133,7 +133,6 @@ jobs:
             "backups/"
             ".pg_log.txt"
             ".ruby_env.sh"
-            ".aider*"
             ".paid-heartbeat"
             ".codegraph/"
             "vendor/bundle/"

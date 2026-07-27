@@ -92,41 +92,6 @@ if [ -f "/usr/local/bin/codex" ] && [ ! -f "/usr/local/bin/codex.real" ]; then
 fi
 
 # ============================================================================
-# Aider
-# ============================================================================
-
-# Create Aider path shim (resolves install location; does not add auto-approval flags
-# since Aider does not have a global auto-approve mode)
-echo "[DEBUG] Creating Aider path shim..."
-cat << 'EOF' | sudo tee "$WRAPPER_DIR/aider" > /dev/null
-#!/bin/bash
-# Aider path shim for devcontainer
-# Prefer user-local installation if present
-if [ -f "$HOME/.local/bin/aider" ]; then
-  exec "$HOME/.local/bin/aider" "$@"
-fi
-
-# Resolve this shim's canonical path to avoid recursion
-SELF_PATH="$(readlink -f "$0" 2>/dev/null || echo "$0")"
-AIDER_CMD="$(command -v aider 2>/dev/null || true)"
-if [ -n "$AIDER_CMD" ]; then
-  AIDER_REAL="$(readlink -f "$AIDER_CMD" 2>/dev/null || echo "$AIDER_CMD")"
-  if [ "$AIDER_REAL" != "$SELF_PATH" ]; then
-    exec "$AIDER_CMD" "$@"
-  fi
-fi
-
-echo "Error: could not locate a real 'aider' binary." >&2
-exit 1
-EOF
-sudo chmod +x "$WRAPPER_DIR/aider"
-
-# Link to /usr/local/bin if not already present
-if [ ! -f "/usr/local/bin/aider" ]; then
-  sudo ln -sf "$WRAPPER_DIR/aider" /usr/local/bin/aider
-fi
-
-# ============================================================================
 # Gemini CLI
 # ============================================================================
 
@@ -248,7 +213,6 @@ echo "  - Claude: Dangerous mode (--dangerously-skip-permissions)"
 echo "  - Codex: Auto-approve mode (approval_policy=never, sandbox=danger-full-access)"
 echo "  - Gemini CLI: Auto-accept mode (autoAccept=true)"
 echo "  - KiloCode: Auto-approve mode (permission=allow, container-specific config)"
-echo "  - Aider: Path shim (no global auto-approve mode available)"
 echo "  - Cursor: Config mounted from host (~/.cursor)"
 echo "  - OpenCode: Auto-approve mode (permission=allow, container-specific config)"
 echo "  - GitHub Copilot CLI: Config mounted from host (~/.copilot)"
