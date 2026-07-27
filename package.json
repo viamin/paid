@@ -6,7 +6,7 @@
     "@eslint/js": "10.0.1",
     "@herb-tools/linter": "^0.10.2",
     "esbuild": "0.28.1",
-    "eslint": "10.7.0",
+    "eslint": "10.8.0",
     "markdownlint-cli": "0.49.1"
   },
   "scripts": {
@@ -22,7 +22,7 @@
     "chartkick": "5.0.1",
     "highlight.js": "11.11.1",
     "marked": "18.0.7",
-    "playwright": "1.61.1",
+    "playwright": "1.62.0",
     "sortablejs": "1.15.7",
     "tailwindcss": "4.3.3"
   },
