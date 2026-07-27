@@ -415,7 +415,7 @@ RUN if [ -z "${PI_PACKAGE}" ]; then \
 ARG OMP_PACKAGE
 ARG OMP_INSTALL_COMMAND
 ARG OMP_BUN_VERSION
-ARG OMP_BUN_INSTALL_COMMAND
+ARG OMP_BUN_INSTALL_SCRIPT_URL
 RUN if [ -z "${OMP_PACKAGE}" ]; then \
         echo "ERROR: OMP_PACKAGE build-arg is required (sourced from agent-harness)" >&2; \
         exit 1; \
@@ -428,13 +428,13 @@ RUN if [ -z "${OMP_PACKAGE}" ]; then \
         echo "ERROR: OMP_BUN_VERSION build-arg is required (sourced from agent-harness)" >&2; \
         exit 1; \
     fi \
-    && if [ -z "${OMP_BUN_INSTALL_COMMAND}" ]; then \
-        echo "ERROR: OMP_BUN_INSTALL_COMMAND build-arg is required (sourced from agent-harness)" >&2; \
+    && if [ -z "${OMP_BUN_INSTALL_SCRIPT_URL}" ]; then \
+        echo "ERROR: OMP_BUN_INSTALL_SCRIPT_URL build-arg is required (sourced from agent-harness)" >&2; \
         exit 1; \
     fi \
     && export BUN_INSTALL="/usr/local/bun" \
     && mkdir -p "${BUN_INSTALL}/bin" \
-    && sh -c "${OMP_BUN_INSTALL_COMMAND}" \
+    && curl -fsSL "${OMP_BUN_INSTALL_SCRIPT_URL}" | BUN_VERSION="${OMP_BUN_VERSION}" bash \
     && test -x "${BUN_INSTALL}/bin/bun" \
     && ln -sf "${BUN_INSTALL}/bin/bun" "${BUN_INSTALL}/bin/bunx" \
     && export PATH="${BUN_INSTALL}/bin:${PATH}" \

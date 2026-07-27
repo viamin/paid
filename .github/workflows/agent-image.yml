@@ -334,7 +334,7 @@ jobs:
           package=$(echo "$contract" | sed -n 's/^PACKAGE=//p')
           install_command=$(echo "$contract" | sed -n 's/^INSTALL_COMMAND=//p')
           bun_version=$(echo "$contract" | sed -n 's/^BUN_VERSION=//p')
-          bun_install_command=$(echo "$contract" | sed -n 's/^BUN_INSTALL_COMMAND=//p')
+          bun_install_script_url=$(echo "$contract" | sed -n 's/^BUN_INSTALL_SCRIPT_URL=//p')
           if [ -z "$package" ]; then
             echo "Failed to extract Oh My Pi package from agent-harness" >&2
             exit 1
@@ -347,8 +347,8 @@ jobs:
             echo "Failed to extract Oh My Pi Bun version from agent-harness" >&2
             exit 1
           fi
-          if [ -z "$bun_install_command" ]; then
-            echo "Failed to extract Oh My Pi Bun install command from agent-harness" >&2
+          if [ -z "$bun_install_script_url" ]; then
+            echo "Failed to extract Oh My Pi Bun install script URL from agent-harness" >&2
             exit 1
           fi
           echo "package=$package" >> "$GITHUB_OUTPUT"
@@ -356,9 +356,7 @@ jobs:
           echo "$install_command" >> "$GITHUB_OUTPUT"
           echo "PAID_EOF" >> "$GITHUB_OUTPUT"
           echo "bun_version=$bun_version" >> "$GITHUB_OUTPUT"
-          echo "bun_install_command<<PAID_EOF" >> "$GITHUB_OUTPUT"
-          echo "$bun_install_command" >> "$GITHUB_OUTPUT"
-          echo "PAID_EOF" >> "$GITHUB_OUTPUT"
+          echo "bun_install_script_url=$bun_install_script_url" >> "$GITHUB_OUTPUT"
 
       - name: Extract Kilocode CLI install contract from agent-harness
         if: steps.changes.outputs.image_relevant == 'true'
@@ -442,7 +440,7 @@ jobs:
             OMP_PACKAGE=${{ steps.omp-contract.outputs.package }}
             OMP_INSTALL_COMMAND=${{ steps.omp-contract.outputs.install_command }}
             OMP_BUN_VERSION=${{ steps.omp-contract.outputs.bun_version }}
-            OMP_BUN_INSTALL_COMMAND=${{ steps.omp-contract.outputs.bun_install_command }}
+            OMP_BUN_INSTALL_SCRIPT_URL=${{ steps.omp-contract.outputs.bun_install_script_url }}
             KILOCODE_INSTALL_COMMAND=${{ steps.kilocode-contract.outputs.install_command }}
             GEMINI_CLI_INSTALL_COMMAND=${{ steps.gemini-contract.outputs.install_command }}
             AIDER_INSTALL_COMMAND=${{ steps.aider-contract.outputs.install_command }}

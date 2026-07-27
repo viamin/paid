@@ -155,7 +155,7 @@ OMP_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-runner-install-
 OMP_PACKAGE=$(echo "${OMP_CONTRACT}" | sed -n 's/^PACKAGE=//p')
 OMP_INSTALL_COMMAND=$(echo "${OMP_CONTRACT}" | sed -n 's/^INSTALL_COMMAND=//p')
 OMP_BUN_VERSION=$(echo "${OMP_CONTRACT}" | sed -n 's/^BUN_VERSION=//p')
-OMP_BUN_INSTALL_COMMAND=$(echo "${OMP_CONTRACT}" | sed -n 's/^BUN_INSTALL_COMMAND=//p')
+OMP_BUN_INSTALL_SCRIPT_URL=$(echo "${OMP_CONTRACT}" | sed -n 's/^BUN_INSTALL_SCRIPT_URL=//p')
 if [ -z "${OMP_PACKAGE}" ]; then
     echo "ERROR: Could not extract Oh My Pi package from agent-harness" >&2
     exit 1
@@ -168,8 +168,8 @@ if [ -z "${OMP_BUN_VERSION}" ]; then
     echo "ERROR: Could not extract Oh My Pi Bun version from agent-harness" >&2
     exit 1
 fi
-if [ -z "${OMP_BUN_INSTALL_COMMAND}" ]; then
-    echo "ERROR: Could not extract Oh My Pi Bun install command from agent-harness" >&2
+if [ -z "${OMP_BUN_INSTALL_SCRIPT_URL}" ]; then
+    echo "ERROR: Could not extract Oh My Pi Bun install script URL from agent-harness" >&2
     exit 1
 fi
 
@@ -225,7 +225,7 @@ echo "  codex: ${CODEX_PACKAGE}"
 echo "  opencode: via agent-harness contract"
 echo "  pi: ${PI_PACKAGE}"
 echo "  omp: ${OMP_PACKAGE} via '${OMP_INSTALL_COMMAND}'"
-echo "  omp-bun: via '${OMP_BUN_INSTALL_COMMAND}' (version ${OMP_BUN_VERSION})"
+echo "  omp-bun: via '${OMP_BUN_INSTALL_SCRIPT_URL}' (version ${OMP_BUN_VERSION})"
 echo "  kilocode-cli: ${KILOCODE_INSTALL_COMMAND}"
 echo "  gemini-cli: ${GEMINI_CLI_INSTALL_COMMAND}"
 echo "  aider-cli: via agent-harness contract"
@@ -250,7 +250,7 @@ echo "  copilot-cli: ${COPILOT_INSTALL_COMMAND}"
   --build-arg "OMP_PACKAGE=${OMP_PACKAGE}" \
   --build-arg "OMP_INSTALL_COMMAND=${OMP_INSTALL_COMMAND}" \
   --build-arg "OMP_BUN_VERSION=${OMP_BUN_VERSION}" \
-  --build-arg "OMP_BUN_INSTALL_COMMAND=${OMP_BUN_INSTALL_COMMAND}" \
+  --build-arg "OMP_BUN_INSTALL_SCRIPT_URL=${OMP_BUN_INSTALL_SCRIPT_URL}" \
   --build-arg "KILOCODE_INSTALL_COMMAND=${KILOCODE_INSTALL_COMMAND}" \
     --build-arg "GEMINI_CLI_INSTALL_COMMAND=${GEMINI_CLI_INSTALL_COMMAND}" \
     --build-arg "AIDER_INSTALL_COMMAND=${AIDER_INSTALL_COMMAND}" \
