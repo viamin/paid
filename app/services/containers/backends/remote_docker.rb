@@ -13,7 +13,7 @@ module Containers
         ssl_ca_file: "REMOTE_DOCKER_CA"
       }.freeze
 
-      attr_reader :connection, :docker_url, :identifier
+      attr_reader :connection, :docker_url, :identifier, :proxy_external_url
 
       def self.from_env(env = ENV)
         host = env["REMOTE_DOCKER_HOST"].presence
@@ -26,9 +26,10 @@ module Containers
         )
       end
 
-      def initialize(host:, identifier: nil, tls_config:)
+      def initialize(host:, identifier: nil, tls_config:, proxy_external_url: nil)
         @docker_url = normalize_url(host)
         @identifier = identifier.presence || derive_identifier(@docker_url)
+        @proxy_external_url = proxy_external_url.presence
         @tls_config = build_tls_config(tls_config)
         validate_tls_config!
         @connection = Docker::Connection.new(@docker_url, @tls_config)
