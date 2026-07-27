@@ -14,6 +14,7 @@ class ServiceContainer < ApplicationRecord
   validates :port, presence: true, numericality: { only_integer: true, greater_than: 0, less_than: 65_536 }
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :docker_container_id, length: { maximum: 128 }, allow_blank: true
+  validates :container_host, length: { maximum: 64 }, allow_blank: true
   validates :container_metrics_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :image_in_allowlist, if: :validate_image?
   validate :env_json_valid
@@ -34,6 +35,14 @@ class ServiceContainer < ApplicationRecord
 
   def running?
     status == "running"
+  end
+
+  def docker_host
+    container_host.presence
+  end
+
+  def docker_backend
+    Containers.backend_for(docker_host)
   end
 
   # Counts in-flight capacity runs across all associated projects that reference this container.

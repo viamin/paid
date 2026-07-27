@@ -18,7 +18,9 @@ class PoolReplenishmentJob < ApplicationJob
 
   def perform(project_id = nil)
     projects(project_id).find_each do |project|
-      Containers::PoolManager.new(project: project).replenish
+      Containers.all_backends.each do |backend|
+        Containers::PoolManager.new(project: project, container_host: backend.identifier).replenish
+      end
     end
   end
 

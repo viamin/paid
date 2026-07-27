@@ -7,12 +7,12 @@ RSpec.describe ServiceContainerReconciliationJob do
   let(:backend) { instance_double(Containers::Backends::Base) }
 
   before do
-    allow(Containers).to receive(:backend).and_return(backend)
+    allow(Containers).to receive(:backend_for).and_return(backend)
   end
 
   describe "#perform" do
     it "corrects running DB records when Docker container is gone" do
-      sc = create(:service_container, status: "running", docker_container_id: "dead123")
+      sc = create(:service_container, status: "running", docker_container_id: "dead123", container_host: "elguapo")
       allow(backend).to receive(:get_container).with("dead123")
         .and_raise(Docker::Error::NotFoundError)
 
@@ -21,10 +21,11 @@ RSpec.describe ServiceContainerReconciliationJob do
       sc.reload
       expect(sc.status).to eq("stopped")
       expect(sc.docker_container_id).to be_nil
+      expect(sc.container_host).to be_nil
     end
 
     it "leaves running containers that are actually running in Docker" do
-      sc = create(:service_container, status: "running", docker_container_id: "alive123")
+      sc = create(:service_container, status: "running", docker_container_id: "alive123", container_host: "elguapo")
       container = instance_double(Docker::Container)
       allow(backend).to receive(:get_container).with("alive123").and_return(container)
       allow(container).to receive(:json).and_return({ "State" => { "Running" => true } })
@@ -37,7 +38,7 @@ RSpec.describe ServiceContainerReconciliationJob do
     end
 
     it "corrects records when Docker container exists but is stopped" do
-      sc = create(:service_container, status: "running", docker_container_id: "stopped123")
+      sc = create(:service_container, status: "running", docker_container_id: "stopped123", container_host: "elguapo")
       container = instance_double(Docker::Container)
       allow(backend).to receive(:get_container).with("stopped123").and_return(container)
       allow(container).to receive(:json).and_return({ "State" => { "Running" => false } })
@@ -47,6 +48,7 @@ RSpec.describe ServiceContainerReconciliationJob do
       sc.reload
       expect(sc.status).to eq("stopped")
       expect(sc.docker_container_id).to be_nil
+      expect(sc.container_host).to be_nil
     end
 
     it "skips non-running service containers" do
@@ -60,8 +62,8 @@ RSpec.describe ServiceContainerReconciliationJob do
     end
 
     it "skips containers on transient Docker API errors" do
-      sc1 = create(:service_container, status: "running", docker_container_id: "err123")
-      sc2 = create(:service_container, status: "running", docker_container_id: "gone456")
+      sc1 = create(:service_container, status: "running", docker_container_id: "err123", container_host: "elguapo")
+      sc2 = create(:service_container, status: "running", docker_container_id: "gone456", container_host: "elguapo")
 
       allow(backend).to receive(:get_container).with("err123")
         .and_raise(Docker::Error::DockerError, "daemon error")
@@ -77,13 +79,28 @@ RSpec.describe ServiceContainerReconciliationJob do
     end
 
     it "corrects records when docker_container_id is blank" do
-      sc = create(:service_container, status: "running", docker_container_id: nil)
+      sc = create(:service_container, status: "running", docker_container_id: nil, container_host: "elguapo")
 
       job.perform
 
       sc.reload
       expect(sc.status).to eq("stopped")
       expect(sc.docker_container_id).to be_nil
+      expect(sc.container_host).to be_nil
+    end
+
+    it "checks the persisted host instead of the active default backend" do
+      sc = create(:service_container, status: "running", docker_container_id: "remote123", container_host: "elguapo")
+      container = instance_double(Docker::Container, json: { "State" => { "Running" => true } })
+
+      allow(Containers).to receive(:backend_for).with("elguapo").and_return(backend)
+      allow(backend).to receive(:get_container).with("remote123").and_return(container)
+
+      job.perform
+
+      expect(Containers).to have_received(:backend_for).with("elguapo")
+      expect(backend).to have_received(:get_container).with("remote123")
+      expect(sc.reload.status).to eq("running")
     end
   end
 end

@@ -142,6 +142,25 @@ RSpec.describe Containers::PoolManager do
       expect(PoolReplenishmentJob).to have_received(:perform_later).with(project.id)
     end
 
+    it "claims only warm entries on the requested host" do
+      local_entry = create(:container_pool_entry, project: project, container_host: "local")
+      remote_entry = create(:container_pool_entry, project: project, container_host: "elguapo")
+      remote_backend = instance_double(
+        Containers::Backends::Base,
+        get_container: container,
+        identifier: "elguapo",
+        remote?: true
+      )
+      allow(Containers).to receive(:backend_for).and_return(remote_backend)
+
+      result = described_class.new(project: project, target_size: 1).acquire(agent_run: agent_run, container_host: "elguapo")
+
+      expect(result).to be_success
+      expect(result[:container_id]).to eq(remote_entry.container_id)
+      expect(remote_entry.reload.status).to eq("claimed")
+      expect(local_entry.reload.status).to eq("warm")
+    end
+
     it "carries reconnect-safe options into the claimed warm container" do
       entry = create(:container_pool_entry, project: project)
 
@@ -250,6 +269,23 @@ RSpec.describe Containers::PoolManager do
       entry = project.container_pool_entries.sole
       expect(entry.status).to eq("warm")
       expect(entry.container_id).to eq("warm-1")
+      expect(entry.container_host).to eq("local")
+    end
+
+    it "keeps host-specific target counts separate during replenishment" do
+      create(:container_pool_entry, project: project, container_host: "local")
+      provision = instance_double(Containers::Provision)
+
+      allow(Containers::Provision).to receive(:new).and_return(provision)
+      allow(provision).to receive_messages(
+        network_name: "paid_agent",
+        provision: Containers::Provision::Result.success(container_id: "warm-remote", container_host: "elguapo")
+      )
+
+      described_class.new(project: project, target_size: 1, container_host: "elguapo").replenish
+
+      expect(project.container_pool_entries.where(container_host: "local").count).to eq(1)
+      expect(project.container_pool_entries.where(container_host: "elguapo").warm.pluck(:container_id)).to eq([ "warm-remote" ])
     end
 
     it "removes stopped warm entries before counting pool capacity" do
@@ -300,6 +336,25 @@ RSpec.describe Containers::PoolManager do
       described_class.new(project: project, target_size: 0).replenish
 
       expect(ContainerPoolEntry.exists?(entry.id)).to be(true)
+    end
+
+    it "cleans up claimed entries only for the replenished host" do
+      remote_entry, local_entry, remote_backend, remote_container, remote_volume =
+        prepare_claimed_entry_cleanup_for_host(project: project)
+      network_probe = instance_double(Containers::Provision, network_name: "paid_agent")
+
+      allow(Containers::Provision).to receive(:new).with(project: project).and_return(network_probe)
+      allow(Containers).to receive(:backend_for).with("elguapo").and_return(remote_backend)
+
+      described_class.new(project: project, target_size: 0, container_host: "elguapo").replenish
+
+      expect(ContainerPoolEntry.exists?(remote_entry.id)).to be(false)
+      expect(ContainerPoolEntry.exists?(local_entry.id)).to be(true)
+      expect(remote_backend).to have_received(:get_container).with(remote_entry.container_id)
+      expect(remote_backend).to have_received(:stop_container).with(remote_container, timeout: 0)
+      expect(remote_backend).to have_received(:delete_container).with(remote_container, force: true, v: true)
+      expect(remote_backend).to have_received(:get_volume).with(remote_entry.workspace_volume, host: "elguapo")
+      expect(remote_backend).to have_received(:delete_volume).with(remote_volume)
     end
 
     it "removes warm entries with an old network" do
@@ -414,5 +469,34 @@ RSpec.describe Containers::PoolManager do
     expect(backend).to have_received(:delete_container).with(container, force: true, v: true)
     expect(container).to have_received(:delete).with(force: true, v: true)
     expect(volume).to have_received(:remove)
+  end
+
+  def prepare_claimed_entry_cleanup_for_host(project:)
+    finished_run = create(:agent_run, :completed, project: project)
+    remote_entry = create(
+      :container_pool_entry,
+      :claimed,
+      project: project,
+      agent_run: finished_run,
+      container_host: "elguapo"
+    )
+    local_entry = create(
+      :container_pool_entry,
+      :claimed,
+      project: project,
+      agent_run: finished_run,
+      container_host: "local"
+    )
+    remote_container = instance_double(Docker::Container, info: { "State" => { "Running" => true } })
+    remote_volume = instance_double(Docker::Volume)
+    remote_backend = instance_double(
+      Containers::Backends::Base,
+      get_container: remote_container,
+      stop_container: true,
+      delete_container: true,
+      get_volume: remote_volume,
+      delete_volume: true
+    )
+    [ remote_entry, local_entry, remote_backend, remote_container, remote_volume ]
   end
 end

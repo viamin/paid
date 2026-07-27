@@ -41,9 +41,10 @@ module Containers
       }
     end
 
-    def initialize(project:, target_size: self.class.target_size)
+    def initialize(project:, target_size: self.class.target_size, container_host: nil)
       @project = project
       @target_size = target_size
+      @container_host = container_host.presence || Containers.backend.identifier
     end
 
     def acquire(agent_run:, container_host: nil, **options)
@@ -95,7 +96,7 @@ module Containers
 
     private
 
-    attr_reader :project, :target_size
+    attr_reader :project, :target_size, :container_host
 
     def enabled_for?(agent_run)
       target_size.positive? &&
@@ -146,7 +147,7 @@ module Containers
         status: "warming",
         image: Provision::DEFAULTS[:image],
         network: pool_network_name,
-        container_host: Containers.backend.identifier,
+        container_host: container_host,
         workspace_volume: "paid-pool-workspace-#{SecureRandom.hex(12)}"
       )
       provision_entry(entry)
@@ -176,7 +177,7 @@ module Containers
     end
 
     def cleanup_claimed_finished_runs
-      project.container_pool_entries.claimed.includes(:agent_run).find_each do |entry|
+      project.container_pool_entries.claimed.where(container_host: container_host).includes(:agent_run).find_each do |entry|
         next if entry.agent_run&.container_retained?
         next if entry.agent_run&.status.in?(AgentRun::UNFINISHED_STATUSES)
 
@@ -189,7 +190,7 @@ module Containers
         remove_entry(entry, force: true)
       end
 
-      project.container_pool_entries.stale_warming.find_each do |entry|
+      project.container_pool_entries.stale_warming.where(container_host: container_host).find_each do |entry|
         remove_error_entry(entry, "warming container did not finish before stale threshold")
       end
 
@@ -210,7 +211,8 @@ module Containers
     def current_pool_entries
       project.container_pool_entries.where(
         image: Provision::DEFAULTS[:image],
-        network: pool_network_name
+        network: pool_network_name,
+        container_host: container_host
       ).where(
         ContainerPoolEntry.arel_table[:status].eq("warm").or(
           ContainerPoolEntry.arel_table[:status].eq("warming").and(
@@ -221,7 +223,7 @@ module Containers
     end
 
     def stale_warm_pool_entries
-      project.container_pool_entries.warm.where.not(
+      project.container_pool_entries.warm.where(container_host: container_host).where.not(
         image: Provision::DEFAULTS[:image],
         network: pool_network_name
       )
@@ -275,6 +277,7 @@ module Containers
         message: "container_manager.pool_entry_error",
         project_id: project.id,
         container_pool_entry_id: entry.id,
+        container_host: entry.container_host,
         error: message
       )
     end

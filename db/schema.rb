@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_26_042949) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_27_013340) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2487,6 +2487,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_26_042949) do
     t.bigint "account_id", null: false
     t.float "avg_cpu_percent"
     t.decimal "avg_memory_bytes", precision: 20, scale: 4
+    t.string "container_host", limit: 64, comment: "Container backend host identifier that currently owns the running service container."
     t.integer "container_metrics_count", default: 0, null: false
     t.datetime "created_at", null: false
     t.string "docker_container_id"
