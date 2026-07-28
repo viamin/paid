@@ -226,6 +226,7 @@ class UserSetting < ApplicationRecord
   validate :validate_kb_chat_fallback_runners
   validate :validate_max_concurrent_runs_for_mode
   validates :auto_weight_enabled, inclusion: { in: [ true, false ] }
+  validates :default_auto_approve, inclusion: { in: [ true, false ] }
 
   def self.normalize_runner_array_param(value)
     return value unless value.is_a?(String)

@@ -59,6 +59,17 @@ RSpec.describe "UserSettings" do
         expect(response.body).not_to include("Max Auto-Pick Open PRs")
         expect(response.body).not_to include('name="user_setting[max_auto_pick_open_prs]"')
       end
+
+      it "defaults the auto-approve preference to enabled" do
+        get edit_user_settings_path
+
+        doc = Nokogiri::HTML(response.body)
+        checkbox = doc.at_css("input[name='user_setting[default_auto_approve]'][type='checkbox']")
+
+        expect(user.reload.settings.default_auto_approve).to be(true)
+        expect(checkbox).to be_present
+        expect(checkbox["checked"]).to eq("checked")
+      end
     end
   end
 
@@ -206,6 +217,17 @@ RSpec.describe "UserSettings" do
         expect(settings.default_branch).to eq("develop")
         expect(settings.default_project_active).to be(false)
         expect(settings.default_allowed_github_usernames).to eq(%w[alice bob])
+      end
+
+      it "updates the new-chat auto-approve default" do
+        patch user_settings_path, params: {
+          user_setting: {
+            default_auto_approve: "0"
+          }
+        }
+
+        expect(response).to redirect_to(edit_user_settings_path)
+        expect(user.reload.settings.default_auto_approve).to be(false)
       end
 
       it "updates auto-pick skip labels for the user" do

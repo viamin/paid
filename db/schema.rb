@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_28_023259) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_28_032312) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2822,6 +2822,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_28_023259) do
     t.string "default_agent_runner", default: "claude", null: false
     t.jsonb "default_agent_runners_by_goal", default: {}, null: false
     t.jsonb "default_allowed_github_usernames", default: [], null: false
+    t.boolean "default_auto_approve", default: true, null: false, comment: "Default value for the auto-approve actions checkbox when starting a new chat session"
     t.string "default_branch", default: "main", null: false
     t.integer "default_poll_interval_seconds", default: 60, null: false
     t.boolean "default_project_active", default: true, null: false

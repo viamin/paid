@@ -226,7 +226,11 @@ class User < ApplicationRecord
   end
 
   def ensure_default_runner
+    return unless Runner.table_exists?
+
     Runner.ensure_default_for(self)
+  rescue ActiveRecord::StatementInvalid => e
+    raise unless e.cause.is_a?(PG::UndefinedTable)
   end
 
   # Normalize role names between old Rolify format and new enum format
