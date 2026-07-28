@@ -1,5 +1,6 @@
 <%= turbo_stream_from current_account, :dashboard_updates %>
 <%= turbo_stream_from current_account, :live_dashboard %>
+<%= turbo_stream_from current_account, current_user, :live_dashboard %>
 
 <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10" data-controller="live-dashboard dashboard-frames">
   <div class="sm:flex sm:items-center sm:justify-between">
