@@ -29,12 +29,14 @@ RSpec.describe Dashboard::LiveBroadcaster do
       allow(Dashboard::CacheVersion).to receive(:bump).and_call_original
     end
 
-    it "broadcasts live stats, active runs, and a queue preview frame refresh" do
-      create(:agent_run, :queued, project: project, created_at: 1.minute.ago)
-
+    it "broadcasts live stats and active runs" do
       described_class.call(account: account, agent_run: agent_run)
 
       expect_live_dashboard_sections_to_broadcast
+      expect(Turbo::StreamsChannel).not_to have_received(:broadcast_replace_to).with(
+        [ account, :live_dashboard ],
+        hash_including(target: "dashboard-queue-preview")
+      )
       expect(Turbo::StreamsChannel).not_to have_received(:broadcast_refresh_to).with(
         [ account, user, :live_dashboard ]
       )
@@ -42,6 +44,14 @@ RSpec.describe Dashboard::LiveBroadcaster do
         [ account, user, :live_dashboard ],
         anything
       )
+    end
+
+    it "refreshes the queue preview when a run enters or leaves queued" do
+      create(:agent_run, :queued, project: project, created_at: 1.minute.ago)
+
+      described_class.call(account: account, agent_run: agent_run, refresh_queue_preview: true)
+
+      expect_live_dashboard_sections_to_broadcast(queue_preview: true)
     end
 
     it "does not use wildcard cache invalidation" do
@@ -177,7 +187,7 @@ RSpec.describe Dashboard::LiveBroadcaster do
     options.dig(:locals, :active_runs)
   end
 
-  def expect_live_dashboard_sections_to_broadcast
+  def expect_live_dashboard_sections_to_broadcast(queue_preview: false)
     expect(Dashboard::CacheVersion).to have_received(:bump).with(
       account,
       scope: Dashboard::CacheVersion::LISTS_SCOPE
@@ -190,6 +200,8 @@ RSpec.describe Dashboard::LiveBroadcaster do
       [ account, :live_dashboard ],
       hash_including(target: "active-runs", partial: "dashboard/active_runs")
     )
+    return unless queue_preview
+
     expect(Turbo::StreamsChannel).to have_received(:broadcast_replace_to).with(
       [ account, :live_dashboard ],
       hash_including(target: "dashboard-queue-preview", partial: "dashboard/queue_preview_frame")

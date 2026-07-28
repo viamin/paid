@@ -6,15 +6,16 @@ module Dashboard
       new(...).call
     end
 
-    def initialize(account:, agent_run:)
+    def initialize(account:, agent_run:, refresh_queue_preview: false)
       @account = account
       @agent_run = agent_run
+      @refresh_queue_preview = refresh_queue_preview
     end
 
     def call
       broadcast_live_stats
       broadcast_active_runs
-      broadcast_queue_preview
+      broadcast_queue_preview if refresh_queue_preview?
       # Paused runs are intentionally NOT broadcast here. The paused-runs
       # partial calls policy(run).resume? per-run, which requires a request
       # context (current_user) the broadcaster does not have. The section
@@ -27,6 +28,10 @@ module Dashboard
     private
 
     attr_reader :account, :agent_run
+
+    def refresh_queue_preview?
+      @refresh_queue_preview
+    end
 
     def broadcast_live_stats
       Rails.cache.delete("dashboard/live_stats/#{account.id}")
