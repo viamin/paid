@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "shellwords"
 require "uri"
 
 module DockerHosts
@@ -70,12 +71,27 @@ module DockerHosts
       endpoint_host = endpoint_host_for(host.endpoint)
       network_name = host.required_network_name.presence || "paid-agents"
       image_tag = host.image_tag
+      tarball_name = image_archive_filename(image_tag)
+      remote_tarball_path = "/tmp/#{tarball_name}"
+      remote_load_command = Shellwords.join([ "sh", "-lc", "gunzip -c #{Shellwords.escape(remote_tarball_path)} | docker load" ])
+      remote_pull_command = Shellwords.join([ "docker", "pull", image_tag ])
+      remote_build_command = Shellwords.join([ "docker", "build", "-t", image_tag, "/path/to/paid-agent-context" ])
 
       {
-        "docker_save_load" => "docker save #{image_tag} | gzip > #{image_tag.tr(':', '_')}.tar.gz\nscp #{image_tag.tr(':', '_')}.tar.gz #{endpoint_host}:/tmp/\nssh #{endpoint_host} 'gunzip -c /tmp/#{image_tag.tr(':', '_')}.tar.gz | docker load'",
-        "registry_pull" => "docker pull #{image_tag}\nssh #{endpoint_host} 'docker pull #{image_tag}'",
-        "remote_build" => "docker build -t #{image_tag} .\nssh #{endpoint_host} 'docker build -t #{image_tag} /path/to/paid-agent-context'",
-        "network_create" => "#{docker_tls_command_prefix} network create #{network_name}",
+        "docker_save_load" => [
+          "#{Shellwords.join([ "docker", "save", image_tag ])} | gzip > #{Shellwords.escape(tarball_name)}",
+          Shellwords.join([ "scp", tarball_name, "#{endpoint_host}:/tmp/" ]),
+          Shellwords.join([ "ssh", endpoint_host, remote_load_command ])
+        ].join("\n"),
+        "registry_pull" => [
+          Shellwords.join([ "docker", "pull", image_tag ]),
+          Shellwords.join([ "ssh", endpoint_host, remote_pull_command ])
+        ].join("\n"),
+        "remote_build" => [
+          Shellwords.join([ "docker", "build", "-t", image_tag, "." ]),
+          Shellwords.join([ "ssh", endpoint_host, remote_build_command ])
+        ].join("\n"),
+        "network_create" => "#{docker_tls_command_prefix} network create #{Shellwords.escape(network_name)}",
         "server_files" => "Install the generated server certificate and private key on #{endpoint_host}.\nConfigure the Docker daemon to trust the generated CA and restart Docker after the files are in place."
       }
     end
@@ -165,10 +181,18 @@ module DockerHosts
     end
 
     def docker_tls_command_prefix
-      "docker --host #{host.endpoint} " \
-        "--tlscacert client-ca.pem " \
-        "--tlscert client-cert.pem " \
-        "--tlskey client-key.pem --tlsverify"
+      Shellwords.join([
+        "docker",
+        "--host", host.endpoint,
+        "--tlscacert", "client-ca.pem",
+        "--tlscert", "client-cert.pem",
+        "--tlskey", "client-key.pem",
+        "--tlsverify"
+      ])
+    end
+
+    def image_archive_filename(image_tag)
+      "#{image_tag.to_s.tr(":", "_").gsub(/[^A-Za-z0-9._-]+/, "_")}.tar.gz"
     end
   end
 end

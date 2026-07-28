@@ -76,11 +76,23 @@ module DockerHosts
     end
 
     def upload_client_bundle
+      client_ca_pem = required_param!(:client_ca_pem)
+      client_ca_key_pem = optional_param(:client_ca_key_pem)
+      client_certificate_pem = required_param!(:client_certificate_pem)
+      client_private_key_pem = required_param!(:client_private_key_pem)
+
+      validate_uploaded_client_tls_bundle!(
+        client_ca_pem: client_ca_pem,
+        client_ca_key_pem: client_ca_key_pem,
+        client_certificate_pem: client_certificate_pem,
+        client_private_key_pem: client_private_key_pem
+      )
+
       host.assign_attributes(
-        client_ca_pem: required_param!(:client_ca_pem),
-        client_ca_key_pem: optional_param(:client_ca_key_pem),
-        client_certificate_pem: required_param!(:client_certificate_pem),
-        client_private_key_pem: required_param!(:client_private_key_pem)
+        client_ca_pem: client_ca_pem,
+        client_ca_key_pem: client_ca_key_pem,
+        client_certificate_pem: client_certificate_pem,
+        client_private_key_pem: client_private_key_pem
       )
       record_step_success("client_tls", "Uploaded client TLS bundle stored encrypted.")
       host.save!
@@ -245,6 +257,54 @@ module DockerHosts
 
     def optional_param(key)
       params[key].to_s.strip.presence
+    end
+
+    def validate_uploaded_client_tls_bundle!(client_ca_pem:, client_ca_key_pem:, client_certificate_pem:, client_private_key_pem:)
+      ca_certificate = parse_certificate!(client_ca_pem, "Client CA certificate")
+      client_certificate = parse_certificate!(client_certificate_pem, "Client certificate")
+      client_private_key = parse_private_key!(client_private_key_pem, "Client private key")
+
+      verify_ca_certificate!(ca_certificate)
+      verify_matching_key_pair!(certificate: client_certificate, private_key: client_private_key, label: "Client certificate")
+      verify_certificate_signed_by_ca!(certificate: client_certificate, ca_certificate: ca_certificate, label: "Client certificate")
+
+      return if client_ca_key_pem.blank?
+
+      ca_private_key = parse_private_key!(client_ca_key_pem, "Client CA private key")
+      verify_matching_key_pair!(certificate: ca_certificate, private_key: ca_private_key, label: "Client CA certificate")
+    end
+
+    def parse_certificate!(pem, label)
+      OpenSSL::X509::Certificate.new(pem)
+    rescue OpenSSL::OpenSSLError => e
+      raise ArgumentError, "#{label} is not a valid PEM certificate: #{e.message}"
+    end
+
+    def parse_private_key!(pem, label)
+      OpenSSL::PKey.read(pem)
+    rescue OpenSSL::OpenSSLError => e
+      raise ArgumentError, "#{label} is not a valid PEM private key: #{e.message}"
+    end
+
+    def verify_ca_certificate!(certificate)
+      basic_constraints = certificate.extensions.find { |extension| extension.oid == "basicConstraints" }&.value.to_s
+      return if basic_constraints.include?("CA:TRUE")
+
+      raise ArgumentError, "Client CA certificate must be a CA certificate."
+    end
+
+    def verify_matching_key_pair!(certificate:, private_key:, label:)
+      return if certificate.check_private_key(private_key)
+
+      raise ArgumentError, "#{label} does not match the provided private key."
+    rescue OpenSSL::OpenSSLError => e
+      raise ArgumentError, "#{label} does not match the provided private key: #{e.message}"
+    end
+
+    def verify_certificate_signed_by_ca!(certificate:, ca_certificate:, label:)
+      return if certificate.issuer.to_s == ca_certificate.subject.to_s && certificate.verify(ca_certificate.public_key)
+
+      raise ArgumentError, "#{label} is not signed by the provided CA certificate."
     end
 
     def ensure_successful_container_exit!(container, step_key:, failure_prefix:)

@@ -23,19 +23,63 @@ RSpec.describe DockerHosts::SetupActionRunner do
     end
 
     it "stores uploaded client TLS material" do
+      bundle = build_uploaded_client_bundle
+
       result = described_class.call(
         host: host,
         action: "upload_client_bundle",
         params: ActionController::Parameters.new(
-          client_ca_pem: "-----BEGIN CERTIFICATE-----\nca\n-----END CERTIFICATE-----",
-          client_certificate_pem: "-----BEGIN CERTIFICATE-----\nclient\n-----END CERTIFICATE-----",
-          client_private_key_pem: "-----BEGIN PRIVATE KEY-----\nkey\n-----END PRIVATE KEY-----"
+          client_ca_pem: bundle.fetch(:ca_cert).to_pem,
+          client_ca_key_pem: bundle.fetch(:ca_key).to_pem,
+          client_certificate_pem: bundle.fetch(:client_cert).to_pem,
+          client_private_key_pem: bundle.fetch(:client_key).to_pem
         )
       )
 
       expect(result.success?).to be(true)
       expect(host.reload.client_certificate_pem).to include("BEGIN CERTIFICATE")
       expect(host.setup_step("client_tls")).to include("status" => "verified")
+    end
+
+    it "rejects invalid uploaded client TLS material" do
+      result = described_class.call(
+        host: host,
+        action: "upload_client_bundle",
+        params: ActionController::Parameters.new(
+          client_ca_pem: "not a cert",
+          client_certificate_pem: "not a cert",
+          client_private_key_pem: "not a key"
+        )
+      )
+
+      expect(result.success?).to be(false)
+      expect(result.message).to include("Client CA certificate is not a valid PEM certificate")
+      expect(host.reload.client_tls_material_present?).to be(false)
+      expect(host.setup_step("client_tls")).to include("status" => "failing")
+    end
+
+    it "rejects a client certificate that does not chain to the uploaded CA" do
+      ca_bundle = build_uploaded_client_bundle
+      mismatched_bundle = build_uploaded_client_bundle(
+        ca_subject: "/CN=other-ca",
+        client_serial: 4,
+        ca_serial: 3
+      )
+
+      result = described_class.call(
+        host: host,
+        action: "upload_client_bundle",
+        params: ActionController::Parameters.new(
+          client_ca_pem: ca_bundle.fetch(:ca_cert).to_pem,
+          client_certificate_pem: mismatched_bundle.fetch(:client_cert).to_pem,
+          client_private_key_pem: mismatched_bundle.fetch(:client_key).to_pem
+        )
+      )
+
+      expect(result.success?).to be(false)
+      expect(result.message).to eq("Client certificate is not signed by the provided CA certificate.")
+      expect(host.reload.client_tls_material_present?).to be(false)
+      expect(host.setup_step("client_tls")).to include("status" => "failing")
     end
 
     it "generates a server CSR when SANs are supplied" do
@@ -320,5 +364,33 @@ RSpec.describe DockerHosts::SetupActionRunner do
     expect(server_certificate.to_pem).to include("BEGIN CERTIFICATE")
     expect(server_certificate.issuer.to_s).to eq(client_ca.subject.to_s)
     expect(server_certificate.verify(client_ca.public_key)).to be(true)
+  end
+
+  def build_certificate(...)
+    DockerHosts::Certificates.build_certificate(...)
+  end
+
+  def build_uploaded_client_bundle(ca_subject: "/CN=paid-upload-ca", ca_serial: 1, client_serial: 2)
+    ca_key = OpenSSL::PKey::RSA.new(2048)
+    ca_cert = build_certificate(
+      subject: ca_subject,
+      issuer: nil,
+      public_key: ca_key.public_key,
+      signing_key: ca_key,
+      serial: ca_serial,
+      is_ca: true
+    )
+    client_key = OpenSSL::PKey::RSA.new(2048)
+    client_cert = build_certificate(
+      subject: "/CN=paid-client",
+      issuer: ca_cert,
+      public_key: client_key.public_key,
+      signing_key: ca_key,
+      serial: client_serial,
+      is_ca: false,
+      extended_key_usage: "clientAuth"
+    )
+
+    { ca_key: ca_key, ca_cert: ca_cert, client_key: client_key, client_cert: client_cert }
   end
 end
