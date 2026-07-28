@@ -43,7 +43,7 @@ module ProviderSmokeHelpers
     "minimax" => "ANTHROPIC_API_KEY",
     "xai" => "XAI_API_KEY",
     "zai" => "ZAI_API_KEY",
-    "zai_coding" => "ZAI_CODING_API_KEY"
+    "zai_coding" => "ZHIPU_API_KEY"
   }.freeze
   DEFAULT_SCENARIO_NAMES = %w[
     claude-subscription

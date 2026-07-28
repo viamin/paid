@@ -71,8 +71,11 @@ class Runner < ApplicationRecord
                opencode_model_provider: "xai" },
     "zai" => { label: "z.ai", base_url: "https://api.z.ai/api/paas/v4", service_type: "zai",
                opencode_model_provider: "zai" },
+    # Both KiloCode and OpenCode ship a built-in "zai-coding-plan" provider
+    # whose availability probe checks ZHIPU_API_KEY (not ZAI_CODING_API_KEY).
+    # Override the auto-derived name so the key lands where the CLIs look.
     "zai_coding" => { label: "z.ai (Coding Plan)", base_url: "https://api.z.ai/api/coding/paas/v4", service_type: "zai_coding",
-                      kilocode_provider_id: "zai-coding-plan", opencode_model_provider: "zai_coding" }
+                      env_var: "ZHIPU_API_KEY", kilocode_provider_id: "zai-coding-plan", opencode_model_provider: "zai_coding" }
   }.freeze
 
   DIRECT_OUTBOUND_SERVICE_TYPES = DIRECT_OUTBOUND_API_PROVIDERS.values.map { |c| c[:service_type] }.to_set.freeze
