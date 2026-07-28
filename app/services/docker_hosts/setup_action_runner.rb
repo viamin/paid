@@ -108,12 +108,18 @@ module DockerHosts
     def test_tls
       DockerHosts::RemoteBackendSession.with_backend(host) do |backend|
         response = backend.ping
+        info = capture_daemon_details(backend)
         host.last_checked_at = Time.current
         host.last_ready_at = Time.current
         host.readiness_status = "ready"
         host.failing_check = nil
         host.last_error = nil
-        record_step_success("tls_connectivity", "Docker daemon responded to TLS ping: #{response.inspect}")
+        record_step_success(
+          "tls_connectivity",
+          "Docker daemon responded to TLS ping: #{response.inspect}. " \
+            "Architecture: #{host.daemon_architecture.presence || 'unknown'}. " \
+            "Version: #{info['ServerVersion'].presence || 'unknown'}."
+        )
       end
       host.save!
 
@@ -152,14 +158,15 @@ module DockerHosts
 
     def inspect_image
       DockerHosts::RemoteBackendSession.with_backend(host) do |backend|
+        capture_daemon_details(backend) if host.daemon_architecture.blank?
         image = backend.get_image(host.image_tag)
         info = image.info
-        architecture = info["Architecture"].presence || info.dig("Os", "Architecture").presence
-        if architecture.present? && architecture == host.daemon_architecture
+        architecture = normalize_architecture(info["Architecture"].presence || info.dig("Os", "Architecture").presence)
+        if architecture_matches_daemon?(architecture)
           host.image_status = "ready"
           record_step_success(
             "image_availability",
-            "Image #{host.image_tag.inspect} present. Architecture: #{architecture}. Digests: #{Array(info['RepoDigests']).join(', ').presence || 'none'}."
+            "Image #{host.image_tag.inspect} present. Architecture: #{architecture || 'unknown'}. Digests: #{Array(info['RepoDigests']).join(', ').presence || 'none'}."
           )
         else
           host.image_status = architecture.present? ? "failing" : "missing"
@@ -262,6 +269,35 @@ module DockerHosts
       return "#{base_message} Docker did not report an image architecture." if architecture.blank?
 
       "#{base_message} Expected #{host.daemon_architecture.inspect} for host compatibility."
+    end
+
+    def capture_daemon_details(backend)
+      info = backend.system_info
+      host.daemon_architecture = normalize_architecture(info["Architecture"])
+      host.daemon_summary = build_daemon_summary(info["ServerVersion"])
+      info
+    end
+
+    def architecture_matches_daemon?(architecture)
+      return false if architecture.blank? || host.daemon_architecture.blank?
+
+      architecture == host.daemon_architecture
+    end
+
+    def normalize_architecture(value)
+      value.to_s.downcase.strip.presence&.yield_self do |architecture|
+        case architecture
+        when "x86_64" then "amd64"
+        when "aarch64" then "arm64"
+        else architecture
+        end
+      end
+    end
+
+    def build_daemon_summary(version)
+      return nil if version.blank?
+
+      "Docker #{version}"
     end
 
     def record_step_success(step_key, message, completed: false)

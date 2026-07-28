@@ -83,11 +83,7 @@ RSpec.describe DockerHosts::SetupActionRunner do
     end
 
     it "marks the required network verified when the network exists remotely" do
-      host.update!(
-        client_ca_pem: "ca",
-        client_certificate_pem: "cert",
-        client_private_key_pem: "key"
-      )
+      seed_client_tls_material
       allow(DockerHosts::RemoteBackendSession).to receive(:with_backend).and_yield(
         instance_double(Containers::Backends::RemoteDocker, get_network: true)
       )
@@ -101,6 +97,51 @@ RSpec.describe DockerHosts::SetupActionRunner do
       expect(result.success?).to be(true)
       expect(host.reload.required_network_status).to eq("ready")
       expect(host.setup_step("required_network")).to include("status" => "verified")
+    end
+
+    it "captures daemon architecture and summary during the TLS test" do
+      seed_client_tls_material
+      host.update!(daemon_architecture: nil, daemon_summary: nil)
+      backend = instance_double(
+        Containers::Backends::RemoteDocker,
+        ping: "OK",
+        system_info: { "Architecture" => "aarch64", "ServerVersion" => "27.0.3" }
+      )
+      allow(DockerHosts::RemoteBackendSession).to receive(:with_backend).and_yield(backend)
+
+      result = described_class.call(
+        host: host,
+        action: "test_tls",
+        params: ActionController::Parameters.new
+      )
+
+      expect(result.success?).to be(true)
+      host.reload
+      expect(host.daemon_architecture).to eq("arm64")
+      expect(host.daemon_summary).to eq("Docker 27.0.3")
+      expect(host.readiness_status).to eq("ready")
+      expect(host.setup_step("tls_connectivity")).to include("status" => "verified")
+    end
+
+    it "leaves the daemon summary blank when system_info omits the server version" do
+      seed_client_tls_material
+      host.update!(daemon_architecture: nil, daemon_summary: nil)
+      backend = instance_double(
+        Containers::Backends::RemoteDocker,
+        ping: "OK",
+        system_info: { "Architecture" => "x86_64" }
+      )
+      allow(DockerHosts::RemoteBackendSession).to receive(:with_backend).and_yield(backend)
+
+      described_class.call(
+        host: host,
+        action: "test_tls",
+        params: ActionController::Parameters.new
+      )
+
+      host.reload
+      expect(host.daemon_architecture).to eq("amd64")
+      expect(host.daemon_summary).to be_nil
     end
 
     it "fails image inspection when the image architecture does not match the daemon" do
@@ -118,6 +159,29 @@ RSpec.describe DockerHosts::SetupActionRunner do
       expect(result.message).to include("Expected \"arm64\"")
       expect(host.reload.image_status).to eq("failing")
       expect(host.setup_step("image_availability")).to include("status" => "failing")
+    end
+
+    it "backfills the daemon architecture during image inspection for a brand-new host" do
+      host.update!(daemon_architecture: nil)
+      image = instance_double(Docker::Image, info: { "Architecture" => "aarch64", "RepoDigests" => [ "paid-agent@sha256:123" ] })
+      backend = instance_double(
+        Containers::Backends::RemoteDocker,
+        system_info: { "Architecture" => "aarch64", "ServerVersion" => "28.3.1" },
+        get_image: image
+      )
+      allow(DockerHosts::RemoteBackendSession).to receive(:with_backend).and_yield(backend)
+
+      result = described_class.call(
+        host: host,
+        action: "inspect_image",
+        params: ActionController::Parameters.new
+      )
+
+      expect(result.success?).to be(true)
+      expect(host.reload.daemon_architecture).to eq("arm64")
+      expect(host.daemon_summary).to eq("Docker 28.3.1")
+      expect(host.image_status).to eq("ready")
+      expect(host.setup_step("image_availability")).to include("status" => "verified")
     end
 
     it "fails image inspection when the image architecture is unavailable" do
@@ -225,6 +289,14 @@ RSpec.describe DockerHosts::SetupActionRunner do
       host: host,
       action: "generate_client_bundle",
       params: ActionController::Parameters.new(client_common_name: "paid-client")
+    )
+  end
+
+  def seed_client_tls_material
+    host.update!(
+      client_ca_pem: "ca",
+      client_certificate_pem: "cert",
+      client_private_key_pem: "key"
     )
   end
 
