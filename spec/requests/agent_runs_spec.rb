@@ -1698,6 +1698,26 @@ RSpec.describe "AgentRuns" do
         )
       end
 
+      it "defers host assignment to the queue for capacity-aware placement" do
+        create_placement_ready_remote_host(project: project, identifier: "preferred-host")
+        configure_codex_create_pr_default!(project)
+        project.account.tenant_setting!.update!(
+          preferred_docker_host_identifier: "preferred-host",
+          docker_host_fallback_behavior: "capacity_aware"
+        )
+
+        post project_agent_runs_path(project), params: { issue_id: issue.id }
+
+        expect(response).to redirect_to(project_path(project))
+        expect(AgentRun.last.container_host).to be_nil
+        expect(AgentRun.last.external_metadata).to include(
+          "container_host_selection" => include(
+            "preferred_host" => "preferred-host",
+            "fallback" => "capacity_aware"
+          )
+        )
+      end
+
       it "redirects with an error when no runnable runner can be resolved" do
         owner = project.effective_owner
         allow(UserSetting).to receive(:enabled_agent_runners).with(owner, identifiers: true).and_return([])

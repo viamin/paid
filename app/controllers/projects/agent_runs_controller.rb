@@ -1220,16 +1220,34 @@ module Projects
     end
 
     def resolved_container_host_attributes(runner: nil)
-      selected_host = resolve_container_host_identifier(runner: runner)
-      external_metadata = container_host_selection_metadata(selected_host)
+      selection = container_host_selection_attributes(runner: runner)
 
-      attributes = { container_host: selected_host }
-      attributes[:external_metadata] = external_metadata if external_metadata.present?
+      attributes = { container_host: selection[:container_host] }
+      attributes[:external_metadata] = selection[:external_metadata] if selection[:external_metadata].present?
       attributes
     end
 
-    def container_host_selection_metadata(selected_host)
+    def container_host_selection_attributes(runner: nil)
       requested_identifier = params[:container_host].to_s.presence
+      selected_host = resolve_container_host_identifier(runner: runner)
+      external_metadata = container_host_selection_metadata(
+        selected_host: selected_host,
+        requested_identifier: requested_identifier
+      )
+
+      if requested_identifier.blank? &&
+          @project.effective_preferred_docker_host_identifier.present? &&
+          current_account.tenant_setting&.docker_host_fallback_behavior == Containers::HostRegistry::FALLBACK_CAPACITY_AWARE
+        selected_host = nil
+      end
+
+      {
+        container_host: selected_host,
+        external_metadata: external_metadata
+      }
+    end
+
+    def container_host_selection_metadata(selected_host:, requested_identifier:)
       if requested_identifier.present?
         return {
           "container_host_selection" => {

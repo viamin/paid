@@ -7,6 +7,7 @@ module DockerHostsIndexPage
 
   def load_docker_hosts_index_data
     @docker_hosts = policy_scope(DockerHost).where(account: current_account).ordered
+    @capacity_snapshots_by_host = capacity_snapshots_by_host(@docker_hosts)
     @enabled_docker_host_options = @docker_hosts.select(&:enabled?).map { |host| [ host.display_name, host.identifier ] }
     @projects = current_account.projects
       .includes(account: [ :tenant_setting, :docker_hosts ])
@@ -19,5 +20,18 @@ module DockerHostsIndexPage
       backend_type: "local",
       callback_url: "/health/services"
     )
+  end
+
+  def capacity_snapshots_by_host(docker_hosts)
+    registry = Containers.host_registry
+
+    docker_hosts.each_with_object({}) do |host, snapshots|
+      runtime_host = registry.host(host.identifier)
+      next unless runtime_host
+
+      snapshots[host.identifier] = Capacity::DockerSnapshot.call(backend: runtime_host.backend)
+    rescue StandardError
+      next
+    end
   end
 end
