@@ -1105,7 +1105,7 @@ RSpec.describe Runner do
         expect(config["provider"]).to eq({
           "zai-coding-plan" => {
             "options" => {
-              "apiKey" => "{env:ZAI_CODING_API_KEY}",
+              "apiKey" => "{env:ZHIPU_API_KEY}",
               "baseURL" => "https://api.z.ai/api/coding/paas/v4"
             },
             "models" => {
@@ -1388,7 +1388,7 @@ RSpec.describe Runner do
 
       expect(runtime.model).to eq("zai_coding/glm-5.1")
       expect(runtime.env).to include(
-        "ZAI_CODING_API_KEY" => "sk-zai-secret",
+        "ZHIPU_API_KEY" => "sk-zai-secret",
         "OPENAI_BASE_URL" => "https://api.z.ai/api/coding/paas/v4"
       )
       expect(runtime.metadata[:config]).not_to have_key("provider")
