@@ -12,13 +12,14 @@ module Projects
       @questions = ClarifyingQuestions::Load.call(project: @project, issue: @issue)
 
       if @questions.empty?
-        redirect_to project_path(@project), alert: "No clarifying questions found for issue ##{@issue.github_number}."
+        redirect_to empty_questions_redirect_path, alert: "No clarifying questions found for issue ##{@issue.github_number}."
       end
     rescue GithubClient::Error => e
-      redirect_to project_path(@project), alert: "Failed to load clarifying questions: #{e.message}"
+      redirect_to empty_questions_redirect_path, alert: "Failed to load clarifying questions: #{e.message}"
     end
 
     def create
+      next_issue = next_queue_issue
       questions_and_answers = build_questions_and_answers(questions: current_questions)
 
       ClarifyingQuestions::SubmitAnswers.call(
@@ -27,11 +28,23 @@ module Projects
         questions_and_answers: questions_and_answers
       )
 
-      redirect_to project_path(@project), notice: "Answers posted to GitHub issue ##{@issue.github_number}. The agent will pick them up on the next run."
+      if queue_mode? && next_issue
+        redirect_to project_issue_clarifying_questions_path(
+          next_issue.project,
+          next_issue,
+          queue: queue_param,
+          queue_project_id: queue_project&.id,
+          return_to: queue_return_to
+        ), notice: "Answers posted to GitHub issue ##{@issue.github_number}. Next questionnaire ready."
+      elsif queue_mode?
+        redirect_to queue_return_to, notice: "Answers posted to GitHub issue ##{@issue.github_number}. You've completed the needs-input queue."
+      else
+        redirect_to project_path(@project), notice: "Answers posted to GitHub issue ##{@issue.github_number}. The agent will pick them up on the next run."
+      end
     rescue ArgumentError => e
-      redirect_to project_issue_clarifying_questions_path(@project, @issue), alert: e.message
+      redirect_to project_issue_clarifying_questions_path(@project, @issue, queue_redirect_params), alert: e.message
     rescue GithubClient::Error => e
-      redirect_to project_issue_clarifying_questions_path(@project, @issue), alert: "Failed to post answers: #{e.message}"
+      redirect_to project_issue_clarifying_questions_path(@project, @issue, queue_redirect_params), alert: "Failed to post answers: #{e.message}"
     end
 
     private
@@ -68,6 +81,78 @@ module Projects
       questions.each_with_index.map do |question, i|
         { question: question, answer: answers[i].to_s.strip }
       end
+    end
+
+    def queue_mode?
+      queue_param == "dashboard_needs_input"
+    end
+
+    def queue_param
+      params[:queue].to_s
+    end
+
+    def queue_project
+      return unless queue_mode? && params[:queue_project_id].present?
+
+      @queue_project ||= begin
+        candidate = policy_scope(Project).find_by(id: params[:queue_project_id])
+        candidate if candidate && queue_scope_issues(project: candidate).any?
+      end
+    end
+
+    def queue_return_to
+      @queue_return_to ||= begin
+        requested_path = params[:return_to].to_s
+        validated_path = validated_queue_return_path(requested_path)
+        return validated_path if validated_path
+
+        dashboard_needs_input_path(project_id: queue_project&.id)
+      end
+    end
+
+    def queue_redirect_params
+      return {} unless queue_mode?
+
+      {
+        queue: queue_param,
+        queue_project_id: queue_project&.id,
+        return_to: queue_return_to
+      }
+    end
+
+    def next_queue_issue
+      return unless queue_mode?
+      return unless valid_queue_scope?
+
+      Dashboard::NeedsInputQueue.next_issue(
+        user: current_user,
+        project: queue_project,
+        after_issue: @issue
+      )
+    end
+
+    def empty_questions_redirect_path
+      queue_mode? ? queue_return_to : project_path(@project)
+    end
+
+    def queue_scope_issues(project:)
+      @queue_scope_issues ||= {}
+      @queue_scope_issues.fetch(project&.id) do
+        @queue_scope_issues[project&.id] = Dashboard::NeedsInputQueue.call(user: current_user, project: project).map(&:issue)
+      end
+    end
+
+    def valid_queue_scope?
+      return false if params[:queue_project_id].present? && queue_project.nil?
+
+      queue_scope_issues(project: queue_project).any? { |issue| issue.id == @issue.id }
+    end
+
+    def validated_queue_return_path(path)
+      return if path.blank?
+      return unless path == dashboard_needs_input_path(project_id: queue_project&.id)
+
+      path
     end
   end
 end

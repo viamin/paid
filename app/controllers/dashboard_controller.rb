@@ -44,6 +44,11 @@ class DashboardController < ApplicationController
     render partial: "dashboard/eligibility_breakdown", locals: { breakdowns: @eligibility_breakdown }
   end
 
+  def needs_input
+    @scoped_project = scoped_needs_input_project
+    @needs_input_entries = Dashboard::NeedsInputQueue.call(user: current_user, project: @scoped_project)
+  end
+
   def metrics
     @time_range = valid_time_range
     @stats = Dashboard::Stats.call(
@@ -195,5 +200,13 @@ class DashboardController < ApplicationController
     when "30d"
       30.days.ago
     end
+  end
+
+  def scoped_needs_input_project
+    return if params[:project_id].blank?
+
+    project = policy_scope(Project).find(params[:project_id])
+    authorize project, :show?
+    project
   end
 end

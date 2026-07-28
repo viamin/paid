@@ -46,6 +46,15 @@
                     clarifying_questions_target: "form",
                     action: "submit->clarifying-questions#submit"
                   } do |f| %>
+      <% if params[:queue].present? %>
+        <%= hidden_field_tag :queue, params[:queue] %>
+      <% end %>
+      <% if params[:queue_project_id].present? %>
+        <%= hidden_field_tag :queue_project_id, params[:queue_project_id] %>
+      <% end %>
+      <% if params[:return_to].present? %>
+        <%= hidden_field_tag :return_to, params[:return_to] %>
+      <% end %>
 
       <% @questions.each_with_index do |question, index| %>
         <div class="mt-4 overflow-hidden rounded-lg bg-white shadow"
