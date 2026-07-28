@@ -270,4 +270,24 @@ RSpec.describe User do
       end
     end
   end
+
+  describe "default runner setup" do
+    it "skips default runner creation when the runners table is unavailable" do
+      allow(Runner).to receive(:table_exists?).and_return(false)
+
+      expect(Runner).not_to receive(:ensure_default_for)
+
+      create(:user)
+    end
+
+    it "ignores missing runners table errors when the schema cache is stale" do
+      error = ActiveRecord::StatementInvalid.new("missing runners table")
+      allow(error).to receive(:cause).and_return(PG::UndefinedTable.new)
+
+      allow(Runner).to receive(:table_exists?).and_return(true)
+      allow(Runner).to receive(:ensure_default_for).and_raise(error)
+
+      expect { create(:user) }.not_to raise_error
+    end
+  end
 end

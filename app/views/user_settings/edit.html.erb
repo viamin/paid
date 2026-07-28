@@ -116,6 +116,14 @@
             </span>
           </label>
 
+          <label class="flex items-start gap-3 rounded-md border border-gray-200 p-4 text-sm text-gray-700 dark:border-gray-700 dark:text-gray-200">
+            <%= form.check_box :default_auto_approve, class: "mt-1 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
+            <span>
+              <span class="block font-medium text-gray-900 dark:text-gray-100">Default auto-approve actions in new chat sessions</span>
+              <span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">When checked, the "Auto-approve actions" checkbox will be pre-checked when you start a new chat session.</span>
+            </span>
+          </label>
+
           <div>
             <%= form.label :max_execution_seconds, "Max Execution Time Override (seconds)", class: "block text-sm font-medium leading-6 text-gray-900 dark:text-gray-100" %>
             <div class="mt-2">

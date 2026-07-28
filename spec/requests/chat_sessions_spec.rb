@@ -278,6 +278,36 @@ RSpec.describe "ChatSessions" do
         expect(response.body).to include(%(checked="checked"))
       end
 
+      it "defaults the new-session modal auto-approve checkbox from user settings" do
+        user.settings.update!(default_auto_approve: true)
+
+        get chat_session_path(chat_session)
+
+        expect(response).to have_http_status(:ok)
+        doc = Nokogiri::HTML(response.body)
+        modal_checkbox = doc.at_css(
+          "dialog[data-chat-session-list-target='modal'] input[name='chat_session[auto_approve]'][type='checkbox']"
+        )
+
+        expect(modal_checkbox).to be_present
+        expect(modal_checkbox["checked"]).to eq("checked")
+      end
+
+      it "leaves the new-session modal auto-approve checkbox unchecked when the user disables the default" do
+        user.settings.update!(default_auto_approve: false)
+
+        get chat_session_path(chat_session)
+
+        expect(response).to have_http_status(:ok)
+        doc = Nokogiri::HTML(response.body)
+        modal_checkbox = doc.at_css(
+          "dialog[data-chat-session-list-target='modal'] input[name='chat_session[auto_approve]'][type='checkbox']"
+        )
+
+        expect(modal_checkbox).to be_present
+        expect(modal_checkbox["checked"]).to be_nil
+      end
+
       it "renders the popup variant for embedded requests" do
         chat_session.update!(
           metadata: {
