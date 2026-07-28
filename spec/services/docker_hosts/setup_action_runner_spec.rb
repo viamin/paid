@@ -87,5 +87,81 @@ RSpec.describe DockerHosts::SetupActionRunner do
       expect(host.reload.required_network_status).to eq("ready")
       expect(host.setup_step("required_network")).to include("status" => "verified")
     end
+
+    it "fails image inspection when the image architecture does not match the daemon" do
+      image = instance_double(Docker::Image, info: { "Architecture" => "amd64", "RepoDigests" => [ "paid-agent@sha256:123" ] })
+      backend = instance_double(Containers::Backends::RemoteDocker, get_image: image)
+      allow(DockerHosts::RemoteBackendSession).to receive(:with_backend).and_yield(backend)
+
+      result = described_class.call(
+        host: host,
+        action: "inspect_image",
+        params: ActionController::Parameters.new
+      )
+
+      expect(result.success?).to be(false)
+      expect(result.message).to include("Expected \"arm64\"")
+      expect(host.reload.image_status).to eq("failing")
+      expect(host.setup_step("image_availability")).to include("status" => "failing")
+    end
+
+    it "fails image inspection when the image architecture is unavailable" do
+      image = instance_double(Docker::Image, info: { "RepoDigests" => [] })
+      backend = instance_double(Containers::Backends::RemoteDocker, get_image: image)
+      allow(DockerHosts::RemoteBackendSession).to receive(:with_backend).and_yield(backend)
+
+      result = described_class.call(
+        host: host,
+        action: "inspect_image",
+        params: ActionController::Parameters.new
+      )
+
+      expect(result.success?).to be(false)
+      expect(result.message).to include("did not report an image architecture")
+      expect(host.reload.image_status).to eq("missing")
+      expect(host.setup_step("image_availability")).to include("status" => "failing")
+    end
+
+    it "fails callback reachability when the probe container exits non-zero" do
+      container = instance_double(Docker::Container, wait: { "StatusCode" => 7 })
+      backend = instance_double(
+        Containers::Backends::RemoteDocker,
+        create_container: container,
+        start_container: true,
+        delete_container: true
+      )
+      allow(DockerHosts::RemoteBackendSession).to receive(:with_backend).and_yield(backend)
+
+      result = described_class.call(
+        host: host,
+        action: "test_callback",
+        params: ActionController::Parameters.new(required_network_name: "shared-agents", callback_url: "https://example.test/callback")
+      )
+
+      expect(result.success?).to be(false)
+      expect(result.message).to include("exit status 7")
+      expect(host.reload.setup_step("callback_reachability")).to include("status" => "failing")
+    end
+
+    it "fails the dry run when the disposable container exits non-zero" do
+      container = instance_double(Docker::Container, wait: { "StatusCode" => 1 })
+      backend = instance_double(
+        Containers::Backends::RemoteDocker,
+        create_container: container,
+        start_container: true,
+        delete_container: true
+      )
+      allow(DockerHosts::RemoteBackendSession).to receive(:with_backend).and_yield(backend)
+
+      result = described_class.call(
+        host: host,
+        action: "dry_run",
+        params: ActionController::Parameters.new(required_network_name: "shared-agents")
+      )
+
+      expect(result.success?).to be(false)
+      expect(result.message).to include("exit status 1")
+      expect(host.reload.setup_step("dry_run")).to include("status" => "failing")
+    end
   end
 end

@@ -186,12 +186,17 @@ module DockerHosts
       DockerHosts::RemoteBackendSession.with_backend(host) do |backend|
         image = backend.get_image(host.image_tag)
         info = image.info
-        architecture = info["Architecture"].presence || info.dig("Os", "Architecture").presence || host.daemon_architecture
-        host.image_status = architecture.present? && architecture == host.daemon_architecture ? "ready" : "ready"
-        record_step_success(
-          "image_availability",
-          "Image #{host.image_tag.inspect} present. Architecture: #{architecture || 'unknown'}. Digests: #{Array(info['RepoDigests']).join(', ').presence || 'none'}."
-        )
+        architecture = info["Architecture"].presence || info.dig("Os", "Architecture").presence
+        if architecture.present? && architecture == host.daemon_architecture
+          host.image_status = "ready"
+          record_step_success(
+            "image_availability",
+            "Image #{host.image_tag.inspect} present. Architecture: #{architecture}. Digests: #{Array(info['RepoDigests']).join(', ').presence || 'none'}."
+          )
+        else
+          host.image_status = architecture.present? ? "failing" : "missing"
+          raise Docker::Error::DockerError, image_architecture_failure_message(architecture:, info:)
+        end
       end
       host.save!
 
@@ -211,7 +216,7 @@ module DockerHosts
           "NetworkingConfig" => { "EndpointsConfig" => { network_name => {} } }
         )
         backend.start_container(container)
-        container.wait(15)
+        ensure_successful_container_exit!(container, step_key: "callback_reachability", failure_prefix: "Disposable container could not reach #{url}")
         record_step_success("callback_reachability", "Disposable container reached #{url}.")
       ensure
         backend.delete_container(container, force: true) if container
@@ -232,7 +237,7 @@ module DockerHosts
           "NetworkingConfig" => { "EndpointsConfig" => { network_name => {} } }
         )
         backend.start_container(container)
-        container.wait(15)
+        ensure_successful_container_exit!(container, step_key: "dry_run", failure_prefix: "Disposable container dry run failed on #{network_name}")
         record_step_success("dry_run", "Created, started, and cleaned up a disposable container on #{network_name}.")
       ensure
         backend.delete_container(container, force: true) if container
@@ -261,6 +266,22 @@ module DockerHosts
       raise ArgumentError, "#{key.to_s.humanize} can't be blank" if value.blank?
 
       value
+    end
+
+    def ensure_successful_container_exit!(container, step_key:, failure_prefix:)
+      status_code = container.wait(15).fetch("StatusCode", nil)
+      return if status_code.to_i.zero?
+
+      raise Docker::Error::DockerError, "#{failure_prefix} (exit status #{status_code || 'unknown'})."
+    rescue KeyError
+      raise Docker::Error::DockerError, "#{failure_prefix} (missing exit status)."
+    end
+
+    def image_architecture_failure_message(architecture:, info:)
+      base_message = "Image #{host.image_tag.inspect} present. Architecture: #{architecture || 'unknown'}. Digests: #{Array(info['RepoDigests']).join(', ').presence || 'none'}."
+      return "#{base_message} Docker did not report an image architecture." if architecture.blank?
+
+      "#{base_message} Expected #{host.daemon_architecture.inspect} for host compatibility."
     end
 
     def record_step_success(step_key, message, completed: false)
