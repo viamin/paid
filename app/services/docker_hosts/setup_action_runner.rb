@@ -5,7 +5,7 @@ require "shellwords"
 
 module DockerHosts
   class SetupActionRunner
-    Result = Struct.new(:success?, :message, keyword_init: true)
+    Result = Struct.new(:success?, :message, :server_private_key_pem, keyword_init: true)
 
     def self.call(host:, action:, params:)
       new(host:, action:, params:).call
@@ -65,6 +65,7 @@ module DockerHosts
 
       host.assign_attributes(
         client_ca_pem: ca_cert.to_pem,
+        client_ca_key_pem: ca_key.to_pem,
         client_certificate_pem: client_cert.to_pem,
         client_private_key_pem: client_key.to_pem
       )
@@ -77,6 +78,7 @@ module DockerHosts
     def upload_client_bundle
       host.assign_attributes(
         client_ca_pem: required_param!(:client_ca_pem),
+        client_ca_key_pem: optional_param(:client_ca_key_pem),
         client_certificate_pem: required_param!(:client_certificate_pem),
         client_private_key_pem: required_param!(:client_private_key_pem)
       )
@@ -91,43 +93,9 @@ module DockerHosts
       san_entries = Certificates.san_entries(params[:server_sans])
       raise ArgumentError, "Supply at least one SAN for server certificate generation" if san_entries.empty?
 
-      server_key = OpenSSL::PKey::RSA.new(4096)
-      if params[:server_mode] == "self_signed"
-        server_cert = Certificates.build_certificate(
-          subject: "/CN=#{common_name}",
-          issuer: nil,
-          public_key: server_key.public_key,
-          signing_key: server_key,
-          serial: 10,
-          is_ca: false,
-          san_entries: san_entries,
-          extended_key_usage: "serverAuth"
-        )
+      return generate_server_csr(common_name:, san_entries:) if params[:server_mode] == "csr"
 
-        host.assign_attributes(
-          server_certificate_pem: server_cert.to_pem,
-          server_private_key_pem: server_key.to_pem,
-          server_csr_pem: nil
-        )
-        record_step_success("server_certificate_install", "Generated a self-signed server certificate with SANs for manual installation.")
-        host.save!
-        Result.new(success?: true, message: "Generated a self-signed server certificate for #{host.display_name}.")
-      else
-        csr = Certificates.build_certificate_request(
-          subject: "/CN=#{common_name}",
-          private_key: server_key,
-          san_entries: san_entries
-        )
-
-        host.assign_attributes(
-          server_private_key_pem: server_key.to_pem,
-          server_csr_pem: csr.to_pem,
-          server_certificate_pem: nil
-        )
-        record_step_success("server_certificate_install", "Generated a server private key and CSR with SANs for manual CA signing.")
-        host.save!
-        Result.new(success?: true, message: "Generated a server CSR for #{host.display_name}.")
-      end
+      generate_server_certificate(common_name:, san_entries:)
     end
 
     def mark_manual_step
@@ -268,6 +236,10 @@ module DockerHosts
       value
     end
 
+    def optional_param(key)
+      params[key].to_s.strip.presence
+    end
+
     def ensure_successful_container_exit!(container, step_key:, failure_prefix:)
       status_code = container.wait(15).fetch("StatusCode", nil)
       return if status_code.to_i.zero?
@@ -310,6 +282,70 @@ module DockerHosts
         "checked_at" => Time.current.iso8601
       }
       host.metadata = setup
+    end
+
+    def generate_server_certificate(common_name:, san_entries:)
+      ca_cert = OpenSSL::X509::Certificate.new(stored_client_ca_pem!)
+      ca_key = OpenSSL::PKey.read(stored_client_ca_key_pem!)
+      server_key = OpenSSL::PKey::RSA.new(4096)
+      server_cert = Certificates.build_certificate(
+        subject: "/CN=#{common_name}",
+        issuer: ca_cert,
+        public_key: server_key.public_key,
+        signing_key: ca_key,
+        serial: SecureRandom.random_number(2**128),
+        is_ca: false,
+        san_entries: san_entries,
+        extended_key_usage: "serverAuth"
+      )
+
+      host.assign_attributes(
+        server_certificate_pem: server_cert.to_pem,
+        server_private_key_pem: server_key.to_pem,
+        server_csr_pem: nil
+      )
+      record_step_success("server_certificate_install", "Generated a server certificate signed by the stored client CA.")
+      host.save!
+
+      Result.new(
+        success?: true,
+        message: "Generated a server certificate signed by the stored client CA for #{host.display_name}.",
+        server_private_key_pem: server_key.to_pem
+      )
+    end
+
+    def generate_server_csr(common_name:, san_entries:)
+      server_key = OpenSSL::PKey::RSA.new(4096)
+      csr = Certificates.build_certificate_request(
+        subject: "/CN=#{common_name}",
+        private_key: server_key,
+        san_entries: san_entries
+      )
+
+      host.assign_attributes(
+        server_private_key_pem: server_key.to_pem,
+        server_csr_pem: csr.to_pem,
+        server_certificate_pem: nil
+      )
+      record_step_success("server_certificate_install", "Generated a server private key and CSR with SANs for manual CA signing.")
+      host.save!
+
+      Result.new(
+        success?: true,
+        message: "Generated a server CSR for #{host.display_name}.",
+        server_private_key_pem: server_key.to_pem
+      )
+    end
+
+    def stored_client_ca_pem!
+      host.client_ca_pem.presence || raise(ArgumentError, "Generate or upload a client CA before generating a server certificate.")
+    end
+
+    def stored_client_ca_key_pem!
+      host.client_ca_key_pem.presence || raise(
+        ArgumentError,
+        "Stored client CA private key required. Generate a client bundle or upload the CA private key, or use CSR mode."
+      )
     end
   end
 end

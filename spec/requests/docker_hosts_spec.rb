@@ -108,6 +108,33 @@ RSpec.describe "DockerHosts", type: :request do
     expect(host.setup_profile).to eq("qnap_nas")
   end
 
+  it "shows generated server private keys only in the immediate helper response" do
+    host = create(:docker_host, account: account)
+
+    post setup_helper_docker_host_path(host), params: {
+      helper_action: "generate_client_bundle",
+      client_common_name: "paid-client"
+    }
+    expect(response).to redirect_to(setup_docker_host_path(host))
+
+    post setup_helper_docker_host_path(host), params: {
+      helper_action: "generate_server_material",
+      server_common_name: "docker.example.test",
+      server_sans: "docker.example.test,100.113.201.1",
+      server_mode: "ca_signed"
+    }
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("One-time server private key")
+    expect(response.body).to include("BEGIN RSA PRIVATE KEY")
+
+    get setup_docker_host_path(host)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).not_to include("One-time server private key")
+    expect(response.body).not_to include("BEGIN RSA PRIVATE KEY")
+  end
+
   def docker_host_params
     {
       display_name: "Edge Builder",

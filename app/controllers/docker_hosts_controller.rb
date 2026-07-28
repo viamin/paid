@@ -88,6 +88,14 @@ class DockerHostsController < ApplicationController
       params: setup_helper_params
     )
 
+    if result.success? && result.server_private_key_pem.present?
+      load_setup_guide
+      @generated_server_private_key_pem = result.server_private_key_pem
+      prevent_secret_caching!
+      flash.now[:notice] = "#{result.message} Copy the private key now. Future visits require regeneration."
+      return render :setup
+    end
+
     redirect_to setup_docker_host_path(@docker_host), result.success? ? { notice: result.message } : { alert: result.message }
   end
 
@@ -169,6 +177,7 @@ class DockerHostsController < ApplicationController
     params.permit(
       :client_common_name,
       :client_ca_pem,
+      :client_ca_key_pem,
       :client_certificate_pem,
       :client_private_key_pem,
       :server_common_name,
@@ -179,5 +188,10 @@ class DockerHostsController < ApplicationController
       :allow_network_create,
       :step_key
     )
+  end
+
+  def prevent_secret_caching!
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Pragma"] = "no-cache"
   end
 end

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "openssl"
 
 RSpec.describe DockerHosts::SetupActionRunner do
   let(:host) { create(:docker_host, daemon_architecture: "arm64") }
@@ -15,8 +16,10 @@ RSpec.describe DockerHosts::SetupActionRunner do
 
       expect(result.success?).to be(true)
       expect(host.reload.client_tls_material_present?).to be(true)
+      expect(host.client_ca_key_pem).to include("BEGIN RSA PRIVATE KEY")
       expect(host.setup_step("client_tls")).to include("status" => "verified")
       expect(host.read_attribute_before_type_cast("client_private_key_pem")).not_to include("BEGIN PRIVATE KEY")
+      expect(host.read_attribute_before_type_cast("client_ca_key_pem")).not_to include("BEGIN PRIVATE KEY")
     end
 
     it "stores uploaded client TLS material" do
@@ -51,20 +54,32 @@ RSpec.describe DockerHosts::SetupActionRunner do
       expect(host.server_private_key_pem).to include("BEGIN RSA PRIVATE KEY")
     end
 
-    it "creates a self-signed server certificate when SANs are supplied" do
+    it "creates a server certificate signed by the stored client CA" do
+      generate_client_bundle
+      result = generate_server_material(server_mode: "ca_signed")
+      expect(result.success?).to be(true)
+      expect_server_certificate_to_chain_to_client_ca
+      expect(host.server_csr_pem).to be_nil
+    end
+
+    it "fails CA-signed server generation when the client CA private key is unavailable" do
+      generate_client_bundle
+      host.update!(client_ca_key_pem: nil)
+
       result = described_class.call(
         host: host,
         action: "generate_server_material",
         params: ActionController::Parameters.new(
           server_common_name: "docker.example.test",
           server_sans: "docker.example.test,100.113.201.1",
-          server_mode: "self_signed"
+          server_mode: "ca_signed"
         )
       )
 
-      expect(result.success?).to be(true)
-      expect(host.reload.server_certificate_pem).to include("BEGIN CERTIFICATE")
-      expect(host.server_csr_pem).to be_nil
+      expect(result.success?).to be(false)
+      expect(result.message).to eq(
+        "Stored client CA private key required. Generate a client bundle or upload the CA private key, or use CSR mode."
+      )
     end
 
     it "marks the required network verified when the network exists remotely" do
@@ -163,5 +178,35 @@ RSpec.describe DockerHosts::SetupActionRunner do
       expect(result.message).to include("exit status 1")
       expect(host.reload.setup_step("dry_run")).to include("status" => "failing")
     end
+  end
+
+  def generate_client_bundle
+    described_class.call(
+      host: host,
+      action: "generate_client_bundle",
+      params: ActionController::Parameters.new(client_common_name: "paid-client")
+    )
+  end
+
+  def generate_server_material(server_mode:)
+    described_class.call(
+      host: host,
+      action: "generate_server_material",
+      params: ActionController::Parameters.new(
+        server_common_name: "docker.example.test",
+        server_sans: "docker.example.test,100.113.201.1",
+        server_mode: server_mode
+      )
+    )
+  end
+
+  def expect_server_certificate_to_chain_to_client_ca
+    host.reload
+    server_certificate = OpenSSL::X509::Certificate.new(host.server_certificate_pem)
+    client_ca = OpenSSL::X509::Certificate.new(host.client_ca_pem)
+
+    expect(server_certificate.to_pem).to include("BEGIN CERTIFICATE")
+    expect(server_certificate.issuer.to_s).to eq(client_ca.subject.to_s)
+    expect(server_certificate.verify(client_ca.public_key)).to be(true)
   end
 end

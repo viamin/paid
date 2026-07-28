@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_28_104130) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_28_132827) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -955,6 +955,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_28_104130) do
     t.bigint "account_id", null: false, comment: "Account that owns and may place runs onto this Docker host."
     t.string "backend_type", null: false, comment: "Docker backend type, such as local, remote, or swarm."
     t.string "callback_url", comment: "Paid proxy callback URL that containers on this host must reach."
+    t.text "client_ca_key_pem", comment: "Encrypted CA private key PEM retained when Paid must generate a matching remote Docker server certificate."
     t.text "client_ca_pem", comment: "Encrypted CA certificate PEM used by Paid when connecting to this remote Docker daemon over TLS."
     t.text "client_certificate_pem", comment: "Encrypted client certificate PEM used by Paid when connecting to this remote Docker daemon over TLS."
     t.text "client_private_key_pem", comment: "Encrypted client private key PEM used by Paid when connecting to this remote Docker daemon over TLS."

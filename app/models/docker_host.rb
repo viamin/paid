@@ -10,6 +10,7 @@ class DockerHost < ApplicationRecord
   belongs_to :account
 
   encrypts :client_ca_pem
+  encrypts :client_ca_key_pem
   encrypts :client_certificate_pem
   encrypts :client_private_key_pem
   encrypts :server_certificate_pem

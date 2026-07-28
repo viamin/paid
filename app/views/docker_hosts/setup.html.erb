@@ -122,7 +122,7 @@
         <div class="mt-6 grid gap-6 lg:grid-cols-2">
           <div class="rounded-2xl border border-gray-200 p-4">
             <h3 class="text-base font-semibold text-gray-900">Generate client bundle</h3>
-            <p class="mt-1 text-sm text-gray-600">Creates a CA, client certificate, and client private key locally, then stores them encrypted on the Docker host record.</p>
+            <p class="mt-1 text-sm text-gray-600">Creates a CA, client certificate, and client private key locally, then stores them encrypted on the Docker host record so Paid can also mint a matching server certificate later.</p>
             <%= form_with url: setup_helper_docker_host_path(@docker_host), method: :post, class: "mt-4 space-y-3" do |form| %>
               <%= hidden_field_tag :helper_action, "generate_client_bundle" %>
               <%= text_field_tag :client_common_name, nil, placeholder: "#{@docker_host.identifier}-paid-client", class: "block w-full rounded-xl border-gray-300 text-sm shadow-sm" %>
@@ -132,10 +132,11 @@
 
           <div class="rounded-2xl border border-gray-200 p-4">
             <h3 class="text-base font-semibold text-gray-900">Upload client bundle</h3>
-            <p class="mt-1 text-sm text-gray-600">Use this when you already have CA, client certificate, and private key PEM material.</p>
+            <p class="mt-1 text-sm text-gray-600">Use this when you already have CA, client certificate, and private key PEM material. Add the CA private key too if you want Paid to generate a matching server certificate.</p>
             <%= form_with url: setup_helper_docker_host_path(@docker_host), method: :post, class: "mt-4 space-y-3" do %>
               <%= hidden_field_tag :helper_action, "upload_client_bundle" %>
               <%= text_area_tag :client_ca_pem, nil, rows: 5, placeholder: "-----BEGIN CERTIFICATE-----", class: "block w-full rounded-xl border-gray-300 font-mono text-xs shadow-sm" %>
+              <%= text_area_tag :client_ca_key_pem, nil, rows: 5, placeholder: "-----BEGIN PRIVATE KEY-----", class: "block w-full rounded-xl border-gray-300 font-mono text-xs shadow-sm" %>
               <%= text_area_tag :client_certificate_pem, nil, rows: 5, placeholder: "-----BEGIN CERTIFICATE-----", class: "block w-full rounded-xl border-gray-300 font-mono text-xs shadow-sm" %>
               <%= text_area_tag :client_private_key_pem, nil, rows: 5, placeholder: "-----BEGIN PRIVATE KEY-----", class: "block w-full rounded-xl border-gray-300 font-mono text-xs shadow-sm" %>
               <%= submit_tag "Store uploaded client bundle", class: "rounded-full border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50" %>
@@ -145,14 +146,14 @@
 
         <div class="mt-6 rounded-2xl border border-gray-200 p-4">
           <h3 class="text-base font-semibold text-gray-900">Generate server material</h3>
-          <p class="mt-1 text-sm text-gray-600">Create either a CSR or a self-signed server certificate when you supply SANs. Installation on the remote daemon is still manual.</p>
+          <p class="mt-1 text-sm text-gray-600">Create a CSR for an external CA, or generate a server certificate signed by the stored client CA so it chains to the same trust root Paid uses for mTLS. Installation on the remote daemon is still manual.</p>
           <%= form_with url: setup_helper_docker_host_path(@docker_host), method: :post, class: "mt-4 grid gap-3 md:grid-cols-3" do %>
             <%= hidden_field_tag :helper_action, "generate_server_material" %>
             <%= text_field_tag :server_common_name, nil, placeholder: "docker.example.com", class: "block w-full rounded-xl border-gray-300 text-sm shadow-sm" %>
             <%= text_field_tag :server_sans, nil, placeholder: "docker.example.com, 100.113.201.1", class: "block w-full rounded-xl border-gray-300 text-sm shadow-sm md:col-span-2" %>
             <div>
               <%= select_tag :server_mode,
-                options_for_select([["Generate CSR", "csr"], ["Generate self-signed cert", "self_signed"]], "csr"),
+                options_for_select([["Generate CSR", "csr"], ["Generate cert signed by stored client CA", "ca_signed"]], "csr"),
                 class: "block w-full rounded-xl border-gray-300 text-sm shadow-sm" %>
             </div>
             <div class="md:col-span-2">
@@ -209,7 +210,7 @@
         </div>
       </section>
 
-      <% if @docker_host.server_certificate_pem.present? || @docker_host.server_csr_pem.present? || @docker_host.server_private_key_pem.present? %>
+      <% if @docker_host.server_certificate_pem.present? || @docker_host.server_csr_pem.present? %>
         <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
           <h2 class="text-xl font-semibold text-gray-900">Generated server material</h2>
           <div class="mt-4 space-y-4">
@@ -225,13 +226,15 @@
                 <textarea readonly rows="6" class="mt-2 block w-full rounded-2xl border-gray-300 bg-gray-50 font-mono text-xs shadow-sm"><%= @docker_host.server_csr_pem %></textarea>
               </div>
             <% end %>
-            <% if @docker_host.server_private_key_pem.present? %>
-              <div>
-                <div class="text-sm font-medium text-gray-900">Server private key</div>
-                <textarea readonly rows="6" class="mt-2 block w-full rounded-2xl border-gray-300 bg-gray-50 font-mono text-xs shadow-sm"><%= @docker_host.server_private_key_pem %></textarea>
-              </div>
-            <% end %>
           </div>
+        </section>
+      <% end %>
+
+      <% if @generated_server_private_key_pem.present? %>
+        <section class="rounded-3xl border border-amber-200 bg-amber-50 p-6 shadow-sm">
+          <h2 class="text-xl font-semibold text-gray-900">One-time server private key</h2>
+          <p class="mt-2 text-sm text-gray-700">Copy this key now and install it on the remote daemon host. Paid will not show it again on later visits; regenerate the server material if you lose it.</p>
+          <textarea readonly rows="6" class="mt-4 block w-full rounded-2xl border-amber-300 bg-white font-mono text-xs shadow-sm"><%= @generated_server_private_key_pem %></textarea>
         </section>
       <% end %>
     </div>
