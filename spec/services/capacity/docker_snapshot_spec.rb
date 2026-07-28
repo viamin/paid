@@ -178,6 +178,31 @@ RSpec.describe Capacity::DockerSnapshot do
       expect(snapshot.usage_buckets.values.sum(&:container_count)).to eq(container_rows.size)
     end
 
+    it "still counts labeled live agent containers when sampling budget exhaustion skips stats collection" do
+      orphaned_run = create(:agent_run, :completed, project: project, container_id: nil)
+      blocking_container = build_container(id: "slow-unrelated", labels: {})
+      timed_out_agent = build_container(
+        id: "orphaned-agent-live",
+        labels: { "paid.agent_run_id" => orphaned_run.id.to_s }
+      )
+
+      stub_const("Capacity::DockerSnapshot::DOCKER_SAMPLING_BUDGET", 0.05)
+      stub_const("Capacity::ConcurrentStatsSampler::MAX_THREADS", 1)
+      allow(backend).to receive(:list_containers).and_return([ blocking_container, timed_out_agent ])
+      allow(backend).to receive(:container_stats).with(blocking_container, stream: false) do
+        sleep 1
+        {}
+      end
+      allow(backend).to receive(:container_stats).with(timed_out_agent, stream: false).and_return({})
+
+      snapshot = described_class.call(backend: backend, now: now, cache: cache, force_refresh: true)
+
+      expect(snapshot).to be_degraded
+      expect(snapshot.degraded_reasons).to include("container_sampling_budget_exceeded")
+      expect(snapshot.bucket(:paid_agents).container_count).to eq(1)
+      expect(snapshot.agent_container_count).to eq(1)
+    end
+
     it "reports container_list_changed_during_sampling when a container starts mid-sample" do
       late_arrival = build_container(id: "late-arrival", labels: {})
       allow(backend).to receive(:list_containers).and_return(containers, containers + [ late_arrival ])

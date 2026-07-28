@@ -125,6 +125,7 @@ module Capacity
           confidence: confidence,
           snapshot_at: snapshot_at,
           docker_memory_bytes: docker_memory_bytes,
+          agent_container_count: agent_container_count,
           agent_memory_bytes: agent_memory_bytes,
           paid_control_plane_memory_bytes: control_plane_memory_bytes,
           service_container_memory_bytes: service_container_memory_bytes,
@@ -318,9 +319,11 @@ module Capacity
       ) { |container| backend.container_stats(container, stream: false) }
 
       results.each do |result|
+        classification = inventory.classify_container(container: result.container, references:)
+
         if result.skipped
           degraded_reasons << "container_sampling_budget_exceeded"
-          accumulate_bucket(buckets.fetch(:other_docker), memory_bytes: 0, cpu_percent: 0.0)
+          accumulate_bucket(buckets.fetch(classification), memory_bytes: 0, cpu_percent: 0.0)
           next
         end
 
@@ -332,11 +335,10 @@ module Capacity
             error_message: result.error.message
           )
           degraded_reasons << "container_sample_failed"
-          accumulate_bucket(buckets.fetch(:other_docker), memory_bytes: 0, cpu_percent: 0.0)
+          accumulate_bucket(buckets.fetch(classification), memory_bytes: 0, cpu_percent: 0.0)
           next
         end
 
-        classification = inventory.classify_container(container: result.container, references:)
         parsed = Containers::DockerStatsParser.parse_stats(result.raw_stats)
         accumulate_bucket(
           buckets.fetch(classification),

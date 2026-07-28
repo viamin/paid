@@ -8,6 +8,7 @@ RSpec.describe Capacity::BlockedReason do
       expected_codes = %w[
         docker_unavailable
         docker_low_confidence
+        docker_sampling_budget_exceeded
         docker_memory_exhausted
         auto_mode_disabled_for_deployment
         unrelated_workload

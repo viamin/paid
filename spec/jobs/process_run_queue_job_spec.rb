@@ -1682,6 +1682,25 @@ RSpec.describe ProcessRunQueueJob do
           )
         )
       end
+
+      it "logs Docker sampling timeout blocks as a host-safety capacity denial" do
+        queued_run = create_queued_run_with_policy(max_concurrent_runs: 5)
+        queued_run.project.created_by.settings.update!(run_concurrency_mode: "auto")
+        stub_policy_decision(sampling_budget_blocked_decision)
+        allow(Rails.logger).to receive(:info)
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        described_class.new.perform
+
+        expect(queued_run.reload.status).to eq("queued")
+        expect(Rails.logger).to have_received(:info).with(
+          hash_including(
+            message: "process_run_queue.capacity_blocked",
+            reasons: include("docker_sampling_budget_exceeded")
+          )
+        )
+      end
     end
   end
 
@@ -1803,6 +1822,40 @@ RSpec.describe ProcessRunQueueJob do
       admission_uses_cpu: false,
       degraded: true,
       degraded_reasons: [ "docker_exhausted" ],
+      effective_max_concurrent: 10,
+      snapshot_present: true
+    )
+  end
+
+  def sampling_budget_blocked_decision
+    degraded_snapshot = Capacity::DockerSnapshot::Snapshot.new(
+      backend_identifier: "local",
+      backend_kind: "local",
+      backend_shared: false,
+      docker_cpu_count: 8,
+      docker_memory_bytes: 16_000_000_000,
+      usage_buckets: Capacity::DockerSnapshot::EMPTY_BUCKETS.merge(
+        paid_agents: Capacity::DockerSnapshot::Bucket.new(container_count: 4, memory_bytes: 0, cpu_percent: 0.0)
+      ),
+      available_memory_bytes: 0,
+      agent_container_count: 4,
+      snapshot_at: Time.current,
+      confidence: 0.1,
+      degraded: true,
+      degraded_reasons: [ "container_sampling_budget_exceeded" ]
+    )
+
+    allow(Capacity::DockerSnapshot).to receive(:call).and_return(degraded_snapshot)
+
+    Capacity::Policy::Decision.new(
+      mode: Capacity::Policy::MANUAL,
+      environment: Capacity::Policy::ENVIRONMENT_LINUX_DOCKER,
+      auto_allowed: false,
+      auto_allowed_reasons: [ "metrics_missing" ],
+      blocked_reasons: [ Capacity::BlockedReason[:docker_sampling_budget_exceeded] ],
+      admission_uses_cpu: false,
+      degraded: true,
+      degraded_reasons: [ "container_sampling_budget_exceeded" ],
       effective_max_concurrent: 10,
       snapshot_present: true
     )

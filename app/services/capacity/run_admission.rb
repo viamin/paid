@@ -3,6 +3,7 @@
 module Capacity
   class RunAdmission
     DEFAULT_ESTIMATED_MEMORY_BYTES = 4 * 1024 * 1024 * 1024
+    DOCKER_SAMPLING_TIMEOUT_REASON = "docker_sampling_budget_exceeded".freeze
 
     class << self
       def call(...)
@@ -81,7 +82,7 @@ module Capacity
 
     def auto_result
       snapshot = docker_snapshot || DockerSnapshot.fetch
-      return degraded_manual_result(snapshot) unless snapshot[:available]
+      return degraded_result(snapshot) unless snapshot[:available]
 
       estimated_memory_per_run_bytes = candidate_memory_bytes
       reserved_agent_memory_bytes = active_local_agent_reserved_bytes
@@ -130,6 +131,12 @@ module Capacity
       decision
     end
 
+    def degraded_result(snapshot)
+      return degraded_sampling_timeout_result(snapshot) if snapshot[:reason] == "container_sampling_budget_exceeded"
+
+      degraded_manual_result(snapshot)
+    end
+
     def degraded_manual_result(snapshot)
       manual_result(mode: UserSetting::RUN_CONCURRENCY_MODE_AUTO).merge(
         degraded: true,
@@ -140,6 +147,42 @@ module Capacity
         snapshot_at: snapshot[:snapshot_at],
         docker_confidence: snapshot[:confidence]
       )
+    end
+
+    def degraded_sampling_timeout_result(snapshot)
+      slot_reason = denial_reason(remaining_memory_slots: nil)
+      reserved_memory_bytes = [
+        active_local_agent_reserved_bytes,
+        snapshot[:agent_memory_bytes].to_i,
+        snapshot[:agent_container_count].to_i * candidate_memory_bytes
+      ].max
+
+      {
+        allowed: false,
+        mode: UserSetting::RUN_CONCURRENCY_MODE_AUTO,
+        reason: slot_reason || DOCKER_SAMPLING_TIMEOUT_REASON,
+        selected_host: selected_host,
+        host_active_count: host_active_count,
+        host_max_concurrent_runs: selected_host_limit,
+        host_available_slots: host_available_slots,
+        user_active_count: user_active_count,
+        project_active_count: project_active_count,
+        create_pr_active_count: create_pr_active_count,
+        effective_max_concurrent_runs: user_hard_ceiling,
+        available_slots: 0,
+        available_memory_bytes: 0,
+        estimated_memory_per_run_bytes: candidate_memory_bytes,
+        reserved_agent_memory_bytes: reserved_memory_bytes,
+        snapshot_available: false,
+        snapshot_at: snapshot[:snapshot_at],
+        docker_confidence: snapshot[:confidence],
+        docker_memory_bytes: snapshot[:docker_memory_bytes],
+        docker_reason: snapshot[:reason],
+        docker_error_class: snapshot[:error_class],
+        docker_error_message: snapshot[:error_message],
+        docker_agent_container_count: snapshot[:agent_container_count].to_i,
+        degraded: true
+      }
     end
 
     def denial_reason(remaining_memory_slots:)

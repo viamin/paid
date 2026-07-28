@@ -202,6 +202,30 @@ RSpec.describe Capacity::RunAdmission do
       expect(result[:degraded]).to be true
     end
 
+    it "fails closed when Docker sampling times out even if slot ceilings still have room" do
+      result = described_class.call(
+        user: user,
+        project: project,
+        docker_snapshot: {
+          available: false,
+          reason: "container_sampling_budget_exceeded",
+          snapshot_at: Time.current,
+          confidence: "low",
+          docker_memory_bytes: 20.gigabytes,
+          agent_container_count: 4,
+          agent_memory_bytes: 0
+        }
+      )
+
+      expect(result[:allowed]).to be false
+      expect(result[:reason]).to eq("docker_sampling_budget_exceeded")
+      expect(result[:available_slots]).to eq(0)
+      expect(result[:reserved_agent_memory_bytes]).to eq(24.gigabytes)
+      expect(result[:docker_agent_container_count]).to eq(4)
+      expect(result[:docker_reason]).to eq("container_sampling_budget_exceeded")
+      expect(result[:degraded]).to be true
+    end
+
     it "supports forcing manual mode for one admission without changing user settings" do
       expect(Capacity::DockerSnapshot).not_to receive(:fetch)
 

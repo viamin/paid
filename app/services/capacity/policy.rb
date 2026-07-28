@@ -88,7 +88,7 @@ module Capacity
       # excluded: those fall back to conservative manual limits rather than
       # halting dispatch, which is the RDR-mandated fail-safe behavior for
       # backends where auto mode is not appropriate or Docker is unmeasurable.
-      CAPACITY_BLOCKING_REASONS = %w[docker_memory_exhausted].freeze
+      CAPACITY_BLOCKING_REASONS = %w[docker_memory_exhausted docker_sampling_budget_exceeded].freeze
 
       def auto?
         mode == Policy::AUTO
@@ -217,6 +217,10 @@ module Capacity
         blocked << BlockedReason[:docker_low_confidence]
       end
 
+      if snapshot.degraded_reasons.include?("container_sampling_budget_exceeded")
+        blocked << BlockedReason[:docker_sampling_budget_exceeded]
+      end
+
       if snapshot.available_memory_bytes.to_i.zero? && snapshot.docker_memory_bytes.to_i.positive?
         # Only assert a hard memory block when the snapshot is measurement
         # healthy. A degraded/unmeasured snapshot defensively reports
@@ -255,6 +259,7 @@ module Capacity
       reasons = []
       reasons << "docker_low_confidence" if snapshot.confidence.to_f < 0.5
       reasons << "docker_timeout" if snapshot.degraded_reasons.include?("docker_timeout")
+      reasons << "container_sampling_budget_exceeded" if snapshot.degraded_reasons.include?("container_sampling_budget_exceeded")
       # A degraded/unmeasured snapshot defensively reports
       # available_memory_bytes: 0 (see DockerSnapshot#collect_snapshot),
       # but that is a "we don't know" signal, not a "Docker is full"

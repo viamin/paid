@@ -36,6 +36,11 @@ module Capacity
         summary: "Docker capacity signal is unreliable",
         hint: "Capacity numbers are uncertain; Paid is keeping conservative defaults until Docker reports clean metrics."
       ),
+      docker_sampling_budget_exceeded: new(
+        code: "docker_sampling_budget_exceeded",
+        summary: "Docker capacity could not be sampled safely",
+        hint: "Paid timed out while sampling live Docker containers, so auto admission is paused until the host is less busy."
+      ),
       docker_memory_exhausted: new(
         code: "docker_memory_exhausted",
         summary: "Not enough Docker memory for another run",
