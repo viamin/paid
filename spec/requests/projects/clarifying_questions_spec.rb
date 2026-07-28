@@ -5,7 +5,7 @@ require "rails_helper"
 RSpec.describe "Projects::ClarifyingQuestions" do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
-  let(:project) { create(:project, account: account) }
+  let(:project) { create(:project, account: account, created_by: user) }
   let(:issue_body) { "This is the issue body" }
   let(:issue) { create(:issue, :needs_input, project: project, body: issue_body) }
   let(:github_client) { instance_double(GithubClient) }
@@ -71,6 +71,18 @@ RSpec.describe "Projects::ClarifyingQuestions" do
         follow_redirect!
         expect(response.body).to include("No clarifying questions found")
       end
+
+      it "falls back to the validated dashboard queue path when return_to is unsafe" do
+        project.update!(auto_pick_enabled: true, active: true)
+
+        get project_issue_clarifying_questions_path(project, issue), params: {
+          queue: "dashboard_needs_input",
+          queue_project_id: project.id,
+          return_to: "//evil.example/path"
+        }
+
+        expect(response).to redirect_to(dashboard_needs_input_path(project_id: project.id))
+      end
     end
   end
 
@@ -81,14 +93,17 @@ RSpec.describe "Projects::ClarifyingQuestions" do
     end
 
     context "when all answers are provided" do
+      let(:questions) { [ "What is the expected behavior?", "Should this be behind a flag?" ] }
+      let(:answers) { [ "X is a feature", "Yes, by default" ] }
+
       before do
         allow(github_client).to receive(:issue_comments).and_return([ trusted_comment ])
       end
 
       it "posts answers as a GitHub comment and redirects" do
         post project_issue_clarifying_questions_path(project, issue), params: {
-          questions: [ "What is the expected behavior?", "Should this be behind a flag?" ],
-          answers: [ "X is a feature", "Yes, by default" ]
+          questions: questions,
+          answers: answers
         }
 
         expect(github_client).to have_received(:add_comment).with(
@@ -105,8 +120,8 @@ RSpec.describe "Projects::ClarifyingQuestions" do
         needs_input_label = project.enhance_issue_needs_input_label_name
 
         post project_issue_clarifying_questions_path(project, issue), params: {
-          questions: [ "What is the expected behavior?", "Should this be behind a flag?" ],
-          answers: [ "X is a feature", "Yes, by default" ]
+          questions: questions,
+          answers: answers
         }
 
         expect(github_client).to have_received(:remove_label_from_issue).with(
@@ -116,6 +131,79 @@ RSpec.describe "Projects::ClarifyingQuestions" do
         expect(issue.paid_state).to eq("new")
         expect(issue.needs_input?).to be false
         expect(issue.labels).not_to include(needs_input_label)
+      end
+
+      it "redirects to the next queued issue when opened from the dashboard queue" do
+        project.update!(auto_pick_enabled: true, active: true)
+        next_issue = create(:issue, :needs_input, project: project, github_number: issue.github_number + 1)
+
+        post project_issue_clarifying_questions_path(project, issue), params: {
+          questions: questions,
+          answers: answers,
+          queue: "dashboard_needs_input",
+          queue_project_id: project.id,
+          return_to: dashboard_needs_input_path(project_id: project.id)
+        }
+
+        expect(response).to redirect_to(
+          project_issue_clarifying_questions_path(
+            project,
+            next_issue,
+            queue: "dashboard_needs_input",
+            queue_project_id: project.id,
+            return_to: dashboard_needs_input_path(project_id: project.id)
+          )
+        )
+      end
+
+      it "returns to the dashboard queue when the queue is exhausted" do
+        project.update!(auto_pick_enabled: true, active: true)
+
+        post project_issue_clarifying_questions_path(project, issue), params: {
+          questions: questions,
+          answers: answers,
+          queue: "dashboard_needs_input",
+          queue_project_id: project.id,
+          return_to: dashboard_needs_input_path(project_id: project.id)
+        }
+
+        expect(response).to redirect_to(dashboard_needs_input_path(project_id: project.id))
+      end
+
+      it "falls back to the validated dashboard queue path when return_to is unsafe" do
+        project.update!(auto_pick_enabled: true, active: true)
+
+        post project_issue_clarifying_questions_path(project, issue), params: {
+          questions: questions,
+          answers: answers,
+          queue: "dashboard_needs_input",
+          queue_project_id: project.id,
+          return_to: "https://evil.example/path"
+        }
+
+        expect(response).to redirect_to(dashboard_needs_input_path(project_id: project.id))
+      end
+
+      it "does not continue into a different queue project scope" do
+        project.update!(auto_pick_enabled: true, active: true)
+        other_project = create(
+          :project,
+          account: account,
+          created_by: user,
+          auto_pick_enabled: true,
+          active: true
+        )
+        create(:issue, :needs_input, project: other_project, github_number: issue.github_number + 1)
+
+        post project_issue_clarifying_questions_path(project, issue), params: {
+          questions: questions,
+          answers: answers,
+          queue: "dashboard_needs_input",
+          queue_project_id: other_project.id,
+          return_to: dashboard_needs_input_path(project_id: other_project.id)
+        }
+
+        expect(response).to redirect_to(dashboard_needs_input_path(project_id: other_project.id))
       end
     end
 

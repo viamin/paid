@@ -816,6 +816,81 @@ RSpec.describe "Dashboard" do
       expect(response.body).to include("Auto-Pick Eligibility")
       expect(response.body).to include(project.full_name)
     end
+
+    it "links the needs-input count to the dashboard queue" do
+      create(:issue, :needs_input, project: project)
+
+      get dashboard_eligibility_breakdown_path
+
+      document = Nokogiri::HTML(response.body)
+      link = document.at_css(%(a[href="#{dashboard_needs_input_path(project_id: project.id)}"]))
+
+      expect(link).to be_present
+      expect(link.text).to include("1 needs input")
+    end
+  end
+
+  describe "GET /dashboard/needs_input" do
+    let(:account) { create(:account) }
+    let(:user) { create(:user, account: account) }
+    let(:project) { create(:project, account: account, created_by: user, auto_pick_enabled: true, active: true, owner: "acme", repo: "alpha") }
+    let(:second_project) { create(:project, account: account, created_by: user, auto_pick_enabled: true, active: true, owner: "acme", repo: "beta") }
+    let(:questions_body) do
+      <<~BODY
+        <!-- paid:enhance-issue -->
+
+        ## Clarifying questions
+        1. What is the expected behavior?
+        2. Should this be behind a flag?
+      BODY
+    end
+
+    before { sign_in user }
+
+    it "lists needs-input issues across auto-pick projects" do
+      create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
+      create(:issue, :needs_input, project: second_project, title: "Beta question", body: questions_body)
+      create(:issue, :closed, :needs_input, project: project, title: "Closed question", body: questions_body)
+      create(:issue, :pull_request, :needs_input, project: project, title: "PR question", body: questions_body)
+
+      get dashboard_needs_input_path
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Needs Input Queue")
+      expect(response.body).to include(project.full_name)
+      expect(response.body).to include(second_project.full_name)
+      expect(response.body).to include("Alpha question")
+      expect(response.body).to include("Beta question")
+      expect(response.body).to include("What is the expected behavior?")
+      expect(response.body).not_to include("Closed question")
+      expect(response.body).not_to include("PR question")
+    end
+
+    it "supports project scoping" do
+      create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
+      create(:issue, :needs_input, project: second_project, title: "Beta question", body: questions_body)
+
+      get dashboard_needs_input_path(project_id: project.id)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include(project.full_name)
+      expect(response.body).to include("Alpha question")
+      expect(response.body).not_to include(second_project.full_name)
+      expect(response.body).not_to include("Beta question")
+      document = Nokogiri::HTML(response.body)
+      link = document.at_css("a[href*='#{project_issue_clarifying_questions_path(project, project.issues.find_by!(title: "Alpha question"))}']")
+
+      expect(link).to be_present
+      expect(link["href"]).to eq(
+        project_issue_clarifying_questions_path(
+          project,
+          project.issues.find_by!(title: "Alpha question"),
+          queue: "dashboard_needs_input",
+          queue_project_id: project.id,
+          return_to: dashboard_needs_input_path(project_id: project.id)
+        )
+      )
+    end
   end
 
   describe "GET /dashboard/decision_metrics" do
