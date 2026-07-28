@@ -14,12 +14,16 @@ class LiveDashboardBroadcastJob < ApplicationJob
     key: -> { "live_dashboard_broadcast_#{arguments[1]}" }
   )
 
-  def perform(account_id, agent_run_id)
+  def perform(account_id, agent_run_id, refresh_queue_preview: false)
     agent_run = AgentRun
       .joins(project: :account)
       .includes(project: :account)
       .find_by!(id: agent_run_id, projects: { account_id: account_id })
 
-    Dashboard::LiveBroadcaster.call(account: agent_run.project.account, agent_run: agent_run)
+    Dashboard::LiveBroadcaster.call(
+      account: agent_run.project.account,
+      agent_run: agent_run,
+      refresh_queue_preview: refresh_queue_preview || agent_run.queued?
+    )
   end
 end

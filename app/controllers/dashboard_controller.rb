@@ -44,6 +44,15 @@ class DashboardController < ApplicationController
     render partial: "dashboard/eligibility_breakdown", locals: { breakdowns: @eligibility_breakdown }
   end
 
+  def queue_preview
+    load_queue_preview
+    render partial: "dashboard/queue_preview_frame",
+      locals: {
+        queue_preview: @queue_preview,
+        paused_projects: @quality_paused_projects
+      }
+  end
+
   def needs_input
     @scoped_project = scoped_needs_input_project
     @needs_input_entries = Dashboard::NeedsInputQueue.call(user: current_user, project: @scoped_project)
