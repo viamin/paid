@@ -264,7 +264,20 @@ RSpec.describe "ChatSessions" do
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("Assistant is typing")
         expect(response.body).to include("Rendered markdown")
-        expect(response.body).to include("Archive")
+
+        doc = Nokogiri::HTML(response.body)
+        # Keep a regression check for #2928 even though the destructive Close control
+        # was already removed from the template before this branch was cut.
+        token_usage_bar = doc.at_xpath("//p[normalize-space(text())='Token usage']/ancestor::div[contains(@class, 'bg-gray-900')]")
+
+        expect(token_usage_bar).to be_present
+        expect(token_usage_bar.text).to include("Archive")
+
+        close_form = doc.at_xpath(
+          "//form[@action='#{chat_session_path(chat_session)}'][.//input[@name='_method' and @value='delete']]"
+        )
+
+        expect(close_form).to be_nil
       end
 
       it "renders the auto-approve checkbox reflecting the session state" do
