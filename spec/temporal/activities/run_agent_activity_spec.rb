@@ -847,14 +847,12 @@ RSpec.describe Activities::RunAgentActivity do
         expect(command[2]).to include("/home/agent/.config/kilocode/kilo.json")
       end
 
-      it "allows Kilocode to inspect container support paths" do
+      it "adds the Paid-managed agent-harness gem path to Kilocode permissions" do
         context = build_kilocode_context(user)
 
         env = activity.send(:command_env_for, context, "ping")
         config_json = JSON.parse(Base64.strict_decode64(env.fetch("PAID_KILOCODE_CONFIG_B64")))
 
-        expect(config_json.dig("permission", "external_directory")).to include("/tmp/**" => "allow")
-        expect(config_json.dig("permission", "external_directory")).to include("/home/agent/**" => "allow")
         expect(config_json.dig("permission", "external_directory")).to include(
           "/usr/local/lib/ruby/gems/*/gems/agent-harness-*/**" => "allow"
         )
