@@ -1,0 +1,12 @@
+<% frame_options = {} %>
+<% frame_options[:src] = local_assigns[:src] if local_assigns[:src].present? %>
+
+<%= turbo_frame_tag "dashboard-queue-preview", **frame_options do %>
+  <% if local_assigns.key?(:queue_preview) %>
+    <%= render "dashboard/queue_preview",
+      queue_preview: queue_preview,
+      paused_projects: paused_projects %>
+  <% else %>
+    <div class="animate-pulse rounded-lg bg-gray-100 h-48"></div>
+  <% end %>
+<% end %>
