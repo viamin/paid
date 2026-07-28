@@ -434,7 +434,10 @@ RUN if [ -z "${OMP_PACKAGE}" ]; then \
     fi \
     && export BUN_INSTALL="/usr/local/bun" \
     && mkdir -p "${BUN_INSTALL}/bin" \
-    && curl -fsSL "${OMP_BUN_INSTALL_SCRIPT_URL}" | BUN_VERSION="${OMP_BUN_VERSION}" bash \
+    && curl -fsSL "${OMP_BUN_INSTALL_SCRIPT_URL}" -o /tmp/omp-bun-install.sh \
+    && test -s /tmp/omp-bun-install.sh \
+    && BUN_VERSION="${OMP_BUN_VERSION}" bash /tmp/omp-bun-install.sh \
+    && rm -f /tmp/omp-bun-install.sh \
     && test -x "${BUN_INSTALL}/bin/bun" \
     && ln -sf "${BUN_INSTALL}/bin/bun" "${BUN_INSTALL}/bin/bunx" \
     && export PATH="${BUN_INSTALL}/bin:${PATH}" \

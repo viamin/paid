@@ -3,7 +3,6 @@
 <% can_update_chat_session = policy(@chat_session).update? && !archived_chat_session %>
 <% can_archive_chat_session = policy(@chat_session).archive? && !archived_chat_session %>
 <% can_unarchive_chat_session = policy(@chat_session).unarchive? && archived_chat_session %>
-<% can_destroy_chat_session = policy(@chat_session).destroy? && !archived_chat_session %>
 
 <%= turbo_stream_from current_account, :chat_sessions %>
 
@@ -125,12 +124,6 @@
                                   archive_chat_session_path(@chat_session),
                                   method: :patch,
                                   class: "inline-flex items-center rounded-md bg-amber-400/15 px-3 py-2 text-xs font-semibold text-amber-100 hover:bg-amber-400/25" %>
-                  <% end %>
-                  <% if can_destroy_chat_session %>
-                    <%= button_to "Close",
-                                  chat_session_path(@chat_session),
-                                  method: :delete,
-                                  class: "inline-flex items-center rounded-md bg-white/10 px-3 py-2 text-xs font-semibold text-white hover:bg-white/20" %>
                   <% end %>
                 </div>
               </div>

@@ -696,6 +696,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_28_032312) do
     t.string "workspace_volume", limit: 128, null: false, comment: "Docker volume that preserves the prepared workspace for fast reuse."
     t.index ["agent_run_id"], name: "index_container_pool_entries_on_agent_run_id"
     t.index ["container_id"], name: "index_container_pool_entries_on_container_id", unique: true, where: "(container_id IS NOT NULL)"
+    t.index ["project_id", "container_host", "status"], name: "idx_pool_entries_project_host_status"
     t.index ["project_id", "status", "warmed_at"], name: "idx_on_project_id_status_warmed_at_d791387888"
     t.index ["project_id"], name: "index_container_pool_entries_on_project_id"
     t.index ["workspace_volume"], name: "index_container_pool_entries_on_workspace_volume", unique: true
@@ -2487,6 +2488,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_28_032312) do
     t.bigint "account_id", null: false
     t.float "avg_cpu_percent"
     t.decimal "avg_memory_bytes", precision: 20, scale: 4
+    t.string "container_host", limit: 64, comment: "Container backend host identifier that currently owns the running service container."
     t.integer "container_metrics_count", default: 0, null: false
     t.datetime "created_at", null: false
     t.string "docker_container_id"

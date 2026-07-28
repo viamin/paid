@@ -23,6 +23,12 @@ module Containers
       entry = ContainerPoolEntry.claimed.find_by(agent_run: agent_run)
       return false unless entry
 
+      # @container_host is intentionally ignored by remove_entry — it resolves
+      # the backend from the entry's own container_host, so we do not need to
+      # pass or know the local backend here. Construction without container_host
+      # keeps @container_host = Containers.backend.identifier for callers that
+      # read it (e.g. tests asserting default scoping), but remove_entry never
+      # consults it.
       new(project: agent_run.project).remove_entry(entry, force: force)
       true
     end
@@ -30,20 +36,39 @@ module Containers
     def self.metrics(projects:)
       scope = ContainerPoolEntry.where(project_id: projects.select(:id))
       counts = scope.group(:status).count
-      active_projects = projects.active.count
 
       {
         warm: counts["warm"].to_i,
         warming: counts["warming"].to_i,
         claimed: counts["claimed"].to_i,
         error: counts["error"].to_i,
-        target: target_size * active_projects
+        target: effective_target_size(projects: projects)
       }
     end
 
-    def initialize(project:, target_size: self.class.target_size)
+    def self.effective_target_size(projects:, backend_count: Containers.all_backends.count)
+      active_projects = projects.active.count
+      target_size * active_projects * backend_count
+    end
+
+    # Acquire a per-project PostgreSQL advisory lock for the duration of the
+    # yielded block. Holds the same lock across multi-host iterations so a
+    # competing replenishment triggered by PoolReplenishmentJob.perform_later
+    # from within `acquire` cannot interleave with the next host's pass.
+    def self.with_project_replenishment_lock(project)
+      connection = ActiveRecord::Base.connection
+      lock_key = project.id % 2_147_483_647
+      raw_connection = connection.raw_connection
+      raw_connection.exec_params(ADVISORY_LOCK_SQL, [ LOCK_NAMESPACE, lock_key ])
+      yield
+    ensure
+      raw_connection&.exec_params(ADVISORY_UNLOCK_SQL, [ LOCK_NAMESPACE, lock_key ])
+    end
+
+    def initialize(project:, target_size: self.class.target_size, container_host: nil)
       @project = project
       @target_size = target_size
+      @container_host = container_host.presence || Containers.backend.identifier
     end
 
     def acquire(agent_run:, container_host: nil, **options)
@@ -78,12 +103,22 @@ module Containers
     end
 
     def replenish
-      with_project_replenishment_lock do
-        cleanup_claimed_finished_runs
-        cleanup_stale_pool_entries
-        trim_excess_warm_entries
-        missing_count.times { warm_one }
+      self.class.with_project_replenishment_lock(project) do
+        replenish_unlocked
       end
+    end
+
+    # Replenishes the pool for the current project/container_host without
+    # acquiring the per-project advisory lock. Callers that already hold the
+    # lock (e.g. PoolReplenishmentJob iterating across all configured backends)
+    # must use this to avoid releasing the lock between host iterations and
+    # letting a competing replenishment slip in via PoolReplenishmentJob's
+    # GoodJob total_limit: 1 concurrency guard racing with itself.
+    def replenish_unlocked
+      cleanup_claimed_finished_runs
+      cleanup_stale_pool_entries
+      trim_excess_warm_entries
+      missing_count.times { warm_one }
     end
 
     def remove_entry(entry, force: false)
@@ -95,7 +130,7 @@ module Containers
 
     private
 
-    attr_reader :project, :target_size
+    attr_reader :project, :target_size, :container_host
 
     def enabled_for?(agent_run)
       target_size.positive? &&
@@ -146,7 +181,7 @@ module Containers
         status: "warming",
         image: Provision::DEFAULTS[:image],
         network: pool_network_name,
-        container_host: Containers.backend.identifier,
+        container_host: container_host,
         workspace_volume: "paid-pool-workspace-#{SecureRandom.hex(12)}"
       )
       provision_entry(entry)
@@ -176,7 +211,7 @@ module Containers
     end
 
     def cleanup_claimed_finished_runs
-      project.container_pool_entries.claimed.includes(:agent_run).find_each do |entry|
+      project.container_pool_entries.claimed.where(container_host: container_host).includes(:agent_run).find_each do |entry|
         next if entry.agent_run&.container_retained?
         next if entry.agent_run&.status.in?(AgentRun::UNFINISHED_STATUSES)
 
@@ -189,7 +224,7 @@ module Containers
         remove_entry(entry, force: true)
       end
 
-      project.container_pool_entries.stale_warming.find_each do |entry|
+      project.container_pool_entries.stale_warming.where(container_host: container_host).find_each do |entry|
         remove_error_entry(entry, "warming container did not finish before stale threshold")
       end
 
@@ -210,7 +245,8 @@ module Containers
     def current_pool_entries
       project.container_pool_entries.where(
         image: Provision::DEFAULTS[:image],
-        network: pool_network_name
+        network: pool_network_name,
+        container_host: container_host
       ).where(
         ContainerPoolEntry.arel_table[:status].eq("warm").or(
           ContainerPoolEntry.arel_table[:status].eq("warming").and(
@@ -221,25 +257,10 @@ module Containers
     end
 
     def stale_warm_pool_entries
-      project.container_pool_entries.warm.where.not(
+      project.container_pool_entries.warm.where(container_host: container_host).where.not(
         image: Provision::DEFAULTS[:image],
         network: pool_network_name
       )
-    end
-
-    def with_project_replenishment_lock
-      execute_lock_sql(ADVISORY_LOCK_SQL)
-      yield
-    ensure
-      execute_lock_sql(ADVISORY_UNLOCK_SQL)
-    end
-
-    def project_lock_key
-      project.id % 2_147_483_647
-    end
-
-    def execute_lock_sql(sql)
-      ActiveRecord::Base.connection.raw_connection.exec_params(sql, [ LOCK_NAMESPACE, project_lock_key ])
     end
 
     def container_running?(container_id, backend: Containers.backend)
@@ -275,6 +296,7 @@ module Containers
         message: "container_manager.pool_entry_error",
         project_id: project.id,
         container_pool_entry_id: entry.id,
+        container_host: entry.container_host,
         error: message
       )
     end

@@ -17,6 +17,17 @@ RSpec.describe Containers::PoolManager do
   end
 
   describe ".metrics" do
+    let(:backends) do
+      [
+        instance_double(Containers::Backends::Base, identifier: "local"),
+        instance_double(Containers::Backends::Base, identifier: "worker-1")
+      ]
+    end
+
+    before do
+      allow(Containers).to receive(:all_backends).and_return(backends)
+    end
+
     it "returns counts for each status and zero-defaults missing statuses" do
       other_project = create(:project)
       create(:container_pool_entry, project: project)
@@ -34,7 +45,7 @@ RSpec.describe Containers::PoolManager do
         warming: 1,
         claimed: 1,
         error: 1,
-        target: described_class.target_size * 1
+        target: described_class.target_size * backends.count
       )
     end
 
@@ -50,7 +61,7 @@ RSpec.describe Containers::PoolManager do
           warming: 1,
           claimed: 0,
           error: 0,
-          target: described_class.target_size * 1
+          target: described_class.target_size * backends.count
         )
       end
 
@@ -65,7 +76,7 @@ RSpec.describe Containers::PoolManager do
         warming: 0,
         claimed: 0,
         error: 0,
-        target: described_class.target_size * 1
+        target: described_class.target_size * backends.count
       )
     end
   end
@@ -105,6 +116,40 @@ RSpec.describe Containers::PoolManager do
     end
   end
 
+  describe ".with_project_replenishment_lock" do
+    it "acquires the per-project advisory lock for the duration of the block" do
+      raw_connection = instance_double(PG::Connection, exec_params: true)
+      connection = ActiveRecord::Base.connection
+      allow(connection).to receive(:raw_connection).and_return(raw_connection)
+      lock_key = project.id % 2_147_483_647
+
+      yielded = false
+      described_class.with_project_replenishment_lock(project) { yielded = true }
+
+      expect(yielded).to be(true)
+      expect(raw_connection).to have_received(:exec_params)
+        .with("SELECT pg_advisory_lock($1, $2)", [ described_class::LOCK_NAMESPACE, lock_key ]).once
+      expect(raw_connection).to have_received(:exec_params)
+        .with("SELECT pg_advisory_unlock($1, $2)", [ described_class::LOCK_NAMESPACE, lock_key ]).once
+    end
+
+    it "releases the lock even when the block raises" do
+      raw_connection = instance_double(PG::Connection, exec_params: true)
+      connection = ActiveRecord::Base.connection
+      allow(connection).to receive(:raw_connection).and_return(raw_connection)
+      lock_key = project.id % 2_147_483_647
+
+      expect {
+        described_class.with_project_replenishment_lock(project) { raise "boom" }
+      }.to raise_error("boom")
+
+      expect(raw_connection).to have_received(:exec_params)
+        .with("SELECT pg_advisory_lock($1, $2)", [ described_class::LOCK_NAMESPACE, lock_key ]).once
+      expect(raw_connection).to have_received(:exec_params)
+        .with("SELECT pg_advisory_unlock($1, $2)", [ described_class::LOCK_NAMESPACE, lock_key ]).once
+    end
+  end
+
   describe "#acquire" do
     let(:agent_run) { create(:agent_run, project: project) }
     let(:service) { instance_double(Containers::Provision) }
@@ -140,6 +185,25 @@ RSpec.describe Containers::PoolManager do
         pool_entry: entry
       )
       expect(PoolReplenishmentJob).to have_received(:perform_later).with(project.id)
+    end
+
+    it "claims only warm entries on the requested host" do
+      local_entry = create(:container_pool_entry, project: project, container_host: "local")
+      remote_entry = create(:container_pool_entry, project: project, container_host: "elguapo")
+      remote_backend = instance_double(
+        Containers::Backends::Base,
+        get_container: container,
+        identifier: "elguapo",
+        remote?: true
+      )
+      allow(Containers).to receive(:backend_for).and_return(remote_backend)
+
+      result = described_class.new(project: project, target_size: 1).acquire(agent_run: agent_run, container_host: "elguapo")
+
+      expect(result).to be_success
+      expect(result[:container_id]).to eq(remote_entry.container_id)
+      expect(remote_entry.reload.status).to eq("claimed")
+      expect(local_entry.reload.status).to eq("warm")
     end
 
     it "carries reconnect-safe options into the claimed warm container" do
@@ -250,6 +314,23 @@ RSpec.describe Containers::PoolManager do
       entry = project.container_pool_entries.sole
       expect(entry.status).to eq("warm")
       expect(entry.container_id).to eq("warm-1")
+      expect(entry.container_host).to eq("local")
+    end
+
+    it "keeps host-specific target counts separate during replenishment" do
+      create(:container_pool_entry, project: project, container_host: "local")
+      provision = instance_double(Containers::Provision)
+
+      allow(Containers::Provision).to receive(:new).and_return(provision)
+      allow(provision).to receive_messages(
+        network_name: "paid_agent",
+        provision: Containers::Provision::Result.success(container_id: "warm-remote", container_host: "elguapo")
+      )
+
+      described_class.new(project: project, target_size: 1, container_host: "elguapo").replenish
+
+      expect(project.container_pool_entries.where(container_host: "local").count).to eq(1)
+      expect(project.container_pool_entries.where(container_host: "elguapo").warm.pluck(:container_id)).to eq([ "warm-remote" ])
     end
 
     it "removes stopped warm entries before counting pool capacity" do
@@ -300,6 +381,25 @@ RSpec.describe Containers::PoolManager do
       described_class.new(project: project, target_size: 0).replenish
 
       expect(ContainerPoolEntry.exists?(entry.id)).to be(true)
+    end
+
+    it "cleans up claimed entries only for the replenished host" do
+      remote_entry, local_entry, remote_backend, remote_container, remote_volume =
+        prepare_claimed_entry_cleanup_for_host(project: project)
+      network_probe = instance_double(Containers::Provision, network_name: "paid_agent")
+
+      allow(Containers::Provision).to receive(:new).with(project: project).and_return(network_probe)
+      allow(Containers).to receive(:backend_for).with("elguapo").and_return(remote_backend)
+
+      described_class.new(project: project, target_size: 0, container_host: "elguapo").replenish
+
+      expect(ContainerPoolEntry.exists?(remote_entry.id)).to be(false)
+      expect(ContainerPoolEntry.exists?(local_entry.id)).to be(true)
+      expect(remote_backend).to have_received(:get_container).with(remote_entry.container_id)
+      expect(remote_backend).to have_received(:stop_container).with(remote_container, timeout: 0)
+      expect(remote_backend).to have_received(:delete_container).with(remote_container, force: true, v: true)
+      expect(remote_backend).to have_received(:get_volume).with(remote_entry.workspace_volume, host: "elguapo")
+      expect(remote_backend).to have_received(:delete_volume).with(remote_volume)
     end
 
     it "removes warm entries with an old network" do
@@ -391,6 +491,28 @@ RSpec.describe Containers::PoolManager do
     end
   end
 
+  describe "#replenish_unlocked" do
+    it "provisions missing warm entries up to the target size without acquiring the advisory lock" do
+      provision = instance_double(Containers::Provision)
+      allow(Containers::Provision).to receive(:new).and_return(provision)
+      allow(provision).to receive_messages(
+        network_name: "paid_agent",
+        provision: Containers::Provision::Result.success(container_id: "warm-1", container_host: "local")
+      )
+      connection = ActiveRecord::Base.connection
+      raw_connection = instance_double(PG::Connection, exec_params: true)
+      allow(connection).to receive(:raw_connection).and_return(raw_connection)
+
+      described_class.new(project: project, target_size: 1).replenish_unlocked
+
+      entry = project.container_pool_entries.sole
+      expect(entry.status).to eq("warm")
+      expect(entry.container_id).to eq("warm-1")
+      expect(entry.container_host).to eq("local")
+      expect(raw_connection).not_to have_received(:exec_params)
+    end
+  end
+
   def expect_replenish_to_remove_stale_warm_entry(stale_entry)
     container = instance_double(Docker::Container, info: { "State" => { "Running" => true } }, stop: true, delete: true)
     volume = instance_double(Docker::Volume, remove: true)
@@ -414,5 +536,34 @@ RSpec.describe Containers::PoolManager do
     expect(backend).to have_received(:delete_container).with(container, force: true, v: true)
     expect(container).to have_received(:delete).with(force: true, v: true)
     expect(volume).to have_received(:remove)
+  end
+
+  def prepare_claimed_entry_cleanup_for_host(project:)
+    finished_run = create(:agent_run, :completed, project: project)
+    remote_entry = create(
+      :container_pool_entry,
+      :claimed,
+      project: project,
+      agent_run: finished_run,
+      container_host: "elguapo"
+    )
+    local_entry = create(
+      :container_pool_entry,
+      :claimed,
+      project: project,
+      agent_run: finished_run,
+      container_host: "local"
+    )
+    remote_container = instance_double(Docker::Container, info: { "State" => { "Running" => true } })
+    remote_volume = instance_double(Docker::Volume)
+    remote_backend = instance_double(
+      Containers::Backends::Base,
+      get_container: remote_container,
+      stop_container: true,
+      delete_container: true,
+      get_volume: remote_volume,
+      delete_volume: true
+    )
+    [ remote_entry, local_entry, remote_backend, remote_container, remote_volume ]
   end
 end
