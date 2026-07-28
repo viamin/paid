@@ -67,6 +67,10 @@ pg_dump_args() {
 }
 
 mkdir -p "$BACKUPS_DIR"
+# Backups contain every tenant's data (RLS is disabled for the dump). Restrict
+# the directory so only the owner can list/read them; tighten an existing dir
+# that may have been created with a looser umask.
+chmod 700 "$BACKUPS_DIR" 2>/dev/null || true
 
 if [[ -n "${1:-}" ]]; then
   BACKUP_FILE="${1}"
@@ -126,6 +130,9 @@ else
   echo "Error: No running postgres container found and DB_NAME not set. Start services with 'bin/dev' or set DB_NAME." >&2
   exit 1
 fi
+
+# Lock the dump to the owner -- it contains all tenant data with RLS disabled.
+chmod 600 "$BACKUP_PATH" 2>/dev/null || true
 
 FILESIZE=$(du -h "$BACKUP_PATH" | cut -f1)
 echo "Dumped ${DB_NAME} data to ${BACKUP_PATH} (${FILESIZE})"
