@@ -18,8 +18,16 @@ class PoolReplenishmentJob < ApplicationJob
 
   def perform(project_id = nil)
     projects(project_id).find_each do |project|
-      Containers.all_backends.each do |backend|
-        Containers::PoolManager.new(project: project, container_host: backend.identifier).replenish
+      # Hold the per-project advisory lock across all host iterations so a
+      # competing replenishment (triggered by PoolManager#acquire calling
+      # perform_later, which GoodJob's total_limit: 1 will re-enqueue) cannot
+      # interleave with the next host's pass and produce duplicate warm
+      # entries. Without this, the lock was released between hosts, weakening
+      # the replenishment invariant.
+      Containers::PoolManager.with_project_replenishment_lock(project) do
+        Containers.all_backends.each do |backend|
+          Containers::PoolManager.new(project: project, container_host: backend.identifier).replenish_unlocked
+        end
       end
     end
   end

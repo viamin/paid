@@ -23,6 +23,12 @@ module Containers
       entry = ContainerPoolEntry.claimed.find_by(agent_run: agent_run)
       return false unless entry
 
+      # @container_host is intentionally ignored by remove_entry — it resolves
+      # the backend from the entry's own container_host, so we do not need to
+      # pass or know the local backend here. Construction without container_host
+      # keeps @container_host = Containers.backend.identifier for callers that
+      # read it (e.g. tests asserting default scoping), but remove_entry never
+      # consults it.
       new(project: agent_run.project).remove_entry(entry, force: force)
       true
     end
@@ -43,6 +49,20 @@ module Containers
     def self.effective_target_size(projects:, backend_count: Containers.all_backends.count)
       active_projects = projects.active.count
       target_size * active_projects * backend_count
+    end
+
+    # Acquire a per-project PostgreSQL advisory lock for the duration of the
+    # yielded block. Holds the same lock across multi-host iterations so a
+    # competing replenishment triggered by PoolReplenishmentJob.perform_later
+    # from within `acquire` cannot interleave with the next host's pass.
+    def self.with_project_replenishment_lock(project)
+      connection = ActiveRecord::Base.connection
+      lock_key = project.id % 2_147_483_647
+      raw_connection = connection.raw_connection
+      raw_connection.exec_params(ADVISORY_LOCK_SQL, [ LOCK_NAMESPACE, lock_key ])
+      yield
+    ensure
+      raw_connection&.exec_params(ADVISORY_UNLOCK_SQL, [ LOCK_NAMESPACE, lock_key ])
     end
 
     def initialize(project:, target_size: self.class.target_size, container_host: nil)
@@ -83,12 +103,22 @@ module Containers
     end
 
     def replenish
-      with_project_replenishment_lock do
-        cleanup_claimed_finished_runs
-        cleanup_stale_pool_entries
-        trim_excess_warm_entries
-        missing_count.times { warm_one }
+      self.class.with_project_replenishment_lock(project) do
+        replenish_unlocked
       end
+    end
+
+    # Replenishes the pool for the current project/container_host without
+    # acquiring the per-project advisory lock. Callers that already hold the
+    # lock (e.g. PoolReplenishmentJob iterating across all configured backends)
+    # must use this to avoid releasing the lock between host iterations and
+    # letting a competing replenishment slip in via PoolReplenishmentJob's
+    # GoodJob total_limit: 1 concurrency guard racing with itself.
+    def replenish_unlocked
+      cleanup_claimed_finished_runs
+      cleanup_stale_pool_entries
+      trim_excess_warm_entries
+      missing_count.times { warm_one }
     end
 
     def remove_entry(entry, force: false)
@@ -231,21 +261,6 @@ module Containers
         image: Provision::DEFAULTS[:image],
         network: pool_network_name
       )
-    end
-
-    def with_project_replenishment_lock
-      execute_lock_sql(ADVISORY_LOCK_SQL)
-      yield
-    ensure
-      execute_lock_sql(ADVISORY_UNLOCK_SQL)
-    end
-
-    def project_lock_key
-      project.id % 2_147_483_647
-    end
-
-    def execute_lock_sql(sql)
-      ActiveRecord::Base.connection.raw_connection.exec_params(sql, [ LOCK_NAMESPACE, project_lock_key ])
     end
 
     def container_running?(container_id, backend: Containers.backend)

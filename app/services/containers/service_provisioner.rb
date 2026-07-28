@@ -218,6 +218,14 @@ module Containers
 
     private
 
+    # NOTE: this class is NOT thread-safe. `with_backend` stashes the resolved
+    # backend in @backend and the private `backend` reader relies on that
+    # instance variable. If two threads share a ServiceProvisioner instance,
+    # one thread's `with_backend` block will corrupt the other thread's view
+    # of @backend. Every existing call site already creates a fresh instance
+    # per call (`Containers::ServiceProvisioner.new`), which keeps the
+    # pattern safe in practice. Do not share instances across threads.
+
     def selected_service_containers(project, service_names)
       scope = project.service_containers
       names = Array(service_names).map(&:to_s).map(&:strip).reject(&:blank?).uniq
@@ -247,6 +255,8 @@ module Containers
       @backend = previous_backend
     end
 
+    # Not thread-safe — see thread-safety note above. Reads the @backend
+    # stashed by with_backend, falling back to the process-global default.
     def backend
       @backend || Containers.backend
     end

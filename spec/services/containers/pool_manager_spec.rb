@@ -116,6 +116,40 @@ RSpec.describe Containers::PoolManager do
     end
   end
 
+  describe ".with_project_replenishment_lock" do
+    it "acquires the per-project advisory lock for the duration of the block" do
+      raw_connection = instance_double(PG::Connection, exec_params: true)
+      connection = ActiveRecord::Base.connection
+      allow(connection).to receive(:raw_connection).and_return(raw_connection)
+      lock_key = project.id % 2_147_483_647
+
+      yielded = false
+      described_class.with_project_replenishment_lock(project) { yielded = true }
+
+      expect(yielded).to be(true)
+      expect(raw_connection).to have_received(:exec_params)
+        .with("SELECT pg_advisory_lock($1, $2)", [ described_class::LOCK_NAMESPACE, lock_key ]).once
+      expect(raw_connection).to have_received(:exec_params)
+        .with("SELECT pg_advisory_unlock($1, $2)", [ described_class::LOCK_NAMESPACE, lock_key ]).once
+    end
+
+    it "releases the lock even when the block raises" do
+      raw_connection = instance_double(PG::Connection, exec_params: true)
+      connection = ActiveRecord::Base.connection
+      allow(connection).to receive(:raw_connection).and_return(raw_connection)
+      lock_key = project.id % 2_147_483_647
+
+      expect {
+        described_class.with_project_replenishment_lock(project) { raise "boom" }
+      }.to raise_error("boom")
+
+      expect(raw_connection).to have_received(:exec_params)
+        .with("SELECT pg_advisory_lock($1, $2)", [ described_class::LOCK_NAMESPACE, lock_key ]).once
+      expect(raw_connection).to have_received(:exec_params)
+        .with("SELECT pg_advisory_unlock($1, $2)", [ described_class::LOCK_NAMESPACE, lock_key ]).once
+    end
+  end
+
   describe "#acquire" do
     let(:agent_run) { create(:agent_run, project: project) }
     let(:service) { instance_double(Containers::Provision) }
@@ -454,6 +488,28 @@ RSpec.describe Containers::PoolManager do
       }.to raise_error(ApplicationJob::PerformTimeoutError, "perform timeout")
 
       expect(project.container_pool_entries.reload.pluck(:status)).to eq([ "warming" ])
+    end
+  end
+
+  describe "#replenish_unlocked" do
+    it "provisions missing warm entries up to the target size without acquiring the advisory lock" do
+      provision = instance_double(Containers::Provision)
+      allow(Containers::Provision).to receive(:new).and_return(provision)
+      allow(provision).to receive_messages(
+        network_name: "paid_agent",
+        provision: Containers::Provision::Result.success(container_id: "warm-1", container_host: "local")
+      )
+      connection = ActiveRecord::Base.connection
+      raw_connection = instance_double(PG::Connection, exec_params: true)
+      allow(connection).to receive(:raw_connection).and_return(raw_connection)
+
+      described_class.new(project: project, target_size: 1).replenish_unlocked
+
+      entry = project.container_pool_entries.sole
+      expect(entry.status).to eq("warm")
+      expect(entry.container_id).to eq("warm-1")
+      expect(entry.container_host).to eq("local")
+      expect(raw_connection).not_to have_received(:exec_params)
     end
   end
 
