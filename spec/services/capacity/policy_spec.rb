@@ -147,12 +147,15 @@ RSpec.describe Capacity::Policy do
       expect(decision.mode).to eq(Capacity::Policy::MANUAL)
       expect(decision.degraded).to be(true)
       expect(decision.degraded_reasons).to include("docker_timeout")
+      expect(decision.degraded_reasons).to include("container_sampling_budget_exceeded")
       # A degraded snapshot defensively reports available_memory_bytes: 0
       # (a "we don't know" signal), which must NOT be tagged as
       # docker_exhausted — that reason is reserved for a genuinely full,
       # measurement-healthy Docker host.
       expect(decision.degraded_reasons).not_to include("docker_exhausted")
       expect(decision.blocked_reasons.map(&:code)).to include("docker_low_confidence")
+      expect(decision.blocked_reasons.map(&:code)).to include("docker_sampling_budget_exceeded")
+      expect(decision).to be_capacity_blocked
     end
 
     it "honors explicit opt-out even when auto would otherwise be allowed" do
@@ -307,14 +310,16 @@ RSpec.describe Capacity::Policy do
       expect(decision.capacity_blocked?).to be(false)
     end
 
-    it "is false for a degraded/unmeasured snapshot even when memory is zeroed" do
-      # A degraded snapshot defensively reports available_memory_bytes: 0 but
-      # cannot be trusted to mean "Docker is full" — it must fall back to
-      # manual limits rather than halting dispatch.
+    it "treats sampling-budget exhaustion as a hard host-safety block" do
+      # A degraded snapshot usually falls back to manual limits, but
+      # container_sampling_budget_exceeded is the exception: the host is busy
+      # enough that Paid could not safely sample live Docker pressure, so auto
+      # dispatch must fail closed.
       decision = described_class.call(snapshot: degraded_snapshot, now: now)
 
       expect(decision.blocked_reasons.map(&:code)).to include("docker_low_confidence")
-      expect(decision.capacity_blocked?).to be(false)
+      expect(decision.blocked_reasons.map(&:code)).to include("docker_sampling_budget_exceeded")
+      expect(decision.capacity_blocked?).to be(true)
     end
   end
 
