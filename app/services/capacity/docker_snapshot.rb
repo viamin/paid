@@ -122,8 +122,10 @@ module Capacity
         {
           available: available,
           reason: available ? nil : degraded_reasons.last || "docker_memory_unavailable",
+          degraded_reasons: degraded_reasons,
           confidence: confidence,
           snapshot_at: snapshot_at,
+          backend_identifier: backend_identifier,
           docker_memory_bytes: docker_memory_bytes,
           agent_container_count: agent_container_count,
           agent_memory_bytes: agent_memory_bytes,

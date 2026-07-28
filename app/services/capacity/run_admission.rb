@@ -81,12 +81,14 @@ module Capacity
     end
 
     def auto_result
-      snapshot = docker_snapshot || DockerSnapshot.fetch
+      snapshot = docker_snapshot || DockerSnapshot.fetch(backend: selected_backend)
       return degraded_result(snapshot) unless snapshot[:available]
 
       estimated_memory_per_run_bytes = candidate_memory_bytes
-      reserved_agent_memory_bytes = active_local_agent_reserved_bytes
-      available_memory_bytes = [ snapshot[:effective_agent_budget_bytes].to_i - additional_local_agent_headroom_bytes(snapshot, reserved_agent_memory_bytes), 0 ].max
+      reserved_agent_memory_bytes = active_selected_host_agent_reserved_bytes
+      available_memory_bytes = [
+        snapshot[:effective_agent_budget_bytes].to_i - additional_selected_host_agent_headroom_bytes(snapshot, reserved_agent_memory_bytes), 0
+      ].max
       remaining_memory_slots = available_memory_bytes / estimated_memory_per_run_bytes
       effective_max_concurrent_runs = [
         total_agent_budget_bytes(snapshot) / estimated_memory_per_run_bytes,
@@ -118,8 +120,10 @@ module Capacity
         reserved_agent_memory_bytes: reserved_agent_memory_bytes,
         snapshot_available: true,
         snapshot_at: snapshot[:snapshot_at],
+        snapshot_backend_identifier: snapshot[:backend_identifier],
         docker_confidence: snapshot[:confidence],
-        docker_memory_bytes: snapshot[:docker_memory_bytes]
+        docker_memory_bytes: snapshot[:docker_memory_bytes],
+        docker_degraded_reasons: snapshot[:degraded_reasons]
       }
 
       # The capacity-blocked annotation only matters when Docker memory is
@@ -141,10 +145,12 @@ module Capacity
       manual_result(mode: UserSetting::RUN_CONCURRENCY_MODE_AUTO).merge(
         degraded: true,
         docker_reason: snapshot[:reason],
+        docker_degraded_reasons: snapshot[:degraded_reasons],
         docker_error_class: snapshot[:error_class],
         docker_error_message: snapshot[:error_message],
         snapshot_available: false,
         snapshot_at: snapshot[:snapshot_at],
+        snapshot_backend_identifier: snapshot[:backend_identifier],
         docker_confidence: snapshot[:confidence]
       )
     end
@@ -152,7 +158,7 @@ module Capacity
     def degraded_sampling_timeout_result(snapshot)
       slot_reason = denial_reason(remaining_memory_slots: nil)
       reserved_memory_bytes = [
-        active_local_agent_reserved_bytes,
+        active_selected_host_agent_reserved_bytes,
         snapshot[:agent_memory_bytes].to_i,
         snapshot[:agent_container_count].to_i * candidate_memory_bytes
       ].max
@@ -175,9 +181,11 @@ module Capacity
         reserved_agent_memory_bytes: reserved_memory_bytes,
         snapshot_available: false,
         snapshot_at: snapshot[:snapshot_at],
+        snapshot_backend_identifier: snapshot[:backend_identifier],
         docker_confidence: snapshot[:confidence],
         docker_memory_bytes: snapshot[:docker_memory_bytes],
         docker_reason: snapshot[:reason],
+        docker_degraded_reasons: snapshot[:degraded_reasons],
         docker_error_class: snapshot[:error_class],
         docker_error_message: snapshot[:error_message],
         docker_agent_container_count: snapshot[:agent_container_count].to_i,
@@ -192,8 +200,8 @@ module Capacity
         slot_available?(create_pr_available_slots) &&
         (remaining_memory_slots.nil? || remaining_memory_slots.positive?)
 
-      return "insufficient_docker_capacity" if !remaining_memory_slots.nil? && remaining_memory_slots <= 0
       return "host_hard_ceiling" if selected_host_limit && host_available_slots.to_i <= 0
+      return "insufficient_docker_capacity" if !remaining_memory_slots.nil? && remaining_memory_slots <= 0
       return "user_hard_ceiling" if user_available_slots <= 0
       return "project_hard_ceiling" if project && project_available_slots <= 0
       return "create_pr_hard_ceiling" if goal == "create_pr" && create_pr_available_slots.to_i <= 0
@@ -291,21 +299,37 @@ module Capacity
       snapshot[:effective_agent_budget_bytes].to_i + snapshot[:agent_memory_bytes].to_i
     end
 
-    def additional_local_agent_headroom_bytes(snapshot, reserved_agent_memory_bytes)
+    def additional_selected_host_agent_headroom_bytes(snapshot, reserved_agent_memory_bytes)
       [ reserved_agent_memory_bytes - snapshot[:agent_memory_bytes].to_i, 0 ].max
     end
 
-    def active_local_agent_reserved_bytes
+    def active_selected_host_agent_reserved_bytes
       return reserved_agent_memory_bytes unless reserved_agent_memory_bytes.nil?
 
       inflight_runs = AgentRun.capacity_inflight
-        .where(container_host: [ nil, "", Containers::LOCAL_BACKEND_KEY.to_s ])
+        .where(
+          "COALESCE(NULLIF(container_host, ''), COALESCE(external_metadata->>'planned_container_host', '')) IN (:scope)",
+          scope: selected_host_scope
+        )
         .includes(project: [ :account, { created_by: :user_setting } ])
         .to_a
 
       latest_limits_by_run_id = latest_metric_limits_by_run_id(inflight_runs)
 
       inflight_runs.sum { |run| reserved_memory_bytes_for(run, latest_limits_by_run_id[run.id]) }
+    end
+
+    def selected_backend
+      @selected_backend ||= Containers.backend_for(selected_host)
+    end
+
+    def selected_host_scope
+      @selected_host_scope ||= begin
+        identifiers = selected_backend.all_host_identifiers.map(&:to_s)
+        selected_backend.remote? ? identifiers : identifiers + [ "" ]
+      end
+    rescue Containers::Backends::Resolver::UnknownBackendError
+      [ selected_host.to_s ]
     end
 
     def latest_metric_limits_by_run_id(inflight_runs)

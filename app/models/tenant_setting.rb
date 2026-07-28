@@ -146,7 +146,7 @@ class TenantSetting < ApplicationRecord
   DEPLOYMENT_ASSURANCE_VERSION_SUPPORT_POLICIES = %w[latest n_minus_one lts].freeze
   ENTERPRISE_OPERATIONS_RELEASE_CHANNELS = %w[stable canary lts].freeze
   ENTERPRISE_OPERATIONS_REMEDIATION_MODES = %w[approval_required operator_applied observe_only].freeze
-  DOCKER_HOST_FALLBACK_BEHAVIORS = %w[disabled first_healthy].freeze
+  DOCKER_HOST_FALLBACK_BEHAVIORS = %w[disabled first_healthy capacity_aware].freeze
   DEFAULT_WORKER_SETTINGS = {
     "temporal_workflow_slots" => 20,
     "temporal_activity_slots" => 4,

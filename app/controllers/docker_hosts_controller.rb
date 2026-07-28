@@ -14,6 +14,7 @@ class DockerHostsController < ApplicationController
   def show
     authorize current_account, :show?
     @recent_runs = recent_runs_for(@docker_host)
+    @capacity_snapshot = capacity_snapshot_for(@docker_host)
   end
 
   def edit
@@ -68,6 +69,15 @@ class DockerHostsController < ApplicationController
       .includes(:project, :issue)
       .order(created_at: :desc)
       .limit(10)
+  end
+
+  def capacity_snapshot_for(docker_host)
+    runtime_host = Containers.host_registry.host(docker_host.identifier)
+    return unless runtime_host
+
+    Capacity::DockerSnapshot.call(backend: runtime_host.backend)
+  rescue StandardError
+    nil
   end
 
   def docker_host_params

@@ -193,6 +193,47 @@
     </dl>
   </div>
 
+  <% placement_decision = agent_run.host_placement_decision %>
+  <% if agent_run.workspace_volume_host.present? || placement_decision.present? %>
+    <div class="mt-6 rounded-lg bg-white p-4 shadow dark:bg-gray-800">
+      <h2 class="text-sm font-semibold text-gray-900 dark:text-gray-100">Docker Host Placement</h2>
+      <dl class="mt-2 divide-y divide-gray-200 dark:divide-gray-700">
+        <div class="flex justify-between py-2">
+          <dt class="text-sm text-gray-500 dark:text-gray-400">Selected Host</dt>
+          <dd class="text-sm font-medium text-gray-900 dark:text-gray-100"><%= agent_run.workspace_volume_host.presence || "Not assigned yet" %></dd>
+        </div>
+        <% if placement_decision.present? %>
+          <div class="flex justify-between py-2">
+            <dt class="text-sm text-gray-500 dark:text-gray-400">Placement Policy</dt>
+            <dd class="text-sm text-gray-900 dark:text-gray-100"><%= placement_decision["decision_mode"].to_s.humanize %></dd>
+          </div>
+          <% if placement_decision["requested_host"].present? %>
+            <div class="flex justify-between py-2">
+              <dt class="text-sm text-gray-500 dark:text-gray-400">Requested Host</dt>
+              <dd class="text-sm text-gray-900 dark:text-gray-100"><%= placement_decision["requested_host"] %></dd>
+            </div>
+          <% end %>
+          <% if placement_decision["selected_by_capacity"] %>
+            <div class="flex justify-between py-2">
+              <dt class="text-sm text-gray-500 dark:text-gray-400">Decision</dt>
+              <dd class="text-sm text-gray-900 dark:text-gray-100">
+                Chosen by available capacity
+                <% if placement_decision["selected_available_memory_bytes"].present? %>
+                  (<%= number_to_human_size(placement_decision["selected_available_memory_bytes"]) %> free)
+                <% end %>
+              </dd>
+            </div>
+          <% elsif placement_decision["decision_mode"] == "capacity_aware_fallback" %>
+            <div class="flex justify-between py-2">
+              <dt class="text-sm text-gray-500 dark:text-gray-400">Decision</dt>
+              <dd class="text-sm text-gray-900 dark:text-gray-100">Fell back to manual first-healthy ordering because capacity data was unavailable</dd>
+            </div>
+          <% end %>
+        <% end %>
+      </dl>
+    </div>
+  <% end %>
+
   <% phase_summary = local_assigns.fetch(:phase_summary) { agent_run.phase_summary } %>
   <% phase_timeline = local_assigns.fetch(:phase_timeline) { agent_run.phase_timeline } %>
   <% phases = phase_timeline.to_a %>

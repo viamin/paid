@@ -6,7 +6,8 @@ module Containers
   class HostRegistry
     FALLBACK_DISABLED = "disabled"
     FALLBACK_FIRST_HEALTHY = "first_healthy"
-    FALLBACK_POLICIES = [ FALLBACK_DISABLED, FALLBACK_FIRST_HEALTHY ].freeze
+    FALLBACK_CAPACITY_AWARE = "capacity_aware"
+    FALLBACK_POLICIES = [ FALLBACK_DISABLED, FALLBACK_FIRST_HEALTHY, FALLBACK_CAPACITY_AWARE ].freeze
 
     HostDefinition = Data.define(:identifier, :backend, :max_concurrent_runs, :fallback_enabled)
 

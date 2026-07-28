@@ -756,6 +756,11 @@ class AgentRun < ApplicationRecord
     raw.is_a?(Hash) ? raw.stringify_keys : {}
   end
 
+  def host_placement_decision
+    raw = external_metadata.fetch("host_placement_decision", {})
+    raw.is_a?(Hash) ? raw.stringify_keys : {}
+  end
+
   # Resolves the Docker host that owns this run's named workspace volume for
   # cleanup. ProcessRunQueueJob clears container_host at claim time and only
   # restores it from a real provision/pool result (see start_claimed_run), so
