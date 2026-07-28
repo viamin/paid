@@ -64,6 +64,26 @@ RSpec.describe "Docker host management", type: :system do
     expect(page).to have_content("Lifecycle")
   end
 
+  it "shows the generic remote Linux setup guide path" do
+    visit setup_docker_host_path(docker_host)
+
+    expect(page).to have_content("Remote Docker Setup")
+    expect(page).to have_content("Generic remote Linux")
+    expect(page).to have_content("Docker TLS connectivity test")
+    expect(page).to have_content("docker save paid-agent:latest")
+  end
+
+  it "shows QNAP / NAS specific setup guidance" do
+    visit setup_docker_host_path(docker_host)
+
+    select "QNAP / NAS", from: "Guide profile"
+    click_button "Save setup details"
+
+    expect(page).to have_content("Remote setup details updated.")
+    expect(page).to have_content("QNAP Container Station or Docker package UI")
+    expect(page).to have_content("QNAP-specific admin UI")
+  end
+
   it "saves placement preferences and shows validation errors" do
     visit docker_hosts_path
 

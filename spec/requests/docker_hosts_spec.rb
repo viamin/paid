@@ -16,7 +16,7 @@ RSpec.describe "DockerHosts", type: :request do
 
     host = account.docker_hosts.find_by!(identifier: "edge-builder")
 
-    expect(response).to redirect_to(docker_host_path(host))
+    expect(response).to redirect_to(setup_docker_host_path(host))
     expect_readiness_fields_to_remain_system_managed(host)
   end
 
@@ -84,6 +84,28 @@ RSpec.describe "DockerHosts", type: :request do
     expect(host.reload).to be_disabled
     expect(tenant_setting.reload.preferred_docker_host_identifier).to be_nil
     expect(project.reload.preferred_docker_host_identifier).to be_nil
+  end
+
+  it "persists setup guide fields and profile state per host" do
+    host = create(:docker_host, account: account, required_network_name: "paid-agents")
+
+    patch setup_docker_host_path(host), params: {
+      setup_profile: "qnap_nas",
+      docker_host: {
+        display_name: "QNAP Edge",
+        callback_url: "https://paid.example.test/health/services",
+        required_network_name: "shared-agents",
+        manual_concurrency_limit: 6
+      }
+    }
+
+    expect(response).to redirect_to(setup_docker_host_path(host))
+
+    host.reload
+    expect(host.display_name).to eq("QNAP Edge")
+    expect(host.required_network_name).to eq("shared-agents")
+    expect(host.manual_concurrency_limit).to eq(6)
+    expect(host.setup_profile).to eq("qnap_nas")
   end
 
   def docker_host_params

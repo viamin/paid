@@ -1,0 +1,239 @@
+<% content_for :title, "Setup #{@docker_host.display_name}" %>
+
+<div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+    <div>
+      <p class="text-sm font-medium uppercase tracking-[0.2em] text-sky-700">Remote Docker Setup</p>
+      <h1 class="mt-2 text-3xl font-semibold text-gray-900"><%= @docker_host.display_name %></h1>
+      <p class="mt-2 max-w-3xl text-sm text-gray-600">
+        Guided setup for <code><%= @docker_host.identifier %></code>. Automated helpers update encrypted TLS material and verification state. Manual infrastructure work stays explicit.
+      </p>
+    </div>
+
+    <div class="flex flex-wrap gap-3">
+      <%= link_to "Back to host", docker_host_path(@docker_host), class: "rounded-full border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50" %>
+      <%= link_to "Edit host", edit_docker_host_path(@docker_host), class: "rounded-full bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-500" %>
+    </div>
+  </div>
+
+  <div class="mt-8 grid gap-8 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
+    <div class="space-y-8">
+      <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+        <div>
+          <h2 class="text-xl font-semibold text-gray-900">Step status</h2>
+          <p class="mt-1 text-sm text-gray-600">`Automated` means Paid can perform the action. `Verified` means Paid checked the outcome. `Manual` means operator work is still required.</p>
+        </div>
+
+        <div class="mt-6 overflow-hidden rounded-2xl border border-gray-200">
+          <table class="min-w-full divide-y divide-gray-200 text-sm">
+            <thead class="bg-gray-50">
+              <tr>
+                <th class="px-4 py-3 text-left font-medium text-gray-700">Step</th>
+                <th class="px-4 py-3 text-left font-medium text-gray-700">Mode</th>
+                <th class="px-4 py-3 text-left font-medium text-gray-700">Status</th>
+                <th class="px-4 py-3 text-left font-medium text-gray-700">Detail</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 bg-white">
+              <% @setup_step_rows.each do |step| %>
+                <% status_classes = case step[:status]
+                  when "verified" then "bg-emerald-50 text-emerald-700"
+                  when "failing" then "bg-red-50 text-red-700"
+                  when "manual_required" then "bg-amber-50 text-amber-700"
+                  else "bg-gray-100 text-gray-700"
+                end %>
+                <tr>
+                  <td class="px-4 py-4 align-top font-medium text-gray-900"><%= step[:label] %></td>
+                  <td class="px-4 py-4 align-top text-gray-600"><%= step[:mode].humanize %></td>
+                  <td class="px-4 py-4 align-top">
+                    <span class="rounded-full px-2.5 py-1 text-xs font-semibold <%= status_classes %>"><%= step[:status].humanize %></span>
+                  </td>
+                  <td class="px-4 py-4 align-top text-gray-600"><%= step[:detail].presence || "No detail recorded yet." %></td>
+                </tr>
+              <% end %>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+        <div>
+          <h2 class="text-xl font-semibold text-gray-900">Configuration</h2>
+          <p class="mt-1 text-sm text-gray-600">Persist the remote host profile, endpoint, callback URL, network, image, and concurrency before running helper actions.</p>
+        </div>
+
+        <% if @docker_host.errors.any? %>
+          <div class="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-800">
+            <%= @docker_host.errors.full_messages.to_sentence %>
+          </div>
+        <% end %>
+
+        <%= form_with model: @docker_host, url: setup_docker_host_path(@docker_host), method: :patch, class: "mt-6 grid gap-4 md:grid-cols-2" do |form| %>
+          <div>
+            <label for="setup_profile" class="block text-sm font-medium text-gray-700">Guide profile</label>
+            <%= select_tag :setup_profile,
+              options_for_select(DockerHosts::SetupGuide::PROFILES.map { |value, label| [label, value] }, @setup_guide.profile),
+              class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm" %>
+          </div>
+
+          <div>
+            <%= form.label :display_name, "Host name", class: "block text-sm font-medium text-gray-700" %>
+            <%= form.text_field :display_name, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm" %>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Stable identifier</label>
+            <input value="<%= @docker_host.identifier %>" disabled class="mt-1 block w-full rounded-xl border-gray-300 bg-gray-50 text-sm shadow-sm">
+          </div>
+
+          <div>
+            <%= form.label :manual_concurrency_limit, "Host concurrency limit", class: "block text-sm font-medium text-gray-700" %>
+            <%= form.number_field :manual_concurrency_limit, min: 1, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm" %>
+          </div>
+
+          <div class="md:col-span-2">
+            <%= form.label :endpoint, "Docker host / TLS endpoint", class: "block text-sm font-medium text-gray-700" %>
+            <%= form.text_field :endpoint, placeholder: "tcp://docker.example.com:2376", class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm" %>
+          </div>
+
+          <div class="md:col-span-2">
+            <%= form.label :callback_url, "Paid callback / proxy URL", class: "block text-sm font-medium text-gray-700" %>
+            <%= form.text_field :callback_url, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm" %>
+          </div>
+
+          <div>
+            <%= form.label :required_network_name, "Required network", class: "block text-sm font-medium text-gray-700" %>
+            <%= form.text_field :required_network_name, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm" %>
+          </div>
+
+          <div>
+            <%= form.label :image_tag, "Agent image", class: "block text-sm font-medium text-gray-700" %>
+            <%= form.text_field :image_tag, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm" %>
+          </div>
+
+          <div class="md:col-span-2 flex justify-end">
+            <%= form.submit "Save setup details", class: "rounded-full bg-sky-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-sky-600" %>
+          </div>
+        <% end %>
+      </section>
+
+      <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+        <h2 class="text-xl font-semibold text-gray-900">TLS helpers</h2>
+        <div class="mt-6 grid gap-6 lg:grid-cols-2">
+          <div class="rounded-2xl border border-gray-200 p-4">
+            <h3 class="text-base font-semibold text-gray-900">Generate client bundle</h3>
+            <p class="mt-1 text-sm text-gray-600">Creates a CA, client certificate, and client private key locally, then stores them encrypted on the Docker host record.</p>
+            <%= form_with url: setup_helper_docker_host_path(@docker_host), method: :post, class: "mt-4 space-y-3" do |form| %>
+              <%= hidden_field_tag :helper_action, "generate_client_bundle" %>
+              <%= text_field_tag :client_common_name, nil, placeholder: "#{@docker_host.identifier}-paid-client", class: "block w-full rounded-xl border-gray-300 text-sm shadow-sm" %>
+              <%= form.submit "Generate client TLS bundle", class: "rounded-full bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-600" %>
+            <% end %>
+          </div>
+
+          <div class="rounded-2xl border border-gray-200 p-4">
+            <h3 class="text-base font-semibold text-gray-900">Upload client bundle</h3>
+            <p class="mt-1 text-sm text-gray-600">Use this when you already have CA, client certificate, and private key PEM material.</p>
+            <%= form_with url: setup_helper_docker_host_path(@docker_host), method: :post, class: "mt-4 space-y-3" do %>
+              <%= hidden_field_tag :helper_action, "upload_client_bundle" %>
+              <%= text_area_tag :client_ca_pem, nil, rows: 5, placeholder: "-----BEGIN CERTIFICATE-----", class: "block w-full rounded-xl border-gray-300 font-mono text-xs shadow-sm" %>
+              <%= text_area_tag :client_certificate_pem, nil, rows: 5, placeholder: "-----BEGIN CERTIFICATE-----", class: "block w-full rounded-xl border-gray-300 font-mono text-xs shadow-sm" %>
+              <%= text_area_tag :client_private_key_pem, nil, rows: 5, placeholder: "-----BEGIN PRIVATE KEY-----", class: "block w-full rounded-xl border-gray-300 font-mono text-xs shadow-sm" %>
+              <%= submit_tag "Store uploaded client bundle", class: "rounded-full border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50" %>
+            <% end %>
+          </div>
+        </div>
+
+        <div class="mt-6 rounded-2xl border border-gray-200 p-4">
+          <h3 class="text-base font-semibold text-gray-900">Generate server material</h3>
+          <p class="mt-1 text-sm text-gray-600">Create either a CSR or a self-signed server certificate when you supply SANs. Installation on the remote daemon is still manual.</p>
+          <%= form_with url: setup_helper_docker_host_path(@docker_host), method: :post, class: "mt-4 grid gap-3 md:grid-cols-3" do %>
+            <%= hidden_field_tag :helper_action, "generate_server_material" %>
+            <%= text_field_tag :server_common_name, nil, placeholder: "docker.example.com", class: "block w-full rounded-xl border-gray-300 text-sm shadow-sm" %>
+            <%= text_field_tag :server_sans, nil, placeholder: "docker.example.com, 100.113.201.1", class: "block w-full rounded-xl border-gray-300 text-sm shadow-sm md:col-span-2" %>
+            <div>
+              <%= select_tag :server_mode,
+                options_for_select([["Generate CSR", "csr"], ["Generate self-signed cert", "self_signed"]], "csr"),
+                class: "block w-full rounded-xl border-gray-300 text-sm shadow-sm" %>
+            </div>
+            <div class="md:col-span-2">
+              <%= submit_tag "Generate server material", class: "rounded-full bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-600" %>
+            </div>
+          <% end %>
+          <div class="mt-3">
+            <%= button_to "Mark server install complete", setup_helper_docker_host_path(@docker_host, helper_action: "mark_manual_step", step_key: "server_certificate_install"), method: :post, class: "rounded-full border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50" %>
+          </div>
+        </div>
+      </section>
+
+      <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+        <h2 class="text-xl font-semibold text-gray-900">Verification helpers</h2>
+        <div class="mt-6 flex flex-wrap gap-3">
+          <%= button_to "Test TLS connectivity", setup_helper_docker_host_path(@docker_host, helper_action: "test_tls"), method: :post, class: "rounded-full bg-sky-700 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-600" %>
+          <%= button_to "Verify network", setup_helper_docker_host_path(@docker_host, helper_action: "verify_network", required_network_name: @docker_host.required_network_name), method: :post, class: "rounded-full border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50" %>
+          <%= button_to "Inspect image", setup_helper_docker_host_path(@docker_host, helper_action: "inspect_image"), method: :post, class: "rounded-full border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50" %>
+          <%= button_to "Test callback reachability", setup_helper_docker_host_path(@docker_host, helper_action: "test_callback", required_network_name: @docker_host.required_network_name, callback_url: @docker_host.callback_url), method: :post, class: "rounded-full border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50" %>
+          <%= button_to "Dry-run disposable container", setup_helper_docker_host_path(@docker_host, helper_action: "dry_run", required_network_name: @docker_host.required_network_name), method: :post, class: "rounded-full border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50" %>
+        </div>
+
+        <%= form_with url: setup_helper_docker_host_path(@docker_host), method: :post, class: "mt-6 flex flex-wrap items-center gap-3" do %>
+          <%= hidden_field_tag :helper_action, "create_network" %>
+          <%= hidden_field_tag :required_network_name, @docker_host.required_network_name %>
+          <label class="inline-flex items-center gap-2 text-sm text-gray-700">
+            <%= check_box_tag :allow_network_create, "1", false, class: "rounded border-gray-300 text-sky-700" %>
+            I authorize Paid to create the missing Docker network on this remote host
+          </label>
+          <%= submit_tag "Create missing network", class: "rounded-full bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-600" %>
+        <% end %>
+      </section>
+    </div>
+
+    <div class="space-y-8">
+      <section class="rounded-3xl border border-sky-200 bg-sky-50 p-6 shadow-sm">
+        <h2 class="text-xl font-semibold text-gray-900">Manual work that stays manual</h2>
+        <ul class="mt-4 space-y-2 text-sm text-gray-700">
+          <% @setup_manual_instructions.each do |instruction| %>
+            <li><%= instruction %></li>
+          <% end %>
+        </ul>
+      </section>
+
+      <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+        <h2 class="text-xl font-semibold text-gray-900">Copyable commands</h2>
+        <div class="mt-4 space-y-4">
+          <% @setup_command_snippets.each do |label, command| %>
+            <div>
+              <div class="text-sm font-medium text-gray-900"><%= label.humanize %></div>
+              <textarea readonly rows="5" class="mt-2 block w-full rounded-2xl border-gray-300 bg-gray-50 font-mono text-xs text-gray-700 shadow-sm"><%= command %></textarea>
+            </div>
+          <% end %>
+        </div>
+      </section>
+
+      <% if @docker_host.server_certificate_pem.present? || @docker_host.server_csr_pem.present? || @docker_host.server_private_key_pem.present? %>
+        <section class="rounded-3xl border border-gray-200 bg-white p-6 shadow-sm">
+          <h2 class="text-xl font-semibold text-gray-900">Generated server material</h2>
+          <div class="mt-4 space-y-4">
+            <% if @docker_host.server_certificate_pem.present? %>
+              <div>
+                <div class="text-sm font-medium text-gray-900">Server certificate</div>
+                <textarea readonly rows="6" class="mt-2 block w-full rounded-2xl border-gray-300 bg-gray-50 font-mono text-xs shadow-sm"><%= @docker_host.server_certificate_pem %></textarea>
+              </div>
+            <% end %>
+            <% if @docker_host.server_csr_pem.present? %>
+              <div>
+                <div class="text-sm font-medium text-gray-900">Server CSR</div>
+                <textarea readonly rows="6" class="mt-2 block w-full rounded-2xl border-gray-300 bg-gray-50 font-mono text-xs shadow-sm"><%= @docker_host.server_csr_pem %></textarea>
+              </div>
+            <% end %>
+            <% if @docker_host.server_private_key_pem.present? %>
+              <div>
+                <div class="text-sm font-medium text-gray-900">Server private key</div>
+                <textarea readonly rows="6" class="mt-2 block w-full rounded-2xl border-gray-300 bg-gray-50 font-mono text-xs shadow-sm"><%= @docker_host.server_private_key_pem %></textarea>
+              </div>
+            <% end %>
+          </div>
+        </section>
+      <% end %>
+    </div>
+  </div>
+</div>
