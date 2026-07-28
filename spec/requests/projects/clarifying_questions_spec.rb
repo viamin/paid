@@ -5,7 +5,7 @@ require "rails_helper"
 RSpec.describe "Projects::ClarifyingQuestions" do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
-  let(:project) { create(:project, account: account) }
+  let(:project) { create(:project, account: account, created_by: user) }
   let(:issue_body) { "This is the issue body" }
   let(:issue) { create(:issue, :needs_input, project: project, body: issue_body) }
   let(:github_client) { instance_double(GithubClient) }
@@ -116,6 +116,43 @@ RSpec.describe "Projects::ClarifyingQuestions" do
         expect(issue.paid_state).to eq("new")
         expect(issue.needs_input?).to be false
         expect(issue.labels).not_to include(needs_input_label)
+      end
+
+      it "redirects to the next queued issue when opened from the dashboard queue" do
+        project.update!(auto_pick_enabled: true, active: true)
+        next_issue = create(:issue, :needs_input, project: project, github_number: issue.github_number + 1)
+
+        post project_issue_clarifying_questions_path(project, issue), params: {
+          questions: [ "What is the expected behavior?", "Should this be behind a flag?" ],
+          answers: [ "X is a feature", "Yes, by default" ],
+          queue: "dashboard_needs_input",
+          queue_project_id: project.id,
+          return_to: dashboard_needs_input_path(project_id: project.id)
+        }
+
+        expect(response).to redirect_to(
+          project_issue_clarifying_questions_path(
+            project,
+            next_issue,
+            queue: "dashboard_needs_input",
+            queue_project_id: project.id,
+            return_to: dashboard_needs_input_path(project_id: project.id)
+          )
+        )
+      end
+
+      it "returns to the dashboard queue when the queue is exhausted" do
+        project.update!(auto_pick_enabled: true, active: true)
+
+        post project_issue_clarifying_questions_path(project, issue), params: {
+          questions: [ "What is the expected behavior?", "Should this be behind a flag?" ],
+          answers: [ "X is a feature", "Yes, by default" ],
+          queue: "dashboard_needs_input",
+          queue_project_id: project.id,
+          return_to: dashboard_needs_input_path(project_id: project.id)
+        }
+
+        expect(response).to redirect_to(dashboard_needs_input_path(project_id: project.id))
       end
     end
 
