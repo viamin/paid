@@ -348,7 +348,7 @@ class ChatSessionsController < ApplicationController
     @sidebar_has_more = sidebar[:next_frame_id].present?
     @sidebar_next_frame_id = sidebar[:next_frame_id]
     @sidebar_next_params = sidebar[:next_params]
-    @new_chat_session = ChatSession.new(mode: "api")
+    @new_chat_session = ChatSession.new(mode: "api", auto_approve: current_user.settings.default_auto_approve)
     @available_runners = current_user.runners.kept_only.ordered
     @available_projects = current_account.projects.order(:name)
     @available_models = LlmModel.active.order(:provider, :display_name)

@@ -74,6 +74,7 @@ class UserSettingsController < ApplicationController
       :retry_max_delay,
       :max_issues_per_page,
       :max_prs_per_page,
+      :default_auto_approve,
       :fallback_enabled,
       :fallback_runners,
       :kb_embedding_runner,
