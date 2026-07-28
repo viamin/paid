@@ -177,6 +177,7 @@ RSpec.describe "Dashboard" do
 
         doc = Nokogiri::HTML(response.body)
         expect(doc.at_css("[data-controller~='dashboard-frames']")).to be_present
+        expect(doc.at_css("turbo-frame#dashboard-queue-preview[src]")).not_to be_present
         expect(doc.at_css("turbo-frame#dashboard-metrics[data-dashboard-frames-src='#{dashboard_metrics_path(time_range: "cumulative")}']")).to be_present
         expect(doc.at_css("turbo-frame#dashboard-performance[data-dashboard-frames-src='#{dashboard_performance_path(time_range: "cumulative", status: "all", goal: "all")}']")).to be_present
         expect(doc.at_css("turbo-frame#dashboard-decision-metrics[data-dashboard-frames-src='#{dashboard_decision_metrics_path(time_range: "cumulative")}']")).to be_present
@@ -1155,6 +1156,29 @@ RSpec.describe "Dashboard" do
       expect(response.body).to include("my-org")
       expect(response.body).to include("App")
       expect(response.body).to include("15,000/hr")
+    end
+  end
+
+  describe "GET /dashboard/queue_preview" do
+    let(:account) { create(:account) }
+    let(:user) { create(:user, account: account) }
+    let(:project) { create(:project, account: account, created_by: user) }
+
+    before { sign_in user }
+
+    it "renders the queue preview inside the dashboard frame" do
+      create(:agent_run, :queued, project: project)
+
+      get dashboard_queue_preview_path
+
+      expect(response).to have_http_status(:ok)
+
+      doc = Nokogiri::HTML.fragment(response.body)
+      frame = doc.at_css("turbo-frame#dashboard-queue-preview")
+
+      expect(frame).to be_present
+      expect(frame["src"]).to be_nil
+      expect(frame.to_html).to include("Upcoming Queue")
     end
   end
 

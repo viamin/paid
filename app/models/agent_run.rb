@@ -2967,6 +2967,13 @@ class AgentRun < ApplicationRecord
     ContainerMetricsCollectionJob.perform_later(id) if container_id.present?
   end
 
+  def queue_preview_membership_changed?
+    return false unless previous_changes.key?("status")
+
+    from_status, to_status = previous_changes["status"]
+    (from_status == "queued") != (to_status == "queued")
+  end
+
   def broadcast_project_updates
     if previous_changes.key?("status") || previous_changes.key?("issue_id") || previous_changes.key?("agent_type")
       project.broadcast_agent_runs_update
@@ -2998,7 +3005,11 @@ class AgentRun < ApplicationRecord
     end
 
     if previous_changes.key?("status")
-      LiveDashboardBroadcastJob.perform_later(project.account_id, id)
+      LiveDashboardBroadcastJob.perform_later(
+        project.account_id,
+        id,
+        refresh_queue_preview: queue_preview_membership_changed?
+      )
     end
 
     project.broadcast_agent_run_detail_update(self)

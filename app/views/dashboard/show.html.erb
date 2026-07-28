@@ -1,6 +1,5 @@
 <%= turbo_stream_from current_account, :dashboard_updates %>
 <%= turbo_stream_from current_account, :live_dashboard %>
-
 <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10" data-controller="live-dashboard dashboard-frames">
   <div class="sm:flex sm:items-center sm:justify-between">
     <div class="sm:flex-auto">
@@ -57,7 +56,9 @@
       </div>
 
       <div class="mt-6">
-        <%= render "dashboard/queue_preview", queue_preview: @queue_preview, paused_projects: @quality_paused_projects %>
+        <%= render "dashboard/queue_preview_frame",
+          queue_preview: @queue_preview,
+          paused_projects: @quality_paused_projects %>
       </div>
 
       <turbo-frame id="dashboard-eligibility-breakdown"
