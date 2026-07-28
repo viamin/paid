@@ -272,7 +272,12 @@ RSpec.describe "ChatSessions" do
 
         expect(token_usage_bar).to be_present
         expect(token_usage_bar.text).to include("Archive")
-        expect(token_usage_bar.at_css("input[name='_method'][value='delete']")).to be_nil
+
+        close_form = doc.at_xpath(
+          "//form[@action='#{chat_session_path(chat_session)}'][.//input[@name='_method' and @value='delete']]"
+        )
+
+        expect(close_form).to be_nil
       end
 
       it "renders the auto-approve checkbox reflecting the session state" do
