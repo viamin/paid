@@ -33,7 +33,7 @@ module Dashboard
       return queue.first if after_issue.blank?
 
       current_index = queue.index { |issue| issue.id == after_issue.id }
-      return queue.first if current_index.nil?
+      return if current_index.nil?
 
       queue[(current_index + 1)..]&.first
     end

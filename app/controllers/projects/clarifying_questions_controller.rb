@@ -94,13 +94,17 @@ module Projects
     def queue_project
       return unless queue_mode? && params[:queue_project_id].present?
 
-      @queue_project ||= policy_scope(Project).find_by(id: params[:queue_project_id])
+      @queue_project ||= begin
+        candidate = policy_scope(Project).find_by(id: params[:queue_project_id])
+        candidate if candidate && queue_scope_issues(project: candidate).any?
+      end
     end
 
     def queue_return_to
       @queue_return_to ||= begin
         requested_path = params[:return_to].to_s
-        return requested_path if safe_return_path?(requested_path)
+        validated_path = validated_queue_return_path(requested_path)
+        return validated_path if validated_path
 
         dashboard_needs_input_path(project_id: queue_project&.id)
       end
@@ -118,6 +122,7 @@ module Projects
 
     def next_queue_issue
       return unless queue_mode?
+      return unless valid_queue_scope?
 
       Dashboard::NeedsInputQueue.next_issue(
         user: current_user,
@@ -130,8 +135,24 @@ module Projects
       queue_mode? ? queue_return_to : project_path(@project)
     end
 
-    def safe_return_path?(path)
-      path.start_with?("/") && !path.start_with?("//")
+    def queue_scope_issues(project:)
+      @queue_scope_issues ||= {}
+      @queue_scope_issues.fetch(project&.id) do
+        @queue_scope_issues[project&.id] = Dashboard::NeedsInputQueue.call(user: current_user, project: project).map(&:issue)
+      end
+    end
+
+    def valid_queue_scope?
+      return false if params[:queue_project_id].present? && queue_project.nil?
+
+      queue_scope_issues(project: queue_project).any? { |issue| issue.id == @issue.id }
+    end
+
+    def validated_queue_return_path(path)
+      return if path.blank?
+      return unless path == dashboard_needs_input_path(project_id: queue_project&.id)
+
+      path
     end
   end
 end
