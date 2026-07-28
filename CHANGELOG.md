@@ -1,5 +1,46 @@
 # Changelog
 
+## [1.7.0](https://github.com/viamin/paid/compare/v1.6.0...v1.7.0) (2026-07-28)
+
+
+### Features
+
+* add clickable needs-input dashboard shortcut and guided questionnaire queue ([#3036](https://github.com/viamin/paid/issues/3036)) ([bcb7bad](https://github.com/viamin/paid/commit/bcb7bad6b7f96abc1e04a106f722c0c12fbf6fd0))
+* Add Oh My Pi as a separate Paid runner ([#3019](https://github.com/viamin/paid/issues/3019)) ([882e98a](https://github.com/viamin/paid/commit/882e98abc0ca12254d9f8638c84ab676682a67f7))
+* Auto-balance runner weights based on usage quotas ([#3007](https://github.com/viamin/paid/issues/3007)) ([7597165](https://github.com/viamin/paid/commit/759716597b07068dbd3c372bc317492884f51206))
+* **chat:** add user default for auto-approve ([#3035](https://github.com/viamin/paid/issues/3035)) ([71e5d3e](https://github.com/viamin/paid/commit/71e5d3e1724f2ccd9c2774c43b7e25485bc541b9))
+* **containers:** log docker host scheduler decisions ([#3028](https://github.com/viamin/paid/issues/3028)) ([c12a1c0](https://github.com/viamin/paid/commit/c12a1c060971380351c3342f5cde8e26daf32e56))
+* **db:** auto-back-up populated DBs before destructive ops ([#3043](https://github.com/viamin/paid/issues/3043)) ([6eb6da1](https://github.com/viamin/paid/commit/6eb6da10ff904b99500f7a1c9ff048248663e122))
+* RDR-016: automate coordination policy evolution and promotion ([#3011](https://github.com/viamin/paid/issues/3011)) ([d7f4679](https://github.com/viamin/paid/commit/d7f4679bda02e710554ad6da53068f0a6bc63526))
+* RDR-025: add proactive runner quota polling and routing ([#3012](https://github.com/viamin/paid/issues/3012)) ([9f0c82e](https://github.com/viamin/paid/commit/9f0c82eb8b4261f4c6141e1bea94d0b0c605ec63))
+* RDR-040: complete runner model compatibility enforcement ([#3010](https://github.com/viamin/paid/issues/3010)) ([e7eb0a0](https://github.com/viamin/paid/commit/e7eb0a0dbc7e742a5837826eb7f438102d3e044e))
+* RDR-048: Add Docker Hosts management UI ([#2998](https://github.com/viamin/paid/issues/2998)) ([d7ea9ee](https://github.com/viamin/paid/commit/d7ea9eefaaaca6e174bd68121408a473e7119959))
+* RDR-048: Add multi-host Docker backend configuration and registry ([#3026](https://github.com/viamin/paid/issues/3026)) ([3fe8f30](https://github.com/viamin/paid/commit/3fe8f30f2c71a4f0346fb721cb04dbfea56e14bd))
+* RDR-048: Add optional capacity-aware Docker host placement ([#3039](https://github.com/viamin/paid/issues/3039)) ([08ab291](https://github.com/viamin/paid/commit/08ab2917a92d44eeee58167a2b317d65e8d9ccc2))
+* RDR-048: Add per-host Docker readiness checks ([#2997](https://github.com/viamin/paid/issues/2997)) ([9ca8a9c](https://github.com/viamin/paid/commit/9ca8a9c6efdad5476de9306ec698694ca83cf412))
+* RDR-048: Enforce independent per-host Docker concurrency limits ([#2996](https://github.com/viamin/paid/issues/2996)) ([50a4600](https://github.com/viamin/paid/commit/50a46000aff2b433d9201ec1a6b5d719afc9e9f8))
+* RDR-048: Make container lifecycle operations multi-host aware ([#3029](https://github.com/viamin/paid/issues/3029)) ([69be62d](https://github.com/viamin/paid/commit/69be62d82a75f8751d27c1f02f9d672ad979e8df))
+* remove Aider runner support ([#3027](https://github.com/viamin/paid/issues/3027)) ([808c99d](https://github.com/viamin/paid/commit/808c99d267a4e851ca26b9a6e6dac3e332d5d72d))
+* Remove Close button from chat session UI ([#3034](https://github.com/viamin/paid/issues/3034)) ([b7140c5](https://github.com/viamin/paid/commit/b7140c53eb2cce8f7f96416eccae51fbe3f8a7f6))
+* remove destructive Close action from chat session UI ([#3040](https://github.com/viamin/paid/issues/3040)) ([e7e79ce](https://github.com/viamin/paid/commit/e7e79ce6aab5bae4fc0ff9f7d630b3239f436164))
+* token optimization (rtk + codegraph) and concurrent Docker stats sampling ([#3013](https://github.com/viamin/paid/issues/3013)) ([f7a8466](https://github.com/viamin/paid/commit/f7a846629908de5117bb50773fbd87ea1af0599a))
+
+
+### Bug Fixes
+
+* Adopt upstream KiloCode permission merge and remove Paid workaround ([#3009](https://github.com/viamin/paid/issues/3009)) ([d23500f](https://github.com/viamin/paid/commit/d23500f749f4c26761cf799cf335e453f04e2862))
+* **agent-image:** consume released agent-harness omp support ([#3038](https://github.com/viamin/paid/issues/3038)) ([ff021a3](https://github.com/viamin/paid/commit/ff021a3a87e9977b61ec5c532082ead1bb075235))
+* **agent-runs:** clarify bare SIGKILL memory diagnostics ([#3005](https://github.com/viamin/paid/issues/3005)) ([c4a28d6](https://github.com/viamin/paid/commit/c4a28d698d674236b345b0e8c95e7056108608c2))
+* **capacity:** fail closed on docker sampling timeout ([#3030](https://github.com/viamin/paid/issues/3030)) ([6c81bab](https://github.com/viamin/paid/commit/6c81babf9a9ead0c50a0e74bfd5cc405e7e3b90c))
+* **capacity:** harden Docker snapshot staleness and dashboard latency ([#3014](https://github.com/viamin/paid/issues/3014)) ([235462c](https://github.com/viamin/paid/commit/235462c5c11b4cdb81526691f412f620d5ffb46a))
+* **capacity:** harden unshallow staleness and dashboard latency ([#3021](https://github.com/viamin/paid/issues/3021)) ([7e03fea](https://github.com/viamin/paid/commit/7e03fea83bd5dab8f2882e6e0231970651425458))
+* **containers:** add separate git unshallow timeout ([#3022](https://github.com/viamin/paid/issues/3022)) ([11e10dd](https://github.com/viamin/paid/commit/11e10ddb23033dcfbeef74ce778b7a3b865c001e))
+* **db:** remove nonexistent trigger_exists? guard from docker_hosts logidze migration ([#3023](https://github.com/viamin/paid/issues/3023)) ([ef39871](https://github.com/viamin/paid/commit/ef39871e46e1a0a95370455db63572e6c75ec9a0))
+* **mutation:** disable SimpleCov during mutation sweeps ([#3024](https://github.com/viamin/paid/issues/3024)) ([4f38a7a](https://github.com/viamin/paid/commit/4f38a7ad9ada2c96784a7efcd9eeeca5d94909a6))
+* **runners:** allow KiloCode to inspect agent-harness gem ([#3004](https://github.com/viamin/paid/issues/3004)) ([865041d](https://github.com/viamin/paid/commit/865041d440e4a223f994ba04a4fb6095a87e301a))
+* **runners:** inject ZHIPU_API_KEY for z.ai coding plan runners ([#3042](https://github.com/viamin/paid/issues/3042)) ([be5436f](https://github.com/viamin/paid/commit/be5436fc74477d81597ff24491377923b2bfa1b8))
+* **ui:** upcoming queue table on dashboard does not live-update like active runs ([#3037](https://github.com/viamin/paid/issues/3037)) ([6b60a04](https://github.com/viamin/paid/commit/6b60a0419c82d8be03f304eb82355fa51a53004a))
+
 ## [1.6.0](https://github.com/viamin/paid/compare/v1.5.0...v1.6.0) (2026-07-23)
 
 
