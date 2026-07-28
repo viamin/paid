@@ -16,7 +16,14 @@ module Containers
       end
 
       def fallback_enabled?
-        fallback_policy == HostRegistry::FALLBACK_FIRST_HEALTHY
+        [
+          HostRegistry::FALLBACK_FIRST_HEALTHY,
+          HostRegistry::FALLBACK_CAPACITY_AWARE
+        ].include?(fallback_policy)
+      end
+
+      def capacity_aware?
+        fallback_policy == HostRegistry::FALLBACK_CAPACITY_AWARE
       end
     end
 
@@ -79,7 +86,10 @@ module Containers
 
     def compatible_candidates_for(requested_host, fallback_policy:, selection_source:, compatibility_failures:, health_failures:)
       candidates = [ requested_host.to_s ]
-      if fallback_policy == HostRegistry::FALLBACK_FIRST_HEALTHY && selection_source != "explicit"
+      if [
+        HostRegistry::FALLBACK_FIRST_HEALTHY,
+        HostRegistry::FALLBACK_CAPACITY_AWARE
+      ].include?(fallback_policy) && selection_source != "explicit"
         candidates.concat(registry.fallback_candidates_for(requested_host))
       end
 

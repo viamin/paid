@@ -25,13 +25,13 @@ RSpec.describe ProcessRunQueueJob do
     job.send(:temporal_priority_for, run)
   end
 
-  def build_host_registry
+  def build_host_registry(fallback_policy: "first_healthy")
     local_backend = instance_double(Containers::Backends::LocalDocker, identifier: "local", all_host_identifiers: [ "local" ], remote?: false, ping: true)
     elguapo_backend = instance_double(Containers::Backends::RemoteDocker, identifier: "elguapo", all_host_identifiers: [ "elguapo" ], remote?: true, ping: true)
     aws_backend = instance_double(Containers::Backends::RemoteDocker, identifier: "aws-runner-1", all_host_identifiers: [ "aws-runner-1" ], remote?: true, ping: true)
     registry = Containers::HostRegistry::Registry.new(
       default_host: "local",
-      fallback_policy: "first_healthy",
+      fallback_policy: fallback_policy,
       hosts: [
         Containers::HostRegistry::HostDefinition.new(identifier: "local", backend: local_backend, max_concurrent_runs: 2, fallback_enabled: true),
         Containers::HostRegistry::HostDefinition.new(identifier: "elguapo", backend: elguapo_backend, max_concurrent_runs: 4, fallback_enabled: true),
@@ -108,6 +108,34 @@ RSpec.describe ProcessRunQueueJob do
         health_failures: health_failures
       )
     )
+  end
+
+  def stub_capacity_aware_preferred_run(project:)
+    user = project.created_by
+    user.settings.update!(run_concurrency_mode: "auto", max_concurrent_runs: 20, max_parallel_agents_per_project: 20)
+    stub_multi_host_registry(build_host_registry(fallback_policy: "capacity_aware"))
+    stub_policy_decision(local_auto_decision)
+    create_preferred_host_run(project: project, fallback: "capacity_aware")
+  end
+
+  def stub_host_capacity_snapshots(elguapo:, local:, aws:)
+    snapshots = {
+      "elguapo" => elguapo,
+      "local" => local,
+      "aws-runner-1" => aws
+    }
+
+    allow(Capacity::DockerSnapshot).to receive(:fetch) do |backend:|
+      snapshots.fetch(backend.identifier).merge(
+        backend_identifier: backend.identifier,
+        docker_memory_bytes: 16.gigabytes
+      )
+    end
+  end
+
+  def expect_capacity_aware_decision(queued_run, planned_host:, decision_mode:)
+    expect(queued_run.reload.external_metadata["planned_container_host"]).to eq(planned_host)
+    expect(queued_run.reload.external_metadata.dig("host_placement_decision", "decision_mode")).to eq(decision_mode)
   end
 
   def stub_unavailable_fallback_hosts(run, registry_bundle)
@@ -214,6 +242,59 @@ RSpec.describe ProcessRunQueueJob do
           "aws-runner-1" => a_string_including("aws down")
         )
       )
+    end
+
+    it "chooses the healthiest capacity-aware host instead of the first healthy fallback" do
+      project = create(:project)
+      queued_run = stub_capacity_aware_preferred_run(project: project)
+      stub_host_capacity_snapshots(
+        elguapo: { available: true, effective_agent_budget_bytes: 5.gigabytes, snapshot_at: Time.current, confidence: "high", degraded_reasons: [] },
+        local: { available: true, effective_agent_budget_bytes: 7.gigabytes, snapshot_at: Time.current, confidence: "high", degraded_reasons: [] },
+        aws: { available: true, effective_agent_budget_bytes: 9.gigabytes, snapshot_at: Time.current, confidence: "high", degraded_reasons: [] }
+      )
+      allow(Rails.logger).to receive(:info)
+
+      described_class.new.perform
+
+      expect_capacity_aware_decision(queued_run, planned_host: "aws-runner-1", decision_mode: "capacity_aware")
+      expect(queued_run.reload.external_metadata.dig("host_placement_decision", "selected_by_capacity")).to be(true)
+      expect_host_selected_log(
+        run_id: queued_run.id,
+        requested_host: "elguapo",
+        selected_host: "aws-runner-1",
+        selection_source: "preferred",
+        selection_reason: "capacity_aware",
+        fallback_policy: "capacity_aware",
+        fallback_chain: [ "elguapo", "local", "aws-runner-1" ]
+      )
+    end
+
+    it "falls back to manual first-healthy ordering when capacity snapshots are degraded" do
+      project = create(:project)
+      queued_run = stub_capacity_aware_preferred_run(project: project)
+      stub_host_capacity_snapshots(
+        elguapo: { available: false, reason: "docker_timeout", degraded_reasons: [ "docker_timeout" ], snapshot_at: Time.current, confidence: "low" },
+        local: { available: true, effective_agent_budget_bytes: 9.gigabytes, snapshot_at: Time.current, confidence: "high", degraded_reasons: [] },
+        aws: { available: true, effective_agent_budget_bytes: 9.gigabytes, snapshot_at: Time.current, confidence: "high", degraded_reasons: [] }
+      )
+
+      described_class.new.perform
+
+      expect_capacity_aware_decision(queued_run, planned_host: "elguapo", decision_mode: "capacity_aware_fallback")
+    end
+
+    it "falls back to manual first-healthy ordering when capacity snapshots are stale" do
+      project = create(:project)
+      queued_run = stub_capacity_aware_preferred_run(project: project)
+      stub_host_capacity_snapshots(
+        elguapo: { available: false, reason: "docker_unavailable", degraded_reasons: [ "stale_cache", "docker_unavailable" ], snapshot_at: 3.minutes.ago, confidence: "low" },
+        local: { available: true, effective_agent_budget_bytes: 9.gigabytes, snapshot_at: Time.current, confidence: "high", degraded_reasons: [] },
+        aws: { available: true, effective_agent_budget_bytes: 9.gigabytes, snapshot_at: Time.current, confidence: "high", degraded_reasons: [] }
+      )
+
+      described_class.new.perform
+
+      expect_capacity_aware_decision(queued_run, planned_host: "elguapo", decision_mode: "capacity_aware_fallback")
     end
 
     it "starts the oldest queued run when capacity is available" do

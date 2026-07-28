@@ -58,6 +58,26 @@
           <dt class="font-medium text-gray-900">Last ready</dt>
           <dd class="mt-1 text-gray-600"><%= @docker_host.last_ready_at&.to_fs(:db) || "Never" %></dd>
         </div>
+        <div>
+          <dt class="font-medium text-gray-900">Capacity snapshot</dt>
+          <dd class="mt-1 text-gray-600">
+            <% if @capacity_snapshot %>
+              <%= @capacity_snapshot.degraded? ? @capacity_snapshot.degraded_reasons.to_sentence : "Healthy" %>
+            <% else %>
+              Not available
+            <% end %>
+          </dd>
+        </div>
+        <div>
+          <dt class="font-medium text-gray-900">Available Docker memory</dt>
+          <dd class="mt-1 text-gray-600">
+            <% if @capacity_snapshot && !@capacity_snapshot.degraded? %>
+              <%= number_to_human_size(@capacity_snapshot.available_memory_bytes) %>
+            <% else %>
+              Unavailable
+            <% end %>
+          </dd>
+        </div>
       </dl>
 
       <% if @docker_host.last_error.present? %>

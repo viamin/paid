@@ -80,9 +80,9 @@ class ProcessRunQueueJob < ApplicationJob
       reroute_cache = {}
       blocked_account_create_pr_ids = Set.new
       blocked_account_dispatch_ids = Set.new
-      docker_snapshot = nil
-      base_reserved_agent_memory_bytes = nil
-      started_reserved_agent_memory_bytes = 0
+      docker_snapshots_by_host = {}
+      base_reserved_agent_memory_bytes_by_host = {}
+      started_reserved_agent_memory_bytes_by_host = Hash.new(0)
 
       loop do
         iterations += 1
@@ -172,23 +172,6 @@ class ProcessRunQueueJob < ApplicationJob
           log_capacity_policy_manual_mode(user, policy_decision)
         end
 
-        # RDR-048 (#2947) scope: per-host Docker memory capacity across multiple
-        # backends is intentionally out of scope here — auto mode still consults
-        # one DockerSnapshot per queue pass, which is bound to the default
-        # backend. In multi-host mode that snapshot does not reflect each
-        # candidate host's daemon, so a saturated default backend can block an
-        # otherwise available remote host (and vice versa). Downgrade auto
-        # admission to manual when multiple hosts are configured so admission
-        # is purely host-ceiling-based until per-backend snapshots land.
-        if Containers.host_registry.multi_host? &&
-            forced_admission_mode != UserSetting::RUN_CONCURRENCY_MODE_MANUAL &&
-            user.settings.run_concurrency_auto?
-          forced_admission_mode = UserSetting::RUN_CONCURRENCY_MODE_MANUAL
-        end
-
-        admission_uses_auto = forced_admission_mode != UserSetting::RUN_CONCURRENCY_MODE_MANUAL &&
-          user.settings.run_concurrency_auto?
-        docker_snapshot ||= Capacity::DockerSnapshot.fetch if admission_uses_auto
         host_selection = Containers::BackendScheduler.call(agent_run: next_run)
         unless host_selection.candidate_hosts.any?
           log_host_selection_skip(next_run, host_selection)
@@ -196,35 +179,17 @@ class ProcessRunQueueJob < ApplicationJob
           next
         end
 
-        admission = nil
-        selected_host = nil
-        host_selection.candidate_hosts.each do |candidate_host|
-          admission = run_admission_for(
-            next_run,
-            user,
-            mode: forced_admission_mode,
-            docker_snapshot: docker_snapshot,
-            reserved_agent_memory_bytes: queue_reserved_agent_memory_bytes(
-              user,
-              base_reserved_agent_memory_bytes,
-              started_reserved_agent_memory_bytes,
-              mode: forced_admission_mode
-            ),
-            selected_host: candidate_host,
-            selected_host_limit: Containers.host_registry.host_limit_for(candidate_host)
-          )
-          if admission[:allowed]
-            selected_host = candidate_host
-            break
-          end
-
-          break unless admission[:reason] == "host_hard_ceiling" && host_selection.fallback_enabled?
-        end
-        if admission[:snapshot_available]
-          base_reserved_agent_memory_bytes ||= admission[:reserved_agent_memory_bytes].to_i - started_reserved_agent_memory_bytes
-        end
+        selected_host, admission, host_placement_decision = select_host_admission(
+          agent_run: next_run,
+          user: user,
+          host_selection: host_selection,
+          forced_admission_mode: forced_admission_mode,
+          docker_snapshots_by_host: docker_snapshots_by_host,
+          base_reserved_agent_memory_bytes_by_host: base_reserved_agent_memory_bytes_by_host,
+          started_reserved_agent_memory_bytes_by_host: started_reserved_agent_memory_bytes_by_host
+        )
         unless admission[:allowed]
-          log_capacity_skip(next_run, admission, host_selection: host_selection)
+          log_capacity_skip(next_run, admission, host_selection: host_selection, host_placement_decision: host_placement_decision)
 
           case admission[:reason]
           when "insufficient_docker_capacity"
@@ -295,8 +260,12 @@ class ProcessRunQueueJob < ApplicationJob
         # or claims a real resource. This avoids leaving the run pointing
         # at a host that never owned it when the budget check, workflow
         # start, or pool/provision step fails after this point.
-        log_host_selection(agent_run, host_selection, selected_host, admission)
-        result = start_claimed_run(agent_run, planned_container_host: selected_host)
+        log_host_selection(agent_run, host_selection, selected_host, admission, host_placement_decision: host_placement_decision)
+        result = start_claimed_run(
+          agent_run,
+          planned_container_host: selected_host,
+          host_placement_decision: host_placement_decision
+        )
         if result == :budget_blocked
           # Budget-blocked is not a workflow failure and not a real start —
           # skip capacity accounting and continue processing the queue.
@@ -310,7 +279,12 @@ class ProcessRunQueueJob < ApplicationJob
           mark_dispatched_probe(agent_run) if dispatch_decision == :allow_probe
           consecutive_failures = 0
           starts_count += 1
-          started_reserved_agent_memory_bytes += admission[:estimated_memory_per_run_bytes].to_i if docker_snapshot&.[](:available)
+          if admission[:snapshot_available]
+            base_reserved_agent_memory_bytes_by_host[selected_host] ||= (
+              admission[:reserved_agent_memory_bytes].to_i - started_reserved_agent_memory_bytes_by_host[selected_host]
+            )
+          end
+          started_reserved_agent_memory_bytes_by_host[selected_host] += admission[:estimated_memory_per_run_bytes].to_i
           break if starts_count >= MAX_STARTS_PER_PERFORM
         else
           consecutive_failures += 1
@@ -447,6 +421,188 @@ class ProcessRunQueueJob < ApplicationJob
     )
   end
 
+  def select_host_admission(agent_run:, user:, host_selection:, forced_admission_mode:, docker_snapshots_by_host:,
+    base_reserved_agent_memory_bytes_by_host:, started_reserved_agent_memory_bytes_by_host:)
+    return select_first_available_host_admission(
+      agent_run: agent_run,
+      user: user,
+      host_selection: host_selection,
+      mode: forced_admission_mode,
+      docker_snapshots_by_host: docker_snapshots_by_host,
+      base_reserved_agent_memory_bytes_by_host: base_reserved_agent_memory_bytes_by_host,
+      started_reserved_agent_memory_bytes_by_host: started_reserved_agent_memory_bytes_by_host
+    ) unless capacity_aware_host_selection?(host_selection, forced_admission_mode, user)
+
+    evaluations = build_host_admission_evaluations(
+      agent_run: agent_run,
+      user: user,
+      host_selection: host_selection,
+      mode: forced_admission_mode,
+      docker_snapshots_by_host: docker_snapshots_by_host,
+      base_reserved_agent_memory_bytes_by_host: base_reserved_agent_memory_bytes_by_host,
+      started_reserved_agent_memory_bytes_by_host: started_reserved_agent_memory_bytes_by_host
+    )
+
+    if evaluations.any? { |evaluation| !capacity_snapshot_usable_for_balancing?(evaluation[:admission]) }
+      selected_host, admission, manual_decision = select_first_available_host_admission(
+        agent_run: agent_run,
+        user: user,
+        host_selection: host_selection,
+        mode: UserSetting::RUN_CONCURRENCY_MODE_MANUAL,
+        docker_snapshots_by_host: docker_snapshots_by_host,
+        base_reserved_agent_memory_bytes_by_host: base_reserved_agent_memory_bytes_by_host,
+        started_reserved_agent_memory_bytes_by_host: started_reserved_agent_memory_bytes_by_host
+      )
+      return [
+        selected_host,
+        admission,
+        manual_decision.merge(
+          decision_mode: "capacity_aware_fallback",
+          fallback_reason: "snapshot_unavailable",
+          auto_evaluations: placement_evaluations_payload(evaluations)
+        )
+      ]
+    end
+
+    allowed_evaluations = evaluations.select { |evaluation| evaluation[:admission][:allowed] }
+    chosen_evaluation = if allowed_evaluations.any?
+      allowed_evaluations.max_by do |evaluation|
+        admission = evaluation[:admission]
+        [
+          admission[:available_memory_bytes].to_i,
+          admission[:host_available_slots].to_i,
+          evaluation[:candidate_host].to_s == host_selection.requested_host.to_s ? 1 : 0,
+          -evaluation[:index]
+        ]
+      end
+    else
+      evaluations.max_by do |evaluation|
+        admission = evaluation[:admission]
+        [
+          admission[:available_memory_bytes].to_i,
+          admission[:host_available_slots].to_i,
+          evaluation[:candidate_host].to_s == host_selection.requested_host.to_s ? 1 : 0,
+          -evaluation[:index]
+        ]
+      end
+    end
+
+    admission = chosen_evaluation.fetch(:admission)
+    [
+      chosen_evaluation.fetch(:candidate_host),
+      admission,
+      {
+        decision_mode: "capacity_aware",
+        requested_host: host_selection.requested_host,
+        selected_host: chosen_evaluation.fetch(:candidate_host),
+        selected_by_capacity: true,
+        auto_evaluations: placement_evaluations_payload(evaluations),
+        selected_snapshot_backend_identifier: admission[:snapshot_backend_identifier],
+        selected_snapshot_at: admission[:snapshot_at],
+        selected_available_memory_bytes: admission[:available_memory_bytes],
+        selected_host_available_slots: admission[:host_available_slots]
+      }
+    ]
+  end
+
+  def select_first_available_host_admission(agent_run:, user:, host_selection:, mode:, docker_snapshots_by_host:,
+    base_reserved_agent_memory_bytes_by_host:, started_reserved_agent_memory_bytes_by_host:)
+    evaluations = build_host_admission_evaluations(
+      agent_run: agent_run,
+      user: user,
+      host_selection: host_selection,
+      mode: mode,
+      docker_snapshots_by_host: docker_snapshots_by_host,
+      base_reserved_agent_memory_bytes_by_host: base_reserved_agent_memory_bytes_by_host,
+      started_reserved_agent_memory_bytes_by_host: started_reserved_agent_memory_bytes_by_host
+    )
+
+    chosen_evaluation = nil
+    evaluations.each do |evaluation|
+      chosen_evaluation = evaluation
+      break if evaluation[:admission][:allowed]
+      break unless evaluation[:admission][:reason] == "host_hard_ceiling" && host_selection.fallback_enabled?
+    end
+    chosen_evaluation ||= evaluations.first
+
+    [
+      chosen_evaluation[:candidate_host],
+      chosen_evaluation[:admission],
+      {
+        decision_mode: mode == UserSetting::RUN_CONCURRENCY_MODE_MANUAL ? "manual" : "first_healthy",
+        requested_host: host_selection.requested_host,
+        selected_host: chosen_evaluation[:candidate_host],
+        selected_by_capacity: false,
+        auto_evaluations: placement_evaluations_payload(evaluations)
+      }
+    ]
+  end
+
+  def build_host_admission_evaluations(agent_run:, user:, host_selection:, mode:, docker_snapshots_by_host:,
+    base_reserved_agent_memory_bytes_by_host:, started_reserved_agent_memory_bytes_by_host:)
+    host_selection.candidate_hosts.each_with_index.map do |candidate_host, index|
+      admission_uses_auto = mode != UserSetting::RUN_CONCURRENCY_MODE_MANUAL && user.settings.run_concurrency_auto?
+      docker_snapshot = docker_snapshot_for_host(candidate_host, docker_snapshots_by_host) if admission_uses_auto
+      admission = run_admission_for(
+        agent_run,
+        user,
+        mode: mode,
+        docker_snapshot: docker_snapshot,
+        reserved_agent_memory_bytes: queue_reserved_agent_memory_bytes(
+          user,
+          base_reserved_agent_memory_bytes_by_host,
+          started_reserved_agent_memory_bytes_by_host,
+          mode: mode,
+          selected_host: candidate_host
+        ),
+        selected_host: candidate_host,
+        selected_host_limit: Containers.host_registry.host_limit_for(candidate_host)
+      )
+
+      {
+        candidate_host: candidate_host,
+        index: index,
+        admission: admission
+      }
+    end
+  end
+
+  def capacity_aware_host_selection?(host_selection, forced_admission_mode, user)
+    host_selection.capacity_aware? &&
+      !host_selection.explicit? &&
+      forced_admission_mode != UserSetting::RUN_CONCURRENCY_MODE_MANUAL &&
+      user.settings.run_concurrency_auto?
+  end
+
+  def capacity_snapshot_usable_for_balancing?(admission)
+    admission[:snapshot_available] && admission[:snapshot_at].present? &&
+      Array(admission[:docker_degraded_reasons]).exclude?("stale_cache")
+  end
+
+  def placement_evaluations_payload(evaluations)
+    evaluations.map do |evaluation|
+      admission = evaluation.fetch(:admission)
+      {
+        host: evaluation.fetch(:candidate_host),
+        allowed: admission[:allowed],
+        reason: admission[:reason],
+        available_memory_bytes: admission[:available_memory_bytes],
+        host_available_slots: admission[:host_available_slots],
+        snapshot_available: admission[:snapshot_available],
+        snapshot_backend_identifier: admission[:snapshot_backend_identifier],
+        snapshot_at: admission[:snapshot_at],
+        docker_reason: admission[:docker_reason],
+        docker_degraded_reasons: admission[:docker_degraded_reasons]
+      }.compact
+    end
+  end
+
+  def docker_snapshot_for_host(candidate_host, docker_snapshots_by_host)
+    docker_snapshots_by_host[candidate_host] ||= Capacity::DockerSnapshot.fetch(
+      backend: Containers.backend_for(candidate_host)
+    )
+  end
+
   def log_capacity_blocked(user, policy_decision)
     Rails.logger.info(
       message: "process_run_queue.capacity_blocked",
@@ -467,15 +623,17 @@ class ProcessRunQueueJob < ApplicationJob
     )
   end
 
-  def queue_reserved_agent_memory_bytes(user, base_reserved_agent_memory_bytes, started_reserved_agent_memory_bytes, mode:)
+  def queue_reserved_agent_memory_bytes(user, base_reserved_agent_memory_bytes_by_host, started_reserved_agent_memory_bytes_by_host, mode:, selected_host:)
     effective_mode = mode || user.settings.run_concurrency_mode
     return unless effective_mode == UserSetting::RUN_CONCURRENCY_MODE_AUTO
-    return if base_reserved_agent_memory_bytes.nil? && started_reserved_agent_memory_bytes.zero?
+    base_reserved = base_reserved_agent_memory_bytes_by_host[selected_host]
+    started_reserved = started_reserved_agent_memory_bytes_by_host[selected_host].to_i
+    return if base_reserved.nil? && started_reserved.zero?
 
-    base_reserved_agent_memory_bytes.to_i + started_reserved_agent_memory_bytes
+    base_reserved.to_i + started_reserved
   end
 
-  def log_capacity_skip(agent_run, admission, host_selection:)
+  def log_capacity_skip(agent_run, admission, host_selection:, host_placement_decision:)
     Rails.logger.info(
       message: "process_run_queue.capacity_denied",
       agent_run_id: agent_run.id,
@@ -497,8 +655,12 @@ class ProcessRunQueueJob < ApplicationJob
       available_memory_bytes: admission[:available_memory_bytes],
       estimated_memory_per_run_bytes: admission[:estimated_memory_per_run_bytes],
       reserved_agent_memory_bytes: admission[:reserved_agent_memory_bytes],
+      snapshot_backend_identifier: admission[:snapshot_backend_identifier],
+      docker_degraded_reasons: admission[:docker_degraded_reasons],
       docker_reason: admission[:docker_reason],
-      degraded: admission[:degraded] == true
+      degraded: admission[:degraded] == true,
+      placement_decision_mode: host_placement_decision[:decision_mode],
+      placement_selected_by_capacity: host_placement_decision[:selected_by_capacity] == true
     )
   end
 
@@ -516,7 +678,7 @@ class ProcessRunQueueJob < ApplicationJob
     )
   end
 
-  def log_host_selection(agent_run, host_selection, selected_host, admission)
+  def log_host_selection(agent_run, host_selection, selected_host, admission, host_placement_decision:)
     Rails.logger.info(
       message: "process_run_queue.host_selected",
       agent_run_id: agent_run.id,
@@ -525,7 +687,7 @@ class ProcessRunQueueJob < ApplicationJob
       requested_host: host_selection.requested_host,
       selected_host: selected_host,
       selection_source: host_selection.selection_source,
-      selection_reason: host_selection_reason(host_selection, selected_host),
+      selection_reason: host_selection_reason(host_selection, selected_host, host_placement_decision: host_placement_decision),
       fallback_policy: host_selection.fallback_policy,
       fallback_chain: host_selection_fallback_chain(host_selection),
       candidate_hosts: host_selection.candidate_hosts,
@@ -533,11 +695,17 @@ class ProcessRunQueueJob < ApplicationJob
       health_failures: host_selection.health_failures,
       host_active_count: admission[:host_active_count],
       host_max_concurrent_runs: admission[:host_max_concurrent_runs],
-      host_available_slots: admission[:host_available_slots]
+      host_available_slots: admission[:host_available_slots],
+      placement_decision_mode: host_placement_decision[:decision_mode],
+      placement_selected_by_capacity: host_placement_decision[:selected_by_capacity] == true,
+      selected_available_memory_bytes: admission[:available_memory_bytes],
+      snapshot_backend_identifier: admission[:snapshot_backend_identifier]
     )
   end
 
-  def host_selection_reason(host_selection, selected_host)
+  def host_selection_reason(host_selection, selected_host, host_placement_decision:)
+    return "capacity_fallback" if host_placement_decision[:decision_mode] == "capacity_aware_fallback"
+    return "capacity_aware" if host_placement_decision[:selected_by_capacity]
     return "fallback" if selected_host.to_s != host_selection.requested_host.to_s
 
     host_selection.selection_source
@@ -595,7 +763,7 @@ class ProcessRunQueueJob < ApplicationJob
       .mark_probe_dispatched!(agent_run_id: agent_run.id)
   end
 
-  def start_claimed_run(agent_run, planned_container_host: nil)
+  def start_claimed_run(agent_run, planned_container_host: nil, host_placement_decision: nil)
     ConfigurationBundles::AssignToRun.call(agent_run: agent_run) if agent_run.configuration_bundle.blank?
 
     budget_result = CostBudgets::Check.call(agent_run.project)
@@ -635,9 +803,11 @@ class ProcessRunQueueJob < ApplicationJob
     update_columns = { temporal_workflow_id: workflow_id }
     if planned_container_host.present?
       update_columns[:container_host] = nil
-      update_columns[:external_metadata] = agent_run.external_metadata.merge(
+      update_columns[:external_metadata] = agent_run.external_metadata.merge({
         "planned_container_host" => planned_container_host
-      )
+      }).tap do |metadata|
+        metadata["host_placement_decision"] = serialize_host_placement_decision(host_placement_decision) if host_placement_decision.present?
+      end
     end
 
     # Write the planned workflow_id before starting the workflow so
@@ -725,6 +895,21 @@ class ProcessRunQueueJob < ApplicationJob
       reason: Capacity::BlockedReason[:policy_unknown].code
     )
     @current_capacity_policy = nil
+  end
+
+  def serialize_host_placement_decision(decision)
+    decision.deep_dup.tap do |payload|
+      payload["requested_host"] = payload.delete(:requested_host) if payload.key?(:requested_host)
+      payload["selected_host"] = payload.delete(:selected_host) if payload.key?(:selected_host)
+      payload["decision_mode"] = payload.delete(:decision_mode) if payload.key?(:decision_mode)
+      payload["selected_by_capacity"] = payload.delete(:selected_by_capacity) if payload.key?(:selected_by_capacity)
+      payload["fallback_reason"] = payload.delete(:fallback_reason) if payload.key?(:fallback_reason)
+      payload["auto_evaluations"] = payload.delete(:auto_evaluations) if payload.key?(:auto_evaluations)
+      payload["selected_snapshot_backend_identifier"] = payload.delete(:selected_snapshot_backend_identifier) if payload.key?(:selected_snapshot_backend_identifier)
+      payload["selected_snapshot_at"] = payload.delete(:selected_snapshot_at)&.iso8601 if payload.key?(:selected_snapshot_at)
+      payload["selected_available_memory_bytes"] = payload.delete(:selected_available_memory_bytes) if payload.key?(:selected_available_memory_bytes)
+      payload["selected_host_available_slots"] = payload.delete(:selected_host_available_slots) if payload.key?(:selected_host_available_slots)
+    end
   end
 
   def temporal_priority_for(agent_run)
