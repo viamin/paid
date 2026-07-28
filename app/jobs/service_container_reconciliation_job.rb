@@ -26,19 +26,21 @@ class ServiceContainerReconciliationJob < ApplicationJob
 
     ServiceContainer.running.find_each do |sc|
       checked += 1
-      status = docker_container_status(sc.docker_container_id)
+      status = docker_container_status(sc)
 
       case status
       when :not_running
         previous_id = sc.docker_container_id
-        sc.update!(status: "stopped", docker_container_id: nil)
+        previous_host = sc.container_host
+        sc.update!(status: "stopped", docker_container_id: nil, container_host: nil)
         corrected += 1
         Rails.logger.warn(
           message: "container_manager.service_container_drift_corrected",
           service_container_id: sc.id,
           name: sc.name,
           image: sc.image,
-          previous_docker_id: previous_id
+          previous_docker_id: previous_id,
+          previous_container_host: previous_host
         )
       when :unknown
         errors += 1
@@ -46,6 +48,7 @@ class ServiceContainerReconciliationJob < ApplicationJob
           message: "container_manager.service_container_reconciliation_skipped",
           service_container_id: sc.id,
           name: sc.name,
+          container_host: sc.container_host,
           reason: "transient Docker API error"
         )
       end
@@ -54,6 +57,7 @@ class ServiceContainerReconciliationJob < ApplicationJob
       Rails.logger.error(
         message: "container_manager.service_container_reconciliation_failed",
         service_container_id: sc.id,
+        container_host: sc.container_host,
         error_class: e.class.name,
         error: e.message
       )
@@ -72,10 +76,11 @@ class ServiceContainerReconciliationJob < ApplicationJob
   # Returns :running, :not_running, or :unknown.
   # :not_running means the container is confirmed missing or stopped.
   # :unknown means a transient API error occurred and we should not correct.
-  def docker_container_status(container_id)
+  def docker_container_status(service_container)
+    container_id = service_container.docker_container_id
     return :not_running if container_id.blank?
 
-    container = Containers.backend.get_container(container_id)
+    container = service_container.docker_backend.get_container(container_id)
     container.json.dig("State", "Running") == true ? :running : :not_running
   rescue Docker::Error::NotFoundError
     :not_running

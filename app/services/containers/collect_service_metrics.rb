@@ -40,15 +40,16 @@ module Containers
     end
 
     def fetch_stats
-      container = Containers.backend.get_container(service_container.docker_container_id)
-      raw = Containers.backend.container_stats(container, stream: false)
+      container = backend.get_container(service_container.docker_container_id)
+      raw = backend.container_stats(container, stream: false)
       parse_stats(raw)
     rescue Docker::Error::NotFoundError
       Rails.logger.warn(
         message: "container_manager.service_container_not_found",
         service_container_id: service_container.id,
         name: service_container.name,
-        container_id: service_container.docker_container_id
+        container_id: service_container.docker_container_id,
+        container_host: service_container.container_host
       )
       :not_found
     end
@@ -70,12 +71,17 @@ module Containers
       DockerStatsParser.update_summaries(model_class: ServiceContainer, id: service_container.id, metric: metric)
     end
 
+    def backend
+      @backend ||= service_container.docker_backend
+    end
+
     def log_failure(error)
       Rails.logger.warn(
         message: "container_manager.service_metrics_collection_failed",
         service_container_id: service_container.id,
         name: service_container.name,
         container_id: service_container.docker_container_id,
+        container_host: service_container.container_host,
         error_class: error.class.name,
         error_message: error.message
       )

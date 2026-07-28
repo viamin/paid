@@ -3,7 +3,7 @@
 require "rails_helper"
 
 RSpec.describe Containers::CollectServiceMetrics do
-  let(:service_container) { create(:service_container, :running, docker_container_id: "container123") }
+  let(:service_container) { create(:service_container, :running, docker_container_id: "container123", container_host: "elguapo") }
   let(:backend) { instance_double(Containers::Backends::Base) }
 
   let(:docker_stats) do
@@ -30,7 +30,7 @@ RSpec.describe Containers::CollectServiceMetrics do
   let(:mock_container) { instance_double(Docker::Container, stats: docker_stats) }
 
   before do
-    allow(Containers).to receive(:backend).and_return(backend)
+    allow(Containers).to receive(:backend_for).with("elguapo").and_return(backend)
     allow(backend).to receive(:get_container).with("container123").and_return(mock_container)
     allow(backend).to receive(:container_stats).with(mock_container, stream: false).and_return(docker_stats)
   end
@@ -64,5 +64,13 @@ RSpec.describe Containers::CollectServiceMetrics do
     expect(Rails.logger).to have_received(:warn).with(
       hash_including(message: "container_manager.service_container_not_found")
     )
+  end
+
+  it "routes service metrics through the persisted container host backend" do
+    described_class.call(service_container: service_container)
+
+    expect(Containers).to have_received(:backend_for).with("elguapo")
+    expect(backend).to have_received(:get_container).with("container123")
+    expect(backend).to have_received(:container_stats).with(mock_container, stream: false)
   end
 end

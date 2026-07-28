@@ -28,6 +28,8 @@ class AgentRunResourceJanitorJob < ApplicationJob
     Rails.logger.info(
       message: "container_manager.janitor_complete",
       agent_run_id: agent_run_id,
+      container_host: agent_run.container_host,
+      workspace_volume_host: agent_run.workspace_volume_host,
       container_cleaned: container_cleaned,
       volume_cleaned: volume_cleaned
     )
@@ -59,6 +61,7 @@ class AgentRunResourceJanitorJob < ApplicationJob
       message: "container_manager.janitor_container_failed",
       agent_run_id: agent_run.id,
       container_id: agent_run.container_id,
+      container_host: agent_run.container_host,
       error_class: e.class.name,
       error: e.message
     )
@@ -84,6 +87,7 @@ class AgentRunResourceJanitorJob < ApplicationJob
       message: "container_manager.janitor_volume_failed",
       agent_run_id: agent_run.id,
       volume_name: "#{VOLUME_PREFIX}#{agent_run.id}",
+      container_host: host,
       error_class: e.class.name,
       error: e.message
     )

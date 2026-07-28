@@ -105,7 +105,8 @@ module Containers
       return {} if service_containers.empty?
 
       @network = network
-      NetworkPolicy.ensure_network!(network: @network, backend: Containers.backend)
+      requested_host = requested_container_host(agent_run)
+      NetworkPolicy.ensure_network!(network: @network, backend: Containers.backend_for(requested_host))
 
       # Record association early so concurrent cleanup counts this run.
       container_ids = service_containers.map(&:id)
@@ -115,16 +116,18 @@ module Containers
 
       service_containers.each do |sc|
         begin
-          sc.with_lock do
-            ensure_running!(sc)
-          end
+          with_backend(resolve_backend(service_container: sc, requested_host: requested_host)) do
+            sc.with_lock do
+              ensure_running!(sc)
+            end
 
-          if sc.image.include?("postgres")
-            db_name = per_run_db_name(agent_run)
-            create_per_run_database(sc, db_name)
-            env_vars.merge!(generate_env_vars(sc, db_override: db_name))
-          else
-            env_vars.merge!(generate_env_vars(sc))
+            if sc.image.include?("postgres")
+              db_name = per_run_db_name(agent_run)
+              create_per_run_database(sc, db_name)
+              env_vars.merge!(generate_env_vars(sc, db_override: db_name))
+            else
+              env_vars.merge!(generate_env_vars(sc))
+            end
           end
         rescue DatabaseError => e
           log_error("service_provisioner.database_error",
@@ -133,7 +136,7 @@ module Containers
             error: e.message)
           raise
         rescue Error => e
-          sc.update!(status: "error", docker_container_id: nil)
+          sc.update!(status: "error", docker_container_id: nil, container_host: nil)
           log_error("service_provisioner.container_error",
             name: sc.name,
             image: sc.image,
@@ -152,7 +155,9 @@ module Containers
     #
     # @param service_container [ServiceContainer] The container to stop
     def stop_orphaned_container!(service_container)
-      stop_container!(service_container)
+      with_backend(resolve_backend(service_container: service_container)) do
+        stop_container!(service_container)
+      end
     end
 
     # Cleans up service containers that are no longer needed.
@@ -164,10 +169,12 @@ module Containers
       return if container_ids.blank?
 
       ServiceContainer.where(id: container_ids).find_each do |sc|
-        cleanup_service_container(sc,
-          agent_run: agent_run,
-          service_environment: agent_run.service_environment,
-          stale_requeue_count: stale_requeue_count)
+        with_backend(resolve_backend(service_container: sc, requested_host: requested_container_host(agent_run))) do
+          cleanup_service_container(sc,
+            agent_run: agent_run,
+            service_environment: agent_run.service_environment,
+            stale_requeue_count: stale_requeue_count)
+        end
       end
 
       agent_run.update_columns(service_container_ids: [])
@@ -197,10 +204,12 @@ module Containers
       return if container_ids.blank?
 
       ServiceContainer.where(id: container_ids).find_each do |sc|
-        cleanup_service_container(sc,
-          agent_run: agent_run,
-          service_environment: service_environment,
-          stale_requeue_count: stale_requeue_count)
+        with_backend(resolve_backend(service_container: sc, requested_host: requested_container_host(agent_run))) do
+          cleanup_service_container(sc,
+            agent_run: agent_run,
+            service_environment: service_environment,
+            stale_requeue_count: stale_requeue_count)
+        end
       rescue => e
         log_warn("service_provisioner.cleanup_container_failed",
           name: sc&.name, error: e.message)
@@ -209,11 +218,47 @@ module Containers
 
     private
 
+    # NOTE: this class is NOT thread-safe. `with_backend` stashes the resolved
+    # backend in @backend and the private `backend` reader relies on that
+    # instance variable. If two threads share a ServiceProvisioner instance,
+    # one thread's `with_backend` block will corrupt the other thread's view
+    # of @backend. Every existing call site already creates a fresh instance
+    # per call (`Containers::ServiceProvisioner.new`), which keeps the
+    # pattern safe in practice. Do not share instances across threads.
+
     def selected_service_containers(project, service_names)
       scope = project.service_containers
       names = Array(service_names).map(&:to_s).map(&:strip).reject(&:blank?).uniq
       scope = scope.where(name: names) if names.any?
       scope.to_a
+    end
+
+    def requested_container_host(agent_run)
+      agent_run.workspace_volume_host
+    end
+
+    def resolve_backend(service_container:, requested_host: nil)
+      host = if service_container.docker_container_id.present? || service_container.running?
+        service_container.container_host.presence || requested_host
+      else
+        requested_host.presence || service_container.container_host.presence
+      end
+
+      Containers.backend_for(host)
+    end
+
+    def with_backend(backend)
+      previous_backend = @backend
+      @backend = backend
+      yield
+    ensure
+      @backend = previous_backend
+    end
+
+    # Not thread-safe — see thread-safety note above. Reads the @backend
+    # stashed by with_backend, falling back to the process-global default.
+    def backend
+      @backend || Containers.backend
     end
 
     def ensure_running!(service_container)
@@ -224,7 +269,7 @@ module Containers
           return
         else
           log_info("service_provisioner.container_dead", name: service_container.name)
-          service_container.update!(status: "stopped", docker_container_id: nil)
+          service_container.update!(status: "stopped", docker_container_id: nil, container_host: nil)
         end
       end
 
@@ -244,8 +289,12 @@ module Containers
         adopted = true
         ensure_connected_to_network!(service_container)
       else
-        Containers.backend.start_container(docker_container)
-        service_container.update!(docker_container_id: docker_container.id, status: "running")
+        backend.start_container(docker_container)
+        service_container.update!(
+          docker_container_id: docker_container.id,
+          container_host: backend.container_host_for(docker_container),
+          status: "running"
+        )
       end
 
       wait_for_health!(service_container)
@@ -264,13 +313,13 @@ module Containers
     def stop_container!(service_container)
       if service_container.docker_container_id.present?
         begin
-          container = Containers.backend.get_container(service_container.docker_container_id)
+          container = backend.get_container(service_container.docker_container_id)
           begin
-            Containers.backend.stop_container(container, timeout: 10)
+            backend.stop_container(container, timeout: 10)
           rescue Docker::Error::NotFoundError, Docker::Error::ClientError
             # Already stopped or gone
           end
-          Containers.backend.delete_container(container, force: true, v: true)
+          backend.delete_container(container, force: true, v: true)
         rescue Docker::Error::NotFoundError
           # Already gone
         rescue Docker::Error::DockerError => e
@@ -279,7 +328,7 @@ module Containers
         end
       end
 
-      service_container.update!(status: "stopped", docker_container_id: nil)
+      service_container.update!(status: "stopped", docker_container_id: nil, container_host: nil)
       log_info("service_provisioner.stopped", name: service_container.name)
     end
 
@@ -303,13 +352,13 @@ module Containers
       container_id = docker_container&.id || service_container.docker_container_id
       if container_id.present?
         begin
-          container = Containers.backend.get_container(container_id)
+          container = backend.get_container(container_id)
           begin
-            Containers.backend.stop_container(container, timeout: 10)
+            backend.stop_container(container, timeout: 10)
           rescue Docker::Error::NotFoundError, Docker::Error::ClientError
             # Already stopped or gone
           end
-          Containers.backend.delete_container(container, force: true, v: true)
+          backend.delete_container(container, force: true, v: true)
         rescue Docker::Error::NotFoundError
           # Container already gone
         rescue Docker::Error::DockerError => docker_err
@@ -333,7 +382,7 @@ module Containers
     end
 
     def resolve_name_conflict!(service_container)
-      existing = Containers.backend.get_container(runtime_name(service_container))
+      existing = backend.get_container(runtime_name(service_container))
       info = existing.json
       labels = info.dig("Config", "Labels") || {}
 
@@ -349,7 +398,11 @@ module Containers
       if info.dig("State", "Running")
         log_info("service_provisioner.adopted_existing",
           name: service_container.name, container_id: existing.id)
-        service_container.update!(docker_container_id: existing.id, status: "running")
+        service_container.update!(
+          docker_container_id: existing.id,
+          container_host: backend.container_host_for(existing),
+          status: "running"
+        )
         return existing
       end
 
@@ -362,14 +415,14 @@ module Containers
 
     def remove_stale_container!(existing, name)
       begin
-        Containers.backend.stop_container(existing, timeout: 10)
+        backend.stop_container(existing, timeout: 10)
       rescue Docker::Error::NotFoundError
         # Already gone
       rescue Docker::Error::DockerError => e
         log_warn("service_provisioner.stale_container_stop_failed",
           name: name, error: e.message)
       end
-      Containers.backend.delete_container(existing, force: true, v: true)
+      backend.delete_container(existing, force: true, v: true)
       log_info("service_provisioner.stale_container_removed", name: name)
     rescue Docker::Error::NotFoundError
       # Container disappeared during cleanup; already removed.
@@ -408,7 +461,7 @@ module Containers
       healthcheck = healthcheck_for(service_container, env)
       options["Healthcheck"] = healthcheck if healthcheck
 
-      Containers.backend.create_container(options)
+      backend.create_container(options)
     end
 
     def container_env_for(service_container)
@@ -453,7 +506,7 @@ module Containers
     end
 
     def pull_image(image)
-      Containers.backend.pull_image("fromImage" => image)
+      backend.pull_image("fromImage" => image)
     rescue Docker::Error::NotFoundError
       raise Error, "Image not found: #{image}"
     rescue Docker::Error::DockerError => e
@@ -463,7 +516,7 @@ module Containers
     def wait_for_health!(service_container)
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + HEALTH_CHECK_TIMEOUT
       has_healthcheck = nil # nil = unknown, true/false once determined
-      docker_container = Containers.backend.get_container(service_container.docker_container_id)
+      docker_container = backend.get_container(service_container.docker_container_id)
 
       loop do
         # Only query Docker HEALTHCHECK when we haven't confirmed its absence.
@@ -503,7 +556,7 @@ module Containers
     def docker_healthcheck_status(service_container)
       return nil if service_container.docker_container_id.blank?
 
-      container = Containers.backend.get_container(service_container.docker_container_id)
+      container = backend.get_container(service_container.docker_container_id)
       health_status = container.json.dig("State", "Health", "Status")
       return nil if health_status.nil?
 
@@ -513,9 +566,9 @@ module Containers
     end
 
     def tcp_port_open?(service_container, docker_container: nil, fallback_on_missing_tools: false)
-      docker_container ||= Containers.backend.get_container(service_container.docker_container_id)
+      docker_container ||= backend.get_container(service_container.docker_container_id)
       Containers::TcpHealthProbe.open?(
-        backend: Containers.backend,
+        backend: backend,
         container: docker_container,
         host: runtime_name(service_container),
         port: service_container.port,
@@ -528,14 +581,14 @@ module Containers
     def docker_container_alive?(container_id)
       return false if container_id.blank?
 
-      container = Containers.backend.get_container(container_id)
+      container = backend.get_container(container_id)
       container.info.dig("State", "Running") == true
     rescue Docker::Error::DockerError, Excon::Error
       false
     end
 
     def ensure_connected_to_network!(service_container)
-      container = Containers.backend.get_container(service_container.docker_container_id)
+      container = backend.get_container(service_container.docker_container_id)
       networks = container.info.dig("NetworkSettings", "Networks") || {}
       endpoint = networks.fetch(@network, nil)
       host = runtime_name(service_container)
@@ -544,7 +597,7 @@ module Containers
         return
       end
 
-      network = Containers.backend.get_network(@network)
+      network = backend.get_network(@network)
       network.disconnect(container.id) if endpoint
       network.connect(
         container.id,
@@ -613,8 +666,8 @@ module Containers
       user = env.fetch("POSTGRES_USER", POSTGRES_DEFAULT_ENV["POSTGRES_USER"])
       admin_db = env.fetch("POSTGRES_DB", POSTGRES_DEFAULT_ENV["POSTGRES_DB"])
 
-      container = Containers.backend.get_container(service_container.docker_container_id)
-      stdout, stderr, status = Containers.backend.exec_in_container(container, [
+      container = backend.get_container(service_container.docker_container_id)
+      stdout, stderr, status = backend.exec_in_container(container, [
         "psql", "-U", user, "-d", admin_db, "-c",
         "SELECT 1 FROM pg_database WHERE datname = #{postgres_string_literal(db_name)}"
       ])
@@ -625,7 +678,7 @@ module Containers
 
       # Create only if it doesn't already exist (idempotent for retries)
       if stdout.join.exclude?("1 row")
-        stdout, stderr, status = Containers.backend.exec_in_container(container, [
+        stdout, stderr, status = backend.exec_in_container(container, [
           "psql", "-U", user, "-d", admin_db, "-c",
           "CREATE DATABASE #{postgres_identifier(db_name)} OWNER #{postgres_identifier(user)}"
         ])
@@ -714,15 +767,15 @@ module Containers
       user = env.fetch("POSTGRES_USER", POSTGRES_DEFAULT_ENV["POSTGRES_USER"])
       admin_db = env.fetch("POSTGRES_DB", POSTGRES_DEFAULT_ENV["POSTGRES_DB"])
 
-      container = Containers.backend.get_container(service_container.docker_container_id)
+      container = backend.get_container(service_container.docker_container_id)
 
       # Terminate active connections before dropping
-      Containers.backend.exec_in_container(container, [
+      backend.exec_in_container(container, [
         "psql", "-U", user, "-d", admin_db, "-c",
         "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = #{postgres_string_literal(db_name)} AND pid <> pg_backend_pid()"
       ])
 
-      _stdout, stderr, status = Containers.backend.exec_in_container(container, [
+      _stdout, stderr, status = backend.exec_in_container(container, [
         "psql", "-U", user, "-d", admin_db, "-c",
         "DROP DATABASE IF EXISTS #{postgres_identifier(db_name)}"
       ])

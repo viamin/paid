@@ -116,6 +116,22 @@ RSpec.describe Metrics::PrometheusCollector do
       end
     end
 
+    context "with multi-host pool replenishment" do
+      before do
+        create(:project)
+        allow(Containers).to receive(:all_backends).and_return([
+          instance_double(Containers::Backends::Base, identifier: "local"),
+          instance_double(Containers::Backends::Base, identifier: "worker-1")
+        ])
+      end
+
+      it "reports the effective target across all active backends" do
+        expect(output).to include(
+          "paid_container_pool_target #{Containers::PoolManager.target_size * 2}"
+        )
+      end
+    end
+
     context "with service container resource metrics" do
       before do
         sc = create(:service_container, :running)

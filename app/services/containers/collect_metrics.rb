@@ -54,7 +54,8 @@ module Containers
       Rails.logger.warn(
         message: "container_manager.container_not_found",
         agent_run_id: agent_run.id,
-        container_id: agent_run.container_id
+        container_id: agent_run.container_id,
+        container_host: agent_run.container_host
       )
       :not_found
     end
@@ -85,6 +86,7 @@ module Containers
         message: "container_manager.metrics_collection_failed",
         agent_run_id: agent_run.id,
         container_id: agent_run.container_id,
+        container_host: agent_run.container_host,
         error_class: error.class.name,
         error_message: error.message
       )

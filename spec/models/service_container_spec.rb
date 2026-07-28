@@ -77,6 +77,31 @@ RSpec.describe ServiceContainer do
     end
   end
 
+  describe "#docker_host" do
+    it "returns the persisted host when present" do
+      service_container = build(:service_container, container_host: "elguapo")
+
+      expect(service_container.docker_host).to eq("elguapo")
+    end
+
+    it "returns nil when the persisted host is blank" do
+      service_container = build(:service_container, container_host: "")
+
+      expect(service_container.docker_host).to be_nil
+    end
+  end
+
+  describe "#docker_backend" do
+    it "routes to the backend for the persisted host" do
+      service_container = build(:service_container, container_host: "elguapo")
+      backend = instance_double(Containers::Backends::Base)
+
+      allow(Containers).to receive(:backend_for).with("elguapo").and_return(backend)
+
+      expect(service_container.docker_backend).to eq(backend)
+    end
+  end
+
   describe "#capacity_inflight_agent_run_count" do
     it "counts running agent runs referencing this container" do
       service_container = create(:service_container)

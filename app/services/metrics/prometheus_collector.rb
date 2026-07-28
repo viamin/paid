@@ -113,7 +113,7 @@ module Metrics
         lines << "paid_container_pool_entries_total{status=\"#{status}\"} #{status_counts.fetch(status) { 0 }}"
       end
 
-      target = Containers::PoolManager.target_size * Project.active.count
+      target = Containers::PoolManager.effective_target_size(projects: Project.active)
       lines << "# HELP paid_container_pool_target Target warm container pool size."
       lines << "# TYPE paid_container_pool_target gauge"
       lines << "paid_container_pool_target #{target}"
