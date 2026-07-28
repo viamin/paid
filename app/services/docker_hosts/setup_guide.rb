@@ -75,7 +75,7 @@ module DockerHosts
         "docker_save_load" => "docker save #{image_tag} | gzip > #{image_tag.tr(':', '_')}.tar.gz\nscp #{image_tag.tr(':', '_')}.tar.gz #{endpoint_host}:/tmp/\nssh #{endpoint_host} 'gunzip -c /tmp/#{image_tag.tr(':', '_')}.tar.gz | docker load'",
         "registry_pull" => "docker pull #{image_tag}\nssh #{endpoint_host} 'docker pull #{image_tag}'",
         "remote_build" => "docker build -t #{image_tag} .\nssh #{endpoint_host} 'docker build -t #{image_tag} /path/to/paid-agent-context'",
-        "network_create" => "docker --host #{host.endpoint} network create #{network_name}",
+        "network_create" => "#{docker_tls_command_prefix} network create #{network_name}",
         "server_files" => "Install the generated server certificate and private key on #{endpoint_host}.\nConfigure the Docker daemon to trust the generated CA and restart Docker after the files are in place."
       }
     end
@@ -162,6 +162,13 @@ module DockerHosts
       URI.parse(endpoint.to_s).host.presence || "remote-host"
     rescue URI::InvalidURIError
       "remote-host"
+    end
+
+    def docker_tls_command_prefix
+      "docker --host #{host.endpoint} " \
+        "--tlscacert client-ca.pem " \
+        "--tlscert client-cert.pem " \
+        "--tlskey client-key.pem --tlsverify"
     end
   end
 end

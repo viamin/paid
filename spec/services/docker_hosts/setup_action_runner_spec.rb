@@ -158,6 +158,26 @@ RSpec.describe DockerHosts::SetupActionRunner do
       expect(host.reload.setup_step("callback_reachability")).to include("status" => "failing")
     end
 
+    it "treats an auto-removed callback probe container as successful cleanup" do
+      container = instance_double(Docker::Container, wait: { "StatusCode" => 0 })
+      backend = instance_double(
+        Containers::Backends::RemoteDocker,
+        create_container: container,
+        start_container: true
+      )
+      allow(backend).to receive(:delete_container).with(container, force: true).and_raise(Docker::Error::NotFoundError)
+      allow(DockerHosts::RemoteBackendSession).to receive(:with_backend).and_yield(backend)
+
+      result = described_class.call(
+        host: host,
+        action: "test_callback",
+        params: ActionController::Parameters.new(required_network_name: "shared-agents", callback_url: "https://example.test/callback")
+      )
+
+      expect(result.success?).to be(true)
+      expect(host.reload.setup_step("callback_reachability")).to include("status" => "verified")
+    end
+
     it "fails the dry run when the disposable container exits non-zero" do
       container = instance_double(Docker::Container, wait: { "StatusCode" => 1 })
       backend = instance_double(
@@ -177,6 +197,26 @@ RSpec.describe DockerHosts::SetupActionRunner do
       expect(result.success?).to be(false)
       expect(result.message).to include("exit status 1")
       expect(host.reload.setup_step("dry_run")).to include("status" => "failing")
+    end
+
+    it "treats an auto-removed dry-run container as successful cleanup" do
+      container = instance_double(Docker::Container, wait: { "StatusCode" => 0 })
+      backend = instance_double(
+        Containers::Backends::RemoteDocker,
+        create_container: container,
+        start_container: true
+      )
+      allow(backend).to receive(:delete_container).with(container, force: true).and_raise(Docker::Error::NotFoundError)
+      allow(DockerHosts::RemoteBackendSession).to receive(:with_backend).and_yield(backend)
+
+      result = described_class.call(
+        host: host,
+        action: "dry_run",
+        params: ActionController::Parameters.new(required_network_name: "shared-agents")
+      )
+
+      expect(result.success?).to be(true)
+      expect(host.reload.setup_step("dry_run")).to include("status" => "verified")
     end
   end
 

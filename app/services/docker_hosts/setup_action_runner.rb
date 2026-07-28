@@ -187,7 +187,7 @@ module DockerHosts
         ensure_successful_container_exit!(container, step_key: "callback_reachability", failure_prefix: "Disposable container could not reach #{url}")
         record_step_success("callback_reachability", "Disposable container reached #{url}.")
       ensure
-        backend.delete_container(container, force: true) if container
+        cleanup_probe_container(backend, container)
       end
       host.save!
 
@@ -208,7 +208,7 @@ module DockerHosts
         ensure_successful_container_exit!(container, step_key: "dry_run", failure_prefix: "Disposable container dry run failed on #{network_name}")
         record_step_success("dry_run", "Created, started, and cleaned up a disposable container on #{network_name}.")
       ensure
-        backend.delete_container(container, force: true) if container
+        cleanup_probe_container(backend, container)
       end
       host.save!
 
@@ -247,6 +247,14 @@ module DockerHosts
       raise Docker::Error::DockerError, "#{failure_prefix} (exit status #{status_code || 'unknown'})."
     rescue KeyError
       raise Docker::Error::DockerError, "#{failure_prefix} (missing exit status)."
+    end
+
+    def cleanup_probe_container(backend, container)
+      return unless container
+
+      backend.delete_container(container, force: true)
+    rescue Docker::Error::NotFoundError
+      nil
     end
 
     def image_architecture_failure_message(architecture:, info:)
