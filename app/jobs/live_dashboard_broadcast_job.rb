@@ -23,7 +23,7 @@ class LiveDashboardBroadcastJob < ApplicationJob
     Dashboard::LiveBroadcaster.call(
       account: agent_run.project.account,
       agent_run: agent_run,
-      refresh_queue_preview: refresh_queue_preview
+      refresh_queue_preview: refresh_queue_preview || agent_run.queued?
     )
   end
 end
