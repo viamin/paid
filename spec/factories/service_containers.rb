@@ -23,6 +23,7 @@ FactoryBot.define do
     trait :running do
       status { "running" }
       docker_container_id { SecureRandom.hex(32) }
+      container_host { "local" }
     end
 
     trait :redis do

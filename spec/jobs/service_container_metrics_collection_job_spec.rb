@@ -5,30 +5,10 @@ require "rails_helper"
 RSpec.describe ServiceContainerMetricsCollectionJob do
   let(:service_container) { create(:service_container, :running, docker_container_id: "container123") }
 
-  let(:docker_stats) do
-    {
-      "cpu_stats" => {
-        "cpu_usage" => { "total_usage" => 500_000_000 },
-        "system_cpu_usage" => 10_000_000_000,
-        "online_cpus" => 2
-      },
-      "precpu_stats" => {
-        "cpu_usage" => { "total_usage" => 400_000_000 },
-        "system_cpu_usage" => 9_000_000_000
-      },
-      "memory_stats" => {
-        "usage" => 2_147_483_648,
-        "limit" => 4_294_967_296
-      },
-      "pids_stats" => { "current" => 42 }
-    }
-  end
-
-  let(:mock_container) { instance_double(Docker::Container) }
-
   before do
-    allow(Docker::Container).to receive(:get).with("container123").and_return(mock_container)
-    allow(mock_container).to receive(:stats).with(stream: false).and_return(docker_stats)
+    allow(Containers::CollectServiceMetrics).to receive(:call).with(service_container: service_container) do
+      create(:service_container_metric, service_container: service_container, container_id: service_container.docker_container_id)
+    end
   end
 
   describe "#perform" do
@@ -83,7 +63,7 @@ RSpec.describe ServiceContainerMetricsCollectionJob do
     end
 
     it "stops re-enqueuing when the container is not found" do
-      allow(Docker::Container).to receive(:get).and_raise(Docker::Error::NotFoundError)
+      allow(Containers::CollectServiceMetrics).to receive(:call).with(service_container: service_container).and_return(:not_found)
 
       expect {
         described_class.perform_now(service_container.id)
@@ -91,7 +71,7 @@ RSpec.describe ServiceContainerMetricsCollectionJob do
     end
 
     it "tracks consecutive failures and re-enqueues with incremented count" do
-      allow(Docker::Container).to receive(:get).and_raise(Docker::Error::DockerError)
+      allow(Containers::CollectServiceMetrics).to receive(:call).with(service_container: service_container).and_return(nil)
 
       expect {
         described_class.perform_now(service_container.id, consecutive_failures: 2)
