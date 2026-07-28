@@ -266,6 +266,8 @@ RSpec.describe "ChatSessions" do
         expect(response.body).to include("Rendered markdown")
 
         doc = Nokogiri::HTML(response.body)
+        # Keep a regression check for #2928 even though the destructive Close control
+        # was already removed from the template before this branch was cut.
         token_usage_bar = doc.at_xpath("//p[normalize-space(text())='Token usage']/ancestor::div[contains(@class, 'bg-gray-900')]")
 
         expect(token_usage_bar).to be_present
