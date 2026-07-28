@@ -18,28 +18,24 @@ RSpec.describe Dashboard::LiveBroadcaster do
     let(:owner) { project.effective_owner }
     let(:agent_run) { create(:agent_run, project: project, status: "running", started_at: 2.minutes.ago) }
     let(:broadcast_updates) { [] }
-    let(:broadcast_replacements) { [] }
 
     before do
       allow(Turbo::StreamsChannel).to receive(:broadcast_update_to) do |*args|
         broadcast_updates << args
       end
-      allow(Turbo::StreamsChannel).to receive(:broadcast_replace_to) do |*args|
-        broadcast_replacements << args
-      end
+      allow(Turbo::StreamsChannel).to receive(:broadcast_refresh_to)
       allow(Turbo::StreamsChannel).to receive(:broadcast_prepend_to)
       allow(Dashboard::CacheVersion).to receive(:bump).and_call_original
     end
 
-    it "broadcasts live stats, active runs, and queue preview" do
-      queued_run = create(:agent_run, :queued, project: project, created_at: 1.minute.ago)
+    it "broadcasts live stats, active runs, and queue preview refreshes" do
+      create(:agent_run, :queued, project: project, created_at: 1.minute.ago)
+      allow(Dashboard::QueuePreview).to receive(:call).and_call_original
 
       described_class.call(account: account, agent_run: agent_run)
 
       expect_live_dashboard_sections_to_broadcast
-      expect(broadcasted_queue_preview).to contain_exactly(
-        have_attributes(run: have_attributes(id: queued_run.id))
-      )
+      expect(Dashboard::QueuePreview).not_to have_received(:call)
     end
 
     it "does not use wildcard cache invalidation" do
@@ -175,11 +171,6 @@ RSpec.describe Dashboard::LiveBroadcaster do
     options.dig(:locals, :active_runs)
   end
 
-  def broadcasted_queue_preview
-    _stream, options = broadcast_replacements.find { |args| args.last[:target] == "queue-preview" }
-    options.dig(:locals, :queue_preview)
-  end
-
   def expect_live_dashboard_sections_to_broadcast
     expect(Dashboard::CacheVersion).to have_received(:bump).with(
       account,
@@ -193,9 +184,6 @@ RSpec.describe Dashboard::LiveBroadcaster do
       [ account, :live_dashboard ],
       hash_including(target: "active-runs", partial: "dashboard/active_runs")
     )
-    expect(Turbo::StreamsChannel).to have_received(:broadcast_replace_to).with(
-      [ account, user, :live_dashboard ],
-      hash_including(target: "queue-preview", partial: "dashboard/queue_preview")
-    )
+    expect(Turbo::StreamsChannel).to have_received(:broadcast_refresh_to).with([ account, user, :live_dashboard ])
   end
 end

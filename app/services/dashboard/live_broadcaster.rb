@@ -59,15 +59,7 @@ module Dashboard
 
     def broadcast_queue_preview
       account.users.find_each do |user|
-        Turbo::StreamsChannel.broadcast_replace_to(
-          queue_preview_stream_name(user),
-          target: "queue-preview",
-          partial: "dashboard/queue_preview",
-          locals: {
-            queue_preview: Dashboard::QueuePreview.call(user: user),
-            paused_projects:
-          }
-        )
+        Turbo::StreamsChannel.broadcast_refresh_to(queue_preview_stream_name(user))
       end
     end
 
@@ -140,14 +132,6 @@ module Dashboard
 
     def account_agent_runs
       @account_agent_runs ||= AgentRun.joins(:project).where(projects: { account_id: account.id })
-    end
-
-    def paused_projects
-      @paused_projects ||= account.projects
-        .where.not(quality_paused_at: nil)
-        .order(quality_paused_at: :desc)
-        .limit(10)
-        .to_a
     end
 
     def queue_preview_stream_name(user)
