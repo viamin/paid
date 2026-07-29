@@ -247,15 +247,22 @@ module Activities
           runner_state_name = state_key_for(runner_candidate, runner, user_settings.user)
           resolved_model = resolve_tier_model_for(runner_candidate, agent_run, user_settings.user)
           if resolved_model&.failure?
-            logger.warn(
-              message: "agent_execution.tier_model_resolution_failed",
-              agent_run_id: agent_run.id,
-              runner: attempt_label,
-              tier: requested_tier,
-              error: resolved_model.error
-            )
-            index += 1
-            next
+            if direct_outbound_runner?(runner_candidate, user_settings.user)
+              # Direct-outbound runners run their own configured model regardless of
+              # the requested tier, so a tier-resolution failure is not fatal for
+              # them — treat it as no resolved model and proceed to the attempt.
+              resolved_model = nil
+            else
+              logger.warn(
+                message: "agent_execution.tier_model_resolution_failed",
+                agent_run_id: agent_run.id,
+                runner: attempt_label,
+                tier: requested_tier,
+                error: resolved_model.error
+              )
+              index += 1
+              next
+            end
           end
 
           resolved_run_info = resolved_model_info_for(resolved_model)
@@ -917,13 +924,31 @@ module Activities
       ]
     end
 
+    # Direct-outbound runners (opencode, kilocode, pi, omp) bring their own
+    # model from config and bypass the LlmModel tier catalog. openrouter_free
+    # is excluded because it still requires a tier-resolved free model.
+    # Uses the runner entry when available; falls back to the resolved runner
+    # key so bare agent-type candidates (e.g. "opencode") are still recognized.
+    def direct_outbound_runner?(runner_candidate, user)
+      runner_entry = runner_entry_for(runner_candidate, user)
+      runner_key = runner_entry&.runner_key || RunnerSupport.runner_key_for_agent_type(runner_candidate)
+      return false if runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
+
+      runner_entry&.requires_direct_outbound? ||
+        Runners::DefaultTierModelIds::DIRECT_OUTBOUND_RUNNER_KEYS.include?(runner_key)
+    end
+
     def runner_supports_tier?(runner_candidate, tier, user)
       return true if tier.blank?
 
+      # Direct-outbound runners bring their own model from config and bypass the
+      # tier catalog entirely, so they are always compatible with any requested tier.
+      return true if direct_outbound_runner?(runner_candidate, user)
+
       runner_entry = runner_entry_for(runner_candidate, user)
-      runner_key = runner_entry&.runner_key || RunnerSupport.runner_key_for_agent_type(runner_candidate)
       return true if runner_entry&.supports_tier?(tier)
 
+      runner_key = runner_entry&.runner_key || RunnerSupport.runner_key_for_agent_type(runner_candidate)
       resolution_runner = runner_entry || Runner.new(runner_key: runner_key)
       provider = user&.provider_for(resolution_runner)
       return true if provider&.supports_tier?(tier)
@@ -1062,7 +1087,19 @@ module Activities
 
       tier = requested_tier_for(agent_run)
       if tier.present?
-        runners = runners.select { |runner_candidate| runner_supports_tier?(runner_candidate, tier, user_settings.user) }
+        runners = runners.select do |runner_candidate|
+          if runner_supports_tier?(runner_candidate, tier, user_settings.user)
+            true
+          else
+            logger.warn(
+              message: "agent_execution.runner_filtered_by_tier",
+              agent_run_id: agent_run.id,
+              runner: canonical_runner_candidate(runner_candidate, user_settings.user),
+              tier: tier
+            )
+            false
+          end
+        end
       end
 
       @rate_limit_fallbacks = load_rate_limit_fallbacks(user_settings.user)

@@ -9,7 +9,7 @@ module Runners
       "gemini" => "google"
     }.freeze
 
-    DIRECT_OUTBOUND_RUNNER_KEYS = %w[kilocode opencode openrouter_free pi omp].freeze
+    DIRECT_OUTBOUND_RUNNER_KEYS = %w[kilocode opencode openrouter_free openrouter_pareto pi omp].freeze
 
     # Compatibility gate applied when callers have no concrete auth context
     # (e.g. the admin form seeding a brand-new runner). Callers on the dispatch
