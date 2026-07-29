@@ -37,6 +37,7 @@ RSpec.describe PrScreenshotsWorkflowFile, :no_db do
 
   it "uses a dedicated non-superuser application role for screenshot capture" do
     expect(workflow.fetch("jobs").fetch("capture").fetch("env")).to include(
+      "DATABASE_URL" => "postgres://paid:paid@localhost:5432/paid_test",
       "DB_USERNAME" => "paid",
       "DB_PASSWORD" => "paid"
     )

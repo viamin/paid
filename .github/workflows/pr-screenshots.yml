@@ -113,6 +113,7 @@ jobs:
       SECRET_KEY_BASE: test-secret-key-base
       RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY }}
       PAID_TEST_DATABASE: paid_test
+      DATABASE_URL: postgres://paid:paid@localhost:5432/paid_test
       DB_HOST: localhost
       DB_USERNAME: paid
       DB_PASSWORD: paid

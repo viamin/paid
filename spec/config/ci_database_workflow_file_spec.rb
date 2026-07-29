@@ -54,6 +54,14 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
     context workflow_path do
       subject(:workflow) { Psych.safe_load_file(Rails.root.join(workflow_path), aliases: true) }
 
+      def expect_application_role_database_url!(job, expectations)
+        return unless expectations.fetch("creates_application_role")
+
+        expect(job.fetch("env")).to include(
+          "DATABASE_URL" => "postgres://paid:paid@localhost:5432/paid_test"
+        )
+      end
+
       jobs.each do |job_name, expectations|
         it "uses the expected database connection flow for #{job_name}" do
           job = workflow.fetch("jobs").fetch(job_name)
@@ -69,6 +77,8 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
             "npm_config_cache" => "${{ github.workspace }}/.cache/npm",
             "PLAYWRIGHT_BROWSERS_PATH" => "${{ github.workspace }}/.cache/ms-playwright"
           )
+
+          expect_application_role_database_url!(job, expectations)
 
           if expectations.fetch("creates_application_role")
             expect(step_names).to include("Create application database role")
