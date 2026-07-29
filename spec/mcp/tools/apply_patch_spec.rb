@@ -86,6 +86,21 @@ RSpec.describe Tools::ApplyPatch do
     }.to raise_error(ArgumentError, /binary/)
   end
 
+  it "rejects git binary patch hunks encoded as text" do
+    patch = <<~PATCH
+      diff --git a/logo.png b/logo.png
+      new file mode 100644
+      index 0000000..1111111
+      GIT binary patch
+      literal 4
+      LcmZQz
+    PATCH
+
+    expect {
+      tool.call(repo_path: repo.fetch(:repo_path), patch:, confirmed: true)
+    }.to raise_error(ArgumentError, /binary diff hunk/)
+  end
+
   it "rejects repo paths not present in the manifest" do
     expect {
       tool.call(repo_path: "/workspace/other-repo", patch: "", confirmed: true)

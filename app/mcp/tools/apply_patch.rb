@@ -10,6 +10,10 @@ module Tools
       /\A(?:---|\+\+\+) [ab]\/(?<path>.+)\z/,
       /\A(?:rename|copy) (?:from|to) (?<path>.+)\z/
     ].freeze
+    BINARY_PATCH_MARKERS = [
+      /\AGIT binary patch\z/,
+      /\ABinary files .* differ\z/
+    ].freeze
 
     def self.tool_name = "apply_patch"
     def self.write_operation? = true
@@ -44,6 +48,7 @@ module Tools
 
       context = repo_context_for!(repo_path, require_non_stale: true)
       ensure_text_payload!(patch, field_name: "patch")
+      reject_binary_patch_payload!(patch)
       validate_patch_paths!(context.fetch(:repo_path), patch)
 
       env = [ encode_env("PATCH_B64", patch) ]
@@ -63,6 +68,15 @@ module Tools
     end
 
     private
+
+    def reject_binary_patch_payload!(patch)
+      patch.each_line do |line|
+        stripped = line.strip
+        next if stripped.blank?
+
+        raise ArgumentError, "patch contains a binary diff hunk" if BINARY_PATCH_MARKERS.any? { |marker| marker.match?(stripped) }
+      end
+    end
 
     def validate_patch_paths!(repo_path, patch)
       touched_paths = patch.each_line.filter_map do |line|
