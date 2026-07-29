@@ -59,11 +59,32 @@ module HealthChecks
         end
 
         def openrouter_routed?(model)
-          preferred_agent_type_openrouter? || model.catalog_source == "openrouter_sync"
+          preferred_agent_type_openrouter? || default_runner_openrouter? || model.catalog_source == "openrouter_sync"
         end
 
         def preferred_agent_type_openrouter?
           %w[openrouter_free openrouter_pareto].include?(model_preferences["preferred_agent_type"])
+        end
+
+        def default_runner_openrouter?
+          %w[openrouter_free openrouter_pareto].include?(default_runner_key)
+        end
+
+        # Health checks run without an AgentRun, so use the same project-owner
+        # default runner settings that RunnerResolver consults for create_pr
+        # runs without invoking mutable automated-selection modes.
+        def default_runner_key
+          identifier = default_runner_identifier
+          return if identifier.blank?
+
+          owner = subject.effective_owner
+          runner = Runner.for_identifier(owner, identifier) if owner
+          runner&.runner_key || identifier
+        end
+
+        def default_runner_identifier
+          settings = AgentRuns::UserSettingsResolver.call(project: subject, strict: false)
+          settings&.default_runner_identifier_for_goal("create_pr")
         end
       end
     end
