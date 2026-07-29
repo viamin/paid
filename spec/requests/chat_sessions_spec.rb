@@ -140,6 +140,13 @@ RSpec.describe "ChatSessions" do
         expect(response.parsed_body["container_capability"]).to eq("none")
       end
 
+      it "rejects lifecycle-only container capabilities at creation time" do
+        post chat_sessions_path(format: :json), params: { container_capability: "ready" }
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body["error"]).to include("container_capability")
+      end
+
       it "creates a session with auto-approve enabled" do
         post chat_sessions_path(format: :json), params: { container_capability: "none", auto_approve: "true" }
 

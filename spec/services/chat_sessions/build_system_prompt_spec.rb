@@ -331,10 +331,16 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
       end
     end
 
-    describe "workspace context omitted for inline-only sessions" do
-      it "does not include workspace section" do
-        expect(prompt).not_to include("Workspace")
-        expect(prompt).not_to include("git repository")
+    describe "workspace context omitted until the container is ready" do
+      %w[none pending provisioning failed stopped].each do |capability|
+        context "when container capability is #{capability}" do
+          let(:chat_session) { create(:chat_session, account: account, created_by: user, container_capability: capability) }
+
+          it "does not include workspace section" do
+            expect(prompt).not_to include("Workspace")
+            expect(prompt).not_to include("git repository")
+          end
+        end
       end
     end
 

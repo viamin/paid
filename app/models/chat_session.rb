@@ -6,6 +6,7 @@ class ChatSession < ApplicationRecord
 
   STATUSES = %w[active idle closed archived].freeze
   CONTAINER_CAPABILITIES = %w[none pending provisioning ready failed stopped].freeze
+  REQUESTABLE_CONTAINER_CAPABILITIES = %w[none pending].freeze
   CONTAINER_REQUESTED_CAPABILITIES = %w[pending provisioning ready failed stopped].freeze
   IDLE_TIMEOUT_DURATION = 30.minutes
 

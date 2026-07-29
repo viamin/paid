@@ -53,8 +53,9 @@ module ChatSessions
     def validate!
       raise ArgumentError, "account is required" unless account
       raise ArgumentError, "user is required" unless user
-      unless ChatSession::CONTAINER_CAPABILITIES.include?(container_capability)
-        raise ArgumentError, "container_capability must be one of #{ChatSession::CONTAINER_CAPABILITIES.join(', ')}"
+      unless ChatSession::REQUESTABLE_CONTAINER_CAPABILITIES.include?(container_capability)
+        raise ArgumentError,
+          "container_capability must be one of #{ChatSession::REQUESTABLE_CONTAINER_CAPABILITIES.join(', ')}"
       end
     end
 

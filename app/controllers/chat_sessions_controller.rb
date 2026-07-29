@@ -100,6 +100,11 @@ class ChatSessionsController < ApplicationController
       format.html { redirect_to chat_session_path(session), notice: "Chat session created." }
       format.json { render json: session_json(session), status: :created }
     end
+  rescue ArgumentError => e
+    respond_to do |format|
+      format.html { redirect_to chat_sessions_path, alert: e.message }
+      format.json { render json: { error: e.message }, status: :unprocessable_entity }
+    end
   end
 
   def show

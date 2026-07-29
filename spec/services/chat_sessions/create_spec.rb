@@ -130,6 +130,14 @@ RSpec.describe ChatSessions::Create do
       }.to raise_error(ArgumentError, /container_capability/)
     end
 
+    it "rejects lifecycle-only container capabilities at creation time" do
+      %w[provisioning ready failed stopped].each do |capability|
+        expect {
+          described_class.call(account: account, user: user, container_capability: capability)
+        }.to raise_error(ArgumentError, /container_capability/)
+      end
+    end
+
     it "raises when account is nil" do
       expect {
         described_class.call(account: nil, user: user)
