@@ -3,7 +3,7 @@
 require "rails_helper"
 require "warden/test/helpers"
 
-RSpec.describe "Docker host management", type: :system do
+RSpec.describe "Docker host management", system_driver: :rack_test, type: :system do
   include Warden::Test::Helpers
 
   let!(:account) { create(:account) }
