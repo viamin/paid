@@ -106,6 +106,9 @@ Rails.application.routes.draw do
   resource :account_lifecycle, only: [ :update ]
   resources :docker_hosts, except: [ :new, :destroy ] do
     patch :disable, on: :member
+    get :setup, on: :member
+    patch :setup, on: :member, action: :update_setup
+    post :setup_helper, on: :member
   end
   resource :account_docker_host_preferences, only: [ :update ]
 

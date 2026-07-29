@@ -286,7 +286,7 @@ For a QNAP/NAS or Linux remote host, the wizard should cover:
 Paid should automate what it can do from the control plane:
 
 - generate a local certificate authority and Docker client certificate/key for a named host;
-- generate a server certificate signing request or self-signed server certificate when the operator supplies hostnames/IP SANs;
+- generate a server certificate signing request or a server certificate signed by the stored client CA when the operator supplies hostnames/IP SANs;
 - store client certificate material securely for the backend connection;
 - test TLS connectivity;
 - create missing Docker networks on the remote daemon when authorized;

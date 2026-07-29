@@ -11,6 +11,9 @@
     <div class="flex flex-wrap gap-3">
       <%= link_to "Back to hosts", docker_hosts_path, class: "rounded-full border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50" %>
       <%= link_to "Edit host", edit_docker_host_path(@docker_host), class: "rounded-full bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-500" %>
+      <% if @docker_host.remote? %>
+        <%= link_to "Setup guide", setup_docker_host_path(@docker_host), class: "rounded-full border border-sky-300 px-4 py-2 text-sm font-semibold text-sky-700 hover:bg-sky-50" %>
+      <% end %>
     </div>
   </div>
 
@@ -48,7 +51,7 @@
         </div>
         <div>
           <dt class="font-medium text-gray-900">Required network</dt>
-          <dd class="mt-1 text-gray-600"><%= @docker_host.required_network_status.humanize %></dd>
+          <dd class="mt-1 text-gray-600"><%= @docker_host.required_network_status.humanize %> • <%= @docker_host.required_network_name %></dd>
         </div>
         <div>
           <dt class="font-medium text-gray-900">Last checked</dt>
