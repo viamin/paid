@@ -32,6 +32,17 @@ RSpec.describe Runners::RecoverParkedRunsJob do
     expect(StaleRunDetectorJob).to have_been_enqueued
   end
 
+  it "recovers parked PR-only runs and enqueues the stale detector" do
+    parked = create(:agent_run, :rate_limited, project: project, issue: nil,
+      source_pull_request_number: 123, rate_limited_until: 2.days.from_now)
+
+    described_class.perform_now(user.id)
+
+    parked.reload
+    expect(parked.rate_limited_until).to be <= Time.current
+    expect(StaleRunDetectorJob).to have_been_enqueued
+  end
+
   it "does not enqueue the stale detector when there are no parked runs" do
     described_class.perform_now(user.id)
 
@@ -66,6 +77,8 @@ RSpec.describe Runners::RecoverParkedRunsJob do
   describe "Runner availability callback" do
     it "enqueues recovery when a runner is created" do
       user # create user (its default runner also enqueues; ignore that)
+      create(:agent_run, :rate_limited, project: project, issue: issue,
+        rate_limited_until: 2.days.from_now)
       clear_enqueued_jobs
 
       expect {
@@ -76,6 +89,8 @@ RSpec.describe Runners::RecoverParkedRunsJob do
     it "enqueues recovery when a runner is re-enabled for agent runs" do
       runner = create(:runner, user: user, runner_key: "codex", auth_type: "subscription",
         enabled_for_agent_runs: false)
+      create(:agent_run, :rate_limited, project: project, issue: issue,
+        rate_limited_until: 2.days.from_now)
       clear_enqueued_jobs
 
       expect {
@@ -85,12 +100,23 @@ RSpec.describe Runners::RecoverParkedRunsJob do
 
     it "enqueues recovery when a runner is undiscarded" do
       runner = create(:runner, user: user, runner_key: "codex", auth_type: "subscription")
+      create(:agent_run, :rate_limited, project: project, issue: issue,
+        rate_limited_until: 2.days.from_now)
       runner.discard!
       clear_enqueued_jobs
 
       expect {
         runner.undiscard!
       }.to have_enqueued_job(described_class).with(user.id)
+    end
+
+    it "does not enqueue recovery when no parked runs need waking" do
+      user # create user (its default runner also enqueues; ignore that)
+      clear_enqueued_jobs
+
+      expect {
+        create(:runner, user: user, runner_key: "codex", auth_type: "subscription")
+      }.not_to have_enqueued_job(described_class)
     end
 
     it "does not enqueue recovery when a runner is disabled for agent runs" do

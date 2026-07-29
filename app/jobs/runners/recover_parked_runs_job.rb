@@ -26,16 +26,21 @@ module Runners
       key: ->(user_id) { "runners_recover_parked_runs/#{user_id}" }
     )
 
+    def self.parked_runs_for(account)
+      account_project_ids = Project.where(account_id: account.id).select(:id)
+
+      AgentRun.rate_limited
+        .where("agent_runs.issue_id IS NOT NULL OR agent_runs.source_pull_request_number IS NOT NULL")
+        .where("agent_runs.rate_limited_until > ?", Time.current)
+        .where(project_id: account_project_ids)
+    end
+
     def perform(user_id)
       TenantContext.with_system_access do
         account = User.find_by(id: user_id)&.account
         return unless account
 
-        account_project_ids = Project.where(account_id: account.id).select(:id)
-        parked = AgentRun.rate_limited
-          .where.not(issue_id: nil)
-          .where("agent_runs.rate_limited_until > ?", Time.current)
-          .where(project_id: account_project_ids)
+        parked = self.class.parked_runs_for(account)
 
         count = parked.update_all(rate_limited_until: 1.minute.ago, updated_at: Time.current)
         return if count.zero?

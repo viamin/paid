@@ -1014,6 +1014,8 @@ class Runner < ApplicationRecord
   end
 
   def enqueue_parked_run_recovery
+    return unless Runners::RecoverParkedRunsJob.parked_runs_for(user.account).exists?
+
     Runners::RecoverParkedRunsJob.perform_later(user_id)
   end
 
