@@ -7,6 +7,12 @@ RSpec.describe DockerHost, type: :model do
     expect(build(:docker_host)).to be_valid
   end
 
+  it "defaults the required network name" do
+    host = create(:docker_host, required_network_name: nil)
+
+    expect(host.required_network_name).to eq("paid-agents")
+  end
+
   it "requires an endpoint for remote hosts" do
     host = build(:docker_host, endpoint: nil)
 
@@ -28,5 +34,17 @@ RSpec.describe DockerHost, type: :model do
 
     expect(host).not_to be_valid
     expect(host.errors[:identifier]).to include("can't be changed after creation")
+  end
+
+  it "stores client TLS material encrypted at rest" do
+    host = create(
+      :docker_host,
+      client_ca_pem: "-----BEGIN CERTIFICATE-----\nca\n-----END CERTIFICATE-----",
+      client_certificate_pem: "-----BEGIN CERTIFICATE-----\nclient\n-----END CERTIFICATE-----",
+      client_private_key_pem: "-----BEGIN PRIVATE KEY-----\nsecret\n-----END PRIVATE KEY-----"
+    )
+
+    expect(host.client_tls_material_present?).to be(true)
+    expect(host.reload.read_attribute_before_type_cast("client_private_key_pem")).not_to include("BEGIN PRIVATE KEY")
   end
 end

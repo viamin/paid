@@ -9,6 +9,14 @@ class DockerHost < ApplicationRecord
 
   belongs_to :account
 
+  encrypts :client_ca_pem
+  encrypts :client_ca_key_pem
+  encrypts :client_certificate_pem
+  encrypts :client_private_key_pem
+  encrypts :server_certificate_pem
+  encrypts :server_private_key_pem
+  encrypts :server_csr_pem
+
   scope :enabled, -> { where(enabled: true) }
   scope :ordered, -> { order(enabled: :desc, display_name: :asc, identifier: :asc) }
 
@@ -23,6 +31,7 @@ class DockerHost < ApplicationRecord
   validates :callback_url, presence: true, length: { maximum: 500 }
   validates :endpoint, length: { maximum: 500 }, allow_blank: true
   validates :image_tag, presence: true, length: { maximum: 255 }
+  validates :required_network_name, length: { maximum: 255 }, allow_blank: true
   validates :manual_concurrency_limit,
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 10_000 }
   validates :readiness_status, inclusion: { in: READINESS_STATUSES }
@@ -51,6 +60,18 @@ class DockerHost < ApplicationRecord
     [ manual_concurrency_limit - active_run_count.to_i, 0 ].max
   end
 
+  def client_tls_material_present?
+    [ client_ca_pem, client_certificate_pem, client_private_key_pem ].all?(&:present?)
+  end
+
+  def setup_profile
+    setup_state.fetch("profile", "generic_linux")
+  end
+
+  def setup_step(key)
+    setup_state.fetch("steps", {}).fetch(key.to_s, {})
+  end
+
   def placement_ready?
     enabled? && ready? && image_status == "ready" && required_network_status == "ready"
   end
@@ -71,6 +92,7 @@ class DockerHost < ApplicationRecord
     self.endpoint = endpoint.to_s.strip.presence
     self.callback_url = callback_url.to_s.strip.presence
     self.image_tag = image_tag.to_s.strip.presence || "paid-agent:latest"
+    self.required_network_name = required_network_name.to_s.strip.presence || "paid-agents"
     self.backend_type = backend_type.to_s.strip.presence || "local"
     self.readiness_status = readiness_status.to_s.strip.presence || "unknown"
     self.image_status = image_status.to_s.strip.presence || "unknown"
@@ -108,5 +130,9 @@ class DockerHost < ApplicationRecord
       .update_all(preferred_docker_host_identifier: nil, updated_at: Time.current)
     Project.where(account_id: account_id, preferred_docker_host_identifier: identifier)
       .update_all(preferred_docker_host_identifier: nil, updated_at: Time.current)
+  end
+
+  def setup_state
+    metadata.fetch("setup", {}).deep_stringify_keys
   end
 end
