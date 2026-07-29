@@ -153,12 +153,15 @@ RSpec.describe PaidMcpServer do
       ENV["PAID_OPERATOR_EMAILS"] = original_emails
     end
 
-    it "lists operator tools for operators and allows calling them" do
+    it "lists only read-only operator tools for operators" do
       result = operator_server.handle_request(method: "tools/list", id: 9)
       tool_names = result[:result][:tools].map { |tool| tool[:name] }
 
-      expect(tool_names).to include("operator_console_inventory", "operator_suspend_account")
+      expect(tool_names).to include("operator_console_inventory", "operator_list_accounts")
+      expect(tool_names).not_to include("operator_suspend_account")
+    end
 
+    it "rejects direct operator write calls on the raw MCP surface" do
       call_result = operator_server.handle_request(
         method: "tools/call",
         params: {
@@ -168,9 +171,8 @@ RSpec.describe PaidMcpServer do
         id: 10
       )
 
-      content = JSON.parse(call_result[:result][:content].first[:text])
-      expect(content).to include("status" => "ok", "account_id" => target_account.id)
-      expect(target_account.reload).to be_suspended
+      expect(call_result[:error]).to eq(code: -32602, message: "Unknown tool: operator_suspend_account")
+      expect(target_account.reload).not_to be_suspended
     end
   end
 

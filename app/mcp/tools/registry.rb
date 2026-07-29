@@ -77,7 +77,7 @@ module Tools
 
       def mcp_definitions_for(user:, session: nil)
         definitions_for_classes(read_only_tool_classes_for(user:)) +
-          OperatorTools::Registry.definitions_for(user:)
+          OperatorTools::Registry.read_only_definitions_for(user:)
       end
 
       # Tools advertised to the chat agent loop. Includes write tools so the
@@ -90,8 +90,8 @@ module Tools
       end
 
       def dispatch_mcp(name:, arguments:, user:, session:)
-        registry = OperatorTools::Registry.find(name) ? OperatorTools::Registry : nil
-        return dispatch_via_registry(registry, name:, arguments:, user:, session:) if registry
+        operator_tool = OperatorTools::Registry.find(name)
+        return OperatorTools::Registry.dispatch_read_only(name:, arguments:, user:, session:) if operator_tool
 
         dispatch_read_only(name:, arguments:, user:, session:)
       end

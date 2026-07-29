@@ -146,14 +146,17 @@ RSpec.describe "Api::McpController" do
         ENV["PAID_OPERATOR_EMAILS"] = original_emails
       end
 
-      it "surfaces and executes operator tools over MCP" do
+      it "surfaces only read-only operator tools over MCP" do
         post "/api/mcp/call", params: {
           jsonrpc: "2.0", id: 6, method: "tools/list", params: {}
         }.to_json, headers: headers
 
         tool_names = JSON.parse(response.body).dig("result", "tools").map { |tool| tool["name"] }
-        expect(tool_names).to include("operator_console_inventory", "operator_suspend_account")
+        expect(tool_names).to include("operator_console_inventory", "operator_list_accounts")
+        expect(tool_names).not_to include("operator_suspend_account")
+      end
 
+      it "rejects direct operator write calls over MCP" do
         post "/api/mcp/call", params: {
           jsonrpc: "2.0", id: 7, method: "tools/call",
           params: {
@@ -163,9 +166,9 @@ RSpec.describe "Api::McpController" do
         }.to_json, headers: headers
 
         expect(response).to have_http_status(:ok)
-        content = JSON.parse(JSON.parse(response.body).dig("result", "content", 0, "text"))
-        expect(content).to include("status" => "ok", "account_id" => target_account.id)
-        expect(target_account.reload).to be_suspended
+        body = JSON.parse(response.body)
+        expect(body["error"]).to eq("code" => -32602, "message" => "Unknown tool: operator_suspend_account")
+        expect(target_account.reload).not_to be_suspended
       end
     end
   end
