@@ -504,6 +504,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to eq([ "project_edit" ])
     end
 
+    it "maps deleted nested project edit controllers to the project edit target" do
+      targets = described_class.call(changed_files: [ "app/controllers/projects/mutation_test_requirements_controller.rb" ])
+
+      expect(targets.map(&:slug)).to eq([ "project_edit" ])
+    end
+
     it "maps projects controller changes to the project edit page" do
       targets = described_class.call(changed_files: [ "app/controllers/projects_controller.rb" ])
 
