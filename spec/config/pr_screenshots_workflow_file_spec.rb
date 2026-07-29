@@ -35,6 +35,17 @@ RSpec.describe PrScreenshotsWorkflowFile, :no_db do
     )
   end
 
+  it "uses a dedicated non-superuser application role for screenshot capture" do
+    expect(workflow.fetch("jobs").fetch("capture").fetch("env")).to include(
+      "DB_USERNAME" => "paid",
+      "DB_PASSWORD" => "paid"
+    )
+
+    expect(capture_step("Create application database role").fetch("run")).to include(
+      "ALTER ROLE paid CREATEDB NOSUPERUSER NOBYPASSRLS;"
+    )
+  end
+
   it "pulls Postgres from the ECR Public mirror to avoid Docker Hub init failures" do
     expect(workflow.fetch("jobs").fetch("capture").fetch("services").fetch("postgres")).to include(
       "image" => "public.ecr.aws/docker/library/postgres:16.14"
