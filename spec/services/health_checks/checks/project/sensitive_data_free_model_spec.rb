@@ -92,4 +92,46 @@ RSpec.describe HealthChecks::Checks::Project::SensitiveDataFreeModel do
 
     expect(described_class.call(project)).to eq([])
   end
+
+  it "returns a warning when a sensitive project inherits a risky free tenant model preference" do
+    model = create(:llm_model, :free, model_id: "free-tenant-model", catalog_source: "manual")
+    owner = create(:user)
+    create(:tenant_setting, account: owner.account, runner_preferences: {
+      "model_preferences" => { "claude" => model.model_id }
+    })
+    project = create(
+      :project,
+      created_by: owner,
+      account: owner.account,
+      data_classification: "confidential"
+    )
+
+    expect(described_class.call(project)).to contain_exactly(
+      have_attributes(
+        check: described_class.name,
+        scope: :project,
+        severity: :warning,
+        message: "Sensitive project resolves to free model free-tenant-model with possible training risk."
+      )
+    )
+  end
+
+  it "ignores tenant model preferences whose provider the project blocks" do
+    model = create(:llm_model, :free, provider: "anthropic", model_id: "free-tenant-model", catalog_source: "manual")
+    owner = create(:user)
+    create(:tenant_setting, account: owner.account, runner_preferences: {
+      "model_preferences" => { "claude" => model.model_id }
+    })
+    project = create(
+      :project,
+      created_by: owner,
+      account: owner.account,
+      data_classification: "restricted",
+      model_preferences: {
+        "llm_providers" => { "allowlist" => [ "openai" ] }
+      }
+    )
+
+    expect(described_class.call(project)).to eq([])
+  end
 end

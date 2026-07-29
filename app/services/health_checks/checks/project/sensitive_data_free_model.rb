@@ -23,10 +23,8 @@ module HealthChecks
 
         private
 
-        # Project-scope health checks do not have a runner/goal context, so
-        # only deterministic project-level overrides are considered here.
         def resolved_model
-          required_model || preferred_model
+          required_model || preferred_model || tenant_preferred_model
         end
 
         def required_model
@@ -45,6 +43,17 @@ module HealthChecks
             .map { |model_id| models_by_id[model_id] }
             .compact
             .find { |model| subject.llm_provider_allowed?(model.provider) }
+        end
+
+        def tenant_preferred_model
+          model_id = subject.account.tenant_setting&.model_preference_for(create_pr_runner_key)
+          return if model_id.blank?
+
+          model = LlmModel.active.find_by(model_id: model_id)
+          return unless model
+          return unless subject.llm_provider_allowed?(model.provider)
+
+          model
         end
 
         def model_preferences
