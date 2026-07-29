@@ -277,6 +277,7 @@ RSpec.describe Containers::ChatSessionManager do
       manager.cleanup!
 
       chat_session.reload
+      expect(chat_session.container_capability).to eq("stopped")
       expect(chat_session.container_id).to be_nil
       expect(chat_session.workspace_volume).to be_nil
     end

@@ -7,7 +7,7 @@ RSpec.describe ChatSessions::Resume do
   let(:user) { create(:user, account: account) }
 
   describe ".call" do
-    it "reopens a closed API session" do
+    it "reopens a closed inline-only session" do
       session = create(:chat_session, :closed, account: account, created_by: user, idle_timeout_at: 1.day.ago)
 
       freeze_time do
@@ -52,7 +52,7 @@ RSpec.describe ChatSessions::Resume do
       )
     end
 
-    it "treats already-active API sessions as a no-op" do
+    it "treats already-active inline-only sessions as a no-op" do
       session = create(:chat_session, account: account, created_by: user)
 
       expect {
@@ -60,7 +60,7 @@ RSpec.describe ChatSessions::Resume do
       }.not_to change { session.reload.attributes.slice("status", "metadata") }
     end
 
-    it "rejects workspace sessions" do
+    it "rejects container-backed sessions" do
       session = create(:chat_session, :closed, :workspace, account: account, created_by: user)
 
       expect {

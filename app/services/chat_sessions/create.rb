@@ -9,19 +9,19 @@ module ChatSessions
   #   ChatSessions::Create.call(
   #     account: account,
   #     user: current_user,
-  #     mode: "api",
+  #     container_capability: "none",
   #     provider_id: provider.id,
   #     model: "gpt-4o"
   #   )
   class Create
-    attr_reader :account, :user, :mode, :runner_id, :model,
+    attr_reader :account, :user, :container_capability, :runner_id, :model,
       :project_id, :system_prompt, :title, :metadata, :auto_approve
 
-    def initialize(account:, user:, mode: nil, runner_id: nil, provider_id: nil, model: nil,
+    def initialize(account:, user:, container_capability: nil, runner_id: nil, provider_id: nil, model: nil,
       project_id: nil, system_prompt: nil, title: nil, metadata: nil, auto_approve: nil)
       @account = account
       @user = user
-      @mode = mode.presence || "api"
+      @container_capability = container_capability.presence || "none"
       @runner_id = runner_id || provider_id
       @model = model
       @project_id = project_id
@@ -53,14 +53,17 @@ module ChatSessions
     def validate!
       raise ArgumentError, "account is required" unless account
       raise ArgumentError, "user is required" unless user
-      raise ArgumentError, "mode must be api or workspace" unless ChatSession::MODES.include?(mode)
+      unless ChatSession::CONTAINER_CAPABILITIES.include?(container_capability)
+        raise ArgumentError, "container_capability must be one of #{ChatSession::CONTAINER_CAPABILITIES.join(', ')}"
+      end
     end
 
     def create_session
       ChatSession.create!(
         account: account,
         created_by: user,
-        mode: mode,
+        container_capability: container_capability,
+        container_requested_at: container_requested_at,
         runner_id: resolved_runner&.id,
         model: resolved_model,
         project_id: project_id,
@@ -71,6 +74,12 @@ module ChatSessions
         metadata: metadata.presence || {},
         auto_approve: auto_approve || false
       )
+    end
+
+    def container_requested_at
+      return unless ChatSession::CONTAINER_REQUESTED_CAPABILITIES.include?(container_capability)
+
+      Time.current
     end
 
     def build_system_prompt(session)

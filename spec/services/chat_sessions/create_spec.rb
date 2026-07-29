@@ -7,12 +7,12 @@ RSpec.describe ChatSessions::Create do
   let(:user) { create(:user, account: account) }
 
   describe ".call" do
-    it "creates an active API mode session" do
+    it "creates an active inline-only session" do
       session = described_class.call(account: account, user: user)
 
       expect(session).to be_persisted
       expect(session.status).to eq("active")
-      expect(session.mode).to eq("api")
+      expect(session.container_capability).to eq("none")
       expect(session.created_by).to eq(user)
       expect(session.account).to eq(account)
       expect(session.idle_timeout_at).to be_within(5.seconds).of(30.minutes.from_now)
@@ -117,16 +117,17 @@ RSpec.describe ChatSessions::Create do
       }.to raise_error(ArgumentError, /enabled for chat/)
     end
 
-    it "creates a workspace mode session" do
-      session = described_class.call(account: account, user: user, mode: "workspace")
+    it "creates a pending container-backed session" do
+      session = described_class.call(account: account, user: user, container_capability: "pending")
 
-      expect(session.mode).to eq("workspace")
+      expect(session.container_capability).to eq("pending")
+      expect(session.container_requested_at).to be_present
     end
 
-    it "raises for invalid mode" do
+    it "raises for invalid container capability" do
       expect {
-        described_class.call(account: account, user: user, mode: "invalid")
-      }.to raise_error(ArgumentError, /mode/)
+        described_class.call(account: account, user: user, container_capability: "invalid")
+      }.to raise_error(ArgumentError, /container_capability/)
     end
 
     it "raises when account is nil" do

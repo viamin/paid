@@ -331,7 +331,7 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
       end
     end
 
-    describe "workspace context omitted for API mode" do
+    describe "workspace context omitted for inline-only sessions" do
       it "does not include workspace section" do
         expect(prompt).not_to include("Workspace")
         expect(prompt).not_to include("git repository")

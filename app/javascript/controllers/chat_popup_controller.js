@@ -122,7 +122,7 @@ export default class extends Controller {
       headers: this.jsonHeaders(),
       credentials: "same-origin",
       body: JSON.stringify({
-        mode: "api",
+        container_capability: "none",
         project_id: this.contextValue.project_id,
         metadata: {
           entry_point: "popup",

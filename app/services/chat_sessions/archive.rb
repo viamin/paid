@@ -17,7 +17,7 @@ module ChatSessions
 
       ActiveRecord::Base.transaction do
         compute_totals if active_or_idle?
-        cleanup_workspace_resources if active_or_idle? && workspace_session?
+        cleanup_workspace_resources if active_or_idle? && container_backed_session?
         chat_session.update!(archive_attributes)
       end
 
@@ -36,8 +36,8 @@ module ChatSessions
       %w[active idle].include?(chat_session.status)
     end
 
-    def workspace_session?
-      chat_session.mode == "workspace"
+    def container_backed_session?
+      !chat_session.inline_only?
     end
 
     def compute_totals
@@ -67,11 +67,12 @@ module ChatSessions
     end
 
     def workspace_cleanup_attributes
-      return {} unless workspace_session?
+      return {} unless container_backed_session?
 
       {
         container_id: nil,
-        workspace_volume: nil
+        workspace_volume: nil,
+        container_capability: "stopped"
       }
     end
 

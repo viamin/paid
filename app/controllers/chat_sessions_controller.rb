@@ -203,7 +203,7 @@ class ChatSessionsController < ApplicationController
 
   def create_params
     source = params.key?(:chat_session) ? params.require(:chat_session) : params
-    permitted = source.permit(:mode, :model, :runner_id, :provider_id, :project_id, :system_prompt, :title, :auto_approve, metadata: {})
+    permitted = source.permit(:container_capability, :model, :runner_id, :provider_id, :project_id, :system_prompt, :title, :auto_approve, metadata: {})
       .to_h.symbolize_keys
     permitted[:runner_id] ||= permitted.delete(:provider_id)
     permitted
@@ -224,7 +224,9 @@ class ChatSessionsController < ApplicationController
       external_id: session.external_id,
       title: session.title,
       status: session.status,
-      mode: session.mode,
+      container_capability: session.container_capability,
+      container_requested_at: session.container_requested_at,
+      container_ready_at: session.container_ready_at,
       model: session.model,
       runner_id: session.runner_id,
       runner_name: session.runner&.display_name,
@@ -348,7 +350,7 @@ class ChatSessionsController < ApplicationController
     @sidebar_has_more = sidebar[:next_frame_id].present?
     @sidebar_next_frame_id = sidebar[:next_frame_id]
     @sidebar_next_params = sidebar[:next_params]
-    @new_chat_session = ChatSession.new(mode: "api", auto_approve: current_user.settings.default_auto_approve)
+    @new_chat_session = ChatSession.new(container_capability: "none", auto_approve: current_user.settings.default_auto_approve)
     @available_runners = current_user.runners.kept_only.ordered
     @available_projects = current_account.projects.order(:name)
     @available_models = LlmModel.active.order(:provider, :display_name)

@@ -37,7 +37,7 @@ RSpec.describe "TenantEnforcement" do
     end
 
     it "returns forbidden json for JSON mutations" do
-      post chat_sessions_path(format: :json), params: { mode: "api", title: "Blocked chat" }
+      post chat_sessions_path(format: :json), params: { container_capability: "none", title: "Blocked chat" }
 
       expect(response).to have_http_status(:forbidden)
       expect(response.parsed_body).to eq("error" => "This account is suspended. Write operations are disabled.")
