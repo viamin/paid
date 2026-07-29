@@ -9,20 +9,44 @@ end
 RSpec.describe CiDatabaseWorkflowFile, :no_db do
   workflow_expectations = {
     ".github/workflows/ci.yml" => {
-      "test" => true,
-      "performance" => true
+      "test" => {
+        "db_username" => "postgres",
+        "db_password" => "postgres",
+        "creates_application_role" => false
+      },
+      "performance" => {
+        "db_username" => "postgres",
+        "db_password" => "postgres",
+        "creates_application_role" => false
+      }
     },
     ".github/workflows/system_tests.yml" => {
-      "system" => true
+      "system" => {
+        "db_username" => "postgres",
+        "db_password" => "postgres",
+        "creates_application_role" => false
+      }
     },
     ".github/workflows/pr-screenshots.yml" => {
-      "capture" => true
+      "capture" => {
+        "db_username" => "paid",
+        "db_password" => "paid",
+        "creates_application_role" => true
+      }
     },
     ".github/workflows/test_prof.yml" => {
-      "profile" => true
+      "profile" => {
+        "db_username" => "postgres",
+        "db_password" => "postgres",
+        "creates_application_role" => false
+      }
     },
     ".github/workflows/ephemeral_tests.yml" => {
-      "run-tests" => true
+      "run-tests" => {
+        "db_username" => "postgres",
+        "db_password" => "postgres",
+        "creates_application_role" => false
+      }
     }
   }.freeze
 
@@ -30,22 +54,37 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
     context workflow_path do
       subject(:workflow) { Psych.safe_load_file(Rails.root.join(workflow_path), aliases: true) }
 
-      jobs.each_key do |job_name|
+      def expect_application_role_database_url!(job, expectations)
+        return unless expectations.fetch("creates_application_role")
+
+        expect(job.fetch("env")).to include(
+          "DATABASE_URL" => "postgres://paid:paid@localhost:5432/paid_test"
+        )
+      end
+
+      jobs.each do |job_name, expectations|
         it "uses the expected database connection flow for #{job_name}" do
           job = workflow.fetch("jobs").fetch(job_name)
           step_names = job.fetch("steps").map { |step| step["name"] }
 
           expect(job.fetch("env")).to include(
             "PAID_TEST_DATABASE" => "paid_test",
-            "DB_USERNAME" => "postgres",
-            "DB_PASSWORD" => "postgres",
+            "DB_USERNAME" => expectations.fetch("db_username"),
+            "DB_PASSWORD" => expectations.fetch("db_password"),
             "TMPDIR" => "${{ github.workspace }}/.tmp-build",
             "YARN_CACHE_FOLDER" => "${{ github.workspace }}/.cache-yarn",
             "XDG_CACHE_HOME" => "${{ github.workspace }}/.cache",
             "npm_config_cache" => "${{ github.workspace }}/.cache/npm",
             "PLAYWRIGHT_BROWSERS_PATH" => "${{ github.workspace }}/.cache/ms-playwright"
           )
-          expect(step_names).not_to include("Create application database role")
+
+          expect_application_role_database_url!(job, expectations)
+
+          if expectations.fetch("creates_application_role")
+            expect(step_names).to include("Create application database role")
+          else
+            expect(step_names).not_to include("Create application database role")
+          end
         end
 
         it "installs the PGDG postgres client major package for #{job_name}" do

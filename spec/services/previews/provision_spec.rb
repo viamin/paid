@@ -343,6 +343,23 @@ RSpec.describe Previews::Provision do
     )
   end
 
+  it "forwards the current Rails runtime env into the preview container" do
+    with_runtime_env(
+      "RAILS_ENV" => "test",
+      "RACK_ENV" => "test",
+      "RAILS_TEST_KEY" => "test-key",
+      "SECRET_KEY_BASE" => "test-secret"
+    ) do
+      service.call(start_tunnel: false, allow_seed: false)
+      expect_preview_runtime_env(
+        "RAILS_ENV" => "test",
+        "RACK_ENV" => "test",
+        "RAILS_TEST_KEY" => "test-key",
+        "SECRET_KEY_BASE" => "test-secret"
+      )
+    end
+  end
+
   it "shell-escapes readiness probe url parts before building the probe command" do
     allow(service).to receive(:config).and_return(
       Screenshots::Configuration.from_hash(
@@ -480,6 +497,27 @@ RSpec.describe Previews::Provision do
       service_provisioner:,
       seed_runner:,
       tunnel_manager:
+    )
+  end
+
+  def with_runtime_env(overrides)
+    previous_env = ENV.to_h.slice(*overrides.keys)
+    overrides.each { |key, value| ENV[key] = value }
+    yield
+  ensure
+    overrides.each_key do |key|
+      previous_env.key?(key) ? ENV[key] = previous_env[key] : ENV.delete(key)
+    end
+  end
+
+  def expect_preview_runtime_env(overrides)
+    expect(container_service).to have_received(:execute).with(
+      a_string_including("bundle exec bin/rails server"),
+      hash_including(
+        timeout: 30,
+        env: hash_including("CI" => "1", **overrides),
+        stream: false
+      )
     )
   end
 end
