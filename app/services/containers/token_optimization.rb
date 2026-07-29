@@ -20,24 +20,34 @@ module Containers
       "cursor" => %w[--agent cursor]
     }.freeze
 
+    # Runners whose rtk integration installs prompt-level instructions
+    # (AGENTS.md) instead of a shell hook. rtk rejects --hook-only and
+    # --auto-patch for these — the instructions file IS the integration, so
+    # there is no hook to keep and no settings.json to auto-patch.
+    RTK_HOOKLESS_RUNNERS = %w[codex].freeze
+
     CODEGRAPH_INIT_TIMEOUT = 120
     CODEGRAPH_INSTALL_TIMEOUT = 30
     RTK_INIT_TIMEOUT = 30
 
     # Initializes rtk hooks for the specific runner inside an already-started
-    # container. Uses --hook-only to avoid injecting RTK.md into the agent's
-    # context (zero added tokens), and --auto-patch for non-interactive setup.
+    # container. For hook-based runners, --hook-only skips RTK.md (zero added
+    # tokens) and --auto-patch makes setup non-interactive. Instructions-only
+    # runners (codex) have no shell hook, so rtk rejects those flags and they
+    # get a bare `rtk init -g`.
     def self.rtk_init_for_runner(container_service:, runner_key:)
-      flags = RTK_RUNNER_FLAGS[runner_key.to_s]
+      key = runner_key.to_s
+      flags = RTK_RUNNER_FLAGS[key]
       return unless flags # runner not supported by rtk
 
-      command = [ "rtk", "init", "-g", "--auto-patch", "--hook-only", *flags ]
+      base = RTK_HOOKLESS_RUNNERS.include?(key) ? [] : %w[--auto-patch --hook-only]
+      command = [ "rtk", "init", "-g", *base, *flags ]
       container_service.execute(command, timeout: RTK_INIT_TIMEOUT)
-      Rails.logger.info(message: "container_manager.rtk_initialized", runner: runner_key.to_s)
+      Rails.logger.info(message: "container_manager.rtk_initialized", runner: key)
     rescue => e
       Rails.logger.warn(
         message: "container_manager.rtk_init_failed",
-        runner: runner_key.to_s,
+        runner: key,
         error: e.message
       )
     end

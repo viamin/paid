@@ -9,11 +9,23 @@ echo "=== Setting up rtk (Rust Token Killer) ==="
 
 # rtk init for each supported agent. Each call configures that agent's hook
 # mechanism independently. --hook-only avoids adding RTK.md to context.
-for flags in "" "--codex" "--gemini" "--opencode"; do
-  if rtk init -g --auto-patch --hook-only $flags 2>/dev/null; then
-    echo "  rtk initialized for: ${flags:-claude/copilot (default)}"
+# Codex has no shell hook (AGENTS.md only), so rtk rejects --hook-only and
+# --auto-patch for it — it gets a bare `rtk init -g --codex`.
+rtk_init_for_selector() {
+  local selector="$1"
+  if [ "$selector" = "--codex" ]; then
+    rtk init -g --codex
   else
-    echo "  WARNING: rtk init failed for: ${flags:-default} (non-fatal)"
+    # shellcheck disable=SC2086
+    rtk init -g --auto-patch --hook-only $selector
+  fi
+}
+
+for selector in "" "--codex" "--gemini" "--opencode"; do
+  if rtk_init_for_selector "$selector" 2>/dev/null; then
+    echo "  rtk initialized for: ${selector:-claude/copilot (default)}"
+  else
+    echo "  WARNING: rtk init failed for: ${selector:-default} (non-fatal)"
   fi
 done
 
