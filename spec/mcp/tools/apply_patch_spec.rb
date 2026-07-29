@@ -59,6 +59,21 @@ RSpec.describe Tools::ApplyPatch do
     }.to raise_error(ArgumentError, /escapes the cloned repo/)
   end
 
+  it "rejects patch paths that traverse a symlink outside the repo" do
+    FileUtils.ln_s(Dir.tmpdir, File.join(repo.fetch(:host_path), "outside"))
+    patch = <<~PATCH
+      diff --git a/outside/hack.txt b/outside/hack.txt
+      --- a/outside/hack.txt
+      +++ b/outside/hack.txt
+      @@ -0,0 +1 @@
+      +owned
+    PATCH
+
+    expect {
+      tool.call(repo_path: repo.fetch(:repo_path), patch:, confirmed: true)
+    }.to raise_error(ArgumentError, /escapes the cloned repo/)
+  end
+
   it "rejects oversized patch content" do
     expect {
       tool.call(repo_path: repo.fetch(:repo_path), patch: "x" * (201 * 1024), confirmed: true)

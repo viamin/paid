@@ -47,6 +47,35 @@ RSpec.describe Tools::WriteRepoFile do
     }.to raise_error(ArgumentError, /escapes the cloned repo/)
   end
 
+  it "rejects writes through symlinked directories that point outside the repo" do
+    FileUtils.ln_s(Dir.tmpdir, File.join(repo.fetch(:host_path), "outside"))
+
+    expect {
+      tool.call(repo_path: repo.fetch(:repo_path), path: "outside/escape.txt", content: "x", confirmed: true)
+    }.to raise_error(ArgumentError, /escapes the cloned repo/)
+  end
+
+  it "rejects symlinked repo paths that resolve outside the workspace" do
+    external_repo = Dir.mktmpdir("chat-external-repo")
+    create_git_repo(external_repo, "README.md" => "# External Repo\n")
+    FileUtils.ln_s(external_repo, File.join(workspace_root, "outside-repo"))
+
+    escaped_session = create(:chat_session, :workspace, account:, created_by: user, clone_manifest: [
+      { project_id: project.id, path: "/workspace/outside-repo" }
+    ])
+
+    expect {
+      described_class.new(user:, session: escaped_session).call(
+        repo_path: "/workspace/outside-repo",
+        path: "lib/file.txt",
+        content: "x",
+        confirmed: true
+      )
+    }.to raise_error(ArgumentError, /escapes the workspace/)
+  ensure
+    FileUtils.rm_rf(external_repo)
+  end
+
   it "rejects oversized content" do
     expect {
       tool.call(repo_path: repo.fetch(:repo_path), path: "big.txt", content: "x" * (201 * 1024), confirmed: true)

@@ -19,11 +19,12 @@ module Tools
     def repo_context_for!(repo_path, require_non_stale: false)
       ensure_container_ready!
 
-      normalized_repo_path = normalize_workspace_path(repo_path)
+      manifest_lookup_path = expand_workspace_path(repo_path)
       manifest_entry = session.clone_manifest_entries.find do |entry|
-        normalize_manifest_path(entry[:path]) == normalized_repo_path
+        expand_manifest_path(entry[:path]) == manifest_lookup_path
       end
-      raise ArgumentError, "Repo is not present in the clone manifest: #{normalized_repo_path}" unless manifest_entry
+      normalized_repo_path = normalize_workspace_path(manifest_lookup_path)
+      raise ArgumentError, "Repo is not present in the clone manifest: #{manifest_lookup_path}" unless manifest_entry
       if require_non_stale && manifest_entry_stale?(manifest_entry)
         raise ArgumentError, "Repo manifest entry is stale: #{normalized_repo_path}"
       end
@@ -44,9 +45,9 @@ module Tools
     end
 
     def project_for_authorization!(repo_path)
-      normalized_repo_path = normalize_workspace_path(repo_path)
+      normalized_repo_path = expand_workspace_path(repo_path)
       manifest_entry = session&.clone_manifest_entries&.find do |entry|
-        normalize_manifest_path(entry[:path]) == normalized_repo_path
+        expand_manifest_path(entry[:path]) == normalized_repo_path
       end
       raise ArgumentError, "Repo is not present in the clone manifest: #{normalized_repo_path}" unless manifest_entry
 
@@ -54,12 +55,19 @@ module Tools
     end
 
     def normalize_workspace_path(path)
+      normalized = expand_workspace_path(path)
+      resolved = resolve_container_path(normalized)
+      return normalized if path_within_root?(resolved, workspace_root_realpath)
+
+      raise ArgumentError, "Path escapes the workspace: #{path}"
+    end
+
+    def expand_workspace_path(path)
       candidate = path.to_s.strip
       raise ArgumentError, "repo_path must be provided" if candidate.blank?
 
       normalized = candidate.start_with?("/") ? File.expand_path(candidate) : File.expand_path(candidate, WORKSPACE_ROOT)
-      root_with_separator = "#{WORKSPACE_ROOT}/"
-      return normalized if normalized == WORKSPACE_ROOT || normalized.start_with?(root_with_separator)
+      return normalized if path_within_root?(normalized, WORKSPACE_ROOT)
 
       raise ArgumentError, "Path escapes the workspace: #{path}"
     end
@@ -69,14 +77,48 @@ module Tools
       raise ArgumentError, "path must be provided" if candidate.blank?
 
       absolute = File.expand_path(candidate, repo_path)
-      repo_prefix = "#{repo_path}/"
-      return [ absolute, absolute.delete_prefix(repo_prefix) ] if absolute.start_with?(repo_prefix)
+      resolved_absolute = resolve_container_path(absolute)
+      return [ absolute, absolute.delete_prefix("#{repo_path}/") ] if path_within_root?(resolved_absolute, resolve_container_path(repo_path))
 
       raise ArgumentError, "Path escapes the cloned repo: #{relative_path}"
     end
 
-    def normalize_manifest_path(path)
-      normalize_workspace_path(path)
+    def path_within_root?(path, root)
+      path == root || path.start_with?("#{root}/")
+    end
+
+    def workspace_root_realpath
+      @workspace_root_realpath ||= resolve_container_path(WORKSPACE_ROOT)
+    end
+
+    def resolve_container_path(path)
+      script = <<~SH
+        ruby -e '
+          path = ARGV.fetch(0)
+
+          begin
+            puts File.realpath(path)
+          rescue Errno::ENOENT
+            current = path
+            missing_components = []
+
+            until File.exist?(current) || File.symlink?(current) || current == File.dirname(current)
+              missing_components.unshift(File.basename(current))
+              current = File.dirname(current)
+            end
+
+            puts File.join(File.realpath(current), *missing_components)
+          end
+        ' #{Shellwords.escape(path)}
+      SH
+      stdout, stderr, exit_code = git_exec!(script)
+      raise ArgumentError, stderr.presence || stdout.presence || "Path could not be resolved: #{path}" unless exit_code.zero?
+
+      stdout.lines.last.to_s.strip
+    end
+
+    def expand_manifest_path(path)
+      expand_workspace_path(path)
     rescue ArgumentError
       nil
     end
