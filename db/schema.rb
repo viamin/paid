@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_28_132827) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_29_183603) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2834,7 +2834,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_28_132827) do
     t.string "default_branch", default: "main", null: false
     t.integer "default_poll_interval_seconds", default: 60, null: false
     t.boolean "default_project_active", default: true, null: false
-    t.boolean "fair_queue_across_projects", default: true, null: false
     t.boolean "fallback_enabled", default: false, null: false
     t.jsonb "fallback_runners", default: [], null: false
     t.integer "git_clone_timeout_seconds", default: 600, null: false
