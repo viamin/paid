@@ -55,6 +55,19 @@ RSpec.describe Tools::WriteRepoFile do
     }.to raise_error(ArgumentError, /escapes the cloned repo/)
   end
 
+  it "rejects writes to a symlinked target file" do
+    external_target = File.join(Dir.mktmpdir("chat-external-target"), "escape.txt")
+    FileUtils.mkdir_p(File.dirname(external_target))
+    File.write(external_target, "outside\n")
+    FileUtils.ln_s(external_target, File.join(repo.fetch(:host_path), "linked.txt"))
+
+    expect {
+      tool.call(repo_path: repo.fetch(:repo_path), path: "linked.txt", content: "x", confirmed: true)
+    }.to raise_error(ArgumentError, /escapes the cloned repo/)
+  ensure
+    FileUtils.rm_rf(File.dirname(external_target))
+  end
+
   it "rejects symlinked repo paths that resolve outside the workspace" do
     external_repo = Dir.mktmpdir("chat-external-repo")
     create_git_repo(external_repo, "README.md" => "# External Repo\n")

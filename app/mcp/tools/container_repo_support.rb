@@ -83,6 +83,50 @@ module Tools
       raise ArgumentError, "Path escapes the cloned repo: #{relative_path}"
     end
 
+    def write_repo_text_file!(repo_path:, relative_path:, content:)
+      _, normalized_relative_path = normalize_repo_relative_path(repo_path, relative_path)
+      env = [ encode_env("FILE_CONTENT_B64", content) ]
+      ruby_code = <<~RUBY
+        require "base64"
+
+        repo_path = ARGV.fetch(0)
+        relative_path = ARGV.fetch(1)
+        content = Base64.decode64(ENV.fetch("FILE_CONTENT_B64"))
+        repo_realpath = File.realpath(repo_path)
+        current = repo_realpath
+        components = relative_path.split("/")
+        filename = components.pop
+
+        raise ArgumentError, "path must be provided" if filename.nil? || filename.empty? || filename == "." || filename == ".."
+
+        components.each do |component|
+          raise ArgumentError, "Path escapes the cloned repo: #{relative_path}" if component.empty? || component == "." || component == ".."
+
+          current = File.join(current, component)
+
+          if File.symlink?(current)
+            raise ArgumentError, "Path escapes the cloned repo: #{relative_path}"
+          elsif File.exist?(current)
+            raise ArgumentError, "Path escapes the cloned repo: #{relative_path}" unless File.directory?(current)
+          else
+            Dir.mkdir(current)
+          end
+        end
+
+        destination = File.join(current, filename)
+        raise ArgumentError, "Path escapes the cloned repo: #{relative_path}" if File.symlink?(destination)
+        raise ArgumentError, "Path escapes the cloned repo: #{relative_path}" if File.exist?(destination) && File.directory?(destination)
+
+        fd = File.sysopen(destination, File::WRONLY | File::CREAT | File::TRUNC | File::NOFOLLOW, 0o644)
+        File.open(fd, "wb") { |file| file.write(content) }
+      RUBY
+      script = "ruby -e #{Shellwords.escape(ruby_code)} #{Shellwords.escape(repo_path)} #{Shellwords.escape(normalized_relative_path)}"
+      stdout, stderr, exit_code = git_exec!(script, env:)
+      raise ArgumentError, stderr.presence || stdout.presence || "File write failed" unless exit_code.zero?
+
+      normalized_relative_path
+    end
+
     def path_within_root?(path, root)
       path == root || path.start_with?("#{root}/")
     end
