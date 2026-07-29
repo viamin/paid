@@ -409,7 +409,7 @@ RSpec.describe Tools::Registry do
           definition.destroy!
         }
       }
-    ]
+    ] + operator_tool_scenarios
   end
 
   describe "authorization parity" do
@@ -445,6 +445,250 @@ RSpec.describe Tools::Registry do
   end
 
   private
+
+  def operator_tool_scenarios
+    [
+      {
+        tool_name: "operator_console_inventory",
+        denied_user: -> { create(:user, :owner, account: other_account) },
+        arguments: -> { {} },
+        ui_call: ->(user) {
+          raise Pundit::NotAuthorizedError unless user&.operator?
+        }
+      },
+      {
+        tool_name: "operator_list_accounts",
+        denied_user: -> { create(:user, :owner, account: other_account) },
+        arguments: -> { {} },
+        ui_call: ->(user) {
+          authorize_record!(user, Account.new, :index?, policy_class: OperatorConsole::AccountPolicy)
+          Pundit.policy_scope!(user, Account, policy_scope_class: OperatorConsole::AccountPolicy::Scope).to_a
+        }
+      },
+      {
+        tool_name: "operator_get_account",
+        denied_user: -> { create(:user, :owner, account: other_account) },
+        arguments: -> {
+          target_account = create(:account)
+          { id: target_account.id }
+        },
+        ui_call: ->(user) {
+          target_account = Account.order(:id).last
+          authorize_record!(user, target_account, :show?, policy_class: OperatorConsole::AccountPolicy)
+        }
+      },
+      {
+        tool_name: "operator_list_account_activity_events",
+        denied_user: -> { create(:user, :owner, account: other_account) },
+        arguments: -> { {} },
+        ui_call: ->(user) {
+          authorize_record!(user, AccountActivityEvent.new, :index?, policy_class: OperatorConsole::AccountActivityEventPolicy)
+          Pundit.policy_scope!(user, AccountActivityEvent, policy_scope_class: OperatorConsole::AccountActivityEventPolicy::Scope).to_a
+        }
+      },
+      {
+        tool_name: "operator_get_account_activity_event",
+        denied_user: -> { create(:user, :owner, account: other_account) },
+        arguments: -> {
+          event_account = create(:account)
+          event = AccountActivityEvent.create!(
+            account: event_account,
+            action: AccountActivityEvent::ACTION_CATEGORIES.keys.first,
+            metadata: {}
+          )
+          { id: event.id }
+        },
+        ui_call: ->(user) {
+          event = AccountActivityEvent.order(:id).last
+          authorize_record!(user, event, :show?, policy_class: OperatorConsole::AccountActivityEventPolicy)
+        }
+      },
+      {
+        tool_name: "operator_list_account_memberships",
+        denied_user: -> { create(:user, :owner, account: other_account) },
+        arguments: -> { {} },
+        ui_call: ->(user) {
+          authorize_record!(user, AccountMembership.new, :index?, policy_class: OperatorConsole::AccountMembershipPolicy)
+          Pundit.policy_scope!(user, AccountMembership, policy_scope_class: OperatorConsole::AccountMembershipPolicy::Scope).to_a
+        }
+      },
+      {
+        tool_name: "operator_get_account_membership",
+        denied_user: -> { create(:user, :owner, account: other_account) },
+        arguments: -> {
+          membership_account = create(:account)
+          membership = create(:account_membership, account: membership_account, user: create(:user, account: create(:account)))
+          { id: membership.id }
+        },
+        ui_call: ->(user) {
+          membership = AccountMembership.order(:id).last
+          authorize_record!(user, membership, :show?, policy_class: OperatorConsole::AccountMembershipPolicy)
+        }
+      },
+      {
+        tool_name: "operator_list_pre_commit_requirements",
+        denied_user: -> { create(:user, :owner, account: other_account) },
+        arguments: -> { {} },
+        ui_call: ->(user) {
+          authorize_record!(user, PreCommitRequirement.new, :index?, policy_class: OperatorConsole::PreCommitRequirementPolicy)
+          Pundit.policy_scope!(user, PreCommitRequirement, policy_scope_class: OperatorConsole::PreCommitRequirementPolicy::Scope).to_a
+        }
+      },
+      {
+        tool_name: "operator_get_pre_commit_requirement",
+        denied_user: -> { create(:user, :owner, account: other_account) },
+        arguments: -> {
+          requirement = create(:pre_commit_requirement, account: create(:account))
+          { id: requirement.id }
+        },
+        ui_call: ->(user) {
+          requirement = PreCommitRequirement.order(:id).last
+          authorize_record!(user, requirement, :show?, policy_class: OperatorConsole::PreCommitRequirementPolicy)
+        }
+      },
+      {
+        tool_name: "operator_list_project_memberships",
+        denied_user: -> { create(:user, :owner, account: other_account) },
+        arguments: -> { {} },
+        ui_call: ->(user) {
+          authorize_record!(user, ProjectMembership.new, :index?, policy_class: OperatorConsole::ProjectMembershipPolicy)
+          Pundit.policy_scope!(user, ProjectMembership, policy_scope_class: OperatorConsole::ProjectMembershipPolicy::Scope).to_a
+        }
+      },
+      {
+        tool_name: "operator_get_project_membership",
+        denied_user: -> { create(:user, :owner, account: other_account) },
+        arguments: -> {
+          project_account = create(:account)
+          project_membership = create(
+            :project_membership,
+            project: create(:project, account: project_account),
+            user: create(:user, account: project_account)
+          )
+          { id: project_membership.id }
+        },
+        ui_call: ->(user) {
+          project_membership = ProjectMembership.order(:id).last
+          authorize_record!(user, project_membership, :show?, policy_class: OperatorConsole::ProjectMembershipPolicy)
+        }
+      },
+      {
+        tool_name: "operator_list_style_guides",
+        denied_user: -> { create(:user, :owner, account: other_account) },
+        arguments: -> { {} },
+        ui_call: ->(user) {
+          authorize_record!(user, StyleGuide.new, :index?, policy_class: OperatorConsole::StyleGuidePolicy)
+          Pundit.policy_scope!(user, StyleGuide, policy_scope_class: OperatorConsole::StyleGuidePolicy::Scope).to_a
+        }
+      },
+      {
+        tool_name: "operator_get_style_guide",
+        denied_user: -> { create(:user, :owner, account: other_account) },
+        arguments: -> {
+          style_guide = create(:style_guide, :global)
+          { id: style_guide.id }
+        },
+        ui_call: ->(user) {
+          style_guide = StyleGuide.order(:id).last
+          authorize_record!(user, style_guide, :show?, policy_class: OperatorConsole::StyleGuidePolicy)
+        }
+      },
+      {
+        tool_name: "operator_list_tenant_settings",
+        denied_user: -> { create(:user, :owner, account: other_account) },
+        arguments: -> { {} },
+        ui_call: ->(user) {
+          authorize_record!(user, TenantSetting.new, :index?, policy_class: OperatorConsole::TenantSettingPolicy)
+          Pundit.policy_scope!(user, TenantSetting, policy_scope_class: OperatorConsole::TenantSettingPolicy::Scope).to_a
+        }
+      },
+      {
+        tool_name: "operator_get_tenant_setting",
+        denied_user: -> { create(:user, :owner, account: other_account) },
+        arguments: -> {
+          setting = create(:tenant_setting, account: create(:account))
+          { id: setting.id }
+        },
+        ui_call: ->(user) {
+          setting = TenantSetting.order(:id).last
+          authorize_record!(user, setting, :show?, policy_class: OperatorConsole::TenantSettingPolicy)
+        }
+      },
+      {
+        tool_name: "operator_list_users",
+        denied_user: -> { create(:user, :owner, account: other_account) },
+        arguments: -> { {} },
+        ui_call: ->(user) {
+          authorize_record!(user, User.new, :index?, policy_class: OperatorConsole::UserPolicy)
+          Pundit.policy_scope!(user, User, policy_scope_class: OperatorConsole::UserPolicy::Scope).to_a
+        }
+      },
+      {
+        tool_name: "operator_get_user",
+        denied_user: -> { create(:user, :owner, account: other_account) },
+        arguments: -> {
+          target_user = create(:user, account: create(:account))
+          { id: target_user.id }
+        },
+        ui_call: ->(user) {
+          target_user = User.order(:id).last
+          authorize_record!(user, target_user, :show?, policy_class: OperatorConsole::UserPolicy)
+        }
+      },
+      {
+        tool_name: "operator_suspend_account",
+        denied_user: -> { create(:user, :owner, account: other_account) },
+        arguments: -> {
+          target_account = create(:account)
+          { account_id: target_account.id, confirmed: true }
+        },
+        ui_call: ->(user) {
+          target_account = Account.order(:id).last
+          authorize_record!(user, target_account, :act_on?, policy_class: OperatorConsole::AccountPolicy)
+          Avo::Actions::SuspendAccount.new.handle(query: [ target_account ], fields: {}, current_user: user, resource: nil)
+        }
+      },
+      {
+        tool_name: "operator_reactivate_account",
+        denied_user: -> { create(:user, :owner, account: other_account) },
+        arguments: -> {
+          target_account = create(:account, suspended_at: Time.current)
+          { account_id: target_account.id, confirmed: true }
+        },
+        ui_call: ->(user) {
+          target_account = Account.order(:id).last
+          authorize_record!(user, target_account, :act_on?, policy_class: OperatorConsole::AccountPolicy)
+          Avo::Actions::ReactivateAccount.new.handle(query: [ target_account ], fields: {}, current_user: user, resource: nil)
+        }
+      },
+      {
+        tool_name: "operator_deactivate_account",
+        denied_user: -> { create(:user, :owner, account: other_account) },
+        arguments: -> {
+          target_account = create(:account)
+          { account_id: target_account.id, confirmed: true }
+        },
+        ui_call: ->(user) {
+          target_account = Account.order(:id).last
+          authorize_record!(user, target_account, :act_on?, policy_class: OperatorConsole::AccountPolicy)
+          Avo::Actions::DeactivateAccount.new.handle(query: [ target_account ], fields: {}, current_user: user, resource: nil)
+        }
+      },
+      {
+        tool_name: "operator_recompress_style_guides",
+        denied_user: -> { create(:user, :owner, account: other_account) },
+        arguments: -> {
+          style_guide = create(:style_guide, :global)
+          { style_guide_ids: [ style_guide.id ], confirmed: true }
+        },
+        ui_call: ->(user) {
+          style_guide = StyleGuide.order(:id).last
+          authorize_record!(user, style_guide, :act_on?, policy_class: OperatorConsole::StyleGuidePolicy)
+          Avo::Actions::RecompressStyleGuides.new.handle(query: [ style_guide ], fields: {}, current_user: user, resource: nil)
+        }
+      }
+    ]
+  end
 
   def capture_error
     yield

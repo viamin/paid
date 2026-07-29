@@ -21,6 +21,10 @@ RSpec.describe Tools::Registry do
       create_mcp_server_definition
       update_mcp_server_definition
       remove_mcp_server_definition
+      operator_suspend_account
+      operator_reactivate_account
+      operator_deactivate_account
+      operator_recompress_style_guides
     ]
   end
 
@@ -78,6 +82,30 @@ RSpec.describe Tools::Registry do
 
       expect(read_only_definition_names).to match_array(all_definition_names - write_tool_names)
       expect(read_only_definition_names & write_tool_names).to be_empty
+    end
+  end
+
+  describe ".mcp_definitions_for" do
+    let(:account) { create(:account) }
+    let(:project) { create(:project, account:) }
+    let(:user) { create(:user, :owner, account:) }
+
+    around do |example|
+      original_emails = ENV["PAID_OPERATOR_EMAILS"]
+      ENV["PAID_OPERATOR_EMAILS"] = user.email
+      example.run
+    ensure
+      ENV["PAID_OPERATOR_EMAILS"] = original_emails
+    end
+
+    it "advertises only read-only tools on the raw MCP surface" do
+      create(:project_membership, :member, user: user, project: project)
+
+      definitions = described_class.mcp_definitions_for(user: user)
+      names = definitions.map { |definition| definition[:name] }
+
+      expect(names).to include("list_projects", "get_project", "operator_console_inventory")
+      expect(names).not_to include("trigger_agent_run", "operator_suspend_account")
     end
   end
 
@@ -146,6 +174,7 @@ RSpec.describe Tools::Registry do
   describe ".write_tool?" do
     it "returns true for known write tools and false otherwise" do
       expect(described_class.write_tool?("trigger_agent_run")).to be(true)
+      expect(described_class.write_tool?("operator_suspend_account")).to be(true)
       expect(described_class.write_tool?("get_project")).to be(false)
       expect(described_class.write_tool?("does_not_exist")).to be(false)
     end
@@ -166,6 +195,44 @@ RSpec.describe Tools::Registry do
           session: build(:chat_session, account: account, created_by: user)
         )
       }.to raise_error(ArgumentError, "Unknown tool: trigger_agent_run")
+    end
+  end
+
+  describe ".dispatch_mcp" do
+    let(:account) { create(:account) }
+    let(:user) { create(:user, :owner, account:) }
+    let(:session) { build(:chat_session, account:, created_by: user) }
+
+    around do |example|
+      original_emails = ENV["PAID_OPERATOR_EMAILS"]
+      ENV["PAID_OPERATOR_EMAILS"] = user.email
+      example.run
+    ensure
+      ENV["PAID_OPERATOR_EMAILS"] = original_emails
+    end
+
+    it "allows direct calls to operator read-only tools" do
+      create(:account)
+
+      result = described_class.dispatch_mcp(
+        name: "operator_list_accounts",
+        arguments: {},
+        user: user,
+        session: session
+      )
+
+      expect(result).to be_an(Array)
+    end
+
+    it "rejects direct calls to operator write tools" do
+      expect {
+        described_class.dispatch_mcp(
+          name: "operator_suspend_account",
+          arguments: { account_id: account.id, confirmed: true },
+          user: user,
+          session: session
+        )
+      }.to raise_error(ArgumentError, "Unknown tool: operator_suspend_account")
     end
   end
 
