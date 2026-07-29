@@ -44,11 +44,13 @@ module Tools
 
     class << self
       def dispatch(name:, arguments:, user:, session:)
-        tool_class = find(name)
-        raise ArgumentError, "Unknown tool: #{name}" unless tool_class
-        raise ArgumentError, "Tool arguments must be a JSON object" unless arguments.is_a?(Hash)
-
-        tool_class.new(user:, session:).dispatch(**arguments.symbolize_keys)
+        dispatch_via_registry(
+          registry_for(name),
+          name:,
+          arguments:,
+          user:,
+          session:
+        )
       end
 
       def dispatch_read_only(name:, arguments:, user:, session:)
@@ -60,15 +62,22 @@ module Tools
       end
 
       def find(name)
-        tool_hash[name]
+        tool_hash[name] || OperatorTools::Registry.find(name)
       end
 
       def definitions_for(user:)
-        definitions_for_classes(available_tool_classes_for(user:))
+        definitions_for_classes(available_tool_classes_for(user:)) +
+          OperatorTools::Registry.definitions_for(user:)
       end
 
       def read_only_definitions_for(user:)
-        definitions_for_classes(read_only_tool_classes_for(user:))
+        definitions_for_classes(read_only_tool_classes_for(user:)) +
+          OperatorTools::Registry.read_only_definitions_for(user:)
+      end
+
+      def mcp_definitions_for(user:, session: nil)
+        definitions_for_classes(read_only_tool_classes_for(user:)) +
+          OperatorTools::Registry.definitions_for(user:)
       end
 
       # Tools advertised to the chat agent loop. Includes write tools so the
@@ -76,7 +85,15 @@ module Tools
       # so confirmation always originates from the human approver, never the
       # model itself. See RDR-028.
       def chat_definitions_for(user:, session: nil)
-        available_chat_tool_classes_for(user:, session:).map { |klass| chat_definition_for(klass) }
+        available_chat_tool_classes_for(user:, session:).map { |klass| chat_definition_for(klass) } +
+          OperatorTools::Registry.chat_definitions_for(user:, session:)
+      end
+
+      def dispatch_mcp(name:, arguments:, user:, session:)
+        registry = OperatorTools::Registry.find(name) ? OperatorTools::Registry : nil
+        return dispatch_via_registry(registry, name:, arguments:, user:, session:) if registry
+
+        dispatch_read_only(name:, arguments:, user:, session:)
       end
 
       def write_tool?(name)
@@ -88,17 +105,14 @@ module Tools
       end
 
       def resolve_confirmation(name:, decision:, pending_result:, user:, session:)
-        tool_class = find(name)
-        raise ArgumentError, "Unknown tool: #{name}" unless tool_class
+        registry = registry_for(name)
+        raise ArgumentError, "Unknown tool: #{name}" unless registry
 
-        tool_class.new(user:, session:).resolve_confirmation(
-          decision: decision.to_sym,
-          pending_result: pending_result
-        )
+        registry.resolve_confirmation(name:, decision:, pending_result:, user:, session:)
       end
 
       def all
-        tool_hash.values
+        tool_hash.values + OperatorTools::Registry.all
       end
 
       private
@@ -142,6 +156,27 @@ module Tools
         stripped_schema[:required] = Array(stripped_schema[:required]).reject { |field| field.to_s == "confirmed" }
 
         definition.merge(inputSchema: stripped_schema)
+      end
+
+      def registry_for(name)
+        return self if tool_hash.key?(name)
+        return OperatorTools::Registry if OperatorTools::Registry.find(name)
+
+        nil
+      end
+
+      def dispatch_via_registry(registry, name:, arguments:, user:, session:)
+        raise ArgumentError, "Unknown tool: #{name}" unless registry
+
+        registry == self ? dispatch_own(name:, arguments:, user:, session:) : registry.dispatch(name:, arguments:, user:, session:)
+      end
+
+      def dispatch_own(name:, arguments:, user:, session:)
+        tool_class = tool_hash[name]
+        raise ArgumentError, "Unknown tool: #{name}" unless tool_class
+        raise ArgumentError, "Tool arguments must be a JSON object" unless arguments.is_a?(Hash)
+
+        tool_class.new(user:, session:).dispatch(**arguments.symbolize_keys)
       end
     end
   end

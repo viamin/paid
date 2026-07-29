@@ -21,6 +21,10 @@ RSpec.describe Tools::Registry do
       create_mcp_server_definition
       update_mcp_server_definition
       remove_mcp_server_definition
+      operator_suspend_account
+      operator_reactivate_account
+      operator_deactivate_account
+      operator_recompress_style_guides
     ]
   end
 
@@ -146,6 +150,7 @@ RSpec.describe Tools::Registry do
   describe ".write_tool?" do
     it "returns true for known write tools and false otherwise" do
       expect(described_class.write_tool?("trigger_agent_run")).to be(true)
+      expect(described_class.write_tool?("operator_suspend_account")).to be(true)
       expect(described_class.write_tool?("get_project")).to be(false)
       expect(described_class.write_tool?("does_not_exist")).to be(false)
     end

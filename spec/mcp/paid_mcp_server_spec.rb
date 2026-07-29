@@ -86,6 +86,14 @@ RSpec.describe PaidMcpServer do
 
       expect(result[:error]).to eq(code: -32602, message: "Unknown tool: trigger_agent_run")
     end
+
+    it "does not expose operator tools to non-operators" do
+      result = server.handle_request(method: "tools/list", id: 8)
+
+      tool_names = result[:result][:tools].map { |tool| tool[:name] }
+      expect(tool_names.grep(/\Aoperator_/)).to eq([])
+      expect(tool_names).not_to include("operator_console_inventory")
+    end
   end
 
   describe "#tool_definitions" do
@@ -117,16 +125,52 @@ RSpec.describe PaidMcpServer do
 
   describe "#call_tool" do
     it "routes tool calls through the registry" do
-      allow(Tools::Registry).to receive(:dispatch_read_only).and_return([])
+      allow(Tools::Registry).to receive(:dispatch_mcp).and_return([])
 
       server.call_tool(name: "list_projects", arguments: {})
 
-      expect(Tools::Registry).to have_received(:dispatch_read_only).with(
+      expect(Tools::Registry).to have_received(:dispatch_mcp).with(
         name: "list_projects",
         arguments: {},
         user: user,
         session: chat_session
       )
+    end
+  end
+
+  describe "operator tools" do
+    let(:operator_account) { create(:account) }
+    let(:operator) { create(:user, :owner, account: operator_account) }
+    let(:target_account) { create(:account) }
+    let(:operator_session) { create(:chat_session, account: operator_account, created_by: operator) }
+    let(:operator_server) { described_class.new(session: operator_session, user: operator) }
+
+    around do |example|
+      original_emails = ENV["PAID_OPERATOR_EMAILS"]
+      ENV["PAID_OPERATOR_EMAILS"] = operator.email
+      example.run
+    ensure
+      ENV["PAID_OPERATOR_EMAILS"] = original_emails
+    end
+
+    it "lists operator tools for operators and allows calling them" do
+      result = operator_server.handle_request(method: "tools/list", id: 9)
+      tool_names = result[:result][:tools].map { |tool| tool[:name] }
+
+      expect(tool_names).to include("operator_console_inventory", "operator_suspend_account")
+
+      call_result = operator_server.handle_request(
+        method: "tools/call",
+        params: {
+          "name" => "operator_suspend_account",
+          "arguments" => { "account_id" => target_account.id, "confirmed" => true }
+        },
+        id: 10
+      )
+
+      content = JSON.parse(call_result[:result][:content].first[:text])
+      expect(content).to include("status" => "ok", "account_id" => target_account.id)
+      expect(target_account.reload).to be_suspended
     end
   end
 
