@@ -37,5 +37,19 @@ RSpec.describe AgentRun, type: :model do
 
       expect(agent_run.resource_profile_oom?).to be(true)
     end
+
+    it "ignores docker exec SIGKILL attempts when the container is still running" do
+      agent_run = create(:agent_run,
+        :failed,
+        error_message: "plain failure",
+        runners_attempted: [
+          {
+            "runner" => "claude",
+            "error_message" => "Preflight check failed: Agent exited with code 137 (process killed by SIGKILL; container OOM not reported; configured memory limit 0.6 GB, container_running=true)"
+          }
+        ])
+
+      expect(agent_run.resource_profile_oom?).to be(false)
+    end
   end
 end
