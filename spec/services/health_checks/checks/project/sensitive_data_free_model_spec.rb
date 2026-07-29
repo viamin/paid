@@ -31,4 +31,18 @@ RSpec.describe HealthChecks::Checks::Project::SensitiveDataFreeModel do
 
     expect(described_class.call(project)).to eq([])
   end
+
+  it "returns no findings for sensitive projects pinned to a risky free model via openrouter_free" do
+    model = create(:llm_model, :free, model_id: "free-model", catalog_source: "manual")
+    project = build(
+      :project,
+      data_classification: "confidential",
+      model_preferences: {
+        "required_model_id" => model.model_id,
+        "preferred_agent_type" => "openrouter_free"
+      }
+    )
+
+    expect(described_class.call(project)).to eq([])
+  end
 end

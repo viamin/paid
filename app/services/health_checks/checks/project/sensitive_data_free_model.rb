@@ -13,7 +13,7 @@ module HealthChecks
           return [] unless sensitive_project?
           return [] unless model&.free?
           return [] unless model.data_training_risk == "possible"
-          return [] if model.catalog_source == "openrouter_sync"
+          return [] if openrouter_routed?(model)
 
           finding(
             severity: :warning,
@@ -56,6 +56,14 @@ module HealthChecks
 
         def sensitive_project?
           subject.confidential? || subject.restricted?
+        end
+
+        def openrouter_routed?(model)
+          preferred_agent_type_openrouter? || model.catalog_source == "openrouter_sync"
+        end
+
+        def preferred_agent_type_openrouter?
+          %w[openrouter_free openrouter_pareto].include?(model_preferences["preferred_agent_type"])
         end
       end
     end
