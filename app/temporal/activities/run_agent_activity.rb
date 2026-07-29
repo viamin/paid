@@ -924,13 +924,16 @@ module Activities
       ]
     end
 
-    # Direct-outbound runners (opencode, kilocode, pi, omp, openrouter_free)
-    # bring their own model from config and bypass the LlmModel tier catalog.
+    # Direct-outbound runners (opencode, kilocode, pi, omp) bring their own
+    # model from config and bypass the LlmModel tier catalog. openrouter_free
+    # is excluded because it still requires a tier-resolved free model.
     # Uses the runner entry when available; falls back to the resolved runner
     # key so bare agent-type candidates (e.g. "opencode") are still recognized.
     def direct_outbound_runner?(runner_candidate, user)
       runner_entry = runner_entry_for(runner_candidate, user)
       runner_key = runner_entry&.runner_key || RunnerSupport.runner_key_for_agent_type(runner_candidate)
+      return false if runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
+
       runner_entry&.requires_direct_outbound? ||
         Runners::DefaultTierModelIds::DIRECT_OUTBOUND_RUNNER_KEYS.include?(runner_key)
     end

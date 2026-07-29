@@ -1785,6 +1785,21 @@ RSpec.describe Activities::RunAgentActivity do
     end
   end
 
+  def create_low_only_openrouter_free_runner(user:)
+    api_key = create(:runner_api_key, user: user, api_service_type: "openrouter")
+    free_model = create(
+      :llm_model,
+      :free,
+      model_id: "openrouter/sonoma-sky-alpha",
+      provider: Runner::OPENROUTER_FREE_MODEL_PROVIDER,
+      tier: "low"
+    )
+
+    create_openrouter_free_runner(user: user, api_key: api_key, model: free_model.model_id).tap do |runner|
+      runner.update!(tier_models: { "low" => runner.tier_models.fetch("low") })
+    end
+  end
+
   def build_openrouter_free_run(project:, model:, data_classification:)
     run = create(:agent_run, :with_git_context, project: project, issue: create(:issue, project: project))
     project_stub = Struct.new(:data_classification).new(data_classification)
@@ -3753,6 +3768,21 @@ expect(container_service).to receive(:execute).with(
         agent_run.reload
         expect(agent_run.status).to eq("failed")
         expect(agent_run.error_message).to eq("No runner supports tier high")
+        expect(agent_run.runners_attempted).to eq([])
+      end
+
+      it "filters openrouter_free before execution when no free model resolves for the requested tier" do
+        fallback_runner = create_low_only_openrouter_free_runner(user: user)
+        user.settings.update!(fallback_enabled: true, fallback_runners: [ fallback_runner.routing_key ])
+        allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude openrouter_free])
+
+        expect(container_service).not_to receive(:execute)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /No runner supports tier high/)
+
+        agent_run.reload
         expect(agent_run.runners_attempted).to eq([])
       end
     end
