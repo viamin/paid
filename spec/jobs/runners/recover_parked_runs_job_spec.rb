@@ -62,17 +62,31 @@ RSpec.describe Runners::RecoverParkedRunsJob do
     expect(other.reload.rate_limited_until).to eq(original_reset)
   end
 
-      it "leaves already-due runs untouched and does not re-queue" do
-        due = create(:agent_run, :rate_limited, project: project, issue: issue,
-          rate_limited_until: 5.minutes.ago)
+  it "ignores parked runs owned by another user in the same account" do
+    other_user = create(:user, account: user.account)
+    other_project = create(:project, account: user.account, created_by: other_user)
+    other_issue = create(:issue, project: other_project)
+    other = create(:agent_run, :rate_limited, project: other_project, issue: other_issue,
+      rate_limited_until: 2.days.from_now)
+    original_reset = other.rate_limited_until
 
-        described_class.perform_now(user.id)
+    described_class.perform_now(user.id)
 
-        # already due — excluded from the update (only future resets advance);
-        # no runs were advanced so the stale detector is not enqueued
-        expect(due.reload.rate_limited_until.to_i).to eq(5.minutes.ago.to_i)
-        expect(StaleRunDetectorJob).not_to have_been_enqueued
-      end
+    expect(other.reload.rate_limited_until).to eq(original_reset)
+  end
+
+  it "leaves already-due runs untouched and does not re-queue" do
+    due = create(:agent_run, :rate_limited, project: project, issue: issue,
+      rate_limited_until: 5.minutes.ago)
+    original_reset = due.rate_limited_until
+
+    described_class.perform_now(user.id)
+
+    # already due — excluded from the update (only future resets advance);
+    # no runs were advanced so the stale detector is not enqueued
+    expect(due.reload.rate_limited_until).to eq(original_reset)
+    expect(StaleRunDetectorJob).not_to have_been_enqueued
+  end
 
   describe "Runner availability callback" do
     it "enqueues recovery when a runner is created" do
@@ -112,6 +126,19 @@ RSpec.describe Runners::RecoverParkedRunsJob do
 
     it "does not enqueue recovery when no parked runs need waking" do
       user # create user (its default runner also enqueues; ignore that)
+      clear_enqueued_jobs
+
+      expect {
+        create(:runner, user: user, runner_key: "codex", auth_type: "subscription")
+      }.not_to have_enqueued_job(described_class)
+    end
+
+    it "does not enqueue recovery for parked runs owned by another user in the same account" do
+      other_user = create(:user, account: user.account)
+      other_project = create(:project, account: user.account, created_by: other_user)
+      other_issue = create(:issue, project: other_project)
+      create(:agent_run, :rate_limited, project: other_project, issue: other_issue,
+        rate_limited_until: 2.days.from_now)
       clear_enqueued_jobs
 
       expect {
