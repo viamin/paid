@@ -394,6 +394,32 @@ RSpec.describe Activities::QueueAgentRunActivity do
         expect(ProcessRunQueueJob).not_to have_been_enqueued
       end
 
+      it "treats a rate_limited run as in-flight and does not mint a duplicate for the same issue" do
+        existing = create(:agent_run, :rate_limited, project: project, issue: issue)
+
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+        expect(result[:agent_run_id]).to eq(existing.id)
+        expect(result[:duplicate]).to be true
+        expect(AgentRun.where(project: project, issue: issue).count).to eq(1)
+        expect(ProcessRunQueueJob).not_to have_been_enqueued
+      end
+
+      it "treats a rate_limited run as in-flight and does not mint a duplicate for the same PR" do
+        existing = create(:agent_run, :rate_limited, project: project,
+          source_pull_request_number: 42, custom_prompt: "Fix it")
+
+        result = activity.execute(
+          project_id: project.id,
+          source_pull_request_number: 42,
+          custom_prompt: "Fix it again"
+        )
+
+        expect(result[:agent_run_id]).to eq(existing.id)
+        expect(result[:duplicate]).to be true
+        expect(AgentRun.where(project: project, source_pull_request_number: 42).count).to eq(1)
+      end
+
       it "allows queueing when no active/queued run exists for the issue" do
         create(:agent_run, :completed, project: project, issue: issue)
 

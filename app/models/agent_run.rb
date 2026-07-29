@@ -127,6 +127,12 @@ class AgentRun < ApplicationRecord
   UNFINISHED_STATUSES = %w[queued running paused].freeze
   GUARDRAIL_VIOLATION_TYPES = %w[loop_detected token_limit cost_limit time_limit anomaly no_progress token_budget].freeze
   AUTO_PICK_BLOCKING_STATUSES = UNFINISHED_STATUSES
+  # Statuses that mean work is already in flight for an issue/PR and must block
+  # queueing a duplicate. Includes +rate_limited+ because a parked run holds the
+  # work slot and will re-queue on recovery — excluding it let re-triggering
+  # pumps (e.g. the PR CI-fix scanner) mint a fresh run every cycle while the
+  # prior one sat parked, producing hundreds of duplicate runs per issue (#129).
+  DEDUP_BLOCKING_STATUSES = (UNFINISHED_STATUSES + %w[rate_limited]).freeze
   TOKEN_LIMIT_STATUSES = %w[ok warning exceeded].freeze
   DEFAULT_MAX_TOKENS_PER_RUN = 10_000_000
   MAX_STALE_REQUEUES = 2

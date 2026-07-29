@@ -157,6 +157,7 @@ class Runner < ApplicationRecord
   before_discard :prevent_destroying_default_runner
   before_discard :clear_provider_api_key_reference
   after_commit :invalidate_agent_run_runner_option_caches, if: :agent_run_runner_option_cache_invalidation_needed?
+  after_commit :enqueue_parked_run_recovery, if: :became_available_for_agent_runs?
 
   validates :weight, numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: MAX_WEIGHT }
   validates :monthly_token_budget,
@@ -996,6 +997,26 @@ class Runner < ApplicationRecord
       previous_changes.key?("runner_key") ||
       previous_changes.key?("auth_type") ||
       display_name_config_changed?
+  end
+
+  # True when this runner just became usable for agent runs — created,
+  # re-enabled, or undiscarded. Used to wake parked `rate_limited` runs so they
+  # re-dispatch onto the newly-available capacity instead of waiting out the
+  # original runner's full rate-limit window.
+  def became_available_for_agent_runs?
+    # The enabled_for_agent_runs? guard means any change to that column was a
+    # re-enable (false -> true); a disable returns false above.
+    return false unless user_id.present? && enabled_for_agent_runs?
+
+    previous_changes.key?("id") ||
+      previous_changes.key?("enabled_for_agent_runs") ||
+      (previous_changes.key?("discarded_at") && discarded_at.nil?)
+  end
+
+  def enqueue_parked_run_recovery
+    return unless Runners::RecoverParkedRunsJob.parked_runs_for(user).exists?
+
+    Runners::RecoverParkedRunsJob.perform_later(user_id)
   end
 
   def display_name_config_changed?

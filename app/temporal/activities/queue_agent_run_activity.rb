@@ -167,14 +167,17 @@ module Activities
     # Returns nil for custom-prompt-only runs (no issue or PR) intentionally:
     # custom prompts are unique by definition and cannot be meaningfully deduplicated.
     #
-    # Deduplication is goal-agnostic: any unfinished run for the same issue or
-    # source PR blocks queueing another. Two runs against the same PR share a
-    # branch and worktree (e.g. a review and a create_pr both cloned to
-    # /workspace), so allowing them to run concurrently caused WorktreeConflict
-    # failures whenever the poll cycle fired both at once. The poller will
-    # re-evaluate next cycle once the in-flight run finishes.
+    # Deduplication is goal-agnostic: any unfinished — or rate_limited (parked,
+    # awaiting recovery) — run for the same issue or source PR blocks queueing
+    # another. A rate_limited run still holds the work slot and will re-queue,
+    # so treating it as in-flight prevents re-triggering pumps (e.g. the PR
+    # CI-fix scanner) from minting a duplicate every cycle. Two runs against the
+    # same PR share a branch and worktree (e.g. a review and a create_pr both
+    # cloned to /workspace), so allowing them to run concurrently caused
+    # WorktreeConflict failures whenever the poll cycle fired both at once. The
+    # poller will re-evaluate next cycle once the in-flight run finishes.
     def find_existing_run(project, issue, source_pull_request_number)
-      scope = project.agent_runs.where(status: AgentRun::UNFINISHED_STATUSES).lock("FOR UPDATE")
+      scope = project.agent_runs.where(status: AgentRun::DEDUP_BLOCKING_STATUSES).lock("FOR UPDATE")
       if issue
         scope.where(issue: issue).first
       elsif source_pull_request_number
