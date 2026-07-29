@@ -3107,6 +3107,124 @@ RSpec.describe Containers::Provision do
         )
       end
     end
+
+    context "when closing stdin for codex exec inside an sh -c wrapper" do
+      let(:captured) { [] }
+
+      before do
+        allow(mock_container).to receive(:exec) do |cmd, **_opts, &block|
+          captured << cmd
+          block.call(:stdout, "output\n") if block
+          [ [ "output\n" ], [], 0 ]
+        end
+        allow(mock_container).to receive(:info).and_return({ "State" => { "Running" => true, "ExitCode" => 0 } })
+      end
+
+      it "redirects stdin from /dev/null for a bare codex exec command" do
+        service.execute([ "codex", "exec", "--json", "prompt" ])
+
+        expect(captured.last.first(2)).to eq([ "sh", "-lc" ])
+        expect(captured.last.last).to end_with(" < /dev/null")
+      end
+
+      it "redirects stdin from /dev/null for an sh -c api-key auth codex command" do
+        script = 'env OPENAI_API_KEY="$KEY" codex exec --json "$1"'
+        service.execute([ "sh", "-c", script, "--", "prompt" ])
+
+        expect(captured.last.first(2)).to eq([ "sh", "-lc" ])
+        expect(captured.last.last).to end_with(" < /dev/null")
+        expect(captured.last.last).to include("codex")
+      end
+
+      it "redirects stdin from /dev/null for an sh -c subscription auth codex command" do
+        script = 'if [ "$PAID_CODEX_SUBSCRIPTION_AUTH" = "1" ]; then env -u OPENAI_API_KEY codex exec --json "$1"; else codex exec --json "$1"; fi'
+        service.execute([ "sh", "-c", script, "--", "prompt" ])
+
+        expect(captured.last.first(2)).to eq([ "sh", "-lc" ])
+        expect(captured.last.last).to end_with(" < /dev/null")
+      end
+    end
+  end
+
+  describe "#codex_exec_command?" do
+    it "detects a bare codex exec command" do
+      expect(service.send(:codex_exec_command?, [ "codex", "exec", "--json", "prompt" ])).to be true
+    end
+
+    it "detects an env -u wrapped codex exec command" do
+      expect(service.send(:codex_exec_command?, [ "env", "-u", "OPENAI_API_KEY", "codex", "exec", "--json", "prompt" ])).to be true
+    end
+
+    it "detects codex exec inside an sh -c api-key auth wrapper" do
+      script = 'env OPENAI_API_KEY="$KEY" codex exec --json "$1"'
+      expect(service.send(:codex_exec_command?, [ "sh", "-c", script, "--", "prompt" ])).to be true
+    end
+
+    it "detects codex exec inside an sh -c subscription auth wrapper" do
+      script = 'if [ "$PAID_CODEX_SUBSCRIPTION_AUTH" = "1" ]; then env -u OPENAI_API_KEY codex exec --json "$1"; else codex exec --json "$1"; fi'
+      expect(service.send(:codex_exec_command?, [ "sh", "-c", script, "--", "prompt" ])).to be true
+    end
+
+    it "detects codex exec inside an sh -c wrapper passed as a string" do
+      expect(service.send(:codex_exec_command?, %(sh -c 'codex exec --json "$1"' -- prompt))).to be true
+    end
+
+    it "returns false for a non-codex agent command" do
+      expect(service.send(:codex_exec_command?, [ "claude", "--print", "prompt" ])).to be false
+    end
+
+    it "returns false for an sh -c wrapper without codex exec" do
+      expect(service.send(:codex_exec_command?, [ "sh", "-c", "echo hello" ])).to be false
+    end
+
+    it "returns false for an empty command" do
+      expect(service.send(:codex_exec_command?, [])).to be false
+    end
+
+    it "returns false for a malformed sh -c command missing a script" do
+      expect(service.send(:codex_exec_command?, [ "sh", "-c" ])).to be false
+    end
+
+    it "returns false for a nil command" do
+      expect(service.send(:codex_exec_command?, nil)).to be false
+    end
+  end
+
+  describe "#close_stdin_for_codex_exec" do
+    it "rewrites a bare codex exec command to redirect stdin from /dev/null" do
+      rewritten = service.send(:close_stdin_for_codex_exec, [ "codex", "exec", "--json", "prompt" ])
+
+      expect(rewritten.first(2)).to eq([ "sh", "-lc" ])
+      expect(rewritten.last).to end_with(" < /dev/null")
+      expect(rewritten.last).to include("codex")
+    end
+
+    it "rewrites an env -u wrapped codex exec command to redirect stdin from /dev/null" do
+      rewritten = service.send(:close_stdin_for_codex_exec, [ "env", "-u", "OPENAI_API_KEY", "codex", "exec", "--json", "prompt" ])
+
+      expect(rewritten.first(2)).to eq([ "sh", "-lc" ])
+      expect(rewritten.last).to end_with(" < /dev/null")
+    end
+
+    it "rewrites an sh -c codex wrapper to redirect stdin from /dev/null" do
+      script = 'env OPENAI_API_KEY="$KEY" codex exec --json "$1"'
+      rewritten = service.send(:close_stdin_for_codex_exec, [ "sh", "-c", script, "--", "prompt" ])
+
+      expect(rewritten.first(2)).to eq([ "sh", "-lc" ])
+      expect(rewritten.last).to end_with(" < /dev/null")
+      expect(rewritten.last).to include("codex")
+    end
+
+    it "preserves the prompt argument when rewriting an sh -c codex wrapper" do
+      rewritten = service.send(:close_stdin_for_codex_exec, [ "sh", "-c", 'codex exec "$1"', "--", "build the feature" ])
+
+      expect(rewritten.last).to include("build\\ the\\ feature")
+    end
+
+    it "leaves non-codex commands untouched" do
+      original = [ "claude", "--print", "prompt" ]
+      expect(service.send(:close_stdin_for_codex_exec, original)).to eq(original)
+    end
   end
 
   describe "#cleanup" do
