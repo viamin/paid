@@ -31,7 +31,7 @@ module HealthChecks
           model_id = model_preferences["required_model_id"]
           return if model_id.blank?
 
-          LlmModel.active.find_by(model_id: model_id)
+          selectable_override_model(LlmModel.active.find_by(model_id: model_id))
         end
 
         def preferred_model
@@ -42,18 +42,14 @@ module HealthChecks
           model_ids
             .map { |model_id| models_by_id[model_id] }
             .compact
-            .find { |model| subject.llm_provider_allowed?(model.provider) }
+            .find { |model| selectable_override_model?(model) }
         end
 
         def tenant_preferred_model
           model_id = subject.account.tenant_setting&.model_preference_for(create_pr_runner_key)
           return if model_id.blank?
 
-          model = LlmModel.active.find_by(model_id: model_id)
-          return unless model
-          return unless subject.llm_provider_allowed?(model.provider)
-
-          model
+          selectable_override_model(LlmModel.active.find_by(model_id: model_id))
         end
 
         def model_preferences
@@ -84,20 +80,49 @@ module HealthChecks
         # keeps round-robin/random routing aligned with RunnerResolver without
         # mutating persisted selection state during a local check.
         def create_pr_runner_key
-          identifier = create_pr_runner_identifier
-          return if identifier.blank?
-
-          owner = subject.effective_owner
-          runner = Runner.for_identifier(owner, identifier) if owner
-          runner&.runner_key || identifier
+          create_pr_runner&.runner_key || create_pr_runner_identifier
         end
 
         def create_pr_runner_identifier
-          settings = AgentRuns::UserSettingsResolver.call(project: subject, strict: false)
-          return if settings.blank?
+          @create_pr_runner_identifier ||= begin
+            settings = AgentRuns::UserSettingsResolver.call(project: subject, strict: false)
+            if settings.present?
+              settings.dup.select_automated_runner_identifier(goal: "create_pr") ||
+                settings.default_runner_identifier_for_goal("create_pr")
+            end
+          end
+        end
 
-          settings.dup.select_automated_runner_identifier(goal: "create_pr") ||
-            settings.default_runner_identifier_for_goal("create_pr")
+        def create_pr_runner
+          @create_pr_runner ||= begin
+            identifier = create_pr_runner_identifier
+            if identifier.present?
+              owner = subject.effective_owner
+              Runner.for_identifier(owner, identifier) if owner
+            end
+          end
+        end
+
+        def selectable_override_model(model)
+          model if selectable_override_model?(model)
+        end
+
+        def selectable_override_model?(model)
+          model && subject.llm_provider_allowed?(model.provider) && runner_compatible?(model)
+        end
+
+        def runner_compatible?(model)
+          runner = create_pr_runner
+          return true unless model && runner
+
+          result = Runners::ModelCompatibility.call(
+            runner_key: runner.runner_key,
+            model_id: model.model_id,
+            auth_type: runner.auth_type,
+            provider_runtime: runner.agent_harness_runner_runtime
+          )
+
+          !result&.unsupported?
         end
       end
     end
