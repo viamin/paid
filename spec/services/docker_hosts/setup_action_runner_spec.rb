@@ -143,6 +143,51 @@ RSpec.describe DockerHosts::SetupActionRunner do
       expect(host.setup_step("required_network")).to include("status" => "verified")
     end
 
+    it "downgrades the required network status when verification fails" do
+      seed_client_tls_material
+      host.update!(required_network_status: "ready")
+      allow(DockerHosts::RemoteBackendSession).to receive(:with_backend).and_yield(
+        instance_double(Containers::Backends::RemoteDocker).tap do |backend|
+          allow(backend).to receive(:get_network).and_raise(Docker::Error::NotFoundError, "missing network")
+        end
+      )
+
+      result = described_class.call(
+        host: host,
+        action: "verify_network",
+        params: ActionController::Parameters.new(required_network_name: "shared-agents")
+      )
+
+      expect(result.success?).to be(false)
+      expect(host.reload.required_network_status).to eq("failing")
+      expect(host).not_to be_placement_ready
+      expect(host.setup_step("required_network")).to include("status" => "failing")
+    end
+
+    it "downgrades the required network status when network creation fails" do
+      seed_client_tls_material
+      host.update!(required_network_status: "ready")
+      allow(DockerHosts::RemoteBackendSession).to receive(:with_backend).and_yield(
+        instance_double(Containers::Backends::RemoteDocker).tap do |backend|
+          allow(backend).to receive(:create_network).and_raise(Docker::Error::DockerError, "permission denied")
+        end
+      )
+
+      result = described_class.call(
+        host: host,
+        action: "create_network",
+        params: ActionController::Parameters.new(
+          required_network_name: "shared-agents",
+          allow_network_create: "1"
+        )
+      )
+
+      expect(result.success?).to be(false)
+      expect(host.reload.required_network_status).to eq("failing")
+      expect(host).not_to be_placement_ready
+      expect(host.setup_step("required_network")).to include("status" => "failing")
+    end
+
     it "captures daemon architecture and summary during the TLS test" do
       seed_client_tls_material
       host.update!(daemon_architecture: nil, daemon_summary: nil)

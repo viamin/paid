@@ -33,6 +33,7 @@ module DockerHosts
         Result.new(success?: false, message: "Unsupported setup helper action.")
       end
     rescue ArgumentError, OpenSSL::OpenSSLError, Docker::Error::DockerError => e
+      downgrade_status_for_failure(step_key_for(action))
       record_step_failure(step_key_for(action), e.message)
       Result.new(success?: false, message: e.message)
     end
@@ -373,6 +374,10 @@ module DockerHosts
       host.save! if host.persisted? && host.changed?
     rescue ActiveRecord::ActiveRecordError
       nil
+    end
+
+    def downgrade_status_for_failure(step_key)
+      host.required_network_status = "failing" if step_key == "required_network"
     end
 
     def write_step(step_key, status:, message:, completed:)
