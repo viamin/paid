@@ -166,18 +166,31 @@ class ProjectsController < ApplicationController
 
     assign_selected_github_credential(@project, update_params)
     update_params = update_params.except(:github_auth_source, :github_token_id, :github_installation_id)
+    @mutation_req = @project.pre_commit_requirements.find_by(check_type: "mutation_test")
 
-    if @project.update(update_params)
-      audit_event("project.updated", metadata: { name: @project.name, changed_fields: @project.saved_changes.except("updated_at").keys })
-      redirect_to @project, notice: "Project was successfully updated."
-    else
-      ensure_github_app_installation_error
-      @available_service_containers = policy_scope(ServiceContainer).where.not(id: @project.service_container_ids).order(:name)
-      @available_mcp_server_definitions = policy_scope(McpServerDefinition).where.not(id: @project.mcp_server_definition_ids).order(:name)
-      @project_mcp_servers = @project.project_mcp_servers.includes(:mcp_server_definition).to_a
-      load_screenshot_settings_context
-      render :edit, status: :unprocessable_content
+    Project.transaction do
+      @project.update!(update_params)
+      @mutation_req = upsert_mutation_test_requirement!
     end
+
+    audit_event("project.updated", metadata: { name: @project.name, changed_fields: @project.saved_changes.except("updated_at").keys })
+    redirect_to @project, notice: "Project was successfully updated."
+  rescue ActiveRecord::RecordInvalid => e
+    if e.record.is_a?(PreCommitRequirement)
+      @mutation_req = e.record
+      e.record.errors.each do |error|
+        @project.errors.add(:base, error.full_message)
+      end
+    elsif mutation_test_params
+      @mutation_req = mutation_test_requirement_for_form
+    end
+
+    ensure_github_app_installation_error
+    @available_service_containers = policy_scope(ServiceContainer).where.not(id: @project.service_container_ids).order(:name)
+    @available_mcp_server_definitions = policy_scope(McpServerDefinition).where.not(id: @project.mcp_server_definition_ids).order(:name)
+    @project_mcp_servers = @project.project_mcp_servers.includes(:mcp_server_definition).to_a
+    load_screenshot_settings_context
+    render :edit, status: :unprocessable_content
   end
 
   def toggle_auto_pick
@@ -541,6 +554,56 @@ class ProjectsController < ApplicationController
       "service_dependencies" => Array(raw[:service_dependencies]).map(&:to_s).map(&:strip).reject(&:blank?).uniq,
       "setup_commands" => raw[:setup_commands_text].to_s.lines.map(&:strip).reject(&:blank?).uniq
     )
+  end
+
+  def mutation_test_params
+    params.permit(mutation_test: [ :enabled, :command, :failure_behavior ]).fetch(:mutation_test, nil)
+  end
+
+  def upsert_mutation_test_requirement!
+    mutation_params = mutation_test_params
+    return @mutation_req unless mutation_params
+
+    if @mutation_req
+      @mutation_req.assign_attributes(mutation_test_requirement_attributes(mutation_params))
+      @mutation_req.save!
+      @mutation_req
+    elsif mutation_test_enabled?(mutation_params)
+      @project.pre_commit_requirements.create!(mutation_test_requirement_attributes(mutation_params))
+    end
+  end
+
+  def mutation_test_requirement_for_form
+    return @mutation_req unless mutation_test_params
+
+    requirement = @mutation_req || @project.pre_commit_requirements.new(
+      account: @project.account,
+      name: "mutation_test",
+      check_type: "mutation_test",
+      position: 0
+    )
+    requirement.assign_attributes(mutation_test_requirement_attributes(mutation_test_params))
+    requirement
+  end
+
+  def mutation_test_requirement_attributes(mutation_params)
+    {
+      account: @project.account,
+      name: "mutation_test",
+      check_type: "mutation_test",
+      command: mutation_params[:command].presence || PreCommitRequirement::MUTATION_TEST_DEFAULT_COMMAND,
+      failure_behavior: mutation_failure_behavior(mutation_params[:failure_behavior]),
+      position: 0,
+      enabled: mutation_test_enabled?(mutation_params)
+    }
+  end
+
+  def mutation_failure_behavior(value)
+    PreCommitRequirement::FAILURE_BEHAVIORS.include?(value) ? value : "warn"
+  end
+
+  def mutation_test_enabled?(mutation_params)
+    ActiveModel::Type::Boolean.new.cast(mutation_params[:enabled])
   end
 
   def screenshot_settings_for_action

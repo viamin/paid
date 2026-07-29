@@ -319,7 +319,20 @@ module Previews
     end
 
     def preview_env
-      @service_environment.merge("CI" => "1")
+      @service_environment.merge(runtime_env_overrides).merge("CI" => "1")
+    end
+
+    def runtime_env_overrides
+      %w[
+        RAILS_ENV
+        RACK_ENV
+        RAILS_TEST_KEY
+        RAILS_MASTER_KEY
+        SECRET_KEY_BASE
+      ].each_with_object({}) do |key, env|
+        value = ENV[key]
+        env[key] = value if value.present?
+      end
     end
 
     def application_start_command
