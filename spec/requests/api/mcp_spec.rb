@@ -41,6 +41,8 @@ RSpec.describe "Api::McpController" do
         expect(body["result"]["tools"]).to be_an(Array)
         tool_names = body["result"]["tools"].map { |t| t["name"] }
         expect(tool_names).to include("list_projects", "get_project", "list_agent_runs")
+        expect(tool_names.grep(/\Aoperator_/)).to eq([])
+        expect(tool_names).not_to include("operator_console_inventory")
       end
 
       it "handles tools/call for list_projects" do
@@ -129,6 +131,44 @@ RSpec.describe "Api::McpController" do
         body = JSON.parse(response.body)
         expect(body["error"]["code"]).to eq(-32029)
         expect(body["error"]["message"]).to include("Rate limit")
+      end
+    end
+
+    context "when the session user is an operator" do
+      let(:user) { create(:user, :owner, account: account, email: "operator@example.com") }
+      let(:target_account) { create(:account) }
+
+      around do |example|
+        original_emails = ENV["PAID_OPERATOR_EMAILS"]
+        ENV["PAID_OPERATOR_EMAILS"] = user.email
+        example.run
+      ensure
+        ENV["PAID_OPERATOR_EMAILS"] = original_emails
+      end
+
+      it "surfaces only read-only operator tools over MCP" do
+        post "/api/mcp/call", params: {
+          jsonrpc: "2.0", id: 6, method: "tools/list", params: {}
+        }.to_json, headers: headers
+
+        tool_names = JSON.parse(response.body).dig("result", "tools").map { |tool| tool["name"] }
+        expect(tool_names).to include("operator_console_inventory", "operator_list_accounts")
+        expect(tool_names).not_to include("operator_suspend_account")
+      end
+
+      it "rejects direct operator write calls over MCP" do
+        post "/api/mcp/call", params: {
+          jsonrpc: "2.0", id: 7, method: "tools/call",
+          params: {
+            name: "operator_suspend_account",
+            arguments: { account_id: target_account.id, confirmed: true }
+          }
+        }.to_json, headers: headers
+
+        expect(response).to have_http_status(:ok)
+        body = JSON.parse(response.body)
+        expect(body["error"]).to eq("code" => -32602, "message" => "Unknown tool: operator_suspend_account")
+        expect(target_account.reload).not_to be_suspended
       end
     end
   end
