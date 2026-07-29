@@ -202,9 +202,10 @@
         <h2 class="text-xl font-semibold text-gray-900">Copyable commands</h2>
         <div class="mt-4 space-y-4">
           <% @setup_command_snippets.each do |label, command| %>
+            <% field_id = "setup-command-#{label.dasherize}" %>
             <div>
-              <div class="text-sm font-medium text-gray-900"><%= label.humanize %></div>
-              <textarea readonly rows="5" class="mt-2 block w-full rounded-2xl border-gray-300 bg-gray-50 font-mono text-xs text-gray-700 shadow-sm"><%= command %></textarea>
+              <label for="<%= field_id %>" class="text-sm font-medium text-gray-900"><%= label.humanize %></label>
+              <textarea id="<%= field_id %>" readonly rows="5" class="mt-2 block w-full rounded-2xl border-gray-300 bg-gray-50 font-mono text-xs text-gray-700 shadow-sm"><%= command %></textarea>
             </div>
           <% end %>
         </div>

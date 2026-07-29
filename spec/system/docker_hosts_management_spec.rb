@@ -70,7 +70,7 @@ RSpec.describe "Docker host management", type: :system do
     expect(page).to have_content("Remote Docker Setup")
     expect(page).to have_content("Generic remote Linux")
     expect(page).to have_content("Docker TLS connectivity test")
-    expect(page).to have_content("docker save paid-agent:latest")
+    expect(find_field("Docker save load", type: "textarea").value).to include("docker save paid-agent:latest")
   end
 
   it "shows QNAP / NAS specific setup guidance" do
