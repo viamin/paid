@@ -2,6 +2,7 @@
 
 require "docker-api"
 require "base64"
+require "shellwords"
 
 module Containers
   # Manages the lifecycle of a chat session's Docker container.
