@@ -504,10 +504,10 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to eq([ "project_edit" ])
     end
 
-    it "maps the mutation test requirements controller to the project edit page" do
-      targets = described_class.call(changed_files: [ "app/controllers/projects/mutation_test_requirements_controller.rb" ])
+    it "maps projects controller changes to the project edit page" do
+      targets = described_class.call(changed_files: [ "app/controllers/projects_controller.rb" ])
 
-      expect(targets.map(&:slug)).to eq([ "project_edit" ])
+      expect(targets.map(&:slug)).to include("project_edit")
     end
 
     it "maps the issues toggle_pause controller to the project_show target" do
