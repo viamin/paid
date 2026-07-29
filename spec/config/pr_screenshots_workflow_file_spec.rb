@@ -22,6 +22,14 @@ RSpec.describe PrScreenshotsWorkflowFile, :no_db do
     capture_steps.find { |step| step["name"] == name }
   end
 
+  def detect_steps
+    workflow.fetch("jobs").fetch("detect").fetch("steps")
+  end
+
+  def detect_step(name)
+    detect_steps.find { |step| step["name"] == name }
+  end
+
   it "scopes concurrency by PR number and action to avoid cross-event self-cancellation" do
     expect(workflow.fetch("concurrency")).to include(
       "group" => "pr-screenshots-${{ github.workflow }}-${{ github.event.pull_request.number }}-${{ github.event.action }}",
@@ -32,6 +40,15 @@ RSpec.describe PrScreenshotsWorkflowFile, :no_db do
   it "pins a stable test database name for the capture job" do
     expect(workflow.fetch("jobs").fetch("capture").fetch("env")).to include(
       "PAID_TEST_DATABASE" => "paid_test"
+    )
+  end
+
+  it "pins the detect job to the repo Ruby version before running the UI detector" do
+    expect(detect_step("Set up Ruby")).to include(
+      "uses" => "ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b"
+    )
+    expect(detect_step("Set up Ruby").fetch("with")).to include(
+      "ruby-version" => ".tool-versions"
     )
   end
 
