@@ -68,4 +68,28 @@ RSpec.describe HealthChecks::Checks::Project::SensitiveDataFreeModel do
 
     expect(described_class.call(project)).to eq([])
   end
+
+  it "returns no findings when the automated create_pr runner routes through OpenRouter" do
+    model = create(:llm_model, :free, model_id: "free-model", catalog_source: "manual")
+    owner = create(:user)
+    settings = owner.settings
+    openrouter_runner = instance_double(Runner, runner_key: "openrouter_free")
+    selected_settings = instance_double(UserSetting)
+    project = build(
+      :project,
+      created_by: owner,
+      account: owner.account,
+      data_classification: "confidential",
+      model_preferences: { "required_model_id" => model.model_id }
+    )
+
+    allow(AgentRuns::UserSettingsResolver).to receive(:call).with(project: project, strict: false).and_return(settings)
+    allow(settings).to receive(:dup).and_return(selected_settings)
+    allow(selected_settings).to receive(:select_automated_runner_identifier)
+      .with(goal: "create_pr")
+      .and_return("runner-123")
+    allow(Runner).to receive(:for_identifier).with(owner, "runner-123").and_return(openrouter_runner)
+
+    expect(described_class.call(project)).to eq([])
+  end
 end
