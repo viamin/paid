@@ -7,7 +7,10 @@ class AgentRunResourceProfile < ApplicationRecord
   MIN_RECOMMENDED_MEMORY_LIMIT_BYTES = 512 * 1024 * 1024
   SAFETY_MULTIPLIER = 1.2
   OOM_BUMP_MULTIPLIER = 1.25
-  OOM_MESSAGE_PATTERN = /container OOM-killed/i
+  OOM_MESSAGE_PATTERN = /
+    container\ OOM-killed |
+    container\ OOM\ not\ reported;\ configured\ memory\ limit .* container_running=false
+  /ix
 
   # Downward-tuning safety: a recommended limit that has grown because of
   # OOMs is never dropped on a single refresh. Several consecutive
