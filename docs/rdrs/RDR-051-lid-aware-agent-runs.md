@@ -34,21 +34,33 @@ blind to LID: it receives a generic implementation prompt, ignores the design tr
 code without updating EARS specs, and never cites `@spec` IDs. The arrow of intent breaks
 at the moment Paid touches the repo.
 
-Three capabilities are missing:
+Four capabilities are missing:
 
 1. **Honor LID on configured projects.** When a downstream project is LID-configured, Paid's
    agent runs must walk the arrow — read the HLD/LLD/EARS, update specs when intent
    changes, write tests first with `@spec`, and annotate code at behavior entry points.
-2. **Let a user request LID adoption.** A project owner should be able to ask Paid to
+2. **Elicit intent through issue enhancement.** Paid already has a synchronous
+   human-in-the-loop step — issue enhancement asks clarifying questions and waits for
+   answers. That is exactly where LID's intent-elicitation phases belong: ask
+   intent-focused questions, capture the answers as intent, and (for LID projects)
+   materialize them into LLD/EARS during implementation. Not every project uses enhancement,
+   so this is a layer *on top of* the others, not a dependency.
+3. **Let a user request LID adoption.** A project owner should be able to ask Paid to
    bootstrap LID on a project that does not yet have it, using LID's brownfield analysis to
    reverse-engineer the existing code and plan docs into a design tree.
-3. **Convert plan docs into LID artifacts.** Paid should turn existing RDRs, ADRs, design
+4. **Convert plan docs into LID artifacts.** Paid should turn existing RDRs, ADRs, design
    docs, and READMEs into HLD/LLD/EARS — authored intent, not inferred — as a special case
    of brownfield analysis weighted toward the plan-doc sources.
 
-Underlying all three is a single reconciliation problem: **LID is a human-in-the-loop,
+A fifth concern runs across all of them: once a design tree exists, the **existing code must
+be linked to it** via `@spec` annotations. Brownfield conversion produces specs but does not,
+by itself, annotate the code that already implements them — that linking has to happen
+somehow, and this RDR states how.
+
+Underlying all of this is a single reconciliation problem: **LID is a human-in-the-loop,
 design-before-code process with mandatory phase-boundary stops; Paid's issue→PR flow is
-built to run autonomously.** This RDR designs how those two models meet.
+built to run autonomously.** This RDR designs how those two models meet — and shows that
+issue enhancement, where it is enabled, is the place the stops land most naturally.
 
 ## Context
 
@@ -89,14 +101,22 @@ discipline.
 - **Agent-image tooling** is installed per-run: `Containers::TokenOptimization` installs
   `rtk` and `codegraph` inside an already-started container. Vendoring the LID method
   reference + coherence checker into the agent image follows the same pattern.
-- **Needs-input flow** (existing check-in channel): an issue enters `paid_state:
-  "needs_input"` with a `paid-needs-input` label; `Dashboard::NeedsInputQueue` surfaces it;
-  `ClarifyingQuestions::Load` / `ClarifyingQuestions::SubmitAnswers` /
-  `ClarifyingQuestions::ClearNeedsInput` carry questions and answers. Note: this channel is
-  **issue-only today** — the queue filters `is_pull_request: false`
-  (`needs_input_queue.rb`), and `ClarifyingQuestionsController` scopes to `issues_only`. It
-  is *not* the confirmation surface this RDR uses (see Decision Rationale); it is background
-  for why a separate Q&A channel was considered and rejected.
+- **Issue enhancement** (`enhance_issue` goal, `EnhanceIssueActivity`): a synchronous
+  human-in-the-loop step. Paid builds a knowledge context, calls an LLM
+  (`EnhanceIssueActivity#prompt_for`), and either marks the issue actionable or posts
+  clarifying questions in a `<!-- paid:enhance-issue -->` comment and moves the issue to
+  `paid_state: "needs_input"`. The LLM prompt is the exact extension point for
+  intent-focused questioning. Enhancement is optional per project — not every project uses
+  it — so LID must work without it (the bootstrap and implementation paths stand alone).
+- **Needs-input flow** (the check-in channel enhancement rides on): an issue in
+  `paid_state: "needs_input"` with a `paid-needs-input` label is surfaced by
+  `Dashboard::NeedsInputQueue`; `ClarifyingQuestions::Load` /
+  `ClarifyingQuestions::SubmitAnswers` / `ClarifyingQuestions::ClearNeedsInput` carry the
+  questions and answers, and clearing the label re-enables the issue. This channel is
+  **issue-only today** (the queue filters `is_pull_request: false`; the controller scopes to
+  `issues_only`) — which makes it the right surface for *enhancement-driven* elicitation
+  (issue-based) but the wrong one for confirming a *Planning PR* (which is why bootstrap
+  confirmation uses PR review instead — see Decision Rationale).
 - **PR review loop**: when a PR receives review, a `review`-goal run is triggered to address
   feedback. The PR is Paid's existing human gate for autonomous runs — and, for Planning PRs,
   the confirmation surface.
@@ -121,26 +141,33 @@ discipline.
    audit checklist, coherence checker, templates.
 2. Traced Paid's prompt-building and agent-run-goal machinery to locate the exact extension
    points (`prompt_for_goal`, `BuildForIssue`, `*::InjectIntoPrompt`, `AgentRun::GOALS`).
-3. Traced the needs-input / clarifying-questions flow and the PR review loop to evaluate
-   which is the right confirmation surface for inferred intent (PR review wins — see
+3. Traced the needs-input / clarifying-questions flow, the issue-enhancement step, and the
+   PR review loop to determine which surface carries intent elicitation vs. confirmation at
+   each point (enhancement uses needs-input; Planning-PR confirmation uses PR review — see
    Decision Rationale).
-4. Mapped LID's mandatory phase-boundary stops onto Paid's autonomous run model and
-   identified the irreducible tension (below).
+4. Mapped LID's mandatory phase-boundary stops onto Paid's run model and found that
+   enhancement — where enabled — absorbs the stops most naturally (below).
 5. Mapped RDR/plan-doc sections onto LID artifacts to validate that conversion is a flavor
    of brownfield analysis rather than a separate pipeline.
 
 ### Key discoveries
 
-**The central tension is real and irreducible.** LID's workflow states that every phase
-boundary is a mandatory stop for user review, and that "skipping stops is the single most
-common way this workflow degrades into a rush." A single Paid agent run cannot pause
-mid-execution to summon a human. Two honest reconciliations exist, and this RDR selects one
-per capability:
+**The tension is real, but enhancement resolves most of it.** LID's workflow states that
+every phase boundary is a mandatory stop for user review. A single autonomous `create_pr`
+run cannot pause mid-execution. But Paid *already* has a synchronous human-in-the-loop step
+— issue enhancement — that asks questions and waits. Where enhancement is enabled, LID's
+intent-elicitation phases (HLD check → LLD → EARS → edge audit) land there, *before*
+implementation, with real human stops. The reconciliations, per path:
 
-| Capability | LID stops reconciled by… | Why |
+| Path | LID stops reconciled by… | Why |
 |---|---|---|
-| Implementation (`create_pr`) on a LID project | The **PR review cycle** | The run walks the arrow internally and self-reports phase state in the PR; the human reconciles intent at review. A single autonomous run has no mid-run human channel, so the PR is the gate. |
-| Bootstrap / brownfield / conversion | A **docs-only Planning PR** reviewed via the **changes-requested flow** | The *entire output* is LID artifacts with `[inferred]` markers inline in the diff; the markers are the questions, and request-changes + inline comments is the correction mechanism. The stops are real and synchronous — nothing lands until the human reviews. |
+| Implementation with enhancement (LID project) | **Enhancement** (intent elicitation, real stops) + **PR review** (backstop) | Enhancement asks intent-focused questions and waits for answers (Phases 1–4); `create_pr` then runs with confirmed intent (Phases 5–6). The PR catches implementation drift. The cleanest mapping — the stops are genuine, not faked. |
+| Implementation without enhancement (LID project) | The **PR review cycle** | No pre-implementation human channel exists, so the run walks the arrow internally and self-reports phase state in the PR; the human reconciles at review. |
+| Bootstrap / brownfield / conversion | A **docs-only Planning PR** reviewed via the **changes-requested flow** | The output is LID artifacts with `[inferred]` markers inline in the diff; the markers are the questions, and request-changes is the correction. The stops are real and synchronous. |
+
+Enhancement is a layer on top of the others, not a dependency: bootstrap and the
+no-enhancement implementation path work standalone, because not every project uses
+enhancement.
 
 **LID detection is a read of the repo, not a Paid setting.** Because LID is declared in the
 project's instruction file, Paid detects it by reading that file plus the design-tree
@@ -170,19 +197,47 @@ authoring process (`workflow.md` § Brownfield LLD content), the five audit chec
 on a downstream project that does not vendor them, the agent image must carry the method
 reference + checker (same pattern as `rtk`/`codegraph` today).
 
+**Intent-eliciting questions are good practice regardless of LID.** The questions that
+narrow an underspecified issue — what problem, what desired behavior (when X, the system
+should Y), what constraints, what alternatives were rejected, what is in/out of scope, how
+we know it's done — are the same questions LID's phases ask. They improve *any*
+implementation, whether or not the answers become formal HLD/LLD/EARS. So the question
+*style* should graduate from "LID-specific" to the default for all enhancement, phrased in
+plain language with no LID jargon. What stays LID-specific is the *materialization*: only
+LID projects turn the answers into artifacts during `create_pr`.
+
+**Brownfield conversion leaves the code untagged.** Bootstrap/conversion produces HLD/LLD/
+EARS, but the *existing* code and tests do not yet carry `@spec` annotations pointing at the
+new specs. LID's coherence checks expect that linkage (coverage: every behavioral spec has
+a citing test; drift: code/tests without `@spec` are flagged). So the linking has to happen
+— and the cheapest answer is that it happens incrementally: as `create_pr` runs touch each
+area under the LID-aware prompt, they add `@spec` at behavior entry points, and the tree
+matures in place under normal cascade discipline (the same posture LID takes for
+reverse-engineered LLDs). An optional dedicated tagging pass is a future enhancement, not a
+prerequisite.
+
 ## Proposed Solution
 
 ### Approach
 
-Three capabilities on two execution paths, all reusing existing infrastructure:
+Four capabilities on three execution paths, all reusing existing infrastructure:
 
 1. **Detection** — Paid reads the downstream repo on import/sync and records its LID mode.
-2. **LID-aware implementation runs** — when a project is LID-configured, `create_pr` runs
-   get a LID-aware prompt section; the PR review cycle is the human gate.
-3. **LID bootstrap + plan-doc conversion** — a new `lid_planning` goal runs brownfield
+2. **LID-aware issue enhancement** (the intent-elicitation entry point) — enhancement asks
+   intent-focused questions in plain language (universal; no LID jargon); for LID projects
+   the answers are captured as intent and materialized into LLD/EARS during `create_pr`.
+   This is a layer on top of the others — it works only where enhancement is enabled, so the
+   remaining paths stand alone.
+3. **LID-aware implementation runs** — when a project is LID-configured, `create_pr` runs
+   get a LID-aware prompt section (walk the arrow, update specs, tests-first, `@spec`). With
+   enhancement the intent is pre-confirmed; without it, the PR review cycle is the gate.
+4. **LID bootstrap + plan-doc conversion** — a new `lid_planning` goal runs brownfield
    analysis and opens a docs-only **Planning PR** whose inline `[inferred]` markers are
    confirmed or corrected through the PR review (request-changes) flow before any code
-   lands.
+   lands. Independent of enhancement.
+
+A cross-cutting concern — **`@spec` tagging of existing code** — matures incrementally as
+implementation runs touch each area (§6 below).
 
 ### Technical design
 
@@ -211,7 +266,30 @@ A project owner can override `lid_mode` (force on, force off, or re-run detectio
 project settings — consistent with `ProjectConventions`' detect-then-override model. This is
 **not** a Paid-side copy of the design tree; the repo remains the single source of truth.
 
-#### 2. LID-aware implementation runs (capability 1)
+#### 2. LID-aware issue enhancement (capability 2 — intent elicitation)
+
+Enhancement is where LID's intent-elicitation phases land most naturally, because it is
+already a synchronous human-in-the-loop step. The change is to the **enhancement prompt**
+(`EnhanceIssueActivity#prompt_for`), not a new goal:
+
+- **Universal question style.** Enhancement asks intent-focused questions in plain language,
+  with no LID jargon, for *every* project: what problem; what the desired behavior is (phrased
+  as "when X, the system should Y"); what constraints apply; what alternatives were
+  considered or rejected; what is in/out of scope; how we know it's done. These are the
+  questions LID's phases ask, and they improve any implementation.
+- **LID-only materialization.** For a LID-configured project, the captured answers are passed
+  to the subsequent `create_pr` run as **elicited intent**, which materializes them into the
+  segment's LLD/EARS (see §3). For a non-LID project, the answers only inform implementation
+  (and may feed `ChangeIntent` records per RDR-042 or knowledge artifacts).
+- **Same machinery.** Questions still post through the `<!-- paid:enhance-issue -->` comment
+  and ride the existing needs-input / clarifying-questions flow (`paid_state: "needs_input"` →
+  `Dashboard::NeedsInputQueue` → `ClarifyingQuestions::*`). No new issue state or surface.
+
+This is a layer on top of the bootstrap and implementation paths: where enhancement is
+enabled, it pre-confirms intent so `create_pr` runs against settled intent; where it is not,
+the other paths work unchanged.
+
+#### 3. LID-aware implementation runs (capability 1)
 
 When `project.lid_mode` is present and the run goal is `create_pr`, a new
 `Lid::InjectIntoPrompt` service (sibling to `ProjectConventions::InjectIntoPrompt`) appends a
@@ -237,12 +315,18 @@ this is the honest mapping of LID's mandatory stops onto an autonomous run. A re
 requesting changes is exactly a phase-boundary reconciliation; the `review`-goal follow-up
 run addresses it under the same LID-aware prompt.
 
+Where enhancement ran first (§2), the `create_pr` run consumes the **elicited intent** —
+the captured answers — and uses them to draft or update the segment's LLD/EARS before
+implementing, so intent is pre-confirmed rather than guessed. Where enhancement did not run,
+the agent derives intent from the issue body and the existing tree, and the PR is the sole
+reconciliation point.
+
 The LID-aware section is **additive** — it layers onto the existing prompt, so style guides,
 conventions, and the service-environment sections are unaffected. For `review`-goal runs on
 a LID project, `Prompts::BuildForPr` includes the same section so PR-continuation work also
 walks the arrow.
 
-#### 3. Bootstrap + conversion via a `lid_planning` goal (capabilities 2 & 3)
+#### 4. Bootstrap + conversion via a `lid_planning` goal (capabilities 3 & 4)
 
 A new agent run goal `lid_planning` produces **docs-only** LID artifacts and opens a
 Planning PR. It is triggered two ways:
@@ -274,7 +358,7 @@ The `lid_planning` run:
 Because the output is pure intent, LID's phase-boundary stops are honored **synchronously**:
 nothing lands until the human reviews.
 
-#### 4. Intent confirmation via the PR review flow
+#### 5. Intent confirmation via the PR review flow
 
 This is the "check in with the user about whether Paid got the intent correct" loop. It uses
 **one surface — the Planning PR** — and reuses the existing PR review machinery, including
@@ -299,7 +383,28 @@ and no new issue state: the Planning PR is the artifact, the question, and the
 confirmation channel at once. This is LID's "STOP for user review" realized through Paid's
 native PR review gate.
 
-#### 5. Vendoring the LID method into the agent image
+#### 6. `@spec` tagging of existing code (cross-cutting)
+
+Bootstrap/conversion (§4) creates HLD/LLD/EARS, but the *existing* code and tests do not yet
+carry `@spec` annotations pointing at the new specs — LID's coherence checks expect that
+linkage (coverage: every behavioral spec has a citing test; drift: unlinked code/tests are
+flagged). The design for closing that gap, in order of preference:
+
+- **Incremental (default).** Do not tag retroactively as a discrete step. As `create_pr`
+  runs touch each area under the LID-aware prompt (§3), they add `@spec` at behavior entry
+  points, and the tree matures in place under normal cascade discipline — the same posture
+  LID takes for reverse-engineered LLDs. This is the cheapest path and avoids a large,
+  speculative code-only PR.
+- **Optional dedicated tagging pass (future).** A run that walks existing code and adds
+  `@spec` annotations for the newly-created specs, prioritized by hotspot / changefrequency.
+  This is a code PR (not docs-only), distinct from the bootstrap Planning PR. Deferred until
+  incremental maturation proves too slow for a given project; not a prerequisite for LID to
+  function.
+
+The coherence checker flags the gap honestly — unlinked code/tests surface as drift
+signals — so the maturation progress is visible without blocking.
+
+#### 7. Vendoring the LID method into the agent image
 
 `lid_planning` runs (and the coherence check in LID-aware implementation runs) need the LID
 method reference and `bin/coherence-check.mjs` available in the container, because a
@@ -349,6 +454,23 @@ own checker uses the project's; the image copy is the fallback.
    code are both inputs to the same brownfield procedure; the only difference is input
    weighting and whether decisions land authored or `[inferred]`. One goal, one prompt
    family, parameterized by the named plan-doc sources.
+
+6. **Enhancement carries intent elicitation; the question style is universal.** Enhancement
+   is already a synchronous human-in-the-loop step, so it is where LID's intent phases belong
+   — and where they land as *real* stops rather than PR-adjacent reconciliations. The
+   intent-focused question style (problem, desired behavior, constraints, rejected
+   alternatives, scope, done-ness) is adopted for *all* enhancement in plain language, because
+   it improves any implementation; only the materialization into LLD/EARS is gated on
+   `lid_mode`. Enhancement is a layer, not a dependency — bootstrap and the no-enhancement
+   implementation path work standalone, since not every project uses enhancement. (Settled
+   direction per the planning conversation.)
+
+7. **`@spec` tagging matures incrementally** (over a mandatory retroactive tagging pass).
+   Brownfield conversion produces specs but cannot, in the same docs-only PR, annotate all
+   existing code that implements them. Forcing a large speculative code PR works against
+   LID's "matures in place" posture. Incremental tagging as `create_pr` runs touch each area,
+   with the coherence checker surfacing the gap honestly, is the cheaper and more honest
+   path; a dedicated tagging pass remains an optional future enhancement.
 
 ### Implementation example
 
@@ -507,22 +629,31 @@ checker, carried in the agent image. The `lid_planning` prompt encodes the proce
 
 - **Paid stops breaking the arrow on LID projects.** Implementation runs read and update the
   design tree; specs and `@spec` annotations stay coherent.
+- **Intent gets elicited before code, where enhancement runs.** Underspecified issues are
+  narrowed through intent-focused questions *before* implementation — LID's stops landing as
+  real human-in-the-loop checkpoints, not faked at the PR.
+- **Better questions for everyone.** The intent-elicitation question style improves
+  enhancement on non-LID projects too, since it is just good engineering questioning in plain
+  language.
 - **Adoption is one action away.** A project owner can bootstrap LID without leaving Paid,
   using the same brownfield procedure a human would, with Paid doing the
   reverse-engineering heavy lifting.
 - **Plan docs become living intent.** RDRs/ADRs convert into walkable HLD/LLD/EARS instead
   of rotting as prose.
-- **Reuses existing infrastructure end to end** — prompt injection, agent-run goals, and the
-  PR review loop (both as the implementation-run gate and as the Planning-PR confirmation
-  surface). No new human-facing surface.
+- **Reuses existing infrastructure end to end** — prompt injection, agent-run goals,
+  enhancement + needs-input, and the PR review loop (both as the implementation-run gate and
+  as the Planning-PR confirmation surface). No new human-facing surface.
 - **Repo stays the source of truth.** No drift between Paid and the project's own intent.
 
 ### Negative consequences
 
-- **Implementation runs can't truly pause per phase.** A single autonomous run walks the
-  arrow internally and reconciles at the PR. This is an honest tradeoff, not a faithful
-  realization of LID's synchronous stops — surfaced explicitly in the PR description so the
-  reviewer knows where the stops landed.
+- **Implementation runs can't truly pause per phase** (without enhancement). A single
+  autonomous run walks the arrow internally and reconciles at the PR. Where enhancement runs
+  first this is resolved — intent is settled before code — but on projects without
+  enhancement it remains an honest tradeoff, surfaced in the PR description.
+- **Brownfield conversion leaves existing code untagged.** Specs appear without matching
+  `@spec` annotations until incremental runs catch up; the gap is surfaced (not hidden) by
+  the coherence checker.
 - **More prompt surface to maintain.** A LID-aware section and a `lid_planning` prompt
   family join the prompt-evolution pipeline (RDR-009), with their own versioning and
   metrics.
@@ -608,7 +739,28 @@ checker.
 - `db/seeds/prompts.rb`
 - `docker/agent/Dockerfile` (and the agent-image build chain)
 
-### Phase 2: `lid_planning` goal — brownfield analysis + Planning PR (capabilities 2 & 3)
+### Phase 2: LID-aware issue enhancement (capability 2 — intent elicitation)
+
+**Prerequisites:**
+
+- [ ] Phase 0 complete (enhancement's materialization branch keys off `lid_mode`)
+
+**Step 1**: Update the enhancement prompt (`EnhanceIssueActivity#prompt_for`, seeded as a DB
+prompt) to ask intent-focused questions in plain language for *all* projects — problem,
+desired behavior (when/then), constraints, rejected alternatives, scope, done-ness.
+
+**Step 2**: For LID-configured projects, pass the captured clarifying-question answers
+forward as **elicited intent** so the `create_pr` run (Phase 1) materializes them into the
+segment's LLD/EARS. (The answers already persist in the issue via the existing
+clarifying-questions flow; the create_pr prompt consumes them.)
+
+**Files to create/modify:**
+
+- `app/temporal/activities/enhance_issue_activity.rb` (`prompt_for` / seeded prompt)
+- `db/seeds/prompts.rb` (intent-elicitation enhancement prompt)
+- `app/services/prompts/build_for_issue.rb` (surface elicited intent to create_pr)
+
+### Phase 3: `lid_planning` goal — brownfield analysis + Planning PR (capabilities 3 & 4)
 
 **Prerequisites:**
 
@@ -631,11 +783,11 @@ plan-doc-source input (conversion). Both queue a `lid_planning` run.
 - `db/seeds/prompts.rb`
 - controller/view for the trigger (adoption + conversion)
 
-### Phase 3: Intent confirmation via the PR review flow (confirmation loop)
+### Phase 4: Intent confirmation via the PR review flow (confirmation loop)
 
 **Prerequisites:**
 
-- [ ] Phase 2 complete
+- [ ] Phase 3 complete
 - [ ] `review`-goal runs can act on a Planning PR (exists; verify docs-only diff handling)
 
 **Step 1**: On Planning-PR creation, build the "Confirm these inferred decisions" checklist
@@ -651,11 +803,11 @@ correction to the LLD/EARS and replaces the marker with the user's authored rati
 - `lid_planning` completion path (open PR + post checklist)
 - `review`-goal prompt/path (handle `[inferred]`-targeted change requests on Planning PRs)
 
-### Phase 4: Conversion polish + coherence gating
+### Phase 5: Conversion polish, coherence gating, and incremental tagging
 
 **Prerequisites:**
 
-- [ ] Phases 2 and 3 complete
+- [ ] Phases 3 and 4 complete
 
 **Step 1**: Conversion-specific prompt weighting (favor named plan docs; map
 problem/alternatives/validation → HLD/LLD/EARS as in the table above).
@@ -663,11 +815,18 @@ problem/alternatives/validation → HLD/LLD/EARS as in the table above).
 **Step 2**: Run `bin/coherence-check.mjs` as a structural soft-block at the end of every
 `lid_planning` and LID-aware run; surface failures in the PR description.
 
+**Step 3 (incremental, no separate phase)**: `@spec` tagging matures as Phase 1
+implementation runs touch each area (no retroactive tagging pass by default). The coherence
+checker surfaces unlinked code/tests as drift signals so progress is visible. A dedicated
+tagging pass remains a possible future enhancement, not built here.
+
 ### Dependencies
 
 - Repo import/sync path (exists)
 - Prompt-building + `*::InjectIntoPrompt` composition (exists)
 - Agent run goal + `prompt_for_goal` switching (exists)
+- Issue enhancement (`EnhanceIssueActivity`) + needs-input / clarifying-questions flow
+  (exists; the intent-elicitation surface)
 - PR review loop + `review`-goal run (exists; the confirmation surface for Planning PRs)
 - Agent-image build chain (exists; modified to vendor LID method)
 
@@ -686,6 +845,9 @@ problem/alternatives/validation → HLD/LLD/EARS as in the table above).
    the artifact and replaces the marker → reviewer approves/merges.
 5. Integration test: a `create_pr` run on a LID-configured project produces a prompt
    containing the LID-aware section and a PR description that self-reports phase state.
+6. Unit/integration tests for LID-aware enhancement: the enhancement prompt asks
+   intent-focused questions in plain language (all projects); captured answers are surfaced
+   as elicited intent to `create_pr` when `lid_mode` is set, and materialized into LLD/EARS.
 
 ### Test scenarios
 
@@ -718,6 +880,19 @@ problem/alternatives/validation → HLD/LLD/EARS as in the table above).
 7. **Scenario**: Scoped-LID project with a missing `## LID Scope` section.
    **Expected**: warning surfaced; all prompts treated as in-scope.
 
+8. **Scenario**: Underspecified issue on a LID project with enhancement enabled.
+   **Expected**: enhancement asks intent-focused questions (plain language); issue goes to
+   `needs_input`; user answers; the subsequent `create_pr` run materializes the answers into
+   the segment's LLD/EARS and implements against confirmed intent.
+
+9. **Scenario**: Same underspecified issue on a non-LID project.
+   **Expected**: enhancement still asks the intent-focused questions (universal style); the
+   answers inform implementation but produce no LID artifacts.
+
+10. **Scenario**: LID project that does not use enhancement.
+    **Expected**: bootstrap (Planning PR) and `create_pr` (LID-aware section) work standalone;
+    the PR review cycle is the gate.
+
 ### Performance validation
 
 - Detection adds one instruction-file read + a few path checks per sync — negligible.
@@ -747,11 +922,13 @@ problem/alternatives/validation → HLD/LLD/EARS as in the table above).
 - `app/models/agent_run.rb` — `GOALS`, `prompt_for_goal`, goal predicates
 - `app/services/prompts/build_for_issue.rb`, `build_for_pr.rb` — prompt composition +
   `*::InjectIntoPrompt` injection points
+- `app/temporal/activities/enhance_issue_activity.rb` — `prompt_for`, the intent-elicitation
+  extension point; `<!-- paid:enhance-issue -->` comment + needs-input flow
 - `app/services/project_conventions/automation_profile.rb` — detect-then-override model to
   mirror for `lid_mode`
 - `app/services/clarifying_questions/*.rb`, `app/services/dashboard/needs_input_queue.rb` —
-  the existing issue-side check-in channel (considered and rejected as the confirmation
-  surface; cited for why PR review is used instead)
+  the issue-side check-in channel enhancement rides on (and that bootstrap confirmation does
+  *not* use, since it is PR-based)
 - `app/services/containers/token_optimization.rb` — agent-image tooling install pattern to
   mirror for the vendored LID method
 - `docker/agent/Dockerfile` — agent image build
@@ -771,9 +948,14 @@ problem/alternatives/validation → HLD/LLD/EARS as in the table above).
   `docs/intent/`) is a plausible future enhancement so `Knowledge::Search` and context
   bundles can surface specs to agents. It is explicitly *not* a second source of truth — it
   would be a re-indexed projection, invalidated on tree changes. Out of scope for this RDR.
-- **`lid_planning` could later subsume issue-enhancement** for LID projects: enhancing an
-  issue on a LID project is naturally an EARS-drafting step. Deferred; keep the goals
-  separate until the brownfield path is proven.
+- **`lid_planning` and enhancement are complementary, not competing.** Bootstrap
+  (`lid_planning`) retroactively creates the tree from existing code/docs — one-time or
+  occasional, works on any project. Enhancement elicits intent *per issue* and grows the
+  tree going forward, but only where enhancement is enabled. They share the brownfield
+  procedure and the `[inferred]`/authored distinction; they do not depend on each other.
+- **Universal question style is the likely first win.** Because the intent-elicitation
+  questions are plain-language good practice, adopting them for all enhancement (independent
+  of `lid_mode`) can ship first and be evaluated before the LID-materialization branch.
 - **Scoped-LID detection** of the `## LID Scope` section should feed the LID-aware prompt so
   the agent can skip the arrow for out-of-scope paths — a Phase 1+ refinement.
 - **Re-detection on PR merge**: when a Planning PR merges the `## LID` block, the next sync
