@@ -11,6 +11,47 @@ Paid (Platform for AI Development) is a Rails 8 application that orchestrates AI
 
 **Status**: Phase 6 (Enterprise Trust & Governance) complete as of 2026-05-27. Phase 7 (Proof, Adoption & Interoperability) complete as of 2026-05-29. Phase 8 (Managed Platform & Ecosystem) complete as of 2026-05-30. The system now offers managed cloud and private deployment models, enterprise operations with documented SLO/SLA expectations, and stable ecosystem extension points, on top of the completed proof, adoption, and interoperability work.
 
+## Linked-Intent Development (LID)
+
+Paid uses [Linked-Intent Development (LID)](https://linked-intent.dev) to keep intent and code coherent. Intent flows one direction:
+
+```
+HLD → LLDs → EARS → Tests → Code
+```
+
+The high-level design and low-level designs are the source of truth; code is compiled output that may be regenerated from specs.
+
+- **New features / substantive changes**: walk the full arrow — confirm the HLD/LLD, write or update the EARS spec, write the failing-first test, then the code.
+- **Bug fixes**: walk the arrow to find where intent diverged, then cascade from there. No short-circuit straight to code.
+- **Trivial changes** (typos, formatting, broken links, stale references): no arrow walk needed.
+
+| What you need | Where to look |
+|---|---|
+| High-level design (the why) | `docs/high-level-design.md` |
+| Design tree (LLDs + their specs) | `docs/intent/` — one folder per segment |
+| EARS specs (testable claims) | `docs/intent/<segment>/<segment>-specs.md` |
+| Arrow overlay (large projects) | `docs/arrows/index.yaml` |
+| LID workflow + templates (non-Claude tools) | `docs/lid/` — vendored procedure for tools without the plugin |
+
+**Conventions**:
+
+- EARS specs carry path-concatenated IDs (e.g. `AGENT-RUN-001`) and status markers: `[x]` implemented, `[ ]` gap, `[D]` deferred.
+- Code and tests carry `@spec SPEC-ID` annotations linking to the EARS claims they implement. A spec ID is a grep target: `grep -r AGENT-RUN-001` returns the spec text, the tests, and the code.
+- Docs carry *current* intent, written to be read cold — mutation, not accumulation. Delete obsolete specs rather than annotating history.
+- **Tests before code.** Write the failing-first test that asserts the EARS claim before the implementation.
+- **Memory vs. intent.** Before saving durable project knowledge to agent or tool memory, test whether it is project *intent* — would a fresh agent, in any tool, next session, need it to build this system correctly? If yes, record it in the arrow (HLD / LLD / EARS / decision doc), which travels and cascades — not in private, per-tool memory, where intent escapes the arrow. Knowledge about the user or how they like to work stays in memory. (This complements `WORKLOG.md` as session working memory and `docs/solutions/` as cross-session learnings; neither is a substitute for intent that belongs in the design.)
+
+**Going-forward policy**: brownfield, Full-mode adoption. The HLD is the floor; LLDs and EARS are added as new features are built and as subsystems are mapped over time. Not all existing code is traced yet — that is expected. When you build or change a component, add or update its segment under `docs/intent/`.
+
+## LID
+
+- Mode: Full
+- Version: 1.3.0
+
+## LID Tooling
+
+- **Coherence check**: `bin/coherence-check.mjs` — deterministic LID coherence report (`@spec` integrity, arrow references, staleness, coverage). Run it for the structural checks in `docs/lid/workflow.md` § Coherence verification. Non-Claude tools use `docs/lid/` for the full workflow procedure that Claude Code gets via the plugin.
+
 ## Git Workflow
 
 - **The `main` branch is protected** - Never commit directly to `main`. Always create a feature branch and open a pull request.
