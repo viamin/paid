@@ -47,12 +47,12 @@ RUN corepack enable && corepack prepare yarn@1.22.22 --activate
 # Keep this inline instead of COPYing a repo script: the devcontainer image is
 # often rebuilt from a minimal or noisy workspace context, and BuildKit has
 # intermittently failed to resolve bin/install-ast-grep from that context.
-ARG AST_GREP_VERSION=0.42.1
+ARG AST_GREP_VERSION=0.45.0
 RUN set -eu; \
   arch="$(dpkg --print-architecture)"; \
   case "$arch" in \
-    amd64) rust_triple="x86_64-unknown-linux-gnu"; checksum="5de8b87cba67fc8dc3e239d54b6484802ad745a7ae3de76be4fe89661dc52657" ;; \
-    arm64) rust_triple="aarch64-unknown-linux-gnu"; checksum="3ba383839044cf9817929435f5ce0027f91d06931e8efb32d942e58d73d92be5" ;; \
+    amd64) rust_triple="x86_64-unknown-linux-gnu"; checksum="78931ae35ebac33d9a72b3aecea3e3d62d6e5b0b718ac8bbedfbe69d68421e41" ;; \
+    arm64) rust_triple="aarch64-unknown-linux-gnu"; checksum="62b60892dafacfa76d6de87157659f880bbf85ff38bdab52db12f1f14ec60f94" ;; \
     *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
   esac; \
   zipfile="app-${rust_triple}.zip"; \

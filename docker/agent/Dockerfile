@@ -172,11 +172,11 @@ RUN mkdir -p "$COREPACK_HOME" \
 
 # Install ast-grep (AST-based code search/lint)
 # https://github.com/ast-grep/ast-grep/releases
-RUN AST_GREP_VERSION=0.42.1 \
+RUN AST_GREP_VERSION=0.45.0 \
     && DEB_ARCH="$(dpkg --print-architecture)" \
     && case "$DEB_ARCH" in \
-        amd64) RUST_TRIPLE="x86_64-unknown-linux-gnu"; EXPECTED_CHECKSUM="5de8b87cba67fc8dc3e239d54b6484802ad745a7ae3de76be4fe89661dc52657" ;; \
-        arm64) RUST_TRIPLE="aarch64-unknown-linux-gnu"; EXPECTED_CHECKSUM="3ba383839044cf9817929435f5ce0027f91d06931e8efb32d942e58d73d92be5" ;; \
+        amd64) RUST_TRIPLE="x86_64-unknown-linux-gnu"; EXPECTED_CHECKSUM="78931ae35ebac33d9a72b3aecea3e3d62d6e5b0b718ac8bbedfbe69d68421e41" ;; \
+        arm64) RUST_TRIPLE="aarch64-unknown-linux-gnu"; EXPECTED_CHECKSUM="62b60892dafacfa76d6de87157659f880bbf85ff38bdab52db12f1f14ec60f94" ;; \
         *) echo "Unsupported architecture: $DEB_ARCH" >&2; exit 1 ;; \
     esac \
     && ZIPFILE="app-${RUST_TRIPLE}.zip" \
