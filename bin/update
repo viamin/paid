@@ -14,6 +14,7 @@ INSTALL_AST_GREP_PATH = APP_ROOT.join("bin/install-ast-grep")
 PACKAGE_JSON_PATH = APP_ROOT.join("package.json")
 GEMFILE_LOCK_PATH = APP_ROOT.join("Gemfile.lock")
 YARN_LOCK_PATH = APP_ROOT.join("yarn.lock")
+CLAUDE_MD_PATH = APP_ROOT.join("CLAUDE.md")
 
 YARN_PATTERNS = {
   AGENT_DOCKERFILE_PATH => /^(\s*&& corepack prepare yarn@)([^\s]+)( --activate\s*)$/,
@@ -31,6 +32,15 @@ BINARY_RELEASES = {
   }
 }.freeze
 
+# Vendored LID reference (docs/lid/ + bin/coherence-check.mjs). bin/update
+# reports drift against upstream but does NOT auto-apply — re-syncing requires
+# re-applying local adaptations (Rails globs in coherence-check.mjs; the
+# tool-agnostic edits in workflow.md). See docs/lid/README.md § Sync policy.
+LID_SOURCE = "jszmajda/lid"
+LID_PLUGIN_VERSION_URL =
+  "https://raw.githubusercontent.com/#{LID_SOURCE}/main/" \
+  "plugins/linked-intent-dev/.claude-plugin/plugin.json"
+
 # Minimum age (in hours) a package version must have been published before
 # bin/update will adopt it. This quarantine period reduces exposure to supply
 # chain attacks that are typically detected and yanked within hours.
@@ -46,7 +56,7 @@ def fetch_json(uri_string, headers: {})
   request = Net::HTTP::Get.new(uri)
   headers.each { |key, value| request[key] = value }
 
-  response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) do |http|
+  response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true, open_timeout: 10, read_timeout: 15) do |http|
     http.request(request)
   end
   raise "Failed to fetch #{uri}: #{response.code}" unless response.is_a?(Net::HTTPSuccess)
@@ -109,6 +119,25 @@ def fetch_npm_publish_time(package_name, version)
   time_str ? Time.parse(time_str) : nil
 rescue StandardError
   nil
+end
+
+def fetch_lid_latest_version
+  fetch_json(LID_PLUGIN_VERSION_URL).fetch("version")
+end
+
+def pinned_lid_version
+  # Read only the `## LID` block so a stray `- Version:` elsewhere in CLAUDE.md
+  # (e.g., a Bundler/tool-config section) can't be mistaken for the LID pin.
+  block = +""
+  in_block = false
+  CLAUDE_MD_PATH.each_line do |line|
+    if line.start_with?("## ")
+      in_block = line.strip == "## LID"
+      next
+    end
+    block << line if in_block
+  end
+  block[/^- Version:\s*(\S+)\s*$/, 1]
 end
 
 def age_hours(published_at)
@@ -530,6 +559,29 @@ Dir.chdir(APP_ROOT) do
     else
       puts "  All updated packages are older than #{MIN_PACKAGE_AGE_HOURS}h ✓"
     end
+  end
+
+  puts "\n== Checking vendored LID reference =="
+  begin
+    pinned = pinned_lid_version
+    if pinned.nil?
+      warn "  ⚠ Could not read - Version: from CLAUDE.md (## LID block); skipping LID check."
+    else
+      latest = fetch_lid_latest_version
+      if latest == pinned
+        puts "  LID v#{pinned} — vendored reference is up to date ✓"
+      else
+        warn "  ⚠ LID is out of date: CLAUDE.md pins v#{pinned}, upstream is v#{latest}."
+        warn "    Three surfaces to reconcile:"
+        warn "      1. Vendored docs/lid/ + bin/coherence-check.mjs — re-sync per docs/lid/README.md § Sync policy."
+        warn "      2. CLAUDE.md (## LID - Version:) — bump to v#{latest}."
+        warn "      3. Installed Claude plugin in devcontainers — rebuild containers; install-lid.sh currently"
+        warn "         pulls latest, so verify the installed version matches the pin."
+        warn "    (bin/update reports only; it does not auto-apply any of these.)"
+      end
+    end
+  rescue StandardError => error
+    warn "  ⚠ Could not check LID for updates: #{error.message}"
   end
 
   puts "\n== Skipped pinned binary installs =="

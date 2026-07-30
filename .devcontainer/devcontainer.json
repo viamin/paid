@@ -84,19 +84,19 @@
     "setup-signing-key": "bash .devcontainer/setup-signing-key.sh",
     // This single sequential chain is the ordering backbone of devcontainer setup:
     //   bin/setup -> install Claude CLI -> install Compound Engineering plugin
-    //   -> configure auto-approve mode.
+    //   -> install LID (Linked-Intent Development) plugin -> configure auto-approve mode.
     // It is chained (not split into parallel entries) for several reasons:
     //  - the Claude CLI install uses `bundle exec`, which needs gems from bin/setup;
-    //  - the plugin install must run after the `claude` binary exists and BEFORE
-    //    configure-llm-tools.sh wraps `claude`/`codex` with approval-bypass flags
-    //    that are invalid alongside the `plugin` subcommand;
+    //  - the plugin installs (Compound Engineering, LID) must run after the `claude`
+    //    binary exists and BEFORE configure-llm-tools.sh wraps `claude`/`codex` with
+    //    approval-bypass flags that are invalid alongside the `plugin` subcommand;
     //  - configure-llm-tools.sh writes the canonical ~/.config/opencode/opencode.json
     //    last, re-asserting auto-approve after the plugin installer rewrites it.
     // Running it last also guarantees the parallel binary-install entries below
     // (codex, gemini, opencode, ...) have finished, so their wrappers/config apply.
     // Each added step is `|| echo`-guarded so a plugin failure stays non-fatal;
     // a bin/setup or Claude-install failure still propagates and fails creation.
-    "setup": "corepack enable && corepack prepare yarn@1.22.22 --activate && bin/setup --skip-server && (eval \"$(bundle exec ruby scripts/extract-provider-install-contract.rb claude | sed -n 's/^INSTALL_COMMAND=//p')\" || echo 'WARNING: Claude CLI installation failed (non-fatal)') && (bash .devcontainer/install-compound-engineering.sh || echo 'WARNING: Compound Engineering plugin install incomplete (non-fatal)') && bash .devcontainer/configure-llm-tools.sh",
+    "setup": "corepack enable && corepack prepare yarn@1.22.22 --activate && bin/setup --skip-server && (eval \"$(bundle exec ruby scripts/extract-provider-install-contract.rb claude | sed -n 's/^INSTALL_COMMAND=//p')\" || echo 'WARNING: Claude CLI installation failed (non-fatal)') && (bash .devcontainer/install-compound-engineering.sh || echo 'WARNING: Compound Engineering plugin install incomplete (non-fatal)') && (bash .devcontainer/install-lid.sh || echo 'WARNING: LID plugin install incomplete (non-fatal)') && bash .devcontainer/configure-llm-tools.sh",
     // LLM CLI Tools - Installation via agent-harness contracts
     // Each tool is installed via scripts/install-from-contract.sh which delegates
     // to scripts/extract-provider-install-contract.rb. This means versions and

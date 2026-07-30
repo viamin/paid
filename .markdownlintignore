@@ -1,1 +1,10 @@
 CHANGELOG.md
+
+# Vendored LID reference docs — byte-identical to upstream (jszmajda/lid),
+# so excluded from host style checks. Authored files in docs/lid/ (README.md,
+# workflow.md) stay linted. See docs/lid/README.md. Do not edit these here.
+docs/lid/ears-syntax.md
+docs/lid/hld-template.md
+docs/lid/lld-templates.md
+docs/lid/decision-doc-template.md
+docs/lid/audit-checklist.md
