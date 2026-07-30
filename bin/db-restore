@@ -28,6 +28,12 @@ usage() {
   echo "Truncates all existing data before restoring."
   echo "Requires a freshly migrated database (schema must match the dump)."
   echo "Automatically disables RLS and triggers during restore so all rows are written."
+  echo "Verifies schema completeness after restore (if a *_manifest.txt exists)."
+  echo ""
+  echo "After restore, verifies schema completeness by comparing FK, trigger,"
+  echo "and RLS counts against the *_manifest.txt file created by bin/db-dump."
+  echo "If counts are lower than expected, points to the *_postdata.sql snapshot"
+  echo "for reconciliation."
   echo ""
   echo "Defaults are read from the Rails database config."
   echo ""
@@ -103,6 +109,84 @@ guard_destructive_restore() {
 
   if ! local_db_host; then
     require_restore_confirmation "remote"
+  fi
+}
+
+# Verify schema completeness after restore by comparing FK, trigger, and RLS
+# counts against the manifest captured by bin/db-dump. Warns (does not fail)
+# when counts are lower than expected, pointing to the post-data snapshot for
+# reconciliation.
+verify_schema() {
+  local db="$1"
+  local manifest_path="${BACKUP_PATH%.dump}_manifest.txt"
+  local postdata_path="${BACKUP_PATH%.dump}_postdata.sql"
+
+  local fk_count trigger_count rls_tables rls_policies
+  fk_count=$(run_sql "$db" -c "SELECT count(*) FROM pg_constraint WHERE contype = 'f' AND connamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public')" 2>/dev/null || true)
+  trigger_count=$(run_sql "$db" -c "SELECT count(*) FROM pg_trigger t JOIN pg_class c ON c.oid = t.tgrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND NOT t.tgisinternal" 2>/dev/null || true)
+  rls_tables=$(run_sql "$db" -c "SELECT count(*) FROM pg_tables WHERE schemaname = 'public' AND rowsecurity = true" 2>/dev/null || true)
+  rls_policies=$(run_sql "$db" -c "SELECT count(*) FROM pg_policy" 2>/dev/null || true)
+
+  if [[ ! "$fk_count" =~ ^[0-9]+$ ]] || [[ ! "$trigger_count" =~ ^[0-9]+$ ]]; then
+    echo ""
+    echo "  (Could not query schema — verification skipped)"
+    return 0
+  fi
+
+  echo ""
+  echo "Schema verification:"
+  echo "  Foreign keys:  ${fk_count}"
+  echo "  Triggers:      ${trigger_count}"
+  echo "  RLS tables:    ${rls_tables}"
+  echo "  RLS policies:  ${rls_policies}"
+
+  if [[ ! -f "$manifest_path" ]]; then
+    echo "  (No manifest from backup — counts not verified)"
+    return 0
+  fi
+
+  local exp_fk exp_triggers exp_rls_tables exp_rls_policies
+  exp_fk=$(grep '^foreign_keys=' "$manifest_path" | cut -d= -f2)
+  exp_triggers=$(grep '^triggers=' "$manifest_path" | cut -d= -f2)
+  exp_rls_tables=$(grep '^rls_tables=' "$manifest_path" | cut -d= -f2)
+  exp_rls_policies=$(grep '^rls_policies=' "$manifest_path" | cut -d= -f2)
+
+  if ! [[ "$exp_fk" =~ ^[0-9]+$ && "$exp_triggers" =~ ^[0-9]+$ && "$exp_rls_tables" =~ ^[0-9]+$ && "$exp_rls_policies" =~ ^[0-9]+$ ]]; then
+    echo "  (Manifest is malformed — counts not verified)"
+    return 0
+  fi
+
+  local warnings=0
+  if [[ "$fk_count" -lt "$exp_fk" ]]; then
+    echo "  WARNING: Foreign keys ${fk_count} < backup had ${exp_fk}"
+    warnings=1
+  fi
+  if [[ "$trigger_count" -lt "$exp_triggers" ]]; then
+    echo "  WARNING: Triggers ${trigger_count} < backup had ${exp_triggers}"
+    warnings=1
+  fi
+  if [[ "$rls_tables" =~ ^[0-9]+$ && "$rls_tables" -lt "$exp_rls_tables" ]]; then
+    echo "  WARNING: RLS tables ${rls_tables} < backup had ${exp_rls_tables}"
+    warnings=1
+  fi
+  if [[ "$rls_policies" =~ ^[0-9]+$ && "$rls_policies" -lt "$exp_rls_policies" ]]; then
+    echo "  WARNING: RLS policies ${rls_policies} < backup had ${exp_rls_policies}"
+    warnings=1
+  fi
+
+  if [[ "$warnings" -eq 1 ]]; then
+    echo ""
+    echo "  Schema objects are missing! Restore may be incomplete."
+    if [[ -f "$postdata_path" ]]; then
+      echo "  A post-data snapshot is available at:"
+      echo "    $postdata_path"
+      echo "  Review and apply with: psql -h <host> -U <user> -d <db> < \"$postdata_path\""
+    else
+      echo "  No post-data snapshot found. Run 'bin/db-dump' on a known-good"
+      echo "  database to create one for future restores."
+    fi
+  else
+    echo "  All counts match the backup manifest."
   fi
 }
 
@@ -257,5 +341,7 @@ else
   echo "Error: No running postgres container found and DB_NAME not set. Start services with 'bin/dev' or set DB_NAME." >&2
   exit 1
 fi
+
+verify_schema "$DB_NAME"
 
 echo "Restore complete."
