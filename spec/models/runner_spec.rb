@@ -1359,6 +1359,17 @@ RSpec.describe Runner do
       } }
     end
 
+    def expected_zai_coding_plan_provider(model_id)
+      { "zai-coding-plan" => {
+        "npm" => "@ai-sdk/openai-compatible",
+        "options" => {
+          "baseURL" => "https://api.z.ai/api/coding/paas/v4",
+          "apiKey" => "{env:ZHIPU_API_KEY}"
+        },
+        "models" => { model_id => { "name" => model_id } }
+      } }
+    end
+
     it "builds runner runtime inputs instead of a local bootstrap wrapper" do
       runtime = runner.agent_harness_runner_runtime
 
@@ -1373,7 +1384,7 @@ RSpec.describe Runner do
       expect(runtime.metadata[:config]).not_to have_key("provider")
     end
 
-    it "qualifies zai_coding models with runner prefix" do
+    it "emits a full custom provider config for z.ai coding plan" do
       zai_key = create(:provider_api_key, user: user, api_service_type: "zai_coding", api_key: "sk-zai-secret")
       zai_provider = create(
         :runner,
@@ -1386,12 +1397,14 @@ RSpec.describe Runner do
 
       runtime = zai_provider.agent_harness_runner_runtime
 
-      expect(runtime.model).to eq("zai_coding/glm-5.1")
-      expect(runtime.env).to include(
-        "ZHIPU_API_KEY" => "sk-zai-secret",
-        "OPENAI_BASE_URL" => "https://api.z.ai/api/coding/paas/v4"
-      )
-      expect(runtime.metadata[:config]).not_to have_key("provider")
+      # opencode's built-in provider id is hyphenated; glm-5.x is declared
+      # (opencode's catalog tops out at glm-4.x) and baseURL/options are
+      # self-contained so no OPENAI_BASE_URL redirect is emitted.
+      expect(runtime.model).to eq("zai-coding-plan/glm-5.1")
+      expect(runtime.env).to include("ZHIPU_API_KEY" => "sk-zai-secret")
+      expect(runtime.env).not_to have_key("OPENAI_BASE_URL")
+      expect(runtime.metadata[:config]["provider"]).to eq(expected_zai_coding_plan_provider("glm-5.1"))
+      expect(runtime.unset_env).to include("OPENAI_HEADER_X_AGENT_RUN_ID", "OPENAI_HEADER_X_PROXY_TOKEN")
     end
 
     it "qualifies zai models with runner prefix" do
