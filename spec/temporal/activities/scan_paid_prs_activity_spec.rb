@@ -69,10 +69,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
   def create_stale_review_runs!(issue, statuses:, trigger_type: "automatic")
     Array(statuses).each_with_index do |status, index|
-      timestamp = (
-        Activities::ScanPaidPrsActivity::NO_PROGRESS_ESCALATION_WINDOW +
-        ((Array(statuses).size - index + 1) * 5).minutes
-      ).ago
+      timestamp = (4.hours + ((Array(statuses).size - index + 1) * 5).minutes).ago
       create(:agent_run,
         project: project,
         issue: issue,
@@ -185,6 +182,79 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       expect(activity.send(:paid_agent_pr_author?, project, "paid-agents[bot]")).to be(false)
       expect(activity.send(:third_party_bot_author?, project, "dependabot[bot]")).to be(true)
+    end
+  end
+
+  describe "scan-confirmation escalation gate (downtime-immune)" do
+    let(:pr_issue) do
+      create(:issue, :pull_request,
+        project: project,
+        github_number: 99,
+        pr_review_phase: "ready")
+    end
+    let(:at_limit_state) do
+      PullRequests::ProgressState::Result.new(
+        consecutive_unsuccessful_automatic_runs: 3,
+        consecutive_operational_failures: 0,
+        consecutive_provider_transient_outages: 0,
+        last_meaningful_progress_at: nil,
+        latest_automatic_run_at: 4.hours.ago,
+        latest_unsuccessful_run_at: 4.hours.ago,
+        latest_unsuccessful_run_goal: "review",
+        latest_unsuccessful_run_status: "failed"
+      )
+    end
+
+    before do
+      allow(activity).to receive(:pr_progress_state).with(project, pr_issue).and_return(at_limit_state)
+      allow(activity).to receive(:failure_streak_limit_reached?).with(project, pr_issue, at_limit_state).and_return(true)
+      allow(activity).to receive(:pr_failure_limit).with(project, pr_issue).and_return(3)
+      allow(activity).to receive_messages(
+        operational_failure_breaker?: false,
+        review_goal_retry_limit_requires_escalation?: false
+      )
+      allow(activity).to receive(:active_run_exists?).with(project, pr_issue).and_return(false)
+    end
+
+    it "does not escalate on the first eligible scan despite a long wall-clock gap (Paid downtime)", :aggregate_failures do
+      # The last failure was 4 hours ago — well beyond the old 3-hour wall-clock
+      # window that previously drove false escalations during Paid outages. With
+      # the scan-confirmation gate, a single scan only records the observation.
+      signals = activity.send(:build_lifecycle_signals, project, pr_issue)
+
+      expect(pr_issue.reload.stuck_confirmation_count).to eq(1)
+      expect(signals[:no_progress_stuck]).to be(false)
+      expect(signals[:escalation_reason]).to be_nil
+    end
+
+    it "escalates once the stuck state persists across the required scan cycles", :aggregate_failures do
+      activity.send(:build_lifecycle_signals, project, pr_issue) # first observation
+      signals = activity.send(:build_lifecycle_signals, project, pr_issue) # confirming scan
+
+      expect(pr_issue.reload.stuck_confirmation_count).to eq(2)
+      expect(signals[:no_progress_stuck]).to be(true)
+      expect(signals[:escalation_reason_key]).to eq(Issue::PR_ESCALATION_REASON_FAILURE_STREAK)
+    end
+
+    it "resets the confirmation count when progress clears the stuck state", :aggregate_failures do
+      2.times { activity.send(:build_lifecycle_signals, project, pr_issue) }
+      expect(pr_issue.reload.stuck_confirmation_count).to eq(2)
+
+      recovered = PullRequests::ProgressState::Result.new(
+        consecutive_unsuccessful_automatic_runs: 0,
+        consecutive_operational_failures: 0,
+        consecutive_provider_transient_outages: 0,
+        last_meaningful_progress_at: 1.minute.ago,
+        latest_automatic_run_at: 1.minute.ago,
+        latest_unsuccessful_run_at: nil,
+        latest_unsuccessful_run_goal: nil,
+        latest_unsuccessful_run_status: nil
+      )
+      allow(activity).to receive(:pr_progress_state).with(project, pr_issue).and_return(recovered)
+      allow(activity).to receive(:failure_streak_limit_reached?).with(project, pr_issue, recovered).and_return(false)
+      activity.send(:build_lifecycle_signals, project, pr_issue)
+
+      expect(pr_issue.reload.stuck_confirmation_count).to eq(0)
     end
   end
 
@@ -1509,7 +1579,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           create(:issue, :pull_request,
             project: project, github_number: 42,
             labels: [ "paid-generated", "paid-automation", "paid-ready" ],
-            pr_review_phase: "ready", paid_state: "completed")
+            pr_review_phase: "ready", paid_state: "completed",
+            stuck_confirmation_count: Activities::ScanPaidPrsActivity::REQUIRED_STUCK_CONFIRMATIONS - 1)
           3.times do
             create(:agent_run, :failed,
               project: project,
@@ -1575,7 +1646,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
             project: project, github_number: 42,
             github_creator_login: "dependabot[bot]",
             labels: [ "paid-generated", "paid-automation", "paid-ready" ],
-            pr_review_phase: "ready", paid_state: "completed")
+            pr_review_phase: "ready", paid_state: "completed",
+            stuck_confirmation_count: Activities::ScanPaidPrsActivity::REQUIRED_STUCK_CONFIRMATIONS - 1)
           stub_automation_label_events!(issue_number: 42)
           3.times do
             create(:agent_run, :failed,
@@ -5225,13 +5297,14 @@ RSpec.describe Activities::ScanPaidPrsActivity do
             created_at: 4.hours.ago - i.minutes
           )
         end
+        pr_issue.update!(stuck_confirmation_count: Activities::ScanPaidPrsActivity::REQUIRED_STUCK_CONFIRMATIONS - 1)
 
         result = activity.execute(project_id: project.id)
 
         expect(automation_scan_results(result).size).to eq(1)
         trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
-        expect(trigger[:triggers].first[:details]).to include("No meaningful progress for 3 hours after")
+        expect(trigger[:triggers].first[:details]).to include("No meaningful progress after")
       end
 
       it "escalates after 3 consecutive timeout failures" do
@@ -5242,19 +5315,21 @@ RSpec.describe Activities::ScanPaidPrsActivity do
             created_at: 4.hours.ago - i.minutes
           )
         end
+        pr_issue.update!(stuck_confirmation_count: Activities::ScanPaidPrsActivity::REQUIRED_STUCK_CONFIRMATIONS - 1)
 
         result = activity.execute(project_id: project.id)
 
         expect(automation_scan_results(result).size).to eq(1)
         trigger = automation_scan_results(result).first
         expect(trigger[:triggers].first[:type]).to eq("escalate_to_owner")
-        expect(trigger[:triggers].first[:details]).to include("No meaningful progress for 3 hours after")
+        expect(trigger[:triggers].first[:details]).to include("No meaningful progress after")
       end
 
       it "escalates after 3 consecutive mixed operational failures" do
         create_followup_run(status: "timeout", error_message: "wall_clock_timeout", created_at: 4.hours.ago)
         create_followup_run(status: "rate_limited", error_message: "All providers rate limited", created_at: 4.hours.ago - 1.minute)
         create_followup_run(status: "failed", error_message: "All providers exhausted: claude_code", created_at: 4.hours.ago - 2.minutes)
+        pr_issue.update!(stuck_confirmation_count: Activities::ScanPaidPrsActivity::REQUIRED_STUCK_CONFIRMATIONS - 1)
 
         result = activity.execute(project_id: project.id)
 
@@ -5310,7 +5385,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         triggers = automation_scan_results(result)
         escalation_triggers = triggers.select do |t|
-          t[:triggers].any? { |tr| tr[:details]&.include?("No meaningful progress for 3 hours after") }
+          t[:triggers].any? { |tr| tr[:details]&.include?("No meaningful progress after") }
         end
         expect(escalation_triggers).to be_empty
       end
@@ -5362,6 +5437,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           error_message: "All providers exhausted: claude_code",
           created_at: 2.hours.ago - 2.minutes
         )
+        pr_issue.update!(stuck_confirmation_count: Activities::ScanPaidPrsActivity::REQUIRED_STUCK_CONFIRMATIONS - 1)
 
         result = activity.execute(project_id: project.id)
 
@@ -7610,7 +7686,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
       it "still skips ready PRs at the follow-up limit when auto-fix is enabled" do
         project.update!(auto_fix_merge_conflicts: true, max_pr_followup_runs: 1)
-        unchanged_pr.update!(pr_review_phase: "ready", pr_followup_count: 1)
+        unchanged_pr.update!(pr_review_phase: "ready", pr_followup_count: 1,
+          stuck_confirmation_count: Activities::ScanPaidPrsActivity::REQUIRED_STUCK_CONFIRMATIONS)
         create(:agent_run, :failed,
           project: project,
           goal: "create_pr",
@@ -7903,6 +7980,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "escalates when retry limit is reached" do
         pr_issue.update!(review_goal_retry_count: 3)
         create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
+        pr_issue.update!(stuck_confirmation_count: Activities::ScanPaidPrsActivity::REQUIRED_STUCK_CONFIRMATIONS - 1)
 
         result = activity.execute(project_id: project.id)
 
@@ -7958,6 +8036,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         pr_issue.update!(pr_review_phase: "ready", review_goal_retry_count: 3)
         create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
         stub_github_for_pr(draft: false, reviews: [], head_committed_at: 5.hours.ago)
+        pr_issue.update!(stuck_confirmation_count: Activities::ScanPaidPrsActivity::REQUIRED_STUCK_CONFIRMATIONS - 1)
 
         result = activity.execute(project_id: project.id)
 
@@ -8221,6 +8300,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         })
         pr_issue
         create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
+        pr_issue.update!(stuck_confirmation_count: Activities::ScanPaidPrsActivity::REQUIRED_STUCK_CONFIRMATIONS - 1)
         stub_github_for_pr(reviews: [], checks: [ { name: "rspec", conclusion: "success" } ], head_committed_at: 5.hours.ago)
       end
 
@@ -8253,6 +8333,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         })
         pr_issue
         create_stale_review_runs!(pr_issue, statuses: %w[failed failed failed])
+        pr_issue.update!(stuck_confirmation_count: Activities::ScanPaidPrsActivity::REQUIRED_STUCK_CONFIRMATIONS - 1)
         stub_github_for_pr(reviews: [], checks: [ { name: "rspec", conclusion: "success" } ], head_committed_at: 5.hours.ago)
       end
 
@@ -8723,6 +8804,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     before do
       enable_paid_agent_review!(project, max_review_rounds: 3)
       create_stale_review_runs!(retry_limit_issue, statuses: %w[failed failed failed])
+      retry_limit_issue.update!(stuck_confirmation_count: Activities::ScanPaidPrsActivity::REQUIRED_STUCK_CONFIRMATIONS - 1)
       stub_github_for_pr(draft: true, reviews: [], head_committed_at: 5.hours.ago)
     end
 
@@ -8842,6 +8924,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     before do
       enable_paid_agent_review!(project, max_review_rounds: 1)
       create_stale_review_runs!(low_rounds_issue, statuses: [ "failed" ])
+      low_rounds_issue.update!(stuck_confirmation_count: Activities::ScanPaidPrsActivity::REQUIRED_STUCK_CONFIRMATIONS - 1)
       stub_github_for_pr(draft: true, reviews: [], head_committed_at: 5.hours.ago)
     end
 
@@ -8868,6 +8951,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     before do
       enable_paid_agent_review!(project)
       create_stale_review_runs!(ready_retry_issue, statuses: %w[failed failed failed])
+      ready_retry_issue.update!(stuck_confirmation_count: Activities::ScanPaidPrsActivity::REQUIRED_STUCK_CONFIRMATIONS - 1)
       stub_github_for_pr(reviews: [], head_committed_at: 5.hours.ago)
     end
 
@@ -9186,6 +9270,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         }
       })
       create_stale_review_runs!(custom_retries_issue, statuses: [ "failed" ])
+      custom_retries_issue.update!(stuck_confirmation_count: Activities::ScanPaidPrsActivity::REQUIRED_STUCK_CONFIRMATIONS - 1)
       stub_github_for_pr(draft: true, reviews: [], head_committed_at: 5.hours.ago)
     end
 
@@ -9277,6 +9362,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     before do
       enable_paid_agent_review!(project, max_review_rounds: 3)
       create_stale_review_runs!(no_output_retry_limit_issue, statuses: %w[no_output no_output no_output])
+      no_output_retry_limit_issue.update!(stuck_confirmation_count: Activities::ScanPaidPrsActivity::REQUIRED_STUCK_CONFIRMATIONS - 1)
       stub_github_for_pr(draft: true, reviews: [], head_committed_at: 5.hours.ago)
     end
 
@@ -9569,6 +9655,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         }
       })
       create_stale_review_runs!(manual_retry_issue, statuses: %w[failed failed failed])
+      manual_retry_issue.update!(stuck_confirmation_count: Activities::ScanPaidPrsActivity::REQUIRED_STUCK_CONFIRMATIONS - 1)
       stub_github_for_pr(draft: true, reviews: [], head_committed_at: 5.hours.ago)
     end
 
@@ -9606,6 +9693,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         }
       })
       create_stale_review_runs!(ci_retry_issue, statuses: %w[failed failed failed])
+      ci_retry_issue.update!(stuck_confirmation_count: Activities::ScanPaidPrsActivity::REQUIRED_STUCK_CONFIRMATIONS - 1)
       stub_github_for_pr(draft: true, reviews: [], head_committed_at: 5.hours.ago)
     end
 

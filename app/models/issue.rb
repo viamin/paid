@@ -255,8 +255,8 @@ class Issue < ApplicationRecord
     pr_progress_state(**kwargs).retryable?(limit:)
   end
 
-  def pr_stuck?(limit:, stale_after:, **kwargs)
-    pr_progress_state(**kwargs).stuck?(limit:, stale_after:)
+  def pr_stuck?(limit:, confirmations:, required_confirmations:, **kwargs)
+    pr_progress_state(**kwargs).stuck?(limit:, confirmations:, required_confirmations:)
   end
 
   def associated_pull_request

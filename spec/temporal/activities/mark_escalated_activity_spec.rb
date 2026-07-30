@@ -5,8 +5,11 @@ require "ostruct"
 
 RSpec.describe Activities::MarkEscalatedActivity do
   def create_operational_failures!(issue, count: 3)
+    # The operational-failure re-validation gate now keys off the persisted
+    # scan-confirmation count (downtime-immune), not a wall-clock window.
+    issue.update!(stuck_confirmation_count: Activities::ScanPaidPrsActivity::REQUIRED_STUCK_CONFIRMATIONS)
     count.times do |i|
-      run_at = (Activities::ScanPaidPrsActivity::NO_PROGRESS_ESCALATION_WINDOW + i.minutes + 1.minute).ago
+      run_at = (4.hours + i.minutes + 1.minute).ago
 
       # Use a non-transient operational failure (Clone failed) so the breaker
       # recognizes these as escalation-worthy. "All providers exhausted" is

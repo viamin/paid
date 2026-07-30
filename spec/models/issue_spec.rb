@@ -702,7 +702,7 @@ RSpec.describe Issue do
         expect(issue.last_pr_meaningful_progress_at).to eq(Time.zone.parse("2026-05-15 12:00:00"))
         expect(issue.pr_escalation_worthy?(limit: 3)).to be(true)
         expect(issue.pr_retryable?(limit: 3)).to be(false)
-        expect(issue.pr_stuck?(limit: 3, stale_after: 3600)).to be(true)
+        expect(issue.pr_stuck?(limit: 3, confirmations: 2, required_confirmations: 2)).to be(true)
         expect(PullRequests::ProgressState).to have_received(:call).exactly(5).times
       end
 

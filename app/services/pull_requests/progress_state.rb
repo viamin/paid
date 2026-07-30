@@ -44,15 +44,18 @@ module PullRequests
         latest_unsuccessful_run_at.present? && !escalation_worthy?(limit:)
       end
 
-      def stuck?(limit:, stale_after:)
+      # A PR is "stuck" when its unified automatic-run failure streak has reached
+      # the phase-appropriate limit AND that stuck state has been confirmed across
+      # the required number of scan cycles. Confirmation is downtime-immune by
+      # construction: scans only run while Paid is active, so wall-clock downtime
+      # never advances the confirmation count. `confirmations` is the persisted
+      # per-issue scan count (see ScanPaidPrsActivity#update_stuck_confirmation!).
+      def stuck?(limit:, confirmations:, required_confirmations:)
         return false unless escalation_worthy?(limit:)
         return false if latest_unsuccessful_run_at.blank?
-        return false if stale_after.to_i <= 0
+        return false if required_confirmations.to_i <= 0
 
-        progress_at = last_meaningful_progress_at || latest_unsuccessful_run_at
-        return false if progress_at.blank?
-
-        progress_at <= stale_after.to_i.seconds.ago
+        confirmations.to_i >= required_confirmations.to_i
       end
 
       def latest_unsuccessful_review?

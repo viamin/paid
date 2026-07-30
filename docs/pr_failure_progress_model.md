@@ -32,11 +32,26 @@ determine whether automation has recovered.
 - Automatic `create_pr` and `review` runs therefore contribute to the same failure accounting model.
 - Existing phase fields still describe workflow state, but they no longer create separate failure-counting regimes.
 
+### Scan-confirmation gate (downtime-immune)
+
+The stuck state must be **confirmed across scan cycles**, not by a wall-clock
+window. Each scan that finds the PR escalation-eligible (failure streak at its
+phase-appropriate limit, or the operational-failure breaker tripped) increments
+`issues.stuck_confirmation_count`; a scan that finds the PR recovered resets it
+to zero. Escalation only fires once the count reaches
+`ScanPaidPrsActivity::REQUIRED_STUCK_CONFIRMATIONS`.
+
+Because the counter only advances when a scan actually runs, an outage — during
+which Paid is offline and produces no scans — can never push a PR into
+escalation on its own. This replaces the previous 3-hour wall-clock window,
+which ticked during downtime and drove false escalations after Paid came back
+online.
+
 ## Straight Answer
 
 - A PR is stuck when its unified automatic-run failure streak has reached the
-  phase-appropriate limit and there has been no meaningful progress for the
-  no-progress window.
+  phase-appropriate limit and that stuck state has persisted across the required
+  number of **scan cycles** (not wall-clock time).
 - That stuck state clears when the PR makes meaningful progress or hits an
   explicit cycle boundary reset; manual escalation dismissal alone does not
   clear it.

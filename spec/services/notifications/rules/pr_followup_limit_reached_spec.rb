@@ -8,6 +8,7 @@ RSpec.describe Notifications::Rules::PrFollowupLimitReached do
   let(:issue) do
     create(:issue, :pull_request, project: project, github_number: 42,
       pr_review_phase: "ready", pr_followup_count: 3,
+      stuck_confirmation_count: Activities::ScanPaidPrsActivity::REQUIRED_STUCK_CONFIRMATIONS,
       github_updated_at: 10.minutes.ago, last_pr_scan_at: 5.minutes.ago)
   end
 
@@ -37,12 +38,14 @@ RSpec.describe Notifications::Rules::PrFollowupLimitReached do
         pr_review_phase: "ready",
         last_pr_scan_at: last_pr_scan_at,
         github_updated_at: github_updated_at,
+        stuck_confirmation_count: stuck_confirmation_count,
         project: project
       )
     end
     let(:rule) { described_class.new }
     let(:last_pr_scan_at) { Time.zone.parse("2026-05-15 12:05:00") }
     let(:github_updated_at) { Time.zone.parse("2026-05-15 12:00:00") }
+    let(:stuck_confirmation_count) { Activities::ScanPaidPrsActivity::REQUIRED_STUCK_CONFIRMATIONS }
 
     before do
       allow(issue).to receive(:pr_progress_state).and_return(
@@ -111,9 +114,10 @@ RSpec.describe Notifications::Rules::PrFollowupLimitReached do
       expect(issue).not_to have_received(:pr_progress_state)
     end
 
-    it "does not match when the failure count is met but the staleness window has not elapsed" do
-      allow(issue).to receive(:pr_progress_state).and_return(
-        PullRequests::ProgressState::Result.new(
+    it "does not match when the scan-confirmation count has not been reached" do
+      allow(issue).to receive_messages(
+        stuck_confirmation_count: 0,
+        pr_progress_state: PullRequests::ProgressState::Result.new(
           consecutive_unsuccessful_automatic_runs: 3,
           consecutive_operational_failures: 0,
           consecutive_provider_transient_outages: 0,
