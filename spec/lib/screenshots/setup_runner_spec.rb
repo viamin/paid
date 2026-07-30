@@ -1,41 +1,40 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "shellwords"
 require "screenshots/setup_runner"
 
 RSpec.describe Screenshots::SetupRunner do
   subject(:runner) { described_class.new }
 
-  let(:repo_path) { "/tmp/repo" }
+  let(:repo_path) { Dir.mktmpdir("setup-runner") }
 
-  it "executes setup commands without invoking a shell" do
-    status = instance_double(Process::Status, success?: true)
-
-    allow(Open3).to receive(:capture3).and_return([ "", "", status ])
-
-    runner.call(commands: [ "bin/rails db:prepare RAILS_ENV=test" ], repo_path: repo_path)
-
-    expect(Open3).to have_received(:capture3).with(
-      "bin/rails",
-      "db:prepare",
-      "RAILS_ENV=test",
-      chdir: repo_path
-    )
+  after do
+    FileUtils.rm_rf(repo_path)
   end
 
-  it "preserves quoted arguments when splitting commands" do
-    status = instance_double(Process::Status, success?: true)
+  it "preserves shell command semantics for inline env assignments and redirects" do
+    output_path = File.join(repo_path, "setup.out")
 
-    allow(Open3).to receive(:capture3).and_return([ "", "", status ])
-
-    runner.call(commands: [ %(bin/rails runner "puts 'hello world'") ], repo_path: repo_path)
-
-    expect(Open3).to have_received(:capture3).with(
-      "bin/rails",
-      "runner",
-      "puts 'hello world'",
-      chdir: repo_path
+    runner.call(
+      commands: [ %(FOO=bar sh -c 'printf "%s" "$FOO"' > #{output_path.shellescape}) ],
+      repo_path: repo_path
     )
+
+    expect(File.read(output_path)).to eq("bar")
+  end
+
+  it "preserves shell operators like && across setup commands" do
+    first_path = File.join(repo_path, "first.out")
+    second_path = File.join(repo_path, "second.out")
+
+    runner.call(
+      commands: [ %(printf '%s' first > #{first_path.shellescape} && printf '%s' second > #{second_path.shellescape}) ],
+      repo_path: repo_path
+    )
+
+    expect(File.read(first_path)).to eq("first")
+    expect(File.read(second_path)).to eq("second")
   end
 
   it "rejects blank setup commands" do
