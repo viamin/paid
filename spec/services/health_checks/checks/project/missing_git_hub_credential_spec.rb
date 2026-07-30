@@ -1,0 +1,24 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe HealthChecks::Checks::Project::MissingGitHubCredential do
+  it "returns a finding when both GitHub credentials are missing" do
+    project = build(:project, github_token: nil, github_installation: nil)
+
+    expect(described_class.call(project)).to contain_exactly(
+      have_attributes(
+        check: described_class.name,
+        scope: :project,
+        severity: :error,
+        message: "Project is missing both GitHub App installation and PAT credentials."
+      )
+    )
+  end
+
+  it "returns no findings when a GitHub credential is present" do
+    project = build(:project)
+
+    expect(described_class.call(project)).to eq([])
+  end
+end
