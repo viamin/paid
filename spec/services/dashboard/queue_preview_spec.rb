@@ -86,6 +86,16 @@ RSpec.describe Dashboard::QueuePreview do
       expect(preview.map { |entry| entry.run.queue_priority_tier }).to eq(%i[issue_p1 issue_p3])
     end
 
+    it "does not promise every queued project is represented in the preview sample" do
+      rendered = ApplicationController.render(
+        partial: "dashboard/queue_preview",
+        locals: { queue_preview: [], paused_projects: [] }
+      )
+
+      expect(rendered).to include("Balanced across sampled projects; priority ranks within each project.")
+      expect(rendered).to include("approximate dispatch order from the next batch of queued work")
+    end
+
     it "includes orphaned projects for the account fallback owner" do
       account = create(:account)
       fallback_owner = create(:user, account: account)

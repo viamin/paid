@@ -5,7 +5,9 @@ module Dashboard
     Entry = Struct.new(:position, :run, keyword_init: true)
     CACHE_TTL = 10.seconds
 
-    MAX_SCAN = 200
+    # Sample more queued rows than we display so the fair-share replay can see
+    # additional projects before the preview limit truncates the result.
+    MAX_SCAN = 500
 
     def self.call(...)
       new(...).call
@@ -70,22 +72,12 @@ module Dashboard
         candidates = queues.reject { |_, queued| queued.empty? }
         break if candidates.empty?
 
-        project_id = candidates.min_by { |pid, queued| [ active[pid].to_i, dispatch_rank(queued.first) ] }.first
+        project_id = candidates.min_by { |pid, queued| [ active[pid].to_i, queued.first.queue_order_rank ] }.first
         run = queues[project_id].shift
         active[project_id] = active[project_id].to_i + 1
         interleaved << run
       end
       interleaved
-    end
-
-    # Tie-break key matching QUEUE_ORDER below the project_active_count /
-    # user_active_count tiers: queue priority, PR-continuation ahead within
-    # the manual tier, create_issue-family goals first, then FIFO.
-    def dispatch_rank(run)
-      indicator = AgentRun::QUEUE_PRIORITIES.dig(run.queue_priority_tier, :indicator) || Float::INFINITY
-      in_progress = run.existing_pr? ? 0 : 1
-      goal_rank = %w[create_issue enhance_issue analyze_issue].include?(run.goal) ? 0 : 1
-      [ indicator, in_progress, goal_rank, run.created_at, run.id ]
     end
 
     def visible_project_ids
