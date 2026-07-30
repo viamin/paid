@@ -81,4 +81,43 @@ RSpec.describe Knowledge::ProviderSelector do
       expect(state.reload.circuit_state).to eq("half_open")
     end
   end
+
+  # @spec ISSUE-ANALYSIS-002
+  describe ".available_chat_runner_keys" do
+    before { user.runners.delete_all }
+
+    it "returns the owner's available chat runners, excluding unavailable ones" do
+      create(:runner, user: user, runner_key: "claude", enabled_for_chat: true)
+      create(:runner, user: user, runner_key: "codex", enabled_for_chat: true)
+      create(:runner_state, :rate_limited, user: user, runner_name: "claude")
+
+      expect(described_class.available_chat_runner_keys(user_setting: setting)).to eq([ "codex" ])
+    end
+
+    it "returns an empty array when every chat runner is unavailable" do
+      create(:runner, user: user, runner_key: "claude", enabled_for_chat: true)
+      create(:runner_state, :rate_limited, user: user, runner_name: "claude")
+
+      expect(described_class.available_chat_runner_keys(user_setting: setting)).to eq([])
+    end
+
+    it "ignores runners that are not enabled for chat" do
+      create(:runner, user: user, runner_key: "claude", enabled_for_chat: true)
+      create(:runner, user: user, runner_key: "codex", enabled_for_chat: false)
+
+      expect(described_class.available_chat_runner_keys(user_setting: setting)).to eq([ "claude" ])
+    end
+
+    it "dedupes runners that share a key so each provider is tried once" do
+      # An owner can legitimately hold several api_key Runner rows for the
+      # same direct-outbound key (e.g. two kilocode accounts).
+      key_a = create(:provider_api_key, user: user, api_service_type: "zai_coding")
+      key_b = create(:provider_api_key, user: user, api_service_type: "zai_coding")
+      config = { "kilocode" => { "api_provider" => "zai_coding", "model" => "glm-5.1" } }
+      create(:runner, :api_key, user: user, runner_key: "kilocode", provider_api_key: key_a, name: "A", config: config)
+      create(:runner, :api_key, user: user, runner_key: "kilocode", provider_api_key: key_b, name: "B", config: config)
+
+      expect(described_class.available_chat_runner_keys(user_setting: setting)).to eq([ "kilocode" ])
+    end
+  end
 end
