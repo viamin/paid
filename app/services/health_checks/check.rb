@@ -3,14 +3,11 @@
 module HealthChecks
   class Check
     class << self
+      attr_reader :scope
       attr_writer :scope
 
       def call(subject)
         new(subject).call
-      end
-
-      def scope
-        @scope
       end
 
       def network?
