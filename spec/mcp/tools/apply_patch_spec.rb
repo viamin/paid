@@ -106,4 +106,21 @@ RSpec.describe Tools::ApplyPatch do
       tool.call(repo_path: "/workspace/other-repo", patch: "", confirmed: true)
     }.to raise_error(ArgumentError, /clone manifest/)
   end
+
+  it "denies viewers without a project role" do
+    project # ensure the auto-owner is absorbed so the viewer is not promoted
+    viewer = create(:user, :viewer, account:)
+    viewer_session = create(:chat_session, :workspace, account:, created_by: viewer, clone_manifest: [
+      { project_id: project.id, path: repo.fetch(:repo_path) }
+    ])
+    viewer_tool = described_class.new(user: viewer, session: viewer_session)
+
+    expect {
+      viewer_tool.call(
+        repo_path: repo.fetch(:repo_path),
+        patch: "diff --git a/README.md b/README.md\n--- a/README.md\n+++ b/README.md\n@@ -1 +1 @@\n-# Repo One\n+# Updated Repo One\n",
+        confirmed: true
+      )
+    }.to raise_error(Pundit::NotAuthorizedError)
+  end
 end

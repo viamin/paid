@@ -99,7 +99,12 @@ RSpec.describe Containers::ProvisionForChat do
         script = command.last
         # Intercept the git clone call used by ProvisionForChat#seed_workspace!
         # and replace it with a local clone from the source fixture.
-        if script.include?("git clone --depth 1") && script.include?("github.com")
+        # CodeQL: match `github.com` as a URL host (between `://` and the next `/`
+        # or `:port` boundary), not as a free substring, so a redirect like
+        # `attacker.com/github.com` cannot impersonate the upstream. The userinfo
+        # class is permissive enough to allow `:` characters in the username
+        # portion of URLs like `https://x-access-token:TOKEN@github.com/...`.
+        if script.include?("git clone --depth 1") && script.match?(/:\/\/(?:[^\/?#]+@)?github\.com(?::[0-9]+)?(?:\/|$)/)
           local_script = "git clone #{Shellwords.escape(@source_repo_path)} . 2>&1"
           return [ "sh", "-c", "cd #{Shellwords.escape(workspace_root)} && #{local_script}" ]
         end

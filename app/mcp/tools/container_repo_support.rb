@@ -16,7 +16,7 @@ module Tools
       raise ArgumentError, "This tool requires a running workspace container" if session.container_id.blank?
     end
 
-    def repo_context_for!(repo_path, require_non_stale: false)
+    def repo_context_for!(repo_path, require_non_stale: false, policy_query: :show?)
       ensure_container_ready!
 
       manifest_lookup_path = expand_workspace_path(repo_path)
@@ -30,7 +30,7 @@ module Tools
       end
 
       project = project_for_manifest_entry(manifest_entry.fetch(:project_id))
-      authorize(project, :show?, policy_class: ProjectPolicy)
+      authorize(project, policy_query, policy_class: ProjectPolicy)
 
       {
         project: project,

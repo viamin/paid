@@ -3,7 +3,7 @@
 module Tools
   class GitBranchCreate < BaseTool
     include ContainerRepoSupport
-    authorize :show?, ->(args) { project_for_authorization!(args.fetch(:repo_path)) }, policy_class: ProjectPolicy
+    authorize :run_agent?, ->(args) { project_for_authorization!(args.fetch(:repo_path)) }, policy_class: ProjectPolicy
 
     def self.tool_name = "git_branch_create"
     def self.write_operation? = true
@@ -36,7 +36,7 @@ module Tools
     def perform(repo_path:, branch_name:, confirmed: false)
       raise ArgumentError, "Confirmation required: set confirmed=true to create a branch" unless confirmed
 
-      context = repo_context_for!(repo_path, require_non_stale: true)
+      context = repo_context_for!(repo_path, require_non_stale: true, policy_query: :run_agent?)
       validate_branch_name!(context.fetch(:repo_path), branch_name)
 
       stdout, stderr, exit_code = git_exec!("git -C #{Shellwords.escape(context.fetch(:repo_path))} switch -c #{Shellwords.escape(branch_name)}")

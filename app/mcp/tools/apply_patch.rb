@@ -3,7 +3,7 @@
 module Tools
   class ApplyPatch < BaseTool
     include ContainerRepoSupport
-    authorize :show?, ->(args) { project_for_authorization!(args.fetch(:repo_path)) }, policy_class: ProjectPolicy
+    authorize :run_agent?, ->(args) { project_for_authorization!(args.fetch(:repo_path)) }, policy_class: ProjectPolicy
 
     DIFF_PATH_PATTERNS = [
       /\Adiff --git a\/(?<from>.+) b\/(?<to>.+)\z/,
@@ -46,7 +46,7 @@ module Tools
     def perform(repo_path:, patch:, confirmed: false)
       raise ArgumentError, "Confirmation required: set confirmed=true to apply a patch" unless confirmed
 
-      context = repo_context_for!(repo_path, require_non_stale: true)
+      context = repo_context_for!(repo_path, require_non_stale: true, policy_query: :run_agent?)
       ensure_text_payload!(patch, field_name: "patch")
       reject_binary_patch_payload!(patch)
       validate_patch_paths!(context.fetch(:repo_path), patch)

@@ -53,4 +53,15 @@ RSpec.describe Tools::GitBranchCreate do
       tool.call(repo_path: "/workspace/other-repo", branch_name: "feature/test", confirmed: true)
     }.to raise_error(ArgumentError, /clone manifest/)
   end
+
+  it "denies viewers without a project role" do
+    project # ensure the auto-owner is absorbed so the viewer is not promoted
+    viewer = create(:user, :viewer, account:)
+    viewer_session = create(:chat_session, :workspace, account:, created_by: viewer, clone_manifest: [ manifest_entry ])
+    viewer_tool = described_class.new(user: viewer, session: viewer_session)
+
+    expect {
+      viewer_tool.call(repo_path: repo.fetch(:repo_path), branch_name: "feature/test-branch", confirmed: true)
+    }.to raise_error(Pundit::NotAuthorizedError)
+  end
 end

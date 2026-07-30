@@ -3,7 +3,7 @@
 module Tools
   class WriteRepoFile < BaseTool
     include ContainerRepoSupport
-    authorize :show?, ->(args) { project_for_authorization!(args.fetch(:repo_path)) }, policy_class: ProjectPolicy
+    authorize :run_agent?, ->(args) { project_for_authorization!(args.fetch(:repo_path)) }, policy_class: ProjectPolicy
 
     def self.tool_name = "write_repo_file"
     def self.write_operation? = true
@@ -37,7 +37,7 @@ module Tools
     def perform(repo_path:, path:, content:, confirmed: false)
       raise ArgumentError, "Confirmation required: set confirmed=true to write a repo file" unless confirmed
 
-      context = repo_context_for!(repo_path, require_non_stale: true)
+      context = repo_context_for!(repo_path, require_non_stale: true, policy_query: :run_agent?)
       ensure_text_payload!(content, field_name: "content")
       relative_path = write_repo_text_file!(
         repo_path: context.fetch(:repo_path),

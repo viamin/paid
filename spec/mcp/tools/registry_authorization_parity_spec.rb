@@ -228,7 +228,7 @@ RSpec.describe Tools::Registry do
           ])
         },
         ui_call: ->(user) {
-          authorize_record!(user, project, :show?, policy_class: ProjectPolicy)
+          authorize_record!(user, project, :run_agent?, policy_class: ProjectPolicy)
         }
       },
       {
@@ -241,7 +241,7 @@ RSpec.describe Tools::Registry do
           ])
         },
         ui_call: ->(user) {
-          authorize_record!(user, project, :show?, policy_class: ProjectPolicy)
+          authorize_record!(user, project, :run_agent?, policy_class: ProjectPolicy)
         }
       },
       {
@@ -280,7 +280,7 @@ RSpec.describe Tools::Registry do
           ])
         },
         ui_call: ->(user) {
-          authorize_record!(user, project, :show?, policy_class: ProjectPolicy)
+          authorize_record!(user, project, :run_agent?, policy_class: ProjectPolicy)
         }
       },
       {
