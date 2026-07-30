@@ -67,6 +67,18 @@ RSpec.describe Containers::ChatSessionManager do
       manager.execute_agent_command(prompt: "Fix the bug")
     end
 
+    it "executes the harness argv directly without wrapping it in a shell" do
+      expect(mock_container).to receive(:exec).with(
+        harness_command,
+        hash_including(wait: described_class::EXECUTE_TIMEOUT)
+      ) do |_cmd, **_opts, &block|
+        block&.call(:stdout, "done\n")
+        [ [ "done\n" ], [], 0 ]
+      end
+
+      manager.execute_agent_command(prompt: "Fix the bug")
+    end
+
     it "passes session_id to harness when resuming" do
       expect(Runners::HarnessExecutionPlan).to receive(:for_runner_key).with(
         runner_key: "claude",
@@ -99,7 +111,7 @@ RSpec.describe Containers::ChatSessionManager do
         ))
 
       expect(mock_container).to receive(:exec).with(
-        [ "sh", "-c", anything ],
+        harness_command,
         hash_including(Env: contain_exactly("OPENAI_API_KEY=sk-test", "CUSTOM_VAR=value"))
       ) do |_cmd, **_opts, &block|
         block&.call(:stdout, "done\n")
