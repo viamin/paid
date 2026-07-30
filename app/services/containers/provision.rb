@@ -3325,6 +3325,8 @@ module Containers
         parts = parts[index..] || []
       end
 
+      return true if parts[0] == "sh" && parts[1] == "-c" && parts[2]&.match?(/\bcodex\s+exec\b/)
+
       parts.first(2) == %w[codex exec]
     rescue ArgumentError
       false

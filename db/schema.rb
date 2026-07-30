@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_29_110456) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_29_183603) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -956,6 +956,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_29_110456) do
     t.bigint "account_id", null: false, comment: "Account that owns and may place runs onto this Docker host."
     t.string "backend_type", null: false, comment: "Docker backend type, such as local, remote, or swarm."
     t.string "callback_url", comment: "Paid proxy callback URL that containers on this host must reach."
+    t.text "client_ca_key_pem", comment: "Encrypted CA private key PEM retained when Paid must generate a matching remote Docker server certificate."
+    t.text "client_ca_pem", comment: "Encrypted CA certificate PEM used by Paid when connecting to this remote Docker daemon over TLS."
+    t.text "client_certificate_pem", comment: "Encrypted client certificate PEM used by Paid when connecting to this remote Docker daemon over TLS."
+    t.text "client_private_key_pem", comment: "Encrypted client private key PEM used by Paid when connecting to this remote Docker daemon over TLS."
     t.datetime "created_at", null: false
     t.string "daemon_architecture", comment: "Docker daemon architecture reported by readiness checks."
     t.string "daemon_summary", comment: "Short Docker daemon summary surfaced to operators."
@@ -975,7 +979,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_29_110456) do
     t.integer "manual_concurrency_limit", default: 1, null: false, comment: "Independent host-level run cap enforced separately from account, user, and project guardrails."
     t.jsonb "metadata", default: {}, null: false, comment: "Extensible host-scoped readiness and setup metadata."
     t.string "readiness_status", default: "unknown", null: false, comment: "Cached host readiness state shown in the admin control plane."
+    t.string "required_network_name", comment: "Docker network name the remote host must provide for disposable agent containers."
     t.string "required_network_status", default: "unknown", null: false, comment: "Whether the required Docker network exists on the host."
+    t.text "server_certificate_pem", comment: "Encrypted server certificate PEM generated or uploaded for operator installation on the remote Docker daemon host."
+    t.text "server_csr_pem", comment: "Encrypted server certificate signing request PEM generated for operator submission to their certificate authority."
+    t.text "server_private_key_pem", comment: "Encrypted server private key PEM generated for manual installation on the remote Docker daemon host."
     t.datetime "updated_at", null: false
     t.index ["account_id", "enabled"], name: "index_docker_hosts_on_account_id_and_enabled"
     t.index ["account_id", "fallback_eligible"], name: "index_docker_hosts_on_account_id_and_fallback_eligible"
@@ -2827,7 +2835,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_29_110456) do
     t.string "default_branch", default: "main", null: false
     t.integer "default_poll_interval_seconds", default: 60, null: false
     t.boolean "default_project_active", default: true, null: false
-    t.boolean "fair_queue_across_projects", default: true, null: false
     t.boolean "fallback_enabled", default: false, null: false
     t.jsonb "fallback_runners", default: [], null: false
     t.integer "git_clone_timeout_seconds", default: 600, null: false

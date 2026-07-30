@@ -1785,6 +1785,21 @@ RSpec.describe Activities::RunAgentActivity do
     end
   end
 
+  def create_low_only_openrouter_free_runner(user:)
+    api_key = create(:runner_api_key, user: user, api_service_type: "openrouter")
+    free_model = create(
+      :llm_model,
+      :free,
+      model_id: "openrouter/sonoma-sky-alpha",
+      provider: Runner::OPENROUTER_FREE_MODEL_PROVIDER,
+      tier: "low"
+    )
+
+    create_openrouter_free_runner(user: user, api_key: api_key, model: free_model.model_id).tap do |runner|
+      runner.update!(tier_models: { "low" => runner.tier_models.fetch("low") })
+    end
+  end
+
   def build_openrouter_free_run(project:, model:, data_classification:)
     run = create(:agent_run, :with_git_context, project: project, issue: create(:issue, project: project))
     project_stub = Struct.new(:data_classification).new(data_classification)
@@ -3648,17 +3663,99 @@ expect(container_service).to receive(:execute).with(
       end
     end
 
+    context "when a direct-outbound fallback runner has no tier_models entry for the requested tier" do
+      let(:opencode_runner) do
+        api_key = create(:runner_api_key, user: user, api_service_type: "openrouter")
+        create_opencode_runner_entry(
+          user: user, api_key: api_key,
+          name: "Kimi K2", model: "moonshotai/kimi-k2-0905"
+        ).tap { |runner| runner.update!(tier_models: {}) }
+      end
+
+      before do
+        llm_model = create(:llm_model, model_id: "claude-sonnet-4-6", provider: "anthropic", tier: "mid")
+        create(:model_selection, agent_run: agent_run, llm_model: llm_model, tier: "mid")
+
+        allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude opencode])
+
+        user.settings.update!(
+          fallback_enabled: true,
+          fallback_runners: [ opencode_runner.routing_key ]
+        )
+
+        allow(git_ops).to receive_messages(
+          head_sha: "pre_agent_sha_abc123",
+          commit_uncommitted_changes: false,
+          has_changes_since?: false
+        )
+      end
+
+      it "keeps the fallback in the order and runs it with its own model instead of filtering it out" do
+        rate_limit_failure = Containers::Provision::Result.failure(
+          error: "rate limit", stdout: "", stderr: "rate limit exceeded", exit_code: 1
+        )
+        call_count = 0
+        allow(container_service).to receive(:execute) do |_command, **_opts|
+          call_count += 1
+          call_count == 1 ? rate_limit_failure : exec_success
+        end
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        agent_run.reload
+        expect(result).to include(success: true)
+        expect(result[:final_runner]).to eq(opencode_runner.routing_key)
+        expect(agent_run.runners_attempted.map { |attempt| attempt["runner"] })
+          .to eq([ "claude_code", opencode_runner.routing_key ])
+      end
+
+      it "emits the tier-filter log only for runners that are genuinely dropped" do
+        logger = instance_double(ActiveSupport::Logger, info: nil, warn: nil, error: nil, debug: nil)
+        allow(activity).to receive(:logger).and_return(logger)
+
+        # gemini has no mid tier_models and no google catalog default, so the tier
+        # filter drops it (and logs it); claude and opencode (direct-outbound) stay.
+        extra = create(:runner, user: user, runner_key: "gemini",
+          tier_models: { "low" => { "model_id" => "g", "provider_id" => 1 } })
+        user.settings.update!(fallback_runners: [ extra.routing_key, opencode_runner.routing_key ])
+        allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude gemini opencode])
+
+        allow(container_service).to receive(:execute).and_return(exec_success)
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(logger).to have_received(:warn).with(hash_including(
+          message: "agent_execution.runner_filtered_by_tier",
+          agent_run_id: agent_run.id,
+          runner: "gemini",
+          tier: "mid"
+        ))
+        expect(logger).not_to have_received(:warn).with(hash_including(
+          message: "agent_execution.runner_filtered_by_tier",
+          runner: "opencode"
+        ))
+      end
+    end
+
     context "when no configured runner supports the requested tier" do
       before do
         llm_model = create(:llm_model, model_id: "claude-opus-4-1", provider: "anthropic", tier: "high")
         create(:model_selection, agent_run: agent_run, llm_model: llm_model, tier: "high")
 
-        allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[opencode])
+        allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor])
+        # Direct-outbound runners bypass the tier filter, so this fast-fail path
+        # can only trigger for managed runners (claude/cursor) with no tier default.
+        allow(Runners::DefaultTierModelIds).to receive(:call).and_return({})
       end
 
       it "fast-fails with NoTierCapableRunner before any attempt executes" do
-        primary_runner = create_low_only_opencode_runner(user: user, name: "Primary Kimi")
-        fallback_runner = create_low_only_opencode_runner(user: user, name: "Fallback Kimi")
+        # Reuse the default managed runner (claude) for the primary and add a
+        # fresh cursor fallback — neither is direct-outbound, and both are
+        # restricted to a low-only tier_models entry so the tier filter drops them.
+        low_only = { "low" => { "model_id" => "claude-sonnet-4", "provider_id" => 1 } }
+        primary_runner = user.runners.find_by!(runner_key: "claude")
+        primary_runner.update!(tier_models: low_only)
+        fallback_runner = create(:runner, user: user, runner_key: "cursor", tier_models: low_only)
         agent_run.update!(runner: primary_runner)
         user.settings.update!(fallback_enabled: true, fallback_runners: [ fallback_runner.routing_key ])
 
@@ -3671,6 +3768,21 @@ expect(container_service).to receive(:execute).with(
         agent_run.reload
         expect(agent_run.status).to eq("failed")
         expect(agent_run.error_message).to eq("No runner supports tier high")
+        expect(agent_run.runners_attempted).to eq([])
+      end
+
+      it "filters openrouter_free before execution when no free model resolves for the requested tier" do
+        fallback_runner = create_low_only_openrouter_free_runner(user: user)
+        user.settings.update!(fallback_enabled: true, fallback_runners: [ fallback_runner.routing_key ])
+        allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude openrouter_free])
+
+        expect(container_service).not_to receive(:execute)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /No runner supports tier high/)
+
+        agent_run.reload
         expect(agent_run.runners_attempted).to eq([])
       end
     end
