@@ -4,7 +4,7 @@ module Notifications
   module Rules
     class PrFollowupLimitReached < Rule
       SOURCE = "pr_followup_limit_reached"
-      NO_PROGRESS_ESCALATION_WINDOW = Activities::ScanPaidPrsActivity::NO_PROGRESS_ESCALATION_WINDOW
+      REQUIRED_STUCK_CONFIRMATIONS = Activities::ScanPaidPrsActivity::REQUIRED_STUCK_CONFIRMATIONS
 
       def initialize(progress_states: nil)
         @progress_states = index_progress_states(progress_states)
@@ -23,7 +23,9 @@ module Notifications
             issue.pr_review_phase.in?(%w[ready escalated]) &&
             synced_with_latest_pr_state?(issue) &&
             !progress_state_for(issue).latest_unsuccessful_review? &&
-            progress_state_for(issue).stuck?(limit: issue.project.max_pr_followup_runs, stale_after: NO_PROGRESS_ESCALATION_WINDOW)
+            progress_state_for(issue).stuck?(limit: issue.project.max_pr_followup_runs,
+              confirmations: issue.stuck_confirmation_count.to_i,
+              required_confirmations: REQUIRED_STUCK_CONFIRMATIONS)
         end
       end
 

@@ -3,10 +3,10 @@
 require "rails_helper"
 
 RSpec.describe Notifications::Rules::PrFollowupLimitReached, :no_db do
-  describe "::NO_PROGRESS_ESCALATION_WINDOW" do
+  describe "::REQUIRED_STUCK_CONFIRMATIONS" do
     it "matches the PR scanner threshold" do
-      expect(described_class::NO_PROGRESS_ESCALATION_WINDOW).to eq(
-        Activities::ScanPaidPrsActivity::NO_PROGRESS_ESCALATION_WINDOW
+      expect(described_class::REQUIRED_STUCK_CONFIRMATIONS).to eq(
+        Activities::ScanPaidPrsActivity::REQUIRED_STUCK_CONFIRMATIONS
       )
     end
   end
