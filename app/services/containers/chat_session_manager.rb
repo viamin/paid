@@ -50,7 +50,7 @@ module Containers
       ensure_container_running!
 
       plan = build_execution_plan(prompt: prompt, session_id: session_id)
-      command = Shellwords.join(plan.command)
+      command = Array(plan.command)
 
       apply_preparation!(plan.preparation) if plan.preparation
       stdout_buffer = []
@@ -61,7 +61,7 @@ module Containers
 
       exec_result = Containers.backend.exec_in_container(
         container,
-        [ "sh", "-c", command ],
+        command,
         **exec_options
       ) do |stream_type, chunk|
         case stream_type
