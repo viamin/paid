@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_30_190357) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_30_203545) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1313,6 +1313,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_30_190357) do
     t.text "runner_retry_abandon_reason", comment: "Human-readable reason the issue was abandoned due to the retry cap."
     t.datetime "runner_retry_abandoned_at", comment: "When non-null, the issue was abandoned because every available provider reached the per-issue retry cap. Excluded from auto-pick until cleared (e.g. by a successful run)."
     t.string "source", default: "github", null: false
+    t.integer "stuck_confirmation_count", default: 0, null: false, comment: "Number of consecutive scans that observed this PR in an escalation-eligible stuck state. Replaces the wall-clock no-progress window so Paid downtime (which produces no scans) cannot drive false escalations."
     t.string "title", limit: 1000, null: false
     t.datetime "updated_at", null: false
     t.index ["deployed_at"], name: "idx_issues_deployed_at_on_prs", where: "(is_pull_request = true)"

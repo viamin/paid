@@ -4,7 +4,7 @@ module Notifications
   module Rules
     class StalledDraftPr < Rule
       SOURCE = "stalled_draft_pr"
-      NO_PROGRESS_ESCALATION_WINDOW = Activities::ScanPaidPrsActivity::NO_PROGRESS_ESCALATION_WINDOW
+      REQUIRED_STUCK_CONFIRMATIONS = Activities::ScanPaidPrsActivity::REQUIRED_STUCK_CONFIRMATIONS
       ERROR_THRESHOLD = 10
 
       private
@@ -23,7 +23,8 @@ module Notifications
         return false unless synced_with_latest_pr_state?(issue)
 
         progress_state_for(issue).stuck?(limit: issue.project.max_draft_review_rounds,
-          stale_after: NO_PROGRESS_ESCALATION_WINDOW)
+          confirmations: issue.stuck_confirmation_count.to_i,
+          required_confirmations: REQUIRED_STUCK_CONFIRMATIONS)
       end
 
       def build(issue)
