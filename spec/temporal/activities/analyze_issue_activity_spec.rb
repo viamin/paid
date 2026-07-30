@@ -238,6 +238,49 @@ RSpec.describe Activities::AnalyzeIssueActivity do
     end
   end
 
+  describe "provider fallback" do
+    # Reproduces the run-17220 failure: the configured kb_chat_runner
+    # (claude) is rate-limited, yet analyze_issue must not force the
+    # known-unavailable DEFAULT_PROVIDER back into the candidate list. It
+    # should widen to an available chat-enabled runner the owner has.
+    let(:account) { create(:account) }
+    let(:owner) { create(:user, account: account) }
+    let(:project) { create(:project, account: account, created_by: owner) }
+
+    before do
+      create(:user_setting, user: owner, kb_chat_runner: "claude", kb_chat_fallback_runners: [])
+      # Claude is rate-limited -> Knowledge::ProviderSelector.for_chat returns []
+      create(:runner_state, :rate_limited, user: owner, runner_name: "claude")
+      # An available alternative the owner actually has configured
+      create(:runner, user: owner, runner_key: "codex", enabled_for_chat: true)
+    end
+
+    # @spec ISSUE-ANALYSIS-002
+    it "selects an available chat runner instead of forcing the rate-limited default" do
+      selected_provider = nil
+      allow(AgentHarness).to receive(:send_message) do |_, **opts|
+        selected_provider = opts[:provider]
+        llm_response
+      end
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(selected_provider).to eq(:codex)
+      expect(selected_provider).not_to eq(:claude)
+    end
+
+    # @spec ISSUE-ANALYSIS-003
+    it "raises when no chat runner is available at all" do
+      # Remove the available codex runner so nothing remains; claude is still
+      # rate-limited, so the DEFAULT_PROVIDER must not be forced back in.
+      owner.runners.where(runner_key: "codex").destroy_all
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError, "No LLM provider produced an issue analysis")
+    end
+  end
+
   describe "knowledge usage attribution" do
     include_context "without qdrant vector search"
 

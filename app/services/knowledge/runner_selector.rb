@@ -10,6 +10,15 @@ module Knowledge
       new(user_setting:).runners_for(:chat)
     end
 
+    # Broadens chat selection beyond the kb_chat settings to every
+    # chat-enabled Runner the user owns, applying the same circuit-breaker /
+    # rate-limit availability filter as #runners_for. Used when the
+    # settings-based selection yields no candidates because the configured
+    # runner is currently unavailable (rate-limited / circuit-open).
+    def self.available_chat_runner_keys(user_setting:)
+      new(user_setting:).available_chat_runner_keys
+    end
+
     def initialize(user_setting:)
       @user_setting = user_setting
     end
@@ -23,6 +32,21 @@ module Knowledge
       candidates.select do |runner|
         runner_available?(runner, runner_states)
       end
+    end
+
+    # Chat runner keys derived from the user's actual Runner records (not just
+    # the kb_chat settings), filtered to supported chat runners and to those
+    # that are currently available. Returns keys in runner priority order.
+    #
+    # @spec ISSUE-ANALYSIS-002
+    def available_chat_runner_keys
+      # .uniq matches configured_runners_for: an owner can hold several
+      # api_key Runner rows for the same key (e.g. two opencode accounts),
+      # and each provider should only be attempted once.
+      candidate_keys = user_setting.user.runners.kept_only.for_chat.ordered.pluck(:runner_key).uniq
+      filtered = filter_supported_runners(candidate_keys, operation: :chat)
+      runner_states = user_setting.user.runner_states.where(runner_name: filtered).index_by(&:runner_name)
+      filtered.select { |runner| runner_available?(runner, runner_states) }
     end
 
     private
