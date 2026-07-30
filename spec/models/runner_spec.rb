@@ -1360,14 +1360,11 @@ RSpec.describe Runner do
     end
 
     def expected_zai_coding_plan_provider(model_id)
-      { "zai-coding-plan" => {
-        "npm" => "@ai-sdk/openai-compatible",
-        "options" => {
-          "baseURL" => "https://api.z.ai/api/coding/paas/v4",
-          "apiKey" => "{env:ZHIPU_API_KEY}"
-        },
-        "models" => { model_id => { "name" => model_id } }
-      } }
+      # Models-only declaration: extends opencode's built-in zai-coding-plan
+      # provider (which owns baseURL/auth/native request format) with a model
+      # its catalog lacks (glm-5.x). Do NOT override npm/options — that replaces
+      # the built-in and sends requests z.ai rejects with a 500.
+      { "zai-coding-plan" => { "models" => { model_id => { "name" => model_id } } } }
     end
 
     it "builds runner runtime inputs instead of a local bootstrap wrapper" do
@@ -1384,7 +1381,7 @@ RSpec.describe Runner do
       expect(runtime.metadata[:config]).not_to have_key("provider")
     end
 
-    it "emits a full custom provider config for z.ai coding plan" do
+    it "extends opencode's built-in zai-coding-plan provider with the configured glm model" do
       zai_key = create(:provider_api_key, user: user, api_service_type: "zai_coding", api_key: "sk-zai-secret")
       zai_provider = create(
         :runner,
@@ -1397,9 +1394,10 @@ RSpec.describe Runner do
 
       runtime = zai_provider.agent_harness_runner_runtime
 
-      # opencode's built-in provider id is hyphenated; glm-5.x is declared
-      # (opencode's catalog tops out at glm-4.x) and baseURL/options are
-      # self-contained so no OPENAI_BASE_URL redirect is emitted.
+      # opencode's built-in provider id is hyphenated; glm-5.x is declared as an
+      # extension to that built-in provider (its catalog tops out at glm-4.x).
+      # No npm/options override and no OPENAI_BASE_URL — the built-in provider
+      # owns baseURL/auth/native request format; overriding it makes z.ai 500.
       expect(runtime.model).to eq("zai-coding-plan/glm-5.1")
       expect(runtime.env).to include("ZHIPU_API_KEY" => "sk-zai-secret")
       expect(runtime.env).not_to have_key("OPENAI_BASE_URL")
