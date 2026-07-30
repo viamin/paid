@@ -61,6 +61,10 @@ module Tools
       false
     end
 
+    def self.requires_container?
+      false
+    end
+
     def self.confirmation_mode
       :pre_dispatch
     end
@@ -76,7 +80,11 @@ module Tools
     # session, so tools can avoid being advertised (and then failing) in chats
     # where they cannot run.
     def self.available_for_chat?(user:, session:)
-      available_to?(user:)
+      available_to?(user:) && (!requires_container? || container_ready?(session:))
+    end
+
+    def self.container_ready?(session:)
+      session&.container_id.present?
     end
 
     def self.run_agent_available_to?(user:)

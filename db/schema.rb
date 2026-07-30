@@ -484,6 +484,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_29_183603) do
   create_table "chat_sessions", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.boolean "auto_approve", default: false, null: false, comment: "When true, write tool calls (e.g. agent run creation) are auto-approved without a manual confirmation click"
+    t.jsonb "clone_manifest", default: [], null: false, comment: "Manifest of repos cloned into the chat workspace for container-backed tools"
     t.string "container_id"
     t.datetime "created_at", null: false
     t.bigint "created_by_id"

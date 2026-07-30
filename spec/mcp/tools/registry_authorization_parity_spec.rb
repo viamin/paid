@@ -219,6 +219,71 @@ RSpec.describe Tools::Registry do
         }
       },
       {
+        tool_name: "write_repo_file",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> { { repo_path: "/workspace/repo-one", path: "README.md", content: "x", confirmed: true } },
+        session: ->(user) {
+          create(:chat_session, :workspace, account: user.account, created_by: user, clone_manifest: [
+            { project_id: project.id, path: "/workspace/repo-one" }
+          ])
+        },
+        ui_call: ->(user) {
+          authorize_record!(user, project, :run_agent?, policy_class: ProjectPolicy)
+        }
+      },
+      {
+        tool_name: "apply_patch",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> { { repo_path: "/workspace/repo-one", patch: "", confirmed: true } },
+        session: ->(user) {
+          create(:chat_session, :workspace, account: user.account, created_by: user, clone_manifest: [
+            { project_id: project.id, path: "/workspace/repo-one" }
+          ])
+        },
+        ui_call: ->(user) {
+          authorize_record!(user, project, :run_agent?, policy_class: ProjectPolicy)
+        }
+      },
+      {
+        tool_name: "git_diff",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> { { repo_path: "/workspace/repo-one" } },
+        session: ->(user) {
+          create(:chat_session, :workspace, account: user.account, created_by: user, clone_manifest: [
+            { project_id: project.id, path: "/workspace/repo-one" }
+          ])
+        },
+        ui_call: ->(user) {
+          authorize_record!(user, project, :show?, policy_class: ProjectPolicy)
+        }
+      },
+      {
+        tool_name: "git_status",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> { { repo_path: "/workspace/repo-one" } },
+        session: ->(user) {
+          create(:chat_session, :workspace, account: user.account, created_by: user, clone_manifest: [
+            { project_id: project.id, path: "/workspace/repo-one" }
+          ])
+        },
+        ui_call: ->(user) {
+          authorize_record!(user, project, :show?, policy_class: ProjectPolicy)
+        }
+      },
+      {
+        tool_name: "git_branch_create",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> { { repo_path: "/workspace/repo-one", branch_name: "feature/test", confirmed: true } },
+        session: ->(user) {
+          create(:chat_session, :workspace, account: user.account, created_by: user, clone_manifest: [
+            { project_id: project.id, path: "/workspace/repo-one" }
+          ])
+        },
+        ui_call: ->(user) {
+          authorize_record!(user, project, :run_agent?, policy_class: ProjectPolicy)
+        }
+      },
+      {
         tool_name: "get_intent",
         denied_user: -> { create(:user, :member, account: other_account) },
         arguments: -> {

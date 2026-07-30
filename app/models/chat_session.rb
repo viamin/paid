@@ -68,6 +68,12 @@ class ChatSession < ApplicationRecord
     status == "archived"
   end
 
+  def clone_manifest_entries
+    Array(clone_manifest).filter_map do |entry|
+      entry.is_a?(Hash) ? entry.with_indifferent_access : nil
+    end
+  end
+
   def sidebar_list_target(status: self.status)
     status == "archived" ? "chat_sessions_list_archived" : "chat_sessions_list_active"
   end
