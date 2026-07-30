@@ -216,6 +216,63 @@ RSpec.describe Containers::ProvisionForChat do
         described_class.call(chat_session: chat_session)
       end
 
+      it "records the cloned repo in chat_session.clone_manifest" do
+        allow(mock_container).to receive(:exec).with(
+          [ "sh", "-c", a_string_matching(/git clone/) ],
+          hash_including(user: "agent")
+        ).and_return([ [], [], 0 ])
+
+        described_class.call(chat_session: chat_session)
+
+        expect(chat_session.reload.clone_manifest_entries).to contain_exactly(
+          a_hash_including(project_id: project.id, path: "/workspace")
+        )
+      end
+
+      it "appends manifest entries without dropping pre-existing ones" do
+        chat_session.update!(clone_manifest: [ { project_id: 999, path: "/workspace/legacy" } ])
+        allow(mock_container).to receive(:exec).with(
+          [ "sh", "-c", a_string_matching(/git clone/) ],
+          hash_including(user: "agent")
+        ).and_return([ [], [], 0 ])
+
+        described_class.call(chat_session: chat_session)
+
+        entries = chat_session.reload.clone_manifest_entries
+        expect(entries.map { |e| e[:path] }).to contain_exactly("/workspace/legacy", "/workspace")
+      end
+
+      it "does not record a manifest entry when the clone fails" do
+        allow(mock_container).to receive(:exec).with(
+          [ "sh", "-c", a_string_matching(/git clone/) ],
+          hash_including(user: "agent")
+        ).and_return([ [ "fatal: repository not found" ], [], 128 ])
+
+        expect {
+          described_class.call(chat_session: chat_session)
+        }.to raise_error(Containers::ProvisionForChat::ProvisionError)
+
+        expect(chat_session.reload.clone_manifest_entries).to be_empty
+      end
+
+      it "does not re-record a manifest entry when reusing a non-empty workspace" do
+        chat_session.update!(clone_manifest: [ { project_id: project.id, path: "/workspace" } ])
+        allow(Docker::Volume).to receive(:get).and_return(mock_volume)
+        allow(mock_container).to receive(:exec).with(
+          [ "sh", "-c", "if [ -z \"$(ls -A . 2>/dev/null)\" ]; then exit 0; fi; exit 1" ],
+          user: "agent"
+        ).and_return([ [], [], 1 ])
+
+        expect(mock_container).not_to receive(:exec).with(
+          [ "sh", "-c", a_string_matching(/git clone/) ],
+          anything
+        )
+
+        described_class.call(chat_session: chat_session)
+
+        expect(chat_session.reload.clone_manifest_entries.size).to eq(1)
+      end
+
       it "raises ProvisionError when clone fails" do
         allow(mock_container).to receive(:exec).with(
           [ "sh", "-c", a_string_matching(/git clone/) ],
