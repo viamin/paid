@@ -1,0 +1,28 @@
+# Arrow overlay for Paid.
+#
+# This is the dependency graph of arrow segments — the chain from high-level
+# design through to realized code: HLD → LLDs → EARS → Tests → Code. Agents
+# load this file first to orient before touching any per-segment arrow doc.
+#
+# Schema: https://github.com/jszmajda/lid/blob/main/plugins/arrow-maintenance/skills/arrow-maintenance/references/index-schema.md
+#
+# Paid adopts LID going-forward (Full mode, brownfield). No segments are
+# mapped yet — the tree is intentionally empty. Add nodes here as arrow
+# segments are created under docs/intent/. See docs/intent/README.md.
+
+schema_version: 2
+last_updated: 2026-07-30
+
+# Taxonomy groups segments by domain cluster. Purely organizational.
+# Empty until segments exist to cluster.
+taxonomy: {}
+
+# The design tree of nodes. Leaf nodes are arrow segments (own EARS + an arrow
+# doc); intermediate nodes (sub-HLDs) group children. Empty = nothing mapped.
+arrows: {}
+
+# Items found during mapping that don't yet belong to a segment.
+# arrow-maintenance cleans this up on each audit.
+unmapped:
+  docs:
+    intent: []
