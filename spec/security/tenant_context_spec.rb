@@ -19,6 +19,7 @@ require Rails.root.join("db/migrate/20260507224416_enable_rls_on_strategy_experi
 require Rails.root.join("db/migrate/20260508064240_tighten_orchestration_decisions_strategy_version_tenant_check")
 require Rails.root.join("db/migrate/20260509083302_ensure_strategy_version_id_on_orchestration_decisions")
 require Rails.root.join("db/migrate/20260511040425_fix_strategies_rls_infinite_recursion")
+require Rails.root.join("db/migrate/20260730190357_make_projects_github_token_optional_in_rls")
 
 RSpec.describe TenantContext, :tenant_isolation do
   around do |example|
@@ -44,6 +45,16 @@ RSpec.describe TenantContext, :tenant_isolation do
       described_class.with(account_a) do
         expect(Project.all).to contain_exactly(project_a)
       end
+    end
+  end
+
+  it "exposes projects without a github token to their own account only" do
+    tokenless_a = described_class.with_system_access { create(:project, :with_github_installation, account: account_a) }
+    described_class.with_system_access { create(:project, :with_github_installation, account: account_b) }
+
+    as_restricted_role do
+      described_class.with(account_a) { expect(Project.all).to contain_exactly(tokenless_a) }
+      described_class.with(account_b) { expect(Project.all).not_to include(tokenless_a) }
     end
   end
 
@@ -260,6 +271,7 @@ RSpec.describe TenantContext, :tenant_isolation do
       EnableRlsOnStrategyExperimentTables.new.up unless strategy_experiment_tables_have_rls?
       EnableRlsOnStrategiesAndStrategyVersions.new.up unless strategies_have_rls?
       FixStrategiesRlsInfiniteRecursion.new.up
+      MakeProjectsGithubTokenOptionalInRls.new.up
     end
     OrchestrationDecision.reset_column_information
     ActiveRecord::Base.connection.execute("RESET ROLE")
@@ -308,6 +320,7 @@ RSpec.describe TenantContext, :tenant_isolation do
       EnableRlsOnStrategyExperimentTables.new.up unless strategy_experiment_tables_have_rls?
       EnableRlsOnStrategiesAndStrategyVersions.new.up unless strategies_have_rls?
       FixStrategiesRlsInfiniteRecursion.new.up
+      MakeProjectsGithubTokenOptionalInRls.new.up
     end
     OrchestrationDecision.reset_column_information
   end
