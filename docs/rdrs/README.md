@@ -140,6 +140,12 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | [RDR-016](RDR-016-self-improving-coordination.md) | Self-Improving Agent Coordination | Implemented | Medium |
 | [RDR-017](RDR-017-orchestration-scaling-laws.md) | Orchestration Scaling Laws | Implemented | Low |
 
+### Linked-Intent Development (LID)
+
+| RDR | Title | Status | Priority |
+|-----|-------|--------|----------|
+| [RDR-051](RDR-051-lid-aware-agent-runs.md) | LID-Aware Agent Runs and Brownfield Adoption | Draft | P1 |
+
 ## Decision Summary
 
 ### Core Stack
