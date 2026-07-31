@@ -59,7 +59,10 @@ RSpec.describe Containers::ProvisionForChat do
       described_class.call(chat_session: chat_session)
 
       chat_session.reload
+      expect(chat_session.container_capability).to eq("ready")
       expect(chat_session.container_id).to eq("chat-container-abc123")
+      expect(chat_session.container_requested_at).to be_present
+      expect(chat_session.container_ready_at).to be_present
       expect(chat_session.workspace_volume).to start_with("paid-chat-workspace-")
       expect(chat_session.idle_timeout_at).to be_within(1.minute).of(30.minutes.from_now)
     end

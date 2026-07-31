@@ -49,7 +49,7 @@ module ChatSessions
       sections << { priority: 1, content: project_context } if primary_project
       sections << { priority: 2, content: tool_definitions } if mcp_tools.any?
       sections << { priority: 3, content: cross_project_context } if reference_projects.any?
-      sections << { priority: 4, content: workspace_context } if chat_session.mode == "workspace"
+      sections << { priority: 4, content: workspace_context } if chat_session.container_ready?
       sections << { priority: 5, content: user_preferences }
       sections
     end

@@ -19,9 +19,9 @@
     <%= form_with model: chat_session, url: chat_sessions_path, class: "mt-6 space-y-5" do |form| %>
       <div class="grid gap-5 md:grid-cols-2">
         <div>
-          <%= form.label :mode, class: "block text-sm font-medium text-gray-700" %>
-          <%= form.select :mode,
-                          options_for_select(ChatSession::MODES.map { |mode| [mode.titleize, mode] }, chat_session.mode),
+          <%= form.label :container_capability, "Session type", class: "block text-sm font-medium text-gray-700" %>
+          <%= form.select :container_capability,
+                          options_for_select([["Inline only", "none"]], chat_session.container_capability),
                           {},
                           class: "mt-1 block w-full rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
         </div>

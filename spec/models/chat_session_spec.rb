@@ -24,7 +24,7 @@ RSpec.describe ChatSession do
 
   describe "validations" do
     it { is_expected.to validate_inclusion_of(:status).in_array(described_class::STATUSES) }
-    it { is_expected.to validate_inclusion_of(:mode).in_array(described_class::MODES) }
+    it { is_expected.to validate_inclusion_of(:container_capability).in_array(described_class::CONTAINER_CAPABILITIES) }
 
     it "validates uniqueness of external_id" do
       create(:chat_session)
@@ -103,6 +103,104 @@ RSpec.describe ChatSession do
 
         expect(described_class.idle_expired).to eq([ expired ])
       end
+    end
+
+    describe ".with_container" do
+      it "returns only container-backed sessions" do
+        container_session = create(:chat_session, :workspace, account: account, created_by: user)
+        create(:chat_session, account: account, created_by: user)
+
+        expect(described_class.with_container).to eq([ container_session ])
+      end
+    end
+
+    describe ".awaiting_container" do
+      it "returns pending and provisioning sessions" do
+        pending_session = create(:chat_session, account: account, created_by: user, container_capability: "pending")
+        provisioning_session = create(:chat_session, account: account, created_by: user, container_capability: "provisioning")
+        create(:chat_session, :workspace, account: account, created_by: user)
+
+        expect(described_class.awaiting_container).to contain_exactly(pending_session, provisioning_session)
+      end
+    end
+  end
+
+  describe "container capability predicates" do
+    it "treats none as inline only" do
+      expect(build(:chat_session, container_capability: "none")).to be_inline_only
+    end
+
+    it "treats pending as pending" do
+      expect(build(:chat_session, container_capability: "pending")).to be_container_pending
+    end
+
+    it "treats provisioning as provisioning" do
+      expect(build(:chat_session, container_capability: "provisioning")).to be_container_provisioning
+    end
+
+    it "treats ready as ready" do
+      expect(build(:chat_session, container_capability: "ready")).to be_container_ready
+    end
+
+    it "treats failed as failed" do
+      expect(build(:chat_session, container_capability: "failed")).to be_container_failed
+    end
+
+    it "treats stopped as stopped" do
+      expect(build(:chat_session, container_capability: "stopped")).to be_container_stopped
+    end
+  end
+
+  describe "clone manifest" do
+    it "returns typed entries" do
+      session = build(:chat_session, clone_manifest: [
+        {
+          "project_id" => 42,
+          "cloned_at" => "2026-07-29T19:00:00Z",
+          "path" => "/workspace/projects/paid",
+          "token_identity" => "github-installation"
+        }
+      ])
+
+      entry = session.clone_manifest.first
+
+      expect(entry).to be_a(ChatSession::CloneManifestEntry)
+      expect(entry.project_id).to eq(42)
+      expect(entry.path).to eq("/workspace/projects/paid")
+      expect(entry.token_identity).to eq("github-installation")
+      expect(entry.cloned_at.iso8601).to eq("2026-07-29T19:00:00Z")
+    end
+
+    it "appends and replaces entries by project id" do
+      session = build(:chat_session)
+
+      session.append_clone_manifest_entry(
+        project_id: 7,
+        cloned_at: Time.zone.parse("2026-07-29 19:00:00 UTC"),
+        path: "/workspace/projects/api",
+        token_identity: "token-a"
+      )
+      session.append_clone_manifest_entry(
+        project_id: 7,
+        cloned_at: Time.zone.parse("2026-07-29 20:00:00 UTC"),
+        path: "/workspace/projects/api-v2",
+        token_identity: "token-b"
+      )
+
+      expect(session.clone_manifest.size).to eq(1)
+      expect(session.clone_manifest.first.path).to eq("/workspace/projects/api-v2")
+    end
+
+    it "removes entries by project id" do
+      session = build(:chat_session, clone_manifest: [
+        { project_id: 1, cloned_at: Time.zone.parse("2026-07-29 19:00:00 UTC"), path: "/workspace/one", token_identity: "a" },
+        { project_id: 2, cloned_at: Time.zone.parse("2026-07-29 20:00:00 UTC"), path: "/workspace/two", token_identity: "b" }
+      ])
+
+      removed = session.remove_clone_manifest_entry(project_id: 1)
+
+      expect(removed.map(&:project_id)).to eq([ 1 ])
+      expect(session.clone_manifest.map(&:project_id)).to eq([ 2 ])
     end
   end
 
