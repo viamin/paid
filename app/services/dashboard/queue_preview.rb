@@ -31,9 +31,10 @@ module Dashboard
     def build_entries
       snapshot = fetch_snapshot
       visible_runs = snapshot.select { |run| visible_project_ids.include?(run.project_id) }
-      preload_associations(visible_runs)
+      interleaved = interleave_by_dispatch_order(visible_runs)
+      preload_associations(interleaved)
 
-      interleave_by_dispatch_order(visible_runs).each_with_index.map do |run, index|
+      interleaved.each_with_index.map do |run, index|
         Entry.new(position: index + 1, run:)
       end
     end
