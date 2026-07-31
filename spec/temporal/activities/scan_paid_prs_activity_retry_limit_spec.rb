@@ -34,7 +34,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       stub_const("ProgressStateDouble", Class.new do
         def latest_unsuccessful_review?; end
         def escalation_worthy?(limit:); end
-        def stuck?(limit:, stale_after:); end
+        def stuck?(limit:, confirmations:, required_confirmations:); end
         def latest_unsuccessful_run_at; end
         def consecutive_unsuccessful_automatic_runs; end
         def consecutive_operational_failures; end
@@ -70,6 +70,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       allow(activity).to receive(:fetch_pr_data)
       allow(activity).to receive(:escalation_dismissed?).with(issue).and_return(false)
       allow(activity).to receive(:focus_for).and_return("review_feedback")
+      allow(activity).to receive(:update_stuck_confirmation!)
     end
 
     context "when a restarted PR already has an active create_pr run" do
@@ -417,7 +418,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       stub_const("FailureStreakProgressStateStub", Class.new do
         def escalation_worthy?(limit:); end
         def latest_unsuccessful_review?; end
-        def stuck?(limit:, stale_after:); end
+        def stuck?(limit:, confirmations:, required_confirmations:); end
       end)
     end
 
@@ -710,6 +711,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       stub_const("ExecuteCacheGithubTokenStub", Class.new)
       stub_const("ExecuteCacheGithubClientStub", Class.new)
       stub_const("ExecuteCacheProgressStateStub", Class.new)
+      allow(activity).to receive(:update_stuck_confirmation!)
     end
 
     let(:activity) { described_class.new }
@@ -740,7 +742,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         draft_review_count: 0,
         review_goal_retry_count: 0,
         pr_followup_count: 0,
-        escalated_phase?: false
+        escalated_phase?: false,
+        stuck_confirmation_count: 0
       )
     end
     let(:first_progress_state) do
@@ -883,6 +886,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       stub_const("LifecycleSignalsProjectStub", Class.new)
       stub_const("LifecycleSignalsIssueStub", Class.new)
       stub_const("LifecycleSignalsProgressStateStub", Class.new)
+      allow(activity).to receive(:update_stuck_confirmation!)
     end
 
     let(:activity) { described_class.new }
@@ -957,21 +961,26 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     let(:activity) { described_class.new }
     let(:project) { instance_double(NoProgressProjectStub) }
-    let(:issue) { instance_double(NoProgressIssueStub) }
+    let(:issue) { instance_double(NoProgressIssueStub, stuck_confirmation_count: 0) }
     let(:progress_state) { instance_double(NoProgressProgressStateStub, latest_unsuccessful_review?: false) }
 
-    it "stays false until the stale no-progress window has elapsed" do
+    it "passes the persisted scan-confirmation count into stuck?" do
+      allow(issue).to receive(:stuck_confirmation_count).and_return(
+        Activities::ScanPaidPrsActivity::REQUIRED_STUCK_CONFIRMATIONS
+      )
       allow(activity).to receive(:failure_streak_limit_reached?).with(project, issue, progress_state).and_return(true)
       allow(activity).to receive(:pr_failure_limit).with(project, issue).and_return(3)
       expect(progress_state).to receive(:stuck?).with(
         limit: 3,
-        stale_after: Activities::ScanPaidPrsActivity::NO_PROGRESS_ESCALATION_WINDOW
+        confirmations: Activities::ScanPaidPrsActivity::REQUIRED_STUCK_CONFIRMATIONS,
+        required_confirmations: Activities::ScanPaidPrsActivity::REQUIRED_STUCK_CONFIRMATIONS
       ).and_return(true)
 
       expect(activity.send(:no_progress_stuck?, project, issue, progress_state)).to be(true)
     end
 
-    it "returns false when the PR still has recent progress despite the streak" do
+    it "returns false when the confirmation count has not reached the threshold" do
+      allow(issue).to receive(:stuck_confirmation_count).and_return(0)
       allow(activity).to receive(:failure_streak_limit_reached?).with(project, issue, progress_state).and_return(true)
       allow(activity).to receive(:pr_failure_limit).with(project, issue).and_return(3)
       allow(progress_state).to receive(:stuck?).and_return(false)
@@ -980,6 +989,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     end
 
     it "uses the review-goal retry limit when follow-up streak escalation is disabled" do
+      allow(issue).to receive(:stuck_confirmation_count).and_return(
+        Activities::ScanPaidPrsActivity::REQUIRED_STUCK_CONFIRMATIONS
+      )
       allow(activity).to receive(:review_goal_retry_limit_requires_escalation?)
         .with(project, issue, progress_state:)
         .and_return(true)
@@ -988,7 +1000,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(activity).not_to receive(:failure_streak_limit_reached?)
       expect(progress_state).to receive(:stuck?).with(
         limit: 2,
-        stale_after: Activities::ScanPaidPrsActivity::NO_PROGRESS_ESCALATION_WINDOW
+        confirmations: Activities::ScanPaidPrsActivity::REQUIRED_STUCK_CONFIRMATIONS,
+        required_confirmations: Activities::ScanPaidPrsActivity::REQUIRED_STUCK_CONFIRMATIONS
       ).and_return(true)
 
       expect(activity.send(:no_progress_stuck?, project, issue, progress_state)).to be(true)

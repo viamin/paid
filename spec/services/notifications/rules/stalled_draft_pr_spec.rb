@@ -8,6 +8,7 @@ RSpec.describe Notifications::Rules::StalledDraftPr do
   let(:issue) do
     create(:issue, :pull_request, project: project, github_number: 42,
       pr_review_phase: "draft", auto_continue_paused: false,
+      stuck_confirmation_count: Activities::ScanPaidPrsActivity::REQUIRED_STUCK_CONFIRMATIONS,
       github_updated_at: 10.minutes.ago, last_pr_scan_at: 5.minutes.ago)
   end
 
