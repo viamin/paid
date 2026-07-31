@@ -32,9 +32,11 @@
 - [x] **RUNNER-SCHED-005** — When a runner's `time_restrictions.mode` is
   `"block"` and the current time (converted to the runner's configured
   timezone) falls inside any configured window, the runner SHALL be excluded
-  from selection by `AgentRuns::RunnerResolver`.
+  from selection by `AgentRuns::RunnerResolver` (auto-pick) and SHALL fail
+  `Runners::PreflightCheck` so a run already pinned to it before dispatch is
+  rerouted to a healthy alternative instead of starting during the window.
   *Code:* `AgentRuns::RunnerResolver#runner_runnable?`,
-  `Runners::TimeWindowCheck.blocked_at?`.
+  `Runners::PreflightCheck`, `Runners::TimeWindowCheck.blocked_at?`.
 
 - [x] **RUNNER-SCHED-006** — When a runner's `time_restrictions.mode` is
   `"block"` and the current time falls inside a window, the runner SHALL be
@@ -58,7 +60,10 @@
   window) and no alternative runner is available, the system SHALL park the
   run with `rate_limited_until` set to the earliest time any blocked
   runner's window opens, so `StaleRunDetectorJob` re-queues it automatically.
-  *Code:* `AgentRuns::BindRunner`, `ProcessRunQueueJob`.
+  This SHALL apply both to runner-agnostic (auto-pick) runs that cannot be
+  bound and to pinned runs whose every reroute alternative is blocked.
+  *Code:* `Runners::TimeWindowPark`, `ProcessRunQueueJob#reroute_unavailable_runner`,
+  `ProcessRunQueueJob#park_run_for_time_window`.
 
 - [x] **RUNNER-SCHED-009** — When at least one eligible runner is available
   (not time-window-blocked), the system SHALL dispatch the run normally and

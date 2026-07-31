@@ -1337,6 +1337,103 @@ RSpec.describe ProcessRunQueueJob do
         expect(queued_run.runner_id).to eq(runner.id)
       end
 
+      # @spec RUNNER-SCHED-005, RUNNER-SCHED-008 — pinned runs blocked by a
+      # time-window restriction must be rerouted (or parked), not dispatched.
+      context "when a pinned runner is blocked by a time-window restriction" do
+        def block_config(start_h, end_h)
+          { "mode" => "block", "timezone" => "UTC",
+            "windows" => [ { "start_hour" => start_h, "end_hour" => end_h } ] }
+        end
+
+        it "reroutes a pinned run to a healthy alternative inside a block window" do
+          project = create(:project)
+          user = project.created_by
+          claude_runner = user.runners.kept_only.find_by!(runner_key: "claude", auth_type: "subscription")
+          claude_runner.update_columns(time_restrictions: block_config(1, 4))
+          codex_runner = create(:runner, user: user, runner_key: "codex")
+          queued_run = create(:agent_run, :queued, project: project, runner: claude_runner)
+
+          expect(temporal_client).to receive(:start_workflow).once.and_return(workflow_handle)
+
+          travel_to Time.utc(2026, 1, 1, 2, 0) do
+            described_class.new.perform
+          end
+
+          queued_run.reload
+          expect(queued_run.runner_id).to eq(codex_runner.id)
+          expect(queued_run.temporal_workflow_id).to be_present
+        end
+
+        it "parks the run when every alternative is also time-window-blocked" do
+          project = create(:project)
+          user = project.created_by
+          claude_runner = user.runners.kept_only.find_by!(runner_key: "claude", auth_type: "subscription")
+          claude_runner.update_columns(time_restrictions: block_config(1, 4))
+          codex_runner = create(:runner, user: user, runner_key: "codex")
+          codex_runner.update_columns(time_restrictions: block_config(1, 6))
+          queued_run = create(:agent_run, :queued, project: project, runner: claude_runner)
+
+          expect(temporal_client).not_to receive(:start_workflow)
+
+          travel_to Time.utc(2026, 1, 1, 2, 0) do
+            described_class.new.perform
+          end
+
+          queued_run.reload
+          expect(queued_run.status).to eq("rate_limited")
+          expect(queued_run.rate_limited_until).to eq(Time.utc(2026, 1, 1, 4, 0, 0))
+        end
+
+        it "parks the run even when the pinned runner is the only eligible runner" do
+          project = create(:project)
+          user = project.created_by
+          claude_runner = user.runners.kept_only.find_by!(runner_key: "claude", auth_type: "subscription")
+          claude_runner.update_columns(time_restrictions: block_config(1, 4))
+          # Disable every other runner so claude is the only eligible one. Uses
+          # update_columns to bypass the "last runner" validation.
+          user.runners.kept_only.where.not(id: claude_runner.id).each do |r|
+            r.update_columns(enabled_for_agent_runs: false)
+          end
+          queued_run = create(:agent_run, :queued, project: project, runner: claude_runner)
+
+          expect(temporal_client).not_to receive(:start_workflow)
+
+          travel_to Time.utc(2026, 1, 1, 2, 0) do
+            described_class.new.perform
+          end
+
+          queued_run.reload
+          expect(queued_run.status).to eq("rate_limited")
+          expect(queued_run.rate_limited_until).to eq(Time.utc(2026, 1, 1, 4, 0, 0))
+        end
+
+        it "caches the park decision so TimeWindowPark is bounded by reroute context count" do
+          stub_const("#{described_class}::MAX_ITERATIONS_PER_PERFORM", 8)
+
+          project = create(:project)
+          user = project.created_by
+          user.settings.update!(max_concurrent_runs: 10)
+          claude_runner = user.runners.kept_only.find_by!(runner_key: "claude", auth_type: "subscription")
+          claude_runner.update_columns(time_restrictions: block_config(1, 4))
+          codex_runner = create(:runner, user: user, runner_key: "codex")
+          codex_runner.update_columns(time_restrictions: block_config(1, 4))
+
+          3.times { |i| create(:agent_run, :queued, project: project, runner: claude_runner, created_at: (10 - i).minutes.ago) }
+
+          allow(Runners::TimeWindowPark).to receive(:call).and_call_original
+
+          travel_to Time.utc(2026, 1, 1, 2, 0) do
+            described_class.new.perform
+          end
+
+          # Two distinct reroute contexts arise (claude pin, then codex after the
+          # two-step reroute), so TimeWindowPark is evaluated at most twice — not
+          # once per run. The third run reuses the cached park decision.
+          expect(Runners::TimeWindowPark).to have_received(:call).at_most(:twice)
+          expect(AgentRun.where(status: "rate_limited").count).to eq(3)
+        end
+      end
+
       it "caches reroute resolution so BindRunner is called once per blocked runner context" do
         stub_const("#{described_class}::MAX_ITERATIONS_PER_PERFORM", 5)
 
@@ -1420,6 +1517,32 @@ RSpec.describe ProcessRunQueueJob do
         expect(second_run.reload.runner_switches).to eq(0)
         expect(first_run.agent_run_logs.none? { |log| log.content.include?("dispatch_reroute") }).to be(true)
         expect(second_run.agent_run_logs.none? { |log| log.content.include?("dispatch_reroute") }).to be(true)
+      end
+    end
+
+    # @spec RUNNER-SCHED-008 — runner-agnostic (auto-pick) runs whose every
+    # eligible runner is time-window-blocked are parked until a window opens.
+    context "when all runners are time-window-blocked for an auto-pick run" do
+      it "parks an unbound run until the earliest window opens" do
+        project = create(:project)
+        user = project.created_by
+        claude_runner = user.runners.kept_only.find_by!(runner_key: "claude", auth_type: "subscription")
+        claude_runner.update_columns(time_restrictions: {
+          "mode" => "block", "timezone" => "UTC",
+          "windows" => [ { "start_hour" => 1, "end_hour" => 4 } ]
+        })
+        # An auto-pick run has no runner pinned (runner_id nil).
+        queued_run = create(:agent_run, :queued, project: project, runner: nil, agent_type: "claude_code")
+
+        expect(temporal_client).not_to receive(:start_workflow)
+
+        travel_to Time.utc(2026, 1, 1, 2, 0) do
+          described_class.new.perform
+        end
+
+        queued_run.reload
+        expect(queued_run.status).to eq("rate_limited")
+        expect(queued_run.rate_limited_until).to eq(Time.utc(2026, 1, 1, 4, 0, 0))
       end
     end
 
