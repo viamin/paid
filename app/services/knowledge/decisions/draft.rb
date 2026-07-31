@@ -23,6 +23,8 @@ module Knowledge
     # @example
     #   Knowledge::Decisions::Draft.call(agent_run: agent_run)
     class Draft
+      include Llm::OutputNormalizer
+
       TIMEOUT = 30
       DEFAULT_MODEL = "claude-sonnet-4-6"
       DEFAULT_PROVIDER = "claude"
@@ -314,7 +316,7 @@ module Knowledge
       def parse_text_output(output)
         return nil if output.blank?
 
-        cleaned = output.gsub(/\A```(?:json)?\s*/, "").gsub(/\s*```\z/, "").strip
+        cleaned = strip_markdown_fence(output.to_s.strip)
         JSON.parse(cleaned, symbolize_names: true)
       rescue JSON::ParserError => e
         Rails.logger.warn(

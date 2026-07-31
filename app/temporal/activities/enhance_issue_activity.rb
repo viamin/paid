@@ -4,6 +4,8 @@ module Activities
   # Enhances a GitHub issue with knowledge-base-backed implementation context,
   # or asks focused clarifying questions when the issue is not actionable yet.
   class EnhanceIssueActivity < BaseActivity
+    include Llm::OutputNormalizer
+
     activity_name "EnhanceIssue"
 
     COMMENT_MARKER = "<!-- paid:enhance-issue -->"
@@ -302,7 +304,7 @@ module Activities
 
     def parse_response!(agent_run, response)
       output = response.respond_to?(:output) ? response.output.to_s : response.to_s
-      parsed = JSON.parse(strip_json_fence(output), symbolize_names: true)
+      parsed = JSON.parse(strip_markdown_fence(output.to_s.strip), symbolize_names: true)
       return parsed if parsed.key?(:sufficient_context) && parsed[:comment_body].present?
 
       raise JSON::ParserError, "missing sufficient_context or comment_body"
@@ -313,10 +315,6 @@ module Activities
         type: "EnhanceIssueInvalidJson",
         non_retryable: true
       )
-    end
-
-    def strip_json_fence(output)
-      output.gsub(/\A```(?:json)?\s*/, "").gsub(/\s*```\z/, "").strip
     end
 
     def comment_body_for(parsed)

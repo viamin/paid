@@ -6,6 +6,8 @@ module Activities
   #
   # Returns structured recommendations for the RecordKnowledgeRecommendationsActivity.
   class AnalyzeKnowledgeGapsActivity < BaseActivity
+    include Llm::OutputNormalizer
+
     activity_name "AnalyzeKnowledgeGaps"
 
     DEFAULT_MODEL = "claude-sonnet-4-6"
@@ -121,7 +123,7 @@ module Activities
 
     def parse_response(response)
       output = response.respond_to?(:output) ? response.output.to_s : response.to_s
-      parsed = JSON.parse(strip_json_fence(output), symbolize_names: true)
+      parsed = JSON.parse(strip_markdown_fence(output.to_s.strip), symbolize_names: true)
       Array(parsed[:recommendations]).map do |rec|
         rec.slice(:recommendation_type, :collector_type, :priority, :description, :evidence)
       end
@@ -131,10 +133,6 @@ module Activities
         error: e.message
       )
       []
-    end
-
-    def strip_json_fence(output)
-      output.gsub(/\A```(?:json)?\s*/, "").gsub(/\s*```\z/, "").strip
     end
   end
 end

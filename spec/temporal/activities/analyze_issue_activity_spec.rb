@@ -122,6 +122,26 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       }.to raise_error(Temporalio::Error::ApplicationError, "LLM returned invalid analysis JSON")
     end
 
+    it "strips a markdown code fence (even with a trailing newline) from the LLM response" do
+      fenced = <<~JSON
+        ```json
+        {
+          "sufficient_context": false,
+          "reasoning": "Needs more detail.",
+          "missing_context_areas": ["steps to reproduce"]
+        }
+        ```
+      JSON
+
+      allow(llm_response).to receive(:output).and_return(fenced)
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:sufficient_context]).to be false
+      expect(result[:missing_context_areas]).to eq([ "steps to reproduce" ])
+      expect(agent_run.reload.status).to eq("completed")
+    end
+
     it "tracks token usage correctly" do
       activity.execute(agent_run_id: agent_run.id)
 

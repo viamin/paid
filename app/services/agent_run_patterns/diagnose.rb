@@ -4,6 +4,8 @@ require "json"
 
 module AgentRunPatterns
   class Diagnose
+    include Llm::OutputNormalizer
+
     DEFAULT_MODEL = "claude-sonnet-4-6"
     MIN_CONFIDENCE = 0.55
     TIMEOUT = 45
@@ -150,7 +152,7 @@ module AgentRunPatterns
     end
 
     def parse_json(output)
-      cleaned = output.to_s.gsub(/\A```(?:json)?\s*/, "").gsub(/\s*```\z/, "").strip
+      cleaned = strip_markdown_fence(output.to_s.strip)
       return if cleaned.blank?
 
       JSON.parse(cleaned)
