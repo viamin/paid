@@ -243,6 +243,10 @@ class Project < ApplicationRecord
   has_many :coordination_policies, dependent: :destroy
   has_many :external_connector_events, dependent: :destroy
 
+  def lid_mode
+    self[:lid_mode] if has_attribute?(:lid_mode)
+  end
+
   encrypts :webhook_secret
 
   before_validation :normalize_priority_labels

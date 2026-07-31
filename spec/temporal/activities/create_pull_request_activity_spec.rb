@@ -240,6 +240,27 @@ RSpec.describe Activities::CreatePullRequestActivity do
       expect(captured_body).not_to include("Here are the changes I made to fix the issue.")
     end
 
+    it "appends a LID phase report when the project declares lid_mode" do
+      allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+      allow(project).to receive(:lid_mode).and_return("full")
+      allow(agent_run).to receive(:project).and_return(project)
+      agent_run.log!("stdout", "Added regression coverage with @spec LID-RUN-001")
+      agent_run.log!("stdout", "bin/coherence-check.mjs completed with 0 failures")
+
+      captured_body = nil
+      allow(github_client).to receive(:create_pull_request) do |*_args, **kwargs|
+        captured_body = kwargs[:body]
+        pr_response
+      end
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(captured_body).to include("## LID Phase Report")
+      expect(captured_body).to include("Mode: `full`")
+      expect(captured_body).to include("LID-RUN-001")
+      expect(captured_body).to include("Reported success in agent output")
+    end
+
     it "does not use raw JSON as fallback body" do
       agent_run.log!("stdout", '{"type":"result","result":"","is_error":false}')
 

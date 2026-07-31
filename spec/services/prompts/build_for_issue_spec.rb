@@ -96,6 +96,16 @@ RSpec.describe Prompts::BuildForIssue do
       expect(prompt).to include("Depends on #123")
     end
 
+    it "includes the LID-aware section when the project declares lid_mode" do
+      project_with_lid = project.dup
+      project_with_lid.lid_mode = "full"
+
+      prompt = described_class.call(issue: issue, project: project_with_lid)
+
+      expect(prompt).to include("## LID-Aware Workflow")
+      expect(prompt).to include("Linked-Intent Development mode: `full`")
+    end
+
     context "when project responds to detected_language" do
       let(:project_with_language) do
         OpenStruct.new(

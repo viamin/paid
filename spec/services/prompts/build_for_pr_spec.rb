@@ -157,6 +157,13 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).to include("Depends on #123")
     end
 
+    it "includes the LID-aware section when the project declares lid_mode" do
+      allow(project).to receive(:lid_mode).and_return("full")
+
+      expect(prompt).to include("## LID-Aware Workflow")
+      expect(prompt).to include("Linked-Intent Development mode: `full`")
+    end
+
     it "includes language-specific lint command for ruby" do
       expect(prompt).to include("bundle exec rubocop")
     end
