@@ -69,11 +69,38 @@ RSpec.describe Lid::BuildInferenceChecklist do
       git(repo_dir, "commit", "-m", "baseline")
       base_sha = git(repo_dir, "rev-parse", "HEAD").strip
 
-      write_file(repo_dir, "README.md", "# Example\n\nNo intent questions here.\n")
+      write_file(repo_dir, "README.md", <<~MARKDOWN)
+        # Example
+
+        ## Open Questions
+
+        - Should unrelated docs trigger the planning checklist?
+      MARKDOWN
 
       checklist = described_class.call(worktree_path: repo_dir, base_commit_sha: base_sha)
 
       expect(checklist).to eq("")
+    end
+
+    it "includes changed high-level design open questions" do
+      write_file(repo_dir, "docs/high-level-design.md", <<~MARKDOWN)
+        # High-Level Design
+      MARKDOWN
+      git(repo_dir, "add", ".")
+      git(repo_dir, "commit", "-m", "baseline")
+      base_sha = git(repo_dir, "rev-parse", "HEAD").strip
+
+      write_file(repo_dir, "docs/high-level-design.md", <<~MARKDOWN)
+        # High-Level Design
+
+        ## Open Questions
+
+        - Which adoption path should the planning PR document first?
+      MARKDOWN
+
+      checklist = described_class.call(worktree_path: repo_dir, base_commit_sha: base_sha)
+
+      expect(checklist).to include("`docs/high-level-design.md`: Open question: Which adoption path should the planning PR document first?")
     end
   end
 end

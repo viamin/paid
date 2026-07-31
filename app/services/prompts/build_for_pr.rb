@@ -385,7 +385,7 @@ module Prompts
     # @spec LID-PR-CONFIRM-002
     def planning_pr_intent_confirmation_section
       return "" unless includes_review_threads?
-      return "" unless docs_only_planning_pr?
+      return "" unless planning_pr_confirmation_requested?
 
       <<~SECTION
         # Intent Confirmation Follow-Up
@@ -550,21 +550,8 @@ module Prompts
       end
     end
 
-    def docs_only_planning_pr?
-      files = changed_files
-      files.any? && files.all? { |file| planning_pr_file?(file[:filename].to_s) }
-    end
-
-    def changed_files
-      @changed_files ||= begin
-        github_client.pull_request_files(project.full_name, pr_number)
-      rescue GithubClient::Error
-        []
-      end
-    end
-
-    def planning_pr_file?(path)
-      path.start_with?("docs/") || path.in?(%w[AGENTS.md CLAUDE.md .github/copilot-instructions.md])
+    def planning_pr_confirmation_requested?
+      Lid::BuildInferenceChecklist.checklist_appended?(pr_data.body)
     end
 
     def trusted_comments

@@ -6,6 +6,7 @@ module Lid
   # @spec LID-PR-CONFIRM-001
   # @spec LID-PR-CONFIRM-002
   class BuildInferenceChecklist
+    CHECKLIST_HEADING = "## Confirm These Inferred Decisions"
     OPEN_QUESTIONS_HEADING = /^##\s+Open Questions\b/i
     SECTION_HEADING = /^\#{1,6}\s+/
     INSTRUCTION_FILES = %w[AGENTS.md CLAUDE.md .github/copilot-instructions.md].freeze
@@ -13,6 +14,10 @@ module Lid
 
     def self.call(...)
       new(...).call
+    end
+
+    def self.checklist_appended?(body)
+      body.to_s.include?(CHECKLIST_HEADING)
     end
 
     def initialize(worktree_path:, base_commit_sha:, max_items: MAX_ITEMS)
@@ -107,7 +112,11 @@ module Lid
     end
 
     def markdown_or_instruction_file?(path)
-      path.end_with?(".md") || INSTRUCTION_FILES.include?(path)
+      planning_doc_file?(path) || INSTRUCTION_FILES.include?(path)
+    end
+
+    def planning_doc_file?(path)
+      path == "docs/high-level-design.md" || path.start_with?("docs/intent/")
     end
 
     def read_lines(path)
@@ -119,7 +128,7 @@ module Lid
 
     def render(items)
       <<~MARKDOWN.rstrip
-        ## Confirm These Inferred Decisions
+        #{CHECKLIST_HEADING}
 
         #{items.join("\n")}
       MARKDOWN

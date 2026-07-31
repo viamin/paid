@@ -72,7 +72,13 @@ RSpec.describe Activities::PreparePrPromptActivity do
   let(:pr_data) do
     OpenStruct.new(
       title: "docs: add LID planning artifacts",
-      body: "Planning PR for LID adoption",
+      body: <<~MARKDOWN,
+        Planning PR for LID adoption
+
+        ## Confirm These Inferred Decisions
+
+        - [ ] `docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md`: Replace inferred rationale
+      MARKDOWN
       draft: true,
       merged: false,
       state: "open",

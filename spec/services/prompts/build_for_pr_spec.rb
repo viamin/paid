@@ -31,6 +31,18 @@ RSpec.describe Prompts::BuildForPr do
     OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: body)
   end
 
+  def planning_pr_data(pr_data)
+    planning_pr = pr_data.dup
+    planning_pr.body = <<~MARKDOWN
+      This PR fixes the auth redirect bug.
+
+      ## Confirm These Inferred Decisions
+
+      - [ ] `docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md`: Replace inferred rationale
+    MARKDOWN
+    planning_pr
+  end
+
   def expect_prompt_to_exclude_sections(prompt, *section_names)
     section_names.each do |section_name|
       expect(prompt).not_to include(section_name)
@@ -198,12 +210,9 @@ RSpec.describe Prompts::BuildForPr do
     end
 
     it "includes intent-confirmation guidance for docs-only planning PRs with review threads" do
-      allow(github_client).to receive(:pull_request_files)
+      allow(github_client).to receive(:pull_request)
         .with(project.full_name, 42)
-        .and_return([
-          { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md" },
-          { filename: "AGENTS.md" }
-        ])
+        .and_return(planning_pr_data(pr_data))
       allow(github_client).to receive(:review_threads)
         .and_return([
           {
@@ -220,17 +229,14 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).to include("docs-only LID planning PR")
     end
 
-    it "omits intent-confirmation guidance for non-docs PRs" do
-      allow(github_client).to receive(:pull_request_files)
-        .with(project.full_name, 42)
-        .and_return([ { filename: "app/models/agent_run.rb" } ])
+    it "omits intent-confirmation guidance for ordinary docs PRs without the planning checklist" do
       allow(github_client).to receive(:review_threads)
         .and_return([
           {
             id: "thread_1",
             is_resolved: false,
             comments: [
-              { body: "Fix this", path: "app/models/agent_run.rb", line: 10, author: "trusteduser" }
+              { body: "Clarify this section", path: "README.md", line: 10, author: "trusteduser" }
             ]
           }
         ])
