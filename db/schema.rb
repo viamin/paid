@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_31_183102) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_30_203545) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2937,21 +2937,31 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_31_183102) do
   add_foreign_key "ab_test_assignments", "ab_tests", on_delete: :cascade
   add_foreign_key "ab_test_assignments", "agent_runs", on_delete: :cascade
   add_foreign_key "ab_test_variants", "ab_tests", on_delete: :cascade
+  add_foreign_key "ab_test_variants", "prompt_versions", on_delete: :restrict
   add_foreign_key "ab_tests", "ab_test_variants", column: "winner_variant_id", on_delete: :nullify
+  add_foreign_key "ab_tests", "prompt_versions", column: "control_version_id", on_delete: :restrict
+  add_foreign_key "ab_tests", "prompts", on_delete: :cascade
   add_foreign_key "account_activity_events", "accounts"
+  add_foreign_key "account_activity_events", "users", column: "actor_id"
   add_foreign_key "account_memberships", "accounts"
+  add_foreign_key "account_memberships", "users"
   add_foreign_key "agent_coordination_signals", "agent_runs", column: "source_agent_run_id"
   add_foreign_key "agent_coordination_signals", "agent_runs", column: "target_agent_run_id"
   add_foreign_key "agent_run_anomalies", "agent_runs"
+  add_foreign_key "agent_run_anomalies", "projects"
   add_foreign_key "agent_run_logs", "agent_runs", on_delete: :cascade
   add_foreign_key "agent_run_marketplace_entries", "agent_runs"
   add_foreign_key "agent_run_marketplace_entries", "marketplace_entries"
   add_foreign_key "agent_run_marketplace_entries", "marketplace_entry_versions"
   add_foreign_key "agent_run_phases", "agent_runs", on_delete: :cascade
   add_foreign_key "agent_run_resource_profiles", "accounts", on_delete: :cascade
+  add_foreign_key "agent_run_resource_profiles", "projects", on_delete: :cascade
   add_foreign_key "agent_runs", "configuration_bundles", on_delete: :nullify
   add_foreign_key "agent_runs", "issues", on_delete: :nullify
-  add_foreign_key "agent_runs", "runners", on_delete: :nullify
+  add_foreign_key "agent_runs", "projects", on_delete: :cascade
+  add_foreign_key "agent_runs", "prompt_versions", on_delete: :nullify
+  add_foreign_key "agent_runs", "runners", name: "fk_agent_runs_runner_id", on_delete: :nullify
+  add_foreign_key "agent_runs", "users", column: "initiating_user_id", on_delete: :nullify
   add_foreign_key "billing_invoices", "accounts"
   add_foreign_key "billing_invoices", "billing_periods"
   add_foreign_key "billing_line_items", "billing_invoices"
@@ -2963,13 +2973,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_31_183102) do
   add_foreign_key "change_intents", "change_intents", column: "superseded_by_id", on_delete: :nullify
   add_foreign_key "change_intents", "chat_sessions", on_delete: :nullify
   add_foreign_key "change_intents", "issues", on_delete: :nullify
+  add_foreign_key "change_intents", "projects", on_delete: :cascade
   add_foreign_key "chat_messages", "chat_sessions"
   add_foreign_key "chat_session_projects", "chat_sessions"
+  add_foreign_key "chat_session_projects", "projects"
   add_foreign_key "chat_sessions", "accounts"
-  add_foreign_key "chat_sessions", "runners"
+  add_foreign_key "chat_sessions", "projects"
+  add_foreign_key "chat_sessions", "runners", name: "fk_chat_sessions_runner_id"
+  add_foreign_key "chat_sessions", "users", column: "created_by_id"
   add_foreign_key "claude_login_sessions", "accounts"
   add_foreign_key "claude_login_sessions", "integration_credentials"
+  add_foreign_key "claude_login_sessions", "runner_credentials"
+  add_foreign_key "claude_login_sessions", "users", column: "created_by_id"
   add_foreign_key "codex_login_sessions", "accounts"
+  add_foreign_key "codex_login_sessions", "runner_credentials"
+  add_foreign_key "codex_login_sessions", "users", column: "created_by_id"
   add_foreign_key "collector_runs", "project_versions"
   add_foreign_key "configuration_bundles", "accounts", on_delete: :cascade
   add_foreign_key "configuration_bundles", "llm_models", on_delete: :nullify
@@ -2988,6 +3006,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_31_183102) do
   add_foreign_key "context_intake_responses", "context_intake_responses", column: "parent_response_id"
   add_foreign_key "context_intake_responses", "context_intake_sessions"
   add_foreign_key "context_intake_sessions", "projects"
+  add_foreign_key "context_intake_sessions", "users", column: "started_by_id"
   add_foreign_key "coordination_experiment_assignments", "coordination_experiment_variants", on_delete: :cascade
   add_foreign_key "coordination_experiment_assignments", "coordination_experiments", on_delete: :cascade
   add_foreign_key "coordination_experiment_assignments", "issues", on_delete: :nullify
@@ -3018,10 +3037,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_31_183102) do
   add_foreign_key "failure_classifications", "projects", on_delete: :cascade
   add_foreign_key "github_installations", "accounts"
   add_foreign_key "github_tokens", "accounts"
+  add_foreign_key "github_tokens", "users", column: "created_by_id"
   add_foreign_key "integration_credentials", "accounts"
+  add_foreign_key "integration_credentials", "users", column: "created_by_id"
   add_foreign_key "issue_dependencies", "issues", column: "depends_on_issue_id", on_delete: :cascade
   add_foreign_key "issue_dependencies", "issues", on_delete: :cascade
   add_foreign_key "issue_merge_subscriptions", "issues"
+  add_foreign_key "issue_merge_subscriptions", "users"
   add_foreign_key "issues", "issues", column: "parent_issue_id"
   add_foreign_key "issues", "projects"
   add_foreign_key "knowledge_artifacts", "collector_runs", on_delete: :cascade
@@ -3036,6 +3058,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_31_183102) do
   add_foreign_key "knowledge_usage_stats", "agent_runs", on_delete: :cascade
   add_foreign_key "knowledge_usage_stats", "projects", on_delete: :cascade
   add_foreign_key "linear_tokens", "accounts"
+  add_foreign_key "linear_tokens", "users", column: "created_by_id"
   add_foreign_key "llm_models", "llm_models", column: "free_variant_of_id"
   add_foreign_key "llm_output_metrics", "accounts", on_delete: :cascade
   add_foreign_key "llm_output_metrics", "projects", on_delete: :cascade
@@ -3049,38 +3072,51 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_31_183102) do
   add_foreign_key "model_selections", "llm_models"
   add_foreign_key "notification_rule_states", "accounts"
   add_foreign_key "notifications", "accounts"
+  add_foreign_key "notifications", "users", on_delete: :nullify
   add_foreign_key "onboarding_steps", "accounts"
   add_foreign_key "orchestration_decisions", "agent_runs", on_delete: :nullify
   add_foreign_key "orchestration_decisions", "projects", on_delete: :cascade
+  add_foreign_key "orchestration_decisions", "strategy_versions", on_delete: :nullify
   add_foreign_key "orchestration_strategies", "accounts"
   add_foreign_key "pending_install_claims", "accounts"
   add_foreign_key "pr_templates", "accounts", on_delete: :cascade
   add_foreign_key "pr_templates", "projects", on_delete: :cascade
+  add_foreign_key "pr_templates", "users", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "accounts", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "projects", on_delete: :cascade
+  add_foreign_key "pre_commit_requirements", "users", on_delete: :cascade
   add_foreign_key "preview_provision_states", "agent_runs", on_delete: :cascade
   add_foreign_key "preview_sessions", "accounts", on_delete: :cascade
   add_foreign_key "preview_sessions", "agent_runs"
   add_foreign_key "preview_sessions", "projects"
+  add_foreign_key "preview_sessions", "users", column: "created_by_id", on_delete: :nullify
   add_foreign_key "project_baselines", "projects"
   add_foreign_key "project_convention_detections", "project_versions"
   add_foreign_key "project_convention_detections", "projects"
   add_foreign_key "project_convention_overrides", "projects"
   add_foreign_key "project_convention_recommendations", "projects"
+  add_foreign_key "project_convention_recommendations", "users", column: "applied_by_id"
+  add_foreign_key "project_convention_recommendations", "users", column: "dismissed_by_id"
   add_foreign_key "project_mcp_servers", "mcp_server_definitions"
   add_foreign_key "project_mcp_servers", "projects"
   add_foreign_key "project_memberships", "projects"
+  add_foreign_key "project_memberships", "users"
   add_foreign_key "project_service_containers", "projects", on_delete: :cascade
+  add_foreign_key "project_service_containers", "service_containers", on_delete: :cascade
   add_foreign_key "project_versions", "projects"
   add_foreign_key "projects", "accounts"
   add_foreign_key "projects", "github_installations", validate: false
   add_foreign_key "projects", "github_tokens"
   add_foreign_key "projects", "github_tokens", column: "git_push_fallback_token_id", validate: false
+  add_foreign_key "projects", "users", column: "created_by_id"
   add_foreign_key "prompt_versions", "prompt_versions", column: "parent_version_id", on_delete: :nullify
   add_foreign_key "prompt_versions", "prompts", on_delete: :cascade
+  add_foreign_key "prompt_versions", "users", column: "created_by_user_id", on_delete: :nullify
+  add_foreign_key "prompt_versions", "users", column: "reviewed_by_user_id", on_delete: :nullify
   add_foreign_key "prompts", "accounts", on_delete: :cascade
   add_foreign_key "prompts", "projects", on_delete: :cascade
   add_foreign_key "prompts", "prompt_versions", column: "current_version_id", on_delete: :nullify
+  add_foreign_key "provider_api_keys", "users", on_delete: :cascade
   add_foreign_key "quality_gate_events", "projects"
   add_foreign_key "quality_gate_events", "quality_gate_thresholds"
   add_foreign_key "quality_gate_events", "quality_metrics"
@@ -3089,6 +3125,76 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_31_183102) do
   add_foreign_key "quality_metrics", "prompt_versions", on_delete: :nullify
   add_foreign_key "quality_pause_events", "agent_runs"
   add_foreign_key "quality_pause_events", "projects"
+  add_foreign_key "quality_recovery_actions", "agent_runs", on_delete: :nullify
+  add_foreign_key "quality_recovery_actions", "projects", on_delete: :cascade
+  add_foreign_key "quality_recovery_actions", "prompt_versions", on_delete: :nullify
+  add_foreign_key "quality_thresholds", "accounts"
+  add_foreign_key "quality_thresholds", "projects"
+  add_foreign_key "remediation_decisions", "accounts"
+  add_foreign_key "remediation_decisions", "users", column: "applied_by_id"
+  add_foreign_key "roi_benchmarks", "projects", on_delete: :cascade
+  add_foreign_key "runner_auth_attempts", "accounts"
+  add_foreign_key "runner_auth_attempts", "agent_runs", on_delete: :nullify
+  add_foreign_key "runner_auth_attempts", "projects", on_delete: :cascade
+  add_foreign_key "runner_auth_attempts", "runner_credentials", on_delete: :nullify
+  add_foreign_key "runner_credentials", "accounts"
+  add_foreign_key "runner_credentials", "users", column: "created_by_id", on_delete: :nullify
+  add_foreign_key "runner_states", "users", on_delete: :cascade
+  add_foreign_key "runners", "integration_credentials", on_delete: :restrict
+  add_foreign_key "runners", "provider_api_keys", on_delete: :restrict
+  add_foreign_key "runners", "users", on_delete: :cascade
+  add_foreign_key "scaling_experiment_assignments", "issues", on_delete: :nullify
+  add_foreign_key "scaling_experiment_assignments", "projects", on_delete: :cascade
+  add_foreign_key "scaling_experiment_assignments", "scaling_experiments", on_delete: :cascade
+  add_foreign_key "scaling_experiment_assignments", "scaling_observations", on_delete: :nullify
+  add_foreign_key "scaling_experiments", "projects", on_delete: :cascade
+  add_foreign_key "scaling_observations", "issues", on_delete: :nullify
+  add_foreign_key "scaling_observations", "projects", on_delete: :cascade
+  add_foreign_key "service_container_metrics", "service_containers", on_delete: :cascade
+  add_foreign_key "service_containers", "accounts"
+  add_foreign_key "strategies", "accounts", on_delete: :cascade
+  add_foreign_key "strategies", "projects", on_delete: :cascade
+  add_foreign_key "strategies", "strategy_versions", column: "current_version_id", on_delete: :nullify
+  add_foreign_key "strategy_experiment_assignments", "agent_runs", on_delete: :cascade
+  add_foreign_key "strategy_experiment_assignments", "strategy_experiment_variants", on_delete: :cascade
+  add_foreign_key "strategy_experiment_assignments", "strategy_experiments", on_delete: :cascade
+  add_foreign_key "strategy_experiment_variants", "strategy_experiments", on_delete: :cascade
+  add_foreign_key "strategy_experiments", "accounts", on_delete: :cascade
+  add_foreign_key "strategy_experiments", "strategy_experiment_variants", column: "winner_variant_id", on_delete: :nullify
+  add_foreign_key "strategy_versions", "strategies", on_delete: :cascade
+  add_foreign_key "strategy_versions", "strategy_versions", column: "parent_version_id", on_delete: :nullify
+  add_foreign_key "strategy_versions", "users", column: "created_by_user_id", on_delete: :nullify
+  add_foreign_key "strategy_versions", "users", column: "promoted_by_user_id", on_delete: :nullify
+  add_foreign_key "style_guide_ab_test_assignments", "agent_runs", on_delete: :cascade
+  add_foreign_key "style_guide_ab_test_assignments", "style_guide_ab_test_variants", on_delete: :cascade
+  add_foreign_key "style_guide_ab_test_assignments", "style_guide_ab_tests", on_delete: :cascade
+  add_foreign_key "style_guide_ab_test_variants", "style_guide_ab_tests", on_delete: :cascade
+  add_foreign_key "style_guide_ab_test_variants", "style_guide_versions", on_delete: :restrict
+  add_foreign_key "style_guide_ab_tests", "accounts", on_delete: :cascade
+  add_foreign_key "style_guide_ab_tests", "style_guide_versions", column: "control_version_id", on_delete: :restrict
+  add_foreign_key "style_guide_ab_tests", "style_guides", on_delete: :cascade
+  add_foreign_key "style_guide_run_exposures", "agent_runs", on_delete: :cascade
+  add_foreign_key "style_guide_run_exposures", "style_guide_ab_test_assignments", on_delete: :nullify
+  add_foreign_key "style_guide_run_exposures", "style_guide_versions", on_delete: :restrict
+  add_foreign_key "style_guide_run_exposures", "style_guides", on_delete: :nullify
+  add_foreign_key "style_guide_versions", "style_guide_versions", column: "parent_version_id", on_delete: :nullify
+  add_foreign_key "style_guide_versions", "style_guides", on_delete: :cascade
+  add_foreign_key "style_guide_versions", "users", column: "created_by_user_id", on_delete: :nullify
+  add_foreign_key "style_guide_versions", "users", column: "reviewed_by_user_id", on_delete: :nullify
+  add_foreign_key "style_guides", "accounts", on_delete: :cascade
+  add_foreign_key "style_guides", "projects", on_delete: :cascade
+  add_foreign_key "style_guides", "style_guide_versions", column: "current_version_id", on_delete: :nullify
+  add_foreign_key "tenant_settings", "accounts"
+  add_foreign_key "token_usages", "agent_runs", on_delete: :cascade
+  add_foreign_key "token_usages", "chat_sessions", on_delete: :cascade
+  add_foreign_key "token_usages", "knowledge_runs", on_delete: :cascade
+  add_foreign_key "tracker_configurations", "integration_credentials"
+  add_foreign_key "tracker_configurations", "users", column: "created_by_id"
+  add_foreign_key "user_settings", "users"
+  add_foreign_key "users", "accounts"
+  add_foreign_key "workflow_states", "projects"
+  add_foreign_key "worktrees", "agent_runs", on_delete: :nullify
+  add_foreign_key "worktrees", "projects", on_delete: :cascade
 
   create_function :logidze_capture_exception, sql_definition: <<-'SQL'
       CREATE OR REPLACE FUNCTION public.logidze_capture_exception(error_data jsonb)
@@ -3971,5 +4077,37 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_31_183102) do
 
   create_trigger :logidze_on_quality_thresholds, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_quality_thresholds BEFORE INSERT OR UPDATE ON public.quality_thresholds FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :logidze_on_runner_credentials, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_runner_credentials BEFORE INSERT OR UPDATE ON public.runner_credentials FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{token}')
+  SQL
+
+  create_trigger :logidze_on_providers, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_providers BEFORE INSERT OR UPDATE ON public.runners FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :logidze_on_service_containers, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_service_containers BEFORE INSERT OR UPDATE ON public.service_containers FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{env,status,docker_container_id,peak_cpu_percent,peak_memory_bytes,avg_cpu_percent,avg_memory_bytes,container_metrics_count}')
+  SQL
+
+  create_trigger :logidze_on_style_guides, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_style_guides BEFORE INSERT OR UPDATE ON public.style_guides FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :logidze_on_tenant_settings, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_tenant_settings BEFORE INSERT OR UPDATE ON public.tenant_settings FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :logidze_on_tracker_configurations, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_tracker_configurations BEFORE INSERT OR UPDATE ON public.tracker_configurations FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :logidze_on_user_settings, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_user_settings BEFORE INSERT OR UPDATE ON public.user_settings FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :logidze_on_users, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_users BEFORE INSERT OR UPDATE ON public.users FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{encrypted_password,reset_password_token,reset_password_sent_at,remember_created_at}')
   SQL
 end

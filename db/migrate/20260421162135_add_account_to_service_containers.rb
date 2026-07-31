@@ -9,7 +9,7 @@ class AddAccountToServiceContainers < ActiveRecord::Migration[8.1]
 
   def perform_up
     add_reference :service_containers, :account, foreign_key: true
-    remove_index :service_containers, name: "index_service_containers_on_name", if_exists: true
+    remove_index :service_containers, name: "index_service_containers_on_name"
 
     execute <<~SQL.squish
       WITH container_accounts AS (
@@ -173,21 +173,6 @@ class AddAccountToServiceContainers < ActiveRecord::Migration[8.1]
   end
 
   def perform_down
-    execute <<~SQL.squish
-      WITH primary_service_containers AS (
-        SELECT DISTINCT ON (name)
-          id,
-          name
-        FROM service_containers
-        ORDER BY name, id
-      )
-      DELETE FROM service_container_metrics
-      USING service_containers, primary_service_containers
-      WHERE service_containers.id = service_container_metrics.service_container_id
-        AND primary_service_containers.name = service_containers.name
-        AND service_containers.id != primary_service_containers.id
-    SQL
-
     execute <<~SQL.squish
       WITH primary_service_containers AS (
         SELECT DISTINCT ON (name)
