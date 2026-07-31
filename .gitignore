@@ -138,6 +138,7 @@ config.status
 # PostgreSQL helper scripts (local tooling, not application source)
 .pg-start.sh
 .pg-stop.sh
+.pgenv
 
 # APT cache and cached package extracts (created during container setup)
 /.apt/

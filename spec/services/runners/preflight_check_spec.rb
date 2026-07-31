@@ -57,6 +57,47 @@ RSpec.describe Runners::PreflightCheck do
       end
     end
 
+    # @spec RUNNER-SCHED-005
+    context "when runner is blocked by a time-window restriction" do
+      let(:runner) { user.runners.find_or_create_by!(runner_key: "claude", auth_type: "subscription") }
+
+      it "fails with time_window_blocked when inside a block-mode window" do
+        runner.update_columns(time_restrictions: {
+          "mode" => "block", "timezone" => "UTC",
+          "windows" => [ { "start_hour" => 1, "end_hour" => 4 } ]
+        })
+
+        travel_to Time.utc(2026, 1, 1, 2, 0) do
+          result = described_class.call(runner: runner, user: user)
+          expect(result).to have_attributes(pass?: false, reason: "time_window_blocked", runner_id: runner.id)
+        end
+      end
+
+      it "passes when outside every block-mode window" do
+        runner.update_columns(time_restrictions: {
+          "mode" => "block", "timezone" => "UTC",
+          "windows" => [ { "start_hour" => 1, "end_hour" => 4 } ]
+        })
+
+        travel_to Time.utc(2026, 1, 1, 5, 0) do
+          result = described_class.call(runner: runner, user: user)
+          expect(result).to have_attributes(pass?: true)
+        end
+      end
+
+      it "passes for a deprioritize-mode runner even inside a window" do
+        runner.update_columns(time_restrictions: {
+          "mode" => "deprioritize", "timezone" => "UTC",
+          "windows" => [ { "start_hour" => 1, "end_hour" => 4 } ]
+        })
+
+        travel_to Time.utc(2026, 1, 1, 2, 0) do
+          result = described_class.call(runner: runner, user: user)
+          expect(result).to have_attributes(pass?: true)
+        end
+      end
+    end
+
     context "with an API-key runner missing its secret" do
       let(:provider_api_key) { create(:provider_api_key, user: user) }
       let(:runner) { create(:runner, user: user, runner_key: "cursor", auth_type: "api_key", provider_api_key: provider_api_key) }

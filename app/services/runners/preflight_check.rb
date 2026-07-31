@@ -2,7 +2,21 @@
 
 module Runners
   class PreflightCheck
-    REASONS = %w[circuit_open rate_limited missing_api_key runner_disabled runner_discarded runner_not_found].freeze
+    # @spec RUNNER-SCHED-005
+    # Pinned runs (manual / resume) skip RunnerResolver on first dispatch, so a
+    # block-mode time-window restriction would otherwise let them start during a
+    # peak-hour window. Failing preflight here closes that gap: the run is
+    # rerouted to a healthy alternative (or parked if all runners are blocked),
+    # the same enforcement the resolver applies to late-bound auto-pick.
+    REASONS = %w[
+      circuit_open
+      rate_limited
+      missing_api_key
+      runner_disabled
+      runner_discarded
+      runner_not_found
+      time_window_blocked
+    ].freeze
 
     Result = Struct.new(:pass?, :reason, :runner_id, keyword_init: true)
 
@@ -21,6 +35,10 @@ module Runners
       return failure("runner_discarded") if runner.discarded?
 
       return failure("runner_disabled") unless runner.enabled_for_agent_runs?
+
+      # @spec RUNNER-SCHED-005 — block-mode time-window guard for pinned runs
+      # that bypass RunnerResolver on first dispatch.
+      return failure("time_window_blocked") if runner.blocked_by_time_window?
 
       return failure("missing_api_key") if api_key_runner_without_secret?
 
