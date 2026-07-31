@@ -411,14 +411,15 @@ module Activities
       @agent_outputs ||= {}
       @agent_outputs[agent_run.id] ||= agent_run.agent_run_logs
         .where(log_type: %w[stdout stderr])
-        .order(:created_at)
+        .order(created_at: :desc, id: :desc)
         .limit(200)
         .pluck(:content)
+        .reverse
         .join("\n")
     end
 
     def changed_test_files(agent_run)
-      changed_files(agent_run).grep(/\A(spec|test)\//)
+      changed_files(agent_run).grep(/\A(spec|test|\.ephemeral-tests)\//)
     end
 
     def touched_spec_docs(agent_run)

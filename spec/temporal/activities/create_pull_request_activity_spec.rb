@@ -261,6 +261,42 @@ RSpec.describe Activities::CreatePullRequestActivity do
       expect(captured_body).to include("Reported success in agent output")
     end
 
+    it "reports coherence-check results from the newest captured agent output" do
+      allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+      allow(project).to receive(:lid_mode).and_return("full")
+      allow(agent_run).to receive(:project).and_return(project)
+
+      205.times { |index| agent_run.log!("stdout", "older output line #{index}") }
+      agent_run.log!("stdout", "bin/coherence-check.mjs completed with 0 failures")
+
+      captured_body = nil
+      allow(github_client).to receive(:create_pull_request) do |*_args, **kwargs|
+        captured_body = kwargs[:body]
+        pr_response
+      end
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(captured_body).to include("Reported success in agent output")
+    end
+
+    it "treats ephemeral PR tests as test-first evidence in the LID report" do
+      allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+      allow(project).to receive(:lid_mode).and_return("full")
+      allow(agent_run).to receive(:project).and_return(project)
+      allow(activity).to receive(:git_diff_name_only).with(agent_run).and_return(".ephemeral-tests/lid_report_spec.rb\n")
+
+      captured_body = nil
+      allow(github_client).to receive(:create_pull_request) do |*_args, **kwargs|
+        captured_body = kwargs[:body]
+        pr_response
+      end
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(captured_body).to include("Changed test files: .ephemeral-tests/lid_report_spec.rb.")
+    end
+
     it "does not use raw JSON as fallback body" do
       agent_run.log!("stdout", '{"type":"result","result":"","is_error":false}')
 
