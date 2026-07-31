@@ -780,11 +780,12 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
-      it "sets writable Bundler paths for all agent containers" do
+      it "sets writable Bundler and Yarn cache paths for all agent containers" do
         expect(Docker::Container).to receive(:create) do |config|
           env = config["Env"]
           expect(env).to include("BUNDLE_PATH=/tmp/bundle")
           expect(env).to include("BUNDLE_APP_CONFIG=/tmp/bundle-config")
+          expect(env).to include("YARN_CACHE_FOLDER=/workspace/.yarn-cache")
           mock_container
         end
 
