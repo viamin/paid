@@ -1599,7 +1599,7 @@ RSpec.describe "Projects" do
         allow(Projects::Screenshots::RepoConfig).to receive(:call).and_return(empty_screenshot_repo_config_result)
       end
 
-      let(:screenshot_update_params) do
+  let(:screenshot_update_params) do
         {
           project: {
             screenshot_settings: {
@@ -1612,6 +1612,16 @@ RSpec.describe "Projects" do
             }
           }
         }
+      end
+
+      def expect_lid_redetection(project, detection_result)
+        expect(response).to redirect_to(project_path(project))
+        expect(Projects::DetectLidMode).to have_received(:from_project_repository).with(project:)
+        expect(project.reload.lid_mode).to eq("full")
+        expect(project.lid_detection).to include(
+          "version" => detection_result[:version],
+          "sources" => detection_result[:sources]
+        )
       end
 
       it "updates the project" do
@@ -1787,6 +1797,37 @@ RSpec.describe "Projects" do
         patch project_path(project), params: { project: { auto_scan_security: true } }
 
         expect(project.reload.auto_scan_security).to be true
+      end
+
+      it "allows forcing lid mode from project settings" do
+        project = create(:project, account: account, github_token: github_token, lid_mode: nil)
+
+        patch project_path(project), params: { project: { lid_mode: "scoped" } }
+
+        expect(response).to redirect_to(project_path(project))
+        expect(project.reload.lid_mode).to eq("scoped")
+      end
+
+      it "re-detects lid mode from the repository when requested" do
+        project = create(:project, account: account, github_token: github_token, lid_mode: "scoped")
+        detection_result = {
+          mode: "full",
+          version: "1.3.0",
+          sources: [ "AGENTS.md ## LID block" ],
+          warnings: []
+        }
+
+        allow(Projects::DetectLidMode).to receive(:from_project_repository).with(project:) do
+          project.update!(
+            lid_mode: detection_result[:mode],
+            lid_detection: detection_result.stringify_keys
+          )
+          detection_result
+        end
+
+        patch project_path(project), params: { project: { lid_mode: "scoped", redetect_lid_mode: "1" } }
+
+        expect_lid_redetection(project, detection_result)
       end
 
       it "allows updating github_token to another valid token" do

@@ -354,6 +354,43 @@
             <p class="mt-1 text-xs text-gray-500">How to merge pull requests when auto-merging on owner approval.</p>
           </div>
 
+          <fieldset class="rounded-md border border-gray-200 p-4">
+            <legend class="text-sm font-semibold leading-6 text-gray-900">Linked-Intent Development</legend>
+
+            <div>
+              <%= form.label :lid_mode, "LID Mode", class: "block text-sm font-medium leading-6 text-gray-900" %>
+              <div class="mt-2">
+                <%= form.select :lid_mode,
+                    options_for_select([
+                      ["Off / not configured", nil],
+                      ["Full", "full"],
+                      ["Scoped", "scoped"]
+                    ], @project.lid_mode),
+                    {},
+                    class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+              </div>
+              <p class="mt-1 text-xs text-gray-500">Force the effective LID mode directly, or re-detect it from the repository instruction file and design tree.</p>
+            </div>
+
+            <% lid_detection = @project.lid_detection || {} %>
+            <div class="mt-3 space-y-1 text-xs text-gray-500">
+              <p>Detected version: <%= lid_detection["version"].presence || "none" %></p>
+              <p>Sources: <%= Array(lid_detection["sources"]).presence&.join(", ") || "none" %></p>
+              <% Array(lid_detection["warnings"]).each do |warning| %>
+                <p class="text-amber-700"><%= warning %></p>
+              <% end %>
+            </div>
+
+            <div class="mt-3">
+              <button type="submit"
+                name="project[redetect_lid_mode]"
+                value="1"
+                class="rounded-md border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50">
+                Re-detect from Repository
+              </button>
+            </div>
+          </fieldset>
+
           <div>
             <%= form.label :max_draft_review_rounds, "Max Draft Review Rounds", class: "block text-sm font-medium leading-6 text-gray-900" %>
             <div class="mt-2">
