@@ -111,6 +111,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | [RDR-045](RDR-045-live-web-app-preview-agent-verification.md) | Live Web App Preview and Interactive Agent Verification | Draft | High |
 | [RDR-046](RDR-046-polyglot-language-detection-and-test-execution.md) | Polyglot Language Detection and Test Execution | Draft | High |
 | [RDR-047](RDR-047-work-category-queue-priority.md) | Work-Category-Aware Queue Priority — PR Continuation Over Fresh Issues | Implemented | P1 |
+| [RDR-050](RDR-050-account-queue-fairness-mode.md) | Account-Level Queue Fairness Mode — Strict Priority vs. Cross-Project Fair Share | Draft | P1 |
 
 ### Runner Intelligence
 
@@ -138,6 +139,12 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | [RDR-015](RDR-015-end-to-end-optimization.md) | End-to-End Outcome Optimization | Implemented | Medium |
 | [RDR-016](RDR-016-self-improving-coordination.md) | Self-Improving Agent Coordination | Implemented | Medium |
 | [RDR-017](RDR-017-orchestration-scaling-laws.md) | Orchestration Scaling Laws | Implemented | Low |
+
+### Linked-Intent Development (LID)
+
+| RDR | Title | Status | Priority |
+|-----|-------|--------|----------|
+| [RDR-051](RDR-051-lid-aware-agent-runs.md) | LID-Aware Agent Runs and Brownfield Adoption | Draft | P1 |
 
 ## Decision Summary
 

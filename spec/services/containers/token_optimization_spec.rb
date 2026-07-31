@@ -15,16 +15,17 @@ RSpec.describe Containers::TokenOptimization do
   describe ".rtk_init_for_runner" do
     context "with supported runners" do
       {
-        "claude" => [],
-        "claude_code" => [],
-        "copilot" => [],
+        "claude" => %w[],
+        "claude_code" => %w[],
+        "copilot" => %w[],
         "codex" => %w[--codex],
         "gemini" => %w[--gemini],
         "opencode" => %w[--opencode],
         "cursor" => %w[--agent cursor]
       }.each do |runner, extra_flags|
         it "runs rtk init with correct flags for #{runner}" do
-          expected_command = [ "rtk", "init", "-g", "--auto-patch", "--hook-only", *extra_flags ]
+          base = described_class::RTK_HOOKLESS_RUNNERS.include?(runner) ? [] : %w[--auto-patch --hook-only]
+          expected_command = [ "rtk", "init", "-g", *base, *extra_flags ]
 
           expect(container_service).to receive(:execute)
             .with(expected_command, timeout: described_class::RTK_INIT_TIMEOUT)
@@ -35,10 +36,16 @@ RSpec.describe Containers::TokenOptimization do
 
       it "accepts symbol runner keys" do
         expect(container_service).to receive(:execute)
-          .with([ "rtk", "init", "-g", "--auto-patch", "--hook-only", "--codex" ],
-              timeout: described_class::CODEGRAPH_INSTALL_TIMEOUT)
+          .with([ "rtk", "init", "-g", "--codex" ], timeout: described_class::RTK_INIT_TIMEOUT)
 
         described_class.rtk_init_for_runner(container_service: container_service, runner_key: :codex)
+      end
+
+      it "uses a bare init for hookless runners (no --hook-only/--auto-patch)" do
+        expect(container_service).to receive(:execute)
+          .with([ "rtk", "init", "-g", "--codex" ], timeout: described_class::RTK_INIT_TIMEOUT)
+
+        described_class.rtk_init_for_runner(container_service: container_service, runner_key: "codex")
       end
     end
 

@@ -432,7 +432,7 @@ RSpec.describe PullRequests::ProgressState, :no_db do
     expect(result.all_provider_transient_outages?).to be false
   end
 
-  it "stuck? uses latest_unsuccessful_run_at as fallback instead of epoch when no progress recorded" do
+  it "stuck? is gated on scan confirmations, not wall-clock time" do
     now = Time.zone.parse("2026-05-15 12:00:00")
     runs = [
       build_run(goal: "review", status: "failed", at: now - 10.minutes),
@@ -443,20 +443,20 @@ RSpec.describe PullRequests::ProgressState, :no_db do
     travel_to(now) do
       result = described_class.call(project: project, issue: issue, runs: runs)
 
-      # With 3 failures and no progress, stuck? should NOT be true when stale_after
-      # exceeds the time since the latest failure (the failures are recent).
+      # With 3 failures and no progress, the streak is at the limit. But stuck?
+      # is NOT true until the scan-confirmation count reaches the threshold —
+      # elapsed wall-clock time is irrelevant (downtime must not cause this).
       expect(result.last_meaningful_progress_at).to be_nil
-      expect(result.stuck?(limit: 3, stale_after: 3600)).to be false
-
-      # But stuck? IS true when stale_after is shorter than time since latest failure
-      expect(result.stuck?(limit: 3, stale_after: 300)).to be true
+      expect(result.stuck?(limit: 3, confirmations: 0, required_confirmations: 2)).to be false
+      expect(result.stuck?(limit: 3, confirmations: 1, required_confirmations: 2)).to be false
+      expect(result.stuck?(limit: 3, confirmations: 2, required_confirmations: 2)).to be true
     end
   end
 
   it "stuck? returns false when there are no unsuccessful runs at all" do
     result = described_class.call(project: project, issue: issue, runs: [])
 
-    expect(result.stuck?(limit: 1, stale_after: 1)).to be false
+    expect(result.stuck?(limit: 1, confirmations: 99, required_confirmations: 1)).to be false
   end
 
   it "loads database-backed history in ordered batches and stops after meaningful progress" do

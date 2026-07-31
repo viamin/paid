@@ -23,9 +23,13 @@ module Activities
     MIN_COMMENT_LENGTH = 20
     CI_ACTION_DISPATCH_GRACE_PERIOD = 2.minutes
     DEFAULT_CONSECUTIVE_UNSUCCESSFUL_PR_RUNS = 3
-    # Give the system multiple poll cycles and follow-up runs to recover
-    # before escalating a PR solely for lack of progress.
-    NO_PROGRESS_ESCALATION_WINDOW = 3.hours
+    # Escalation requires the stuck state to persist across this many scan
+    # cycles, not a wall-clock duration. Scans only run while Paid is active,
+    # so an outage (which produces no scans) can never advance the count and
+    # drive a false escalation. The first eligible scan records the observation;
+    # each subsequent confirming scan that still finds the PR stuck increments
+    # the count until it reaches this threshold.
+    REQUIRED_STUCK_CONFIRMATIONS = 2
     # Floor for re-scanning a PR even when GitHub's `updated_at` has not
     # advanced. `updated_at` does not bump for check-run state changes,
     # unanswered bot review requests, or review-goal retry timers — without
@@ -250,6 +254,15 @@ module Activities
     end
 
     def build_lifecycle_signals(project, issue)
+      # Advance the scan-confirmation counter before evaluating the breakers so
+      # the gates below reflect this scan's observation. Mutated exactly here,
+      # once per PR per scan attempt. ScanPaidPrsActivity re-runs wholesale on a
+      # Temporal retry (max_attempts: 3); that can advance the count one extra
+      # time for PRs already processed before the failure — an accepted, rare
+      # edge case consistent with the scanner's other per-scan writes (e.g.
+      # last_pr_scan_at), which at worst escalates a stuck PR one cycle early.
+      update_stuck_confirmation!(project, issue)
+
       progress_state = pr_progress_state(project, issue)
       op_breaker = operational_failure_breaker?(project, issue, progress_state)
       no_progress_stuck = no_progress_stuck?(project, issue, progress_state)
@@ -1236,38 +1249,22 @@ module Activities
       streak = progress_state.consecutive_unsuccessful_automatic_runs
 
       if progress_state.latest_unsuccessful_review?
-        "No meaningful progress for #{no_progress_escalation_window_label} after " \
-          "#{streak} consecutive unsuccessful automatic runs; latest run was review"
+        "No meaningful progress after #{streak} consecutive unsuccessful automatic runs (latest run was review)"
       elsif issue.draft_phase?
-        "No meaningful progress for #{no_progress_escalation_window_label} after " \
-          "#{streak} consecutive unsuccessful automatic runs in the current PR cycle"
+        "No meaningful progress after #{streak} consecutive unsuccessful automatic runs in the current PR cycle"
       else
-        "No meaningful progress for #{no_progress_escalation_window_label} after " \
-          "#{streak} consecutive unsuccessful automatic runs"
+        "No meaningful progress after #{streak} consecutive unsuccessful automatic runs"
       end
     end
 
     def operational_failure_reason
-      "No meaningful progress for #{no_progress_escalation_window_label} after " \
+      "No meaningful progress after " \
         "#{MAX_CONSECUTIVE_OPERATIONAL_FAILURES} consecutive provider/infrastructure failures"
     end
 
     def review_goal_retry_escalation_reason(project, issue, progress_state: nil)
-      "Review-goal retry budget exhausted with no meaningful progress for " \
-        "#{no_progress_escalation_window_label} " \
+      "Review-goal retry budget exhausted with no meaningful progress " \
         "(#{review_goal_consecutive_failure_count(project, issue, progress_state:)} consecutive failures)"
-    end
-
-    def no_progress_escalation_window_label
-      seconds = NO_PROGRESS_ESCALATION_WINDOW.to_i
-
-      if (seconds % 1.hour).zero?
-        hours = seconds / 1.hour
-        "#{hours} #{'hour'.pluralize(hours)}"
-      else
-        minutes = seconds / 1.minute
-        "#{minutes} #{'minute'.pluralize(minutes)}"
-      end
     end
 
     def followup_limit_reached?(project, issue, progress_state = pr_progress_state(project, issue))
@@ -1324,17 +1321,20 @@ module Activities
     # streak is non-transient (e.g. auth expiry, task-level timeout).
     def operational_failure_breaker?(project, issue, progress_state = pr_progress_state(project, issue))
       return false if issue.escalated_phase?
-      return false unless progress_state.consecutive_operational_failures >= MAX_CONSECUTIVE_OPERATIONAL_FAILURES
-      return false if progress_state.all_provider_transient_outages?
+      return false unless operational_failure_eligible?(progress_state)
 
-      no_meaningful_progress_window_elapsed?(progress_state)
+      escalation_confirmed?(issue)
     end
 
     def no_progress_stuck?(project, issue, progress_state = pr_progress_state(project, issue))
       limit = no_progress_stuck_limit(project, issue, progress_state)
       return false if limit <= 0
 
-      progress_state.stuck?(limit:, stale_after: NO_PROGRESS_ESCALATION_WINDOW)
+      progress_state.stuck?(
+        limit:,
+        confirmations: issue.stuck_confirmation_count.to_i,
+        required_confirmations: REQUIRED_STUCK_CONFIRMATIONS
+      )
     end
 
     def no_progress_stuck_limit(project, issue, progress_state)
@@ -2171,11 +2171,54 @@ module Activities
       end
     end
 
-    def no_meaningful_progress_window_elapsed?(progress_state)
-      progress_at = progress_state.last_meaningful_progress_at || progress_state.latest_unsuccessful_run_at
-      return false if progress_at.blank?
+    # Returns true when the PR's escalation-eligible stuck state has been
+    # confirmed across enough scan cycles. Backed by the persisted
+    # stuck_confirmation_count, which is advanced once per scan by
+    # update_stuck_confirmation!.
+    def escalation_confirmed?(issue)
+      issue.stuck_confirmation_count.to_i >= REQUIRED_STUCK_CONFIRMATIONS
+    end
 
-      progress_at <= NO_PROGRESS_ESCALATION_WINDOW.ago
+    # The escalation-eligible predicate: the PR would be escalated except for
+    # the scan-confirmation gate. Either the operational-failure breaker core or
+    # the unified failure-streak limit has been reached. Once escalated the PR
+    # is no longer eligible (dismissal returns it to a non-escalated phase).
+    def escalation_eligible?(project, issue, progress_state)
+      return false if issue.escalated_phase?
+      # Cheap short-circuit for the common healthy-PR case: with no failures on
+      # the books the PR can't be at either limit, so skip the DB-backed limit
+      # lookups below (no_progress_stuck_limit queries review-run history).
+      return false if progress_state.consecutive_unsuccessful_automatic_runs.zero? &&
+        progress_state.consecutive_operational_failures.zero?
+
+      operational_failure_eligible?(progress_state) ||
+        no_progress_stuck_limit(project, issue, progress_state) > 0
+    end
+
+    def operational_failure_eligible?(progress_state)
+      progress_state.consecutive_operational_failures >= MAX_CONSECUTIVE_OPERATIONAL_FAILURES &&
+        !progress_state.all_provider_transient_outages?
+    end
+
+    # Advances the per-issue scan-confirmation count once per scan. When the PR
+    # is escalation-eligible the count increments (each scan re-confirms the
+    # stuck state); otherwise it resets to zero. Downtime produces no scans, so
+    # the count never advances while Paid is offline.
+    def update_stuck_confirmation!(project, issue)
+      progress_state = pr_progress_state(project, issue)
+      eligible = escalation_eligible?(project, issue, progress_state)
+      current = issue.stuck_confirmation_count.to_i
+      new_count = eligible ? current + 1 : 0
+      return if new_count == current
+
+      issue.update_column(:stuck_confirmation_count, new_count)
+      logger.info(
+        message: "pr_scanner.stuck_confirmation_updated",
+        issue_id: issue.id,
+        pr_number: issue.github_number,
+        stuck_confirmation_count: new_count,
+        escalation_eligible: eligible
+      )
     end
 
     def review_run_cycle_boundary
@@ -2504,15 +2547,26 @@ module Activities
     # Returns true when every enabled blocking review method has a
     # completion signal. Review methods and their completion criteria:
     #
-    #   copilot / codex / paid_agent — checked by no_outstanding_review_feedback?
+    #   paid_agent (sole bot method, non-escalated PRs only) — the most
+    #     recent finished review-goal run must not be a failure that posted
+    #     no review. A failed, unposted run means the required review never
+    #     landed, so the gate holds until a run succeeds (or the retry-limit
+    #     escalation path releases it by escalating). Outstanding feedback
+    #     from a review that *was* posted is still checked by
+    #     no_outstanding_review_feedback?.
+    #   copilot / codex — checked by no_outstanding_review_feedback?
     #     (review bot status + thread resolution). Not re-checked here.
     #   ci_action — the check run named by action_name must be present
     #     and have a successful conclusion.
     #   manual — at least one trusted non-bot user must have submitted
     #     an APPROVED review (distinct from owner approval, which gates
     #     the merge trigger itself).
-    def all_blocking_review_methods_complete?(project, reviews, checks, pr_data: nil)
+    def all_blocking_review_methods_complete?(project, reviews, checks, pr_data: nil, issue: nil)
       return true unless project.review_enabled? && project.wait_for_reviews?
+
+      if issue && paid_agent_review_unposted_failure?(project, issue, reviews)
+        return false
+      end
 
       if project.review_method_enabled?("ci_action")
         return false unless ci_action_review_complete?(project, checks, pr_data)
@@ -2523,6 +2577,47 @@ module Activities
       end
 
       true
+    end
+
+    # Returns true when paid_agent is enabled as the SOLE bot review method,
+    # the PR is still in a review-gated phase (not escalated), no paid_agent
+    # review has been posted, and the most recent finished review-goal run in
+    # the current cycle ended in a retryable failure status without posting a
+    # review. The PR then never received the required review, so auto-merge
+    # must hold until a run succeeds, or until exhausting retries drives the
+    # escalation path (which moves the PR to the escalated phase, exempt
+    # below). A posted review — clean or not — is left to the existing
+    # no_outstanding_review_feedback? path, so this only closes the "review
+    # never landed" hole (#3086).
+    #
+    # Scope is deliberately narrow:
+    # - Sole-method only: mixed-bot projects (e.g. copilot + paid_agent) do
+    #   NOT escalate on paid_agent exhaustion — the other bot is meant to keep
+    #   gating (see review_goal_retry_limit_requires_escalation?). Blocking
+    #   here for a mixed project would deadlock with no recovery.
+    # - Escalated PRs are exempt: owner approval intentionally unblocks
+    #   auto-merge for an escalated PR (see scan_escalated_pr), and the race
+    #   this guard prevents (merge firing before escalation confirms) is
+    #   already resolved once the PR has escalated.
+    def paid_agent_review_unposted_failure?(project, issue, reviews)
+      return false if issue.escalated_phase?
+      return false unless paid_agent_sole_review_method?(project)
+      return false if paid_agent_review_present?(reviews)
+
+      latest_run = latest_finished_automatic_review_run(
+        project, issue, progress_state: pr_progress_state(project, issue)
+      )
+      return false unless latest_run&.status&.in?(REVIEW_GOAL_RETRYABLE_FAILURE_STATUSES)
+      return false if latest_run.review_posted_at.present?
+
+      true
+    end
+
+    # Returns true when any posted review came from the paid_agent review bot.
+    def paid_agent_review_present?(reviews)
+      return false if reviews.blank?
+
+      reviews.any? { |review| RunnerSupport.runner_bot_username_for?("paid_agent", review[:user_login]) }
     end
 
     # ci_action is complete when the configured action_name appears in
@@ -2950,7 +3045,7 @@ module Activities
         unresolved_threads: unresolved_threads
       )
       blocking_reviews_complete = all_blocking_review_methods_complete?(
-        project, reviews, checks, pr_data: pr_data
+        project, reviews, checks, pr_data: pr_data, issue: issue
       )
       reviews_fresh = !review_stale_for_head?(client, project, issue, pr_data, reviews)
       dependencies_resolved = if human_dependency_check_required?(

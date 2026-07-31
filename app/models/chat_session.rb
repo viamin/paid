@@ -43,6 +43,8 @@ class ChatSession < ApplicationRecord
     private_class_method :parse_time
   end
 
+  CLONE_MANIFEST_TYPED_KEYS = %w[project_id cloned_at path token_identity].freeze
+
   before_validation :set_external_id, on: :create
   before_create :generate_proxy_token
   after_create_commit :broadcast_sidebar_prepend
@@ -59,7 +61,6 @@ class ChatSession < ApplicationRecord
   has_many :change_intents, dependent: :nullify
   has_many :chat_session_projects, dependent: :destroy
   has_many :projects, through: :chat_session_projects
-  has_many :change_intents, dependent: :nullify
 
   validates :status, inclusion: { in: STATUSES }
   validates :container_capability, inclusion: { in: CONTAINER_CAPABILITIES }
@@ -136,7 +137,13 @@ class ChatSession < ApplicationRecord
   end
 
   def clone_manifest=(entries)
-    self[:clone_manifest] = Array(entries).map { |entry| CloneManifestEntry.coerce(entry).as_json }
+    self[:clone_manifest] = Array(entries).map do |entry|
+      typed_entry = CloneManifestEntry.coerce(entry)
+      next typed_entry.as_json unless entry.respond_to?(:to_h)
+
+      entry.to_h.stringify_keys.slice(*CLONE_MANIFEST_TYPED_KEYS).merge(typed_entry.as_json)
+        .merge(entry.to_h.stringify_keys.except(*CLONE_MANIFEST_TYPED_KEYS))
+    end
   end
 
   def append_clone_manifest_entry(project_id:, cloned_at:, path:, token_identity:)
@@ -154,6 +161,12 @@ class ChatSession < ApplicationRecord
     removed, remaining = clone_manifest.partition { |entry| entry.project_id == project_id }
     self.clone_manifest = remaining
     removed
+  end
+
+  def clone_manifest_entries
+    Array(self[:clone_manifest]).filter_map do |entry|
+      entry.respond_to?(:as_json) ? entry.as_json.with_indifferent_access : nil
+    end
   end
 
   def sidebar_list_target(status: self.status)

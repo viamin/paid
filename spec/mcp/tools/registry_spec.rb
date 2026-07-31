@@ -21,6 +21,9 @@ RSpec.describe Tools::Registry do
       create_mcp_server_definition
       update_mcp_server_definition
       remove_mcp_server_definition
+      write_repo_file
+      apply_patch
+      git_branch_create
       operator_suspend_account
       operator_reactivate_account
       operator_deactivate_account

@@ -132,6 +132,7 @@ module Activities
       { content: "", sections: [], total_tokens: 0 }
     end
 
+    # @spec ISSUE-ANALYSIS-003
     def call_llm(agent_run, prompt)
       chat_providers(agent_run.project).each do |provider|
         response = AgentHarness.send_message(prompt, **llm_options(provider))
@@ -162,10 +163,28 @@ module Activities
       true
     end
 
+    # @spec ISSUE-ANALYSIS-001 ISSUE-ANALYSIS-002
     def chat_providers(project)
       setting = project.effective_owner&.settings
       providers = setting ? Knowledge::ProviderSelector.for_chat(user_setting: setting) : []
-      providers.presence || [ DEFAULT_PROVIDER ]
+      return providers if providers.any?
+
+      broadened = setting ? Knowledge::ProviderSelector.available_chat_runner_keys(user_setting: setting) : []
+      return broadened if broadened.any?
+
+      # Last resort: the platform default. Only used when it is not currently
+      # known-unavailable for this owner, so we never silently target a
+      # rate-limited / circuit-open runner. An empty list makes call_llm fail
+      # loudly rather than masking the outage by forcing a known-bad provider.
+      default_provider_available?(project) ? [ DEFAULT_PROVIDER ] : []
+    end
+
+    # @spec ISSUE-ANALYSIS-002
+    def default_provider_available?(project)
+      owner = project.effective_owner or return true
+
+      state = owner.runner_states.find_by(runner_name: DEFAULT_PROVIDER)
+      state.nil? || !state.unavailable?
     end
 
     def llm_options(provider)
@@ -233,10 +252,12 @@ module Activities
       end.join("\n\n")
     end
 
+    # @spec ISSUE-ANALYSIS-004
     def trusted_comments(project, comments)
       comments.select { |comment| project.trusted_github_user?(comment.user&.login) }
     end
 
+    # @spec ISSUE-ANALYSIS-004
     def ensure_trusted_issue!(issue)
       return if issue.trusted?
 
@@ -263,6 +284,7 @@ module Activities
       end.join("\n\n")
     end
 
+    # @spec ISSUE-ANALYSIS-005
     def parse_response!(agent_run, response)
       output = response.respond_to?(:output) ? response.output.to_s : response.to_s
       parsed = extract_analysis_json(output)

@@ -73,6 +73,12 @@ class CreateConfigurationBundles < ActiveRecord::Migration[8.1]
     add_index :bundle_outcomes, :quality_score
     add_index :bundle_outcomes, :success
 
+    safety_assured do
+      add_foreign_key :configuration_bundles, :prompt_versions,
+        column: :prompt_version_id,
+        on_delete: :nullify unless foreign_key_exists?(:configuration_bundles, :prompt_versions)
+    end
+
     reversible do |dir|
       dir.up do
         safety_assured do

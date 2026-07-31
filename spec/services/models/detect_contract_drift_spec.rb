@@ -92,6 +92,28 @@ RSpec.describe Models::DetectContractDrift do
       expect(result.findings).to be_empty
     end
 
+    it "checks direct-outbound runners included in the shared key list" do
+      model_id = "pareto-#{SecureRandom.hex(4)}"
+      create(:llm_model, :openai, model_id: model_id, tier: "mid", active: true)
+
+      allow(Runners::ModelCompatibility).to receive(:call).and_return(
+        AgentHarness::ModelCompatibility::Result.new(
+          runner: :opencode,
+          model_id: model_id,
+          auth_mode: :subscription,
+          supported: nil
+        )
+      )
+
+      described_class.call(runner_keys: %w[openrouter_pareto], auth_types: %w[subscription])
+
+      expect(Runners::ModelCompatibility).to have_received(:call).with(hash_including(
+        runner_key: "openrouter_pareto",
+        model_id: model_id,
+        auth_type: "subscription"
+      ))
+    end
+
     it "caps findings per (provider, runner, auth_type) group" do
       stub_const("Models::DetectContractDrift::MAX_FINDINGS_PER_GROUP", 2)
       model_ids = 5.times.map { |i| "cap-#{SecureRandom.hex(4)}-#{i}" }

@@ -67,20 +67,21 @@ module Activities
       return true unless resolve_escalation_reason(input) == Issue::PR_ESCALATION_REASON_OPERATIONAL_FAILURES
 
       progress_state = PullRequests::ProgressState.call(project:, issue:)
-      operational_failure_breaker_holds?(progress_state)
+      operational_failure_breaker_holds?(issue, progress_state)
     end
 
-    def operational_failure_breaker_holds?(progress_state)
+    def operational_failure_breaker_holds?(issue, progress_state)
       progress_state.consecutive_operational_failures >= Activities::ScanPaidPrsActivity::MAX_CONSECUTIVE_OPERATIONAL_FAILURES &&
         !progress_state.all_provider_transient_outages? &&
-        no_meaningful_progress_window_elapsed?(progress_state)
+        escalation_confirmed?(issue)
     end
 
-    def no_meaningful_progress_window_elapsed?(progress_state)
-      progress_at = progress_state.last_meaningful_progress_at || progress_state.latest_unsuccessful_run_at
-      return false if progress_at.blank?
-
-      progress_at <= Activities::ScanPaidPrsActivity::NO_PROGRESS_ESCALATION_WINDOW.ago
+    # Re-validates the scan-confirmation gate at escalation time. The count is
+    # advanced once per scan by ScanPaidPrsActivity#update_stuck_confirmation!,
+    # so it reflects how many active scans confirmed the stuck state — never
+    # inflated by Paid downtime.
+    def escalation_confirmed?(issue)
+      issue.stuck_confirmation_count.to_i >= Activities::ScanPaidPrsActivity::REQUIRED_STUCK_CONFIRMATIONS
     end
 
     def record_noop_decision(project, issue, reason:, phase_before:)

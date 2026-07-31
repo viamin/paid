@@ -205,6 +205,16 @@ RSpec.describe Activities::RunAgentActivity, :no_db do
     end
   end
 
+  describe "#direct_outbound_runner?" do
+    let(:activity) { described_class.new }
+
+    it "treats bare openrouter_pareto candidates as direct outbound" do
+      allow(activity).to receive(:runner_entry_for).with("openrouter_pareto", nil).and_return(nil)
+
+      expect(activity.send(:direct_outbound_runner?, "openrouter_pareto", nil)).to be(true)
+    end
+  end
+
   describe "#preflight_timeout_seconds_for" do
     let(:activity) { described_class.new }
 

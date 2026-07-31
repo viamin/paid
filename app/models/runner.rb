@@ -74,8 +74,13 @@ class Runner < ApplicationRecord
     # Both KiloCode and OpenCode ship a built-in "zai-coding-plan" provider
     # whose availability probe checks ZHIPU_API_KEY (not ZAI_CODING_API_KEY).
     # Override the auto-derived name so the key lands where the CLIs look.
+    # opencode_model_provider matches the built-in provider id (hyphenated).
+    # opencode_custom marks this as needing a declared model entry: opencode's
+    # catalog tops out before glm-5.x, so opencode_runner_runtime extends the
+    # built-in provider with the configured model instead of overriding it.
     "zai_coding" => { label: "z.ai (Coding Plan)", base_url: "https://api.z.ai/api/coding/paas/v4", service_type: "zai_coding",
-                      env_var: "ZHIPU_API_KEY", kilocode_provider_id: "zai-coding-plan", opencode_model_provider: "zai_coding" }
+                      env_var: "ZHIPU_API_KEY", kilocode_provider_id: "zai-coding-plan", opencode_model_provider: "zai-coding-plan",
+                      opencode_custom: true }
   }.freeze
 
   DIRECT_OUTBOUND_SERVICE_TYPES = DIRECT_OUTBOUND_API_PROVIDERS.values.map { |c| c[:service_type] }.to_set.freeze
@@ -1610,15 +1615,29 @@ class Runner < ApplicationRecord
         models = opencode_custom_provider_models
         provider_config["models"] = models if models
       end
+    elsif custom_openai_compatible_provider?(api_config)
+      # opencode ships a built-in provider for these endpoints (e.g.
+      # zai-coding-plan) that reads its API key from the env var set above and
+      # speaks z.ai's native request format. Only the model needs declaring —
+      # opencode's catalog tops out before glm-5.x — so EXTEND the built-in
+      # provider with a models entry rather than overriding it. Declaring a full
+      # @ai-sdk/openai-compatible block (npm/options) here would REPLACE the
+      # built-in and send requests z.ai rejects with a 500 "Unexpected server
+      # error". Do NOT emit OPENAI_BASE_URL either: it only redirects the
+      # unrelated built-in openai provider.
+      models = opencode_custom_provider_models
+      provider_config["models"] = models if models
     elsif api_config[:base_url]
       env["OPENAI_BASE_URL"] = api_config[:base_url]
     end
 
     metadata_config = {}
     unless provider_config.empty?
-      # provider_config is only populated for @ai-sdk/anthropic entries, which
-      # always declare opencode_model_provider. fetch (not ||) so a future entry
-      # that forgets it fails loudly instead of silently mislabeling the block.
+      # provider_config is populated for @ai-sdk/anthropic entries and for
+      # :opencode_custom entries that extend a built-in provider with a model
+      # opencode's catalog lacks; both always declare opencode_model_provider.
+      # fetch (not ||) so a future entry that forgets it fails loudly instead of
+      # silently mislabeling the block.
       provider_key = api_config.fetch(:opencode_model_provider)
       metadata_config["provider"] = { provider_key => provider_config }
     end
@@ -1648,6 +1667,15 @@ class Runner < ApplicationRecord
   def custom_anthropic_endpoint?(api_config)
     api_config[:opencode_npm] == "@ai-sdk/anthropic" &&
       api_config[:opencode_model_provider].to_s != "anthropic"
+  end
+
+  # True for OpenAI-compatible providers flagged :opencode_custom (e.g. z.ai
+  # coding plan). opencode ships a built-in provider for them that handles auth
+  # and z.ai's native request format, but its catalog lacks glm-5.x, so the
+  # configured model is declared as an extension to the built-in provider
+  # (opencode_runner_runtime) rather than overriding it.
+  def custom_openai_compatible_provider?(api_config)
+    api_config[:opencode_custom] == true
   end
 
   # opencode model declaration keyed by the bare model id — the segment after

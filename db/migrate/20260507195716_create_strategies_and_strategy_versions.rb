@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class CreateStrategiesAndStrategyVersions < ActiveRecord::Migration[8.1]
-  def change
+  def up
     create_table :strategies, comment: "Scoped orchestration strategies selected for workflow decisions." do |t|
       t.string :slug,
         null: false,
@@ -115,6 +115,44 @@ class CreateStrategiesAndStrategyVersions < ActiveRecord::Migration[8.1]
       where: "promotion_state = 'active' AND retired_at IS NULL",
       name: "index_strategy_versions_one_active_per_strategy"
 
-    add_foreign_key :strategies, :strategy_versions, column: :current_version_id, on_delete: :nullify
+    safety_assured do
+      execute <<~SQL
+        ALTER TABLE strategies
+          ADD CONSTRAINT fk_strategies_account_id
+          FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE,
+          ADD CONSTRAINT fk_strategies_project_id
+          FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+          ADD CONSTRAINT fk_strategies_current_version_id
+          FOREIGN KEY (current_version_id) REFERENCES strategy_versions(id) ON DELETE SET NULL
+      SQL
+
+      execute <<~SQL
+        ALTER TABLE strategy_versions
+          ADD CONSTRAINT fk_strategy_versions_strategy_id
+          FOREIGN KEY (strategy_id) REFERENCES strategies(id) ON DELETE CASCADE,
+          ADD CONSTRAINT fk_strategy_versions_created_by_user_id
+          FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
+          ADD CONSTRAINT fk_strategy_versions_parent_version_id
+          FOREIGN KEY (parent_version_id) REFERENCES strategy_versions(id) ON DELETE SET NULL,
+          ADD CONSTRAINT fk_strategy_versions_promoted_by_user_id
+          FOREIGN KEY (promoted_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+      SQL
+    end
+  end
+
+  def down
+    if table_exists?(:orchestration_decisions) && column_exists?(:orchestration_decisions, :strategy_version_id)
+      safety_assured do
+        execute "DROP TRIGGER IF EXISTS validate_strategy_version_scope ON orchestration_decisions"
+        execute "DROP FUNCTION IF EXISTS validate_orchestration_decision_strategy_version_scope()"
+        remove_foreign_key :orchestration_decisions, column: :strategy_version_id if foreign_key_exists?(:orchestration_decisions, :strategy_versions, column: :strategy_version_id)
+        remove_index :orchestration_decisions, :strategy_version_id if index_exists?(:orchestration_decisions, :strategy_version_id)
+        remove_column :orchestration_decisions, :strategy_version_id
+      end
+    end
+
+    remove_foreign_key :strategies, column: :current_version_id if table_exists?(:strategies) && foreign_key_exists?(:strategies, :strategy_versions, column: :current_version_id)
+    drop_table :strategy_versions, if_exists: true
+    drop_table :strategies, if_exists: true
   end
 end
