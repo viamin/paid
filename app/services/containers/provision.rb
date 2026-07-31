@@ -2627,7 +2627,8 @@ module Containers
         "PROJECT_ID=#{project.id}",
         "HOME=/home/agent",
         "BUNDLE_PATH=/tmp/bundle",
-        "BUNDLE_APP_CONFIG=/tmp/bundle-config"
+        "BUNDLE_APP_CONFIG=/tmp/bundle-config",
+        "YARN_CACHE_FOLDER=/workspace/.yarn-cache"
       ]
 
       env.concat(run_scoped_environment(proxy_base)) if agent_run.present?
