@@ -36,7 +36,10 @@
   *Code:* `app/temporal/activities/analyze_issue_activity.rb#ensure_trusted_issue!`, `#trusted_comments`.
 
 - [x] **ISSUE-ANALYSIS-005** — The system SHALL surface malformed or
-  incomplete analysis JSON as a non-retryable `AnalyzeIssueInvalidJson` error,
-  trusting agent-harness to deliver clean `response.output`.
-  *Tests:* `spec/temporal/activities/analyze_issue_activity_spec.rb` ("malformed JSON", "missing required keys").
-  *Code:* `app/temporal/activities/analyze_issue_activity.rb#parse_response!`.
+  incomplete analysis JSON as a non-retryable `AnalyzeIssueInvalidJson` error.
+  A markdown code fence around the JSON (```` ```json ... ``` ````, including a
+  trailing newline after the closing fence) SHALL be normalized away before
+  parsing, so a fenced-but-otherwise-valid response is not mistaken for a
+  failure.
+  *Tests:* `spec/temporal/activities/analyze_issue_activity_spec.rb` ("malformed JSON", "missing required keys", "strips a markdown code fence").
+  *Code:* `app/temporal/activities/analyze_issue_activity.rb#parse_response!`, `#extract_analysis_json`.

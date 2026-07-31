@@ -396,6 +396,19 @@ RSpec.describe Activities::EnhanceIssueActivity do
       }.to raise_error(Temporalio::Error::ApplicationError, "LLM returned invalid enhancement JSON")
     end
 
+    it "parses a markdown-fenced response with a trailing newline after the closing fence" do
+      body = {
+        sufficient_context: true,
+        comment_body: "## Implementation context\n- `app/models/audit_log.rb`"
+      }.to_json
+      allow(llm_response).to receive(:output).and_return("```json\n#{body}\n```\n")
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:sufficient_context]).to be true
+      expect(agent_run.reload.status).to eq("completed")
+    end
+
     it "raises GitHub API failures before calling the LLM" do
       allow(client).to receive(:issue_comments).and_raise(GithubClient::Error.new("GitHub unavailable"))
 

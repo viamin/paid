@@ -8,6 +8,8 @@ module Activities
   #
   # This is a direct LLM call — no container provisioning or repo cloning.
   class AnalyzeIssueActivity < BaseActivity
+    include Llm::OutputNormalizer
+
     activity_name "AnalyzeIssue"
 
     LLM_TIMEOUT = 90
@@ -306,12 +308,7 @@ module Activities
     end
 
     def extract_analysis_json(output)
-      stripped = strip_json_fence(output)
-      JSON.parse(stripped, symbolize_names: true)
-    end
-
-    def strip_json_fence(output)
-      output.gsub(/\A```(?:json)?\s*/, "").gsub(/\s*```\z/, "").strip
+      JSON.parse(strip_markdown_fence(output.to_s.strip), symbolize_names: true)
     end
 
     def track_tokens(agent_run, response)
