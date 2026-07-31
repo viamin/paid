@@ -3,7 +3,7 @@
 module Lid
   class CoherenceCheck
     CHECK_TIMEOUT_SECONDS = 60
-    GOALS = %w[create_pr review].freeze
+    GOALS = %w[create_pr review lid_planning].freeze
     MARKER = "__PAID_LID_STATUS__"
 
     def self.call(...)

@@ -57,4 +57,18 @@ RSpec.describe Lid::CoherenceCheck do
     expect(result["status"]).to eq("skipped")
     expect(container_service).not_to have_received(:execute)
   end
+
+  it "runs for lid_planning goals" do
+    allow(agent_run).to receive(:goal).and_return("lid_planning")
+    allow(container_service).to receive(:execute)
+      .and_return(Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0))
+    allow(Lid::CoherenceReport).to receive(:parse).with("").and_return(
+      instance_double(Lid::CoherenceReport::Result, to_h: { "status" => "passed", "summary_line" => "ok" })
+    )
+
+    result = service
+
+    expect(container_service).to have_received(:execute)
+    expect(result["status"]).to eq("passed")
+  end
 end

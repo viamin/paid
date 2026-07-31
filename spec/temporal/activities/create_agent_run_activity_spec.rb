@@ -165,6 +165,20 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(agent_run.goal).to eq("review")
     end
 
+    it "persists named plan docs for lid_planning runs" do
+      result = activity.execute(
+        project_id: project.id,
+        goal: "lid_planning",
+        plan_docs: [ { name: "docs/rdrs/RDR-051-lid-aware-agent-runs.md" } ]
+      )
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.custom_prompt).to include("docs/rdrs/RDR-051-lid-aware-agent-runs.md")
+      expect(agent_run.external_metadata["plan_docs"]).to eq(
+        [ { "name" => "docs/rdrs/RDR-051-lid-aware-agent-runs.md" } ]
+      )
+    end
+
     it "persists the focus when provided" do
       result = activity.execute(
         project_id: project.id,

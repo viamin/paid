@@ -43,9 +43,13 @@ module Prompts
 
       lines = [ "Named plan docs:" ]
       plan_docs.each do |doc|
-        lines << "- #{doc.fetch(:name)}"
+        lines << "- #{plan_doc_name(doc)}"
       end
       lines.join("\n")
+    end
+
+    def plan_doc_name(doc)
+      doc.fetch(:name) { doc.fetch("name") }
     end
   end
 end

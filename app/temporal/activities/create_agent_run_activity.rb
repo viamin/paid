@@ -23,10 +23,12 @@ module Activities
       count_toward_draft_review_round = input.fetch(:count_toward_draft_review_round, false)
       expected_draft_review_count = input[:expected_draft_review_count]
       manual_marketplace_entry_ids = input[:marketplace_entry_ids]
+      plan_docs = Array(input[:plan_docs])
 
       project = Project.find(project_id)
       goal ||= project.account.tenant_setting&.default_goal || "create_pr"
       issue = issue_id ? Issue.find(issue_id) : nil
+      custom_prompt = build_lid_planning_prompt(project: project, custom_prompt: custom_prompt, plan_docs: plan_docs, goal: goal)
       ensure_trusted_issue_for_non_container_goal!(issue, goal)
       user_settings = resolve_user_settings(project)
       runner_selection_options = {
@@ -91,6 +93,7 @@ module Activities
         expected_draft_review_count: expected_draft_review_count,
         focus: focus,
         prompt_version: prompt_version,
+        external_metadata: build_external_metadata(plan_docs: plan_docs),
         status: "queued",
         temporal_workflow_id: input[:workflow_id] || AgentRun::CLAIMED_SENTINEL
       }
@@ -209,6 +212,29 @@ module Activities
         effective_runner: effective_runner,
         logger: logger
       )
+    end
+
+    def build_external_metadata(plan_docs:)
+      return {} if plan_docs.empty?
+
+      { "plan_docs" => plan_docs }
+    end
+
+    def build_lid_planning_prompt(project:, custom_prompt:, plan_docs:, goal:)
+      return custom_prompt unless goal == "lid_planning"
+      return custom_prompt if custom_prompt.present?
+
+      Prompts::BuildForLidPlanning.call(
+        project_name: project.full_name,
+        project_description: project_description_for_lid_planning(project),
+        plan_docs: plan_docs
+      )
+    end
+
+    def project_description_for_lid_planning(project)
+      return "" unless project.respond_to?(:description)
+
+      project.description.to_s
     end
 
     def maybe_inject_style_guides!(agent_run:, prompt_version:, custom_prompt_provided:)
