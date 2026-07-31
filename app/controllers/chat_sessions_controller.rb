@@ -208,9 +208,21 @@ class ChatSessionsController < ApplicationController
 
   def create_params
     source = params.key?(:chat_session) ? params.require(:chat_session) : params
-    permitted = source.permit(:container_capability, :model, :runner_id, :provider_id, :project_id, :system_prompt, :title, :auto_approve, metadata: {})
+    permitted = source.permit(
+      :container_capability,
+      :mode,
+      :model,
+      :runner_id,
+      :provider_id,
+      :project_id,
+      :system_prompt,
+      :title,
+      :auto_approve,
+      metadata: {}
+    )
       .to_h.symbolize_keys
     permitted[:runner_id] ||= permitted.delete(:provider_id)
+    normalize_legacy_create_params!(permitted)
     permitted
   end
 
@@ -219,6 +231,23 @@ class ChatSessionsController < ApplicationController
       .to_h.symbolize_keys
     permitted[:runner_id] ||= permitted.delete(:provider_id)
     permitted
+  end
+
+  def normalize_legacy_create_params!(permitted)
+    mode = permitted.delete(:mode).presence
+    return unless mode
+    return if permitted[:container_capability].present?
+
+    permitted[:container_capability] = container_capability_for_legacy_mode(mode)
+  end
+
+  def container_capability_for_legacy_mode(mode)
+    case mode
+    when "api" then "none"
+    when "workspace" then "pending"
+    else
+      raise ArgumentError, "mode must be one of api, workspace"
+    end
   end
 
   def session_json(session)

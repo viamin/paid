@@ -140,6 +140,41 @@ RSpec.describe "ChatSessions" do
         expect(response.parsed_body["container_capability"]).to eq("none")
       end
 
+      it "maps legacy api mode to inline-only sessions" do
+        post chat_sessions_path(format: :json), params: { mode: "api", title: "Legacy API Chat" }
+
+        expect(response).to have_http_status(:created)
+        expect(response.parsed_body["container_capability"]).to eq("none")
+      end
+
+      it "maps legacy workspace mode to pending container capability" do
+        post chat_sessions_path(format: :json), params: { mode: "workspace", title: "Legacy Workspace Chat" }
+
+        expect(response).to have_http_status(:created)
+        expect(response.parsed_body["container_capability"]).to eq("pending")
+      end
+
+      it "maps nested legacy workspace mode to pending container capability" do
+        post chat_sessions_path(format: :json), params: { chat_session: { mode: "workspace", title: "Nested Legacy Workspace Chat" } }
+
+        expect(response).to have_http_status(:created)
+        expect(response.parsed_body["container_capability"]).to eq("pending")
+      end
+
+      it "rejects unsupported legacy modes" do
+        post chat_sessions_path(format: :json), params: { mode: "desktop" }
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body["error"]).to eq("mode must be one of api, workspace")
+      end
+
+      it "prefers explicit container capability over legacy mode" do
+        post chat_sessions_path(format: :json), params: { mode: "workspace", container_capability: "none" }
+
+        expect(response).to have_http_status(:created)
+        expect(response.parsed_body["container_capability"]).to eq("none")
+      end
+
       it "rejects lifecycle-only container capabilities at creation time" do
         post chat_sessions_path(format: :json), params: { container_capability: "ready" }
 
