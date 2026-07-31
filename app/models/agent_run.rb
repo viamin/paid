@@ -935,6 +935,7 @@ class AgentRun < ApplicationRecord
     auto_pick: { label: "Auto-pick", indicator: 9 }
   }.freeze
   UNKNOWN_PRIORITY = { label: "Unknown", indicator: nil }.freeze
+  QUEUE_GOAL_PRIORITY_GOALS = %w[create_issue enhance_issue analyze_issue].freeze
 
   def queue_priority_tier
     return :manual if manual?
@@ -1163,7 +1164,7 @@ class AgentRun < ApplicationRecord
   IN_PROGRESS_SQL = Arel.sql("#{IN_PROGRESS_CASE_SQL} ASC").freeze
   GOAL_PRIORITY_CASE_SQL = <<~SQL.squish.freeze
     CASE
-      WHEN goal IN ('create_issue', 'enhance_issue', 'analyze_issue') THEN 0
+      WHEN goal IN ('#{QUEUE_GOAL_PRIORITY_GOALS.join("', '")}') THEN 0
       ELSE 1
     END
   SQL
@@ -1430,6 +1431,16 @@ class AgentRun < ApplicationRecord
     source_pull_request_number.present?
   end
 
+  def queue_order_rank
+    [
+      queue_priority_rank,
+      existing_pr? ? 0 : 1,
+      queue_goal_priority_rank,
+      created_at,
+      id
+    ]
+  end
+
   def create_issue_goal?
     goal == "create_issue"
   end
@@ -1470,6 +1481,16 @@ class AgentRun < ApplicationRecord
   def automatic?
     trigger_type == "automatic"
   end
+
+  def queue_priority_rank
+    self[:queue_priority] || QUEUE_PRIORITIES.dig(queue_priority_tier, :indicator)&.-(1) || Float::INFINITY
+  end
+
+  def queue_goal_priority_rank
+    self[:goal_priority] || (QUEUE_GOAL_PRIORITY_GOALS.include?(goal) ? 0 : 1)
+  end
+
+  private :queue_priority_rank, :queue_goal_priority_rank
 
   def queued?
     status == "queued"

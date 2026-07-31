@@ -27,6 +27,75 @@ RSpec.describe Dashboard::QueuePreview do
       expect(preview.map { |entry| entry.run.project.full_name }).to eq([ "octo/alpha", "octo/beta" ])
     end
 
+    it "interleaves projects in dispatch order instead of clustering one project's backlog" do
+      account = create(:account)
+      user = create(:user, account: account)
+      alpha = create(:project, account: account, created_by: user, owner: "octo", repo: "alpha")
+      beta = create(:project, account: account, created_by: user, owner: "octo", repo: "beta")
+
+      # Alpha has the larger backlog and older runs, so the raw QUEUE_ORDER
+      # snapshot would place all three alpha runs ahead of beta. The
+      # scheduler really round-robins by per-project in-flight count, so the
+      # preview should interleave: alpha, beta, alpha, alpha.
+      create(:agent_run, :queued, project: alpha, trigger_type: "automatic", created_at: 4.minutes.ago)
+      create(:agent_run, :queued, project: alpha, trigger_type: "automatic", created_at: 3.minutes.ago)
+      create(:agent_run, :queued, project: alpha, trigger_type: "automatic", created_at: 2.minutes.ago)
+      create(:agent_run, :queued, project: beta, trigger_type: "automatic", created_at: 1.minute.ago)
+
+      preview = described_class.call(user:)
+
+      expect(preview.map { |entry| entry.run.project.repo }).to eq(%w[alpha beta alpha alpha])
+    end
+
+    it "surfaces a higher-priority run from a busy project across the round-robin" do
+      account = create(:account)
+      user = create(:user, account: account)
+      alpha = create(:project, account: account, created_by: user, owner: "octo", repo: "alpha")
+      beta = create(:project, account: account, created_by: user, owner: "octo", repo: "beta")
+
+      # alpha is idle (0 in-flight); beta already has a run going, but its
+      # queued run carries a P1 label. Once alpha claims one run both
+      # projects tie at the same in-flight count, and beta's P1 run should
+      # win the tie ahead of alpha's lower-priority backlog.
+      create(:agent_run, :queued, project: alpha, trigger_type: "automatic", created_at: 2.minutes.ago)
+      create(:agent_run, :queued, project: alpha, trigger_type: "automatic", created_at: 1.minute.ago)
+      beta_issue = create(:issue, project: beta, labels: [ "P1" ])
+      create(:agent_run, :queued, project: beta, issue: beta_issue, trigger_type: "automatic", created_at: 30.seconds.ago)
+      create(:agent_run, :running, project: beta, started_at: 1.minute.ago)
+
+      preview = described_class.call(user:)
+
+      expect(preview.map { |entry| entry.run.project.repo }).to eq(%w[alpha beta alpha])
+    end
+
+    it "preserves per-project priority order within the round-robin" do
+      account = create(:account)
+      user = create(:user, account: account)
+      project = create(:project, account: account, created_by: user, owner: "octo", repo: "alpha")
+
+      # A P3 run is older than a P1 run in the same project. The snapshot is
+      # sorted by QUEUE_ORDER, so grouping must keep P1 ahead of P3 even
+      # though the round-robin has a single project to draw from.
+      create(:agent_run, :queued, project:, issue: create(:issue, project:, labels: [ "P3" ]),
+               trigger_type: "automatic", created_at: 2.minutes.ago)
+      create(:agent_run, :queued, project:, issue: create(:issue, project:, labels: [ "P1" ]),
+               trigger_type: "automatic", created_at: 1.minute.ago)
+
+      preview = described_class.call(user:)
+
+      expect(preview.map { |entry| entry.run.queue_priority_tier }).to eq(%i[issue_p1 issue_p3])
+    end
+
+    it "does not promise every queued project is represented in the preview sample" do
+      rendered = ApplicationController.render(
+        partial: "dashboard/queue_preview",
+        locals: { queue_preview: [], paused_projects: [] }
+      )
+
+      expect(rendered).to include("Balanced across sampled projects; priority ranks within each project.")
+      expect(rendered).to include("approximate dispatch order from the next batch of queued work")
+    end
+
     it "includes orphaned projects for the account fallback owner" do
       account = create(:account)
       fallback_owner = create(:user, account: account)
