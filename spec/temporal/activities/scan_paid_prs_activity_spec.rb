@@ -4701,6 +4701,166 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when paid_agent review-goal retries are exhausted without posting a review (#3086)" do
+      let(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 0)
+      end
+
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          auto_merge_mode: "all",
+          review_settings: {
+            "enabled" => true,
+            "methods" => {
+              "paid_agent" => { "enabled" => true, "termination" => { "max_review_rounds" => 3 } }
+            }
+          }
+        )
+        pr_issue
+        # Three failed automatic review-goal runs exhaust the retry budget
+        # (MAX_REVIEW_GOAL_RETRIES = 3). At that point check_paid_agent_review_status
+        # stops emitting paid_agent_review_pending, so without the merge gate the PR
+        # would auto-merge before the escalation path confirms — the #3086 regression.
+        3.times do
+          create(:agent_run, :automatic, :failed, :review_goal,
+            project: project, issue: pr_issue,
+            source_pull_request_number: 42)
+        end
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "Approved",
+              submitted_at: 1.hour.ago }
+          ],
+          review_threads: []
+        )
+      end
+
+      it "does not auto-merge until escalation releases the gate" do
+        result = activity.execute(project_id: project.id)
+
+        types = automation_scan_results(result).flat_map { |r| r[:triggers].map { |t| t[:type] } }
+        expect(types).not_to include("owner_approved")
+      end
+
+      it "auto-merges once a paid_agent review is posted" do
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [
+            { id: 1, user_login: "paid-code-reviewer[bot]", state: "COMMENTED",
+              body: "Review complete.\n<!-- paid-review-clean -->", submitted_at: 1.hour.ago },
+            { id: 2, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current }
+          ],
+          review_threads: []
+        )
+
+        result = activity.execute(project_id: project.id)
+
+        types = automation_scan_results(result).flat_map { |r| r[:triggers].map { |t| t[:type] } }
+        expect(types).to include("owner_approved")
+      end
+    end
+
+    context "when a mixed copilot+paid_agent project has failed paid_agent runs but a clean copilot review" do
+      let(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ],
+          pr_review_phase: "ready",
+          pr_followup_count: 0)
+      end
+
+      before do
+        # Mixed-bot projects do NOT escalate on paid_agent exhaustion — the other
+        # bot is meant to keep gating. The merge gate must not block here, or the
+        # PR deadlocks with no recovery (#3086 review).
+        project.update!(
+          owner_reviewer_login: "viamin",
+          auto_merge_mode: "all",
+          review_settings: {
+            "enabled" => true,
+            "methods" => {
+              "copilot" => { "enabled" => true },
+              "paid_agent" => { "enabled" => true, "termination" => { "max_review_rounds" => 3 } }
+            }
+          }
+        )
+        pr_issue
+        3.times do
+          create(:agent_run, :automatic, :failed, :review_goal,
+            project: project, issue: pr_issue,
+            source_pull_request_number: 42)
+        end
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: default_clean_copilot_review + [
+            { id: 2, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current }
+          ],
+          review_threads: []
+        )
+      end
+
+      it "lets copilot's clean review satisfy the gate and auto-merge (no deadlock)" do
+        result = activity.execute(project_id: project.id)
+
+        types = automation_scan_results(result).flat_map { |r| r[:triggers].map { |t| t[:type] } }
+        expect(types).to include("owner_approved")
+      end
+    end
+
+    context "when an escalated sole-method PR has a failed paid_agent run and owner approval" do
+      let(:pr_issue) do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation", "paid-escalated" ],
+          pr_review_phase: "escalated",
+          pr_followup_count: 0)
+      end
+
+      before do
+        project.update!(
+          owner_reviewer_login: "viamin",
+          auto_merge_mode: "all",
+          review_settings: {
+            "enabled" => true,
+            "methods" => {
+              "paid_agent" => { "enabled" => true, "termination" => { "max_review_rounds" => 3 } }
+            }
+          }
+        )
+        pr_issue
+        # The PR escalated BECAUSE paid_agent exhausted its retry budget, so the
+        # sibling review-feedback gate has already cleared (returns [] at the
+        # limit). This isolates whether the new gate still blocks an escalated
+        # PR that the owner has approved.
+        3.times do
+          create(:agent_run, :automatic, :failed, :review_goal,
+            project: project, issue: pr_issue,
+            source_pull_request_number: 42)
+        end
+        stub_github_for_pr(
+          checks: [ { name: "ci", conclusion: "success" } ],
+          reviews: [
+            { id: 1, user_login: "viamin", state: "APPROVED", body: "Approved",
+              submitted_at: Time.current }
+          ],
+          review_threads: []
+        )
+      end
+
+      it "auto-merges because escalation puts the owner in control" do
+        result = activity.execute(project_id: project.id)
+
+        types = automation_scan_results(result).flat_map { |r| r[:triggers].map { |t| t[:type] } }
+        expect(types).to include("owner_approved")
+      end
+    end
+
     context "when ready PR is fork-backed and Claude ci_action review is enabled" do
       before do
         project.update!(
