@@ -39,7 +39,7 @@
                                       class: "w-full rounded-md border-gray-300 px-3 py-2 text-lg font-semibold text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 lg:max-w-md" %>
                   <div class="flex flex-wrap items-center gap-2">
                     <%= chat_session_status_badge(@chat_session) %>
-                    <%= chat_mode_badge(@chat_session.mode) %>
+                    <%= chat_mode_badge(@chat_session) %>
                     <%= chat_container_status_badge(@chat_session) %>
                   </div>
                 <% end %>
@@ -48,7 +48,7 @@
                   <h1 class="text-lg font-semibold text-gray-900 lg:max-w-md"><%= chat_session_title(@chat_session) %></h1>
                   <div class="flex flex-wrap items-center gap-2">
                     <%= chat_session_status_badge(@chat_session) %>
-                    <%= chat_mode_badge(@chat_session.mode) %>
+                    <%= chat_mode_badge(@chat_session) %>
                     <%= chat_container_status_badge(@chat_session) %>
                   </div>
                 </div>

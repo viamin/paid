@@ -2,7 +2,7 @@
 
 module ChatSessions
   # Gracefully closes a chat session: transitions status to "closed",
-  # computes final token/cost totals, and cleans up workspace resources.
+  # computes final token/cost totals, and cleans up container-backed resources.
   #
   # @example
   #   ChatSessions::Close.call(chat_session: session)
@@ -24,7 +24,7 @@ module ChatSessions
 
       ActiveRecord::Base.transaction do
         compute_totals
-        cleanup_workspace_resources if workspace_session?
+        cleanup_workspace_resources if container_backed_session?
         transition_to_closed(workspace_cleanup_attributes)
       end
 
@@ -40,7 +40,7 @@ module ChatSessions
     end
 
     def destroy_empty_session
-      cleanup_workspace_resources if workspace_session?
+      cleanup_workspace_resources if container_backed_session?
       chat_session.destroy!
       chat_session
     end
@@ -49,8 +49,8 @@ module ChatSessions
       chat_session.messages.where(role: "user").exists?
     end
 
-    def workspace_session?
-      chat_session.mode == "workspace"
+    def container_backed_session?
+      !chat_session.inline_only?
     end
 
     def compute_totals
@@ -77,11 +77,12 @@ module ChatSessions
     end
 
     def workspace_cleanup_attributes
-      return {} unless workspace_session?
+      return {} unless container_backed_session?
 
       {
         container_id: nil,
-        workspace_volume: nil
+        workspace_volume: nil,
+        container_capability: "stopped"
       }
     end
 

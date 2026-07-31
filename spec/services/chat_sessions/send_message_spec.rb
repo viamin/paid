@@ -91,7 +91,7 @@ RSpec.describe ChatSessions::SendMessage do
       expect(chat_session.idle_timeout_at).to be_within(5.seconds).of(30.minutes.from_now)
     end
 
-    it "resumes a closed API session before sending the next message" do
+    it "resumes a closed inline-only session before sending the next message" do
       closed_session = create(:chat_session, :closed, account: account, created_by: user)
 
       described_class.call(chat_session: closed_session, content: "Hello", llm_client: llm_client)
@@ -126,7 +126,7 @@ RSpec.describe ChatSessions::SendMessage do
       expect(closed_session.metadata).not_to include("resume_count")
     end
 
-    it "raises when a closed workspace session is resumed" do
+    it "raises when a closed container-backed session is resumed" do
       closed_session = create(:chat_session, :closed, :workspace, account: account, created_by: user)
 
       expect {

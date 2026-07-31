@@ -523,7 +523,7 @@ RSpec.describe Prompts::BuildForIssue do
           github_number: 42,
           body: "Users are redirected to the wrong page after login.",
           github_creator_login: "viamin")
-        agent_run = build(:agent_run, project: real_project, issue: real_issue, goal: "create_pr")
+        agent_run = create(:agent_run, project: real_project, issue: real_issue, goal: "create_pr")
         allow(Knowledge::ContextBundle::Build).to receive(:call).and_return(
           content: "", sections: [], total_tokens: 0, queries_made: 0
         )

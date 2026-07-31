@@ -2,7 +2,7 @@
 
 module ChatSessions
   # Reopens a closed API chat session so the same thread can continue later.
-  # Workspace sessions remain non-resumable because close tears down resources.
+  # Container-backed sessions remain non-resumable because close tears down resources.
   class Resume
     CLOSE_SNAPSHOT_KEYS = %w[
       total_tokens_input
@@ -35,7 +35,7 @@ module ChatSessions
     private
 
     def validate!
-      raise ArgumentError, "workspace chat sessions cannot be resumed" if chat_session.mode == "workspace"
+      raise ArgumentError, "container-backed chat sessions cannot be resumed" unless chat_session.inline_only?
       return if %w[active closed].include?(chat_session.status)
 
       raise ArgumentError, "chat session must be active or closed to resume"

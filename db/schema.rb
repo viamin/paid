@@ -484,14 +484,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_30_203545) do
   create_table "chat_sessions", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.boolean "auto_approve", default: false, null: false, comment: "When true, write tool calls (e.g. agent run creation) are auto-approved without a manual confirmation click"
-    t.jsonb "clone_manifest", default: [], null: false, comment: "Manifest of repos cloned into the chat workspace for container-backed tools"
+    t.jsonb "clone_manifest", default: [], null: false, comment: "Persisted clone metadata used to reopen a reaped multi-repo chat workspace."
+    t.string "container_capability", default: "none", null: false, comment: "Container capability lifecycle for the chat session: none, pending, provisioning, ready, failed, or stopped."
     t.string "container_id"
+    t.datetime "container_ready_at", comment: "When the session's container-backed workspace most recently became ready."
+    t.datetime "container_requested_at", comment: "When the session most recently requested a container-backed workspace."
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
     t.uuid "external_id", default: -> { "gen_random_uuid()" }, null: false
     t.datetime "idle_timeout_at"
     t.jsonb "metadata", default: {}
-    t.string "mode", default: "api", null: false
     t.string "model"
     t.bigint "project_id"
     t.string "proxy_token", limit: 64

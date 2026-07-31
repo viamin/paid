@@ -815,9 +815,9 @@ RSpec.describe Activities::CreateAgentRunActivity do
         result = activity.execute(project_id: project.id, issue_id: issue.id)
 
         agent_run = AgentRun.find(result[:agent_run_id])
+        exposure = agent_run.style_guide_run_exposures.find_by!(style_guide: guide)
         expect(agent_run.custom_prompt).to include("Team Guide")
-        expect(agent_run.style_guide_run_exposures.sole.style_guide).to eq(guide)
-        expect(agent_run.style_guide_run_exposures.sole.style_guide_version).to eq(guide.current_version)
+        expect(exposure.style_guide_version).to eq(guide.current_version)
       end
 
       it "appends service environment guidance for configured database containers" do

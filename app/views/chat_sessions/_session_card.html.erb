@@ -25,7 +25,7 @@
   </div>
 
   <div class="mt-3 flex flex-wrap items-center gap-2">
-    <%= chat_mode_badge(chat_session.mode) %>
+    <%= chat_mode_badge(chat_session) %>
     <% if chat_session.model.present? %>
       <span class="inline-flex items-center rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-600"><%= chat_session.model %></span>
     <% end %>

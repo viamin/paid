@@ -5,7 +5,8 @@ FactoryBot.define do
     account
     created_by { association :user, account: account }
     status { "active" }
-    mode { "api" }
+    container_capability { "none" }
+    clone_manifest { [] }
 
     trait :with_project do
       project { association :project, account: account }
@@ -28,7 +29,9 @@ FactoryBot.define do
     end
 
     trait :workspace do
-      mode { "workspace" }
+      container_capability { "ready" }
+      container_requested_at { 5.minutes.ago }
+      container_ready_at { 1.minute.ago }
       container_id { "abc123" }
       workspace_volume { "vol_abc123" }
     end

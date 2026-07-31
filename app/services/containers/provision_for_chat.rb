@@ -59,6 +59,7 @@ module Containers
 
     def call
       log("provision.start")
+      mark_provisioning!
 
       workspace_volume, workspace_volume_created = create_workspace_volume
       state_volume, state_volume_created = create_state_volume
@@ -72,7 +73,9 @@ module Containers
       seed_workspace!(workspace_volume_created:)
 
       chat_session.update!(
+        container_capability: "ready",
         container_id: @container.id,
+        container_ready_at: Time.current,
         workspace_volume: workspace_volume,
         idle_timeout_at: options[:idle_timeout].from_now
       )
@@ -84,6 +87,7 @@ module Containers
         state_volume: state_volume
       )
     rescue Docker::Error::DockerError => e
+      mark_failed!
       log("provision.failed", error: e.message)
       cleanup_on_failure(
         workspace_volume,
@@ -93,6 +97,7 @@ module Containers
       )
       raise ProvisionError, "Docker error: #{e.message}"
     rescue StandardError => e
+      mark_failed!
       log("provision.failed", error: e.message)
       cleanup_on_failure(
         workspace_volume,
@@ -104,6 +109,17 @@ module Containers
     end
 
     private
+
+    def mark_provisioning!
+      chat_session.update!(
+        container_capability: "provisioning",
+        container_requested_at: chat_session.container_requested_at || Time.current
+      )
+    end
+
+    def mark_failed!
+      chat_session.update_columns(container_capability: "failed") if chat_session.persisted?
+    end
 
     def project
       chat_session.project
