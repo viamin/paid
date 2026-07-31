@@ -65,7 +65,7 @@ module Dashboard
         .group(:project_id)
         .count
 
-      queues = visible_runs.group_by(&:project_id).transform_values { |runs| runs.dup }
+      queues = visible_runs.group_by(&:project_id).transform_values(&:dup)
       active = active_counts.transform_values(&:to_i)
 
       interleaved = []
