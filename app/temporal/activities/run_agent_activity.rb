@@ -1202,6 +1202,9 @@ module Activities
 
       normal + deprioritized
     end
+
+    # Reorders runners based on per-issue failure history.
+    #
     # Runners that have not yet failed for this issue are sorted before
     # runners that have, using a stable sort to preserve the user's
     # configured priority order within each tier.
