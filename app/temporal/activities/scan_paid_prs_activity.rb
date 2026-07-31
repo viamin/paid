@@ -2547,15 +2547,26 @@ module Activities
     # Returns true when every enabled blocking review method has a
     # completion signal. Review methods and their completion criteria:
     #
-    #   copilot / codex / paid_agent — checked by no_outstanding_review_feedback?
+    #   paid_agent (sole bot method, non-escalated PRs only) — the most
+    #     recent finished review-goal run must not be a failure that posted
+    #     no review. A failed, unposted run means the required review never
+    #     landed, so the gate holds until a run succeeds (or the retry-limit
+    #     escalation path releases it by escalating). Outstanding feedback
+    #     from a review that *was* posted is still checked by
+    #     no_outstanding_review_feedback?.
+    #   copilot / codex — checked by no_outstanding_review_feedback?
     #     (review bot status + thread resolution). Not re-checked here.
     #   ci_action — the check run named by action_name must be present
     #     and have a successful conclusion.
     #   manual — at least one trusted non-bot user must have submitted
     #     an APPROVED review (distinct from owner approval, which gates
     #     the merge trigger itself).
-    def all_blocking_review_methods_complete?(project, reviews, checks, pr_data: nil)
+    def all_blocking_review_methods_complete?(project, reviews, checks, pr_data: nil, issue: nil)
       return true unless project.review_enabled? && project.wait_for_reviews?
+
+      if issue && paid_agent_review_unposted_failure?(project, issue, reviews)
+        return false
+      end
 
       if project.review_method_enabled?("ci_action")
         return false unless ci_action_review_complete?(project, checks, pr_data)
@@ -2566,6 +2577,47 @@ module Activities
       end
 
       true
+    end
+
+    # Returns true when paid_agent is enabled as the SOLE bot review method,
+    # the PR is still in a review-gated phase (not escalated), no paid_agent
+    # review has been posted, and the most recent finished review-goal run in
+    # the current cycle ended in a retryable failure status without posting a
+    # review. The PR then never received the required review, so auto-merge
+    # must hold until a run succeeds, or until exhausting retries drives the
+    # escalation path (which moves the PR to the escalated phase, exempt
+    # below). A posted review — clean or not — is left to the existing
+    # no_outstanding_review_feedback? path, so this only closes the "review
+    # never landed" hole (#3086).
+    #
+    # Scope is deliberately narrow:
+    # - Sole-method only: mixed-bot projects (e.g. copilot + paid_agent) do
+    #   NOT escalate on paid_agent exhaustion — the other bot is meant to keep
+    #   gating (see review_goal_retry_limit_requires_escalation?). Blocking
+    #   here for a mixed project would deadlock with no recovery.
+    # - Escalated PRs are exempt: owner approval intentionally unblocks
+    #   auto-merge for an escalated PR (see scan_escalated_pr), and the race
+    #   this guard prevents (merge firing before escalation confirms) is
+    #   already resolved once the PR has escalated.
+    def paid_agent_review_unposted_failure?(project, issue, reviews)
+      return false if issue.escalated_phase?
+      return false unless paid_agent_sole_review_method?(project)
+      return false if paid_agent_review_present?(reviews)
+
+      latest_run = latest_finished_automatic_review_run(
+        project, issue, progress_state: pr_progress_state(project, issue)
+      )
+      return false unless latest_run&.status&.in?(REVIEW_GOAL_RETRYABLE_FAILURE_STATUSES)
+      return false if latest_run.review_posted_at.present?
+
+      true
+    end
+
+    # Returns true when any posted review came from the paid_agent review bot.
+    def paid_agent_review_present?(reviews)
+      return false if reviews.blank?
+
+      reviews.any? { |review| RunnerSupport.runner_bot_username_for?("paid_agent", review[:user_login]) }
     end
 
     # ci_action is complete when the configured action_name appears in
@@ -2993,7 +3045,7 @@ module Activities
         unresolved_threads: unresolved_threads
       )
       blocking_reviews_complete = all_blocking_review_methods_complete?(
-        project, reviews, checks, pr_data: pr_data
+        project, reviews, checks, pr_data: pr_data, issue: issue
       )
       reviews_fresh = !review_stale_for_head?(client, project, issue, pr_data, reviews)
       dependencies_resolved = if human_dependency_check_required?(
