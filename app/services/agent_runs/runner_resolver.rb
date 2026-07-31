@@ -328,7 +328,9 @@ module AgentRuns
       self.class.selected_runner(project: project, runner_id: runner_id)
     end
 
+    # @spec RUNNER-SCHED-005
     def runner_runnable?(runner)
+      return false if runner.blocked_by_time_window?
       container_executable_runner_key?(runner.runner_key)
     end
 

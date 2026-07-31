@@ -219,7 +219,15 @@ class ProcessRunQueueJob < ApplicationJob
         if next_run.runner_unbound?
           bound_runner = AgentRuns::BindRunner.call(agent_run: next_run, exclude_runner_ids: blocked_runner_ids)
           unless bound_runner
-            log_no_runnable_runner(next_run)
+            # @spec RUNNER-SCHED-008: when all eligible runners are blocked by
+            # time-window restrictions, park the run until the earliest window
+            # opens so StaleRunDetectorJob recovers it automatically.
+            park_until = Runners::TimeWindowPark.call(next_run, exclude_runner_ids: blocked_runner_ids)
+            if park_until
+              park_run_for_time_window(next_run, park_until)
+            else
+              log_no_runnable_runner(next_run)
+            end
             next
           end
         end
@@ -406,6 +414,34 @@ class ProcessRunQueueJob < ApplicationJob
       project_id: agent_run.project_id,
       intended_agent_type: agent_run.agent_type
     )
+  end
+
+  # @spec RUNNER-SCHED-008
+  # Atomically transitions a queued run to rate_limited with
+  # rate_limited_until set to the earliest time-window-open, so
+  # StaleRunDetectorJob re-queues it automatically when the window passes.
+  # Does NOT reset stale_requeue_count: that counter tracks how many times
+  # the run has cycled through rate_limited recovery, and resetting it here
+  # would defeat the MAX_RATE_LIMITED_REQUEUES exhaustion guard in
+  # StaleRunDetectorJob#recover_rate_limited_run — a misconfigured runner
+  # (e.g. all 24h blocked) would loop forever without ever failing.
+  def park_run_for_time_window(agent_run, available_at)
+    count = AgentRun.where(id: agent_run.id, status: "queued")
+      .where.not(temporal_workflow_id: AgentRun::CLAIMED_SENTINEL)
+      .update_all(
+        status: "rate_limited",
+        rate_limited_until: available_at,
+        updated_at: Time.current
+      )
+
+    if count.positive?
+      Rails.logger.info(
+        message: "process_run_queue.time_window_parked",
+        agent_run_id: agent_run.id,
+        project_id: agent_run.project_id,
+        rate_limited_until: available_at.iso8601
+      )
+    end
   end
 
   def run_admission_for(agent_run, user, mode:, docker_snapshot:, reserved_agent_memory_bytes:, selected_host:, selected_host_limit:)

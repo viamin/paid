@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_29_183603) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_31_045426) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2379,6 +2379,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_29_183603) do
     t.string "runner_key", limit: 50, null: false
     t.jsonb "tier_model_ids", comment: "Per-tier model mapping for configurable runners. Nil means no explicit mapping is stored."
     t.jsonb "tier_models", default: {}, null: false, comment: "Per-tier model map shared by Runner and Provider records on this table. Shape: {\"low\":{\"model_id\":\"model-id\",\"provider_id\":123}} keyed by LlmModel tiers."
+    t.jsonb "time_restrictions", comment: "Per-runner time-window usage restrictions. Null means no restrictions. Shape: { mode: block|deprioritize, timezone: IANA zone, windows: [{ start_hour, end_hour }] }"
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
     t.integer "weight", default: 1, null: false

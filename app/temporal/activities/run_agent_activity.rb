@@ -1123,6 +1123,9 @@ module Activities
       # routing into an almost-exhausted provider.
       runners = apply_quota_aware_ordering(runners, agent_run, user_settings.user)
 
+      # @spec RUNNER-SCHED-005, RUNNER-SCHED-006, RUNNER-SCHED-007
+      runners = apply_time_window_restrictions(runners, agent_run, user_settings.user)
+
       runners
     end
 
@@ -1154,7 +1157,51 @@ module Activities
       reordered
     end
 
-    # Reorders runners based on per-issue failure history.
+    # @spec RUNNER-SCHED-005, RUNNER-SCHED-006, RUNNER-SCHED-007
+    # Filters out block-mode runners and moves deprioritize-mode runners to
+    # the end of the ordered list, based on each runner's time_restrictions
+    # config evaluated against the current time.
+    def apply_time_window_restrictions(runners, agent_run, user)
+      return runners if runners.empty?
+
+      now = Time.current
+      deprioritized = []
+      normal = []
+
+      runners.each do |runner_candidate|
+        runner = runner_entry_for(runner_candidate, user)
+        if runner.nil? || runner[:time_restrictions].blank?
+          normal << runner_candidate
+        else
+          # Build one TimeWindowCheck per runner instead of calling
+          # blocked_by_time_window? + deprioritized_by_time_window?
+          # separately (each allocates its own check + JSONB parse).
+          check = runner.time_window_check(now: now)
+          if check.blocked_at?
+            logger.info(
+              message: "agent_execution.runner_filtered_by_time_window",
+              agent_run_id: agent_run.id,
+              runner: canonical_runner_candidate(runner_candidate, user),
+              mode: "block"
+            )
+          elsif check.deprioritized_at?
+            deprioritized << runner_candidate
+          else
+            normal << runner_candidate
+          end
+        end
+      end
+
+      if deprioritized.any?
+        logger.info(
+          message: "agent_execution.runner_deprioritized_by_time_window",
+          agent_run_id: agent_run.id,
+          runners: deprioritized.map { |r| canonical_runner_candidate(r, user) }
+        )
+      end
+
+      normal + deprioritized
+    end
     # Runners that have not yet failed for this issue are sorted before
     # runners that have, using a stable sort to preserve the user's
     # configured priority order within each tier.
