@@ -2880,6 +2880,25 @@ RSpec.describe AgentRun do
     end
   end
 
+  describe "#queue_order_rank" do
+    it "matches the queued_with_priority SQL tie-break tuple for representative runs" do
+      project = create(:project)
+      p1_issue = create(:issue, project:, labels: [ "P1" ])
+
+      manual_goal = create(:agent_run, :queued, :manual, project:, goal: "create_issue", created_at: 3.minutes.ago)
+      pr_continue = create(:agent_run, :queued, :automatic, project:, goal: "create_pr",
+        source_pull_request_number: 42, created_at: 2.minutes.ago)
+      labeled_issue = create(:agent_run, :queued, :automatic, project:, issue: p1_issue,
+        goal: "analyze_issue", created_at: 1.minute.ago)
+
+      [ manual_goal, pr_continue, labeled_issue ].each do |run|
+        sql_ranked_run = described_class.queued_with_priority.find(run.id)
+
+        expect(run.queue_order_rank).to eq(sql_ranked_run.queue_order_rank)
+      end
+    end
+  end
+
   describe "user-defined priority labels" do
     let(:project) { create(:project, priority_labels: { "P1" => "critical", "P2" => "high", "P3" => "low" }) }
 
