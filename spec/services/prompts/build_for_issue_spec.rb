@@ -155,6 +155,18 @@ RSpec.describe Prompts::BuildForIssue do
         expect(prompt).to include("What problem are we solving for admins?")
         expect(prompt).to include("the system should send the user to `/dashboard`")
       end
+
+      it "downloads the comment thread only once across conversation and elicited-intent sections" do
+        described_class.call(
+          issue: issue,
+          project: project_with_lid,
+          github_client: github_client
+        )
+
+        expect(github_client).to have_received(:issue_comments)
+          .with(project.full_name, issue.github_number)
+          .exactly(1).time
+      end
     end
 
     context "when the project is not LID-configured" do
