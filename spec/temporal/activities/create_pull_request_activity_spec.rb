@@ -175,6 +175,28 @@ RSpec.describe Activities::CreatePullRequestActivity do
       expect(agent_run.reload.status).to eq("cancelled")
     end
 
+    it "surfaces failed LID coherence findings in the PR body" do
+      agent_run.update!(
+        external_metadata: {
+          "lid_coherence" => {
+            "status" => "failed",
+            "summary_line" => "Coherence soft-block: 1 reverse orphan, 2 untagged test files."
+          }
+        }
+      )
+
+      captured_body = nil
+      allow(github_client).to receive(:create_pull_request) do |*_args, **kwargs|
+        captured_body = kwargs[:body]
+        pr_response
+      end
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(captured_body).to include("## LID Coherence Soft-Block")
+      expect(captured_body).to include("Coherence soft-block: 1 reverse orphan, 2 untagged test files.")
+    end
+
     it "syncs a local pull request row immediately after PR creation" do
       expect {
         activity.execute(agent_run_id: agent_run.id)

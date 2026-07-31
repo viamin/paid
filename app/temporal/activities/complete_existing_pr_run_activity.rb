@@ -103,9 +103,13 @@ module Activities
 
     def build_comment_body(client, project, pr_number, agent_run)
       summary = generate_summary(client, project, pr_number, agent_run)
-      return if summary.blank?
+      coherence = lid_coherence_section(agent_run)
+      return if summary.blank? && coherence.blank?
 
-      "#{COMMENT_MARKER}\n#{SUMMARY_PREFIX}\n\n#{summary}"
+      sections = [ "#{COMMENT_MARKER}\n#{SUMMARY_PREFIX}" ]
+      sections << summary if summary.present?
+      sections << coherence if coherence.present?
+      sections.join("\n\n")
     end
 
     def summary_comments_enabled?(agent_run)
@@ -146,6 +150,19 @@ module Activities
         },
         enforce_guardrails: false
       )
+    end
+
+    def lid_coherence_section(agent_run)
+      coherence = agent_run.external_metadata["lid_coherence"]
+      return if coherence.blank? || coherence["status"] != "failed"
+
+      [
+        "## LID Coherence Soft-Block",
+        "",
+        coherence["summary_line"],
+        "",
+        "The run continued intentionally; address these findings in the next LID-aware pass."
+      ].join("\n")
     end
   end
 end

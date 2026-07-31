@@ -206,12 +206,13 @@ module Activities
       validate_summary_scope(summary, issue, agent_run, client: client)
       description = generate_description(summary, issue, agent_run_id: agent_run.id)
       quality_warnings = quality_warning_section(agent_run)
+      lid_coherence = lid_coherence_section(agent_run)
 
       template = resolve_pr_template(agent_run)
       body = if template
-        render_pr_template(template, issue, agent_run, description, quality_warnings)
+        render_pr_template(template, issue, agent_run, description, [ quality_warnings, lid_coherence ].compact.join("\n\n"))
       else
-        build_default_pr_body(issue, description, quality_warnings: quality_warnings)
+        build_default_pr_body(issue, description, quality_warnings: quality_warnings, lid_coherence: lid_coherence)
       end
 
       {
@@ -220,7 +221,7 @@ module Activities
       }
     end
 
-    def build_default_pr_body(issue, description, quality_warnings: nil)
+    def build_default_pr_body(issue, description, quality_warnings: nil, lid_coherence: nil)
       parts = []
 
       if description.present?
@@ -232,6 +233,11 @@ module Activities
       if quality_warnings.present?
         parts << ""
         parts << quality_warnings
+      end
+
+      if lid_coherence.present?
+        parts << ""
+        parts << lid_coherence
       end
 
       parts << ""
@@ -299,6 +305,19 @@ module Activities
       return feedback_errors.map { |error| error["message"] || error[:message] }.compact.join("; ") if feedback_errors.any?
 
       metadata["output_preview"].to_s
+    end
+
+    def lid_coherence_section(agent_run)
+      coherence = agent_run.external_metadata["lid_coherence"]
+      return if coherence.blank? || coherence["status"] != "failed"
+
+      [
+        "## LID Coherence Soft-Block",
+        "",
+        coherence["summary_line"],
+        "",
+        "This run continued intentionally; the checker is advisory, not a hard gate."
+      ].join("\n")
     end
 
     # Deterministic fallback used when the LLM description generator fails or
