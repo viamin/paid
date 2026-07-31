@@ -75,7 +75,8 @@ RSpec.describe Prompts::BuildForPr do
     allow(github_client).to receive_messages(
       check_runs_for_ref: [],
       review_threads: [],
-      recent_issue_comments: []
+      recent_issue_comments: [],
+      pull_request_files: []
     )
     allow(AgentRuns::UserSettingsResolver).to receive(:call).and_return(user_settings)
   end
@@ -194,6 +195,47 @@ RSpec.describe Prompts::BuildForPr do
 
     it "omits issue requirements section when no issue" do
       expect(prompt).not_to include("Issue Requirements")
+    end
+
+    it "includes intent-confirmation guidance for docs-only planning PRs with review threads" do
+      allow(github_client).to receive(:pull_request_files)
+        .with(project.full_name, 42)
+        .and_return([
+          { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md" },
+          { filename: "AGENTS.md" }
+        ])
+      allow(github_client).to receive(:review_threads)
+        .and_return([
+          {
+            id: "thread_1",
+            is_resolved: false,
+            comments: [
+              { body: "Replace this inferred rationale", path: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md", line: 12, author: "trusteduser" }
+            ]
+          }
+        ])
+
+      expect(prompt).to include("Intent Confirmation Follow-Up")
+      expect(prompt).to include("Replace the `[inferred]` marker")
+      expect(prompt).to include("docs-only LID planning PR")
+    end
+
+    it "omits intent-confirmation guidance for non-docs PRs" do
+      allow(github_client).to receive(:pull_request_files)
+        .with(project.full_name, 42)
+        .and_return([ { filename: "app/models/agent_run.rb" } ])
+      allow(github_client).to receive(:review_threads)
+        .and_return([
+          {
+            id: "thread_1",
+            is_resolved: false,
+            comments: [
+              { body: "Fix this", path: "app/models/agent_run.rb", line: 10, author: "trusteduser" }
+            ]
+          }
+        ])
+
+      expect(prompt).not_to include("Intent Confirmation Follow-Up")
     end
 
     it "appends global style guides using raw_content" do

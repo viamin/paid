@@ -447,6 +447,22 @@ RSpec.describe Activities::CreatePullRequestActivity do
       }.not_to raise_error
     end
 
+    it "appends an inferred-decision checklist when the branch contains LID planning markers" do
+      allow(Lid::BuildInferenceChecklist).to receive(:call)
+        .with(worktree_path: agent_run.worktree_path, base_commit_sha: agent_run.base_commit_sha)
+        .and_return("## Confirm These Inferred Decisions\n\n- [ ] `docs/intent/lid.md`: Replace [inferred]")
+
+      expect(github_client).to receive(:create_pull_request).with(
+        anything,
+        hash_including(
+          body: a_string_including("## Confirm These Inferred Decisions")
+            .and(including("Replace [inferred]"))
+        )
+      ).and_return(pr_response)
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
     context "when auto_add_labels_enabled is false" do
       before { project.update!(auto_add_labels_enabled: false) }
 

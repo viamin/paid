@@ -126,6 +126,7 @@ module Prompts
       sections << merge_conflicts_section if include_merge_conflicts_section?
       sections << ci_failures_section if include_ci_failures_section?
       sections << code_review_section if includes_review_threads?
+      sections << planning_pr_intent_confirmation_section if planning_pr_intent_confirmation_section.present?
       sections << conversation_section if include_conversation_section?
       other_issues = other_issues_section
       sections << other_issues if other_issues.present?
@@ -381,6 +382,27 @@ module Prompts
       SECTION
     end
 
+    # @spec LID-PR-CONFIRM-002
+    def planning_pr_intent_confirmation_section
+      return "" unless includes_review_threads?
+      return "" unless docs_only_planning_pr?
+
+      <<~SECTION
+        # Intent Confirmation Follow-Up
+
+        This PR appears to be a docs-only LID planning PR. Treat review comments on
+        `[inferred]` lines as intent corrections, not ordinary prose edits.
+
+        When a reviewer requests changes on an inferred decision:
+
+        - Replace the `[inferred]` marker with the reviewer's authored rationale.
+        - Update the affected LLD, EARS, and any linked Open Questions text on this branch
+          so the corrected rationale is consistent everywhere it is load-bearing.
+        - Keep comment-only feedback deferable. Approvals confirm any remaining inferred
+          decisions that were not corrected in review.
+      SECTION
+    end
+
     # When reviewers have flagged specific issues, tell the agent to scan for
     # the same class of problem across the whole diff — not just the flagged lines.
     def review_scan_instruction
@@ -526,6 +548,23 @@ module Prompts
       rescue GithubClient::Error
         []
       end
+    end
+
+    def docs_only_planning_pr?
+      files = changed_files
+      files.any? && files.all? { |file| planning_pr_file?(file[:filename].to_s) }
+    end
+
+    def changed_files
+      @changed_files ||= begin
+        github_client.pull_request_files(project.full_name, pr_number)
+      rescue GithubClient::Error
+        []
+      end
+    end
+
+    def planning_pr_file?(path)
+      path.start_with?("docs/") || path.in?(%w[AGENTS.md CLAUDE.md .github/copilot-instructions.md])
     end
 
     def trusted_comments
