@@ -111,6 +111,7 @@ module Prompts
       base_prompt = [
         rendered,
         conversation_section.presence,
+        elicited_intent_section.presence,
         service_environment_section.presence
       ].compact.join("\n\n")
 
@@ -184,6 +185,39 @@ module Prompts
       )
     end
 
+    # @spec ISSUE-ENHANCEMENT-003
+    # @spec ISSUE-ENHANCEMENT-004
+    def elicited_intent_section
+      return "" unless lid_enabled?
+      return "" unless github_client
+
+      comments = github_client.issue_comments(project.full_name, issue.github_number)
+      qa_pairs = ClarifyingQuestions::ExtractAnswerPairs.call(
+        project: project,
+        issue_comments: comments
+      ).qa_pairs
+      return "" if qa_pairs.empty?
+
+      lines = qa_pairs.each_with_index.flat_map do |qa, index|
+        [
+          "#{index + 1}. Question: #{qa[:question]}",
+          "   Answer: #{qa[:answer]}"
+        ]
+      end
+
+      <<~SECTION.delete("\u0000").strip
+        # Elicited Intent
+
+        These answers came from the issue's clarifying-question flow. Treat them
+        as confirmed human intent and carry them into any LID artifact updates
+        you make while implementing the change.
+
+        #{lines.join("\n")}
+      SECTION
+    rescue GithubClient::Error
+      ""
+    end
+
     def inject_knowledge_context(prompt)
       bundle = Knowledge::ContextBundle::Build.call(
         issue: issue,
@@ -206,6 +240,11 @@ module Prompts
 
     def detected_language
       @detected_language ||= LanguageCommands.detected_language(project)
+    end
+
+    # @spec ISSUE-ENHANCEMENT-004
+    def lid_enabled?
+      project.respond_to?(:lid_mode) && project.lid_mode.present?
     end
 
     # Service container methods (setup_database_instruction, no_infrastructure_section,

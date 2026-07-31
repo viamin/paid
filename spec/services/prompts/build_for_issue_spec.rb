@@ -15,11 +15,16 @@ RSpec.describe Prompts::BuildForIssue do
     OpenStruct.new(
       full_name: "owner-1/repo-1",
       allowed_github_usernames: [ "viamin" ],
-      service_containers: service_containers_relation
+      service_containers: service_containers_relation,
+      lid_mode: nil
     ).tap do |p|
       def p.trusted_github_user?(login)
         return false if login.nil?
         allowed_github_usernames.any? { |u| u.downcase == login.downcase }
+      end
+
+      def p.paid_bot_author?(login)
+        login == "paid-code-reviewer[bot]"
       end
     end
   end
@@ -94,6 +99,103 @@ RSpec.describe Prompts::BuildForIssue do
       expect(prompt).to include("Commit subjects: Guidance")
       expect(prompt).to include("PR titles: Guidance")
       expect(prompt).to include("Depends on #123")
+    end
+
+    context "when the project is LID-configured" do
+      let(:github_client) { instance_double(GithubClient) }
+      let(:project_with_lid) do
+        project.tap { |value| value.lid_mode = "full" }
+      end
+      let(:clarifying_comments) do
+        [
+          OpenStruct.new(
+            body: <<~COMMENT,
+              <!-- paid:enhance-issue -->
+              ## Clarifying questions
+              1. What problem are we solving for admins?
+              2. When the redirect is invalid, what should the system do?
+            COMMENT
+            user: OpenStruct.new(login: "paid-code-reviewer[bot]"),
+            created_at: Time.zone.parse("2026-07-30 12:00:00 UTC")
+          ),
+          OpenStruct.new(
+            body: <<~COMMENT,
+              <!-- paid:clarifying-answers -->
+
+              ## Clarifying question answers
+
+              **Q1: What problem are we solving for admins?**
+              **A1:** Admins need failed redirects to fall back to the team dashboard.
+
+              **Q2: When the redirect is invalid, what should the system do?**
+              **A2:** When a stored redirect is invalid, the system should send the user to `/dashboard`.
+            COMMENT
+            user: OpenStruct.new(login: "viamin"),
+            created_at: Time.zone.parse("2026-07-30 13:00:00 UTC")
+          )
+        ]
+      end
+
+      before do
+        allow(github_client).to receive(:issue_comments)
+          .with(project.full_name, issue.github_number)
+          .and_return(clarifying_comments)
+      end
+
+      it "includes answered clarifying questions as elicited intent" do # @spec ISSUE-ENHANCEMENT-003
+        prompt = described_class.call(
+          issue: issue,
+          project: project_with_lid,
+          github_client: github_client
+        )
+
+        expect(prompt).to include("# Elicited Intent")
+        expect(prompt).to include("These answers came from the issue's clarifying-question flow.")
+        expect(prompt).to include("as confirmed human intent and carry them into any LID artifact updates")
+        expect(prompt).to include("What problem are we solving for admins?")
+        expect(prompt).to include("the system should send the user to `/dashboard`")
+      end
+    end
+
+    context "when the project is not LID-configured" do
+      let(:github_client) { instance_double(GithubClient) }
+      let(:clarifying_comments) do
+        [
+          OpenStruct.new(
+            body: <<~COMMENT,
+              <!-- paid:enhance-issue -->
+              ## Clarifying questions
+              1. What problem are we solving?
+            COMMENT
+            user: OpenStruct.new(login: "paid-code-reviewer[bot]"),
+            created_at: Time.zone.parse("2026-07-30 12:00:00 UTC")
+          ),
+          OpenStruct.new(
+            body: <<~COMMENT,
+              <!-- paid:clarifying-answers -->
+
+              ## Clarifying question answers
+
+              **Q1: What problem are we solving?**
+              **A1:** Keep users on a valid page after login.
+            COMMENT
+            user: OpenStruct.new(login: "viamin"),
+            created_at: Time.zone.parse("2026-07-30 13:00:00 UTC")
+          )
+        ]
+      end
+
+      before do
+        allow(github_client).to receive(:issue_comments)
+          .with(project.full_name, issue.github_number)
+          .and_return(clarifying_comments)
+      end
+
+      it "does not include the elicited-intent section" do # @spec ISSUE-ENHANCEMENT-004
+        prompt = described_class.call(issue: issue, project: project, github_client: github_client)
+
+        expect(prompt).not_to include("# Elicited Intent")
+      end
     end
 
     context "when project responds to detected_language" do

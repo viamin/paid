@@ -129,6 +129,30 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(Knowledge::ContextBundle::Build).to have_received(:call).with(issue: issue, project: project, agent_run: agent_run, agent_run_id: agent_run.id)
     end
 
+    it "asks plain-language intent questions when context is insufficient" do # @spec ISSUE-ENHANCEMENT-001
+      allow(llm_response).to receive(:output).and_return(
+        {
+          sufficient_context: false,
+          comment_body: "## Clarifying questions\n1. What problem are we solving?\n## Current context\n- Existing issue body"
+        }.to_json
+      )
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(AgentHarness).to have_received(:send_message).with(
+        a_string_including(
+          "Do not use Linked-Intent Development or other process jargon",
+          "the problem being solved",
+          'the desired behavior, ideally phrased as "when X happens, the system should Y"',
+          "what is in scope versus out of scope",
+          "how the user will know the work is done"
+        ),
+        anything
+      )
+      expect_comment_including(described_class::COMMENT_MARKER, "## Clarifying questions")
+      expect_label_added(project.enhance_issue_needs_input_label_name)
+    end
+
     it "posts clarifying questions when the LLM reports insufficient context" do
       allow(llm_response).to receive(:output).and_return(
         {
