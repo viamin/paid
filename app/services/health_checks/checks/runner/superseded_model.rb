@@ -35,6 +35,8 @@ module HealthChecks
             .where.not(id: model.id)
             .where.not(capability_score: nil)
             .where("capability_score > ?", model.capability_score)
+            .where("expires_at IS NULL OR expires_at > ?", Time.current)
+            .where("(metadata->>'below_quality_bar')::boolean IS NOT TRUE")
             .order(capability_score: :desc, model_id: :asc)
             .find { |candidate| !compatibility_for(candidate.model_id)&.unsupported? }
         end

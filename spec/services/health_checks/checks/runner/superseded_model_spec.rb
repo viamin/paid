@@ -42,6 +42,22 @@ RSpec.describe HealthChecks::Checks::Runner::SupersededModel do
     expect(described_class.call(runner)).to eq([])
   end
 
+  it "returns no findings when the stronger sibling is expired" do
+    model = create(:llm_model, :openai, model_id: "gpt-older", tier: "mid", capability_score: 7.0)
+    create(:llm_model, :openai, model_id: "gpt-expired", tier: "mid", capability_score: 9.0, expires_at: 1.day.ago)
+    runner = create_runner_with_model(model, tier: "mid")
+
+    expect(described_class.call(runner)).to eq([])
+  end
+
+  it "returns no findings when the stronger sibling is below quality bar" do
+    model = create(:llm_model, :openai, model_id: "gpt-older", tier: "mid", capability_score: 7.0)
+    create(:llm_model, :openai, :below_quality_bar, model_id: "gpt-bad", tier: "mid", capability_score: 9.0)
+    runner = create_runner_with_model(model, tier: "mid")
+
+    expect(described_class.call(runner)).to eq([])
+  end
+
   def create_runner_with_model(model, tier:)
     user = create(:user)
     api_key = create(:provider_api_key, user: user, api_service_type: "openai")
