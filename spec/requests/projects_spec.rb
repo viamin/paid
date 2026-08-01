@@ -1599,7 +1599,7 @@ RSpec.describe "Projects" do
         allow(Projects::Screenshots::RepoConfig).to receive(:call).and_return(empty_screenshot_repo_config_result)
       end
 
-      let(:screenshot_update_params) do
+  let(:screenshot_update_params) do
         {
           project: {
             screenshot_settings: {
@@ -1612,6 +1612,16 @@ RSpec.describe "Projects" do
             }
           }
         }
+      end
+
+      def expect_lid_redetection(project, detection_result)
+        expect(response).to redirect_to(project_path(project))
+        expect(Projects::DetectLidMode).to have_received(:from_project_repository).with(project:, force: true)
+        expect(project.reload.lid_mode).to eq("full")
+        expect(project.lid_detection).to include(
+          "version" => detection_result[:version],
+          "sources" => detection_result[:sources]
+        )
       end
 
       it "updates the project" do
@@ -1801,6 +1811,93 @@ RSpec.describe "Projects" do
         patch project_path(project), params: { project: { auto_scan_security: true } }
 
         expect(project.reload.auto_scan_security).to be true
+      end
+
+      it "allows forcing lid mode from project settings" do
+        project = create(:project, account: account, github_token: github_token, lid_mode: nil)
+
+        patch project_path(project), params: { project: { lid_mode: "scoped" } }
+
+        expect(response).to redirect_to(project_path(project))
+        expect(project.reload.lid_mode).to eq("scoped")
+        expect(project.lid_mode_overridden?).to be true
+      end
+
+      it "does not lock lid mode when the form re-submits an unchanged value" do
+        project = create(:project, account: account, github_token: github_token,
+          lid_mode: "full", lid_mode_overridden: false)
+
+        patch project_path(project), params: { project: { lid_mode: "full" } }
+
+        expect(response).to redirect_to(project_path(project))
+        expect(project.reload.lid_mode).to eq("full")
+        expect(project.lid_mode_overridden?).to be false
+      end
+
+      it "preserves an existing lid mode override when the value is unchanged" do
+        project = create(:project, account: account, github_token: github_token,
+          lid_mode: "scoped", lid_mode_overridden: true)
+
+        patch project_path(project), params: { project: { lid_mode: "scoped" } }
+
+        expect(response).to redirect_to(project_path(project))
+        expect(project.reload.lid_mode).to eq("scoped")
+        expect(project.lid_mode_overridden?).to be true
+      end
+
+      it "does not override lid mode when an unrelated save resubmits a nil value" do
+        project = create(:project, account: account, github_token: github_token, lid_mode: nil)
+
+        patch project_path(project), params: { project: { lid_mode: "" } }
+
+        expect(response).to redirect_to(project_path(project))
+        expect(project.reload.lid_mode).to be_nil
+        expect(project.lid_mode_overridden?).to be false
+      end
+
+      it "overrides lid mode when the user explicitly turns it off" do
+        project = create(:project, account: account, github_token: github_token,
+          lid_mode: "full", lid_mode_overridden: false)
+
+        patch project_path(project), params: { project: { lid_mode: "" } }
+
+        expect(response).to redirect_to(project_path(project))
+        expect(project.reload.lid_mode).to be_nil
+        expect(project.lid_mode_overridden?).to be true
+      end
+
+      it "does not let background detection overwrite a manually forced lid mode" do
+        project = create(:project, account: account, github_token: github_token, lid_mode: nil)
+        patch project_path(project), params: { project: { lid_mode: "scoped" } }
+        project.reload
+
+        Projects::DetectLidMode.call(project:, repo_path: Rails.root)
+
+        expect(project.reload.lid_mode).to eq("scoped")
+      end
+
+      it "re-detects lid mode from the repository when requested" do
+        project = create(:project, account: account, github_token: github_token, lid_mode: "scoped")
+        detection_result = {
+          mode: "full",
+          version: "1.3.0",
+          sources: [ "AGENTS.md ## LID block" ],
+          warnings: []
+        }
+
+        allow(Projects::DetectLidMode).to receive(:from_project_repository).with(project:, force: true) do
+          project.reload.update!(
+            lid_mode: detection_result[:mode],
+            lid_detection: detection_result.stringify_keys,
+            lid_mode_overridden: false
+          )
+          detection_result
+        end
+
+        patch project_path(project), params: { project: { lid_mode: "scoped", redetect_lid_mode: "1" } }
+
+        expect_lid_redetection(project, detection_result)
+        expect(project.lid_mode_overridden?).to be false
       end
 
       it "allows updating github_token to another valid token" do

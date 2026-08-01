@@ -25,6 +25,7 @@ class Project < ApplicationRecord
     "cuprite" => "Best for Rails and other server-rendered apps using Capybara."
   }.freeze
 
+  LID_MODES = %w[full scoped].freeze
   PRIORITY_TIERS = %w[P1 P2 P3].freeze
   DEFAULT_PRIORITY_LABELS = { "P1" => "P1", "P2" => "P2", "P3" => "P3" }.freeze
   ADOPTION_MODES = %w[observe_only advisory review_only full_execution].freeze
@@ -260,6 +261,7 @@ class Project < ApplicationRecord
   validates :merge_method, inclusion: { in: MERGE_METHODS }
   validates :auto_merge_mode, inclusion: { in: %w[off dependabot_only all] }
   validates :auto_release_granularity, inclusion: { in: AUTO_RELEASE_GRANULARITIES }
+  validates :lid_mode, inclusion: { in: LID_MODES }, allow_nil: true
   validates :max_draft_review_rounds, numericality: { greater_than_or_equal_to: 0 }
   validates :generated_label_name, presence: true
   validates :automation_label_name, presence: true

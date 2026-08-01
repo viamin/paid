@@ -21,6 +21,7 @@ RSpec.describe ProjectConventions::DetectForImport do
   it "runs the project conventions collector against a temporary checkout" do
     Dir.mktmpdir do |dir|
       Pathname(dir).join("release-please-config.json").write('{"packages":{".":{}}}')
+      Pathname(dir).join("AGENTS.md").write("## LID\n\n- Mode: Full\n- Version: 1.3.0\n")
       Pathname(dir).join("bin").mkpath
       Pathname(dir).join("bin/ci").write("#!/usr/bin/env bash\nbundle exec rspec\n")
 
@@ -35,6 +36,11 @@ RSpec.describe ProjectConventions::DetectForImport do
       detection = project.project_convention_detections.find_by!(key: "commit_style")
       expect(detection.project_version.commit_sha).to eq(commit_sha)
       expect(detection.value).to include("type" => "conventional_commits")
+      expect(project.reload.lid_mode).to eq("full")
+      expect(project.lid_detection).to include(
+        "version" => "1.3.0",
+        "sources" => [ "AGENTS.md ## LID block" ]
+      )
     end
   end
 end

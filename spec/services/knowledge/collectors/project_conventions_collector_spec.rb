@@ -39,7 +39,17 @@ RSpec.describe Knowledge::Collectors::ProjectConventionsCollector do
     )
   end
 
+  def expect_full_lid_detection!
+    expect(project.reload.lid_mode).to eq("full")
+    expect(project.lid_detection).to include(
+      "version" => "1.3.0",
+      "sources" => [ "AGENTS.md ## LID block" ]
+    )
+  end
+
   it "stores convention artifacts and syncs first-class detections" do
+    fixture_path.join("AGENTS.md").write("## LID\n\n- Mode: Full\n- Version: 1.3.0\n")
+
     artifacts = collector.collect
 
     expect(artifacts.map { |artifact| artifact[:identifier] }).to include(
@@ -56,6 +66,7 @@ RSpec.describe Knowledge::Collectors::ProjectConventionsCollector do
       "hook_manager",
       "ci_entrypoint"
     )
+    expect_full_lid_detection!
   end
 
   it "creates a first-class project convention recommendation for detected hook managers" do
