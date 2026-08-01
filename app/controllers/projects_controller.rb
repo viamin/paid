@@ -292,6 +292,8 @@ class ProjectsController < ApplicationController
     redirect_to @project, notice: "LID planning run queued. Paid will analyze the repository and open a docs-only Planning PR for your review."
   rescue ActiveRecord::RecordInvalid => e
     redirect_to @project, alert: e.message
+  rescue ActiveRecord::RecordNotUnique
+    redirect_to @project, alert: "A LID planning run is already queued or in progress for this project."
   end
 
   def quality_resume

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_01_133212) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_01_142109) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -326,6 +326,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_01_133212) do
     t.index ["project_id", "status", "completed_at"], name: "index_agent_runs_on_project_status_completed_at"
     t.index ["project_id", "status", "created_at"], name: "idx_agent_runs_project_status_created_at_desc", order: { created_at: :desc }
     t.index ["project_id", "status"], name: "index_agent_runs_on_project_id_and_status"
+    t.index ["project_id"], name: "idx_agent_runs_unique_active_lid_planning", unique: true, where: "(((goal)::text = 'lid_planning'::text) AND ((status)::text = ANY ((ARRAY['queued'::character varying, 'pending'::character varying, 'running'::character varying, 'paused'::character varying])::text[])))"
     t.index ["project_id"], name: "index_agent_runs_on_project_id"
     t.index ["prompt_version_id"], name: "index_agent_runs_on_prompt_version_id"
     t.index ["proxy_token"], name: "index_agent_runs_on_proxy_token", unique: true
@@ -2521,16 +2522,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_01_133212) do
     t.datetime "updated_at", null: false
     t.index ["account_id", "name"], name: "index_service_containers_on_account_id_and_name", unique: true
     t.index ["account_id"], name: "index_service_containers_on_account_id"
-  end
-
-  create_table "solid_cable_messages", force: :cascade do |t|
-    t.binary "channel", null: false
-    t.bigint "channel_hash", null: false
-    t.datetime "created_at", null: false
-    t.binary "payload", null: false
-    t.index ["channel"], name: "index_solid_cable_messages_on_channel"
-    t.index ["channel_hash"], name: "index_solid_cable_messages_on_channel_hash"
-    t.index ["created_at"], name: "index_solid_cable_messages_on_created_at"
   end
 
   create_table "strategies", comment: "Scoped orchestration strategies selected for workflow decisions.", force: :cascade do |t|
