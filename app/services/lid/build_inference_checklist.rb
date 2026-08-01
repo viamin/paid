@@ -41,10 +41,10 @@ module Lid
 
     def inferred_items
       changed_markdown_files.flat_map do |path|
-        read_lines(path).filter_map do |line|
-          next unless line.include?("[inferred]")
+        changed_lines(path).filter_map do |line|
+          next unless line[:text].include?("[inferred]")
 
-          checklist_item(path, normalize_inferred_line(line))
+          checklist_item(path, normalize_inferred_line(line[:text]))
         end
       end
     end
@@ -52,7 +52,7 @@ module Lid
     def open_question_items
       changed_markdown_files.flat_map do |path|
         extract_open_questions(path).filter_map do |line|
-          checklist_item(path, "Open question: #{normalize_open_question(line)}")
+          checklist_item(path, "Open question: #{normalize_open_question(line[:text])}")
         end
       end
     end
@@ -89,11 +89,61 @@ module Lid
       start_index = lines.index { |line| line.match?(OPEN_QUESTIONS_HEADING) }
       return [] unless start_index
 
-      lines[(start_index + 1)..].take_while { |line|
-        !line.match?(SECTION_HEADING)
-      }.select { |line|
-        line.strip.start_with?("-", "*", "+") || line.strip.match?(/\A\d+\./) || line.strip.match?(/\A\[[ xX]\]/)
-      }
+      changed_line_numbers_for(path).filter_map do |line_number|
+        next if line_number <= start_index
+
+        line = lines[line_number]
+        next if line.blank?
+        next unless open_question_line?(line)
+        next unless within_open_questions_section?(lines, start_index, line_number)
+
+        { number: line_number, text: line }
+      end
+    end
+
+    def within_open_questions_section?(lines, start_index, line_number)
+      lines[(start_index + 1)...line_number].none? { |line| line.match?(SECTION_HEADING) }
+    end
+
+    def open_question_line?(line)
+      line.strip.start_with?("-", "*", "+") || line.strip.match?(/\A\d+\./) || line.strip.match?(/\A\[[ xX]\]/)
+    end
+
+    def changed_lines(path)
+      line_numbers = changed_line_numbers_for(path)
+      return [] if line_numbers.empty?
+
+      lines = read_lines(path)
+      line_numbers.filter_map do |line_number|
+        line = lines[line_number]
+        next if line.nil?
+
+        { number: line_number, text: line }
+      end
+    end
+
+    def changed_line_numbers_for(path)
+      @changed_line_numbers ||= {}
+      @changed_line_numbers[path] ||= parse_changed_line_numbers(path)
+    end
+
+    def parse_changed_line_numbers(path)
+      stdout, stderr, status = Open3.capture3(
+        "git", "diff", "--unified=0", base_commit_sha, "--", path,
+        chdir: worktree_path
+      )
+
+      raise "Failed to diff changed lines for #{path}: #{stderr.presence || stdout}" unless status.success?
+
+      stdout.each_line.with_object([]) do |line, changed_lines|
+        next unless (match = line.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/))
+
+        start_line = match[1].to_i
+        line_count = match[2] ? match[2].to_i : 1
+        next if line_count.zero?
+
+        changed_lines.concat(((start_line - 1)...(start_line + line_count - 1)).to_a)
+      end
     end
 
     def changed_markdown_files

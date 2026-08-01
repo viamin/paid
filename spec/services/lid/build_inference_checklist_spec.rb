@@ -33,12 +33,6 @@ RSpec.describe Lid::BuildInferenceChecklist do
     it "builds a checklist from inferred markers and open questions" do
       write_file(repo_dir, "docs/intent/lid/lid-design.md", <<~MARKDOWN)
         ## Decisions
-
-        - The planning PR keeps inferred rationale inline [inferred]
-
-        ## Open Questions
-
-        - Should comment-only feedback move to Open Questions?
       MARKDOWN
       git(repo_dir, "add", ".")
       git(repo_dir, "commit", "-m", "baseline")
@@ -101,6 +95,42 @@ RSpec.describe Lid::BuildInferenceChecklist do
       checklist = described_class.call(worktree_path: repo_dir, base_commit_sha: base_sha)
 
       expect(checklist).to include("`docs/high-level-design.md`: Open question: Which adoption path should the planning PR document first?")
+    end
+
+    it "only includes inferred markers and open questions on changed lines" do
+      write_file(repo_dir, "docs/intent/lid/lid-design.md", <<~MARKDOWN)
+        ## Decisions
+
+        - Keep the legacy inference untouched [inferred]
+        - Replace inferred markers after review [inferred]
+
+        ## Open Questions
+
+        - Should the existing open question remain deferred?
+        - Should the new audit item block merge?
+      MARKDOWN
+      git(repo_dir, "add", ".")
+      git(repo_dir, "commit", "-m", "baseline")
+      base_sha = git(repo_dir, "rev-parse", "HEAD").strip
+
+      write_file(repo_dir, "docs/intent/lid/lid-design.md", <<~MARKDOWN)
+        ## Decisions
+
+        - Keep the legacy inference untouched [inferred]
+        - Replace inferred markers after review with authored rationale [inferred]
+
+        ## Open Questions
+
+        - Should the existing open question remain deferred?
+        - Should the new audit item block merge immediately?
+      MARKDOWN
+
+      checklist = described_class.call(worktree_path: repo_dir, base_commit_sha: base_sha)
+
+      expect(checklist).to include("Replace inferred markers after review with authored rationale")
+      expect(checklist).to include("Open question: Should the new audit item block merge immediately?")
+      expect(checklist).not_to include("Keep the legacy inference untouched")
+      expect(checklist).not_to include("Open question: Should the existing open question remain deferred?")
     end
   end
 end
