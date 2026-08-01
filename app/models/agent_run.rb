@@ -235,6 +235,7 @@ class AgentRun < ApplicationRecord
   validate :review_goal_requires_pull_request
   validate :issue_goal_requires_issue
   validates :trigger_type, presence: true, inclusion: { in: TRIGGER_TYPES }
+  validates :plan_doc_source, length: { maximum: 1000 }
   validates :created_issue_url, length: { maximum: 500 }
   validates :worktree_path, length: { maximum: 500 }
   validates :branch_name, length: { maximum: 255 }
@@ -2615,7 +2616,7 @@ class AgentRun < ApplicationRecord
   end
 
   def prompt_for_lid_planning
-    Prompts::BuildForLidPlanning.call(project: project)
+    Prompts::BuildForLidPlanning.call(project: project, plan_doc_source: plan_doc_source)
   end
 
   def empty_phase_summary
@@ -2790,6 +2791,9 @@ class AgentRun < ApplicationRecord
   end
 
   def has_prompt_source
+    # lid_planning derives its prompt from Prompts::BuildForLidPlanning, so it
+    # needs no issue, custom prompt, or source PR.
+    return if lid_planning_goal?
     return if issue.present? || custom_prompt.present? || source_pull_request_number.present?
 
     errors.add(:base, "must have either an issue, a custom prompt, or a source pull request")

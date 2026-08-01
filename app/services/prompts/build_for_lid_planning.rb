@@ -13,8 +13,24 @@ module Prompts
   #
   # @example
   #   prompt = Prompts::BuildForLidPlanning.call(project: project)
+  #   prompt = Prompts::BuildForLidPlanning.call(project: project, plan_doc_source: "docs/rdrs/RDR-051.md")
   class BuildForLidPlanning
     PROMPT_SLUG = "lid.planning"
+
+    # Section prepended to the rendered prompt when the user names an existing
+    # plan document for the conversion path. Tells the agent to treat that doc's
+    # decisions as authored intent rather than [inferred].
+    def self.plan_doc_section(plan_doc_source)
+      <<~SECTION
+        ## User-specified plan document
+
+        The project owner has identified the following as authored intent. Read it
+        fully before drafting any LLD: decisions sourced from it carry authored
+        rationale (no `[inferred]` marker), and its stated scope is binding.
+
+        #{plan_doc_source}
+      SECTION
+    end
 
     # Fallback used only if the seeded prompt is missing or deactivated.
     # The active template lives in db/seeds/prompts.rb under PROMPT_SLUG.
@@ -156,10 +172,11 @@ module Prompts
       When you're done, commit your changes and open the PR.  Do not push to main.
     PROMPT
 
-    attr_reader :project
+    attr_reader :project, :plan_doc_source
 
-    def initialize(project:)
+    def initialize(project:, plan_doc_source: nil)
       @project = project
+      @plan_doc_source = plan_doc_source.to_s.strip
     end
 
     def self.call(...)
@@ -172,12 +189,20 @@ module Prompts
         full_name: project.full_name
       }
 
-      Prompts::Render.call(
+      base = Prompts::Render.call(
         slug: PROMPT_SLUG,
         project: project,
         variables: vars,
         fallback: -> { Prompts::Render.interpolate(FALLBACK_PROMPT, vars) }
       )
+
+      plan_doc_source.present? ? inject_plan_doc(base) : base
+    end
+
+    private
+
+    def inject_plan_doc(base)
+      "#{self.class.plan_doc_section(plan_doc_source)}\n#{base}"
     end
   end
 end

@@ -2972,4 +2972,96 @@ RSpec.describe "Projects" do
       end
     end
   end
+
+  describe "POST /projects/:id/start_lid" do
+    let(:user) { create(:user, :owner, account: account) }
+    let(:project) { create(:project, account: account, github_token: github_token, created_by: user) }
+    let!(:runner) { create(:runner, user: project.effective_owner, enabled_for_agent_runs: true) }
+
+    before { sign_in user }
+
+    it "queues a lid_planning run and redirects" do
+      expect {
+        post start_lid_project_path(project)
+      }.to change { project.agent_runs.where(goal: "lid_planning").count }.by(1)
+
+      expect(response).to redirect_to(project_path(project))
+      expect(flash[:notice]).to include("LID planning run queued")
+      run = project.agent_runs.where(goal: "lid_planning").last
+      expect(run.status).to eq("queued")
+      expect(run.trigger_type).to eq("manual")
+    end
+
+    it "passes the plan_doc_source into the queued run" do
+      post start_lid_project_path(project), params: { plan_doc_source: "docs/rdrs/RDR-051.md" }
+
+      run = project.agent_runs.where(goal: "lid_planning").last
+      expect(run.plan_doc_source).to eq("docs/rdrs/RDR-051.md")
+    end
+
+    it "strips whitespace from plan_doc_source" do
+      post start_lid_project_path(project), params: { plan_doc_source: "  docs/plan.md  " }
+
+      expect(project.agent_runs.where(goal: "lid_planning").last.plan_doc_source).to eq("docs/plan.md")
+    end
+
+    it "allows queuing with no plan_doc_source" do
+      post start_lid_project_path(project)
+
+      expect(project.agent_runs.where(goal: "lid_planning").last.plan_doc_source).to be_nil
+    end
+
+    it "rejects a duplicate when a lid_planning run is already queued" do
+      create(:agent_run, project: project, goal: "lid_planning", status: "queued",
+             custom_prompt: nil, issue: nil, runner: runner)
+
+      expect {
+        post start_lid_project_path(project)
+      }.not_to change { project.agent_runs.where(goal: "lid_planning").count }
+
+      expect(response).to redirect_to(project_path(project))
+      expect(flash[:alert]).to include("already queued or in progress")
+    end
+
+    it "rejects a duplicate when a lid_planning run is running" do
+      create(:agent_run, project: project, goal: "lid_planning", status: "running",
+             custom_prompt: nil, issue: nil, runner: runner)
+
+      expect {
+        post start_lid_project_path(project)
+      }.not_to change { project.agent_runs.where(goal: "lid_planning").count }
+
+      expect(flash[:alert]).to include("already queued or in progress")
+    end
+
+    it "allows queuing after a previous lid_planning run finished" do
+      create(:agent_run, project: project, goal: "lid_planning", status: "completed",
+             custom_prompt: nil, issue: nil, runner: runner)
+
+      expect {
+        post start_lid_project_path(project)
+      }.to change { project.agent_runs.where(goal: "lid_planning").count }.by(1)
+    end
+
+    it "rejects when LID is already configured" do
+      project.update!(lid_mode: "full")
+
+      expect {
+        post start_lid_project_path(project)
+      }.not_to change { project.agent_runs.where(goal: "lid_planning").count }
+
+      expect(response).to redirect_to(project_path(project))
+      expect(flash[:alert]).to include("LID is already configured")
+    end
+
+    it "forbids viewers from starting LID planning" do
+      viewer = create(:user, :viewer, account: account)
+      sign_in viewer
+
+      post start_lid_project_path(project)
+
+      expect(response).to redirect_to(root_path)
+      expect(flash[:alert]).to eq("You are not authorized to perform this action.")
+    end
+  end
 end

@@ -257,17 +257,18 @@ class ProjectsController < ApplicationController
       return
     end
 
+    if lid_planning_run_in_flight?
+      redirect_to @project, alert: "A LID planning run is already queued or in progress for this project."
+      return
+    end
+
     budget_result = CostBudgets::Check.call(@project)
     unless budget_result[:allowed]
       redirect_to @project, alert: "Your project's AI budget has been reached. Please adjust your budget settings or try again later."
       return
     end
 
-    settings = current_user.settings
-    runner_identifier = settings.default_runner_identifier_for_goal("lid_planning")
-    runner = Runner.runnable.find_by(routing_key: runner_identifier) if runner_identifier
-    runner ||= Runner.runnable.first
-
+    runner = resolve_lid_planning_runner
     unless runner
       redirect_to @project, alert: "No runnable agent runner is available. Please configure a runner first."
       return
@@ -279,6 +280,7 @@ class ProjectsController < ApplicationController
       runner: runner,
       agent_type: Runner.agent_type_for(runner.runner_key),
       goal: "lid_planning",
+      plan_doc_source: lid_planning_params[:plan_doc_source],
       trigger_type: "manual",
       status: "queued"
     )
@@ -540,6 +542,28 @@ class ProjectsController < ApplicationController
   def redetect_lid_mode!
     Projects::DetectLidMode.from_project_repository(project: @project, force: true)
     @project.reload
+  end
+
+  def lid_planning_params
+    source = params[:plan_doc_source].to_s.strip
+    { plan_doc_source: source.presence }
+  end
+
+  # Rejects double-submit / page refresh: a queued, running, paused, or parked
+  # (rate_limited) lid_planning run will each try to open their own docs-only
+  # Planning PR, so block until it reaches a terminal status.
+  def lid_planning_run_in_flight?
+    @project.agent_runs.exists?(
+      goal: "lid_planning",
+      status: AgentRun::DEDUP_BLOCKING_STATUSES
+    )
+  end
+
+  def resolve_lid_planning_runner
+    settings = current_user.settings
+    runner_identifier = settings.default_runner_identifier_for_goal("lid_planning")
+    runner = Runner.for_identifier(@project.effective_owner, runner_identifier) if runner_identifier
+    runner || @project.effective_owner.runners.kept_only.for_agent_runs.ordered.first
   end
 
   def selected_github_auth_source(params_hash = nil)

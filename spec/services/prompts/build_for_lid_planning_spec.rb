@@ -70,4 +70,33 @@ RSpec.describe Prompts::BuildForLidPlanning do
     end
   end
 
+  describe ".call with plan_doc_source" do
+    it "injects the named plan document as authored intent" do
+      prompt = described_class.call(project: project, plan_doc_source: "docs/rdrs/RDR-051.md")
+
+      expect(prompt).to include("User-specified plan document")
+      expect(prompt).to include("docs/rdrs/RDR-051.md")
+      expect(prompt).to include("authored rationale")
+    end
+
+    it "places the plan-doc section before the brownfield procedure" do
+      prompt = described_class.call(project: project, plan_doc_source: "docs/rdrs/RDR-051.md")
+
+      expect(prompt.index("User-specified plan document")).to be < prompt.index("brownfield analysis")
+    end
+
+    it "omits the plan-doc section when the source is blank" do
+      prompt = described_class.call(project: project, plan_doc_source: "   ")
+
+      expect(prompt).not_to include("User-specified plan document")
+    end
+
+    it "strips surrounding whitespace from the plan-doc source" do
+      prompt = described_class.call(project: project, plan_doc_source: "  docs/plan.md  ")
+
+      expect(prompt).to include("docs/plan.md")
+      expect(prompt).not_to include("docs/plan.md  ")
+    end
+  end
+
 end

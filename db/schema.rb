@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_01_011044) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_01_133212) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -275,6 +275,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_01_011044) do
     t.datetime "paused_at"
     t.float "peak_cpu_percent"
     t.bigint "peak_memory_bytes"
+    t.string "plan_doc_source", limit: 1000, comment: "User-named plan document (RDR/ADR/design doc path or URL) the lid_planning run treats as authored intent. Only set for lid_planning runs."
     t.string "priority_tier", limit: 10
     t.bigint "project_id", null: false
     t.bigint "prompt_version_id"
@@ -2520,6 +2521,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_01_011044) do
     t.datetime "updated_at", null: false
     t.index ["account_id", "name"], name: "index_service_containers_on_account_id_and_name", unique: true
     t.index ["account_id"], name: "index_service_containers_on_account_id"
+  end
+
+  create_table "solid_cable_messages", force: :cascade do |t|
+    t.binary "channel", null: false
+    t.bigint "channel_hash", null: false
+    t.datetime "created_at", null: false
+    t.binary "payload", null: false
+    t.index ["channel"], name: "index_solid_cable_messages_on_channel"
+    t.index ["channel_hash"], name: "index_solid_cable_messages_on_channel_hash"
+    t.index ["created_at"], name: "index_solid_cable_messages_on_created_at"
   end
 
   create_table "strategies", comment: "Scoped orchestration strategies selected for workflow decisions.", force: :cascade do |t|
