@@ -98,6 +98,8 @@ module Tools
       end
 
       def dispatch_mcp(name:, arguments:, user:, session:)
+        return mcp_container_unavailable(name:, session:) if container_tool_unready?(name:, session:)
+
         dispatch_via_registry(
           registry_for(name),
           name:,
@@ -149,15 +151,11 @@ module Tools
       end
 
       def available_chat_tool_classes_for(user:, session:)
-        tool_hash.values.select do |klass|
-          klass.available_for_chat?(user:, session:) && tool_visible_for_session?(klass, session:)
-        end
+        tool_hash.values.select { |klass| klass.available_for_chat?(user:, session:) }
       end
 
       def operator_chat_tool_classes_for(user:, session:)
-        OperatorTools::Registry.all.select do |klass|
-          klass.available_for_chat?(user:, session:) && tool_visible_for_session?(klass, session:)
-        end
+        OperatorTools::Registry.all.select { |klass| klass.available_for_chat?(user:, session:) }
       end
 
       def read_only_tool_classes_for(user:)
@@ -221,10 +219,31 @@ module Tools
         tool_class.new(user:, session:).dispatch(**arguments.symbolize_keys)
       end
 
-      def tool_visible_for_session?(klass, session:)
-        return true unless klass.requires_container?
+      def container_tool_unready?(name:, session:)
+        requires_container?(name) && !session&.container_ready?
+      end
 
-        session&.container_ready? == true
+      def mcp_container_unavailable(name:, session:)
+        capability = session&.container_capability || "none"
+
+        {
+          status: "error",
+          error: "container_unavailable",
+          message: mcp_container_unavailable_message(capability),
+          container_capability: capability,
+          retryable: capability.in?(%w[pending provisioning])
+        }
+      end
+
+      def mcp_container_unavailable_message(capability)
+        case capability
+        when "failed"
+          "Workspace tools are unavailable because the workspace container failed to prepare."
+        when "stopped"
+          "Workspace tools are unavailable because the workspace container is stopped."
+        else
+          "Workspace tools are still preparing. Retry shortly or fall back to inline tools."
+        end
       end
     end
   end

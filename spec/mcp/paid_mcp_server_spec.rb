@@ -35,21 +35,40 @@ RSpec.describe PaidMcpServer do
       expect(result[:result][:tools].map { |tool| tool[:name] }).not_to include("trigger_agent_run")
     end
 
-    it "returns the session-specific read-only tool surface" do
-      ready_session = create(
+    it "keeps container tools discoverable in tools/list before the workspace is ready" do
+      manifest = [ { project_id: project.id, path: "/workspace/repo-one" } ]
+      pending_session = create(
         :chat_session,
-        :workspace,
         account: account,
         created_by: user,
-        clone_manifest: [ { project_id: project.id, path: "/workspace/repo-one" } ]
+        container_capability: "pending",
+        clone_manifest: manifest
       )
-      ready_server = described_class.new(session: ready_session, user: user)
+      pending_server = described_class.new(session: pending_session, user: user)
 
-      ready_result = ready_server.handle_request(method: "tools/list", id: 20)
-      pending_result = server.handle_request(method: "tools/list", id: 21)
+      pending_result = pending_server.handle_request(method: "tools/list", id: 21)
 
-      expect(ready_result[:result][:tools].map { |tool| tool[:name] }).to include("git_status", "git_diff")
-      expect(pending_result[:result][:tools].map { |tool| tool[:name] }).not_to include("git_status", "git_diff")
+      expect(pending_result[:result][:tools].map { |tool| tool[:name] }).to include("git_status", "git_diff")
+    end
+
+    it "returns a structured unavailable result when a container tool is called before ready" do
+      manifest = [ { project_id: project.id, path: "/workspace/repo-one" } ]
+      session = create(:chat_session, account: account, created_by: user, container_capability: "pending", clone_manifest: manifest)
+      pending_server = described_class.new(session: session, user: user)
+
+      result = pending_server.handle_request(
+        method: "tools/call",
+        params: { "name" => "git_status", "arguments" => { "repo_path" => "/workspace/repo-one" } },
+        id: 22
+      )
+
+      content = JSON.parse(result[:result][:content].first[:text])
+      expect(content).to include(
+        "status" => "error",
+        "error" => "container_unavailable",
+        "container_capability" => "pending",
+        "retryable" => true
+      )
     end
 
     it "handles tools/call" do
