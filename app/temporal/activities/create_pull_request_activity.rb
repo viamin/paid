@@ -1,8 +1,12 @@
 # frozen_string_literal: true
 
+require "open3"
+
 module Activities
   class CreatePullRequestActivity < BaseActivity
     activity_name "CreatePullRequest"
+
+    LID_REPORT_HEADING = "## LID Phase Report"
 
     def execute(input)
       agent_run_id = input[:agent_run_id]
@@ -215,7 +219,7 @@ module Activities
       end
 
       {
-        body: body,
+        body: append_lid_phase_report(body, agent_run),
         llm_generated_description: description.present?
       }
     end
@@ -347,6 +351,142 @@ module Activities
         error: e.message
       )
       nil
+    end
+
+    def append_lid_phase_report(body, agent_run)
+      return body unless lid_mode_for(agent_run.project).present?
+      return body if body.include?(LID_REPORT_HEADING)
+
+      [ body.rstrip, "", lid_phase_report(agent_run) ].join("\n")
+    end
+
+    def lid_phase_report(agent_run)
+      [
+        LID_REPORT_HEADING,
+        "",
+        "- Mode: `#{lid_mode_for(agent_run.project)}`",
+        "- Specs touched: #{specs_touched_summary(agent_run)}",
+        "- Tests-first evidence: #{tests_first_summary(agent_run)}",
+        "- Coherence check: #{coherence_check_summary(agent_run)}"
+      ].join("\n")
+    end
+
+    def lid_mode_for(project)
+      return unless project.respond_to?(:lid_mode)
+
+      project.lid_mode.to_s.strip.downcase.presence
+    end
+
+    def specs_touched_summary(agent_run)
+      spec_ids = spec_ids_for_report(agent_run)
+      touched_docs = touched_spec_docs(agent_run)
+
+      details = []
+      details << "EARS IDs: #{spec_ids.join(', ')}" if spec_ids.any?
+      details << "intent docs: #{touched_docs.join(', ')}" if touched_docs.any?
+
+      details.presence&.join("; ") || "No LID spec IDs or intent doc edits were detected automatically."
+    end
+
+    def tests_first_summary(agent_run)
+      changed_tests = changed_test_files(agent_run)
+      spec_ids = spec_ids_for_report(agent_run)
+
+      return "Changed test files: #{changed_tests.join(', ')}." if changed_tests.any?
+      return "@spec annotations detected for #{spec_ids.join(', ')}." if spec_ids.any?
+
+      "No test-file changes or @spec annotations were detected automatically."
+    end
+
+    def coherence_check_summary(agent_run)
+      line = latest_coherence_check_line(agent_run)
+      return "Not found in captured agent output." unless line
+      return "Reported success in agent output." if line.match?(/pass(?:ed)?|success|0 failures/i)
+      return "Reported failures in agent output; inspect the run logs." if line.match?(/fail(?:ed|ures?)?/i)
+
+      "Referenced in agent output; inspect the run logs for the full result."
+    end
+
+    def latest_coherence_check_line(agent_run)
+      coherence_log = latest_coherence_log(agent_run)
+      return unless coherence_log
+
+      coherence_log.lines.reverse_each.find do |line|
+        line.match?(/coherence-check\.mjs|\/opt\/paid-lid\/bin\/coherence-check\.mjs/)
+      end
+    end
+
+    def latest_coherence_log(agent_run)
+      agent_run.agent_run_logs
+        .where(log_type: %w[stdout stderr])
+        .where("content LIKE :default_path OR content LIKE :vendored_path",
+          default_path: "%coherence-check.mjs%",
+          vendored_path: "%/opt/paid-lid/bin/coherence-check.mjs%")
+        .order(created_at: :desc, id: :desc)
+        .pick(:content)
+    end
+
+    def agent_output(agent_run)
+      @agent_outputs ||= {}
+      @agent_outputs[agent_run.id] ||= agent_run.agent_run_logs
+        .where(log_type: %w[stdout stderr])
+        .order(created_at: :desc, id: :desc)
+        .limit(200)
+        .pluck(:content)
+        .reverse
+        .join("\n")
+    end
+
+    def changed_test_files(agent_run)
+      changed_files(agent_run).grep(/\A(spec|test|\.ephemeral-tests)\//)
+    end
+
+    def touched_spec_docs(agent_run)
+      changed_files(agent_run).grep(%r{\Adocs/intent/.+-specs\.md\z})
+    end
+
+    def spec_ids_from_diff(agent_run)
+      git_diff(agent_run).scan(/@spec\s+([A-Z0-9-]+-\d+)/).flatten.uniq
+    end
+
+    def spec_ids_for_report(agent_run)
+      (spec_ids_from_diff(agent_run) + spec_ids_from_output(agent_run)).uniq
+    end
+
+    def spec_ids_from_output(agent_run)
+      agent_output(agent_run).scan(/@spec\s+([A-Z0-9-]+-\d+)/).flatten.uniq
+    end
+
+    def changed_files(agent_run)
+      @changed_files ||= {}
+      @changed_files[agent_run.id] ||= git_diff_name_only(agent_run).lines.map(&:strip).reject(&:empty?)
+    end
+
+    def git_diff(agent_run)
+      @git_diffs ||= {}
+      @git_diffs[agent_run.id] ||= run_git_diff(agent_run, "--unified=0")
+    end
+
+    def git_diff_name_only(agent_run)
+      @git_diff_names ||= {}
+      @git_diff_names[agent_run.id] ||= run_git_diff(agent_run, "--name-only")
+    end
+
+    def run_git_diff(agent_run, *args)
+      return "" if agent_run.worktree_path.blank? || agent_run.base_commit_sha.blank? || agent_run.result_commit_sha.blank?
+
+      stdout, status = Open3.capture2(
+        "git",
+        "-C",
+        agent_run.worktree_path,
+        "diff",
+        *args,
+        agent_run.base_commit_sha,
+        agent_run.result_commit_sha
+      )
+      status.success? ? stdout : ""
+    rescue StandardError
+      ""
     end
 
     # Checks whether the agent summary text plausibly relates to the target

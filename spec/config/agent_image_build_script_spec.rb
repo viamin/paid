@@ -39,6 +39,11 @@ RSpec.describe AgentImageBuildScript, :no_db do
       expect(script_source).to include('OMP_BUN_INSTALL_SCRIPT_URL=$(echo "${OMP_CONTRACT}" | sed -n \'s/^BUN_INSTALL_SCRIPT_URL=//p\')')
       expect(script_source).to include('--build-arg "OMP_BUN_INSTALL_SCRIPT_URL=${OMP_BUN_INSTALL_SCRIPT_URL}"')
     end
+
+    it "skips the database runtime role guard for metadata-only contract extraction" do
+      expect(script_source).to include('RUBY_CONTRACT_ENV=(env PAID_SKIP_DATABASE_RUNTIME_ROLE_GUARD=true)')
+      expect(script_source).to include('CLAUDE_CONTRACT=$("${RUBY_CONTRACT_ENV[@]}" bundle exec ruby')
+    end
   end
 
   describe AgentImageWorkflow do
@@ -61,10 +66,29 @@ RSpec.describe AgentImageBuildScript, :no_db do
       expect(workflow_source).to include('echo "bun_install_script_url=$bun_install_script_url" >> "$GITHUB_OUTPUT"')
       expect(workflow_source).to include("OMP_BUN_INSTALL_SCRIPT_URL=${{ steps.omp-contract.outputs.bun_install_script_url }}")
     end
+
+    it "skips the runtime role guard for the agent-image job's metadata-only Ruby subprocesses" do
+      expect(workflow_source).to include("env:\n      PAID_SKIP_DATABASE_RUNTIME_ROLE_GUARD: \"true\"")
+    end
   end
 
   describe AgentImageDockerfile do
     subject(:dockerfile_source) { Rails.root.join("docker/agent/Dockerfile").read }
+
+    it "keeps the pinned Node.js version in sync with .tool-versions" do
+      node_version = Rails.root.join(".tool-versions")
+        .read
+        .lines
+        .find { |line| line.start_with?("nodejs ") }
+        .split
+        .last
+
+      expect(dockerfile_source).to include("# Install Node.js #{node_version} (pinned version for reproducible builds)")
+      expect(dockerfile_source).to include("RUN NODE_VERSION=#{node_version} \\")
+      expect(dockerfile_source).to include(
+        "# Checksums from official release: https://nodejs.org/download/release/v#{node_version}/SHASUMS256.txt"
+      )
+    end
 
     it "installs the oh-my-pi Bun runtime into a non-root shared path" do
       expect(dockerfile_source).to include('export BUN_INSTALL="/usr/local/bun"')
@@ -86,6 +110,13 @@ RSpec.describe AgentImageBuildScript, :no_db do
     it "verifies the omp launcher exists after installation" do
       expect(dockerfile_source).to include('OMP_BINARY_PATH="$(command -v omp || true)"')
       expect(dockerfile_source).to include('test -x "${OMP_BINARY_PATH}"')
+    end
+
+    it "copies the vendored git credential helper from the agent image directory" do
+      helper_path = Rails.root.join("docker/agent/scripts/git-credential-paid")
+
+      expect(helper_path).to exist
+      expect(dockerfile_source).to include("COPY docker/agent/scripts/git-credential-paid /usr/local/bin/git-credential-paid")
     end
   end
 end

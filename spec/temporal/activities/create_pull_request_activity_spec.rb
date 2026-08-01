@@ -240,6 +240,94 @@ RSpec.describe Activities::CreatePullRequestActivity do
       expect(captured_body).not_to include("Here are the changes I made to fix the issue.")
     end
 
+    it "appends a LID phase report when the project declares lid_mode" do
+      allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+      project.update!(lid_mode: "full")
+      agent_run.log!("stdout", "Added regression coverage with @spec LID-RUN-001")
+      agent_run.log!("stdout", "bin/coherence-check.mjs completed with 0 failures")
+
+      captured_body = nil
+      allow(github_client).to receive(:create_pull_request) do |*_args, **kwargs|
+        captured_body = kwargs[:body]
+        pr_response
+      end
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(captured_body).to include("## LID Phase Report")
+      expect(captured_body).to include("Mode: `full`")
+      expect(captured_body).to include("LID-RUN-001")
+      expect(captured_body).to include("Reported success in agent output")
+    end
+
+    it "reports coherence-check results from the newest captured agent output" do
+      allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+      project.update!(lid_mode: "full")
+
+      205.times { |index| agent_run.log!("stdout", "older output line #{index}") }
+      agent_run.log!("stdout", "bin/coherence-check.mjs completed with 0 failures")
+
+      captured_body = nil
+      allow(github_client).to receive(:create_pull_request) do |*_args, **kwargs|
+        captured_body = kwargs[:body]
+        pr_response
+      end
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(captured_body).to include("Reported success in agent output")
+    end
+
+    it "reports coherence-check results even when later logs push them beyond the 200-line tail" do
+      allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+      project.update!(lid_mode: "full")
+      agent_run.log!("stdout", "bin/coherence-check.mjs completed with 0 failures")
+      205.times { |index| agent_run.log!("stdout", "later output line #{index}") }
+
+      captured_body = nil
+      allow(github_client).to receive(:create_pull_request) do |*_args, **kwargs|
+        captured_body = kwargs[:body]
+        pr_response
+      end
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(captured_body).to include("Reported success in agent output")
+    end
+
+    it "does not treat unrelated later output as coherence-check success" do
+      allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+      project.update!(lid_mode: "full")
+      agent_run.log!("stdout", "bin/coherence-check.mjs started")
+      agent_run.log!("stdout", "RSpec finished with 0 failures")
+
+      captured_body = nil
+      allow(github_client).to receive(:create_pull_request) do |*_args, **kwargs|
+        captured_body = kwargs[:body]
+        pr_response
+      end
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(captured_body).to include("Referenced in agent output; inspect the run logs for the full result.")
+    end
+
+    it "treats ephemeral PR tests as test-first evidence in the LID report" do
+      allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+      project.update!(lid_mode: "full")
+      allow(activity).to receive(:git_diff_name_only).with(agent_run).and_return(".ephemeral-tests/lid_report_spec.rb\n")
+
+      captured_body = nil
+      allow(github_client).to receive(:create_pull_request) do |*_args, **kwargs|
+        captured_body = kwargs[:body]
+        pr_response
+      end
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(captured_body).to include("Changed test files: .ephemeral-tests/lid_report_spec.rb.")
+    end
+
     it "does not use raw JSON as fallback body" do
       agent_run.log!("stdout", '{"type":"result","result":"","is_error":false}')
 
