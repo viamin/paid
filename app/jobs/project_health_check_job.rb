@@ -23,14 +23,17 @@ class ProjectHealthCheckJob < ApplicationJob
       include_network: true
     )
     HealthChecks::Cache.write(project, result)
-    broadcast_result(project, result)
 
+    # Emit the structured completion metric before the broadcast so a transient
+    # broadcast failure cannot swallow the completion signal.
     Rails.logger.info(
       message: "project_health.check_completed",
       project_id: project.id,
       findings_count: result.findings.size,
       duration_ms: ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
     )
+
+    broadcast_result(project, result)
   end
 
   private

@@ -64,7 +64,7 @@ RSpec.describe "Projects::HealthCheck" do
 
       # warning-only is healthy? (no errors) but must still show the amber badge,
       # not the green healthy badge (RDR-049).
-      badge = Projects::HealthCheckController::SUMMARY_BADGE
+      badge = Projects::HealthCheckHelper::SUMMARY_BADGE
       expect(response.body).to include(badge[:warning])
       expect(response.body).not_to include(badge[:healthy])
     end

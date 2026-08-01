@@ -48,6 +48,49 @@ RSpec.describe ProjectHealthCheckJob do
     )
   end
 
+  # The broadcast renders its partial through ApplicationController's view
+  # context, which does not see controller-specific helper_methods. Rendering
+  # the partial the same way the broadcast does must not raise (RDR-049).
+  it "renders the result partial in the broadcast view context without raising" do
+    allow(HealthChecks::Coordinator).to receive(:call)
+      .and_return(HealthChecks::Result.new(
+        findings: [ HealthChecks::Finding.new(
+          code: :empty_allowlist, scope: :project, severity: :error,
+          title: "Trusted usernames allowlist is empty",
+          description: "d", remediation: "r"
+        ) ],
+        checked_at: Time.current, duration_ms: 10
+      ))
+
+    captured = nil
+    allow(Turbo::StreamsChannel).to receive(:broadcast_update_to) do |_stream, opts|
+      captured = opts
+    end
+
+    described_class.perform_now(project.id)
+
+    rendered = ApplicationController.render(
+      partial: captured.fetch(:partial),
+      locals: captured.fetch(:locals)
+    )
+    expect(rendered).to include("Trusted usernames allowlist is empty")
+    expect(rendered).to include(Projects::HealthCheckHelper::SUMMARY_BADGE[:error])
+  end
+
+  # The structured completion log must be emitted before the broadcast so a
+  # transient broadcast failure cannot swallow the completion metric.
+  it "logs completion before broadcasting the result" do
+    events = []
+    allow(Rails.logger).to receive(:info) do |payload|
+      events << :logged if payload.is_a?(Hash) && payload[:message] == "project_health.check_completed"
+    end
+    allow(Turbo::StreamsChannel).to receive(:broadcast_update_to) { events << :broadcast }
+
+    described_class.perform_now(project.id)
+
+    expect(events).to eq([ :logged, :broadcast ])
+  end
+
   it "discards silently when the project no longer exists" do
     expect { described_class.perform_now(-1) }.not_to raise_error
     expect(HealthChecks::Cache).not_to have_received(:write)
