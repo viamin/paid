@@ -210,7 +210,8 @@ module Activities
 
       template = resolve_pr_template(agent_run)
       body = if template
-        render_pr_template(template, issue, agent_run, description, [ quality_warnings, lid_coherence ].compact.join("\n\n"))
+        rendered = render_pr_template(template, issue, agent_run, description, quality_warnings)
+        append_coherence_section(rendered, lid_coherence)
       else
         build_default_pr_body(issue, description, quality_warnings: quality_warnings, lid_coherence: lid_coherence)
       end
@@ -277,6 +278,16 @@ module Activities
         "quality_warnings" => quality_warnings.to_s
       }
       template.render(variables)
+    end
+
+    # The coherence soft-block must appear on the PR body regardless of
+    # whether the selected template renders {{quality_warnings}} (#3083).
+    # Templates that omit that placeholder would otherwise silently drop
+    # the coherence section.
+    def append_coherence_section(body, lid_coherence)
+      return body if lid_coherence.blank?
+
+      "#{body}\n\n#{lid_coherence}"
     end
 
     def quality_warning_section(agent_run)

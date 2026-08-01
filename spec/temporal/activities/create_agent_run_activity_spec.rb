@@ -179,6 +179,19 @@ RSpec.describe Activities::CreateAgentRunActivity do
       )
     end
 
+    it "builds the lid_planning prompt on resume when plan_docs are in external_metadata" do
+      queued_run = create(:agent_run, :queued, :automatic,
+        project: project,
+        goal: "lid_planning",
+        custom_prompt: nil,
+        external_metadata: { "plan_docs" => [ { "name" => "docs/hld.md" } ] })
+
+      activity.execute(agent_run_id: queued_run.id)
+
+      queued_run.reload
+      expect(queued_run.custom_prompt).to include("docs/hld.md")
+    end
+
     it "persists the focus when provided" do
       result = activity.execute(
         project_id: project.id,

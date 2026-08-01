@@ -231,6 +231,24 @@ module Activities
       )
     end
 
+    # Resumed queued runs were created by the controller/MCP, which stores
+    # plan_docs in external_metadata but leaves custom_prompt blank for
+    # lid_planning goals. Build and persist the prompt eagerly so
+    # apply_policy_controls and the audit trail see the same prompt the
+    # create path produces.
+    def ensure_lid_planning_prompt!(agent_run)
+      return unless agent_run.lid_planning_goal? && agent_run.custom_prompt.blank?
+
+      plan_docs = agent_run.external_metadata.fetch("plan_docs", [])
+      prompt = build_lid_planning_prompt(
+        project: agent_run.project,
+        custom_prompt: nil,
+        plan_docs: plan_docs,
+        goal: agent_run.goal
+      )
+      agent_run.update!(custom_prompt: prompt) if prompt.present?
+    end
+
     def maybe_inject_style_guides!(agent_run:, prompt_version:, custom_prompt_provided:)
       prompt = agent_run.custom_prompt
       return if prompt.blank?
@@ -312,6 +330,7 @@ module Activities
 
       agent_run.issue&.update!(paid_state: "in_progress")
       select_model(agent_run) unless agent_run.model_selection
+      ensure_lid_planning_prompt!(agent_run)
       user_settings = resolve_user_settings(agent_run.project)
       attach_marketplace_entries_for_resume(
         agent_run: agent_run,

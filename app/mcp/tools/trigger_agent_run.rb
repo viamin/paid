@@ -26,6 +26,11 @@ module Tools
           issue_id: { type: "integer", description: "The issue ID. Omit when goal is create_issue and custom_prompt is provided instead." },
           goal: { type: "string", description: "Run goal", enum: AgentRun::GOALS, default: "create_pr" },
           custom_prompt: { type: "string", description: "Description of the work for the agent to do. Required when goal is create_issue and no issue_id is given." },
+          plan_docs: {
+            type: "array",
+            description: "Named plan docs to weight the prompt (used by lid_planning). Each entry is an object with a 'name' key.",
+            items: { type: "object", properties: { name: { type: "string" } }, required: %w[name] }
+          },
           confirmed: { type: "boolean", description: "Must be true to execute this write operation" }
         },
         required: %w[project_id confirmed],
@@ -36,12 +41,18 @@ module Tools
       }
     end
 
-    def perform(project_id:, confirmed: false, issue_id: nil, goal: "create_pr", custom_prompt: nil)
+    def perform(project_id:, confirmed: false, issue_id: nil, goal: "create_pr", custom_prompt: nil, plan_docs: [])
       raise ArgumentError, "Confirmation required: set confirmed=true to trigger an agent run" unless confirmed
 
       project = project_for(project_id)
       issue = issue_id ? project.issues.find(issue_id) : nil
       custom_prompt = custom_prompt&.strip.presence
+      named_plan_docs = Array(plan_docs).filter_map do |doc|
+        next unless doc.respond_to?(:[])
+
+        name = doc["name"]
+        { "name" => name.to_s } if name.present?
+      end
 
       raise ArgumentError, "issue_id or custom_prompt is required" if issue.nil? && custom_prompt.nil?
 
@@ -49,6 +60,8 @@ module Tools
         project: project,
         goal: goal
       )
+
+      external_metadata = named_plan_docs.any? ? { "plan_docs" => named_plan_docs } : {}
 
       run = AgentRun.create!(
         project: project,
@@ -58,6 +71,7 @@ module Tools
         agent_type: agent_type,
         goal: goal,
         custom_prompt: custom_prompt,
+        external_metadata: external_metadata,
         status: "queued",
         trigger_type: "manual"
       )

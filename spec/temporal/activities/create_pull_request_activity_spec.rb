@@ -176,25 +176,25 @@ RSpec.describe Activities::CreatePullRequestActivity do
     end
 
     it "surfaces failed LID coherence findings in the PR body" do
-      agent_run.update!(
-        external_metadata: {
-          "lid_coherence" => {
-            "status" => "failed",
-            "summary_line" => "Coherence soft-block: 1 reverse orphan, 2 untagged test files."
-          }
-        }
-      )
+      set_coherence_failure(summary_line: "Coherence soft-block: 1 reverse orphan, 2 untagged test files.")
 
-      captured_body = nil
-      allow(github_client).to receive(:create_pull_request) do |*_args, **kwargs|
-        captured_body = kwargs[:body]
-        pr_response
-      end
-
-      activity.execute(agent_run_id: agent_run.id)
+      captured_body = capture_pr_body
 
       expect(captured_body).to include("## LID Coherence Soft-Block")
       expect(captured_body).to include("Coherence soft-block: 1 reverse orphan, 2 untagged test files.")
+    end
+
+    it "appends coherence section even when template omits {{quality_warnings}}" do
+      PrTemplate.create!(
+        account: project.account, project: project, name: "no-warnings",
+        body: "## Summary\n\n{{description}}", pr_type: "default", position: 0, enabled: true
+      )
+      set_coherence_failure(summary_line: "Coherence soft-block: missing @spec annotations.")
+
+      captured_body = capture_pr_body
+
+      expect(captured_body).to include("## LID Coherence Soft-Block")
+      expect(captured_body).to include("Coherence soft-block: missing @spec annotations.")
     end
 
     it "syncs a local pull request row immediately after PR creation" do
@@ -1045,5 +1045,23 @@ RSpec.describe Activities::CreatePullRequestActivity do
         expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
       end
     end
+  end
+
+  def capture_pr_body
+    captured = nil
+    allow(github_client).to receive(:create_pull_request) do |*_args, **kwargs|
+      captured = kwargs[:body]
+      pr_response
+    end
+    activity.execute(agent_run_id: agent_run.id)
+    captured
+  end
+
+  def set_coherence_failure(summary_line:)
+    agent_run.update!(
+      external_metadata: {
+        "lid_coherence" => { "status" => "failed", "summary_line" => summary_line }
+      }
+    )
   end
 end

@@ -83,8 +83,6 @@ module Activities
     end
 
     def post_update_comment(client, project, pr_number, agent_run)
-      return unless summary_comments_enabled?(agent_run)
-
       body = build_comment_body(client, project, pr_number, agent_run)
       return if body.blank?
 
@@ -102,7 +100,7 @@ module Activities
     end
 
     def build_comment_body(client, project, pr_number, agent_run)
-      summary = generate_summary(client, project, pr_number, agent_run)
+      summary = summary_comments_enabled?(agent_run) ? generate_summary(client, project, pr_number, agent_run) : nil
       coherence = lid_coherence_section(agent_run)
       return if summary.blank? && coherence.blank?
 

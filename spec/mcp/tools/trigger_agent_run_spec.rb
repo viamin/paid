@@ -95,5 +95,37 @@ RSpec.describe Tools::TriggerAgentRun do
         }.to raise_error(ArgumentError, "issue_id or custom_prompt is required")
       end
     end
+
+    context "with plan_docs for lid_planning" do
+      it "stores named plan docs in external_metadata" do
+        result = tool.call(
+          project_id: project.id,
+          goal: "lid_planning",
+          custom_prompt: "Plan the auth module.",
+          plan_docs: [ { "name" => "docs/rdrs/RDR-051.md" } ],
+          confirmed: true
+        )
+
+        run = AgentRun.find(result[:id])
+        expect(run.external_metadata["plan_docs"]).to eq(
+          [ { "name" => "docs/rdrs/RDR-051.md" } ]
+        )
+      end
+
+      it "filters out entries without a name" do
+        result = tool.call(
+          project_id: project.id,
+          goal: "lid_planning",
+          custom_prompt: "Plan the auth module.",
+          plan_docs: [ { "name" => "docs/rdrs/RDR-051.md" }, { "path" => "no-name" } ],
+          confirmed: true
+        )
+
+        run = AgentRun.find(result[:id])
+        expect(run.external_metadata["plan_docs"]).to eq(
+          [ { "name" => "docs/rdrs/RDR-051.md" } ]
+        )
+      end
+    end
   end
 end

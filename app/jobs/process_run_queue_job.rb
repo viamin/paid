@@ -851,6 +851,8 @@ class ProcessRunQueueJob < ApplicationJob
     workflow_input[:custom_prompt] = agent_run.custom_prompt if agent_run.custom_prompt.present?
     workflow_input[:source_pull_request_number] = agent_run.source_pull_request_number if agent_run.source_pull_request_number
     workflow_input[:container_host] = planned_container_host if planned_container_host.present?
+    plan_docs = agent_run.external_metadata["plan_docs"]
+    workflow_input[:plan_docs] = plan_docs if plan_docs.present?
 
     workflow_id = "queued-#{agent_run.project_id}-#{agent_run.id}-#{Time.current.to_i}"
 
