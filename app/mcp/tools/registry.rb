@@ -48,6 +48,11 @@ module Tools
     ].freeze
 
     class << self
+      def tools_for(session:, user:)
+        available_chat_tool_classes_for(user:, session:) +
+          operator_chat_tool_classes_for(user:, session:)
+      end
+
       def dispatch(name:, arguments:, user:, session:)
         dispatch_via_registry(
           registry_for(name),
@@ -81,8 +86,7 @@ module Tools
       end
 
       def mcp_definitions_for(user:, session: nil)
-        definitions_for_classes(read_only_tool_classes_for(user:)) +
-          OperatorTools::Registry.read_only_definitions_for(user:)
+        definitions_for_classes(read_only_tools_for(session:, user:))
       end
 
       # Tools advertised to the chat agent loop. Includes write tools so the
@@ -90,19 +94,26 @@ module Tools
       # so confirmation always originates from the human approver, never the
       # model itself. See RDR-028.
       def chat_definitions_for(user:, session: nil)
-        available_chat_tool_classes_for(user:, session:).map { |klass| chat_definition_for(klass) } +
-          OperatorTools::Registry.chat_definitions_for(user:, session:)
+        tools_for(session:, user:).map { |klass| chat_definition_for(klass) }
       end
 
       def dispatch_mcp(name:, arguments:, user:, session:)
-        operator_tool = OperatorTools::Registry.find(name)
-        return OperatorTools::Registry.dispatch_read_only(name:, arguments:, user:, session:) if operator_tool
-
-        dispatch_read_only(name:, arguments:, user:, session:)
+        dispatch_via_registry(
+          registry_for(name),
+          name:,
+          arguments:,
+          user:,
+          session:,
+          mcp: true
+        )
       end
 
       def write_tool?(name)
         find(name)&.write_operation? ? true : false
+      end
+
+      def requires_container?(name)
+        find(name)&.requires_container? ? true : false
       end
 
       def post_dispatch_confirmation?(name)
@@ -138,11 +149,23 @@ module Tools
       end
 
       def available_chat_tool_classes_for(user:, session:)
-        tool_hash.values.select { |klass| klass.available_for_chat?(user:, session:) }
+        tool_hash.values.select do |klass|
+          klass.available_for_chat?(user:, session:) && tool_visible_for_session?(klass, session:)
+        end
+      end
+
+      def operator_chat_tool_classes_for(user:, session:)
+        OperatorTools::Registry.all.select do |klass|
+          klass.available_for_chat?(user:, session:) && tool_visible_for_session?(klass, session:)
+        end
       end
 
       def read_only_tool_classes_for(user:)
         available_tool_classes_for(user:).reject(&:write_operation?)
+      end
+
+      def read_only_tools_for(session:, user:)
+        tools_for(session:, user:).reject(&:write_operation?)
       end
 
       def definitions_for_classes(tool_classes)
@@ -170,8 +193,14 @@ module Tools
         nil
       end
 
-      def dispatch_via_registry(registry, name:, arguments:, user:, session:)
+      def dispatch_via_registry(registry, name:, arguments:, user:, session:, mcp: false)
         raise ArgumentError, "Unknown tool: #{name}" unless registry
+
+        if mcp
+          return dispatch_own_read_only(name:, arguments:, user:, session:) if registry == self
+
+          return registry.dispatch_read_only(name:, arguments:, user:, session:)
+        end
 
         registry == self ? dispatch_own(name:, arguments:, user:, session:) : registry.dispatch(name:, arguments:, user:, session:)
       end
@@ -182,6 +211,20 @@ module Tools
         raise ArgumentError, "Tool arguments must be a JSON object" unless arguments.is_a?(Hash)
 
         tool_class.new(user:, session:).dispatch(**arguments.symbolize_keys)
+      end
+
+      def dispatch_own_read_only(name:, arguments:, user:, session:)
+        tool_class = read_only_tools_for(session:, user:).find { |klass| klass.tool_name == name }
+        raise ArgumentError, "Unknown tool: #{name}" unless tool_class
+        raise ArgumentError, "Tool arguments must be a JSON object" unless arguments.is_a?(Hash)
+
+        tool_class.new(user:, session:).dispatch(**arguments.symbolize_keys)
+      end
+
+      def tool_visible_for_session?(klass, session:)
+        return true unless klass.requires_container?
+
+        session&.container_ready? == true
       end
     end
   end

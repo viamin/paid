@@ -6,9 +6,38 @@ module ChatSessions
   # tools). Errors are normalized into tool-result hashes so the model can react
   # instead of crashing the turn.
   module ToolDispatch
+    CONTAINER_WAIT_TIMEOUT = 60.seconds
+    CONTAINER_WAIT_INTERVAL = 0.25
+    PREPARING_WORKSPACE_MESSAGE = "Preparing workspace..."
+
     private
 
     def dispatch_tool(name:, arguments:)
+      return dispatch_container_tool(name:, arguments:) if Tools::Registry.requires_container?(name)
+
+      normalize_tool_dispatch_result(name:) do
+        Tools::Registry.dispatch(
+          name: name,
+          arguments: arguments,
+          user: chat_session.created_by,
+          session: chat_session
+        )
+      end
+    end
+
+    def dispatch_container_tool(name:, arguments:)
+      return dispatch_tool_now(name:, arguments:) if chat_session.container_ready?
+
+      if chat_session.container_pending? || chat_session.container_provisioning?
+        announce_preparing_workspace!
+        return dispatch_tool_now(name:, arguments:) if await_container_ready
+      end
+
+      persist_container_capability_notice if degraded_container_capability?
+      container_unavailable_result
+    end
+
+    def dispatch_tool_now(name:, arguments:)
       normalize_tool_dispatch_result(name:) do
         Tools::Registry.dispatch(
           name: name,
@@ -50,6 +79,95 @@ module ChatSessions
         error: error.message,
         error_class: error.class.name
       )
+    end
+
+    def announce_preparing_workspace!
+      return if preparing_workspace_announced?
+
+      message = chat_session.messages.create!(
+        role: "assistant",
+        content: PREPARING_WORKSPACE_MESSAGE,
+        metadata: { "workspace_preparing_notice" => true }
+      )
+      on_message_persisted&.call(message)
+      @preparing_workspace_announced = true
+    end
+
+    def preparing_workspace_announced?
+      @preparing_workspace_announced == true
+    end
+
+    def await_container_ready
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + container_wait_timeout
+
+      loop do
+        chat_session.reload
+        return true if chat_session.container_ready?
+        return false unless chat_session.container_pending? || chat_session.container_provisioning?
+
+        remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        return false if remaining <= 0
+
+        sleep([ container_wait_interval, remaining ].min)
+      end
+    end
+
+    def persist_container_capability_notice
+      existing_notice = chat_session.messages.where(role: "system").find do |message|
+        message.metadata.is_a?(Hash) && message.metadata["container_capability_notice"] == true
+      end
+      return if existing_notice
+
+      chat_session.messages.create!(
+        role: "system",
+        content: degraded_container_notice,
+        metadata: {
+          "container_capability_notice" => true,
+          "container_capability" => chat_session.container_capability
+        }
+      )
+    end
+
+    def degraded_container_capability?
+      chat_session.container_failed? || chat_session.container_stopped?
+    end
+
+    def container_unavailable_result
+      {
+        status: "error",
+        error: "container_unavailable",
+        message: container_unavailable_message,
+        container_capability: chat_session.container_capability,
+        retryable: chat_session.container_pending? || chat_session.container_provisioning?
+      }
+    end
+
+    def container_unavailable_message
+      case chat_session.container_capability
+      when "failed"
+        "Workspace tools are unavailable because the workspace container failed to prepare."
+      when "stopped"
+        "Workspace tools are unavailable because the workspace container is stopped."
+      else
+        "Workspace tools are still preparing. Retry shortly or fall back to inline tools."
+      end
+    end
+
+    def degraded_container_notice
+      case chat_session.container_capability
+      when "failed"
+        "Workspace tools are currently unavailable because the workspace container failed to prepare. Use inline tools until the workspace is restored."
+      when "stopped"
+        "Workspace tools are currently unavailable because the workspace container is stopped. Use inline tools until the workspace is started again."
+      end
+    end
+
+    def container_wait_timeout
+      self.class.const_defined?(:CONTAINER_WAIT_TIMEOUT) ? self.class::CONTAINER_WAIT_TIMEOUT : CONTAINER_WAIT_TIMEOUT
+    end
+
+    def container_wait_interval
+      self.class.const_defined?(:CONTAINER_WAIT_INTERVAL) ? self.class::CONTAINER_WAIT_INTERVAL : CONTAINER_WAIT_INTERVAL
     end
   end
 end

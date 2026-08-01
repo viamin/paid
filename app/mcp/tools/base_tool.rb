@@ -80,11 +80,11 @@ module Tools
     # session, so tools can avoid being advertised (and then failing) in chats
     # where they cannot run.
     def self.available_for_chat?(user:, session:)
-      available_to?(user:) && (!requires_container? || container_ready?(session:))
+      available_to?(user:)
     end
 
     def self.container_ready?(session:)
-      session&.container_id.present?
+      session&.container_ready? == true
     end
 
     def self.run_agent_available_to?(user:)

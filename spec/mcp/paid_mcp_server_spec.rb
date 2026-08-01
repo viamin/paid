@@ -15,7 +15,7 @@ RSpec.describe PaidMcpServer do
 
       expect(result[:result][:protocolVersion]).to eq("2024-11-05")
       expect(result[:result][:serverInfo][:name]).to eq("paid-mcp-server")
-      expect(result[:result][:capabilities][:tools]).to eq({ listChanged: false })
+      expect(result[:result][:capabilities][:tools]).to eq({ listChanged: true })
     end
 
     it "accepts initialized notifications" do
@@ -33,6 +33,23 @@ RSpec.describe PaidMcpServer do
       expect(result[:result][:tools].first).to have_key(:name)
       expect(result[:result][:tools].first).to have_key(:inputSchema)
       expect(result[:result][:tools].map { |tool| tool[:name] }).not_to include("trigger_agent_run")
+    end
+
+    it "returns the session-specific read-only tool surface" do
+      ready_session = create(
+        :chat_session,
+        :workspace,
+        account: account,
+        created_by: user,
+        clone_manifest: [ { project_id: project.id, path: "/workspace/repo-one" } ]
+      )
+      ready_server = described_class.new(session: ready_session, user: user)
+
+      ready_result = ready_server.handle_request(method: "tools/list", id: 20)
+      pending_result = server.handle_request(method: "tools/list", id: 21)
+
+      expect(ready_result[:result][:tools].map { |tool| tool[:name] }).to include("git_status", "git_diff")
+      expect(pending_result[:result][:tools].map { |tool| tool[:name] }).not_to include("git_status", "git_diff")
     end
 
     it "handles tools/call" do
@@ -120,6 +137,26 @@ RSpec.describe PaidMcpServer do
         expect(definition).to have_key(:inputSchema)
         expect(definition[:inputSchema][:type]).to eq("object")
       end
+    end
+  end
+
+  describe ".tools_list_changed_notification" do
+    it "builds an MCP notification payload" do
+      notification = described_class.tools_list_changed_notification(
+        session: chat_session,
+        from: "pending",
+        to: "ready"
+      )
+
+      expect(notification).to eq(
+        jsonrpc: "2.0",
+        method: "notifications/tools/list_changed",
+        params: {
+          sessionId: chat_session.external_id,
+          containerCapability: "ready",
+          previousContainerCapability: "pending"
+        }
+      )
     end
   end
 
