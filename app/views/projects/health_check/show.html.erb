@@ -1,5 +1,7 @@
 <% content_for(:title) { "Health Check - #{@project.name} - Paid" } %>
 
+<%= turbo_stream_from @project, :health_checks %>
+
 <div class="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
   <div class="mb-6">
     <%= link_to project_path(@project), class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
@@ -21,66 +23,12 @@
                   refresh_project_health_check_path(@project),
                   method: :post,
                   class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600",
-                  data: { turbo_frame: "_top" } %>
+                  form: { data: { turbo_stream: true } } %>
   </div>
 
   <div id="health_check_alert" class="mt-4"></div>
 
-  <% if @result.nil? %>
-    <div class="mt-4 rounded-md bg-gray-50 p-6 ring-1 ring-inset ring-gray-200">
-      <div class="flex items-center gap-3">
-        <svg class="h-8 w-8 text-gray-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-          <path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm.75-13a.75.75 0 0 0-1.5 0v5c0 .2.08.39.22.53l3 3a.75.75 0 1 0 1.06-1.06l-2.78-2.78V5Z" clip-rule="evenodd" />
-        </svg>
-        <div>
-          <h2 class="text-base font-medium text-gray-900">No health check has been run yet</h2>
-          <p class="mt-1 text-sm text-gray-500">Click "Re-run checks" to generate a health report for this project.</p>
-        </div>
-      </div>
-    </div>
-  <% elsif @result.findings.empty? %>
-    <div class="mt-4 rounded-md bg-green-50 p-6 ring-1 ring-inset ring-green-200">
-      <div class="flex items-center gap-3">
-        <svg class="h-8 w-8 flex-shrink-0 text-green-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-          <path fill-rule="evenodd" d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 1 0-1.06 1.061l2.5 2.5a.75.75 0 0 0 1.137-.089l4-5.5Z" clip-rule="evenodd" />
-        </svg>
-        <div>
-          <h2 class="text-base font-medium text-green-800">All checks passed</h2>
-          <p class="mt-1 text-sm text-green-700">No configuration issues detected.</p>
-        </div>
-      </div>
-    </div>
-  <% else %>
-    <div class="mt-4 flex items-center gap-3">
-      <span class="inline-flex items-center rounded-md px-2.5 py-1 text-sm font-medium ring-1 ring-inset <%= summary_badge_class(@result) %>">
-        <% error_count = @result.counts[:error].to_i %>
-        <% warning_count = @result.counts[:warning].to_i %>
-        <% if error_count.positive? %>
-          <%= error_count %> <%= "error".pluralize(error_count) %>
-          <% if warning_count.positive? %>, <%= warning_count %> <%= "warning".pluralize(warning_count) %><% end %>
-        <% else %>
-          <%= warning_count %> <%= "warning".pluralize(warning_count) %>
-        <% end %>
-      </span>
-    </div>
-
-    <% if @result.checked_at %>
-      <p class="mt-2 text-sm text-gray-500">Last checked <%= time_ago_in_words(@result.checked_at) %> ago.</p>
-    <% end %>
-
-    <% [ :project, :runner, :user ].each do |scope| %>
-      <% findings = @result.for_scope(scope) %>
-      <% next if findings.empty? %>
-      <div class="mt-6 overflow-hidden rounded-lg bg-white shadow">
-        <div class="border-b border-gray-200 px-4 py-3">
-          <h2 class="text-sm font-semibold text-gray-900"><%= scope_label(scope) %></h2>
-        </div>
-        <div class="divide-y divide-gray-100 px-4">
-          <% findings.each do |finding| %>
-            <%= render partial: "projects/health_check/finding", locals: { finding: finding } %>
-          <% end %>
-        </div>
-      </div>
-    <% end %>
+  <%= turbo_frame_tag "health_check_result" do %>
+    <%= render partial: "projects/health_check/result", locals: { result: @result } %>
   <% end %>
 </div>

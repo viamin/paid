@@ -7,7 +7,7 @@ RSpec.describe "Projects::HealthCheck" do
   let(:user) { create(:user, :owner, account: account) }
   let(:project) { create(:project, account: account) }
 
-  describe "GET /projects/:project_id/health_check" do
+  describe "GET /projects/:project_id/health" do
     before { sign_in user }
 
     it "renders the not-run-yet state when no result is cached" do
@@ -42,17 +42,34 @@ RSpec.describe "Projects::HealthCheck" do
 
       expect(response.body).to include("All checks passed")
     end
+
+    it "includes the Turbo Frame and stream subscription for completion-driven refresh" do
+      get project_health_check_path(project)
+
+      expect(response.body).to include('turbo-frame id="health_check_result"')
+      expect(response.body).to include("Turbo::StreamsChannel")
+    end
   end
 
-  describe "POST /projects/:project_id/health_check/refresh" do
+  describe "POST /projects/:project_id/health/refresh" do
     before { sign_in user }
 
-    it "enqueues ProjectHealthCheckJob and redirects to show" do
+    it "enqueues ProjectHealthCheckJob and redirects to show for HTML requests" do
       expect do
         post refresh_project_health_check_path(project)
       end.to have_enqueued_job(ProjectHealthCheckJob).with(project.id)
 
       expect(response).to redirect_to(project_health_check_path(project))
+    end
+
+    it "responds with a Turbo Stream re-running state for Turbo requests" do
+      expect do
+        post refresh_project_health_check_path(project), as: :turbo_stream
+      end.to have_enqueued_job(ProjectHealthCheckJob).with(project.id)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.media_type).to eq("text/vnd.turbo-stream.html")
+      expect(response.body).to include("Re-running health checks")
     end
   end
 end

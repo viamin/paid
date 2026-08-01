@@ -35,7 +35,10 @@ module Projects
     def refresh
       authorize @project, :show?
       ProjectHealthCheckJob.perform_later(@project.id)
-      redirect_to project_health_check_path(@project), notice: "Re-running health checks\u2026"
+      respond_to do |format|
+        format.turbo_stream
+        format.html { redirect_to project_health_check_path(@project), notice: "Re-running health checks\u2026" }
+      end
     end
 
     private

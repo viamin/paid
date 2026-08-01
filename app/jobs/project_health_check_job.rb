@@ -23,12 +23,24 @@ class ProjectHealthCheckJob < ApplicationJob
       include_network: true
     )
     HealthChecks::Cache.write(project, result)
+    broadcast_result(project, result)
 
     Rails.logger.info(
       message: "project_health.check_completed",
       project_id: project.id,
       findings_count: result.findings.size,
       duration_ms: ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
+    )
+  end
+
+  private
+
+  def broadcast_result(project, result)
+    Turbo::StreamsChannel.broadcast_update_to(
+      [ project, :health_checks ],
+      target: "health_check_result",
+      partial: "projects/health_check/result",
+      locals: { result: result }
     )
   end
 end

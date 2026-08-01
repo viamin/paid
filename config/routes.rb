@@ -285,7 +285,7 @@ Rails.application.routes.draw do
       patch :update_recommendation, on: :collection
     end
 
-    resource :health_check, only: [ :show ], controller: "projects/health_check" do
+    resource :health_check, only: [ :show ], controller: "projects/health_check", path: :health do
       post :refresh
     end
 

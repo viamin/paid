@@ -6,9 +6,12 @@ RSpec.describe ProjectHealthCheckJob do
   let(:account) { create(:account) }
   let(:project) { create(:project, account: account) }
 
-  it "writes the Coordinator result to the cache" do
+  before do
     allow(HealthChecks::Cache).to receive(:write)
+    allow(Turbo::StreamsChannel).to receive(:broadcast_update_to)
+  end
 
+  it "writes the Coordinator result to the cache" do
     described_class.perform_now(project.id)
 
     expect(HealthChecks::Cache).to have_received(:write) do |proj, result|
@@ -19,7 +22,6 @@ RSpec.describe ProjectHealthCheckJob do
   end
 
   it "emits a structured completion log with findings count and duration" do
-    allow(HealthChecks::Cache).to receive(:write)
     allow(Rails.logger).to receive(:info)
 
     described_class.perform_now(project.id)
@@ -34,9 +36,19 @@ RSpec.describe ProjectHealthCheckJob do
     )
   end
 
-  it "discards silently when the project no longer exists" do
-    allow(HealthChecks::Cache).to receive(:write)
+  it "broadcasts the fresh result via Turbo Streams so the page auto-refreshes" do
+    described_class.perform_now(project.id)
 
+    expect(Turbo::StreamsChannel).to have_received(:broadcast_update_to).with(
+      [ project, :health_checks ],
+      hash_including(
+        target: "health_check_result",
+        partial: "projects/health_check/result"
+      )
+    )
+  end
+
+  it "discards silently when the project no longer exists" do
     expect { described_class.perform_now(-1) }.not_to raise_error
     expect(HealthChecks::Cache).not_to have_received(:write)
   end
