@@ -187,6 +187,34 @@ upsert_global_prompt.call(
 )
 
 # ----------------------------------------------------------------------------
+# coding.lid_aware_section — LID workflow instructions for coding runs
+# Used by: Lid::InjectIntoPrompt
+# ----------------------------------------------------------------------------
+upsert_global_prompt.call(
+  slug: "coding.lid_aware_section",
+  name: "LID-Aware Workflow Section",
+  description: "Prompt fragment appended to create_pr and review runs when a project is configured for Linked-Intent Development.",
+  category: "coding",
+  template: <<~'TEMPLATE',
+    ## LID-Aware Workflow
+
+    This repository declares Linked-Intent Development mode: `{{lid_mode}}`.
+
+    - Read `docs/high-level-design.md`, the relevant LLDs under `docs/intent/`, and the cited EARS specs for the area this issue or PR touches.
+    - Walk the arrow before changing code: confirm the EARS trace to the LLD and the LLD traces to the HLD. If intent changed, update the spec and design docs first, then cascade into tests and code.
+    - Work tests first. Add `@spec` annotations in tests citing the EARS IDs, then add matching `@spec` annotations at the implementation-graph entry points for the behavior you changed.
+    - Run `{{coherence_check_command}}` for the structural checks before you finish. Treat failures as soft-blocks: fix forward, never skip hooks, and never use `--no-verify`.
+    - Record LID phase progress in the PR description: which specs you touched, what tests-first evidence you added, and the coherence-check result.
+    {{scope_instruction}}
+  TEMPLATE
+  variables: [
+    var.call("lid_mode", "Detected Linked-Intent Development mode"),
+    var.call("coherence_check_command", "Preferred project-local coherence check command, plus fallback image path"),
+    var.call("scope_instruction", "Extra instruction for scoped LID mode", required: false)
+  ]
+)
+
+# ----------------------------------------------------------------------------
 # service_environment.* — Atomic service-environment guidance blocks
 # Used by: Prompts::ServiceContainerSections
 # ----------------------------------------------------------------------------

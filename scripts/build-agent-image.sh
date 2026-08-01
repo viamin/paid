@@ -18,6 +18,7 @@ FULL_IMAGE="${IMAGE_NAME}:${IMAGE_TAG}"
 DOCKER_BUILD_ENV=()
 TEMP_DOCKER_CONFIG=""
 docker_config_path="${DOCKER_CONFIG:-${HOME}/.docker}/config.json"
+RUBY_CONTRACT_ENV=(env PAID_SKIP_DATABASE_RUNTIME_ROLE_GUARD=true)
 
 # VS Code devcontainers inject a short-lived Docker credential helper into
 # ~/.docker/config.json. Nested docker builds can outlive that helper and then
@@ -79,7 +80,7 @@ fi
 
 # Extract Claude CLI install contract from agent-harness (single source of truth).
 # The helper script outputs key=value pairs; we capture the ones we need.
-CLAUDE_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-runner-install-contract.rb" claude)
+CLAUDE_CONTRACT=$("${RUBY_CONTRACT_ENV[@]}" bundle exec ruby "${PROJECT_ROOT}/scripts/extract-runner-install-contract.rb" claude)
 CLAUDE_INSTALL_COMMAND=$(echo "${CLAUDE_CONTRACT}" | sed -n 's/^INSTALL_COMMAND=//p')
 CLAUDE_POST_INSTALL_BINARY_PATH=$(echo "${CLAUDE_CONTRACT}" | sed -n 's/^POST_INSTALL_BINARY_PATH=//p')
 
@@ -95,7 +96,7 @@ fi
 
 # Extract Cursor CLI install contract from agent-harness (single source of truth).
 # Uses the pinned artifact URL + checksum (more stable than the install script).
-CURSOR_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-runner-install-contract.rb" cursor)
+CURSOR_CONTRACT=$("${RUBY_CONTRACT_ENV[@]}" bundle exec ruby "${PROJECT_ROOT}/scripts/extract-runner-install-contract.rb" cursor)
 CURSOR_ARTIFACT_URL=$(echo "${CURSOR_CONTRACT}" | sed -n 's/^ARTIFACT_URL=//p')
 CURSOR_ARTIFACT_SHA256=$(echo "${CURSOR_CONTRACT}" | sed -n 's/^ARTIFACT_SHA256=//p')
 CURSOR_BINARY_NAME=$(echo "${CURSOR_CONTRACT}" | sed -n 's/^BINARY_NAME=//p')
@@ -123,7 +124,7 @@ fi
 
 # Extract Codex CLI package from agent-harness installation contract.
 # agent-harness owns the supported Codex CLI version; Paid consumes it at build time.
-CODEX_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-runner-install-contract.rb" codex)
+CODEX_CONTRACT=$("${RUBY_CONTRACT_ENV[@]}" bundle exec ruby "${PROJECT_ROOT}/scripts/extract-runner-install-contract.rb" codex)
 CODEX_PACKAGE=$(echo "${CODEX_CONTRACT}" | sed -n 's/^PACKAGE=//p')
 if [ -z "${CODEX_PACKAGE}" ]; then
     echo "ERROR: Could not extract Codex package from agent-harness" >&2
@@ -134,7 +135,7 @@ fi
 # agent-harness owns the supported OpenCode CLI version and install recipe
 # (including the required trust-postinstall step that extracts the native
 # binary); Paid consumes it at build time.
-OPENCODE_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-runner-install-contract.rb" opencode)
+OPENCODE_CONTRACT=$("${RUBY_CONTRACT_ENV[@]}" bundle exec ruby "${PROJECT_ROOT}/scripts/extract-runner-install-contract.rb" opencode)
 OPENCODE_INSTALL_COMMAND=$(echo "${OPENCODE_CONTRACT}" | sed -n 's/^INSTALL_COMMAND=//p')
 if [ -z "${OPENCODE_INSTALL_COMMAND}" ]; then
     echo "ERROR: Could not extract OpenCode install command from agent-harness" >&2
@@ -143,7 +144,7 @@ fi
 
 # Extract Pi CLI package from agent-harness installation contract.
 # agent-harness owns the supported Pi CLI version; Paid consumes it at build time.
-PI_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-runner-install-contract.rb" pi)
+PI_CONTRACT=$("${RUBY_CONTRACT_ENV[@]}" bundle exec ruby "${PROJECT_ROOT}/scripts/extract-runner-install-contract.rb" pi)
 PI_PACKAGE=$(echo "${PI_CONTRACT}" | sed -n 's/^PACKAGE=//p')
 if [ -z "${PI_PACKAGE}" ]; then
     echo "ERROR: Could not extract Pi package from agent-harness" >&2
@@ -151,7 +152,7 @@ if [ -z "${PI_PACKAGE}" ]; then
 fi
 
 # Extract Oh My Pi CLI package + Bun runtime pin from agent-harness.
-OMP_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-runner-install-contract.rb" omp)
+OMP_CONTRACT=$("${RUBY_CONTRACT_ENV[@]}" bundle exec ruby "${PROJECT_ROOT}/scripts/extract-runner-install-contract.rb" omp)
 OMP_PACKAGE=$(echo "${OMP_CONTRACT}" | sed -n 's/^PACKAGE=//p')
 OMP_INSTALL_COMMAND=$(echo "${OMP_CONTRACT}" | sed -n 's/^INSTALL_COMMAND=//p')
 OMP_BUN_VERSION=$(echo "${OMP_CONTRACT}" | sed -n 's/^BUN_VERSION=//p')
@@ -174,7 +175,7 @@ if [ -z "${OMP_BUN_INSTALL_SCRIPT_URL}" ]; then
 fi
 
 # Extract Kilocode CLI install command from agent-harness (single source of truth).
-KILOCODE_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-runner-install-contract.rb" kilocode)
+KILOCODE_CONTRACT=$("${RUBY_CONTRACT_ENV[@]}" bundle exec ruby "${PROJECT_ROOT}/scripts/extract-runner-install-contract.rb" kilocode)
 KILOCODE_INSTALL_COMMAND=$(echo "${KILOCODE_CONTRACT}" | sed -n 's/^INSTALL_COMMAND=//p')
 
 if [ -z "${KILOCODE_INSTALL_COMMAND}" ]; then
@@ -183,7 +184,7 @@ if [ -z "${KILOCODE_INSTALL_COMMAND}" ]; then
 fi
 
 # Extract Gemini CLI install command from agent-harness (single source of truth).
-GEMINI_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-runner-install-contract.rb" gemini)
+GEMINI_CONTRACT=$("${RUBY_CONTRACT_ENV[@]}" bundle exec ruby "${PROJECT_ROOT}/scripts/extract-runner-install-contract.rb" gemini)
 GEMINI_CLI_INSTALL_COMMAND=$(echo "${GEMINI_CONTRACT}" | sed -n 's/^INSTALL_COMMAND=//p')
 
 if [ -z "${GEMINI_CLI_INSTALL_COMMAND}" ]; then
@@ -192,7 +193,7 @@ if [ -z "${GEMINI_CLI_INSTALL_COMMAND}" ]; then
 fi
 
 # Extract Copilot CLI install command from agent-harness (single source of truth).
-COPILOT_CONTRACT=$(bundle exec ruby "${PROJECT_ROOT}/scripts/extract-runner-install-contract.rb" copilot)
+COPILOT_CONTRACT=$("${RUBY_CONTRACT_ENV[@]}" bundle exec ruby "${PROJECT_ROOT}/scripts/extract-runner-install-contract.rb" copilot)
 COPILOT_INSTALL_COMMAND=$(echo "${COPILOT_CONTRACT}" | sed -n 's/^INSTALL_COMMAND=//p')
 
 if [ -z "${COPILOT_INSTALL_COMMAND}" ]; then
@@ -202,7 +203,7 @@ fi
 
 echo "Building agent container image..."
 echo "  Image: ${FULL_IMAGE}"
-echo "  Context: ${PROJECT_ROOT}/docker/agent"
+echo "  Context: ${PROJECT_ROOT}"
 echo "  bundler: ${BUNDLER_VERSION}"
 echo "  ruby-maat: ${RUBY_MAAT_VERSION}"
 echo "  agent-harness: ${AGENT_HARNESS_VERSION}"
@@ -239,11 +240,11 @@ echo "  copilot-cli: ${COPILOT_INSTALL_COMMAND}"
   --build-arg "OMP_PACKAGE=${OMP_PACKAGE}" \
   --build-arg "OMP_INSTALL_COMMAND=${OMP_INSTALL_COMMAND}" \
   --build-arg "OMP_BUN_VERSION=${OMP_BUN_VERSION}" \
-  --build-arg "OMP_BUN_INSTALL_SCRIPT_URL=${OMP_BUN_INSTALL_SCRIPT_URL}" \
+    --build-arg "OMP_BUN_INSTALL_SCRIPT_URL=${OMP_BUN_INSTALL_SCRIPT_URL}" \
   --build-arg "KILOCODE_INSTALL_COMMAND=${KILOCODE_INSTALL_COMMAND}" \
     --build-arg "GEMINI_CLI_INSTALL_COMMAND=${GEMINI_CLI_INSTALL_COMMAND}" \
     --build-arg "COPILOT_INSTALL_COMMAND=${COPILOT_INSTALL_COMMAND}" \
-    "${PROJECT_ROOT}/docker/agent/"
+    "${PROJECT_ROOT}"
 
 echo ""
 echo "Image built successfully: ${FULL_IMAGE}"

@@ -16,6 +16,7 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 IMAGE_NAME="${IMAGE_NAME:-paid-agent}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
 FULL_IMAGE="${IMAGE_NAME}:${IMAGE_TAG}"
+RUBY_CONTRACT_ENV=(env PAID_SKIP_DATABASE_RUNTIME_ROLE_GUARD=true)
 
 echo "Runner-contract smoke test: ${FULL_IMAGE}"
 echo "============================================="
@@ -35,7 +36,7 @@ fi
 
 # Extract runtime contract values from app code without booting the full Rails
 # environment or requiring a database connection.
-CONTAINER_EXECUTABLE_KEYS=$(cd "${PROJECT_ROOT}" && bundle exec ruby -e "
+CONTAINER_EXECUTABLE_KEYS=$(cd "${PROJECT_ROOT}" && "${RUBY_CONTRACT_ENV[@]}" bundle exec ruby -e "
   require 'bundler/setup'
   require 'agent_harness'
   \$LOAD_PATH.unshift('lib')
@@ -44,7 +45,7 @@ CONTAINER_EXECUTABLE_KEYS=$(cd "${PROJECT_ROOT}" && bundle exec ruby -e "
 ")
 
 # Generate the Codex config TOML body and notify line as Paid would.
-CODEX_CONFIG_TOML_BODY=$(cd "${PROJECT_ROOT}" && bundle exec ruby -e "
+CODEX_CONFIG_TOML_BODY=$(cd "${PROJECT_ROOT}" && "${RUBY_CONTRACT_ENV[@]}" bundle exec ruby -e "
   require 'bundler/setup'
   require 'agent_harness'
   runner = AgentHarness.provider(:codex)
@@ -56,7 +57,7 @@ CODEX_CONFIG_TOML_BODY=$(cd "${PROJECT_ROOT}" && bundle exec ruby -e "
   )
 ")
 
-CODEX_NOTIFY_LINE=$(cd "${PROJECT_ROOT}" && bundle exec ruby -e "
+CODEX_NOTIFY_LINE=$(cd "${PROJECT_ROOT}" && "${RUBY_CONTRACT_ENV[@]}" bundle exec ruby -e "
   require 'bundler/setup'
   require_relative 'app/services/containers/provision'
   puts Containers::Provision.codex_notify_line

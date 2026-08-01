@@ -158,6 +158,13 @@ RSpec.describe Prompts::BuildForIssue do
         expect(prompt).to include("the system should send the user to `/dashboard`")
       end
 
+      it "includes the LID-aware workflow section when the project declares lid_mode" do
+        prompt = described_class.call(issue: issue, project: project_with_lid)
+
+        expect(prompt).to include("## LID-Aware Workflow")
+        expect(prompt).to include("Linked-Intent Development mode: `full`")
+      end
+
       it "downloads the comment thread only once across conversation and elicited-intent sections" do
         described_class.call(
           issue: issue,
