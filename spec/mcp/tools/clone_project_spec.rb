@@ -56,6 +56,37 @@ RSpec.describe Tools::CloneProject do
       end
     end
 
+    it "builds the clone command with an expandable $CLONE_TOKEN placeholder" do
+      tool.call(project_id: project.id, confirmed: true)
+
+      expect(Containers.backend).to have_received(:exec_in_container) do |_container, command, **_opts|
+        script = command.last
+        # The placeholder must reach the shell unescaped so it expands from the
+        # Env entry; `\$CLONE_TOKEN` would authenticate with the literal string.
+        expect(script).to include("x-access-token:$CLONE_TOKEN@github.com")
+        expect(script).not_to include("x-access-token:\\$CLONE_TOKEN")
+        # The user/org-controlled repo path is still escaped.
+        expect(script).to include("git clone --depth 1")
+      end
+    end
+
+    it "redacts the clone token from a failed clone's error output" do
+      secret = "ghp_supersecrettoken123"
+      allow(project).to receive(:github_credential).and_return(secret)
+
+      leak = "fatal: repository 'https://x-access-token:#{secret}@github.com/#{project.full_name}.git/' not found"
+      allow(Containers.backend).to receive(:exec_in_container).and_return([ [], [ leak ], 128 ])
+
+      expect {
+        tool.call(project_id: project.id, confirmed: true)
+      }.to raise_error do |error|
+        expect(error).to be_a(ArgumentError)
+        expect(error.message).to include("Clone failed (exit 128)")
+        expect(error.message).not_to include(secret)
+        expect(error.message).to include("x-access-token:[REDACTED]@github.com")
+      end
+    end
+
     it "surfaces token identity in the result" do
       result = tool.call(project_id: project.id, confirmed: true)
 

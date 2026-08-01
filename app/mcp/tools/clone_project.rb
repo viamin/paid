@@ -115,8 +115,14 @@ module Tools
     end
 
     def execute_clone!(project, token, repo_path)
-      clone_url = "https://x-access-token:$CLONE_TOKEN@github.com/#{project.full_name}.git"
-      clone_cmd = "mkdir -p #{Shellwords.escape(repo_path)} && git clone --depth 1 #{Shellwords.escape(clone_url)} #{Shellwords.escape(repo_path)} 2>&1"
+      # `$CLONE_TOKEN` is a literal placeholder expanded by the shell at runtime
+      # (the secret is passed via the Env entry below, never inlined). Only the
+      # user/org-controlled `full_name` and the repo path are escaped — escaping
+      # the whole URL would turn `$CLONE_TOKEN` into `\$CLONE_TOKEN` and the
+      # shell would pass the literal placeholder instead of the token.
+      escaped_full_name = Shellwords.escape(project.full_name)
+      escaped_path = Shellwords.escape(repo_path)
+      clone_cmd = "mkdir -p #{escaped_path} && git clone --depth 1 https://x-access-token:$CLONE_TOKEN@github.com/#{escaped_full_name}.git #{escaped_path} 2>&1"
 
       timeout = session.account.tenant_setting&.chat_clone_timeout || CLONE_TIMEOUT
 
@@ -138,8 +144,17 @@ module Tools
 
       return if exit_code == 0
 
-      output = result.is_a?(Array) ? result[0..1].flatten.join("\n").truncate(500) : ""
-      raise ArgumentError, "Clone failed (exit #{exit_code}): #{output}"
+      # Redact before surfacing: a failed clone can echo the authenticated URL
+      # (e.g. `https://x-access-token:<token>@github.com/...`) in stderr.
+      raw_output = result.is_a?(Array) ? result[0..1].flatten.join("\n") : ""
+      raise ArgumentError, "Clone failed (exit #{exit_code}): #{redact_clone_output(raw_output, token).truncate(500)}"
+    end
+
+    def redact_clone_output(output, token)
+      redacted = output.to_s.dup
+      redacted.gsub!(token, "[REDACTED]") if token.present?
+      redacted.gsub!(%r{x-access-token:[^@/\s]+@github\.com}, "x-access-token:[REDACTED]@github.com")
+      redacted
     end
 
     def project_slug(project)
