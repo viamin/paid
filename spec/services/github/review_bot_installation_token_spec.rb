@@ -75,5 +75,42 @@ RSpec.describe Github::ReviewBotInstallationToken do
       expect { service.fetch }
         .to raise_error(described_class::ConfigurationError, /not configured/)
     end
+
+    it "wraps transport failures during installation lookup in the service error type" do
+      stub_request(:get, "https://api.github.com/repos/acme/widgets/installation")
+        .to_timeout
+
+      expect { service.installation_id }
+        .to raise_error(described_class::Error, /request failed/)
+    end
+
+    it "wraps transport failures during token creation in the service error type" do
+      stub_request(:get, "https://api.github.com/repos/acme/widgets/installation")
+        .to_return(status: 200, body: { id: 77 }.to_json, headers: { "Content-Type" => "application/json" })
+
+      stub_request(:post, "https://api.github.com/app/installations/77/access_tokens")
+        .to_timeout
+
+      expect { service.fetch }
+        .to raise_error(described_class::Error, /request failed/)
+    end
+
+    it "raises NotInstalledError when the app is not installed on the repo" do
+      stub_request(:get, "https://api.github.com/repos/acme/widgets/installation")
+        .to_return(status: 404, body: { message: "Not Found" }.to_json,
+          headers: { "Content-Type" => "application/json" })
+
+      expect { service.installation_id }
+        .to raise_error(described_class::NotInstalledError, /not installed/)
+    end
+
+    it "raises a generic error (not NotInstalledError) for non-404 failures" do
+      stub_request(:get, "https://api.github.com/repos/acme/widgets/installation")
+        .to_return(status: 403, body: { message: "Forbidden" }.to_json,
+          headers: { "Content-Type" => "application/json" })
+
+      expect { service.installation_id }
+        .to raise_error(described_class::ResponseError, /status 403/)
+    end
   end
 end

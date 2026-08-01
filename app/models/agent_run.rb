@@ -1466,6 +1466,12 @@ class AgentRun < ApplicationRecord
     goal == "lid_planning"
   end
 
+  def plan_docs_present?
+    return true if plan_doc_source.present?
+
+    Array(external_metadata["plan_docs"]).any? { |doc| doc.respond_to?(:[]) && doc["name"].present? }
+  end
+
   def focused?
     focus != "general"
   end
@@ -2588,12 +2594,12 @@ class AgentRun < ApplicationRecord
   def prompt_for_goal
     if review_goal?
       prompt_for_review
+    elsif lid_planning_goal?
+      prompt_for_lid_planning
     elsif enhance_issue_goal?
       prompt_for_enhance_issue
     elsif analyze_issue_goal?
       prompt_for_analyze_issue
-    elsif lid_planning_goal?
-      prompt_for_lid_planning
     else
       prompt_for_issue
     end
@@ -2616,7 +2622,17 @@ class AgentRun < ApplicationRecord
   end
 
   def prompt_for_lid_planning
-    Prompts::BuildForLidPlanning.call(project: project, plan_doc_source: plan_doc_source)
+    docs = []
+    docs << { name: plan_doc_source } if plan_doc_source.present?
+    if external_metadata.present?
+      docs.concat(external_metadata.fetch("plan_docs", []))
+    end
+
+    Prompts::BuildForLidPlanning.call(
+      project_name: project.full_name,
+      project_description: Prompts::BuildForLidPlanning.project_description_for(project),
+      plan_docs: docs
+    )
   end
 
   def empty_phase_summary

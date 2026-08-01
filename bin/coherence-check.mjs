@@ -282,6 +282,57 @@ function coverageSummary(specDefs, codeRefs) {
   return { total, implemented, deferred, gaps, defined, codeRefsTotal: codeRefs.size };
 }
 
+// ───────── 5. Drift signals ─────────
+
+function walkFiles(dir, predicate, out = []) {
+  if (!existsSync(dir)) return out;
+
+  for (const ent of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, ent.name);
+    if (ent.isDirectory()) walkFiles(path, predicate, out);
+    else if (predicate(path)) out.push(path);
+  }
+
+  return out;
+}
+
+function relative(path) {
+  return path.replace(`${ROOT}/`, '');
+}
+
+function tagged(path) {
+  return readFile(path)?.includes('@spec') || false;
+}
+
+function behavioralRuby(path) {
+  const content = readFile(path);
+  return content ? /^\s*(class|module|def)\b/m.test(content) : false;
+}
+
+function rspecFile(path) {
+  const content = readFile(path);
+  return content ? /\bRSpec\.describe\b|\bdescribe\b|\bit\b/m.test(content) : false;
+}
+
+function checkDriftSignals() {
+  const codeFiles = [
+    ...walkFiles(join(ROOT, 'app'), path => path.endsWith('.rb')),
+    ...walkFiles(join(ROOT, 'lib'), path => path.endsWith('.rb'))
+  ];
+  const testFiles = walkFiles(join(ROOT, 'spec'), path => path.endsWith('_spec.rb'));
+
+  const untaggedCode = codeFiles
+    .filter(path => behavioralRuby(path) && !tagged(path))
+    .map(relative)
+    .sort();
+  const untaggedTests = testFiles
+    .filter(path => rspecFile(path) && !tagged(path))
+    .map(relative)
+    .sort();
+
+  return { untaggedCode, untaggedTests };
+}
+
 // ───────── Report ─────────
 
 function section(title) {
@@ -360,6 +411,16 @@ function run() {
   console.log(`    [D] deferred:    ${cov.deferred}`);
   console.log(`    (defined, no marker): ${cov.defined}`);
   console.log(`  Unique @spec IDs in code: ${cov.codeRefsTotal}`);
+
+  section('Drift Signals');
+  const drift = checkDriftSignals();
+  console.log(`  Untagged code files (${drift.untaggedCode.length}) — behavior entry points with no @spec marker:`);
+  for (const file of drift.untaggedCode.slice(0, 25)) console.log(`    ${file}`);
+  if (drift.untaggedCode.length > 25) console.log(`    ... and ${drift.untaggedCode.length - 25} more`);
+
+  console.log(`\n  Untagged test files (${drift.untaggedTests.length}) — tests with no @spec marker:`);
+  for (const file of drift.untaggedTests.slice(0, 25)) console.log(`    ${file}`);
+  if (drift.untaggedTests.length > 25) console.log(`    ... and ${drift.untaggedTests.length - 25} more`);
   console.log('');
 }
 

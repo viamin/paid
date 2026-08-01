@@ -98,7 +98,7 @@ module HealthChecks
             identifier = create_pr_runner_identifier
             if identifier.present?
               owner = subject.effective_owner
-              Runner.for_identifier(owner, identifier) if owner
+              ::Runner.for_identifier(owner, identifier) if owner
             end
           end
         end

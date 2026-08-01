@@ -1498,6 +1498,32 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("Please select an issue")
       end
 
+      it "creates a lid_planning run from plan_docs alone with no issue or prompt" do
+        expect {
+          post project_agent_runs_path(project), params: {
+            goal: "lid_planning",
+            plan_docs: [ { "name" => "docs/rdrs/RDR-051.md" } ]
+          }
+        }.to change(AgentRun, :count).by(1)
+
+        agent_run = AgentRun.last
+        expect(agent_run.goal).to eq("lid_planning")
+        expect(agent_run.issue_id).to be_nil
+        expect(agent_run.custom_prompt).to be_nil
+        expect(agent_run.external_metadata["plan_docs"]).to eq(
+          [ { "name" => "docs/rdrs/RDR-051.md" } ]
+        )
+        expect(response).to redirect_to(project_path(project))
+      end
+
+      it "redirects with error when lid_planning has no plan_docs, issue, or prompt" do
+        post project_agent_runs_path(project), params: { goal: "lid_planning" }
+
+        expect(response).to redirect_to(new_project_agent_run_path(project, goal: "lid_planning"))
+        follow_redirect!
+        expect(response.body).to include("Please select an issue")
+      end
+
       it "rejects a create_pr run when the issue already has an open paid-generated PR" do
         pr_issue = create(:issue, project: project, github_number: 42, title: "Has paid PR")
         pr = create(:issue, :pull_request, project: project, github_number: 99,

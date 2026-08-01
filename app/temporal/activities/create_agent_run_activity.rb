@@ -23,10 +23,12 @@ module Activities
       count_toward_draft_review_round = input.fetch(:count_toward_draft_review_round, false)
       expected_draft_review_count = input[:expected_draft_review_count]
       manual_marketplace_entry_ids = input[:marketplace_entry_ids]
+      plan_docs = normalize_plan_docs(input[:plan_docs])
 
       project = Project.find(project_id)
       goal ||= project.account.tenant_setting&.default_goal || "create_pr"
       issue = issue_id ? Issue.find(issue_id) : nil
+      custom_prompt = build_lid_planning_prompt(project: project, custom_prompt: custom_prompt, plan_docs: plan_docs, goal: goal)
       ensure_trusted_issue_for_non_container_goal!(issue, goal)
       user_settings = resolve_user_settings(project)
       runner_selection_options = {
@@ -91,6 +93,7 @@ module Activities
         expected_draft_review_count: expected_draft_review_count,
         focus: focus,
         prompt_version: prompt_version,
+        external_metadata: build_external_metadata(plan_docs: plan_docs),
         status: "queued",
         temporal_workflow_id: input[:workflow_id] || AgentRun::CLAIMED_SENTINEL
       }
@@ -211,6 +214,50 @@ module Activities
       )
     end
 
+    def build_external_metadata(plan_docs:)
+      return {} if plan_docs.empty?
+
+      { "plan_docs" => plan_docs }
+    end
+
+    def normalize_plan_docs(raw_docs)
+      Array(raw_docs).filter_map do |doc|
+        next unless doc.respond_to?(:[])
+
+        name = doc[:name] || doc["name"]
+        { "name" => name.to_s } if name.present?
+      end
+    end
+
+    def build_lid_planning_prompt(project:, custom_prompt:, plan_docs:, goal:)
+      return custom_prompt unless goal == "lid_planning"
+      return custom_prompt if custom_prompt.present?
+
+      Prompts::BuildForLidPlanning.call(
+        project_name: project.full_name,
+        project_description: Prompts::BuildForLidPlanning.project_description_for(project),
+        plan_docs: plan_docs
+      )
+    end
+
+    # Resumed queued runs were created by the controller/MCP, which stores
+    # plan_docs in external_metadata but leaves custom_prompt blank for
+    # lid_planning goals. Build and persist the prompt eagerly so
+    # apply_policy_controls and the audit trail see the same prompt the
+    # create path produces.
+    def ensure_lid_planning_prompt!(agent_run)
+      return unless agent_run.lid_planning_goal? && agent_run.custom_prompt.blank?
+
+      plan_docs = agent_run.external_metadata.fetch("plan_docs", [])
+      prompt = build_lid_planning_prompt(
+        project: agent_run.project,
+        custom_prompt: nil,
+        plan_docs: plan_docs,
+        goal: agent_run.goal
+      )
+      agent_run.update!(custom_prompt: prompt) if prompt.present?
+    end
+
     def maybe_inject_style_guides!(agent_run:, prompt_version:, custom_prompt_provided:)
       prompt = agent_run.custom_prompt
       return if prompt.blank?
@@ -292,6 +339,7 @@ module Activities
 
       agent_run.issue&.update!(paid_state: "in_progress")
       select_model(agent_run) unless agent_run.model_selection
+      ensure_lid_planning_prompt!(agent_run)
       user_settings = resolve_user_settings(agent_run.project)
       attach_marketplace_entries_for_resume(
         agent_run: agent_run,

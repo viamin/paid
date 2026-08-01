@@ -1652,6 +1652,7 @@ module Activities
         output_present = stdout.present? || stderr.present?
         output_chars = stdout.to_s.length + stderr.to_s.length
         track_harness_tokens(agent_run, runner_candidate, runner, user_settings.user, result, execution_started_at)
+        run_lid_coherence_check(agent_run: agent_run, container_service: container_service)
         agent_run.log!("system", "Agent execution succeeded with #{runner}")
         return {
           pre_agent_sha: pre_agent_sha,
@@ -1911,6 +1912,10 @@ module Activities
         container_id: agent_run.container_id,
         worktree_path: agent_run.worktree_path
       )
+    end
+
+    def run_lid_coherence_check(agent_run:, container_service:)
+      Lid::CoherenceCheck.call(agent_run: agent_run, container_service: container_service, logger: logger)
     end
 
     # Checks if the output indicates a rate limit error.

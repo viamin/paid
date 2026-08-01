@@ -458,13 +458,13 @@ end
 
 ### Container Image
 
-Based on `ubuntu:24.04` with Ruby 3.4.8 compiled from source and Node.js 22.13.0 from binary:
+Based on `ubuntu:24.04` with Ruby 3.4.8 compiled from source and Node.js 24.18.0 from binary:
 
 ```dockerfile
 # Dockerfile.agent
 FROM ubuntu:24.04
 
-# Ruby 3.4.8 compiled from source; Node.js 22.13.0 from binary archive
+# Ruby 3.4.8 compiled from source; Node.js 24.18.0 from binary archive
 
 # Agent CLIs installed via build args from agent-harness
 ARG CLAUDE_CODE_VERSION

@@ -28,9 +28,11 @@ module HealthChecks
 
         register(HealthChecks::Checks::Project::AutoMergeWithoutOwner)
         register(HealthChecks::Checks::Project::ReviewWithoutBot)
+        register(HealthChecks::Checks::Project::ReviewBotNotInstalled)
         register(HealthChecks::Checks::Project::EmptyAllowlist)
         register(HealthChecks::Checks::Project::MissingGitHubCredential)
         register(HealthChecks::Checks::Project::SensitiveDataFreeModel)
+        register(HealthChecks::Checks::Runner::DeprecatedModel)
         @defaults_loaded = true
       end
     end

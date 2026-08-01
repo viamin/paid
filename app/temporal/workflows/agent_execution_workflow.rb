@@ -112,7 +112,8 @@ module Workflows
         parent_workflow_id: parent_workflow_id,
         workflow_id: current_workflow_id,
         count_toward_draft_review_round: input[:count_toward_draft_review_round],
-        expected_draft_review_count: input[:expected_draft_review_count] }.compact
+        expected_draft_review_count: input[:expected_draft_review_count],
+        plan_docs: input[:plan_docs] }.compact
       agent_run_result = run_activity(Activities::CreateAgentRunActivity,
         create_input, timeout: 30)
       agent_run_id = agent_run_result[:agent_run_id]
