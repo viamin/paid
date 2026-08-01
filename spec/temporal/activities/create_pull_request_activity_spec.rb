@@ -333,6 +333,16 @@ RSpec.describe Activities::CreatePullRequestActivity do
         create(:agent_run, :with_git_context, project: project, goal: "lid_planning", issue: nil)
       end
 
+      before do
+        # All lid_planning runs require changed-file validation.
+        # Set result_commit_sha and stub the compare API so the
+        # allowlist check passes by default (docs-only files).
+        # Tests that need different files override the stub.
+        lid_agent_run.update!(result_commit_sha: "abc123def456789012345678901234567890abcd")
+        allow(github_client).to receive(:compare_changed_files)
+          .and_return([ "docs/high-level-design.md" ])
+      end
+
       it "uses the lid_planning PR title" do
         expect(github_client).to receive(:create_pull_request).with(
           anything,
