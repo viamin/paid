@@ -24,5 +24,13 @@ RSpec.describe HealthChecks::Registry do
         HealthChecks::Checks::Runner::SupersededModel
       )
     end
+
+    it "registers the user-scope local checks" do
+      expect(described_class.local_for_scope(:user)).to contain_exactly(
+        HealthChecks::Checks::User::NoAgentRunners,
+        HealthChecks::Checks::User::InvalidFallbackChain,
+        HealthChecks::Checks::User::MissingDefaultRunner
+      )
+    end
   end
 end

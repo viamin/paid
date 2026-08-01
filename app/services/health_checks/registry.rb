@@ -37,6 +37,9 @@ module HealthChecks
         register(HealthChecks::Checks::Runner::IncompatibleModel)
         register(HealthChecks::Checks::Runner::MissingRunnerCredentials)
         register(HealthChecks::Checks::Runner::SupersededModel)
+        register(HealthChecks::Checks::User::NoAgentRunners)
+        register(HealthChecks::Checks::User::InvalidFallbackChain)
+        register(HealthChecks::Checks::User::MissingDefaultRunner)
         @defaults_loaded = true
       end
     end
