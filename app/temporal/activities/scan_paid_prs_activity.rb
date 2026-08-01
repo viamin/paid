@@ -2453,6 +2453,13 @@ module Activities
       pull_request_collector(project, client:).fetch_reviews(issue:)
     end
 
+    # Review states that clear an earlier CHANGES_REQUESTED from the same
+    # reviewer. APPROVED supersedes it; a DISMISSED review means the reviewer
+    # (or a repo admin) explicitly withdrew the request in GitHub, so it must
+    # also clear — otherwise the change request survives forever and the PR
+    # can never be cleared without a fresh re-review.
+    REVIEW_CLEARING_STATES = %w[APPROVED DISMISSED].freeze
+
     def changes_requested_from_reviews(project, reviews, last_run)
       return [] if reviews.nil?
 
@@ -2467,8 +2474,10 @@ module Activities
         latest_changes_requested = latest_review_for_state(user_reviews, "CHANGES_REQUESTED")
         next unless latest_changes_requested
 
-        latest_approved = latest_review_for_state(user_reviews, "APPROVED")
-        next if latest_approved && review_time(latest_approved) > review_time(latest_changes_requested)
+        latest_clearing = REVIEW_CLEARING_STATES
+          .filter_map { |state| latest_review_for_state(user_reviews, state) }
+          .max_by { |review| review_time(review) }
+        next if latest_clearing && review_time(latest_clearing) > review_time(latest_changes_requested)
 
         latest_changes_requested
       end

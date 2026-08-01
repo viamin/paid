@@ -1443,6 +1443,26 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when a subsequent dismissed review clears changes_requested" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
+        stub_github_for_pr(
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "CHANGES_REQUESTED", body: "", submitted_at: 2.hours.ago },
+            { id: 2, user_login: "viamin", state: "DISMISSED", body: "", submitted_at: 1.hour.ago }
+          ]
+        )
+      end
+
+      it "does not trigger when the reviewer later dismisses the change request" do
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result)).to eq([])
+      end
+    end
+
     context "when changes_requested review is older than the last completed agent run" do
       before do
         create(:issue, :pull_request,
