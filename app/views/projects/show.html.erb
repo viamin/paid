@@ -139,6 +139,31 @@
               Edit
             <% end %>
           <% end %>
+          <% if policy(@project).run_agent? && @project.lid_mode.nil? %>
+            <details data-testid="lid-planning-disclosure">
+              <summary class="inline-flex items-center rounded-md bg-amber-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-500">
+                <svg class="-ml-0.5 mr-1.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                  <path fill-rule="evenodd" d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Z" clip-rule="evenodd" />
+                </svg>
+                Start using LID
+              </summary>
+              <div class="mt-3 rounded-md border border-amber-200 bg-amber-50 p-4">
+                <%= form_with url: start_lid_project_path(@project), method: :post, local: true, class: "space-y-3", data: { testid: "lid-planning-form", turbo_confirm: "Paid will analyze the repository and open a docs-only Planning PR. This won't change any code. Continue?" } do |f| %>
+                  <div>
+                    <%= f.label :plan_doc_source, "Existing design doc (optional)", class: "block text-sm font-medium text-gray-700" %>
+                    <p class="mt-1 text-xs text-gray-500">Point Paid at an RDR, ADR, or design doc to treat as authored intent (e.g. <code>docs/rdrs/RDR-051.md</code>). Leave blank for repo-only inference.</p>
+                    <%= f.text_field :plan_doc_source, placeholder: "docs/rdrs/RDR-051.md", maxlength: 1000,
+                          class: "mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 sm:text-sm",
+                          data: { testid: "plan_doc_source" } %>
+                  </div>
+                  <div>
+                    <%= f.submit "Queue LID planning run",
+                          class: "inline-flex items-center rounded-md bg-amber-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-500" %>
+                  </div>
+                <% end %>
+              </div>
+            </details>
+          <% end %>
         </div>
       </div>
     </div>

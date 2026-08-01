@@ -6,7 +6,7 @@ module Projects
     include AuditLogging
 
     NoRunnableRunnerError = Class.new(StandardError)
-    InvalidDockerHostSelectionError = Class.new(StandardError)
+    InvalidDockerHostSelectionError = Containers::ResolveHostForRun::InvalidDockerHostSelectionError
 
     before_action :set_project
     before_action :set_agent_run, only: [ :show, :cancel, :retry, :refresh_auth, :diagnose_error, :resume, :terminate, :provenance ]
@@ -1214,72 +1214,14 @@ module Projects
       eligible_hosts.find { |host| host.identifier == preferred_identifier }&.identifier
     end
 
-    def resolve_container_host_identifier(runner: nil)
-      requested_identifier = params[:container_host].to_s.presence
-      eligible_hosts = docker_host_selection_context(runner: runner)[:eligible_hosts].index_by(&:identifier)
-
-      if requested_identifier.present?
-        requested_host = eligible_hosts[requested_identifier]
-        raise InvalidDockerHostSelectionError, "Please choose a healthy compatible Docker host." unless requested_host
-
-        return requested_host.identifier
-      end
-
-      preferred_identifier = @project.effective_preferred_docker_host_identifier
-      preferred_host = eligible_hosts[preferred_identifier]
-      return preferred_host.identifier if preferred_host
-
-      fallback_behavior = current_account.tenant_setting&.docker_host_fallback_behavior
-      return nil unless preferred_identifier.present? && fallback_behavior == "first_healthy"
-
-      eligible_hosts.values.find(&:fallback_eligible?)&.identifier
-    end
 
     def resolved_container_host_attributes(runner: nil)
-      selection = container_host_selection_attributes(runner: runner)
-
-      attributes = { container_host: selection[:container_host] }
-      attributes[:external_metadata] = selection[:external_metadata] if selection[:external_metadata].present?
-      attributes
-    end
-
-    def container_host_selection_attributes(runner: nil)
-      requested_identifier = params[:container_host].to_s.presence
-      selected_host = resolve_container_host_identifier(runner: runner)
-      external_metadata = container_host_selection_metadata(
-        selected_host: selected_host,
-        requested_identifier: requested_identifier
+      Containers::ResolveHostForRun.call(
+        project: @project,
+        runner: runner,
+        account: current_account,
+        requested_container_host: params[:container_host].to_s.presence
       )
-
-      if requested_identifier.blank? &&
-          @project.effective_preferred_docker_host_identifier.present? &&
-          current_account.tenant_setting&.docker_host_fallback_behavior == Containers::HostRegistry::FALLBACK_CAPACITY_AWARE
-        selected_host = nil
-      end
-
-      {
-        container_host: selected_host,
-        external_metadata: external_metadata
-      }
-    end
-
-    def container_host_selection_metadata(selected_host:, requested_identifier:)
-      if requested_identifier.present?
-        return {
-          "container_host_selection" => {
-            "explicit_host" => selected_host
-          }
-        }
-      end
-
-      preferred_identifier = @project.effective_preferred_docker_host_identifier.presence
-      return {} if preferred_identifier.blank?
-
-      selection = { "preferred_host" => preferred_identifier }
-      fallback_behavior = current_account.tenant_setting&.docker_host_fallback_behavior
-      selection["fallback"] = fallback_behavior if fallback_behavior.present?
-
-      { "container_host_selection" => selection }
     end
 
     def docker_host_selection_context(runner: nil)

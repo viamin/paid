@@ -958,3 +958,19 @@ upsert_global_prompt.call(
     var.call("issue_number", "GitHub issue number")
   ]
 )
+
+# ----------------------------------------------------------------------------
+# lid.planning — LID brownfield analysis + Planning PR bootstrap
+# Used by: Prompts::BuildForLidPlanning
+# ----------------------------------------------------------------------------
+upsert_global_prompt.call(
+  slug: "lid.planning",
+  name: "LID Planning — Brownfield Analysis",
+  description: "Bootstraps a Linked-Intent Development design tree via brownfield analysis. Reads the repo and any named plan docs, produces docs-only HLD/LLD/EARS artifacts, adds the ## LID block to AGENTS.md, creates docs/arrows/index.yaml, and opens a Planning PR with an inference checklist.",
+  category: "planning",
+  template: Prompts::BuildForLidPlanning::FALLBACK_PROMPT,
+  variables: [
+    var.call("project_name", "Human-readable project name"),
+    var.call("full_name", "Repository full_name (owner/repo)")
+  ]
+)

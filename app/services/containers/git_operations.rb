@@ -1002,7 +1002,9 @@ module Containers
     end
 
     def generate_branch_slug
-      if agent_run.issue.present?
+      if agent_run.lid_planning_goal?
+        "lid/planning-bootstrap"
+      elsif agent_run.issue.present?
         "#{agent_run.issue.github_number}-#{slugify(agent_run.issue.title)}"
       elsif agent_run.custom_prompt.present?
         slugify(agent_run.custom_prompt)

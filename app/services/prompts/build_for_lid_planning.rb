@@ -2,6 +2,32 @@
 
 module Prompts
   class BuildForLidPlanning
+    # Documentation copy of the prompt this class builds, seeded into the
+    # Prompts admin UI for reference (see db/seeds/prompts.rb, slug
+    # "lid.planning"). `build` below composes the live prompt directly from
+    # project_name/project_description/plan_docs and does not render this
+    # template at runtime.
+    FALLBACK_PROMPT = <<~'PROMPT'
+      # Task
+
+      Bootstrap or refine Linked-Intent Development artifacts for {{project_name}} ({{full_name}}).
+
+      Read the repository and any named plan docs. Prioritize named plan docs over code
+      inference when they are available. Treat them as authored intent and map them as follows:
+      - Problem / context sections -> HLD problem statement and LLD context
+      - Alternatives / decisions -> LLD decisions and alternatives with authored rationale
+      - Validation / acceptance sections -> EARS specs
+      - Implementation plan sections -> cascade ordering and segment boundaries
+
+      When plan docs are silent, infer cautiously from the codebase and mark brownfield
+      rationale as `[inferred]`.
+
+      Produce docs-only Linked-Intent Development artifacts: HLD, LLDs, and EARS specs. Add
+      the `## LID` block to AGENTS.md and create docs/arrows/index.yaml. Open a Planning PR
+      containing only these docs changes, with an inference checklist so a human reviewer can
+      confirm or correct every `[inferred]` item before implementation work begins.
+    PROMPT
+
     attr_reader :project_name, :project_description, :plan_docs
 
     def self.call(...)

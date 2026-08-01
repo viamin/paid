@@ -438,6 +438,224 @@ RSpec.describe Activities::CreatePullRequestActivity do
       expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
     end
 
+    context "when the goal is lid_planning" do
+      let(:lid_agent_run) do
+        create(:agent_run, :with_git_context, project: project, goal: "lid_planning", issue: nil)
+      end
+
+      before do
+        # All lid_planning runs require changed-file validation.
+        # Set result_commit_sha and stub the compare API so the
+        # allowlist check passes by default (docs-only files).
+        # Tests that need different files override the stub.
+        lid_agent_run.update!(result_commit_sha: "abc123def456789012345678901234567890abcd")
+        allow(github_client).to receive(:compare_changed_files)
+          .and_return([ "docs/high-level-design.md" ])
+      end
+
+      it "uses the lid_planning PR title" do
+        expect(github_client).to receive(:create_pull_request).with(
+          anything,
+          hash_including(title: "docs: bootstrap LID design tree")
+        ).and_return(pr_response)
+
+        result = activity.execute(agent_run_id: lid_agent_run.id)
+        expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
+      end
+
+      it "uses goal-specific PR body when agent summary is present" do
+        lid_agent_run.log!("stdout", "## LID Brownfield Analysis\n\nInferred decisions...")
+
+        allow(AgentHarness).to receive(:send_message)
+          .and_return(instance_double(AgentHarness::Response, success?: true,
+                                     output: "Bootstrapped LID design tree with 5 LLDs and EARS specs."))
+
+        captured_body = nil
+        allow(github_client).to receive(:create_pull_request) do |*_args, **kwargs|
+          captured_body = kwargs[:body]
+          pr_response
+        end
+
+        activity.execute(agent_run_id: lid_agent_run.id)
+
+        expect(captured_body).to include("Bootstrapped LID design tree")
+      end
+
+      it "falls back to goal-specific body when agent summary is blank" do
+        captured_body = nil
+        allow(github_client).to receive(:create_pull_request) do |*_args, **kwargs|
+          captured_body = kwargs[:body]
+          pr_response
+        end
+
+        activity.execute(agent_run_id: lid_agent_run.id)
+
+        expect(captured_body).to include("This Planning PR bootstraps the LID design tree")
+      end
+
+      it "appends the Confirm these inferred decisions checklist from the agent summary" do
+        summary = <<~SUMMARY
+          ## LID Brownfield Analysis
+
+          Bootstrapped LID design tree with 5 LLDs and EARS specs.
+
+          ## Confirm these inferred decisions
+
+          - [ ] auth: session tokens use JWT with RS256 (inferred from implementation)
+          - [ ] api: rate limiting is per-account with sliding window (inferred from rack-attack config)
+          - [ ] db: tenant isolation via RLS policies (inferred from schema)
+        SUMMARY
+        lid_agent_run.log!("stdout", summary)
+
+        allow(AgentHarness).to receive(:send_message)
+          .and_return(instance_double(AgentHarness::Response, success?: true,
+                                     output: "Bootstrapped LID design tree with 5 LLDs and EARS specs."))
+
+        captured_body = nil
+        allow(github_client).to receive(:create_pull_request) do |*_args, **kwargs|
+          captured_body = kwargs[:body]
+          pr_response
+        end
+
+        activity.execute(agent_run_id: lid_agent_run.id)
+
+        expect(captured_body).to include("Confirm these inferred decisions")
+        expect(captured_body).to include("- [ ] auth: session tokens use JWT with RS256")
+        expect(captured_body).to include("- [ ] db: tenant isolation via RLS policies")
+      end
+
+      it "does not duplicate checklist when description already contains it" do
+        summary = <<~SUMMARY
+          ## Confirm these inferred decisions
+
+          - [ ] auth: session tokens use JWT with RS256
+        SUMMARY
+        lid_agent_run.log!("stdout", summary)
+
+        # The generated description already includes the checklist
+        allow(AgentHarness).to receive(:send_message)
+          .and_return(instance_double(AgentHarness::Response, success?: true,
+                                     output: "Bootstrapped LID design tree.\n\n## Confirm these inferred decisions\n\n- [ ] auth: session tokens use JWT with RS256"))
+
+        captured_body = nil
+        allow(github_client).to receive(:create_pull_request) do |*_args, **kwargs|
+          captured_body = kwargs[:body]
+          pr_response
+        end
+
+        activity.execute(agent_run_id: lid_agent_run.id)
+
+        # Should appear exactly once
+        occurrences = captured_body.scan("Confirm these inferred decisions").size
+        expect(occurrences).to eq(1)
+      end
+
+      it "extracts checkbox block as checklist when no explicit heading exists" do
+        summary = <<~SUMMARY
+          ## LID Analysis
+
+          Decisions inferred from codebase:
+
+          - [ ] core: async job processing via GoodJob
+          - [ ] api: GraphQL schema uses relay connections
+        SUMMARY
+        lid_agent_run.log!("stdout", summary)
+
+        allow(AgentHarness).to receive(:send_message)
+          .and_return(instance_double(AgentHarness::Response, success?: true,
+                                     output: "Generated description without checklist."))
+
+        captured_body = nil
+        allow(github_client).to receive(:create_pull_request) do |*_args, **kwargs|
+          captured_body = kwargs[:body]
+          pr_response
+        end
+        activity.execute(agent_run_id: lid_agent_run.id)
+
+        expect(captured_body).to include("Confirm these inferred decisions")
+        expect(captured_body).to include("- [ ] core: async job processing via GoodJob")
+      end
+
+      it "extracts checkbox block as checklist with a single decision item" do
+        summary = <<~SUMMARY
+          ## LID Analysis
+
+          Only one inferred decision this run:
+
+          - [ ] core: async job processing via GoodJob
+        SUMMARY
+        lid_agent_run.log!("stdout", summary)
+
+        allow(AgentHarness).to receive(:send_message)
+          .and_return(instance_double(AgentHarness::Response, success?: true,
+                                     output: "Generated description without checklist."))
+
+        captured_body = nil
+        allow(github_client).to receive(:create_pull_request) do |*_args, **kwargs|
+          captured_body = kwargs[:body]
+          pr_response
+        end
+        activity.execute(agent_run_id: lid_agent_run.id)
+
+        expect(captured_body).to include("Confirm these inferred decisions")
+        expect(captured_body).to include("- [ ] core: async job processing via GoodJob")
+      end
+
+      context "when the agent edits files outside the docs allowlist" do
+        before do
+          # The allowlist validation needs both commit SHAs to fetch changed
+          # files from the GitHub compare API.
+          lid_agent_run.update!(result_commit_sha: "abc123def456789012345678901234567890abcd")
+        end
+
+        it "raises an error when non-docs files are present" do
+          allow(github_client).to receive(:compare_changed_files)
+            .and_return([ "docs/high-level-design.md", "app/models/foo.rb" ])
+
+          expect {
+            activity.execute(agent_run_id: lid_agent_run.id)
+          }.to raise_error(RuntimeError, /outside allowlist/)
+        end
+
+        it "raises an error when only non-docs files are present" do
+          allow(github_client).to receive(:compare_changed_files)
+            .and_return([ "app/models/foo.rb", "spec/models/foo_spec.rb" ])
+
+          expect {
+            activity.execute(agent_run_id: lid_agent_run.id)
+          }.to raise_error(RuntimeError, /outside allowlist/)
+        end
+
+        it "allows docs/ files without raising" do
+          allow(github_client).to receive(:compare_changed_files)
+            .and_return([ "docs/high-level-design.md", "docs/intent/auth/auth-specs.md" ])
+
+          expect { activity.execute(agent_run_id: lid_agent_run.id) }.not_to raise_error
+        end
+
+        it "allows instruction files without raising" do
+          allow(github_client).to receive(:compare_changed_files)
+            .and_return([ "docs/high-level-design.md", "AGENTS.md" ])
+
+          expect { activity.execute(agent_run_id: lid_agent_run.id) }.not_to raise_error
+        end
+
+        it "allows CLAUDE.md without raising" do
+          allow(github_client).to receive(:compare_changed_files)
+            .and_return([ "docs/high-level-design.md", "CLAUDE.md" ])
+
+          expect { activity.execute(agent_run_id: lid_agent_run.id) }.not_to raise_error
+        end
+
+        it "allows .github/copilot-instructions.md without raising" do
+          allow(github_client).to receive(:compare_changed_files)
+            .and_return([ "docs/high-level-design.md", ".github/copilot-instructions.md" ])
+
+          expect { activity.execute(agent_run_id: lid_agent_run.id) }.not_to raise_error
+        end
+      end
+    end
+
     it "does not fail when label addition fails" do
       allow(github_client).to receive(:add_labels_to_issue)
         .and_raise(GithubClient::ApiError.new("Label not found"))

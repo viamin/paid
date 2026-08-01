@@ -3,7 +3,7 @@
 class ProjectsController < ApplicationController
   include AuditLogging
 
-  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :toggle_auto_merge, :toggle_pause, :quality_resume, :detect_services, :detect_screenshot_settings, :commit_screenshot_config, :ensure_labels, :cleanup_stale_runs, :start_preview, :stop_preview, :restart_preview ]
+  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :toggle_auto_merge, :toggle_pause, :quality_resume, :detect_services, :detect_screenshot_settings, :commit_screenshot_config, :ensure_labels, :cleanup_stale_runs, :start_preview, :stop_preview, :restart_preview, :start_lid ]
   skip_after_action :verify_authorized, only: :index
 
   NULLS_LAST_SORT_ATTRIBUTES = %w[last_agent_run_at last_github_activity_at].freeze
@@ -247,6 +247,60 @@ class ProjectsController < ApplicationController
       end
       format.html { redirect_to @project }
     end
+  end
+
+  def start_lid
+    authorize @project, :run_agent?
+
+    if @project.lid_mode.present?
+      redirect_to @project, alert: "LID is already configured (mode: #{@project.lid_mode}). Use Re-detect to refresh."
+      return
+    end
+
+    if lid_planning_run_in_flight?
+      redirect_to @project, alert: "A LID planning run is already queued or in progress for this project."
+      return
+    end
+
+    budget_result = CostBudgets::Check.call(@project)
+    unless budget_result[:allowed]
+      redirect_to @project, alert: "Your project's AI budget has been reached. Please adjust your budget settings or try again later."
+      return
+    end
+
+    runner = resolve_lid_planning_runner
+    unless runner
+      redirect_to @project, alert: "No runnable agent runner is available. Please configure a runner first."
+      return
+    end
+
+    host_attrs = Containers::ResolveHostForRun.call(
+      project: @project,
+      runner: runner,
+      account: current_account
+    )
+
+    agent_run = AgentRun.create!(
+      project: @project,
+      initiating_user: current_user,
+      runner: runner,
+      agent_type: Runner.agent_type_for(runner.runner_key),
+      goal: "lid_planning",
+      plan_doc_source: lid_planning_params[:plan_doc_source],
+      trigger_type: "manual",
+      status: "queued",
+      **host_attrs
+    )
+
+    ProcessRunQueueJob.perform_later
+
+    audit_event("agent_run.created", metadata: { agent_run_id: agent_run.id, project_name: @project.name, goal: "lid_planning" })
+
+    redirect_to @project, notice: "LID planning run queued. Paid will analyze the repository and open a docs-only Planning PR for your review."
+  rescue ActiveRecord::RecordInvalid => e
+    redirect_to @project, alert: e.message
+  rescue ActiveRecord::RecordNotUnique
+    redirect_to @project, alert: "A LID planning run is already queued or in progress for this project."
   end
 
   def quality_resume
@@ -497,6 +551,42 @@ class ProjectsController < ApplicationController
   def redetect_lid_mode!
     Projects::DetectLidMode.from_project_repository(project: @project, force: true)
     @project.reload
+  end
+
+  def lid_planning_params
+    source = params[:plan_doc_source].to_s.strip
+    { plan_doc_source: source.presence }
+  end
+
+  # Rejects double-submit / page refresh: a queued, running, paused, or parked
+  # (rate_limited) lid_planning run will each try to open their own docs-only
+  # Planning PR, so block until it reaches a terminal status.
+  def lid_planning_run_in_flight?
+    @project.agent_runs.exists?(
+      goal: "lid_planning",
+      status: AgentRun::DEDUP_BLOCKING_STATUSES
+    )
+  end
+
+  # Resolves the runner for a lid_planning run using the same owner-scoped
+  # priority chain as Projects::AgentRunsController#resolve_runner_selection:
+  # project owner's settings (not the initiating user's), enabled-runner
+  # filtering, and runner_priority_for_goal ordering.
+  def resolve_lid_planning_runner
+    owner = @project.effective_owner
+    return unless owner
+
+    configured_identifiers = UserSetting.enabled_agent_runners(owner, identifiers: true)
+    priority_identifiers = owner.settings.runner_priority_for_goal("lid_planning", identifiers: true)
+    default_identifier = priority_identifiers.first
+
+    selected_identifier = if configured_identifiers.include?(default_identifier)
+      default_identifier
+    else
+      priority_identifiers.find { |id| configured_identifiers.include?(id) } || configured_identifiers.first
+    end
+
+    Runner.for_identifier(owner, selected_identifier) || Runner.ensure_default_for(owner)
   end
 
   def selected_github_auth_source(params_hash = nil)
