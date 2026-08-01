@@ -114,6 +114,25 @@ RSpec.describe AgentRun do
         expect(agent_run).not_to be_valid
         expect(agent_run.errors[:base]).to include("must have either an issue, a custom prompt, or a source pull request")
       end
+
+      it "allows nil issue and nil custom_prompt for lid_planning with named plan_docs" do
+        agent_run = build(
+          :agent_run,
+          :lid_planning_goal,
+          issue: nil,
+          custom_prompt: nil,
+          external_metadata: { "plan_docs" => [ { "name" => "docs/rdrs/RDR-051.md" } ] }
+        )
+
+        expect(agent_run).to be_valid
+      end
+
+      it "rejects lid_planning without plan_docs, issue, or custom_prompt" do
+        agent_run = build(:agent_run, :lid_planning_goal, issue: nil, custom_prompt: nil)
+
+        expect(agent_run).not_to be_valid
+        expect(agent_run.errors[:base]).to include("must have either an issue, a custom prompt, or a source pull request")
+      end
     end
 
     describe "review goal requires pull request" do

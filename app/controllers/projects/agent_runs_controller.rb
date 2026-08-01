@@ -163,7 +163,7 @@ module Projects
         )
       else
         source_pr_number = resolve_pull_request
-        unless issue || custom_prompt || source_pr_number
+        unless issue || custom_prompt || source_pr_number || (goal == "lid_planning" && plan_docs.present?)
           redirect_to new_project_agent_run_path(@project, goal: goal),
             alert: "Please select an issue, provide a custom prompt, or select a pull request."
           return

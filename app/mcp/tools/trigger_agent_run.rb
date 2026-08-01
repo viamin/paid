@@ -36,7 +36,8 @@ module Tools
         required: %w[project_id confirmed],
         anyOf: [
           { required: %w[issue_id] },
-          { required: %w[custom_prompt] }
+          { required: %w[custom_prompt] },
+          { required: %w[plan_docs] }
         ]
       }
     end
@@ -54,7 +55,8 @@ module Tools
         { "name" => name.to_s } if name.present?
       end
 
-      raise ArgumentError, "issue_id or custom_prompt is required" if issue.nil? && custom_prompt.nil?
+      docs_only_planning = goal == "lid_planning" && named_plan_docs.any?
+      raise ArgumentError, "issue_id or custom_prompt is required" if issue.nil? && custom_prompt.nil? && !docs_only_planning
 
       runner_id, agent_type = AgentRuns::RunnerResolver.call(
         project: project,

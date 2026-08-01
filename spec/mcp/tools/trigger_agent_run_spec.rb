@@ -126,6 +126,42 @@ RSpec.describe Tools::TriggerAgentRun do
           [ { "name" => "docs/rdrs/RDR-051.md" } ]
         )
       end
+
+      it "creates a run from plan_docs alone with no issue_id or custom_prompt" do
+        result = tool.call(
+          project_id: project.id,
+          goal: "lid_planning",
+          plan_docs: [ { "name" => "docs/rdrs/RDR-051.md" } ],
+          confirmed: true
+        )
+
+        expect(result[:status]).to eq("queued")
+        expect(result[:issue_id]).to be_nil
+
+        run = AgentRun.find(result[:id])
+        expect(run.issue_id).to be_nil
+        expect(run.custom_prompt).to be_nil
+        expect(run.external_metadata["plan_docs"]).to eq(
+          [ { "name" => "docs/rdrs/RDR-051.md" } ]
+        )
+      end
+
+      it "raises when lid_planning has no plan_docs, issue_id, or custom_prompt" do
+        expect {
+          tool.call(project_id: project.id, goal: "lid_planning", confirmed: true)
+        }.to raise_error(ArgumentError, "issue_id or custom_prompt is required")
+      end
+
+      it "raises when plan_docs are given for a non-lid_planning goal without issue_id or custom_prompt" do
+        expect {
+          tool.call(
+            project_id: project.id,
+            goal: "create_pr",
+            plan_docs: [ { "name" => "docs/rdrs/RDR-051.md" } ],
+            confirmed: true
+          )
+        }.to raise_error(ArgumentError, "issue_id or custom_prompt is required")
+      end
     end
   end
 end

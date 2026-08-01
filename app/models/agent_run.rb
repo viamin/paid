@@ -1465,6 +1465,10 @@ class AgentRun < ApplicationRecord
     goal == "lid_planning"
   end
 
+  def plan_docs_present?
+    Array(external_metadata["plan_docs"]).any? { |doc| doc.respond_to?(:[]) && doc["name"].present? }
+  end
+
   def focused?
     focus != "general"
   end
@@ -2795,6 +2799,7 @@ class AgentRun < ApplicationRecord
 
   def has_prompt_source
     return if issue.present? || custom_prompt.present? || source_pull_request_number.present?
+    return if lid_planning_goal? && plan_docs_present?
 
     errors.add(:base, "must have either an issue, a custom prompt, or a source pull request")
   end
