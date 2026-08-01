@@ -2011,7 +2011,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_01_013314) do
     t.datetime "last_issue_reconciliation_at", comment: "Timestamp of the last issue state reconciliation against GitHub"
     t.datetime "last_issue_sync_at"
     t.datetime "last_polled_at"
-    t.string "lid_mode"
+    t.jsonb "lid_detection", default: {}, null: false, comment: "Repository-derived LID detection metadata such as version, sources, warnings, and detection time."
+    t.string "lid_mode", comment: "Effective Linked-Intent Development mode detected from the repository or forced in settings."
+    t.boolean "lid_mode_overridden", default: false, null: false, comment: "True when the project owner has manually forced lid_mode from settings. Repo-driven detection during import/sync leaves lid_mode untouched while this is true, until an explicit re-detect is requested."
     t.jsonb "log_data"
     t.integer "max_draft_review_rounds", default: 10, null: false
     t.integer "max_enhance_issue_reevaluation_rounds", default: 3, null: false
@@ -2058,6 +2060,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_01_013314) do
     t.index ["git_push_fallback_token_id"], name: "index_projects_on_git_push_fallback_token_id"
     t.index ["github_installation_id"], name: "index_projects_on_github_installation_id"
     t.index ["github_token_id"], name: "index_projects_on_github_token_id"
+    t.index ["lid_mode"], name: "index_projects_on_lid_mode"
     t.index ["owner", "repo"], name: "index_projects_on_owner_and_repo"
     t.index ["quality_paused_at"], name: "index_projects_on_quality_paused_at", where: "(quality_paused_at IS NOT NULL)"
     t.index ["scheduler_paused_at"], name: "index_projects_on_scheduler_paused_at", where: "(scheduler_paused_at IS NOT NULL)"

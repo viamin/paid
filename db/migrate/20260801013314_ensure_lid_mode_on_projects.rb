@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-class AddLidModeToProjects < ActiveRecord::Migration[8.1]
+class EnsureLidModeOnProjects < ActiveRecord::Migration[8.1]
   def change
     return if column_exists?(:projects, :lid_mode)
 

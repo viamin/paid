@@ -111,6 +111,7 @@ module Prompts
       base_prompt = [
         rendered,
         conversation_section.presence,
+        clarifying_answers_section.presence,
         service_environment_section.presence
       ].compact.join("\n\n")
 
@@ -129,7 +130,10 @@ module Prompts
     # Extracted as a class method so CreateAgentRunActivity can append
     # this section to rendered PromptVersion custom_prompts, avoiding
     # the effective_prompt bypass described in the review.
-    def self.conversation_section_for(project:, issue:, github_client: nil)
+    # When +issue_comments+ is supplied (e.g. by the instance builder, which
+    # shares one fetch with #clarifying_answers_section), the network round-trip
+    # is skipped and the supplied comments are filtered in place.
+    def self.conversation_section_for(project:, issue:, github_client: nil, issue_comments: nil)
       return "" unless github_client
 
       settings = AgentRuns::UserSettingsResolver.call(project: project, strict: false)
@@ -141,14 +145,18 @@ module Prompts
         repo: project.full_name,
         number: issue.github_number,
         project: project,
-        max_comments: max_comments
+        max_comments: max_comments,
+        comments: issue_comments
       )
       format_conversation_section(comments, max_comment_length: max_length)
     end
 
-    def self.fetch_trusted_comments(github_client:, repo:, number:, project:, max_comments: DEFAULT_MAX_COMMENTS)
+    # When +comments+ is supplied, the GitHub fetch is skipped so callers that
+    # already hold the comment list (e.g. #issue_comments) don't pay for a
+    # second round-trip. Without it the list is fetched as before.
+    def self.fetch_trusted_comments(github_client:, repo:, number:, project:, max_comments: DEFAULT_MAX_COMMENTS, comments: nil)
       return [] if max_comments <= 0
-      all_comments = github_client.issue_comments(repo, number)
+      all_comments = comments || github_client.issue_comments(repo, number)
       trusted = []
       all_comments.reverse_each do |c|
         next unless project.trusted_github_user?(c.user&.login)
@@ -180,9 +188,56 @@ module Prompts
     private
 
     def conversation_section
+      return "" unless github_client
+
       self.class.conversation_section_for(
-        project: project, issue: issue, github_client: github_client
+        project: project, issue: issue, github_client: github_client,
+        issue_comments: issue_comments
       )
+    end
+
+    # @spec ISSUE-ENHANCEMENT-003
+    # @spec ISSUE-ENHANCEMENT-004
+    def clarifying_answers_section
+      return "" unless github_client
+
+      qa_pairs = ClarifyingQuestions::ExtractAnswerPairs.call(
+        project: project,
+        issue_comments: issue_comments,
+        issue: issue
+      ).qa_pairs
+      return "" if qa_pairs.empty?
+
+      lines = qa_pairs.each_with_index.flat_map do |qa, index|
+        [
+          "#{index + 1}. Question: #{qa[:question]}",
+          "   Answer: #{qa[:answer]}"
+        ]
+      end
+
+      [ clarifying_answers_heading, clarifying_answers_guidance, lines.join("\n") ]
+        .join("\n\n")
+        .delete("\u0000")
+        .strip
+    rescue GithubClient::Error
+      ""
+    end
+
+    def clarifying_answers_heading
+      lid_enabled? ? "# Elicited Intent" : "# Clarified Requirements"
+    end
+
+    def clarifying_answers_guidance
+      guidance = [
+        "These answers came from the issue's clarifying-question flow.",
+        "Treat them as confirmed human intent while implementing the change."
+      ]
+
+      if lid_enabled?
+        guidance << "Carry them into any LID artifact updates you make while implementing the change."
+      end
+
+      guidance.join(" ")
     end
 
     def inject_knowledge_context(prompt)
@@ -207,6 +262,23 @@ module Prompts
 
     def detected_language
       @detected_language ||= LanguageCommands.detected_language(project)
+    end
+
+    # @spec ISSUE-ENHANCEMENT-004
+    def lid_enabled?
+      project.respond_to?(:lid_mode) && project.lid_mode.present?
+    end
+
+    # Fetched once and shared by #conversation_section and
+    # #clarifying_answers_section so the comment thread is downloaded a single
+    # time per prompt build, regardless of how many sections consume it.
+    def issue_comments
+      @issue_comments ||= begin
+        return [] unless github_client
+        github_client.issue_comments(project.full_name, issue.github_number)
+      rescue GithubClient::Error
+        []
+      end
     end
 
     # Service container methods (setup_database_instruction, no_infrastructure_section,
