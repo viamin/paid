@@ -75,6 +75,21 @@ RSpec.describe AgentImageBuildScript, :no_db do
   describe AgentImageDockerfile do
     subject(:dockerfile_source) { Rails.root.join("docker/agent/Dockerfile").read }
 
+    it "keeps the pinned Node.js version in sync with .tool-versions" do
+      node_version = Rails.root.join(".tool-versions")
+        .read
+        .lines
+        .find { |line| line.start_with?("nodejs ") }
+        .split
+        .last
+
+      expect(dockerfile_source).to include("# Install Node.js #{node_version} (pinned version for reproducible builds)")
+      expect(dockerfile_source).to include("RUN NODE_VERSION=#{node_version} \\")
+      expect(dockerfile_source).to include(
+        "# Checksums from official release: https://nodejs.org/download/release/v#{node_version}/SHASUMS256.txt"
+      )
+    end
+
     it "installs the oh-my-pi Bun runtime into a non-root shared path" do
       expect(dockerfile_source).to include('export BUN_INSTALL="/usr/local/bun"')
       expect(dockerfile_source).to include('ln -sf "${BUN_INSTALL}/bin/bun" /usr/local/bin/bun')

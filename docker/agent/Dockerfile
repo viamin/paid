@@ -61,15 +61,15 @@ RUN apt-get update && apt-get purge -y --auto-remove \
     rustc \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Node.js 22.13.0 (pinned version for reproducible builds)
+# Install Node.js 24.18.0 (pinned version for reproducible builds)
 # Using direct download with pinned checksum verification for supply-chain security
-# Checksums from official release: https://nodejs.org/download/release/v22.13.0/SHASUMS256.txt
+# Checksums from official release: https://nodejs.org/download/release/v24.18.0/SHASUMS256.txt
 # Keep version in sync with .tool-versions
-RUN NODE_VERSION=22.13.0 \
+RUN NODE_VERSION=24.18.0 \
     && DEB_ARCH="$(dpkg --print-architecture)" \
     && case "$DEB_ARCH" in \
-        amd64) NODE_ARCH="x64"; EXPECTED_CHECKSUM="9a33e89093a0d946c54781dcb3ccab4ccf7538a7135286528ca41ca055e9b38f" ;; \
-        arm64) NODE_ARCH="arm64"; EXPECTED_CHECKSUM="e0cc088cb4fb2e945d3d5c416c601e1101a15f73e0f024c9529b964d9f6dce5b" ;; \
+        amd64) NODE_ARCH="x64"; EXPECTED_CHECKSUM="783130984963db7ba9cbd01089eaf2c2efb055c7c1693c943174b967b3050cb8" ;; \
+        arm64) NODE_ARCH="arm64"; EXPECTED_CHECKSUM="6b4484c2190274175df9aa8f28e2d758a819cb1c1fe6ab481e2f95b463ab8508" ;; \
         *) echo "Unsupported architecture: $DEB_ARCH" >&2; exit 1 ;; \
     esac \
     && TARBALL="node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.gz" \
