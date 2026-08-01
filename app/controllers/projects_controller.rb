@@ -274,6 +274,12 @@ class ProjectsController < ApplicationController
       return
     end
 
+    host_attrs = Containers::ResolveHostForRun.call(
+      project: @project,
+      runner: runner,
+      account: current_account
+    )
+
     agent_run = AgentRun.create!(
       project: @project,
       initiating_user: current_user,
@@ -282,7 +288,8 @@ class ProjectsController < ApplicationController
       goal: "lid_planning",
       plan_doc_source: lid_planning_params[:plan_doc_source],
       trigger_type: "manual",
-      status: "queued"
+      status: "queued",
+      **host_attrs
     )
 
     ProcessRunQueueJob.perform_later
@@ -576,7 +583,7 @@ class ProjectsController < ApplicationController
     selected_identifier = if configured_identifiers.include?(default_identifier)
       default_identifier
     else
-      priority_identifiers.first || configured_identifiers.first
+      priority_identifiers.find { |id| configured_identifiers.include?(id) } || configured_identifiers.first
     end
 
     Runner.for_identifier(owner, selected_identifier) || Runner.ensure_default_for(owner)
