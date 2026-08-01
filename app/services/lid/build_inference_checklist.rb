@@ -28,6 +28,7 @@ module Lid
 
     def call
       return "" if worktree_path.blank? || base_commit_sha.blank? || !Dir.exist?(worktree_path)
+      return "" unless docs_only_diff?
 
       items = inferred_items + open_question_items
       return "" if items.empty?
@@ -38,6 +39,13 @@ module Lid
     private
 
     attr_reader :worktree_path, :base_commit_sha, :max_items
+
+    # Scopes the checklist to genuine docs-only Planning PRs (RDR-051 phase 4):
+    # an ordinary implementation PR that happens to touch LID docs alongside
+    # code changes must not be misclassified as a Planning PR downstream.
+    def docs_only_diff?
+      changed_files.present? && changed_files.all? { |path| markdown_or_instruction_file?(path) }
+    end
 
     def inferred_items
       changed_markdown_files.flat_map do |path|
@@ -151,14 +159,16 @@ module Lid
     end
 
     def changed_files
-      stdout, stderr, status = Open3.capture3(
-        "git", "diff", "--name-only", base_commit_sha,
-        chdir: worktree_path
-      )
+      @changed_files ||= begin
+        stdout, stderr, status = Open3.capture3(
+          "git", "diff", "--name-only", base_commit_sha,
+          chdir: worktree_path
+        )
 
-      raise "Failed to list changed files: #{stderr.presence || stdout}" unless status.success?
+        raise "Failed to list changed files: #{stderr.presence || stdout}" unless status.success?
 
-      stdout.lines.map(&:strip).reject(&:blank?)
+        stdout.lines.map(&:strip).reject(&:blank?)
+      end
     end
 
     def markdown_or_instruction_file?(path)

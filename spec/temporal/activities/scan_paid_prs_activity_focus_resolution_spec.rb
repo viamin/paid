@@ -24,7 +24,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       allow(activity).to receive(:fetch_check_runs).with(client, project, pr_data).and_return(checks)
       allow(activity).to receive(:fetch_reviews).with(client, project, issue).and_return(reviews)
       allow(activity).to receive(:fetch_unresolved_threads).with(client, project, issue).and_return(unresolved_threads)
-      allow(activity).to receive(:human_review_thread_triggers).with(project, unresolved_threads).and_return([])
+      allow(activity).to receive(:human_review_thread_triggers).with(project, unresolved_threads, pr_data).and_return([])
       allow(activity).to receive(:check_non_enabled_bot_reviews)
         .with(reviews, unresolved_threads, project:, last_run: focused_run, client:, issue:)
         .and_return([])

@@ -41,6 +41,31 @@ RSpec.describe Activities::PreparePrPromptActivity do
     ])
   end
 
+  # Comment-only review feedback (no CHANGES_REQUESTED review) on a docs-only
+  # Planning PR must stay deferable per RDR-051 phase 4 — only a formal
+  # "Request changes" review corrects an inferred decision.
+  def stub_comment_only_review_flow(github_client)
+    allow(github_client).to receive_messages(
+      pull_request_reviews: [
+        { id: 1, user_login: "reviewer", state: "COMMENTED", body: "Looks reasonable", submitted_at: 30.minutes.ago }
+      ],
+      review_threads: [
+        {
+          id: "thread_1",
+          is_resolved: false,
+          comments: [
+            { body: "Just double-checking this looks right", path: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md", line: 12, author: "reviewer" }
+          ]
+        }
+      ],
+      pull_request_files: [
+        { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md" },
+        { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-specs.md" },
+        { filename: "AGENTS.md" }
+      ]
+    )
+  end
+
   def build_followup_run(project, pull_request_issue)
     create(:agent_run, :with_git_context,
       project: project,
@@ -90,13 +115,14 @@ RSpec.describe Activities::PreparePrPromptActivity do
 
   before do
     completed_run
+    recent_comments = [].tap { |comments| comments.define_singleton_method(:multi_page?) { false } }
     allow(Project).to receive(:find_by).with(id: project.id).and_return(project)
     allow(project).to receive(:client).and_return(github_client)
     allow(github_client).to receive(:pull_request).and_return(pr_data)
     allow(github_client).to receive_messages(
       rate_limit_remaining!: 100,
       check_runs_for_ref: [],
-      recent_issue_comments: [],
+      recent_issue_comments: recent_comments,
       fetch_issue_comment_page: [],
       compare_changed_files: [],
       commit: OpenStruct.new(commit: OpenStruct.new(committer: OpenStruct.new(date: 5.minutes.ago))),
@@ -115,7 +141,7 @@ RSpec.describe Activities::PreparePrPromptActivity do
     trigger = automation_scan_results(scan_result).first
 
     expect(trigger[:focus]).to eq("review_feedback")
-    expect(trigger[:triggers].map { |entry| entry[:type] }).to include("review_threads")
+    expect(trigger[:triggers].map { |entry| entry[:type] }).to include("changes_requested")
 
     followup_run = build_followup_run(project, pull_request_issue)
     allow(AgentRun).to receive(:find).with(followup_run.id).and_return(followup_run)
@@ -129,5 +155,14 @@ RSpec.describe Activities::PreparePrPromptActivity do
     cleared_result = scan_activity.execute(project_id: project.id)
 
     expect(automation_scan_results(cleared_result)).to eq([])
+  end
+
+  it "does not queue a follow-up run for comment-only review feedback on a Planning PR" do
+    stub_comment_only_review_flow(github_client)
+
+    scan_result = scan_activity.execute(project_id: project.id)
+    trigger_types = automation_scan_results(scan_result).flat_map { |trigger| trigger[:triggers].map { |entry| entry[:type] } }
+
+    expect(trigger_types).not_to include("review_threads", "changes_requested")
   end
 end

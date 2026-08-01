@@ -76,6 +76,27 @@ RSpec.describe Lid::BuildInferenceChecklist do
       expect(checklist).to eq("")
     end
 
+    it "returns an empty string when the diff also touches non-doc files" do
+      write_file(repo_dir, "docs/intent/lid/lid-design.md", <<~MARKDOWN)
+        ## Decisions
+      MARKDOWN
+      write_file(repo_dir, "app/models/widget.rb", "class Widget\nend\n")
+      git(repo_dir, "add", ".")
+      git(repo_dir, "commit", "-m", "baseline")
+      base_sha = git(repo_dir, "rev-parse", "HEAD").strip
+
+      write_file(repo_dir, "docs/intent/lid/lid-design.md", <<~MARKDOWN)
+        ## Decisions
+
+        - The planning PR keeps inferred rationale inline [inferred]
+      MARKDOWN
+      write_file(repo_dir, "app/models/widget.rb", "class Widget\n  def call; end\nend\n")
+
+      checklist = described_class.call(worktree_path: repo_dir, base_commit_sha: base_sha)
+
+      expect(checklist).to eq("")
+    end
+
     it "includes changed high-level design open questions" do
       write_file(repo_dir, "docs/high-level-design.md", <<~MARKDOWN)
         # High-Level Design
