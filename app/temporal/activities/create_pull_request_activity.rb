@@ -25,6 +25,14 @@ module Activities
         branch_exists = branch_exists?(client, project, agent_run.branch_name, agent_run_id: agent_run_id)
         existing_pr = find_existing_pr(client, project, agent_run.branch_name, agent_run_id: agent_run_id)
 
+        # LID planning runs are docs-only: verify the changed files
+        # before creating or reusing the PR. If the agent edited code
+        # outside of docs/ or the instruction file, fail the run instead
+        # of publishing a misleading "Planning PR". This check runs
+        # regardless of whether the PR is new or already exists, so a
+        # retry that finds an open PR cannot bypass it.
+        validate_lid_planning_changed_files!(agent_run, client) if agent_run.lid_planning_goal?
+
         if existing_pr
           pr = existing_pr
           pr_action = "reused"
@@ -137,7 +145,7 @@ module Activities
         project.full_name,
         base: project.default_branch,
         head: agent_run.branch_name,
-        title: pr_title(issue),
+        title: pr_title(agent_run, issue),
         body: pr_body.fetch(:body),
         draft: true
       )
@@ -199,13 +207,16 @@ module Activities
       end
     end
 
-    def pr_title(issue)
+    def pr_title(agent_run, issue)
+      return "docs: bootstrap LID design tree" if agent_run.lid_planning_goal?
       return "Agent changes" unless issue
 
       ConventionalCommitTitle.for_issue(issue, project: issue.project, style_key: "pr_title_style").truncate(255)
     end
 
     def build_pr_body(issue, agent_run, client: nil)
+      return build_lid_planning_pr_body(agent_run) if agent_run.lid_planning_goal?
+
       summary = agent_run.agent_summary
       validate_summary_scope(summary, issue, agent_run, client: client)
       description = generate_description(summary, issue, agent_run_id: agent_run.id)
@@ -254,6 +265,69 @@ module Activities
       end
 
       parts.join("\n")
+    end
+
+    # Builds a goal-specific PR body for lid_planning runs.
+    # Uses the agent summary (which contains the planning analysis)
+    # and appends a review checklist for the project owner to verify
+    # the inferred LID decisions.
+    def build_lid_planning_pr_body(agent_run)
+      summary = agent_run.agent_summary
+      description = if summary.present?
+        generate_description(summary, nil, agent_run_id: agent_run.id) || summary
+      end
+
+      body = if description.present?
+        description
+      else
+        [
+          "## Summary",
+          "",
+          "This Planning PR bootstraps the LID design tree from brownfield analysis.",
+          ""
+        ].join("\n")
+      end
+
+      # The LID Planning prompt requires a "Confirm these inferred decisions"
+      # checklist in the PR description. generate_description may collapse it
+      # from the raw agent summary, so extract it separately and append it
+      # when it is missing from the final body.
+      checklist = extract_lid_planning_checklist(summary)
+      if checklist.present? && !body.include?("Confirm these inferred decisions")
+        body = "#{body}\n\n#{checklist}"
+      end
+
+      {
+        body: body,
+        llm_generated_description: false
+      }
+    end
+
+    # Extracts the "Confirm these inferred decisions" checklist from the raw
+    # agent summary. The LID Planning prompt instructs the agent to format
+    # each item as a Markdown checkbox with the segment and decision text.
+    #
+    # Returns the full section (heading + items) as a string, or nil when
+    # no checklist can be found.
+    def extract_lid_planning_checklist(summary)
+      return nil if summary.blank?
+
+      # Match a heading like "## Confirm these inferred decisions" and
+      # capture its content through the next same-or-higher-level heading.
+      section = summary.match(
+        /^\#{1,4}\s*Confirm these inferred decisions\s*$(.+?)(?=^\#{1,4}\s|\z)/mi
+      )
+      return section[0].strip if section
+
+      # Fallback: the agent may have included checkbox items without an
+      # explicit heading. Look for a block of consecutive checkbox lines
+      # and wrap them in the expected heading.
+      checkbox_block = summary.match(
+        /(?:^[-*]\s*\[[ x]\]\s*.+$\n?){1,}/m
+      )
+      return nil unless checkbox_block
+
+      "## Confirm these inferred decisions\n\n#{checkbox_block[0].strip}"
     end
 
     def resolve_pr_template(agent_run)
@@ -656,6 +730,49 @@ module Activities
         agent_run.result_commit_sha
       )
     end
+    LID_PLANNING_ALLOWED_PATTERNS = [
+      %r{\Adocs/},
+      %r{\A\.github/copilot-instructions\.md\z},
+      %r{\AAGENTS\.md\z},
+      %r{\ACLAUDE\.md\z}
+    ].freeze
+
+    # Validates that a lid_planning run only touches docs/ and instruction
+    # files. The prompt instructs the agent to produce docs-only changes,
+    # but this server-side check ensures the PR never contains code edits
+    # when the agent strays outside the docs boundary.
+    #
+    # Raises when non-conforming files are detected or when the changed
+    # file list is unavailable (no client or missing commit SHAs). The
+    # docs-only contract is server-side enforced; skipping validation
+    # because comparison data is unavailable would defeat it.
+    def validate_lid_planning_changed_files!(agent_run, client)
+      changed_files = fetch_changed_files(agent_run, client)
+      if changed_files.nil?
+        raise "LID planning validation requires changed file data (missing client or commit SHAs)"
+      end
+
+      rejected = changed_files.reject { |path| lid_planning_allowed?(path) }
+      return if rejected.empty?
+
+      logger.error(
+        message: "agent_execution.lid_planning_allowlist_violation",
+        agent_run_id: agent_run.id,
+        rejected_files: rejected,
+        total_changed: changed_files.size
+      )
+      agent_run.log!(
+        "system",
+        "LID planning allowlist violation: #{rejected.to_sentence} " \
+        "is outside docs/ and the instruction file. The run is aborted."
+      )
+      raise "LID planning changed files outside allowlist: #{rejected.join(', ')}"
+    end
+
+    def lid_planning_allowed?(path)
+      LID_PLANNING_ALLOWED_PATTERNS.any? { |pattern| path.match?(pattern) }
+    end
+
 
     def inherited_priority_labels(project, issue)
       return [] unless project.inherit_priority_labels?

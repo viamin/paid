@@ -235,6 +235,7 @@ class AgentRun < ApplicationRecord
   validate :review_goal_requires_pull_request
   validate :issue_goal_requires_issue
   validates :trigger_type, presence: true, inclusion: { in: TRIGGER_TYPES }
+  validates :plan_doc_source, length: { maximum: 1000 }
   validates :created_issue_url, length: { maximum: 500 }
   validates :worktree_path, length: { maximum: 500 }
   validates :branch_name, length: { maximum: 255 }
@@ -935,7 +936,7 @@ class AgentRun < ApplicationRecord
     auto_pick: { label: "Auto-pick", indicator: 9 }
   }.freeze
   UNKNOWN_PRIORITY = { label: "Unknown", indicator: nil }.freeze
-  QUEUE_GOAL_PRIORITY_GOALS = %w[create_issue enhance_issue analyze_issue].freeze
+  QUEUE_GOAL_PRIORITY_GOALS = %w[create_issue enhance_issue analyze_issue lid_planning].freeze
 
   def queue_priority_tier
     return :manual if manual?
@@ -1466,6 +1467,8 @@ class AgentRun < ApplicationRecord
   end
 
   def plan_docs_present?
+    return true if plan_doc_source.present?
+
     Array(external_metadata["plan_docs"]).any? { |doc| doc.respond_to?(:[]) && doc["name"].present? }
   end
 
@@ -2619,10 +2622,16 @@ class AgentRun < ApplicationRecord
   end
 
   def prompt_for_lid_planning
+    docs = []
+    docs << { name: plan_doc_source } if plan_doc_source.present?
+    if external_metadata.present?
+      docs.concat(external_metadata.fetch("plan_docs", []))
+    end
+
     Prompts::BuildForLidPlanning.call(
       project_name: project.full_name,
       project_description: Prompts::BuildForLidPlanning.project_description_for(project),
-      plan_docs: external_metadata.fetch("plan_docs", [])
+      plan_docs: docs
     )
   end
 
@@ -2798,8 +2807,10 @@ class AgentRun < ApplicationRecord
   end
 
   def has_prompt_source
+    # lid_planning derives its prompt from Prompts::BuildForLidPlanning, so it
+    # needs no issue, custom prompt, or source PR.
+    return if lid_planning_goal?
     return if issue.present? || custom_prompt.present? || source_pull_request_number.present?
-    return if lid_planning_goal? && plan_docs_present?
 
     errors.add(:base, "must have either an issue, a custom prompt, or a source pull request")
   end

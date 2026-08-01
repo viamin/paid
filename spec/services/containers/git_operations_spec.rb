@@ -160,6 +160,14 @@ RSpec.describe Containers::GitOperations do
       expect(agent_run.reload.branch_name).to match(/\Apaid\/agent-#{agent_run.id}-[0-9a-f]{6}\z/)
     end
 
+    it "creates a lid/planning-bootstrap branch for lid_planning runs" do
+      agent_run.update!(issue: nil, custom_prompt: nil, goal: "lid_planning")
+
+      git_ops.clone_and_setup_branch
+
+      expect(agent_run.reload.branch_name).to match(%r{\Apaid/lid/planning-bootstrap-[0-9a-f]{6}\z})
+    end
+
     it "truncates long titles to keep branch names reasonable" do
       issue = create(:issue, project: project, title: "A very long issue title that should be truncated to keep branch names reasonable length")
       agent_run.update!(issue: issue)
