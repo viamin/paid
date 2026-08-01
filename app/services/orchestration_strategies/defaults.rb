@@ -216,7 +216,7 @@ module OrchestrationStrategies
           "codex" => "chatgpt-codex-connector"
         },
         "agent_types" => AgentRun::AGENT_TYPES,
-        "goals" => %w[create_pr create_issue review enhance_issue analyze_issue],
+        "goals" => AgentRun::GOALS,
         "non_container_goals" => %w[enhance_issue analyze_issue]
       }
     end

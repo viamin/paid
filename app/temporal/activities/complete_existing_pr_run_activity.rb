@@ -83,8 +83,6 @@ module Activities
     end
 
     def post_update_comment(client, project, pr_number, agent_run)
-      return unless summary_comments_enabled?(agent_run)
-
       body = build_comment_body(client, project, pr_number, agent_run)
       return if body.blank?
 
@@ -102,10 +100,14 @@ module Activities
     end
 
     def build_comment_body(client, project, pr_number, agent_run)
-      summary = generate_summary(client, project, pr_number, agent_run)
-      return if summary.blank?
+      summary = summary_comments_enabled?(agent_run) ? generate_summary(client, project, pr_number, agent_run) : nil
+      coherence = lid_coherence_section(agent_run)
+      return if summary.blank? && coherence.blank?
 
-      "#{COMMENT_MARKER}\n#{SUMMARY_PREFIX}\n\n#{summary}"
+      sections = [ "#{COMMENT_MARKER}\n#{SUMMARY_PREFIX}" ]
+      sections << summary if summary.present?
+      sections << coherence if coherence.present?
+      sections.join("\n\n")
     end
 
     def summary_comments_enabled?(agent_run)
@@ -145,6 +147,13 @@ module Activities
           metadata: { operation: "agent_update_summary" }
         },
         enforce_guardrails: false
+      )
+    end
+
+    def lid_coherence_section(agent_run)
+      Lid::CoherenceSection.render(
+        agent_run,
+        closing_note: "The run continued intentionally; address these findings in the next LID-aware pass."
       )
     end
   end

@@ -50,6 +50,9 @@ RSpec.describe Activities::RunAgentActivity do
 
     # Stub rtk init so existing execute-call counts aren't affected.
     allow(Containers::TokenOptimization).to receive(:rtk_init_for_runner)
+    # Stub LID coherence check so tests that don't explicitly test it
+    # aren't affected by the extra container-service call.
+    allow(activity).to receive(:run_lid_coherence_check)
   end
 
   def create_ab_test_assignment(slug:, agent_run:, variant_template:, status: "running")
@@ -1619,6 +1622,7 @@ RSpec.describe Activities::RunAgentActivity do
   end
 
   def expect_opencode_fallback_execution(opencode_runner)
+    allow(activity).to receive(:run_lid_coherence_check)
     call_count = 0
     expect(container_service).to receive(:execute).twice do |command, **opts|
       call_count += 1
@@ -1704,6 +1708,7 @@ RSpec.describe Activities::RunAgentActivity do
   end
 
   def expect_same_provider_rate_limit_fallback_execution(fallback_provider)
+    allow(activity).to receive(:run_lid_coherence_check)
     logger = instance_double(ActiveSupport::Logger, info: nil, warn: nil, error: nil)
     allow(activity).to receive(:logger).and_return(logger)
 

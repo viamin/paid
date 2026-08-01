@@ -14,6 +14,17 @@ RSpec.describe Tools::TriggerAgentRun do
     end
   end
 
+  describe ".input_schema" do
+    it "requires goal=lid_planning alongside plan_docs so clients get the real contract at validation time" do
+      plan_docs_branch = described_class.input_schema[:anyOf].find do |branch|
+        branch[:required]&.include?("plan_docs")
+      end
+
+      expect(plan_docs_branch[:required]).to include("goal")
+      expect(plan_docs_branch[:properties][:goal][:const]).to eq("lid_planning")
+    end
+  end
+
   describe "#call" do
     let(:project) { create(:project, account: account) }
     let(:issue) { create(:issue, project: project) }
@@ -92,6 +103,74 @@ RSpec.describe Tools::TriggerAgentRun do
       it "raises when neither issue_id nor custom_prompt is given" do
         expect {
           tool.call(project_id: project.id, goal: "create_issue", confirmed: true)
+        }.to raise_error(ArgumentError, "issue_id or custom_prompt is required")
+      end
+    end
+
+    context "with plan_docs for lid_planning" do
+      it "stores named plan docs in external_metadata" do
+        result = tool.call(
+          project_id: project.id,
+          goal: "lid_planning",
+          custom_prompt: "Plan the auth module.",
+          plan_docs: [ { "name" => "docs/rdrs/RDR-051.md" } ],
+          confirmed: true
+        )
+
+        run = AgentRun.find(result[:id])
+        expect(run.external_metadata["plan_docs"]).to eq(
+          [ { "name" => "docs/rdrs/RDR-051.md" } ]
+        )
+      end
+
+      it "filters out entries without a name" do
+        result = tool.call(
+          project_id: project.id,
+          goal: "lid_planning",
+          custom_prompt: "Plan the auth module.",
+          plan_docs: [ { "name" => "docs/rdrs/RDR-051.md" }, { "path" => "no-name" } ],
+          confirmed: true
+        )
+
+        run = AgentRun.find(result[:id])
+        expect(run.external_metadata["plan_docs"]).to eq(
+          [ { "name" => "docs/rdrs/RDR-051.md" } ]
+        )
+      end
+
+      it "creates a run from plan_docs alone with no issue_id or custom_prompt" do
+        result = tool.call(
+          project_id: project.id,
+          goal: "lid_planning",
+          plan_docs: [ { "name" => "docs/rdrs/RDR-051.md" } ],
+          confirmed: true
+        )
+
+        expect(result[:status]).to eq("queued")
+        expect(result[:issue_id]).to be_nil
+
+        run = AgentRun.find(result[:id])
+        expect(run.issue_id).to be_nil
+        expect(run.custom_prompt).to be_nil
+        expect(run.external_metadata["plan_docs"]).to eq(
+          [ { "name" => "docs/rdrs/RDR-051.md" } ]
+        )
+      end
+
+      it "raises when lid_planning has no plan_docs, issue_id, or custom_prompt" do
+        expect {
+          tool.call(project_id: project.id, goal: "lid_planning", confirmed: true)
+        }.to raise_error(ArgumentError, "issue_id or custom_prompt is required")
+      end
+
+      it "raises when plan_docs are given for a non-lid_planning goal without issue_id or custom_prompt" do
+        expect {
+          tool.call(
+            project_id: project.id,
+            goal: "create_pr",
+            plan_docs: [ { "name" => "docs/rdrs/RDR-051.md" } ],
+            confirmed: true
+          )
         }.to raise_error(ArgumentError, "issue_id or custom_prompt is required")
       end
     end

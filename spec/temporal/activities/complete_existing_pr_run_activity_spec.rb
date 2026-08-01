@@ -66,6 +66,26 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
       activity.execute(agent_run_id: agent_run.id)
     end
 
+    it "surfaces coherence soft-block even when summary comments are disabled" do
+      agent_run.update!(
+        external_metadata: {
+          "pre_run_head_sha" => "fedcba9876543210012345678901234567890abc",
+          "lid_coherence" => {
+            "status" => "failed",
+            "summary_line" => "Coherence soft-block: 1 reverse orphan."
+          }
+        }
+      )
+
+      expect(github_client).not_to receive(:compare_summary)
+      expect(github_client).to receive(:add_comment) do |_, _, body|
+        expect(body).to include("## LID Coherence Soft-Block")
+        expect(body).to include("Coherence soft-block: 1 reverse orphan.")
+      end
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
     it "adds a generated summary comment when summary comments are enabled" do
       enable_summary_comments
       allow(TokenUsageTracker).to receive(:track).and_call_original

@@ -130,6 +130,7 @@ module Projects
       issue = resolve_issue
       priority_tier = resolve_priority_tier
       blocked_by_issue_ids = resolve_blocked_by_issue_ids
+      plan_docs = resolve_plan_docs
 
       if goal == "review"
         pr_ids = Array(params[:pull_request_ids]).filter_map { |id| Integer(id, exception: false) }.select(&:positive?)
@@ -162,7 +163,7 @@ module Projects
         )
       else
         source_pr_number = resolve_pull_request
-        unless issue || custom_prompt || source_pr_number
+        unless issue || custom_prompt || source_pr_number || (goal == "lid_planning" && plan_docs.present?)
           redirect_to new_project_agent_run_path(@project, goal: goal),
             alert: "Please select an issue, provide a custom prompt, or select a pull request."
           return
@@ -183,7 +184,8 @@ module Projects
           source_pull_request_number: source_pr_number,
           goal: goal,
           priority_tier: priority_tier,
-          blocked_by_issue_ids: blocked_by_issue_ids
+          blocked_by_issue_ids: blocked_by_issue_ids,
+          plan_docs: plan_docs
         )
       end
     end
@@ -618,6 +620,15 @@ module Projects
       Array(params[:blocked_by_issue_ids]).filter_map { |id| Integer(id, exception: false) }.select(&:positive?)
     end
 
+    def resolve_plan_docs
+      Array(params[:plan_docs]).filter_map do |doc|
+        next unless doc.respond_to?(:[])
+
+        name = doc["name"]
+        { "name" => name.to_s } if name.present?
+      end
+    end
+
     def apply_priority_label(issue, tier)
       label_name = @project.priority_label_for(tier)
       return if label_name.blank?
@@ -676,7 +687,7 @@ module Projects
       @agent_run.reload
     end
 
-    def create_agent_run(issue: nil, custom_prompt: nil, source_pull_request_number: nil, agent_type: nil, runner_identifier: nil, goal: nil, trigger_type: "manual", priority_tier: nil, blocked_by_issue_ids: [])
+    def create_agent_run(issue: nil, custom_prompt: nil, source_pull_request_number: nil, agent_type: nil, runner_identifier: nil, goal: nil, trigger_type: "manual", priority_tier: nil, blocked_by_issue_ids: [], plan_docs: [])
       goal ||= params[:goal].presence || "create_pr"
       goal = "create_pr" unless AgentRun::GOALS.include?(goal)
 
@@ -691,6 +702,10 @@ module Projects
 
       resolved_agent_type = runner_key_to_agent_type(resolved_runner.runner_key)
 
+      host_attributes = resolved_container_host_attributes(runner: resolved_runner)
+      external_metadata = host_attributes[:external_metadata] || {}
+      external_metadata = external_metadata.merge("plan_docs" => plan_docs) if plan_docs.any?
+
       ActiveRecord::Base.transaction do
         agent_run = AgentRun.create!(
           project: @project,
@@ -701,7 +716,8 @@ module Projects
           custom_prompt: custom_prompt,
           source_pull_request_number: source_pull_request_number,
           goal: goal,
-          **resolved_container_host_attributes(runner: resolved_runner),
+          container_host: host_attributes[:container_host],
+          external_metadata: external_metadata,
           trigger_type: trigger_type,
           status: "queued",
           priority_tier: priority_tier,

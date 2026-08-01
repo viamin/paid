@@ -32,6 +32,7 @@ in-repo as a reference.
 | `ears-syntax.md` | EARS syntax, spec-ID format, scope disambiguation | vendored verbatim |
 | `decision-doc-template.md` | Decision-doc structure + earns-its-place heuristic | vendored verbatim |
 | `audit-checklist.md` | The five coherence/audit checks | vendored verbatim |
+| `incremental-tagging.md` | Brownfield `@spec` maturation policy | Paid-specific |
 
 The runnable coherence check is `bin/coherence-check.mjs` (a vendored +
 Rails-adapted reference implementation — adds `*.rb` to the scan and `vendor`,
@@ -49,6 +50,9 @@ escapes out of the line parser), declared in `CLAUDE.md` under `## LID Tooling`.
    `docs/intent/`.
 4. Run `bin/coherence-check.mjs` for the structural checks in
    `workflow.md` § Coherence verification.
+5. Use `incremental-tagging.md` for the default brownfield policy: mature
+   `@spec` coverage as implementation runs touch each area; do not stage a
+   mandatory repo-wide tagging sweep by default.
 
 For the project-level *policy* (mode, conventions, navigation), see the
 `## Linked-Intent Development (LID)` section of `CLAUDE.md` (canonical;

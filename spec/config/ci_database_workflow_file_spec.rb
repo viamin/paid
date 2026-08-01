@@ -62,6 +62,13 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
         )
       end
 
+      def expect_database_yml_connection!(job, expectations)
+        return if expectations.fetch("creates_application_role")
+
+        expect(job.fetch("env")).not_to have_key("DATABASE_URL")
+        expect(job.fetch("env")).not_to have_key("CABLE_DATABASE_URL")
+      end
+
       jobs.each do |job_name, expectations|
         it "uses the expected database connection flow for #{job_name}" do
           job = workflow.fetch("jobs").fetch(job_name)
@@ -79,6 +86,7 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
           )
 
           expect_application_role_database_url!(job, expectations)
+          expect_database_yml_connection!(job, expectations)
 
           if expectations.fetch("creates_application_role")
             expect(step_names).to include("Create application database role")
