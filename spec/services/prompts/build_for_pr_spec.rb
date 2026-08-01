@@ -31,76 +31,6 @@ RSpec.describe Prompts::BuildForPr do
     OpenStruct.new(user: OpenStruct.new(login: "trusteduser"), body: body)
   end
 
-  def planning_pr_data(pr_data)
-    planning_pr = pr_data.dup
-    planning_pr.body = <<~MARKDOWN
-      This PR fixes the auth redirect bug.
-
-      ## Confirm These Inferred Decisions
-
-      - [ ] `docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md`: Replace inferred rationale
-    MARKDOWN
-    planning_pr
-  end
-
-  def docs_only_planning_pr_patches
-    [
-      { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md",
-        status: "modified",
-        patch: "@@ -0,0 +1,3 @@\n+## Decisions\n+\n+- Replace inferred rationale [inferred]\n" },
-      { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-specs.md",
-        status: "modified",
-        patch: "@@ -0,0 +1,3 @@\n+## Open Questions\n+\n+- Which rationale should be confirmed?\n" },
-      { filename: "AGENTS.md",
-        status: "modified",
-        patch: "@@ -0,0 +1 @@\n+Agent instructions\n" }
-    ]
-  end
-
-  def planning_review_thread(path:, body:, line: 3)
-    [
-      {
-        id: "thread_1",
-        is_resolved: false,
-        comments: [
-          { body:, path:, line:, author: "trusteduser" }
-        ]
-      }
-    ]
-  end
-
-
-  def changes_requested_review
-    {
-      id: 5001,
-      user_login: "trusteduser",
-      state: "CHANGES_REQUESTED",
-      body: "Please update the inferred rationale",
-      submitted_at: Time.now,
-      commit_id: "abc123"
-    }
-  end
-
-  def stub_planning_pr_review_context(pr_body:)
-    planning_pr = pr_data.dup
-    planning_pr.body = pr_body
-    allow(github_client).to receive(:pull_request)
-      .with(project.full_name, 42)
-      .and_return(planning_pr)
-    allow(github_client).to receive(:pull_request_file_patches)
-      .with(project.full_name, 42, head_sha: instance_of(String))
-      .and_return(docs_only_planning_pr_patches)
-    allow(github_client).to receive(:pull_request_reviews)
-      .with(project.full_name, 42)
-      .and_return([ changes_requested_review ])
-    allow(github_client).to receive(:review_threads)
-      .and_return(
-        planning_review_thread(
-          path: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md",
-          body: "Replace this inferred rationale"
-        )
-      )
-  end
   def expect_prompt_to_exclude_sections(prompt, *section_names)
     section_names.each do |section_name|
       expect(prompt).not_to include(section_name)
@@ -145,11 +75,8 @@ RSpec.describe Prompts::BuildForPr do
     allow(github_client).to receive_messages(
       check_runs_for_ref: [],
       review_threads: [],
-      recent_issue_comments: [],
-      pull_request_files: [],
-      pull_request_file_patches: []
+      recent_issue_comments: []
     )
-    allow(github_client).to receive(:file_content).and_return(nil)
     allow(AgentRuns::UserSettingsResolver).to receive(:call).and_return(user_settings)
   end
 
@@ -267,66 +194,6 @@ RSpec.describe Prompts::BuildForPr do
 
     it "omits issue requirements section when no issue" do
       expect(prompt).not_to include("Issue Requirements")
-    end
-
-    it "includes intent-confirmation guidance for docs-only planning PRs with review threads" do
-      stub_planning_pr_review_context(pr_body: planning_pr_data(pr_data).body)
-
-      expect(prompt).to include("Intent Confirmation Follow-Up")
-      expect(prompt).to include("Replace the `[inferred]` marker")
-      expect(prompt).to include("docs-only LID planning PR")
-    end
-
-    it "derives planning-PR status from the live diff even when the PR body is trimmed of the checklist heading" do
-      stub_planning_pr_review_context(pr_body: "Planning PR - body edited, checklist section removed")
-
-      expect(prompt).to include("Intent Confirmation Follow-Up")
-    end
-
-    it "omits intent-confirmation guidance when the review thread targets a non-[inferred] line" do
-      stub_planning_pr_review_context(pr_body: planning_pr_data(pr_data).body)
-      # Override the review thread to target AGENTS.md line 1, which has no
-      # [inferred] marker in the diff patch.
-      allow(github_client).to receive(:review_threads)
-        .and_return(
-          planning_review_thread(
-            path: "AGENTS.md",
-            body: "This is an ordinary docs review",
-            line: 1
-          )
-        )
-
-      expect(prompt).not_to include("Intent Confirmation Follow-Up")
-    end
-
-    it "omits intent-confirmation guidance when the planning checklist is stale against the live diff" do
-      allow(github_client).to receive(:pull_request)
-        .with(project.full_name, 42)
-        .and_return(planning_pr_data(pr_data))
-      allow(github_client).to receive_messages(pull_request_file_patches: [
-          { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md", status: "modified", patch: "" },
-          { filename: "app/services/prompts/build_for_pr.rb", status: "modified", patch: "" }
-        ], review_threads: planning_review_thread(
-            path: "app/services/prompts/build_for_pr.rb",
-            body: "This now needs ordinary review feedback handling"
-          ))
-
-      expect(prompt).not_to include("Intent Confirmation Follow-Up")
-    end
-
-    it "omits intent-confirmation guidance for ordinary docs PRs without the planning checklist" do
-      allow(github_client).to receive(:review_threads)
-        .and_return([
-          {
-            id: "thread_1",
-            is_resolved: false,
-            comments: [
-              { body: "Clarify this section", path: "README.md", line: 10, author: "trusteduser" }
-            ]
-          }
-        ])
-
-      expect(prompt).not_to include("Intent Confirmation Follow-Up")
     end
 
     it "appends global style guides using raw_content" do
