@@ -35,7 +35,7 @@ The original design recommended a Gaussian Process because it supplies both a me
 
 ### Production interface
 
-The optimizer trains and queries the surrogate through `ConfigurationBundles::SurrogateOutcomeModel` (`optimizer.rb#trained_surrogate_model`): `SurrogateOutcomeModel.train(dataset:)` returns a serializable `TrainedState`; `SurrogateOutcomeModel.call(bundle_definition:, trained_state:)` returns a `Prediction` carrying `predicted_objective_score`, `predicted_quality_score`, `predicted_success_probability`, `predicted_cost_cents`, `predicted_duration_seconds`, `uncertainty`, and `sample_count`. The optimizer's expected-improvement acquisition function consumes the objective score and uncertainty directly.
+The optimizer trains and queries the surrogate through `ConfigurationBundles::SurrogateOutcomeModel` (`optimizer.rb#trained_surrogate_model`). `SurrogateOutcomeModel.train(dataset:)` returns a trained `SurrogateOutcomeModel` instance whose `trained_state` reader exposes the serializable `TrainedState` payload. When persistence or transport is needed, callers serialize that payload with `SurrogateOutcomeModel.serialize_trained_state(model.trained_state)` and restore it with `deserialize_trained_state`. `SurrogateOutcomeModel.call(bundle_definition:, trained_state:)` accepts that trained-state payload and returns a `Prediction` carrying `predicted_objective_score`, `predicted_quality_score`, `predicted_success_probability`, `predicted_cost_cents`, `predicted_duration_seconds`, `uncertainty`, and `sample_count`. The optimizer's expected-improvement acquisition function consumes the objective score and uncertainty directly.
 
 ### When a GP would be revisited
 
