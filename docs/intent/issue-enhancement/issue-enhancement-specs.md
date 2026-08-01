@@ -18,7 +18,7 @@
   questions, the system SHALL continue using the existing enhancement comment
   marker and `needs_input` flow rather than creating a new state or surface.
   *Tests:* `spec/temporal/activities/enhance_issue_activity_spec.rb`.
-  *Code:* `app/temporal/activities/enhance_issue_activity.rb#complete_with_questions`,
+  *Code:* `app/temporal/activities/enhance_issue_activity.rb#prompt_for`,
   `app/services/clarifying_questions/load.rb`.
 
 ## LID-aware prompt materialization
@@ -27,7 +27,7 @@
   `lid_mode` and the issue has answered clarifying questions, the system SHALL
   surface those answers into the `create_pr` issue prompt as elicited intent.
   *Tests:* `spec/services/prompts/build_for_issue_spec.rb`.
-  *Code:* `app/services/prompts/build_for_issue.rb#elicited_intent_section`.
+  *Code:* `app/services/prompts/build_for_issue.rb#clarifying_answers_section`.
 
 - [x] **ISSUE-ENHANCEMENT-004** — When a project is not marked with `lid_mode`,
   the system SHALL omit the elicited-intent section even if answered

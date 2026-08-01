@@ -18,7 +18,7 @@ module ClarifyingQuestions
     def call
       return unless github_available?
 
-      extraction = ExtractAnswerPairs.call(project: project, issue_comments: issue_comments)
+      extraction = ExtractAnswerPairs.call(project: project, issue_comments: issue_comments, issue: issue)
       qa_pairs = extraction.qa_pairs
       return if qa_pairs.empty?
 

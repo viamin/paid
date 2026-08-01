@@ -130,7 +130,7 @@ module Prompts
     # this section to rendered PromptVersion custom_prompts, avoiding
     # the effective_prompt bypass described in the review.
     # When +issue_comments+ is supplied (e.g. by the instance builder, which
-    # shares one fetch with #elicited_intent_section), the network round-trip
+    # shares one fetch with #clarifying_answers_section), the network round-trip
     # is skipped and the supplied comments are filtered in place.
     def self.conversation_section_for(project:, issue:, github_client: nil, issue_comments: nil)
       return "" unless github_client
@@ -269,7 +269,7 @@ module Prompts
     end
 
     # Fetched once and shared by #conversation_section and
-    # #elicited_intent_section so the comment thread is downloaded a single
+    # #clarifying_answers_section so the comment thread is downloaded a single
     # time per prompt build, regardless of how many sections consume it.
     def issue_comments
       @issue_comments ||= begin

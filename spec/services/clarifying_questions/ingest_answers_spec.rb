@@ -4,7 +4,7 @@ require "rails_helper"
 
 RSpec.describe ClarifyingQuestions::IngestAnswers do
   let(:project) { create(:project) }
-  let(:issue) { create(:issue, project: project) }
+  let(:issue) { create(:issue, project: project, github_updated_at: 10.minutes.ago) }
   let(:github_client) { instance_double(GithubClient) }
   let(:trusted_login) { "viamin" }
   let(:enhancement_body) do
@@ -146,7 +146,7 @@ RSpec.describe ClarifyingQuestions::IngestAnswers do
 
     context "when another project has already ingested the same answers" do
       let(:other_project) { create(:project) }
-      let(:other_issue) { create(:issue, project: other_project) }
+      let(:other_issue) { create(:issue, project: other_project, github_updated_at: 10.minutes.ago) }
       let(:other_github_client) { instance_double(GithubClient) }
 
       before do
@@ -185,6 +185,21 @@ RSpec.describe ClarifyingQuestions::IngestAnswers do
       before do
         enhancement = trusted_comment(body: enhancement_body, created_at: 2.minutes.ago)
         answers = trusted_comment(body: answers_body, created_at: 5.minutes.ago)
+        allow(github_client).to receive(:issue_comments).and_return([ enhancement, answers ])
+      end
+
+      it "does not create any chunks" do
+        described_class.call(project: project, issue: issue)
+
+        expect(KnowledgeChunk.where(project: project, chunk_type: "qa_pair")).to be_empty
+      end
+    end
+
+    context "when the issue was edited after the answer comment" do
+      before do
+        issue.update!(github_updated_at: 1.minute.ago)
+        enhancement = trusted_comment(body: enhancement_body, created_at: 5.minutes.ago)
+        answers = trusted_comment(body: answers_body, created_at: 2.minutes.ago)
         allow(github_client).to receive(:issue_comments).and_return([ enhancement, answers ])
       end
 

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "ostruct"
 
 RSpec.describe ClarifyingQuestions::ExtractAnswerPairs do
   let(:project) { create(:project) }
@@ -85,6 +86,20 @@ RSpec.describe ClarifyingQuestions::ExtractAnswerPairs do
 
   it "returns no pairs when the issue was edited after the answers were posted" do
     issue.github_updated_at = Time.zone.parse("2026-07-30 14:00:00 UTC")
+
+    result = described_class.call(
+      project: project,
+      issue: issue,
+      issue_comments: [ enhancement_comment, answer_comment ]
+    )
+
+    expect(result.qa_pairs).to eq([])
+    expect(result.answer_comment).to be_nil
+  end
+
+  it "returns no pairs when issue.updated_at is newer than the answer comment" do
+    issue.github_updated_at = nil
+    issue.updated_at = Time.zone.parse("2026-07-30 14:00:00 UTC")
 
     result = described_class.call(
       project: project,
