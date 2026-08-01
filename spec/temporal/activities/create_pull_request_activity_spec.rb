@@ -455,6 +455,85 @@ RSpec.describe Activities::CreatePullRequestActivity do
         expect(captured_body).to include("Confirm these inferred decisions")
         expect(captured_body).to include("- [ ] core: async job processing via GoodJob")
       end
+
+      it "extracts checkbox block as checklist with a single decision item" do
+        summary = <<~SUMMARY
+          ## LID Analysis
+
+          Only one inferred decision this run:
+
+          - [ ] core: async job processing via GoodJob
+        SUMMARY
+        lid_agent_run.log!("stdout", summary)
+
+        allow(AgentHarness).to receive(:send_message)
+          .and_return(instance_double(AgentHarness::Response, success?: true,
+                                     output: "Generated description without checklist."))
+
+        captured_body = nil
+        allow(github_client).to receive(:create_pull_request) do |*_args, **kwargs|
+          captured_body = kwargs[:body]
+          pr_response
+        end
+        activity.execute(agent_run_id: lid_agent_run.id)
+
+        expect(captured_body).to include("Confirm these inferred decisions")
+        expect(captured_body).to include("- [ ] core: async job processing via GoodJob")
+      end
+
+      context "when the agent edits files outside the docs allowlist" do
+        before do
+          # The allowlist validation needs both commit SHAs to fetch changed
+          # files from the GitHub compare API.
+          lid_agent_run.update!(result_commit_sha: "abc123def456789012345678901234567890abcd")
+        end
+
+        it "raises an error when non-docs files are present" do
+          allow(github_client).to receive(:compare_changed_files)
+            .and_return([ "docs/high-level-design.md", "app/models/foo.rb" ])
+
+          expect {
+            activity.execute(agent_run_id: lid_agent_run.id)
+          }.to raise_error(RuntimeError, /outside allowlist/)
+        end
+
+        it "raises an error when only non-docs files are present" do
+          allow(github_client).to receive(:compare_changed_files)
+            .and_return([ "app/models/foo.rb", "spec/models/foo_spec.rb" ])
+
+          expect {
+            activity.execute(agent_run_id: lid_agent_run.id)
+          }.to raise_error(RuntimeError, /outside allowlist/)
+        end
+
+        it "allows docs/ files without raising" do
+          allow(github_client).to receive(:compare_changed_files)
+            .and_return([ "docs/high-level-design.md", "docs/intent/auth/auth-specs.md" ])
+
+          expect { activity.execute(agent_run_id: lid_agent_run.id) }.not_to raise_error
+        end
+
+        it "allows instruction files without raising" do
+          allow(github_client).to receive(:compare_changed_files)
+            .and_return([ "docs/high-level-design.md", "AGENTS.md" ])
+
+          expect { activity.execute(agent_run_id: lid_agent_run.id) }.not_to raise_error
+        end
+
+        it "allows CLAUDE.md without raising" do
+          allow(github_client).to receive(:compare_changed_files)
+            .and_return([ "docs/high-level-design.md", "CLAUDE.md" ])
+
+          expect { activity.execute(agent_run_id: lid_agent_run.id) }.not_to raise_error
+        end
+
+        it "allows .github/copilot-instructions.md without raising" do
+          allow(github_client).to receive(:compare_changed_files)
+            .and_return([ "docs/high-level-design.md", ".github/copilot-instructions.md" ])
+
+          expect { activity.execute(agent_run_id: lid_agent_run.id) }.not_to raise_error
+        end
+      end
     end
 
     it "does not fail when label addition fails" do

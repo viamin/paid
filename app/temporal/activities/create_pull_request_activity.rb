@@ -25,6 +25,12 @@ module Activities
           pr = existing_pr
           pr_action = "reused"
         elsif branch_exists
+          # LID planning runs are docs-only: verify the changed files
+          # before creating the PR. If the agent edited code outside of
+          # docs/ or the instruction file, fail the run instead of
+          # publishing a misleading "Planning PR".
+          validate_lid_planning_changed_files!(agent_run, client) if agent_run.lid_planning_goal?
+
           pr_body = build_pr_body(issue, agent_run, client: client)
           pr, pr_action = create_pull_request_or_reuse(
             client, project, agent_run, issue, pr_body, agent_run_id: agent_run_id
@@ -304,7 +310,7 @@ module Activities
       # explicit heading. Look for a block of consecutive checkbox lines
       # and wrap them in the expected heading.
       checkbox_block = summary.match(
-        /(?:^[-*]\s*\[[ x]\]\s*.+$\n?){2,}/m
+        /(?:^[-*]\s*\[[ x]\]\s*.+$\n?){1,}/m
       )
       return nil unless checkbox_block
 
@@ -558,6 +564,46 @@ module Activities
         agent_run.result_commit_sha
       )
     end
+
+    # Validates that a lid_planning run only touches docs/ and instruction
+    # files. The prompt instructs the agent to produce docs-only changes,
+    # but this server-side check ensures the PR never contains code edits
+    # when the agent strays outside the docs boundary.
+    #
+    # Raises RuntimeError when non-conforming files are detected. Returns
+    # nil when the check cannot be performed (no client or missing SHAs).
+    LID_PLANNING_ALLOWED_PATTERNS = [
+      %r{\Adocs/},
+      %r{\A\.github/copilot-instructions\.md\z},
+      %r{\AAGENTS\.md\z},
+      %r{\ACLAUDE\.md\z}
+    ].freeze
+
+    def validate_lid_planning_changed_files!(agent_run, client)
+      changed_files = fetch_changed_files(agent_run, client)
+      return if changed_files.nil?
+
+      rejected = changed_files.reject { |path| lid_planning_allowed?(path) }
+      return if rejected.empty?
+
+      logger.error(
+        message: "agent_execution.lid_planning_allowlist_violation",
+        agent_run_id: agent_run.id,
+        rejected_files: rejected,
+        total_changed: changed_files.size
+      )
+      agent_run.log!(
+        "system",
+        "LID planning allowlist violation: #{rejected.to_sentence} " \
+        "is outside docs/ and the instruction file. The run is aborted."
+      )
+      raise "LID planning changed files outside allowlist: #{rejected.join(', ')}"
+    end
+
+    def lid_planning_allowed?(path)
+      LID_PLANNING_ALLOWED_PATTERNS.any? { |pattern| path.match?(pattern) }
+    end
+
 
     def inherited_priority_labels(project, issue)
       return [] unless project.inherit_priority_labels?
