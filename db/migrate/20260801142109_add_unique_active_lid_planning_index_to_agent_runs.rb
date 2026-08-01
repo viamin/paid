@@ -6,7 +6,7 @@ class AddUniqueActiveLidPlanningIndexToAgentRuns < ActiveRecord::Migration[8.1]
   def up
     add_index :agent_runs, :project_id,
       unique: true,
-      where: "goal = 'lid_planning' AND status IN ('queued', 'pending', 'running', 'paused')",
+      where: "goal = 'lid_planning' AND status IN ('queued', 'running', 'paused', 'rate_limited')",
       name: "idx_agent_runs_unique_active_lid_planning",
       algorithm: :concurrently,
       if_not_exists: true
