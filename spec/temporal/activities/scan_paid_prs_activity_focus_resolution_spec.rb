@@ -79,22 +79,16 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       allow(client).to receive(:pull_request_file_patches)
         .with(project.full_name, issue.github_number)
         .and_return([
-          "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md",
-          "docs/intent/lid-pr-confirmation/lid-pr-confirmation-specs.md",
-          "AGENTS.md"
+          { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md",
+            status: "modified",
+            patch: "@@ -0,0 +1 @@\n+- Confirmed later [inferred]\n" },
+          { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-specs.md",
+            status: "modified",
+            patch: "@@ -0,0 +1,3 @@\n+## Open Questions\n+\n+- Which decision needs confirmation?\n" },
+          { filename: "AGENTS.md",
+            status: "modified",
+            patch: "@@ -0,0 +1 @@\n+Agent instructions\n" }
         ])
-      allow(client).to receive(:pull_request)
-        .with(project.full_name, issue.github_number)
-        .and_return(PullRequestDouble.new(HeadDouble.new("abc123")))
-      allow(client).to receive(:file_content)
-        .with(project.full_name, path: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md", ref: "abc123")
-        .and_return("## Decisions\n\n- Confirmed later [inferred]\n")
-      allow(client).to receive(:file_content)
-        .with(project.full_name, path: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-specs.md", ref: "abc123")
-        .and_return("## Open Questions\n\n- Which decision needs confirmation?\n")
-      allow(client).to receive(:file_content)
-        .with(project.full_name, path: "AGENTS.md", ref: "abc123")
-        .and_return("Agent instructions\n")
     end
 
     let(:activity) { described_class.new }

@@ -205,10 +205,10 @@ RSpec.describe Lid::BuildInferenceChecklist do
       expect(described_class.docs_only_planning_pr?(changed_files: changed)).to be(false)
     end
 
-    it "is true when only file paths are available (conservative: assume markers present)" do
+    it "is false when only file paths are available (no patch, no content: do not guess)" do
       changed = %w[docs/intent/lid/lid-design.md docs/high-level-design.md AGENTS.md]
 
-      expect(described_class.docs_only_planning_pr?(changed_files: changed)).to be(true)
+      expect(described_class.docs_only_planning_pr?(changed_files: changed)).to be(false)
     end
 
     it "is false when a touched file has an existing Open Questions heading not added by the PR" do

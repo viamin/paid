@@ -62,13 +62,14 @@ module Lid
           else
             # Patch and content are both unavailable — GitHub omits the
             # patch payload for oversized diffs, and this caller did not
-            # supply file content.  Be conservative: assume planning
-            # markers are present so a real planning PR never silently
-            # falls through to ordinary PR handling.  The caller
-            # (docs_only_planning_pr?) only invokes this method after
-            # docs_only_paths? has already confirmed the diff touches only
-            # docs/intent, docs/high-level-design.md, AGENTS.md, etc.
-            true
+            # supply file content.  Do NOT guess: assume planning markers
+            # are absent so an ordinary docs-only PR whose diff happens to
+            # be oversized is never silently classified as a Planning PR.
+            # A genuine Planning PR whose diff is too large for GitHub to
+            # return a patch will simply not get the automatic checklist
+            # (the author can reduce the diff size, and reviewers can
+            # still manually request changes).
+            false
           end
         end
       end
