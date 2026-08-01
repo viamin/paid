@@ -24,6 +24,7 @@ RSpec.describe Tools::Registry do
       write_repo_file
       apply_patch
       git_branch_create
+      run_shell
       operator_suspend_account
       operator_reactivate_account
       operator_deactivate_account
@@ -171,6 +172,34 @@ RSpec.describe Tools::Registry do
       names = described_class.chat_definitions_for(user: viewer, session: session).map { |definition| definition[:name] }
 
       expect(names).not_to include("record_change_intent")
+    end
+
+    it "does not advertise run_shell when chat_shell_enabled is false" do
+      account.tenant_setting!.update!(features: account.tenant_setting!.features.deep_merge("chat_settings" => { "chat_shell_enabled" => false }))
+      session = build(:chat_session, :workspace, account:, created_by: user, project:)
+
+      names = described_class.chat_definitions_for(user: user, session: session).map { |definition| definition[:name] }
+
+      expect(names).not_to include("run_shell")
+    end
+
+    it "advertises run_shell when chat_shell_enabled is true and user can run_agent?" do
+      account.tenant_setting!.update!(features: account.tenant_setting!.features.deep_merge("chat_settings" => { "chat_shell_enabled" => true }))
+      session = build(:chat_session, :workspace, account:, created_by: user, project:)
+
+      names = described_class.chat_definitions_for(user: user, session: session).map { |definition| definition[:name] }
+
+      expect(names).to include("run_shell")
+    end
+
+    it "does not advertise run_shell when user lacks run_agent? on the session project" do
+      account.tenant_setting!.update!(features: account.tenant_setting!.features.deep_merge("chat_settings" => { "chat_shell_enabled" => true }))
+      viewer = create(:user, :viewer, account:)
+      session = build(:chat_session, :workspace, account:, created_by: viewer, project:)
+
+      names = described_class.chat_definitions_for(user: viewer, session: session).map { |definition| definition[:name] }
+
+      expect(names).not_to include("run_shell")
     end
   end
 
