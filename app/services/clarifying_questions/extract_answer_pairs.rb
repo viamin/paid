@@ -18,7 +18,7 @@ module ClarifyingQuestions
       enhancement_comment = find_enhancement_comment
       return empty_result unless enhancement_comment
 
-      answer_comment = find_answer_comment
+      answer_comment = find_answer_comment(enhancement_comment)
       return empty_result unless answer_comment
 
       questions = Parse.call(comment_body: enhancement_comment.body.to_s)
@@ -52,10 +52,15 @@ module ClarifyingQuestions
       end
     end
 
-    def find_answer_comment
+    def find_answer_comment(enhancement_comment)
       admitted_comments.reverse.find do |comment|
-        comment.body.to_s.include?(Load::ANSWER_MARKER)
+        comment.body.to_s.include?(Load::ANSWER_MARKER) &&
+          answer_satisfies_latest_questions?(answer_comment: comment, enhancement_comment: enhancement_comment)
       end
+    end
+
+    def answer_satisfies_latest_questions?(answer_comment:, enhancement_comment:)
+      answer_comment.created_at > enhancement_comment.created_at
     end
 
     def pair_qa(questions, parsed_pairs)

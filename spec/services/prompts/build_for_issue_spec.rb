@@ -170,7 +170,7 @@ RSpec.describe Prompts::BuildForIssue do
           .exactly(1).time
       end
 
-      it "omits elicited intent when the issue was edited after the answers were posted" do
+      it "keeps elicited intent when unrelated issue activity advances github_updated_at" do
         issue.github_updated_at = Time.zone.parse("2026-07-30 14:00:00 UTC")
 
         prompt = described_class.call(
@@ -179,8 +179,8 @@ RSpec.describe Prompts::BuildForIssue do
           github_client: github_client
         )
 
-        expect(prompt).not_to include("# Elicited Intent")
-        expect(prompt).not_to include("Treat them as confirmed human intent")
+        expect(prompt).to include("# Elicited Intent")
+        expect(prompt).to include("Treat them as confirmed human intent")
       end
     end
 

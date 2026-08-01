@@ -195,7 +195,7 @@ RSpec.describe ClarifyingQuestions::IngestAnswers do
       end
     end
 
-    context "when the issue was edited after the answer comment" do
+    context "when unrelated issue activity advanced github_updated_at after answers were posted" do
       before do
         issue.update!(github_updated_at: 1.minute.ago)
         enhancement = trusted_comment(body: enhancement_body, created_at: 5.minutes.ago)
@@ -203,10 +203,10 @@ RSpec.describe ClarifyingQuestions::IngestAnswers do
         allow(github_client).to receive(:issue_comments).and_return([ enhancement, answers ])
       end
 
-      it "does not create any chunks" do
+      it "still creates chunks for the matching answered questions" do
         described_class.call(project: project, issue: issue)
 
-        expect(KnowledgeChunk.where(project: project, chunk_type: "qa_pair")).to be_empty
+        expect(KnowledgeChunk.where(project: project, chunk_type: "qa_pair").count).to eq(2)
       end
     end
 

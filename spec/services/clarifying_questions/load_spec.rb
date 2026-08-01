@@ -135,6 +135,41 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
       end
     end
 
+    context "when matching answers predate repeated clarifying questions" do
+      before do
+        original_enhancement_comment = double(
+          body: comment_body,
+          user: double(login: trusted_login),
+          created_at: 3.minutes.ago
+        )
+        answers_comment = double(
+          body: full_answers_body,
+          user: double(login: trusted_login),
+          created_at: 2.minutes.ago
+        )
+        repeated_enhancement_comment = double(
+          body: comment_body,
+          user: double(login: trusted_login),
+          created_at: 1.minute.ago
+        )
+
+        allow(github_client).to receive(:issue_comments).and_return([
+          original_enhancement_comment,
+          answers_comment,
+          repeated_enhancement_comment
+        ])
+        allow(ClarifyingQuestions::IngestAnswers).to receive(:call)
+      end
+
+      it "returns the latest questions instead of treating stale answers as current" do
+        expect(described_class.call(project: project, issue: issue)).to eq([
+          "What is the expected behavior?",
+          "Should this be behind a flag?"
+        ])
+        expect(ClarifyingQuestions::IngestAnswers).not_to have_received(:call)
+      end
+    end
+
     context "when the issue body still contains questions after answers were posted" do
       let(:issue_body) { comment_body }
 

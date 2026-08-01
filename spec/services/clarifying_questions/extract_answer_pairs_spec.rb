@@ -95,6 +95,27 @@ RSpec.describe ClarifyingQuestions::ExtractAnswerPairs do
     expect(result.answer_comment).to be_nil
   end
 
+  it "returns no pairs when matching answers predate the latest repeated questions" do
+    repeated_enhancement_comment = comment(
+      body: enhancement_body,
+      created_at: Time.zone.parse("2026-07-30 14:00:00 UTC"),
+      login: bot_login
+    )
+
+    result = described_class.call(
+      project: project,
+      issue: issue,
+      issue_comments: [
+        enhancement_comment,
+        answer_comment,
+        repeated_enhancement_comment
+      ]
+    )
+
+    expect(result.qa_pairs).to eq([])
+    expect(result.answer_comment).to be_nil
+  end
+
   it "keeps answer pairs when unrelated GitHub activity advances issue.github_updated_at" do
     issue.github_updated_at = Time.zone.parse("2026-07-30 14:00:00 UTC")
 

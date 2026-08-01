@@ -58,6 +58,7 @@ module ClarifyingQuestions
     def answered_after_latest_questions?(body_questions:, enhancement_comment:)
       latest_answer_comment = latest_answer_comment()
       return false unless latest_answer_comment
+      return false unless answer_satisfies_latest_questions?(latest_answer_comment, enhancement_comment)
 
       current_questions = latest_questions(body_questions:, enhancement_comment:)
       parsed_pairs = AnswerPairs.parse(comment_body(latest_answer_comment))
@@ -75,6 +76,12 @@ module ClarifyingQuestions
       issue_comments.reverse.find do |comment|
         comment_body(comment).include?(ANSWER_MARKER)
       end
+    end
+
+    def answer_satisfies_latest_questions?(answer_comment, enhancement_comment)
+      return true unless enhancement_comment
+
+      answer_comment.created_at > enhancement_comment.created_at
     end
 
     def comment_body(comment)
