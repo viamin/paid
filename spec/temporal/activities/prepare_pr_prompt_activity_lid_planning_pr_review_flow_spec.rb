@@ -39,6 +39,7 @@ RSpec.describe Activities::PreparePrPromptActivity do
       { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-specs.md" },
       { filename: "AGENTS.md" }
     ])
+    stub_planning_pr_file_contents(github_client)
   end
 
   # Comment-only review feedback (no CHANGES_REQUESTED review) on a docs-only
@@ -64,6 +65,7 @@ RSpec.describe Activities::PreparePrPromptActivity do
         { filename: "AGENTS.md" }
       ]
     )
+    stub_planning_pr_file_contents(github_client)
   end
 
   def stub_requested_changes_then_comment_flow(github_client)
@@ -87,6 +89,19 @@ RSpec.describe Activities::PreparePrPromptActivity do
         { filename: "AGENTS.md" }
       ]
     )
+    stub_planning_pr_file_contents(github_client)
+  end
+
+  def stub_planning_pr_file_contents(github_client)
+    allow(github_client).to receive(:file_content)
+      .with(project.full_name, path: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md", ref: "abc123")
+      .and_return("## Decisions\n\n- Replace inferred rationale [inferred]\n")
+    allow(github_client).to receive(:file_content)
+      .with(project.full_name, path: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-specs.md", ref: "abc123")
+      .and_return("## Open Questions\n\n- Which rationale should be confirmed?\n")
+    allow(github_client).to receive(:file_content)
+      .with(project.full_name, path: "AGENTS.md", ref: "abc123")
+      .and_return("Agent instructions\n")
   end
 
   def build_followup_run(project, pull_request_issue)

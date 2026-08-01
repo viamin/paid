@@ -16,13 +16,13 @@ module Lid
       new(...).call
     end
 
-    # A docs-only Planning PR is identified by its live diff, not by whether
-    # the PR body still carries the appended checklist heading. The body is a
-    # snapshot that can be edited or trimmed independently of the branch, so
-    # the branch contents (the changed files) remain the source of truth —
-    # mirroring the criteria the checklist builder gates on at PR-creation time.
+    # A docs-only Planning PR is identified by its live diff contents, not by
+    # whether the PR body still carries the appended checklist heading. The
+    # body is a snapshot that can be edited or trimmed independently of the
+    # branch, so the branch contents remain the source of truth — mirroring
+    # the criteria the checklist builder gates on at PR-creation time.
     def self.docs_only_planning_pr?(changed_files:)
-      docs_only_paths?(changed_files)
+      docs_only_paths?(changed_files) && planning_markers_present?(changed_files)
     end
 
     def self.docs_only_paths?(changed_files)
@@ -41,6 +41,22 @@ module Lid
           entry.filename if entry.respond_to?(:filename)
         end
       end.reject(&:blank?)
+    end
+
+    def self.planning_markers_present?(changed_files)
+      Array(changed_files).any? do |entry|
+        content = changed_file_content(entry)
+        content.present? && (content.include?("[inferred]") || content.match?(OPEN_QUESTIONS_HEADING))
+      end
+    end
+
+    def self.changed_file_content(entry)
+      case entry
+      when Hash
+        entry[:content] || entry["content"] || entry[:patch] || entry["patch"]
+      else
+        entry.content if entry.respond_to?(:content)
+      end
     end
 
     def self.markdown_or_instruction_file?(path)

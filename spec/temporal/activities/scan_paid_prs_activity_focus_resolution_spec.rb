@@ -68,6 +68,28 @@ RSpec.describe Activities::ScanPaidPrsActivity do
   end
 
   describe "#human_review_thread_triggers", :no_db do
+    def stub_docs_only_planning_diff(client, project, issue)
+      allow(client).to receive(:pull_request_files)
+        .with(project.full_name, issue.github_number)
+        .and_return([
+          "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md",
+          "docs/intent/lid-pr-confirmation/lid-pr-confirmation-specs.md",
+          "AGENTS.md"
+        ])
+      allow(client).to receive(:pull_request)
+        .with(project.full_name, issue.github_number)
+        .and_return(PullRequestDouble.new(HeadDouble.new("abc123")))
+      allow(client).to receive(:file_content)
+        .with(project.full_name, path: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md", ref: "abc123")
+        .and_return("## Decisions\n\n- Confirmed later [inferred]\n")
+      allow(client).to receive(:file_content)
+        .with(project.full_name, path: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-specs.md", ref: "abc123")
+        .and_return("## Open Questions\n\n- Which decision needs confirmation?\n")
+      allow(client).to receive(:file_content)
+        .with(project.full_name, path: "AGENTS.md", ref: "abc123")
+        .and_return("Agent instructions\n")
+    end
+
     let(:activity) { described_class.new }
     let(:project) { instance_double(ProjectDouble, full_name: "acme/widgets") }
     let(:client) { instance_double(GithubClientDouble) }
@@ -88,17 +110,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       stub_const("ProjectDouble", Class.new)
       stub_const("GithubClientDouble", Class.new)
       stub_const("IssueDouble", Class.new)
+      stub_const("HeadDouble", Struct.new(:sha))
+      stub_const("PullRequestDouble", Struct.new(:head))
       allow(project).to receive(:trusted_github_user?).with("trusteduser").and_return(true)
     end
 
     it "suppresses unresolved thread triggers while the live diff remains docs-only" do
-      allow(client).to receive(:pull_request_files)
-        .with(project.full_name, issue.github_number)
-        .and_return([
-          "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md",
-          "docs/intent/lid-pr-confirmation/lid-pr-confirmation-specs.md",
-          "AGENTS.md"
-        ])
+      stub_docs_only_planning_diff(client, project, issue)
 
       triggers = activity.send(
         :human_review_thread_triggers,

@@ -156,26 +156,45 @@ RSpec.describe Lid::BuildInferenceChecklist do
   end
 
   describe ".docs_only_planning_pr?" do
-    let(:docs_only_files) do
+    let(:docs_only_files_with_markers) do
       [
-        "docs/intent/lid/lid-design.md",
-        "docs/high-level-design.md",
-        "AGENTS.md"
+        { filename: "docs/intent/lid/lid-design.md", content: "## Decisions\n\n- Decision [inferred]\n" },
+        { filename: "docs/high-level-design.md", content: "# High-Level Design\n" },
+        { filename: "AGENTS.md", content: "Agent instructions\n" }
       ]
     end
 
-    it "derives planning-PR status from the live diff, not the PR body" do
-      expect(described_class.docs_only_planning_pr?(changed_files: docs_only_files)).to be(true)
+    it "is true for docs-only diffs that contain inferred markers" do
+      expect(described_class.docs_only_planning_pr?(changed_files: docs_only_files_with_markers)).to be(true)
     end
 
     it "is false once the diff touches a non-doc file" do
-      changed = docs_only_files + [ "app/models/widget.rb" ]
+      changed = docs_only_files_with_markers + [ { filename: "app/models/widget.rb", content: "class Widget; end\n" } ]
 
       expect(described_class.docs_only_planning_pr?(changed_files: changed)).to be(false)
     end
 
     it "is false for an empty diff" do
       expect(described_class.docs_only_planning_pr?(changed_files: [])).to be(false)
+    end
+
+    it "is false for docs-only diffs without inferred markers or open questions" do
+      changed = [
+        { filename: "docs/intent/lid/lid-design.md", content: "## Decisions\n\n- Authored rationale\n" },
+        { filename: "AGENTS.md", content: "Agent instructions\n" }
+      ]
+
+      expect(described_class.docs_only_planning_pr?(changed_files: changed)).to be(false)
+    end
+
+    it "is false when only file paths are available without marker evidence" do
+      changed = [
+        "docs/intent/lid/lid-design.md",
+        "docs/high-level-design.md",
+        "AGENTS.md"
+      ]
+
+      expect(described_class.docs_only_planning_pr?(changed_files: changed)).to be(false)
     end
   end
 end

@@ -551,11 +551,25 @@ module Prompts
     end
 
     def planning_pr_confirmation_requested?
-      Lid::BuildInferenceChecklist.docs_only_planning_pr?(changed_files: pull_request_files)
+      Lid::BuildInferenceChecklist.docs_only_planning_pr?(changed_files: planning_pr_changed_files)
     end
 
     def pull_request_files
       @pull_request_files ||= github_client.pull_request_files(project.full_name, pr_number)
+    rescue GithubClient::Error
+      []
+    end
+
+    def planning_pr_changed_files
+      changed_paths = Lid::BuildInferenceChecklist.normalize_changed_files(pull_request_files)
+      return pull_request_files unless Lid::BuildInferenceChecklist.docs_only_paths?(changed_paths)
+
+      changed_paths.filter_map do |path|
+        content = github_client.file_content(project.full_name, path:, ref: pr_data.head.sha)
+        next if content.blank?
+
+        { filename: path, content: content }
+      end
     rescue GithubClient::Error
       []
     end

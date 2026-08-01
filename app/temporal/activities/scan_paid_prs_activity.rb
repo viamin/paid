@@ -1739,10 +1739,24 @@ module Activities
     # source of truth per the LLD). See LID-PR-CONFIRM-001.
     def planning_pr?(issue:, client:, project:)
       Lid::BuildInferenceChecklist.docs_only_planning_pr?(
-        changed_files: client.pull_request_files(project.full_name, issue.github_number)
+        changed_files: planning_pr_changed_files(issue:, client:, project:)
       )
     rescue GithubClient::Error
       false
+    end
+
+    def planning_pr_changed_files(issue:, client:, project:)
+      changed_files = client.pull_request_files(project.full_name, issue.github_number)
+      changed_paths = Lid::BuildInferenceChecklist.normalize_changed_files(changed_files)
+      return changed_files unless Lid::BuildInferenceChecklist.docs_only_paths?(changed_paths)
+
+      pull_request = client.pull_request(project.full_name, issue.github_number)
+      changed_paths.filter_map do |path|
+        content = client.file_content(project.full_name, path:, ref: pull_request.head.sha)
+        next if content.blank?
+
+        { filename: path, content: content }
+      end
     end
 
     def review_bot_review_status(reviews, allowed_bot_logins: nil)

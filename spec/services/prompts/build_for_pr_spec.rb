@@ -51,6 +51,22 @@ RSpec.describe Prompts::BuildForPr do
     ]
   end
 
+  def planning_pr_file_contents
+    {
+      "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md" => <<~MARKDOWN,
+        ## Decisions
+
+        - Replace inferred rationale [inferred]
+      MARKDOWN
+      "docs/intent/lid-pr-confirmation/lid-pr-confirmation-specs.md" => <<~MARKDOWN,
+        ## Open Questions
+
+        - Which rationale should be confirmed?
+      MARKDOWN
+      "AGENTS.md" => "Agent instructions\n"
+    }
+  end
+
   def planning_review_thread(path:, body:)
     [
       {
@@ -61,6 +77,29 @@ RSpec.describe Prompts::BuildForPr do
         ]
       }
     ]
+  end
+
+  def stub_planning_pr_review_context(pr_body:)
+    planning_pr = pr_data.dup
+    planning_pr.body = pr_body
+    allow(github_client).to receive(:pull_request)
+      .with(project.full_name, 42)
+      .and_return(planning_pr)
+    allow(github_client).to receive(:pull_request_files)
+      .with(project.full_name, 42)
+      .and_return(docs_only_planning_pr_files)
+    planning_pr_file_contents.each do |path, content|
+      allow(github_client).to receive(:file_content)
+        .with(project.full_name, path:, ref: "abc123")
+        .and_return(content)
+    end
+    allow(github_client).to receive(:review_threads)
+      .and_return(
+        planning_review_thread(
+          path: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md",
+          body: "Replace this inferred rationale"
+        )
+      )
   end
 
   def expect_prompt_to_exclude_sections(prompt, *section_names)
@@ -110,6 +149,7 @@ RSpec.describe Prompts::BuildForPr do
       recent_issue_comments: [],
       pull_request_files: []
     )
+    allow(github_client).to receive(:file_content).and_return(nil)
     allow(AgentRuns::UserSettingsResolver).to receive(:call).and_return(user_settings)
   end
 
@@ -230,19 +270,7 @@ RSpec.describe Prompts::BuildForPr do
     end
 
     it "includes intent-confirmation guidance for docs-only planning PRs with review threads" do
-      allow(github_client).to receive(:pull_request)
-        .with(project.full_name, 42)
-        .and_return(planning_pr_data(pr_data))
-      allow(github_client).to receive(:pull_request_files)
-        .with(project.full_name, 42)
-        .and_return(docs_only_planning_pr_files)
-      allow(github_client).to receive(:review_threads)
-        .and_return(
-          planning_review_thread(
-            path: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md",
-            body: "Replace this inferred rationale"
-          )
-        )
+      stub_planning_pr_review_context(pr_body: planning_pr_data(pr_data).body)
 
       expect(prompt).to include("Intent Confirmation Follow-Up")
       expect(prompt).to include("Replace the `[inferred]` marker")
@@ -250,21 +278,7 @@ RSpec.describe Prompts::BuildForPr do
     end
 
     it "derives planning-PR status from the live diff even when the PR body is trimmed of the checklist heading" do
-      trimmed_pr = pr_data.dup
-      trimmed_pr.body = "Planning PR — body edited, checklist section removed"
-      allow(github_client).to receive(:pull_request)
-        .with(project.full_name, 42)
-        .and_return(trimmed_pr)
-      allow(github_client).to receive(:pull_request_files)
-        .with(project.full_name, 42)
-        .and_return(docs_only_planning_pr_files)
-      allow(github_client).to receive(:review_threads)
-        .and_return(
-          planning_review_thread(
-            path: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md",
-            body: "Replace this inferred rationale"
-          )
-        )
+      stub_planning_pr_review_context(pr_body: "Planning PR - body edited, checklist section removed")
 
       expect(prompt).to include("Intent Confirmation Follow-Up")
     end
