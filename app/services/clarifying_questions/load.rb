@@ -59,22 +59,16 @@ module ClarifyingQuestions
       latest_answer_comment = latest_answer_comment()
       return false unless latest_answer_comment
 
-      latest_answer_timestamp = comment_timestamp(latest_answer_comment)
-      latest_question_timestamp = latest_question_timestamp(
-        body_questions: body_questions,
-        enhancement_comment: enhancement_comment
-      )
-      return false unless latest_question_timestamp
+      current_questions = latest_questions(body_questions:, enhancement_comment:)
+      parsed_pairs = AnswerPairs.parse(comment_body(latest_answer_comment))
 
-      latest_answer_timestamp > latest_question_timestamp
+      AnswerPairs.questions_match?(current_questions, parsed_pairs)
     end
 
-    def latest_question_timestamp(body_questions:, enhancement_comment:)
-      timestamps = []
-      timestamps << issue_timestamp if body_questions.any?
-      timestamps << comment_timestamp(enhancement_comment) if enhancement_comment.present?
+    def latest_questions(body_questions:, enhancement_comment:)
+      return Parse.call(comment_body: comment_body(enhancement_comment)) if enhancement_comment.present?
 
-      timestamps.compact.max
+      body_questions
     end
 
     def latest_answer_comment
@@ -85,14 +79,6 @@ module ClarifyingQuestions
 
     def comment_body(comment)
       comment.body.to_s
-    end
-
-    def comment_timestamp(comment)
-      comment.created_at&.to_time || Time.at(0)
-    end
-
-    def issue_timestamp
-      issue.github_updated_at&.to_time || issue.updated_at&.to_time || Time.at(0)
     end
 
     def issue_comments

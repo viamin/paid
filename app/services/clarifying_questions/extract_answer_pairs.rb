@@ -2,8 +2,6 @@
 
 module ClarifyingQuestions
   class ExtractAnswerPairs
-    ANSWER_PATTERN = /\*\*A\d+:\*\*\s*(.+?)(?=\n\n\*\*|\z)/m.freeze
-
     Result = Struct.new(:qa_pairs, :answer_comment, keyword_init: true)
 
     def self.call(...)
@@ -22,11 +20,12 @@ module ClarifyingQuestions
 
       answer_comment = find_answer_comment
       return empty_result unless answer_comment
-      return empty_result unless answer_newer_than_latest_questions?(answer_comment, enhancement_comment)
 
       questions = Parse.call(comment_body: enhancement_comment.body.to_s)
-      answers = parse_answers(answer_comment.body.to_s)
-      qa_pairs = pair_qa(questions, answers)
+      parsed_pairs = AnswerPairs.parse(answer_comment.body.to_s)
+      return empty_result unless AnswerPairs.questions_match?(questions, parsed_pairs)
+
+      qa_pairs = pair_qa(questions, parsed_pairs)
 
       Result.new(qa_pairs: qa_pairs, answer_comment: answer_comment)
     end
@@ -59,39 +58,12 @@ module ClarifyingQuestions
       end
     end
 
-    def answer_newer_than_latest_questions?(answer_comment, enhancement_comment)
-      answer_time = comment_timestamp(answer_comment)
-      latest_question_time = latest_question_timestamp(enhancement_comment)
-
-      answer_time > latest_question_time
-    end
-
-    def latest_question_timestamp(enhancement_comment)
-      [
-        comment_timestamp(enhancement_comment),
-        issue_timestamp
-      ].compact.max || Time.at(0)
-    end
-
-    def comment_timestamp(comment)
-      comment.created_at&.to_time || Time.at(0)
-    end
-
-    def issue_timestamp
-      return unless issue
-
-      issue.github_updated_at&.to_time || issue.updated_at&.to_time
-    end
-
-    def parse_answers(body)
-      body.scan(ANSWER_PATTERN).map { |match| match[0].strip }
-    end
-
-    def pair_qa(questions, answers)
+    def pair_qa(questions, parsed_pairs)
       questions.each_with_index.filter_map do |question, index|
-        next if answers[index].blank?
+        answer = parsed_pairs[index]&.fetch(:answer, nil)
+        next if answer.blank?
 
-        { question: question, answer: answers[index] }
+        { question: question, answer: answer }
       end
     end
   end

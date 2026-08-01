@@ -70,13 +70,24 @@ RSpec.describe ClarifyingQuestions::ExtractAnswerPairs do
     expect(result.answer_comment.body).to include("<!-- paid:clarifying-answers -->")
   end
 
-  it "returns no pairs when the answers predate the questions" do
+  it "returns no pairs when the latest questions do not match the answered questions" do
+    latest_enhancement_comment = comment(
+      body: <<~COMMENT,
+        <!-- paid:enhance-issue -->
+        ## Clarifying questions
+        1. What should happen after the redirect fails?
+      COMMENT
+      created_at: Time.zone.parse("2026-07-30 14:00:00 UTC"),
+      login: bot_login
+    )
+
     result = described_class.call(
       project: project,
       issue: issue,
       issue_comments: [
-        enhancement_comment.tap { |entry| allow(entry).to receive(:created_at).and_return(Time.zone.parse("2026-07-30 13:00:00 UTC")) },
-        answer_comment.tap { |entry| allow(entry).to receive(:created_at).and_return(Time.zone.parse("2026-07-30 12:00:00 UTC")) }
+        enhancement_comment,
+        answer_comment,
+        latest_enhancement_comment
       ]
     )
 
@@ -84,7 +95,7 @@ RSpec.describe ClarifyingQuestions::ExtractAnswerPairs do
     expect(result.answer_comment).to be_nil
   end
 
-  it "returns no pairs when the issue was edited after the answers were posted" do
+  it "keeps answer pairs when unrelated GitHub activity advances issue.github_updated_at" do
     issue.github_updated_at = Time.zone.parse("2026-07-30 14:00:00 UTC")
 
     result = described_class.call(
@@ -93,11 +104,11 @@ RSpec.describe ClarifyingQuestions::ExtractAnswerPairs do
       issue_comments: [ enhancement_comment, answer_comment ]
     )
 
-    expect(result.qa_pairs).to eq([])
-    expect(result.answer_comment).to be_nil
+    expect(result.qa_pairs.size).to eq(2)
+    expect(result.answer_comment.body).to include("<!-- paid:clarifying-answers -->")
   end
 
-  it "returns no pairs when issue.updated_at is newer than the answer comment" do
+  it "keeps answer pairs when issue.updated_at is newer than the answer comment" do
     issue.github_updated_at = nil
     issue.updated_at = Time.zone.parse("2026-07-30 14:00:00 UTC")
 
@@ -107,7 +118,7 @@ RSpec.describe ClarifyingQuestions::ExtractAnswerPairs do
       issue_comments: [ enhancement_comment, answer_comment ]
     )
 
-    expect(result.qa_pairs).to eq([])
-    expect(result.answer_comment).to be_nil
+    expect(result.qa_pairs.size).to eq(2)
+    expect(result.answer_comment.body).to include("<!-- paid:clarifying-answers -->")
   end
 end
