@@ -158,7 +158,7 @@ RSpec.describe Prompts::BuildForPr do
     end
 
     it "includes the LID-aware section when the project declares lid_mode" do
-      allow(project).to receive(:lid_mode).and_return("full")
+      project.update!(lid_mode: "full")
 
       expect(prompt).to include("## LID-Aware Workflow")
       expect(prompt).to include("Linked-Intent Development mode: `full`")

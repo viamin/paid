@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_31_045426) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_01_013314) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2011,6 +2011,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_31_045426) do
     t.datetime "last_issue_reconciliation_at", comment: "Timestamp of the last issue state reconciliation against GitHub"
     t.datetime "last_issue_sync_at"
     t.datetime "last_polled_at"
+    t.string "lid_mode"
     t.jsonb "log_data"
     t.integer "max_draft_review_rounds", default: 10, null: false
     t.integer "max_enhance_issue_reevaluation_rounds", default: 3, null: false

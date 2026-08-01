@@ -399,8 +399,7 @@ module Activities
     end
 
     def coherence_check_summary(agent_run)
-      output = agent_output(agent_run)
-      line = latest_coherence_check_line(output)
+      line = latest_coherence_check_line(agent_run)
       return "Not found in captured agent output." unless line
       return "Reported success in agent output." if line.match?(/pass(?:ed)?|success|0 failures/i)
       return "Reported failures in agent output; inspect the run logs." if line.match?(/fail(?:ed|ures?)?/i)
@@ -408,10 +407,23 @@ module Activities
       "Referenced in agent output; inspect the run logs for the full result."
     end
 
-    def latest_coherence_check_line(output)
-      output.lines.reverse.find do |line|
+    def latest_coherence_check_line(agent_run)
+      coherence_log = latest_coherence_log(agent_run)
+      return unless coherence_log
+
+      coherence_log.lines.reverse_each.find do |line|
         line.match?(/coherence-check\.mjs|\/opt\/paid-lid\/bin\/coherence-check\.mjs/)
       end
+    end
+
+    def latest_coherence_log(agent_run)
+      agent_run.agent_run_logs
+        .where(log_type: %w[stdout stderr])
+        .where("content LIKE :default_path OR content LIKE :vendored_path",
+          default_path: "%coherence-check.mjs%",
+          vendored_path: "%/opt/paid-lid/bin/coherence-check.mjs%")
+        .order(created_at: :desc, id: :desc)
+        .pick(:content)
     end
 
     def agent_output(agent_run)

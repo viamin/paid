@@ -29,6 +29,7 @@ class Project < ApplicationRecord
   DEFAULT_PRIORITY_LABELS = { "P1" => "P1", "P2" => "P2", "P3" => "P3" }.freeze
   ADOPTION_MODES = %w[observe_only advisory review_only full_execution].freeze
   DATA_CLASSIFICATIONS = %w[open internal confidential restricted].freeze
+  LID_MODES = %w[full scoped].freeze
   DEFAULT_SCREENSHOT_SETTINGS = {
     "enabled" => false,
     "driver" => "playwright",
@@ -243,10 +244,6 @@ class Project < ApplicationRecord
   has_many :coordination_policies, dependent: :destroy
   has_many :external_connector_events, dependent: :destroy
 
-  def lid_mode
-    self[:lid_mode] if has_attribute?(:lid_mode)
-  end
-
   encrypts :webhook_secret
 
   before_validation :normalize_priority_labels
@@ -289,6 +286,7 @@ class Project < ApplicationRecord
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 100 }
   validates :max_execution_seconds, numericality: { only_integer: true, greater_than_or_equal_to: 60, less_than_or_equal_to: 86_400 }
   validates :data_classification, inclusion: { in: DATA_CLASSIFICATIONS }
+  validates :lid_mode, inclusion: { in: LID_MODES }, allow_nil: true
   validate :allowed_github_usernames_not_empty
   validate :owner_reviewer_login_is_trusted, if: -> { owner_reviewer_login.present? }
   validate :exactly_one_github_credential, if: :validate_github_credential_presence?
