@@ -551,8 +551,43 @@ module Prompts
       end
     end
 
+
+    # Returns true when the PR is a docs-only planning PR AND has an active
+    # CHANGES_REQUESTED review. Comment-only feedback and approvals do not
+    # trigger intent confirmation (comment-only = defer, approve = confirm).
     def planning_pr_confirmation_requested?
-      Lid::BuildInferenceChecklist.docs_only_planning_pr?(changed_files: planning_pr_changed_files)
+      Lid::BuildInferenceChecklist.docs_only_planning_pr?(changed_files: planning_pr_changed_files) &&
+        changes_requested?
+    end
+
+    # Returns true when any reviewer has an active CHANGES_REQUESTED review
+    # that has not been cleared by a later APPROVED or DISMISSED review from
+    # the same user.
+    def changes_requested?
+      reviews = github_client.pull_request_reviews(project.full_name, pr_number)
+      reviews_by_user = reviews.group_by { |r| r[:user_login]&.downcase }
+
+      reviews_by_user.any? do |_login, user_reviews|
+        latest_cr = user_reviews
+          .select { |r| r[:state] == "CHANGES_REQUESTED" }
+          .max_by { |r| r[:submitted_at] || Time.at(0) }
+        next false unless latest_cr
+
+        latest_clearing = %w[APPROVED DISMISSED]
+          .filter_map { |state|
+            user_reviews
+              .select { |r| r[:state] == state }
+              .max_by { |r| r[:submitted_at] || Time.at(0) }
+          }
+          .compact
+          .max_by { |r| r[:submitted_at] || Time.at(0) }
+
+        next false if latest_clearing &&
+          (latest_clearing[:submitted_at] || Time.at(0)) > (latest_cr[:submitted_at] || Time.at(0))
+        true
+      end
+    rescue GithubClient::Error
+      false
     end
 
     def pull_request_files
@@ -561,8 +596,11 @@ module Prompts
       []
     end
 
+
     def planning_pr_changed_files
-      files_data = github_client.pull_request_file_patches(project.full_name, pr_number)
+      head_sha = pr_data.head.sha
+      files_data = github_client.pull_request_file_patches(project.full_name, pr_number,
+                                                           head_sha: head_sha)
       changed_paths = Lid::BuildInferenceChecklist.normalize_changed_files(files_data)
       return files_data unless Lid::BuildInferenceChecklist.docs_only_paths?(changed_paths)
 

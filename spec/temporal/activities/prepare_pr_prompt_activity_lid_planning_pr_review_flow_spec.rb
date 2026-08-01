@@ -11,7 +11,10 @@ RSpec.describe Activities::PreparePrPromptActivity do
   def stub_requested_changes_flow(github_client)
     allow(github_client).to receive(:pull_request_reviews).and_return(
       [ { id: 1, user_login: "reviewer", state: "CHANGES_REQUESTED", body: "", submitted_at: 30.minutes.ago } ],
-      [ { id: 2, user_login: "reviewer", state: "APPROVED", body: "Confirmed", submitted_at: Time.current } ]
+      # Extra return for BuildForPr#changes_requested? called during prompt preparation.
+      [ { id: 1, user_login: "reviewer", state: "CHANGES_REQUESTED", body: "", submitted_at: 30.minutes.ago } ],
+      [ { id: 2, user_login: "reviewer", state: "APPROVED", body: "Confirmed", submitted_at: Time.current } ],
+      []
     )
     allow(github_client).to receive(:review_threads).and_return(
       [
@@ -41,9 +44,12 @@ RSpec.describe Activities::PreparePrPromptActivity do
         { filename: "AGENTS.md" }
       ],
       pull_request_file_patches: [
-        { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md" },
-        { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-specs.md" },
-        { filename: "AGENTS.md" }
+        { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md",
+          patch: "@@ -0,0 +1,3 @@\n+## Decisions\n+\n+- Replace inferred rationale [inferred]\n" },
+        { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-specs.md",
+          patch: "@@ -0,0 +1,3 @@\n+## Open Questions\n+\n+- Which rationale should be confirmed?\n" },
+        { filename: "AGENTS.md",
+          patch: "@@ -0,0 +1 @@\n+Agent instructions\n" }
       ]
     )
     stub_planning_pr_file_contents(github_client)
@@ -72,9 +78,12 @@ RSpec.describe Activities::PreparePrPromptActivity do
         { filename: "AGENTS.md" }
       ],
       pull_request_file_patches: [
-        { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md" },
-        { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-specs.md" },
-        { filename: "AGENTS.md" }
+        { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md",
+          patch: "@@ -0,0 +1,3 @@\n+## Decisions\n+\n+- Replace inferred rationale [inferred]\n" },
+        { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-specs.md",
+          patch: "@@ -0,0 +1,3 @@\n+## Open Questions\n+\n+- Which rationale should be confirmed?\n" },
+        { filename: "AGENTS.md",
+          patch: "@@ -0,0 +1 @@\n+Agent instructions\n" }
       ]
     )
     stub_planning_pr_file_contents(github_client)
@@ -101,9 +110,12 @@ RSpec.describe Activities::PreparePrPromptActivity do
         { filename: "AGENTS.md" }
       ],
       pull_request_file_patches: [
-        { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md" },
-        { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-specs.md" },
-        { filename: "AGENTS.md" }
+        { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md",
+          patch: "@@ -0,0 +1,3 @@\n+## Decisions\n+\n+- Replace inferred rationale [inferred]\n" },
+        { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-specs.md",
+          patch: "@@ -0,0 +1,3 @@\n+## Open Questions\n+\n+- Which rationale should be confirmed?\n" },
+        { filename: "AGENTS.md",
+          patch: "@@ -0,0 +1 @@\n+Agent instructions\n" }
       ]
     )
     stub_planning_pr_file_contents(github_client)

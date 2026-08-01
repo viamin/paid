@@ -69,6 +69,18 @@ RSpec.describe Prompts::BuildForPr do
     ]
   end
 
+
+  def changes_requested_review
+    {
+      id: 5001,
+      user_login: "trusteduser",
+      state: "CHANGES_REQUESTED",
+      body: "Please update the inferred rationale",
+      submitted_at: Time.now,
+      commit_id: "abc123"
+    }
+  end
+
   def stub_planning_pr_review_context(pr_body:)
     planning_pr = pr_data.dup
     planning_pr.body = pr_body
@@ -76,8 +88,11 @@ RSpec.describe Prompts::BuildForPr do
       .with(project.full_name, 42)
       .and_return(planning_pr)
     allow(github_client).to receive(:pull_request_file_patches)
-      .with(project.full_name, 42)
+      .with(project.full_name, 42, head_sha: instance_of(String))
       .and_return(docs_only_planning_pr_patches)
+    allow(github_client).to receive(:pull_request_reviews)
+      .with(project.full_name, 42)
+      .and_return([ changes_requested_review ])
     allow(github_client).to receive(:review_threads)
       .and_return(
         planning_review_thread(
@@ -272,19 +287,13 @@ RSpec.describe Prompts::BuildForPr do
       allow(github_client).to receive(:pull_request)
         .with(project.full_name, 42)
         .and_return(planning_pr_data(pr_data))
-      allow(github_client).to receive(:pull_request_file_patches)
-        .with(project.full_name, 42)
-        .and_return([
+      allow(github_client).to receive_messages(pull_request_file_patches: [
           { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md", status: "modified", patch: "" },
           { filename: "app/services/prompts/build_for_pr.rb", status: "modified", patch: "" }
-        ])
-      allow(github_client).to receive(:review_threads)
-        .and_return(
-          planning_review_thread(
+        ], review_threads: planning_review_thread(
             path: "app/services/prompts/build_for_pr.rb",
             body: "This now needs ordinary review feedback handling"
-          )
-        )
+          ))
 
       expect(prompt).not_to include("Intent Confirmation Follow-Up")
     end
