@@ -31,6 +31,12 @@ module HealthChecks
         register(HealthChecks::Checks::Project::EmptyAllowlist)
         register(HealthChecks::Checks::Project::MissingGitHubCredential)
         register(HealthChecks::Checks::Project::SensitiveDataFreeModel)
+        register(HealthChecks::Checks::Runner::InactiveModel)
+        register(HealthChecks::Checks::Runner::ExpiredModel)
+        register(HealthChecks::Checks::Runner::BelowQualityBarModel)
+        register(HealthChecks::Checks::Runner::IncompatibleModel)
+        register(HealthChecks::Checks::Runner::MissingRunnerCredentials)
+        register(HealthChecks::Checks::Runner::SupersededModel)
         @defaults_loaded = true
       end
     end

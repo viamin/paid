@@ -13,5 +13,16 @@ RSpec.describe HealthChecks::Registry do
         HealthChecks::Checks::Project::SensitiveDataFreeModel
       )
     end
+
+    it "registers the runner-scope local checks" do
+      expect(described_class.local_for_scope(:runner)).to contain_exactly(
+        HealthChecks::Checks::Runner::InactiveModel,
+        HealthChecks::Checks::Runner::ExpiredModel,
+        HealthChecks::Checks::Runner::BelowQualityBarModel,
+        HealthChecks::Checks::Runner::IncompatibleModel,
+        HealthChecks::Checks::Runner::MissingRunnerCredentials,
+        HealthChecks::Checks::Runner::SupersededModel
+      )
+    end
   end
 end
