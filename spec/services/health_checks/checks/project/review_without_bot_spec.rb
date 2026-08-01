@@ -19,18 +19,20 @@ RSpec.describe HealthChecks::Checks::Project::ReviewWithoutBot do
   context "when the review bot is not configured" do
     let(:configured) { false }
 
-    it "returns a finding" do
-      project = build(:project, review_settings: review_settings)
+      it "returns a finding" do
+        project = build(:project, review_settings: review_settings)
 
-      expect(described_class.call(project)).to contain_exactly(
-        have_attributes(
-          check: described_class.name,
-          scope: :project,
-          severity: :error,
-          message: "Paid Agent review is enabled but the paid-code-reviewer GitHub App is not configured."
+        expect(described_class.call(project)).to contain_exactly(
+          have_attributes(
+            code: :review_without_bot,
+            scope: :project,
+            severity: :error,
+            title: "Review enabled without the review bot configured",
+            remediation: a_string_including("paid-code-reviewer GitHub App"),
+            action_url: nil
+          )
         )
-      )
-    end
+      end
   end
 
   context "when the review bot is configured" do

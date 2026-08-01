@@ -28,8 +28,8 @@ RSpec.describe HealthChecks::Coordinator do
 
       scopes = result.findings.map(&:scope).uniq
       expect(scopes).to contain_exactly(:project, :user)
-      expect(result.findings).to include(have_attributes(message: "project issue"))
-      expect(result.findings).to include(have_attributes(message: "user issue"))
+      expect(result.findings).to include(have_attributes(title: "project issue"))
+      expect(result.findings).to include(have_attributes(title: "user issue"))
     end
 
     it "returns a healthy Result when no findings exist" do
@@ -53,7 +53,12 @@ RSpec.describe HealthChecks::Coordinator do
       result = described_class.call(scope: :project, subject: project)
 
       expect(result.findings).to include(
-        have_attributes(severity: :error, message: /kaboom/, check: "HealthChecks::Checks::Project::RaisingTest")
+        have_attributes(
+          severity: :error,
+          code: :raising_test,
+          title: /Raising Test check failed/,
+          description: /kaboom/
+        )
       )
     end
 
@@ -63,7 +68,7 @@ RSpec.describe HealthChecks::Coordinator do
 
         def self.network? = true
         def self.name = "HealthChecks::Checks::Project::NetworkOnly"
-        def call = finding(severity: :warning, message: "network result")
+        def call = finding(severity: :warning, title: "network result", description: nil, remediation: nil)
       end
 
       allow(HealthChecks::Registry).to receive(:for_scope).and_return([ network_check ])
@@ -76,7 +81,7 @@ RSpec.describe HealthChecks::Coordinator do
 
   describe HealthChecks::Result do
     it "counts warnings without marking unhealthy" do
-      warning = HealthChecks::Finding.new(check: "T", scope: :project, severity: :warning, message: "w")
+      warning = HealthChecks::Finding.new(code: :t, scope: :project, severity: :warning, title: "w")
       result = described_class.new(findings: [ warning ], checked_at: Time.current, duration_ms: 0)
 
       expect(result).to be_healthy
@@ -85,7 +90,7 @@ RSpec.describe HealthChecks::Coordinator do
     end
 
     it "is unhealthy when an error finding exists" do
-      error = HealthChecks::Finding.new(check: "T", scope: :project, severity: :error, message: "e")
+      error = HealthChecks::Finding.new(code: :t, scope: :project, severity: :error, title: "e")
       result = described_class.new(findings: [ error ], checked_at: Time.current, duration_ms: 0)
 
       expect(result).not_to be_healthy
@@ -93,8 +98,8 @@ RSpec.describe HealthChecks::Coordinator do
     end
 
     it "groups findings by scope" do
-      project_f = HealthChecks::Finding.new(check: "A", scope: :project, severity: :error, message: "a")
-      user_f = HealthChecks::Finding.new(check: "B", scope: :user, severity: :warning, message: "b")
+      project_f = HealthChecks::Finding.new(code: :a, scope: :project, severity: :error, title: "a")
+      user_f = HealthChecks::Finding.new(code: :b, scope: :user, severity: :warning, title: "b")
       result = described_class.new(findings: [ project_f, user_f ], checked_at: Time.current, duration_ms: 0)
 
       expect(result.for_scope(:project)).to eq([ project_f ])
@@ -108,7 +113,7 @@ RSpec.describe HealthChecks::Coordinator do
 
       def self.network? = false
       def self.name = "HealthChecks::Checks::#{scope.capitalize}::StubCheck"
-      define_method(:call) { finding(severity: severity, message: message) }
+      define_method(:call) { finding(severity: severity, title: message, description: message, remediation: nil) }
     end
   end
 end

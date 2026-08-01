@@ -13,7 +13,10 @@ module HealthChecks
 
           finding(
             severity: :error,
-            message: "Trusted GitHub usernames allowlist is empty."
+            title: "Trusted usernames allowlist is empty",
+            description: "No trusted GitHub usernames are configured, so no issues will be treated as trusted.",
+            remediation: "Add at least one trusted GitHub username.",
+            action_url: settings_action_url(:edit_project_path, anchor: "trusted-usernames")
           )
         end
       end

@@ -14,7 +14,10 @@ module HealthChecks
 
           finding(
             severity: :error,
-            message: "Auto-merge is enabled but owner reviewer login is blank."
+            title: "Auto-merge enabled without an owner reviewer",
+            description: "Auto-merge is on but no owner reviewer login is set, so human-authored PRs can never satisfy owner approval and will stall.",
+            remediation: "Set an owner reviewer login (a trusted GitHub username) or turn off auto-merge.",
+            action_url: settings_action_url(:edit_project_path, anchor: "owner-reviewer")
           )
         end
       end

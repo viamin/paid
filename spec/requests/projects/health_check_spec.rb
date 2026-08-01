@@ -19,10 +19,13 @@ RSpec.describe "Projects::HealthCheck" do
 
     it "renders cached findings grouped by scope" do
       finding = HealthChecks::Finding.new(
-        check: "HealthChecks::Checks::Project::EmptyAllowlist",
+        code: :empty_allowlist,
         scope: :project,
         severity: :error,
-        message: "Allowed GitHub usernames is empty."
+        title: "Trusted usernames allowlist is empty",
+        description: "No trusted GitHub usernames are configured.",
+        remediation: "Add at least one trusted GitHub username.",
+        action_url: "/projects/#{project.id}/edit#trusted-usernames"
       )
       result = HealthChecks::Result.new(findings: [ finding ], checked_at: Time.current, duration_ms: 10)
       allow(HealthChecks::Cache).to receive(:read).with(project).and_return(result)
@@ -30,8 +33,10 @@ RSpec.describe "Projects::HealthCheck" do
       get project_health_check_path(project)
 
       expect(response.body).to include("Project")
-      expect(response.body).to include("Empty Allowlist")
-      expect(response.body).to include("Allowed GitHub usernames is empty.")
+      expect(response.body).to include("Trusted usernames allowlist is empty")
+      expect(response.body).to include("No trusted GitHub usernames are configured.")
+      expect(response.body).to include("Add at least one trusted GitHub username.")
+      expect(response.body).to include("Open settings")
     end
 
     it "renders the all-clear card when the result is healthy" do

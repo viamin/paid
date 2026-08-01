@@ -59,10 +59,13 @@ module HealthChecks
 
     def internal_error_finding(check_class, error)
       Finding.new(
-        check: check_class.name,
+        code: check_class.code,
         scope: check_class.scope,
         severity: :error,
-        message: "Check raised an unexpected error: #{error.message}"
+        title: "#{check_class.name.demodulize.titleize} check failed",
+        description: "Check raised an unexpected error: #{error.message}",
+        remediation: "Re-run the health checks. If this persists, investigate the check implementation.",
+        metadata: { check: check_class.name, error: error.class.name }
       )
     end
 

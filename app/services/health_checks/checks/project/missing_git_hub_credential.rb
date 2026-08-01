@@ -13,7 +13,10 @@ module HealthChecks
 
           finding(
             severity: :error,
-            message: "Project is missing both GitHub App installation and PAT credentials."
+            title: "Missing GitHub credentials",
+            description: "The project has neither a GitHub App installation nor a personal access token, so Paid cannot access the repository.",
+            remediation: "Configure a GitHub App installation or a personal access token.",
+            action_url: settings_action_url(:edit_project_path, anchor: "github-authentication")
           )
         end
       end

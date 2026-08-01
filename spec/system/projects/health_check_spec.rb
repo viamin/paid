@@ -12,16 +12,19 @@ RSpec.describe "Project health check page", system_driver: :rack_test, type: :sy
   let(:populated_findings) do
     [
       HealthChecks::Finding.new(
-        check: "HealthChecks::Checks::Project::EmptyAllowlist",
+        code: :empty_allowlist,
         scope: :project,
         severity: :error,
-        message: "Allowed GitHub usernames is empty."
+        title: "Trusted usernames allowlist is empty",
+        description: "No trusted GitHub usernames are configured.",
+        remediation: "Add at least one trusted GitHub username."
       ),
       HealthChecks::Finding.new(
-        check: "HealthChecks::Checks::User::NoAgentRunners",
+        code: :no_agent_runners,
         scope: :user,
         severity: :warning,
-        message: "No enabled runners for agent runs."
+        title: "No enabled runners for agent runs",
+        description: "The owner has no runners enabled for agent runs."
       )
     ]
   end
@@ -44,10 +47,10 @@ RSpec.describe "Project health check page", system_driver: :rack_test, type: :sy
 
     expect(page).to have_content("Health Check")
     expect(page).to have_content("Project")
-    expect(page).to have_content("Empty Allowlist")
-    expect(page).to have_content("Allowed GitHub usernames is empty.")
+    expect(page).to have_content("Trusted usernames allowlist is empty")
+    expect(page).to have_content("No trusted GitHub usernames are configured.")
     expect(page).to have_content("User")
-    expect(page).to have_content("No Agent Runners")
+    expect(page).to have_content("No enabled runners for agent runs")
   end
 
   it "shows the all-clear card in the healthy state" do
