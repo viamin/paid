@@ -1747,20 +1747,7 @@ module Activities
 
 
     def planning_pr_changed_files(issue:, client:, project:)
-      files_data = client.pull_request_file_patches(project.full_name, issue.github_number)
-      changed_paths = Lid::BuildInferenceChecklist.normalize_changed_files(files_data)
-      return files_data unless Lid::BuildInferenceChecklist.docs_only_paths?(changed_paths)
-
-      # Only docs-only paths remain — re-fetch with content fallback so
-      # that oversized diffs (where GitHub omits the patch payload) still
-      # surface planning markers via the file-content scan.
-      if files_data.any? { |f| f[:patch].blank? }
-        pr_data = client.pull_request(project.full_name, issue.github_number)
-        files_data = client.pull_request_file_patches(
-          project.full_name, issue.github_number, head_sha: pr_data.head.sha
-        )
-      end
-      files_data
+      client.pull_request_file_patches(project.full_name, issue.github_number)
     end
 
     def review_bot_review_status(reviews, allowed_bot_logins: nil)

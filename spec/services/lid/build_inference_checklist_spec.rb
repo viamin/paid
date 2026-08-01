@@ -211,6 +211,20 @@ RSpec.describe Lid::BuildInferenceChecklist do
       expect(described_class.docs_only_planning_pr?(changed_files: changed)).to be(false)
     end
 
+    it "is false when file content is available but patch is missing (do not scan full file)" do
+      # The old code fell back to scanning the entire file body for
+      # [inferred] or ## Open Questions when content was present but
+      # patch was not.  That produces false positives when a docs-only
+      # PR touches a file that already contains those markers from
+      # previous work.  Now we treat missing patch as non-planning
+      # regardless of whether content is present.
+      changed = [
+        { filename: "docs/intent/lid/lid-design.md", content: "## Open Questions\n\n- Old question?\n" }
+      ]
+
+      expect(described_class.docs_only_planning_pr?(changed_files: changed)).to be(false)
+    end
+
     it "is false when a touched file has an existing Open Questions heading not added by the PR" do
       # The file already had ## Open Questions; the PR only adds an unrelated line
       # under a different heading.  The Open Questions heading appears in context

@@ -47,30 +47,25 @@ module Lid
     # appear in changed lines.  When patch data is available only added
     # lines (lines starting with "+" but not "+++") are checked so that an
     # existing Open Questions section in a touched file does not falsely
-    # classify the PR as a planning PR.  Falls back to full-content scan
-    # when only string content is provided (backward compatibility for
-    # callers that don't supply diff hunks).
+    # classify the PR as a planning PR.
+    #
+    # When the patch is unavailable (oversized diff, or the caller only
+    # supplied file paths), assume planning markers are absent.  A
+    # full-content scan would falsely classify a docs-only PR that touches
+    # a planning doc whose existing body already contains [inferred] or
+    # ## Open Questions — treating the entire file as "changed" when the
+    # actual PR edits are invisible to us.  A genuine Planning PR whose
+    # diff is too large for GitHub to return a patch will simply not get
+    # the automatic checklist (the author can reduce the diff size, and
+    # reviewers can still manually request changes).
     def self.planning_markers_present?(changed_files)
       Array(changed_files).any? do |entry|
         patch = changed_file_patch(entry)
         if patch.present?
           planning_marker_in_patch?(patch)
         else
-          content = changed_file_content(entry)
-          if content.present?
-            content.include?("[inferred]") || content.match?(OPEN_QUESTIONS_HEADING)
-          else
-            # Patch and content are both unavailable — GitHub omits the
-            # patch payload for oversized diffs, and this caller did not
-            # supply file content.  Do NOT guess: assume planning markers
-            # are absent so an ordinary docs-only PR whose diff happens to
-            # be oversized is never silently classified as a Planning PR.
-            # A genuine Planning PR whose diff is too large for GitHub to
-            # return a patch will simply not get the automatic checklist
-            # (the author can reduce the diff size, and reviewers can
-            # still manually request changes).
-            false
-          end
+          # Patch unavailable — do not guess from full file content.
+          false
         end
       end
     end
@@ -93,14 +88,6 @@ module Lid
       end
     end
 
-    def self.changed_file_content(entry)
-      case entry
-      when Hash
-        entry[:content] || entry["content"]
-      else
-        entry.content if entry.respond_to?(:content)
-      end
-    end
 
     def self.markdown_or_instruction_file?(path)
       planning_doc_file?(path) || INSTRUCTION_FILES.include?(path)
