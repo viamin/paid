@@ -269,10 +269,46 @@ module Activities
         ].join("\n")
       end
 
+      # The LID Planning prompt requires a "Confirm these inferred decisions"
+      # checklist in the PR description. generate_description may collapse it
+      # from the raw agent summary, so extract it separately and append it
+      # when it is missing from the final body.
+      checklist = extract_lid_planning_checklist(summary)
+      if checklist.present? && !body.include?("Confirm these inferred decisions")
+        body = "#{body}\n\n#{checklist}"
+      end
+
       {
         body: body,
         llm_generated_description: false
       }
+    end
+
+    # Extracts the "Confirm these inferred decisions" checklist from the raw
+    # agent summary. The LID Planning prompt instructs the agent to format
+    # each item as a Markdown checkbox with the segment and decision text.
+    #
+    # Returns the full section (heading + items) as a string, or nil when
+    # no checklist can be found.
+    def extract_lid_planning_checklist(summary)
+      return nil if summary.blank?
+
+      # Match a heading like "## Confirm these inferred decisions" and
+      # capture its content through the next same-or-higher-level heading.
+      section = summary.match(
+        /^\#{1,4}\s*Confirm these inferred decisions\s*$(.+?)(?=^\#{1,4}\s|\z)/mi
+      )
+      return section[0].strip if section
+
+      # Fallback: the agent may have included checkbox items without an
+      # explicit heading. Look for a block of consecutive checkbox lines
+      # and wrap them in the expected heading.
+      checkbox_block = summary.match(
+        /(?:^[-*]\s*\[[ x]\]\s*.+$\n?){2,}/m
+      )
+      return nil unless checkbox_block
+
+      "## Confirm these inferred decisions\n\n#{checkbox_block[0].strip}"
     end
 
     def resolve_pr_template(agent_run)

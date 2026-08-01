@@ -372,6 +372,89 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
         expect(captured_body).to include("This Planning PR bootstraps the LID design tree")
       end
+
+      it "appends the Confirm these inferred decisions checklist from the agent summary" do
+        summary = <<~SUMMARY
+          ## LID Brownfield Analysis
+
+          Bootstrapped LID design tree with 5 LLDs and EARS specs.
+
+          ## Confirm these inferred decisions
+
+          - [ ] auth: session tokens use JWT with RS256 (inferred from implementation)
+          - [ ] api: rate limiting is per-account with sliding window (inferred from rack-attack config)
+          - [ ] db: tenant isolation via RLS policies (inferred from schema)
+        SUMMARY
+        lid_agent_run.log!("stdout", summary)
+
+        allow(AgentHarness).to receive(:send_message)
+          .and_return(instance_double(AgentHarness::Response, success?: true,
+                                     output: "Bootstrapped LID design tree with 5 LLDs and EARS specs."))
+
+        captured_body = nil
+        allow(github_client).to receive(:create_pull_request) do |*_args, **kwargs|
+          captured_body = kwargs[:body]
+          pr_response
+        end
+
+        activity.execute(agent_run_id: lid_agent_run.id)
+
+        expect(captured_body).to include("Confirm these inferred decisions")
+        expect(captured_body).to include("- [ ] auth: session tokens use JWT with RS256")
+        expect(captured_body).to include("- [ ] db: tenant isolation via RLS policies")
+      end
+
+      it "does not duplicate checklist when description already contains it" do
+        summary = <<~SUMMARY
+          ## Confirm these inferred decisions
+
+          - [ ] auth: session tokens use JWT with RS256
+        SUMMARY
+        lid_agent_run.log!("stdout", summary)
+
+        # The generated description already includes the checklist
+        allow(AgentHarness).to receive(:send_message)
+          .and_return(instance_double(AgentHarness::Response, success?: true,
+                                     output: "Bootstrapped LID design tree.\n\n## Confirm these inferred decisions\n\n- [ ] auth: session tokens use JWT with RS256"))
+
+        captured_body = nil
+        allow(github_client).to receive(:create_pull_request) do |*_args, **kwargs|
+          captured_body = kwargs[:body]
+          pr_response
+        end
+
+        activity.execute(agent_run_id: lid_agent_run.id)
+
+        # Should appear exactly once
+        occurrences = captured_body.scan("Confirm these inferred decisions").size
+        expect(occurrences).to eq(1)
+      end
+
+      it "extracts checkbox block as checklist when no explicit heading exists" do
+        summary = <<~SUMMARY
+          ## LID Analysis
+
+          Decisions inferred from codebase:
+
+          - [ ] core: async job processing via GoodJob
+          - [ ] api: GraphQL schema uses relay connections
+        SUMMARY
+        lid_agent_run.log!("stdout", summary)
+
+        allow(AgentHarness).to receive(:send_message)
+          .and_return(instance_double(AgentHarness::Response, success?: true,
+                                     output: "Generated description without checklist."))
+
+        captured_body = nil
+        allow(github_client).to receive(:create_pull_request) do |*_args, **kwargs|
+          captured_body = kwargs[:body]
+          pr_response
+        end
+        activity.execute(agent_run_id: lid_agent_run.id)
+
+        expect(captured_body).to include("Confirm these inferred decisions")
+        expect(captured_body).to include("- [ ] core: async job processing via GoodJob")
+      end
     end
 
     it "does not fail when label addition fails" do
