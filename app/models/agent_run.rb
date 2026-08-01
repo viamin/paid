@@ -18,7 +18,7 @@ class AgentRun < ApplicationRecord
   AGENT_TYPES = %w[claude_code cursor codex copilot gemini opencode kilocode pi api devin factory internal_agent].freeze
   FOCUSES = %w[general ci_fix review_feedback merge_conflict conversation issue_implementation label_action].freeze
   # analyze_issue is automation-only (triggered via Automation::Decision), not exposed in the manual run form.
-  GOALS = %w[create_pr create_issue review enhance_issue analyze_issue].freeze
+  GOALS = %w[create_pr create_issue review enhance_issue analyze_issue lid_planning].freeze
   TRIGGER_TYPES = %w[manual automatic].freeze
   EXECUTION_ORIGINS = %w[paid_native external].freeze
   ACTIVE_STATUSES = %w[running].freeze
@@ -1461,6 +1461,14 @@ class AgentRun < ApplicationRecord
     goal == "analyze_issue"
   end
 
+  def lid_planning_goal?
+    goal == "lid_planning"
+  end
+
+  def plan_docs_present?
+    Array(external_metadata["plan_docs"]).any? { |doc| doc.respond_to?(:[]) && doc["name"].present? }
+  end
+
   def focused?
     focus != "general"
   end
@@ -2583,6 +2591,8 @@ class AgentRun < ApplicationRecord
   def prompt_for_goal
     if review_goal?
       prompt_for_review
+    elsif lid_planning_goal?
+      prompt_for_lid_planning
     elsif enhance_issue_goal?
       prompt_for_enhance_issue
     elsif analyze_issue_goal?
@@ -2606,6 +2616,14 @@ class AgentRun < ApplicationRecord
 
     "Analyze issue ##{issue.github_number} in #{project.full_name}. " \
       "Assess whether there is sufficient context to start implementation."
+  end
+
+  def prompt_for_lid_planning
+    Prompts::BuildForLidPlanning.call(
+      project_name: project.full_name,
+      project_description: Prompts::BuildForLidPlanning.project_description_for(project),
+      plan_docs: external_metadata.fetch("plan_docs", [])
+    )
   end
 
   def empty_phase_summary
@@ -2781,6 +2799,7 @@ class AgentRun < ApplicationRecord
 
   def has_prompt_source
     return if issue.present? || custom_prompt.present? || source_pull_request_number.present?
+    return if lid_planning_goal? && plan_docs_present?
 
     errors.add(:base, "must have either an issue, a custom prompt, or a source pull request")
   end

@@ -165,6 +165,46 @@ RSpec.describe Activities::CreateAgentRunActivity do
       expect(agent_run.goal).to eq("review")
     end
 
+    it "persists named plan docs for lid_planning runs" do
+      result = activity.execute(
+        project_id: project.id,
+        goal: "lid_planning",
+        plan_docs: [ { name: "docs/rdrs/RDR-051-lid-aware-agent-runs.md" } ]
+      )
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.custom_prompt).to include("docs/rdrs/RDR-051-lid-aware-agent-runs.md")
+      expect(agent_run.external_metadata["plan_docs"]).to eq(
+        [ { "name" => "docs/rdrs/RDR-051-lid-aware-agent-runs.md" } ]
+      )
+    end
+
+    it "filters out malformed plan docs without crashing" do
+      result = activity.execute(
+        project_id: project.id,
+        goal: "lid_planning",
+        plan_docs: [ { "name" => "docs/rdrs/RDR-051.md" }, { "path" => "no-name" } ]
+      )
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.external_metadata["plan_docs"]).to eq(
+        [ { "name" => "docs/rdrs/RDR-051.md" } ]
+      )
+    end
+
+    it "builds the lid_planning prompt on resume when plan_docs are in external_metadata" do
+      queued_run = create(:agent_run, :queued, :automatic,
+        project: project,
+        goal: "lid_planning",
+        custom_prompt: nil,
+        external_metadata: { "plan_docs" => [ { "name" => "docs/hld.md" } ] })
+
+      activity.execute(agent_run_id: queued_run.id)
+
+      queued_run.reload
+      expect(queued_run.custom_prompt).to include("docs/hld.md")
+    end
+
     it "persists the focus when provided" do
       result = activity.execute(
         project_id: project.id,

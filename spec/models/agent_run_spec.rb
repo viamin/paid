@@ -114,6 +114,25 @@ RSpec.describe AgentRun do
         expect(agent_run).not_to be_valid
         expect(agent_run.errors[:base]).to include("must have either an issue, a custom prompt, or a source pull request")
       end
+
+      it "allows nil issue and nil custom_prompt for lid_planning with named plan_docs" do
+        agent_run = build(
+          :agent_run,
+          :lid_planning_goal,
+          issue: nil,
+          custom_prompt: nil,
+          external_metadata: { "plan_docs" => [ { "name" => "docs/rdrs/RDR-051.md" } ] }
+        )
+
+        expect(agent_run).to be_valid
+      end
+
+      it "rejects lid_planning without plan_docs, issue, or custom_prompt" do
+        agent_run = build(:agent_run, :lid_planning_goal, issue: nil, custom_prompt: nil)
+
+        expect(agent_run).not_to be_valid
+        expect(agent_run.errors[:base]).to include("must have either an issue, a custom prompt, or a source pull request")
+      end
     end
 
     describe "review goal requires pull request" do
@@ -1720,6 +1739,24 @@ RSpec.describe AgentRun do
       end
     end
 
+    describe "#prompt_for_goal" do
+      it "builds the lid planning prompt from project context and stored plan docs" do
+        project = create(:project)
+        agent_run = build(
+          :agent_run,
+          :lid_planning_goal,
+          project: project,
+          issue: nil,
+          external_metadata: { "plan_docs" => [ { "name" => "docs/rdrs/RDR-051.md" } ] }
+        )
+
+        prompt = agent_run.send(:prompt_for_goal)
+
+        expect(prompt).to include("Bootstrap or refine Linked-Intent Development artifacts for #{project.full_name}.")
+        expect(prompt).to include("docs/rdrs/RDR-051.md")
+      end
+    end
+
     describe "#ensure_proxy_token!" do
       it "returns the existing token when present" do
         agent_run = create(:agent_run)
@@ -3040,7 +3077,7 @@ RSpec.describe AgentRun do
     end
 
     it "defines valid GOALS" do
-      expect(described_class::GOALS).to eq(%w[create_pr create_issue review enhance_issue analyze_issue])
+      expect(described_class::GOALS).to eq(%w[create_pr create_issue review enhance_issue analyze_issue lid_planning])
     end
 
     it "defines valid TRIGGER_TYPES" do

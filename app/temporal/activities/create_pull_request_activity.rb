@@ -210,12 +210,14 @@ module Activities
       validate_summary_scope(summary, issue, agent_run, client: client)
       description = generate_description(summary, issue, agent_run_id: agent_run.id)
       quality_warnings = quality_warning_section(agent_run)
+      lid_coherence = lid_coherence_section(agent_run)
 
       template = resolve_pr_template(agent_run)
       body = if template
-        render_pr_template(template, issue, agent_run, description, quality_warnings)
+        rendered = render_pr_template(template, issue, agent_run, description, quality_warnings)
+        append_coherence_section(rendered, lid_coherence)
       else
-        build_default_pr_body(issue, description, quality_warnings: quality_warnings)
+        build_default_pr_body(issue, description, quality_warnings: quality_warnings, lid_coherence: lid_coherence)
       end
 
       {
@@ -224,7 +226,7 @@ module Activities
       }
     end
 
-    def build_default_pr_body(issue, description, quality_warnings: nil)
+    def build_default_pr_body(issue, description, quality_warnings: nil, lid_coherence: nil)
       parts = []
 
       if description.present?
@@ -236,6 +238,11 @@ module Activities
       if quality_warnings.present?
         parts << ""
         parts << quality_warnings
+      end
+
+      if lid_coherence.present?
+        parts << ""
+        parts << lid_coherence
       end
 
       parts << ""
@@ -277,6 +284,16 @@ module Activities
       template.render(variables)
     end
 
+    # The coherence soft-block must appear on the PR body regardless of
+    # whether the selected template renders {{quality_warnings}} (#3083).
+    # Templates that omit that placeholder would otherwise silently drop
+    # the coherence section.
+    def append_coherence_section(body, lid_coherence)
+      return body if lid_coherence.blank?
+
+      "#{body}\n\n#{lid_coherence}"
+    end
+
     def quality_warning_section(agent_run)
       warnings = agent_run.agent_run_logs.system.filter_map do |log|
         metadata = log.metadata || {}
@@ -303,6 +320,13 @@ module Activities
       return feedback_errors.map { |error| error["message"] || error[:message] }.compact.join("; ") if feedback_errors.any?
 
       metadata["output_preview"].to_s
+    end
+
+    def lid_coherence_section(agent_run)
+      Lid::CoherenceSection.render(
+        agent_run,
+        closing_note: "This run continued intentionally; the checker is advisory, not a hard gate."
+      )
     end
 
     # Deterministic fallback used when the LLM description generator fails or
