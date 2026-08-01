@@ -50,6 +50,8 @@ jobs:
       || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    env:
+      PAID_SKIP_DATABASE_RUNTIME_ROLE_GUARD: "true"
 
     steps:
       - name: Checkout code

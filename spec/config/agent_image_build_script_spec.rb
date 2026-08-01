@@ -39,6 +39,11 @@ RSpec.describe AgentImageBuildScript, :no_db do
       expect(script_source).to include('OMP_BUN_INSTALL_SCRIPT_URL=$(echo "${OMP_CONTRACT}" | sed -n \'s/^BUN_INSTALL_SCRIPT_URL=//p\')')
       expect(script_source).to include('--build-arg "OMP_BUN_INSTALL_SCRIPT_URL=${OMP_BUN_INSTALL_SCRIPT_URL}"')
     end
+
+    it "skips the database runtime role guard for metadata-only contract extraction" do
+      expect(script_source).to include('RUBY_CONTRACT_ENV=(env PAID_SKIP_DATABASE_RUNTIME_ROLE_GUARD=true)')
+      expect(script_source).to include('CLAUDE_CONTRACT=$("${RUBY_CONTRACT_ENV[@]}" bundle exec ruby')
+    end
   end
 
   describe AgentImageWorkflow do
@@ -60,6 +65,10 @@ RSpec.describe AgentImageBuildScript, :no_db do
       expect(workflow_source).to include('bun_install_script_url=$(echo "$contract" | sed -n \'s/^BUN_INSTALL_SCRIPT_URL=//p\')')
       expect(workflow_source).to include('echo "bun_install_script_url=$bun_install_script_url" >> "$GITHUB_OUTPUT"')
       expect(workflow_source).to include("OMP_BUN_INSTALL_SCRIPT_URL=${{ steps.omp-contract.outputs.bun_install_script_url }}")
+    end
+
+    it "skips the runtime role guard for the agent-image job's metadata-only Ruby subprocesses" do
+      expect(workflow_source).to include("env:\n      PAID_SKIP_DATABASE_RUNTIME_ROLE_GUARD: \"true\"")
     end
   end
 
