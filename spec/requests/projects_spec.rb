@@ -1616,7 +1616,7 @@ RSpec.describe "Projects" do
 
       def expect_lid_redetection(project, detection_result)
         expect(response).to redirect_to(project_path(project))
-        expect(Projects::DetectLidMode).to have_received(:from_project_repository).with(project:)
+        expect(Projects::DetectLidMode).to have_received(:from_project_repository).with(project:, force: true)
         expect(project.reload.lid_mode).to eq("full")
         expect(project.lid_detection).to include(
           "version" => detection_result[:version],
@@ -1806,6 +1806,17 @@ RSpec.describe "Projects" do
 
         expect(response).to redirect_to(project_path(project))
         expect(project.reload.lid_mode).to eq("scoped")
+        expect(project.lid_mode_overridden?).to be true
+      end
+
+      it "does not let background detection overwrite a manually forced lid mode" do
+        project = create(:project, account: account, github_token: github_token, lid_mode: nil)
+        patch project_path(project), params: { project: { lid_mode: "scoped" } }
+        project.reload
+
+        Projects::DetectLidMode.call(project:, repo_path: Rails.root)
+
+        expect(project.reload.lid_mode).to eq("scoped")
       end
 
       it "re-detects lid mode from the repository when requested" do
@@ -1817,10 +1828,11 @@ RSpec.describe "Projects" do
           warnings: []
         }
 
-        allow(Projects::DetectLidMode).to receive(:from_project_repository).with(project:) do
-          project.update!(
+        allow(Projects::DetectLidMode).to receive(:from_project_repository).with(project:, force: true) do
+          project.reload.update!(
             lid_mode: detection_result[:mode],
-            lid_detection: detection_result.stringify_keys
+            lid_detection: detection_result.stringify_keys,
+            lid_mode_overridden: false
           )
           detection_result
         end
@@ -1828,6 +1840,7 @@ RSpec.describe "Projects" do
         patch project_path(project), params: { project: { lid_mode: "scoped", redetect_lid_mode: "1" } }
 
         expect_lid_redetection(project, detection_result)
+        expect(project.lid_mode_overridden?).to be false
       end
 
       it "allows updating github_token to another valid token" do

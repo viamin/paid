@@ -45,7 +45,10 @@ as in-scope-by-default until a scope section is added.
 
 Detection writes:
 
-- `projects.lid_mode` as the currently effective mode
+- `projects.lid_mode` as the currently effective mode (skipped when a manual
+  override is in effect and detection is not an explicit re-detect)
+- `projects.lid_mode_overridden` as whether the owner has manually forced the
+  mode from settings
 - `projects.lid_detection` as metadata with the detected version, timestamp,
   source signals, and warnings
 
@@ -72,5 +75,12 @@ Project owners can:
 - re-run repo detection
 
 The override is applied through project settings by writing `projects.lid_mode`
-directly. Re-detect replaces that value with the repo-derived result and refreshes
-`projects.lid_detection`.
+directly, which also sets `projects.lid_mode_overridden`. Re-detect replaces
+that value with the repo-derived result, refreshes `projects.lid_detection`,
+and clears `lid_mode_overridden`.
+
+Background detection (repo import, normal collector sync) always refreshes
+`projects.lid_detection` metadata, but skips writing `projects.lid_mode` while
+`lid_mode_overridden` is true — otherwise a routine sync would silently discard
+the owner's override. Detection during an explicit re-detect always applies,
+regardless of the override flag.

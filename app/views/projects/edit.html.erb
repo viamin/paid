@@ -374,6 +374,9 @@
 
             <% lid_detection = @project.lid_detection || {} %>
             <div class="mt-3 space-y-1 text-xs text-gray-500">
+              <% if @project.lid_mode_overridden? %>
+                <p class="text-amber-700">Manually overridden — repository sync will not change this until you re-detect.</p>
+              <% end %>
               <p>Detected version: <%= lid_detection["version"].presence || "none" %></p>
               <p>Sources: <%= Array(lid_detection["sources"]).presence&.join(", ") || "none" %></p>
               <% Array(lid_detection["warnings"]).each do |warning| %>

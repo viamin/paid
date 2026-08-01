@@ -154,7 +154,10 @@ class ProjectsController < ApplicationController
     @github_installations = policy_scope(GithubInstallation).active
 
     update_params = project_params
-    update_params[:lid_mode] = update_params[:lid_mode].presence if update_params.key?(:lid_mode)
+    if update_params.key?(:lid_mode)
+      update_params[:lid_mode] = update_params[:lid_mode].presence
+      update_params[:lid_mode_overridden] = true
+    end
     @github_auth_source = selected_github_auth_source(update_params)
     @paid_agents_installation = @project.paid_agents_installation(installations: @github_installations)
     update_params = update_params.merge(allowed_github_usernames: parse_usernames_csv) if params.dig(:project, :allowed_github_usernames_csv)
@@ -486,7 +489,7 @@ class ProjectsController < ApplicationController
   end
 
   def redetect_lid_mode!
-    Projects::DetectLidMode.from_project_repository(project: @project)
+    Projects::DetectLidMode.from_project_repository(project: @project, force: true)
     @project.reload
   end
 

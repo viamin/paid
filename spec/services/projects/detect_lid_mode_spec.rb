@@ -99,4 +99,39 @@ RSpec.describe Projects::DetectLidMode do
     expect(project.reload.lid_mode).to be_nil
     expect(project.lid_detection).to include("sources" => [], "warnings" => [])
   end
+
+  # @spec LID-DETECTION-008
+  it "does not overwrite a manually overridden lid mode during background detection" do
+    project.update!(lid_mode: "scoped", lid_mode_overridden: true)
+    write_repo_file("AGENTS.md", <<~MD)
+      ## LID
+
+      - Mode: Full
+      - Version: 1.3.0
+    MD
+
+    result = described_class.call(project:, repo_path:)
+
+    expect(result[:mode]).to eq("full")
+    expect(project.reload.lid_mode).to eq("scoped")
+    expect(project.lid_mode_overridden?).to be true
+    expect(project.lid_detection).to include("version" => "1.3.0")
+  end
+
+  # @spec LID-DETECTION-008
+  it "applies the detected mode and clears the override when forced" do
+    project.update!(lid_mode: "scoped", lid_mode_overridden: true)
+    write_repo_file("AGENTS.md", <<~MD)
+      ## LID
+
+      - Mode: Full
+      - Version: 1.3.0
+    MD
+
+    result = described_class.call(project:, repo_path:, force: true)
+
+    expect(result[:mode]).to eq("full")
+    expect(project.reload.lid_mode).to eq("full")
+    expect(project.lid_mode_overridden?).to be false
+  end
 end

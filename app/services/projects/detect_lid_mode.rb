@@ -15,20 +15,21 @@ module Projects
       new(...).call
     end
 
-    def self.from_project_repository(project:)
+    def self.from_project_repository(project:, force: false)
       worktree_service = WorktreeService.new(project)
       worktree_service.ensure_cloned
       commit_sha = worktree_service.current_commit_sha
 
       worktree_service.with_temporary_checkout(commit_sha) do |checkout_path|
-        call(project:, repo_path: checkout_path)
+        call(project:, repo_path: checkout_path, force:)
       end
     end
 
-    def initialize(project:, repo_path:)
+    def initialize(project:, repo_path:, force: false)
       @project = project
       @repo_path = Pathname(repo_path)
       @warnings = []
+      @force = force
     end
 
     # @spec LID-DETECTION-001
@@ -44,7 +45,7 @@ module Projects
 
     private
 
-    attr_reader :project, :repo_path, :warnings
+    attr_reader :project, :repo_path, :warnings, :force
 
     def instruction_file_detection
       instruction_file = find_instruction_file
@@ -90,17 +91,27 @@ module Projects
       }
     end
 
+    # @spec LID-DETECTION-008
+    # A manual override from project settings survives background detection
+    # (import/sync) until the owner explicitly requests re-detection.
     def persist!(result)
-      project.update!(
-        lid_mode: result.fetch(:mode),
-        lid_detection: {
-          "version" => result[:version],
-          "detected_at" => Time.current.iso8601,
-          "sources" => result.fetch(:sources),
-          "warnings" => result.fetch(:warnings),
-          "scope_defaults_to_in_scope" => scoped_without_scope?(result)
-        }
-      )
+      attrs = { lid_detection: detection_metadata(result) }
+      attrs.merge!(lid_mode: result.fetch(:mode), lid_mode_overridden: false) if apply_detected_mode?
+      project.update!(attrs)
+    end
+
+    def apply_detected_mode?
+      force || !project.lid_mode_overridden?
+    end
+
+    def detection_metadata(result)
+      {
+        "version" => result[:version],
+        "detected_at" => Time.current.iso8601,
+        "sources" => result.fetch(:sources),
+        "warnings" => result.fetch(:warnings),
+        "scope_defaults_to_in_scope" => scoped_without_scope?(result)
+      }
     end
 
     def scoped_without_scope?(result)

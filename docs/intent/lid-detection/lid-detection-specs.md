@@ -51,3 +51,10 @@
   repo-derived result.
   *Tests:* `spec/requests/projects_spec.rb`.
   *Code:* `app/controllers/projects_controller.rb`, `app/views/projects/edit.html.erb`.
+
+- [x] **LID-DETECTION-008** — When a project owner has manually forced
+  `projects.lid_mode`, the system SHALL NOT overwrite it during background
+  detection (repo import or collector sync); the override SHALL persist until
+  the owner explicitly requests re-detection.
+  *Tests:* `spec/services/projects/detect_lid_mode_spec.rb`, `spec/requests/projects_spec.rb`.
+  *Code:* `app/services/projects/detect_lid_mode.rb`, `app/controllers/projects_controller.rb`.

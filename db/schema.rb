@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_31_201903) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_01_011044) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2011,6 +2011,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_31_201903) do
     t.datetime "last_polled_at"
     t.jsonb "lid_detection", default: {}, null: false, comment: "Repository-derived LID detection metadata such as version, sources, warnings, and detection time."
     t.string "lid_mode", comment: "Effective Linked-Intent Development mode detected from the repository or forced in settings."
+    t.boolean "lid_mode_overridden", default: false, null: false, comment: "True when the project owner has manually forced lid_mode from settings. Repo-driven detection during import/sync leaves lid_mode untouched while this is true, until an explicit re-detect is requested."
     t.jsonb "log_data"
     t.integer "max_draft_review_rounds", default: 10, null: false
     t.integer "max_enhance_issue_reevaluation_rounds", default: 3, null: false
