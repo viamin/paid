@@ -513,7 +513,7 @@ module Activities
       else
         # Fetch review threads first; only fetch full reviews when needed.
         unresolved_threads = fetch_unresolved_threads(client, project, issue)
-        human_triggers = human_review_thread_triggers(project, unresolved_threads)
+        human_triggers = human_review_thread_triggers(project, unresolved_threads, issue:, client:)
 
         if human_triggers.blank?
           reviews = fetch_reviews(client, project, issue)
@@ -939,7 +939,7 @@ module Activities
         project: project, last_run: last_run, client: client, issue: issue))
       triggers.concat(check_non_enabled_bot_reviews(reviews, unresolved_threads,
         project: project, last_run: last_run, client: client, issue: issue))
-      triggers.concat(human_review_thread_triggers(project, unresolved_threads))
+      triggers.concat(human_review_thread_triggers(project, unresolved_threads, issue:, client:))
       triggers.concat(check_conversation_comments(client, project, issue, last_run))
       triggers.concat(changes_requested_from_reviews(project, reviews, last_run))
       triggers.concat(check_actionable_labels(project, issue))
@@ -1475,7 +1475,7 @@ module Activities
       return nil if unresolved_threads.nil?
 
       triggers = []
-      triggers.concat(human_review_thread_triggers(project, unresolved_threads))
+      triggers.concat(human_review_thread_triggers(project, unresolved_threads, issue:, client:))
       triggers.concat(check_review_bot_status(reviews, unresolved_threads,
         project: project, last_run: focused_run, client: client, issue: issue))
       triggers.concat(check_non_enabled_bot_reviews(reviews, unresolved_threads,
@@ -1514,7 +1514,7 @@ module Activities
 
       ci_passed = all_checks_green?(checks) ? 1.0 : 0.0
       resolved = ci_passed == 1.0 &&
-        human_review_thread_triggers(project, unresolved_threads).empty? &&
+        human_review_thread_triggers(project, unresolved_threads, issue:, client:).empty? &&
         changes_requested_from_reviews(project, reviews, focused_run).empty? &&
         check_conversation_comments(client, project, issue, focused_run).empty? &&
         check_actionable_labels(project, issue).empty? &&
@@ -1708,7 +1708,8 @@ module Activities
       pull_request_collector(project, client:).fetch_unresolved_threads(issue:)
     end
 
-    def human_review_thread_triggers(project, unresolved_threads)
+    # @spec LID-PR-CONFIRM-003
+    def human_review_thread_triggers(project, unresolved_threads, issue: nil, client: nil)
       return [] if unresolved_threads.nil?
 
       trusted_threads = unresolved_threads.select do |thread|
@@ -1718,8 +1719,35 @@ module Activities
       end
 
       return [] if trusted_threads.empty?
+      # Planning-PR detection (a docs-files fetch) runs only once a
+      # review-thread trigger would otherwise fire, so ordinary PRs without
+      # trusted thread activity never pay for the extra API call.
+      return [] if planning_pr?(issue:, client:, project:)
 
       [ { type: "review_threads", details: "#{trusted_threads.size} unresolved thread(s)" } ]
+    end
+
+    # @spec LID-PR-CONFIRM-003
+    # Docs-only Planning PRs (RDR-051 phase 4) defer comment-only review
+    # feedback; only a formal "Request changes" review should enqueue a
+    # follow-up run, so unresolved-thread presence alone must not trigger
+    # one here. `changes_requested_from_reviews` remains the trigger.
+    #
+    # Detection derives from the live diff (changed files) rather than the PR
+    # body so that editing or trimming the PR description cannot un-classify a
+    # branch whose contents are still docs-only (the branch contents are the
+    # source of truth per the LLD). See LID-PR-CONFIRM-001.
+    def planning_pr?(issue:, client:, project:)
+      Lid::BuildInferenceChecklist.docs_only_planning_pr?(
+        changed_files: planning_pr_changed_files(issue:, client:, project:)
+      )
+    rescue GithubClient::Error
+      false
+    end
+
+
+    def planning_pr_changed_files(issue:, client:, project:)
+      client.pull_request_file_patches(project.full_name, issue.github_number)
     end
 
     def review_bot_review_status(reviews, allowed_bot_logins: nil)
@@ -2430,26 +2458,48 @@ module Activities
       pull_request_collector(project, client:).fetch_reviews(issue:)
     end
 
+    # Review states that clear an earlier CHANGES_REQUESTED from the same
+    # reviewer. APPROVED supersedes it; a DISMISSED review means the reviewer
+    # (or a repo admin) explicitly withdrew the request in GitHub, so it must
+    # also clear — otherwise the change request survives forever and the PR
+    # can never be cleared without a fresh re-review.
+    REVIEW_CLEARING_STATES = %w[APPROVED DISMISSED].freeze
+
     def changes_requested_from_reviews(project, reviews, last_run)
       return [] if reviews.nil?
 
       cutoff = last_run&.completed_at
 
-      latest_by_user = reviews
+      reviews_by_user = reviews
         .select { |r| project.trusted_github_user?(r[:user_login]) && !bot_user?(r[:user_login]) }
+        .select { |r| cutoff.nil? || r[:submitted_at].nil? || r[:submitted_at] > cutoff }
         .group_by { |r| r[:user_login]&.downcase }
-        .transform_values { |user_reviews| user_reviews.max_by { |r| r[:submitted_at] || Time.at(0) } }
 
-      changes_requested = latest_by_user.values.select do |review|
-        next false unless review[:state] == "CHANGES_REQUESTED"
-        next false if cutoff && review[:submitted_at] && review[:submitted_at] <= cutoff
+      changes_requested = reviews_by_user.values.filter_map do |user_reviews|
+        latest_changes_requested = latest_review_for_state(user_reviews, "CHANGES_REQUESTED")
+        next unless latest_changes_requested
 
-        true
+        latest_clearing = REVIEW_CLEARING_STATES
+          .filter_map { |state| latest_review_for_state(user_reviews, state) }
+          .max_by { |review| review_time(review) }
+        next if latest_clearing && review_time(latest_clearing) > review_time(latest_changes_requested)
+
+        latest_changes_requested
       end
 
       return [] if changes_requested.empty?
 
       [ { type: "changes_requested", details: changes_requested.map { |r| r[:user_login] } } ]
+    end
+
+    def latest_review_for_state(reviews, state)
+      reviews
+        .select { |review| review[:state] == state }
+        .max_by { |review| review_time(review) }
+    end
+
+    def review_time(review)
+      review[:submitted_at] || Time.at(0)
     end
 
     def check_actionable_labels(project, issue)
@@ -2522,7 +2572,7 @@ module Activities
       last_run = last_completed_run(project, issue)
       unresolved_threads ||= fetch_unresolved_threads(client, project, issue)
 
-      return false if human_review_thread_triggers(project, unresolved_threads).any?
+      return false if human_review_thread_triggers(project, unresolved_threads, issue:, client:).any?
       return false if check_review_bot_status(reviews, unresolved_threads,
         project: project, last_run: last_run, client: client, issue: issue).any?
       return false if changes_requested_from_reviews(project, reviews, last_run).any?
