@@ -322,6 +322,7 @@ class Project < ApplicationRecord
   after_update_commit :clear_scheduler_pause_on_token_change, if: :saved_change_to_github_token_id?
   after_update_commit :clear_scheduler_pause_on_installation_change, if: :saved_change_to_github_installation_id?
   after_update_commit :seed_eligible_issues, if: :auto_pick_just_enabled?
+  after_update_commit :cancel_queued_auto_pick_runs, if: :auto_pick_just_disabled?
   after_update_commit :ensure_playwright_mcp_definition!, if: :verification_just_enabled?
   after_destroy_commit :stop_github_polling
   after_destroy_commit :cleanup_qdrant_collection
@@ -1426,6 +1427,10 @@ class Project < ApplicationRecord
     saved_change_to_auto_pick_enabled? && auto_pick_enabled?
   end
 
+  def auto_pick_just_disabled?
+    saved_change_to_auto_pick_enabled? && !auto_pick_enabled?
+  end
+
   def verification_just_enabled?
     return false unless saved_change_to_screenshot_settings?
 
@@ -1475,6 +1480,36 @@ class Project < ApplicationRecord
     Issues::BulkEnqueueEligible.call(project: self, skip_project_gate: true)
   rescue => e
     Rails.logger.error(message: "auto_pick.bulk_seed_failed", project_id: id, error: e.message)
+  end
+
+  # @spec AUTO-PICK-QUEUE-001
+  def cancel_queued_auto_pick_runs
+    now = Time.current
+    queued_auto_pick_runs = agent_runs
+      .where(status: "queued")
+      .where("agent_runs.auto_pick = TRUE OR (agent_runs.trigger_type = 'automatic' AND agent_runs.goal = 'enhance_issue')")
+    queued_auto_pick_run_ids = queued_auto_pick_runs.ids
+    return if queued_auto_pick_run_ids.empty?
+
+    cancelled_count = queued_auto_pick_runs
+      .where(id: queued_auto_pick_run_ids)
+      .update_all(
+        status: "cancelled",
+        completed_at: now,
+        error_message: "Auto-Pick disabled for project",
+        updated_at: now
+      )
+    return if cancelled_count.zero?
+
+    Dashboard::CacheVersion.bump(account, scope: Dashboard::CacheVersion::LISTS_SCOPE)
+    LiveDashboardBroadcastJob.perform_later(account_id, queued_auto_pick_run_ids.first, refresh_queue_preview: true)
+    Rails.logger.info(
+      message: "auto_pick.queued_runs_cancelled",
+      project_id: id,
+      cancelled_count: cancelled_count
+    )
+  rescue => e
+    Rails.logger.error(message: "auto_pick.queued_runs_cancel_failed", project_id: id, error: e.message)
   end
 
   def enqueue_knowledge_collection

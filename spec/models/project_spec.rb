@@ -778,11 +778,37 @@ RSpec.describe Project do
     end
 
     it "does not bulk seed when auto_pick is disabled" do
+      # @spec AUTO-PICK-QUEUE-001
       project = create(:project, auto_pick_enabled: true)
 
       project.update!(auto_pick_enabled: false)
 
       expect(Issues::BulkEnqueueEligible).not_to have_received(:call)
+    end
+
+    it "cancels queued auto-pick runs when auto_pick is disabled" do
+      # @spec AUTO-PICK-QUEUE-001
+      project = create(:project, auto_pick_enabled: true)
+      queued_auto_pick = create(:agent_run, :queued, project: project, auto_pick: true, trigger_type: "automatic")
+      claimed_auto_pick = create(:agent_run, :queued, project: project, auto_pick: true, trigger_type: "automatic", temporal_workflow_id: "claimed")
+      automatic_enhance_issue = create(:agent_run, :queued, :enhance_issue_goal, project: project, auto_pick: false, trigger_type: "automatic")
+      manual_enhance_issue = create(:agent_run, :queued, :enhance_issue_goal, :manual, project: project, auto_pick: false)
+      running_auto_pick = create(:agent_run, :running, project: project, auto_pick: true, trigger_type: "automatic")
+      manual_run = create(:agent_run, :queued, :manual, project: project, auto_pick: false)
+      other_project_run = create(:agent_run, :queued, auto_pick: true, trigger_type: "automatic")
+
+      expect {
+        project.update!(auto_pick_enabled: false)
+      }.to have_enqueued_job(LiveDashboardBroadcastJob)
+        .with(project.account_id, queued_auto_pick.id, refresh_queue_preview: true)
+
+      expect(queued_auto_pick.reload).to have_attributes(status: "cancelled", error_message: "Auto-Pick disabled for project")
+      expect(claimed_auto_pick.reload.status).to eq("cancelled")
+      expect(automatic_enhance_issue.reload.status).to eq("cancelled")
+      expect(manual_enhance_issue.reload.status).to eq("queued")
+      expect(running_auto_pick.reload.status).to eq("running")
+      expect(manual_run.reload.status).to eq("queued")
+      expect(other_project_run.reload.status).to eq("queued")
     end
 
     it "does not bulk seed when other attributes change" do
