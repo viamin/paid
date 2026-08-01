@@ -28,4 +28,14 @@ RSpec.describe HealthChecks::Checks::User::InvalidFallbackChain do
 
     expect(described_class.call(project)).to eq([])
   end
+
+  it "does not create a missing user_setting when run against a project" do
+    project = create(:project)
+    owner = project.effective_owner
+    owner.user_setting&.destroy!
+
+    expect {
+      expect(described_class.call(project)).to eq([])
+    }.not_to change(UserSetting, :count)
+  end
 end

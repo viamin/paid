@@ -40,7 +40,7 @@ module HealthChecks
 
         def settings
           @settings ||= if subject.is_a?(::Project)
-            AgentRuns::UserSettingsResolver.call(project: subject, strict: false)
+            AgentRuns::UserSettingsResolver.call(project: subject, strict: false, create: false)
           else
             owner&.user_setting
           end
