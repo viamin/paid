@@ -513,7 +513,7 @@ module Activities
       else
         # Fetch review threads first; only fetch full reviews when needed.
         unresolved_threads = fetch_unresolved_threads(client, project, issue)
-        human_triggers = human_review_thread_triggers(project, unresolved_threads, pr_data)
+        human_triggers = human_review_thread_triggers(project, unresolved_threads, pr_data, issue:, client:)
 
         if human_triggers.blank?
           reviews = fetch_reviews(client, project, issue)
@@ -939,7 +939,7 @@ module Activities
         project: project, last_run: last_run, client: client, issue: issue))
       triggers.concat(check_non_enabled_bot_reviews(reviews, unresolved_threads,
         project: project, last_run: last_run, client: client, issue: issue))
-      triggers.concat(human_review_thread_triggers(project, unresolved_threads, pr_data))
+      triggers.concat(human_review_thread_triggers(project, unresolved_threads, pr_data, issue:, client:))
       triggers.concat(check_conversation_comments(client, project, issue, last_run))
       triggers.concat(changes_requested_from_reviews(project, reviews, last_run))
       triggers.concat(check_actionable_labels(project, issue))
@@ -1475,7 +1475,7 @@ module Activities
       return nil if unresolved_threads.nil?
 
       triggers = []
-      triggers.concat(human_review_thread_triggers(project, unresolved_threads, pr_data))
+      triggers.concat(human_review_thread_triggers(project, unresolved_threads, pr_data, issue:, client:))
       triggers.concat(check_review_bot_status(reviews, unresolved_threads,
         project: project, last_run: focused_run, client: client, issue: issue))
       triggers.concat(check_non_enabled_bot_reviews(reviews, unresolved_threads,
@@ -1514,7 +1514,7 @@ module Activities
 
       ci_passed = all_checks_green?(checks) ? 1.0 : 0.0
       resolved = ci_passed == 1.0 &&
-        human_review_thread_triggers(project, unresolved_threads, pr_data).empty? &&
+        human_review_thread_triggers(project, unresolved_threads, pr_data, issue:, client:).empty? &&
         changes_requested_from_reviews(project, reviews, focused_run).empty? &&
         check_conversation_comments(client, project, issue, focused_run).empty? &&
         check_actionable_labels(project, issue).empty? &&
@@ -1709,9 +1709,9 @@ module Activities
     end
 
     # @spec LID-PR-CONFIRM-003
-    def human_review_thread_triggers(project, unresolved_threads, pr_data = nil)
+    def human_review_thread_triggers(project, unresolved_threads, pr_data = nil, issue: nil, client: nil)
       return [] if unresolved_threads.nil?
-      return [] if planning_pr?(pr_data)
+      return [] if planning_pr?(pr_data, issue:, client:, project:)
 
       trusted_threads = unresolved_threads.select do |thread|
         thread[:comments].any? do |c|
@@ -1729,8 +1729,16 @@ module Activities
     # feedback; only a formal "Request changes" review should enqueue a
     # follow-up run, so unresolved-thread presence alone must not trigger
     # one here. `changes_requested_from_reviews` remains the trigger.
-    def planning_pr?(pr_data)
-      Lid::BuildInferenceChecklist.checklist_appended?(pr_data&.body)
+    def planning_pr?(pr_data, issue:, client:, project:)
+      return false unless issue && client
+      return false unless Lid::BuildInferenceChecklist.checklist_appended?(pr_data&.body)
+
+      Lid::BuildInferenceChecklist.docs_only_planning_pr?(
+        body: pr_data&.body,
+        changed_files: client.pull_request_files(project.full_name, issue.github_number)
+      )
+    rescue GithubClient::Error
+      false
     end
 
     def review_bot_review_status(reviews, allowed_bot_logins: nil)
@@ -2533,7 +2541,7 @@ module Activities
       last_run = last_completed_run(project, issue)
       unresolved_threads ||= fetch_unresolved_threads(client, project, issue)
 
-      return false if human_review_thread_triggers(project, unresolved_threads, pr_data).any?
+      return false if human_review_thread_triggers(project, unresolved_threads, pr_data, issue:, client:).any?
       return false if check_review_bot_status(reviews, unresolved_threads,
         project: project, last_run: last_run, client: client, issue: issue).any?
       return false if changes_requested_from_reviews(project, reviews, last_run).any?

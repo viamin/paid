@@ -20,6 +20,36 @@ module Lid
       body.to_s.include?(CHECKLIST_HEADING)
     end
 
+    def self.docs_only_planning_pr?(body:, changed_files:)
+      checklist_appended?(body) && docs_only_paths?(changed_files)
+    end
+
+    def self.docs_only_paths?(changed_files)
+      paths = normalize_changed_files(changed_files)
+      paths.present? && paths.all? { |path| markdown_or_instruction_file?(path) }
+    end
+
+    def self.normalize_changed_files(changed_files)
+      Array(changed_files).filter_map do |entry|
+        case entry
+        when String
+          entry
+        when Hash
+          entry[:filename] || entry["filename"]
+        else
+          entry.filename if entry.respond_to?(:filename)
+        end
+      end.reject(&:blank?)
+    end
+
+    def self.markdown_or_instruction_file?(path)
+      planning_doc_file?(path) || INSTRUCTION_FILES.include?(path)
+    end
+
+    def self.planning_doc_file?(path)
+      path == "docs/high-level-design.md" || path.start_with?("docs/intent/")
+    end
+
     def initialize(worktree_path:, base_commit_sha:, max_items: MAX_ITEMS)
       @worktree_path = worktree_path
       @base_commit_sha = base_commit_sha
@@ -44,7 +74,7 @@ module Lid
     # an ordinary implementation PR that happens to touch LID docs alongside
     # code changes must not be misclassified as a Planning PR downstream.
     def docs_only_diff?
-      changed_files.present? && changed_files.all? { |path| markdown_or_instruction_file?(path) }
+      self.class.docs_only_paths?(changed_files)
     end
 
     def inferred_items
@@ -172,11 +202,11 @@ module Lid
     end
 
     def markdown_or_instruction_file?(path)
-      planning_doc_file?(path) || INSTRUCTION_FILES.include?(path)
+      self.class.markdown_or_instruction_file?(path)
     end
 
     def planning_doc_file?(path)
-      path == "docs/high-level-design.md" || path.start_with?("docs/intent/")
+      self.class.planning_doc_file?(path)
     end
 
     def read_lines(path)

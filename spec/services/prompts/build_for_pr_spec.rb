@@ -43,6 +43,26 @@ RSpec.describe Prompts::BuildForPr do
     planning_pr
   end
 
+  def docs_only_planning_pr_files
+    [
+      "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md",
+      "docs/intent/lid-pr-confirmation/lid-pr-confirmation-specs.md",
+      "AGENTS.md"
+    ]
+  end
+
+  def planning_review_thread(path:, body:)
+    [
+      {
+        id: "thread_1",
+        is_resolved: false,
+        comments: [
+          { body:, path:, line: 12, author: "trusteduser" }
+        ]
+      }
+    ]
+  end
+
   def expect_prompt_to_exclude_sections(prompt, *section_names)
     section_names.each do |section_name|
       expect(prompt).not_to include(section_name)
@@ -213,20 +233,41 @@ RSpec.describe Prompts::BuildForPr do
       allow(github_client).to receive(:pull_request)
         .with(project.full_name, 42)
         .and_return(planning_pr_data(pr_data))
+      allow(github_client).to receive(:pull_request_files)
+        .with(project.full_name, 42)
+        .and_return(docs_only_planning_pr_files)
       allow(github_client).to receive(:review_threads)
-        .and_return([
-          {
-            id: "thread_1",
-            is_resolved: false,
-            comments: [
-              { body: "Replace this inferred rationale", path: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md", line: 12, author: "trusteduser" }
-            ]
-          }
-        ])
+        .and_return(
+          planning_review_thread(
+            path: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md",
+            body: "Replace this inferred rationale"
+          )
+        )
 
       expect(prompt).to include("Intent Confirmation Follow-Up")
       expect(prompt).to include("Replace the `[inferred]` marker")
       expect(prompt).to include("docs-only LID planning PR")
+    end
+
+    it "omits intent-confirmation guidance when the planning checklist is stale against the live diff" do
+      allow(github_client).to receive(:pull_request)
+        .with(project.full_name, 42)
+        .and_return(planning_pr_data(pr_data))
+      allow(github_client).to receive(:pull_request_files)
+        .with(project.full_name, 42)
+        .and_return([
+          "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md",
+          "app/services/prompts/build_for_pr.rb"
+        ])
+      allow(github_client).to receive(:review_threads)
+        .and_return(
+          planning_review_thread(
+            path: "app/services/prompts/build_for_pr.rb",
+            body: "This now needs ordinary review feedback handling"
+          )
+        )
+
+      expect(prompt).not_to include("Intent Confirmation Follow-Up")
     end
 
     it "omits intent-confirmation guidance for ordinary docs PRs without the planning checklist" do

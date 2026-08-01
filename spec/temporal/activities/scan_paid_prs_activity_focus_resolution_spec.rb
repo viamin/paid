@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "ostruct"
 
 RSpec.describe Activities::ScanPaidPrsActivity do
   describe "#review_feedback_resolution_scores", :no_db do
@@ -24,7 +25,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       allow(activity).to receive(:fetch_check_runs).with(client, project, pr_data).and_return(checks)
       allow(activity).to receive(:fetch_reviews).with(client, project, issue).and_return(reviews)
       allow(activity).to receive(:fetch_unresolved_threads).with(client, project, issue).and_return(unresolved_threads)
-      allow(activity).to receive(:human_review_thread_triggers).with(project, unresolved_threads, pr_data).and_return([])
+      allow(activity).to receive(:human_review_thread_triggers)
+        .with(project, unresolved_threads, pr_data, issue: issue, client: client)
+        .and_return([])
       allow(activity).to receive(:check_non_enabled_bot_reviews)
         .with(reviews, unresolved_threads, project:, last_run: focused_run, client:, issue:)
         .and_return([])
@@ -61,6 +64,81 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       result = activity.send(:review_feedback_resolution_scores, project, client, issue, focused_run)
 
       expect(result).to be_nil
+    end
+  end
+
+  describe "#human_review_thread_triggers", :no_db do
+    let(:activity) { described_class.new }
+    let(:project) { instance_double(ProjectDouble, full_name: "acme/widgets") }
+    let(:client) { instance_double(GithubClientDouble) }
+    let(:issue) { instance_double(IssueDouble, github_number: 42) }
+    let(:pr_data) do
+      OpenStruct.new(body: <<~MARKDOWN)
+        Planning PR for LID adoption
+
+        ## Confirm These Inferred Decisions
+
+        - [ ] `docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md`: Replace inferred rationale
+      MARKDOWN
+    end
+    let(:unresolved_threads) do
+      [
+        {
+          id: "thread_1",
+          is_resolved: false,
+          comments: [
+            { body: "Please fix this", author: "trusteduser" }
+          ]
+        }
+      ]
+    end
+
+    before do
+      stub_const("ProjectDouble", Class.new)
+      stub_const("GithubClientDouble", Class.new)
+      stub_const("IssueDouble", Class.new)
+      allow(project).to receive(:trusted_github_user?).with("trusteduser").and_return(true)
+    end
+
+    it "suppresses unresolved thread triggers while the live diff remains docs-only" do
+      allow(client).to receive(:pull_request_files)
+        .with(project.full_name, issue.github_number)
+        .and_return([
+          "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md",
+          "docs/intent/lid-pr-confirmation/lid-pr-confirmation-specs.md",
+          "AGENTS.md"
+        ])
+
+      triggers = activity.send(
+        :human_review_thread_triggers,
+        project,
+        unresolved_threads,
+        pr_data,
+        issue: issue,
+        client: client
+      )
+
+      expect(triggers).to eq([])
+    end
+
+    it "treats stale planning markers as ordinary review feedback once code files are added" do
+      allow(client).to receive(:pull_request_files)
+        .with(project.full_name, issue.github_number)
+        .and_return([
+          "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md",
+          "app/services/prompts/build_for_pr.rb"
+        ])
+
+      triggers = activity.send(
+        :human_review_thread_triggers,
+        project,
+        unresolved_threads,
+        pr_data,
+        issue: issue,
+        client: client
+      )
+
+      expect(triggers).to eq([ { type: "review_threads", details: "1 unresolved thread(s)" } ])
     end
   end
 end

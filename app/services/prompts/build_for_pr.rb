@@ -551,7 +551,18 @@ module Prompts
     end
 
     def planning_pr_confirmation_requested?
-      Lid::BuildInferenceChecklist.checklist_appended?(pr_data.body)
+      return false unless Lid::BuildInferenceChecklist.checklist_appended?(pr_data.body)
+
+      Lid::BuildInferenceChecklist.docs_only_planning_pr?(
+        body: pr_data.body,
+        changed_files: pull_request_files
+      )
+    end
+
+    def pull_request_files
+      @pull_request_files ||= github_client.pull_request_files(project.full_name, pr_number)
+    rescue GithubClient::Error
+      []
     end
 
     def trusted_comments
