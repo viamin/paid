@@ -16,12 +16,13 @@ module Lid
       new(...).call
     end
 
-    def self.checklist_appended?(body)
-      body.to_s.include?(CHECKLIST_HEADING)
-    end
-
-    def self.docs_only_planning_pr?(body:, changed_files:)
-      checklist_appended?(body) && docs_only_paths?(changed_files)
+    # A docs-only Planning PR is identified by its live diff, not by whether
+    # the PR body still carries the appended checklist heading. The body is a
+    # snapshot that can be edited or trimmed independently of the branch, so
+    # the branch contents (the changed files) remain the source of truth —
+    # mirroring the criteria the checklist builder gates on at PR-creation time.
+    def self.docs_only_planning_pr?(changed_files:)
+      docs_only_paths?(changed_files)
     end
 
     def self.docs_only_paths?(changed_files)

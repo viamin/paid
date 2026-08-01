@@ -551,12 +551,7 @@ module Prompts
     end
 
     def planning_pr_confirmation_requested?
-      return false unless Lid::BuildInferenceChecklist.checklist_appended?(pr_data.body)
-
-      Lid::BuildInferenceChecklist.docs_only_planning_pr?(
-        body: pr_data.body,
-        changed_files: pull_request_files
-      )
+      Lid::BuildInferenceChecklist.docs_only_planning_pr?(changed_files: pull_request_files)
     end
 
     def pull_request_files

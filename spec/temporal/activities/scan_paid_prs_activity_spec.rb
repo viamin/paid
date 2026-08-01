@@ -9905,7 +9905,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     reviews: default_clean_copilot_review,
     recent_multi_page: false,
     head_committed_at: 2.hours.ago,
-    pr_updated_at: nil
+    pr_updated_at: nil,
+    pr_files: []
   )
     pr_data = OpenStruct.new(
       head: OpenStruct.new(sha: "abc123", repo: OpenStruct.new(fork: head_repo_fork)),
@@ -9943,6 +9944,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     allow(github_client).to receive(:pull_request_reviews)
       .with(project.full_name, 42)
       .and_return(reviews)
+    allow(github_client).to receive(:pull_request_files)
+      .with(project.full_name, 42)
+      .and_return(pr_files)
     allow(github_client).to receive(:commit)
       .with(project.full_name, "abc123")
       .and_return(commit_data)

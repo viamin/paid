@@ -26,7 +26,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       allow(activity).to receive(:fetch_reviews).with(client, project, issue).and_return(reviews)
       allow(activity).to receive(:fetch_unresolved_threads).with(client, project, issue).and_return(unresolved_threads)
       allow(activity).to receive(:human_review_thread_triggers)
-        .with(project, unresolved_threads, pr_data, issue: issue, client: client)
+        .with(project, unresolved_threads, issue: issue, client: client)
         .and_return([])
       allow(activity).to receive(:check_non_enabled_bot_reviews)
         .with(reviews, unresolved_threads, project:, last_run: focused_run, client:, issue:)
@@ -72,15 +72,6 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     let(:project) { instance_double(ProjectDouble, full_name: "acme/widgets") }
     let(:client) { instance_double(GithubClientDouble) }
     let(:issue) { instance_double(IssueDouble, github_number: 42) }
-    let(:pr_data) do
-      OpenStruct.new(body: <<~MARKDOWN)
-        Planning PR for LID adoption
-
-        ## Confirm These Inferred Decisions
-
-        - [ ] `docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md`: Replace inferred rationale
-      MARKDOWN
-    end
     let(:unresolved_threads) do
       [
         {
@@ -113,7 +104,6 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         :human_review_thread_triggers,
         project,
         unresolved_threads,
-        pr_data,
         issue: issue,
         client: client
       )
@@ -133,7 +123,6 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         :human_review_thread_triggers,
         project,
         unresolved_threads,
-        pr_data,
         issue: issue,
         client: client
       )

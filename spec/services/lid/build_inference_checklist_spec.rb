@@ -154,4 +154,28 @@ RSpec.describe Lid::BuildInferenceChecklist do
       expect(checklist).not_to include("Open question: Should the existing open question remain deferred?")
     end
   end
+
+  describe ".docs_only_planning_pr?" do
+    let(:docs_only_files) do
+      [
+        "docs/intent/lid/lid-design.md",
+        "docs/high-level-design.md",
+        "AGENTS.md"
+      ]
+    end
+
+    it "derives planning-PR status from the live diff, not the PR body" do
+      expect(described_class.docs_only_planning_pr?(changed_files: docs_only_files)).to be(true)
+    end
+
+    it "is false once the diff touches a non-doc file" do
+      changed = docs_only_files + [ "app/models/widget.rb" ]
+
+      expect(described_class.docs_only_planning_pr?(changed_files: changed)).to be(false)
+    end
+
+    it "is false for an empty diff" do
+      expect(described_class.docs_only_planning_pr?(changed_files: [])).to be(false)
+    end
+  end
 end

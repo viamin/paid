@@ -249,6 +249,26 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).to include("docs-only LID planning PR")
     end
 
+    it "derives planning-PR status from the live diff even when the PR body is trimmed of the checklist heading" do
+      trimmed_pr = pr_data.dup
+      trimmed_pr.body = "Planning PR — body edited, checklist section removed"
+      allow(github_client).to receive(:pull_request)
+        .with(project.full_name, 42)
+        .and_return(trimmed_pr)
+      allow(github_client).to receive(:pull_request_files)
+        .with(project.full_name, 42)
+        .and_return(docs_only_planning_pr_files)
+      allow(github_client).to receive(:review_threads)
+        .and_return(
+          planning_review_thread(
+            path: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md",
+            body: "Replace this inferred rationale"
+          )
+        )
+
+      expect(prompt).to include("Intent Confirmation Follow-Up")
+    end
+
     it "omits intent-confirmation guidance when the planning checklist is stale against the live diff" do
       allow(github_client).to receive(:pull_request)
         .with(project.full_name, 42)
