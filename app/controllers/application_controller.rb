@@ -10,6 +10,7 @@ class ApplicationController < ActionController::Base
 
   around_action :with_current_attributes, prepend: true
   before_action :authenticate_user!
+  before_action :stamp_cable_auth_cookie, if: :user_signed_in?
   after_action :verify_authorized, unless: :skip_pundit?
   after_action :verify_policy_scoped, if: :verify_policy_scoped?
 
@@ -42,6 +43,20 @@ class ApplicationController < ActionController::Base
     Current.account
   end
   helper_method :current_account
+
+  # ActionCable websocket requests bypass the Warden/session middleware, so the
+  # connection can't read request.env["warden"]. Stamp an encrypted user-id
+  # cookie on every authenticated request so ApplicationCable::Connection can
+  # authorize the subscriber (see app/channels/application_cable/connection.rb).
+  # httponly denies JS access (defense vs. XSS exfiltration); secure scopes it
+  # to HTTPS where the app enforces SSL.
+  def stamp_cable_auth_cookie
+    cookies.encrypted[ApplicationCable::Connection::CABLE_USER_COOKIE] = {
+      value: current_user.id,
+      httponly: true,
+      secure: Rails.application.config.force_ssl
+    }
+  end
 
   def feature_enabled?(flag_name, project: nil)
     FeatureFlags.enabled?(flag_name, project:)

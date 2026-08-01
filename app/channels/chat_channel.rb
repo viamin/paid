@@ -18,7 +18,11 @@ class ChatChannel < ApplicationCable::Channel
   def send_message(data)
     return unless @chat_session
 
-    TenantContext.with(current_user.account) do
+    # ActionCable channels run outside ApplicationController; TenantContext.with
+    # does not propagate the RLS session variable to the query connection here,
+    # so role/rate-limit lookups silently come back empty. Bypass RLS and rely
+    # on the explicit checks below (Pundit policy + account-scoped session).
+    TenantContext.with_system_access do
       content = data["content"].to_s
       return if content.blank?
       return transmit_event("error", { message: "You are not authorized to send messages" }) unless authorized_to_send_messages?
@@ -44,7 +48,7 @@ class ChatChannel < ApplicationCable::Channel
   def resolve_tool_call(data)
     return unless @chat_session
 
-    TenantContext.with(current_user.account) do
+    TenantContext.with_system_access do
       decision = data["decision"].to_s
       message = @chat_session.messages.find_by(id: data["message_id"])
       return transmit_event("error", { message: "Pending tool call not found" }) unless message
@@ -70,8 +74,8 @@ class ChatChannel < ApplicationCable::Channel
   private
 
   def find_session
-    TenantContext.with(current_user.account) do
-      ChatSession.where(account: current_user.account)
+    TenantContext.with_system_access do
+      ChatSession.where(account_id: current_user.account_id)
         .find_by(id: params[:session_id])
     end
   end
