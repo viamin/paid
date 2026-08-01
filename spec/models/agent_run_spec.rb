@@ -3040,7 +3040,7 @@ RSpec.describe AgentRun do
     end
 
     it "defines valid GOALS" do
-      expect(described_class::GOALS).to eq(%w[create_pr create_issue review enhance_issue analyze_issue])
+      expect(described_class::GOALS).to eq(%w[create_pr create_issue review enhance_issue analyze_issue lid_planning])
     end
 
     it "defines valid TRIGGER_TYPES" do

@@ -3,7 +3,7 @@
 class ProjectsController < ApplicationController
   include AuditLogging
 
-  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :toggle_auto_merge, :toggle_pause, :quality_resume, :detect_services, :detect_screenshot_settings, :commit_screenshot_config, :ensure_labels, :cleanup_stale_runs, :start_preview, :stop_preview, :restart_preview ]
+  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :toggle_auto_merge, :toggle_pause, :quality_resume, :detect_services, :detect_screenshot_settings, :commit_screenshot_config, :ensure_labels, :cleanup_stale_runs, :start_preview, :stop_preview, :restart_preview, :start_lid ]
   skip_after_action :verify_authorized, only: :index
 
   NULLS_LAST_SORT_ATTRIBUTES = %w[last_agent_run_at last_github_activity_at].freeze
@@ -247,6 +247,49 @@ class ProjectsController < ApplicationController
       end
       format.html { redirect_to @project }
     end
+  end
+
+  def start_lid
+    authorize @project, :run_agent?
+
+    if @project.lid_mode.present?
+      redirect_to @project, alert: "LID is already configured (mode: #{@project.lid_mode}). Use Re-detect to refresh."
+      return
+    end
+
+    budget_result = CostBudgets::Check.call(@project)
+    unless budget_result[:allowed]
+      redirect_to @project, alert: "Your project's AI budget has been reached. Please adjust your budget settings or try again later."
+      return
+    end
+
+    settings = current_user.settings
+    runner_identifier = settings.default_runner_identifier_for_goal("lid_planning")
+    runner = Runner.runnable.find_by(routing_key: runner_identifier) if runner_identifier
+    runner ||= Runner.runnable.first
+
+    unless runner
+      redirect_to @project, alert: "No runnable agent runner is available. Please configure a runner first."
+      return
+    end
+
+    agent_run = AgentRun.create!(
+      project: @project,
+      initiating_user: current_user,
+      runner: runner,
+      agent_type: Runner.agent_type_for(runner.runner_key),
+      goal: "lid_planning",
+      trigger_type: "manual",
+      status: "queued"
+    )
+
+    ProcessRunQueueJob.perform_later
+
+    audit_event("agent_run.created", metadata: { agent_run_id: agent_run.id, project_name: @project.name, goal: "lid_planning" })
+
+    redirect_to @project, notice: "LID planning run queued. Paid will analyze the repository and open a docs-only Planning PR for your review."
+  rescue ActiveRecord::RecordInvalid => e
+    redirect_to @project, alert: e.message
   end
 
   def quality_resume

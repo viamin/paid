@@ -139,6 +139,16 @@
               Edit
             <% end %>
           <% end %>
+          <% if policy(@project).run_agent? && @project.lid_mode.nil? %>
+            <%= button_to start_lid_project_path(@project), method: :post,
+                class: "inline-flex items-center rounded-md bg-amber-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-500",
+                form: { data: { turbo_confirm: "Paid will analyze the repository and open a docs-only Planning PR. This won't change any code. Continue?" } } do %>
+              <svg class="-ml-0.5 mr-1.5 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                <path fill-rule="evenodd" d="M10 1a4.5 4.5 0 0 0-4.5 4.5V9H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-.5V5.5A4.5 4.5 0 0 0 10 1Zm3 8V5.5a3 3 0 1 0-6 0V9h6Z" clip-rule="evenodd" />
+              </svg>
+              Start using LID
+            <% end %>
+          <% end %>
         </div>
       </div>
     </div>

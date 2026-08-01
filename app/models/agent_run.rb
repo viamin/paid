@@ -18,7 +18,7 @@ class AgentRun < ApplicationRecord
   AGENT_TYPES = %w[claude_code cursor codex copilot gemini opencode kilocode pi api devin factory internal_agent].freeze
   FOCUSES = %w[general ci_fix review_feedback merge_conflict conversation issue_implementation label_action].freeze
   # analyze_issue is automation-only (triggered via Automation::Decision), not exposed in the manual run form.
-  GOALS = %w[create_pr create_issue review enhance_issue analyze_issue].freeze
+  GOALS = %w[create_pr create_issue review enhance_issue analyze_issue lid_planning].freeze
   TRIGGER_TYPES = %w[manual automatic].freeze
   EXECUTION_ORIGINS = %w[paid_native external].freeze
   ACTIVE_STATUSES = %w[running].freeze
@@ -935,7 +935,7 @@ class AgentRun < ApplicationRecord
     auto_pick: { label: "Auto-pick", indicator: 9 }
   }.freeze
   UNKNOWN_PRIORITY = { label: "Unknown", indicator: nil }.freeze
-  QUEUE_GOAL_PRIORITY_GOALS = %w[create_issue enhance_issue analyze_issue].freeze
+  QUEUE_GOAL_PRIORITY_GOALS = %w[create_issue enhance_issue analyze_issue lid_planning].freeze
 
   def queue_priority_tier
     return :manual if manual?
@@ -1459,6 +1459,10 @@ class AgentRun < ApplicationRecord
 
   def analyze_issue_goal?
     goal == "analyze_issue"
+  end
+
+  def lid_planning_goal?
+    goal == "lid_planning"
   end
 
   def focused?
@@ -2587,6 +2591,8 @@ class AgentRun < ApplicationRecord
       prompt_for_enhance_issue
     elsif analyze_issue_goal?
       prompt_for_analyze_issue
+    elsif lid_planning_goal?
+      prompt_for_lid_planning
     else
       prompt_for_issue
     end
@@ -2606,6 +2612,10 @@ class AgentRun < ApplicationRecord
 
     "Analyze issue ##{issue.github_number} in #{project.full_name}. " \
       "Assess whether there is sufficient context to start implementation."
+  end
+
+  def prompt_for_lid_planning
+    Prompts::BuildForLidPlanning.call(project: project)
   end
 
   def empty_phase_summary
