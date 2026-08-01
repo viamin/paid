@@ -220,13 +220,23 @@ module Activities
       options
     end
 
+    # @spec ISSUE-ENHANCEMENT-001
+    # @spec ISSUE-ENHANCEMENT-002
     def prompt_for(project, issue, comments, context)
       <<~PROMPT
         You analyze GitHub issues for implementation readiness.
 
         Decide whether the issue has enough context for an implementation agent.
         Use the issue text, conversation, and knowledge base context. Do not invent
-        facts. If requirements are missing or ambiguous, ask specific questions.
+        facts. If requirements are missing or ambiguous, ask specific questions in
+        plain language. Do not use Linked-Intent Development or other process jargon.
+        Prefer questions that uncover:
+        - the problem being solved,
+        - the desired behavior, ideally phrased as "when X happens, the system should Y",
+        - constraints or non-negotiables,
+        - alternatives that were considered or rejected,
+        - what is in scope versus out of scope,
+        - how the user will know the work is done.
 
         Respond with ONLY valid JSON:
         {
