@@ -1711,6 +1711,20 @@ RSpec.describe "Projects" do
         expect(response.body).to include("Could not load repository screenshot config: GitHub is down")
       end
 
+      it "re-renders the form without crashing when mutation_test params accompany a validation failure" do
+        project = create(:project, account: account, github_token: github_token)
+
+        expect {
+          patch project_path(project), params: {
+            project: { name: "" },
+            mutation_test: { enabled: "1", command: "bundle exec mutant run", failure_behavior: "warn" }
+          }
+        }.not_to raise_error
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.body).to include("Mutation Testing")
+      end
+
       it "allows updating priority label names" do
         project = create(:project, account: account, github_token: github_token)
         patch project_path(project), params: {
