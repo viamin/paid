@@ -923,6 +923,44 @@ RSpec.describe Prompts::BuildForIssue do
 
       expect(result).to eq([])
     end
+
+    it "uses the supplied comments without fetching from GitHub" do
+      supplied = [ issue_comment(login: "viamin", body: "pre-fetched trusted") ]
+      allow(github_client).to receive(:issue_comments)
+
+      result = described_class.fetch_trusted_comments(
+        github_client: github_client,
+        repo: repo,
+        number: number,
+        project: project,
+        comments: supplied
+      )
+
+      expect(result).to eq(supplied)
+      expect(github_client).not_to have_received(:issue_comments)
+    end
+
+    it "filters and caps the supplied comments without fetching from GitHub" do
+      trusted_oldest = issue_comment(login: "viamin", body: "oldest trusted")
+      trusted_newest = issue_comment(login: "viamin", body: "newest trusted")
+      allow(github_client).to receive(:issue_comments)
+
+      result = described_class.fetch_trusted_comments(
+        github_client: github_client,
+        repo: repo,
+        number: number,
+        project: project,
+        max_comments: 1,
+        comments: [
+          issue_comment(login: "stranger", body: "ignore me"),
+          trusted_oldest,
+          trusted_newest
+        ]
+      )
+
+      expect(result).to eq([ trusted_newest ])
+      expect(github_client).not_to have_received(:issue_comments)
+    end
   end
 
   describe ".service_environment_section_for" do
