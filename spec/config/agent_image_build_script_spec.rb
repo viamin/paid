@@ -111,5 +111,12 @@ RSpec.describe AgentImageBuildScript, :no_db do
       expect(dockerfile_source).to include('OMP_BINARY_PATH="$(command -v omp || true)"')
       expect(dockerfile_source).to include('test -x "${OMP_BINARY_PATH}"')
     end
+
+    it "copies the vendored git credential helper from the agent image directory" do
+      helper_path = Rails.root.join("docker/agent/scripts/git-credential-paid")
+
+      expect(helper_path).to exist
+      expect(dockerfile_source).to include("COPY docker/agent/scripts/git-credential-paid /usr/local/bin/git-credential-paid")
+    end
   end
 end

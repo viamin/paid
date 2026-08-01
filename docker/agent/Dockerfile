@@ -490,7 +490,7 @@ RUN if [ -z "${CURSOR_ARTIFACT_URL}" ]; then echo "ERROR: CURSOR_ARTIFACT_URL bu
 
 # Install git credential helper for proxy-based authentication.
 # This allows git clone/push inside the container without exposing GitHub tokens.
-COPY scripts/git-credential-paid /usr/local/bin/git-credential-paid
+COPY docker/agent/scripts/git-credential-paid /usr/local/bin/git-credential-paid
 COPY docs/lid /opt/paid-lid/docs/lid
 COPY bin/coherence-check.mjs /opt/paid-lid/bin/coherence-check.mjs
 RUN chmod +x /usr/local/bin/git-credential-paid
