@@ -258,6 +258,34 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
       .with(hash_including(type: "error", message: "An unexpected error occurred"))
   end
 
+  # Exercises the REAL SendMessage service (not mocked) through the job with a
+  # streaming LLM client, asserting the complete broadcast contract a
+  # ChatChannel subscriber depends on to render a reply. This is the path the
+  # chat UI uses; the per-example mocks above stub SendMessage entirely and so
+  # cannot detect a regression in the streaming/broadcast wiring.
+  it "broadcasts the full streaming sequence with chunk content and rendered html" do
+    allow(ChatSessions::BuildLlmClient).to receive(:call).and_return(streaming_llm_client)
+
+    expect {
+      described_class.perform_now(
+        chat_session_id: chat_session.id,
+        content: "hi",
+        stream_message_id: stream_message_id
+      )
+    }.to have_broadcasted_to(stream_name)
+      .with(hash_including(type: "message_start", message_id: stream_message_id))
+      .and have_broadcasted_to(stream_name)
+      .with(hash_including(type: "message_chunk", message_id: stream_message_id, content: "Hello "))
+      .and have_broadcasted_to(stream_name)
+      .with(hash_including(type: "message_chunk", message_id: stream_message_id, content: "there!"))
+      .and have_broadcasted_to(stream_name)
+      .with(hash_including(type: "message_created", role: "assistant",
+        stream_message_id: stream_message_id, html: include("Hello there!")))
+      .and have_broadcasted_to(stream_name)
+      .with(hash_including(type: "message_complete", message_id: stream_message_id,
+        tokens: { input: 10, output: 5 }))
+  end
+
   it "broadcasts error and discards on missing session" do
     expect {
       described_class.perform_now(
@@ -272,6 +300,18 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
     Class.new do
       def call(*)
         raise AgentHarness::RateLimitError, "API rate limit exceeded"
+      end
+    end.new
+  end
+
+  # A streaming client that emits two chunks then returns a final assistant
+  # response, exercising the real AgentLoop chunk path through the job.
+  def streaming_llm_client
+    Class.new do
+      def call(_conversation, on_chunk: nil)
+        on_chunk&.call("Hello ")
+        on_chunk&.call("there!")
+        { content: "Hello there!", tool_calls: [], tokens_input: 10, tokens_output: 5, model: "gpt-4o" }
       end
     end.new
   end
