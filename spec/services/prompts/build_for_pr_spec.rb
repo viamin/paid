@@ -57,13 +57,13 @@ RSpec.describe Prompts::BuildForPr do
     ]
   end
 
-  def planning_review_thread(path:, body:)
+  def planning_review_thread(path:, body:, line: 3)
     [
       {
         id: "thread_1",
         is_resolved: false,
         comments: [
-          { body:, path:, line: 12, author: "trusteduser" }
+          { body:, path:, line:, author: "trusteduser" }
         ]
       }
     ]
@@ -281,6 +281,22 @@ RSpec.describe Prompts::BuildForPr do
       stub_planning_pr_review_context(pr_body: "Planning PR - body edited, checklist section removed")
 
       expect(prompt).to include("Intent Confirmation Follow-Up")
+    end
+
+    it "omits intent-confirmation guidance when the review thread targets a non-[inferred] line" do
+      stub_planning_pr_review_context(pr_body: planning_pr_data(pr_data).body)
+      # Override the review thread to target AGENTS.md line 1, which has no
+      # [inferred] marker in the diff patch.
+      allow(github_client).to receive(:review_threads)
+        .and_return(
+          planning_review_thread(
+            path: "AGENTS.md",
+            body: "This is an ordinary docs review",
+            line: 1
+          )
+        )
+
+      expect(prompt).not_to include("Intent Confirmation Follow-Up")
     end
 
     it "omits intent-confirmation guidance when the planning checklist is stale against the live diff" do

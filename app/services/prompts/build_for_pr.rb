@@ -552,12 +552,39 @@ module Prompts
     end
 
 
-    # Returns true when the PR is a docs-only planning PR AND has an active
-    # CHANGES_REQUESTED review. Comment-only feedback and approvals do not
-    # trigger intent confirmation (comment-only = defer, approve = confirm).
+    # Returns true when the PR is a docs-only planning PR, has an active
+    # CHANGES_REQUESTED review, AND at least one unresolved review thread
+    # targets a line that currently contains an [inferred] marker in the
+    # diff. Comment-only feedback and approvals do not trigger intent
+    # confirmation (comment-only = defer, approve = confirm). A
+    # CHANGES_REQUESTED review on an authored line (e.g. AGENTS.md) does not
+    # trigger intent confirmation — the review must be on a live [inferred]
+    # marker line in the current diff.
     def planning_pr_confirmation_requested?
       Lid::BuildInferenceChecklist.docs_only_planning_pr?(changed_files: planning_pr_changed_files) &&
-        changes_requested?
+        changes_requested? &&
+        unresolved_thread_targets_inferred_line?
+    end
+
+    # Returns true when at least one unresolved review thread targets a
+    # line that currently contains an [inferred] marker in the PR diff.
+    # This gates intent confirmation so that ordinary docs review on
+    # authored lines (e.g. AGENTS.md) does not trigger the
+    # inference-correction mode.
+    def unresolved_thread_targets_inferred_line?
+      changed_files = planning_pr_changed_files
+      return false if changed_files.blank?
+
+      inferred_positions = Lid::BuildInferenceChecklist.inferred_line_positions(changed_files)
+      return false if inferred_positions.empty?
+
+      unresolved_threads.any? do |thread|
+        thread[:comments].any? do |comment|
+          path = comment[:path]
+          line = comment[:line]
+          inferred_positions.include?([ path, line ])
+        end
+      end
     end
 
     # Returns true when any reviewer has an active CHANGES_REQUESTED review
@@ -598,15 +625,17 @@ module Prompts
 
 
     def planning_pr_changed_files
-      head_sha = pr_data.head.sha
-      files_data = github_client.pull_request_file_patches(project.full_name, pr_number,
-                                                           head_sha: head_sha)
-      changed_paths = Lid::BuildInferenceChecklist.normalize_changed_files(files_data)
-      return files_data unless Lid::BuildInferenceChecklist.docs_only_paths?(changed_paths)
+      @planning_pr_changed_files ||= begin
+        head_sha = pr_data.head.sha
+        files_data = github_client.pull_request_file_patches(project.full_name, pr_number,
+                                                             head_sha: head_sha)
+        changed_paths = Lid::BuildInferenceChecklist.normalize_changed_files(files_data)
+        return files_data unless Lid::BuildInferenceChecklist.docs_only_paths?(changed_paths)
 
-      files_data
-    rescue GithubClient::Error
-      []
+        files_data
+      rescue GithubClient::Error
+        []
+      end
     end
 
     def trusted_comments

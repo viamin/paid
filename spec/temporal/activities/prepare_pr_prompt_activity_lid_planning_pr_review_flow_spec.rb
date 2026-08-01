@@ -22,16 +22,15 @@ RSpec.describe Activities::PreparePrPromptActivity do
           id: "thread_1",
           is_resolved: false,
           comments: [
-            { body: "Replace this inferred rationale with the confirmed decision", path: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md", line: 12, author: "reviewer" }
+            { body: "Replace this inferred rationale with the confirmed decision", path: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md", line: 3, author: "reviewer" }
           ]
         }
       ],
       [
         {
-          id: "thread_1",
           is_resolved: false,
           comments: [
-            { body: "Replace this inferred rationale with the confirmed decision", path: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md", line: 12, author: "reviewer" }
+            { body: "Replace this inferred rationale with the confirmed decision", path: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md", line: 3, author: "reviewer" }
           ]
         }
       ],

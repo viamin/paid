@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "set"
 require "open3"
 
 module Lid
@@ -86,6 +87,42 @@ module Lid
         added = line[1..]
         added.include?("[inferred]") || added.match?(OPEN_QUESTIONS_HEADING)
       end
+    end
+
+    # Returns a Set of [path, line_number] pairs where added lines in the
+    # diff patches contain an [inferred] marker. Only added lines (lines
+    # starting with "+" but not "+++") are checked, consistent with
+    # {planning_markers_present?}.
+    #
+    # @param changed_files [Array<Hash, Object>] File entries with :filename
+    #   and :patch keys, or objects responding to +filename+ and +patch+.
+    # @return [Set<Array(String, Integer)>] Path and 1-based new-file
+    #   line-number pairs for every added line containing "[inferred]".
+    def self.inferred_line_positions(changed_files)
+      positions = Set.new
+      Array(changed_files).each do |entry|
+        patch = changed_file_patch(entry)
+        next if patch.blank?
+
+        path = normalize_changed_files([ entry ]).first
+        next if path.blank?
+
+        current_new_line = nil
+        patch.each_line do |line|
+          if line.start_with?("@@")
+            match = line.match(/^@@[^@]*\+(\d+)(?:,\d+)?[^@]*@@/)
+            current_new_line = match ? match[1].to_i : nil
+          elsif current_new_line && line.start_with?("+") && !line.start_with?("+++")
+            if line[1..].include?("[inferred]")
+              positions.add([ path, current_new_line ])
+            end
+            current_new_line += 1
+          elsif current_new_line && !line.start_with?("-")
+            current_new_line += 1
+          end
+        end
+      end
+      positions
     end
 
 
