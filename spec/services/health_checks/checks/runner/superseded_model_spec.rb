@@ -26,6 +26,22 @@ RSpec.describe HealthChecks::Checks::Runner::SupersededModel do
     expect(described_class.call(runner)).to eq([])
   end
 
+  it "returns no findings when a stronger sibling exists but is incompatible with the runner" do
+    model = create(:llm_model, :openai, model_id: "gpt-older", tier: "mid", capability_score: 7.0)
+    create(:llm_model, :openai, model_id: "gpt-newer", tier: "mid", capability_score: 9.0)
+    runner = create_runner_with_model(model, tier: "mid")
+
+    allow(Runners::ModelCompatibility).to receive(:call).and_wrap_original do |_original, **args|
+      if args[:model_id] == "gpt-newer"
+        Runners::ModelCompatibility::Result.new(supported: false, reason: "version-gated", incompatibility_type: :cli_version_gated, source: "test")
+      else
+        Runners::ModelCompatibility::Result.new(supported: true, source: "test")
+      end
+    end
+
+    expect(described_class.call(runner)).to eq([])
+  end
+
   def create_runner_with_model(model, tier:)
     user = create(:user)
     api_key = create(:provider_api_key, user: user, api_service_type: "openai")

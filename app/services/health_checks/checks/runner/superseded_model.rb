@@ -36,7 +36,7 @@ module HealthChecks
             .where.not(capability_score: nil)
             .where("capability_score > ?", model.capability_score)
             .order(capability_score: :desc, model_id: :asc)
-            .first
+            .find { |candidate| !compatibility_for(candidate.model_id).unsupported? }
         end
       end
     end
