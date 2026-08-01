@@ -11,15 +11,26 @@
 # segments are created under docs/intent/. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-07-30
+last_updated: 2026-08-01
 
 # Taxonomy groups segments by domain cluster. Purely organizational.
 # Empty until segments exist to cluster.
-taxonomy: {}
+taxonomy:
+  automation:
+    label: Automation
+    description: Automated work selection and queueing behavior.
 
 # The design tree of nodes. Leaf nodes are arrow segments (own EARS + an arrow
-# doc); intermediate nodes (sub-HLDs) group children. Empty = nothing mapped.
-arrows: {}
+# doc); intermediate nodes (sub-HLDs) group children.
+arrows:
+  auto-pick-queue:
+    title: Auto-Pick Queue
+    path: docs/intent/auto-pick-queue/auto-pick-queue-design.md
+    specs: docs/intent/auto-pick-queue/auto-pick-queue-specs.md
+    parent: PAID
+    taxonomy: automation
+    status: OK
+    audited: 2026-08-01
 
 # Items found during mapping that don't yet belong to a segment.
 # arrow-maintenance cleans this up on each audit.

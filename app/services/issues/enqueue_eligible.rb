@@ -14,6 +14,12 @@ module Issues
     end
 
     def call
+      # @spec AUTO-PICK-QUEUE-001
+      unless project.auto_pick_enabled?
+        log_project_deferred
+        return nil
+      end
+
       unless skip_project_gate || Issues::AutoPickProjectGate.call(project)
         log_project_deferred
         return nil

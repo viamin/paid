@@ -18,7 +18,7 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
   end
 
   def project_class
-    @project_class ||= Struct.new(:id) do
+    @project_class ||= Struct.new(:id, :auto_pick_enabled?) do
       def auto_enhance_enabled? = false
       def model_preferences
         @model_preferences ||= {}
@@ -45,6 +45,7 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
   let(:service) { described_class.new(issue, project: project) }
 
   before do
+    allow(project).to receive_messages(auto_pick_enabled?: true, model_preferences: {})
     allow(Issues::AutoPickProjectGate).to receive(:call).with(project).and_return(true)
     allow(Automation::Strategies::AutoPick::DefaultCandidateSource).to receive(:eligible_scope)
       .with(project)
@@ -52,7 +53,6 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
     allow(eligible_scope).to receive(:where).with(id: issue.id).and_return(issue_scope)
     allow(service).to receive(:blocking_runs).with("create_pr").and_return(create_pr_blocking_runs)
     allow(service).to receive(:blocking_runs).with("analyze_issue").and_return(analyze_issue_blocking_runs)
-    allow(project).to receive(:model_preferences).and_return({})
   end
 
   def build_run(id:, previously_new_record:)
@@ -198,6 +198,21 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
     allow(Rails.logger).to receive(:info)
 
     result = service.call
+
+    expect(result).to be_nil
+    expect(Rails.logger).to have_received(:info).with(
+      hash_including(message: "enqueue_eligible.project_deferred", issue_id: issue.id, project_id: project.id)
+    )
+    expect(eligible_scope).not_to have_received(:where)
+  end
+
+  it "returns nil when auto-pick is disabled even if the caller skips the project gate" do
+    # @spec AUTO-PICK-QUEUE-001
+    allow(project).to receive(:auto_pick_enabled?).and_return(false)
+    skipped_service = described_class.new(issue, project: project, skip_project_gate: true)
+    allow(Rails.logger).to receive(:info)
+
+    result = skipped_service.call
 
     expect(result).to be_nil
     expect(Rails.logger).to have_received(:info).with(
