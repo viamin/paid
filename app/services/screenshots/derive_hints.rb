@@ -16,6 +16,8 @@ module Screenshots
   # Best-effort: returns +{}+ (and leaves the column unchanged) on any failure,
   # so callers fall back to capturing every configured route.
   class DeriveHints
+    include Llm::OutputNormalizer
+
     DEFAULT_MODEL = "claude-sonnet-4-6"
     TIMEOUT = 30
     MAX_FILES = 100
@@ -130,15 +132,10 @@ module Screenshots
     end
 
     def parse_json(text)
-      cleaned = strip_fence(text.to_s.strip)
+      cleaned = strip_markdown_fence(text.to_s.strip)
       JSON.parse(cleaned)
     rescue JSON::ParserError
       {}
-    end
-
-    def strip_fence(text)
-      match = text.match(/\A```(?:json)?\s*\n(.*)\n```\z/m)
-      match ? match[1].strip : text
     end
 
     def prompt

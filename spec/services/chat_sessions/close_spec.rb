@@ -79,6 +79,7 @@ RSpec.describe ChatSessions::Close do
       described_class.call(chat_session: ws_session)
 
       expect(ws_session.reload.container_id).to be_nil
+      expect(ws_session.container_capability).to eq("stopped")
       expect(ws_session.workspace_volume).to be_nil
     end
 

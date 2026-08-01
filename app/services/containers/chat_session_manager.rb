@@ -152,7 +152,7 @@ module Containers
         remove_state_volume
       end
 
-      chat_session.update!(container_id: nil, workspace_volume: nil)
+      chat_session.update!(container_capability: "stopped", container_id: nil, workspace_volume: nil)
       @container = nil
       log("cleanup.success")
     end

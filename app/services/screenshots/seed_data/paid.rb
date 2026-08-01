@@ -301,7 +301,9 @@ module Screenshots
             created_by: user,
             project: project,
             runner: provider,
-            mode: "workspace",
+            container_capability: "ready",
+            container_requested_at: 10.minutes.ago,
+            container_ready_at: 5.minutes.ago,
             status: "active"
           )
 

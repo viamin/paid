@@ -943,7 +943,7 @@
               </div>
             </div>
 
-            <% if @mutation_req %>
+            <% if @mutation_req&.updated_at %>
               <div class="pt-2">
                 <span class="text-xs text-gray-500">Last updated: <%= @mutation_req.updated_at.strftime("%b %-d, %Y") %></span>
               </div>

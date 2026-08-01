@@ -13,6 +13,8 @@ class RemoveFairQueueAcrossProjectsFromUserSettings < ActiveRecord::Migration[8.
   # still have the column cached. This column is unused (zero references in
   # app/config/spec), so there is no attribute-caching hazard — safe to drop.
   def change
+    return unless column_exists?(:user_settings, :fair_queue_across_projects, :boolean)
+
     safety_assured do
       remove_column :user_settings, :fair_queue_across_projects, :boolean,
         default: true, null: false

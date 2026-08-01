@@ -67,11 +67,11 @@ module ChatSessions
     end
 
     def resumable_closed_session?
-      chat_session.status == "closed" && chat_session.mode != "workspace"
+      chat_session.status == "closed" && chat_session.inline_only?
     end
 
     def closed_workspace_session?
-      chat_session.status == "closed" && chat_session.mode == "workspace"
+      chat_session.status == "closed" && !chat_session.inline_only?
     end
 
     def check_token_limit!

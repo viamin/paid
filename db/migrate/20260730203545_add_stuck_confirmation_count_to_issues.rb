@@ -2,6 +2,8 @@
 
 class AddStuckConfirmationCountToIssues < ActiveRecord::Migration[8.1]
   def change
+    return if column_exists?(:issues, :stuck_confirmation_count, :integer)
+
     add_column :issues, :stuck_confirmation_count, :integer,
       null: false,
       default: 0,

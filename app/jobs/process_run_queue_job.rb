@@ -219,7 +219,15 @@ class ProcessRunQueueJob < ApplicationJob
         if next_run.runner_unbound?
           bound_runner = AgentRuns::BindRunner.call(agent_run: next_run, exclude_runner_ids: blocked_runner_ids)
           unless bound_runner
-            log_no_runnable_runner(next_run)
+            # @spec RUNNER-SCHED-008: when all eligible runners are blocked by
+            # time-window restrictions, park the run until the earliest window
+            # opens so StaleRunDetectorJob recovers it automatically.
+            park_until = Runners::TimeWindowPark.call(next_run, exclude_runner_ids: blocked_runner_ids)
+            if park_until
+              park_run_for_time_window(next_run, park_until)
+            else
+              log_no_runnable_runner(next_run)
+            end
             next
           end
         end
@@ -325,6 +333,13 @@ class ProcessRunQueueJob < ApplicationJob
   # exists the run's original pin is *restored* (not silently downgraded) and
   # the run is skipped for the rest of this pass — the preferred runner is
   # retried on the next tick.
+  #
+  # @spec RUNNER-SCHED-008 — when no alternative is found because *every*
+  # eligible runner is blocked by a time-window restriction, the run is parked
+  # (rate_limited with +rate_limited_until+) until the earliest window opens
+  # instead of being restored and churned on every queue pass. The parked_until
+  # time is cached alongside reroute resolutions so runs sharing a reroute
+  # context park without another resolver call.
   def reroute_unavailable_runner(agent_run, blocked_runner_ids, skipped_ids, reroute_cache)
     original_id = agent_run.runner_id
     cache_key = reroute_cache_key(agent_run, original_id)
@@ -332,6 +347,7 @@ class ProcessRunQueueJob < ApplicationJob
     if reroute_cache.key?(cache_key)
       cached = reroute_cache[cache_key]
       return skipped_ids.add(agent_run.id) if cached.nil?
+      return park_run_for_time_window(agent_run, cached[:parked_until]) if cached.key?(:parked_until)
       return apply_cached_reroute(agent_run, cached) unless blocked_runner_ids.include?(cached[:runner_id])
     end
 
@@ -339,9 +355,26 @@ class ProcessRunQueueJob < ApplicationJob
     if AgentRuns::BindRunner.call(agent_run: agent_run, exclude_runner_ids: blocked_runner_ids)
       cache_reroute_resolution(agent_run, original_id, cache_key, reroute_cache)
     else
+      # @spec RUNNER-SCHED-008: when every alternative is time-window-blocked,
+      # park the run until the earliest window opens so StaleRunDetectorJob
+      # recovers it automatically, instead of restoring the pin and churning.
+      #
+      # Intentionally passes NO exclude list: the reroute no-alternative path is
+      # reached because the pinned runner just failed preflight (time_window_blocked)
+      # and was added to +blocked_runner_ids+. Excluding it here would hide it from
+      # the "all runners blocked" check, so a user whose only runner carries a
+      # time restriction would never park — they'd churn every pass. Rate-limited
+      # runners in +blocked_runner_ids+ are NOT time-window-blocked, so counting
+      # them (by not excluding) correctly suppresses parking while they recover.
+      park_until = Runners::TimeWindowPark.call(agent_run)
       agent_run.update_columns(runner_id: original_id)
-      reroute_cache[cache_key] = nil
-      skipped_ids.add(agent_run.id)
+      if park_until
+        park_run_for_time_window(agent_run, park_until)
+        reroute_cache[cache_key] = { parked_until: park_until }
+      else
+        reroute_cache[cache_key] = nil
+        skipped_ids.add(agent_run.id)
+      end
     end
   end
 
@@ -406,6 +439,37 @@ class ProcessRunQueueJob < ApplicationJob
       project_id: agent_run.project_id,
       intended_agent_type: agent_run.agent_type
     )
+  end
+
+  # @spec RUNNER-SCHED-008
+  # Atomically transitions a queued run to rate_limited with
+  # rate_limited_until set to the earliest time-window-open, so
+  # StaleRunDetectorJob re-queues it automatically when the window passes.
+  # Does NOT reset stale_requeue_count: that counter tracks how many times
+  # the run has cycled through rate_limited recovery, and resetting it here
+  # would defeat the MAX_RATE_LIMITED_REQUEUES exhaustion guard in
+  # StaleRunDetectorJob#recover_rate_limited_run — a misconfigured runner
+  # (e.g. all 24h blocked) would loop forever without ever failing.
+  def park_run_for_time_window(agent_run, available_at)
+    # Only transition an unclaimed queued run (temporal_workflow_id IS NULL).
+    # Using nil rather than `where.not(temporal_workflow_id: CLAIMED_SENTINEL)`
+    # because SQL `NULL != 'claimed'` evaluates to NULL (not TRUE), which would
+    # exclude every unclaimed run and silently never park — defeating the guard.
+    count = AgentRun.where(id: agent_run.id, status: "queued", temporal_workflow_id: nil)
+      .update_all(
+        status: "rate_limited",
+        rate_limited_until: available_at,
+        updated_at: Time.current
+      )
+
+    if count.positive?
+      Rails.logger.info(
+        message: "process_run_queue.time_window_parked",
+        agent_run_id: agent_run.id,
+        project_id: agent_run.project_id,
+        rate_limited_until: available_at.iso8601
+      )
+    end
   end
 
   def run_admission_for(agent_run, user, mode:, docker_snapshot:, reserved_agent_memory_bytes:, selected_host:, selected_host_limit:)

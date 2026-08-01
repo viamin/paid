@@ -113,7 +113,7 @@ RSpec.describe "ChatSessions" do
   describe "POST /chat" do
     context "when not authenticated" do
       it "redirects to the sign in page" do
-        post chat_sessions_path, params: { mode: "api" }
+        post chat_sessions_path, params: { container_capability: "none" }
         expect(response).to redirect_to(new_user_session_path)
       end
     end
@@ -123,25 +123,67 @@ RSpec.describe "ChatSessions" do
 
       it "creates a new chat session" do
         expect {
-          post chat_sessions_path(format: :json), params: { mode: "api", title: "Test Chat" }
+          post chat_sessions_path(format: :json), params: { container_capability: "none", title: "Test Chat" }
         }.to change(ChatSession, :count).by(1)
 
         expect(response).to have_http_status(:created)
         body = response.parsed_body
         expect(body["title"]).to eq("Test Chat")
         expect(body["status"]).to eq("active")
-        expect(body["mode"]).to eq("api")
+        expect(body["container_capability"]).to eq("none")
         expect(body["external_id"]).to be_present
       end
 
-      it "creates a session with default mode" do
+      it "creates a session with default container capability" do
         post chat_sessions_path(format: :json)
         expect(response).to have_http_status(:created)
-        expect(response.parsed_body["mode"]).to eq("api")
+        expect(response.parsed_body["container_capability"]).to eq("none")
+      end
+
+      it "maps legacy api mode to inline-only sessions" do
+        post chat_sessions_path(format: :json), params: { mode: "api", title: "Legacy API Chat" }
+
+        expect(response).to have_http_status(:created)
+        expect(response.parsed_body["container_capability"]).to eq("none")
+      end
+
+      it "maps legacy workspace mode to pending container capability" do
+        post chat_sessions_path(format: :json), params: { mode: "workspace", title: "Legacy Workspace Chat" }
+
+        expect(response).to have_http_status(:created)
+        expect(response.parsed_body["container_capability"]).to eq("pending")
+      end
+
+      it "maps nested legacy workspace mode to pending container capability" do
+        post chat_sessions_path(format: :json), params: { chat_session: { mode: "workspace", title: "Nested Legacy Workspace Chat" } }
+
+        expect(response).to have_http_status(:created)
+        expect(response.parsed_body["container_capability"]).to eq("pending")
+      end
+
+      it "rejects unsupported legacy modes" do
+        post chat_sessions_path(format: :json), params: { mode: "desktop" }
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body["error"]).to eq("mode must be one of api, workspace")
+      end
+
+      it "prefers explicit container capability over legacy mode" do
+        post chat_sessions_path(format: :json), params: { mode: "workspace", container_capability: "none" }
+
+        expect(response).to have_http_status(:created)
+        expect(response.parsed_body["container_capability"]).to eq("none")
+      end
+
+      it "rejects lifecycle-only container capabilities at creation time" do
+        post chat_sessions_path(format: :json), params: { container_capability: "ready" }
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body["error"]).to include("container_capability")
       end
 
       it "creates a session with auto-approve enabled" do
-        post chat_sessions_path(format: :json), params: { mode: "api", auto_approve: "true" }
+        post chat_sessions_path(format: :json), params: { container_capability: "none", auto_approve: "true" }
 
         expect(response).to have_http_status(:created)
         expect(response.parsed_body["auto_approve"]).to be(true)
@@ -150,7 +192,7 @@ RSpec.describe "ChatSessions" do
 
       it "creates a session with popup metadata context" do
         post chat_sessions_path(format: :json), params: {
-          mode: "api",
+          container_capability: "none",
           project_id: create(:project, account: account).id,
           metadata: {
             entry_point: "popup",
@@ -172,7 +214,7 @@ RSpec.describe "ChatSessions" do
       it "accepts provider_id as a legacy alias for runner_id" do
         runner = create(:runner, user: user)
 
-        post chat_sessions_path(format: :json), params: { mode: "api", provider_id: runner.id }
+        post chat_sessions_path(format: :json), params: { container_capability: "none", provider_id: runner.id }
 
         expect(response).to have_http_status(:created)
         expect(ChatSession.order(:id).last.runner).to eq(runner)
@@ -181,14 +223,14 @@ RSpec.describe "ChatSessions" do
       it "redirects to the session page for html requests" do
         existing_ids = ChatSession.pluck(:id)
 
-        post chat_sessions_path, params: { mode: "api", title: "UI Chat" }
+        post chat_sessions_path, params: { container_capability: "none", title: "UI Chat" }
 
         created_session = ChatSession.where.not(id: existing_ids).sole
         expect(response).to redirect_to(chat_session_path(created_session))
       end
 
       it "defaults wildcard accept create requests to json" do
-        post chat_sessions_path, params: { mode: "api", title: "API Chat" }, headers: { "Accept" => "*/*" }
+        post chat_sessions_path, params: { container_capability: "none", title: "API Chat" }, headers: { "Accept" => "*/*" }
 
         expect(response).to have_http_status(:created)
         expect(response.media_type).to eq("application/json")
@@ -199,10 +241,10 @@ RSpec.describe "ChatSessions" do
         Rails.cache.clear
 
         10.times do |index|
-          post chat_sessions_path, params: { mode: "api", title: "Chat #{index}" }
+          post chat_sessions_path, params: { container_capability: "none", title: "Chat #{index}" }
         end
 
-        post chat_sessions_path, params: { mode: "api", title: "Blocked chat" }
+        post chat_sessions_path, params: { container_capability: "none", title: "Blocked chat" }
 
         expect(response).to redirect_to(chat_sessions_path)
         expect(flash[:alert]).to eq("Rate limit exceeded")

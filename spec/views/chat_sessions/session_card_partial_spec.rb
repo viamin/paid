@@ -14,10 +14,11 @@ RSpec.describe "chat_sessions/_session_card", :no_db, type: :view do
       :model,
       :updated_at,
       :status,
-      :mode,
+      :container_capability,
       :project,
       :projects,
       :archived?,
+      :inline_only?,
       keyword_init: true
     ).new(
       id: 42,
@@ -27,10 +28,11 @@ RSpec.describe "chat_sessions/_session_card", :no_db, type: :view do
       model: "gpt-5.4",
       updated_at: Time.zone.parse("2026-05-15 00:00:00 UTC"),
       status: "active",
-      mode: "workspace",
+      container_capability: "ready",
       project: project,
       projects: [ project ],
-      archived?: false
+      archived?: false,
+      inline_only?: false
     )
   end
 
@@ -40,7 +42,7 @@ RSpec.describe "chat_sessions/_session_card", :no_db, type: :view do
     allow(view).to receive(:chat_session_preview).with(chat_session).and_return("Review failing specs")
     allow(view).to receive(:chat_session_projects).with(chat_session).and_return([ project ])
     allow(view).to receive(:chat_session_status_badge).with(chat_session).and_return('<span>Active</span>'.html_safe)
-    allow(view).to receive(:chat_mode_badge).with(chat_session.mode).and_return('<span>Workspace</span>'.html_safe)
+    allow(view).to receive(:chat_mode_badge).with(chat_session).and_return('<span>Container</span>'.html_safe)
     allow(view).to receive(:local_time).with(chat_session.updated_at, format: :relative).and_return("5 minutes ago")
     allow(view).to receive(:chat_session_member_path).with(chat_session).and_return("/chat/42")
   end

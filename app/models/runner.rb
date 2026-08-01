@@ -36,6 +36,7 @@ class Runner < ApplicationRecord
   # and per-project via projects.token_budget_max_input_tokens.
   DEFAULT_NO_PROGRESS_THRESHOLDS = { "min_input_tokens" => 100_000, "max_output_tokens" => 100 }.freeze
   NO_PROGRESS_THRESHOLD_KEYS = %w[min_input_tokens max_output_tokens].freeze
+  MAX_TIME_RESTRICTION_WINDOWS = 24
   # Upstream API providers supported by direct-outbound CLI tools (OpenCode,
   # KiloCode). Each entry maps a slug to its base URL and the ProviderApiKey
   # service type required for authentication.
@@ -204,6 +205,7 @@ class Runner < ApplicationRecord
   validate :tier_models_must_be_runner_compatible
   validate :complexity_thresholds_must_be_valid
   validate :no_progress_thresholds_must_be_valid
+  validate :time_restrictions_must_be_valid
   validate :agent_co_author_trailer_is_single_line
 
   before_destroy :prevent_destroying_last_agent_run_runner
@@ -273,6 +275,32 @@ class Runner < ApplicationRecord
     stored = no_progress_thresholds.is_a?(Hash) ? no_progress_thresholds : {}
     DEFAULT_NO_PROGRESS_THRESHOLDS.merge(stored.slice(*NO_PROGRESS_THRESHOLD_KEYS))
       .transform_values { |v| Integer(v, exception: false) || v }
+  end
+
+  # --- Time-window restrictions (@spec RUNNER-SCHED-001..010) ---
+
+  def time_window_check(now: Time.current)
+    Runners::TimeWindowCheck.new(self[:time_restrictions], now: now)
+  end
+
+  def time_restrictions_configured?
+    time_window_check.restrictions_enabled?
+  end
+
+  def blocked_by_time_window?(now: Time.current)
+    time_window_check(now: now).blocked_at?
+  end
+
+  def deprioritized_by_time_window?(now: Time.current)
+    time_window_check(now: now).deprioritized_at?
+  end
+
+  def restricted_by_time_window?(now: Time.current)
+    time_window_check(now: now).restricted_at?
+  end
+
+  def next_time_window_available_at(now: Time.current)
+    time_window_check(now: now).next_available_at
   end
 
   def routing_key
@@ -1409,6 +1437,85 @@ class Runner < ApplicationRecord
         errors.add(:no_progress_thresholds, "#{key} must be a positive integer")
       end
     end
+  end
+
+  # @spec RUNNER-SCHED-002
+  def time_restrictions_must_be_valid
+    raw = self[:time_restrictions]
+    return if raw.blank?
+    return errors.add(:time_restrictions, "must be a hash") unless raw.is_a?(Hash)
+
+    config = raw.deep_symbolize_keys
+
+    mode = config[:mode].to_s
+    unless Runners::TimeWindowCheck::MODES.include?(mode)
+      errors.add(:time_restrictions, "mode must be one of: #{Runners::TimeWindowCheck::MODES.join(', ')}")
+      return
+    end
+
+    timezone = config[:timezone].to_s.presence || "UTC"
+    unless ActiveSupport::TimeZone[timezone]
+      errors.add(:time_restrictions, "timezone '#{timezone}' is not a recognized IANA zone")
+      return
+    end
+
+    windows = Array(config[:windows])
+    if windows.empty?
+      errors.add(:time_restrictions, "must include at least one window when mode is set")
+      return
+    end
+
+    if windows.size > MAX_TIME_RESTRICTION_WINDOWS
+      errors.add(:time_restrictions, "must not include more than #{MAX_TIME_RESTRICTION_WINDOWS} windows")
+      return
+    end
+
+    parsed_windows = windows.each_with_index.filter_map do |window, index|
+      unless window.is_a?(Hash)
+        errors.add(:time_restrictions, "window #{index} must be a hash with start_hour and end_hour")
+        next
+      end
+
+      w = window.deep_symbolize_keys
+      start_h = Integer(w[:start_hour], exception: false)
+      end_h = Integer(w[:end_hour], exception: false)
+
+      unless start_h && end_h
+        errors.add(:time_restrictions, "window #{index} must include integer start_hour and end_hour")
+        next
+      end
+
+      unless start_h.between?(0, 23) && end_h.between?(0, 23)
+        errors.add(:time_restrictions, "window #{index} hours must be between 0 and 23")
+        next
+      end
+
+      if start_h == end_h
+        errors.add(:time_restrictions, "window #{index} start_hour and end_hour must not be equal")
+        next
+      end
+
+      [ start_h, end_h ]
+    end
+
+    return if errors.any?
+
+    if covers_all_24_hours?(parsed_windows)
+      errors.add(:time_restrictions, "windows must not cover all 24 hours (at least one hour must remain unrestricted)")
+    end
+  end
+
+  def covers_all_24_hours?(parsed_windows)
+    covered = Array.new(24, false)
+    parsed_windows.each do |start_h, end_h|
+      if start_h < end_h
+        (start_h...end_h).each { |h| covered[h] = true }
+      else
+        (start_h...24).each { |h| covered[h] = true }
+        (0...end_h).each { |h| covered[h] = true }
+      end
+    end
+    covered.all?
   end
 
   def normalize_tier_models(value)

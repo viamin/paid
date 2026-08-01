@@ -9,39 +9,33 @@ module ChatSessionsHelper
   }.freeze
 
   CHAT_MODE_STYLES = {
-    "api" => "bg-blue-100 text-blue-700",
-    "workspace" => "bg-indigo-100 text-indigo-700"
+    "inline" => "bg-blue-100 text-blue-700",
+    "container" => "bg-indigo-100 text-indigo-700"
+  }.freeze
+
+  CHAT_CONTAINER_CAPABILITY_STYLES = {
+    "none" => "bg-gray-100 text-gray-600",
+    "pending" => "bg-amber-100 text-amber-800",
+    "provisioning" => "bg-amber-100 text-amber-800",
+    "ready" => "bg-green-100 text-green-700",
+    "failed" => "bg-rose-100 text-rose-700",
+    "stopped" => "bg-gray-100 text-gray-600"
   }.freeze
 
   def chat_session_status_badge(chat_session)
     badge_label(chat_session.status.titleize, CHAT_SESSION_STATUS_STYLES.fetch(chat_session.status, CHAT_SESSION_STATUS_STYLES["archived"]))
   end
 
-  def chat_mode_badge(mode)
-    badge_label(mode.to_s.titleize, CHAT_MODE_STYLES.fetch(mode.to_s, CHAT_MODE_STYLES["api"]))
+  def chat_mode_badge(chat_session)
+    mode = chat_session.inline_only? ? "inline" : "container"
+    label = chat_session.inline_only? ? "Inline" : "Container"
+
+    badge_label(label, CHAT_MODE_STYLES.fetch(mode))
   end
 
   def chat_container_status_badge(chat_session)
-    label =
-      if chat_session.mode != "workspace"
-        "API"
-      elsif chat_session.status == "active" && chat_session.container_id.present?
-        "Running"
-      elsif chat_session.status == "idle"
-        "Idle"
-      else
-        "Stopped"
-      end
-
-    classes =
-      case label
-      when "Running" then "bg-green-100 text-green-700"
-      when "Idle" then "bg-yellow-100 text-yellow-800"
-      when "API" then "bg-gray-100 text-gray-600"
-      else "bg-gray-100 text-gray-600"
-      end
-
-    badge_label(label, classes)
+    capability = chat_session.container_capability
+    badge_label(capability.to_s.titleize, CHAT_CONTAINER_CAPABILITY_STYLES.fetch(capability, CHAT_CONTAINER_CAPABILITY_STYLES["none"]))
   end
 
   def chat_session_title(chat_session)
