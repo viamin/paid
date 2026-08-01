@@ -18,23 +18,11 @@ module ClarifyingQuestions
     def call
       return unless github_available?
 
-      enhancement_comment = find_enhancement_comment
-      return unless enhancement_comment
-
-      answer_comment = find_answer_comment
-      return unless answer_comment
-      return unless answer_newer_than_enhancement?(answer_comment, enhancement_comment)
-
-      questions = Parse.call(comment_body: enhancement_comment.body.to_s)
-      return if questions.empty?
-
-      answers = parse_answers(answer_comment.body.to_s)
-      return if answers.empty?
-
-      qa_pairs = pair_qa(questions, answers)
+      extraction = ExtractAnswerPairs.call(project: project, issue_comments: issue_comments, issue: issue)
+      qa_pairs = extraction.qa_pairs
       return if qa_pairs.empty?
 
-      ingest(qa_pairs, answer_comment)
+      ingest(qa_pairs, extraction.answer_comment)
     rescue GithubClient::Error
       nil
     end
@@ -51,42 +39,10 @@ module ClarifyingQuestions
       @github_client ||= project.client
     end
 
-    def find_enhancement_comment
-      issue_comments.reverse.find do |comment|
-        body = comment.body.to_s
-        body.include?(Parse::ENHANCEMENT_MARKER) &&
-          body.include?("## Clarifying questions")
-      end
-    end
-
-    def find_answer_comment
-      issue_comments.reverse.find do |comment|
-        comment.body.to_s.include?(Load::ANSWER_MARKER)
-      end
-    end
-
-    def answer_newer_than_enhancement?(answer_comment, enhancement_comment)
-      answer_time = answer_comment.created_at&.to_time || Time.at(0)
-      enhancement_time = enhancement_comment.created_at&.to_time || Time.at(0)
-      answer_time > enhancement_time
-    end
-
     def issue_comments
       @issue_comments ||= begin
         comments = @injected_comments || github_client.issue_comments(project.full_name, issue.github_number)
         comments.select { |comment| CommentAdmission.admissible?(project: project, comment: comment) }
-      end
-    end
-
-    def parse_answers(body)
-      body.scan(/\*\*A\d+:\*\*\s*(.+?)(?=\n\n\*\*|\z)/m).map { |m| m[0].strip }
-    end
-
-    def pair_qa(questions, answers)
-      questions.each_with_index.filter_map do |question, i|
-        next if answers[i].blank?
-
-        { question: question, answer: answers[i] }
       end
     end
 

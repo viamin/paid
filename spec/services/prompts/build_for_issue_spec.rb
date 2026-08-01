@@ -15,11 +15,16 @@ RSpec.describe Prompts::BuildForIssue do
     OpenStruct.new(
       full_name: "owner-1/repo-1",
       allowed_github_usernames: [ "viamin" ],
-      service_containers: service_containers_relation
+      service_containers: service_containers_relation,
+      lid_mode: nil
     ).tap do |p|
       def p.trusted_github_user?(login)
         return false if login.nil?
         allowed_github_usernames.any? { |u| u.downcase == login.downcase }
+      end
+
+      def p.paid_bot_author?(login)
+        login == "paid-code-reviewer[bot]"
       end
     end
   end
@@ -29,7 +34,8 @@ RSpec.describe Prompts::BuildForIssue do
       title: "Fix login redirect",
       github_number: 42,
       body: "Users are redirected to the wrong page after login.",
-      github_creator_login: "viamin"
+      github_creator_login: "viamin",
+      github_updated_at: Time.zone.parse("2026-07-30 11:00:00 UTC")
     ).tap do |i|
       i.define_singleton_method(:trusted?) { true }
     end
@@ -94,6 +100,133 @@ RSpec.describe Prompts::BuildForIssue do
       expect(prompt).to include("Commit subjects: Guidance")
       expect(prompt).to include("PR titles: Guidance")
       expect(prompt).to include("Depends on #123")
+    end
+
+    context "when the project is LID-configured" do
+      let(:github_client) { instance_double(GithubClient) }
+      let(:project_with_lid) do
+        project.tap { |value| value.lid_mode = "full" }
+      end
+      let(:clarifying_comments) do
+        [
+          OpenStruct.new(
+            body: <<~COMMENT,
+              <!-- paid:enhance-issue -->
+              ## Clarifying questions
+              1. What problem are we solving for admins?
+              2. When the redirect is invalid, what should the system do?
+            COMMENT
+            user: OpenStruct.new(login: "paid-code-reviewer[bot]"),
+            created_at: Time.zone.parse("2026-07-30 12:00:00 UTC")
+          ),
+          OpenStruct.new(
+            body: <<~COMMENT,
+              <!-- paid:clarifying-answers -->
+
+              ## Clarifying question answers
+
+              **Q1: What problem are we solving for admins?**
+              **A1:** Admins need failed redirects to fall back to the team dashboard.
+
+              **Q2: When the redirect is invalid, what should the system do?**
+              **A2:** When a stored redirect is invalid, the system should send the user to `/dashboard`.
+            COMMENT
+            user: OpenStruct.new(login: "viamin"),
+            created_at: Time.zone.parse("2026-07-30 13:00:00 UTC")
+          )
+        ]
+      end
+
+      before do
+        allow(github_client).to receive(:issue_comments)
+          .with(project.full_name, issue.github_number)
+          .and_return(clarifying_comments)
+      end
+
+      it "includes answered clarifying questions as elicited intent" do # @spec ISSUE-ENHANCEMENT-003
+        prompt = described_class.call(
+          issue: issue,
+          project: project_with_lid,
+          github_client: github_client
+        )
+
+        expect(prompt).to include("# Elicited Intent")
+        expect(prompt).to include("These answers came from the issue's clarifying-question flow.")
+        expect(prompt).to include("Treat them as confirmed human intent while implementing the change.")
+        expect(prompt).to include("Carry them into any LID artifact updates you make while implementing the change.")
+        expect(prompt).to include("What problem are we solving for admins?")
+        expect(prompt).to include("the system should send the user to `/dashboard`")
+      end
+
+      it "downloads the comment thread only once across conversation and elicited-intent sections" do
+        described_class.call(
+          issue: issue,
+          project: project_with_lid,
+          github_client: github_client
+        )
+
+        expect(github_client).to have_received(:issue_comments)
+          .with(project.full_name, issue.github_number)
+          .exactly(1).time
+      end
+
+      it "keeps elicited intent when unrelated issue activity advances github_updated_at" do
+        issue.github_updated_at = Time.zone.parse("2026-07-30 14:00:00 UTC")
+
+        prompt = described_class.call(
+          issue: issue,
+          project: project_with_lid,
+          github_client: github_client
+        )
+
+        expect(prompt).to include("# Elicited Intent")
+        expect(prompt).to include("Treat them as confirmed human intent")
+      end
+    end
+
+    context "when the project is not LID-configured" do
+      let(:github_client) { instance_double(GithubClient) }
+      let(:clarifying_comments) do
+        [
+          OpenStruct.new(
+            body: <<~COMMENT,
+              <!-- paid:enhance-issue -->
+              ## Clarifying questions
+              1. What problem are we solving?
+            COMMENT
+            user: OpenStruct.new(login: "paid-code-reviewer[bot]"),
+            created_at: Time.zone.parse("2026-07-30 12:00:00 UTC")
+          ),
+          OpenStruct.new(
+            body: <<~COMMENT,
+              <!-- paid:clarifying-answers -->
+
+              ## Clarifying question answers
+
+              **Q1: What problem are we solving?**
+              **A1:** Keep users on a valid page after login.
+            COMMENT
+            user: OpenStruct.new(login: "viamin"),
+            created_at: Time.zone.parse("2026-07-30 13:00:00 UTC")
+          )
+        ]
+      end
+
+      before do
+        allow(github_client).to receive(:issue_comments)
+          .with(project.full_name, issue.github_number)
+          .and_return(clarifying_comments)
+      end
+
+      it "does not include the elicited-intent section" do # @spec ISSUE-ENHANCEMENT-004
+        prompt = described_class.call(issue: issue, project: project, github_client: github_client)
+
+        expect(prompt).to include("# Clarified Requirements")
+        expect(prompt).to include("These answers came from the issue's clarifying-question flow.")
+        expect(prompt).to include("Treat them as confirmed human intent while implementing the change.")
+        expect(prompt).to include("Keep users on a valid page after login.")
+        expect(prompt).not_to include("Carry them into any LID artifact updates")
+      end
     end
 
     context "when project responds to detected_language" do
@@ -789,6 +922,44 @@ RSpec.describe Prompts::BuildForIssue do
       )
 
       expect(result).to eq([])
+    end
+
+    it "uses the supplied comments without fetching from GitHub" do
+      supplied = [ issue_comment(login: "viamin", body: "pre-fetched trusted") ]
+      allow(github_client).to receive(:issue_comments)
+
+      result = described_class.fetch_trusted_comments(
+        github_client: github_client,
+        repo: repo,
+        number: number,
+        project: project,
+        comments: supplied
+      )
+
+      expect(result).to eq(supplied)
+      expect(github_client).not_to have_received(:issue_comments)
+    end
+
+    it "filters and caps the supplied comments without fetching from GitHub" do
+      trusted_oldest = issue_comment(login: "viamin", body: "oldest trusted")
+      trusted_newest = issue_comment(login: "viamin", body: "newest trusted")
+      allow(github_client).to receive(:issue_comments)
+
+      result = described_class.fetch_trusted_comments(
+        github_client: github_client,
+        repo: repo,
+        number: number,
+        project: project,
+        max_comments: 1,
+        comments: [
+          issue_comment(login: "stranger", body: "ignore me"),
+          trusted_oldest,
+          trusted_newest
+        ]
+      )
+
+      expect(result).to eq([ trusted_newest ])
+      expect(github_client).not_to have_received(:issue_comments)
     end
   end
 

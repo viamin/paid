@@ -34,6 +34,19 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
       - Some context
     COMMENT
   end
+  let(:full_answers_body) do
+    <<~COMMENT
+      <!-- paid:clarifying-answers -->
+
+      ## Clarifying question answers
+
+      **Q1: What is the expected behavior?**
+      **A1:** Use the wizard flow.
+
+      **Q2: Should this be behind a flag?**
+      **A2:** No, ship it directly.
+    COMMENT
+  end
 
   before do
     allow(github_client).to receive(:issue_comments).and_return([])
@@ -97,14 +110,7 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
           created_at: 2.minutes.ago
         )
         answers_comment = double(
-          body: <<~COMMENT,
-            <!-- paid:clarifying-answers -->
-
-            ## Clarifying question answers
-
-            **Q1: What is the expected behavior?**
-            **A1:** Use the wizard flow.
-          COMMENT
+          body: full_answers_body,
           user: double(login: trusted_login),
           created_at: 1.minute.ago
         )
@@ -129,19 +135,47 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
       end
     end
 
+    context "when matching answers predate repeated clarifying questions" do
+      before do
+        original_enhancement_comment = double(
+          body: comment_body,
+          user: double(login: trusted_login),
+          created_at: 3.minutes.ago
+        )
+        answers_comment = double(
+          body: full_answers_body,
+          user: double(login: trusted_login),
+          created_at: 2.minutes.ago
+        )
+        repeated_enhancement_comment = double(
+          body: comment_body,
+          user: double(login: trusted_login),
+          created_at: 1.minute.ago
+        )
+
+        allow(github_client).to receive(:issue_comments).and_return([
+          original_enhancement_comment,
+          answers_comment,
+          repeated_enhancement_comment
+        ])
+        allow(ClarifyingQuestions::IngestAnswers).to receive(:call)
+      end
+
+      it "returns the latest questions instead of treating stale answers as current" do
+        expect(described_class.call(project: project, issue: issue)).to eq([
+          "What is the expected behavior?",
+          "Should this be behind a flag?"
+        ])
+        expect(ClarifyingQuestions::IngestAnswers).not_to have_received(:call)
+      end
+    end
+
     context "when the issue body still contains questions after answers were posted" do
       let(:issue_body) { comment_body }
 
       before do
         answers_comment = double(
-          body: <<~COMMENT,
-            <!-- paid:clarifying-answers -->
-
-            ## Clarifying question answers
-
-            **Q1: What is the expected behavior?**
-            **A1:** Use the wizard flow.
-          COMMENT
+          body: full_answers_body,
           user: double(login: trusted_login),
           created_at: 1.minute.ago
         )
@@ -155,7 +189,7 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
       end
     end
 
-    context "when the issue body was updated after answers were posted" do
+    context "when unrelated issue activity advanced github_updated_at after answers were posted" do
       let(:issue_body) { comment_body }
       let(:issue) do
         double(
@@ -163,6 +197,32 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
           github_number: 1964,
           github_updated_at: 30.seconds.ago
         )
+      end
+
+      before do
+        allow(ClarifyingQuestions::IngestAnswers).to receive(:call)
+        answers_comment = double(
+          body: full_answers_body,
+          user: double(login: trusted_login),
+          created_at: 1.minute.ago
+        )
+
+        allow(github_client).to receive(:issue_comments).and_return([ answers_comment ])
+      end
+
+      it "still treats the current questions as answered" do
+        expect(described_class.call(project: project, issue: issue)).to eq([])
+      end
+    end
+
+    context "when the issue body questions changed after answers were posted" do
+      let(:issue_body) do
+        <<~COMMENT
+          <!-- paid:enhance-issue -->
+
+          ## Clarifying questions
+          1. What should happen when the redirect is invalid?
+        COMMENT
       end
 
       before do
@@ -184,8 +244,7 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
 
       it "returns the refreshed body questions" do
         expect(described_class.call(project: project, issue: issue)).to eq([
-          "What is the expected behavior?",
-          "Should this be behind a flag?"
+          "What should happen when the redirect is invalid?"
         ])
       end
     end
@@ -273,6 +332,7 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
         )
 
         allow(github_client).to receive(:issue_comments).and_return([ answers_comment ])
+        allow(ClarifyingQuestions::IngestAnswers).to receive(:call).and_return(true)
       end
 
       it "treats the questions as answered (the bot answer comment is honored)" do
@@ -330,14 +390,7 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
           created_at: 2.minutes.ago
         )
         answers_comment = double(
-          body: <<~COMMENT,
-            <!-- paid:clarifying-answers -->
-
-            ## Clarifying question answers
-
-            **Q1: What is the expected behavior?**
-            **A1:** Use the wizard flow.
-          COMMENT
+          body: full_answers_body,
           user: double(login: trusted_login),
           created_at: 1.minute.ago
         )
@@ -369,14 +422,7 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
           created_at: 2.minutes.ago
         )
         answers_comment = double(
-          body: <<~COMMENT,
-            <!-- paid:clarifying-answers -->
-
-            ## Clarifying question answers
-
-            **Q1: What is the expected behavior?**
-            **A1:** Use the wizard flow.
-          COMMENT
+          body: full_answers_body,
           user: double(login: trusted_login),
           created_at: 1.minute.ago
         )
@@ -400,14 +446,7 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
           created_at: 2.minutes.ago
         )
         answers_comment = double(
-          body: <<~COMMENT,
-            <!-- paid:clarifying-answers -->
-
-            ## Clarifying question answers
-
-            **Q1: What is the expected behavior?**
-            **A1:** Use the wizard flow.
-          COMMENT
+          body: full_answers_body,
           user: double(login: trusted_login),
           created_at: 1.minute.ago
         )
