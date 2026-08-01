@@ -41,6 +41,7 @@ RSpec.describe ClarifyingQuestions::ExtractAnswerPairs do
       login: trusted_login
     )
   end
+  let(:issue) { build_stubbed(:issue, github_updated_at: Time.zone.parse("2026-07-30 11:00:00 UTC")) }
 
   before do
     allow(project).to receive(:paid_bot_author?) { |login| login == bot_login }
@@ -51,7 +52,7 @@ RSpec.describe ClarifyingQuestions::ExtractAnswerPairs do
   end
 
   it "returns paired questions and answers from the admitted comment flow" do
-    result = described_class.call(project: project, issue_comments: [ enhancement_comment, answer_comment ])
+    result = described_class.call(project: project, issue_comments: [ enhancement_comment, answer_comment ], issue: issue)
 
     expect(result.qa_pairs).to eq(
       [
@@ -71,10 +72,24 @@ RSpec.describe ClarifyingQuestions::ExtractAnswerPairs do
   it "returns no pairs when the answers predate the questions" do
     result = described_class.call(
       project: project,
+      issue: issue,
       issue_comments: [
         enhancement_comment.tap { |entry| allow(entry).to receive(:created_at).and_return(Time.zone.parse("2026-07-30 13:00:00 UTC")) },
         answer_comment.tap { |entry| allow(entry).to receive(:created_at).and_return(Time.zone.parse("2026-07-30 12:00:00 UTC")) }
       ]
+    )
+
+    expect(result.qa_pairs).to eq([])
+    expect(result.answer_comment).to be_nil
+  end
+
+  it "returns no pairs when the issue was edited after the answers were posted" do
+    issue.github_updated_at = Time.zone.parse("2026-07-30 14:00:00 UTC")
+
+    result = described_class.call(
+      project: project,
+      issue: issue,
+      issue_comments: [ enhancement_comment, answer_comment ]
     )
 
     expect(result.qa_pairs).to eq([])

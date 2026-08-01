@@ -10,9 +10,10 @@ module ClarifyingQuestions
       new(...).call
     end
 
-    def initialize(project:, issue_comments:)
+    def initialize(project:, issue_comments:, issue: nil)
       @project = project
       @issue_comments = Array(issue_comments)
+      @issue = issue
     end
 
     def call
@@ -21,7 +22,7 @@ module ClarifyingQuestions
 
       answer_comment = find_answer_comment
       return empty_result unless answer_comment
-      return empty_result unless answer_newer_than_enhancement?(answer_comment, enhancement_comment)
+      return empty_result unless answer_newer_than_latest_questions?(answer_comment, enhancement_comment)
 
       questions = Parse.call(comment_body: enhancement_comment.body.to_s)
       answers = parse_answers(answer_comment.body.to_s)
@@ -32,7 +33,7 @@ module ClarifyingQuestions
 
     private
 
-    attr_reader :project, :issue_comments
+    attr_reader :project, :issue_comments, :issue
 
     def empty_result
       Result.new(qa_pairs: [], answer_comment: nil)
@@ -58,10 +59,28 @@ module ClarifyingQuestions
       end
     end
 
-    def answer_newer_than_enhancement?(answer_comment, enhancement_comment)
-      answer_time = answer_comment.created_at&.to_time || Time.at(0)
-      enhancement_time = enhancement_comment.created_at&.to_time || Time.at(0)
-      answer_time > enhancement_time
+    def answer_newer_than_latest_questions?(answer_comment, enhancement_comment)
+      answer_time = comment_timestamp(answer_comment)
+      latest_question_time = latest_question_timestamp(enhancement_comment)
+
+      answer_time > latest_question_time
+    end
+
+    def latest_question_timestamp(enhancement_comment)
+      [
+        comment_timestamp(enhancement_comment),
+        issue_timestamp
+      ].compact.max || Time.at(0)
+    end
+
+    def comment_timestamp(comment)
+      comment.created_at&.to_time || Time.at(0)
+    end
+
+    def issue_timestamp
+      return unless issue
+
+      issue.github_updated_at&.to_time || issue.updated_at&.to_time
     end
 
     def parse_answers(body)

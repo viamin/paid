@@ -203,7 +203,8 @@ module Prompts
 
       qa_pairs = ClarifyingQuestions::ExtractAnswerPairs.call(
         project: project,
-        issue_comments: issue_comments
+        issue_comments: issue_comments,
+        issue: issue
       ).qa_pairs
       return "" if qa_pairs.empty?
 

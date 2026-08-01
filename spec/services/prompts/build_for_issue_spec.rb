@@ -34,7 +34,8 @@ RSpec.describe Prompts::BuildForIssue do
       title: "Fix login redirect",
       github_number: 42,
       body: "Users are redirected to the wrong page after login.",
-      github_creator_login: "viamin"
+      github_creator_login: "viamin",
+      github_updated_at: Time.zone.parse("2026-07-30 11:00:00 UTC")
     ).tap do |i|
       i.define_singleton_method(:trusted?) { true }
     end
@@ -166,6 +167,19 @@ RSpec.describe Prompts::BuildForIssue do
         expect(github_client).to have_received(:issue_comments)
           .with(project.full_name, issue.github_number)
           .exactly(1).time
+      end
+
+      it "omits elicited intent when the issue was edited after the answers were posted" do
+        issue.github_updated_at = Time.zone.parse("2026-07-30 14:00:00 UTC")
+
+        prompt = described_class.call(
+          issue: issue,
+          project: project_with_lid,
+          github_client: github_client
+        )
+
+        expect(prompt).not_to include("# Elicited Intent")
+        expect(prompt).not_to include("Treat them as confirmed human intent")
       end
     end
 
