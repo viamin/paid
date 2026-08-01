@@ -236,6 +236,23 @@ class GithubClient
     end.map(&:filename)
   end
 
+  # Lists files changed in a pull request with patches.
+  #
+  # @param repo [String] Repository in "owner/name" format
+  # @param number [Integer] Pull request number
+  # @return [Array<Hash>] File data with :filename, :status, :patch keys
+  def pull_request_file_patches(repo, number)
+    handle_errors do
+      files = with_auto_paginate { client.pull_request_files(repo, number) }
+      files.map do |file|
+        {
+          filename: file.filename.to_s,
+          status: file.status.to_s,
+          patch: file.patch.to_s
+        }
+      end
+    end
+  end
   # Compares two commits and returns the list of changed file paths.
   #
   # NOTE: GitHub's compare API returns a maximum of 300 files per response.

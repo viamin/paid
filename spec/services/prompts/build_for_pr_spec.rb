@@ -43,28 +43,18 @@ RSpec.describe Prompts::BuildForPr do
     planning_pr
   end
 
-  def docs_only_planning_pr_files
+  def docs_only_planning_pr_patches
     [
-      "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md",
-      "docs/intent/lid-pr-confirmation/lid-pr-confirmation-specs.md",
-      "AGENTS.md"
+      { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md",
+        status: "modified",
+        patch: "@@ -0,0 +1,3 @@\n+## Decisions\n+\n+- Replace inferred rationale [inferred]\n" },
+      { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-specs.md",
+        status: "modified",
+        patch: "@@ -0,0 +1,3 @@\n+## Open Questions\n+\n+- Which rationale should be confirmed?\n" },
+      { filename: "AGENTS.md",
+        status: "modified",
+        patch: "@@ -0,0 +1 @@\n+Agent instructions\n" }
     ]
-  end
-
-  def planning_pr_file_contents
-    {
-      "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md" => <<~MARKDOWN,
-        ## Decisions
-
-        - Replace inferred rationale [inferred]
-      MARKDOWN
-      "docs/intent/lid-pr-confirmation/lid-pr-confirmation-specs.md" => <<~MARKDOWN,
-        ## Open Questions
-
-        - Which rationale should be confirmed?
-      MARKDOWN
-      "AGENTS.md" => "Agent instructions\n"
-    }
   end
 
   def planning_review_thread(path:, body:)
@@ -85,14 +75,9 @@ RSpec.describe Prompts::BuildForPr do
     allow(github_client).to receive(:pull_request)
       .with(project.full_name, 42)
       .and_return(planning_pr)
-    allow(github_client).to receive(:pull_request_files)
+    allow(github_client).to receive(:pull_request_file_patches)
       .with(project.full_name, 42)
-      .and_return(docs_only_planning_pr_files)
-    planning_pr_file_contents.each do |path, content|
-      allow(github_client).to receive(:file_content)
-        .with(project.full_name, path:, ref: "abc123")
-        .and_return(content)
-    end
+      .and_return(docs_only_planning_pr_patches)
     allow(github_client).to receive(:review_threads)
       .and_return(
         planning_review_thread(
@@ -101,7 +86,6 @@ RSpec.describe Prompts::BuildForPr do
         )
       )
   end
-
   def expect_prompt_to_exclude_sections(prompt, *section_names)
     section_names.each do |section_name|
       expect(prompt).not_to include(section_name)
@@ -147,7 +131,8 @@ RSpec.describe Prompts::BuildForPr do
       check_runs_for_ref: [],
       review_threads: [],
       recent_issue_comments: [],
-      pull_request_files: []
+      pull_request_files: [],
+      pull_request_file_patches: []
     )
     allow(github_client).to receive(:file_content).and_return(nil)
     allow(AgentRuns::UserSettingsResolver).to receive(:call).and_return(user_settings)
@@ -287,11 +272,11 @@ RSpec.describe Prompts::BuildForPr do
       allow(github_client).to receive(:pull_request)
         .with(project.full_name, 42)
         .and_return(planning_pr_data(pr_data))
-      allow(github_client).to receive(:pull_request_files)
+      allow(github_client).to receive(:pull_request_file_patches)
         .with(project.full_name, 42)
         .and_return([
-          "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md",
-          "app/services/prompts/build_for_pr.rb"
+          { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md", status: "modified", patch: "" },
+          { filename: "app/services/prompts/build_for_pr.rb", status: "modified", patch: "" }
         ])
       allow(github_client).to receive(:review_threads)
         .and_return(

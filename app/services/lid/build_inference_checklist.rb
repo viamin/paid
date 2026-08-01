@@ -43,17 +43,47 @@ module Lid
       end.reject(&:blank?)
     end
 
+    # Returns true when planning markers ([inferred] or ## Open Questions)
+    # appear in changed lines.  When patch data is available only added
+    # lines (lines starting with "+" but not "+++") are checked so that an
+    # existing Open Questions section in a touched file does not falsely
+    # classify the PR as a planning PR.  Falls back to full-content scan
+    # when only string content is provided (backward compatibility for
+    # callers that don't supply diff hunks).
     def self.planning_markers_present?(changed_files)
       Array(changed_files).any? do |entry|
-        content = changed_file_content(entry)
-        content.present? && (content.include?("[inferred]") || content.match?(OPEN_QUESTIONS_HEADING))
+        patch = changed_file_patch(entry)
+        if patch.present?
+          planning_marker_in_patch?(patch)
+        else
+          content = changed_file_content(entry)
+          content.present? && (content.include?("[inferred]") || content.match?(OPEN_QUESTIONS_HEADING))
+        end
+      end
+    end
+
+    def self.changed_file_patch(entry)
+      case entry
+      when Hash
+        entry[:patch] || entry["patch"]
+      else
+        entry.patch if entry.respond_to?(:patch)
+      end
+    end
+
+    def self.planning_marker_in_patch?(patch)
+      patch.each_line.any? do |line|
+        next false unless line.start_with?("+") && !line.start_with?("+++")
+
+        added = line[1..]
+        added.include?("[inferred]") || added.match?(OPEN_QUESTIONS_HEADING)
       end
     end
 
     def self.changed_file_content(entry)
       case entry
       when Hash
-        entry[:content] || entry["content"] || entry[:patch] || entry["patch"]
+        entry[:content] || entry["content"]
       else
         entry.content if entry.respond_to?(:content)
       end

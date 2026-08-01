@@ -1746,17 +1746,11 @@ module Activities
     end
 
     def planning_pr_changed_files(issue:, client:, project:)
-      changed_files = client.pull_request_files(project.full_name, issue.github_number)
-      changed_paths = Lid::BuildInferenceChecklist.normalize_changed_files(changed_files)
-      return changed_files unless Lid::BuildInferenceChecklist.docs_only_paths?(changed_paths)
+      files_data = client.pull_request_file_patches(project.full_name, issue.github_number)
+      changed_paths = Lid::BuildInferenceChecklist.normalize_changed_files(files_data)
+      return files_data unless Lid::BuildInferenceChecklist.docs_only_paths?(changed_paths)
 
-      pull_request = client.pull_request(project.full_name, issue.github_number)
-      changed_paths.filter_map do |path|
-        content = client.file_content(project.full_name, path:, ref: pull_request.head.sha)
-        next if content.blank?
-
-        { filename: path, content: content }
-      end
+      files_data
     end
 
     def review_bot_review_status(reviews, allowed_bot_logins: nil)

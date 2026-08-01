@@ -156,20 +156,36 @@ RSpec.describe Lid::BuildInferenceChecklist do
   end
 
   describe ".docs_only_planning_pr?" do
-    let(:docs_only_files_with_markers) do
+    let(:docs_only_patches_with_inferred) do
       [
-        { filename: "docs/intent/lid/lid-design.md", content: "## Decisions\n\n- Decision [inferred]\n" },
-        { filename: "docs/high-level-design.md", content: "# High-Level Design\n" },
-        { filename: "AGENTS.md", content: "Agent instructions\n" }
+        { filename: "docs/intent/lid/lid-design.md",
+          patch: "@@ -0,0 +1 @@\n+- Decision [inferred]\n" },
+        { filename: "docs/high-level-design.md",
+          patch: "@@ -0,0 +1 @@\n+# High-Level Design\n" },
+        { filename: "AGENTS.md",
+          patch: "@@ -0,0 +1 @@\n+Agent instructions\n" }
       ]
     end
 
-    it "is true for docs-only diffs that contain inferred markers" do
-      expect(described_class.docs_only_planning_pr?(changed_files: docs_only_files_with_markers)).to be(true)
+    it "is true for docs-only diffs whose patches add inferred markers" do
+      expect(described_class.docs_only_planning_pr?(changed_files: docs_only_patches_with_inferred)).to be(true)
+    end
+
+    it "is true for docs-only diffs whose patches add an Open Questions heading" do
+      changed = [
+        { filename: "docs/intent/lid/lid-design.md",
+          patch: "@@ -0,0 +1,3 @@\n+## Decisions\n+\n+- Authored decision\n" },
+        { filename: "docs/high-level-design.md",
+          patch: "@@ -0,0 +1,3 @@\n+## Open Questions\n+\n+- New question?\n" }
+      ]
+
+      expect(described_class.docs_only_planning_pr?(changed_files: changed)).to be(true)
     end
 
     it "is false once the diff touches a non-doc file" do
-      changed = docs_only_files_with_markers + [ { filename: "app/models/widget.rb", content: "class Widget; end\n" } ]
+      changed = docs_only_patches_with_inferred + [
+        { filename: "app/models/widget.rb", patch: "@@ -0,0 +1 @@\n+class Widget; end\n" }
+      ]
 
       expect(described_class.docs_only_planning_pr?(changed_files: changed)).to be(false)
     end
@@ -178,20 +194,38 @@ RSpec.describe Lid::BuildInferenceChecklist do
       expect(described_class.docs_only_planning_pr?(changed_files: [])).to be(false)
     end
 
-    it "is false for docs-only diffs without inferred markers or open questions" do
+    it "is false for docs-only diffs without inferred markers or open questions in added lines" do
       changed = [
-        { filename: "docs/intent/lid/lid-design.md", content: "## Decisions\n\n- Authored rationale\n" },
-        { filename: "AGENTS.md", content: "Agent instructions\n" }
+        { filename: "docs/intent/lid/lid-design.md",
+          patch: "@@ -1,1 +1,1 @@\n ## Authored\n+- Authored rationale\n" },
+        { filename: "AGENTS.md",
+          patch: "@@ -0,0 +1 @@\n+Agent instructions\n" }
       ]
 
       expect(described_class.docs_only_planning_pr?(changed_files: changed)).to be(false)
     end
 
     it "is false when only file paths are available without marker evidence" do
+      changed = %w[docs/intent/lid/lid-design.md docs/high-level-design.md AGENTS.md]
+
+      expect(described_class.docs_only_planning_pr?(changed_files: changed)).to be(false)
+    end
+
+    it "is false when a touched file has an existing Open Questions heading not added by the PR" do
+      # The file already had ## Open Questions; the PR only adds an unrelated line
+      # under a different heading.  The Open Questions heading appears in context
+      # lines (no "+ " prefix), never in added lines, so it must not trigger.
       changed = [
-        "docs/intent/lid/lid-design.md",
-        "docs/high-level-design.md",
-        "AGENTS.md"
+        { filename: "docs/intent/lid/lid-design.md",
+          patch: <<~PATCH }
+            @@ -1,4 +1,5 @@
+             ## Decisions
+
+             ## Open Questions
+
+            +- A new authored decision
+            +
+          PATCH
       ]
 
       expect(described_class.docs_only_planning_pr?(changed_files: changed)).to be(false)
