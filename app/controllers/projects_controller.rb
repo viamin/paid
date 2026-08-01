@@ -154,6 +154,16 @@ class ProjectsController < ApplicationController
     @github_installations = policy_scope(GithubInstallation).active
 
     update_params = project_params
+    if update_params.key?(:lid_mode)
+      submitted_mode = update_params[:lid_mode].presence
+      update_params[:lid_mode] = submitted_mode
+      # Lock the override only when the mode actually changes. The select
+      # is always submitted on save, so treating an unchanged value as an
+      # override would permanently pin a nil/auto-detected project to off
+      # and block future sync/import detection from enabling LID. An
+      # existing override is preserved as-is; Re-detect clears it.
+      update_params[:lid_mode_overridden] = true if @project.lid_mode != submitted_mode
+    end
     @github_auth_source = selected_github_auth_source(update_params)
     @paid_agents_installation = @project.paid_agents_installation(installations: @github_installations)
     update_params = update_params.merge(allowed_github_usernames: parse_usernames_csv) if params.dig(:project, :allowed_github_usernames_csv)
@@ -171,6 +181,7 @@ class ProjectsController < ApplicationController
     Project.transaction do
       @project.update!(update_params)
       @mutation_req = upsert_mutation_test_requirement!
+      redetect_lid_mode! if redetect_lid_mode_requested?
     end
 
     audit_event("project.updated", metadata: { name: @project.name, changed_fields: @project.saved_changes.except("updated_at").keys })
@@ -463,6 +474,7 @@ class ProjectsController < ApplicationController
       :token_budget_max_input_tokens,
       :owner_reviewer_login, :merge_method, :max_draft_review_rounds, :auto_pick_enabled, :auto_merge_mode,
       :allow_bot_authored_pr_auto_merge, :auto_fix_merge_conflicts, :auto_scan_security,
+      :lid_mode,
       :generated_label_name, :automation_label_name,
       :enhance_issue_needs_input_label_name, :enhance_issue_enhanced_label_name,
       :max_enhance_issue_reevaluation_rounds,
@@ -476,6 +488,15 @@ class ProjectsController < ApplicationController
       auto_pick_skip_labels: [],
       allowed_github_usernames: [],
       priority_labels: Project::PRIORITY_TIERS)
+  end
+
+  def redetect_lid_mode_requested?
+    ActiveModel::Type::Boolean.new.cast(params.dig(:project, :redetect_lid_mode))
+  end
+
+  def redetect_lid_mode!
+    Projects::DetectLidMode.from_project_repository(project: @project, force: true)
+    @project.reload
   end
 
   def selected_github_auth_source(params_hash = nil)
