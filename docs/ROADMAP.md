@@ -1125,7 +1125,7 @@ Tasks:
 
 - [x] Create `configuration_bundles` and `bundle_outcomes` tables
 - [x] Implement configuration bundle tracking per agent run
-- [x] Build surrogate model (Random Forest initially, GP later)
+- [x] Build surrogate model (`ConfigurationBundles::SurrogateOutcomeModel`, a weighted similarity/prior model with uncertainty — the originally planned GP was superseded; see [RDR-015 Surrogate Model Decision](rdrs/RDR-015-end-to-end-optimization.md#surrogate-model-decision))
 - [x] Implement Bayesian optimization for bundle selection
 - [x] Exploration/exploitation balance with context awareness
 - [x] Dashboard for bundle performance analysis

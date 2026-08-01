@@ -13,7 +13,33 @@
 
 ## Implementation Status
 
-Implemented with one accepted design drift to review. Paid has configuration bundles, bundle outcomes, objective scoring, runtime bundle assignment, outcome recording, exploration/exploitation, optimization services, and dashboard stats. The production surrogate is `ConfigurationBundles::SurrogateOutcomeModel`, a weighted similarity/prior model with uncertainty, not the Gaussian Process surrogate originally specified here.
+Implemented. Paid has configuration bundles, bundle outcomes, objective scoring, runtime bundle assignment, outcome recording, exploration/exploitation, optimization services, and dashboard stats. The surrogate-model design drift has been formally resolved — see [Surrogate Model Decision](#surrogate-model-decision). The originally specified Gaussian Process surrogate was superseded in production by `ConfigurationBundles::SurrogateOutcomeModel`, a weighted similarity/prior model with uncertainty. That decision is now documented in this RDR rather than left as an open drift.
+
+## Surrogate Model Decision
+
+> **Decision**: Accept `ConfigurationBundles::SurrogateOutcomeModel` — a weighted similarity/prior model with uncertainty — as the production surrogate. The Gaussian Process (GP) surrogate originally proposed below is recorded as a superseded design, retained as a future direction.
+
+### Why the GP was originally proposed
+
+The original design recommended a Gaussian Process because it supplies both a mean prediction and a posterior variance (uncertainty) from a single coherent probabilistic model — exactly the two quantities the acquisition function and exploration/exploitation loop require. The Notes section below records that rationale ("it provides uncertainty estimates needed for principled exploration/exploitation, which Random Forest cannot").
+
+### Why the weighted similarity/prior model was accepted instead
+
+1. **The configuration space is categorical, not continuous.** A GP assumes a continuous input space and a smooth kernel (e.g. RBF/Matern) over real-valued features. A configuration bundle is dominated by discrete identifiers — `goal`, `agent_type`, `provider_id`, `prompt_version_id`, `model_selection`, experiment variant assignments. There is no natural metric distance between two prompt versions or two providers. The accepted model uses a categorical similarity kernel (feature-by-feature match ratio, with exponential decay for numeric experiment values), which is the correct kernel for this input space. Fitting an RBF GP over one-hot encoded categoricals would impose a false smoothness assumption.
+
+2. **The data regime is sparse, and each sample is expensive.** The RDR itself recommends ~50 outcomes before the optimizer activates exploration, and every "sample" is a full agent run. With sparse, high-cardinality categorical data a GP largely reverts to its prior between observed points and gains little over a prior-regularized estimator. The accepted model blends observed outcomes with a `PRIOR_MEAN`/`PRIOR_WEIGHT` prior and decays uncertainty as `1/sqrt(weight)` — behavior that is well calibrated for small samples and degrades gracefully to the prior on cold start.
+
+3. **It already provides the two properties the RDR requires of the surrogate.** `SurrogateOutcomeModel#predict` returns a predicted objective/quality score **and** an uncertainty estimate, which the `ConfigurationBundles::Optimizer` feeds into its expected-improvement acquisition function and the exploitative/exploratory selection. This satisfies the intent behind "use a GP from the start."
+
+4. **It meets the inline selection performance target without heavy dependencies.** The RDR's performance validation targets "Configuration selection < 50ms." A GP requires a kernel-matrix solve (O(n³) in the number of observations) plus hyperparameter optimization, and pulls in numerical dependencies (`numo-narray`/`torch.rb`). The accepted model is pure Ruby and runs inline during bundle selection with no matrix algebra.
+
+### Production interface
+
+The optimizer trains and queries the surrogate through `ConfigurationBundles::SurrogateOutcomeModel` (`optimizer.rb#trained_surrogate_model`): `SurrogateOutcomeModel.train(dataset:)` returns a serializable `TrainedState`; `SurrogateOutcomeModel.call(bundle_definition:, trained_state:)` returns a `Prediction` carrying `predicted_objective_score`, `predicted_quality_score`, `predicted_success_probability`, `predicted_cost_cents`, `predicted_duration_seconds`, `uncertainty`, and `sample_count`. The optimizer's expected-improvement acquisition function consumes the objective score and uncertainty directly.
+
+### When a GP would be revisited
+
+A GP (or a GP ensemble) becomes attractive only if the configuration space gains meaningful continuous dimensions with dense observations — e.g. continuous knobs such as `quality_gate`, `max_iterations`, `cost_limit` populated with enough outcomes to fit a kernel meaningfully. Until then the categorical, sparse regime makes the weighted similarity/prior model the simpler, better-calibrated choice. This is tracked as a deferred direction, not an open gap.
 
 ## Problem Statement
 
@@ -370,7 +396,9 @@ class ConfigurationBundle < ApplicationRecord
 end
 ```
 
-### Surrogate Model
+### Surrogate Model (originally specified — superseded)
+
+> The example below was the **originally proposed** Gaussian Process surrogate. It is superseded in production by `ConfigurationBundles::SurrogateOutcomeModel` (weighted similarity/prior model with uncertainty). It is retained here to preserve the original design rationale and as a reference for a future GP/ensemble direction. See [Surrogate Model Decision](#surrogate-model-decision) for the accepted rationale.
 
 ```ruby
 # app/services/surrogate_model.rb
@@ -529,7 +557,7 @@ end
 1. Create `configuration_bundles` and `bundle_outcomes` tables
 2. Build baseline bundles from current configuration
 3. Instrument workflow to record bundle + outcome for every agent run
-4. Implement `ConfigurationOptimizer` with Gaussian Process surrogate model
+4. Implement `ConfigurationBundles::Optimizer` with a surrogate model (accepted: weighted similarity/prior model — `SurrogateOutcomeModel`; see [Surrogate Model Decision](#surrogate-model-decision))
 5. Integrate optimizer into workflow execution with exploration/exploitation
 6. Add monitoring for optimization metrics
 7. Build dashboard for configuration performance and outcome trends
@@ -542,14 +570,14 @@ The optimizer activates once sufficient baseline data exists (~50 recorded outco
 - `db/migrate/xxx_create_bundle_outcomes.rb`
 - `app/models/configuration_bundle.rb`
 - `app/models/bundle_outcome.rb`
-- `app/services/configuration_optimizer.rb`
-- `app/services/surrogate_model.rb`
-- `app/jobs/surrogate_model_update_job.rb`
+- `app/services/configuration_bundles/optimizer.rb`
+- `app/services/configuration_bundles/surrogate_outcome_model.rb` (accepted surrogate)
+- `app/services/configuration_bundles/training_dataset.rb`
 
 ### Dependencies
 
-- `numo-narray` for numerical operations
-- Gaussian Process implementation (pure Ruby or `torch.rb`)
+- No numerical-ML dependency required for the accepted weighted similarity/prior surrogate (pure Ruby).
+- A future GP/ensemble surrogate would require `numo-narray` for linear algebra and a Gaussian Process implementation (pure Ruby or `torch.rb`). These are **not** pulled in for the current surrogate.
 
 ### Success Metrics
 
@@ -589,7 +617,7 @@ The optimizer activates once sufficient baseline data exists (~50 recorded outco
 
 ## Notes
 
-- Use Gaussian Process surrogate model from the start — it provides uncertainty estimates needed for principled exploration/exploitation, which Random Forest cannot.
+- The surrogate must expose both a predicted outcome **and** an uncertainty estimate — these drive the expected-improvement acquisition function and the exploration/exploitation balance. The accepted `SurrogateOutcomeModel` satisfies this; the originally specified Gaussian Process was the motivating example of a model with this property, not a hard requirement (see [Surrogate Model Decision](#surrogate-model-decision)).
 - Exploration should be gated on task importance (don't explore on critical tasks)
 - Configuration bundles should be human-reviewable (not just numerical vectors)
 - The optimizer is always deployed but only activates exploration once sufficient baseline data exists
