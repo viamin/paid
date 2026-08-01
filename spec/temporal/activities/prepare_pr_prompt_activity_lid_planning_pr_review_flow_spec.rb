@@ -66,6 +66,29 @@ RSpec.describe Activities::PreparePrPromptActivity do
     )
   end
 
+  def stub_requested_changes_then_comment_flow(github_client)
+    allow(github_client).to receive_messages(
+      pull_request_reviews: [
+        { id: 1, user_login: "reviewer", state: "CHANGES_REQUESTED", body: "", submitted_at: 45.minutes.ago },
+        { id: 2, user_login: "reviewer", state: "COMMENTED", body: "Still waiting on the fix", submitted_at: 15.minutes.ago }
+      ],
+      review_threads: [
+        {
+          id: "thread_1",
+          is_resolved: false,
+          comments: [
+            { body: "Replace this inferred rationale with the confirmed decision", path: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md", line: 12, author: "reviewer" }
+          ]
+        }
+      ],
+      pull_request_files: [
+        { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md" },
+        { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-specs.md" },
+        { filename: "AGENTS.md" }
+      ]
+    )
+  end
+
   def build_followup_run(project, pull_request_issue)
     create(:agent_run, :with_git_context,
       project: project,
@@ -164,5 +187,15 @@ RSpec.describe Activities::PreparePrPromptActivity do
     trigger_types = automation_scan_results(scan_result).flat_map { |trigger| trigger[:triggers].map { |entry| entry[:type] } }
 
     expect(trigger_types).not_to include("review_threads", "changes_requested")
+  end
+
+  it "keeps requested changes blocking on a Planning PR until the reviewer explicitly approves" do
+    stub_requested_changes_then_comment_flow(github_client)
+
+    scan_result = scan_activity.execute(project_id: project.id)
+    trigger_types = automation_scan_results(scan_result).flat_map { |trigger| trigger[:triggers].map { |entry| entry[:type] } }
+
+    expect(trigger_types).to include("changes_requested")
+    expect(trigger_types).not_to include("review_threads")
   end
 end

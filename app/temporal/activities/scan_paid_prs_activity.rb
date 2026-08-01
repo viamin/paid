@@ -2454,21 +2454,34 @@ module Activities
 
       cutoff = last_run&.completed_at
 
-      latest_by_user = reviews
+      reviews_by_user = reviews
         .select { |r| project.trusted_github_user?(r[:user_login]) && !bot_user?(r[:user_login]) }
+        .select { |r| cutoff.nil? || r[:submitted_at].nil? || r[:submitted_at] > cutoff }
         .group_by { |r| r[:user_login]&.downcase }
-        .transform_values { |user_reviews| user_reviews.max_by { |r| r[:submitted_at] || Time.at(0) } }
 
-      changes_requested = latest_by_user.values.select do |review|
-        next false unless review[:state] == "CHANGES_REQUESTED"
-        next false if cutoff && review[:submitted_at] && review[:submitted_at] <= cutoff
+      changes_requested = reviews_by_user.values.filter_map do |user_reviews|
+        latest_changes_requested = latest_review_for_state(user_reviews, "CHANGES_REQUESTED")
+        next unless latest_changes_requested
 
-        true
+        latest_approved = latest_review_for_state(user_reviews, "APPROVED")
+        next if latest_approved && review_time(latest_approved) > review_time(latest_changes_requested)
+
+        latest_changes_requested
       end
 
       return [] if changes_requested.empty?
 
       [ { type: "changes_requested", details: changes_requested.map { |r| r[:user_login] } } ]
+    end
+
+    def latest_review_for_state(reviews, state)
+      reviews
+        .select { |review| review[:state] == state }
+        .max_by { |review| review_time(review) }
+    end
+
+    def review_time(review)
+      review[:submitted_at] || Time.at(0)
     end
 
     def check_actionable_labels(project, issue)

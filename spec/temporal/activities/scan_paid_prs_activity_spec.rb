@@ -1421,6 +1421,28 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when a subsequent commented review follows changes_requested" do
+      before do
+        create(:issue, :pull_request,
+          project: project, github_number: 42,
+          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
+        stub_github_for_pr(
+          reviews: default_clean_copilot_review + [
+            { id: 1, user_login: "viamin", state: "CHANGES_REQUESTED", body: "", submitted_at: 2.hours.ago },
+            { id: 2, user_login: "viamin", state: "COMMENTED", body: "Following up", submitted_at: 1.hour.ago }
+          ]
+        )
+      end
+
+      it "keeps the changes_requested trigger until an approval is posted" do
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result).size).to eq(1)
+        trigger = automation_scan_results(result).first
+        expect(trigger[:triggers].map { |entry| entry[:type] }).to include("changes_requested")
+      end
+    end
+
     context "when changes_requested review is older than the last completed agent run" do
       before do
         create(:issue, :pull_request,
