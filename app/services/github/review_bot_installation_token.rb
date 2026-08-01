@@ -12,6 +12,16 @@ module Github
 
     class Error < StandardError; end
     class ConfigurationError < Error; end
+    class NotInstalledError < Error; end
+
+    class ResponseError < Error
+      attr_reader :status
+
+      def initialize(message, status:)
+        @status = status
+        super(message)
+      end
+    end
 
     def self.app_id
       ENV["PAID_CODE_REVIEWER_APP_ID"].presence || APP_ID
@@ -41,12 +51,20 @@ module Github
     def fetch
       validate_configuration!
 
-      installation_id = installation_response.fetch("id")
-      token_response = post("/app/installations/#{installation_id}/access_tokens")
+      resolved_id = installation_id
+      token_response = post("/app/installations/#{resolved_id}/access_tokens")
 
       token_response.fetch("token")
     rescue KeyError => e
       raise Error, "GitHub review bot token response missing #{e.key}"
+    end
+
+    def installation_id
+      validate_configuration!
+
+      installation_response.fetch("id")
+    rescue KeyError => e
+      raise Error, "GitHub review bot installation response missing #{e.key}"
     end
 
     private
@@ -62,6 +80,10 @@ module Github
     def installation_response
       owner, repo = repo_full_name.split("/", 2)
       get("/repos/#{owner}/#{repo}/installation")
+    rescue ResponseError => e
+      raise NotInstalledError, "GitHub review bot is not installed on #{repo_full_name}" if e.status == 404
+
+      raise
     end
 
     def get(path)
@@ -70,6 +92,8 @@ module Github
       end
 
       parse_response(response)
+    rescue Faraday::Error => e
+      raise Error, "GitHub review bot request failed: #{e.message}"
     end
 
     def post(path)
@@ -80,6 +104,8 @@ module Github
       end
 
       parse_response(response)
+    rescue Faraday::Error => e
+      raise Error, "GitHub review bot request failed: #{e.message}"
     end
 
     def app_headers
@@ -105,9 +131,15 @@ module Github
       return body if response.success?
 
       message = body.is_a?(Hash) ? body["message"] : response.body
-      raise Error, "GitHub review bot request failed (status #{response.status}): #{message}"
+      raise ResponseError.new(
+        "GitHub review bot request failed (status #{response.status}): #{message}",
+        status: response.status
+      )
     rescue JSON::ParserError
-      raise Error, "GitHub review bot request returned invalid JSON (status #{response.status})"
+      raise ResponseError.new(
+        "GitHub review bot request returned invalid JSON (status #{response.status})",
+        status: response.status
+      )
     end
   end
 end

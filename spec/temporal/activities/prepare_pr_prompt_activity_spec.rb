@@ -41,13 +41,7 @@ RSpec.describe Activities::PreparePrPromptActivity do
       .with(project.full_name, 42)
       .and_return(pr_data)
 
-    allow(github_client).to receive_messages(
-      check_runs_for_ref: [],
-      review_threads: [],
-      recent_issue_comments: [],
-      pull_request_files: [],
-      pull_request_file_patches: []
-    )
+    allow(github_client).to receive_messages(check_runs_for_ref: [], review_threads: [], recent_issue_comments: [])
   end
 
   describe "#execute" do

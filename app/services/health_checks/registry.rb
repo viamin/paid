@@ -28,18 +28,11 @@ module HealthChecks
 
         register(HealthChecks::Checks::Project::AutoMergeWithoutOwner)
         register(HealthChecks::Checks::Project::ReviewWithoutBot)
+        register(HealthChecks::Checks::Project::ReviewBotNotInstalled)
         register(HealthChecks::Checks::Project::EmptyAllowlist)
         register(HealthChecks::Checks::Project::MissingGitHubCredential)
         register(HealthChecks::Checks::Project::SensitiveDataFreeModel)
-        register(HealthChecks::Checks::Runner::InactiveModel)
-        register(HealthChecks::Checks::Runner::ExpiredModel)
-        register(HealthChecks::Checks::Runner::BelowQualityBarModel)
-        register(HealthChecks::Checks::Runner::IncompatibleModel)
-        register(HealthChecks::Checks::Runner::MissingRunnerCredentials)
-        register(HealthChecks::Checks::Runner::SupersededModel)
-        register(HealthChecks::Checks::User::NoAgentRunners)
-        register(HealthChecks::Checks::User::InvalidFallbackChain)
-        register(HealthChecks::Checks::User::MissingDefaultRunner)
+        register(HealthChecks::Checks::Runner::DeprecatedModel)
         @defaults_loaded = true
       end
     end

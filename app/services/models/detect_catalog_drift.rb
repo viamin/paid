@@ -55,6 +55,18 @@ module Models
       Result.new(providers: providers, registry_fetched: @registry.fetched?)
     end
 
+    # A catalog model is "deprecated" only when the registry loaded healthily
+    # for that provider and no longer knows the model; otherwise a degraded
+    # registry fetch would raise false alarms.
+    def deprecated_models_for(provider)
+      return [] unless @registry.healthy?(provider)
+
+      registry_bases = @registry.for_provider(provider).to_set { |model| base_id(model.id) }
+      LlmModel.active.by_provider(provider).pluck(:model_id)
+        .reject { |id| registry_bases.include?(base_id(id)) }
+        .sort
+    end
+
     private
 
     def drift_for(provider)
@@ -92,18 +104,6 @@ module Models
         .flat_map { |base| Array(chat_by_base[base]) }
         .filter_map(&:created_at)
         .max
-    end
-
-    # A catalog model is "deprecated" only when the registry loaded healthily
-    # for that provider and no longer knows the model — otherwise a degraded
-    # registry fetch would raise false alarms.
-    def deprecated_models_for(provider)
-      return [] unless @registry.healthy?(provider)
-
-      registry_bases = @registry.for_provider(provider).to_set { |model| base_id(model.id) }
-      LlmModel.active.by_provider(provider).pluck(:model_id)
-        .reject { |id| registry_bases.include?(base_id(id)) }
-        .sort
     end
 
     def chat_models_for(provider)

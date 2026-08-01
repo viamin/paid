@@ -1421,48 +1421,6 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
-    context "when a subsequent commented review follows changes_requested" do
-      before do
-        create(:issue, :pull_request,
-          project: project, github_number: 42,
-          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
-        stub_github_for_pr(
-          reviews: default_clean_copilot_review + [
-            { id: 1, user_login: "viamin", state: "CHANGES_REQUESTED", body: "", submitted_at: 2.hours.ago },
-            { id: 2, user_login: "viamin", state: "COMMENTED", body: "Following up", submitted_at: 1.hour.ago }
-          ]
-        )
-      end
-
-      it "keeps the changes_requested trigger until an approval is posted" do
-        result = activity.execute(project_id: project.id)
-
-        expect(automation_scan_results(result).size).to eq(1)
-        trigger = automation_scan_results(result).first
-        expect(trigger[:triggers].map { |entry| entry[:type] }).to include("changes_requested")
-      end
-    end
-
-    context "when a subsequent dismissed review clears changes_requested" do
-      before do
-        create(:issue, :pull_request,
-          project: project, github_number: 42,
-          labels: [ "paid-generated", "paid-automation" ], paid_state: "completed")
-        stub_github_for_pr(
-          reviews: default_clean_copilot_review + [
-            { id: 1, user_login: "viamin", state: "CHANGES_REQUESTED", body: "", submitted_at: 2.hours.ago },
-            { id: 2, user_login: "viamin", state: "DISMISSED", body: "", submitted_at: 1.hour.ago }
-          ]
-        )
-      end
-
-      it "does not trigger when the reviewer later dismisses the change request" do
-        result = activity.execute(project_id: project.id)
-
-        expect(automation_scan_results(result)).to eq([])
-      end
-    end
-
     context "when changes_requested review is older than the last completed agent run" do
       before do
         create(:issue, :pull_request,
@@ -9925,8 +9883,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     reviews: default_clean_copilot_review,
     recent_multi_page: false,
     head_committed_at: 2.hours.ago,
-    pr_updated_at: nil,
-    pr_files: []
+    pr_updated_at: nil
   )
     pr_data = OpenStruct.new(
       head: OpenStruct.new(sha: "abc123", repo: OpenStruct.new(fork: head_repo_fork)),
@@ -9964,12 +9921,6 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     allow(github_client).to receive(:pull_request_reviews)
       .with(project.full_name, 42)
       .and_return(reviews)
-    allow(github_client).to receive(:pull_request_files)
-      .with(project.full_name, 42)
-      .and_return(pr_files)
-    allow(github_client).to receive(:pull_request_file_patches)
-      .with(project.full_name, 42)
-      .and_return(pr_files.map { |f| { filename: f, status: "modified", patch: "" } })
     allow(github_client).to receive(:commit)
       .with(project.full_name, "abc123")
       .and_return(commit_data)

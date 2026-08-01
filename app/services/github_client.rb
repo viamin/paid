@@ -236,34 +236,6 @@ class GithubClient
     end.map(&:filename)
   end
 
-
-  # Lists files changed in a pull request with patches.
-  #
-  # When the PR head SHA is provided, files whose patch payload is absent
-  # (GitHub omits the patch for oversized diffs) are hydrated with the file
-  # content so that downstream callers can fall back to a full-content scan.
-  #
-  # @param repo [String] Repository in "owner/name" format
-  # @param number [Integer] Pull request number
-  # @param head_sha [String, nil] PR head commit SHA for content fallback
-  # @return [Array<Hash>] File data with :filename, :status, :patch keys,
-  #   and :content when hydrated from the absent patch fallback
-  def pull_request_file_patches(repo, number, head_sha: nil)
-    handle_errors do
-      files = with_auto_paginate { client.pull_request_files(repo, number) }
-      files.map do |file|
-        entry = {
-          filename: file.filename.to_s,
-          status: file.status.to_s,
-          patch: file.patch.to_s
-        }
-        if file.patch.to_s.blank? && head_sha
-          entry[:content] = fetch_file_content(repo, file.filename, head_sha)
-        end
-        entry
-      end
-    end
-  end
   # Compares two commits and returns the list of changed file paths.
   #
   # NOTE: GitHub's compare API returns a maximum of 300 files per response.
@@ -1779,27 +1751,6 @@ class GithubClient
       error: e.message
     )
     false
-  end
-
-  # Fetches the content of a single file at a given ref via the GitHub
-  # Contents API. Returns nil on failure (missing file, rate limit, etc.)
-  # so callers that use this as a fallback degrade gracefully.
-  #
-  # @param repo [String] Repository in "owner/name" format
-  # @param path [String] File path relative to repo root
-  # @param ref [String] Git ref (branch, tag, or commit SHA)
-  # @return [String, nil] Decoded file content, or nil on failure
-  def fetch_file_content(repo, path, ref)
-    file = handle_errors { client.contents(repo, path: path, ref: ref) }
-    return nil unless file&.content
-
-    if file.encoding == "base64"
-      Base64.decode64(file.content).force_encoding("UTF-8")
-    else
-      file.content
-    end
-  rescue GithubClient::Error
-    nil
   end
 
   class TokenNamespacedStore

@@ -220,8 +220,6 @@ module Activities
         build_default_pr_body(issue, description, quality_warnings: quality_warnings, lid_coherence: lid_coherence)
       end
 
-      body = append_inference_checklist(body, agent_run)
-
       {
         body: append_lid_phase_report(body, agent_run),
         llm_generated_description: description.present?
@@ -256,25 +254,6 @@ module Activities
       end
 
       parts.join("\n")
-    end
-
-    # @spec LID-PR-CONFIRM-001
-    def append_inference_checklist(body, agent_run)
-      checklist = Lid::BuildInferenceChecklist.call(
-        worktree_path: agent_run.worktree_path,
-        base_commit_sha: agent_run.base_commit_sha
-      )
-      return body if checklist.blank?
-
-      "#{body}\n\n---\n\n#{checklist}"
-    rescue StandardError => e
-      logger.warn(
-        message: "agent_execution.inference_checklist_failed",
-        agent_run_id: agent_run.id,
-        error_class: e.class.name,
-        error: e.message
-      )
-      body
     end
 
     def resolve_pr_template(agent_run)
