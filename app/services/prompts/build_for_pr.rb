@@ -126,7 +126,8 @@ module Prompts
       sections << merge_conflicts_section if include_merge_conflicts_section?
       sections << ci_failures_section if include_ci_failures_section?
       sections << code_review_section if includes_review_threads?
-      sections << planning_pr_intent_confirmation_section if planning_pr_intent_confirmation_section.present?
+      intent_confirmation = planning_pr_intent_confirmation_section
+      sections << intent_confirmation if intent_confirmation.present?
       sections << conversation_section if include_conversation_section?
       other_issues = other_issues_section
       sections << other_issues if other_issues.present?
