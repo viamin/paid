@@ -1809,7 +1809,7 @@ RSpec.describe "Projects" do
         expect(project.lid_mode_overridden?).to be true
       end
 
-      it "does not mark lid mode overridden when the submitted value is unchanged" do
+      it "locks lid mode when the form re-submits the current value" do
         project = create(:project, account: account, github_token: github_token,
           lid_mode: "full", lid_mode_overridden: false)
 
@@ -1817,7 +1817,17 @@ RSpec.describe "Projects" do
 
         expect(response).to redirect_to(project_path(project))
         expect(project.reload.lid_mode).to eq("full")
-        expect(project.lid_mode_overridden?).to be false
+        expect(project.lid_mode_overridden?).to be true
+      end
+
+      it "forces lid mode off when submitting not-configured from a nil state" do
+        project = create(:project, account: account, github_token: github_token, lid_mode: nil)
+
+        patch project_path(project), params: { project: { lid_mode: "" } }
+
+        expect(response).to redirect_to(project_path(project))
+        expect(project.reload.lid_mode).to be_nil
+        expect(project.lid_mode_overridden?).to be true
       end
 
       it "does not let background detection overwrite a manually forced lid mode" do

@@ -157,7 +157,11 @@ class ProjectsController < ApplicationController
     if update_params.key?(:lid_mode)
       submitted_mode = update_params[:lid_mode].presence
       update_params[:lid_mode] = submitted_mode
-      update_params[:lid_mode_overridden] = true if submitted_mode != @project.lid_mode
+      # The LID mode select is always submitted on save, so the form
+      # submission itself is the user-intent signal — lock the value even
+      # when it matches the current mode, otherwise syncs/detection can
+      # clobber it. Explicit re-detect below clears the override.
+      update_params[:lid_mode_overridden] = true
     end
     @github_auth_source = selected_github_auth_source(update_params)
     @paid_agents_installation = @project.paid_agents_installation(installations: @github_installations)
