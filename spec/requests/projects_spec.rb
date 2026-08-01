@@ -1809,7 +1809,7 @@ RSpec.describe "Projects" do
         expect(project.lid_mode_overridden?).to be true
       end
 
-      it "locks lid mode when the form re-submits the current value" do
+      it "does not lock lid mode when the form re-submits an unchanged value" do
         project = create(:project, account: account, github_token: github_token,
           lid_mode: "full", lid_mode_overridden: false)
 
@@ -1817,11 +1817,33 @@ RSpec.describe "Projects" do
 
         expect(response).to redirect_to(project_path(project))
         expect(project.reload.lid_mode).to eq("full")
+        expect(project.lid_mode_overridden?).to be false
+      end
+
+      it "preserves an existing lid mode override when the value is unchanged" do
+        project = create(:project, account: account, github_token: github_token,
+          lid_mode: "scoped", lid_mode_overridden: true)
+
+        patch project_path(project), params: { project: { lid_mode: "scoped" } }
+
+        expect(response).to redirect_to(project_path(project))
+        expect(project.reload.lid_mode).to eq("scoped")
         expect(project.lid_mode_overridden?).to be true
       end
 
-      it "forces lid mode off when submitting not-configured from a nil state" do
+      it "does not override lid mode when an unrelated save resubmits a nil value" do
         project = create(:project, account: account, github_token: github_token, lid_mode: nil)
+
+        patch project_path(project), params: { project: { lid_mode: "" } }
+
+        expect(response).to redirect_to(project_path(project))
+        expect(project.reload.lid_mode).to be_nil
+        expect(project.lid_mode_overridden?).to be false
+      end
+
+      it "overrides lid mode when the user explicitly turns it off" do
+        project = create(:project, account: account, github_token: github_token,
+          lid_mode: "full", lid_mode_overridden: false)
 
         patch project_path(project), params: { project: { lid_mode: "" } }
 
