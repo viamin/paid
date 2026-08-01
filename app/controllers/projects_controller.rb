@@ -155,8 +155,9 @@ class ProjectsController < ApplicationController
 
     update_params = project_params
     if update_params.key?(:lid_mode)
-      update_params[:lid_mode] = update_params[:lid_mode].presence
-      update_params[:lid_mode_overridden] = true
+      submitted_mode = update_params[:lid_mode].presence
+      update_params[:lid_mode] = submitted_mode
+      update_params[:lid_mode_overridden] = true if submitted_mode != @project.lid_mode
     end
     @github_auth_source = selected_github_auth_source(update_params)
     @paid_agents_installation = @project.paid_agents_installation(installations: @github_installations)

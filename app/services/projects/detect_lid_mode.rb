@@ -48,13 +48,21 @@ module Projects
     attr_reader :project, :repo_path, :warnings, :force
 
     def instruction_file_detection
-      instruction_file = find_instruction_file
-      return unless instruction_file
+      INSTRUCTION_FILES.each do |relative_path|
+        path = repo_path.join(relative_path)
+        next unless path.file?
 
-      contents = instruction_file.read
-      lid_block = extract_section(contents, LID_HEADER)
-      return unless lid_block
+        contents = path.read
+        lid_block = extract_section(contents, LID_HEADER)
+        next unless lid_block
 
+        return lid_detection_from_block(path, contents, lid_block)
+      end
+
+      nil
+    end
+
+    def lid_detection_from_block(instruction_file, contents, lid_block)
       mode = parse_mode(lid_block, instruction_file.basename.to_s)
       version = parse_bullet(lid_block, "Version")
       warnings << MISSING_SCOPE_WARNING if mode == SCOPED_MODE && extract_section(contents, LID_SCOPE_HEADER).blank?
@@ -116,12 +124,6 @@ module Projects
 
     def scoped_without_scope?(result)
       result[:mode] == SCOPED_MODE && result.fetch(:warnings).include?(MISSING_SCOPE_WARNING)
-    end
-
-    def find_instruction_file
-      INSTRUCTION_FILES
-        .map { |relative_path| repo_path.join(relative_path) }
-        .find(&:file?)
     end
 
     def parse_mode(lid_block, file_name)

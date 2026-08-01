@@ -1809,6 +1809,17 @@ RSpec.describe "Projects" do
         expect(project.lid_mode_overridden?).to be true
       end
 
+      it "does not mark lid mode overridden when the submitted value is unchanged" do
+        project = create(:project, account: account, github_token: github_token,
+          lid_mode: "full", lid_mode_overridden: false)
+
+        patch project_path(project), params: { project: { lid_mode: "full" } }
+
+        expect(response).to redirect_to(project_path(project))
+        expect(project.reload.lid_mode).to eq("full")
+        expect(project.lid_mode_overridden?).to be false
+      end
+
       it "does not let background detection overwrite a manually forced lid mode" do
         project = create(:project, account: account, github_token: github_token, lid_mode: nil)
         patch project_path(project), params: { project: { lid_mode: "scoped" } }

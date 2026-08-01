@@ -90,6 +90,30 @@ RSpec.describe Projects::DetectLidMode do
     expect(project.reload.lid_mode).to eq("scoped")
   end
 
+  # @spec LID-DETECTION-001
+  it "falls back to CLAUDE.md when AGENTS.md exists but lacks a LID block" do
+    write_repo_file("AGENTS.md", <<~MD)
+      # Project agent instructions
+
+      No LID configuration here.
+    MD
+    write_repo_file("CLAUDE.md", <<~MD)
+      ## LID
+
+      - Mode: Full
+      - Version: 1.3.0
+    MD
+
+    result = described_class.call(project:, repo_path:)
+
+    expect(result).to include(
+      mode: "full",
+      version: "1.3.0",
+      sources: [ "CLAUDE.md ## LID block" ]
+    )
+    expect(project.reload.lid_mode).to eq("full")
+  end
+
   it "clears lid mode when no directives or artifacts are present" do
     project.update!(lid_mode: "full", lid_detection: { "version" => "1.2.0" })
 
