@@ -21,7 +21,7 @@ module HealthChecks
 
         def executable_agent_run_runners
           owner&.runners&.kept_only&.for_agent_runs
-            &.where(runner_key: RunnerSupport.container_executable_runner_keys) || Runner.none
+            &.where(runner_key: RunnerSupport.container_executable_runner_keys) || ::Runner.none
         end
 
         def owner

@@ -31,7 +31,7 @@ module HealthChecks
         end
 
         def stale_runner_reference?(identifier)
-          Runner.for_identifier(owner, identifier, include_discarded: true).present?
+          ::Runner.for_identifier(owner, identifier, include_discarded: true).present?
         end
 
         def default_runner
