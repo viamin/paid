@@ -29,6 +29,17 @@ RSpec.describe CiWorkflowFile, :no_db do
     )
   end
 
+  it "clears inherited database URL overrides for test-mode ci jobs" do
+    jobs = workflow.fetch("jobs")
+
+    %w[test migrations performance].each do |job_name|
+      expect(jobs.fetch(job_name).fetch("env")).to include(
+        "DATABASE_URL" => "",
+        "CABLE_DATABASE_URL" => ""
+      )
+    end
+  end
+
   it "verifies workflow jobs install the matching PGDG postgres client major package" do
     lint_step = workflow.fetch("jobs").fetch("lint").fetch("steps")
       .find { |step| step["name"] == "Verify Postgres image pins and client install sources are in sync" }
