@@ -1484,32 +1484,41 @@ class Project < ApplicationRecord
 
   # @spec AUTO-PICK-QUEUE-001
   def cancel_queued_auto_pick_runs
-    now = Time.current
     queued_auto_pick_runs = agent_runs
       .where(status: "queued")
       .where("agent_runs.auto_pick = TRUE OR (agent_runs.trigger_type = 'automatic' AND agent_runs.goal = 'enhance_issue')")
-    queued_auto_pick_run_ids = queued_auto_pick_runs.ids
-    return if queued_auto_pick_run_ids.empty?
+      .to_a
+    return if queued_auto_pick_runs.empty?
 
-    cancelled_count = queued_auto_pick_runs
-      .where(id: queued_auto_pick_run_ids)
-      .update_all(
-        status: "cancelled",
-        completed_at: now,
-        error_message: "Auto-Pick disabled for project",
-        updated_at: now
-      )
-    return if cancelled_count.zero?
+    cancelled_run_ids = queued_auto_pick_runs.filter_map { |run| run.id if cancel_auto_pick_run(run) }
+    return if cancelled_run_ids.empty?
 
-    Dashboard::CacheVersion.bump(account, scope: Dashboard::CacheVersion::LISTS_SCOPE)
-    LiveDashboardBroadcastJob.perform_later(account_id, queued_auto_pick_run_ids.first, refresh_queue_preview: true)
+    # No manual LiveDashboardBroadcastJob/CacheVersion bump here: cancel_auto_pick_run
+    # cancels each run through AgentRun#cancel!, whose after_commit broadcast_project_updates
+    # callback already enqueues LiveDashboardBroadcastJob(refresh_queue_preview: true) per run.
     Rails.logger.info(
       message: "auto_pick.queued_runs_cancelled",
       project_id: id,
-      cancelled_count: cancelled_count
+      cancelled_count: cancelled_run_ids.size
     )
   rescue => e
     Rails.logger.error(message: "auto_pick.queued_runs_cancel_failed", project_id: id, error: e.message)
+  end
+
+  # Cancels via AgentRuns::Cancel (not update_all) so that a queued run already
+  # claimed by a Temporal workflow (AgentRun.claimed) actually has that
+  # workflow and any container torn down, and so the normal AgentRun
+  # after_commit broadcasts fire for each run.
+  def cancel_auto_pick_run(run)
+    AgentRuns::Cancel.call(agent_run: run, error: "Auto-Pick disabled for project")
+  rescue => e
+    Rails.logger.error(
+      message: "auto_pick.queued_run_cancel_failed",
+      project_id: id,
+      agent_run_id: run.id,
+      error: e.message
+    )
+    false
   end
 
   def enqueue_knowledge_collection
