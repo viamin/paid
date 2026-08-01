@@ -111,7 +111,7 @@ module Prompts
       base_prompt = [
         rendered,
         conversation_section.presence,
-        elicited_intent_section.presence,
+        clarifying_answers_section.presence,
         service_environment_section.presence
       ].compact.join("\n\n")
 
@@ -197,8 +197,7 @@ module Prompts
 
     # @spec ISSUE-ENHANCEMENT-003
     # @spec ISSUE-ENHANCEMENT-004
-    def elicited_intent_section
-      return "" unless lid_enabled?
+    def clarifying_answers_section
       return "" unless github_client
 
       qa_pairs = ClarifyingQuestions::ExtractAnswerPairs.call(
@@ -215,17 +214,29 @@ module Prompts
         ]
       end
 
-      <<~SECTION.delete("\u0000").strip
-        # Elicited Intent
-
-        These answers came from the issue's clarifying-question flow. Treat them
-        as confirmed human intent and carry them into any LID artifact updates
-        you make while implementing the change.
-
-        #{lines.join("\n")}
-      SECTION
+      [ clarifying_answers_heading, clarifying_answers_guidance, lines.join("\n") ]
+        .join("\n\n")
+        .delete("\u0000")
+        .strip
     rescue GithubClient::Error
       ""
+    end
+
+    def clarifying_answers_heading
+      lid_enabled? ? "# Elicited Intent" : "# Clarified Requirements"
+    end
+
+    def clarifying_answers_guidance
+      guidance = [
+        "These answers came from the issue's clarifying-question flow.",
+        "Treat them as confirmed human intent while implementing the change."
+      ]
+
+      if lid_enabled?
+        guidance << "Carry them into any LID artifact updates you make while implementing the change."
+      end
+
+      guidance.join(" ")
     end
 
     def inject_knowledge_context(prompt)

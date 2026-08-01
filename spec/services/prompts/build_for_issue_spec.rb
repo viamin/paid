@@ -152,7 +152,8 @@ RSpec.describe Prompts::BuildForIssue do
 
         expect(prompt).to include("# Elicited Intent")
         expect(prompt).to include("These answers came from the issue's clarifying-question flow.")
-        expect(prompt).to include("as confirmed human intent and carry them into any LID artifact updates")
+        expect(prompt).to include("Treat them as confirmed human intent while implementing the change.")
+        expect(prompt).to include("Carry them into any LID artifact updates you make while implementing the change.")
         expect(prompt).to include("What problem are we solving for admins?")
         expect(prompt).to include("the system should send the user to `/dashboard`")
       end
@@ -220,7 +221,11 @@ RSpec.describe Prompts::BuildForIssue do
       it "does not include the elicited-intent section" do # @spec ISSUE-ENHANCEMENT-004
         prompt = described_class.call(issue: issue, project: project, github_client: github_client)
 
-        expect(prompt).not_to include("# Elicited Intent")
+        expect(prompt).to include("# Clarified Requirements")
+        expect(prompt).to include("These answers came from the issue's clarifying-question flow.")
+        expect(prompt).to include("Treat them as confirmed human intent while implementing the change.")
+        expect(prompt).to include("Keep users on a valid page after login.")
+        expect(prompt).not_to include("Carry them into any LID artifact updates")
       end
     end
 
