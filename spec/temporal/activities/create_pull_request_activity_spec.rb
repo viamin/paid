@@ -280,6 +280,24 @@ RSpec.describe Activities::CreatePullRequestActivity do
       expect(captured_body).to include("Reported success in agent output")
     end
 
+    it "does not treat unrelated later output as coherence-check success" do
+      allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
+      allow(project).to receive(:lid_mode).and_return("full")
+      allow(agent_run).to receive(:project).and_return(project)
+      agent_run.log!("stdout", "bin/coherence-check.mjs started")
+      agent_run.log!("stdout", "RSpec finished with 0 failures")
+
+      captured_body = nil
+      allow(github_client).to receive(:create_pull_request) do |*_args, **kwargs|
+        captured_body = kwargs[:body]
+        pr_response
+      end
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(captured_body).to include("Referenced in agent output; inspect the run logs for the full result.")
+    end
+
     it "treats ephemeral PR tests as test-first evidence in the LID report" do
       allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
       allow(project).to receive(:lid_mode).and_return("full")

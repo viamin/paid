@@ -400,11 +400,18 @@ module Activities
 
     def coherence_check_summary(agent_run)
       output = agent_output(agent_run)
-      return "Not found in captured agent output." unless output.match?(/coherence-check\.mjs|\/opt\/paid-lid\/bin\/coherence-check\.mjs/)
-      return "Reported success in agent output." if output.match?(/coherence-check.*pass|coherence-check.*success|0 failures/i)
-      return "Reported failures in agent output; inspect the run logs." if output.match?(/coherence-check.*fail|fail.*coherence-check/i)
+      line = latest_coherence_check_line(output)
+      return "Not found in captured agent output." unless line
+      return "Reported success in agent output." if line.match?(/pass(?:ed)?|success|0 failures/i)
+      return "Reported failures in agent output; inspect the run logs." if line.match?(/fail(?:ed|ures?)?/i)
 
       "Referenced in agent output; inspect the run logs for the full result."
+    end
+
+    def latest_coherence_check_line(output)
+      output.lines.reverse.find do |line|
+        line.match?(/coherence-check\.mjs|\/opt\/paid-lid\/bin\/coherence-check\.mjs/)
+      end
     end
 
     def agent_output(agent_run)
