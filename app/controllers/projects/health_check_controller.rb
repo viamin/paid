@@ -56,10 +56,14 @@ module Projects
     end
 
     def summary_badge_class(result)
-      return SUMMARY_BADGE[:healthy] if result.nil? || result.healthy?
+      return SUMMARY_BADGE[:healthy] if result.nil?
+      # healthy? is true for warning-only runs (it only excludes errors), so
+      # check warnings before the healthy fallthrough to avoid a green badge
+      # that contradicts the amber findings below it.
+      return SUMMARY_BADGE[:error] unless result.healthy?
       return SUMMARY_BADGE[:warning] if result.warnings?
 
-      SUMMARY_BADGE[:error]
+      SUMMARY_BADGE[:healthy]
     end
 
     def scope_label(scope)
