@@ -45,7 +45,8 @@ RSpec.describe Activities::PreparePrPromptActivity do
       check_runs_for_ref: [],
       review_threads: [],
       recent_issue_comments: [],
-      pull_request_files: []
+      pull_request_files: [],
+      pull_request_file_patches: []
     )
   end
 

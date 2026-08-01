@@ -34,11 +34,18 @@ RSpec.describe Activities::PreparePrPromptActivity do
       ],
       []
     )
-    allow(github_client).to receive(:pull_request_files).and_return([
-      { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md" },
-      { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-specs.md" },
-      { filename: "AGENTS.md" }
-    ])
+    allow(github_client).to receive_messages(
+      pull_request_files: [
+        { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md" },
+        { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-specs.md" },
+        { filename: "AGENTS.md" }
+      ],
+      pull_request_file_patches: [
+        { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md" },
+        { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-specs.md" },
+        { filename: "AGENTS.md" }
+      ]
+    )
     stub_planning_pr_file_contents(github_client)
   end
 
@@ -63,6 +70,11 @@ RSpec.describe Activities::PreparePrPromptActivity do
         { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md" },
         { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-specs.md" },
         { filename: "AGENTS.md" }
+      ],
+      pull_request_file_patches: [
+        { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md" },
+        { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-specs.md" },
+        { filename: "AGENTS.md" }
       ]
     )
     stub_planning_pr_file_contents(github_client)
@@ -84,6 +96,11 @@ RSpec.describe Activities::PreparePrPromptActivity do
         }
       ],
       pull_request_files: [
+        { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md" },
+        { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-specs.md" },
+        { filename: "AGENTS.md" }
+      ],
+      pull_request_file_patches: [
         { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md" },
         { filename: "docs/intent/lid-pr-confirmation/lid-pr-confirmation-specs.md" },
         { filename: "AGENTS.md" }

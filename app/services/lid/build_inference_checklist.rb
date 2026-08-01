@@ -57,7 +57,19 @@ module Lid
           planning_marker_in_patch?(patch)
         else
           content = changed_file_content(entry)
-          content.present? && (content.include?("[inferred]") || content.match?(OPEN_QUESTIONS_HEADING))
+          if content.present?
+            content.include?("[inferred]") || content.match?(OPEN_QUESTIONS_HEADING)
+          else
+            # Patch and content are both unavailable — GitHub omits the
+            # patch payload for oversized diffs, and this caller did not
+            # supply file content.  Be conservative: assume planning
+            # markers are present so a real planning PR never silently
+            # falls through to ordinary PR handling.  The caller
+            # (docs_only_planning_pr?) only invokes this method after
+            # docs_only_paths? has already confirmed the diff touches only
+            # docs/intent, docs/high-level-design.md, AGENTS.md, etc.
+            true
+          end
         end
       end
     end

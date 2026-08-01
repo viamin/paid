@@ -76,6 +76,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           "docs/intent/lid-pr-confirmation/lid-pr-confirmation-specs.md",
           "AGENTS.md"
         ])
+      allow(client).to receive(:pull_request_file_patches)
+        .with(project.full_name, issue.github_number)
+        .and_return([
+          "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md",
+          "docs/intent/lid-pr-confirmation/lid-pr-confirmation-specs.md",
+          "AGENTS.md"
+        ])
       allow(client).to receive(:pull_request)
         .with(project.full_name, issue.github_number)
         .and_return(PullRequestDouble.new(HeadDouble.new("abc123")))
@@ -131,6 +138,12 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     it "treats stale planning markers as ordinary review feedback once code files are added" do
       allow(client).to receive(:pull_request_files)
+        .with(project.full_name, issue.github_number)
+        .and_return([
+          "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md",
+          "app/services/prompts/build_for_pr.rb"
+        ])
+      allow(client).to receive(:pull_request_file_patches)
         .with(project.full_name, issue.github_number)
         .and_return([
           "docs/intent/lid-pr-confirmation/lid-pr-confirmation-design.md",
