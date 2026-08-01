@@ -15,11 +15,12 @@ RSpec.describe Tools::TriggerAgentRun do
   end
 
   describe ".input_schema" do
-    it "gates the plan_docs branch to lid_planning so clients don't send it for other goals" do
+    it "requires goal=lid_planning alongside plan_docs so clients get the real contract at validation time" do
       plan_docs_branch = described_class.input_schema[:anyOf].find do |branch|
-        branch[:required] == %w[plan_docs]
+        branch[:required]&.include?("plan_docs")
       end
 
+      expect(plan_docs_branch[:required]).to include("goal")
       expect(plan_docs_branch[:properties][:goal][:const]).to eq("lid_planning")
     end
   end

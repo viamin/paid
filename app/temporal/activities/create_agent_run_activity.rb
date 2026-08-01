@@ -23,7 +23,7 @@ module Activities
       count_toward_draft_review_round = input.fetch(:count_toward_draft_review_round, false)
       expected_draft_review_count = input[:expected_draft_review_count]
       manual_marketplace_entry_ids = input[:marketplace_entry_ids]
-      plan_docs = Array(input[:plan_docs])
+      plan_docs = normalize_plan_docs(input[:plan_docs])
 
       project = Project.find(project_id)
       goal ||= project.account.tenant_setting&.default_goal || "create_pr"
@@ -218,6 +218,15 @@ module Activities
       return {} if plan_docs.empty?
 
       { "plan_docs" => plan_docs }
+    end
+
+    def normalize_plan_docs(raw_docs)
+      Array(raw_docs).filter_map do |doc|
+        next unless doc.respond_to?(:[])
+
+        name = doc[:name] || doc["name"]
+        { "name" => name.to_s } if name.present?
+      end
     end
 
     def build_lid_planning_prompt(project:, custom_prompt:, plan_docs:, goal:)

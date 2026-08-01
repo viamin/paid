@@ -179,6 +179,19 @@ RSpec.describe Activities::CreateAgentRunActivity do
       )
     end
 
+    it "filters out malformed plan docs without crashing" do
+      result = activity.execute(
+        project_id: project.id,
+        goal: "lid_planning",
+        plan_docs: [ { "name" => "docs/rdrs/RDR-051.md" }, { "path" => "no-name" } ]
+      )
+
+      agent_run = AgentRun.find(result[:agent_run_id])
+      expect(agent_run.external_metadata["plan_docs"]).to eq(
+        [ { "name" => "docs/rdrs/RDR-051.md" } ]
+      )
+    end
+
     it "builds the lid_planning prompt on resume when plan_docs are in external_metadata" do
       queued_run = create(:agent_run, :queued, :automatic,
         project: project,
