@@ -153,16 +153,10 @@ module Activities
     end
 
     def lid_coherence_section(agent_run)
-      coherence = agent_run.external_metadata["lid_coherence"]
-      return if coherence.blank? || coherence["status"] != "failed"
-
-      [
-        "## LID Coherence Soft-Block",
-        "",
-        coherence["summary_line"],
-        "",
-        "The run continued intentionally; address these findings in the next LID-aware pass."
-      ].join("\n")
+      Lid::CoherenceSection.render(
+        agent_run,
+        closing_note: "The run continued intentionally; address these findings in the next LID-aware pass."
+      )
     end
   end
 end

@@ -308,16 +308,10 @@ module Activities
     end
 
     def lid_coherence_section(agent_run)
-      coherence = agent_run.external_metadata["lid_coherence"]
-      return if coherence.blank? || coherence["status"] != "failed"
-
-      [
-        "## LID Coherence Soft-Block",
-        "",
-        coherence["summary_line"],
-        "",
-        "This run continued intentionally; the checker is advisory, not a hard gate."
-      ].join("\n")
+      Lid::CoherenceSection.render(
+        agent_run,
+        closing_note: "This run continued intentionally; the checker is advisory, not a hard gate."
+      )
     end
 
     # Deterministic fallback used when the LLM description generator fails or

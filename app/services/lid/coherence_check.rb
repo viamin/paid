@@ -20,6 +20,8 @@ module Lid
       return skipped_result("goal_not_supported") unless GOALS.include?(agent_run.goal)
 
       result = container_service.execute(command, timeout: CHECK_TIMEOUT_SECONDS, stream: false)
+      return persist_and_return(unavailable_result("exit_code_#{result[:exit_code]}")) unless result.success?
+
       output = [ result[:stdout], result[:stderr] ].compact.join("\n").strip
 
       marker_status = parse_marker(output)
@@ -32,9 +34,7 @@ module Lid
         Lid::CoherenceReport.parse(output).to_h
       end
 
-      persist(report)
-      log_findings(report)
-      report
+      persist_and_return(report)
     rescue StandardError => e
       report = unavailable_result("#{e.class.name}: #{e.message}")
       persist(report)
@@ -91,6 +91,12 @@ module Lid
         "status" => "unavailable",
         "summary_line" => "LID coherence check unavailable: #{reason}."
       }
+    end
+
+    def persist_and_return(report)
+      persist(report)
+      log_findings(report)
+      report
     end
 
     def persist(report)

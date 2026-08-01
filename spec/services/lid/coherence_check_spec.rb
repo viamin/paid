@@ -58,6 +58,22 @@ RSpec.describe Lid::CoherenceCheck do
     expect(container_service).not_to have_received(:execute)
   end
 
+  it "marks the check unavailable when the container command exits non-zero" do
+    allow(container_service).to receive(:execute)
+      .and_return(Containers::Provision::Result.failure(error: "boom", stdout: "", stderr: "stack trace", exit_code: 1))
+
+    expect(agent_run).to receive(:update!).with(
+      external_metadata: hash_including(
+        "lid_coherence" => hash_including("status" => "unavailable")
+      )
+    )
+
+    result = service
+
+    expect(result["status"]).to eq("unavailable")
+    expect(result["summary_line"]).to include("exit_code_1")
+  end
+
   it "runs for lid_planning goals" do
     allow(agent_run).to receive(:goal).and_return("lid_planning")
     allow(container_service).to receive(:execute)

@@ -8,6 +8,12 @@ module Prompts
       new(...).build
     end
 
+    def self.project_description_for(project)
+      return "" unless project.respond_to?(:description)
+
+      project.description.to_s
+    end
+
     def initialize(project_name:, project_description:, plan_docs: [])
       @project_name = project_name
       @project_description = project_description

@@ -226,15 +226,9 @@ module Activities
 
       Prompts::BuildForLidPlanning.call(
         project_name: project.full_name,
-        project_description: project_description_for_lid_planning(project),
+        project_description: Prompts::BuildForLidPlanning.project_description_for(project),
         plan_docs: plan_docs
       )
-    end
-
-    def project_description_for_lid_planning(project)
-      return "" unless project.respond_to?(:description)
-
-      project.description.to_s
     end
 
     def maybe_inject_style_guides!(agent_run:, prompt_version:, custom_prompt_provided:)

@@ -19,4 +19,18 @@ RSpec.describe Prompts::BuildForLidPlanning do
     expect(prompt).to include("Alternatives / decisions -> LLD decisions and alternatives with authored rationale")
     expect(prompt).to include("Validation / acceptance sections -> EARS specs")
   end
+
+  describe ".project_description_for" do
+    it "returns the project's description when present" do
+      project = Struct.new(:description).new("LID-aware agent orchestration.")
+
+      expect(described_class.project_description_for(project)).to eq("LID-aware agent orchestration.")
+    end
+
+    it "returns an empty string when the project has no description method" do
+      project = Object.new
+
+      expect(described_class.project_description_for(project)).to eq("")
+    end
+  end
 end

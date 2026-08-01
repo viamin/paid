@@ -2617,15 +2617,9 @@ class AgentRun < ApplicationRecord
   def prompt_for_lid_planning
     Prompts::BuildForLidPlanning.call(
       project_name: project.full_name,
-      project_description: project_description_for_lid_planning,
+      project_description: Prompts::BuildForLidPlanning.project_description_for(project),
       plan_docs: external_metadata.fetch("plan_docs", [])
     )
-  end
-
-  def project_description_for_lid_planning
-    return "" unless project.respond_to?(:description)
-
-    project.description.to_s
   end
 
   def empty_phase_summary
