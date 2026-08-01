@@ -3,6 +3,8 @@
 require "rails_helper"
 
 RSpec.describe Tools::CloneProject do
+  # @spec clone_project returns already_cloned for manifest entries even when the session is at capacity.
+  # @spec clone_project uses the resolved project GitHub credential, including GitHub App tokens, for clones.
   let(:account) { create(:account) }
   let(:user) { create(:user, :member, account:) }
   let(:project) { create(:project, account:) }
@@ -72,6 +74,24 @@ RSpec.describe Tools::CloneProject do
       expect(result[:token_identity]).to be_present
     end
 
+    it "returns already_cloned when the manifest is already at the clone limit" do
+      tenant_setting = create(:tenant_setting, account:)
+      allow(account).to receive(:tenant_setting).and_return(tenant_setting)
+      allow(tenant_setting).to receive(:chat_max_cloned_repos).and_return(1)
+      session.append_clone_manifest_entry(
+        project_id: project.id,
+        cloned_at: Time.current,
+        path: "/workspace/#{project.full_name.tr('/', '-')}",
+        token_identity: "project-token:#{project.github_token.name}"
+      )
+      session.save!
+
+      result = tool.call(project_id: project.id, confirmed: true)
+
+      expect(result[:status]).to eq("already_cloned")
+      expect(result[:project_id]).to eq(project.id)
+    end
+
     it "rejects unconfirmed operations" do
       expect {
         tool.call(project_id: project.id, confirmed: false)
@@ -134,6 +154,24 @@ RSpec.describe Tools::CloneProject do
       expect {
         tool.call(project_id: sixth_project.id, confirmed: true)
       }.to raise_error(ArgumentError, /Maximum cloned repos limit reached/)
+    end
+
+    it "uses the project GitHub App credential for app-backed projects" do
+      project = create(:project, :with_github_installation, account:)
+      tool = described_class.new(user:, session:)
+
+      allow(project).to receive_messages(
+        github_credential: "ghs_app_token",
+        client: instance_double(GithubClient)
+      )
+
+      result = tool.call(project_id: project.id, confirmed: true)
+
+      expect(result[:status]).to eq("cloned")
+      expect(result[:token_identity]).to eq("github-app:#{project.github_installation.github_installation_id}")
+      expect(Containers.backend).to have_received(:exec_in_container) do |_container, _cmd, **opts|
+        expect(opts.fetch(:Env)).to include("CLONE_TOKEN=ghs_app_token")
+      end
     end
 
     it "uses per-account max_cloned_repos setting" do

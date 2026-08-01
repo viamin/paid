@@ -35,6 +35,8 @@ module Tools
       }
     end
 
+    # @spec clone_project returns already_cloned for manifest entries even when the session is at capacity.
+    # @spec clone_project uses the resolved project GitHub credential, including GitHub App tokens, for clones.
     def perform(project_id:, confirmed: false)
       raise ArgumentError, "Confirmation required: set confirmed=true to clone a project" unless confirmed
 
@@ -43,12 +45,12 @@ module Tools
       project = policy_scope(Project).find(project_id)
       authorize(project, :show?, policy_class: ProjectPolicy)
 
-      enforce_clone_limit!
-
       existing = session.clone_manifest.find { |entry| entry.project_id == project.id }
       if existing
         return already_cloned_result(project, existing)
       end
+
+      enforce_clone_limit!
 
       token, identity = resolve_clone_token(project)
       slug = project_slug(project)
@@ -104,17 +106,8 @@ module Tools
       resolver = RepoReadClientResolver.new(project:, user:, session:)
       resolved = resolver.resolve
 
+      token = resolved.credential
       identity = resolved.identity
-      token = if identity.start_with?("user-token:")
-        token_name = identity.sub("user-token:", "")
-        user_token = user.created_github_tokens.active.find_by(name: token_name)
-        user_token&.token
-      end
-
-      unless token.present?
-        gh_token = project.github_token
-        token = gh_token.token if gh_token&.active?
-      end
 
       raise ArgumentError, "Project #{project.full_name} has no active GitHub token; cannot clone" if token.blank?
 
