@@ -9,7 +9,7 @@ module HealthChecks
         def self.network? = false
 
         def call
-          return [] if owner&.runners&.kept_only&.for_agent_runs&.exists?
+          return [] if executable_agent_run_runners.exists?
 
           finding(
             severity: :error,
@@ -18,6 +18,11 @@ module HealthChecks
         end
 
         private
+
+        def executable_agent_run_runners
+          owner&.runners&.kept_only&.for_agent_runs
+            &.where(runner_key: RunnerSupport.container_executable_runner_keys) || Runner.none
+        end
 
         def owner
           subject.is_a?(::Project) ? subject.effective_owner : subject
