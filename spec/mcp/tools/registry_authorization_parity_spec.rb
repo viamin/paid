@@ -473,6 +473,15 @@ RSpec.describe Tools::Registry do
           authorize_record!(user, definition, :destroy?, policy_class: McpServerDefinitionPolicy)
           definition.destroy!
         }
+      },
+      {
+        tool_name: "clone_project",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> { { project_id: project.id, confirmed: true } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :show?, policy_class: ProjectPolicy)
+        }
       }
     ] + operator_tool_scenarios
   end

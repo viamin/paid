@@ -148,7 +148,7 @@ class TenantConfigurationsController < ApplicationController
 
   def update_chat_settings!
     permitted = params.require(:tenant_setting).permit(
-      chat_settings: %i[chat_session_token_limit chat_monthly_token_limit chat_max_tool_iterations]
+      chat_settings: %i[chat_session_token_limit chat_monthly_token_limit chat_max_tool_iterations chat_max_cloned_repos chat_clone_timeout]
     )[:chat_settings].to_h
 
     @tenant_setting.chat_settings = permitted
