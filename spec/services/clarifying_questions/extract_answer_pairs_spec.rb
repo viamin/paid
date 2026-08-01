@@ -142,4 +142,57 @@ RSpec.describe ClarifyingQuestions::ExtractAnswerPairs do
     expect(result.qa_pairs.size).to eq(2)
     expect(result.answer_comment.body).to include("<!-- paid:clarifying-answers -->")
   end
+
+  context "when the clarifying questions live in the issue body rather than a comment" do
+    let(:body_issue) do
+      build_stubbed(
+        :issue,
+        body: <<~BODY,
+          <!-- paid:enhance-issue -->
+          ## Clarifying questions
+          1. What problem are we solving?
+          2. When the redirect is invalid, what should happen?
+        BODY
+        github_updated_at: Time.zone.parse("2026-07-30 11:00:00 UTC")
+      )
+    end
+
+    it "returns pairs when the body questions match the posted answers" do
+      result = described_class.call(
+        project: project,
+        issue: body_issue,
+        issue_comments: [ answer_comment ]
+      )
+
+      expect(result.qa_pairs).to eq(
+        [
+          { question: "What problem are we solving?",
+            answer: "Users should never land on a broken redirect." },
+          { question: "When the redirect is invalid, what should happen?",
+            answer: "The system should send them to `/dashboard`." }
+        ]
+      )
+    end
+
+    it "returns no pairs when the body questions changed after the answers were posted" do
+      refreshed_issue = build_stubbed(
+        :issue,
+        body: <<~BODY,
+          <!-- paid:enhance-issue -->
+          ## Clarifying questions
+          1. What should happen when the redirect is invalid?
+        BODY
+        github_updated_at: Time.zone.parse("2026-07-30 11:00:00 UTC")
+      )
+
+      result = described_class.call(
+        project: project,
+        issue: refreshed_issue,
+        issue_comments: [ answer_comment ]
+      )
+
+      expect(result.qa_pairs).to eq([])
+      expect(result.answer_comment).to be_nil
+    end
+  end
 end

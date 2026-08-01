@@ -16,12 +16,10 @@ module ClarifyingQuestions
 
     def call
       enhancement_comment = find_enhancement_comment
-      return empty_result unless enhancement_comment
-
       answer_comment = find_answer_comment(enhancement_comment)
       return empty_result unless answer_comment
 
-      questions = Parse.call(comment_body: enhancement_comment.body.to_s)
+      questions = current_questions(enhancement_comment)
       parsed_pairs = AnswerPairs.parse(answer_comment.body.to_s)
       return empty_result unless AnswerPairs.questions_match?(questions, parsed_pairs)
 
@@ -59,7 +57,21 @@ module ClarifyingQuestions
       end
     end
 
+    # Determines which questions are "current", mirroring
+    # ClarifyingQuestions::Load#latest_questions so this service and Load agree:
+    # the latest enhancement comment wins when present, otherwise the questions
+    # embedded in the issue body. Without the body fallback, answers that Load
+    # treats as stale (because the body questions changed after they were posted)
+    # would still be injected into the agent prompt.
+    def current_questions(enhancement_comment)
+      return Parse.call(comment_body: enhancement_comment.body.to_s) if enhancement_comment
+
+      Parse.call(comment_body: issue&.body.to_s)
+    end
+
     def answer_satisfies_latest_questions?(answer_comment:, enhancement_comment:)
+      return true unless enhancement_comment
+
       answer_comment.created_at > enhancement_comment.created_at
     end
 

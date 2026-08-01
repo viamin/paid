@@ -332,6 +332,7 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
         )
 
         allow(github_client).to receive(:issue_comments).and_return([ answers_comment ])
+        allow(ClarifyingQuestions::IngestAnswers).to receive(:call).and_return(true)
       end
 
       it "treats the questions as answered (the bot answer comment is honored)" do
