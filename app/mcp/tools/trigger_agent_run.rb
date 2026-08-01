@@ -37,7 +37,7 @@ module Tools
         anyOf: [
           { required: %w[issue_id] },
           { required: %w[custom_prompt] },
-          { required: %w[plan_docs] }
+          { required: %w[plan_docs], properties: { goal: { const: "lid_planning" } } }
         ]
       }
     end

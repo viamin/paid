@@ -14,6 +14,16 @@ RSpec.describe Tools::TriggerAgentRun do
     end
   end
 
+  describe ".input_schema" do
+    it "gates the plan_docs branch to lid_planning so clients don't send it for other goals" do
+      plan_docs_branch = described_class.input_schema[:anyOf].find do |branch|
+        branch[:required] == %w[plan_docs]
+      end
+
+      expect(plan_docs_branch[:properties][:goal][:const]).to eq("lid_planning")
+    end
+  end
+
   describe "#call" do
     let(:project) { create(:project, account: account) }
     let(:issue) { create(:issue, project: project) }
