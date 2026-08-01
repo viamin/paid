@@ -133,7 +133,7 @@ module Activities
         project.full_name,
         base: project.default_branch,
         head: agent_run.branch_name,
-        title: pr_title(issue),
+        title: pr_title(agent_run, issue),
         body: pr_body.fetch(:body),
         draft: true
       )
@@ -195,13 +195,16 @@ module Activities
       end
     end
 
-    def pr_title(issue)
+    def pr_title(agent_run, issue)
+      return "docs: bootstrap LID design tree" if agent_run.lid_planning_goal?
       return "Agent changes" unless issue
 
       ConventionalCommitTitle.for_issue(issue, project: issue.project, style_key: "pr_title_style").truncate(255)
     end
 
     def build_pr_body(issue, agent_run, client: nil)
+      return build_lid_planning_pr_body(agent_run) if agent_run.lid_planning_goal?
+
       summary = agent_run.agent_summary
       validate_summary_scope(summary, issue, agent_run, client: client)
       description = generate_description(summary, issue, agent_run_id: agent_run.id)
@@ -243,6 +246,33 @@ module Activities
       end
 
       parts.join("\n")
+    end
+
+    # Builds a goal-specific PR body for lid_planning runs.
+    # Uses the agent summary (which contains the planning analysis)
+    # and appends a review checklist for the project owner to verify
+    # the inferred LID decisions.
+    def build_lid_planning_pr_body(agent_run)
+      summary = agent_run.agent_summary
+      description = if summary.present?
+        generate_description(summary, nil, agent_run_id: agent_run.id) || summary
+      end
+
+      body = if description.present?
+        description
+      else
+        [
+          "## Summary",
+          "",
+          "This Planning PR bootstraps the LID design tree from brownfield analysis.",
+          ""
+        ].join("\n")
+      end
+
+      {
+        body: body,
+        llm_generated_description: false
+      }
     end
 
     def resolve_pr_template(agent_run)

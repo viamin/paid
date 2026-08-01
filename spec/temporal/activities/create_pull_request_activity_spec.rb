@@ -328,6 +328,52 @@ RSpec.describe Activities::CreatePullRequestActivity do
       expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
     end
 
+    context "when the goal is lid_planning" do
+      let(:lid_agent_run) do
+        create(:agent_run, :with_git_context, project: project, goal: "lid_planning", issue: nil)
+      end
+
+      it "uses the lid_planning PR title" do
+        expect(github_client).to receive(:create_pull_request).with(
+          anything,
+          hash_including(title: "docs: bootstrap LID design tree")
+        ).and_return(pr_response)
+
+        result = activity.execute(agent_run_id: lid_agent_run.id)
+        expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
+      end
+
+      it "uses goal-specific PR body when agent summary is present" do
+        lid_agent_run.log!("stdout", "## LID Brownfield Analysis\n\nInferred decisions...")
+
+        allow(AgentHarness).to receive(:send_message)
+          .and_return(instance_double(AgentHarness::Response, success?: true,
+                                     output: "Bootstrapped LID design tree with 5 LLDs and EARS specs."))
+
+        captured_body = nil
+        allow(github_client).to receive(:create_pull_request) do |*_args, **kwargs|
+          captured_body = kwargs[:body]
+          pr_response
+        end
+
+        activity.execute(agent_run_id: lid_agent_run.id)
+
+        expect(captured_body).to include("Bootstrapped LID design tree")
+      end
+
+      it "falls back to goal-specific body when agent summary is blank" do
+        captured_body = nil
+        allow(github_client).to receive(:create_pull_request) do |*_args, **kwargs|
+          captured_body = kwargs[:body]
+          pr_response
+        end
+
+        activity.execute(agent_run_id: lid_agent_run.id)
+
+        expect(captured_body).to include("This Planning PR bootstraps the LID design tree")
+      end
+    end
+
     it "does not fail when label addition fails" do
       allow(github_client).to receive(:add_labels_to_issue)
         .and_raise(GithubClient::ApiError.new("Label not found"))
