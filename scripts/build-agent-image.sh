@@ -202,7 +202,7 @@ fi
 
 echo "Building agent container image..."
 echo "  Image: ${FULL_IMAGE}"
-echo "  Context: ${PROJECT_ROOT}/docker/agent"
+echo "  Context: ${PROJECT_ROOT}"
 echo "  bundler: ${BUNDLER_VERSION}"
 echo "  ruby-maat: ${RUBY_MAAT_VERSION}"
 echo "  agent-harness: ${AGENT_HARNESS_VERSION}"
@@ -239,11 +239,11 @@ echo "  copilot-cli: ${COPILOT_INSTALL_COMMAND}"
   --build-arg "OMP_PACKAGE=${OMP_PACKAGE}" \
   --build-arg "OMP_INSTALL_COMMAND=${OMP_INSTALL_COMMAND}" \
   --build-arg "OMP_BUN_VERSION=${OMP_BUN_VERSION}" \
-  --build-arg "OMP_BUN_INSTALL_SCRIPT_URL=${OMP_BUN_INSTALL_SCRIPT_URL}" \
+    --build-arg "OMP_BUN_INSTALL_SCRIPT_URL=${OMP_BUN_INSTALL_SCRIPT_URL}" \
   --build-arg "KILOCODE_INSTALL_COMMAND=${KILOCODE_INSTALL_COMMAND}" \
     --build-arg "GEMINI_CLI_INSTALL_COMMAND=${GEMINI_CLI_INSTALL_COMMAND}" \
     --build-arg "COPILOT_INSTALL_COMMAND=${COPILOT_INSTALL_COMMAND}" \
-    "${PROJECT_ROOT}/docker/agent/"
+    "${PROJECT_ROOT}"
 
 echo ""
 echo "Image built successfully: ${FULL_IMAGE}"

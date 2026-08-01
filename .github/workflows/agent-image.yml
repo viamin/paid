@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - .github/workflows/agent-image.yml
+      - bin/coherence-check.mjs
+      - docs/lid/**
       - docker/agent/**
       - Gemfile.lock
       - scripts/build-agent-image.sh
@@ -19,6 +21,8 @@ on:
     branches: [ main ]
     paths:
       - .github/workflows/agent-image.yml
+      - bin/coherence-check.mjs
+      - docs/lid/**
       - docker/agent/**
       - Gemfile.lock
       - scripts/build-agent-image.sh
@@ -71,6 +75,8 @@ jobs:
             while IFS= read -r path; do
               case "$path" in
                 .github/workflows/agent-image.yml|\
+                bin/coherence-check.mjs|\
+                docs/lid/**|\
                 docker/agent/*|\
                 scripts/build-agent-image.sh|\
                 scripts/extract-runner-install-contract.rb|\
@@ -404,7 +410,7 @@ jobs:
         if: steps.changes.outputs.image_relevant == 'true'
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
-          context: ./docker/agent
+          context: .
           file: ./docker/agent/Dockerfile
           load: true
           pull: true
