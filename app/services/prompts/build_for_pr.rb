@@ -126,6 +126,8 @@ module Prompts
       sections << merge_conflicts_section if include_merge_conflicts_section?
       sections << ci_failures_section if include_ci_failures_section?
       sections << code_review_section if includes_review_threads?
+      intent_confirmation = planning_pr_intent_confirmation_section
+      sections << intent_confirmation if intent_confirmation.present?
       sections << conversation_section if include_conversation_section?
       other_issues = other_issues_section
       sections << other_issues if other_issues.present?
@@ -381,6 +383,27 @@ module Prompts
       SECTION
     end
 
+    # @spec LID-PR-CONFIRM-002
+    def planning_pr_intent_confirmation_section
+      return "" unless includes_review_threads?
+      return "" unless planning_pr_confirmation_requested?
+
+      <<~SECTION
+        # Intent Confirmation Follow-Up
+
+        This PR appears to be a docs-only LID planning PR. Treat review comments on
+        `[inferred]` lines as intent corrections, not ordinary prose edits.
+
+        When a reviewer requests changes on an inferred decision:
+
+        - Replace the `[inferred]` marker with the reviewer's authored rationale.
+        - Update the affected LLD, EARS, and any linked Open Questions text on this branch
+          so the corrected rationale is consistent everywhere it is load-bearing.
+        - Keep comment-only feedback deferable. Approvals confirm any remaining inferred
+          decisions that were not corrected in review.
+      SECTION
+    end
+
     # When reviewers have flagged specific issues, tell the agent to scan for
     # the same class of problem across the whole diff — not just the flagged lines.
     def review_scan_instruction
@@ -523,6 +546,93 @@ module Prompts
       @unresolved_threads ||= begin
         threads = github_client.review_threads(project.full_name, pr_number)
         threads.reject { |t| t[:is_resolved] }
+      rescue GithubClient::Error
+        []
+      end
+    end
+
+
+    # Returns true when the PR is a docs-only planning PR, has an active
+    # CHANGES_REQUESTED review, AND at least one unresolved review thread
+    # targets a line that currently contains an [inferred] marker in the
+    # diff. Comment-only feedback and approvals do not trigger intent
+    # confirmation (comment-only = defer, approve = confirm). A
+    # CHANGES_REQUESTED review on an authored line (e.g. AGENTS.md) does not
+    # trigger intent confirmation — the review must be on a live [inferred]
+    # marker line in the current diff.
+    def planning_pr_confirmation_requested?
+      Lid::BuildInferenceChecklist.docs_only_planning_pr?(changed_files: planning_pr_changed_files) &&
+        changes_requested? &&
+        unresolved_thread_targets_inferred_line?
+    end
+
+    # Returns true when at least one unresolved review thread targets a
+    # line that currently contains an [inferred] marker in the PR diff.
+    # This gates intent confirmation so that ordinary docs review on
+    # authored lines (e.g. AGENTS.md) does not trigger the
+    # inference-correction mode.
+    def unresolved_thread_targets_inferred_line?
+      changed_files = planning_pr_changed_files
+      return false if changed_files.blank?
+
+      inferred_positions = Lid::BuildInferenceChecklist.inferred_line_positions(changed_files)
+      return false if inferred_positions.empty?
+
+      unresolved_threads.any? do |thread|
+        thread[:comments].any? do |comment|
+          path = comment[:path]
+          line = comment[:line]
+          inferred_positions.include?([ path, line ])
+        end
+      end
+    end
+
+    # Returns true when any reviewer has an active CHANGES_REQUESTED review
+    # that has not been cleared by a later APPROVED or DISMISSED review from
+    # the same user.
+    def changes_requested?
+      reviews = github_client.pull_request_reviews(project.full_name, pr_number)
+      reviews_by_user = reviews.group_by { |r| r[:user_login]&.downcase }
+
+      reviews_by_user.any? do |_login, user_reviews|
+        latest_cr = user_reviews
+          .select { |r| r[:state] == "CHANGES_REQUESTED" }
+          .max_by { |r| r[:submitted_at] || Time.at(0) }
+        next false unless latest_cr
+
+        latest_clearing = %w[APPROVED DISMISSED]
+          .filter_map { |state|
+            user_reviews
+              .select { |r| r[:state] == state }
+              .max_by { |r| r[:submitted_at] || Time.at(0) }
+          }
+          .compact
+          .max_by { |r| r[:submitted_at] || Time.at(0) }
+
+        next false if latest_clearing &&
+          (latest_clearing[:submitted_at] || Time.at(0)) > (latest_cr[:submitted_at] || Time.at(0))
+        true
+      end
+    rescue GithubClient::Error
+      false
+    end
+
+    def pull_request_files
+      @pull_request_files ||= github_client.pull_request_files(project.full_name, pr_number)
+    rescue GithubClient::Error
+      []
+    end
+
+
+    def planning_pr_changed_files
+      @planning_pr_changed_files ||= begin
+        head_sha = pr_data.head.sha
+        files_data = github_client.pull_request_file_patches(project.full_name, pr_number,
+                                                             head_sha: head_sha)
+        changed_paths = Lid::BuildInferenceChecklist.normalize_changed_files(files_data)
+        return files_data unless Lid::BuildInferenceChecklist.docs_only_paths?(changed_paths)
+
+        files_data
       rescue GithubClient::Error
         []
       end
