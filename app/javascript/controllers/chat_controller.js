@@ -14,9 +14,9 @@ export default class extends Controller {
     this.subscription = consumer.subscriptions.create(
       { channel: "ChatChannel", session_id: this.sessionIdValue },
       {
-        connected: () => this.setStatus("Connected"),
-        disconnected: () => this.setStatus("Disconnected"),
-        rejected: () => this.setStatus("Subscription rejected"),
+        connected: () => this.handleConnected(),
+        disconnected: () => this.handleDisconnected(),
+        rejected: () => this.handleRejected(),
         received: (data) => this.handleEvent(data)
       }
     )
@@ -24,6 +24,40 @@ export default class extends Controller {
 
   disconnect() {
     this.subscription?.unsubscribe()
+  }
+
+  // A dropped/rejected connection mid-turn strands the streaming lock: the
+  // terminators that normally release it (message_complete / error /
+  // message_tool_confirmation) travel over the socket we just lost, so any
+  // emitted during the gap are gone. Without recovery, `sendMessage` no-ops
+  // forever (it guards on `streaming`) and the only escape is a page reload.
+  // Reset on disconnect/reconnect/reject so the input recovers. No-op when no
+  // turn is in flight, so stable connections and the initial connect — where
+  // dispatching chat:idle would also auto-focus the textarea — are unaffected.
+  handleConnected() {
+    this.resetStreamingState()
+    this.setStatus("Connected")
+  }
+
+  handleDisconnected() {
+    this.resetStreamingState()
+    this.setStatus("Disconnected")
+  }
+
+  handleRejected() {
+    this.resetStreamingState()
+    this.setStatus("Subscription rejected")
+  }
+
+  resetStreamingState() {
+    if (!this.streaming) return
+
+    this.removePendingAssistantMessage()
+    this.streaming = false
+    this.currentStreamId = null
+    this.currentAttemptToolCards = []
+    this.toggleTyping(false)
+    this.dispatchChatState("chat:idle")
   }
 
   sendMessage(event) {
