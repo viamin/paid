@@ -561,11 +561,25 @@ class ProjectsController < ApplicationController
     )
   end
 
+  # Resolves the runner for a lid_planning run using the same owner-scoped
+  # priority chain as Projects::AgentRunsController#resolve_runner_selection:
+  # project owner's settings (not the initiating user's), enabled-runner
+  # filtering, and runner_priority_for_goal ordering.
   def resolve_lid_planning_runner
-    settings = current_user.settings
-    runner_identifier = settings.default_runner_identifier_for_goal("lid_planning")
-    runner = Runner.for_identifier(@project.effective_owner, runner_identifier) if runner_identifier
-    runner || @project.effective_owner.runners.kept_only.for_agent_runs.ordered.first
+    owner = @project.effective_owner
+    return unless owner
+
+    configured_identifiers = UserSetting.enabled_agent_runners(owner, identifiers: true)
+    priority_identifiers = owner.settings.runner_priority_for_goal("lid_planning", identifiers: true)
+    default_identifier = priority_identifiers.first
+
+    selected_identifier = if configured_identifiers.include?(default_identifier)
+      default_identifier
+    else
+      priority_identifiers.first || configured_identifiers.first
+    end
+
+    Runner.for_identifier(owner, selected_identifier) || Runner.ensure_default_for(owner)
   end
 
   def selected_github_auth_source(params_hash = nil)
