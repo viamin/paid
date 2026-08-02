@@ -63,7 +63,9 @@ RSpec.describe Tools::ProposePullRequest do
   describe "#perform" do
     # @spec CHAT-PR-PROPOSAL-001, CHAT-PR-PROPOSAL-002, CHAT-PR-PROPOSAL-004
     it "pushes the branch, opens a pull request, and returns audit metadata" do
-      result = tool.call(
+      tool_instance = tool
+      push_envs = script_pushes(tool: tool_instance, results: [ [ "", "", 0 ] ])
+      result = tool_instance.call(
         repo_path: repo.fetch(:repo_path),
         branch_name: "feature/pr-proposal",
         title: "Add chat PR proposal tool",
@@ -72,7 +74,7 @@ RSpec.describe Tools::ProposePullRequest do
         confirmed: true
       )
 
-      expect_branch_pushed(repo:, branch_name: "feature/pr-proposal")
+      expect_canonical_push(push_envs:, project:, credential: "ghp_testcredential")
       expect_pull_request_opened(
         github_client:,
         project:,
@@ -101,8 +103,10 @@ RSpec.describe Tools::ProposePullRequest do
     # @spec CHAT-PR-PROPOSAL-003
     it "allows explicit confirmation to ship the committed branch state while local changes remain uncommitted" do
       File.write(File.join(repo.fetch(:host_path), "README.md"), "# Dirty change\n")
+      tool_instance = tool
+      push_envs = script_pushes(tool: tool_instance, results: [ [ "", "", 0 ] ])
 
-      result = tool.call(
+      result = tool_instance.call(
         repo_path: repo.fetch(:repo_path),
         branch_name: "feature/pr-proposal",
         title: "Committed branch only",
@@ -112,6 +116,7 @@ RSpec.describe Tools::ProposePullRequest do
       )
 
       expect(result[:pull_request_number]).to eq(42)
+      expect_canonical_push(push_envs:, project:, credential: "ghp_testcredential")
     end
 
     # @spec CHAT-PR-PROPOSAL-001
@@ -237,6 +242,24 @@ RSpec.describe Tools::ProposePullRequest do
           expect(error.message).to include("x-access-token:[REDACTED]@github.com")
         }
       end
+
+      it "pushes to the project's canonical GitHub remote even if origin is repointed elsewhere" do
+        tool = described_class.new(user:, session:)
+        run_cmd!("git", "-C", repo.fetch(:host_path), "remote", "set-url", "origin", "https://example.test/attacker/repo.git")
+        push_envs = script_pushes(tool:, results: [ [ "", "", 0 ] ])
+
+        tool.call(
+          repo_path: repo.fetch(:repo_path),
+          branch_name: "feature/pr-proposal",
+          title: "Canonical push remote",
+          body: "Body.",
+          confirmed: true
+        )
+
+        expect(push_envs.length).to eq(1)
+        expect(push_envs.first.join).to include("https://x-access-token:ghp_testcredential@github.com/#{project.full_name}.git")
+        expect(push_envs.first.join).not_to include("example.test/attacker/repo.git")
+      end
     end
 
     # @spec CHAT-PR-PROPOSAL-002
@@ -321,7 +344,9 @@ RSpec.describe Tools::ProposePullRequest do
 
       # @spec CHAT-PR-PROPOSAL-005
       it "returns a workspace warning listing the dirty repos" do
-        result = tool.call(
+        tool_instance = tool
+        push_envs = script_pushes(tool: tool_instance, results: [ [ "", "", 0 ] ])
+        result = tool_instance.call(
           repo_path: repo.fetch(:repo_path),
           branch_name: "feature/pr-proposal",
           title: "Warn on multi-repo dirtiness",
@@ -335,6 +360,7 @@ RSpec.describe Tools::ProposePullRequest do
           hash_including("project_id" => project.id, "path" => repo.fetch(:repo_path)),
           hash_including("project_id" => project_two.id, "path" => repo_two.fetch(:repo_path))
         )
+        expect_canonical_push(push_envs:, project:, credential: "ghp_testcredential")
       end
     end
 
@@ -364,7 +390,9 @@ RSpec.describe Tools::ProposePullRequest do
 
       # @spec CHAT-PR-PROPOSAL-003, CHAT-PR-PROPOSAL-005
       it "filters unauthorized dirty repos from warnings and results" do
-        result = described_class.new(user: member, session:).call(
+        viewer_tool = described_class.new(user: member, session:)
+        push_envs = script_pushes(tool: viewer_tool, results: [ [ "", "", 0 ] ])
+        result = viewer_tool.call(
           repo_path: repo.fetch(:repo_path),
           branch_name: "feature/pr-proposal",
           title: "Authorized repo only",
@@ -377,6 +405,7 @@ RSpec.describe Tools::ProposePullRequest do
         expect(result[:dirty_repos]).to contain_exactly(
           hash_including("project_id" => project.id, "path" => repo.fetch(:repo_path))
         )
+        expect_canonical_push(push_envs:, project:, credential: "ghp_testcredential")
       end
     end
 
@@ -522,6 +551,11 @@ RSpec.describe Tools::ProposePullRequest do
     expect_fallback_pull_request_client(result:, client:, project:, title:, body:, pr_number:, token_identity:)
   end
 
+  def expect_canonical_push(push_envs:, project:, credential:)
+    expect(push_envs.length).to eq(1)
+    expect(push_envs.first.join).to include("https://x-access-token:#{credential}@github.com/#{project.full_name}.git")
+  end
+
   def expect_workflow_permission_fallback(result:, push_envs:, project:, fallback_client:, github_client:)
     expect_successful_fallback(
       push_envs:,
@@ -551,11 +585,6 @@ RSpec.describe Tools::ProposePullRequest do
       pr_number: 7,
       token_identity: "project-token:#{project.github_token.name}"
     )
-  end
-
-  def expect_branch_pushed(repo:, branch_name:)
-    source_ref = "refs/heads/#{branch_name}"
-    expect(run_cmd!("git", "-C", repo.fetch(:source_path), "rev-parse", "--verify", source_ref).strip).not_to be_empty
   end
 
   def expect_pull_request_opened(github_client:, project:, title:, body:)
@@ -604,7 +633,9 @@ RSpec.describe Tools::ProposePullRequest do
   end
 
   def propose_upstream(repo_two:)
-    described_class.new(user:, session:).call(
+    tool = described_class.new(user:, session:)
+    script_pushes(tool:, results: [ [ "", "", 0 ] ])
+    tool.call(
       repo_path: repo_two.fetch(:repo_path),
       branch_name: "feature/upstream",
       title: "Upstream change",
@@ -614,7 +645,9 @@ RSpec.describe Tools::ProposePullRequest do
   end
 
   def propose_dependent(repo:, project_two:, upstream_number:)
-    described_class.new(user:, session:).call(
+    tool = described_class.new(user:, session:)
+    script_pushes(tool:, results: [ [ "", "", 0 ] ])
+    tool.call(
       repo_path: repo.fetch(:repo_path),
       branch_name: "feature/pr-proposal",
       title: "Dependent change",

@@ -5,8 +5,6 @@ module Tools
     include ContainerRepoSupport
 
     DEPENDS_ON_REF_PATTERN = /\A[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+\#[1-9]\d*\z/
-    GITHUB_HTTPS_REMOTE_PATTERN = %r{\Ahttps://(?:x-access-token:[^@/\s]+@)?github\.com/}i
-    GITHUB_SSH_REMOTE_PATTERN = /\Agit@github\.com:/i
     CREDENTIAL_IN_URL_PATTERN = %r{x-access-token:[^@/\s]+@github\.com}
 
     # Captured output of a single git push attempt. git can echo the remote
@@ -239,20 +237,18 @@ module Tools
     #   accessible_repositories can include repos the token can read but not
     #   push, so the project credential is retried before giving up.
     def push_branch!(repo_path:, branch_name:, project:, resolved_credential:)
-      remote_url = origin_remote_url(repo_path)
       refspec = "refs/heads/#{branch_name}:refs/heads/#{branch_name}"
 
       result = run_git_push(
         repo_path:,
         refspec:,
-        push_url: authenticated_push_url(remote_url:, project:, credential: resolved_credential.credential)
+        push_url: authenticated_push_url(project:, credential: resolved_credential.credential)
       )
       return resolved_credential if result.success?
 
       fallback_attempt = retry_push_with_fallbacks(
         repo_path:,
         refspec:,
-        remote_url:,
         project:,
         primary_failure: result,
         try_project_credential_fallback: resolved_credential.from_user_token
@@ -262,7 +258,7 @@ module Tools
       raise ArgumentError, (fallback_attempt&.result || result).message
     end
 
-    def retry_push_with_fallbacks(repo_path:, refspec:, remote_url:, project:, primary_failure:, try_project_credential_fallback:)
+    def retry_push_with_fallbacks(repo_path:, refspec:, project:, primary_failure:, try_project_credential_fallback:)
       candidates = fallback_push_credentials(project:, primary_failure:, try_project_credential_fallback:)
       return nil if candidates.empty?
 
@@ -272,7 +268,7 @@ module Tools
         last = run_git_push(
           repo_path:,
           refspec:,
-          push_url: authenticated_push_url(remote_url:, project:, credential: candidate.credential)
+          push_url: authenticated_push_url(project:, credential: candidate.credential)
         )
         return PushAttempt.new(resolved_credential: candidate, result: last) if last.success?
       end
@@ -357,16 +353,7 @@ module Tools
       message.to_s.include?("refusing to allow a GitHub App")
     end
 
-    def origin_remote_url(repo_path)
-      stdout, stderr, exit_code = git_exec!("git -C #{Shellwords.escape(repo_path)} remote get-url origin")
-      raise ArgumentError, stderr.presence || stdout.presence || "git remote get-url failed" unless exit_code.zero?
-
-      stdout.to_s.strip
-    end
-
-    def authenticated_push_url(remote_url:, project:, credential:)
-      return remote_url unless remote_url.match?(GITHUB_HTTPS_REMOTE_PATTERN) || remote_url.match?(GITHUB_SSH_REMOTE_PATTERN)
-
+    def authenticated_push_url(project:, credential:)
       "https://x-access-token:#{credential}@github.com/#{project.full_name}.git"
     end
 
