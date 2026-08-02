@@ -22,6 +22,9 @@ taxonomy:
   chat:
     label: Chat
     description: Interactive chat tooling and workspace mutation behavior.
+  security:
+    label: Security
+    description: Repository and runtime security controls.
 
 # The design tree of nodes. Leaf nodes are arrow segments (own EARS + an arrow
 # doc); intermediate nodes (sub-HLDs) group children.
@@ -40,6 +43,12 @@ arrows:
     specs: docs/intent/chat-pr-proposal/chat-pr-proposal-specs.md
     parent: PAID
     taxonomy: chat
+  repo-secret-scan:
+    title: Repo Secret Scan
+    path: docs/intent/repo-secret-scan/repo-secret-scan-design.md
+    specs: docs/intent/repo-secret-scan/repo-secret-scan-specs.md
+    parent: PAID
+    taxonomy: security
     status: OK
     audited: 2026-08-02
 

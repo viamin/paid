@@ -318,6 +318,84 @@ RSpec.describe ProjectPolicy do
         expect(described_class.new(other_user, project)).not_to be_run_agent
       end
     end
+
+    describe "#manage_issues?" do
+      it "permits owner" do
+        account = create(:account)
+        owner = create(:user, account: account)
+        project = create(:project, account: account)
+
+        expect(described_class.new(owner, project)).to be_manage_issues
+      end
+
+      it "permits admin" do
+        account = create(:account)
+        create(:user, account: account) # absorb owner role
+        admin = create(:user, :admin, account: account)
+        project = create(:project, account: account)
+
+        expect(described_class.new(admin, project)).to be_manage_issues
+      end
+
+      it "permits member" do
+        account = create(:account)
+        create(:user, account: account) # absorb owner role
+        member = create(:user, :member, account: account)
+        project = create(:project, account: account)
+
+        expect(described_class.new(member, project)).to be_manage_issues
+      end
+
+      it "does not permit viewer without project role" do
+        account = create(:account)
+        create(:user, account: account) # absorb owner role
+        viewer = create(:user, :viewer, account: account)
+        project = create(:project, account: account)
+
+        expect(described_class.new(viewer, project)).not_to be_manage_issues
+      end
+
+      it "permits viewer with project_admin role" do
+        account = create(:account)
+        create(:user, account: account) # absorb owner role
+        viewer = create(:user, :viewer, account: account)
+        project = create(:project, account: account)
+        viewer.add_role(:project_admin, project)
+
+        expect(described_class.new(viewer, project)).to be_manage_issues
+      end
+
+      it "permits viewer with project_member role" do
+        account = create(:account)
+        create(:user, account: account) # absorb owner role
+        viewer = create(:user, :viewer, account: account)
+        project = create(:project, account: account)
+        viewer.add_role(:project_member, project)
+
+        expect(described_class.new(viewer, project)).to be_manage_issues
+      end
+
+      it "does not permit users from different account" do
+        account = create(:account)
+        create(:user, account: account)
+        project = create(:project, account: account)
+        other_account = create(:account)
+        other_user = create(:user, account: other_account)
+
+        expect(described_class.new(other_user, project)).not_to be_manage_issues
+      end
+
+      it "does not permit users from different account even with project role" do
+        account = create(:account)
+        create(:user, account: account)
+        project = create(:project, account: account)
+        other_account = create(:account)
+        other_user = create(:user, account: other_account)
+        other_user.add_role(:project_member, project)
+
+        expect(described_class.new(other_user, project)).not_to be_manage_issues
+      end
+    end
   end
 
   describe "Scope" do
