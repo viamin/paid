@@ -19,6 +19,9 @@ taxonomy:
   automation:
     label: Automation
     description: Automated work selection and queueing behavior.
+  chat:
+    label: Chat
+    description: Interactive chat tooling and workspace mutation behavior.
 
 # The design tree of nodes. Leaf nodes are arrow segments (own EARS + an arrow
 # doc); intermediate nodes (sub-HLDs) group children.
@@ -31,6 +34,14 @@ arrows:
     taxonomy: automation
     status: OK
     audited: 2026-08-01
+  chat-pr-proposal:
+    title: Chat PR Proposal
+    path: docs/intent/chat-pr-proposal/chat-pr-proposal-design.md
+    specs: docs/intent/chat-pr-proposal/chat-pr-proposal-specs.md
+    parent: PAID
+    taxonomy: chat
+    status: OK
+    audited: 2026-08-02
 
 # Items found during mapping that don't yet belong to a segment.
 # arrow-maintenance cleans this up on each audit.

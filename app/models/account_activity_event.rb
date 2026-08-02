@@ -35,6 +35,7 @@ class AccountActivityEvent < ApplicationRecord
     "agent_run.terminated" => "run",
     "agent_run.resumed" => "run",
     "run_shell.executed" => "run",
+    "propose_pull_request.executed" => "run",
     "prompt_version.approved" => "approval",
     "prompt_version.rejected" => "approval",
     "configuration_profile.applied" => "configuration_profile",
@@ -150,6 +151,8 @@ class AccountActivityEvent < ApplicationRecord
       "Terminated agent run ##{metadata_value('agent_run_id')}"
     when "agent_run.resumed"
       "Resumed agent run ##{metadata_value('agent_run_id')}"
+    when "propose_pull_request.executed"
+      "Proposed pull request ##{metadata_value('pull_request_number')}"
     when "prompt_version.approved"
       "Approved prompt #{metadata_value('prompt_slug')} v#{metadata_value('version')}"
     when "prompt_version.rejected"
@@ -187,6 +190,8 @@ class AccountActivityEvent < ApplicationRecord
       Array(metadata.to_h["details"]).compact
     when "agent_run.retried"
       Array(metadata.to_h["details"]).compact
+    when "propose_pull_request.executed"
+      Array(metadata.to_h["pull_request_url"]).compact
     when "prompt_version.approved"
       Array(metadata.to_h["notes"]).compact.map { |n| "Notes: #{n}" }
     when "prompt_version.rejected"
