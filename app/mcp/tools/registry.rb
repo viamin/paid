@@ -2,6 +2,9 @@
 
 module Tools
   module Registry
+    MCP_CONTAINER_WAIT_TIMEOUT = 60.seconds
+    MCP_CONTAINER_WAIT_INTERVAL = 0.25
+
     TOOL_CLASSES = [
       "Tools::ListProjects",
       "Tools::GetProject",
@@ -86,7 +89,9 @@ module Tools
       end
 
       def mcp_definitions_for(user:, session: nil)
-        definitions_for_classes(read_only_tools_for(session:, user:))
+        read_only_tools_for(session:, user:).map do |klass|
+          mcp_definition_for(klass, session:)
+        end
       end
 
       # Tools advertised to the chat agent loop. Includes write tools so the
@@ -98,6 +103,7 @@ module Tools
       end
 
       def dispatch_mcp(name:, arguments:, user:, session:)
+        ensure_mcp_container_ready(name:, session:)
         return mcp_container_unavailable(name:, session:) if container_tool_unready?(name:, session:)
 
         dispatch_via_registry(
@@ -170,6 +176,24 @@ module Tools
         tool_classes.map(&:definition)
       end
 
+      def mcp_definition_for(klass, session:)
+        definition = klass.definition
+        return definition unless mcp_container_unavailable_definition?(klass:, session:)
+
+        definition.merge(
+          annotations: {
+            temporaryUnavailable: true,
+            availability: {
+              type: "container_capability",
+              state: session.container_capability,
+              retryable: session.container_capability.in?(%w[pending provisioning]),
+              message: mcp_container_unavailable_message(session.container_capability),
+              expectedBehavior: mcp_expected_behavior(session.container_capability)
+            }
+          }
+        )
+      end
+
       def chat_definition_for(klass)
         return klass.definition unless klass.write_operation?
 
@@ -223,6 +247,54 @@ module Tools
         requires_container?(name) && !session&.container_ready?
       end
 
+      def ensure_mcp_container_ready(name:, session:)
+        return unless requires_container?(name)
+        return unless session
+
+        if session.inline_only? || session.container_stopped?
+          session.request_container_provision!
+          provision_mcp_container(session:)
+        elsif session.container_pending? || session.container_provisioning?
+          await_mcp_container_ready(session:)
+        end
+      end
+
+      def provision_mcp_container(session:)
+        Containers::ProvisionForChat.call(chat_session: session)
+        session.reload
+      rescue StandardError => error
+        log_mcp_container_provision_failure(session:, error:)
+        session.reload
+      end
+
+      def await_mcp_container_ready(session:)
+        deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + MCP_CONTAINER_WAIT_TIMEOUT
+
+        loop do
+          session.reload
+          return if session.container_ready?
+          return unless session.container_pending? || session.container_provisioning?
+
+          remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+          return if remaining <= 0
+
+          sleep([ MCP_CONTAINER_WAIT_INTERVAL, remaining ].min)
+        end
+      end
+
+      def log_mcp_container_provision_failure(session:, error:)
+        Rails.logger.warn(
+          message: "mcp.tool_container_provision_failed",
+          chat_session_id: session.id,
+          error: error.message,
+          error_class: error.class.name
+        )
+      end
+
+      def mcp_container_unavailable_definition?(klass:, session:)
+        klass.requires_container? && !session&.container_ready?
+      end
+
       def mcp_container_unavailable(name:, session:)
         capability = session&.container_capability || "none"
 
@@ -243,6 +315,17 @@ module Tools
           "Workspace tools are unavailable because the workspace container is stopped."
         else
           "Workspace tools are still preparing. Retry shortly or fall back to inline tools."
+        end
+      end
+
+      def mcp_expected_behavior(capability)
+        case capability
+        when "none", "stopped"
+          "invoking_triggers_lazy_provisioning"
+        when "pending", "provisioning"
+          "invoking_waits_for_inflight_provision"
+        else
+          "invoking_returns_container_unavailable"
         end
       end
     end

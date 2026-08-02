@@ -624,6 +624,33 @@ RSpec.describe ChatSessions::SendMessage do
         expect(chat_session.messages.where(content: "Preparing workspace...")).to be_empty
       end
 
+      it "lazily provisions an inline-only session before dispatching the tool" do
+        allow(Tools::Registry).to receive(:dispatch).and_return(container_tool_result)
+        allow(Containers::ProvisionForChat).to receive(:call) do
+          chat_session.update!(container_capability: "ready", container_id: "container-123")
+        end
+
+        described_class.call(chat_session: chat_session, content: "Use the workspace", llm_client: container_tool_llm_client)
+
+        expect(Containers::ProvisionForChat).to have_received(:call).with(chat_session: chat_session)
+        expect(chat_session.messages.where(content: "Preparing workspace...")).to exist
+        expect(chat_session.messages.where(role: "tool", content: container_tool_result.to_json)).to exist
+      end
+
+      it "re-provisions a stopped workspace before dispatching the tool" do
+        chat_session.update!(container_capability: "stopped", container_id: nil)
+        allow(Tools::Registry).to receive(:dispatch).and_return(container_tool_result)
+        allow(Containers::ProvisionForChat).to receive(:call) do
+          chat_session.update!(container_capability: "ready", container_id: "container-123")
+        end
+
+        described_class.call(chat_session: chat_session, content: "Use the workspace", llm_client: container_tool_llm_client)
+
+        expect(Containers::ProvisionForChat).to have_received(:call).with(chat_session: chat_session)
+        expect(chat_session.messages.where(content: "Preparing workspace...")).to exist
+        expect(chat_session.messages.where(role: "tool", content: container_tool_result.to_json)).to exist
+      end
+
       it "streams a preparing notice, waits for readiness, and then dispatches" do
         chat_session.update!(container_capability: "provisioning", container_id: nil)
         allow(Tools::Registry).to receive(:dispatch).and_return(container_tool_result)

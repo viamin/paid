@@ -28,9 +28,16 @@ module ChatSessions
     def dispatch_container_tool(name:, arguments:)
       return dispatch_tool_now(name:, arguments:) if chat_session.container_ready?
 
+      if request_lazy_container_provision!
+        announce_preparing_workspace!
+        return dispatch_tool_now(name:, arguments:) if provision_requested_container
+      end
+
       if chat_session.container_pending? || chat_session.container_provisioning?
         announce_preparing_workspace!
         return dispatch_tool_now(name:, arguments:) if await_container_ready
+        chat_session.reload
+        return dispatch_tool_now(name:, arguments:) if chat_session.container_ready?
       end
 
       persist_container_capability_notice if degraded_container_capability?
@@ -91,6 +98,27 @@ module ChatSessions
       )
       on_message_persisted&.call(message)
       @preparing_workspace_announced = true
+    end
+
+    def request_lazy_container_provision!
+      return false unless chat_session.inline_only? || chat_session.container_stopped?
+
+      chat_session.request_container_provision!
+    end
+
+    def provision_requested_container
+      Containers::ProvisionForChat.call(chat_session:)
+      chat_session.reload
+      chat_session.container_ready?
+    rescue StandardError => error
+      Rails.logger.warn(
+        message: "chat_tool_dispatch.container_provision_failed",
+        chat_session_id: chat_session.id,
+        error: error.message,
+        error_class: error.class.name
+      )
+      chat_session.reload
+      false
     end
 
     def preparing_workspace_announced?

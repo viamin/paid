@@ -49,12 +49,23 @@ RSpec.describe PaidMcpServer do
       pending_result = pending_server.handle_request(method: "tools/list", id: 21)
 
       expect(pending_result[:result][:tools].map { |tool| tool[:name] }).to include("git_status", "git_diff")
+
+      git_status_definition = pending_result[:result][:tools].find { |tool| tool[:name] == "git_status" }
+      expect(git_status_definition[:annotations]).to include(
+        temporaryUnavailable: true,
+        availability: include(
+          state: "pending",
+          retryable: true,
+          expectedBehavior: "invoking_waits_for_inflight_provision"
+        )
+      )
     end
 
     it "returns a structured unavailable result when a container tool is called before ready" do
       manifest = [ { project_id: project.id, path: "/workspace/repo-one" } ]
       session = create(:chat_session, account: account, created_by: user, container_capability: "pending", clone_manifest: manifest)
       pending_server = described_class.new(session: session, user: user)
+      stub_const("Tools::Registry::MCP_CONTAINER_WAIT_TIMEOUT", 0)
 
       result = pending_server.handle_request(
         method: "tools/call",

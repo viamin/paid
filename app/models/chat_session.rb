@@ -133,6 +133,21 @@ class ChatSession < ApplicationRecord
     container_capability == "stopped"
   end
 
+  def request_container_provision!
+    with_lock do
+      reload
+      return false unless container_capability.in?(%w[none stopped])
+
+      update!(
+        container_capability: "pending",
+        container_requested_at: Time.current,
+        container_ready_at: nil
+      )
+    end
+
+    true
+  end
+
   def clone_manifest
     Array(self[:clone_manifest]).map { |entry| CloneManifestEntry.coerce(entry) }
   end

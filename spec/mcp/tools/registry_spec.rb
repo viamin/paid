@@ -35,6 +35,45 @@ RSpec.describe Tools::Registry do
       end
     end
 
+    it "annotates container tools as temporarily unavailable until the workspace is ready" do
+      session = create(
+        :chat_session,
+        account: account,
+        created_by: user,
+        container_capability: "pending",
+        clone_manifest: clone_manifest
+      )
+
+      definitions = described_class.mcp_definitions_for(user: user, session: session)
+      git_status_definition = definitions.find { |definition| definition[:name] == "git_status" }
+
+      expect(git_status_definition[:annotations]).to include(
+        temporaryUnavailable: true,
+        availability: include(
+          type: "container_capability",
+          state: "pending",
+          retryable: true,
+          expectedBehavior: "invoking_waits_for_inflight_provision"
+        )
+      )
+    end
+
+    it "removes the temporary-unavailable annotation once the workspace is ready" do
+      session = create(
+        :chat_session,
+        account: account,
+        created_by: user,
+        container_capability: "ready",
+        clone_manifest: clone_manifest,
+        container_id: "container-123"
+      )
+
+      definitions = described_class.mcp_definitions_for(user: user, session: session)
+      git_status_definition = definitions.find { |definition| definition[:name] == "git_status" }
+
+      expect(git_status_definition).not_to have_key(:annotations)
+    end
+
     it "omits container tools when the session has no clone manifest" do
       session = create(:chat_session, account: account, created_by: user, container_capability: "pending")
 
@@ -61,7 +100,7 @@ RSpec.describe Tools::Registry do
       [ { project_id: 123, path: "/workspace/repo-one" } ]
     end
 
-    %w[none pending provisioning failed stopped].each do |capability|
+    %w[pending provisioning failed].each do |capability|
       it "returns a structured unavailable result for container tools when #{capability}" do
         session = create(
           :chat_session,
@@ -70,6 +109,7 @@ RSpec.describe Tools::Registry do
           container_capability: capability,
           clone_manifest: clone_manifest
         )
+        stub_const("Tools::Registry::MCP_CONTAINER_WAIT_TIMEOUT", 0) if capability.in?(%w[pending provisioning])
 
         result = described_class.dispatch_mcp(
           name: "git_status",
@@ -84,6 +124,32 @@ RSpec.describe Tools::Registry do
           container_capability: capability
         )
         expect(result[:retryable]).to eq(capability.in?(%w[pending provisioning]))
+      end
+    end
+
+    %w[none stopped].each do |capability|
+      it "lazily provisions container tools when #{capability}" do
+        session = create(
+          :chat_session,
+          account: account,
+          created_by: user,
+          container_capability: capability,
+          clone_manifest: clone_manifest
+        )
+        allow(Containers::ProvisionForChat).to receive(:call) do
+          session.update!(container_capability: "ready", container_id: "container-123")
+        end
+        allow(described_class).to receive(:dispatch_via_registry).and_return({ status: "ok" })
+
+        result = described_class.dispatch_mcp(
+          name: "git_status",
+          arguments: { "repo_path" => "/workspace/repo-one" },
+          user: user,
+          session: session
+        )
+
+        expect(Containers::ProvisionForChat).to have_received(:call).with(chat_session: session)
+        expect(result).to eq(status: "ok")
       end
     end
 
