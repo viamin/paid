@@ -26,6 +26,7 @@ module Tools
       "Tools::GitDiff",
       "Tools::GitStatus",
       "Tools::GitBranchCreate",
+      "Tools::RunShell",
       "Tools::GetIntent",
       "Tools::ListAccountMemberships",
       "Tools::InviteAccountMember",

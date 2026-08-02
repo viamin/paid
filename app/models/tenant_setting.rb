@@ -29,7 +29,8 @@ class TenantSetting < ApplicationRecord
     "chat_monthly_token_limit" => nil,
     "chat_max_tool_iterations" => 50,
     "chat_max_cloned_repos" => 5,
-    "chat_clone_timeout" => 120
+    "chat_clone_timeout" => 120,
+    "chat_shell_enabled" => false
   }.freeze
   DEFAULT_QUALITY_THRESHOLDS = Project::DEFAULT_QUALITY_GATE_SETTINGS.freeze
   DEFAULT_AGENT_SETTINGS = {
@@ -333,6 +334,10 @@ class TenantSetting < ApplicationRecord
 
   def chat_clone_timeout
     effective_chat_settings["chat_clone_timeout"]
+  end
+
+  def chat_shell_enabled
+    ActiveModel::Type::Boolean.new.cast(effective_chat_settings["chat_shell_enabled"])
   end
 
   def chat_settings=(value)
@@ -712,6 +717,7 @@ class TenantSetting < ApplicationRecord
       %w[chat_session_token_limit chat_monthly_token_limit chat_max_tool_iterations chat_max_cloned_repos chat_clone_timeout].each do |key|
         normalized[key] = normalize_integer_value(normalized[key]) if normalized.key?(key)
       end
+      normalized["chat_shell_enabled"] = ActiveModel::Type::Boolean.new.cast(normalized["chat_shell_enabled"]) if normalized.key?("chat_shell_enabled")
     end
   end
 
