@@ -284,6 +284,22 @@ RSpec.describe Tools::Registry do
         }
       },
       {
+        tool_name: "run_shell",
+        denied_user: -> { create(:user, :viewer, account: account) },
+        arguments: -> { { command: "echo hi", working_dir: "/workspace/repo-one", confirmed: true } },
+        session: ->(user) {
+          session = create(:chat_session, :workspace, account: user.account, created_by: user,
+            project: project, clone_manifest: [ { project_id: project.id, path: "/workspace/repo-one" } ])
+          user.account.tenant_setting!.update!(features: user.account.tenant_setting!.features.deep_merge(
+            "chat_settings" => { "chat_shell_enabled" => true }
+          ))
+          session
+        },
+        ui_call: ->(user) {
+          authorize_record!(user, project, :run_agent?, policy_class: ProjectPolicy)
+        }
+      },
+      {
         tool_name: "get_intent",
         denied_user: -> { create(:user, :member, account: other_account) },
         arguments: -> {
@@ -472,6 +488,15 @@ RSpec.describe Tools::Registry do
           definition = Pundit.policy_scope!(user, McpServerDefinition).order(:id).last
           authorize_record!(user, definition, :destroy?, policy_class: McpServerDefinitionPolicy)
           definition.destroy!
+        }
+      },
+      {
+        tool_name: "clone_project",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> { { project_id: project.id, confirmed: true } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :show?, policy_class: ProjectPolicy)
         }
       }
     ] + operator_tool_scenarios
