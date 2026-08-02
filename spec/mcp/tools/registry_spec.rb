@@ -24,6 +24,7 @@ RSpec.describe Tools::Registry do
       write_repo_file
       apply_patch
       git_branch_create
+      clone_project
       run_shell
       operator_suspend_account
       operator_reactivate_account

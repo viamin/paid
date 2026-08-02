@@ -12,6 +12,7 @@ module Tools
       "Tools::GetAgentRun",
       "Tools::ListAgentRuns",
       "Tools::CancelAgentRun",
+      "Tools::CloneProject",
       "Tools::RecordChangeIntent",
       "Tools::GetIssueDetails",
       "Tools::GetPullRequestDetails",

@@ -2,7 +2,7 @@
 
 module Tools
   class RepoReadClientResolver
-    ResolvedClient = Struct.new(:client, :identity, keyword_init: true)
+    ResolvedClient = Struct.new(:client, :identity, :credential, keyword_init: true)
 
     def initialize(project:, user:, session:)
       @project = project
@@ -21,14 +21,17 @@ module Tools
       token = user_token_for_project
       return unless token
 
-      ResolvedClient.new(client: token.client, identity: "user-token:#{token.name}")
+      ResolvedClient.new(client: token.client, identity: "user-token:#{token.name}", credential: token.token)
     end
 
     def resolve_project_client
+      credential = project.github_credential
+      return unless credential
+
       client = project.client
       return unless client
 
-      ResolvedClient.new(client:, identity: project_identity)
+      ResolvedClient.new(client:, identity: project_identity, credential:)
     end
 
     def user_token_for_project
