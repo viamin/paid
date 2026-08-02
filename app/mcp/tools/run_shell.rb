@@ -119,8 +119,10 @@ module Tools
     def validate_working_dir!(working_dir)
       raise ArgumentError, "working_dir must be provided" if working_dir.to_s.strip.empty?
 
-      path = normalize_workspace_path(working_dir)
+      path = expand_workspace_path(working_dir)
       resolved_path = resolve_container_path(path)
+      raise ArgumentError, "Path escapes the workspace: #{working_dir}" unless path_within_root?(resolved_path, workspace_root_realpath)
+
       manifest_entry = session.clone_manifest_entries.find do |entry|
         manifest_path = expand_workspace_path(entry[:path])
         path_within_root?(resolved_path, resolve_container_path(manifest_path))
