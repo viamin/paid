@@ -27,6 +27,7 @@ RSpec.describe Tools::RepoReadClientResolver do
       resolved = described_class.new(project:, user:, session:).resolve
 
       expect(resolved.client).to eq(user_github_client)
+      expect(resolved.credential).to eq(user_token.token)
       expect(resolved.identity).to eq("user-token:User Token")
       expect(project).not_to have_received(:client)
     end
@@ -44,7 +45,22 @@ RSpec.describe Tools::RepoReadClientResolver do
       resolved = described_class.new(project:, user:, session:).resolve
 
       expect(resolved.client).to be(project_github_client)
+      expect(resolved.credential).to eq(project.github_credential)
       expect(resolved.identity).to eq("project-token:#{project.github_token.name}")
+    end
+
+    it "returns the opaque GitHub App credential for app-backed projects" do
+      project = create(:project, :with_github_installation, account: account)
+      allow(project).to receive_messages(
+        github_credential: "ghs_app_token",
+        client: project_github_client
+      )
+
+      resolved = described_class.new(project:, user:, session:).resolve
+
+      expect(resolved.client).to be(project_github_client)
+      expect(resolved.credential).to eq("ghs_app_token")
+      expect(resolved.identity).to eq("github-app:#{project.github_installation.github_installation_id}")
     end
   end
 end
