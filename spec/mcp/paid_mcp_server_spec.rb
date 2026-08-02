@@ -15,7 +15,7 @@ RSpec.describe PaidMcpServer do
 
       expect(result[:result][:protocolVersion]).to eq("2024-11-05")
       expect(result[:result][:serverInfo][:name]).to eq("paid-mcp-server")
-      expect(result[:result][:capabilities][:tools]).to eq({ listChanged: false })
+      expect(result[:result][:capabilities][:tools]).to eq({ listChanged: true })
     end
 
     it "accepts initialized notifications" do
@@ -33,6 +33,52 @@ RSpec.describe PaidMcpServer do
       expect(result[:result][:tools].first).to have_key(:name)
       expect(result[:result][:tools].first).to have_key(:inputSchema)
       expect(result[:result][:tools].map { |tool| tool[:name] }).not_to include("trigger_agent_run")
+    end
+
+    it "keeps container tools discoverable in tools/list before the workspace is ready" do
+      manifest = [ { project_id: project.id, path: "/workspace/repo-one" } ]
+      pending_session = create(
+        :chat_session,
+        account: account,
+        created_by: user,
+        container_capability: "pending",
+        clone_manifest: manifest
+      )
+      pending_server = described_class.new(session: pending_session, user: user)
+
+      pending_result = pending_server.handle_request(method: "tools/list", id: 21)
+
+      expect(pending_result[:result][:tools].map { |tool| tool[:name] }).to include("git_status", "git_diff")
+
+      git_status_definition = pending_result[:result][:tools].find { |tool| tool[:name] == "git_status" }
+      expect(git_status_definition[:annotations]).to include(
+        temporaryUnavailable: true,
+        availability: include(
+          state: "pending",
+          retryable: true,
+          expectedBehavior: "invoking_returns_retryable_unavailable"
+        )
+      )
+    end
+
+    it "returns a structured unavailable result when a container tool is called before ready" do
+      manifest = [ { project_id: project.id, path: "/workspace/repo-one" } ]
+      session = create(:chat_session, account: account, created_by: user, container_capability: "pending", clone_manifest: manifest)
+      pending_server = described_class.new(session: session, user: user)
+
+      result = pending_server.handle_request(
+        method: "tools/call",
+        params: { "name" => "git_status", "arguments" => { "repo_path" => "/workspace/repo-one" } },
+        id: 22
+      )
+
+      content = JSON.parse(result[:result][:content].first[:text])
+      expect(content).to include(
+        "status" => "error",
+        "error" => "container_unavailable",
+        "container_capability" => "pending",
+        "retryable" => true
+      )
     end
 
     it "handles tools/call" do
@@ -120,6 +166,26 @@ RSpec.describe PaidMcpServer do
         expect(definition).to have_key(:inputSchema)
         expect(definition[:inputSchema][:type]).to eq("object")
       end
+    end
+  end
+
+  describe ".tools_list_changed_notification" do
+    it "builds an MCP notification payload" do
+      notification = described_class.tools_list_changed_notification(
+        session: chat_session,
+        from: "pending",
+        to: "ready"
+      )
+
+      expect(notification).to eq(
+        jsonrpc: "2.0",
+        method: "notifications/tools/list_changed",
+        params: {
+          sessionId: chat_session.external_id,
+          containerCapability: "ready",
+          previousContainerCapability: "pending"
+        }
+      )
     end
   end
 

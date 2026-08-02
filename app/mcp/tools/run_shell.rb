@@ -33,7 +33,6 @@ module Tools
     def self.available_for_chat?(user:, session:)
       return false unless user.present?
       return false unless tenant_shell_enabled?(session)
-      return false unless container_ready?(session:)
       return false unless session.clone_manifest_entries.present?
       return false unless session.project
 

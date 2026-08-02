@@ -118,7 +118,7 @@ module Containers
     end
 
     def mark_failed!
-      chat_session.update_columns(container_capability: "failed") if chat_session.persisted?
+      chat_session.update!(container_capability: "failed") if chat_session.persisted?
     end
 
     def project

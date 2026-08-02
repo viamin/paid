@@ -16,6 +16,8 @@ class ChatMessage < ApplicationRecord
   scope :chronological, -> { order(created_at: :asc) }
   scope :for_conversation, -> { where(role: %w[user assistant tool]).chronological }
   scope :pending_tool_confirmations, -> { where.not(tool_status: nil).where(tool_status: "pending") }
+  scope :system, -> { where(role: "system") }
+  scope :container_capability_notices, -> { system.where("metadata ->> 'container_capability_notice' = 'true'") }
 
   def pending_confirmation?
     tool_status == "pending"

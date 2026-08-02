@@ -288,6 +288,29 @@ RSpec.describe Containers::ProvisionForChat do
     end
 
     context "when provisioning fails" do
+      it "marks the session failed through the capability transition flow" do
+        subscriber = Mcp::SessionTransport.subscribe(session_id: chat_session.id)
+        allow(mock_container).to receive(:start).and_raise(Docker::Error::DockerError, "start failed")
+
+        expect {
+          described_class.call(chat_session: chat_session)
+        }.to raise_error(Containers::ProvisionForChat::ProvisionError, /start failed/)
+
+        expect(chat_session.reload.container_capability).to eq("failed")
+
+        notice = chat_session.messages.where(role: "system").find_by("metadata ->> 'container_capability_notice' = 'true'")
+        expect(notice.content).to include("Workspace tools are currently unavailable")
+        expect(notice.metadata).to include(
+          "container_capability_notice" => true,
+          "container_capability" => "failed"
+        )
+
+        expect_tools_list_changed_event(subscriber:, capability: "provisioning", previous_capability: "none")
+        expect_tools_list_changed_event(subscriber:, capability: "failed", previous_capability: "provisioning")
+      ensure
+        Mcp::SessionTransport.unsubscribe(session_id: chat_session.id, subscriber:)
+      end
+
       it "cleans up container and volumes on Docker error" do
         allow(mock_container).to receive(:start).and_raise(Docker::Error::DockerError, "start failed")
 
@@ -331,5 +354,20 @@ RSpec.describe Containers::ProvisionForChat do
         described_class.call(chat_session: chat_session)
       end
     end
+  end
+
+  def expect_tools_list_changed_event(subscriber:, capability:, previous_capability:)
+    expect(subscriber.pop(timeout: 1)).to eq(
+      event: "message",
+      data: {
+        jsonrpc: "2.0",
+        method: "notifications/tools/list_changed",
+        params: {
+          sessionId: chat_session.external_id,
+          containerCapability: capability,
+          previousContainerCapability: previous_capability
+        }
+      }
+    )
   end
 end

@@ -342,9 +342,9 @@ RSpec.describe Tools::CloneProject do
       expect(described_class.available_for_chat?(user:, session:)).to be(true)
     end
 
-    it "is not available for chat when container is not ready" do
+    it "is available for chat even before the container is ready" do
       no_container_session = create(:chat_session, account:, created_by: user)
-      expect(described_class.available_for_chat?(user:, session: no_container_session)).to be(false)
+      expect(described_class.available_for_chat?(user:, session: no_container_session)).to be(true)
     end
 
     it "is not available for chat when user is nil" do
