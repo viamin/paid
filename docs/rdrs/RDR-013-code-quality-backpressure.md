@@ -5,15 +5,20 @@
 ## Metadata
 
 - **Date**: 2025-01-23
-- **Status**: Superseded
+- **Status**: Partially Implemented, Partially Superseded
 - **Type**: Architecture
 - **Priority**: High
-- **Related Issues**: N/A (foundational decision)
+- **Related Issues**: #3113 (Gitleaks secret scanning — closed, shipped via #3123), #3114 (Zizmor workflow security scanning — open)
 - **Related Tests**: Hook execution tests, CI pipeline tests, linter integration tests
 
 ## Implementation Status
 
-Superseded by later concrete quality systems rather than implemented exactly as written. Paid now enforces quality through repository CI/security workflows, `.githooks/pre-commit`, container pre-commit hooks, `PreCommitRequirement` evaluation, project convention guardrails, quality gates/recovery, and mutation backpressure from RDR-036. The original Lefthook/pre-push/SARIF-oriented shape and broad `QualityConfiguratorService` / `RunQualityChecksActivity` design were not adopted as-is.
+Most of this RDR was superseded by later concrete quality systems rather than implemented as written:
+
+- **Superseded** (different mechanism, same purpose — no gap): Lefthook → `.githooks/pre-commit` + `bin/lint`; the proposed CI lint/security/test/performance jobs → `.github/workflows/ci.yml` + `security.yml` (`bin/audit`: secret scan, Brakeman, bundler-audit, yarn audit); `PrReviewService` → `paid-code-reviewer[bot]` GitHub App + `claude-code-review.yml`; Layer 2's per-language container feedback loop → `Containers::QualityHooks` / container git hooks; Layer 3's `QualityConfiguratorService` → `PreCommitRequirement` (DB-backed, account/user/project-configurable); the per-run `RunQualityChecksActivity` retry loop → cross-run statistical gating via `CheckQualityGateActivity` and mutation backpressure from RDR-036.
+- **Implemented** (matches original intent): Gitleaks secret-content scanning, both pre-commit (`bin/secret-scan --staged` via `.githooks/pre-commit`) and CI (`bin/audit` / `security.yml`), shipped in #3123 closing #3113.
+- **Genuine gap, tracked**: Zizmor (GitHub Actions workflow security scanning) was never adopted anywhere — tracked in #3114.
+- **Not adopted, not tracked as a gap**: the broad `QualityConfiguratorService` file-generation approach for target/customer projects, and the literal `QualityFeedbackService`/`RunQualityChecksActivity` class shapes — the functional needs these addressed are covered by the superseded mechanisms above.
 
 ## Problem Statement
 
