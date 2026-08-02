@@ -9,11 +9,18 @@ class ProjectPolicy < ApplicationPolicy
   #
   # Project-specific permissions:
   # - run_agent?: can trigger agent runs (members + project roles)
+  # - manage_issues?: can file and update GitHub issues via MCP tools
 
   def run_agent?
     return false unless user_in_account?
 
     has_any_account_role?(:owner, :admin, :member) || has_project_role?
+  end
+
+  def manage_issues?
+    return false unless user_in_account?
+
+    has_any_account_role?(:owner, :admin, :member, :viewer) || has_project_role?
   end
 
   private

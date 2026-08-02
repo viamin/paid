@@ -172,6 +172,33 @@ RSpec.describe Tools::Registry do
         }
       },
       {
+        tool_name: "create_issue",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> { { project_id: project.id, title: "Test" } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :manage_issues?, policy_class: ProjectPolicy)
+        }
+      },
+      {
+        tool_name: "edit_issue",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> { { project_id: project.id, issue_number: 1, title: "Updated" } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :manage_issues?, policy_class: ProjectPolicy)
+        }
+      },
+      {
+        tool_name: "set_labels",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> { { project_id: project.id, issue_number: 1, labels: %w[bug] } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :manage_issues?, policy_class: ProjectPolicy)
+        }
+      },
+      {
         tool_name: "search_code",
         denied_user: -> { create(:user, :member, account: other_account) },
         arguments: -> { { project_id: project.id, query: "agent run" } },
