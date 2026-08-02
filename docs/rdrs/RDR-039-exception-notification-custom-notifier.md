@@ -153,13 +153,13 @@ ExceptionNotification.configure do |config|
   config.add_notifier :paid, Paid::ExceptionNotifier.new
 end
 
-Rails.application.config.middleware.insert_before(
+Rails.application.config.middleware.insert_after(
   ActionDispatch::ShowExceptions,
   ExceptionNotification::Rack
 )
 ```
 
-The middleware must sit just inside `ActionDispatch::ShowExceptions` so it catches exceptions raised by the rest of the stack *before* the error page renders. `config.middleware.use` (which appends to the end) would not see app-raised exceptions and is incorrect here.
+The middleware must sit inside Rails exception handling so it catches app-raised exceptions *before* the error page renders. In the shipped implementation this means inserting `ExceptionNotification::Rack` *after* `ActionDispatch::ShowExceptions`, which places it closer to the app; `ShowExceptions` then rescues the re-raised exception and renders the response. `config.middleware.use` (which appends to the end) would not see app-raised exceptions and is incorrect here.
 
 ActiveJob integration is enabled via a terminal-failure hook in `ApplicationJob`. Per-retry firing would 5x the capture volume on a 5-retry job and pollute the rate limiter. The hook reads per-job declared subsystem/project (see §6) and only fires after retries exhaust:
 
@@ -318,7 +318,7 @@ Each subsystem-owning job declares its own `notification_subsystem`; jobs that d
 
 ### 7. Wire-Format Pin (for future external transport)
 
-The `data:` hash passed to `notify_exception` defines the eventual external payload. Pin these keys in the RDR so external clients can match:
+The `data:` hash passed into `Paid::ExceptionNotifier#call` defines the eventual external payload. Pin these keys in the RDR so external clients can match:
 
 | Key | Type | Required | Notes |
 |-----|------|----------|-------|
@@ -343,7 +343,7 @@ External callers (phase 2) will POST these same fields plus `exception_class`, `
 
 ### Positive
 
-- One-line subsystem coverage. Adding exception reporting to a new area becomes `ExceptionNotifier.notify_exception(e, data: { subsystem: "..." })` instead of a custom job + serializer.
+- One-line subsystem coverage. Adding exception reporting to a new area becomes `Paid::ExceptionNotifier.new.call(e, data: { subsystem: "..." })` or, for web requests, raising into the global Rack capture path instead of wiring a custom job + serializer.
 - The pipeline is unchanged. `ExceptionHandler::Handle`, `Fingerprinter`, `Classifier`, `IssueFiler` keep their interfaces and tests.
 - Token-spam exposure is bounded. A new fingerprint can file at most one issue per hour per account, and a runaway exception cannot exceed the per-account cap.
 
@@ -365,7 +365,7 @@ Sub-tasks (each a separate child issue under the umbrella issue):
 
 1. **Add `exception_notification` gem.** Update `Gemfile`, `bundle install`, lock file. No code change yet.
 2. **Implement `Paid::ExceptionNotifier`.** New file at `lib/paid/exception_notifier.rb`. Unit tests covering: in-process enqueue path, missing account returns nil, internal exception swallowed.
-3. **Initializer + middleware wiring + per-job subsystem declaration.** New `config/initializers/exception_notification.rb`. `ExceptionNotification::Rack` inserted *before* `ActionDispatch::ShowExceptions`. `ApplicationJob` gains a `class_attribute :notification_subsystem` (default `"general"`) and a terminal-failure-only `rescue_from` hook. Knowledge collector job sets `self.notification_subsystem = "knowledge"`. Integration spec asserts a job exception lands as an `ExceptionIncident` with the right subsystem.
+3. **Initializer + middleware wiring + per-job subsystem declaration.** New `config/initializers/exception_notification.rb`. `ExceptionNotification::Rack` is inserted *after* `ActionDispatch::ShowExceptions`, which places it inside Rails exception handling so production 500s are notified before `ShowExceptions` renders the response. `ApplicationJob` gains a `class_attribute :notification_subsystem` (default `"general"`) and a terminal-failure-only `rescue_from` hook. Knowledge collector jobs set `self.notification_subsystem = "knowledge"`. Specs assert both terminal job failures and Rack/web-request exceptions land as `ExceptionIncident`s with the right account attribution.
 4. **Add `ISSUE_FILING_ALLOWLIST` constant + gating in `Handle`.** Seed with `%w[knowledge agent_runs container_manager secrets_proxy]` (all current p1 subsystems plus historically-covered `knowledge`). Specs covering: allowlisted subsystem files issue; non-allowlisted subsystem records incident + notification but does *not* call `IssueFiler`.
 5. **Add per-fingerprint and per-account rate limits.** Constants in `Handle`, fast-path in `find_or_create_incident`, structured warn/error logs on rate-limit hits. Specs covering: 5th occurrence files, 6th occurrence skips, 1-hour window resets, account-level cap drops cleanly.
 6. **Retire `report_exception` in `Knowledge::CollectorRunner`.** Confirm via `rg` that no other callers exist. Migrate collector exception coverage to the GoodJob hook with `data: { subsystem: "knowledge", project_id: ... }`.
@@ -377,7 +377,7 @@ Scenarios to exercise before marking the RDR Implemented:
 
 - A handled GoodJob failure under an allowlisted subsystem produces an `ExceptionIncident` with `action_taken: "issue_filed"` and a GitHub issue.
 - A handled GoodJob failure under a non-allowlisted subsystem produces an `ExceptionIncident` with `action_taken: "notified"` and no GitHub issue.
-- A controller exception in a web request produces an `ExceptionIncident` with `Current.account` correctly attributed.
+- A Rack/web-request exception produces an `ExceptionIncident` with `Current.account` correctly attributed.
 - 50 identical exceptions in quick succession produce at most 5 full-pipeline runs in the first hour; the rest fast-path through `record_occurrence!`.
 - 600 distinct exceptions for a single account in an hour: the first 500 record incidents; the rest are dropped with a structured `error` log.
 - Removing the `report_exception` callsite does not regress incident creation for collector failures.
