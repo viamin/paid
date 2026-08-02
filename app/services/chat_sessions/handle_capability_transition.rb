@@ -36,6 +36,8 @@ module ChatSessions
     end
 
     def sync_capability_notice!
+      return if intentional_teardown_stop_transition?
+
       notice = capability_notice
       existing_notice = chat_session.messages.container_capability_notices.first
 
@@ -66,6 +68,10 @@ module ChatSessions
       when "stopped"
         "Workspace tools are currently unavailable because the workspace container is stopped. Use inline tools until the workspace is started again."
       end
+    end
+
+    def intentional_teardown_stop_transition?
+      to == "stopped" && %w[closed archived].include?(chat_session.status)
     end
   end
 end

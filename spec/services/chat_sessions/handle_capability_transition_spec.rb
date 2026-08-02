@@ -41,4 +41,20 @@ RSpec.describe ChatSessions::HandleCapabilityTransition do
       "container_capability" => "failed"
     )
   end
+
+  it "does not persist a stopped notice for intentionally closed sessions" do
+    chat_session.update!(status: "closed")
+
+    expect {
+      described_class.call(chat_session:, from: "ready", to: "stopped")
+    }.not_to change { chat_session.messages.container_capability_notices.count }
+  end
+
+  it "does not persist a stopped notice for intentionally archived sessions" do
+    chat_session.update!(status: "archived")
+
+    expect {
+      described_class.call(chat_session:, from: "ready", to: "stopped")
+    }.not_to change { chat_session.messages.container_capability_notices.count }
+  end
 end
