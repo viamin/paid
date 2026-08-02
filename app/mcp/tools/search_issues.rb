@@ -40,9 +40,19 @@ module Tools
       project = project_for(project_id)
       repo_client = resolve_repo_read_client(project)
       search_limit = limit.to_i.clamp(1, MAX_RESULTS)
+      sanitized_query = sanitize_query(query)
+      raise ArgumentError, "query must contain searchable terms after removing repo/org/user qualifiers" if sanitized_query.blank?
 
-      qualified_query = build_query(project.full_name, query, state:, labels:)
+      qualified_query = build_query(project.full_name, sanitized_query, state:, labels:)
       result = repo_client.client.search_issues(qualified_query, per_page: search_limit)
+
+      record_audit_event!(
+        project:,
+        query: sanitized_query,
+        state:,
+        labels:,
+        limit: search_limit
+      )
 
       {
         total_count: result&.total_count || 0,
@@ -54,12 +64,11 @@ module Tools
 
     private
 
-    def build_query(repo_full_name, query, state:, labels:)
+    def build_query(repo_full_name, sanitized_query, state:, labels:)
       parts = [ "repo:#{repo_full_name}", "is:issue" ]
       parts << "state:#{state}" if state.present? && state != "all"
-      Array(labels).each { |label| parts << %(label:"#{sanitize_label(label)}") }
-      sanitized_query = sanitize_query(query)
-      parts << sanitized_query if sanitized_query.present?
+      Array(labels).map { |label| sanitize_label(label) }.reject(&:blank?).each { |label| parts << %(label:"#{label}") }
+      parts << sanitized_query
       parts.join(" ")
     end
 
@@ -86,6 +95,24 @@ module Tools
     def project_for(project_id)
       @projects_by_id ||= {}
       @projects_by_id[project_id] ||= policy_scope(Project).find(project_id)
+    end
+
+    def record_audit_event!(project:, query:, state:, labels:, limit:)
+      Audit::RecordEvent.call(
+        action: "search_issues.executed",
+        actor: user,
+        subject: session,
+        account: account,
+        metadata: {
+          project_id: project.id,
+          project_name: project.name,
+          query: query,
+          state: state,
+          labels: Array(labels).map { |label| sanitize_label(label) }.reject(&:blank?),
+          limit: limit,
+          session_id: session.id
+        }
+      )
     end
   end
 end

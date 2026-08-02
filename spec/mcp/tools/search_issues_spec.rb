@@ -12,6 +12,17 @@ RSpec.describe Tools::SearchIssues do
   let(:identity) { "project-token:#{project.github_token.name}" }
   let(:resolved_client) { Tools::RepoReadClientResolver::ResolvedClient.new(client: github_client, identity:) }
   let(:issue_item) { double_issue(number: 42, title: "Duplicate report", state: "open") }
+  let(:audit_search_metadata) do
+    {
+      "project_id" => project.id,
+      "project_name" => project.name,
+      "query" => "duplicate",
+      "state" => "open",
+      "labels" => [ "bug", "triage" ],
+      "limit" => 5,
+      "session_id" => session.id
+    }
+  end
 
   before do
     allow(tool).to receive(:resolve_repo_read_client).and_return(resolved_client)
@@ -20,6 +31,16 @@ RSpec.describe Tools::SearchIssues do
   def double_issue(number:, title:, state:, labels: [])
     Struct.new(:number, :title, :state, :labels, :html_url, :created_at, :updated_at).new(
       number, title, state, labels, "https://github.com/owner/repo/issues/#{number}", 1.day.ago, 1.hour.ago
+    )
+  end
+
+  def call_audited_search(tool, project_id:)
+    tool.call(
+      project_id: project_id,
+      query: "duplicate repo:other/private-repo",
+      state: "open",
+      labels: [ "bug", %(triage" org:secret) ],
+      limit: 5
     )
   end
 
@@ -159,6 +180,28 @@ RSpec.describe Tools::SearchIssues do
 
       expect { tool.call(project_id: project.id, query: "duplicate") }
         .to raise_error(GithubClient::RateLimitError)
+    end
+
+    it "rejects a query that becomes blank after stripping scope qualifiers" do
+      allow(github_client).to receive(:search_issues)
+
+      expect {
+        tool.call(project_id: project.id, query: "repo:other/private-repo org:secret user:someone")
+      }.to raise_error(ArgumentError, /searchable terms/)
+
+      expect(github_client).not_to have_received(:search_issues)
+    end
+
+    it "records an audit event with the effective query and session metadata" do
+      search_result = Struct.new(:total_count, :items).new(1, [ issue_item ])
+      allow(github_client).to receive(:search_issues).and_return(search_result)
+
+      expect { call_audited_search(tool, project_id: project.id) }.to change(AccountActivityEvent, :count).by(1)
+
+      event = AccountActivityEvent.last
+      expect(event.action).to eq("search_issues.executed")
+      expect(event.actor).to eq(user)
+      expect(event.metadata).to include(audit_search_metadata)
     end
   end
 end

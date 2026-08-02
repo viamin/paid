@@ -102,6 +102,13 @@ RSpec.describe AccountActivityEvent do
       expect(event.description).to eq("Retried agent run #42 -> #99")
     end
 
+    it "describes issue search audit events" do
+      event = described_class.new(action: "search_issues.executed", metadata: {
+        "project_name" => "paid", "query" => "duplicate"
+      })
+      expect(event.description).to eq("Searched paid issues for duplicates")
+    end
+
     it "describes prompt approval" do
       event = described_class.new(action: "prompt_version.approved", metadata: {
         "prompt_slug" => "my-prompt", "version" => 3
@@ -151,6 +158,13 @@ RSpec.describe AccountActivityEvent do
     it "returns empty array for run events" do
       event = described_class.new(action: "agent_run.created")
       expect(event.detail_lines).to eq([])
+    end
+
+    it "returns query details for issue search audit events" do
+      event = described_class.new(action: "search_issues.executed", metadata: {
+        "query" => "duplicate", "state" => "open"
+      })
+      expect(event.detail_lines).to eq([ "Query: duplicate (state: open)" ])
     end
   end
 
