@@ -140,34 +140,31 @@ RSpec.describe Tools::ProposePullRequest do
     # @spec CHAT-PR-PROPOSAL-002
     context "when the App push is rejected for a missing workflow permission" do
       let(:project) { create(:project, :with_github_installation, account:) }
+      let(:fallback_client) { instance_double(GithubClient) }
 
       before do
         fallback_token = create(:github_token, :with_workflow_scope, account: project.account)
         project.update!(git_push_pat_fallback_enabled: true, git_push_fallback_token: fallback_token)
+        allow(project).to receive_messages(
+          git_push_fallback_client: fallback_client,
+          client: github_client
+        )
+        allow(fallback_client).to receive(:create_pull_request).and_return(
+          pull_request_resource(number: 42, url: "https://github.com/#{project.full_name}/pull/42")
+        )
       end
 
       it "retries the push with the configured fallback PAT and opens the pull request" do
-        tool = described_class.new(user:, session:)
-        with_github_origin(repo:, full_name: project.full_name)
-        rejection = "! [remote rejected] feature/pr-proposal (refusing to allow a GitHub App " \
-                    "to create or update workflow `.github/workflows/ci.yml`)"
-        push_envs = script_pushes(
+        result, push_envs = perform_fallback_proposal(
           tool:,
-          results: [ [ "", rejection, 1 ], [ "", "", 0 ] ]
-        )
-
-        result = tool.call(
-          repo_path: repo.fetch(:repo_path),
-          branch_name: "feature/pr-proposal",
+          repo:,
+          project:,
           title: "Workflow change",
           body: "Updates a workflow.",
-          confirmed: true
+          rejection: workflow_permission_rejection
         )
 
-        expect(push_envs.length).to eq(2)
-        expect(push_envs.first.join).to include("ghp_testcredential")
-        expect(push_envs.last.join).to include(project.git_push_fallback_token.token)
-        expect(result[:pull_request_number]).to eq(42)
+        expect_workflow_permission_fallback(result:, push_envs:, project:, fallback_client:, github_client:)
       end
 
       context "when no fallback PAT is configured" do
@@ -236,32 +233,25 @@ RSpec.describe Tools::ProposePullRequest do
             )
           )
         )
-        allow(user_client).to receive(:create_pull_request).and_return(
+        allow(user_client).to receive(:create_pull_request)
+        allow(project).to receive(:client).and_return(github_client)
+        allow(github_client).to receive(:create_pull_request).and_return(
           pull_request_resource(number: 7, url: "https://github.com/#{project.full_name}/pull/7")
         )
       end
 
-      it "falls back to the project credential and opens the pull request" do
-        tool = described_class.new(user:, session:)
-        with_github_origin(repo:, full_name: project.full_name)
-        rejection = "! [remote rejected] feature/pr-proposal (permission denied)"
-        push_envs = script_pushes(
+      it "falls back to the project credential for both push and PR creation" do
+        result, push_envs = perform_fallback_proposal(
           tool:,
-          results: [ [ "", rejection, 1 ], [ "", "", 0 ] ]
-        )
-
-        result = tool.call(
-          repo_path: repo.fetch(:repo_path),
-          branch_name: "feature/pr-proposal",
+          repo:,
+          project:,
           title: "User token fallback",
           body: "Body.",
-          confirmed: true
+          rejection: permission_denied_rejection
         )
 
-        expect(push_envs.length).to eq(2)
-        expect(push_envs.first.join).to include("ghp_usertoken")
-        expect(push_envs.last.join).to include(project.github_credential)
-        expect(result[:pull_request_number]).to eq(7)
+        expect_user_token_fallback(result:, push_envs:, project:, github_client:)
+        expect(user_client).not_to have_received(:create_pull_request)
       end
     end
 
@@ -408,6 +398,71 @@ RSpec.describe Tools::ProposePullRequest do
     attempts
   end
 
+  def perform_fallback_proposal(tool:, repo:, project:, title:, body:, rejection:)
+    allow(tool).to receive(:project_for_manifest_entry).and_return(project)
+    with_github_origin(repo:, full_name: project.full_name)
+    push_envs = script_pushes(tool:, results: [ [ "", rejection, 1 ], [ "", "", 0 ] ])
+    result = tool.call(
+      repo_path: repo.fetch(:repo_path),
+      branch_name: "feature/pr-proposal",
+      title: title,
+      body: body,
+      confirmed: true
+    )
+    [ result, push_envs ]
+  end
+
+  def workflow_permission_rejection
+    "! [remote rejected] feature/pr-proposal (refusing to allow a GitHub App " \
+      "to create or update workflow `.github/workflows/ci.yml`)"
+  end
+
+  def permission_denied_rejection
+    "! [remote rejected] feature/pr-proposal (permission denied)"
+  end
+
+  def expect_push_attempts(push_envs:, first_credential:, second_credential:)
+    expect(push_envs.length).to eq(2)
+    expect(push_envs.first.join).to include(first_credential)
+    expect(push_envs.last.join).to include(second_credential)
+  end
+
+  def expect_successful_fallback(push_envs:, result:, project:, client:, first_credential:, second_credential:, title:, body:, pr_number:, token_identity:)
+    expect_push_attempts(push_envs:, first_credential:, second_credential:)
+    expect_fallback_pull_request_client(result:, client:, project:, title:, body:, pr_number:, token_identity:)
+  end
+
+  def expect_workflow_permission_fallback(result:, push_envs:, project:, fallback_client:, github_client:)
+    expect_successful_fallback(
+      push_envs:,
+      result:,
+      project:,
+      client: fallback_client,
+      first_credential: "ghp_testcredential",
+      second_credential: project.git_push_fallback_token.token,
+      title: "Workflow change",
+      body: "Updates a workflow.",
+      pr_number: 42,
+      token_identity: "fallback-token:#{project.git_push_fallback_token.name}"
+    )
+    expect(github_client).not_to have_received(:create_pull_request)
+  end
+
+  def expect_user_token_fallback(result:, push_envs:, project:, github_client:)
+    expect_successful_fallback(
+      push_envs:,
+      result:,
+      project:,
+      client: github_client,
+      first_credential: "ghp_usertoken",
+      second_credential: project.github_credential,
+      title: "User token fallback",
+      body: "Body.",
+      pr_number: 7,
+      token_identity: "project-token:#{project.github_token.name}"
+    )
+  end
+
   def expect_branch_pushed(repo:, branch_name:)
     source_ref = "refs/heads/#{branch_name}"
     expect(run_cmd!("git", "-C", repo.fetch(:source_path), "rev-parse", "--verify", source_ref).strip).not_to be_empty
@@ -415,6 +470,18 @@ RSpec.describe Tools::ProposePullRequest do
 
   def expect_pull_request_opened(github_client:, project:, title:, body:)
     expect(github_client).to have_received(:create_pull_request).with(
+      project.full_name,
+      base: project.default_branch,
+      head: "feature/pr-proposal",
+      title: title,
+      body: body
+    )
+  end
+
+  def expect_fallback_pull_request_client(result:, client:, project:, title:, body:, pr_number:, token_identity:)
+    expect(result[:pull_request_number]).to eq(pr_number)
+    expect(result[:token_identity]).to eq(token_identity)
+    expect(client).to have_received(:create_pull_request).with(
       project.full_name,
       base: project.default_branch,
       head: "feature/pr-proposal",

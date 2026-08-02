@@ -23,6 +23,8 @@ module Tools
       end
     end
 
+    PushAttempt = Struct.new(:resolved_credential, :result, keyword_init: true)
+
     authorize :run_agent?, ->(args) { project_for_authorization!(args.fetch(:repo_path)) }, policy_class: ProjectPolicy
 
     def self.tool_name = "propose_pull_request"
@@ -92,15 +94,14 @@ module Tools
       resolved = RepoWriteCredentialResolver.new(project: context.fetch(:project), user:, session:).resolve
       final_body = render_pull_request_body(body, dependency_refs)
 
-      push_branch!(
+      effective_credential = push_branch!(
         repo_path: context.fetch(:repo_path),
         branch_name: branch_name,
         project: context.fetch(:project),
-        credential: resolved.credential,
-        try_project_credential_fallback: resolved.from_user_token
+        resolved_credential: resolved
       )
 
-      pull_request = resolved.client.create_pull_request(
+      pull_request = effective_credential.client.create_pull_request(
         context.fetch(:project).full_name,
         base: context.fetch(:project).default_branch.presence || "main",
         head: branch_name,
@@ -113,7 +114,7 @@ module Tools
         repo_path: context.fetch(:repo_path),
         project_id: context.fetch(:project).id,
         pull_request: pull_request,
-        token_identity: resolved.identity
+        token_identity: effective_credential.identity
       )
 
       result = {
@@ -124,7 +125,7 @@ module Tools
         body: final_body,
         pull_request_number: pull_request.number,
         pull_request_url: pull_request.html_url,
-        token_identity: resolved.identity
+        token_identity: effective_credential.identity
       }
       warnings = workspace_warnings(dirty_repos)
       result[:warnings] = warnings if warnings.any?
@@ -209,19 +210,28 @@ module Tools
     # * a user token the resolver preferred may lack push access — classic PAT
     #   accessible_repositories can include repos the token can read but not
     #   push, so the project credential is retried before giving up.
-    def push_branch!(repo_path:, branch_name:, project:, credential:, try_project_credential_fallback: false)
+    def push_branch!(repo_path:, branch_name:, project:, resolved_credential:)
       remote_url = origin_remote_url(repo_path)
       refspec = "refs/heads/#{branch_name}:refs/heads/#{branch_name}"
 
-      result = run_git_push(repo_path:, refspec:, push_url: authenticated_push_url(remote_url:, project:, credential:))
-      return if result.success?
-
-      retried = retry_push_with_fallbacks(
-        repo_path:, refspec:, remote_url:, project:, primary_failure: result, try_project_credential_fallback:
+      result = run_git_push(
+        repo_path:,
+        refspec:,
+        push_url: authenticated_push_url(remote_url:, project:, credential: resolved_credential.credential)
       )
-      return if retried&.success?
+      return resolved_credential if result.success?
 
-      raise ArgumentError, (retried || result).message
+      fallback_attempt = retry_push_with_fallbacks(
+        repo_path:,
+        refspec:,
+        remote_url:,
+        project:,
+        primary_failure: result,
+        try_project_credential_fallback: resolved_credential.from_user_token
+      )
+      return fallback_attempt.resolved_credential if fallback_attempt&.result&.success?
+
+      raise ArgumentError, (fallback_attempt&.result || result).message
     end
 
     def retry_push_with_fallbacks(repo_path:, refspec:, remote_url:, project:, primary_failure:, try_project_credential_fallback:)
@@ -231,10 +241,14 @@ module Tools
       log_push_credential_fallback(project:)
       last = primary_failure
       candidates.each do |candidate|
-        last = run_git_push(repo_path:, refspec:, push_url: authenticated_push_url(remote_url:, project:, credential: candidate))
-        return last if last.success?
+        last = run_git_push(
+          repo_path:,
+          refspec:,
+          push_url: authenticated_push_url(remote_url:, project:, credential: candidate.credential)
+        )
+        return PushAttempt.new(resolved_credential: candidate, result: last) if last.success?
       end
-      last
+      PushAttempt.new(resolved_credential: candidates.last, result: last)
     end
 
     # Ordered push credentials to try after the primary is rejected. The
@@ -243,10 +257,11 @@ module Tools
     # matching the rest of the app.
     def fallback_push_credentials(project:, primary_failure:, try_project_credential_fallback:)
       candidates = []
-      project_credential = try_project_credential_fallback ? project.github_credential : nil
+      project_credential = try_project_credential_fallback ? resolved_project_credential(project) : nil
       candidates << project_credential if project_credential_useful?(project_credential:, project:, primary_failure:)
-      if app_permission_rejection?(primary_failure.message) && project.git_push_pat_fallback_configured?
-        candidates << project.git_push_fallback_credential
+      fallback_credential = fallback_pat_resolved_credential(project)
+      if app_permission_rejection?(primary_failure.message) && fallback_credential
+        candidates << fallback_credential
       end
       candidates
     end
@@ -256,10 +271,47 @@ module Tools
     # token; if the push was rejected for an App permission limit, retrying it
     # wastes an installation-token mint before the PAT fallback can succeed.
     def project_credential_useful?(project_credential:, project:, primary_failure:)
-      return false if project_credential.blank?
+      return false if project_credential&.credential.blank?
       return false if project.github_installation_id.present? && app_permission_rejection?(primary_failure.message)
 
       true
+    end
+
+    def resolved_project_credential(project)
+      credential = project.github_credential
+      client = project.client
+      return if credential.blank? || client.blank?
+
+      Tools::RepoWriteCredentialResolver::ResolvedCredential.new(
+        client:,
+        credential:,
+        identity: project_credential_identity(project),
+        from_user_token: false
+      )
+    end
+
+    def fallback_pat_resolved_credential(project)
+      credential = project.git_push_fallback_credential
+      client = project.git_push_fallback_client
+      token = project.git_push_fallback_token
+      return if credential.blank? || client.blank? || token.blank?
+
+      Tools::RepoWriteCredentialResolver::ResolvedCredential.new(
+        client:,
+        credential:,
+        identity: "fallback-token:#{token.name}",
+        from_user_token: false
+      )
+    end
+
+    def project_credential_identity(project)
+      if project.github_installation.present?
+        "github-app:#{project.github_installation.github_installation_id}"
+      elsif project.github_token.present?
+        "project-token:#{project.github_token.name}"
+      else
+        "unknown"
+      end
     end
 
     def run_git_push(repo_path:, refspec:, push_url:)
