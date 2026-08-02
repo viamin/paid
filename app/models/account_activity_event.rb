@@ -34,6 +34,7 @@ class AccountActivityEvent < ApplicationRecord
     "agent_run.retried" => "run",
     "agent_run.terminated" => "run",
     "agent_run.resumed" => "run",
+    "run_shell.executed" => "run",
     "prompt_version.approved" => "approval",
     "prompt_version.rejected" => "approval",
     "configuration_profile.applied" => "configuration_profile",
