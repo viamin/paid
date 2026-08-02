@@ -133,7 +133,7 @@ if [ "$FILE_FILTER" = true ]; then
     echo "  No shell files to lint."
   fi
 else
-  shellcheck -x scripts/*.sh .devcontainer/*.sh .githooks/* bin/audit bin/dev bin/dev-update bin/docker-entrypoint bin/lib/dev_supervisor.sh bin/lint
+  shellcheck -x scripts/*.sh .devcontainer/*.sh .githooks/* bin/audit bin/dev bin/dev-update bin/docker-entrypoint bin/install-gitleaks bin/lib/dev_supervisor.sh bin/lint bin/secret-scan
 fi
 
 echo "== ERB: Herb =="
