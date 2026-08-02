@@ -13,7 +13,7 @@
 
 ## Implementation Status
 
-RDR-041 is partially implemented, but only Claude Code has a remote-safe managed credential path today.
+RDR-041 is partially implemented. The full provider-neutral auth lifecycle — feature flag, telemetry, the provider adapter/materializer contract, Codex managed auth, and the RDR-048 host-eligibility contract — is shipped and wired into provisioning/scheduling. The only remaining work is cutover (#2965) and provider login/harvest flows for Codex/Gemini/Copilot, which are intentionally deferred behind the feature flag.
 
 Shipped:
 
@@ -23,18 +23,20 @@ Shipped:
 - Managed Claude setup tokens are injected as `CLAUDE_CODE_OAUTH_TOKEN`; when present, provisioning skips host `.credentials.json` seeding.
 - Browser-completed Claude login captures native `.credentials.json` into a `RunnerCredential`.
 - Claude keep-warm can refresh host-forwarded native credentials and write the rotated credential back under a lock.
+- The `managed_subscription_runner_auth` feature flag is registered in `FeatureFlags::DEFINITIONS` with a tenant-scoped rollout plan; gating is enforced by `Containers::Provision#managed_subscription_runner_auth_enabled_for?` (#2959).
+- Auth-attempt telemetry is shipped as the `runner_auth_attempts` table + `RunnerAuthAttempt` model + the single `Runners::AuthAttemptRecorder` seam, which records provider, auth source, materialization mode, backend capability, refresh/lease/result, and feature-flag state while rejecting secret-shaped values (#2960).
+- The provider-neutral contract is extracted: `Runners::SubscriptionAuthProviders` (`status`/`materialize`/`refresh`/`harvest`) over `Runners::SubscriptionAuthMaterializers` (`materialization_mode`/`rotation_risk`/`remote_safe?`) for Claude, Codex, Gemini, and Copilot (#2961).
+- Codex managed subscription auth: a managed `RunnerCredential` regenerates native `~/.codex/auth.json`, with refresh-before-run and lease-through-run harvest via the provisioner (`refresh_codex_managed_credential!` / `harvest_codex_managed_credential!`) (#2962).
 - Gemini and Copilot have remote-safe native config materializers (#2964): a managed `RunnerCredential` materializes the minimal `~/.gemini/oauth_creds.json` or `~/.copilot/config.json` directly into the container, so neither needs a host bind mount.
+- RDR-048 host-eligibility integration is shipped: `Runners::SubscriptionAuthEligibility` and `Runners::SubscriptionAuthHostPaths` are consulted by `Containers::Provision`, `Containers::HostReadiness`, `Containers::ResolveHostForRun`, and the runner retry options to allow/reject remote placement by provider auth capability, surfacing named reasons (`requires_host_bind_mount`, `managed_auth_missing`, `provider_materializer_missing`, `credential_expired`, `credential_refresh_failed`, `remote_proxy_unreachable`) (#2963).
 
 The original Claude-focused issue chain (#2690, #2683, #2685, #2684, #2686, #2687, #2688, #2689) is closed/completed. This RDR remains **Partially Implemented** because the revised scope now covers provider-neutral managed auth and RDR-048 remote-host eligibility, not only Claude.
 
 Still open:
 
-- Provider-neutral managed auth for Codex. Gemini and Copilot now have remote-safe native config materializers (#2964); Codex still depends on a Docker-host-bind-mountable `auth.json` and cannot run on a backend where `supports_host_paths? == false` unless it uses API-key/proxy mode.
-- ~~A canonical materialization contract that says how each provider turns an encrypted `RunnerCredential` into container runtime state.~~ Done: all four subscription providers (Claude, Codex, Gemini, Copilot) now have concrete `SubscriptionAuthProviders` adapters implementing the `status`/`materialize`/`refresh`/`harvest` contract. Gemini and Copilot refresh/harvest remain deferred until their provider login flows land (#2964 follow-up).
-- Refresh ownership for providers whose CLI may rotate credentials during a run.
-- Feature-flagged rollout is not implemented; `FeatureFlags::DEFINITIONS` does not yet include `managed_subscription_runner_auth`.
-- Production-style auth-attempt telemetry is not implemented, so managed auth cannot yet be compared against legacy host-mounted local auth by provider and Docker host.
-- RDR-048 scheduler/readiness integration is not implemented, so remote hosts are not yet selected/rejected by provider auth capability.
+- Codex remote placement is intentionally gated (`SubscriptionAuthMaterializers` sets Codex `remote_safe: false`) until refresh/writeback durability is proven by tests and telemetry; Codex managed auth is local-only for now, or API-key/proxy mode on remote hosts.
+- Gemini and Copilot provider login flows and lease-through-run harvest (`refresh`/`harvest`) are deferred until their managed materializers prove reliable in telemetry; today they materialize the native CLI config from a stored `RunnerCredential` but Paid does not yet run their OAuth login or harvest rotated state (#2964 follow-up).
+- #2965 cutover (managed auth as default-on, legacy host-mounted auth as a local-only escape hatch) is intentionally held behind the `managed_subscription_runner_auth` flag until success metrics prove managed auth is at least as reliable as legacy local auth for each provider.
 
 ## Issue Plan
 
@@ -78,8 +80,8 @@ RDR-048 makes this urgent. Multi-host Docker placement can only send a subscript
 
 | Provider | Current local behavior | Current remote behavior | Managed-auth status | Required next step |
 |----------|------------------------|--------------------------|---------------------|--------------------|
-| Claude Code | Host `.credentials.json`, managed `CLAUDE_CODE_OAUTH_TOKEN`, or captured native credential | Works when managed `RunnerCredential` exists; host file is not required | Partially implemented | Keep, harden, and place behind the same provider-neutral contract as other providers |
-| Codex | Host `auth.json` bind mount with lock/writeback | Not supported unless that auth file exists on the remote Docker host or the runner uses API-key/proxy mode | Not implemented | Add Codex login, refresh/writeback, and native `auth.json` materialization from `RunnerCredential` |
+| Claude Code | Host `.credentials.json`, managed `CLAUDE_CODE_OAUTH_TOKEN`, or captured native credential | Works when managed `RunnerCredential` exists; host file is not required | Implemented; behind the provider-neutral contract | Keep; server-side keep-warm refresh proven |
+| Codex | Host `auth.json` bind mount with lock/writeback, or managed native `auth.json` from `RunnerCredential` | Managed materializer exists but remote placement is gated (`remote_safe: false`) until refresh/writeback is proven; API-key/proxy mode otherwise | Implemented (#2962), remote-gated | Prove refresh/writeback durability via telemetry, then flip `remote_safe` to true |
 | Gemini | Host `oauth_creds.json`/config copy, or managed native `oauth_creds.json` from `RunnerCredential` | Works when managed `RunnerCredential` exists; host file is not required | Implemented (#2964) | Provider adapter extracted (status/materialize); add provider login flow and lease-through-run harvest once telemetry proves reliability |
 | Copilot | Host `config.json`/local config copy, or managed native `config.json` from `RunnerCredential` | Works when managed `RunnerCredential` exists; host file is not required | Implemented (#2964) | Provider adapter extracted (status/materialize); add provider login flow and lease-through-run harvest once telemetry proves reliability |
 
