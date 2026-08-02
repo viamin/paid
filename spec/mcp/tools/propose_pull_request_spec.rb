@@ -253,6 +253,24 @@ RSpec.describe Tools::ProposePullRequest do
         expect_user_token_fallback(result:, push_envs:, project:, github_client:)
         expect(user_client).not_to have_received(:create_pull_request)
       end
+
+      it "rewrites seeded authenticated origins for both push attempts" do
+        tool_instance = tool
+        allow(tool_instance).to receive(:project_for_manifest_entry).and_return(project)
+        with_github_origin(repo:, full_name: project.full_name, credential: "ghp_cloneorigin")
+        push_envs = script_pushes(tool: tool_instance, results: [ [ "", permission_denied_rejection, 1 ], [ "", "", 0 ] ])
+
+        result = tool_instance.call(
+          repo_path: repo.fetch(:repo_path),
+          branch_name: "feature/pr-proposal",
+          title: "User token fallback",
+          body: "Body.",
+          confirmed: true
+        )
+
+        expect_user_token_fallback(result:, push_envs:, project:, github_client:)
+        expect(push_envs.join).not_to include("ghp_cloneorigin")
+      end
     end
 
     context "when multiple cloned repos have uncommitted changes" do
@@ -419,8 +437,15 @@ RSpec.describe Tools::ProposePullRequest do
   # Points the cloned repo's origin at a github.com URL so the tool embeds the
   # active credential in the push URL (mirroring production). Local file://
   # origins ignore credentials, which would hide which token was used.
-  def with_github_origin(repo:, full_name:)
-    run_cmd!("git", "-C", repo.fetch(:host_path), "remote", "set-url", "origin", "https://github.com/#{full_name}.git")
+  def with_github_origin(repo:, full_name:, credential: nil)
+    url =
+      if credential.present?
+        "https://x-access-token:#{credential}@github.com/#{full_name}.git"
+      else
+        "https://github.com/#{full_name}.git"
+      end
+
+    run_cmd!("git", "-C", repo.fetch(:host_path), "remote", "set-url", "origin", url)
   end
 
   # Scripts push results in order and records each push's env (which carries the

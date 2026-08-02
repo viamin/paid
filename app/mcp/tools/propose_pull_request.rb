@@ -5,7 +5,7 @@ module Tools
     include ContainerRepoSupport
 
     DEPENDS_ON_REF_PATTERN = /\A[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+\#[1-9]\d*\z/
-    GITHUB_HTTPS_REMOTE_PATTERN = %r{\Ahttps://github\.com/}i
+    GITHUB_HTTPS_REMOTE_PATTERN = %r{\Ahttps://(?:x-access-token:[^@/\s]+@)?github\.com/}i
     GITHUB_SSH_REMOTE_PATTERN = /\Agit@github\.com:/i
     CREDENTIAL_IN_URL_PATTERN = %r{x-access-token:[^@/\s]+@github\.com}
 
