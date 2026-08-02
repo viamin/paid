@@ -31,6 +31,7 @@ RSpec.describe Tools::RepoWriteCredentialResolver do
       expect(resolved.client).to eq(user_github_client)
       expect(resolved.credential).to eq(user_token.token)
       expect(resolved.identity).to eq("user-token:User Token")
+      expect(resolved.from_user_token).to be(true)
       expect(project).not_to have_received(:client)
     end
 
@@ -50,6 +51,7 @@ RSpec.describe Tools::RepoWriteCredentialResolver do
       expect(resolved.client).to be(project_github_client)
       expect(resolved.credential).to eq("project-token")
       expect(resolved.identity).to eq("project-token:#{project.github_token.name}")
+      expect(resolved.from_user_token).to be(false)
     end
   end
 end

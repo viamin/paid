@@ -8,6 +8,15 @@ module Tools
     GITHUB_HTTPS_REMOTE_PATTERN = %r{\Ahttps://github\.com/}i
     GITHUB_SSH_REMOTE_PATTERN = /\Agit@github\.com:/i
 
+    # Captured output of a single git push attempt.
+    PushResult = Struct.new(:stdout, :stderr, :exit_code, keyword_init: true) do
+      def success? = exit_code.zero?
+
+      def message
+        [ stderr, stdout ].map(&:presence).compact.join(" — ").presence || "git push failed"
+      end
+    end
+
     authorize :run_agent?, ->(args) { project_for_authorization!(args.fetch(:repo_path)) }, policy_class: ProjectPolicy
 
     def self.tool_name = "propose_pull_request"
@@ -74,7 +83,8 @@ module Tools
         repo_path: context.fetch(:repo_path),
         branch_name: branch_name,
         project: context.fetch(:project),
-        credential: resolved.credential
+        credential: resolved.credential,
+        try_project_credential_fallback: resolved.from_user_token
       )
 
       pull_request = resolved.client.create_pull_request(
@@ -176,14 +186,82 @@ module Tools
       stdout
     end
 
-    def push_branch!(repo_path:, branch_name:, project:, credential:)
+    # Pushes the branch, falling back through alternate credentials when the
+    # primary is rejected so PR proposal does not regress app-backed projects:
+    #
+    # * a GitHub App installation token is rejected for pushes it lacks
+    #   permission for (e.g. a change under .github/workflows/) — mirrored from
+    #   WorktreeService and Containers::GitOperations, the push retries with the
+    #   project's configured fallback PAT (see Project#git_push_pat_fallback?).
+    # * a user token the resolver preferred may lack push access — classic PAT
+    #   accessible_repositories can include repos the token can read but not
+    #   push, so the project credential is retried before giving up.
+    def push_branch!(repo_path:, branch_name:, project:, credential:, try_project_credential_fallback: false)
       remote_url = origin_remote_url(repo_path)
-      push_url = authenticated_push_url(remote_url:, project:, credential:)
-      env = [ "PUSH_URL=#{push_url}" ]
       refspec = "refs/heads/#{branch_name}:refs/heads/#{branch_name}"
+
+      result = run_git_push(repo_path:, refspec:, push_url: authenticated_push_url(remote_url:, project:, credential:))
+      return if result.success?
+
+      retried = retry_push_with_fallbacks(
+        repo_path:, refspec:, remote_url:, project:, primary_failure: result, try_project_credential_fallback:
+      )
+      return if retried&.success?
+
+      raise ArgumentError, (retried || result).message
+    end
+
+    def retry_push_with_fallbacks(repo_path:, refspec:, remote_url:, project:, primary_failure:, try_project_credential_fallback:)
+      candidates = fallback_push_credentials(project:, primary_failure:, try_project_credential_fallback:)
+      return nil if candidates.empty?
+
+      log_push_credential_fallback(project:)
+      last = primary_failure
+      candidates.each do |candidate|
+        last = run_git_push(repo_path:, refspec:, push_url: authenticated_push_url(remote_url:, project:, credential: candidate))
+        return last if last.success?
+      end
+      last
+    end
+
+    # Ordered push credentials to try after the primary is rejected. The
+    # project credential comes first (general user-token rejection fallback);
+    # the fallback PAT is appended only for a GitHub App permission rejection,
+    # matching the rest of the app.
+    def fallback_push_credentials(project:, primary_failure:, try_project_credential_fallback:)
+      candidates = []
+      project_credential = try_project_credential_fallback ? project.github_credential : nil
+      candidates << project_credential if project_credential_useful?(project_credential:, project:, primary_failure:)
+      if app_permission_rejection?(primary_failure.message) && project.git_push_pat_fallback_configured?
+        candidates << project.git_push_fallback_credential
+      end
+      candidates
+    end
+
+    # The project credential is a meaningful push fallback only when the primary
+    # was a user token. On an app-backed project it is the App installation
+    # token; if the push was rejected for an App permission limit, retrying it
+    # wastes an installation-token mint before the PAT fallback can succeed.
+    def project_credential_useful?(project_credential:, project:, primary_failure:)
+      return false if project_credential.blank?
+      return false if project.github_installation_id.present? && app_permission_rejection?(primary_failure.message)
+
+      true
+    end
+
+    def run_git_push(repo_path:, refspec:, push_url:)
+      env = [ "PUSH_URL=#{push_url}" ]
       command = "git -C #{Shellwords.escape(repo_path)} push --set-upstream \"$PUSH_URL\" #{Shellwords.escape(refspec)}"
       stdout, stderr, exit_code = git_exec!(command, env:)
-      raise ArgumentError, stderr.presence || stdout.presence || "git push failed" unless exit_code.zero?
+      PushResult.new(stdout:, stderr:, exit_code:)
+    end
+
+    def log_push_credential_fallback(project:)
+      Rails.logger.info(message: "propose_pull_request.push_credential_fallback", project_id: project.id)
+    end
+
+    def app_permission_rejection?(message)
+      message.to_s.include?("refusing to allow a GitHub App")
     end
 
     def origin_remote_url(repo_path)

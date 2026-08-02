@@ -3,7 +3,12 @@
 module Tools
   class RepoWriteCredentialResolver
     # @spec CHAT-PR-PROPOSAL-001, CHAT-PR-PROPOSAL-002
-    ResolvedCredential = Struct.new(:client, :credential, :identity, keyword_init: true)
+    # +from_user_token+ flags that the primary credential is a personal token
+    # the resolver preferred over the project credential. The push path uses
+    # it to decide whether the project credential is a meaningful fallback:
+    # classic PAT accessible_repositories can include repos the token can read
+    # but not push, so a preferred user token may be rejected at push time.
+    ResolvedCredential = Struct.new(:client, :credential, :identity, :from_user_token, keyword_init: true)
 
     def initialize(project:, user:, session:)
       @project = project
@@ -26,7 +31,8 @@ module Tools
       ResolvedCredential.new(
         client: token.client,
         credential: token.token,
-        identity: "user-token:#{token.name}"
+        identity: "user-token:#{token.name}",
+        from_user_token: true
       )
     end
 
@@ -38,7 +44,8 @@ module Tools
       ResolvedCredential.new(
         client: client,
         credential: credential,
-        identity: project_identity
+        identity: project_identity,
+        from_user_token: false
       )
     end
 

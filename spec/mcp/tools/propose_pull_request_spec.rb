@@ -137,6 +137,109 @@ RSpec.describe Tools::ProposePullRequest do
       }.to raise_error(Pundit::NotAuthorizedError)
     end
 
+    # @spec CHAT-PR-PROPOSAL-002
+    context "when the App push is rejected for a missing workflow permission" do
+      let(:project) { create(:project, :with_github_installation, account:) }
+
+      before do
+        fallback_token = create(:github_token, :with_workflow_scope, account: project.account)
+        project.update!(git_push_pat_fallback_enabled: true, git_push_fallback_token: fallback_token)
+      end
+
+      it "retries the push with the configured fallback PAT and opens the pull request" do
+        tool = described_class.new(user:, session:)
+        with_github_origin(repo:, full_name: project.full_name)
+        rejection = "! [remote rejected] feature/pr-proposal (refusing to allow a GitHub App " \
+                    "to create or update workflow `.github/workflows/ci.yml`)"
+        push_envs = script_pushes(
+          tool:,
+          results: [ [ "", rejection, 1 ], [ "", "", 0 ] ]
+        )
+
+        result = tool.call(
+          repo_path: repo.fetch(:repo_path),
+          branch_name: "feature/pr-proposal",
+          title: "Workflow change",
+          body: "Updates a workflow.",
+          confirmed: true
+        )
+
+        expect(push_envs.length).to eq(2)
+        expect(push_envs.first.join).to include("ghp_testcredential")
+        expect(push_envs.last.join).to include(project.git_push_fallback_token.token)
+        expect(result[:pull_request_number]).to eq(42)
+      end
+
+      context "when no fallback PAT is configured" do
+        before { project.update!(git_push_pat_fallback_enabled: false) }
+
+        it "raises the rejection without retrying" do
+          tool = described_class.new(user:, session:)
+          with_github_origin(repo:, full_name: project.full_name)
+          rejection = "! [remote rejected] feature/pr-proposal (refusing to allow a GitHub App)"
+          push_envs = script_pushes(tool:, results: [ [ "", rejection, 1 ] ])
+
+          expect {
+            tool.call(
+              repo_path: repo.fetch(:repo_path),
+              branch_name: "feature/pr-proposal",
+              title: "Workflow change",
+              body: "Updates a workflow.",
+              confirmed: true
+            )
+          }.to raise_error(ArgumentError, /refusing to allow a GitHub App/)
+
+          expect(push_envs.length).to eq(1)
+        end
+      end
+    end
+
+    # @spec CHAT-PR-PROPOSAL-002
+    context "when a preferred user token is rejected at push time" do
+      let(:user_client) { instance_double(GithubClient) }
+
+      before do
+        allow(Tools::RepoWriteCredentialResolver).to receive(:new).and_return(
+          instance_double(
+            Tools::RepoWriteCredentialResolver,
+            resolve: resolved_credential(
+              project:,
+              client: user_client,
+              credential: "ghp_usertoken",
+              from_user_token: true,
+              identity: "user-token:Personal"
+            )
+          )
+        )
+        allow(user_client).to receive(:create_pull_request).and_return(
+          pull_request_resource(number: 7, url: "https://github.com/#{project.full_name}/pull/7")
+        )
+      end
+
+      it "falls back to the project credential and opens the pull request" do
+        tool = described_class.new(user:, session:)
+        with_github_origin(repo:, full_name: project.full_name)
+        rejection = "! [remote rejected] feature/pr-proposal (permission denied)"
+        push_envs = script_pushes(
+          tool:,
+          results: [ [ "", rejection, 1 ], [ "", "", 0 ] ]
+        )
+
+        result = tool.call(
+          repo_path: repo.fetch(:repo_path),
+          branch_name: "feature/pr-proposal",
+          title: "User token fallback",
+          body: "Body.",
+          confirmed: true
+        )
+
+        expect(push_envs.length).to eq(2)
+        expect(push_envs.first.join).to include("ghp_usertoken")
+        expect(push_envs.last.join).to include(project.github_credential)
+        expect(result[:pull_request_number]).to eq(7)
+      end
+    end
+
     context "when multiple cloned repos have uncommitted changes" do
       let(:project_two) { create(:project, account:) }
       let!(:repo_two) do
@@ -243,16 +346,41 @@ RSpec.describe Tools::ProposePullRequest do
     { project_id: project.id, path: repo.fetch(:repo_path) }
   end
 
-  def resolved_credential(project:, client:, credential: "ghp_testcredential")
+  def resolved_credential(project:, client:, credential: "ghp_testcredential", from_user_token: false, identity: nil)
     Tools::RepoWriteCredentialResolver::ResolvedCredential.new(
       client: client,
       credential: credential,
-      identity: "project-token:#{project.github_token.name}"
+      identity: identity || "project-token:#{project.github_token&.name || project.full_name}",
+      from_user_token: from_user_token
     )
   end
 
   def pull_request_resource(number:, url:)
     double(number:, html_url: url)
+  end
+
+  # Points the cloned repo's origin at a github.com URL so the tool embeds the
+  # active credential in the push URL (mirroring production). Local file://
+  # origins ignore credentials, which would hide which token was used.
+  def with_github_origin(repo:, full_name:)
+    run_cmd!("git", "-C", repo.fetch(:host_path), "remote", "set-url", "origin", "https://github.com/#{full_name}.git")
+  end
+
+  # Scripts push results in order and records each push's env (which carries the
+  # PUSH_URL with the embedded credential). Non-push git commands (branch
+  # validation, status, remote lookup) run for real against the local repo.
+  def script_pushes(tool:, results:)
+    attempts = []
+    original = tool.method(:git_exec!)
+    allow(tool).to receive(:git_exec!) do |script, env: []|
+      if script.include?(" push ")
+        attempts << env
+        results.shift || [ "", "", 0 ]
+      else
+        original.call(script, env: env)
+      end
+    end
+    attempts
   end
 
   def expect_branch_pushed(repo:, branch_name:)
