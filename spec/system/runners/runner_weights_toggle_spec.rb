@@ -16,6 +16,7 @@ RSpec.describe "Runner weight inputs", type: :system do
 
   let(:user) { create(:user) }
   let(:notice_text) { "Manual weight inputs are read-only until you turn it off" }
+  let(:weight_input_selector) { "input[name^='user_setting[runner_weights]']" }
 
   before do
     allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor])
@@ -30,10 +31,10 @@ RSpec.describe "Runner weight inputs", type: :system do
     Warden.test_reset!
   end
 
-  def weight_inputs
-    all("input[name^='user_setting[runner_weights]']")
-  end
-
+  # Assertions use Capybara's auto-retrying `have_css`/`have_no_css` matchers
+  # (instead of a one-shot `all(...).to all(be_disabled)` snapshot) so they
+  # wait for the Stimulus controller's DOM mutation to land instead of racing
+  # it, which is what made this spec flaky under a real browser driver.
   it "re-enables weight inputs immediately when auto-weight is unchecked, and disables them again on re-check" do
     skip "Requires a JavaScript-capable driver" if SYSTEM_DRIVER == :rack_test
 
@@ -41,18 +42,20 @@ RSpec.describe "Runner weight inputs", type: :system do
 
     visit runners_path
 
-    expect(weight_inputs).not_to be_empty
-    expect(weight_inputs).to all(be_disabled)
+    expect(page).to have_css("#{weight_input_selector}:disabled", minimum: 1)
+    expect(page).to have_no_css("#{weight_input_selector}:enabled")
     expect(page).to have_text(notice_text)
 
     uncheck "Auto-balance weights based on usage quotas"
 
-    expect(weight_inputs).to all(be_enabled)
+    expect(page).to have_css("#{weight_input_selector}:enabled", minimum: 1)
+    expect(page).to have_no_css("#{weight_input_selector}:disabled")
     expect(page).not_to have_text(notice_text)
 
     check "Auto-balance weights based on usage quotas"
 
-    expect(weight_inputs).to all(be_disabled)
+    expect(page).to have_css("#{weight_input_selector}:disabled", minimum: 1)
+    expect(page).to have_no_css("#{weight_input_selector}:enabled")
     expect(page).to have_text(notice_text)
   end
 end
