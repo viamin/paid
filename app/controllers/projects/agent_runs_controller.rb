@@ -1052,7 +1052,19 @@ module Projects
     end
 
     def safe_return_target
-      url_from(params[:return_to])
+      normalized_return_to(params[:return_to])
+    end
+
+    def normalized_return_to(candidate)
+      return if candidate.blank?
+
+      parsed = URI.parse(candidate.to_s)
+      return unless parsed.scheme.nil? && parsed.host.nil?
+      return unless candidate.to_s.start_with?("/") && !candidate.to_s.start_with?("//")
+
+      candidate.to_s
+    rescue URI::InvalidURIError
+      nil
     end
 
     def create_review_runs_and_redirect(pr_ids:, on_error_path:, custom_prompt:, goal:)
