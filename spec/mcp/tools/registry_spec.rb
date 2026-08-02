@@ -153,6 +153,27 @@ RSpec.describe Tools::Registry do
       end
     end
 
+    it "does not provision when a concurrent request already won the transition" do
+      session = create(:chat_session, account: account, created_by: user,
+                                       container_capability: "stopped", clone_manifest: clone_manifest)
+      # Lost race: another request moved the session to pending and won the
+      # transition, so this request must await instead of racing ProvisionForChat.
+      allow(session).to receive(:request_container_provision!) do
+        session.update!(container_capability: "pending")
+        false
+      end
+      stub_const("Tools::Registry::MCP_CONTAINER_WAIT_TIMEOUT", 0)
+      allow(Containers::ProvisionForChat).to receive(:call)
+
+      result = described_class.dispatch_mcp(name: "git_status",
+                                            arguments: { "repo_path" => "/workspace/repo-one" },
+                                            user: user, session: session)
+
+      expect(Containers::ProvisionForChat).not_to have_received(:call)
+      expect(result).to include(status: "error", error: "container_unavailable",
+                                container_capability: "pending", retryable: true)
+    end
+
     it "dispatches normally when the container is ready" do
       session = create(
         :chat_session,

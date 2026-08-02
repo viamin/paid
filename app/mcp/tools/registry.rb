@@ -251,12 +251,21 @@ module Tools
         return unless requires_container?(name)
         return unless session
 
-        if session.inline_only? || session.container_stopped?
-          session.request_container_provision!
+        if won_container_provision_request?(session)
           provision_mcp_container(session:)
         elsif session.container_pending? || session.container_provisioning?
           await_mcp_container_ready(session:)
         end
+      end
+
+      # Returns true only when this request won the none/stopped -> pending
+      # transition. When a concurrent request already moved the session out of
+      # none/stopped, request_container_provision! returns false and the caller
+      # falls through to await the in-flight provisioning instead of racing it.
+      def won_container_provision_request?(session)
+        return false unless session.inline_only? || session.container_stopped?
+
+        session.request_container_provision!
       end
 
       def provision_mcp_container(session:)
