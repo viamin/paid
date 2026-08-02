@@ -126,6 +126,28 @@ RSpec.describe "Previews" do
         expect(response).to have_http_status(:ok)
         expect(response.body).to eq("proxied app")
       end
+
+      it "looks up the preview session from the path token, not the query string" do
+        other_session = create(
+          :preview_session,
+          :ready,
+          project: project,
+          branch_name: "feature/other",
+          token: "query-token",
+          container_id: "container-query"
+        )
+        path_token_request = stub_request(:get, "http://127.0.0.1:#{preview_session.tunnel_port}/?token=#{other_session.token}")
+          .to_return(status: 200, body: "path token app")
+        query_token_request = stub_request(:get, "http://127.0.0.1:#{other_session.tunnel_port}/?token=#{other_session.token}")
+          .to_return(status: 200, body: "query token app")
+
+        get "#{preview_session.proxy_prefix}/?token=#{other_session.token}"
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to eq("path token app")
+        expect(path_token_request).to have_been_made.once
+        expect(query_token_request).not_to have_been_made
+      end
     end
 
     context "when the user is not authenticated" do

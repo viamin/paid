@@ -18,7 +18,7 @@ class PreviewsController < ApplicationController
   before_action :set_preview_session, only: :stop
 
   def show
-    return show_token_preview if params[:token].present?
+    return show_token_preview if request.path_parameters[:token].present?
 
     show_wrapper
   end
@@ -42,8 +42,8 @@ class PreviewsController < ApplicationController
   end
 
   def show_token_preview
-    @preview_session = PreviewSession.find_accessible_by_token(params[:token])
-    return show_wrapper_fallback if @preview_session.nil? && params[:path].blank? && params[:token].match?(/\A\d+\z/)
+    @preview_session = PreviewSession.find_accessible_by_token(request.path_parameters[:token])
+    return show_wrapper_fallback if @preview_session.nil? && params[:path].blank? && request.path_parameters[:token].match?(/\A\d+\z/)
     return head :not_found unless @preview_session && policy(@preview_session).show?
 
     apply_embed_headers
@@ -161,7 +161,7 @@ class PreviewsController < ApplicationController
   end
 
   def show_wrapper_fallback
-    @preview_session = policy_scope(PreviewSession).find(params[:token])
+    @preview_session = policy_scope(PreviewSession).find(request.path_parameters[:token])
     authorize @preview_session
     render :show
   rescue ActiveRecord::RecordNotFound
