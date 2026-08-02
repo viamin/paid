@@ -2400,6 +2400,28 @@ RSpec.describe "AgentRuns" do
         expect(agent_run.temporal_workflow_id).to eq("workflow-123")
         expect(agent_run.temporal_run_id).to eq("run-123")
       end
+
+      it "falls back to the agent run path for an absolute return_to URL" do
+        agent_run = create(:agent_run, project: project, status: "paused", paused_at: Time.current,
+          guardrail_violation_type: "time_limit")
+        allow(AgentRuns::Cancel).to receive(:call)
+
+        post resume_project_agent_run_path(project, agent_run), params: { return_to: "https://evil.test" }
+
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+        expect(flash[:notice]).to eq("Agent run resumed and re-queued.")
+      end
+
+      it "falls back to the agent run path for a protocol-relative return_to URL" do
+        agent_run = create(:agent_run, project: project, status: "paused", paused_at: Time.current,
+          guardrail_violation_type: "time_limit")
+        allow(AgentRuns::Cancel).to receive(:call)
+
+        post resume_project_agent_run_path(project, agent_run), params: { return_to: "//evil.test" }
+
+        expect(response).to redirect_to(project_agent_run_path(project, agent_run))
+        expect(flash[:notice]).to eq("Agent run resumed and re-queued.")
+      end
     end
   end
 
