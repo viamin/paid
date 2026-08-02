@@ -10,14 +10,14 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
   workflow_expectations = {
     ".github/workflows/ci.yml" => {
       "test" => {
-        "db_username" => "postgres",
-        "db_password" => "postgres",
-        "creates_application_role" => false
+        "db_username" => "paid",
+        "db_password" => "paid",
+        "creates_application_role" => true
       },
       "performance" => {
-        "db_username" => "postgres",
-        "db_password" => "postgres",
-        "creates_application_role" => false
+        "db_username" => "paid",
+        "db_password" => "paid",
+        "creates_application_role" => true
       }
     },
     ".github/workflows/system_tests.yml" => {
