@@ -2,7 +2,6 @@
 
 module HealthChecks
   # Registry of health check classes.
-  # Populated by phases 2–5 as concrete checks are added.
   class Registry
     class << self
       def all
@@ -28,8 +27,13 @@ module HealthChecks
       def load_defaults
         return if @defaults_loaded
 
-        @registry ||= []
-        # Phases 2–5 register concrete checks here.
+        register(HealthChecks::Checks::Project::AutoMergeWithoutOwner)
+        register(HealthChecks::Checks::Project::ReviewWithoutBot)
+        register(HealthChecks::Checks::Project::ReviewBotNotInstalled)
+        register(HealthChecks::Checks::Project::EmptyAllowlist)
+        register(HealthChecks::Checks::Project::MissingGitHubCredential)
+        register(HealthChecks::Checks::Project::SensitiveDataFreeModel)
+        register(HealthChecks::Checks::Runner::DeprecatedModel)
         @defaults_loaded = true
       end
     end

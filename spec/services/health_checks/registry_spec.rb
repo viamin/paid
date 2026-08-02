@@ -3,40 +3,48 @@
 require "rails_helper"
 
 RSpec.describe HealthChecks::Registry do
-  describe ".all" do
-    it "returns an empty array by default (no checks registered in phase 1)" do
-      expect(described_class.all).to eq([])
-    end
-  end
-
   describe ".for_scope" do
-    it "returns an empty array when no checks are registered" do
-      expect(described_class.for_scope(:project)).to eq([])
-      expect(described_class.for_scope(:user)).to eq([])
-      expect(described_class.for_scope(:runner)).to eq([])
+    it "registers all project-scope checks, including network checks" do
+      expect(described_class.for_scope(:project)).to contain_exactly(
+        HealthChecks::Checks::Project::AutoMergeWithoutOwner,
+        HealthChecks::Checks::Project::ReviewWithoutBot,
+        HealthChecks::Checks::Project::ReviewBotNotInstalled,
+        HealthChecks::Checks::Project::EmptyAllowlist,
+        HealthChecks::Checks::Project::MissingGitHubCredential,
+        HealthChecks::Checks::Project::SensitiveDataFreeModel
+      )
+    end
+
+    it "registers runner-scope network checks" do
+      expect(described_class.for_scope(:runner)).to contain_exactly(
+        HealthChecks::Checks::Runner::DeprecatedModel
+      )
     end
   end
 
   describe ".local_for_scope" do
-    it "returns an empty array when no checks are registered" do
-      expect(described_class.local_for_scope(:project)).to eq([])
+    it "registers the project-scope local checks" do
+      expect(described_class.local_for_scope(:project)).to contain_exactly(
+        HealthChecks::Checks::Project::AutoMergeWithoutOwner,
+        HealthChecks::Checks::Project::ReviewWithoutBot,
+        HealthChecks::Checks::Project::EmptyAllowlist,
+        HealthChecks::Checks::Project::MissingGitHubCredential,
+        HealthChecks::Checks::Project::SensitiveDataFreeModel
+      )
+    end
+
+    it "skips network checks when listing local runner checks" do
+      expect(described_class.local_for_scope(:runner)).to eq([])
     end
   end
 
   describe ".register" do
-    it "adds a check class to the registry" do
-      fake_check = Class.new(HealthChecks::Check) do
-        def self.scope = :project
-        def self.network? = false
-        def call(subject) = []
-      end
+    it "adds a check class to the registry without duplicating it" do
+      described_class.register(HealthChecks::Checks::Runner::DeprecatedModel)
 
-      described_class.register(fake_check)
-
-      expect(described_class.for_scope(:project)).to include(fake_check)
-
-      described_class.instance_variable_set(:@registry, [])
-      described_class.instance_variable_set(:@defaults_loaded, false)
+      expect(described_class.for_scope(:runner)).to contain_exactly(
+        HealthChecks::Checks::Runner::DeprecatedModel
+      )
     end
   end
 end
