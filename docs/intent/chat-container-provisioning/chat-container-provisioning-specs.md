@@ -38,13 +38,19 @@
   `Containers::ProvisionForChat::ProvisionError` or
   `Docker::Error::DockerError`, the job SHALL contain the error, broadcast
   the `failed` capability, and log a structured error rather than re-raising
-  and looping on a permanent failure. `ActiveRecord::RecordNotFound` for a
+  and looping on a permanent failure. When provisioning raises
+  `ApplicationJob::PerformTimeoutError` or another unexpected `StandardError`,
+  the job SHALL reload and broadcast the `failed` capability before re-raising
+  through the normal job failure path. `ActiveRecord::RecordNotFound` for a
   deleted session SHALL be discarded.
   *Tests:* `spec/jobs/chat_sessions/provision_container_job_spec.rb`
   ("broadcasts the failed capability without re-raising",
   "contains a raw Docker error without re-raising",
+  "broadcasts timeout failures before re-raising",
+  "broadcasts unexpected provisioning failures before re-raising",
   "when the session no longer exists: is discarded without raising").
   *Code:* `ChatSessions::ProvisionContainerJob#perform` (rescue block),
+  `ChatSessions::ProvisionContainerJob#handle_provision_failure`,
   `discard_on ActiveRecord::RecordNotFound`.
 
 ## Tenant opt-out

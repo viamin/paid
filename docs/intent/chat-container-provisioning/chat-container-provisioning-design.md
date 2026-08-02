@@ -44,8 +44,11 @@ Errors from `Containers::ProvisionForChat::ProvisionError` and
 `Docker::Error::DockerError` are contained: the provisioner has already
 transitioned the session to `failed` and cleaned up any volumes it created, so
 the job broadcasts the failure and logs a structured error rather than
-re-raising and looping on a permanent failure. `ActiveRecord::RecordNotFound`
-is discarded; a deleted session cannot be provisioned.
+re-raising and looping on a permanent failure. Timeouts and unexpected
+`StandardError` failures still reload and broadcast the failed capability, then
+re-raise so the normal job failure and notification path records the incident.
+`ActiveRecord::RecordNotFound` is discarded; a deleted session cannot be
+provisioned.
 
 Per-session concurrency (`total_limit: 1`, `enqueue_limit: 1`) prevents
 duplicate provisioning if `Create` runs twice for the same session ID.

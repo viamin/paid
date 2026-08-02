@@ -97,6 +97,34 @@ RSpec.describe ChatSessions::ProvisionContainerJob, type: :job do
 
         expect(chat_session.reload.container_capability).to eq("failed")
       end
+
+      it "broadcasts timeout failures before re-raising" do
+        allow(Containers::ProvisionForChat).to receive(:call) do |kwargs|
+          kwargs[:chat_session].update_columns(container_capability: "failed")
+          raise ApplicationJob::PerformTimeoutError, "provisioning timed out"
+        end
+
+        expect {
+          expect {
+            described_class.perform_now(chat_session_id: chat_session.id)
+          }.to raise_error(ApplicationJob::PerformTimeoutError)
+        }.to have_broadcasted_to(stream_name)
+          .with(hash_including(type: "capability_changed", container_capability: "failed"))
+      end
+
+      it "broadcasts unexpected provisioning failures before re-raising" do
+        allow(Containers::ProvisionForChat).to receive(:call) do |kwargs|
+          kwargs[:chat_session].update_columns(container_capability: "failed")
+          raise StandardError, "unexpected provision failure"
+        end
+
+        expect {
+          expect {
+            described_class.perform_now(chat_session_id: chat_session.id)
+          }.to raise_error(StandardError, "unexpected provision failure")
+        }.to have_broadcasted_to(stream_name)
+          .with(hash_including(type: "capability_changed", container_capability: "failed"))
+      end
     end
 
     context "when the session no longer exists" do

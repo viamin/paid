@@ -44,12 +44,12 @@ module ChatSessions
       Containers::ProvisionForChat.call(chat_session: chat_session)
       broadcast_capability(chat_session.reload)
     rescue Containers::ProvisionForChat::ProvisionError, Docker::Error::DockerError => e
-      # ProvisionForChat already transitions capability to "failed" and cleans
-      # up the volumes it created; surface the failure to the chat stream and
-      # the structured log so the agent loop can fall back to inline-only tools.
-      chat_session.reload
-      log("failed", chat_session_id:, error: e.message)
-      broadcast_capability(chat_session)
+      handle_provision_failure(chat_session_id, e)
+    rescue ActiveRecord::RecordNotFound
+      raise
+    rescue StandardError => e
+      handle_provision_failure(chat_session_id, e)
+      raise
     end
 
     private
@@ -66,6 +66,14 @@ module ChatSessions
         container_capability: chat_session.container_capability,
         container_ready_at: chat_session.container_ready_at
       })
+    end
+
+    def handle_provision_failure(chat_session_id, error)
+      chat_session = ChatSession.find_by(id: chat_session_id)
+      return unless chat_session
+
+      log("failed", chat_session_id:, error: error.message)
+      broadcast_capability(chat_session.reload)
     end
 
     def log(action, **metadata)
