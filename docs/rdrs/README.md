@@ -39,7 +39,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | [RDR-004](RDR-004-container-isolation.md) | Container Isolation Strategy | Implemented | High |
 | [RDR-005](RDR-005-git-worktree-management.md) | Git Worktree Management | Superseded | High |
 | [RDR-006](RDR-006-secrets-proxy.md) | Secrets Proxy Architecture | Implemented | High |
-| [RDR-041](RDR-041-subscription-runner-auth-lifecycle.md) | Subscription Runner Managed Auth Lifecycle | Implemented | P1 |
+| [RDR-041](RDR-041-subscription-runner-auth-lifecycle.md) | Subscription Runner Managed Auth Lifecycle | Partially Implemented | P1 |
 
 ### Agent System
 
