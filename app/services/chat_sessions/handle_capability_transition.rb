@@ -37,7 +37,7 @@ module ChatSessions
 
     def sync_capability_notice!
       notice = capability_notice
-      existing_notice = find_existing_notice
+      existing_notice = chat_session.messages.container_capability_notices.first
 
       if notice.present?
         attributes = {
@@ -56,12 +56,6 @@ module ChatSessions
         end
       elsif existing_notice
         existing_notice.destroy!
-      end
-    end
-
-    def find_existing_notice
-      chat_session.messages.where(role: "system").find do |message|
-        message.metadata.is_a?(Hash) && message.metadata["container_capability_notice"] == true
       end
     end
 

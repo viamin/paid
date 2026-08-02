@@ -2,11 +2,18 @@
 
 module Mcp
   class SessionTransport
+    SubscriptionTimeoutError = Class.new(StandardError)
+
     class Subscriber
-      def initialize
+      attr_reader :broadcasting, :callback
+
+      def initialize(broadcasting:)
+        @broadcasting = broadcasting
         @mutex = Mutex.new
         @condition = ConditionVariable.new
         @events = []
+        @subscribed = false
+        @callback = ->(payload) { push(normalize_payload(payload)) }
       end
 
       def push(event)
@@ -31,40 +38,72 @@ module Mcp
           end
         end
       end
-    end
 
-    class << self
-      def subscribe(session_id:)
-        subscriber = Subscriber.new
-
-        mutex.synchronize do
-          subscribers[session_id] << subscriber
-        end
-
-        subscriber
-      end
-
-      def unsubscribe(session_id:, subscriber:)
-        mutex.synchronize do
-          session_subscribers = subscribers[session_id]
-          session_subscribers.delete(subscriber)
-          subscribers.delete(session_id) if session_subscribers.empty?
+      def mark_subscribed
+        @mutex.synchronize do
+          @subscribed = true
+          @condition.broadcast
         end
       end
 
-      def publish(session_id:, event:, data:)
-        session_subscribers = mutex.synchronize { subscribers[session_id].dup }
-        session_subscribers.each { |subscriber| subscriber.push(event: event, data: data) }
+      def wait_for_subscription!(timeout: 1)
+        deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
+
+        @mutex.synchronize do
+          until @subscribed
+            remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
+            raise SubscriptionTimeoutError, "Timed out waiting for MCP session subscription" if remaining <= 0
+
+            @condition.wait(@mutex, remaining)
+          end
+        end
       end
 
       private
 
-      def subscribers
-        @subscribers ||= Hash.new { |hash, key| hash[key] = [] }
+      def normalize_payload(payload)
+        decoded =
+          case payload
+          when String
+            JSON.parse(payload)
+          else
+            payload
+          end
+
+        decoded.deep_symbolize_keys
+      rescue JSON::ParserError
+        payload
+      end
+    end
+
+    class << self
+      def subscribe(session_id:)
+        subscriber = Subscriber.new(broadcasting: broadcasting_for(session_id))
+        pubsub.subscribe(subscriber.broadcasting, subscriber.callback, -> { subscriber.mark_subscribed })
+        subscriber.wait_for_subscription!
+
+        subscriber
       end
 
-      def mutex
-        @mutex ||= Mutex.new
+      def unsubscribe(session_id: nil, subscriber:)
+        pubsub.unsubscribe(subscriber.broadcasting, subscriber.callback)
+      end
+
+      def publish(session_id:, event:, data:)
+        ActionCable.server.broadcast(
+          broadcasting_for(session_id),
+          { event: event, data: data }
+        )
+      end
+
+      private
+
+      def broadcasting_for(session_id)
+        "mcp_session:#{session_id}"
+      end
+
+      def pubsub
+        ActionCable.server.pubsub
       end
     end
   end

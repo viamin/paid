@@ -113,9 +113,7 @@ module ChatSessions
     end
 
     def persist_container_capability_notice
-      existing_notice = chat_session.messages.where(role: "system").find do |message|
-        message.metadata.is_a?(Hash) && message.metadata["container_capability_notice"] == true
-      end
+      existing_notice = chat_session.messages.container_capability_notices.first
       return if existing_notice
 
       chat_session.messages.create!(
