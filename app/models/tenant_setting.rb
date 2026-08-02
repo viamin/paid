@@ -30,7 +30,11 @@ class TenantSetting < ApplicationRecord
     "chat_max_tool_iterations" => 50,
     "chat_max_cloned_repos" => 5,
     "chat_clone_timeout" => 120,
-    "chat_shell_enabled" => false
+    "chat_shell_enabled" => false,
+    # When true (default), a container is provisioned in the background as soon
+    # as a session requests one, so the first message is never blocked. When
+    # false, provisioning is deferred until a container-only tool is invoked.
+    "chat_eager_provisioning" => true
   }.freeze
   DEFAULT_QUALITY_THRESHOLDS = Project::DEFAULT_QUALITY_GATE_SETTINGS.freeze
   DEFAULT_AGENT_SETTINGS = {
@@ -338,6 +342,10 @@ class TenantSetting < ApplicationRecord
 
   def chat_shell_enabled
     ActiveModel::Type::Boolean.new.cast(effective_chat_settings["chat_shell_enabled"])
+  end
+
+  def chat_eager_provisioning
+    ActiveModel::Type::Boolean.new.cast(effective_chat_settings["chat_eager_provisioning"])
   end
 
   def chat_settings=(value)
@@ -718,6 +726,7 @@ class TenantSetting < ApplicationRecord
         normalized[key] = normalize_integer_value(normalized[key]) if normalized.key?(key)
       end
       normalized["chat_shell_enabled"] = ActiveModel::Type::Boolean.new.cast(normalized["chat_shell_enabled"]) if normalized.key?("chat_shell_enabled")
+      normalized["chat_eager_provisioning"] = ActiveModel::Type::Boolean.new.cast(normalized["chat_eager_provisioning"]) if normalized.key?("chat_eager_provisioning")
     end
   end
 
