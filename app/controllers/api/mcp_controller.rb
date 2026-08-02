@@ -12,17 +12,22 @@ module Api
       response.headers["Content-Type"] = "text/event-stream"
       response.headers["Cache-Control"] = "no-cache"
       response.headers["X-Accel-Buffering"] = "no"
+      subscriber = Mcp::SessionTransport.subscribe(session_id: @chat_session.id)
 
       write_sse_event("endpoint", { url: api_mcp_call_url })
 
-      # Keep connection alive until client disconnects
       loop do
-        write_sse_event("ping", { time: Time.current.iso8601 })
-        sleep 15
+        event = subscriber.pop(timeout: 15)
+        if event
+          write_sse_event(event.fetch(:event), event.fetch(:data))
+        else
+          write_sse_event("ping", { time: Time.current.iso8601 })
+        end
       end
     rescue IOError, ActionController::Live::ClientDisconnected
       # Client disconnected
     ensure
+      Mcp::SessionTransport.unsubscribe(session_id: @chat_session.id, subscriber:) if subscriber
       TenantContext.clear!
       response.stream.close
     end

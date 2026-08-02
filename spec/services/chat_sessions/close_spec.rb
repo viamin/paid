@@ -46,6 +46,17 @@ RSpec.describe ChatSessions::Close do
       expect(chat_session.reload.metadata["total_messages"]).to eq(3)
     end
 
+    it "does not append a stopped-capability notice during intentional teardown" do
+      ws_session = create(:chat_session, :workspace, account: account, created_by: user)
+      create(:chat_message, chat_session: ws_session)
+
+      described_class.call(chat_session: ws_session)
+
+      ws_session.reload
+      expect(ws_session.messages.container_capability_notices).to be_empty
+      expect(ws_session.metadata["total_messages"]).to eq(1)
+    end
+
     it "records closed_at timestamp" do
       create(:chat_message, chat_session: chat_session)
       freeze_time do

@@ -48,6 +48,7 @@ class ChatSession < ApplicationRecord
   before_validation :set_external_id, on: :create
   before_create :generate_proxy_token
   after_create_commit :broadcast_sidebar_prepend
+  after_update_commit :handle_container_capability_transition, if: :saved_change_to_container_capability?
   after_update_commit :broadcast_sidebar_refresh
   after_destroy_commit :broadcast_sidebar_remove
 
@@ -130,6 +131,21 @@ class ChatSession < ApplicationRecord
 
   def container_stopped?
     container_capability == "stopped"
+  end
+
+  def request_container_provision!
+    with_lock do
+      reload
+      return false unless container_capability.in?(%w[none stopped])
+
+      update!(
+        container_capability: "pending",
+        container_requested_at: Time.current,
+        container_ready_at: nil
+      )
+    end
+
+    true
   end
 
   def clone_manifest
@@ -293,5 +309,10 @@ class ChatSession < ApplicationRecord
       partial: "chat_sessions/sidebar_empty_state",
       locals: { archived_view: status == "archived" }
     )
+  end
+
+  def handle_container_capability_transition
+    from, to = saved_change_to_container_capability
+    ChatSessions::HandleCapabilityTransition.call(chat_session: self, from:, to:)
   end
 end

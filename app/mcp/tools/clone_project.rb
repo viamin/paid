@@ -23,7 +23,7 @@ module Tools
     end
 
     def self.available_for_chat?(user:, session:)
-      user.present? && container_ready?(session:)
+      user.present?
     end
 
     def self.input_schema

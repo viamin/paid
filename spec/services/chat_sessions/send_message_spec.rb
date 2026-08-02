@@ -397,7 +397,7 @@ RSpec.describe ChatSessions::SendMessage do
     it "does not discard messages a concurrent turn persisted during the failed attempt" do
       allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user, session: anything).and_return(tool_definitions)
       fallback_client = inspecting_llm_client(llm_response)
-      fallback_runner = configure_chat_fallback
+      configure_chat_fallback
       allow(ChatSessions::BuildLlmClient).to receive(:call).with(chat_session: chat_session).and_return(fallback_client)
 
       # SendMessage holds no lock on the session, so ChatChannel / the HTTP
@@ -601,6 +601,108 @@ RSpec.describe ChatSessions::SendMessage do
         expect(last_conversation.last[:content]).to include("maximum number of tool calls")
       end
     end
+
+    context "when the model emits a container-only tool call" do
+      before do
+        allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user, session: anything).and_return(container_tool_definitions)
+        allow(Tools::Registry).to receive(:requires_container?).and_call_original
+        allow(Tools::Registry).to receive(:requires_container?).with("container_tool").and_return(true)
+      end
+
+      it "dispatches immediately when the workspace is ready" do
+        chat_session.update!(container_capability: "ready", container_id: "container-123")
+        allow(Tools::Registry).to receive(:dispatch).and_return(container_tool_result)
+
+        described_class.call(chat_session: chat_session, content: "Use the workspace", llm_client: container_tool_llm_client)
+
+        expect(Tools::Registry).to have_received(:dispatch).with(
+          name: "container_tool",
+          arguments: { "query" => "test" },
+          user: user,
+          session: chat_session
+        )
+        expect(chat_session.messages.where(content: "Preparing workspace...")).to be_empty
+      end
+
+      it "lazily provisions an inline-only session before dispatching the tool" do
+        allow(Tools::Registry).to receive(:dispatch).and_return(container_tool_result)
+        allow(Containers::ProvisionForChat).to receive(:call) do
+          chat_session.update!(container_capability: "ready", container_id: "container-123")
+        end
+
+        described_class.call(chat_session: chat_session, content: "Use the workspace", llm_client: container_tool_llm_client)
+
+        expect(Containers::ProvisionForChat).to have_received(:call).with(chat_session: chat_session)
+        expect(chat_session.messages.where(content: "Preparing workspace...")).to exist
+        expect(chat_session.messages.where(role: "tool", content: container_tool_result.to_json)).to exist
+      end
+
+      it "re-provisions a stopped workspace before dispatching the tool" do
+        chat_session.update!(container_capability: "stopped", container_id: nil)
+        allow(Tools::Registry).to receive(:dispatch).and_return(container_tool_result)
+        allow(Containers::ProvisionForChat).to receive(:call) do
+          chat_session.update!(container_capability: "ready", container_id: "container-123")
+        end
+
+        described_class.call(chat_session: chat_session, content: "Use the workspace", llm_client: container_tool_llm_client)
+
+        expect(Containers::ProvisionForChat).to have_received(:call).with(chat_session: chat_session)
+        expect(chat_session.messages.where(content: "Preparing workspace...")).to exist
+        expect(chat_session.messages.where(role: "tool", content: container_tool_result.to_json)).to exist
+      end
+
+      it "streams a preparing notice, waits for readiness, and then dispatches" do
+        chat_session.update!(container_capability: "provisioning", container_id: nil)
+        allow(Tools::Registry).to receive(:dispatch).and_return(container_tool_result)
+        stub_const("ChatSessions::ToolDispatch::CONTAINER_WAIT_INTERVAL", 0)
+
+        reloads = 0
+        allow(chat_session).to receive(:reload).and_wrap_original do |original, *args|
+          reloads += 1
+          chat_session.update_columns(container_capability: "ready", container_id: "container-123") if reloads == 1
+          original.call(*args)
+        end
+
+        described_class.call(chat_session: chat_session, content: "Use the workspace", llm_client: container_tool_llm_client)
+
+        persisted_messages = chat_session.messages.order(:created_at).pluck(:role, :content)
+        expect(persisted_messages).to include([ "assistant", "Preparing workspace..." ])
+        expect(persisted_messages).to include([ "tool", container_tool_result.to_json ])
+      end
+
+      it "returns a structured error and records a degraded-capability notice when the workspace failed" do
+        chat_session.update!(container_capability: "failed")
+        allow(Tools::Registry).to receive(:dispatch)
+
+        described_class.call(chat_session: chat_session, content: "Use the workspace", llm_client: container_tool_llm_client)
+
+        expect(Tools::Registry).not_to have_received(:dispatch)
+        tool_result_message = chat_session.messages.where(role: "tool").last
+        expect(tool_result_message.tool_result).to include(
+          "status" => "error",
+          "error" => "container_unavailable",
+          "container_capability" => "failed"
+        )
+
+        system_notice = chat_session.messages.where(role: "system").find_by("metadata ->> 'container_capability_notice' = 'true'")
+        expect(system_notice.content).to include("Workspace tools are currently unavailable")
+      end
+
+      it "returns a structured timeout error when the workspace never becomes ready" do
+        chat_session.update!(container_capability: "pending", container_id: nil)
+        stub_const("ChatSessions::ToolDispatch::CONTAINER_WAIT_TIMEOUT", 0)
+
+        described_class.call(chat_session: chat_session, content: "Use the workspace", llm_client: container_tool_llm_client)
+
+        tool_result_message = chat_session.messages.where(role: "tool").last
+        expect(tool_result_message.tool_result).to include(
+          "status" => "error",
+          "error" => "container_unavailable",
+          "container_capability" => "pending",
+          "retryable" => true
+        )
+      end
+    end
   end
 
   def expect_follow_up_tool_round_trip(conversation)
@@ -705,11 +807,32 @@ RSpec.describe ChatSessions::SendMessage do
     { "status" => "ok", "results" => [ "match" ] }
   end
 
-  def tool_response(content:, tokens_input:, tokens_output:, arguments: { "query" => "test" })
+  def container_tool_definitions
+    [
+      {
+        name: "container_tool",
+        description: "Runs in the workspace container",
+        inputSchema: { type: "object", properties: { query: { type: "string" } } }
+      }
+    ]
+  end
+
+  def container_tool_result
+    { "status" => "ok", "source" => "container" }
+  end
+
+  def container_tool_llm_client
+    build_stateful_llm_client([
+      tool_response(content: "Let me use the workspace.", tokens_input: 40, tokens_output: 10, name: "container_tool"),
+      final_response(content: "The workspace tool finished.", tokens_input: 20, tokens_output: 8)
+    ])
+  end
+
+  def tool_response(content:, tokens_input:, tokens_output:, arguments: { "query" => "test" }, name: "search")
     {
       content: content,
       tool_calls: [
-        { id: "call_1", name: "search", arguments: arguments }
+        { id: "call_1", name: name, arguments: arguments }
       ],
       tokens_input: tokens_input,
       tokens_output: tokens_output,

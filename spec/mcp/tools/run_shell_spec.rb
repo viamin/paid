@@ -46,9 +46,9 @@ RSpec.describe Tools::RunShell do
       expect(described_class.available_for_chat?(user:, session:)).to be false
     end
 
-    it "returns false when container is not ready" do
+    it "remains advertised before the container is ready" do
       session.update!(container_id: nil)
-      expect(described_class.available_for_chat?(user:, session:)).to be false
+      expect(described_class.available_for_chat?(user:, session:)).to be true
     end
 
     it "returns false when user lacks run_agent? on the session project" do

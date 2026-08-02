@@ -14,6 +14,18 @@ class PaidMcpServer
     @user = user
   end
 
+  def self.tools_list_changed_notification(session:, from:, to:)
+    {
+      jsonrpc: "2.0",
+      method: "notifications/tools/list_changed",
+      params: {
+        sessionId: session.external_id,
+        containerCapability: to,
+        previousContainerCapability: from
+      }
+    }
+  end
+
   def handle_request(method:, params: {}, id: nil)
     check_rate_limit! if method == "tools/call"
 
@@ -62,7 +74,7 @@ class PaidMcpServer
     {
       protocolVersion: PROTOCOL_VERSION,
       serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
-      capabilities: { tools: { listChanged: false } }
+      capabilities: { tools: { listChanged: true } }
     }
   end
 
