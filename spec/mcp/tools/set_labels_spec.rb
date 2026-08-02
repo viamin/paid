@@ -19,7 +19,9 @@ RSpec.describe Tools::SetLabels do
       Struct.new(:name).new("documentation")
     ])
     allow(github_client).to receive(:add_labels_to_issue)
-    allow(github_client).to receive(:remove_label_from_issue)
+    allow(github_client).to receive(:remove_labels_from_issue) do |_repo, _issue_number, labels|
+      { removed: labels, failed: [] }
+    end
   end
 
   describe "#call" do
@@ -71,8 +73,8 @@ RSpec.describe Tools::SetLabels do
         expect(github_client).to have_received(:add_labels_to_issue).with(
           project.full_name, 42, %w[enhancement]
         )
-        expect(github_client).to have_received(:remove_label_from_issue).with(
-          project.full_name, 42, "documentation"
+        expect(github_client).to have_received(:remove_labels_from_issue).with(
+          project.full_name, 42, %w[documentation]
         )
         expect(Issues::UpsertFromGithub).to have_received(:call).with(
           project:, github_issue: have_attributes(number: 42, labels: satisfy { |labels|
@@ -99,7 +101,7 @@ RSpec.describe Tools::SetLabels do
                            labels: %w[bug enhancement])
 
         expect(github_client).not_to have_received(:add_labels_to_issue)
-        expect(github_client).not_to have_received(:remove_label_from_issue)
+        expect(github_client).not_to have_received(:remove_labels_from_issue)
         expect(result[:added]).to be_empty
         expect(result[:removed]).to be_empty
       end
@@ -116,9 +118,9 @@ RSpec.describe Tools::SetLabels do
         Struct.new(:name).new("documentation")
       ])
       allow(github_client).to receive(:issue).and_return(labeled_issue, refreshed_issue)
-      allow(github_client).to receive(:remove_label_from_issue)
-        .with(project.full_name, 42, "documentation")
-        .and_raise(GithubClient::Error, "still present")
+      allow(github_client).to receive(:remove_labels_from_issue)
+        .with(project.full_name, 42, %w[documentation])
+        .and_return({ removed: [], failed: [ { label: "documentation", error: "still present" } ] })
 
       result = tool.call(project_id: project.id, issue_number: 42, labels: %w[bug enhancement])
 
