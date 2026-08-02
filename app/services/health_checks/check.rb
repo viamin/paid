@@ -53,5 +53,14 @@ module HealthChecks
       path = Rails.application.routes.url_helpers.public_send(path_helper, subject)
       anchor ? "#{path}##{anchor}" : path
     end
+
+    # Like #settings_action_url but for collection/singleton routes (e.g. the
+    # runners index) whose helper does not take the subject as an argument.
+    def collection_action_url(path_helper, anchor: nil)
+      return nil unless subject.respond_to?(:persisted?) && subject.persisted?
+
+      path = Rails.application.routes.url_helpers.public_send(path_helper)
+      anchor ? "#{path}##{anchor}" : path
+    end
   end
 end

@@ -32,6 +32,19 @@ RSpec.describe HealthChecks::Coordinator do
       expect(result.findings).to include(have_attributes(title: "user issue"))
     end
 
+    it "runs the registered user-scope checks over the project's effective owner" do
+      owner = project.effective_owner
+      owner.runners.kept_only.for_agent_runs.update_all(enabled_for_agent_runs: false)
+
+      allow(HealthChecks::Registry).to receive(:for_scope).and_call_original
+      allow(HealthChecks::Registry).to receive(:for_scope).with(:project).and_return([])
+      allow(HealthChecks::Registry).to receive(:for_scope).with(:runner).and_return([])
+
+      result = described_class.call(scope: :project, subject: project, include_network: false)
+
+      expect(result.for_scope(:user).map(&:code)).to include(:no_agent_runners)
+    end
+
     it "returns a healthy Result when no findings exist" do
       allow(HealthChecks::Registry).to receive(:for_scope).and_return([])
       result = described_class.call(scope: :project, subject: project)

@@ -20,6 +20,14 @@ RSpec.describe HealthChecks::Registry do
         HealthChecks::Checks::Runner::DeprecatedModel
       )
     end
+
+    it "registers the user-scope local checks" do
+      expect(described_class.for_scope(:user)).to contain_exactly(
+        HealthChecks::Checks::User::NoAgentRunners,
+        HealthChecks::Checks::User::InvalidFallbackChain,
+        HealthChecks::Checks::User::MissingDefaultRunner
+      )
+    end
   end
 
   describe ".local_for_scope" do
@@ -35,6 +43,14 @@ RSpec.describe HealthChecks::Registry do
 
     it "skips network checks when listing local runner checks" do
       expect(described_class.local_for_scope(:runner)).to eq([])
+    end
+
+    it "lists the user-scope local checks (all local)" do
+      expect(described_class.local_for_scope(:user)).to contain_exactly(
+        HealthChecks::Checks::User::NoAgentRunners,
+        HealthChecks::Checks::User::InvalidFallbackChain,
+        HealthChecks::Checks::User::MissingDefaultRunner
+      )
     end
   end
 end

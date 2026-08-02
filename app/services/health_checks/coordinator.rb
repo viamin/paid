@@ -27,8 +27,15 @@ module HealthChecks
       return run_scope(@scope, @subject) unless @scope == :project
 
       run_scope(:project, @subject) +
-        run_scope(:user, @subject.effective_owner) +
+        run_user_checks +
         run_runner_checks
+    end
+
+    def run_user_checks
+      owner = @subject.effective_owner
+      return [] unless owner
+
+      run_scope(:user, owner)
     end
 
     def run_runner_checks
