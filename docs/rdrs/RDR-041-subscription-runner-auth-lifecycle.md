@@ -4,7 +4,7 @@
 
 ## Metadata
 
-- **Status**: Implemented
+- **Status**: Partially Implemented
 - **Date**: 2026-06-26
 - **Revised**: 2026-08-02
 - **Priority**: P1
@@ -13,21 +13,23 @@
 
 ## Implementation Status
 
-RDR-041 is implemented. All six work items that were listed as "Still open"
-in the Partially Implemented revision of 2026-07-16 are now shipped:
+RDR-041 remains partially implemented as of 2026-08-02. The audit completed in
+[#2966](https://github.com/viamin/paid/issues/2966) found that four of the six
+work items that were listed as "Still open" in the 2026-07-16 revision are now
+fully shipped, while two still have material scope open:
 
 | Criterion | Status | Evidence |
 |-----------|--------|----------|
 | Feature-flagged rollout (`managed_subscription_runner_auth` in `FeatureFlags::DEFINITIONS`) | Implemented | `app/services/feature_flags.rb`; tenant-scoped via `FeatureFlags.enabled?` |
 | Production-style auth-attempt telemetry (`runner_auth_attempts`) | Implemented | `db/migrate/20260720200906_create_runner_auth_attempts.rb`; analytics queries in `app/services/analytics/runner_auth_attempts/` |
 | Canonical materialization contract (provider-neutral adapter/materializer registry) | Implemented | `app/services/runners/subscription_auth_materializers.rb`; `app/services/runners/subscription_auth_providers.rb` |
-| Codex managed subscription auth (device-code login, `auth.json` materialization, refresh/harvest, lease-through-run) | Implemented | `app/services/runners/subscription_auth_providers.rb` (`Codex < Base`); `app/services/codex_credentials/secret.rb`; `app/services/codex_login_sessions/device_flow.rb`; `spec/services/containers/provision_codex_managed_auth_2962_spec.rb` |
-| Gemini and Copilot remote-safe native config materializers | Implemented (#2964) | `spec/services/containers/provision_managed_subscription_auth_2964_spec.rb`; provisioning path in `Containers::Provision` |
+| Codex managed subscription auth (device-code login, `auth.json` materialization, refresh/harvest, lease-through-run) | Partially Implemented (#2962) | Device-code login, canonical secret storage, lease-through-run refresh/harvest, and managed `auth.json` materialization ship in `app/services/runners/subscription_auth_providers.rb`, `app/services/codex_credentials/secret.rb`, `app/services/codex_login_sessions/device_flow.rb`, and `spec/services/containers/provision_codex_managed_auth_2962_spec.rb`; remote placement stays gated by `remote_safe: false` in `app/services/runners/subscription_auth_materializers.rb` pending additional proof |
+| Gemini and Copilot remote-safe native config materializers | Partially Implemented (#2964) | Remote-safe native config materializers ship in `spec/services/containers/provision_managed_subscription_auth_2964_spec.rb` and the provisioning path in `Containers::Provision`; provider-owned login flows and lease-through-run refresh/harvest remain deferred |
 | RDR-048 scheduler/readiness integration | Implemented | `app/services/runners/subscription_auth_eligibility.rb`; `app/services/runners/subscription_auth_host_paths.rb`; `app/services/containers/host_readiness.rb` |
 
-### Intentional Deferrals
+### Remaining Open Scope
 
-These are design-level decisions, not gaps:
+These items keep the RDR in `Partially Implemented` status:
 
 - **Codex remote placement** is gated at `remote_safe: false` in the
   materializer registry until refresh/writeback is proven by tests and
@@ -65,7 +67,9 @@ The original Claude-focused issue chain ([#2690](https://github.com/viamin/paid/
 | [#2965](https://github.com/viamin/paid/issues/2965) | P1 | Cut over managed subscription auth after telemetry proves reliability | Depends on [#2960](https://github.com/viamin/paid/issues/2960), [#2963](https://github.com/viamin/paid/issues/2963), [#2964](https://github.com/viamin/paid/issues/2964) |
 | [#2966](https://github.com/viamin/paid/issues/2966) | P1 | Final implementation audit, gap filing, and RDR status update | Depends on [#2965](https://github.com/viamin/paid/issues/2965) |
 
-The final issue ([#2966](https://github.com/viamin/paid/issues/2966)) should update this RDR to `Implemented` only after auditing that the shipped implementation matches the plan. If any acceptance criteria are missing or intentionally deferred, #2966 should create specific follow-up issues and reference them from this RDR instead of marking the RDR implemented prematurely.
+The final issue ([#2966](https://github.com/viamin/paid/issues/2966)) should
+only update this RDR to `Implemented` after the remaining open scope above is
+either shipped or moved to explicit follow-up issues referenced from this RDR.
 
 ## Problem Statement
 
