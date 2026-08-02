@@ -32,6 +32,9 @@ RSpec.describe Tools::Registry do
       operator_reactivate_account
       operator_deactivate_account
       operator_recompress_style_guides
+      create_issue
+      edit_issue
+      set_labels
     ]
   end
 
