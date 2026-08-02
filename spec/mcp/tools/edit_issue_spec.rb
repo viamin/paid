@@ -16,17 +16,39 @@ RSpec.describe Tools::EditIssue do
     )
   end
 
-  before do
-    allow(GithubClient).to receive(:new).and_return(github_client)
-    allow(Issues::UpsertFromGithub).to receive(:call).and_return(local_issue)
-    allow(Issues::ParseDependencies).to receive(:call)
-    allow(github_client).to receive_messages(update_issue: updated_issue, labels: [
-      Struct.new(:name).new("bug"),
-      Struct.new(:name).new("enhancement")
-    ])
+
+  describe ".available_to?" do
+    it "is available to a member with a project" do
+      project # ensure a project exists in the account
+      expect(described_class).to be_available_to(user:)
+    end
+
+    it "is not available to a viewer" do
+      project
+      viewer = create(:user, :viewer, account:)
+      expect(described_class).not_to be_available_to(user: viewer)
+    end
+
+    it "is not available when the account has no projects" do
+      expect(described_class).not_to be_available_to(user:)
+    end
+
+    it "is not available when user is nil" do
+      expect(described_class).not_to be_available_to(user: nil)
+    end
   end
 
   describe "#call" do
+    before do
+      allow(GithubClient).to receive(:new).and_return(github_client)
+      allow(Issues::UpsertFromGithub).to receive(:call).and_return(local_issue)
+      allow(Issues::ParseDependencies).to receive(:call)
+      allow(github_client).to receive_messages(update_issue: updated_issue, labels: [
+        Struct.new(:name).new("bug"),
+        Struct.new(:name).new("enhancement")
+      ])
+    end
+
     it "updates the issue title" do
       result = tool.call(project_id: project.id, issue_number: 42, title: "Updated title")
 

@@ -24,6 +24,27 @@ RSpec.describe Tools::SetLabels do
     end
   end
 
+  describe ".available_to?" do
+    it "is available to a member with a project" do
+      project # ensure a project exists in the account
+      expect(described_class).to be_available_to(user:)
+    end
+
+    it "is not available to a viewer" do
+      project
+      viewer = create(:user, :viewer, account:)
+      expect(described_class).not_to be_available_to(user: viewer)
+    end
+
+    it "is not available when the account has no projects" do
+      expect(described_class).not_to be_available_to(user:)
+    end
+
+    it "is not available when user is nil" do
+      expect(described_class).not_to be_available_to(user: nil)
+    end
+  end
+
   describe "#call" do
     context "when setting labels on an issue with no existing labels" do
       before do

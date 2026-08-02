@@ -8,6 +8,16 @@ module Tools
 
     def self.tool_name = "edit_issue"
     def self.write_operation? = true
+    def self.available_to?(user:)
+      return false if user.blank?
+
+      Pundit.policy_scope!(user, Project).any? do |project|
+        policy_allows?(user:, record: project, query: :manage_issues?, policy_class: ProjectPolicy)
+      end
+    rescue Pundit::NotAuthorizedError
+      false
+    end
+
 
     def self.description
       "Update an existing GitHub issue. Pass only the fields you want to change. " \
