@@ -36,8 +36,13 @@ RSpec.describe Tools::SetLabels do
       expect(described_class).not_to be_available_to(user: viewer)
     end
 
-    it "is not available when the account has no projects" do
-      expect(described_class).not_to be_available_to(user:)
+    it "is available to an account member even when the account has no projects" do
+      expect(described_class).to be_available_to(user:)
+    end
+
+    it "is not available when the account has no projects (viewer)" do
+      viewer = create(:user, :viewer, account:)
+      expect(described_class).not_to be_available_to(user: viewer)
     end
 
     it "is not available when user is nil" do

@@ -2,6 +2,28 @@
 
 module Tools
   module GithubIssueToolSupport
+    def self.included(base)
+      base.extend(ClassMethods)
+    end
+
+    module ClassMethods
+      # Short-circuit for account-level roles (owner, admin, member) before
+      # scanning the policy scope, avoiding a full project scan on every chat
+      # tool advertisement call. Mirrors BaseTool.run_agent_available_to?.
+      def available_to?(user:)
+        return false if user.blank?
+
+        record = Project.new(account: user.account)
+        return true if policy_allows?(user:, record:, query: :manage_issues?, policy_class: ProjectPolicy)
+
+        Pundit.policy_scope!(user, Project).any? do |project|
+          policy_allows?(user:, record: project, query: :manage_issues?, policy_class: ProjectPolicy)
+        end
+      rescue Pundit::NotAuthorizedError
+        false
+      end
+    end
+
     private
 
     def project_for(project_id)

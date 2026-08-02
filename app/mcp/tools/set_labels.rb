@@ -8,16 +8,6 @@ module Tools
 
     def self.tool_name = "set_labels"
     def self.write_operation? = true
-    def self.available_to?(user:)
-      return false if user.blank?
-
-      Pundit.policy_scope!(user, Project).any? do |project|
-        policy_allows?(user:, record: project, query: :manage_issues?, policy_class: ProjectPolicy)
-      end
-    rescue Pundit::NotAuthorizedError
-      false
-    end
-
 
     def self.description
       "Replace all labels on a GitHub issue or pull request. Computes the add/remove " \
