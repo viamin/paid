@@ -57,7 +57,7 @@ module Tools
     def build_query(repo_full_name, query, state:, labels:)
       parts = [ "repo:#{repo_full_name}", "is:issue" ]
       parts << "state:#{state}" if state.present? && state != "all"
-      Array(labels).each { |label| parts << %(label:"#{label}") }
+      Array(labels).each { |label| parts << %(label:"#{sanitize_label(label)}") }
       sanitized_query = sanitize_query(query)
       parts << sanitized_query if sanitized_query.present?
       parts.join(" ")
@@ -65,6 +65,10 @@ module Tools
 
     def sanitize_query(query)
       query.to_s.gsub(SCOPE_QUALIFIER_PATTERN, "").squish
+    end
+
+    def sanitize_label(label)
+      label.to_s.delete('"').gsub(SCOPE_QUALIFIER_PATTERN, "").squish
     end
 
     def serialize(item)

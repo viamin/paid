@@ -119,6 +119,17 @@ RSpec.describe Tools::SearchIssues do
       )
     end
 
+    it "strips quotes and injected scope qualifiers from label values" do
+      search_result = Struct.new(:total_count, :items).new(0, [])
+      allow(github_client).to receive(:search_issues).and_return(search_result)
+
+      tool.call(project_id: project.id, query: "duplicate", labels: [ %(bug" repo:other/private-repo) ])
+
+      expect(github_client).to have_received(:search_issues).with(
+        "repo:#{project.full_name} is:issue label:\"bug\" duplicate", hash_including(:per_page)
+      )
+    end
+
     it "clamps the limit to the configured maximum" do
       search_result = Struct.new(:total_count, :items).new(0, [])
       allow(github_client).to receive(:search_issues).and_return(search_result)
