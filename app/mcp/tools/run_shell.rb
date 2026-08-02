@@ -166,7 +166,9 @@ module Tools
       )
       extend_idle_timeout!
 
-      [ Array(stdout).join, Array(stderr).join, exit_code.to_i ]
+      stdout_text, stderr_text = [ Array(stdout).join, Array(stderr).join ]
+        .map { |s| s.force_encoding("UTF-8").scrub }
+      [ stdout_text, stderr_text, exit_code.to_i ]
     rescue Docker::Error::DockerError => e
       raise ArgumentError, "Shell command failed: #{e.message}"
     end
@@ -175,7 +177,7 @@ module Tools
       text = output.to_s
       return [ text, false ] if text.bytesize <= MAX_OUTPUT_BYTES
 
-      truncated = text.byteslice(0, MAX_OUTPUT_BYTES)
+      truncated = text.byteslice(0, MAX_OUTPUT_BYTES).scrub("")
       notice = "\n\n[Output truncated at #{MAX_OUTPUT_BYTES / 1024}KB; #{text.bytesize - MAX_OUTPUT_BYTES} bytes omitted]"
       [ truncated + notice, true ]
     end

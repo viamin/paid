@@ -285,5 +285,34 @@ RSpec.describe Tools::RunShell do
       expect(result).not_to have_key(:stdout_truncated)
       expect(result).not_to have_key(:stderr_truncated)
     end
+
+    it "truncates on a valid UTF-8 boundary so the result serializes to JSON" do
+      # 3-byte UTF-8 character (e.g. U+2603 SNOWMAN) repeated so the byte cutoff
+      # at MAX_OUTPUT_BYTES is very likely to land mid-character.
+      result = tool.call(
+        command: "printf '\\xe2\\x98\\x83%.0s' $(seq 1 40000)",
+        working_dir: repo.fetch(:repo_path),
+        confirmed: true
+      )
+
+      expect(result[:stdout_truncated]).to be true
+      expect(result[:stdout].encoding).to eq(Encoding::UTF_8)
+      expect(result[:stdout]).to be_valid_encoding
+      expect { result.to_json }.not_to raise_error
+    end
+  end
+
+  describe "output encoding" do
+    it "normalizes non-UTF-8 command output so the result serializes to JSON" do
+      result = tool.call(
+        command: "printf '\\xff\\xfehello'",
+        working_dir: repo.fetch(:repo_path),
+        confirmed: true
+      )
+
+      expect(result[:stdout].encoding).to eq(Encoding::UTF_8)
+      expect(result[:stdout]).to be_valid_encoding
+      expect { result.to_json }.not_to raise_error
+    end
   end
 end
