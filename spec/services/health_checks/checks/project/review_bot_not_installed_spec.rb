@@ -34,10 +34,10 @@ RSpec.describe HealthChecks::Checks::Project::ReviewBotNotInstalled do
 
     expect(described_class.call(project)).to contain_exactly(
       have_attributes(
-        check: described_class.name,
+        code: :review_bot_not_installed,
         scope: :project,
         severity: :warning,
-        message: "Paid Agent review is enabled but the paid-code-reviewer GitHub App is not installed on this repository."
+        title: "Paid Agent review is enabled but the paid-code-reviewer GitHub App is not installed on this repository."
       )
     )
   end
