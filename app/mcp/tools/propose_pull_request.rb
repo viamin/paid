@@ -47,7 +47,18 @@ module Tools
     # entry, which `Tools::CloneProject` (main, not yet merged into this
     # branch) is responsible for adding.
     def self.available_for_chat?(user:, session:)
-      user.present? && container_ready?(session:) && session.clone_manifest_entries.present?
+      return false unless user.present?
+      return false unless container_ready?(session:)
+      return false unless session.clone_manifest_entries.present?
+
+      any_manifest_project_mutable?(user:, session:)
+    end
+
+    def self.any_manifest_project_mutable?(user:, session:)
+      session.clone_manifest_entries.any? do |entry|
+        project = Project.find_by(id: entry[:project_id])
+        project && policy_allows?(user:, record: project, query: :run_agent?, policy_class: ProjectPolicy)
+      end
     end
 
     def self.input_schema
@@ -80,7 +91,8 @@ module Tools
 
       context = repo_context_for!(repo_path, require_non_stale: true, policy_query: :run_agent?)
       validate_branch_name!(context.fetch(:repo_path), branch_name)
-      ensure_text_payload!(title, field_name: "title", max_bytes: 10 * 1024)
+      normalized_title = normalize_title!(title)
+      ensure_text_payload!(normalized_title, field_name: "title", max_bytes: 10 * 1024)
       ensure_text_payload!(body, field_name: "body")
 
       dependency_refs = normalize_dependency_refs(depends_on)
@@ -105,7 +117,7 @@ module Tools
         context.fetch(:project).full_name,
         base: context.fetch(:project).default_branch.presence || "main",
         head: branch_name,
-        title: title.to_s,
+        title: normalized_title,
         body: final_body
       )
 
@@ -121,7 +133,7 @@ module Tools
         project_id: context.fetch(:project).id,
         repo_path: context.fetch(:repo_path),
         branch_name: branch_name,
-        title: title.to_s,
+        title: normalized_title,
         body: final_body,
         pull_request_number: pull_request.number,
         pull_request_url: pull_request.html_url,
@@ -143,6 +155,13 @@ module Tools
 
       _, _, exit_code = git_exec!("git -C #{Shellwords.escape(repo_path)} show-ref --verify --quiet refs/heads/#{Shellwords.escape(branch_name)}")
       raise ArgumentError, "Branch not found: #{branch_name}" unless exit_code.zero?
+    end
+
+    def normalize_title!(title)
+      normalized_title = title.to_s.strip
+      raise ArgumentError, "title must be provided" if normalized_title.blank?
+
+      normalized_title
     end
 
     def normalize_dependency_refs(depends_on)

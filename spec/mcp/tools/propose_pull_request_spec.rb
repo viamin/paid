@@ -50,6 +50,14 @@ RSpec.describe Tools::ProposePullRequest do
     it "returns true when the container is ready and the session has cloned repos" do
       expect(described_class.available_for_chat?(user:, session:)).to be(true)
     end
+
+    # @spec CHAT-PR-PROPOSAL-001
+    it "returns false when no cloned repo is mutable for the current user" do
+      viewer = create(:user, :viewer, account:)
+      viewer_session = create(:chat_session, :workspace, account:, created_by: viewer, clone_manifest: [ repo_manifest_entry(project:, repo:) ])
+
+      expect(described_class.available_for_chat?(user: viewer, session: viewer_session)).to be(false)
+    end
   end
 
   describe "#perform" do
@@ -117,6 +125,21 @@ RSpec.describe Tools::ProposePullRequest do
           confirmed: true
         )
       }.to raise_error(ArgumentError, /Branch not found/)
+    end
+
+    # @spec CHAT-PR-PROPOSAL-001
+    it "rejects blank titles before pushing the branch" do
+      expect(tool).not_to receive(:push_branch!)
+
+      expect {
+        tool.call(
+          repo_path: repo.fetch(:repo_path),
+          branch_name: "feature/pr-proposal",
+          title: "   ",
+          body: "No title",
+          confirmed: true
+        )
+      }.to raise_error(ArgumentError, /title must be provided/)
     end
 
     # @spec CHAT-PR-PROPOSAL-001
