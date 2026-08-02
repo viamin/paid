@@ -22,6 +22,19 @@ RSpec.describe Tools::CloneProject do
     )
   end
 
+  def stub_repo_read_client(credential:, identity:)
+    allow(Tools::RepoReadClientResolver).to receive(:new).and_return(
+      instance_double(
+        Tools::RepoReadClientResolver,
+        resolve: Tools::RepoReadClientResolver::ResolvedClient.new(
+          client: instance_double(GithubClient),
+          identity:,
+          credential:
+        )
+      )
+    )
+  end
+
   describe "#perform" do
     it "clones a project successfully" do
       result = tool.call(project_id: project.id, confirmed: true)
@@ -72,7 +85,7 @@ RSpec.describe Tools::CloneProject do
 
     it "redacts the clone token from a failed clone's error output" do
       secret = "ghp_supersecrettoken123"
-      allow(project).to receive(:github_credential).and_return(secret)
+      stub_repo_read_client(credential: secret, identity: "project-token:#{project.github_token.name}")
 
       leak = "fatal: repository 'https://x-access-token:#{secret}@github.com/#{project.full_name}.git/' not found"
       allow(Containers.backend).to receive(:exec_in_container).and_return([ [], [ leak ], 128 ])
@@ -191,9 +204,9 @@ RSpec.describe Tools::CloneProject do
       project = create(:project, :with_github_installation, account:)
       tool = described_class.new(user:, session:)
 
-      allow(project).to receive_messages(
-        github_credential: "ghs_app_token",
-        client: instance_double(GithubClient)
+      stub_repo_read_client(
+        credential: "ghs_app_token",
+        identity: "github-app:#{project.github_installation.github_installation_id}"
       )
 
       result = tool.call(project_id: project.id, confirmed: true)

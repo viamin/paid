@@ -4,7 +4,7 @@ require "shellwords"
 
 module Tools
   class CloneProject < BaseTool
-    authorize :show?, ->(args) { policy_scope(Project).find(args.fetch(:project_id)) }
+    authorize :show?, ->(args) { project_for(args.fetch(:project_id)) }
 
     CLONE_TIMEOUT = 120
 
@@ -42,8 +42,7 @@ module Tools
 
       ensure_container_ready!
 
-      project = policy_scope(Project).find(project_id)
-      authorize(project, :show?, policy_class: ProjectPolicy)
+      project = project_for(project_id)
 
       existing = session.clone_manifest.find { |entry| entry.project_id == project.id }
       if existing
@@ -103,11 +102,15 @@ module Tools
     end
 
     def resolve_clone_token(project)
-      resolver = RepoReadClientResolver.new(project:, user:, session:)
-      resolved = resolver.resolve
+      resolved =
+        begin
+          RepoReadClientResolver.new(project:, user:, session:).resolve
+        rescue ArgumentError
+          nil
+        end
 
-      token = resolved.credential
-      identity = resolved.identity
+      token = resolved&.credential
+      identity = resolved&.identity
 
       raise ArgumentError, "Project #{project.full_name} has no active GitHub token; cannot clone" if token.blank?
 
@@ -159,6 +162,11 @@ module Tools
 
     def project_slug(project)
       project.full_name.tr("/", "-")
+    end
+
+    def project_for(project_id)
+      @projects_by_id ||= {}
+      @projects_by_id[project_id] ||= policy_scope(Project).find(project_id)
     end
   end
 end
