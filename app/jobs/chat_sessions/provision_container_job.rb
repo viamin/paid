@@ -11,6 +11,11 @@ module ChatSessions
   # container warms up. When provisioning succeeds the session transitions to
   # "ready" and the capability change is broadcast to the chat stream so the UI
   # and the agent's tool surface update without losing conversation history.
+  #
+  # @spec CHAT-CONTAINER-PROVISIONING-002
+  # @spec CHAT-CONTAINER-PROVISIONING-003
+  # @spec CHAT-CONTAINER-PROVISIONING-004
+  # @spec CHAT-CONTAINER-PROVISIONING-006
   class ProvisionContainerJob < ApplicationJob
     include GoodJob::ActiveJobExtensions::Concurrency
 
@@ -23,10 +28,14 @@ module ChatSessions
     good_job_control_concurrency_with(
       total_limit: 1,
       enqueue_limit: 1,
-      key: -> { "chat_sessions_provision_#{arguments.first[:chat_session_id]}" }
+      key: -> { self.class.concurrency_key_for(arguments.first[:chat_session_id]) }
     )
 
     discard_on ActiveRecord::RecordNotFound
+
+    def self.concurrency_key_for(chat_session_id)
+      "chat_sessions_provision_#{chat_session_id}"
+    end
 
     def perform(chat_session_id:)
       chat_session = ChatSession.find(chat_session_id)

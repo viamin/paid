@@ -89,7 +89,10 @@ module ChatSessions
     # Provisioning runs in the background (RDR-037) so the first inline message
     # is never blocked. Only sessions that requested a container ("pending")
     # are provisioned, and only when eager provisioning is enabled for the
-    # account — accounts that defer it rely on the lazy path instead.
+    # account; accounts that defer it rely on the lazy path instead.
+    #
+    # @spec CHAT-CONTAINER-PROVISIONING-001
+    # @spec CHAT-CONTAINER-PROVISIONING-005
     def enqueue_background_provisioning(session)
       return unless session.container_pending?
       return unless eager_provisioning_enabled?

@@ -2,6 +2,10 @@
 
 require "rails_helper"
 
+# @spec CHAT-CONTAINER-PROVISIONING-002
+# @spec CHAT-CONTAINER-PROVISIONING-003
+# @spec CHAT-CONTAINER-PROVISIONING-004
+# @spec CHAT-CONTAINER-PROVISIONING-006
 RSpec.describe ChatSessions::ProvisionContainerJob, type: :job do
   let(:account) { create(:account) }
   let(:user) { create(:user, :owner, account: account) }
@@ -101,6 +105,18 @@ RSpec.describe ChatSessions::ProvisionContainerJob, type: :job do
           described_class.perform_now(chat_session_id: 999_999_999)
         }.not_to raise_error
       end
+    end
+  end
+
+  describe ".good_job_concurrency_config" do
+    it "limits provisioning to one job per chat session" do
+      chat_session = create(:chat_session, account: account, created_by: user, container_capability: "pending")
+
+      config = described_class.good_job_concurrency_config
+      expect(config[:total_limit]).to eq(1)
+      expect(config[:enqueue_limit]).to eq(1)
+      expect(described_class.new(chat_session_id: chat_session.id).good_job_concurrency_key)
+        .to eq(described_class.concurrency_key_for(chat_session.id))
     end
   end
 end

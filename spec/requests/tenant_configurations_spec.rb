@@ -124,6 +124,7 @@ RSpec.describe "TenantConfigurations" do
       expect(account.tenant_setting.reload.chat_shell_enabled).to be(false)
     end
 
+    # @spec CHAT-CONTAINER-PROVISIONING-005
     it "updates the tenant chat_eager_provisioning opt-in via the admin form" do
       account.tenant_setting!.update!(chat_settings: { "chat_eager_provisioning" => false })
 
