@@ -297,6 +297,48 @@ RSpec.describe Tools::ProposePullRequest do
       end
     end
 
+    context "when another cloned repo is not mutable for the caller" do
+      let(:member) { create(:user, :viewer, account:) }
+      let(:project_two) { create(:project, account:) }
+      let!(:repo_two) do
+        clone_repo_into_workspace(
+          workspace_root:,
+          repo_name: "repo-two",
+          files: { "README.md" => "# Repo Two\n" }
+        )
+      end
+      let(:session) do
+        create(:chat_session, :workspace, account:, created_by: member, project:, clone_manifest: [
+          repo_manifest_entry(project:, repo:),
+          repo_manifest_entry(project: project_two, repo: repo_two)
+        ])
+      end
+
+      before do
+        create(:project_membership, :member, user: member, project:)
+        run_cmd!("git", "-C", repo_two.fetch(:host_path), "switch", "-c", "feature/other")
+        File.write(File.join(repo.fetch(:host_path), "README.md"), "# Dirty one\n")
+        File.write(File.join(repo_two.fetch(:host_path), "README.md"), "# Dirty two\n")
+      end
+
+      # @spec CHAT-PR-PROPOSAL-003, CHAT-PR-PROPOSAL-005
+      it "filters unauthorized dirty repos from warnings and results" do
+        result = described_class.new(user: member, session:).call(
+          repo_path: repo.fetch(:repo_path),
+          branch_name: "feature/pr-proposal",
+          title: "Authorized repo only",
+          body: "Ships committed state only.",
+          confirm_commit_first: true,
+          confirmed: true
+        )
+
+        expect(result[:warnings]).to be_nil
+        expect(result[:dirty_repos]).to contain_exactly(
+          hash_including("project_id" => project.id, "path" => repo.fetch(:repo_path))
+        )
+      end
+    end
+
     context "with coordinated cross-repo PRs" do
       let(:project_two) { create(:project, account:, owner: "viamin", repo: "agent-harness") }
       let!(:repo_two) do

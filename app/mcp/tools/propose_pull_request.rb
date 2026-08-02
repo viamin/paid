@@ -174,6 +174,8 @@ module Tools
 
     def dirty_repo_entries
       session.clone_manifest_entries.filter_map do |entry|
+        next unless mutable_manifest_entry?(entry)
+
         manifest_path = entry[:path].to_s
         status = git_porcelain_status(manifest_path)
         next if status.blank?
@@ -185,6 +187,13 @@ module Tools
       rescue ArgumentError
         nil
       end
+    end
+
+    def mutable_manifest_entry?(entry)
+      project = project_for_manifest_entry(entry.fetch(:project_id))
+      self.class.policy_allows?(user:, record: project, query: :run_agent?, policy_class: ProjectPolicy)
+    rescue ActiveRecord::RecordNotFound
+      false
     end
 
     def workspace_warnings(dirty_repos)
