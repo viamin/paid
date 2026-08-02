@@ -14,11 +14,11 @@ module Runners
   # runner eligible for remote placement; providers without a remote-safe
   # materializer stay local-only until their adapter ships.
   #
-  # Today only Claude has a remote-safe managed materializer (env-var injection
-  # of `CLAUDE_CODE_OAUTH_TOKEN`, or writing the native `.credentials.json`
-  # directly into the container). Gemini and Copilot have remote-safe native
-  # config materializers (#2964) that regenerate only the minimal CLI config
-  # the provider needs from a managed `RunnerCredential`. Codex has a managed
+  # Claude, Gemini, and Copilot each have a remote-safe managed materializer
+  # (Claude via env-var injection of `CLAUDE_CODE_OAUTH_TOKEN` or writing the
+  # native `.credentials.json`; Gemini and Copilot via native config
+  # materializers (#2964) that regenerate only the minimal CLI config the
+  # provider needs from a managed `RunnerCredential`). Codex has a managed
   # native-file materializer (#2962) that regenerates `auth.json` from a
   # managed `RunnerCredential`, but remote placement stays disabled here
   # (`remote_safe: false`) until refresh/writeback is proven by tests and

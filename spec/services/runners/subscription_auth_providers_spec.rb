@@ -21,13 +21,27 @@ RSpec.describe Runners::SubscriptionAuthProviders, :no_db do
       expect(codex_provider.materialization_mode).to eq("native_file")
     end
 
-    it "returns an explicit unsupported adapter for providers not yet extracted" do
+    it "returns a Gemini provider adapter that is remote-safe (#2964)" do
       gemini_provider = described_class.for_runner("gemini")
-      status = gemini_provider.status(secret: "anything")
-      materialization = gemini_provider.materialize(secret: "anything")
 
-      expect(status).to be_unsupported
-      expect(materialization.supported?).to be(false)
+      expect(gemini_provider).not_to be_nil
+      expect(gemini_provider.remote_safe?).to be(true)
+      expect(gemini_provider.rotation_risk).to eq("container_may_rotate")
+      expect(gemini_provider.materialization_mode).to eq("native_file")
+    end
+
+    it "returns a Copilot provider adapter that is remote-safe (#2964)" do
+      copilot_provider = described_class.for_runner("copilot")
+
+      expect(copilot_provider).not_to be_nil
+      expect(copilot_provider.remote_safe?).to be(true)
+      expect(copilot_provider.rotation_risk).to eq("container_may_rotate")
+      expect(copilot_provider.materialization_mode).to eq("native_file")
+    end
+
+    it "returns an explicit unsupported adapter for unknown providers" do
+      unknown_provider = described_class.for_runner("unknown-provider")
+      expect(unknown_provider).to be_nil
     end
   end
 
@@ -113,8 +127,8 @@ RSpec.describe Runners::SubscriptionAuthProviders, :no_db do
       expect(claude_provider.status(secret: "")).not_to be_present
       expect(claude_provider.status(secret: "   ")).not_to be_present
 
-      unsupported = described_class.for_runner("gemini").status(secret: "anything")
-      expect(unsupported).not_to be_present
+      blank = described_class.for_runner("gemini").status(secret: "")
+      expect(blank).not_to be_present
     end
 
     it "classifies malformed native credentials as malformed" do
@@ -268,6 +282,168 @@ RSpec.describe Runners::SubscriptionAuthProviders, :no_db do
       allow(provisioner).to receive(:harvest_codex_managed_credential!).and_return(harvest_result)
 
       expect(codex_provider.harvest(provisioner: provisioner)).to eq(harvest_result)
+    end
+  end
+
+  describe "Gemini contract" do
+    let(:gemini_provider) { described_class.for_runner("gemini") }
+    let(:valid_creds) { file_fixture("gemini_oauth_creds.json").read }
+    let(:unrefreshable_creds) do
+      JSON.generate("access_token" => "ya29.access-only", "token_type" => "Bearer", "expiry_date" => 4102444800000)
+    end
+    let(:expired_creds) do
+      JSON.generate("access_token" => "ya29.expired", "refresh_token" => "1//refresh",
+        "token_type" => "Bearer", "expiry_date" => 1)
+    end
+
+    it "classifies valid oauth credentials as valid and refreshable" do
+      status = gemini_provider.status(secret: valid_creds)
+      materialization = gemini_provider.materialize(secret: valid_creds)
+
+      expect(status).to be_valid
+      expect(status.refreshable?).to be(true)
+      expect(status.expires_at).to eq(Time.at(4_102_444_800, in: "UTC"))
+      expect(status.materialization_mode).to eq("native_file")
+      expect(status.remote_safe?).to be(true)
+      expect(materialization.supported?).to be(true)
+      expect(materialization.mode).to eq("native_file")
+      expect(materialization.files.keys).to contain_exactly("/home/agent/.gemini/oauth_creds.json")
+      expect(materialization.files.fetch("/home/agent/.gemini/oauth_creds.json")).to include("managed-gemini-access-token")
+    end
+
+    it "drops host-only fields from the materialized config" do
+      materialization = gemini_provider.materialize(secret: valid_creds)
+
+      expect(materialization.files.fetch("/home/agent/.gemini/oauth_creds.json"))
+        .not_to include("should-not-leak-into-container")
+    end
+
+    it "classifies expired oauth credentials as expired but materializable when refreshable" do
+      status = gemini_provider.status(secret: expired_creds)
+      materialization = gemini_provider.materialize(secret: expired_creds)
+
+      expect(status).to be_expired
+      expect(status.refreshable?).to be(true)
+      expect(status.materializable?).to be(true)
+      expect(materialization.supported?).to be(true)
+    end
+
+    it "classifies oauth credentials without a refresh token as unrefreshable but still valid" do
+      status = gemini_provider.status(secret: unrefreshable_creds)
+
+      expect(status).to be_valid
+      expect(status.refreshable?).to be(false)
+      expect(status.materializable?).to be(true)
+    end
+
+    it "treats non-blank valid Gemini credentials as present for eligibility" do
+      expect(gemini_provider.status(secret: valid_creds)).to be_present
+      expect(gemini_provider.status(secret: expired_creds)).to be_present
+    end
+
+    it "does not treat blank or non-oauth payloads as present" do
+      expect(gemini_provider.status(secret: "")).not_to be_present
+      expect(gemini_provider.status(secret: "{\"unexpected\":true}")).not_to be_present
+    end
+
+    it "exposes redacted metadata without secret values" do
+      status = gemini_provider.status(secret: valid_creds)
+      serialized = JSON.generate(status.redacted_metadata)
+
+      expect(status.redacted_metadata["materialized"]).to be(true)
+      expect(serialized).not_to include("managed-gemini-access-token")
+      expect(serialized).not_to include("managed-gemini-refresh-token")
+    end
+
+    it "returns unsupported refresh and harvest until the provider lifecycle lands" do
+      provisioner = instance_double(Containers::Provision)
+
+      refresh_result = gemini_provider.refresh(provisioner: provisioner)
+      harvest_result = gemini_provider.harvest(provisioner: provisioner)
+
+      expect(refresh_result.supported?).to be(false)
+      expect(harvest_result.supported?).to be(false)
+    end
+  end
+
+  describe "Copilot contract" do
+    let(:copilot_provider) { described_class.for_runner("copilot") }
+    let(:valid_config) { file_fixture("copilot_config.json").read }
+    let(:unrefreshable_config) do
+      JSON.generate("oauth_token" => "tid=copilot-oauth;exp=4102444800")
+    end
+    let(:expired_config) do
+      JSON.generate("oauth_token" => "tid=copilot-oauth;exp=1",
+        "refresh_token" => "copilot-refresh", "expires_at" => "2000-01-01T00:00:00Z")
+    end
+
+    it "classifies valid config as valid and refreshable" do
+      status = copilot_provider.status(secret: valid_config)
+      materialization = copilot_provider.materialize(secret: valid_config)
+
+      expect(status).to be_valid
+      expect(status.refreshable?).to be(true)
+      expect(status.expires_at).to eq(Time.parse("2100-01-01T00:00:00Z"))
+      expect(status.materialization_mode).to eq("native_file")
+      expect(status.remote_safe?).to be(true)
+      expect(materialization.supported?).to be(true)
+      expect(materialization.mode).to eq("native_file")
+      expect(materialization.files.keys).to contain_exactly("/home/agent/.copilot/config.json")
+      expect(materialization.files.fetch("/home/agent/.copilot/config.json")).to include("managed-copilot-oauth-token")
+    end
+
+    it "drops host-only fields from the materialized config" do
+      materialization = copilot_provider.materialize(secret: valid_config)
+
+      expect(materialization.files.fetch("/home/agent/.copilot/config.json"))
+        .not_to include("should-not-leak-into-container")
+    end
+
+    it "classifies expired config as expired but materializable when refreshable" do
+      status = copilot_provider.status(secret: expired_config)
+      materialization = copilot_provider.materialize(secret: expired_config)
+
+      expect(status).to be_expired
+      expect(status.refreshable?).to be(true)
+      expect(status.materializable?).to be(true)
+      expect(materialization.supported?).to be(true)
+    end
+
+    it "classifies config without a refresh token as unrefreshable but still valid" do
+      status = copilot_provider.status(secret: unrefreshable_config)
+
+      expect(status).to be_valid
+      expect(status.refreshable?).to be(false)
+      expect(status.materializable?).to be(true)
+    end
+
+    it "treats non-blank valid Copilot credentials as present for eligibility" do
+      expect(copilot_provider.status(secret: valid_config)).to be_present
+      expect(copilot_provider.status(secret: expired_config)).to be_present
+    end
+
+    it "does not treat blank or non-copilot payloads as present" do
+      expect(copilot_provider.status(secret: "")).not_to be_present
+      expect(copilot_provider.status(secret: "{\"unexpected\":true}")).not_to be_present
+    end
+
+    it "exposes redacted metadata without secret values" do
+      status = copilot_provider.status(secret: valid_config)
+      serialized = JSON.generate(status.redacted_metadata)
+
+      expect(status.redacted_metadata["materialized"]).to be(true)
+      expect(serialized).not_to include("managed-copilot-oauth-token")
+      expect(serialized).not_to include("managed-copilot-refresh-token")
+    end
+
+    it "returns unsupported refresh and harvest until the provider lifecycle lands" do
+      provisioner = instance_double(Containers::Provision)
+
+      refresh_result = copilot_provider.refresh(provisioner: provisioner)
+      harvest_result = copilot_provider.harvest(provisioner: provisioner)
+
+      expect(refresh_result.supported?).to be(false)
+      expect(harvest_result.supported?).to be(false)
     end
   end
 end
