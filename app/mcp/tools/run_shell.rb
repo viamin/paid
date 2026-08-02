@@ -4,11 +4,12 @@ module Tools
   class RunShell < BaseTool
     include ContainerRepoSupport
 
-    authorize :run_agent?, ->(_args) {
-      project = session&.project
-      raise ArgumentError, "Session has no project" unless project
-      project
-    }, policy_class: ProjectPolicy
+    # Authorization is derived from the requested working directory, not the
+    # session's primary project: in a multi-repo session a user who can run_agent?
+    # on the primary project must not execute shell against another cloned repo
+    # they lack access to. This mirrors how the other repo-writing tools
+    # authorize against the target repo path.
+    authorize :run_agent?, ->(args) { project_for_working_dir!(args[:working_dir]) }, policy_class: ProjectPolicy
 
     DEFAULT_TIMEOUT = 60
     MAX_TIMEOUT = 600
@@ -30,6 +31,7 @@ module Tools
       return false unless user.present?
       return false unless tenant_shell_enabled?(session)
       return false unless container_ready?(session:)
+      return false unless session.clone_manifest_entries.present?
 
       project = session.project
       return false unless project
@@ -42,25 +44,21 @@ module Tools
         type: "object",
         properties: {
           command: { type: "string", description: "Shell command to execute inside the workspace container" },
-          working_dir: { type: "string", description: "Working directory for the command; must be a path under a cloned repo in the workspace. Defaults to /workspace." },
+          working_dir: { type: "string", description: "Working directory for the command; must be a path under a cloned repo in the workspace (for example /workspace/paid)" },
           timeout: { type: "integer", description: "Wall-clock timeout in seconds (default 60, max 600)" },
           confirmed: { type: "boolean", description: "Must be true to execute this shell command" }
         },
-        required: %w[command confirmed]
+        required: %w[command working_dir confirmed]
       }
     end
 
-    def perform(command:, working_dir: nil, timeout: nil, confirmed: false)
+    def perform(command:, working_dir:, timeout: nil, confirmed: false)
       raise ArgumentError, "Confirmation required: set confirmed=true to execute a shell command" unless confirmed
       raise ArgumentError, "Shell execution is not enabled for this tenant" unless tenant_shell_enabled?
 
       validate_command!(command)
 
-      resolved_working_dir = if working_dir.present?
-        validate_working_dir!(working_dir)
-      else
-        WORKSPACE_ROOT
-      end
+      resolved_working_dir = validate_working_dir!(working_dir)
 
       timeout_seconds = [ (timeout.to_i.positive? ? timeout.to_i : DEFAULT_TIMEOUT), MAX_TIMEOUT ].min
       timeout_seconds = timeout_seconds.positive? ? timeout_seconds : DEFAULT_TIMEOUT
@@ -70,7 +68,12 @@ module Tools
       truncated_stdout, stdout_oversize = truncate_output(stdout)
       truncated_stderr, stderr_oversize = truncate_output(stderr)
 
-      record_audit_event!(command:, working_dir: resolved_working_dir, exit_code:)
+      record_audit_event!(
+        command:,
+        working_dir: resolved_working_dir,
+        exit_code:,
+        project_id: project_for_working_dir!(working_dir).id
+      )
 
       result = {
         exit_code: exit_code,
@@ -103,6 +106,8 @@ module Tools
     end
 
     def validate_working_dir!(working_dir)
+      raise ArgumentError, "working_dir must be provided" if working_dir.to_s.strip.empty?
+
       path = normalize_workspace_path(working_dir)
       resolved_path = resolve_container_path(path)
       manifest_paths = session.clone_manifest_entries.map { |entry| expand_workspace_path(entry[:path]) }
@@ -139,7 +144,7 @@ module Tools
       [ truncated + notice, true ]
     end
 
-    def record_audit_event!(command:, working_dir:, exit_code:)
+    def record_audit_event!(command:, working_dir:, exit_code:, project_id:)
       Audit::RecordEvent.call(
         action: "run_shell.executed",
         actor: user,
@@ -150,7 +155,7 @@ module Tools
           working_dir: working_dir,
           exit_code: exit_code,
           session_id: session.id,
-          project_id: session.project_id
+          project_id: project_id
         }
       )
     end

@@ -185,7 +185,8 @@ RSpec.describe Tools::Registry do
 
     it "advertises run_shell when chat_shell_enabled is true and user can run_agent?" do
       account.tenant_setting!.update!(features: account.tenant_setting!.features.deep_merge("chat_settings" => { "chat_shell_enabled" => true }))
-      session = build(:chat_session, :workspace, account:, created_by: user, project:)
+      session = build(:chat_session, :workspace, account:, created_by: user, project:,
+        clone_manifest: [ { project_id: project.id, path: "/workspace/repo-one" } ])
 
       names = described_class.chat_definitions_for(user: user, session: session).map { |definition| definition[:name] }
 
@@ -195,7 +196,8 @@ RSpec.describe Tools::Registry do
     it "does not advertise run_shell when user lacks run_agent? on the session project" do
       account.tenant_setting!.update!(features: account.tenant_setting!.features.deep_merge("chat_settings" => { "chat_shell_enabled" => true }))
       viewer = create(:user, :viewer, account:)
-      session = build(:chat_session, :workspace, account:, created_by: viewer, project:)
+      session = build(:chat_session, :workspace, account:, created_by: viewer, project:,
+        clone_manifest: [ { project_id: project.id, path: "/workspace/repo-one" } ])
 
       names = described_class.chat_definitions_for(user: viewer, session: session).map { |definition| definition[:name] }
 

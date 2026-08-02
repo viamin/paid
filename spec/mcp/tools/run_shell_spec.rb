@@ -26,6 +26,7 @@ RSpec.describe Tools::RunShell do
   ensure
     FileUtils.rm_rf(workspace_root)
     FileUtils.rm_rf(repo[:source_path]) if repo
+    FileUtils.rm_rf(repo_two[:source_path]) if defined?(repo_two) && repo_two
   end
 
   before do
@@ -60,6 +61,11 @@ RSpec.describe Tools::RunShell do
       expect(described_class.available_for_chat?(user:, session:)).to be false
     end
 
+    it "returns false when the session has no cloned repos" do
+      session.update!(clone_manifest: [])
+      expect(described_class.available_for_chat?(user:, session:)).to be false
+    end
+
     it "returns false for nil user" do
       expect(described_class.available_for_chat?(user: nil, session:)).to be false
     end
@@ -75,6 +81,7 @@ RSpec.describe Tools::RunShell do
     it "executes a shell command and returns stdout, stderr, and exit code" do
       result = tool.call(
         command: "echo hello",
+        working_dir: repo.fetch(:repo_path),
         confirmed: true
       )
 
@@ -85,19 +92,27 @@ RSpec.describe Tools::RunShell do
     it "rejects invocation when tenant setting is disabled at call time" do
       account.tenant_setting!.update!(features: account.tenant_setting!.features.deep_merge("chat_settings" => { "chat_shell_enabled" => false }))
 
-      expect { tool.call(command: "echo hi", confirmed: true) }.to raise_error(ArgumentError, /not enabled/)
+      expect { tool.call(command: "echo hi", working_dir: repo.fetch(:repo_path), confirmed: true) }.to raise_error(ArgumentError, /not enabled/)
     end
 
     it "requires confirmed=true" do
-      expect { tool.call(command: "echo hi") }.to raise_error(ArgumentError, /Confirmation required/)
+      expect {
+        tool.call(command: "echo hi", working_dir: repo.fetch(:repo_path))
+      }.to raise_error(ArgumentError, /Confirmation required/)
     end
 
     it "rejects empty command" do
-      expect { tool.call(command: "", confirmed: true) }.to raise_error(ArgumentError, /non-empty/)
+      expect { tool.call(command: "", working_dir: repo.fetch(:repo_path), confirmed: true) }.to raise_error(ArgumentError, /non-empty/)
     end
 
     it "rejects whitespace-only command" do
-      expect { tool.call(command: "   ", confirmed: true) }.to raise_error(ArgumentError, /non-empty/)
+      expect { tool.call(command: "   ", working_dir: repo.fetch(:repo_path), confirmed: true) }.to raise_error(ArgumentError, /non-empty/)
+    end
+
+    it "requires a working directory" do
+      expect {
+        tool.call(command: "echo hi", confirmed: true)
+      }.to raise_error(ArgumentError, /working_dir must be provided/)
     end
 
     it "rejects working directory outside clone manifest" do
@@ -127,24 +142,76 @@ RSpec.describe Tools::RunShell do
       expect(tool).to have_received(:resolve_container_path).with(working_dir).once
     end
 
-    it "records an audit event on invocation" do
+    it "records an audit event attributed to the repo the command ran in" do
       expect {
-        tool.call(command: "echo audited", confirmed: true)
+        tool.call(command: "echo audited", working_dir: repo.fetch(:repo_path), confirmed: true)
       }.to change(AccountActivityEvent, :count).by(1)
 
       event = AccountActivityEvent.last
       expect(event.action).to eq("run_shell.executed")
       expect(event.actor).to eq(user)
       expect(event.metadata["command"]).to eq("echo audited")
+      expect(event.metadata["project_id"]).to eq(project.id)
     end
 
     it "returns non-zero exit code for failing commands" do
       result = tool.call(
         command: "exit 42",
+        working_dir: repo.fetch(:repo_path),
         confirmed: true
       )
 
       expect(result[:exit_code]).to eq(42)
+    end
+  end
+
+  context "when the session clones multiple repos" do
+    let(:project_two) { create(:project, account:) }
+    let!(:repo_two) do
+      clone_repo_into_workspace(workspace_root:, repo_name: "repo-two", files: { "README.md" => "# Repo Two\n" })
+    end
+    # A viewer has no account-level run_agent?, so access is granted only where a
+    # project membership exists (project, not project_two).
+    let(:member) { create(:user, :viewer, account:) }
+    let(:session) do
+      create(:chat_session, :workspace, account:, created_by: member, project:, clone_manifest: [
+        { project_id: project.id, path: repo.fetch(:repo_path) },
+        { project_id: project_two.id, path: repo_two.fetch(:repo_path) }
+      ])
+    end
+
+    before do
+      create(:project_membership, :member, user: member, project:)
+    end
+
+    it "runs shell when the working directory is under an authorized repo" do
+      result = described_class.new(user: member, session:).call(
+        command: "pwd",
+        working_dir: repo.fetch(:repo_path),
+        confirmed: true
+      )
+
+      expect(result[:exit_code]).to eq(0)
+    end
+
+    it "denies shell when the working directory is under a repo the user cannot run_agent? on" do
+      expect {
+        described_class.new(user: member, session:).call(
+          command: "pwd",
+          working_dir: repo_two.fetch(:repo_path),
+          confirmed: true
+        )
+      }.to raise_error(Pundit::NotAuthorizedError)
+    end
+
+    it "attributes the audit event to the repo the command actually ran in" do
+      described_class.new(user: member, session:).call(
+        command: "echo multi",
+        working_dir: repo.fetch(:repo_path),
+        confirmed: true
+      )
+
+      expect(AccountActivityEvent.last.metadata["project_id"]).to eq(project.id)
     end
   end
 end

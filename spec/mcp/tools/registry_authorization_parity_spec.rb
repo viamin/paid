@@ -286,7 +286,7 @@ RSpec.describe Tools::Registry do
       {
         tool_name: "run_shell",
         denied_user: -> { create(:user, :viewer, account: account) },
-        arguments: -> { { command: "echo hi", confirmed: true } },
+        arguments: -> { { command: "echo hi", working_dir: "/workspace/repo-one", confirmed: true } },
         session: ->(user) {
           session = create(:chat_session, :workspace, account: user.account, created_by: user,
             project: project, clone_manifest: [ { project_id: project.id, path: "/workspace/repo-one" } ])
