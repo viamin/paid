@@ -116,6 +116,17 @@ RSpec.describe Tools::RunShell do
       expect(result[:exit_code]).to eq(0)
     end
 
+    it "resolves the requested working directory once during clone-manifest validation" do
+      working_dir = File.join(repo.fetch(:repo_path), "lib")
+
+      allow(tool).to receive(:normalize_workspace_path).with(working_dir).and_return(working_dir)
+      allow(tool).to receive(:resolve_container_path).and_call_original
+
+      tool.send(:validate_working_dir!, working_dir)
+
+      expect(tool).to have_received(:resolve_container_path).with(working_dir).once
+    end
+
     it "records an audit event on invocation" do
       expect {
         tool.call(command: "echo audited", confirmed: true)

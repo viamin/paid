@@ -104,9 +104,10 @@ module Tools
 
     def validate_working_dir!(working_dir)
       path = normalize_workspace_path(working_dir)
+      resolved_path = resolve_container_path(path)
       manifest_paths = session.clone_manifest_entries.map { |entry| expand_workspace_path(entry[:path]) }
 
-      unless manifest_paths.any? { |manifest_path| path_within_root?(resolve_container_path(path), resolve_container_path(manifest_path)) }
+      unless manifest_paths.any? { |manifest_path| path_within_root?(resolved_path, resolve_container_path(manifest_path)) }
         raise ArgumentError, "Working directory must be under a cloned repo path in the workspace: #{path}"
       end
 
