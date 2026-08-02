@@ -14,14 +14,15 @@ require "warden/test/helpers"
 RSpec.describe "Runner weight inputs", type: :system do
   include Warden::Test::Helpers
 
-  let!(:user) { create(:user) }
+  let(:user) { create(:user) }
   let(:notice_text) { "Manual weight inputs are read-only until you turn it off" }
 
   before do
+    allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor])
+
     Warden.test_mode!
     login_as(user, scope: :user)
 
-    allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor])
     user.runners.create!(runner_key: "cursor", enabled_for_agent_runs: true)
   end
 
