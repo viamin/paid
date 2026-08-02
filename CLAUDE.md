@@ -91,9 +91,10 @@ bin/rubocop                  # Run RuboCop (rubocop-rails-omakase style)
 bin/rubocop -a               # Auto-fix violations
 
 # Security
-bin/audit                    # Run all security checks (Brakeman, bundler-audit, yarn audit)
+bin/audit                    # Run all security checks (secret scan, Brakeman, bundler-audit, yarn audit)
 bin/brakeman                 # Static security analysis
 bin/bundler-audit            # Gem vulnerability audit
+bin/secret-scan              # Run repo secret scan with the pinned Gitleaks CLI
 yarn audit                   # JS dependency audit
 
 # CI (runs all checks)

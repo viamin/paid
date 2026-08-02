@@ -1,0 +1,10 @@
+title = "Paid repository Gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Ignore local build artifacts that are not tracked repository content"
+paths = [
+  '''(?:^|/)tmp(?:/.*)?$''',
+]
