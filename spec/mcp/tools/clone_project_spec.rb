@@ -10,13 +10,17 @@ RSpec.describe Tools::CloneProject do
   let(:project) { create(:project, account:) }
   let(:session) { create(:chat_session, :workspace, account:, created_by: user) }
   let(:tool) { described_class.new(user:, session:) }
+  let(:container_info) { { "State" => { "Running" => true } } }
+  let(:container) do
+    instance_double(Docker::Container, id: session.container_id, info: container_info)
+  end
 
   before do
     # Mock the container backend to return success for clone operations
     backend = instance_double(Containers::Backends::Base, remote?: false)
     allow(Containers).to receive(:backend).and_return(backend)
     allow(backend).to receive_messages(
-      get_container: instance_double(Docker::Container, id: session.container_id),
+      get_container: container,
       exec_in_container: [ [], [], 0 ],
       delete_container: nil
     )
@@ -66,6 +70,14 @@ RSpec.describe Tools::CloneProject do
         expect(env).to be_present
         token_entry = env.find { |e| e.start_with?("CLONE_TOKEN=") }
         expect(token_entry).to be_present
+      end
+    end
+
+    it "executes the clone as the agent user" do
+      tool.call(project_id: project.id, confirmed: true)
+
+      expect(Containers.backend).to have_received(:exec_in_container) do |_container, _cmd, **opts|
+        expect(opts[:user]).to eq("agent")
       end
     end
 
@@ -251,6 +263,30 @@ RSpec.describe Tools::CloneProject do
       expect {
         tool_no_container.call(project_id: project.id, confirmed: true)
       }.to raise_error(ArgumentError, /running workspace container/)
+    end
+
+    it "translates missing containers into an argument error" do
+      allow(Containers.backend).to receive(:get_container).and_raise(Docker::Error::NotFoundError)
+
+      expect {
+        tool.call(project_id: project.id, confirmed: true)
+      }.to raise_error(ArgumentError, "Workspace container not found")
+    end
+
+    it "translates stopped containers into an argument error" do
+      allow(container).to receive(:info).and_return({ "State" => { "Running" => false } })
+
+      expect {
+        tool.call(project_id: project.id, confirmed: true)
+      }.to raise_error(ArgumentError, "Workspace container is not running")
+    end
+
+    it "translates exec failures into an argument error" do
+      allow(Containers.backend).to receive(:exec_in_container).and_raise(Docker::Error::DockerError, "container stopped")
+
+      expect {
+        tool.call(project_id: project.id, confirmed: true)
+      }.to raise_error(ArgumentError, "Workspace command failed: container stopped")
     end
   end
 

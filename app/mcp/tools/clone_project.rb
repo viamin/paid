@@ -4,6 +4,8 @@ require "shellwords"
 
 module Tools
   class CloneProject < BaseTool
+    include ContainerRepoSupport
+
     authorize :show?, ->(args) { project_for(args.fetch(:project_id)) }
 
     CLONE_TIMEOUT = 120
@@ -78,11 +80,6 @@ module Tools
 
     private
 
-    def ensure_container_ready!
-      raise ArgumentError, "This tool requires a running workspace container" if session.blank?
-      raise ArgumentError, "This tool requires a running workspace container" if session.container_id.blank?
-    end
-
     def enforce_clone_limit!
       max_repos = session.account.tenant_setting&.chat_max_cloned_repos || 5
       if session.clone_manifest.size >= max_repos
@@ -129,12 +126,12 @@ module Tools
 
       timeout = session.account.tenant_setting&.chat_clone_timeout || CLONE_TIMEOUT
 
-      container = Containers.backend.get_container(session.container_id)
-      container.refresh! if container.respond_to?(:refresh!)
+      container = container_handle
 
       result = Containers.backend.exec_in_container(
         container,
         [ "sh", "-c", clone_cmd ],
+        user: "agent",
         wait: timeout,
         Env: [ "CLONE_TOKEN=#{token}" ]
       )
@@ -151,6 +148,8 @@ module Tools
       # (e.g. `https://x-access-token:<token>@github.com/...`) in stderr.
       raw_output = result.is_a?(Array) ? result[0..1].flatten.join("\n") : ""
       raise ArgumentError, "Clone failed (exit #{exit_code}): #{redact_clone_output(raw_output, token).truncate(500)}"
+    rescue Docker::Error::DockerError => e
+      raise ArgumentError, "Workspace command failed: #{e.message}"
     end
 
     def redact_clone_output(output, token)
