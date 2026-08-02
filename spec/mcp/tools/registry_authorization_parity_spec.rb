@@ -182,6 +182,15 @@ RSpec.describe Tools::Registry do
         }
       },
       {
+        tool_name: "search_issues",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> { { project_id: project.id, query: "duplicate" } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :show?)
+        }
+      },
+      {
         tool_name: "search_intents",
         denied_user: -> { create(:user, :member, account: other_account) },
         arguments: -> { { project_id: project.id, query: "redis" } },

@@ -35,6 +35,7 @@ class AccountActivityEvent < ApplicationRecord
     "agent_run.terminated" => "run",
     "agent_run.resumed" => "run",
     "run_shell.executed" => "run",
+    "search_issues.executed" => "run",
     "prompt_version.approved" => "approval",
     "prompt_version.rejected" => "approval",
     "configuration_profile.applied" => "configuration_profile",
@@ -150,6 +151,8 @@ class AccountActivityEvent < ApplicationRecord
       "Terminated agent run ##{metadata_value('agent_run_id')}"
     when "agent_run.resumed"
       "Resumed agent run ##{metadata_value('agent_run_id')}"
+    when "search_issues.executed"
+      "Searched #{metadata_value('project_name')} issues for duplicates"
     when "prompt_version.approved"
       "Approved prompt #{metadata_value('prompt_slug')} v#{metadata_value('version')}"
     when "prompt_version.rejected"
@@ -187,6 +190,10 @@ class AccountActivityEvent < ApplicationRecord
       Array(metadata.to_h["details"]).compact
     when "agent_run.retried"
       Array(metadata.to_h["details"]).compact
+    when "search_issues.executed"
+      detail = +"Query: #{metadata_value('query')}"
+      detail << " (state: #{metadata_value('state')})" if metadata.to_h["state"].present?
+      [ detail ]
     when "prompt_version.approved"
       Array(metadata.to_h["notes"]).compact.map { |n| "Notes: #{n}" }
     when "prompt_version.rejected"
