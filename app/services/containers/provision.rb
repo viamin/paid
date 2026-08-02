@@ -2927,41 +2927,19 @@ module Containers
         # materializability: an expired/non-refreshable managed credential
         # must still surface as `:managed` with credential_state `:expired` so
         # `record_eligibility_attempts!` reports `credential_expired` instead
-        # of silently falling back to `host_forwarded`. Providers without a
-        # concrete adapter (unsupported status) defer to their legacy
-        # parsed-credential checks below.
+        # of silently falling back to `host_forwarded`. All four subscription
+        # providers (Claude, Codex, Gemini, Copilot) now have concrete adapters,
+        # so a non-unsupported status is authoritative.
         return status.present? unless status.unsupported?
       end
 
-      parsed = parse_managed_subscription_credential(runner_key, credential: credential)
-      return parsed&.oauth_credentials? == true if runner_key.to_s == "gemini"
-      return parsed&.copilot_config? == true if runner_key.to_s == "copilot"
-      return parsed&.codex_auth? == true if runner_key.to_s == "codex"
-
-      parsed.present? && !parsed.blank?
+      false
     end
 
     def managed_subscription_runner_auth_enabled_for?(runner_key)
       return true unless %w[gemini copilot].include?(runner_key.to_s)
 
       managed_subscription_runner_auth_enabled?
-    end
-
-    def parse_managed_subscription_credential(runner_key, credential: nil)
-      token = credential&.token.to_s.presence ||
-        managed_subscription_credential_for(runner_key, require_active: false)&.token.to_s.presence
-      return nil if token.blank?
-
-      case runner_key.to_s
-      when "claude"
-        ClaudeCredentials::Secret.parse(token)
-      when "codex"
-        CodexCredentials::Secret.parse(token)
-      when "gemini"
-        GeminiCredentials::Secret.parse(token)
-      when "copilot"
-        CopilotCredentials::Secret.parse(token)
-      end
     end
 
     # Whether the backend's Paid proxy callback is reachable for API-key/proxy
