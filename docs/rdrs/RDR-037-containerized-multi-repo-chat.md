@@ -220,7 +220,7 @@ Session visibility must tighten alongside multi-repo support: a session is reada
 
 | Tool | Inline-only OK | Requires container |
 |------|----------------|--------------------|
-| `list_projects`, `get_project`, `get_project_issues`, `get_project_pull_requests`, `get_issue_details`, `get_pull_request_details`, `get_agent_run`, `list_agent_runs`, `cancel_agent_run`, `trigger_agent_run`, `search_code` | ✅ | — |
+| `list_projects`, `get_project`, `get_project_issues`, `get_project_pull_requests`, `get_issue_details`, `get_pull_request_details`, `get_agent_run`, `list_agent_runs`, `cancel_agent_run`, `trigger_agent_run`, `search_code`, `search_issues` (from #2376) | ✅ | — |
 | `read_repo_file`, `list_repo_tree`, `grep_repo` (from #2352) | ✅ (via GitHub API) | ✅ (faster: read from local clone if cloned) |
 | Admin/operator tools (from #2350, #2351) | ✅ | — |
 | `clone_project` | — | ✅ |
