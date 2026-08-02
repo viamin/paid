@@ -10,8 +10,8 @@ module Tools
     end
 
     def require_github_client!(project)
-      client = project.github_token&.client
-      raise ArgumentError, "Project has no GitHub token configured" unless client
+      client = project.client
+      raise ArgumentError, "Project has no GitHub credential configured" unless client
 
       client
     end

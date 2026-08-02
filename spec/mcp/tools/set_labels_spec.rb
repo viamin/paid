@@ -187,5 +187,23 @@ RSpec.describe Tools::SetLabels do
         tool.call(project_id: project.id, issue_number: 42, labels: %w[bug])
       end.to raise_error(GithubClient::Error, "rate limited")
     end
+
+    context "with GitHub App installation" do
+      let(:project) { create(:project, :with_github_installation, account:) }
+      let(:issue) { Struct.new(:number, :labels).new(42, []) }
+
+      before do
+        allow(Github::AppInstallation).to receive(:token_for).and_return("ghs_installation_token")
+        allow(github_client).to receive(:issue).and_return(issue)
+      end
+
+      it "sets labels using the installation credential" do
+        tool.call(project_id: project.id, issue_number: 42, labels: %w[bug])
+
+        expect(github_client).to have_received(:add_labels_to_issue).with(
+          project.full_name, 42, %w[bug]
+        )
+      end
+    end
   end
 end

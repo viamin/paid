@@ -144,5 +144,22 @@ RSpec.describe Tools::CreateIssue do
         expect(dep.external_ref).to eq("viamin/foo#42")
       end
     end
+
+    context "with GitHub App installation" do
+      let(:project) { create(:project, :with_github_installation, account:) }
+
+      before do
+        allow(Github::AppInstallation).to receive(:token_for).and_return("ghs_installation_token")
+      end
+
+      it "creates an issue using the installation credential" do
+        result = tool.call(project_id: project.id, title: "Test issue")
+
+        expect(github_client).to have_received(:create_issue).with(
+          project.full_name, title: "Test issue", body: "", labels: [], assignees: []
+        )
+        expect(result[:number]).to eq(42)
+      end
+    end
   end
 end

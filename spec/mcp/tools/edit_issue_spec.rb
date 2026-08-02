@@ -121,5 +121,22 @@ RSpec.describe Tools::EditIssue do
         tool.call(project_id: project.id, issue_number: 42, labels: %w[bug])
       end.to raise_error(GithubClient::Error, "rate limited")
     end
+
+    context "with GitHub App installation" do
+      let(:project) { create(:project, :with_github_installation, account:) }
+
+      before do
+        allow(Github::AppInstallation).to receive(:token_for).and_return("ghs_installation_token")
+      end
+
+      it "edits an issue using the installation credential" do
+        result = tool.call(project_id: project.id, issue_number: 42, title: "Updated title")
+
+        expect(github_client).to have_received(:update_issue).with(
+          project.full_name, 42, title: "Updated title"
+        )
+        expect(result[:title]).to eq("Updated title")
+      end
+    end
   end
 end
