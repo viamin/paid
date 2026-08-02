@@ -20,7 +20,7 @@ class ProjectPolicy < ApplicationPolicy
   def manage_issues?
     return false unless user_in_account?
 
-    has_any_account_role?(:owner, :admin, :member, :viewer) || has_project_role?
+    has_any_account_role?(:owner, :admin, :member) || has_project_role?
   end
 
   private
