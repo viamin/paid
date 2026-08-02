@@ -144,6 +144,19 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "installs gitleaks during setup so the pre-commit secret scan is ready locally" do
+    # @spec REPO-SECRET-SCAN-003
+    Dir.mktmpdir("setup-script-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+      env = setup_script_env(dir)
+
+      stdout, stderr, status = Open3.capture3(env, script_path, "--skip-server", "--skip-database", chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.read(File.join(dir, "gitleaks-install.log")).lines.map(&:chomp)).to eq([ "installed" ])
+    end
+  end
+
   it "installs the lockfile Bundler version before running bundle when missing" do
     Dir.mktmpdir("setup-script-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, installed_bundler_versions: [])
@@ -185,6 +198,15 @@ RSpec.describe "bin/setup" do # rubocop:disable RSpec/DescribeClass
       <<~BASH
         #!/usr/bin/env bash
         printf '%s\n' "$@" > "#{dir}/dev-args.log"
+        exit 0
+      BASH
+    )
+
+    write_executable(
+      File.join(dir, "bin", "install-gitleaks"),
+      <<~BASH
+        #!/usr/bin/env bash
+        printf 'installed\\n' >> "#{dir}/gitleaks-install.log"
         exit 0
       BASH
     )

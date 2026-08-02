@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+echo "== Security: Secret scan =="
+bin/secret-scan --repo
+
 echo "== Security: Brakeman =="
 bin/brakeman --quiet --no-pager --exit-on-warn --exit-on-error
 
