@@ -83,10 +83,6 @@ module Tools
       available_to?(user:)
     end
 
-    def self.container_ready?(session:)
-      session&.container_ready? == true
-    end
-
     def self.run_agent_available_to?(user:)
       return false if user.blank?
 

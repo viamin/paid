@@ -53,6 +53,7 @@ RSpec.describe Tools::Registry do
           type: "container_capability",
           state: "pending",
           retryable: true,
+          message: Containers::CapabilityMessages.unavailable_for("pending"),
           expectedBehavior: "invoking_returns_retryable_unavailable"
         )
       )
@@ -120,7 +121,8 @@ RSpec.describe Tools::Registry do
         expect(result).to include(
           status: "error",
           error: "container_unavailable",
-          container_capability: capability
+          container_capability: capability,
+          message: Containers::CapabilityMessages.unavailable_for(capability)
         )
         expect(result[:retryable]).to eq(capability.in?(%w[pending provisioning]))
       end

@@ -35,7 +35,7 @@ RSpec.describe ChatSessions::HandleCapabilityTransition do
 
     notice = chat_session.messages.where(role: "system").find_by("metadata ->> 'container_capability_notice' = 'true'")
 
-    expect(notice.content).to include("Workspace tools are currently unavailable")
+    expect(notice.content).to eq(Containers::CapabilityMessages.notice_for("failed"))
     expect(notice.metadata).to include(
       "container_capability_notice" => true,
       "container_capability" => "failed"

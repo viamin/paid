@@ -62,12 +62,7 @@ module ChatSessions
     end
 
     def capability_notice
-      case to
-      when "failed"
-        "Workspace tools are currently unavailable because the workspace container failed to prepare. Use inline tools until the workspace is restored."
-      when "stopped"
-        "Workspace tools are currently unavailable because the workspace container is stopped. Use inline tools until the workspace is started again."
-      end
+      Containers::CapabilityMessages.notice_for(to)
     end
 
     def intentional_teardown_stop_transition?

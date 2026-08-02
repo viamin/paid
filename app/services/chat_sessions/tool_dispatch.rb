@@ -162,30 +162,14 @@ module ChatSessions
       {
         status: "error",
         error: "container_unavailable",
-        message: container_unavailable_message,
+        message: Containers::CapabilityMessages.unavailable_for(chat_session.container_capability),
         container_capability: chat_session.container_capability,
         retryable: chat_session.container_pending? || chat_session.container_provisioning?
       }
     end
 
-    def container_unavailable_message
-      case chat_session.container_capability
-      when "failed"
-        "Workspace tools are unavailable because the workspace container failed to prepare."
-      when "stopped"
-        "Workspace tools are unavailable because the workspace container is stopped."
-      else
-        "Workspace tools are still preparing. Retry shortly or fall back to inline tools."
-      end
-    end
-
     def degraded_container_notice
-      case chat_session.container_capability
-      when "failed"
-        "Workspace tools are currently unavailable because the workspace container failed to prepare. Use inline tools until the workspace is restored."
-      when "stopped"
-        "Workspace tools are currently unavailable because the workspace container is stopped. Use inline tools until the workspace is started again."
-      end
+      Containers::CapabilityMessages.notice_for(chat_session.container_capability)
     end
 
     def container_wait_timeout

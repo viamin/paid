@@ -184,7 +184,7 @@ module Tools
               type: "container_capability",
               state: session.container_capability,
               retryable: session.container_capability.in?(%w[pending provisioning]),
-              message: mcp_container_unavailable_message(session.container_capability),
+              message: Containers::CapabilityMessages.unavailable_for(session.container_capability),
               expectedBehavior: mcp_expected_behavior(session.container_capability)
             }
           }
@@ -295,21 +295,10 @@ module Tools
         {
           status: "error",
           error: "container_unavailable",
-          message: mcp_container_unavailable_message(capability),
+          message: Containers::CapabilityMessages.unavailable_for(capability),
           container_capability: capability,
           retryable: capability.in?(%w[pending provisioning])
         }
-      end
-
-      def mcp_container_unavailable_message(capability)
-        case capability
-        when "failed"
-          "Workspace tools are unavailable because the workspace container failed to prepare."
-        when "stopped"
-          "Workspace tools are unavailable because the workspace container is stopped."
-        else
-          "Workspace tools are still preparing. Retry shortly or fall back to inline tools."
-        end
       end
 
       def mcp_expected_behavior(capability)
