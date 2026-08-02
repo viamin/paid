@@ -90,6 +90,40 @@ RSpec.describe "TenantConfigurations" do
       expect(event.metadata["changed_fields"]).to include("max_concurrent_runs")
     end
 
+    it "updates the tenant chat_shell_enabled opt-in via the admin form" do
+      patch tenant_configuration_path, params: {
+        tenant_setting: {
+          chat_settings: {
+            chat_max_tool_iterations: "50",
+            chat_session_token_limit: "100000",
+            chat_monthly_token_limit: "",
+            chat_shell_enabled: "1"
+          }
+        }
+      }
+
+      expect(response).to redirect_to(edit_tenant_configuration_path)
+      expect(account.tenant_setting.reload.chat_shell_enabled).to be(true)
+    end
+
+    it "disables chat_shell_enabled when the checkbox submits its hidden false value" do
+      account.tenant_setting!.update!(chat_settings: { "chat_shell_enabled" => true })
+
+      patch tenant_configuration_path, params: {
+        tenant_setting: {
+          chat_settings: {
+            chat_max_tool_iterations: "50",
+            chat_session_token_limit: "100000",
+            chat_monthly_token_limit: "",
+            chat_shell_enabled: "0"
+          }
+        }
+      }
+
+      expect(response).to redirect_to(edit_tenant_configuration_path)
+      expect(account.tenant_setting.reload.chat_shell_enabled).to be(false)
+    end
+
     it "updates the tenant marketplace auto-attach override" do
       api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
 
