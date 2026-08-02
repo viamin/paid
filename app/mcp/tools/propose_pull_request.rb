@@ -7,13 +7,19 @@ module Tools
     DEPENDS_ON_REF_PATTERN = /\A[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+\#[1-9]\d*\z/
     GITHUB_HTTPS_REMOTE_PATTERN = %r{\Ahttps://github\.com/}i
     GITHUB_SSH_REMOTE_PATTERN = /\Agit@github\.com:/i
+    CREDENTIAL_IN_URL_PATTERN = %r{x-access-token:[^@/\s]+@github\.com}
 
-    # Captured output of a single git push attempt.
+    # Captured output of a single git push attempt. git can echo the remote
+    # URL (which embeds the push credential, see #authenticated_push_url) back
+    # in its stdout/stderr on failure, so the message is scrubbed the same way
+    # CloneProject#redact_clone_output scrubs clone failures before either can
+    # reach chat/LLM context.
     PushResult = Struct.new(:stdout, :stderr, :exit_code, keyword_init: true) do
       def success? = exit_code.zero?
 
       def message
-        [ stderr, stdout ].map(&:presence).compact.join(" — ").presence || "git push failed"
+        raw = [ stderr, stdout ].map(&:presence).compact.join(" — ").presence || "git push failed"
+        raw.gsub(CREDENTIAL_IN_URL_PATTERN, "x-access-token:[REDACTED]@github.com")
       end
     end
 
@@ -31,6 +37,13 @@ module Tools
       false
     end
 
+    # `clone_manifest_entries` always has at least the single repo
+    # `Containers::ProvisionForChat#seed_workspace!` clones at session start,
+    # so this tool is reachable for that repo alone even without any
+    # additional clone. The multi-repo case this tool is designed for
+    # (`depends_on` spanning a second cloned repo) requires a second manifest
+    # entry, which `Tools::CloneProject` (main, not yet merged into this
+    # branch) is responsible for adding.
     def self.available_for_chat?(user:, session:)
       user.present? && container_ready?(session:) && session.clone_manifest_entries.present?
     end

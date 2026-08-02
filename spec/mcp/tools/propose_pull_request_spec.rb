@@ -194,6 +194,31 @@ RSpec.describe Tools::ProposePullRequest do
       end
     end
 
+    # @spec CHAT-PR-PROPOSAL-001
+    context "when a push failure echoes the authenticated remote URL" do
+      it "redacts the credential from the raised error message" do
+        tool = described_class.new(user:, session:)
+        with_github_origin(repo:, full_name: project.full_name)
+        rejection = "fatal: unable to access " \
+                    "'https://x-access-token:ghp_testcredential@github.com/#{project.full_name}.git/': " \
+                    "The requested URL returned error: 403"
+        script_pushes(tool:, results: [ [ "", rejection, 1 ] ])
+
+        expect {
+          tool.call(
+            repo_path: repo.fetch(:repo_path),
+            branch_name: "feature/pr-proposal",
+            title: "Redaction check",
+            body: "Body.",
+            confirmed: true
+          )
+        }.to raise_error(ArgumentError) { |error|
+          expect(error.message).not_to include("ghp_testcredential")
+          expect(error.message).to include("x-access-token:[REDACTED]@github.com")
+        }
+      end
+    end
+
     # @spec CHAT-PR-PROPOSAL-002
     context "when a preferred user token is rejected at push time" do
       let(:user_client) { instance_double(GithubClient) }
