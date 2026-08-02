@@ -6,6 +6,12 @@ module HealthChecks
   # check becomes an internal-error Finding instead of failing the run, so one
   # broken check cannot hide the others' results.
   #
+  # A :project run composes all three scopes (RDR-049): it runs the project
+  # checks on the project itself, the runner checks over the project's
+  # effective owner's agent-eligible runners, and the user checks over that
+  # effective owner — so one project health report spans project, runner, and
+  # user settings.
+  #
   # Network checks (those that hit GitHub / the model registry) are skipped
   # unless +include_network+ is true. They run only from the scheduled sweep
   # job, never synchronously in a request.
@@ -22,18 +28,36 @@ module HealthChecks
 
     def call
       started_at = monotonic_clock
-      findings = applicable_checks.flat_map { |check| run_safely(check) }
+      findings = collect_findings
       Result.new(findings: findings, checked_at: Time.current, duration_ms: elapsed_ms(started_at))
     end
 
     private
 
-    def applicable_checks
-      Registry.for_scope(@scope).select { |check| @include_network || !check.network? }
+    def collect_findings
+      findings = run_checks(@scope, @subject)
+      findings += project_composed_findings if @scope == :project
+      findings
     end
 
-    def run_safely(check)
-      check.call(@subject)
+    def project_composed_findings
+      owner = @subject.effective_owner
+      return [] unless owner
+
+      runner_findings = owner.runners.kept_only.for_agent_runs.flat_map { |runner| run_checks(:runner, runner) }
+      runner_findings + run_checks(:user, owner)
+    end
+
+    def run_checks(scope, subject)
+      applicable_checks(scope).flat_map { |check| run_safely(check, subject) }
+    end
+
+    def applicable_checks(scope)
+      Registry.for_scope(scope).select { |check| @include_network || !check.network? }
+    end
+
+    def run_safely(check, subject)
+      check.call(subject)
     rescue => e
       [ internal_error_finding(check, e) ]
     end

@@ -49,5 +49,26 @@ RSpec.describe HealthChecks::Coordinator do
       expect(error_finding.message).to include("kaboom")
       expect(result).not_to be_healthy
     end
+
+    it "composes runner-scope findings for the project's effective owner's agent runners" do
+      persisted_project = create(:project)
+      create(:runner, user: persisted_project.effective_owner)
+      network = HealthChecks::Checks::Runner::DeprecatedModel
+      allow(network).to receive(:call).and_return(
+        [ HealthChecks::Finding.new(check: network.name, scope: :runner, severity: :warning, message: "stale") ]
+      )
+
+      result = described_class.call(scope: :project, subject: persisted_project, include_network: true)
+
+      expect(result.findings.map(&:check)).to include(network.name)
+    end
+
+    it "does not compose runner-scope findings when scope is not :project" do
+      runner = build_stubbed(:runner)
+
+      result = described_class.call(scope: :runner, subject: runner, include_network: true)
+
+      expect(result.findings.map(&:scope)).to all(eq(:runner))
+    end
   end
 end
