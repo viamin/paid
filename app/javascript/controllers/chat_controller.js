@@ -2,7 +2,7 @@ import { Controller } from "@hotwired/stimulus"
 import consumer from "../channels/consumer"
 
 export default class extends Controller {
-  static targets = ["container", "messages", "input", "status", "typingIndicator", "tokenUsage"]
+  static targets = ["container", "messages", "input", "status", "typingIndicator", "tokenUsage", "capabilityBadge"]
   static values = { sessionId: Number }
 
   connect() {
@@ -111,6 +111,9 @@ export default class extends Controller {
     case "message_complete":
       this.handleMessageComplete(data)
       break
+    case "capability_changed":
+      this.handleCapabilityChanged(data)
+      break
     case "error":
       this.handleError(data)
       break
@@ -140,6 +143,36 @@ export default class extends Controller {
     this.setStatus("Ready")
     this.incrementTokenUsage(data.tokens)
     this.scrollToBottom()
+  }
+
+  // Updates the workspace-capability badge in place when the background
+  // provisioner finishes (RDR-037), so the inline→container transition is
+  // visible without a page reload. Conversation history is unaffected.
+  handleCapabilityChanged(data) {
+    const capability = data.container_capability
+    if (!capability) return
+
+    const styles = {
+      none: "bg-gray-100 text-gray-600",
+      pending: "bg-amber-100 text-amber-800",
+      provisioning: "bg-amber-100 text-amber-800",
+      ready: "bg-green-100 text-green-700",
+      failed: "bg-rose-100 text-rose-700",
+      stopped: "bg-gray-100 text-gray-600"
+    }
+    const classes = styles[capability] || styles.none
+
+    this.capabilityBadgeTargets.forEach((badge) => {
+      badge.textContent = capability.charAt(0).toUpperCase() + capability.slice(1)
+      badge.className = `inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${classes}`
+      badge.dataset.capability = capability
+    })
+
+    if (capability === "ready") {
+      this.setStatus("Workspace ready")
+    } else if (capability === "failed") {
+      this.setStatus("Workspace unavailable")
+    }
   }
 
   handleError(data) {

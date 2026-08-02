@@ -35,7 +35,9 @@ module ChatSessionsHelper
 
   def chat_container_status_badge(chat_session)
     capability = chat_session.container_capability
-    badge_label(capability.to_s.titleize, CHAT_CONTAINER_CAPABILITY_STYLES.fetch(capability, CHAT_CONTAINER_CAPABILITY_STYLES["none"]))
+    classes = CHAT_CONTAINER_CAPABILITY_STYLES.fetch(capability, CHAT_CONTAINER_CAPABILITY_STYLES["none"])
+    tag.span(capability.to_s.titleize, class: "inline-flex items-center rounded-full px-2 py-1 text-xs font-medium #{classes}",
+      data: { chat_target: "capabilityBadge", capability: capability })
   end
 
   def chat_session_title(chat_session)

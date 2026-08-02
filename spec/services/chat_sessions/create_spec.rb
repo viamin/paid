@@ -124,6 +124,41 @@ RSpec.describe ChatSessions::Create do
       expect(session.container_requested_at).to be_present
     end
 
+    it "enqueues background provisioning for a pending session" do
+      expect {
+        described_class.call(account: account, user: user, container_capability: "pending")
+      }.to have_enqueued_job(ChatSessions::ProvisionContainerJob)
+    end
+
+    it "does not block on provisioning (returns the session immediately)" do
+      session = described_class.call(account: account, user: user, container_capability: "pending")
+
+      expect(session).to be_persisted
+      expect(session.container_capability).to eq("pending")
+    end
+
+    it "does not enqueue provisioning for an inline-only session" do
+      expect {
+        described_class.call(account: account, user: user)
+      }.not_to have_enqueued_job(ChatSessions::ProvisionContainerJob)
+    end
+
+    it "skips background provisioning when eager provisioning is disabled" do
+      account.tenant_setting!.update!(features: { "chat_settings" => { "chat_eager_provisioning" => false } })
+
+      expect {
+        described_class.call(account: account, user: user, container_capability: "pending")
+      }.not_to have_enqueued_job(ChatSessions::ProvisionContainerJob)
+    end
+
+    it "enqueues background provisioning when eager provisioning is enabled" do
+      account.tenant_setting!.update!(features: { "chat_settings" => { "chat_eager_provisioning" => true } })
+
+      expect {
+        described_class.call(account: account, user: user, container_capability: "pending")
+      }.to have_enqueued_job(ChatSessions::ProvisionContainerJob)
+    end
+
     it "raises for invalid container capability" do
       expect {
         described_class.call(account: account, user: user, container_capability: "invalid")

@@ -40,12 +40,15 @@ module ChatSessions
     def call
       validate!
 
-      ActiveRecord::Base.transaction do
-        session = create_session
-        prompt_text = build_system_prompt(session)
-        persist_system_message(session, prompt_text)
-        session
+      session = ActiveRecord::Base.transaction do
+        created = create_session
+        prompt_text = build_system_prompt(created)
+        persist_system_message(created, prompt_text)
+        created
       end
+
+      enqueue_background_provisioning(session)
+      session
     end
 
     private
@@ -81,6 +84,21 @@ module ChatSessions
       return unless ChatSession::CONTAINER_REQUESTED_CAPABILITIES.include?(container_capability)
 
       Time.current
+    end
+
+    # Provisioning runs in the background (RDR-037) so the first inline message
+    # is never blocked. Only sessions that requested a container ("pending")
+    # are provisioned, and only when eager provisioning is enabled for the
+    # account — accounts that defer it rely on the lazy path instead.
+    def enqueue_background_provisioning(session)
+      return unless session.container_pending?
+      return unless eager_provisioning_enabled?
+
+      ChatSessions::ProvisionContainerJob.perform_later(chat_session_id: session.id)
+    end
+
+    def eager_provisioning_enabled?
+      account.tenant_setting&.chat_eager_provisioning != false
     end
 
     def build_system_prompt(session)
