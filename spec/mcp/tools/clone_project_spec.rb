@@ -92,6 +92,9 @@ RSpec.describe Tools::CloneProject do
         expect(script).not_to include("x-access-token:\\$CLONE_TOKEN")
         # The user/org-controlled repo path is still escaped.
         expect(script).to include("git clone --depth 1")
+        # git clone creates the leaf directory itself; mkdir -p is redundant and
+        # would leave a stale dir that breaks retries after a failed clone.
+        expect(script).not_to include("mkdir -p")
       end
     end
 
@@ -110,6 +113,38 @@ RSpec.describe Tools::CloneProject do
         expect(error.message).not_to include(secret)
         expect(error.message).to include("x-access-token:[REDACTED]@github.com")
       end
+    end
+
+    it "removes a partial clone directory when the clone fails so a retry succeeds" do
+      commands = []
+      allow(Containers.backend).to receive(:exec_in_container) do |_container, command, **_opts|
+        commands << command
+        [ [], [], 128 ]
+      end
+
+      expect {
+        tool.call(project_id: project.id, confirmed: true)
+      }.to raise_error(ArgumentError, /Clone failed/)
+
+      cleanup = commands.find { |cmd| cmd.last.to_s.include?("rm -rf") }
+      expect(cleanup).to be_present
+      expect(cleanup.last).to include("rm -rf /workspace/#{project.full_name.tr('/', '-')}")
+    end
+
+    it "removes a partial clone directory when the clone exec times out" do
+      commands = []
+      allow(Containers.backend).to receive(:exec_in_container) do |_container, command, **_opts|
+        commands << command
+        raise Docker::Error::DockerError, "execution timeout"
+      end
+
+      expect {
+        tool.call(project_id: project.id, confirmed: true)
+      }.to raise_error(ArgumentError, /Workspace command failed/)
+
+      cleanup = commands.find { |cmd| cmd.last.to_s.include?("rm -rf") }
+      expect(cleanup).to be_present
+      expect(cleanup.last).to include("rm -rf /workspace/#{project.full_name.tr('/', '-')}")
     end
 
     it "surfaces token identity in the result" do

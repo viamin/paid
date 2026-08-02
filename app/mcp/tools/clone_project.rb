@@ -122,7 +122,7 @@ module Tools
       # shell would pass the literal placeholder instead of the token.
       escaped_full_name = Shellwords.escape(project.full_name)
       escaped_path = Shellwords.escape(repo_path)
-      clone_cmd = "mkdir -p #{escaped_path} && git clone --depth 1 https://x-access-token:$CLONE_TOKEN@github.com/#{escaped_full_name}.git #{escaped_path} 2>&1"
+      clone_cmd = "git clone --depth 1 https://x-access-token:$CLONE_TOKEN@github.com/#{escaped_full_name}.git #{escaped_path} 2>&1"
 
       timeout = session.account.tenant_setting&.chat_clone_timeout || CLONE_TIMEOUT
 
@@ -153,9 +153,27 @@ module Tools
       # Redact before surfacing: a failed clone can echo the authenticated URL
       # (e.g. `https://x-access-token:<token>@github.com/...`) in stderr.
       raw_output = result.is_a?(Array) ? result[0..1].flatten.join("\n") : ""
+      cleanup_partial_clone!(escaped_path)
       raise ArgumentError, "Clone failed (exit #{exit_code}): #{redact_clone_output(raw_output, token).truncate(500)}"
     rescue Docker::Error::DockerError => e
+      # A timeout or exec error can leave a partial /workspace/<slug> behind.
+      # Remove it so a retry clones into a clean directory instead of failing
+      # with "destination path already exists and is not an empty directory".
+      cleanup_partial_clone!(escaped_path)
       raise ArgumentError, "Workspace command failed: #{e.message}"
+    end
+
+    # Removes a partially-cloned repo directory so a subsequent retry succeeds.
+    # Best-effort: any error here must not mask the original clone failure.
+    def cleanup_partial_clone!(escaped_path)
+      Containers.backend.exec_in_container(
+        container_handle,
+        [ "sh", "-c", "rm -rf #{escaped_path}" ],
+        user: "agent",
+        wait: 30
+      )
+    rescue StandardError
+      # Swallowed deliberately — see method comment.
     end
 
     def redact_clone_output(output, token)
