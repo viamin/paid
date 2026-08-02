@@ -107,5 +107,42 @@ RSpec.describe Tools::CreateIssue do
         tool.call(project_id: project.id, title: "Test issue", labels: %w[bug])
       end.to raise_error(GithubClient::Error, "rate limited")
     end
+
+    context "with dependency in body" do
+      let(:created_issue) do
+        user_struct = Struct.new(:login).new("test-user")
+        label_struct = Struct.new(:name)
+        Struct.new(:id, :number, :html_url, :title, :body, :user, :state, :labels, :created_at, :updated_at).new(
+          12_345, 42, "https://github.com/owner/repo/issues/42",
+          "Test issue", "Depends on viamin/foo#42",
+          user_struct, "open",
+          [ label_struct.new("bug") ],
+          Time.current, Time.current
+        )
+      end
+
+      before do
+        allow(Issues::UpsertFromGithub).to receive(:call).and_call_original
+        allow(Issues::ParseDependencies).to receive(:call).and_call_original
+      end
+
+      it "parses dependencies from the issue body and persists them" do
+        result = tool.call(
+          project_id: project.id,
+          title: "Test issue",
+          body: "Depends on viamin/foo#42"
+        )
+
+        expect(result[:number]).to eq(42)
+
+        local = Issue.find_by(github_issue_id: 12_345, project:)
+        expect(local).to be_present
+        expect(local.body).to include("Depends on viamin/foo#42")
+        expect(local.issue_dependencies.count).to eq(1)
+        dep = local.issue_dependencies.first
+        expect(dep).to be_external
+        expect(dep.external_ref).to eq("viamin/foo#42")
+      end
+    end
   end
 end

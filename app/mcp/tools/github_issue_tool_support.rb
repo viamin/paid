@@ -24,9 +24,13 @@ module Tools
       raise ArgumentError, "Unknown labels: #{unknown.join(', ')}. Available: #{available.sort.join(', ')}"
     end
 
+    # Cached per-session + repo so repeated issue mutations in one chat
+    # reuse the label list.  Rails.cache key includes session.id; the
+    # TTL guards against stale labels across long-lived sessions.
     def label_cache(repo, client)
-      @label_cache ||= {}
-      @label_cache[repo] ||= client.labels(repo).map { |l| l.is_a?(String) ? l : l.name }
+      Rails.cache.fetch("tools/github_issue/label_cache/#{session.id}/#{repo}", expires_in: 5.minutes) do
+        client.labels(repo).map { |l| l.is_a?(String) ? l : l.name }
+      end
     end
   end
 end
