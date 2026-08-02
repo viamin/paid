@@ -15,10 +15,11 @@ prefix: CHAT-CONTAINER-PROVISIONING
 
 RDR-037 requires that a chat session accept the user's first message
 immediately, provisioning the container in parallel with the initial inline
-exchange. `ChatSessions::Create` is the only creation entry point; on its own
-it persists a session with `container_capability: "pending"` but does nothing
-to advance that state. This segment defines the background job that closes
-that gap and the tenant-level toggle that governs whether it runs.
+exchange. `ChatSessions::Create` is the only creation entry point; for
+eager-enabled accounts it persists a session with
+`container_capability: "pending"` but needs background work to advance that
+state. This segment defines the background job that closes that gap and the
+tenant-level toggle that governs whether it runs.
 
 ## Provisioning path
 
@@ -53,8 +54,9 @@ duplicate provisioning if `Create` runs twice for the same session ID.
 
 `TenantSetting#chat_eager_provisioning` (default `true`) is the opt-out for
 operators with constrained container capacity. When disabled, the job is
-never enqueued at create time; the session remains `pending` and only
-transitions when a container-only tool call triggers the lazy path.
+never enqueued at create time; container-requesting sessions start
+inline-only (`container_capability: "none"`) and only transition when a
+container-only tool call triggers the lazy path.
 Inline-only sessions (`container_capability: "none"`) are unaffected
 regardless of the flag.
 

@@ -145,12 +145,16 @@ RSpec.describe ChatSessions::Create do
       }.not_to have_enqueued_job(ChatSessions::ProvisionContainerJob)
     end
 
-    it "skips background provisioning when eager provisioning is disabled" do
+    it "defers eager-disabled container requests to the lazy provisioning path" do
       account.tenant_setting!.update!(features: { "chat_settings" => { "chat_eager_provisioning" => false } })
 
+      session = nil
       expect {
-        described_class.call(account: account, user: user, container_capability: "pending")
+        session = described_class.call(account: account, user: user, container_capability: "pending")
       }.not_to have_enqueued_job(ChatSessions::ProvisionContainerJob)
+
+      expect(session.container_capability).to eq("none")
+      expect(session.container_requested_at).to be_nil
     end
 
     it "enqueues background provisioning when eager provisioning is enabled" do

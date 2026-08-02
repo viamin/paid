@@ -66,7 +66,7 @@ module ChatSessions
       ChatSession.create!(
         account: account,
         created_by: user,
-        container_capability: container_capability,
+        container_capability: initial_container_capability,
         container_requested_at: container_requested_at,
         runner_id: resolved_runner&.id,
         model: resolved_model,
@@ -81,7 +81,7 @@ module ChatSessions
     end
 
     def container_requested_at
-      return unless ChatSession::CONTAINER_REQUESTED_CAPABILITIES.include?(container_capability)
+      return unless ChatSession::CONTAINER_REQUESTED_CAPABILITIES.include?(initial_container_capability)
 
       Time.current
     end
@@ -89,7 +89,9 @@ module ChatSessions
     # Provisioning runs in the background (RDR-037) so the first inline message
     # is never blocked. Only sessions that requested a container ("pending")
     # are provisioned, and only when eager provisioning is enabled for the
-    # account; accounts that defer it rely on the lazy path instead.
+    # account. Accounts that defer provisioning start inline-only so the first
+    # container-only tool call can win the existing none/stopped -> pending lazy
+    # transition instead of leaving the session permanently pending.
     #
     # @spec CHAT-CONTAINER-PROVISIONING-001
     # @spec CHAT-CONTAINER-PROVISIONING-005
@@ -102,6 +104,13 @@ module ChatSessions
 
     def eager_provisioning_enabled?
       account.tenant_setting&.chat_eager_provisioning != false
+    end
+
+    def initial_container_capability
+      return container_capability if eager_provisioning_enabled?
+      return "none" if ChatSession::CONTAINER_REQUESTED_CAPABILITIES.include?(container_capability)
+
+      container_capability
     end
 
     def build_system_prompt(session)

@@ -52,15 +52,17 @@
 - [x] **CHAT-CONTAINER-PROVISIONING-005** - When
   `TenantSetting#chat_eager_provisioning` is `false`, the system SHALL NOT
   enqueue background provisioning at session create time; the session
-  remains `pending` and only transitions via the lazy path. Inline-only
-  sessions (`container_capability: "none"`) SHALL NOT enqueue provisioning
-  regardless of the flag.
+  starts with `container_capability: "none"` so it can transition through the
+  lazy none/stopped -> pending path when a container-only tool is invoked.
+  Inline-only sessions (`container_capability: "none"`) SHALL NOT enqueue
+  provisioning regardless of the flag.
   *Tests:* `spec/services/chat_sessions/create_spec.rb`
-  ("skips background provisioning when eager provisioning is disabled",
+  ("defers eager-disabled container requests to the lazy provisioning path",
   "does not enqueue provisioning for an inline-only session",
   "enqueues background provisioning when eager provisioning is enabled"),
   `spec/requests/tenant_configurations_spec.rb` (chat_eager_provisioning toggle).
-  *Code:* `ChatSessions::Create#eager_provisioning_enabled?`,
+  *Code:* `ChatSessions::Create#initial_container_capability`,
+  `ChatSessions::Create#eager_provisioning_enabled?`,
   `TenantSetting#chat_eager_provisioning`.
 
 - [x] **CHAT-CONTAINER-PROVISIONING-006** - Background provisioning SHALL use
