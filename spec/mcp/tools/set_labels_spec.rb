@@ -177,5 +177,13 @@ RSpec.describe Tools::SetLabels do
         tool.call(project_id: project.id, issue_number: 42, labels: %w[bug])
       end.to raise_error(GithubClient::Error, "API error")
     end
+
+    it "propagates label fetch failures" do
+      allow(github_client).to receive(:labels).and_raise(GithubClient::Error, "rate limited")
+
+      expect do
+        tool.call(project_id: project.id, issue_number: 42, labels: %w[bug])
+      end.to raise_error(GithubClient::Error, "rate limited")
+    end
   end
 end

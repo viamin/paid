@@ -9,13 +9,15 @@ RSpec.describe Tools::CreateIssue do
   let(:session) { create(:chat_session, account:, created_by: user) }
   let(:tool) { described_class.new(user:, session:) }
   let(:github_client) { instance_double(GithubClient) }
+  let(:local_issue) { create(:issue, project:) }
   let(:created_issue) do
     Struct.new(:number, :html_url).new(42, "https://github.com/owner/repo/issues/42")
   end
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
-    allow(Issues::UpsertFromGithub).to receive(:call)
+    allow(Issues::UpsertFromGithub).to receive(:call).and_return(local_issue)
+    allow(Issues::ParseDependencies).to receive(:call)
     allow(github_client).to receive_messages(create_issue: created_issue, labels: [
       Struct.new(:name).new("bug"),
       Struct.new(:name).new("enhancement"),
@@ -31,6 +33,7 @@ RSpec.describe Tools::CreateIssue do
         project.full_name, title: "Test issue", body: "Test body", labels: [], assignees: []
       )
       expect(Issues::UpsertFromGithub).to have_received(:call).with(project:, github_issue: created_issue)
+      expect(Issues::ParseDependencies).to have_received(:call).with(issue: local_issue)
       expect(result[:number]).to eq(42)
       expect(result[:url]).to eq("https://github.com/owner/repo/issues/42")
     end
@@ -95,6 +98,14 @@ RSpec.describe Tools::CreateIssue do
       expect do
         tool.call(project_id: project.id, title: "Test issue")
       end.to raise_error(GithubClient::Error, "API error")
+    end
+
+    it "propagates label fetch failures" do
+      allow(github_client).to receive(:labels).and_raise(GithubClient::Error, "rate limited")
+
+      expect do
+        tool.call(project_id: project.id, title: "Test issue", labels: %w[bug])
+      end.to raise_error(GithubClient::Error, "rate limited")
     end
   end
 end

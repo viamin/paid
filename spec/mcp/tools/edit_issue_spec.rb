@@ -9,6 +9,7 @@ RSpec.describe Tools::EditIssue do
   let(:session) { create(:chat_session, account:, created_by: user) }
   let(:tool) { described_class.new(user:, session:) }
   let(:github_client) { instance_double(GithubClient) }
+  let(:local_issue) { create(:issue, project:) }
   let(:updated_issue) do
     Struct.new(:number, :html_url, :title, :state).new(
       42, "https://github.com/owner/repo/issues/42", "Updated title", "open"
@@ -17,7 +18,8 @@ RSpec.describe Tools::EditIssue do
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
-    allow(Issues::UpsertFromGithub).to receive(:call)
+    allow(Issues::UpsertFromGithub).to receive(:call).and_return(local_issue)
+    allow(Issues::ParseDependencies).to receive(:call)
     allow(github_client).to receive_messages(update_issue: updated_issue, labels: [
       Struct.new(:name).new("bug"),
       Struct.new(:name).new("enhancement")
@@ -37,12 +39,14 @@ RSpec.describe Tools::EditIssue do
       tool.call(project_id: project.id, issue_number: 42, body: "New body")
 
       expect(github_client).to have_received(:update_issue).with(project.full_name, 42, body: "New body")
+      expect(Issues::ParseDependencies).to have_received(:call).with(issue: local_issue)
     end
 
     it "updates the issue state" do
       tool.call(project_id: project.id, issue_number: 42, state: "closed")
 
       expect(github_client).to have_received(:update_issue).with(project.full_name, 42, state: "closed")
+      expect(Issues::ParseDependencies).not_to have_received(:call)
     end
 
     it "updates multiple fields at once" do
@@ -108,6 +112,14 @@ RSpec.describe Tools::EditIssue do
       expect do
         tool.call(project_id: project.id, issue_number: 42, title: "X")
       end.to raise_error(GithubClient::Error, "API error")
+    end
+
+    it "propagates label fetch failures" do
+      allow(github_client).to receive(:labels).and_raise(GithubClient::Error, "rate limited")
+
+      expect do
+        tool.call(project_id: project.id, issue_number: 42, labels: %w[bug])
+      end.to raise_error(GithubClient::Error, "rate limited")
     end
   end
 end

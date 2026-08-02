@@ -105,12 +105,7 @@ module Tools
 
     def label_cache(repo, client)
       @label_cache ||= {}
-      @label_cache[repo] ||= begin
-        client.labels(repo).map { |l| l.is_a?(String) ? l : l.name }
-      rescue StandardError => e
-        Rails.logger.warn(message: "mcp.label_fetch_failed", repo:, error: e.message)
-        []
-      end
+      @label_cache[repo] ||= client.labels(repo).map { |l| l.is_a?(String) ? l : l.name }
     end
   end
 end

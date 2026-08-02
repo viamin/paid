@@ -69,7 +69,9 @@ module Tools
     end
 
     def sync_local_issue!(project, github_issue)
-      Issues::UpsertFromGithub.call(project:, github_issue:)
+      issue = Issues::UpsertFromGithub.call(project:, github_issue:)
+      Issues::ParseDependencies.call(issue:)
+      issue
     end
 
     def validate_labels!(client, repo, requested_labels)
@@ -82,12 +84,7 @@ module Tools
 
     def label_cache(repo, client)
       @label_cache ||= {}
-      @label_cache[repo] ||= begin
-        client.labels(repo).map { |l| l.is_a?(String) ? l : l.name }
-      rescue StandardError => e
-        Rails.logger.warn(message: "mcp.label_fetch_failed", repo:, error: e.message)
-        []
-      end
+      @label_cache[repo] ||= client.labels(repo).map { |l| l.is_a?(String) ? l : l.name }
     end
   end
 end

@@ -57,7 +57,7 @@ module Tools
       end
 
       issue = client.update_issue(repo, issue_number, **options)
-      sync_local_issue!(project, issue)
+      sync_local_issue!(project, issue, parse_dependencies: options.key?(:body))
 
       Audit::RecordEvent.call(
         action: "issue.updated",
@@ -88,8 +88,10 @@ module Tools
       client
     end
 
-    def sync_local_issue!(project, github_issue)
-      Issues::UpsertFromGithub.call(project:, github_issue:)
+    def sync_local_issue!(project, github_issue, parse_dependencies: false)
+      issue = Issues::UpsertFromGithub.call(project:, github_issue:)
+      Issues::ParseDependencies.call(issue:) if parse_dependencies
+      issue
     end
 
     def validate_labels!(client, repo, requested_labels)
@@ -102,12 +104,7 @@ module Tools
 
     def label_cache(repo, client)
       @label_cache ||= {}
-      @label_cache[repo] ||= begin
-        client.labels(repo).map { |l| l.is_a?(String) ? l : l.name }
-      rescue StandardError => e
-        Rails.logger.warn(message: "mcp.label_fetch_failed", repo:, error: e.message)
-        []
-      end
+      @label_cache[repo] ||= client.labels(repo).map { |l| l.is_a?(String) ? l : l.name }
     end
   end
 end
