@@ -53,7 +53,7 @@ RSpec.describe Tools::Registry do
           type: "container_capability",
           state: "pending",
           retryable: true,
-          expectedBehavior: "invoking_waits_for_inflight_provision"
+          expectedBehavior: "invoking_returns_retryable_unavailable"
         )
       )
     end
@@ -109,7 +109,6 @@ RSpec.describe Tools::Registry do
           container_capability: capability,
           clone_manifest: clone_manifest
         )
-        stub_const("Tools::Registry::MCP_CONTAINER_WAIT_TIMEOUT", 0) if capability.in?(%w[pending provisioning])
 
         result = described_class.dispatch_mcp(
           name: "git_status",
@@ -162,7 +161,6 @@ RSpec.describe Tools::Registry do
         session.update!(container_capability: "pending")
         false
       end
-      stub_const("Tools::Registry::MCP_CONTAINER_WAIT_TIMEOUT", 0)
       allow(Containers::ProvisionForChat).to receive(:call)
 
       result = described_class.dispatch_mcp(name: "git_status",
@@ -205,6 +203,69 @@ RSpec.describe Tools::Registry do
           session: session
         )
       }.to raise_error(ArgumentError, /Unknown tool/)
+    end
+  end
+
+  describe ".chat_definitions_for" do
+    let(:project) { create(:project, account: account) }
+    let(:owner) { create(:user, :owner, account: account) }
+    let(:chat_session) { build(:chat_session, account: account, created_by: owner, project: project) }
+
+    before { create(:project_membership, :member, user: owner, project: project) }
+
+    # RDR-028: the per-tool `confirmed` argument must be stripped from every
+    # advertised write-tool schema — not just operator tools — so confirmation
+    # always originates from the human approver, never the model itself.
+    it "strips the confirmed argument from non-operator write-tool schemas" do
+      schema = described_class.chat_definitions_for(user: owner, session: chat_session)
+        .find { |definition| definition[:name] == "trigger_agent_run" }
+        .fetch(:inputSchema)
+
+      expect(schema[:properties]).not_to have_key(:confirmed)
+      expect(schema[:required]).not_to include("confirmed")
+    end
+
+    it "leaves read-only tool schemas untouched" do
+      get_project = described_class.chat_definitions_for(user: owner, session: chat_session)
+        .find { |definition| definition[:name] == "get_project" }
+
+      expect(get_project[:inputSchema]).to eq(Tools::GetProject.definition[:inputSchema])
+    end
+  end
+
+  describe "write-operation audit" do
+    let(:write_tool_names) do
+      %w[
+        trigger_agent_run
+        cancel_agent_run
+        record_change_intent
+        invite_account_member
+        update_account_membership
+        remove_account_membership
+        update_user_settings
+        update_tenant_settings
+        update_project_settings
+        apply_configuration_profile
+        create_provider_api_key
+        update_provider_api_key
+        remove_provider_api_key
+        create_mcp_server_definition
+        update_mcp_server_definition
+        remove_mcp_server_definition
+        write_repo_file
+        apply_patch
+        git_branch_create
+        operator_suspend_account
+        operator_reactivate_account
+        operator_deactivate_account
+        operator_recompress_style_guides
+      ]
+    end
+
+    it "flags the known write tools" do
+      flagged_write_tool_names = described_class.all.select(&:write_operation?).map(&:tool_name)
+
+      expect(flagged_write_tool_names).to match_array(write_tool_names)
     end
   end
 end

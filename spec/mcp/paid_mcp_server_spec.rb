@@ -56,7 +56,7 @@ RSpec.describe PaidMcpServer do
         availability: include(
           state: "pending",
           retryable: true,
-          expectedBehavior: "invoking_waits_for_inflight_provision"
+          expectedBehavior: "invoking_returns_retryable_unavailable"
         )
       )
     end
@@ -65,7 +65,6 @@ RSpec.describe PaidMcpServer do
       manifest = [ { project_id: project.id, path: "/workspace/repo-one" } ]
       session = create(:chat_session, account: account, created_by: user, container_capability: "pending", clone_manifest: manifest)
       pending_server = described_class.new(session: session, user: user)
-      stub_const("Tools::Registry::MCP_CONTAINER_WAIT_TIMEOUT", 0)
 
       result = pending_server.handle_request(
         method: "tools/call",

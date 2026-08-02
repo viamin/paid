@@ -2,9 +2,6 @@
 
 module Tools
   module Registry
-    MCP_CONTAINER_WAIT_TIMEOUT = 60.seconds
-    MCP_CONTAINER_WAIT_INTERVAL = 0.25
-
     TOOL_CLASSES = [
       "Tools::ListProjects",
       "Tools::GetProject",
@@ -247,21 +244,24 @@ module Tools
         requires_container?(name) && !session&.container_ready?
       end
 
+      # Provisions the workspace container when this request wins the
+      # none/stopped -> pending transition. When a container is already
+      # pending/provisioning the request returns promptly instead of blocking
+      # the synchronous MCP tools/call worker; the client retries the call
+      # after the tools/list_changed notification emitted on the
+      # provisioning -> ready transition (see HandleCapabilityTransition).
       def ensure_mcp_container_ready(name:, session:)
         return unless requires_container?(name)
         return unless session
 
-        if won_container_provision_request?(session)
-          provision_mcp_container(session:)
-        elsif session.container_pending? || session.container_provisioning?
-          await_mcp_container_ready(session:)
-        end
+        provision_mcp_container(session:) if won_container_provision_request?(session)
       end
 
       # Returns true only when this request won the none/stopped -> pending
       # transition. When a concurrent request already moved the session out of
       # none/stopped, request_container_provision! returns false and the caller
-      # falls through to await the in-flight provisioning instead of racing it.
+      # returns a retryable unavailable result instead of racing the in-flight
+      # provisioning.
       def won_container_provision_request?(session)
         return false unless session.inline_only? || session.container_stopped?
 
@@ -274,21 +274,6 @@ module Tools
       rescue StandardError => error
         log_mcp_container_provision_failure(session:, error:)
         session.reload
-      end
-
-      def await_mcp_container_ready(session:)
-        deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + MCP_CONTAINER_WAIT_TIMEOUT
-
-        loop do
-          session.reload
-          return if session.container_ready?
-          return unless session.container_pending? || session.container_provisioning?
-
-          remaining = deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)
-          return if remaining <= 0
-
-          sleep([ MCP_CONTAINER_WAIT_INTERVAL, remaining ].min)
-        end
       end
 
       def log_mcp_container_provision_failure(session:, error:)
@@ -332,7 +317,7 @@ module Tools
         when "none", "stopped"
           "invoking_triggers_lazy_provisioning"
         when "pending", "provisioning"
-          "invoking_waits_for_inflight_provision"
+          "invoking_returns_retryable_unavailable"
         else
           "invoking_returns_container_unavailable"
         end
