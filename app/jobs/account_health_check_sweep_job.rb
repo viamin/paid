@@ -28,8 +28,16 @@ class AccountHealthCheckSweepJob < ApplicationJob
       # Project#effective_owner is a method (created_by || account.fallback_owner),
       # not an association, so preload the associations it resolves through to
       # avoid an N+1 across the project fleet.
+      #
+      # owner_findings_cache is shared across every Coordinator.call below so
+      # runner/user findings for a given owner (including network-backed
+      # checks) are computed once per sweep, not once per project.
+      owner_findings_cache = {}
+
       Project.includes(:created_by, :account).find_each do |project|
-        result = HealthChecks::Coordinator.call(scope: :project, subject: project, include_network: true)
+        result = HealthChecks::Coordinator.call(
+          scope: :project, subject: project, include_network: true, owner_findings_cache: owner_findings_cache
+        )
         HealthChecks::Cache.write(project, result)
         checked += 1
         total_findings += result.findings.size

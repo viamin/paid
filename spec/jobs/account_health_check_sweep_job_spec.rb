@@ -45,7 +45,7 @@ RSpec.describe AccountHealthCheckSweepJob do
 
       projects.each do |project|
         expect(HealthChecks::Coordinator).to have_received(:call)
-          .with(scope: :project, subject: project, include_network: true)
+          .with(scope: :project, subject: project, include_network: true, owner_findings_cache: anything)
         expect(HealthChecks::Cache).to have_received(:write).with(project, clean_result)
       end
       expect(Rails.logger).to have_received(:info).with(
@@ -61,6 +61,20 @@ RSpec.describe AccountHealthCheckSweepJob do
       described_class.perform_now
 
       expect(Rails.logger).to have_received(:info).with(hash_including(projects_checked: 2, total_findings: 1))
+    end
+
+    it "shares one owner_findings_cache across every project in the sweep" do
+      create_list(:project, 2)
+      seen_caches = []
+      allow(HealthChecks::Coordinator).to receive(:call) do |owner_findings_cache:, **|
+        seen_caches << owner_findings_cache
+        clean_result
+      end
+
+      described_class.perform_now
+
+      expect(seen_caches.size).to eq(2)
+      expect(seen_caches[0]).to equal(seen_caches[1])
     end
 
     it "runs each project under TenantContext system access (RLS bypass)" do

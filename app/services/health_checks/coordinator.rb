@@ -15,15 +15,24 @@ module HealthChecks
   # Network checks (those that hit GitHub / the model registry) are skipped
   # unless +include_network+ is true. They run only from the scheduled sweep
   # job, never synchronously in a request.
+  #
+  # +owner_findings_cache+ memoizes the runner/user findings composed for a
+  # :project run, keyed by owner id. Runner and user findings depend only on
+  # the project's effective owner, not the project itself, so a caller that
+  # sweeps many projects (e.g. AccountHealthCheckSweepJob) should pass in one
+  # Hash shared across calls to avoid recomputing the same owner's findings
+  # — including network-backed checks — once per project.
   class Coordinator
-    def self.call(scope:, subject:, include_network: false)
-      new(scope: scope, subject: subject, include_network: include_network).call
+    def self.call(scope:, subject:, include_network: false, owner_findings_cache: {})
+      new(scope: scope, subject: subject, include_network: include_network,
+          owner_findings_cache: owner_findings_cache).call
     end
 
-    def initialize(scope:, subject:, include_network: false)
+    def initialize(scope:, subject:, include_network: false, owner_findings_cache: {})
       @scope = scope
       @subject = subject
       @include_network = include_network
+      @owner_findings_cache = owner_findings_cache
     end
 
     def call
@@ -44,6 +53,10 @@ module HealthChecks
       owner = @subject.effective_owner
       return [] unless owner
 
+      @owner_findings_cache[owner.id] ||= owner_scope_findings(owner)
+    end
+
+    def owner_scope_findings(owner)
       runner_findings = owner.runners.kept_only.for_agent_runs.flat_map { |runner| run_checks(:runner, runner) }
       runner_findings + run_checks(:user, owner)
     end

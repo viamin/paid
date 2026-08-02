@@ -70,5 +70,25 @@ RSpec.describe HealthChecks::Coordinator do
 
       expect(result.findings.map(&:scope)).to all(eq(:runner))
     end
+
+    it "reuses a shared owner_findings_cache instead of recomputing owner-scope findings per project" do
+      account = create(:account)
+      owner = create(:user, account: account) # User#ensure_default_runner gives it one runner
+      first_project = create(:project, created_by: owner, account: account)
+      second_project = create(:project, created_by: owner, account: account)
+      network = HealthChecks::Checks::Runner::DeprecatedModel
+      allow(network).to receive(:call).and_return(
+        [ HealthChecks::Finding.new(check: network.name, scope: :runner, severity: :warning, message: "stale") ]
+      )
+      owner_findings_cache = {}
+
+      described_class.call(scope: :project, subject: first_project, include_network: true,
+                            owner_findings_cache: owner_findings_cache)
+      described_class.call(scope: :project, subject: second_project, include_network: true,
+                            owner_findings_cache: owner_findings_cache)
+
+      # Called once for the owner's single runner, not once per project.
+      expect(network).to have_received(:call).once
+    end
   end
 end
