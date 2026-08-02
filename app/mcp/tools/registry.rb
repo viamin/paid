@@ -17,6 +17,7 @@ module Tools
       "Tools::GetIssueDetails",
       "Tools::GetPullRequestDetails",
       "Tools::SearchCode",
+      "Tools::SearchIssues",
       "Tools::SearchIntents",
       "Tools::ReadRepoFile",
       "Tools::ListRepoTree",
