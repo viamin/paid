@@ -28,7 +28,7 @@ module Tools
     end
 
     def self.available_for_chat?(user:, session:)
-      user.present? && container_ready?(session:) && session.clone_manifest_entries.present?
+      user.present? && session&.clone_manifest_entries.present?
     end
 
     def self.input_schema

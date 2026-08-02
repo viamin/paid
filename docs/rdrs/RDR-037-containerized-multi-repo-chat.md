@@ -220,7 +220,7 @@ Session visibility must tighten alongside multi-repo support: a session is reada
 
 | Tool | Inline-only OK | Requires container |
 |------|----------------|--------------------|
-| `list_projects`, `get_project`, `get_project_issues`, `get_project_pull_requests`, `get_issue_details`, `get_pull_request_details`, `get_agent_run`, `list_agent_runs`, `cancel_agent_run`, `trigger_agent_run`, `search_code` | ✅ | — |
+| `list_projects`, `get_project`, `get_project_issues`, `get_project_pull_requests`, `get_issue_details`, `get_pull_request_details`, `get_agent_run`, `list_agent_runs`, `cancel_agent_run`, `trigger_agent_run`, `search_code`, `search_issues` (from #2376) | ✅ | — |
 | `read_repo_file`, `list_repo_tree`, `grep_repo` (from #2352) | ✅ (via GitHub API) | ✅ (faster: read from local clone if cloned) |
 | Admin/operator tools (from #2350, #2351) | ✅ | — |
 | `clone_project` | — | ✅ |
@@ -355,7 +355,7 @@ The cloning token decision (user GH token first, project token fallback, identit
 #### Step 2: Background provisioning
 
 - New `ChatSessions::ProvisionContainerJob` (GoodJob, low priority, account-scoped concurrency)
-- `ChatSessions::Create` enqueues the job when `chat_eager_provisioning` is true (default), skips when false
+- `ChatSessions::Create` enqueues the job when `chat_eager_provisioning` is true (default); when false, container-requesting sessions start inline-only so the lazy none/stopped -> pending path can provision on first container-tool use
 - `ProvisionForChat`: split current single-project seed out of the main path; default to provisioning an empty `/workspace/`
 - On provision success: broadcast capability change + MCP `tools/list_changed`
 - On provision failure: capability → `failed`; surface a system message in the session
@@ -444,7 +444,7 @@ The cloning token decision (user GH token first, project token fallback, identit
 | Different account member reopens a session containing a mutable clone they cannot `run_agent?` | Repo may still be re-cloned if they satisfy `project.show?`, but `run_shell` stays absent and mutable tools reject that repo for that user |
 | Different account member tries to open a session containing any repo they cannot `show?` | Session show/reopen is denied before transcript or manifest contents are returned |
 | Project deleted between close and reopen | Reopen surfaces a system message naming the failed clone; rest of session usable |
-| Account with `chat_eager_provisioning = false` | No background job; container provisioned lazily on first container-only tool call |
+| Account with `chat_eager_provisioning = false` | Session starts inline-only; no background job; container provisioned lazily on first container-only tool call |
 | `run_shell` invoked when `TenantSettings.chat_shell_enabled = false` | Tool not present in `tools/list`; if invoked anyway, returns authorization error |
 | Session contains a repo cloned with only `project.show?` | `run_shell` is absent from `tools/list`, and mutable tools reject that repo unless the user separately satisfies `project.run_agent?` |
 

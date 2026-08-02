@@ -3,6 +3,8 @@
 require "rails_helper"
 
 RSpec.describe Tools::Registry do
+  let(:account) { create(:account) }
+  let(:user) { create(:user, :member, account: account) }
   let(:write_tool_names) do
     %w[
       trigger_agent_run
@@ -25,12 +27,103 @@ RSpec.describe Tools::Registry do
       apply_patch
       git_branch_create
       propose_pull_request
+      clone_project
       run_shell
       operator_suspend_account
       operator_reactivate_account
       operator_deactivate_account
       operator_recompress_style_guides
     ]
+  end
+
+  describe ".tools_for" do
+    let(:clone_manifest) do
+      [
+        { project_id: 123, path: "/workspace/repo-one" }
+      ]
+    end
+
+    # RDR-037: container-only tools stay discoverable in tools/list even before
+    # the container is ready. Dispatch-time availability is handled separately.
+    %w[none pending provisioning ready failed stopped].each do |capability|
+      it "keeps container tools discoverable for #{capability}" do
+        session = create(
+          :chat_session,
+          account: account,
+          created_by: user,
+          container_capability: capability,
+          clone_manifest: clone_manifest,
+          container_id: (capability == "ready" ? "container-123" : nil)
+        )
+
+        tool_names = described_class.tools_for(session:, user:).map(&:tool_name)
+
+        expect(tool_names).to include("list_projects")
+        expect(tool_names).to include("git_status")
+        expect(tool_names).to include("git_diff")
+        expect(tool_names).to include("write_repo_file")
+      end
+    end
+
+    it "annotates container tools as temporarily unavailable until the workspace is ready" do
+      session = create(
+        :chat_session,
+        account: account,
+        created_by: user,
+        container_capability: "pending",
+        clone_manifest: clone_manifest
+      )
+
+      definitions = described_class.mcp_definitions_for(user: user, session: session)
+      git_status_definition = definitions.find { |definition| definition[:name] == "git_status" }
+
+      expect(git_status_definition[:annotations]).to include(
+        temporaryUnavailable: true,
+        availability: include(
+          type: "container_capability",
+          state: "pending",
+          retryable: true,
+          message: Containers::CapabilityMessages.unavailable_for("pending"),
+          expectedBehavior: "invoking_returns_retryable_unavailable"
+        )
+      )
+    end
+
+    it "removes the temporary-unavailable annotation once the workspace is ready" do
+      session = create(
+        :chat_session,
+        account: account,
+        created_by: user,
+        container_capability: "ready",
+        clone_manifest: clone_manifest,
+        container_id: "container-123"
+      )
+
+      definitions = described_class.mcp_definitions_for(user: user, session: session)
+      git_status_definition = definitions.find { |definition| definition[:name] == "git_status" }
+
+      expect(git_status_definition).not_to have_key(:annotations)
+    end
+
+    it "omits container tools when the session has no clone manifest" do
+      session = create(:chat_session, account: account, created_by: user, container_capability: "pending")
+
+      tool_names = described_class.tools_for(session:, user:).map(&:tool_name)
+
+      expect(tool_names).to include("list_projects")
+      expect(tool_names).not_to include("git_status", "git_diff", "write_repo_file")
+    end
+
+    it "continues to apply Pundit-backed availability filters" do
+      viewer = create(:user, :viewer, account: account)
+      session = create(:chat_session, account: account, created_by: viewer, container_capability: "ready", clone_manifest: clone_manifest, container_id: "container-123")
+
+      tool_names = described_class.tools_for(session:, user: viewer).map(&:tool_name)
+
+      expect(tool_names).to include("list_projects")
+      expect(tool_names).not_to include("trigger_agent_run")
+      expect(tool_names).not_to include("cancel_agent_run")
+    end
   end
 
   describe ".definitions_for" do
@@ -138,6 +231,9 @@ RSpec.describe Tools::Registry do
       )
     end
 
+    # RDR-028: the per-tool `confirmed` argument must be stripped from every
+    # advertised write-tool schema — not just operator tools — so confirmation
+    # always originates from the human approver, never the model itself.
     it "strips the confirmed argument from write-tool schemas so the model cannot self-confirm" do
       trigger_definition = described_class.chat_definitions_for(user: user, session: chat_session).find { |definition| definition[:name] == "trigger_agent_run" }
       schema = trigger_definition[:inputSchema]
@@ -234,40 +330,152 @@ RSpec.describe Tools::Registry do
   end
 
   describe ".dispatch_mcp" do
-    let(:account) { create(:account) }
-    let(:user) { create(:user, :owner, account:) }
-    let(:session) { build(:chat_session, account:, created_by: user) }
-
-    around do |example|
-      original_emails = ENV["PAID_OPERATOR_EMAILS"]
-      ENV["PAID_OPERATOR_EMAILS"] = user.email
-      example.run
-    ensure
-      ENV["PAID_OPERATOR_EMAILS"] = original_emails
+    let(:clone_manifest) do
+      [ { project_id: 123, path: "/workspace/repo-one" } ]
     end
 
-    it "allows direct calls to operator read-only tools" do
-      create(:account)
+    %w[pending provisioning failed].each do |capability|
+      it "returns a structured unavailable result for container tools when #{capability}" do
+        session = create(
+          :chat_session,
+          account: account,
+          created_by: user,
+          container_capability: capability,
+          clone_manifest: clone_manifest
+        )
 
-      result = described_class.dispatch_mcp(
-        name: "operator_list_accounts",
-        arguments: {},
+        result = described_class.dispatch_mcp(
+          name: "git_status",
+          arguments: { "repo_path" => "/workspace/repo-one" },
+          user: user,
+          session: session
+        )
+
+        expect(result).to include(
+          status: "error",
+          error: "container_unavailable",
+          container_capability: capability,
+          message: Containers::CapabilityMessages.unavailable_for(capability)
+        )
+        expect(result[:retryable]).to eq(capability.in?(%w[pending provisioning]))
+      end
+    end
+
+    %w[none stopped].each do |capability|
+      it "lazily provisions container tools when #{capability}" do
+        session = create(
+          :chat_session,
+          account: account,
+          created_by: user,
+          container_capability: capability,
+          clone_manifest: clone_manifest
+        )
+        allow(Containers::ProvisionForChat).to receive(:call) do
+          session.update!(container_capability: "ready", container_id: "container-123")
+        end
+        allow(described_class).to receive(:dispatch_via_registry).and_return({ status: "ok" })
+
+        result = described_class.dispatch_mcp(
+          name: "git_status",
+          arguments: { "repo_path" => "/workspace/repo-one" },
+          user: user,
+          session: session
+        )
+
+        expect(Containers::ProvisionForChat).to have_received(:call).with(chat_session: session)
+        expect(result).to eq(status: "ok")
+      end
+    end
+
+    it "does not provision when a concurrent request already won the transition" do
+      session = create(:chat_session, account: account, created_by: user,
+                                       container_capability: "stopped", clone_manifest: clone_manifest)
+      # Lost race: another request moved the session to pending and won the
+      # transition, so this request must await instead of racing ProvisionForChat.
+      allow(session).to receive(:request_container_provision!) do
+        session.update!(container_capability: "pending")
+        false
+      end
+      allow(Containers::ProvisionForChat).to receive(:call)
+
+      result = described_class.dispatch_mcp(name: "git_status",
+                                            arguments: { "repo_path" => "/workspace/repo-one" },
+                                            user: user, session: session)
+
+      expect(Containers::ProvisionForChat).not_to have_received(:call)
+      expect(result).to include(status: "error", error: "container_unavailable",
+                                container_capability: "pending", retryable: true)
+    end
+
+    it "dispatches normally when the container is ready" do
+      session = create(
+        :chat_session,
+        :workspace,
+        account: account,
+        created_by: user,
+        clone_manifest: clone_manifest
+      )
+      allow(described_class).to receive(:dispatch_via_registry).and_return({ status: "ok" })
+
+      described_class.dispatch_mcp(
+        name: "git_status",
+        arguments: { "repo_path" => "/workspace/repo-one" },
         user: user,
         session: session
       )
 
-      expect(result).to be_an(Array)
+      expect(described_class).to have_received(:dispatch_via_registry)
     end
 
-    it "rejects direct calls to operator write tools" do
+    it "still raises for unknown tools on the MCP surface" do
+      session = create(:chat_session, account: account, created_by: user)
+
       expect {
         described_class.dispatch_mcp(
-          name: "operator_suspend_account",
-          arguments: { account_id: account.id, confirmed: true },
+          name: "nonexistent",
+          arguments: {},
           user: user,
           session: session
         )
-      }.to raise_error(ArgumentError, "Unknown tool: operator_suspend_account")
+      }.to raise_error(ArgumentError, /Unknown tool/)
+    end
+
+    context "with operator tools" do
+      let(:account) { create(:account) }
+      let(:user) { create(:user, :owner, account:) }
+      let(:session) { build(:chat_session, account:, created_by: user) }
+
+      around do |example|
+        original_emails = ENV["PAID_OPERATOR_EMAILS"]
+        ENV["PAID_OPERATOR_EMAILS"] = user.email
+        example.run
+      ensure
+        ENV["PAID_OPERATOR_EMAILS"] = original_emails
+      end
+
+      it "allows direct calls to operator read-only tools" do
+        create(:account)
+
+        result = described_class.dispatch_mcp(
+          name: "operator_list_accounts",
+          arguments: {},
+          user: user,
+          session: session
+        )
+
+        expect(result).to be_an(Array)
+      end
+
+      it "rejects direct calls to operator write tools" do
+        expect {
+          described_class.dispatch_mcp(
+            name: "operator_suspend_account",
+            arguments: { account_id: account.id, confirmed: true },
+            user: user,
+            session: session
+          )
+        }.to raise_error(ArgumentError, "Unknown tool: operator_suspend_account")
+      end
     end
   end
 

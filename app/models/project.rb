@@ -1148,20 +1148,23 @@ class Project < ApplicationRecord
 
   # Returns an opaque GitHub credential (installation token or PAT) for
   # repo operations. Callers use this without knowing which auth path
-  # is active.
+  # is active. Memoized per instance so a single request does not
+  # re-derive the credential — #client derives it internally too, so
+  # callers that touch both (e.g. RepoReadClientResolver) would otherwise
+  # fetch the App installation token twice. #installation_token_refresher
+  # clears the memo so a 401 mid-request still mints a fresh token.
   def github_credential
-    if github_installation_id.present? || github_installation.present?
-      return unless credential_active?(github_installation)
+    return @github_credential if defined?(@github_credential)
 
-      Github::AppInstallation.token_for(
-        installation_id: github_installation.github_installation_id,
-        repo_full_name: full_name
-      )
-    else
-      return unless credential_active?(github_token)
-
-      github_token&.token
-    end
+    @github_credential =
+      if github_installation_id.present? || github_installation.present?
+        credential_active?(github_installation) ? Github::AppInstallation.token_for(
+          installation_id: github_installation.github_installation_id,
+          repo_full_name: full_name
+        ) : nil
+      else
+        credential_active?(github_token) ? github_token&.token : nil
+      end
   end
 
   # True when this app-backed project is configured to retry a GitHub
@@ -1213,7 +1216,9 @@ class Project < ApplicationRecord
 
   # Returns a proc that clears the cached App installation token and mints
   # a fresh one. Passed to +GithubClient+ so a 401 mid-request triggers a
-  # transparent re-mint instead of a hard failure (RDR-030).
+  # transparent re-mint instead of a hard failure (RDR-030). Clears the
+  # per-instance memo set by #github_credential so the re-mint returns the
+  # fresh token rather than the stale memoized value.
   def installation_token_refresher
     return nil unless github_installation_id.present? || github_installation.present?
 
@@ -1225,6 +1230,7 @@ class Project < ApplicationRecord
         installation_id: installation.github_installation_id,
         repo_full_name: repo_name
       )
+      remove_instance_variable(:@github_credential) if defined?(@github_credential)
       github_credential
     }
   end

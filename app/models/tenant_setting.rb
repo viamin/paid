@@ -28,7 +28,13 @@ class TenantSetting < ApplicationRecord
     "chat_session_token_limit" => 100_000,
     "chat_monthly_token_limit" => nil,
     "chat_max_tool_iterations" => 50,
-    "chat_shell_enabled" => false
+    "chat_max_cloned_repos" => 5,
+    "chat_clone_timeout" => 120,
+    "chat_shell_enabled" => false,
+    # When true (default), a container is provisioned in the background as soon
+    # as a session requests one, so the first message is never blocked. When
+    # false, provisioning is deferred until a container-only tool is invoked.
+    "chat_eager_provisioning" => true
   }.freeze
   DEFAULT_QUALITY_THRESHOLDS = Project::DEFAULT_QUALITY_GATE_SETTINGS.freeze
   DEFAULT_AGENT_SETTINGS = {
@@ -321,12 +327,25 @@ class TenantSetting < ApplicationRecord
   def chat_monthly_token_limit
     effective_chat_settings["chat_monthly_token_limit"]
   end
+
   def chat_max_tool_iterations
     effective_chat_settings["chat_max_tool_iterations"]
   end
 
+  def chat_max_cloned_repos
+    effective_chat_settings["chat_max_cloned_repos"]
+  end
+
+  def chat_clone_timeout
+    effective_chat_settings["chat_clone_timeout"]
+  end
+
   def chat_shell_enabled
     ActiveModel::Type::Boolean.new.cast(effective_chat_settings["chat_shell_enabled"])
+  end
+
+  def chat_eager_provisioning
+    ActiveModel::Type::Boolean.new.cast(effective_chat_settings["chat_eager_provisioning"])
   end
 
   def chat_settings=(value)
@@ -488,6 +507,19 @@ class TenantSetting < ApplicationRecord
       val = chat[key]
       unless val.is_a?(Integer) && val >= 1
         errors.add(:features, "chat_settings.#{key} must be a positive integer")
+      end
+    end
+    if chat.key?("chat_max_cloned_repos") && chat["chat_max_cloned_repos"].present?
+      val = chat["chat_max_cloned_repos"]
+      unless val.is_a?(Integer) && val >= 1 && val <= 50
+        errors.add(:features, "chat_settings.chat_max_cloned_repos must be an integer between 1 and 50")
+      end
+    end
+
+    if chat.key?("chat_clone_timeout") && chat["chat_clone_timeout"].present?
+      val = chat["chat_clone_timeout"]
+      unless val.is_a?(Integer) && val >= 10 && val <= 600
+        errors.add(:features, "chat_settings.chat_clone_timeout must be an integer between 10 and 600")
       end
     end
   end
@@ -690,10 +722,11 @@ class TenantSetting < ApplicationRecord
     normalize_hash(value).slice(*DEFAULT_CHAT_SETTINGS.keys).tap do |normalized|
       next unless normalized.is_a?(Hash)
 
-      %w[chat_session_token_limit chat_monthly_token_limit chat_max_tool_iterations].each do |key|
+      %w[chat_session_token_limit chat_monthly_token_limit chat_max_tool_iterations chat_max_cloned_repos chat_clone_timeout].each do |key|
         normalized[key] = normalize_integer_value(normalized[key]) if normalized.key?(key)
       end
       normalized["chat_shell_enabled"] = ActiveModel::Type::Boolean.new.cast(normalized["chat_shell_enabled"]) if normalized.key?("chat_shell_enabled")
+      normalized["chat_eager_provisioning"] = ActiveModel::Type::Boolean.new.cast(normalized["chat_eager_provisioning"]) if normalized.key?("chat_eager_provisioning")
     end
   end
 

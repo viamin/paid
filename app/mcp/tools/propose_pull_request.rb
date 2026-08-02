@@ -37,17 +37,14 @@ module Tools
       false
     end
 
-    # `clone_manifest_entries` always has at least the single repo
-    # `Containers::ProvisionForChat#seed_workspace!` clones at session start,
-    # so this tool is reachable for that repo alone even without any
-    # additional clone. The multi-repo case this tool is designed for
-    # (`depends_on` spanning a second cloned repo) requires a second manifest
-    # entry, which `Tools::CloneProject` (main, not yet merged into this
-    # branch) is responsible for adding.
+    # Like the other container-only repo tools, chat keeps this tool
+    # discoverable as soon as the session has a clone manifest. The registry
+    # adds the temporary-unavailable metadata while container capability is not
+    # ready, so proposal-specific availability only needs to answer whether the
+    # chat has cloned repos the current user can ship.
     def self.available_for_chat?(user:, session:)
       return false unless user.present?
-      return false unless container_ready?(session:)
-      return false unless session.clone_manifest_entries.present?
+      return false unless session&.clone_manifest_entries.present?
 
       any_manifest_project_mutable?(user:, session:)
     end

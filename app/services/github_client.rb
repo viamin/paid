@@ -184,6 +184,15 @@ class GithubClient
     handle_errors { client.search_code(query, per_page: per_page) }
   end
 
+  # Searches issues and pull requests using GitHub's search API.
+  #
+  # @param query [String] GitHub search query (e.g. "repo:owner/name is:issue duplicate label:bug")
+  # @param per_page [Integer] Max results to return (GitHub caps at 100)
+  # @return [Sawyer::Resource] Search result with .total_count and .items
+  def search_issues(query, per_page: 30)
+    handle_errors { client.search_issues(query, per_page: per_page) }
+  end
+
   # Lists repositories the token has push access to.
   # Filters by permissions.push to exclude repos where the token only
   # has metadata access (relevant for fine-grained PATs with selected repos).
