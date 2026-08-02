@@ -184,34 +184,106 @@ RSpec.describe Tools::RunShell do
       create(:project_membership, :member, user: member, project:)
     end
 
-    it "runs shell when the working directory is under an authorized repo" do
-      result = described_class.new(user: member, session:).call(
-        command: "pwd",
-        working_dir: repo.fetch(:repo_path),
-        confirmed: true
-      )
-
-      expect(result[:exit_code]).to eq(0)
-    end
-
-    it "denies shell when the working directory is under a repo the user cannot run_agent? on" do
+    # A shell command is not sandboxed to its working directory (the command body
+    # can `cd` anywhere in the container), so run_shell grants workspace-scoped
+    # access: it requires run_agent? on every cloned repo in the session, not
+    # just the one named in working_dir.
+    it "denies shell for any working directory when any cloned repo is not run_agent?-authorized for the user" do
       expect {
         described_class.new(user: member, session:).call(
           command: "pwd",
-          working_dir: repo_two.fetch(:repo_path),
+          working_dir: repo.fetch(:repo_path),
           confirmed: true
         )
       }.to raise_error(Pundit::NotAuthorizedError)
     end
 
-    it "attributes the audit event to the repo the command actually ran in" do
-      described_class.new(user: member, session:).call(
-        command: "echo multi",
+    it "denies shell entirely (self.available_for_chat?) when any cloned repo is not run_agent?-authorized for the user" do
+      expect(described_class.available_for_chat?(user: member, session:)).to be false
+    end
+
+    context "when the user can run_agent? on every cloned repo" do
+      before do
+        create(:project_membership, :member, user: member, project: project_two)
+      end
+
+      it "runs shell against the requested working directory" do
+        result = described_class.new(user: member, session:).call(
+          command: "pwd",
+          working_dir: repo.fetch(:repo_path),
+          confirmed: true
+        )
+
+        expect(result[:exit_code]).to eq(0)
+      end
+
+      it "attributes the audit event to the repo the command actually ran in" do
+        described_class.new(user: member, session:).call(
+          command: "echo multi",
+          working_dir: repo_two.fetch(:repo_path),
+          confirmed: true
+        )
+
+        expect(AccountActivityEvent.last.metadata["project_id"]).to eq(project_two.id)
+      end
+    end
+  end
+
+  describe "timeout handling" do
+    def exec_call_options_for(command_fragment)
+      backend = Rails.application.config.x.container_backend
+      backend.exec_calls.find { |call| call[:command].last.include?(command_fragment) }.fetch(:options)
+    end
+
+    it "uses the default timeout when none is given" do
+      tool.call(command: "echo default-timeout", working_dir: repo.fetch(:repo_path), confirmed: true)
+
+      expect(exec_call_options_for("echo default-timeout")[:wait]).to eq(Tools::RunShell::DEFAULT_TIMEOUT)
+    end
+
+    it "uses the requested timeout when within bounds" do
+      tool.call(command: "echo custom-timeout", working_dir: repo.fetch(:repo_path), timeout: 5, confirmed: true)
+
+      expect(exec_call_options_for("echo custom-timeout")[:wait]).to eq(5)
+    end
+
+    it "clamps the requested timeout to MAX_TIMEOUT" do
+      tool.call(command: "echo capped-timeout", working_dir: repo.fetch(:repo_path), timeout: 10_000, confirmed: true)
+
+      expect(exec_call_options_for("echo capped-timeout")[:wait]).to eq(Tools::RunShell::MAX_TIMEOUT)
+    end
+  end
+
+  describe "oversize output" do
+    it "truncates stdout exceeding MAX_OUTPUT_BYTES and flags it" do
+      result = tool.call(
+        command: "head -c 150000 /dev/zero | tr '\\0' 'a'",
         working_dir: repo.fetch(:repo_path),
         confirmed: true
       )
 
-      expect(AccountActivityEvent.last.metadata["project_id"]).to eq(project.id)
+      expect(result[:stdout].bytesize).to be <= Tools::RunShell::MAX_OUTPUT_BYTES + 200
+      expect(result[:stdout]).to include("[Output truncated at")
+      expect(result[:stdout_truncated]).to be true
+    end
+
+    it "truncates stderr exceeding MAX_OUTPUT_BYTES and flags it" do
+      result = tool.call(
+        command: "head -c 150000 /dev/zero | tr '\\0' 'a' 1>&2",
+        working_dir: repo.fetch(:repo_path),
+        confirmed: true
+      )
+
+      expect(result[:stderr].bytesize).to be <= Tools::RunShell::MAX_OUTPUT_BYTES + 200
+      expect(result[:stderr]).to include("[Output truncated at")
+      expect(result[:stderr_truncated]).to be true
+    end
+
+    it "does not flag output under MAX_OUTPUT_BYTES as truncated" do
+      result = tool.call(command: "echo small", working_dir: repo.fetch(:repo_path), confirmed: true)
+
+      expect(result).not_to have_key(:stdout_truncated)
+      expect(result).not_to have_key(:stderr_truncated)
     end
   end
 end

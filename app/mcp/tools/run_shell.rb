@@ -4,12 +4,15 @@ module Tools
   class RunShell < BaseTool
     include ContainerRepoSupport
 
-    # Authorization is derived from the requested working directory, not the
-    # session's primary project: in a multi-repo session a user who can run_agent?
-    # on the primary project must not execute shell against another cloned repo
-    # they lack access to. This mirrors how the other repo-writing tools
-    # authorize against the target repo path.
-    authorize :run_agent?, ->(args) { project_for_working_dir!(args[:working_dir]) }, policy_class: ProjectPolicy
+    # Unlike the other repo-scoped tools, a shell command is not sandboxed to its
+    # working directory: the command body can `cd` into any cloned repo in the
+    # workspace container, so authorizing only the working directory's project
+    # would not actually isolate access. Instead, run_shell requires the user to
+    # have run_agent? on every repo in the session's clone manifest (matching
+    # RDR-037's "entire workspace revalidates as mutable" gate for this tool),
+    # so no cloned repo reachable from the container is outside what the user is
+    # otherwise authorized to run against.
+    authorize :run_agent?, ->(_args) { manifest_authorization_target }, policy_class: ProjectPolicy
 
     DEFAULT_TIMEOUT = 60
     MAX_TIMEOUT = 600
@@ -32,11 +35,19 @@ module Tools
       return false unless tenant_shell_enabled?(session)
       return false unless container_ready?(session:)
       return false unless session.clone_manifest_entries.present?
+      return false unless session.project
 
-      project = session.project
-      return false unless project
+      all_manifest_projects_mutable?(user:, session:)
+    end
 
-      policy_allows?(user:, record: project, query: :run_agent?, policy_class: ProjectPolicy)
+    # RDR-037: run_shell is only advertised when the entire workspace (every
+    # cloned repo, not just the session's primary project) is mutable for the
+    # current user, because a shell command can reach any cloned repo.
+    def self.all_manifest_projects_mutable?(user:, session:)
+      session.clone_manifest_entries.all? do |entry|
+        project = Project.find_by(id: entry[:project_id])
+        project && policy_allows?(user:, record: project, query: :run_agent?, policy_class: ProjectPolicy)
+      end
     end
 
     def self.input_schema
@@ -52,16 +63,15 @@ module Tools
       }
     end
 
-    def perform(command:, working_dir:, timeout: nil, confirmed: false)
+    def perform(command:, working_dir: nil, timeout: nil, confirmed: false)
       raise ArgumentError, "Confirmation required: set confirmed=true to execute a shell command" unless confirmed
       raise ArgumentError, "Shell execution is not enabled for this tenant" unless tenant_shell_enabled?
 
       validate_command!(command)
 
-      resolved_working_dir = validate_working_dir!(working_dir)
+      resolved_working_dir, working_dir_project = validate_working_dir!(working_dir)
 
       timeout_seconds = [ (timeout.to_i.positive? ? timeout.to_i : DEFAULT_TIMEOUT), MAX_TIMEOUT ].min
-      timeout_seconds = timeout_seconds.positive? ? timeout_seconds : DEFAULT_TIMEOUT
 
       stdout, stderr, exit_code = exec_shell_command!(command, working_dir: resolved_working_dir, timeout: timeout_seconds)
 
@@ -72,7 +82,7 @@ module Tools
         command:,
         working_dir: resolved_working_dir,
         exit_code:,
-        project_id: project_for_working_dir!(working_dir).id
+        project_id: working_dir_project.id
       )
 
       result = {
@@ -101,22 +111,46 @@ module Tools
       settings.chat_shell_enabled == true
     end
 
-    def validate_command!(command)
-      raise ArgumentError, "command must be a non-empty string" if command.to_s.strip.empty?
-    end
-
+    # Resolves the manifest entry that actually contains the (realpath-resolved)
+    # working directory, and returns both the validated path and the project
+    # that owns it — so callers attribute execution (e.g. the audit event) to
+    # the repo the command truly ran in, not to whichever repo naive path
+    # matching would have guessed before symlinks are resolved.
     def validate_working_dir!(working_dir)
       raise ArgumentError, "working_dir must be provided" if working_dir.to_s.strip.empty?
 
       path = normalize_workspace_path(working_dir)
       resolved_path = resolve_container_path(path)
-      manifest_paths = session.clone_manifest_entries.map { |entry| expand_workspace_path(entry[:path]) }
+      manifest_entry = session.clone_manifest_entries.find do |entry|
+        manifest_path = expand_workspace_path(entry[:path])
+        path_within_root?(resolved_path, resolve_container_path(manifest_path))
+      end
 
-      unless manifest_paths.any? { |manifest_path| path_within_root?(resolved_path, resolve_container_path(manifest_path)) }
+      unless manifest_entry
         raise ArgumentError, "Working directory must be under a cloned repo path in the workspace: #{path}"
       end
 
-      path
+      [ path, project_for_manifest_entry(manifest_entry.fetch(:project_id)) ]
+    end
+
+    # Returns the first manifest project the user cannot run_agent? on, so the
+    # declarative `authorize` macro raises Pundit::NotAuthorizedError against
+    # it. When every manifest project is mutable, returns the first one (any
+    # would pass authorization at that point).
+    def manifest_authorization_target
+      entries = session&.clone_manifest_entries
+      raise ArgumentError, "This tool requires a chat session with cloned repos" if entries.blank?
+
+      entries.each do |entry|
+        candidate = project_for_manifest_entry(entry.fetch(:project_id))
+        return candidate unless self.class.policy_allows?(user:, record: candidate, query: :run_agent?, policy_class: ProjectPolicy)
+      end
+
+      project_for_manifest_entry(entries.first.fetch(:project_id))
+    end
+
+    def validate_command!(command)
+      raise ArgumentError, "command must be a non-empty string" if command.to_s.strip.empty?
     end
 
     def exec_shell_command!(command, working_dir:, timeout:)

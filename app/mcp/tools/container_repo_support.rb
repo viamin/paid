@@ -54,25 +54,6 @@ module Tools
       project_for_manifest_entry(manifest_entry.fetch(:project_id))
     end
 
-    # Resolve the project that owns a working directory. Unlike
-    # #project_for_authorization!, which matches an exact repo root, the working
-    # directory of a shell command may be a subdirectory of the cloned repo, so
-    # this does a containment match. Uses pure path expansion (no container exec)
-    # so it is safe to call during preflight authorization; callers re-validate
-    # with realpath resolution before acting on the directory.
-    def project_for_working_dir!(working_dir)
-      raise ArgumentError, "working_dir must be provided" if working_dir.to_s.strip.empty?
-
-      expanded = expand_workspace_path(working_dir)
-      manifest_entry = session&.clone_manifest_entries&.find do |entry|
-        manifest_path = expand_manifest_path(entry[:path])
-        manifest_path && path_within_root?(expanded, manifest_path)
-      end
-      raise ArgumentError, "Working directory must be under a cloned repo path in the workspace: #{expanded}" unless manifest_entry
-
-      project_for_manifest_entry(manifest_entry.fetch(:project_id))
-    end
-
     def normalize_workspace_path(path)
       normalized = expand_workspace_path(path)
       resolved = resolve_container_path(normalized)
