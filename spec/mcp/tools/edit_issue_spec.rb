@@ -17,6 +17,7 @@ RSpec.describe Tools::EditIssue do
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
+    allow(Issues::UpsertFromGithub).to receive(:call)
     allow(github_client).to receive_messages(update_issue: updated_issue, labels: [
       Struct.new(:name).new("bug"),
       Struct.new(:name).new("enhancement")
@@ -28,6 +29,7 @@ RSpec.describe Tools::EditIssue do
       result = tool.call(project_id: project.id, issue_number: 42, title: "Updated title")
 
       expect(github_client).to have_received(:update_issue).with(project.full_name, 42, title: "Updated title")
+      expect(Issues::UpsertFromGithub).to have_received(:call).with(project:, github_issue: updated_issue)
       expect(result[:title]).to eq("Updated title")
     end
 

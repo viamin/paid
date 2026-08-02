@@ -52,6 +52,10 @@ module Tools
         failed << { label:, error: e.message }
       end
 
+      refreshed_issue = client.issue(repo, issue_number)
+      final_labels = extract_label_names(refreshed_issue.labels)
+      sync_local_issue!(project, refreshed_issue)
+
       Audit::RecordEvent.call(
         action: "issue.labels_changed",
         actor: user,
@@ -65,7 +69,7 @@ module Tools
         added: to_add,
         removed:,
         failed:,
-        current_labels: labels
+        current_labels: final_labels
       }
     end
 
@@ -81,6 +85,10 @@ module Tools
       raise ArgumentError, "Project has no GitHub token configured" unless client
 
       client
+    end
+
+    def sync_local_issue!(project, github_issue)
+      Issues::UpsertFromGithub.call(project:, github_issue:)
     end
 
     def extract_label_names(labels)

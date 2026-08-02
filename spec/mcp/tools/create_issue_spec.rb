@@ -15,6 +15,7 @@ RSpec.describe Tools::CreateIssue do
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
+    allow(Issues::UpsertFromGithub).to receive(:call)
     allow(github_client).to receive_messages(create_issue: created_issue, labels: [
       Struct.new(:name).new("bug"),
       Struct.new(:name).new("enhancement"),
@@ -29,6 +30,7 @@ RSpec.describe Tools::CreateIssue do
       expect(github_client).to have_received(:create_issue).with(
         project.full_name, title: "Test issue", body: "Test body", labels: [], assignees: []
       )
+      expect(Issues::UpsertFromGithub).to have_received(:call).with(project:, github_issue: created_issue)
       expect(result[:number]).to eq(42)
       expect(result[:url]).to eq("https://github.com/owner/repo/issues/42")
     end

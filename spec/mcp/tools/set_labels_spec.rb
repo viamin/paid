@@ -12,6 +12,7 @@ RSpec.describe Tools::SetLabels do
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
+    allow(Issues::UpsertFromGithub).to receive(:call)
     allow(github_client).to receive(:labels).and_return([
       Struct.new(:name).new("bug"),
       Struct.new(:name).new("enhancement"),
@@ -25,7 +26,11 @@ RSpec.describe Tools::SetLabels do
     context "when setting labels on an issue with no existing labels" do
       before do
         bare_issue = Struct.new(:number, :labels).new(42, [])
-        allow(github_client).to receive(:issue).and_return(bare_issue)
+        refreshed_issue = Struct.new(:number, :labels).new(42, [
+          Struct.new(:name).new("bug"),
+          Struct.new(:name).new("enhancement")
+        ])
+        allow(github_client).to receive(:issue).and_return(bare_issue, refreshed_issue)
       end
 
       it "adds all requested labels" do
@@ -34,6 +39,11 @@ RSpec.describe Tools::SetLabels do
 
         expect(github_client).to have_received(:add_labels_to_issue).with(
           project.full_name, 42, %w[bug enhancement]
+        )
+        expect(Issues::UpsertFromGithub).to have_received(:call).with(
+          project:, github_issue: have_attributes(number: 42, labels: satisfy { |labels|
+            labels.map(&:name) == %w[bug enhancement]
+          })
         )
         expect(result[:added]).to match_array(%w[bug enhancement])
         expect(result[:removed]).to be_empty
@@ -47,7 +57,11 @@ RSpec.describe Tools::SetLabels do
           Struct.new(:name).new("bug"),
           Struct.new(:name).new("documentation")
         ])
-        allow(github_client).to receive(:issue).and_return(labeled_issue)
+        refreshed_issue = Struct.new(:number, :labels).new(42, [
+          Struct.new(:name).new("bug"),
+          Struct.new(:name).new("enhancement")
+        ])
+        allow(github_client).to receive(:issue).and_return(labeled_issue, refreshed_issue)
       end
 
       it "adds new labels and removes unwanted ones" do
@@ -59,6 +73,11 @@ RSpec.describe Tools::SetLabels do
         )
         expect(github_client).to have_received(:remove_label_from_issue).with(
           project.full_name, 42, "documentation"
+        )
+        expect(Issues::UpsertFromGithub).to have_received(:call).with(
+          project:, github_issue: have_attributes(number: 42, labels: satisfy { |labels|
+            labels.map(&:name) == %w[bug enhancement]
+          })
         )
         expect(result[:added]).to match_array(%w[enhancement])
         expect(result[:removed]).to match_array(%w[documentation])
@@ -72,7 +91,7 @@ RSpec.describe Tools::SetLabels do
           Struct.new(:name).new("bug"),
           Struct.new(:name).new("enhancement")
         ])
-        allow(github_client).to receive(:issue).and_return(labeled_issue)
+        allow(github_client).to receive(:issue).and_return(labeled_issue, labeled_issue)
       end
 
       it "makes no API calls for add or remove" do
@@ -84,6 +103,28 @@ RSpec.describe Tools::SetLabels do
         expect(result[:added]).to be_empty
         expect(result[:removed]).to be_empty
       end
+    end
+
+    it "returns the refreshed labels when a removal fails" do
+      labeled_issue = Struct.new(:number, :labels).new(42, [
+        Struct.new(:name).new("bug"),
+        Struct.new(:name).new("documentation")
+      ])
+      refreshed_issue = Struct.new(:number, :labels).new(42, [
+        Struct.new(:name).new("bug"),
+        Struct.new(:name).new("enhancement"),
+        Struct.new(:name).new("documentation")
+      ])
+      allow(github_client).to receive(:issue).and_return(labeled_issue, refreshed_issue)
+      allow(github_client).to receive(:remove_label_from_issue)
+        .with(project.full_name, 42, "documentation")
+        .and_raise(GithubClient::Error, "still present")
+
+      result = tool.call(project_id: project.id, issue_number: 42, labels: %w[bug enhancement])
+
+      expect(result[:failed]).to contain_exactly({ label: "documentation", error: "still present" })
+      expect(result[:current_labels]).to match_array(%w[bug enhancement documentation])
+      expect(Issues::UpsertFromGithub).to have_received(:call).with(project:, github_issue: refreshed_issue)
     end
 
     it "rejects unknown labels" do

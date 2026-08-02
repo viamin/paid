@@ -57,6 +57,7 @@ module Tools
       end
 
       issue = client.update_issue(repo, issue_number, **options)
+      sync_local_issue!(project, issue)
 
       Audit::RecordEvent.call(
         action: "issue.updated",
@@ -85,6 +86,10 @@ module Tools
       raise ArgumentError, "Project has no GitHub token configured" unless client
 
       client
+    end
+
+    def sync_local_issue!(project, github_issue)
+      Issues::UpsertFromGithub.call(project:, github_issue:)
     end
 
     def validate_labels!(client, repo, requested_labels)
