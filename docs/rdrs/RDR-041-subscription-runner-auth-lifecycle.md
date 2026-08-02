@@ -329,6 +329,7 @@ Do not log plaintext tokens, native credential files, authorization codes, or re
 The implementation phases below are complete for the scope locked by the
 2026-08-02 audit in [#2966](https://github.com/viamin/paid/issues/2966). See
 the Implementation Status table above for evidence traces per criterion.
+
 ## Implementation Plan
 
 ### Phase 1: Gate Existing Runtime State
