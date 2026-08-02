@@ -136,6 +136,12 @@ module Tools
         Env: [ "CLONE_TOKEN=#{token}" ]
       )
 
+      # The clone is the longest-running container op (up to chat_clone_timeout).
+      # Reset the session idle clock afterwards — like git_exec! does for every
+      # other container tool — so a session near its idle deadline is not reaped
+      # before the next tool runs.
+      extend_idle_timeout!
+
       exit_code = if result.is_a?(Array)
         result[2]
       else
