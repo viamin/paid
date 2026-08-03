@@ -38,11 +38,12 @@ RSpec.describe AccountHealthCheckSweepJob do
   describe "#perform" do
     before do
       allow(HealthChecks::Cache).to receive(:write)
+      allow(HealthChecks::Notifications::RuleAdapter).to receive(:call)
       allow(Rails.logger).to receive(:info)
       allow(Rails.logger).to receive(:warn)
     end
 
-    it "writes the cached result for each project and emits the sweep_completed log" do
+    it "writes the cached result for each project, syncs notifications, and emits the sweep_completed log" do
       projects = create_list(:project, 2)
       allow(HealthChecks::Coordinator).to receive(:call).and_return(clean_result)
 
@@ -54,6 +55,7 @@ RSpec.describe AccountHealthCheckSweepJob do
           owner_findings_cache: anything, effective_owner: anything
         )
         expect(HealthChecks::Cache).to have_received(:write).with(project, clean_result)
+        expect(HealthChecks::Notifications::RuleAdapter).to have_received(:call).with(scope: project)
       end
       expect(Rails.logger).to have_received(:info).with(
         hash_including(message: "project_health.sweep_completed", projects_checked: 2, total_findings: 0)

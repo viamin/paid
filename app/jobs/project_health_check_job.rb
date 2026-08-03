@@ -23,6 +23,7 @@ class ProjectHealthCheckJob < ApplicationJob
       include_network: true
     )
     HealthChecks::Cache.write(project, result)
+    HealthChecks::Notifications::RuleAdapter.call(scope: project)
 
     # Emit the structured completion metric before the broadcast so a transient
     # broadcast failure cannot swallow the completion signal.

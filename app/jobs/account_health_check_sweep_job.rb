@@ -45,6 +45,7 @@ class AccountHealthCheckSweepJob < ApplicationJob
           effective_owner: effective_owners[project.id]
         )
         HealthChecks::Cache.write(project, result)
+        HealthChecks::Notifications::RuleAdapter.call(scope: project)
         checked += 1
         total_findings += result.findings.size
       rescue => e
