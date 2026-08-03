@@ -605,15 +605,34 @@ RSpec.describe "Runners" do
       expect(runner.opencode_model_id).to eq("moonshotai/kimi-k2-0905")
     end
 
-    it "creates an openrouter_free runner with default free tier mappings" do
+    # @spec FREE-MODEL-RUNNER-002
+    it "creates an openrouter_free runner with default free tier mappings and suggested flags" do
       api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
       seed_openrouter_synced_free_models
       post_create_openrouter_free_runner(api_key:)
       expect(response).to redirect_to(runners_path)
-      expect(user.runners.find_by!(runner_key: "openrouter_free", auth_type: "api_key").tier_model_ids).to eq(
+      runner = user.runners.find_by!(runner_key: "openrouter_free", auth_type: "api_key")
+      expect(runner.tier_model_ids).to eq(
         "low" => "free-low",
         "mid" => "free-mid",
         "high" => "free-high"
+      )
+      expect(runner.fallback_role).to eq("rate_limit_fallback")
+      expect(runner.enabled_for_agent_runs).to be(true)
+      expect(runner.enabled_for_chat).to be(true)
+      expect(runner.enabled_for_fallback).to be(true)
+    end
+
+    # @spec FREE-MODEL-RUNNER-003
+    it "preserves explicit openrouter_free settings supplied by the user" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+      seed_openrouter_synced_free_models
+      create_free_model_override
+      post_create_openrouter_free_runner(api_key:, runner_attrs: explicit_openrouter_free_runner_attrs)
+
+      expect(response).to redirect_to(runners_path)
+      expect_openrouter_free_runner_overrides(
+        user.runners.find_by!(runner_key: "openrouter_free", auth_type: "api_key")
       )
     end
 
@@ -890,18 +909,18 @@ RSpec.describe "Runners" do
       expect(response.body).not_to include("No More Runners Yet")
     end
 
-    it "prefills openrouter_free setup from the catalog link" do
+    # @spec FREE-MODEL-RUNNER-004
+    # @spec FREE-MODEL-RUNNER-005
+    # @spec FREE-MODEL-RUNNER-006
+    it "prefills openrouter_free setup from the catalog link with free-model guidance" do
       create(:provider_api_key, user: user, api_service_type: "openrouter", name: "OpenRouter")
-      create(:llm_model, model_id: "high-free", provider: "deepseek", tier: "high", pricing_tier: "free",
-        catalog_source: "openrouter_sync")
+      seed_free_runner_form_models
       allow(RunnerSupport).to receive(:addable_runner_keys).and_return(%w[claude openrouter_free])
 
       get new_runner_path(form_variant: "api_key", runner_key: "openrouter_free")
 
       expect(response).to have_http_status(:ok)
-      expect(response.body).to include("OpenRouter Free")
-      expect(response.body).to include('id="runner_runner_key_api_key"')
-      expect(response.body).to include("Tier Model Mapping")
+      expect_free_runner_form_guidance(response.body)
     end
   end
 
@@ -1226,7 +1245,65 @@ RSpec.describe "Runners" do
       catalog_source: "openrouter_sync")
   end
 
-  def post_create_openrouter_free_runner(api_key:)
+  def create_free_model_override
+    create(:llm_model, model_id: "free-low-alt", provider: "deepseek", tier: "low", pricing_tier: "free", capability_score: 3.0,
+      catalog_source: "openrouter_sync")
+  end
+
+  def explicit_openrouter_free_runner_attrs
+    {
+      fallback_role: "standard",
+      enabled_for_agent_runs: false,
+      enabled_for_chat: false,
+      enabled_for_fallback: false,
+      tier_model_ids: {
+        low: "free-low-alt",
+        mid: "free-mid",
+        high: "free-high"
+      }
+    }
+  end
+
+  def expect_openrouter_free_runner_overrides(runner)
+    aggregate_failures do
+      expect(runner.fallback_role).to eq("standard")
+      expect(runner.enabled_for_agent_runs).to be(false)
+      expect(runner.enabled_for_chat).to be(false)
+      expect(runner.enabled_for_fallback).to be(false)
+      expect(runner.tier_model_ids).to eq(
+        "low" => "free-low-alt",
+        "mid" => "free-mid",
+        "high" => "free-high"
+      )
+    end
+  end
+
+  def seed_free_runner_form_models
+    create(:llm_model, model_id: "high-free", provider: "deepseek", tier: "high", pricing_tier: "free", capability_score: 8.0,
+      catalog_source: "openrouter_sync")
+    create(:llm_model, model_id: "high-free-below-bar", provider: "deepseek", tier: "high", pricing_tier: "free", capability_score: 6.0,
+      catalog_source: "openrouter_sync", metadata: { "below_quality_bar" => true })
+    create(:llm_model, model_id: "mid-free", provider: "moonshotai", tier: "mid", pricing_tier: "free", capability_score: 6.0,
+      catalog_source: "openrouter_sync")
+    create(:llm_model, model_id: "low-free", provider: "qwen", tier: "low", pricing_tier: "free", capability_score: 4.0,
+      catalog_source: "openrouter_sync")
+  end
+
+  def expect_free_runner_form_guidance(body)
+    aggregate_failures do
+      expect(body).to include("OpenRouter Free")
+      expect(body).to include("Free Model Configuration")
+      expect(body).to include("Data classification routing")
+      expect(body).to include("~20 free requests/day without OpenRouter credits")
+      expect(body).to include("High tier free models")
+      expect(body).to include("Below quality bar")
+      expect(body).to include('value="high-free" selected')
+      expect(body).to include('value="mid-free" selected')
+      expect(body).to include('value="low-free" selected')
+    end
+  end
+
+  def post_create_openrouter_free_runner(api_key:, runner_attrs: {})
     post runners_path, params: {
       runner: {
         runner_key: "openrouter_free",
@@ -1234,7 +1311,7 @@ RSpec.describe "Runners" do
         provider_api_key_id: api_key.id,
         enabled_for_agent_runs: true,
         enabled_for_fallback: true
-      }
+      }.deep_merge(runner_attrs)
     }
   end
 end
