@@ -12,12 +12,14 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
       "test" => {
         "db_username" => "paid",
         "db_password" => "paid",
-        "creates_application_role" => true
+        "creates_application_role" => true,
+        "uses_database_url" => false
       },
       "performance" => {
         "db_username" => "paid",
         "db_password" => "paid",
-        "creates_application_role" => true
+        "creates_application_role" => true,
+        "uses_database_url" => false
       }
     },
     ".github/workflows/system_tests.yml" => {
@@ -31,7 +33,8 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
       "capture" => {
         "db_username" => "paid",
         "db_password" => "paid",
-        "creates_application_role" => true
+        "creates_application_role" => true,
+        "uses_database_url" => true
       }
     },
     ".github/workflows/test_prof.yml" => {
@@ -56,14 +59,14 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
 
       def expect_application_role_database_url!(job, expectations)
         return unless expectations.fetch("creates_application_role")
+        return if expectations.fetch("uses_database_url", false)
 
-        expect(job.fetch("env")).to include(
-          "DATABASE_URL" => "postgres://paid:paid@localhost:5432/paid_test"
-        )
+        expect(job.fetch("env")).not_to have_key("DATABASE_URL")
+        expect(job.fetch("env")).not_to have_key("CABLE_DATABASE_URL")
       end
 
       def expect_database_yml_connection!(job, expectations)
-        return if expectations.fetch("creates_application_role")
+        return if expectations.fetch("uses_database_url", false)
 
         expect(job.fetch("env")).not_to have_key("DATABASE_URL")
         expect(job.fetch("env")).not_to have_key("CABLE_DATABASE_URL")
