@@ -135,4 +135,44 @@ RSpec.describe HealthChecks::Notifications::RuleAdapter do
     expect(queries.count { |sql| sql.include?('FROM "runners"') }).to eq(1)
     expect(queries.count { |sql| sql.include?('FROM "users"') }).to eq(1)
   end
+
+  it "preserves the original subject identity when the subject row has been deleted" do
+    allow(HealthChecks::Cache).to receive(:read).with(project).and_return(
+      HealthChecks::Result.new(
+        findings: [ deprecated_model_finding(model_id: "gpt-4.1-mini", tier: "fast") ],
+        checked_at: Time.current,
+        duration_ms: 5
+      )
+    )
+
+    described_class.call(scope: project)
+    runner_id = runner.id
+    runner.destroy!
+
+    expect {
+      described_class.call(scope: project)
+    }.not_to change(Notification, :count)
+
+    notification = Notification.find_by!(account: account, source: Notification.last.source)
+    expect(notification.subject_type).to eq("Runner")
+    expect(notification.subject_id).to eq(runner_id)
+    expect(notification.subject).to be_nil
+  end
+
+  it "resolves stale notifications even when the original subject row has been deleted" do
+    source = "health_check/project/#{project.id}/deprecated_model/Runner/#{runner.id}/abc123def456"
+    create(:notification, account: account, source: source, subject: runner)
+    runner.destroy!
+
+    allow(HealthChecks::Cache).to receive(:read).with(project).and_return(
+      HealthChecks::Result.new(findings: [], checked_at: Time.current, duration_ms: 5)
+    )
+
+    described_class.call(scope: project)
+
+    notification = Notification.find_by!(account: account, source: source)
+    expect(notification.resolved_at).to be_present
+    expect(notification.subject_type).to eq("Runner")
+    expect(notification.subject_id).to eq(runner.id)
+  end
 end

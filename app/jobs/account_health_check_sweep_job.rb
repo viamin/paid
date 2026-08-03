@@ -45,7 +45,7 @@ class AccountHealthCheckSweepJob < ApplicationJob
           effective_owner: effective_owners[project.id]
         )
         HealthChecks::Cache.write(project, result)
-        HealthChecks::Notifications::RuleAdapter.call(scope: project)
+        sync_notifications(project)
         checked += 1
         total_findings += result.findings.size
       rescue => e
@@ -66,6 +66,16 @@ class AccountHealthCheckSweepJob < ApplicationJob
   end
 
   private
+
+  def sync_notifications(project)
+    HealthChecks::Notifications::RuleAdapter.call(scope: project)
+  rescue => e
+    Rails.logger.warn(
+      message: "project_health.notification_sync_failed",
+      project_id: project.id,
+      error: e.message
+    )
+  end
 
   # Batch-resolves Account#fallback_owner for every orphaned project (no
   # created_by) up front, in two queries total regardless of fleet size,

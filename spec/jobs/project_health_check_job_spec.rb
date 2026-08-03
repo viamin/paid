@@ -109,6 +109,22 @@ RSpec.describe ProjectHealthCheckJob do
     expect(events).to eq([ :logged, :broadcast ])
   end
 
+  it "logs completion and still broadcasts when notification sync fails" do
+    allow(HealthChecks::Notifications::RuleAdapter).to receive(:call).and_raise("notify boom")
+    allow(Rails.logger).to receive(:info)
+    allow(Rails.logger).to receive(:warn)
+
+    described_class.perform_now(project.id)
+
+    expect(Rails.logger).to have_received(:info).with(
+      hash_including(message: "project_health.check_completed", project_id: project.id)
+    )
+    expect(Rails.logger).to have_received(:warn).with(
+      hash_including(message: "project_health.notification_sync_failed", project_id: project.id, error: "notify boom")
+    )
+    expect(Turbo::StreamsChannel).to have_received(:broadcast_update_to)
+  end
+
   it "discards silently when the project no longer exists" do
     expect { described_class.perform_now(-1) }.not_to raise_error
     expect(HealthChecks::Cache).not_to have_received(:write)

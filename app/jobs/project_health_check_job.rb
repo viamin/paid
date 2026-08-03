@@ -23,7 +23,7 @@ class ProjectHealthCheckJob < ApplicationJob
       include_network: true
     )
     HealthChecks::Cache.write(project, result)
-    HealthChecks::Notifications::RuleAdapter.call(scope: project)
+    sync_notifications(project)
 
     # Emit the structured completion metric before the broadcast so a transient
     # broadcast failure cannot swallow the completion signal.
@@ -38,6 +38,16 @@ class ProjectHealthCheckJob < ApplicationJob
   end
 
   private
+
+  def sync_notifications(project)
+    HealthChecks::Notifications::RuleAdapter.call(scope: project)
+  rescue => e
+    Rails.logger.warn(
+      message: "project_health.notification_sync_failed",
+      project_id: project.id,
+      error: e.message
+    )
+  end
 
   def broadcast_result(project, result)
     Turbo::StreamsChannel.broadcast_update_to(

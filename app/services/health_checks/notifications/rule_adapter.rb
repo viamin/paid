@@ -62,7 +62,7 @@ module HealthChecks
           ::Notifications::Resolve.call(
             account: project.account,
             source: notification.source,
-            subject: notification.subject
+            subject: notification_subject_reference(notification)
           )
         end
       end
@@ -121,7 +121,8 @@ module HealthChecks
         subject_class = subject_class_for(finding)
         return project unless subject_class
 
-        subjects.dig(subject_class.name, finding.subject_id) || project
+        subjects.dig(subject_class.name, finding.subject_id) ||
+          subject_reference(subject_class, finding.subject_id)
       end
 
       def subject_class_for(finding)
@@ -154,6 +155,18 @@ module HealthChecks
           health_check_subject_id: finding.subject_id,
           project_id: project.id
         ).compact
+      end
+
+      def subject_reference(subject_class, subject_id)
+        subject_class.new(id: subject_id)
+      end
+
+      def notification_subject_reference(notification)
+        return notification.subject if notification.subject
+
+        notification.subject_type&.safe_constantize&.<(ApplicationRecord) ?
+          subject_reference(notification.subject_type.safe_constantize, notification.subject_id) :
+          nil
       end
     end
   end

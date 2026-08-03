@@ -151,5 +151,26 @@ RSpec.describe AccountHealthCheckSweepJob do
         hash_including(message: "project_health.sweep_completed", projects_checked: 1)
       )
     end
+
+    it "does not count notification sync failures as project sweep failures" do
+      good = create(:project)
+      allow(HealthChecks::Coordinator).to receive(:call).and_return(warning_result)
+      allow(HealthChecks::Notifications::RuleAdapter).to receive(:call) do |scope:|
+        raise "notify boom" if scope == good
+      end
+
+      described_class.perform_now
+
+      expect(HealthChecks::Cache).to have_received(:write).with(good, warning_result)
+      expect(Rails.logger).to have_received(:warn).with(
+        hash_including(message: "project_health.notification_sync_failed", project_id: good.id, error: "notify boom")
+      )
+      expect(Rails.logger).not_to have_received(:warn).with(
+        hash_including(message: "project_health.sweep_project_failed", project_id: good.id)
+      )
+      expect(Rails.logger).to have_received(:info).with(
+        hash_including(message: "project_health.sweep_completed", projects_checked: 1, total_findings: 1)
+      )
+    end
   end
 end
