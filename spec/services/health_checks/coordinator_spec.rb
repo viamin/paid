@@ -71,6 +71,20 @@ RSpec.describe HealthChecks::Coordinator do
       expect(result.findings.map(&:scope)).to all(eq(:runner))
     end
 
+    it "uses a passed-in effective_owner instead of calling subject.effective_owner" do
+      persisted_project = create(:project)
+      other_owner = create(:user, account: persisted_project.account)
+      network = HealthChecks::Checks::Runner::DeprecatedModel
+      allow(network).to receive(:call).and_return(
+        [ HealthChecks::Finding.new(check: network.name, scope: :runner, severity: :warning, message: "stale") ]
+      )
+
+      expect(persisted_project).not_to receive(:effective_owner)
+
+      described_class.call(scope: :project, subject: persisted_project, include_network: true,
+                            effective_owner: other_owner)
+    end
+
     it "reuses a shared owner_findings_cache instead of recomputing owner-scope findings per project" do
       account = create(:account)
       owner = create(:user, account: account) # User#ensure_default_runner gives it one runner

@@ -44,8 +44,10 @@ RSpec.describe AccountHealthCheckSweepJob do
       described_class.perform_now
 
       projects.each do |project|
-        expect(HealthChecks::Coordinator).to have_received(:call)
-          .with(scope: :project, subject: project, include_network: true, owner_findings_cache: anything)
+        expect(HealthChecks::Coordinator).to have_received(:call).with(
+          scope: :project, subject: project, include_network: true,
+          owner_findings_cache: anything, effective_owner: anything
+        )
         expect(HealthChecks::Cache).to have_received(:write).with(project, clean_result)
       end
       expect(Rails.logger).to have_received(:info).with(
@@ -88,6 +90,36 @@ RSpec.describe AccountHealthCheckSweepJob do
       described_class.perform_now
 
       expect(seen_bypass).to be(true)
+    end
+
+    it "passes the account's fallback owner as effective_owner for an orphaned project" do
+      account = create(:account)
+      owner = create(:user, account: account)
+      owner.add_role(:owner, account)
+      orphaned_project = create(:project, account: account, created_by: nil)
+      seen_effective_owner = nil
+      allow(HealthChecks::Coordinator).to receive(:call) do |subject:, effective_owner:, **|
+        seen_effective_owner = effective_owner if subject == orphaned_project
+        clean_result
+      end
+
+      described_class.perform_now
+
+      expect(seen_effective_owner).to eq(owner)
+    end
+
+    it "batch-resolves fallback owners for orphaned projects instead of querying per project" do
+      account = create(:account)
+      owner = create(:user, account: account)
+      owner.add_role(:owner, account)
+      create_list(:project, 3, account: account, created_by: nil)
+      allow(HealthChecks::Coordinator).to receive(:call).and_return(clean_result)
+
+      queries = capture_queries { described_class.perform_now }
+      membership_lookup_queries = queries.select { |sql| sql.include?("account_memberships") }
+
+      # One batched lookup for all 3 orphaned projects, not one per project.
+      expect(membership_lookup_queries.size).to eq(1)
     end
 
     it "isolates a failing project so the sweep continues and logs it" do

@@ -22,17 +22,25 @@ module HealthChecks
   # sweeps many projects (e.g. AccountHealthCheckSweepJob) should pass in one
   # Hash shared across calls to avoid recomputing the same owner's findings
   # — including network-backed checks — once per project.
+  #
+  # +effective_owner+ lets a caller pass a pre-resolved owner for a :project
+  # run instead of falling back to +subject.effective_owner+. Project#effective_owner
+  # falls back to Account#fallback_owner for orphaned projects (no created_by),
+  # which queries account_memberships/users per call — a caller sweeping many
+  # projects should batch-resolve fallback owners once and pass the result
+  # here to avoid a query per orphaned project.
   class Coordinator
-    def self.call(scope:, subject:, include_network: false, owner_findings_cache: {})
+    def self.call(scope:, subject:, include_network: false, owner_findings_cache: {}, effective_owner: nil)
       new(scope: scope, subject: subject, include_network: include_network,
-          owner_findings_cache: owner_findings_cache).call
+          owner_findings_cache: owner_findings_cache, effective_owner: effective_owner).call
     end
 
-    def initialize(scope:, subject:, include_network: false, owner_findings_cache: {})
+    def initialize(scope:, subject:, include_network: false, owner_findings_cache: {}, effective_owner: nil)
       @scope = scope
       @subject = subject
       @include_network = include_network
       @owner_findings_cache = owner_findings_cache
+      @effective_owner = effective_owner
     end
 
     def call
@@ -50,7 +58,7 @@ module HealthChecks
     end
 
     def project_composed_findings
-      owner = @subject.effective_owner
+      owner = @effective_owner || @subject.effective_owner
       return [] unless owner
 
       @owner_findings_cache[owner.id] ||= owner_scope_findings(owner)
