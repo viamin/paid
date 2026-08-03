@@ -843,6 +843,7 @@ RSpec.describe "Dashboard" do
 
       expect(link).to be_present
       expect(link.text).to include("1 needs input")
+      expect(link["data-turbo-frame"]).to eq("_top")
     end
   end
 
