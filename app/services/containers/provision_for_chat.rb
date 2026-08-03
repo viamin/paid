@@ -9,7 +9,8 @@ module Containers
   # Chat containers differ from agent run containers:
   # - Lower resource defaults (2GB RAM, 1 CPU vs 4GB/2 CPU)
   # - Persistent named volume for agent CLI state (~/.claude, ~/.codex, etc.)
-  # - Workspace volume seeded from the project's git repo (when project is present)
+  # - Workspace volume left empty by default; optional project seeding remains
+  #   available for migration callers via `seed_project:`
   # - Idle timeout management (30 min default)
   # - Network access to Paid MCP server
   #
@@ -45,14 +46,15 @@ module Containers
     class Error < StandardError; end
     class ProvisionError < Error; end
 
-    attr_reader :chat_session, :container, :options
+    attr_reader :chat_session, :container, :options, :seed_project
 
     def self.call(chat_session:, **options)
       new(chat_session: chat_session, **options).call
     end
 
-    def initialize(chat_session:, **options)
+    def initialize(chat_session:, seed_project: nil, **options)
       @chat_session = chat_session
+      @seed_project = resolve_seed_project(seed_project)
       @options = CHAT_DEFAULTS.merge(options)
       @container = nil
     end
@@ -77,7 +79,8 @@ module Containers
         container_id: @container.id,
         container_ready_at: Time.current,
         workspace_volume: workspace_volume,
-        idle_timeout_at: options[:idle_timeout].from_now
+        idle_timeout_at: options[:idle_timeout].from_now,
+        metadata: metadata_without_container_failure
       )
 
       log("provision.success", container_id: @container.id)
@@ -87,7 +90,7 @@ module Containers
         state_volume: state_volume
       )
     rescue Docker::Error::DockerError => e
-      mark_failed!
+      mark_failed!(e)
       log("provision.failed", error: e.message)
       cleanup_on_failure(
         workspace_volume,
@@ -97,7 +100,7 @@ module Containers
       )
       raise ProvisionError, "Docker error: #{e.message}"
     rescue StandardError => e
-      mark_failed!
+      mark_failed!(e)
       log("provision.failed", error: e.message)
       cleanup_on_failure(
         workspace_volume,
@@ -113,12 +116,21 @@ module Containers
     def mark_provisioning!
       chat_session.update!(
         container_capability: "provisioning",
-        container_requested_at: chat_session.container_requested_at || Time.current
+        container_requested_at: chat_session.container_requested_at || Time.current,
+        metadata: metadata_without_container_failure
       )
     end
 
-    def mark_failed!
-      chat_session.update!(container_capability: "failed") if chat_session.persisted?
+    def mark_failed!(error)
+      return unless chat_session.persisted?
+
+      chat_session.update!(
+        container_capability: "failed",
+        container_id: nil,
+        container_ready_at: nil,
+        workspace_volume: nil,
+        metadata: metadata_with_container_failure(error)
+      )
     end
 
     def project
@@ -246,30 +258,31 @@ module Containers
       Containers.backend.exec_in_container(@container, [ "mkdir", "-p", *STATE_VOLUME_DIRS ], user: "root")
     end
 
-    # Seeds the workspace volume by cloning the project's git repository.
+    # Seeds the workspace volume by cloning the requested project's git
+    # repository.
     # The GitHub token is passed as an ephemeral environment variable for the
     # clone command only, not stored in the container environment.
-    # Skipped when no project is associated.
+    # Skipped unless `seed_project:` was explicitly requested.
     # Raises ProvisionError if the project has no active token or the clone fails,
-    # since mounting the project repo is a core acceptance criterion for workspace mode.
+    # since callers opting into project seeding expect a ready-to-use clone.
     #
     # On a successful clone, persists a manifest entry on the chat session so
     # workspace mutation tools (write_repo_file, apply_patch, git_*) can
     # authorize against the cloned repo via session.clone_manifest_entries.
     def seed_workspace!(workspace_volume_created:)
-      return unless project
+      return unless seed_project
 
       unless workspace_volume_created || workspace_empty?
-        log("provision.workspace_reused", project_id: project.id)
+        log("provision.workspace_reused", project_id: seed_project.id)
         return
       end
 
-      github_token = project.github_token
+      github_token = seed_project.github_token
       unless github_token&.active?
-        raise ProvisionError, "Project #{project.full_name} has no active GitHub token; cannot seed workspace"
+        raise ProvisionError, "Project #{seed_project.full_name} has no active GitHub token; cannot seed workspace"
       end
 
-      clone_cmd = "git clone --depth 1 https://x-access-token:$CLONE_TOKEN@github.com/#{Shellwords.escape(project.full_name)}.git . 2>&1"
+      clone_cmd = "git clone --depth 1 https://x-access-token:$CLONE_TOKEN@github.com/#{Shellwords.escape(seed_project.full_name)}.git . 2>&1"
 
       result = Containers.backend.exec_in_container(
         @container,
@@ -291,13 +304,17 @@ module Containers
       end
 
       record_clone_manifest_entry!
-      log("provision.workspace_seeded", project_id: project.id)
+      log("provision.workspace_seeded", project_id: seed_project.id)
     end
 
     def record_clone_manifest_entry!
-      entry = { project_id: project.id, path: options[:workspace_mount] }
-      existing = Array(chat_session.clone_manifest)
-      chat_session.update!(clone_manifest: existing + [ entry ])
+      chat_session.append_clone_manifest_entry(
+        project_id: seed_project.id,
+        cloned_at: Time.current,
+        path: options[:workspace_mount],
+        token_identity: "project_token"
+      )
+      chat_session.save!
     end
 
     def workspace_empty?
@@ -344,6 +361,24 @@ module Containers
         chat_session_id: chat_session.id,
         project_id: project&.id,
         **metadata
+      )
+    end
+
+    def resolve_seed_project(seed_project)
+      return if seed_project.blank? || seed_project == false
+      return project if seed_project == true
+
+      seed_project
+    end
+
+    def metadata_without_container_failure
+      (chat_session.metadata || {}).except("container_failure_reason", "container_failure_at")
+    end
+
+    def metadata_with_container_failure(error)
+      metadata_without_container_failure.merge(
+        "container_failure_reason" => error.message.to_s.truncate(500),
+        "container_failure_at" => Time.current.iso8601
       )
     end
   end

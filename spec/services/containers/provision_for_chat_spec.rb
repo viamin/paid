@@ -67,6 +67,14 @@ RSpec.describe Containers::ProvisionForChat do
       expect(chat_session.idle_timeout_at).to be_within(1.minute).of(30.minutes.from_now)
     end
 
+    it "clears any previously recorded container failure metadata on success" do
+      chat_session.update!(metadata: { "container_failure_reason" => "old failure" })
+
+      described_class.call(chat_session: chat_session)
+
+      expect(chat_session.reload.metadata).not_to have_key("container_failure_reason")
+    end
+
     it "creates workspace and state volumes" do
       expect(Docker::Volume).to receive(:create).with(
         "paid-chat-workspace-#{chat_session.id}",
@@ -199,7 +207,7 @@ RSpec.describe Containers::ProvisionForChat do
       described_class.call(chat_session: chat_session)
     end
 
-    context "when project has an active GitHub token" do
+    context "when project has an active GitHub token and seeding is requested" do
       let(:github_token) { instance_double(GithubToken, active?: true, token: "ghp_test123") }
 
       before do
@@ -216,7 +224,7 @@ RSpec.describe Containers::ProvisionForChat do
           )
         ).and_return([ [], [], 0 ])
 
-        described_class.call(chat_session: chat_session)
+        described_class.call(chat_session: chat_session, seed_project: true)
       end
 
       it "records the cloned repo in chat_session.clone_manifest" do
@@ -225,7 +233,7 @@ RSpec.describe Containers::ProvisionForChat do
           hash_including(user: "agent")
         ).and_return([ [], [], 0 ])
 
-        described_class.call(chat_session: chat_session)
+        described_class.call(chat_session: chat_session, seed_project: true)
 
         expect(chat_session.reload.clone_manifest_entries).to contain_exactly(
           a_hash_including(project_id: project.id, path: "/workspace")
@@ -239,7 +247,7 @@ RSpec.describe Containers::ProvisionForChat do
           hash_including(user: "agent")
         ).and_return([ [], [], 0 ])
 
-        described_class.call(chat_session: chat_session)
+        described_class.call(chat_session: chat_session, seed_project: true)
 
         entries = chat_session.reload.clone_manifest_entries
         expect(entries.map { |e| e[:path] }).to contain_exactly("/workspace/legacy", "/workspace")
@@ -252,7 +260,7 @@ RSpec.describe Containers::ProvisionForChat do
         ).and_return([ [ "fatal: repository not found" ], [], 128 ])
 
         expect {
-          described_class.call(chat_session: chat_session)
+          described_class.call(chat_session: chat_session, seed_project: true)
         }.to raise_error(Containers::ProvisionForChat::ProvisionError)
 
         expect(chat_session.reload.clone_manifest_entries).to be_empty
@@ -282,9 +290,20 @@ RSpec.describe Containers::ProvisionForChat do
           hash_including(user: "agent")
         ).and_return([ [ "fatal: repository not found" ], [], 128 ])
 
-        expect { described_class.call(chat_session: chat_session) }
+        expect { described_class.call(chat_session: chat_session, seed_project: true) }
           .to raise_error(Containers::ProvisionForChat::ProvisionError, /Workspace clone failed/)
       end
+    end
+
+    it "leaves the default workspace empty even when the session has a primary project" do
+      expect(mock_container).not_to receive(:exec).with(
+        [ "sh", "-c", a_string_matching(/git clone/) ],
+        anything
+      )
+
+      described_class.call(chat_session: chat_session)
+
+      expect(chat_session.reload.clone_manifest_entries).to be_empty
     end
 
     context "when provisioning fails" do
@@ -297,6 +316,7 @@ RSpec.describe Containers::ProvisionForChat do
         }.to raise_error(Containers::ProvisionForChat::ProvisionError, /start failed/)
 
         expect(chat_session.reload.container_capability).to eq("failed")
+        expect(chat_session.metadata["container_failure_reason"]).to eq("start failed")
 
         notice = chat_session.messages.where(role: "system").find_by("metadata ->> 'container_capability_notice' = 'true'")
         expect(notice.content).to include("Workspace tools are currently unavailable")

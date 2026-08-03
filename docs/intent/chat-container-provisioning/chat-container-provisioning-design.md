@@ -50,8 +50,9 @@ re-raise so the normal job failure and notification path records the incident.
 `ActiveRecord::RecordNotFound` is discarded; a deleted session cannot be
 provisioned.
 
-Per-session concurrency (`total_limit: 1`, `enqueue_limit: 1`) prevents
-duplicate provisioning if `Create` runs twice for the same session ID.
+Per-account concurrency (`total_limit: 1`, `enqueue_limit: 1`) keeps
+background provisioning off the hot path while preventing one account from
+spinning up multiple chat workspaces concurrently on the low-priority queue.
 
 ## Tenant toggle
 
