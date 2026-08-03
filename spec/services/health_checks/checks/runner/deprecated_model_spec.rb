@@ -43,6 +43,7 @@ RSpec.describe HealthChecks::Checks::Runner::DeprecatedModel do
     context "when the resolved model has been dropped from the registry" do
       let(:deprecated_models) { [ "claude-retired" ] }
 
+      # @spec HEALTH-CHECKS-005
       it "returns a warning" do
         expect(described_class.call(runner)).to contain_exactly(
           have_attributes(

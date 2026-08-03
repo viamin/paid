@@ -3,11 +3,28 @@
 require "rails_helper"
 
 RSpec.describe ProjectHealthCheckJob do
-  let(:account) { create(:account) }
-  let(:project) { create(:project, account: account) }
+  let(:account) do
+    create(:account, name: "Account #{SecureRandom.hex(4)}", slug: "account-#{SecureRandom.hex(4)}")
+  end
+  let(:token_creator) { create(:user, account: account, email: "token-#{SecureRandom.hex(6)}@example.com") }
+  let(:project_owner) { create(:user, account: account, email: "owner-#{SecureRandom.hex(6)}@example.com") }
+  let(:github_token) do
+    create(:github_token, account: account, created_by: token_creator, name: "Token #{SecureRandom.hex(4)}")
+  end
+  let(:project) do
+    create(
+      :project,
+      account: account,
+      created_by: project_owner,
+      github_token: github_token,
+      owner: "owner-#{SecureRandom.hex(4)}",
+      repo: "repo-#{SecureRandom.hex(4)}"
+    )
+  end
 
   before do
     allow(HealthChecks::Cache).to receive(:write)
+    allow(HealthChecks::Notifications::RuleAdapter).to receive(:call)
     allow(Turbo::StreamsChannel).to receive(:broadcast_update_to)
   end
 
@@ -19,6 +36,7 @@ RSpec.describe ProjectHealthCheckJob do
       expect(result).to be_a(HealthChecks::Result)
       expect(result.findings).to be_an(Array)
     end
+    expect(HealthChecks::Notifications::RuleAdapter).to have_received(:call).with(scope: project)
   end
 
   it "emits a structured completion log with findings count and duration" do
@@ -89,6 +107,22 @@ RSpec.describe ProjectHealthCheckJob do
     described_class.perform_now(project.id)
 
     expect(events).to eq([ :logged, :broadcast ])
+  end
+
+  it "logs completion and still broadcasts when notification sync fails" do
+    allow(HealthChecks::Notifications::RuleAdapter).to receive(:call).and_raise("notify boom")
+    allow(Rails.logger).to receive(:info)
+    allow(Rails.logger).to receive(:warn)
+
+    described_class.perform_now(project.id)
+
+    expect(Rails.logger).to have_received(:info).with(
+      hash_including(message: "project_health.check_completed", project_id: project.id)
+    )
+    expect(Rails.logger).to have_received(:warn).with(
+      hash_including(message: "project_health.notification_sync_failed", project_id: project.id, error: "notify boom")
+    )
+    expect(Turbo::StreamsChannel).to have_received(:broadcast_update_to)
   end
 
   it "discards silently when the project no longer exists" do

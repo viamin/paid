@@ -4,15 +4,19 @@
 
 ## Metadata
 
-- **Status**: Proposed
+- **Status**: Partially Implemented
 - **Date**: 2026-07-29
 - **Priority**: P1
-- **Related Issues**: #3050 (tracking/umbrella), #3049 (RDR PR); phased issues #3051–#3058 (see "Implementation Plan")
+- **Related Issues**: #3050 (tracking/closeout), #3049 (RDR PR), implemented phases #3051–#3057, remaining phase #3058 still open as of August 3, 2026
 - **Related RDRs**: RDR-008 (Model Selection Strategy), RDR-022 (Auto-Merge PR Strategy), RDR-023 (Automation Modularization Architecture), RDR-030 (GitHub App Bot Account), RDR-040 (Runner Model Compatibility Contracts), RDR-041 (Subscription Runner Auth Lifecycle)
 
 ## Implementation Status
 
-Not yet implemented. This RDR defines the design; implementation is broken into phased issues that hang off a tracking (umbrella) issue. The umbrella issue is the verification gate: RDR-049 stays `Proposed` / `Partially Implemented` until the closeout audit confirms the shipped code matches this plan.
+Substantially implemented as of August 3, 2026. The shipped system includes the
+`Finding` / `Result` / `Check` registry, isolated coordinator, cached
+per-project `Result`, daily account sweep, dedicated project health page, and
+auto-resolving notification sync. Final closeout remains pending while #3058 is
+still open. No schema changes were introduced.
 
 ## Problem Statement
 
@@ -95,7 +99,7 @@ end
 
 This shape matches the established `Data.define` Result convention (`Guardrails::DataClassificationPolicy::Result` at `app/services/guardrails/data_classification_policy.rb:8-24`). The stable `:code` is the join key to `Notification#source` (same dedup idea as the `Models::FileModelHealthIssue` fingerprint).
 
-### Check catalog (v1)
+### Check catalog (shipped)
 
 Each check is one file under `app/services/health_checks/checks/<scope>/`.
 
@@ -110,17 +114,11 @@ Each check is one file under `app/services/health_checks/checks/<scope>/`.
 | `MissingGitHubCredential` | error | neither `github_token` nor `github_installation` set | `exactly_one_github_credential` |
 | `SensitiveDataFreeModel` | warning | confidential/restricted project resolved to a free model with `data_training_risk: possible` | `Guardrails::DataClassificationPolicy` logic |
 
-**Runner scope** (7) — iterate `project.effective_owner.runners.kept_only.for_agent_runs`:
+**Runner scope** (1) — iterate `project.effective_owner.runners.kept_only.for_agent_runs`:
 
 | Check | Severity | Detects | Reuses |
 |---|---|---|---|
-| `InactiveModel` | error | resolved tier model has `active: false` (retired) | `Runners::ResolveTierModel`, `LlmModel#active` |
-| `ExpiredModel` | warning | resolved model `expired?` | `LlmModel#expired?` |
-| `BelowQualityBarModel` | warning | resolved model `below_quality_bar?` | `LlmModel#below_quality_bar?` |
 | `DeprecatedModel` | warning (**network**) | resolved model dropped from the RubyLLM registry | `Models::DetectCatalogDrift#deprecated_models_for` |
-| `IncompatibleModel` | error | resolved model hard-incompatible with the runner contract | `Runners::ModelCompatibility` (treat `nil` as pass, matching existing permissiveness) |
-| `MissingRunnerCredentials` | error | `api_key` runner with no `provider_api_key` AND no `integration_credential` | `Runner#effective_api_secret` |
-| `SupersededModel` | info | newer sibling exists in same provider+tier with higher `capability_score` | `LlmModel` catalog query |
 
 **User scope** (3):
 
@@ -130,7 +128,9 @@ Each check is one file under `app/services/health_checks/checks/<scope>/`.
 | `InvalidFallbackChain` | warning | `runner_selection_mode` references disabled/discarded runners | `UserSetting#validate_fallback_runners` |
 | `MissingDefaultRunner` | warning | `default_agent_runner` set to a discarded/disabled runner | `UserSetting#validate_default_agent_runner` |
 
-The runner's example ("runner configured for an older out-of-date model") maps to `InactiveModel` + `DeprecatedModel` + `SupersededModel` — three severity tiers from "won't run" through "provider deprecated it" to "a newer one exists." The auto-review/auto-merge example maps to `AutoMergeWithoutOwner` + `ReviewWithoutBot` (+ `ReviewBotNotInstalled`).
+The shipped runner example ("runner configured for an older out-of-date
+model") maps to `DeprecatedModel`. The auto-review/auto-merge example maps to
+`AutoMergeWithoutOwner` + `ReviewWithoutBot` (+ `ReviewBotNotInstalled`).
 
 ### Coordinator and registry
 
@@ -153,14 +153,16 @@ end
 
 ### Execution model
 
-**Scheduled daily sweep is the source of truth.** `AccountHealthCheckSweepJob` (queue `:maintenance`, `GoodJob::ActiveJobExtensions::Concurrency` with `key: "account_health_sweep"`, capped at 1):
+**Scheduled daily sweep is the source of truth.** `AccountHealthCheckSweepJob`
+(queue `:maintenance`, `GoodJob::ActiveJobExtensions::Concurrency` with
+`key: "account_health_sweep"`, capped at 1):
 
 ```
 under TenantContext.with_system_access:
   Project.includes(:effective_owner).find_each do |project|
     Cache.write(project, Coordinator.call(scope: :project, subject: project, include_network: true))
+    HealthChecks::Notifications::RuleAdapter.call(scope: project)
   end
-  Notifications::Rule.evaluate_all(account:)   # drives publish + auto-resolve
   log message: "project_health.sweep_completed", ...
 ```
 
@@ -168,27 +170,20 @@ under TenantContext.with_system_access:
 
 ### Notification auto-resolve
 
-Rather than one hand-written `Notifications::Rule` subclass per check, a single generic adapter binds any `Check` class into a rule:
+`HealthChecks::Notifications::RuleAdapter` is the bridge from cached
+project-health findings into the existing `Notification` publish/resolve
+pipeline.
 
-```ruby
-# app/services/health_checks/notifications/rule_adapter.rb
-module HealthChecks::Notifications
-  class RuleAdapter < Notifications::Rule
-    def self.for(check_class) = Class.new(self) { define_singleton_method(:check_class) { check_class } }
-    def detect(scope)   # account -> projects where the check fires
-      Project.where(account: scope).select { |p| check_class.new.call(p).any? }
-    end
-    def build(subject)  # project -> notification attrs from the finding
-      finding = check_class.new.call(subject).first
-      { severity: finding.severity, title: finding.title, description: finding.description,
-        action_url: project_health_check_path(subject), nav_section: "projects",
-        source: "health_check_#{finding.code}", metadata: finding.metadata }
-    end
-  end
-end
-```
-
-Registered once per check at boot. `Notifications::Rule#call` handles publish-on-fire and auto-resolve-on-clean, so no new reconciliation code is written. One finding → one notification per `(project, code)`; source-keyed dedup means a re-sweep updates rather than stacks.
+- After each cache refresh, the adapter reads the cached `Result` for that
+  project and publishes one unresolved notification per current finding.
+- Notifications deep-link back to `project_health_check_path(project)` so the
+  operator lands on the grouped health report rather than an individual
+  settings surface.
+- Notification `source` values are prefixed per project and include a stable
+  fingerprint of the finding metadata. This preserves separate notifications
+  when one check emits multiple findings for the same subject and code.
+- When a finding disappears from the cached result, the adapter resolves the
+  stale notification on the next sync without manual dismissal.
 
 ### Frontend (dedicated page only)
 
@@ -262,17 +257,10 @@ Rejected. With network checks in scope (review-bot-installed-on-repo, registry d
 
 The work is broken into phased issues hanging off a tracking (umbrella) issue. Issues use explicit `Depends on #...` lines so auto-pick honors the order. Parallelizable phases are grouped; each phase references this RDR.
 
-1. **Core framework** — `Finding`, `Result`, `Check` base, `Registry`, `Coordinator` (with check isolation), `Cache`. Specs for the framework itself. *No upstream dependencies.*
-2. **Project-scope local checks** — `AutoMergeWithoutOwner`, `ReviewWithoutBot`, `EmptyAllowlist`, `MissingGitHubCredential`, `SensitiveDataFreeModel`. *Depends on the core framework.*
-3. **Runner-scope local checks** — `InactiveModel`, `ExpiredModel`, `BelowQualityBarModel`, `IncompatibleModel`, `MissingRunnerCredentials`, `SupersededModel`. *Depends on the core framework.*
-4. **User-scope local checks** — `NoAgentRunners`, `InvalidFallbackChain`, `MissingDefaultRunner`. *Depends on the core framework.*
-5. **Network checks** — `ReviewBotNotInstalled` (GitHub API), `DeprecatedModel` (registry diff via `DetectCatalogDrift`). *Depends on the core framework.*
-6. **Health check page + on-demand job** — controller, routes, `show` view + partials, `Cache.read`, `refresh` action + `ProjectHealthCheckJob`. *Depends on project + runner local checks.*
-7. **Scheduled sweep job** — `AccountHealthCheckSweepJob` (daily cron, `:maintenance`, concurrency cap, writes cache, structured log). *Depends on network checks + the page's job pattern.*
-8. **Auto-resolving notifications** — `RuleAdapter`, boot-time registration, integration with `Notifications::Rule.evaluate_all`. *Depends on the scheduled sweep.*
-9. **Closeout audit (umbrella)** — verify the shipped implementation matches this RDR; update the RDR `Status` to `Implemented`. *Depends on all phases.*
-
-Phases 2–5 can proceed in parallel once the core framework lands.
+Implemented via phased issues #3051–#3057; remaining phase #3058 is still open
+as of August 3, 2026. The plan is retained in the issue history; the current
+design sections above reflect the shipped system to date rather than marking
+the closeout as finished early.
 
 ## Validation
 
@@ -280,7 +268,8 @@ Phases 2–5 can proceed in parallel once the core framework lands.
 
 - One spec per check (`spec/services/health_checks/checks/**/*_spec.rb`): factory the subject in the broken state, assert the `Finding`; factory it in the healthy state, assert `[]`. Network checks stub the GitHub client / registry fetch.
 - Coordinator spec: assert scope composition (a `:project` run includes runner + user findings), and that a raising check becomes an internal-error finding rather than failing the run.
-- `RuleAdapter` spec: assert publish-on-fire and resolve-on-clean via the existing `Notifications::Rule` spec harness.
+- `RuleAdapter` spec: assert publish-on-fire, resolve-on-clean, and distinct
+  notifications for distinct finding fingerprints.
 - Job specs: assert cache is written, the structured `message: "project_health.sweep_completed"` log is emitted, and the concurrency key is set.
 - A system spec for the page: renders cached findings grouped by scope, "Re-run" enqueues the job, empty state renders when healthy.
 
