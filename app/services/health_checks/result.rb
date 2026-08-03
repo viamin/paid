@@ -22,5 +22,13 @@ module HealthChecks
     def counts
       findings.group_by(&:severity).transform_values(&:count)
     end
+
+    def error_count
+      counts.fetch(:error, 0)
+    end
+
+    def warning_count
+      counts.fetch(:warning, 0)
+    end
   end
 end

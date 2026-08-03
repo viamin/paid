@@ -5,7 +5,9 @@ module HealthChecks
   # Page reads cache; the daily sweep refreshes it.
   class Cache
     KEY_PREFIX = "project_health"
-    DEFAULT_TTL = 1.day
+    # Slightly longer than the daily sweep cadence so a delayed sweep does not
+    # briefly blank the page right at the 24h boundary.
+    DEFAULT_TTL = 26.hours
 
     class << self
       # Reads the cached Result for +subject+ (a Project, Runner, etc.).
