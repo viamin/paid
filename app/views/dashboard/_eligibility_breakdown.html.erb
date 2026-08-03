@@ -26,6 +26,7 @@
               <% if bd.needs_input.positive? %>
                 <%= link_to dashboard_needs_input_path(project_id: bd.project.id),
                       class: "inline-flex items-center gap-1 text-amber-700 hover:text-amber-800",
+                      data: { turbo_frame: "_top" },
                       title: "Issues where Paid needs human clarification before proceeding" do %>
                   <span class="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
                   <%= bd.needs_input %> needs input
