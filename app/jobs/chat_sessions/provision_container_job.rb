@@ -87,8 +87,13 @@ module ChatSessions
       return unless chat_session
 
       log("restore_failed", chat_session_id:, error: error.message)
+      # ProvisionForChat already started a container and attached volumes before
+      # restore failed. Reclaim them and clear the recorded ids so a reopen retry
+      # provisions fresh resources instead of leaking a running paid-chat-*
+      # container while the orphaned one stays attached to the session.
+      Containers::ChatSessionManager.new(chat_session).release_resources!
       persist_reopen_failure_notice!(chat_session, error)
-      chat_session.update!(container_capability: "failed")
+      chat_session.update!(container_capability: "failed", container_id: nil, workspace_volume: nil)
       ChatSessions::BroadcastCapabilityState.call(chat_session: chat_session.reload)
     end
 

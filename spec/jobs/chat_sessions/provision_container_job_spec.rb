@@ -19,7 +19,8 @@ RSpec.describe ChatSessions::ProvisionContainerJob, type: :job do
       kwargs[:chat_session].update!(
         container_capability: "ready",
         container_id: "chat-container-1",
-        container_ready_at: Time.current
+        container_ready_at: Time.current,
+        workspace_volume: "paid-chat-workspace-#{kwargs[:chat_session].id}"
       )
       Containers::Provision::Result.success(container_id: "chat-container-1")
     end
@@ -75,30 +76,53 @@ RSpec.describe ChatSessions::ProvisionContainerJob, type: :job do
         expect(ChatSessions::RestoreCloneManifest).to have_received(:call)
       end
 
-      it "moves the session to failed and persists a reopen-failure notice when restore raises" do
-        allow(ChatSessions::RestoreCloneManifest).to receive(:call) do |_kwargs|
-          raise "Workspace reset failed: permission denied"
+      context "when restore fails after provisioning succeeded" do
+        let(:mock_container) { instance_double(Docker::Container, stop: true, delete: true) }
+        let(:mock_volume) { instance_double(Docker::Volume, remove: true) }
+
+        before do
+          allow(ChatSessions::RestoreCloneManifest).to receive(:call) do
+            raise "Workspace reset failed: permission denied"
+          end
+          allow(Docker::Container).to receive(:get).and_return(mock_container)
+          allow(Docker::Volume).to receive(:get).and_return(mock_volume)
         end
 
-        expect {
+        it "tears down the provisioned container and clears recorded ids so a retry does not leak it" do
+          expect(mock_container).to receive(:stop).with(timeout: 10)
+          expect(mock_container).to receive(:delete).with(force: true, v: true)
+          expect(mock_volume).to receive(:remove).twice
+
           described_class.perform_now(chat_session_id: chat_session.id)
-        }.not_to raise_error
 
-        expect(chat_session.reload.container_capability).to eq("failed")
+          session = chat_session.reload
+          expect(session.container_capability).to eq("failed")
+          expect(session.container_id).to be_nil
+          expect(session.workspace_volume).to be_nil
+        end
 
-        notice = chat_session.messages.system.find_by("metadata ->> 'reopen_clone_failures' = 'true'")
-        expect(notice).to be_present
-        expect(notice.content).to include("Workspace reopen failed")
-        expect(notice.content).to include("Workspace reset failed")
-      end
+        it "moves the session to failed and persists a reopen-failure notice" do
+          expect {
+            described_class.perform_now(chat_session_id: chat_session.id)
+          }.not_to raise_error
 
-      it "broadcasts the failed capability rather than ready when restore fails" do
-        allow(ChatSessions::RestoreCloneManifest).to receive(:call) { raise "Workspace reset failed" }
+          expect(chat_session.reload.container_capability).to eq("failed")
 
-        expect {
-          described_class.perform_now(chat_session_id: chat_session.id)
-        }.to have_broadcasted_to(stream_name)
-          .with(hash_including(type: "capability_changed", container_capability: "failed"))
+          notice = chat_session.messages.system.find_by("metadata ->> 'reopen_clone_failures' = 'true'")
+          expect(notice).to be_present
+          expect(notice.content).to include("Workspace reopen failed")
+          expect(notice.content).to include("Workspace reset failed")
+        end
+
+        it "broadcasts the failed capability rather than ready" do
+          # The ready -> failed update fires the capability-transition callback
+          # broadcast, and the handler also broadcasts explicitly; both carry
+          # the failed state, so assert the event is emitted at least once.
+          expect {
+            described_class.perform_now(chat_session_id: chat_session.id)
+          }.to have_broadcasted_to(stream_name)
+            .with(hash_including(type: "capability_changed", container_capability: "failed")).at_least(:once)
+        end
       end
     end
 
