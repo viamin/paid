@@ -13,13 +13,13 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
         "db_username" => "paid",
         "db_password" => "paid",
         "creates_application_role" => true,
-        "uses_database_url" => false
+        "uses_database_url" => true
       },
       "performance" => {
         "db_username" => "paid",
         "db_password" => "paid",
         "creates_application_role" => true,
-        "uses_database_url" => false
+        "uses_database_url" => true
       }
     },
     ".github/workflows/system_tests.yml" => {
