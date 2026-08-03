@@ -114,6 +114,12 @@ Rails.application.configure do
       class: "ModelsSyncJob",
       description: "Seed/update LlmModel records from known models list"
     },
+    free_models_sync: {
+      cron: "15 0 * * *",
+      class: "FreeModels::SyncJob",
+      queue: "maintenance",
+      description: "Sync OpenRouter free models into the LlmModel catalog"
+    },
     model_health_check: {
       cron: "0 5 * * *",
       class: "ModelHealthCheckJob",

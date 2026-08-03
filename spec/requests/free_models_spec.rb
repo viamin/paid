@@ -10,9 +10,10 @@ RSpec.describe "FreeModels" do
     {
       model_id: "high-free",
       display_name: "High Free",
-      provider: "openrouter",
+      provider: "deepseek",
       tier: "high",
       pricing_tier: "free",
+      catalog_source: "openrouter_sync",
       capability_score: 9.1,
       supports_tools: true,
       data_training_risk: "possible",
@@ -23,9 +24,10 @@ RSpec.describe "FreeModels" do
     {
       model_id: "low-free",
       display_name: "Low Free",
-      provider: "openrouter",
+      provider: "qwen",
       tier: "low",
       pricing_tier: "free",
+      catalog_source: "openrouter_sync",
       capability_score: 4.2,
       data_training_risk: "none",
       metadata: { "below_quality_bar" => true }
