@@ -144,6 +144,15 @@ RSpec.describe "Admin::GithubApp::Setup" do
       expect(ENV["PAID_AGENT_APP_WEBHOOK_SECRET"]).to eq(original_webhook_secret)
     end
 
+    it "filters the callback code from request parameters before Rails logs them" do
+      filtered_parameters = ActiveSupport::ParameterFilter
+        .new(Rails.application.config.filter_parameters)
+        .filter(code: code, state: primed_state)
+
+      expect(filtered_parameters).to include(code: "[FILTERED]")
+      expect(filtered_parameters).to include(state: kind_of(String))
+    end
+
     it "renders the manual instructions when the persister cannot write credentials" do
       state = primed_state
       instructions = "Add paid_agent_app_id: \"99\" and paid_agent_app_private_key here"

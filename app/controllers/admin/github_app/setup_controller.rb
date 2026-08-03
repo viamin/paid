@@ -61,8 +61,9 @@ module Admin
       # The authorization code is received via GET query parameter as part
       # of the standard OAuth 2.0 authorization-code grant flow. The code is
       # single-use (GitHub invalidates it after the first exchange), short-lived,
-      # and is immediately exchanged below — it is never stored, logged, or
-      # forwarded outside this action.
+      # and is immediately exchanged below. Rails request logging redacts the
+      # bare `code` query key via `config.filter_parameters`, so the value is
+      # neither stored nor emitted in application logs.
       def callback
         expected = session.delete(:admin_github_app_setup_state)
         provided = params[:state].to_s
@@ -103,8 +104,8 @@ module Admin
       # to POST because GitHub controls the redirect URL.
       #
       # The code is single-use, short-lived, immediately exchanged for
-      # credentials, and never logged or stored — it is safe to read from
-      # the query string in this context.
+      # credentials, and the bare `code` key is filtered from Rails request
+      # logs — it is safe to read from the query string in this context.
       def oauth_callback_code
         # lgtm[rb/sensitive-get-query]
         request.query_parameters[:code].to_s
