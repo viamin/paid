@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+# @spec REPO-WORKFLOW-SCAN-003
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "${script_dir}/.." && pwd)"
+
+version="1.29.0"
+install_dir="${ZIZMOR_INSTALL_DIR:-${repo_root}/tmp/tools/zizmor}"
+target_path="${install_dir}/zizmor-v${version}"
+
+print_path() {
+  printf '%s\n' "${target_path}"
+}
+
+verify_checksum() {
+  local expected archive
+  expected="$1"
+  archive="$2"
+
+  if command -v sha256sum >/dev/null 2>&1; then
+    printf '%s  %s\n' "${expected}" "${archive}" | sha256sum -c - >/dev/null
+    return
+  fi
+
+  if command -v shasum >/dev/null 2>&1; then
+    printf '%s  %s\n' "${expected}" "${archive}" | shasum -a 256 -c >/dev/null
+    return
+  fi
+
+  echo "No SHA-256 verifier found (expected sha256sum or shasum)." >&2
+  exit 1
+}
+
+current_version() {
+  if [[ ! -x "${target_path}" ]]; then
+    return 1
+  fi
+
+  "${target_path}" --version 2>/dev/null | tr -d '\r'
+}
+
+resolve_asset() {
+  local os arch suffix checksum
+
+  case "$(uname -s)" in
+    Linux) os="linux" ;;
+    Darwin) os="darwin" ;;
+    *)
+      echo "Unsupported OS for Zizmor install: $(uname -s)" >&2
+      exit 1
+      ;;
+  esac
+
+  case "$(uname -m)" in
+    x86_64|amd64) arch="x64" ;;
+    arm64|aarch64) arch="arm64" ;;
+    *)
+      echo "Unsupported architecture for Zizmor install: $(uname -m)" >&2
+      exit 1
+      ;;
+  esac
+
+  case "${os}_${arch}" in
+    darwin_arm64)
+      suffix="zizmor-aarch64-apple-darwin.tar.gz"
+      checksum="720322fade9e83a9c7953944c438f2ba942636b86b96a8f0e6b15ce94c8a6b6f"
+      ;;
+    darwin_x64)
+      suffix="zizmor-x86_64-apple-darwin.tar.gz"
+      checksum="648b72ab9941a7f2a8d65d7b68a8e76cef789538c8df3a3950384d38423375b0"
+      ;;
+    linux_arm64)
+      suffix="zizmor-aarch64-unknown-linux-gnu.tar.gz"
+      checksum="415eaa7c0a06479a701b8e44a3e812c1047decc848ec4bede7bd6bbf49f22d20"
+      ;;
+    linux_x64)
+      suffix="zizmor-x86_64-unknown-linux-gnu.tar.gz"
+      checksum="dd96df044a6e8538d5f423790f453bdd03d49e5b2bcc38214acc41a2f1297839"
+      ;;
+    *)
+      echo "No pinned checksum for Zizmor asset ${os}_${arch}." >&2
+      exit 1
+      ;;
+  esac
+
+  printf '%s\n%s\n' "${suffix}" "${checksum}"
+}
+
+install_zizmor() {
+  local asset checksum tmpdir archive url extracted_path
+  mapfile -t asset_data < <(resolve_asset)
+  asset="${asset_data[0]}"
+  checksum="${asset_data[1]}"
+
+  mkdir -p "${install_dir}"
+
+  if current_version | grep -Fq "${version}"; then
+    print_path
+    return
+  fi
+
+  tmpdir=""
+  tmpdir="$(mktemp -d "${TMPDIR:-/tmp}/zizmor-install.XXXXXX")"
+  trap 'rm -rf "${tmpdir:-}"' EXIT
+
+  archive="${tmpdir}/${asset}"
+  url="https://github.com/zizmorcore/zizmor/releases/download/v${version}/${asset}"
+
+  curl -fsSL "${url}" -o "${archive}"
+  verify_checksum "${checksum}" "${archive}"
+  tar -xzf "${archive}" -C "${tmpdir}"
+
+  extracted_path="${tmpdir}/zizmor"
+  if [[ ! -x "${extracted_path}" ]]; then
+    echo "Downloaded Zizmor archive did not contain an executable binary." >&2
+    exit 1
+  fi
+
+  mv "${extracted_path}" "${target_path}"
+  chmod +x "${target_path}"
+  print_path
+}
+
+case "${1:-}" in
+  ""|--print-path)
+    install_zizmor
+    ;;
+  *)
+    echo "Usage: bin/install-zizmor [--print-path]" >&2
+    exit 1
+    ;;
+esac
