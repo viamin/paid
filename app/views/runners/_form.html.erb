@@ -380,7 +380,7 @@
                 <% models_for_group = grouped_free_models[group_tier] || [] %>
                 <% next if models_for_group.empty? %>
 
-                <optgroup label="<%= "#{group_tier.titleize} tier free models" %>">
+                <optgroup label="<%= group_tier.titleize %> tier free models">
                   <% models_for_group.each do |m| %>
                     <option value="<%= m.model_id %>" <% if current_tier_ids[tier] == m.model_id %>selected<% end %>>
                       <%= m.display_name %> (<%= m.tier %>) <%= m.below_quality_bar? ? "• Below quality bar" : "• Above quality bar" %>
