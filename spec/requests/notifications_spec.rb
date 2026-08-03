@@ -131,7 +131,6 @@ RSpec.describe "Notifications" do
 
       expect(response).to redirect_to(notifications_path)
     end
-
     it "redirects back for HTML requests" do
       notification = create(:notification, account: account)
 

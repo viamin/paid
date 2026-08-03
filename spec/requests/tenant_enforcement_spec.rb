@@ -38,7 +38,6 @@ RSpec.describe "TenantEnforcement" do
 
       expect(response).to redirect_to(root_path)
     end
-
     it "sets a flash alert for blocked mutations" do
       post projects_path, params: { project: { name: "test" } }
       expect(flash[:alert]).to match(/suspended/i)

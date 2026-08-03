@@ -91,7 +91,7 @@ class PromptsController < ApplicationController
     b_id = params[:b]
 
     if a_id.blank? || b_id.blank? || a_id == b_id
-      redirect_back fallback_location: @prompt, allow_other_host: false, alert: "You must select two different versions to compare."
+      redirect_back fallback_location: @prompt, alert: "You must select two different versions to compare."
       return
     end
 
