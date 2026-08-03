@@ -1120,8 +1120,10 @@ RSpec.describe "Dashboard" do
     end
 
     it "shows free-model availability details for openrouter_free" do
-      free_model = create(:llm_model, model_id: "high-free", provider: "openrouter", tier: "high", pricing_tier: "free")
-      create(:llm_model, model_id: "mid-free", provider: "openrouter", tier: "mid", pricing_tier: "free")
+      free_model = create(:llm_model, model_id: "high-free", provider: "deepseek", tier: "high", pricing_tier: "free",
+        catalog_source: "openrouter_sync")
+      create(:llm_model, model_id: "mid-free", provider: "moonshotai", tier: "mid", pricing_tier: "free",
+        catalog_source: "openrouter_sync")
       api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
       runner = create(
         :runner,

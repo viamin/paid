@@ -67,27 +67,13 @@ RSpec.describe Dashboard::RunnerHealth do
     end
 
     it "includes free-model availability details for openrouter_free runners" do
-      free_model = create(:llm_model, model_id: "high-free", provider: "openrouter", tier: "high", pricing_tier: "free")
-      create(:llm_model, model_id: "mid-free", provider: "openrouter", tier: "mid", pricing_tier: "free")
-      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
-      runner = create(
-        :runner,
-        user: user,
-        runner_key: "openrouter_free",
-        auth_type: "api_key",
-        provider_api_key: api_key,
-        tier_model_ids: LlmModel::TIERS.index_with { free_model.model_id }
-      )
-      create(:runner_state, user: user, runner_name: "#{runner.state_key}:#{free_model.model_id}", rate_limited_until: 10.minutes.from_now)
+      create_openrouter_free_runner_with_rate_limited_model(user:)
 
-      stats = described_class.call(account: account)
-      summary = stats[:runners].find { |entry| entry.runner_key == "openrouter_free" }.free_model_summary
+      summary = described_class.call(account: account)[:runners]
+        .find { |entry| entry.runner_key == "openrouter_free" }
+        .free_model_summary
 
-      expect(summary).to include(
-        available: 1,
-        total: 2,
-        rate_limited: 1
-      )
+      expect(summary).to include(available: 1, total: 2, rate_limited: 1)
       expect(summary[:recovery_at]).to be_present
     end
 
@@ -131,6 +117,24 @@ RSpec.describe Dashboard::RunnerHealth do
         expect(stats[:dispatch_halted][:state]).to eq("open")
         expect(breaker.reload).to be_circuit_open
       end
+    end
+
+    def create_openrouter_free_runner_with_rate_limited_model(user:)
+      free_model = create(:llm_model, model_id: "high-free", provider: "deepseek", tier: "high", pricing_tier: "free",
+        catalog_source: "openrouter_sync")
+      create(:llm_model, model_id: "mid-free", provider: "moonshotai", tier: "mid", pricing_tier: "free",
+        catalog_source: "openrouter_sync")
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+      runner = create(
+        :runner,
+        user: user,
+        runner_key: "openrouter_free",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        tier_model_ids: LlmModel::TIERS.index_with { free_model.model_id }
+      )
+      create(:runner_state, user: user, runner_name: "#{runner.state_key}:#{free_model.model_id}", rate_limited_until: 10.minutes.from_now)
+      runner
     end
   end
 end

@@ -39,6 +39,7 @@ RSpec.describe ApplicationJob, :no_db do
         ClaudeCredentialKeepWarmJob
         CoordinationExperimentResolutionJob
         CoordinationPolicyEvolutionJob
+        FreeModels::SyncJob
         GithubTokenHealthCheckJob
         KnowledgeAuditRetentionJob
         ModelHealthCheckJob

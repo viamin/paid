@@ -32,7 +32,7 @@ module FreeModels
     attr_reader :project
 
     def models
-      @models ||= LlmModel.free.by_provider(Runner::OPENROUTER_FREE_MODEL_PROVIDER).order(Arel.sql("capability_score DESC NULLS LAST"), :display_name).to_a
+      @models ||= LlmModel.openrouter_synced_free.order(Arel.sql("capability_score DESC NULLS LAST"), :display_name).to_a
     end
   end
 end
