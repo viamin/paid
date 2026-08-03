@@ -33,7 +33,11 @@ module ChatSessions
 
     def reap_session(session)
       TenantContext.with(session.account) do
-        ChatSessions::Close.call(chat_session: session)
+        if session.inline_only?
+          ChatSessions::Close.call(chat_session: session)
+        else
+          ChatSessions::ReapIdleWorkspace.call(chat_session: session)
+        end
       end
       true
     rescue => e

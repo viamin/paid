@@ -73,8 +73,8 @@
 
 - [x] **CHAT-CONTAINER-PROVISIONING-006** - Background provisioning SHALL use
   GoodJob concurrency controls with `total_limit: 1`, `enqueue_limit: 1`, and
-  a key scoped to the chat session ID so duplicate jobs cannot provision the
-  same workspace concurrently.
+  a key scoped to the account so chat workspaces for the same tenant are
+  provisioned one at a time on the low-priority queue.
   *Tests:* `spec/jobs/chat_sessions/provision_container_job_spec.rb`
   (".good_job_concurrency_config").
   *Code:* `ChatSessions::ProvisionContainerJob.good_job_concurrency_config`,

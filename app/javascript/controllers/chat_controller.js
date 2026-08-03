@@ -90,6 +90,9 @@ export default class extends Controller {
     case "message_created":
       this.handleMessageCreated(data)
       break
+    case "message_deleted":
+      this.handleMessageDeleted(data)
+      break
     case "message_tool_call":
       this.handleMessageToolCall(data)
       break
@@ -292,7 +295,7 @@ export default class extends Controller {
 
     const existing = this.messageElementById(data.message_id)
     if (existing) {
-      existing.closest("div")?.replaceWith(card)
+      this.renderedMessageElement(existing)?.replaceWith(card)
     } else {
       this.messagesTarget.append(card)
     }
@@ -326,10 +329,19 @@ export default class extends Controller {
     const messageElement = this.buildMessageElement(data.html)
     if (!messageElement) return
 
+    if (data.message_id) {
+      const existingMessage = this.messageElementById(data.message_id)
+      if (existingMessage) {
+        this.renderedMessageElement(existingMessage)?.replaceWith(messageElement)
+        this.scrollToBottom()
+        return
+      }
+    }
+
     if (data.stream_message_id) {
       const existingMessage = this.messagesTarget.querySelector(`article[data-stream-message-id="${data.stream_message_id}"]`)
       if (existingMessage) {
-        existingMessage.closest("div")?.replaceWith(messageElement)
+        this.renderedMessageElement(existingMessage)?.replaceWith(messageElement)
         this.scrollToBottom()
         return
       }
@@ -337,6 +349,13 @@ export default class extends Controller {
 
     this.messagesTarget.append(messageElement)
     this.scrollToBottom()
+  }
+
+  handleMessageDeleted(data) {
+    if (!data.message_id) return
+
+    const messageElement = this.messageElementById(data.message_id)
+    this.renderedMessageElement(messageElement)?.remove()
   }
 
   buildMessageElement(html) {
@@ -399,7 +418,11 @@ export default class extends Controller {
   }
 
   messageElementById(messageId) {
-    return this.messagesTarget.querySelector(`article[data-message-id="${messageId}"]`)
+    return this.messagesTarget.querySelector(`[data-message-id="${messageId}"]`)
+  }
+
+  renderedMessageElement(element) {
+    return element?.closest("details, div.flex.justify-start, div.justify-end, div.justify-center")
   }
 
   messageIdFor(element) {
