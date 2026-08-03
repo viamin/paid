@@ -52,6 +52,17 @@ RSpec.describe Tools::ProposePullRequest do
     end
 
     # @spec CHAT-PR-PROPOSAL-001
+    it "checks clone manifest projects through the user's policy scope" do
+      scoped_projects = Project.none
+
+      allow(Pundit).to receive(:policy_scope!).with(user, Project).and_return(scoped_projects)
+      allow(described_class).to receive(:policy_allows?).and_call_original
+
+      expect(described_class.available_for_chat?(user:, session:)).to be(false)
+      expect(described_class).not_to have_received(:policy_allows?)
+    end
+
+    # @spec CHAT-PR-PROPOSAL-001
     it "returns false when no cloned repo is mutable for the current user" do
       viewer = create(:user, :viewer, account:)
       viewer_session = create(:chat_session, :workspace, account:, created_by: viewer, clone_manifest: [ repo_manifest_entry(project:, repo:) ])

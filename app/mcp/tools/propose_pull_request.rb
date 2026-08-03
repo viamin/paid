@@ -50,8 +50,10 @@ module Tools
     end
 
     def self.any_manifest_project_mutable?(user:, session:)
+      scoped_projects = Pundit.policy_scope!(user, Project)
+
       session.clone_manifest_entries.any? do |entry|
-        project = Project.find_by(id: entry[:project_id])
+        project = scoped_projects.find_by(id: entry[:project_id])
         project && policy_allows?(user:, record: project, query: :run_agent?, policy_class: ProjectPolicy)
       end
     end
