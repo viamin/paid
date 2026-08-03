@@ -61,7 +61,7 @@ module ChatSessions
     def recover_failed_restore!(error)
       Containers::ChatSessionManager.new(chat_session).release_resources!
       persist_reopen_failure_notice!(error)
-      chat_session.update!(container_capability: "stopped", container_id: nil, workspace_volume: nil)
+      chat_session.update!(container_capability: "stopped", container_id: nil, workspace_volume: nil, container_ready_at: nil)
       ChatSessions::BroadcastCapabilityState.call(chat_session: chat_session.reload)
     end
 

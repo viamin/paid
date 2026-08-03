@@ -291,21 +291,26 @@ module Containers
         raise ProvisionError, "Workspace clone failed (exit #{exit_code}): #{output}"
       end
 
-      record_clone_manifest_entry!
+      record_clone_manifest_entry!(github_token)
       log("provision.workspace_seeded", project_id: project.id)
     end
 
-    def record_clone_manifest_entry!
-      entry = {
+    # Records the seed clone using the same append path as Tools::CloneProject so
+    # the primary repo carries the same manifest metadata (cloned_at,
+    # token_identity) as an explicit clone — otherwise the capability panel
+    # renders "unknown" for the very first repo in a fresh workspace.
+    def record_clone_manifest_entry!(github_token)
+      chat_session.append_clone_manifest_entry(
         project_id: project.id,
+        cloned_at: Time.current,
         path: options[:workspace_mount],
+        token_identity: "project-token:#{github_token.name}",
         project_name: project.name,
         project_full_name: project.full_name,
         status: "ready",
         stale: false
-      }
-      existing = Array(chat_session.clone_manifest)
-      chat_session.update!(clone_manifest: existing + [ entry ])
+      )
+      chat_session.save!
     end
 
     def workspace_empty?

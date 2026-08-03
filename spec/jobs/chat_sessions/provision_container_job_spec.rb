@@ -106,6 +106,7 @@ RSpec.describe ChatSessions::ProvisionContainerJob, type: :job do
           expect(session.container_capability).to eq("stopped")
           expect(session.container_id).to be_nil
           expect(session.workspace_volume).to be_nil
+          expect(session.container_ready_at).to be_nil
         end
 
         it "moves the session to stopped and persists a reopen-failure notice" do

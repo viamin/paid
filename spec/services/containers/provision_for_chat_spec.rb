@@ -200,7 +200,7 @@ RSpec.describe Containers::ProvisionForChat do
     end
 
     context "when project has an active GitHub token" do
-      let(:github_token) { instance_double(GithubToken, active?: true, token: "ghp_test123") }
+      let(:github_token) { instance_double(GithubToken, active?: true, token: "ghp_test123", name: "primary-token") }
 
       before do
         allow(project).to receive(:github_token).and_return(github_token)
@@ -228,7 +228,12 @@ RSpec.describe Containers::ProvisionForChat do
         described_class.call(chat_session: chat_session)
 
         expect(chat_session.reload.clone_manifest_entries).to contain_exactly(
-          a_hash_including(project_id: project.id, path: "/workspace")
+          a_hash_including(
+            project_id: project.id,
+            path: "/workspace",
+            token_identity: "project-token:primary-token",
+            cloned_at: a_string_matching(/\A\d{4}-\d{2}-\d{2}T/)
+          )
         )
       end
 
