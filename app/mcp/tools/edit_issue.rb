@@ -34,13 +34,20 @@ module Tools
             type: "array",
             items: { type: "string" },
             description: "New assignees (replaces all existing)"
+          },
+          confirmed: {
+            type: "boolean",
+            description: "Must be true to execute this write operation"
           }
         },
-        required: %w[project_id issue_number]
+        required: %w[project_id issue_number confirmed]
       }
     end
 
-    def perform(project_id:, issue_number:, title: nil, body: nil, state: nil, labels: nil, assignees: nil)
+    # @spec CHAT-TOOL-CONFIRMATION-001
+    def perform(project_id:, issue_number:, confirmed: false, title: nil, body: nil, state: nil, labels: nil, assignees: nil)
+      raise ArgumentError, "Confirmation required: set confirmed=true to edit an issue" unless confirmed
+
       project = project_for(project_id)
       client = require_github_client!(project)
       repo = project.full_name

@@ -627,15 +627,13 @@ RSpec.describe GithubClient do
     let(:repo) { "owner/repo" }
 
     before do
-      stub_request(:get, "#{api_base}/repos/#{repo}/labels")
-        .to_return(
-          status: 200,
-          body: [
-            { id: 1, name: "bug", color: "d73a4a" },
-            { id: 2, name: "enhancement", color: "a2eeef" }
-          ].to_json,
-          headers: { "Content-Type" => "application/json" }
-        )
+      stub_labels_page(
+        query: hash_including("per_page" => "100"),
+        labels: [
+          { id: 1, name: "bug", color: "d73a4a" },
+          { id: 2, name: "enhancement", color: "a2eeef" }
+        ]
+      )
     end
 
     it "returns list of labels" do
@@ -643,6 +641,39 @@ RSpec.describe GithubClient do
 
       expect(result.size).to eq(2)
       expect(result.first.name).to eq("bug")
+    end
+
+    it "follows pagination so labels beyond the first page are visible" do
+      stub_labels_page(
+        query: { "per_page" => "100" },
+        labels: [ { id: 1, name: "bug", color: "d73a4a" } ],
+        link: %(<#{api_base}/repos/#{repo}/labels?per_page=100&page=2>; rel="next")
+      )
+      stub_labels_page(
+        query: { "per_page" => "100", "page" => "2" },
+        labels: [ { id: 2, name: "P2", color: "ff9800" } ]
+      )
+
+      result = client.labels(repo)
+
+      expect(result.map(&:name)).to eq(%w[bug P2])
+    end
+
+    it "temporarily enables auto_paginate and restores it" do
+      expect(client.client.auto_paginate).to be false
+
+      client.labels(repo)
+
+      expect(client.client.auto_paginate).to be false
+    end
+
+    def stub_labels_page(query:, labels:, link: nil)
+      headers = { "Content-Type" => "application/json" }
+      headers["Link"] = link if link
+
+      stub_request(:get, "#{api_base}/repos/#{repo}/labels")
+        .with(query: query)
+        .to_return(status: 200, body: labels.to_json, headers: headers)
     end
   end
 

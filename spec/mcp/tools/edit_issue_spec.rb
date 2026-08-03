@@ -54,8 +54,18 @@ RSpec.describe Tools::EditIssue do
       ])
     end
 
+    # @spec CHAT-TOOL-CONFIRMATION-001
+    it "raises when not confirmed" do
+      expect do
+        tool.call(project_id: project.id, issue_number: 42, title: "Updated title", confirmed: false)
+      end.to raise_error(ArgumentError, /Confirmation required/)
+
+      expect(github_client).not_to have_received(:update_issue)
+    end
+
+    # @spec CHAT-TOOL-CONFIRMATION-001
     it "updates the issue title" do
-      result = tool.call(project_id: project.id, issue_number: 42, title: "Updated title")
+      result = tool.call(project_id: project.id, issue_number: 42, title: "Updated title", confirmed: true)
 
       expect(github_client).to have_received(:update_issue).with(project.full_name, 42, title: "Updated title")
       expect(Issues::UpsertFromGithub).to have_received(:call).with(project:, github_issue: updated_issue)
@@ -63,21 +73,21 @@ RSpec.describe Tools::EditIssue do
     end
 
     it "updates the issue body" do
-      tool.call(project_id: project.id, issue_number: 42, body: "New body")
+      tool.call(project_id: project.id, issue_number: 42, body: "New body", confirmed: true)
 
       expect(github_client).to have_received(:update_issue).with(project.full_name, 42, body: "New body")
       expect(Issues::ParseDependencies).to have_received(:call).with(issue: local_issue)
     end
 
     it "updates the issue state" do
-      tool.call(project_id: project.id, issue_number: 42, state: "closed")
+      tool.call(project_id: project.id, issue_number: 42, state: "closed", confirmed: true)
 
       expect(github_client).to have_received(:update_issue).with(project.full_name, 42, state: "closed")
       expect(Issues::ParseDependencies).not_to have_received(:call)
     end
 
     it "updates multiple fields at once" do
-      tool.call(project_id: project.id, issue_number: 42, title: "X", body: "Y", state: "closed")
+      tool.call(project_id: project.id, issue_number: 42, title: "X", body: "Y", state: "closed", confirmed: true)
 
       expect(github_client).to have_received(:update_issue).with(
         project.full_name, 42, title: "X", body: "Y", state: "closed"
@@ -85,26 +95,26 @@ RSpec.describe Tools::EditIssue do
     end
 
     it "validates labels when present" do
-      tool.call(project_id: project.id, issue_number: 42, labels: %w[bug])
+      tool.call(project_id: project.id, issue_number: 42, labels: %w[bug], confirmed: true)
 
       expect(github_client).to have_received(:update_issue).with(project.full_name, 42, labels: %w[bug])
     end
 
     it "rejects unknown labels" do
       expect do
-        tool.call(project_id: project.id, issue_number: 42, labels: %w[nonexistent])
+        tool.call(project_id: project.id, issue_number: 42, labels: %w[nonexistent], confirmed: true)
       end.to raise_error(ArgumentError, /Unknown labels: nonexistent/)
     end
 
     it "raises when no fields are provided" do
       expect do
-        tool.call(project_id: project.id, issue_number: 42)
+        tool.call(project_id: project.id, issue_number: 42, confirmed: true)
       end.to raise_error(ArgumentError, "No fields to update")
     end
 
     it "records an audit event" do
       expect do
-        tool.call(project_id: project.id, issue_number: 42, title: "Updated title")
+        tool.call(project_id: project.id, issue_number: 42, title: "Updated title", confirmed: true)
       end.to change(AccountActivityEvent, :count).by(1)
 
       event = AccountActivityEvent.last
@@ -119,7 +129,7 @@ RSpec.describe Tools::EditIssue do
       other_project = create(:project)
 
       expect do
-        tool.call(project_id: other_project.id, issue_number: 42, title: "X")
+        tool.call(project_id: other_project.id, issue_number: 42, title: "X", confirmed: true)
       end.to raise_error(ActiveRecord::RecordNotFound)
     end
 
@@ -129,7 +139,7 @@ RSpec.describe Tools::EditIssue do
       other_tool = described_class.new(user: other_user, session:)
 
       expect do
-        other_tool.call(project_id: project.id, issue_number: 42, title: "X")
+        other_tool.call(project_id: project.id, issue_number: 42, title: "X", confirmed: true)
       end.to raise_error(ActiveRecord::RecordNotFound)
     end
 
@@ -137,7 +147,7 @@ RSpec.describe Tools::EditIssue do
       allow(github_client).to receive(:update_issue).and_raise(GithubClient::Error, "API error")
 
       expect do
-        tool.call(project_id: project.id, issue_number: 42, title: "X")
+        tool.call(project_id: project.id, issue_number: 42, title: "X", confirmed: true)
       end.to raise_error(GithubClient::Error, "API error")
     end
 
@@ -145,7 +155,7 @@ RSpec.describe Tools::EditIssue do
       allow(github_client).to receive(:labels).and_raise(GithubClient::Error, "rate limited")
 
       expect do
-        tool.call(project_id: project.id, issue_number: 42, labels: %w[bug])
+        tool.call(project_id: project.id, issue_number: 42, labels: %w[bug], confirmed: true)
       end.to raise_error(GithubClient::Error, "rate limited")
     end
 
@@ -157,7 +167,7 @@ RSpec.describe Tools::EditIssue do
       end
 
       it "edits an issue using the installation credential" do
-        result = tool.call(project_id: project.id, issue_number: 42, title: "Updated title")
+        result = tool.call(project_id: project.id, issue_number: 42, title: "Updated title", confirmed: true)
 
         expect(github_client).to have_received(:update_issue).with(
           project.full_name, 42, title: "Updated title"
