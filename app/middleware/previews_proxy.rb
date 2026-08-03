@@ -21,8 +21,6 @@ require "erb"
 # autoloading is available (see the QueryMonitor precedent in the same file).
 class PreviewsProxy
   class StreamingResponseBody
-    CHUNK_HEADER_BYTES = 4
-
     def initialize(reader, thread)
       @reader = reader
       @thread = thread
@@ -30,11 +28,10 @@ class PreviewsProxy
 
     def each
       loop do
-        chunk = read_chunk
-        break if chunk.nil?
-
-        yield chunk
+        yield @reader.readpartial(BUFFER_SIZE)
       end
+    rescue EOFError
+      nil
     ensure
       close
     end
@@ -44,16 +41,6 @@ class PreviewsProxy
       @thread.join(2)
     rescue IOError, SystemCallError
       nil
-    end
-
-    private
-
-    def read_chunk
-      header = @reader.read(CHUNK_HEADER_BYTES)
-      return if header.nil?
-
-      length = header.unpack1("N")
-      @reader.read(length)
     end
   end
 
@@ -192,7 +179,7 @@ class PreviewsProxy
       begin
         http.request(request_headers) do |upstream_response|
           response_queue << upstream_response
-          upstream_response.read_body { |chunk| write_stream_chunk(writer, chunk) }
+          upstream_response.read_body { |chunk| writer.write(chunk) }
         end
       rescue StandardError => e
         response_queue << e
@@ -210,11 +197,6 @@ class PreviewsProxy
       upstream_response:,
       body: StreamingResponseBody.new(reader, stream_thread)
     )
-  end
-
-  def write_stream_chunk(writer, chunk)
-    writer.write([ chunk.bytesize ].pack("N"))
-    writer.write(chunk)
   end
 
   def build_net_http_request(request:, session:, proxied_path:)
