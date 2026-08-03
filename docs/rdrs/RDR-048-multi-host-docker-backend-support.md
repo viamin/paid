@@ -6,30 +6,40 @@
 
 - **Date**: 2026-07-16
 - **Status**: Implemented
+- **Revised**: 2026-08-03
 - **Type**: Operations + Architecture
-- **Priority**: P2
+- **Priority**: P1
 - **Related Issues**: [#2944](https://github.com/viamin/paid/issues/2944) (tracking), [#2945](https://github.com/viamin/paid/issues/2945) (backend configuration and registry), [#2946](https://github.com/viamin/paid/issues/2946) (scheduler and manual placement), [#2947](https://github.com/viamin/paid/issues/2947) (per-host concurrency), [#2948](https://github.com/viamin/paid/issues/2948) (multi-host lifecycle operations), [#2949](https://github.com/viamin/paid/issues/2949) (readiness checks), [#2950](https://github.com/viamin/paid/issues/2950) (management UI), [#2951](https://github.com/viamin/paid/issues/2951) (setup guide and automation helpers), [#2952](https://github.com/viamin/paid/issues/2952) (optional capacity-aware placement), [#2953](https://github.com/viamin/paid/issues/2953) (implementation audit and RDR closeout), [#2963](https://github.com/viamin/paid/issues/2963) (subscription auth host eligibility)
 - **Related RDRs**: RDR-019 (Remote Container Execution), RDR-020 (Service Container Architecture), RDR-033 (Worker Pool Scaling Algorithm), RDR-041 (Subscription Runner Managed Auth Lifecycle), RDR-043 (Zero-Config Docker Capacity Autoscaling)
 - **Related Tests**: Docker backend resolver tests, container provisioning tests, process queue admission tests, orphan cleanup tests, container metrics tests, capacity snapshot tests, operations dashboard system tests, host setup wizard tests
 
 ## Implementation Status
 
-Implemented. Audited on 2026-08-03 against the shipped code and test suite.
+RDR-048 is implemented as of 2026-08-03. The audit completed in
+[#2953](https://github.com/viamin/paid/issues/2953) found that the planned
+multi-host Docker scope is shipped, with one intentional design clarification:
+host readiness validates per-host callback URL configuration, while actual
+container-to-Paid reachability is exercised by the setup guide's disposable
+container probe rather than by a control-plane network check.
 
-Paid now supports the RDR-048 scope end to end:
+| Criterion | Status | Evidence |
+|-----------|--------|----------|
+| Backward-compatible `local`, `remote`, and `swarm` singleton modes | Implemented | `config/initializers/container_backend.rb`; `spec/services/containers/backends/resolver_initializer_spec.rb` |
+| Structured multi-host registry with named local + remote hosts such as `elguapo` | Implemented | `app/services/containers/host_registry.rb`; `spec/services/containers/host_registry_spec.rb` |
+| Explicit placement plus first-healthy and capacity-aware fallback | Implemented | `app/services/containers/resolve_host_for_run.rb`; `app/services/containers/backend_scheduler.rb`; `spec/requests/agent_runs_spec.rb`; `spec/jobs/process_run_queue_job_spec.rb` |
+| Independent per-host concurrency limits in queue admission | Implemented | `app/services/capacity/run_admission.rb`; `spec/services/capacity/run_admission_spec.rb` |
+| Persisted host ownership from claim through lifecycle routing | Implemented | `app/models/agent_run.rb`; `app/temporal/workflows/agent_execution_workflow.rb`; `spec/models/agent_run_spec.rb`; `spec/jobs/process_run_queue_job_spec.rb` |
+| Cleanup, warm pools, and metrics follow persisted host identity | Implemented | `app/jobs/docker_orphan_cleanup_job.rb`; `app/jobs/agent_run_resource_janitor_job.rb`; `app/services/containers/pool_manager.rb`; `app/services/containers/collect_metrics.rb`; related specs |
+| Docker Hosts UI for add/edit/disable/inspect/setup plus per-host placement controls | Implemented | `app/controllers/docker_hosts_controller.rb`; `app/views/docker_hosts/`; `spec/requests/docker_hosts_spec.rb`; `spec/system/docker_hosts_management_spec.rb` |
+| Per-host readiness checks and setup helper workflow | Implemented | `app/services/containers/host_readiness.rb`; `app/services/docker_hosts/setup_guide.rb`; `app/services/docker_hosts/setup_action_runner.rb`; related specs |
+| RDR-041 host eligibility contract for subscription runners | Implemented | `app/services/runners/subscription_auth_eligibility.rb`; `app/services/containers/provision.rb`; `spec/services/containers/provision_spec.rb`; `spec/requests/agent_runs_spec.rb` |
 
-- structured multi-host backend registration with stable host identifiers, named local/remote hosts, per-host callback URLs, and independent manual concurrency limits via `Containers::HostRegistry`, `Containers::Backends::Resolver`, and their specs;
-- conservative host selection plus explicit/manual placement through `Containers::BackendScheduler`, `Containers::ResolveHostForRun`, `Projects::AgentRunsController`, and queue/workflow/provisioning coverage;
-- per-host admission and planned-host accounting through `ProcessRunQueueJob`, `AgentRun.active_count_for_host`, and capacity admission logic so each host enforces its own ceiling;
-- persisted host-aware lifecycle routing for provisioning, warm pools, cleanup, service containers, and metrics through `agent_runs.container_host`, `planned_container_host`, `Containers.backend_for`, `DockerOrphanCleanupJob`, `Containers::PoolManager`, `Containers::CollectMetrics`, and `Containers::ServiceProvisioner`;
-- operator management UI, readiness checks, and setup guidance through `DockerHostsController`, the Docker Hosts views/system tests, `Containers::HostReadiness`, and `docs/guides/remote-docker-setup.md`;
-- multi-host-safe subscription-runner placement checks through the RDR-041 host-eligibility contract in `Runners::SubscriptionAuthEligibility` and `Containers::Provision`.
-
-The optional capacity-aware placement slice also shipped as an opt-in policy, while first-healthy and explicit placement remain the conservative defaults described by this RDR.
+No remaining acceptance gaps were found in the locked RDR-048 scope, so this
+audit does not create follow-up issues.
 
 ## Issue Plan
 
-Implementation was tracked by a dependency-ordered core issue chain. No issue in the core multi-host chain was intended to be labeled higher than `P2`; the cross-cutting subscription-auth eligibility work remained the `P1` RDR-041 issue [#2963](https://github.com/viamin/paid/issues/2963).
+Implementation is tracked by a dependency-ordered core issue chain. No issue in the core multi-host chain should be labeled higher than `P2`; the cross-cutting subscription-auth eligibility work is tracked as the `P1` RDR-041 issue [#2963](https://github.com/viamin/paid/issues/2963).
 
 | Issue | Priority | Scope | Dependency |
 |-------|----------|-------|------------|
@@ -44,7 +54,7 @@ Implementation was tracked by a dependency-ordered core issue chain. No issue in
 | [#2952](https://github.com/viamin/paid/issues/2952) | P3 | Optional capacity-aware host placement | Depends on [#2951](https://github.com/viamin/paid/issues/2951) |
 | [#2953](https://github.com/viamin/paid/issues/2953) | P2 | Final implementation audit, gap filing, and RDR status update | Depends on [#2952](https://github.com/viamin/paid/issues/2952), [#2963](https://github.com/viamin/paid/issues/2963) |
 
-The final closeout step for this chain was to audit the shipped implementation against the plan before marking the RDR implemented. This document now reflects that audit: the acceptance criteria below are satisfied by the current codebase, and the capacity-aware placement item remains opt-in exactly as planned rather than as an implementation gap.
+The final issue ([#2953](https://github.com/viamin/paid/issues/2953)) should update this RDR to `Implemented` only after auditing that the shipped implementation matches the plan. If any acceptance criteria are missing or intentionally deferred, #2953 should create specific follow-up issues and reference them from this RDR instead of marking the RDR implemented prematurely.
 
 ## Problem Statement
 
@@ -321,7 +331,9 @@ Each configured backend should have a health/readiness check that can be evaluat
   - `paid_agent`;
   - `paid_internal`.
 - `paid-agent:latest` exists locally on that Docker host or can be pulled/created according to configured policy.
-- Remote containers can reach that host’s configured Paid callback/proxy URL.
+- The host's configured Paid callback/proxy URL is present and valid for that
+  backend, and the setup guide provides a disposable-container reachability
+  probe to verify actual container access.
 - Backend supports the selected run’s mount/auth/network requirements.
 - TLS credentials for remote Docker are present and valid enough to connect.
 
@@ -348,6 +360,11 @@ Networks are per-host state. `NetworkPolicy.ensure_network!` already accepts a b
 #### Proxy and Callback URLs
 
 Remote backends need a URL reachable from containers on that host. The current global `PAID_PROXY_EXTERNAL_URL` is sufficient for one remote host, but multi-host mode needs per-host callback configuration because different hosts may reach Paid through different addresses.
+
+The shipped readiness contract is intentionally split:
+
+- host readiness validates that the per-host callback URL is present and well-formed;
+- the setup guide's disposable-container probe validates actual container-to-Paid reachability on that host.
 
 For the verified QNAP setup:
 
@@ -556,7 +573,7 @@ Rejected. This would technically enable multiple Docker hosts, but it would keep
 - Cleanup scans all configured hosts in multi-host mode.
 - Metrics collection reads from the persisted host for each running container.
 - Remote hosts are rejected for runs that require unsupported host bind mounts.
-- Remote proxy readiness validates that containers can reach the configured Paid callback URL.
+- Remote proxy readiness validates per-host callback URL configuration, and the setup guide validates actual container reachability with a disposable-container probe.
 - The setup guide can generate or accept certificate material, test Docker TLS connectivity, and show copyable remaining setup commands.
 - The setup guide can verify or guide image availability and required networks per host.
 - Tests cover backward compatibility, host selection, fallback, host concurrency, persisted host lookup, setup wizard behavior, cleanup, and metrics.
