@@ -51,6 +51,16 @@ RSpec.describe Tools::SetLabels do
   end
 
   describe "#call" do
+    # @spec CHAT-TOOL-CONFIRMATION-001
+    it "raises when not confirmed" do
+      expect do
+        tool.call(project_id: project.id, issue_number: 42, labels: %w[bug], confirmed: false)
+      end.to raise_error(ArgumentError, /Confirmation required/)
+
+      expect(github_client).not_to have_received(:add_labels_to_issue)
+      expect(github_client).not_to have_received(:remove_labels_from_issue)
+    end
+
     context "when setting labels on an issue with no existing labels" do
       before do
         bare_issue = Struct.new(:number, :labels).new(42, [])
@@ -63,7 +73,7 @@ RSpec.describe Tools::SetLabels do
 
       it "adds all requested labels" do
         result = tool.call(project_id: project.id, issue_number: 42,
-                           labels: %w[bug enhancement])
+                           labels: %w[bug enhancement], confirmed: true)
 
         expect(github_client).to have_received(:add_labels_to_issue).with(
           project.full_name, 42, %w[bug enhancement]
@@ -94,7 +104,7 @@ RSpec.describe Tools::SetLabels do
 
       it "adds new labels and removes unwanted ones" do
         result = tool.call(project_id: project.id, issue_number: 42,
-                           labels: %w[bug enhancement])
+                           labels: %w[bug enhancement], confirmed: true)
 
         expect(github_client).to have_received(:add_labels_to_issue).with(
           project.full_name, 42, %w[enhancement]
@@ -124,7 +134,7 @@ RSpec.describe Tools::SetLabels do
 
       it "makes no API calls for add or remove" do
         result = tool.call(project_id: project.id, issue_number: 42,
-                           labels: %w[bug enhancement])
+                           labels: %w[bug enhancement], confirmed: true)
 
         expect(github_client).not_to have_received(:add_labels_to_issue)
         expect(github_client).not_to have_received(:remove_labels_from_issue)
@@ -148,7 +158,7 @@ RSpec.describe Tools::SetLabels do
         .with(project.full_name, 42, %w[documentation])
         .and_return({ removed: [], failed: [ { label: "documentation", error: "still present" } ] })
 
-      result = tool.call(project_id: project.id, issue_number: 42, labels: %w[bug enhancement])
+      result = tool.call(project_id: project.id, issue_number: 42, labels: %w[bug enhancement], confirmed: true)
 
       expect(result[:failed]).to contain_exactly({ label: "documentation", error: "still present" })
       expect(result[:current_labels]).to match_array(%w[bug enhancement documentation])
@@ -157,7 +167,7 @@ RSpec.describe Tools::SetLabels do
 
     it "rejects unknown labels" do
       expect do
-        tool.call(project_id: project.id, issue_number: 42, labels: %w[nonexistent])
+        tool.call(project_id: project.id, issue_number: 42, labels: %w[nonexistent], confirmed: true)
       end.to raise_error(ArgumentError, /Unknown labels: nonexistent/)
     end
 
@@ -168,7 +178,7 @@ RSpec.describe Tools::SetLabels do
       allow(github_client).to receive(:issue).and_return(labeled_issue)
 
       expect do
-        tool.call(project_id: project.id, issue_number: 42, labels: %w[enhancement])
+        tool.call(project_id: project.id, issue_number: 42, labels: %w[enhancement], confirmed: true)
       end.to change(AccountActivityEvent, :count).by(1)
 
       event = AccountActivityEvent.last
@@ -184,7 +194,7 @@ RSpec.describe Tools::SetLabels do
       other_project = create(:project)
 
       expect do
-        tool.call(project_id: other_project.id, issue_number: 42, labels: %w[bug])
+        tool.call(project_id: other_project.id, issue_number: 42, labels: %w[bug], confirmed: true)
       end.to raise_error(ActiveRecord::RecordNotFound)
     end
 
@@ -194,7 +204,7 @@ RSpec.describe Tools::SetLabels do
       other_tool = described_class.new(user: other_user, session:)
 
       expect do
-        other_tool.call(project_id: project.id, issue_number: 42, labels: %w[bug])
+        other_tool.call(project_id: project.id, issue_number: 42, labels: %w[bug], confirmed: true)
       end.to raise_error(ActiveRecord::RecordNotFound)
     end
 
@@ -202,7 +212,7 @@ RSpec.describe Tools::SetLabels do
       allow(github_client).to receive(:issue).and_raise(GithubClient::Error, "API error")
 
       expect do
-        tool.call(project_id: project.id, issue_number: 42, labels: %w[bug])
+        tool.call(project_id: project.id, issue_number: 42, labels: %w[bug], confirmed: true)
       end.to raise_error(GithubClient::Error, "API error")
     end
 
@@ -210,7 +220,7 @@ RSpec.describe Tools::SetLabels do
       allow(github_client).to receive(:labels).and_raise(GithubClient::Error, "rate limited")
 
       expect do
-        tool.call(project_id: project.id, issue_number: 42, labels: %w[bug])
+        tool.call(project_id: project.id, issue_number: 42, labels: %w[bug], confirmed: true)
       end.to raise_error(GithubClient::Error, "rate limited")
     end
 
@@ -224,7 +234,7 @@ RSpec.describe Tools::SetLabels do
       end
 
       it "sets labels using the installation credential" do
-        tool.call(project_id: project.id, issue_number: 42, labels: %w[bug])
+        tool.call(project_id: project.id, issue_number: 42, labels: %w[bug], confirmed: true)
 
         expect(github_client).to have_received(:add_labels_to_issue).with(
           project.full_name, 42, %w[bug]
