@@ -58,6 +58,50 @@ RSpec.describe ChatSessions::ProvisionContainerJob, type: :job do
       end
     end
 
+    context "when reopening a previously provisioned workspace" do
+      let(:chat_session) do
+        create(:chat_session, account: account, created_by: user,
+          container_capability: "pending",
+          metadata: { "workspace_reopen_requested_at" => Time.current.iso8601 })
+      end
+
+      it "skips project seeding and restores the clone manifest" do
+        allow(ChatSessions::RestoreCloneManifest).to receive(:call)
+
+        described_class.perform_now(chat_session_id: chat_session.id)
+
+        expect(Containers::ProvisionForChat).to have_received(:call)
+          .with(hash_including(chat_session: chat_session, seed_project: false))
+        expect(ChatSessions::RestoreCloneManifest).to have_received(:call)
+      end
+
+      it "moves the session to failed and persists a reopen-failure notice when restore raises" do
+        allow(ChatSessions::RestoreCloneManifest).to receive(:call) do |_kwargs|
+          raise "Workspace reset failed: permission denied"
+        end
+
+        expect {
+          described_class.perform_now(chat_session_id: chat_session.id)
+        }.not_to raise_error
+
+        expect(chat_session.reload.container_capability).to eq("failed")
+
+        notice = chat_session.messages.system.find_by("metadata ->> 'reopen_clone_failures' = 'true'")
+        expect(notice).to be_present
+        expect(notice.content).to include("Workspace reopen failed")
+        expect(notice.content).to include("Workspace reset failed")
+      end
+
+      it "broadcasts the failed capability rather than ready when restore fails" do
+        allow(ChatSessions::RestoreCloneManifest).to receive(:call) { raise "Workspace reset failed" }
+
+        expect {
+          described_class.perform_now(chat_session_id: chat_session.id)
+        }.to have_broadcasted_to(stream_name)
+          .with(hash_including(type: "capability_changed", container_capability: "failed"))
+      end
+    end
+
     [ "none", "ready", "failed", "stopped" ].each do |capability|
       context "when the session is #{capability}" do
         let(:chat_session) { create(:chat_session, account: account, created_by: user, container_capability: capability) }

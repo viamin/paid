@@ -45,7 +45,7 @@ module ChatSessions
       reopening = session.metadata.to_h["workspace_reopen_requested_at"].present?
 
       Containers::ProvisionForChat.call(chat_session: session, seed_project: !reopening)
-      ChatSessions::RestoreCloneManifest.call(chat_session: session.reload) if reopening
+      restore_reopened_workspace(chat_session_id) if reopening
     rescue Containers::ProvisionForChat::ProvisionError, Docker::Error::DockerError => e
       handle_provision_failure(chat_session_id, e)
     rescue ActiveRecord::RecordNotFound
@@ -69,6 +69,40 @@ module ChatSessions
 
       log("failed", chat_session_id:, error: error.message)
       ChatSessions::BroadcastCapabilityState.call(chat_session: chat_session.reload)
+    end
+
+    # Restores cloned repos into a reopened workspace. ProvisionForChat has
+    # already flipped the session to "ready", so a restore failure must be
+    # handled separately from provisioning: the generic rescue below would
+    # rebroadcast the now-ready snapshot and report a healthy workspace even
+    # though the reopen never completed. Surface it as an explicit failure.
+    def restore_reopened_workspace(chat_session_id)
+      ChatSessions::RestoreCloneManifest.call(chat_session: ChatSession.find(chat_session_id))
+    rescue StandardError => e
+      handle_restore_failure(chat_session_id, e)
+    end
+
+    def handle_restore_failure(chat_session_id, error)
+      chat_session = ChatSession.find_by(id: chat_session_id)
+      return unless chat_session
+
+      log("restore_failed", chat_session_id:, error: error.message)
+      persist_reopen_failure_notice!(chat_session, error)
+      chat_session.update!(container_capability: "failed")
+      ChatSessions::BroadcastCapabilityState.call(chat_session: chat_session.reload)
+    end
+
+    def persist_reopen_failure_notice!(chat_session, error)
+      content = "Workspace reopen failed and could not be restored: #{error.message.to_s.truncate(300)}"
+      existing = chat_session.messages.system.find_by("metadata ->> 'reopen_clone_failures' = 'true'")
+
+      attributes = {
+        role: "system",
+        content: content,
+        metadata: { "reopen_clone_failures" => true }
+      }
+
+      existing ? existing.update!(**attributes) : chat_session.messages.create!(**attributes)
     end
 
     def log(action, **metadata)

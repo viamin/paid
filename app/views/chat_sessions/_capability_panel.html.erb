@@ -22,8 +22,8 @@
                     reopen_chat_session_path(chat_session),
                     method: :patch,
                     class: "inline-flex items-center rounded-md bg-gray-900 px-3 py-2 text-xs font-semibold text-white hover:bg-gray-700",
-                    data: { chat_capability_stopped_only: true },
-                    form_class: (chat_session.container_stopped? ? nil : "hidden") %>
+                    form_class: (chat_session.container_stopped? ? nil : "hidden"),
+                    form: { data: { chat_capability_stopped_only: true } } %>
     <% end %>
   </div>
 

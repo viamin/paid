@@ -762,4 +762,38 @@ RSpec.describe "ChatSessions" do
       expect(flash[:alert]).to eq("Chat session is archived.")
     end
   end
+
+  describe "capability panel reopen control" do
+    let(:account) { create(:account) }
+    let(:user) { create(:user, :owner, account: account) }
+    let(:chat_session) { create(:chat_session, account: account, created_by: user) }
+
+    before { sign_in user }
+
+    it "renders the reopen form visible with the toggle attribute on the form when stopped" do
+      chat_session.update!(container_capability: "stopped")
+
+      get chat_session_path(chat_session)
+
+      form = Nokogiri::HTML(response.body).at_css("form[action='#{reopen_chat_session_path(chat_session)}']")
+
+      expect(form).to be_present
+      expect(form["class"]).not_to match(/hidden/)
+      # The Stimulus toggle target must live on the same element that carries
+      # the initial hidden state, so a live transition to stopped reveals the CTA.
+      expect(form["data-chat-capability-stopped-only"]).to be_present
+    end
+
+    it "hides the reopen form but keeps the toggle attribute on the same element when not stopped" do
+      chat_session.update!(container_capability: "ready")
+
+      get chat_session_path(chat_session)
+
+      form = Nokogiri::HTML(response.body).at_css("form[action='#{reopen_chat_session_path(chat_session)}']")
+
+      expect(form).to be_present
+      expect(form["class"]).to match(/hidden/)
+      expect(form["data-chat-capability-stopped-only"]).to be_present
+    end
+  end
 end
