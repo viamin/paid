@@ -18,6 +18,21 @@ RSpec.describe ChatChannel do
       expect(subscription).to have_stream_from("chat_session:#{chat_session.id}")
     end
 
+    it "transmits the current capability snapshot immediately after subscribing" do
+      chat_session.update!(
+        container_capability: "ready",
+        container_ready_at: Time.current
+      )
+
+      subscribe(session_id: chat_session.id)
+
+      expect(transmissions.last).to include(
+        "type" => "capability_changed",
+        "container_capability" => "ready",
+        "container_capability_label" => "Workspace ready"
+      )
+    end
+
     it "rejects subscription for non-existent session" do
       subscribe(session_id: -1)
       expect(subscription).to be_rejected
