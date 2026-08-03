@@ -176,7 +176,11 @@ disable_triggers() {
   local message="${4:-}"
 
   [[ -n "$message" ]] && db_helpers_log_info "$message"
-  run_table_alter_best_effort "$db" "$tables" "DISABLE TRIGGER ALL" "disable triggers" "$required"
+  # Local restore/regenerate flows run as the application role in CI and on
+  # developer machines. PostgreSQL only allows superusers to toggle system
+  # triggers, so target user-defined triggers only; FK/system triggers remain
+  # enforced by TRUNCATE CASCADE and pg_restore's dependency ordering.
+  run_table_alter_best_effort "$db" "$tables" "DISABLE TRIGGER USER" "disable triggers" "$required"
 }
 
 enable_triggers() {
@@ -186,5 +190,5 @@ enable_triggers() {
   local message="${4:-}"
 
   [[ -n "$message" ]] && db_helpers_log_info "$message"
-  run_table_alter_best_effort "$db" "$tables" "ENABLE TRIGGER ALL" "enable triggers" "$required"
+  run_table_alter_best_effort "$db" "$tables" "ENABLE TRIGGER USER" "enable triggers" "$required"
 }

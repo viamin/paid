@@ -154,7 +154,7 @@ RSpec.describe DbScriptWarning do
         *"rowsecurity = true"*)
           echo "widgets"
           ;;
-        *"ENABLE TRIGGER ALL"*)
+        *"ENABLE TRIGGER USER"*)
           echo "enable trigger failed" >&2
           exit 1
           ;;
