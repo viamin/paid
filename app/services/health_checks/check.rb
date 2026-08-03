@@ -4,18 +4,21 @@ module HealthChecks
   # Abstract base for health checks.
   # Subclasses implement +self.scope+ and +#call+ (reads +subject+ from the instance).
   class Check
-    # Stable identifier derived from the class name (e.g. :auto_merge_without_owner).
-    def self.code
-      name.demodulize.underscore.to_sym
-    end
-
-    # +:project+, +:user+, or +:runner+. Subclasses MUST set via +self.scope = :project+
-    # or override +def self.scope+.
     class << self
       attr_writer :scope
 
+      # Stable, human-stable identifier for a finding. The dedup/auto-resolve
+      # key shared with the notification pipeline (RDR-049).
+      def code
+        name.demodulize.underscore.to_sym
+      end
+
       def scope
         @scope || raise(NotImplementedError, "#{name} must define self.scope")
+      end
+
+      def call(subject)
+        new(subject).call
       end
     end
 
@@ -23,11 +26,6 @@ module HealthChecks
     # Network checks are skipped when +include_network+ is false.
     def self.network?
       false
-    end
-
-    # Entry point: runs the check against +subject+ and returns an array of Findings.
-    def self.call(subject)
-      new(subject).call
     end
 
     def initialize(subject)
@@ -43,8 +41,8 @@ module HealthChecks
 
     attr_reader :subject
 
-    # Convenience: build a single-element Finding array from the check's own metadata.
-    def finding(severity:, title:, description: nil, remediation: nil, action_url: nil, subject_type: nil, subject_id: nil, metadata: {})
+    def finding(severity:, title:, description: nil, remediation: nil, action_url: nil,
+      subject_type: nil, subject_id: nil, metadata: {})
       [
         Finding.new(
           code: self.class.code,
@@ -54,11 +52,30 @@ module HealthChecks
           description: description,
           remediation: remediation,
           action_url: action_url,
-          subject_type: subject_type,
-          subject_id: subject_id,
+          subject_type: subject_type || subject.class.name,
+          subject_id: subject_id || subject.try(:id),
           metadata: metadata
         )
       ]
+    end
+
+    # Deep-link to the settings surface where this finding can be fixed.
+    # Returns nil for unpersisted subjects (e.g. in unit tests) so the UI
+    # simply omits the link rather than rendering a broken path.
+    def settings_action_url(path_helper, anchor: nil)
+      return nil unless subject.respond_to?(:persisted?) && subject.persisted?
+
+      path = Rails.application.routes.url_helpers.public_send(path_helper, subject)
+      anchor ? "#{path}##{anchor}" : path
+    end
+
+    # Like #settings_action_url but for collection/singleton routes (e.g. the
+    # runners index) whose helper does not take the subject as an argument.
+    def collection_action_url(path_helper, anchor: nil)
+      return nil unless subject.respond_to?(:persisted?) && subject.persisted?
+
+      path = Rails.application.routes.url_helpers.public_send(path_helper)
+      anchor ? "#{path}##{anchor}" : path
     end
   end
 end

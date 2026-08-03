@@ -49,7 +49,10 @@ RSpec.describe HealthChecks::Checks::Runner::DeprecatedModel do
             code: :deprecated_model,
             scope: :runner,
             severity: :warning,
-            title: "Runner cursor resolves to deprecated model claude-retired at tier mid."
+            title: "Runner pinned to a deprecated model",
+            description: a_string_including("claude-retired"),
+            remediation: a_string_including("tier model mapping"),
+            action_url: Rails.application.routes.url_helpers.edit_runner_path(runner)
           )
         )
       end

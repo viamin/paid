@@ -50,6 +50,7 @@ module Screenshots
     HELPER_TARGETS = {
       "application" => SHARED_TARGET_KEYS,
       "cost_dashboard" => %i[project_cost_dashboard project_cost_snapshot],
+      "health_check" => [ :project_health_check ],
       "integrations" => %i[integrations integrations_new],
       "knowledge" => %i[knowledge_search project_knowledge_search project_knowledge_browse project_context_intake project_knowledge_recommendations],
       "quality_metrics" => %i[quality_dashboard project_quality_dashboard],
@@ -188,6 +189,7 @@ module Screenshots
         requires_auth: true
       ),
       project_edit: Target.new(slug: "project_edit", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/edit" }, requires_auth: true),
+      project_health_check: Target.new(slug: "project_health_check", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/health" }, requires_auth: true),
       project_agent_runs: Target.new(slug: "project_agent_runs", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/agent_runs" }, requires_auth: true),
       project_agent_run_new: Target.new(slug: "project_agent_run_new", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/agent_runs/new" }, requires_auth: true),
       project_agent_run_show: Target.new(slug: "project_agent_run_show", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/agent_runs/#{seed_data.fetch(:agent_run).id}" }, requires_auth: true),
@@ -321,6 +323,7 @@ module Screenshots
       "knowledge/context_intake_controller.rb" => [ :project_context_intake ],
       "projects/cost_budgets_controller.rb" => [ :project_cost_dashboard ],
       "projects/clarifying_questions_controller.rb" => [ :project_issue_clarifying_questions ],
+      "projects/health_check_controller.rb" => [ :project_health_check ],
       "projects/connector_events_controller.rb" => [ :project_edit ],
       "projects/external_agent_runs_controller.rb" => [ :project_agent_runs ],
       "projects/issue_merge_subscriptions_controller.rb" => [ :project_show ],
@@ -581,6 +584,7 @@ module Screenshots
       when /\Aprojects\/convention_settings\// then [ :project_convention_settings ]
       when /\Aprojects\/knowledge_recommendations\// then [ :project_knowledge_recommendations ]
       when /\Apreviews\// then [ :preview_session_show ]
+      when /\Aprojects\/health_check\// then [ :project_health_check ]
       when /\Aprojects\// then projects_targets(relative_path.delete_prefix("projects/"))
       else
         []

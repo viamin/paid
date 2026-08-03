@@ -11,7 +11,9 @@ RSpec.describe HealthChecks::Checks::Project::MissingGitHubCredential do
         code: :missing_git_hub_credential,
         scope: :project,
         severity: :error,
-        title: "Project is missing both GitHub App installation and PAT credentials."
+        title: "Missing GitHub credentials",
+        remediation: a_string_including("GitHub App installation"),
+        action_url: nil
       )
     )
   end

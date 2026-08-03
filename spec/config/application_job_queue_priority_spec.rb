@@ -19,6 +19,7 @@ RSpec.describe ApplicationJob, :no_db do
         HumanFeedbackCollectionJob
         ModelsSyncJob
         ProcessRunQueueJob
+        ProjectHealthCheckJob
         QdrantCollectionCleanupJob
         RetryTimedOutIssueGoalJob
       ],

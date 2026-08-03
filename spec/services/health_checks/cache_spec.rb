@@ -28,14 +28,17 @@ RSpec.describe HealthChecks::Cache do
       described_class.write(project, result)
 
       cached = described_class.read(project)
-      expect(cached).to be_a(HealthChecks::Result)
-      expect(cached.findings.size).to eq(1)
-      expect(cached.findings.first.code).to eq(:test)
-      expect(cached.duration_ms).to eq(42)
+      expect(cached).to eq(result)
     end
 
     it "returns nil for an uncached subject" do
       expect(described_class.read(project)).to be_nil
+    end
+
+    it "keys entries by subject type and id" do
+      described_class.write(project, result)
+
+      expect(Rails.cache.read("project_health/project/#{project.id}")).to eq(result)
     end
   end
 
@@ -45,6 +48,15 @@ RSpec.describe HealthChecks::Cache do
       expect(described_class.read(project)).to be_present
 
       described_class.clear(project)
+
+      expect(described_class.read(project)).to be_nil
+    end
+
+    it "supports the delete alias" do
+      described_class.write(project, result)
+
+      described_class.delete(project)
+
       expect(described_class.read(project)).to be_nil
     end
   end
@@ -67,10 +79,11 @@ RSpec.describe HealthChecks::Cache do
     end
   end
 
-  describe "cache key" do
+  describe "cache key partitioning" do
     it "generates different keys for different subject types" do
-      described_class.write(project, result)
       user = create(:user)
+
+      described_class.write(project, result)
       described_class.write(user, result)
 
       expect(described_class.read(project)).to be_present

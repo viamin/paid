@@ -18,7 +18,10 @@ RSpec.describe HealthChecks::Checks::Project::SensitiveDataFreeModel do
         code: :sensitive_data_free_model,
         scope: :project,
         severity: :warning,
-        title: "Sensitive project resolves to free model free-model with possible training risk."
+        title: "Sensitive project resolves to a data-training-risk model",
+        description: a_string_including("free-model"),
+        remediation: a_string_including("non-free model"),
+        action_url: nil
       )
     )
   end

@@ -14,7 +14,11 @@ module HealthChecks
 
             finding(
               severity: :warning,
-              title: "Runner #{runner_label} resolves to deprecated model #{model.model_id} at tier #{tier}."
+              title: "Runner pinned to a deprecated model",
+              description: "Runner #{runner_label} resolves to deprecated model #{model.model_id} at tier #{tier}.",
+              remediation: "Update the runner's tier model mapping to a current model.",
+              action_url: settings_action_url(:edit_runner_path),
+              metadata: { runner_id: subject.id, model_id: model.model_id, tier: tier.to_s }
             ).first
           end
         end
