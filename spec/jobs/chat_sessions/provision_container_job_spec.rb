@@ -60,10 +60,17 @@ RSpec.describe ChatSessions::ProvisionContainerJob, type: :job do
     end
 
     context "when reopening a previously provisioned workspace" do
+      let(:project) { create(:project, account: account) }
       let(:chat_session) do
         create(:chat_session, account: account, created_by: user,
           container_capability: "pending",
-          metadata: { "workspace_reopen_requested_at" => Time.current.iso8601 })
+          metadata: { "workspace_reopen_requested_at" => Time.current.iso8601 }).tap do |session|
+            session.update!(clone_manifest: [
+              { project_id: project.id, project_name: project.name,
+                project_full_name: project.full_name, path: "/workspace",
+                token_identity: "project-token:#{project.github_token.name}" }
+            ])
+          end
       end
 
       it "skips project seeding and restores the clone manifest" do

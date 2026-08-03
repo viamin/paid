@@ -275,7 +275,7 @@ module Tools
       end
 
       def provision_mcp_container(session:)
-        Containers::ProvisionForChat.call(chat_session: session)
+        ChatSessions::ProvisionWorkspace.call(chat_session: session)
         session.reload
       rescue StandardError => error
         log_mcp_container_provision_failure(session:, error:)
