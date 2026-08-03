@@ -189,7 +189,7 @@ export default class extends Controller {
     })
 
     this.capabilityIconTargets.forEach((icon) => {
-      icon.className = `h-4 w-4 ${iconClasses}`
+      this.setElementClassName(icon, `h-4 w-4 ${iconClasses}`)
     })
 
     this.updateCapabilityActions(capability)
@@ -499,6 +499,15 @@ export default class extends Controller {
       .replaceAll(">", "&gt;")
       .replaceAll("\"", "&quot;")
       .replaceAll("'", "&#39;")
+  }
+
+  setElementClassName(element, className) {
+    if (typeof element.setAttribute === "function") {
+      element.setAttribute("class", className)
+      return
+    }
+
+    element.className = className
   }
 
   incrementTokenUsage(tokens) {

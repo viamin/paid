@@ -208,11 +208,25 @@ class ChatControllerNodeHarness
     function testCapabilityChangedUpdatesPanelIconAndActions() {
       const actions = [];
       const repos = [];
+      let iconClassName = "";
+      let iconSetAttributeCalls = 0;
       const { controller, statusMessages } = makeController({
         capabilityBadgeTargets: [ { textContent: "", className: "", dataset: {} } ],
         capabilityPanelTargets: [ { dataset: {} } ],
         capabilityLabelTargets: [ { textContent: "" } ],
-        capabilityIconTargets: [ { className: "" } ],
+        capabilityIconTargets: [ {
+          get className() {
+            throw new Error("SVG className setter should not be used");
+          },
+          setAttribute(name, value) {
+            if (name !== "class") {
+              throw new Error(`Expected setAttribute to target class, got ${name}`);
+            }
+
+            iconSetAttributeCalls += 1;
+            iconClassName = value;
+          }
+        } ],
         updateCapabilityActions: (capability) => actions.push(capability),
         updateCapabilityRepos: (entries) => repos.push(entries),
         setStatus: (message) => statusMessages.push(message)
@@ -244,8 +258,12 @@ class ChatControllerNodeHarness
         throw new Error(`Expected capability label text to update, saw '${controller.capabilityLabelTargets[0].textContent}'`);
       }
 
-      if (controller.capabilityIconTargets[0].className !== "h-4 w-4 text-green-500 fill-current") {
-        throw new Error(`Expected capability icon classes to switch to ready, saw '${controller.capabilityIconTargets[0].className}'`);
+      if (iconSetAttributeCalls !== 1) {
+        throw new Error(`Expected capability icon classes to be set once, saw ${iconSetAttributeCalls}`);
+      }
+
+      if (iconClassName !== "h-4 w-4 text-green-500 fill-current") {
+        throw new Error(`Expected capability icon classes to switch to ready, saw '${iconClassName}'`);
       }
 
       if (actions.length !== 1 || actions[0] !== "ready") {
