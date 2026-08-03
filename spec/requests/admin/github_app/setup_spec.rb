@@ -144,12 +144,13 @@ RSpec.describe "Admin::GithubApp::Setup" do
       expect(ENV["PAID_AGENT_APP_WEBHOOK_SECRET"]).to eq(original_webhook_secret)
     end
 
-    it "filters the callback code from request parameters before Rails logs them" do
+    it "filters only the bare callback code from request parameters before Rails logs them" do
       filtered_parameters = ActiveSupport::ParameterFilter
         .new(Rails.application.config.filter_parameters)
-        .filter(code: code, state: primed_state)
+        .filter(code: code, error_code: "already_used", state: primed_state)
 
       expect(filtered_parameters).to include(code: "[FILTERED]")
+      expect(filtered_parameters).to include(error_code: "already_used")
       expect(filtered_parameters).to include(state: kind_of(String))
     end
 
