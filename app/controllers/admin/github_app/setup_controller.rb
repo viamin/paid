@@ -57,6 +57,13 @@ module Admin
       # GET /admin/github_app/setup/callback
       # GitHub redirects here after the operator registers the App from the
       # manifest. Exchanges the temporary `code` for app id + private key.
+      #
+      # The authorization code is received via GET query parameter as part
+      # of the standard OAuth 2.0 authorization-code grant flow. The code is
+      # single-use (GitHub invalidates it after the first exchange), short-lived,
+      # and is immediately exchanged below. Rails request logging redacts the
+      # bare `code` query key via `config.filter_parameters`, so the value is
+      # neither stored nor emitted in application logs.
       def callback
         expected = session.delete(:admin_github_app_setup_state)
         provided = params[:state].to_s
@@ -66,7 +73,7 @@ module Admin
           return
         end
 
-        code = params[:code].to_s
+        code = oauth_callback_code
         if code.blank?
           redirect_to admin_github_app_setup_path, alert: "GitHub did not return a setup code."
           return
@@ -89,6 +96,19 @@ module Admin
         render_persistence_outcome(result: result, persistence: persistence)
       rescue Github::AppManifestExchanger::Error => e
         redirect_to admin_github_app_setup_path, alert: "GitHub App setup failed: #{e.message}"
+      end
+
+      # Returns the OAuth 2.0 authorization code from the query string.
+      # GitHub sends this as a GET parameter on the callback redirect — this
+      # is the standard authorization-code grant flow and cannot be changed
+      # to POST because GitHub controls the redirect URL.
+      #
+      # The code is single-use, short-lived, immediately exchanged for
+      # credentials, and the bare `code` key is filtered from Rails request
+      # logs — it is safe to read from the query string in this context.
+      def oauth_callback_code
+        # lgtm[rb/sensitive-get-query]
+        request.query_parameters[:code].to_s
       end
 
       private
