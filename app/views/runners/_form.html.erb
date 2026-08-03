@@ -316,6 +316,7 @@
   </div>
 
   <% tier_model_provider = Runners::DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER[runner.runner_key.to_s] %>
+  <% free_runner = runner.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY %>
   <% tier_models = if runner.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
        LlmModel.openrouter_synced_free.active.order(:display_name)
      elsif tier_model_provider
@@ -328,10 +329,43 @@
     <div class="rounded-lg border border-gray-200 p-4"
          data-runner-form-target="tierSettings"
          data-tier-runner-key="<%= runner.runner_key %>">
-      <h3 class="text-sm font-semibold text-gray-900">Tier Model Mapping</h3>
-      <p class="mt-1 text-xs text-gray-500">
-        <%= runner.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY ? "Pick which free model fills each tier slot for this runner." : "Pick which model fills each tier slot for this runner." %>
-      </p>
+      <% if free_runner %>
+        <div class="flex flex-wrap items-center gap-2">
+          <h3 class="text-sm font-semibold text-gray-900">Free Model Configuration</h3>
+          <span class="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">Free</span>
+        </div>
+        <p class="mt-1 text-xs text-gray-500">Pick which free model fills each tier slot for this runner.</p>
+
+        <div class="mt-4 grid gap-4 lg:grid-cols-2">
+          <div class="rounded-lg border border-sky-200 bg-sky-50 p-3">
+            <h4 class="text-xs font-semibold uppercase tracking-wide text-sky-950">Data classification routing</h4>
+            <p class="mt-2 text-xs text-sky-900">Paid maps project sensitivity to OpenRouter routing controls for this runner.</p>
+            <dl class="mt-3 space-y-2 text-xs text-sky-900">
+              <div class="flex items-start justify-between gap-3">
+                <dt class="font-medium">Open / Internal</dt>
+                <dd>Standard OpenRouter routing</dd>
+              </div>
+              <div class="flex items-start justify-between gap-3">
+                <dt class="font-medium">Confidential</dt>
+                <dd><code>provider.data_collection: "deny"</code></dd>
+              </div>
+              <div class="flex items-start justify-between gap-3">
+                <dt class="font-medium">Restricted</dt>
+                <dd><code>data_collection: "deny"</code> + <code>zdr: true</code></dd>
+              </div>
+            </dl>
+          </div>
+
+          <div class="rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <h4 class="text-xs font-semibold uppercase tracking-wide text-amber-950">Rate limit expectations</h4>
+            <p class="mt-2 text-xs text-amber-900">~20 free requests/day without OpenRouter credits. Limits are account-wide, so switching models does not avoid the daily cap.</p>
+            <p class="mt-2 text-xs text-amber-900">Models marked <span class="font-medium">Below quality bar</span> stay selectable for manual use, but they are not chosen as defaults.</p>
+          </div>
+        </div>
+      <% else %>
+        <h3 class="text-sm font-semibold text-gray-900">Tier Model Mapping</h3>
+        <p class="mt-1 text-xs text-gray-500">Pick which model fills each tier slot for this runner.</p>
+      <% end %>
       <% LlmModel::TIERS.each do |tier| %>
         <div class="mt-3">
           <label class="block text-sm font-medium text-gray-900" for="runner_tier_model_ids_<%= tier %>"><%= tier.titleize %></label>
@@ -340,10 +374,26 @@
                   data-runner-form-target="tierSelect"
                   class="mt-1 block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6">
             <option value="">— None —</option>
-            <% tier_models.each do |m| %>
-              <option value="<%= m.model_id %>" <% if current_tier_ids[tier] == m.model_id %>selected<% end %>>
-                <%= m.display_name %><%= " (#{m.tier})" if m.tier.present? %><%= " - below quality bar" if m.below_quality_bar? %>
-              </option>
+            <% if free_runner %>
+              <% grouped_free_models = tier_models.group_by { |model| model.tier.presence || "untiered" } %>
+              <% LlmModel::TIERS.each do |group_tier| %>
+                <% models_for_group = grouped_free_models[group_tier] || [] %>
+                <% next if models_for_group.empty? %>
+
+                <optgroup label="<%= "#{group_tier.titleize} tier free models" %>">
+                  <% models_for_group.each do |m| %>
+                    <option value="<%= m.model_id %>" <% if current_tier_ids[tier] == m.model_id %>selected<% end %>>
+                      <%= m.display_name %> (<%= m.tier %>) <%= m.below_quality_bar? ? "• Below quality bar" : "• Above quality bar" %>
+                    </option>
+                  <% end %>
+                </optgroup>
+              <% end %>
+            <% else %>
+              <% tier_models.each do |m| %>
+                <option value="<%= m.model_id %>" <% if current_tier_ids[tier] == m.model_id %>selected<% end %>>
+                  <%= m.display_name %><%= " (#{m.tier})" if m.tier.present? %><%= " - below quality bar" if m.below_quality_bar? %>
+                </option>
+              <% end %>
             <% end %>
           </select>
         </div>

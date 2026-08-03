@@ -716,12 +716,16 @@ class RunnersController < ApplicationController
   def apply_new_runner_defaults(runner)
     return unless runner.runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
 
+    submitted_runner_params = params[:runner].respond_to?(:to_unsafe_h) ? params[:runner].to_unsafe_h : params.fetch(:runner, {})
+
     runner.auth_type = "api_key"
+    # @spec FREE-MODEL-RUNNER-002
+    # @spec FREE-MODEL-RUNNER-003
     runner.enabled_for_agent_runs = true if runner.enabled_for_agent_runs.nil?
     runner.enabled_for_chat = true if runner.enabled_for_chat.nil?
     runner.enabled_for_fallback = true if runner.enabled_for_fallback.nil?
-    runner.fallback_role = "rate_limit_fallback"
-    runner.tier_model_ids = Runners::DefaultTierModelIds.call(runner_key: runner.runner_key) if runner.tier_model_ids.blank?
+    runner.fallback_role = "rate_limit_fallback" unless submitted_runner_params.key?("fallback_role") || submitted_runner_params.key?(:fallback_role)
+    runner.tier_model_ids = FreeModels::DefaultTierModels.call if runner.tier_model_ids.blank?
   end
 
   def api_key_only_runner?(runner_key)
