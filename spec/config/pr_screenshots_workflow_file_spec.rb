@@ -73,15 +73,20 @@ RSpec.describe PrScreenshotsWorkflowFile, :no_db do
   it "uses a known-good Chrome install and exports CHROMIUM_PATH for capture" do
     setup_step = capture_step("Set up Chrome")
     export_step = capture_step("Export Chromium path")
+    capture_screenshots_step = capture_step("Capture screenshots")
 
     expect(setup_step).to include(
       "id" => "setup_chrome",
       "uses" => "browser-actions/setup-chrome@2e1d749697dd1612b833dba4a722266286fbefcd"
     )
+    expect(export_step).to include("id" => "export_chromium_path")
     expect(export_step.fetch("env")).to include(
       "INSTALLED_CHROME_PATH" => "${{ steps.setup_chrome.outputs.chrome-path }}"
     )
-    expect(export_step.fetch("run")).to include('echo "CHROMIUM_PATH=$chrome_path" >> "$GITHUB_ENV"')
+    expect(export_step.fetch("run")).to include('echo "chromium_path=$chrome_path" >> "$GITHUB_OUTPUT"')
+    expect(capture_screenshots_step.fetch("env")).to include(
+      "CHROMIUM_PATH" => "${{ steps.export_chromium_path.outputs.chromium_path }}"
+    )
   end
 
   it "uploads screenshot artifacts only when the capture job produced png files" do

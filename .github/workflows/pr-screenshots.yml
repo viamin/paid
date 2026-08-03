@@ -202,12 +202,13 @@ jobs:
         uses: browser-actions/setup-chrome@2e1d749697dd1612b833dba4a722266286fbefcd # v2.1.2
 
       - name: Export Chromium path
+        id: export_chromium_path
         env:
           INSTALLED_CHROME_PATH: ${{ steps.setup_chrome.outputs.chrome-path }}
         run: |
           chrome_path="${INSTALLED_CHROME_PATH}"
           if [ -n "$chrome_path" ] && [ -x "$chrome_path" ]; then
-            echo "CHROMIUM_PATH=$chrome_path" >> "$GITHUB_ENV"
+            echo "chromium_path=$chrome_path" >> "$GITHUB_OUTPUT"
             echo "Chrome available at ${chrome_path}"
             "$chrome_path" --version
           else
@@ -241,6 +242,8 @@ jobs:
 
       - name: Capture screenshots
         id: capture_screenshots
+        env:
+          CHROMIUM_PATH: ${{ steps.export_chromium_path.outputs.chromium_path }}
         run: bin/rails screenshots:capture
 
       - name: Detect captured screenshots
