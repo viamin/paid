@@ -7,6 +7,8 @@ module Activities
     activity_name "CreatePullRequest"
 
     LID_REPORT_HEADING = "## LID Phase Report"
+    SPEC_TAG = "@ spec".delete(" ")
+    SPEC_ID_PATTERN = /([A-Z0-9-]+-\d+)/
 
     def execute(input)
       agent_run_id = input[:agent_run_id]
@@ -544,7 +546,7 @@ module Activities
     end
 
     def spec_ids_from_diff(agent_run)
-      git_diff(agent_run).scan(/@spec\s+([A-Z0-9-]+-\d+)/).flatten.uniq
+      git_diff(agent_run).scan(spec_annotation_pattern).flatten.uniq
     end
 
     def spec_ids_for_report(agent_run)
@@ -552,7 +554,11 @@ module Activities
     end
 
     def spec_ids_from_output(agent_run)
-      agent_output(agent_run).scan(/@spec\s+([A-Z0-9-]+-\d+)/).flatten.uniq
+      agent_output(agent_run).scan(spec_annotation_pattern).flatten.uniq
+    end
+
+    def spec_annotation_pattern
+      @spec_annotation_pattern ||= Regexp.new("#{Regexp.escape(SPEC_TAG)}\\s+#{SPEC_ID_PATTERN.source}")
     end
 
     def changed_files(agent_run)
