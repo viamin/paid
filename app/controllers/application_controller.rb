@@ -75,5 +75,4 @@ class ApplicationController < ActionController::Base
   def verify_policy_scoped?
     action_name == "index" && !skip_pundit?
   end
-
 end
