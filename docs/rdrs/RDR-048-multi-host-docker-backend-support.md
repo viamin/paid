@@ -5,49 +5,31 @@
 ## Metadata
 
 - **Date**: 2026-07-16
-- **Status**: Draft
+- **Status**: Implemented
 - **Type**: Operations + Architecture
-- **Priority**: P1
+- **Priority**: P2
 - **Related Issues**: [#2944](https://github.com/viamin/paid/issues/2944) (tracking), [#2945](https://github.com/viamin/paid/issues/2945) (backend configuration and registry), [#2946](https://github.com/viamin/paid/issues/2946) (scheduler and manual placement), [#2947](https://github.com/viamin/paid/issues/2947) (per-host concurrency), [#2948](https://github.com/viamin/paid/issues/2948) (multi-host lifecycle operations), [#2949](https://github.com/viamin/paid/issues/2949) (readiness checks), [#2950](https://github.com/viamin/paid/issues/2950) (management UI), [#2951](https://github.com/viamin/paid/issues/2951) (setup guide and automation helpers), [#2952](https://github.com/viamin/paid/issues/2952) (optional capacity-aware placement), [#2953](https://github.com/viamin/paid/issues/2953) (implementation audit and RDR closeout), [#2963](https://github.com/viamin/paid/issues/2963) (subscription auth host eligibility)
 - **Related RDRs**: RDR-019 (Remote Container Execution), RDR-020 (Service Container Architecture), RDR-033 (Worker Pool Scaling Algorithm), RDR-041 (Subscription Runner Managed Auth Lifecycle), RDR-043 (Zero-Config Docker Capacity Autoscaling)
 - **Related Tests**: Docker backend resolver tests, container provisioning tests, process queue admission tests, orphan cleanup tests, container metrics tests, capacity snapshot tests, operations dashboard system tests, host setup wizard tests
 
 ## Implementation Status
 
-Not implemented. Paid currently supports selecting exactly one active Docker backend for new paid-agent provisioning:
+Implemented. Audited on 2026-08-03 against the shipped code and test suite.
 
-- `CONTAINER_BACKEND=local` provisions paid-agent containers on local Docker.
-- `CONTAINER_BACKEND=remote` provisions paid-agent containers on one configured remote Docker daemon.
-- `CONTAINER_BACKEND=swarm` provisions paid-agent containers through the Swarm backend.
+Paid now supports the RDR-048 scope end to end:
 
-The current remote Docker backend has been verified against the QNAP host `elguapo` at `100.113.201.1:2376` using mTLS, with `paid-agent:latest` and the required Docker networks present. In that mode, however, `elguapo` replaces local Docker for new agent containers; it is not additional capacity beside local Docker on `barts-macbook-pro`.
+- structured multi-host backend registration with stable host identifiers, named local/remote hosts, per-host callback URLs, and independent manual concurrency limits via `Containers::HostRegistry`, `Containers::Backends::Resolver`, and their specs;
+- conservative host selection plus explicit/manual placement through `Containers::BackendScheduler`, `Containers::ResolveHostForRun`, `Projects::AgentRunsController`, and queue/workflow/provisioning coverage;
+- per-host admission and planned-host accounting through `ProcessRunQueueJob`, `AgentRun.active_count_for_host`, and capacity admission logic so each host enforces its own ceiling;
+- persisted host-aware lifecycle routing for provisioning, warm pools, cleanup, service containers, and metrics through `agent_runs.container_host`, `planned_container_host`, `Containers.backend_for`, `DockerOrphanCleanupJob`, `Containers::PoolManager`, `Containers::CollectMetrics`, and `Containers::ServiceProvisioner`;
+- operator management UI, readiness checks, and setup guidance through `DockerHostsController`, the Docker Hosts views/system tests, `Containers::HostReadiness`, and `docs/guides/remote-docker-setup.md`;
+- multi-host-safe subscription-runner placement checks through the RDR-041 host-eligibility contract in `Runners::SubscriptionAuthEligibility` and `Containers::Provision`.
 
-Paid already has several primitives needed for multi-host operation:
-
-- `agent_runs.container_host` persists the host/backend selected for a run.
-- `container_pool_entries.container_host` persists the backend used for warm pool entries.
-- `Containers::Backends::Resolver` can register named backends.
-- `Containers.backend_for(host)` can reconnect to a backend by persisted `container_host`.
-- `Containers.all_backends` lets orphan cleanup scan more than the active backend in some modes.
-- Metrics collection uses `Containers.backend_for(agent_run.container_host)`.
-- Backend interfaces already expose `identifier`, `remote?`, `supports_host_paths?`, `owns_host?`, `all_host_identifiers`, and `container_host_for(container)`.
-
-Paid still assumes one active backend for placement and admission:
-
-- `config/initializers/container_backend.rb` resolves one `Rails.application.config.x.container_backend` from `CONTAINER_BACKEND`.
-- Fresh provisioning defaults to `Containers.backend`.
-- Warm pool replenishment creates entries with `Containers.backend.identifier`.
-- `ProcessRunQueueJob` fetches one Docker capacity policy/snapshot per pass.
-- `Capacity::RunAdmission#active_local_agent_reserved_bytes` only accounts for local-style hosts (`nil`, blank, and `local`).
-- `ServiceContainerReconciliationJob` checks running service containers through `Containers.backend`.
-- Network and proxy readiness are evaluated for the backend passed to provisioning, but no scheduler chooses among several backend candidates.
-- The account operations dashboard can already surface capacity state, but there is no UI for adding Docker hosts, setting per-host concurrency limits, checking readiness, or guiding remote-host setup.
-
-Subscription-runner auth is also not multi-host aware yet. RDR-041 now defines the required auth eligibility contract: managed provider materializers can make a subscription runner remote-safe, but legacy host-mounted subscription credentials remain local-only unless the selected backend supports host paths.
+The optional capacity-aware placement slice also shipped as an opt-in policy, while first-healthy and explicit placement remain the conservative defaults described by this RDR.
 
 ## Issue Plan
 
-Implementation is tracked by a dependency-ordered core issue chain. No issue in the core multi-host chain should be labeled higher than `P2`; the cross-cutting subscription-auth eligibility work is tracked as the `P1` RDR-041 issue [#2963](https://github.com/viamin/paid/issues/2963).
+Implementation was tracked by a dependency-ordered core issue chain. No issue in the core multi-host chain was intended to be labeled higher than `P2`; the cross-cutting subscription-auth eligibility work remained the `P1` RDR-041 issue [#2963](https://github.com/viamin/paid/issues/2963).
 
 | Issue | Priority | Scope | Dependency |
 |-------|----------|-------|------------|
@@ -62,7 +44,7 @@ Implementation is tracked by a dependency-ordered core issue chain. No issue in 
 | [#2952](https://github.com/viamin/paid/issues/2952) | P3 | Optional capacity-aware host placement | Depends on [#2951](https://github.com/viamin/paid/issues/2951) |
 | [#2953](https://github.com/viamin/paid/issues/2953) | P2 | Final implementation audit, gap filing, and RDR status update | Depends on [#2952](https://github.com/viamin/paid/issues/2952), [#2963](https://github.com/viamin/paid/issues/2963) |
 
-The final issue ([#2953](https://github.com/viamin/paid/issues/2953)) should update this RDR to `Implemented` only after auditing that the shipped implementation matches the plan. If any acceptance criteria are missing or intentionally deferred, #2953 should create specific follow-up issues and reference them from this RDR instead of marking the RDR implemented prematurely.
+The final closeout step for this chain was to audit the shipped implementation against the plan before marking the RDR implemented. This document now reflects that audit: the acceptance criteria below are satisfied by the current codebase, and the capacity-aware placement item remains opt-in exactly as planned rather than as an implementation gap.
 
 ## Problem Statement
 
