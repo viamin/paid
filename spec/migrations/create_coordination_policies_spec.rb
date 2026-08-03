@@ -12,13 +12,16 @@ RSpec.describe CreateCoordinationPolicies, :aggregate_failures do
     versions_existed = connection.table_exists?(:coordination_policy_versions)
     policies_existed = connection.table_exists?(:coordination_policies)
     drop_policy_tables!(connection)
+    clear_schema_metadata!(connection)
 
     example.run
   ensure
     drop_policy_tables!(connection)
+    clear_schema_metadata!(connection)
     if policies_existed || versions_existed
       described_class.new.up
       restore_columns_added_by_later_migrations(connection)
+      clear_schema_metadata!(connection)
     end
   end
 
@@ -73,6 +76,14 @@ RSpec.describe CreateCoordinationPolicies, :aggregate_failures do
   def drop_policy_tables!(connection)
     connection.execute("DROP TABLE IF EXISTS coordination_policies CASCADE")
     connection.execute("DROP TABLE IF EXISTS coordination_policy_versions CASCADE")
+  end
+
+  def clear_schema_metadata!(connection)
+    connection.schema_cache.clear!
+    connection.data_sources.each do |table_name|
+      connection.schema_cache.clear_data_source_cache!(table_name)
+    end
+    [ CoordinationPolicy, CoordinationPolicyVersion ].each(&:reset_column_information)
   end
 
   def expect_policy_schema
