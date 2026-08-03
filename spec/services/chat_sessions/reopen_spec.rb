@@ -109,6 +109,37 @@ RSpec.describe ChatSessions::Reopen do
     expect(notice.content).not_to include(project.github_token.token)
   end
 
+  it "clears a stale reopen failure notice when a subsequent reopen restores every repo cleanly" do
+    session = create(:chat_session, :closed, :workspace, account:, created_by: user, container_capability: "stopped", container_id: nil)
+    session.messages.create!(role: "system", content: "previous reopen failures", metadata: { "reopen_clone_failures" => true, "failed_project_ids" => [ project.id ] })
+    session.update!(clone_manifest: reopen_manifest(project))
+
+    perform_enqueued_jobs do
+      described_class.call(chat_session: session)
+    end
+
+    expect(session.reload.clone_manifest_entries.first).to include(status: "ready", stale: false)
+    expect(session.messages.system.find_by("metadata ->> 'reopen_clone_failures' = 'true'")).to be_nil
+  end
+
+  it "restores an app-backed project through the same credential resolver as the original clone" do
+    app_project = create(:project, :with_github_installation, account:)
+    allow(Github::AppInstallation).to receive(:token_for).and_return("ghs_app_token")
+
+    session = create(:chat_session, :closed, :workspace, account:, created_by: user, container_capability: "stopped", container_id: nil)
+    session.update!(clone_manifest: reopen_manifest(app_project))
+    clone_envs = capture_clone_env_tokens
+
+    perform_enqueued_jobs do
+      described_class.call(chat_session: session)
+    end
+
+    entry = session.reload.clone_manifest_entries.first
+    expect(entry).to include(status: "ready", stale: false, stale_reason: nil)
+    expect(entry[:token_identity]).to start_with("github-app:")
+    expect(clone_envs).to include("CLONE_TOKEN=ghs_app_token")
+  end
+
   it "is a no-op for an already-active workspace session" do
     session = create(:chat_session, :workspace, account:, created_by: user)
 
@@ -126,9 +157,28 @@ RSpec.describe ChatSessions::Reopen do
         project_name: manifest_project.name,
         project_full_name: manifest_project.full_name,
         path: "/workspace/#{manifest_project.full_name.tr('/', '-')}",
-        token_identity: "project-token:#{manifest_project.github_token.name}"
+        token_identity: manifest_token_identity(manifest_project)
       }
     end
+  end
+
+  def manifest_token_identity(project)
+    if project.github_installation.present?
+      "github-app:#{project.github_installation.github_installation_id}"
+    else
+      "project-token:#{project.github_token.name}"
+    end
+  end
+
+  # Stubs exec_in_container to succeed while capturing every CLONE_TOKEN env
+  # value passed to the container, so a test can assert which credential was used.
+  def capture_clone_env_tokens
+    envs = []
+    allow(backend).to receive(:exec_in_container) do |*_args, **opts|
+      envs.concat(Array(opts[:Env])) if opts.key?(:Env)
+      [ [], [], 0 ]
+    end
+    envs
   end
 
   def workspace_reset_command

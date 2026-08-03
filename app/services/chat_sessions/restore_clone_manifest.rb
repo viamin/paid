@@ -21,7 +21,7 @@ module ChatSessions
       reset_workspace! if chat_session.clone_manifest_entries.any?
 
       failures = chat_session.clone_manifest_entries.filter_map { |entry| restore_entry(entry) }
-      persist_failure_notice!(failures) if failures.any?
+      sync_failure_notice!(failures)
       failures
     end
 
@@ -45,9 +45,10 @@ module ChatSessions
       project = Project.find_by(id: entry[:project_id])
       return mark_stale(entry, "project_missing", "Project is no longer available") unless project
 
-      github_token = project.github_token
-      return mark_stale(entry, "token_missing", "Project no longer has an active GitHub token") unless github_token&.active?
+      resolved = resolve_clone_credential(project)
+      return mark_stale(entry, "token_missing", "Project no longer has an active GitHub credential") unless resolved
 
+      token = resolved.credential
       repo_path = entry[:path].presence || "/workspace/#{project.full_name.tr('/', '-')}"
       clone_cmd = "git clone --depth 1 https://x-access-token:$CLONE_TOKEN@github.com/#{Shellwords.escape(project.full_name)}.git #{Shellwords.escape(repo_path)} 2>&1"
       result = Containers.backend.exec_in_container(
@@ -55,23 +56,32 @@ module ChatSessions
         [ "sh", "-c", clone_cmd ],
         user: "agent",
         wait: chat_session.account.tenant_setting&.chat_clone_timeout || CLONE_TIMEOUT,
-        Env: [ "CLONE_TOKEN=#{github_token.token}" ]
+        Env: [ "CLONE_TOKEN=#{token}" ]
       )
 
       exit_code = result.is_a?(Array) ? result[2].to_i : -1
-      return clear_stale(entry, project) if exit_code.zero?
+      return clear_stale(entry, project, resolved.identity) if exit_code.zero?
 
-      output = clone_failure_output(result, github_token.token)
+      output = clone_failure_output(result, token)
       mark_stale(entry, "clone_failed", output)
     rescue Docker::Error::DockerError => e
-      mark_stale(entry, "clone_failed", redact_clone_output(e.message, github_token&.token))
+      mark_stale(entry, "clone_failed", redact_clone_output(e.message, token))
     end
 
-    def clear_stale(entry, project)
+    # Reuses the same credential-resolution path as Tools::CloneProject so a
+    # repo cloned via a GitHub App installation or a user-scoped token is
+    # restored with an equivalent credential instead of requiring project.github_token.
+    def resolve_clone_credential(project)
+      Tools::RepoReadClientResolver.new(project:, user: chat_session.created_by, session: chat_session).resolve
+    rescue ArgumentError
+      nil
+    end
+
+    def clear_stale(entry, project, identity)
       chat_session.replace_clone_manifest_entry(project_id: entry[:project_id], attributes: {
         "project_name" => project.name,
         "project_full_name" => project.full_name,
-        "token_identity" => entry[:token_identity].presence || project.github_token&.name,
+        "token_identity" => identity.presence || entry[:token_identity].presence || project.github_token&.name,
         "status" => "ready",
         "stale" => false,
         "stale_reason" => nil,
@@ -97,14 +107,20 @@ module ChatSessions
       }
     end
 
-    def persist_failure_notice!(failures)
+    def sync_failure_notice!(failures)
+      existing_notice = chat_session.messages.system.find_by("metadata ->> 'reopen_clone_failures' = 'true'")
+
+      if failures.empty?
+        existing_notice&.destroy!
+        return
+      end
+
       lines = failures.map { |failure| "- #{failure[:project_name]}: #{failure[:detail]}" }
       content = [
         "Workspace reopen restored the conversation, but some repos could not be cloned:",
         *lines
       ].join("\n")
 
-      existing_notice = chat_session.messages.system.find_by("metadata ->> 'reopen_clone_failures' = 'true'")
       attributes = {
         role: "system",
         content: content,
