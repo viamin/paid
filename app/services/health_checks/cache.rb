@@ -1,31 +1,35 @@
 # frozen_string_literal: true
 
 module HealthChecks
-  # Stores the cached Result the project health page reads. The daily sweep is
-  # the single source of truth: the page never runs checks live, it reads here.
-  # TTL is set a little longer than the daily cadence so a sweep that briefly
-  # slips does not leave the page empty at the boundary.
+  # Rails.cache wrapper for health check results.
+  # Page reads cache; the daily sweep refreshes it.
   class Cache
-    KEY_PREFIX = "health_checks/project"
-    TTL = 26.hours
+    KEY_PREFIX = "project_health"
+    # Slightly longer than the daily sweep cadence so a delayed sweep does not
+    # briefly blank the page right at the 24h boundary.
+    DEFAULT_TTL = 26.hours
 
     class << self
-      def write(project, result)
-        Rails.cache.write(key(project), result, expires_in: TTL)
+      # Reads the cached Result for +subject+ (a Project, Runner, etc.).
+      def read(subject)
+        Rails.cache.read(cache_key(subject))
       end
 
-      def read(project)
-        Rails.cache.read(key(project))
+      # Writes a Result into the cache for +subject+.
+      def write(subject, result, ttl: DEFAULT_TTL)
+        Rails.cache.write(cache_key(subject), result, expires_in: ttl)
       end
 
-      def delete(project)
-        Rails.cache.delete(key(project))
+      # Clears the cached entry for +subject+.
+      def clear(subject)
+        Rails.cache.delete(cache_key(subject))
       end
+      alias_method :delete, :clear
 
       private
 
-      def key(project)
-        "#{KEY_PREFIX}/#{project.id}"
+      def cache_key(subject)
+        "#{KEY_PREFIX}/#{subject.class.model_name.param_key}/#{subject.id}"
       end
     end
   end

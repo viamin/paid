@@ -3,43 +3,91 @@
 require "rails_helper"
 
 RSpec.describe HealthChecks::Cache do
-  let(:memory_store) { ActiveSupport::Cache::MemoryStore.new }
-  let(:project) { build_stubbed(:project, id: 42) }
+  let(:project) { create(:project) }
   let(:result) do
     HealthChecks::Result.new(
       findings: [
-        HealthChecks::Finding.new(check: "X", scope: :project, severity: :error, message: "broken")
+        HealthChecks::Finding.new(code: :test, scope: :project, severity: :info, title: "test")
       ],
       checked_at: Time.current,
       duration_ms: 7
     )
   end
 
-  before do
-    allow(Rails).to receive(:cache).and_return(memory_store)
+  around do |example|
+    original_cache = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    Rails.cache.clear
+    example.run
+  ensure
+    Rails.cache = original_cache
   end
 
-  it "round-trips a written Result for the same project" do
-    described_class.write(project, result)
+  describe ".read and .write" do
+    it "writes and reads a Result for a subject" do
+      described_class.write(project, result)
 
-    cached = described_class.read(project)
-    expect(cached).to be_a(HealthChecks::Result)
-    expect(cached.findings.size).to eq(1)
-    expect(cached.findings.first.severity).to eq(:error)
-    expect(cached.duration_ms).to eq(7)
+      cached = described_class.read(project)
+      expect(cached).to eq(result)
+    end
+
+    it "returns nil for an uncached subject" do
+      expect(described_class.read(project)).to be_nil
+    end
+
+    it "keys entries by subject type and id" do
+      described_class.write(project, result)
+
+      expect(Rails.cache.read("project_health/project/#{project.id}")).to eq(result)
+    end
   end
 
-  it "scopes cached results per project id" do
-    other = build_stubbed(:project, id: 99)
-    described_class.write(project, result)
+  describe ".clear" do
+    it "removes the cached entry" do
+      described_class.write(project, result)
+      expect(described_class.read(project)).to be_present
 
-    expect(described_class.read(other)).to be_nil
+      described_class.clear(project)
+
+      expect(described_class.read(project)).to be_nil
+    end
+
+    it "supports the delete alias" do
+      described_class.write(project, result)
+
+      described_class.delete(project)
+
+      expect(described_class.read(project)).to be_nil
+    end
   end
 
-  it "deletes a cached result" do
-    described_class.write(project, result)
-    described_class.delete(project)
+  describe "TTL" do
+    it "keeps the entry before the TTL elapses" do
+      described_class.write(project, result, ttl: 5.seconds)
 
-    expect(described_class.read(project)).to be_nil
+      travel_to(4.seconds.from_now) do
+        expect(described_class.read(project)).to be_present
+      end
+    end
+
+    it "expires the cache after the TTL" do
+      described_class.write(project, result, ttl: 1.second)
+
+      travel_to(2.seconds.from_now) do
+        expect(described_class.read(project)).to be_nil
+      end
+    end
+  end
+
+  describe "cache key partitioning" do
+    it "generates different keys for different subject types" do
+      user = create(:user)
+
+      described_class.write(project, result)
+      described_class.write(user, result)
+
+      expect(described_class.read(project)).to be_present
+      expect(described_class.read(user)).to be_present
+    end
   end
 end

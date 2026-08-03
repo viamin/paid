@@ -17,7 +17,11 @@ module HealthChecks
 
           finding(
             severity: :warning,
-            message: "Sensitive project resolves to free model #{model.model_id} with possible training risk."
+            title: "Sensitive project resolves to a data-training-risk model",
+            description: "This sensitive project resolves to the free model #{model.model_id}, which may share data with the provider.",
+            remediation: "Pin a non-free model or route this project's model through OpenRouter.",
+            action_url: nil,
+            metadata: { model_id: model.model_id }
           )
         end
 

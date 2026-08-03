@@ -30,9 +30,16 @@ module HealthChecks
   # projects should batch-resolve fallback owners once and pass the result
   # here to avoid a query per orphaned project.
   class Coordinator
+    INTERNAL_ERROR_CODE = :health_check_internal_error
+
     def self.call(scope:, subject:, include_network: false, owner_findings_cache: {}, effective_owner: nil)
-      new(scope: scope, subject: subject, include_network: include_network,
-          owner_findings_cache: owner_findings_cache, effective_owner: effective_owner).call
+      new(
+        scope: scope,
+        subject: subject,
+        include_network: include_network,
+        owner_findings_cache: owner_findings_cache,
+        effective_owner: effective_owner
+      ).call
     end
 
     def initialize(scope:, subject:, include_network: false, owner_findings_cache: {}, effective_owner: nil)
@@ -45,51 +52,87 @@ module HealthChecks
 
     def call
       started_at = monotonic_clock
-      findings = collect_findings
-      Result.new(findings: findings, checked_at: Time.current, duration_ms: elapsed_ms(started_at))
+
+      Result.new(
+        findings: compose_findings,
+        checked_at: Time.current,
+        duration_ms: elapsed_ms(started_at)
+      )
     end
 
     private
 
-    def collect_findings
-      findings = run_checks(@scope, @subject)
-      findings += project_composed_findings if @scope == :project
-      findings
+    attr_reader :scope, :subject, :include_network
+
+    def compose_findings
+      return run_scope(scope, subject) unless scope == :project
+
+      run_scope(:project, subject) + owner_scope_findings
     end
 
-    def project_composed_findings
-      owner = @effective_owner || @subject.effective_owner
+    def owner_scope_findings
+      owner = effective_owner
       return [] unless owner
 
-      @owner_findings_cache[owner.id] ||= owner_scope_findings(owner)
+      owner_findings_cache[owner.id] ||= begin
+        run_runner_checks(owner) + run_scope(:user, owner)
+      end
     end
 
-    def owner_scope_findings(owner)
-      runner_findings = owner.runners.kept_only.for_agent_runs.flat_map { |runner| run_checks(:runner, runner) }
-      runner_findings + run_checks(:user, owner)
+    def run_runner_checks(owner)
+      checks = scoped_checks(:runner)
+      return [] if checks.empty?
+
+      owner.runners.kept_only.for_agent_runs.flat_map do |runner|
+        run_checks(checks, runner)
+      end
     end
 
-    def run_checks(scope, subject)
-      applicable_checks(scope).flat_map { |check| run_safely(check, subject) }
+    def run_scope(check_scope, check_subject)
+      run_checks(scoped_checks(check_scope), check_subject)
     end
 
-    def applicable_checks(scope)
-      Registry.for_scope(scope).select { |check| @include_network || !check.network? }
+    def run_checks(checks, check_subject)
+      checks.flat_map { |check| run_safely(check, check_subject) }
     end
 
-    def run_safely(check, subject)
-      check.call(subject)
+    def scoped_checks(check_scope)
+      Registry.for_scope(check_scope).select { |check| include_network || !check.network? }
+    end
+
+    def run_safely(check_class, check_subject)
+      check_class.call(check_subject)
     rescue => e
-      [ internal_error_finding(check, e) ]
+      Rails.logger.error(
+        message: "health_checks.coordinator.check_error",
+        check: check_class.name || check_class.to_s,
+        error: e.class.name,
+        error_message: e.message
+      )
+
+      [ internal_error_finding(check_class, check_subject, e) ]
     end
 
-    def internal_error_finding(check, error)
+    def internal_error_finding(check_class, check_subject, error)
       Finding.new(
-        check: check.name,
-        scope: check.scope,
+        code: INTERNAL_ERROR_CODE,
+        scope: check_class.scope,
         severity: :error,
-        message: "Health check #{check.name} failed: #{error.message}"
+        title: "Internal health check error",
+        description: "#{check_class.name || check_class} raised #{error.class}: #{error.message}",
+        remediation: "Re-run the health checks. If this persists, investigate the check implementation.",
+        subject_type: check_subject.class.name,
+        subject_id: check_subject.try(:id),
+        metadata: { check_class: check_class.name || check_class.to_s, error_class: error.class.name }
       )
+    end
+
+    def owner_findings_cache
+      @owner_findings_cache
+    end
+
+    def effective_owner
+      @effective_owner || subject.effective_owner
     end
 
     def monotonic_clock

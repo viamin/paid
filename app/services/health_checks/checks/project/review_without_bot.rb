@@ -15,7 +15,10 @@ module HealthChecks
 
           finding(
             severity: :error,
-            message: "Paid Agent review is enabled but the paid-code-reviewer GitHub App is not configured."
+            title: "Review enabled without the review bot configured",
+            description: "Paid Agent review is enabled but the paid-code-reviewer GitHub App is not configured.",
+            remediation: "Configure the paid-code-reviewer GitHub App credentials or disable the Paid Agent review method.",
+            action_url: settings_action_url(:edit_project_path, anchor: "review-settings")
           )
         end
 

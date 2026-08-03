@@ -10,8 +10,13 @@ RSpec.describe AccountHealthCheckSweepJob do
   let(:warning_result) do
     HealthChecks::Result.new(
       findings: [
-        HealthChecks::Finding.new(check: "HealthChecks::Checks::Project::EmptyAllowlist",
-                                  scope: :project, severity: :warning, message: "warn")
+        HealthChecks::Finding.new(
+          code: :empty_allowlist,
+          scope: :project,
+          severity: :warning,
+          title: "Empty allowlist",
+          description: "warn"
+        )
       ],
       checked_at: Time.current,
       duration_ms: 6

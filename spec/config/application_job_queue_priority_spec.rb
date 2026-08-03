@@ -19,11 +19,13 @@ RSpec.describe ApplicationJob, :no_db do
         HumanFeedbackCollectionJob
         ModelsSyncJob
         ProcessRunQueueJob
+        ProjectHealthCheckJob
         QdrantCollectionCleanupJob
         RetryTimedOutIssueGoalJob
       ],
       maintenance: %w[
         AnalyzeIssueFollowupBackfillJob
+        AccountHealthCheckSweepJob
         AutoPickEligibilitySweepJob
         AutoPickQueueBackfillJob
         AgentRunPatternDetectorJob
