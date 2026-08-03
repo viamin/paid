@@ -130,6 +130,7 @@ RSpec.describe ChatSessions::Create do
       expect {
         described_class.call(account: account, user: user, container_capability: "pending")
       }.to have_enqueued_job(ChatSessions::ProvisionContainerJob)
+        .with(hash_including(chat_session_id: kind_of(Integer), account_id: account.id))
     end
 
     it "does not block on provisioning (returns the session immediately)" do
@@ -163,6 +164,7 @@ RSpec.describe ChatSessions::Create do
       expect {
         described_class.call(account: account, user: user, container_capability: "pending")
       }.to have_enqueued_job(ChatSessions::ProvisionContainerJob)
+        .with(hash_including(chat_session_id: kind_of(Integer), account_id: account.id))
     end
 
     it "raises for invalid container capability" do

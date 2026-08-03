@@ -326,6 +326,15 @@ export default class extends Controller {
     const messageElement = this.buildMessageElement(data.html)
     if (!messageElement) return
 
+    if (data.message_id) {
+      const existingMessage = this.messageElementById(data.message_id)
+      if (existingMessage) {
+        existingMessage.closest("div")?.replaceWith(messageElement)
+        this.scrollToBottom()
+        return
+      }
+    }
+
     if (data.stream_message_id) {
       const existingMessage = this.messagesTarget.querySelector(`article[data-stream-message-id="${data.stream_message_id}"]`)
       if (existingMessage) {
@@ -399,7 +408,7 @@ export default class extends Controller {
   }
 
   messageElementById(messageId) {
-    return this.messagesTarget.querySelector(`article[data-message-id="${messageId}"]`)
+    return this.messagesTarget.querySelector(`[data-message-id="${messageId}"]`)
   }
 
   messageIdFor(element) {

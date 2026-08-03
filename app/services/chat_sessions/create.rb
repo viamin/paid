@@ -99,7 +99,10 @@ module ChatSessions
       return unless session.container_pending?
       return unless eager_provisioning_enabled?
 
-      ChatSessions::ProvisionContainerJob.perform_later(chat_session_id: session.id)
+      ChatSessions::ProvisionContainerJob.perform_later(
+        chat_session_id: session.id,
+        account_id: account.id
+      )
     end
 
     def eager_provisioning_enabled?
