@@ -123,6 +123,15 @@ RSpec.describe "Notifications" do
       expect(notification.reload.read_at).to be_present
     end
 
+    it "falls back to the notifications index for an external referer" do
+      notification = create(:notification, account: account)
+
+      patch read_notification_path(notification),
+        headers: { "HTTP_REFERER" => "https://evil.example/phish" }
+
+      expect(response).to redirect_to(notifications_path)
+    end
+
     it "redirects back for HTML requests" do
       notification = create(:notification, account: account)
 
