@@ -8,10 +8,10 @@ RSpec.describe HealthChecks::Checks::Project::AutoMergeWithoutOwner do
 
     expect(described_class.call(project)).to contain_exactly(
       have_attributes(
-        check: described_class.name,
+        code: :auto_merge_without_owner,
         scope: :project,
         severity: :error,
-        message: "Auto-merge is enabled but owner reviewer login is blank."
+        title: "Auto-merge is enabled but owner reviewer login is blank."
       )
     )
   end

@@ -17,7 +17,7 @@ module HealthChecks
 
           finding(
             severity: :warning,
-            message: "Sensitive project resolves to free model #{model.model_id} with possible training risk."
+            title: "Sensitive project resolves to free model #{model.model_id} with possible training risk."
           )
         end
 

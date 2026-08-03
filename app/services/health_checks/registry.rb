@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 module HealthChecks
+  # Registry of health check classes.
   class Registry
     class << self
       def all

@@ -15,7 +15,7 @@ module HealthChecks
 
           finding(
             severity: :error,
-            message: "Paid Agent review is enabled but the paid-code-reviewer GitHub App is not configured."
+            title: "Paid Agent review is enabled but the paid-code-reviewer GitHub App is not configured."
           )
         end
 

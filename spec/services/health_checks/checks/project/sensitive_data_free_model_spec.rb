@@ -15,10 +15,10 @@ RSpec.describe HealthChecks::Checks::Project::SensitiveDataFreeModel do
 
     expect(described_class.call(project)).to contain_exactly(
       have_attributes(
-        check: described_class.name,
+        code: :sensitive_data_free_model,
         scope: :project,
         severity: :warning,
-        message: "Sensitive project resolves to free model free-model with possible training risk."
+        title: "Sensitive project resolves to free model free-model with possible training risk."
       )
     )
   end

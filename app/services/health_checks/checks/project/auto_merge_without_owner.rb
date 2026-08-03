@@ -14,7 +14,7 @@ module HealthChecks
 
           finding(
             severity: :error,
-            message: "Auto-merge is enabled but owner reviewer login is blank."
+            title: "Auto-merge is enabled but owner reviewer login is blank."
           )
         end
       end

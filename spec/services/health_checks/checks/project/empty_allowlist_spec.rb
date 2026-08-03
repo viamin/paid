@@ -8,10 +8,10 @@ RSpec.describe HealthChecks::Checks::Project::EmptyAllowlist do
 
     expect(described_class.call(project)).to contain_exactly(
       have_attributes(
-        check: described_class.name,
+        code: :empty_allowlist,
         scope: :project,
         severity: :error,
-        message: "Trusted GitHub usernames allowlist is empty."
+        title: "Trusted GitHub usernames allowlist is empty."
       )
     )
   end

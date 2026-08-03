@@ -14,7 +14,7 @@ module HealthChecks
 
             finding(
               severity: :warning,
-              message: "Runner #{runner_label} resolves to deprecated model #{model.model_id} at tier #{tier}."
+              title: "Runner #{runner_label} resolves to deprecated model #{model.model_id} at tier #{tier}."
             ).first
           end
         end

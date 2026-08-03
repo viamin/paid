@@ -13,7 +13,7 @@ module HealthChecks
 
           finding(
             severity: :error,
-            message: "Project is missing both GitHub App installation and PAT credentials."
+            title: "Project is missing both GitHub App installation and PAT credentials."
           )
         end
       end

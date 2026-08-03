@@ -46,10 +46,10 @@ RSpec.describe HealthChecks::Checks::Runner::DeprecatedModel do
       it "returns a warning" do
         expect(described_class.call(runner)).to contain_exactly(
           have_attributes(
-            check: described_class.name,
+            code: :deprecated_model,
             scope: :runner,
             severity: :warning,
-            message: "Runner cursor resolves to deprecated model claude-retired at tier mid."
+            title: "Runner cursor resolves to deprecated model claude-retired at tier mid."
           )
         )
       end

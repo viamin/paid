@@ -8,10 +8,10 @@ RSpec.describe HealthChecks::Checks::Project::MissingGitHubCredential do
 
     expect(described_class.call(project)).to contain_exactly(
       have_attributes(
-        check: described_class.name,
+        code: :missing_git_hub_credential,
         scope: :project,
         severity: :error,
-        message: "Project is missing both GitHub App installation and PAT credentials."
+        title: "Project is missing both GitHub App installation and PAT credentials."
       )
     )
   end
