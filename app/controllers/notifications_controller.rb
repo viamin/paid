@@ -31,7 +31,7 @@ class NotificationsController < ApplicationController
           turbo_stream.replace("notification_bell", partial: "notifications/bell", locals: { account: current_account })
         ]
       end
-      format.html { redirect_back(fallback_location: notifications_path) }
+      format.html { redirect_back_safely(notifications_path) }
     end
   end
 
@@ -47,7 +47,7 @@ class NotificationsController < ApplicationController
           turbo_stream.replace("notification_bell", partial: "notifications/bell", locals: { account: current_account })
         ]
       end
-      format.html { redirect_back(fallback_location: notifications_path) }
+      format.html { redirect_back_safely(notifications_path) }
     end
   end
 

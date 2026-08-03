@@ -31,6 +31,14 @@ RSpec.describe "TenantEnforcement" do
       expect(response).to redirect_to(root_path)
     end
 
+    it "falls back to the root path for an external referer" do
+      post projects_path,
+        params: { project: { name: "test" } },
+        headers: { "HTTP_REFERER" => "https://evil.example/phish" }
+
+      expect(response).to redirect_to(root_path)
+    end
+
     it "sets a flash alert for blocked mutations" do
       post projects_path, params: { project: { name: "test" } }
       expect(flash[:alert]).to match(/suspended/i)
