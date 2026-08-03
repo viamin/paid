@@ -136,12 +136,14 @@ RSpec.describe "Projects::ClarifyingQuestions" do
       it "redirects to the next queued issue when opened from the dashboard queue" do
         project.update!(auto_pick_enabled: true, active: true)
         next_issue = create(:issue, :needs_input, project: project, github_number: issue.github_number + 1)
+        return_to = dashboard_needs_input_path(project_id: project.id)
 
         post project_issue_clarifying_questions_path(project, issue), params: {
           questions: questions,
           answers: answers,
           queue: "dashboard_needs_input",
-          queue_project_id: project.id
+          queue_project_id: project.id,
+          return_to: return_to
         }
 
         expect(response).to redirect_to(
@@ -149,7 +151,8 @@ RSpec.describe "Projects::ClarifyingQuestions" do
             project,
             next_issue,
             queue: "dashboard_needs_input",
-            queue_project_id: project.id
+            queue_project_id: project.id,
+            return_to: return_to
           )
         )
       end
@@ -180,6 +183,30 @@ RSpec.describe "Projects::ClarifyingQuestions" do
         }
 
         expect(response).to redirect_to(dashboard_needs_input_path(project_id: project.id))
+      end
+
+      it "preserves the validated queue return target when posting fails" do
+        project.update!(auto_pick_enabled: true, active: true)
+        return_to = dashboard_needs_input_path(project_id: project.id)
+        allow(github_client).to receive(:add_comment).and_raise(GithubClient::Error, "boom")
+
+        post project_issue_clarifying_questions_path(project, issue), params: {
+          questions: questions,
+          answers: answers,
+          queue: "dashboard_needs_input",
+          queue_project_id: project.id,
+          return_to: return_to
+        }
+
+        expect(response).to redirect_to(
+          project_issue_clarifying_questions_path(
+            project,
+            issue,
+            queue: "dashboard_needs_input",
+            queue_project_id: project.id,
+            return_to: return_to
+          )
+        )
       end
 
       it "does not continue into a different queue project scope" do

@@ -32,8 +32,7 @@ module Projects
         redirect_to project_issue_clarifying_questions_path(
           next_issue.project,
           next_issue,
-          queue: queue_param,
-          queue_project_id: queue_project&.id
+          queue_redirect_params
         ), notice: "Answers posted to GitHub issue ##{@issue.github_number}. Next questionnaire ready."
       elsif queue_mode?
         redirect_to queue_return_to, notice: "Answers posted to GitHub issue ##{@issue.github_number}. You've completed the needs-input queue."
@@ -108,7 +107,8 @@ module Projects
 
       {
         queue: queue_param,
-        queue_project_id: queue_project&.id
+        queue_project_id: queue_project&.id,
+        return_to: queue_return_to
       }
     end
 
