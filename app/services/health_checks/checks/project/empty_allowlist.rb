@@ -10,7 +10,6 @@ module HealthChecks
 
         def call
           return [] if Array(subject.allowed_github_usernames).any?(&:present?)
-
           finding(
             severity: :error,
             title: "Trusted usernames allowlist is empty",

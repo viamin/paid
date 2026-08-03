@@ -1,33 +1,48 @@
 # frozen_string_literal: true
 
 module HealthChecks
+  # Abstract base for health checks.
+  # Subclasses implement +self.scope+ and +#call+ (reads +subject+ from the instance).
   class Check
     class << self
-      attr_reader :scope
       attr_writer :scope
 
       # Stable, human-stable identifier for a finding. The dedup/auto-resolve
       # key shared with the notification pipeline (RDR-049).
-      def code = name.demodulize.underscore.to_sym
+      def code
+        name.demodulize.underscore.to_sym
+      end
+
+      def scope
+        @scope || raise(NotImplementedError, "#{name} must define self.scope")
+      end
 
       def call(subject)
         new(subject).call
       end
+    end
 
-      def network?
-        true
-      end
+    # Marks checks that hit external services (GitHub API, model registry).
+    # Network checks are skipped when +include_network+ is false.
+    def self.network?
+      false
     end
 
     def initialize(subject)
       @subject = subject
     end
 
+    # Subclasses MUST implement. Returns an array of Findings (empty = pass).
+    def call
+      raise NotImplementedError, "#{self.class.name} must implement #call"
+    end
+
     private
 
     attr_reader :subject
 
-    def finding(severity:, title:, description:, remediation:, action_url: nil, metadata: {})
+    def finding(severity:, title:, description: nil, remediation: nil, action_url: nil,
+      subject_type: nil, subject_id: nil, metadata: {})
       [
         Finding.new(
           code: self.class.code,
@@ -37,8 +52,8 @@ module HealthChecks
           description: description,
           remediation: remediation,
           action_url: action_url,
-          subject_type: subject.class.name,
-          subject_id: subject.id,
+          subject_type: subject_type || subject.class.name,
+          subject_id: subject_id || subject.try(:id),
           metadata: metadata
         )
       ]
