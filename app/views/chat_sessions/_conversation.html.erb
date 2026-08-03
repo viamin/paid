@@ -62,7 +62,7 @@
 
       <%= form_with model: chat_session, url: chat_session_path(chat_session), method: :patch,
             class: "mt-3 inline-flex items-center gap-2",
-            data: { action: "change->chat#submitForm" } do |form| %>
+            data: { action: "change->chat#submitForm", turbo_stream: true } do |form| %>
         <%= form.check_box :auto_approve,
               checked: chat_session.auto_approve?,
               class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" %>
