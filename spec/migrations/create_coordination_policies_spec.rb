@@ -2,8 +2,6 @@
 
 require "rails_helper"
 require Rails.root.join("db/migrate/20260509101016_create_coordination_policies")
-require Rails.root.join("db/migrate/20260704043457_add_idempotency_key_to_evolution_tables")
-
 RSpec.describe CreateCoordinationPolicies, :aggregate_failures do
   self.use_transactional_tests = false
 
@@ -13,14 +11,14 @@ RSpec.describe CreateCoordinationPolicies, :aggregate_failures do
   around do |example|
     versions_existed = connection.table_exists?(:coordination_policy_versions)
     policies_existed = connection.table_exists?(:coordination_policies)
-    migration.down if versions_existed || policies_existed
+    drop_policy_tables!(connection)
 
     example.run
   ensure
-    migration.down if connection.table_exists?(:coordination_policy_versions) || connection.table_exists?(:coordination_policies)
+    drop_policy_tables!(connection)
     if policies_existed || versions_existed
-      migration.up
-      restore_columns_added_by_later_migrations
+      described_class.new.up
+      restore_columns_added_by_later_migrations(connection)
     end
   end
 
@@ -51,12 +49,30 @@ RSpec.describe CreateCoordinationPolicies, :aggregate_failures do
   # +CreateCoordinationPolicies+ recreates the tables in their original form,
   # which predates later migrations that added columns production code now
   # depends on (e.g. +idempotency_key+ on +coordination_policy_versions+, added
-  # by +AddIdempotencyKeyToEvolutionTables+). Re-applying those later migrations
-  # restores the canonical schema so downstream specs see the columns they
-  # expect. Each migration is idempotent (guarded on column/index existence),
-  # so this is safe whether or not the columns are already present.
-  def restore_columns_added_by_later_migrations
-    AddIdempotencyKeyToEvolutionTables.new.up
+  # by +AddIdempotencyKeyToEvolutionTables+). Re-applying that later migration
+  # would use concurrent indexes, which is not safe inside this spec's cleanup
+  # path on CI. Repair the specific schema elements directly instead so
+  # downstream specs still see the canonical schema.
+  def restore_columns_added_by_later_migrations(connection)
+    return if connection.column_exists?(:coordination_policy_versions, :idempotency_key)
+
+    connection.add_column(:coordination_policy_versions, :idempotency_key, :string)
+    return if connection.index_exists?(:coordination_policy_versions,
+      [ :coordination_policy_id, :idempotency_key ],
+      name: "index_coordination_policy_versions_on_idempotency_key")
+
+    connection.add_index(
+      :coordination_policy_versions,
+      [ :coordination_policy_id, :idempotency_key ],
+      name: "index_coordination_policy_versions_on_idempotency_key",
+      unique: true,
+      where: "idempotency_key IS NOT NULL"
+    )
+  end
+
+  def drop_policy_tables!(connection)
+    connection.execute("DROP TABLE IF EXISTS coordination_policies CASCADE")
+    connection.execute("DROP TABLE IF EXISTS coordination_policy_versions CASCADE")
   end
 
   def expect_policy_schema
