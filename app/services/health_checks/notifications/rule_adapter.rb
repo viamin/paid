@@ -20,7 +20,20 @@ module HealthChecks
         end
       end
 
+      def initialize(health_check_results_by_project_id: {})
+        @health_check_results_by_project_id = health_check_results_by_project_id
+        @finding_by_project_id = {}
+      end
+
+      def call(scope: nil, health_check_results_by_project_id: nil, **kwargs)
+        @health_check_results_by_project_id = health_check_results_by_project_id || @health_check_results_by_project_id
+        @finding_by_project_id.clear
+        super(scope:, **kwargs)
+      end
+
       private
+
+      attr_reader :health_check_results_by_project_id, :finding_by_project_id
 
       def source
         "health_check_#{check_class.code}"
@@ -58,6 +71,25 @@ module HealthChecks
       # correct scope-specific lookup. Returns nil when the project is healthy
       # for this check.
       def first_finding_for(project)
+        finding_by_project_id.fetch(project.id) do
+          finding_by_project_id[project.id] = cached_finding_for(project) || live_finding_for(project)
+        end
+      end
+
+      def cached_finding_for(project)
+        result = health_check_result_for(project)
+        return unless result
+
+        result.findings.find { |finding| matching_finding?(finding) }
+      end
+
+      def health_check_result_for(project)
+        health_check_results_by_project_id.fetch(project.id) do
+          HealthChecks::Cache.read(project)
+        end
+      end
+
+      def live_finding_for(project)
         case check_class.scope
         when :project
           run_check_safely(project)
@@ -67,6 +99,15 @@ module HealthChecks
           owner = project.effective_owner
           run_check_safely(owner) if owner
         end
+      end
+
+      def matching_finding?(finding)
+        finding.code == check_class.code || internal_error_for_check?(finding)
+      end
+
+      def internal_error_for_check?(finding)
+        finding.code == HealthChecks::Coordinator::INTERNAL_ERROR_CODE &&
+          finding.metadata.to_h.with_indifferent_access[:check_class] == (check_class.name || check_class.to_s)
       end
 
       def find_runner_finding(project)
@@ -80,7 +121,8 @@ module HealthChecks
         nil
       end
 
-      # Runs the check and returns the first finding, or nil on failure.
+      # Runs the check and returns the first finding, or an internal-error
+      # finding if the check itself failed.
       def run_check_safely(subject)
         check_class.call(subject).first
       rescue => e
@@ -91,7 +133,8 @@ module HealthChecks
           error: e.class.name,
           error_message: e.message
         )
-        nil
+
+        HealthChecks::Coordinator.internal_error_finding(check_class:, subject:, error: e)
       end
     end
   end

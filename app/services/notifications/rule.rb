@@ -18,16 +18,16 @@ module Notifications
 
       # Evaluate every registered rule against the given account, publishing
       # notifications for matches and auto-resolving for cleared subjects.
-      def evaluate_all(account:)
-        rule_classes.each { |rule| rule.call(scope: account) }
+      def evaluate_all(account:, **kwargs)
+        rule_classes.each { |rule| rule.call(scope: account, **kwargs) }
       end
     end
 
     def self.call(scope: nil, **kwargs)
-      new(**kwargs).call(scope:)
+      new.call(scope:, **kwargs)
     end
 
-    def call(scope: nil)
+    def call(scope: nil, **_kwargs)
       matches = Array(detect(scope))
 
       matches.each { |subject| publish(subject) }

@@ -76,6 +76,28 @@ RSpec.describe HealthChecks::Notifications::RuleAdapter do
 
       expect(matches).to include(project)
     end
+
+    it "reuses cached sweep results instead of rerunning the bound check" do
+      project = create(:project, account: account, auto_merge_mode: "off")
+      finding = HealthChecks::Finding.new(
+        code: :auto_merge_without_owner,
+        scope: :project,
+        severity: :error,
+        title: "Cached finding",
+        description: "cached"
+      )
+      result = HealthChecks::Result.new(findings: [ finding ], checked_at: Time.current, duration_ms: 3)
+
+      allow(HealthChecks::Checks::Project::AutoMergeWithoutOwner).to receive(:call).and_call_original
+
+      rule = described_class.for(HealthChecks::Checks::Project::AutoMergeWithoutOwner).new(
+        health_check_results_by_project_id: { project.id => result }
+      )
+      matches = rule.send(:detect, account)
+
+      expect(matches).to contain_exactly(project)
+      expect(HealthChecks::Checks::Project::AutoMergeWithoutOwner).not_to have_received(:call)
+    end
   end
 
   describe "#build" do
@@ -105,6 +127,18 @@ RSpec.describe HealthChecks::Notifications::RuleAdapter do
   describe "#call (publish + auto-resolve)" do
     let(:check_class) { HealthChecks::Checks::Project::AutoMergeWithoutOwner }
     let(:source) { "health_check_auto_merge_without_owner" }
+    let(:raising_project_check) do
+      Class.new(HealthChecks::Check) do
+        self.scope = :project
+
+        def call
+          raise "boom"
+        end
+      end.tap do |check|
+        check.define_singleton_method(:code) { :raising_project_check }
+        check.define_singleton_method(:name) { "RaisingProjectCheck" }
+      end
+    end
 
     it "publishes a notification for a project where the check fires" do
       matching = create(:project, account: account, auto_merge_mode: "all", owner_reviewer_login: nil)
@@ -166,6 +200,45 @@ RSpec.describe HealthChecks::Notifications::RuleAdapter do
       }.to change(Notification, :count).by(1)
 
       expect(Notification.find_by!(subject: bad).resolved_at).to be_nil
+    end
+
+    it "keeps a notification active when the cached sweep result captured a check failure" do
+      project = create(:project, account: account, auto_merge_mode: "off")
+      create(:notification, account: account, source: source, subject: project)
+      error_finding = HealthChecks::Finding.new(
+        code: HealthChecks::Coordinator::INTERNAL_ERROR_CODE,
+        scope: :project,
+        severity: :error,
+        title: "Internal health check error",
+        description: "Check failed",
+        metadata: { check_class: check_class.name, error_class: "RuntimeError" }
+      )
+      result = HealthChecks::Result.new(findings: [ error_finding ], checked_at: Time.current, duration_ms: 5)
+
+      rule = described_class.for(check_class)
+      rule.call(scope: account, health_check_results_by_project_id: { project.id => result })
+
+      notification = Notification.find_by!(account: account, source: source, subject: project)
+      expect(notification.resolved_at).to be_nil
+      expect(notification.title).to eq("Internal health check error")
+    end
+
+    it "publishes an internal-error notification when the bound check raises" do
+      project = create(:project, account: account)
+      rule = described_class.for(raising_project_check)
+
+      expect {
+        rule.call(scope: account)
+      }.to change(Notification, :count).by(1)
+
+      notification = Notification.find_by!(
+        account: account,
+        source: "health_check_raising_project_check",
+        subject: project
+      )
+      expect(notification.resolved_at).to be_nil
+      expect(notification.title).to eq("Internal health check error")
+      expect(notification.description).to include("RaisingProjectCheck raised RuntimeError: boom")
     end
   end
 

@@ -154,14 +154,20 @@ RSpec.describe AccountHealthCheckSweepJob do
     it "invokes evaluate_all for each distinct account after the sweep" do
       account1 = create(:account)
       account2 = create(:account)
-      create(:project, account: account1)
-      create(:project, account: account2)
+      project1 = create(:project, account: account1)
+      project2 = create(:project, account: account2)
       allow(HealthChecks::Coordinator).to receive(:call).and_return(clean_result)
 
       described_class.perform_now
 
-      expect(Notifications::Rule).to have_received(:evaluate_all).with(account: account1)
-      expect(Notifications::Rule).to have_received(:evaluate_all).with(account: account2)
+      expect(Notifications::Rule).to have_received(:evaluate_all).with(
+        account: account1,
+        health_check_results_by_project_id: { project1.id => clean_result }
+      )
+      expect(Notifications::Rule).to have_received(:evaluate_all).with(
+        account: account2,
+        health_check_results_by_project_id: { project2.id => clean_result }
+      )
     end
 
     it "isolates a failing evaluate_all call so the sweep continues" do
