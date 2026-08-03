@@ -2,12 +2,15 @@
 
 module Guardrails
   class DataClassificationPolicy
+    include Runners::OpenRouterDataRouting
+
     DECISION_TYPE = "check_data_classification"
     DECISION_POINT = "data_classification_policy"
 
     Result = Data.define(
       :data_classification,
       :provider_data_collection,
+      :provider_zdr,
       :warning_emitted,
       :warning_message
     ) do
@@ -18,7 +21,8 @@ module Guardrails
       def context
         {
           data_classification: data_classification,
-          provider_data_collection: provider_data_collection
+          provider_data_collection: provider_data_collection,
+          provider_zdr: provider_zdr
         }
       end
     end
@@ -43,12 +47,15 @@ module Guardrails
 
     attr_reader :agent_run, :selection
 
+    # @spec FREE-MODEL-002, FREE-MODEL-003
     def build_result
       data_collection = routing_params[:data_collection]
+      zdr = routing_params[:zdr]
 
       Result.new(
         data_classification: project.data_classification,
         provider_data_collection: data_collection,
+        provider_zdr: zdr,
         warning_emitted: warning?,
         warning_message: warning_message(data_collection)
       )
@@ -62,6 +69,7 @@ module Guardrails
       selection[:model]
     end
 
+    # @spec FREE-MODEL-003
     def warning?
       return false unless sensitive_project?
       return false unless model&.free?
@@ -91,14 +99,7 @@ module Guardrails
     def routing_params
       return {} unless openrouter_routed?
 
-      case project.data_classification
-      when "open", "internal"
-        { data_collection: "allow" }
-      when "confidential", "restricted"
-        { data_collection: "deny" }
-      else
-        {}
-      end
+      build_provider_routing(project)
     end
 
     def warning_message(data_collection)
@@ -139,6 +140,7 @@ module Guardrails
           type: "data_classification_guardrail",
           data_classification: result.data_classification,
           provider_data_collection: result.provider_data_collection,
+          provider_zdr: result.provider_zdr,
           model_id: model&.model_id,
           runner_key: runner_key
         }.compact
