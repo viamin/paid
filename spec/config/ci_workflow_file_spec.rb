@@ -50,4 +50,8 @@ RSpec.describe CiWorkflowFile, :no_db do
     expect(install_step.fetch("run")).to include('echo "$HOME/.local/bin" >> "$GITHUB_PATH"')
     expect(install_step.fetch("run")).to include('INSTALL_DIR="$HOME/.local/bin" bin/install-ast-grep')
   end
+
+  it "gives the test job enough time to complete the full RSpec suite" do
+    expect(workflow.fetch("jobs").fetch("test").fetch("timeout-minutes")).to eq(60)
+  end
 end
