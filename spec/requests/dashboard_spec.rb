@@ -378,6 +378,21 @@ RSpec.describe "Dashboard" do
         expect(cancel_form.at_css("button")&.text).to include("Cancel")
       end
 
+      it "disables Turbo navigation for the project link in the upcoming queue" do
+        issue = create(:issue, project: project, github_number: 92, title: "Navigate from the queue")
+        run = create(:agent_run, :queued, project: project, issue: issue, created_at: 2.minutes.ago)
+
+        get dashboard_path
+
+        document = Nokogiri::HTML(response.body)
+        queue_section = document.at_xpath("//h3[normalize-space(text())='Upcoming Queue']/ancestor::div[contains(@class, 'rounded-lg')][1]")
+        row = queue_section.at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(run, :queue_preview_row)}"]))
+        project_link = row.at_css(%(a[href="#{project_path(project)}"]))
+
+        expect(project_link).to be_present
+        expect(project_link["data-turbo"]).to eq("false")
+      end
+
       it "does not render a Cancel button in the upcoming queue for users who cannot run agents" do
         viewer = create(:user, :viewer, account: account)
         sign_in viewer
