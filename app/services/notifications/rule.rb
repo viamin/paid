@@ -5,6 +5,24 @@ module Notifications
     include ActionView::Helpers::DateHelper
     include Rails.application.routes.url_helpers
 
+    class << self
+      # Registered rule classes that evaluate_all iterates over.
+      def rule_classes
+        @rule_classes ||= []
+      end
+
+      # Register a rule class so evaluate_all picks it up.
+      def register(rule_class)
+        rule_classes << rule_class unless rule_classes.include?(rule_class)
+      end
+
+      # Evaluate every registered rule against the given account, publishing
+      # notifications for matches and auto-resolving for cleared subjects.
+      def evaluate_all(account:)
+        rule_classes.each { |rule| rule.call(scope: account) }
+      end
+    end
+
     def self.call(scope: nil, **kwargs)
       new(**kwargs).call(scope:)
     end

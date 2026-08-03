@@ -40,6 +40,7 @@ RSpec.describe AccountHealthCheckSweepJob do
       allow(HealthChecks::Cache).to receive(:write)
       allow(Rails.logger).to receive(:info)
       allow(Rails.logger).to receive(:warn)
+      allow(Notifications::Rule).to receive(:evaluate_all)
     end
 
     it "writes the cached result for each project and emits the sweep_completed log" do
@@ -147,6 +148,35 @@ RSpec.describe AccountHealthCheckSweepJob do
       # Sweep still completes and reports the one project that succeeded.
       expect(Rails.logger).to have_received(:info).with(
         hash_including(message: "project_health.sweep_completed", projects_checked: 1)
+      )
+    end
+
+    it "invokes evaluate_all for each distinct account after the sweep" do
+      account1 = create(:account)
+      account2 = create(:account)
+      create(:project, account: account1)
+      create(:project, account: account2)
+      allow(HealthChecks::Coordinator).to receive(:call).and_return(clean_result)
+
+      described_class.perform_now
+
+      expect(Notifications::Rule).to have_received(:evaluate_all).with(account: account1)
+      expect(Notifications::Rule).to have_received(:evaluate_all).with(account: account2)
+    end
+
+    it "isolates a failing evaluate_all call so the sweep continues" do
+      account = create(:account)
+      create(:project, account: account)
+      allow(HealthChecks::Coordinator).to receive(:call).and_return(clean_result)
+      allow(Notifications::Rule).to receive(:evaluate_all).and_raise("boom")
+
+      described_class.perform_now
+
+      expect(Rails.logger).to have_received(:warn).with(
+        hash_including(message: "project_health.notification_evaluate_all_failed", account_id: account.id, error: "boom")
+      )
+      expect(Rails.logger).to have_received(:info).with(
+        hash_including(message: "project_health.sweep_completed")
       )
     end
   end

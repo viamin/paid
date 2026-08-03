@@ -23,6 +23,7 @@ class AccountHealthCheckSweepJob < ApplicationJob
     started_at = monotonic_clock
     checked = 0
     total_findings = 0
+    account_ids = Set.new
 
     TenantContext.with_system_access do
       # Project#effective_owner is a method (created_by || account.fallback_owner),
@@ -47,10 +48,23 @@ class AccountHealthCheckSweepJob < ApplicationJob
         HealthChecks::Cache.write(project, result)
         checked += 1
         total_findings += result.findings.size
+        account_ids.add(project.account_id)
       rescue => e
         Rails.logger.warn(
           message: "project_health.sweep_project_failed",
           project_id: project.id,
+          error: e.message
+        )
+      end
+
+      # Drive the notification pipeline: publish for firing checks and
+      # auto-resolve for projects that are now clean (RDR-049 §8).
+      Account.where(id: account_ids.to_a).find_each do |account|
+        Notifications::Rule.evaluate_all(account: account)
+      rescue => e
+        Rails.logger.warn(
+          message: "project_health.notification_evaluate_all_failed",
+          account_id: account.id,
           error: e.message
         )
       end
