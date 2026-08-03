@@ -154,20 +154,22 @@ jobs:
           fi
 
       - name: Build assets
-        run: yarn build && yarn build:css
+        run: |
+          env -u DATABASE_URL -u CABLE_DATABASE_URL yarn build
+          env -u DATABASE_URL -u CABLE_DATABASE_URL yarn build:css
 
       - name: Set up database
-        run: bin/rails db:create db:schema:load
+        run: env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails db:create db:schema:load
 
       - name: Bootstrap test defaults
-        run: bin/rails ci:bootstrap_test_defaults
+        run: env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails ci:bootstrap_test_defaults
 
       - name: Run ephemeral RSpec tests
         run: |
           spec_files=$(find .ephemeral-tests -name '*_spec.rb')
           if [ -n "$spec_files" ]; then
             # shellcheck disable=SC2086
-            bin/rspec $spec_files
+            env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rspec $spec_files
           else
             echo "::error::No RSpec test files found. Only *_spec.rb files are supported."
             exit 1

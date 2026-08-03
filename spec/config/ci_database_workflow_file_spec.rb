@@ -29,8 +29,13 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
           "db_username" => "postgres",
           "db_password" => "postgres",
           "creates_application_role" => false,
-          "database_setup_command" => "bin/rails db:create db:schema:load",
-          "bootstrap_command" => "bin/rails ci:bootstrap_test_defaults"
+          "asset_build_command" => [
+            "env -u DATABASE_URL -u CABLE_DATABASE_URL yarn build",
+            "env -u DATABASE_URL -u CABLE_DATABASE_URL yarn build:css"
+          ],
+          "database_setup_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails db:create db:schema:load",
+          "bootstrap_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails ci:bootstrap_test_defaults",
+          "test_command_snippets" => [ "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rspec spec/system" ]
         }
       },
     ".github/workflows/pr-screenshots.yml" => {
@@ -48,8 +53,12 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
           "db_username" => "postgres",
           "db_password" => "postgres",
           "creates_application_role" => false,
-          "database_setup_command" => "bin/rails db:create db:schema:load",
-          "bootstrap_command" => "bin/rails ci:bootstrap_test_defaults"
+          "database_setup_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails db:create db:schema:load",
+          "bootstrap_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails ci:bootstrap_test_defaults",
+          "test_command_snippets" => [
+            "env -u DATABASE_URL -u CABLE_DATABASE_URL FPROF=1 bin/rspec",
+            "env -u DATABASE_URL -u CABLE_DATABASE_URL FDOC=1 bin/rspec"
+          ]
         }
       },
     ".github/workflows/ephemeral_tests.yml" => {
@@ -57,8 +66,13 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
           "db_username" => "postgres",
           "db_password" => "postgres",
           "creates_application_role" => false,
-          "database_setup_command" => "bin/rails db:create db:schema:load",
-          "bootstrap_command" => "bin/rails ci:bootstrap_test_defaults"
+          "asset_build_command" => [
+            "env -u DATABASE_URL -u CABLE_DATABASE_URL yarn build",
+            "env -u DATABASE_URL -u CABLE_DATABASE_URL yarn build:css"
+          ],
+          "database_setup_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails db:create db:schema:load",
+          "bootstrap_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails ci:bootstrap_test_defaults",
+          "test_command_snippets" => [ "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rspec $spec_files" ]
         }
       }
   }.freeze
@@ -151,6 +165,24 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
           bootstrap_step = job.fetch("steps").find { |step| step["name"] == "Bootstrap test defaults" }
 
           expect(bootstrap_step.fetch("run")).to eq(expectations.fetch("bootstrap_command"))
+        end
+
+        it "avoids inherited database urls when building assets or running tests for #{job_name}" do
+          job = workflow.fetch("jobs").fetch(job_name)
+
+          if expectations.key?("asset_build_command")
+            build_step = job.fetch("steps").find { |step| step["name"] == "Build assets" }
+
+            expect(build_step.fetch("run")).to include(*expectations.fetch("asset_build_command"))
+          end
+
+          next unless expectations.key?("test_command_snippets")
+
+          test_step = job.fetch("steps").find do |step|
+            step["name"]&.start_with?("Run ")
+          end
+
+          expect(test_step.fetch("run")).to include(*expectations.fetch("test_command_snippets"))
         end
       end
 

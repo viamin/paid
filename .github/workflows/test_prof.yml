@@ -110,10 +110,10 @@ jobs:
           sudo apt-get install -y postgresql-client-16
 
       - name: Set up database
-        run: bin/rails db:create db:schema:load
+        run: env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails db:create db:schema:load
 
       - name: Bootstrap test defaults
-        run: bin/rails ci:bootstrap_test_defaults
+        run: env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails ci:bootstrap_test_defaults
 
       - name: Verify Qdrant health
         run: |
@@ -125,10 +125,10 @@ jobs:
           mkdir -p tmp/test_prof
           case "${{ inputs.profiler }}" in
             factory_prof)
-              FPROF=1 bin/rspec --exclude-pattern "spec/performance/**/*_spec.rb,spec/system/**/*_spec.rb" | tee tmp/test_prof/factory_prof.log
+              env -u DATABASE_URL -u CABLE_DATABASE_URL FPROF=1 bin/rspec --exclude-pattern "spec/performance/**/*_spec.rb,spec/system/**/*_spec.rb" | tee tmp/test_prof/factory_prof.log
               ;;
             factory_doctor)
-              FDOC=1 bin/rspec --exclude-pattern "spec/performance/**/*_spec.rb,spec/system/**/*_spec.rb" | tee tmp/test_prof/factory_doctor.log
+              env -u DATABASE_URL -u CABLE_DATABASE_URL FDOC=1 bin/rspec --exclude-pattern "spec/performance/**/*_spec.rb,spec/system/**/*_spec.rb" | tee tmp/test_prof/factory_doctor.log
               ;;
           esac
 
