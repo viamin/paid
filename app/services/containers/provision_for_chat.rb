@@ -72,13 +72,7 @@ module Containers
       fix_ownership!
       seed_workspace!(workspace_volume_created:)
 
-      chat_session.update!(
-        container_capability: "ready",
-        container_id: @container.id,
-        container_ready_at: Time.current,
-        workspace_volume: workspace_volume,
-        idle_timeout_at: options[:idle_timeout].from_now
-      )
+      chat_session.update!(final_session_attributes(workspace_volume))
 
       log("provision.success", container_id: @container.id)
       Result.success(
@@ -119,6 +113,24 @@ module Containers
 
     def mark_failed!
       chat_session.update!(container_capability: "failed") if chat_session.persisted?
+    end
+
+    # When +ready+ is false the caller (ProvisionWorkspace's reopen path) keeps
+    # the session in the +provisioning+ capability so it never broadcasts ready
+    # — and the tools/UI that key off ready — before the clone manifest has been
+    # replayed. The caller flips to ready once restore succeeds.
+    def final_session_attributes(workspace_volume)
+      {
+        container_capability: ready? ? "ready" : "provisioning",
+        container_id: @container.id,
+        container_ready_at: ready? ? Time.current : nil,
+        workspace_volume: workspace_volume,
+        idle_timeout_at: options[:idle_timeout].from_now
+      }
+    end
+
+    def ready?
+      options[:ready] != false
     end
 
     def project

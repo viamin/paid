@@ -13,11 +13,13 @@ module ChatSessions
   # recorded repo instead of some paths leaving it empty.
   #
   # Provision failures (image pull, daemon errors) propagate to the caller so it
-  # can broadcast the terminal capability. A restore failure is recovered here —
-  # resources reclaimed, the session returned to the retryable stopped state, the
-  # user notified — and then re-raised as RestoreFailed, because by then the
-  # session has already flipped to ready and leaving it ready-but-empty would
-  # mislead both the UI and subsequent tool calls.
+  # can broadcast the terminal capability. On the reopen path the session stays
+  # in the +provisioning+ capability while the manifest replays — it only flips
+  # to +ready+ after restore succeeds, so the UI and server-side tool dispatch
+  # never see a usable workspace before every recorded repo is back. A restore
+  # failure is recovered here — resources reclaimed, the session returned to the
+  # retryable stopped state, the user notified — and then re-raised as
+  # RestoreFailed.
   class ProvisionWorkspace
     class Error < StandardError; end
     class RestoreFailed < Error; end
@@ -33,8 +35,9 @@ module ChatSessions
     end
 
     def call
-      Containers::ProvisionForChat.call(chat_session:, seed_project: !reopen_restore?)
+      Containers::ProvisionForChat.call(chat_session:, seed_project: !reopen_restore?, ready: !reopen_restore?)
       restore_manifest! if reopen_restore?
+      mark_ready! if reopen_restore?
     end
 
     private
@@ -46,6 +49,14 @@ module ChatSessions
       chat_session.clone_manifest_entries.any?
     end
 
+    # ProvisionForChat left the session in +provisioning+ for the reopen path so
+    # neither the UI nor server-side tool dispatch treat it as usable while the
+    # manifest replays. Restore has now succeeded, so it is safe to flip ready
+    # and broadcast the capability change.
+    def mark_ready!
+      chat_session.update!(container_capability: "ready", container_ready_at: Time.current)
+    end
+
     def restore_manifest!
       ChatSessions::RestoreCloneManifest.call(chat_session:)
     rescue StandardError => e
@@ -53,11 +64,12 @@ module ChatSessions
       raise RestoreFailed, e.message
     end
 
-    # ProvisionForChat already flipped the session to "ready" with a running
-    # container and attached volumes. A restore failure must reclaim them so a
-    # retry provisions fresh resources, surface the failure, and return the
-    # session to the stopped state (the only state that offers a retry
-    # affordance) instead of leaving a ready-but-empty workspace.
+    # ProvisionForChat provisioned a running container with attached volumes but
+    # (on the reopen path) left the capability at +provisioning+. A restore
+    # failure must reclaim those resources so a retry provisions fresh ones,
+    # surface the failure, and return the session to the stopped state (the only
+    # state that offers a retry affordance) instead of leaving a provisioned but
+    # empty workspace.
     def recover_failed_restore!(error)
       Containers::ChatSessionManager.new(chat_session).release_resources!
       persist_reopen_failure_notice!(error)

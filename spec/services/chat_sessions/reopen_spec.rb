@@ -14,12 +14,15 @@ RSpec.describe ChatSessions::Reopen do
 
   before do
     ActiveJob::Base.queue_adapter = :test
-    allow(Containers::ProvisionForChat).to receive(:call) do |chat_session:, **|
-      chat_session.update!(
-        container_capability: "ready",
-        container_id: "restored-container",
-        container_ready_at: Time.current
-      )
+    allow(Containers::ProvisionForChat).to receive(:call) do |chat_session:, **opts|
+      # The reopen path defers the ready flip until restore completes, so the
+      # stub must honor `ready:` to exercise the real ProvisionWorkspace flow.
+      ready = opts.fetch(:ready, true)
+      if ready
+        chat_session.update!(container_capability: "ready", container_id: "restored-container", container_ready_at: Time.current)
+      else
+        chat_session.update!(container_capability: "provisioning", container_id: "restored-container")
+      end
     end
 
     allow(Containers).to receive(:backend).and_return(backend)
@@ -71,6 +74,27 @@ RSpec.describe ChatSessions::Reopen do
     end
 
     expect(session.reload.clone_manifest_entries.first).to include(status: "ready", stale: false)
+  end
+
+  it "keeps the session non-ready until the clone manifest finishes replaying" do
+    session = create(:chat_session, :closed, :workspace, account:, created_by: user, container_capability: "stopped", container_id: nil)
+    session.update!(clone_manifest: reopen_manifest(project))
+
+    capability_during_restore = nil
+    allow(ChatSessions::RestoreCloneManifest).to receive(:call) do |chat_session:|
+      capability_during_restore = chat_session.container_capability
+      []
+    end
+
+    perform_enqueued_jobs do
+      described_class.call(chat_session: session)
+    end
+
+    # The session must stay non-ready while restore runs so neither the UI nor
+    # server-side tool dispatch treat an empty workspace as usable.
+    expect(capability_during_restore).to eq("provisioning")
+    expect(session.reload.container_capability).to eq("ready")
+    expect(session.reload.container_ready_at).to be_present
   end
 
   it "marks failed clones stale and persists a system notice naming them" do

@@ -16,12 +16,16 @@ RSpec.describe ChatSessions::ProvisionContainerJob, type: :job do
     # job's orchestration (guarding, broadcasting, error containment) without
     # standing up a real container, matching the ProcessMessageJob spec pattern.
     allow(Containers::ProvisionForChat).to receive(:call) do |kwargs|
-      kwargs[:chat_session].update!(
-        container_capability: "ready",
+      # The reopen path passes `ready: false` so the session stays non-ready
+      # until restore completes; honor it to exercise the real flow.
+      ready = kwargs[:ready] != false
+      attrs = {
         container_id: "chat-container-1",
-        container_ready_at: Time.current,
         workspace_volume: "paid-chat-workspace-#{kwargs[:chat_session].id}"
-      )
+      }
+      attrs[:container_capability] = ready ? "ready" : "provisioning"
+      attrs[:container_ready_at] = Time.current if ready
+      kwargs[:chat_session].update!(**attrs)
       Containers::Provision::Result.success(container_id: "chat-container-1")
     end
   end
@@ -33,7 +37,7 @@ RSpec.describe ChatSessions::ProvisionContainerJob, type: :job do
       it "provisions the container and transitions to ready" do
         described_class.perform_now(chat_session_id: chat_session.id)
 
-        expect(Containers::ProvisionForChat).to have_received(:call).with(chat_session: chat_session, seed_project: true)
+        expect(Containers::ProvisionForChat).to have_received(:call).with(hash_including(chat_session: chat_session, seed_project: true))
         expect(chat_session.reload.container_capability).to eq("ready")
       end
 
