@@ -107,7 +107,7 @@ module ChatSessions
     end
 
     def provision_requested_container
-      Containers::ProvisionForChat.call(chat_session:)
+      ChatSessions::ProvisionWorkspace.call(chat_session: chat_session)
       chat_session.reload
       chat_session.container_ready?
     rescue StandardError => error

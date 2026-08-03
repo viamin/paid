@@ -8,8 +8,8 @@ class ChatSessionsController < ApplicationController
   SIDEBAR_PAGE_SIZE = 50
 
   skip_after_action :verify_authorized, only: %i[index sidebar_page]
-  before_action :set_chat_session, only: %i[show update destroy archive unarchive older_messages]
-  before_action :reject_archived_chat_session, only: %i[update destroy archive]
+  before_action :set_chat_session, only: %i[show update destroy archive unarchive reopen clone_project older_messages]
+  before_action :reject_archived_chat_session, only: %i[update destroy archive clone_project]
   before_action :enforce_create_rate_limit, only: :create
   before_action :default_request_format_to_json, only: %i[index create show update destroy archive unarchive]
 
@@ -184,6 +184,46 @@ class ChatSessionsController < ApplicationController
     respond_to do |format|
       format.html { redirect_to chat_session_path(@chat_session), notice: "Chat session restored." }
       format.json { render json: session_json(@chat_session) }
+    end
+  end
+
+  def reopen
+    authorize @chat_session, :reopen?
+    ChatSessions::Reopen.call(chat_session: @chat_session)
+
+    respond_to do |format|
+      format.html { redirect_to chat_session_path(@chat_session, format: :html), notice: "Workspace reopen requested." }
+      format.json { render json: session_json(@chat_session.reload) }
+    end
+  rescue ArgumentError => e
+    respond_to do |format|
+      format.html { redirect_to chat_session_path(@chat_session), alert: e.message }
+      format.json { render json: { error: e.message }, status: :unprocessable_entity }
+    end
+  end
+
+  def clone_project
+    authorize @chat_session, :update?
+
+    result = Tools::CloneProject.new(user: current_user, session: @chat_session).call(
+      project_id: params.require(:project_id),
+      confirmed: true
+    )
+    @chat_session.messages.create!(
+      role: "tool",
+      tool_name: "clone_project",
+      tool_result: result,
+      content: result.to_json
+    )
+
+    respond_to do |format|
+      format.html { redirect_to chat_session_path(@chat_session, format: :html), notice: "Project cloned into the workspace." }
+      format.json { render json: result }
+    end
+  rescue ActiveRecord::RecordNotFound, ArgumentError => e
+    respond_to do |format|
+      format.html { redirect_to chat_session_path(@chat_session), alert: e.message }
+      format.json { render json: { error: e.message }, status: :unprocessable_entity }
     end
   end
 

@@ -49,6 +49,7 @@ class ChatSession < ApplicationRecord
   before_create :generate_proxy_token
   after_create_commit :broadcast_sidebar_prepend
   after_update_commit :handle_container_capability_transition, if: :saved_change_to_container_capability?
+  after_update_commit :broadcast_capability_state_refresh, if: :saved_change_to_clone_manifest?
   after_update_commit :broadcast_sidebar_refresh
   after_destroy_commit :broadcast_sidebar_remove
 
@@ -162,14 +163,16 @@ class ChatSession < ApplicationRecord
     end
   end
 
-  def append_clone_manifest_entry(project_id:, cloned_at:, path:, token_identity:)
+  def append_clone_manifest_entry(project_id:, cloned_at:, path:, token_identity:, **attributes)
     entry = CloneManifestEntry.new(
       project_id: project_id,
       cloned_at: cloned_at,
       path: path,
       token_identity: token_identity
     )
-    self.clone_manifest = clone_manifest.reject { |existing| existing.project_id == entry.project_id } + [ entry ]
+    self.clone_manifest = clone_manifest_entries.reject { |existing| existing[:project_id].to_i == entry.project_id } + [
+      entry.as_json.merge(attributes.stringify_keys.compact)
+    ]
     entry
   end
 
@@ -177,6 +180,14 @@ class ChatSession < ApplicationRecord
     removed, remaining = clone_manifest.partition { |entry| entry.project_id == project_id }
     self.clone_manifest = remaining
     removed
+  end
+
+  def replace_clone_manifest_entry(project_id:, attributes:)
+    self.clone_manifest = clone_manifest_entries.map do |entry|
+      next entry unless entry[:project_id].to_i == project_id.to_i
+
+      entry.merge(attributes.stringify_keys)
+    end
   end
 
   def clone_manifest_entries
@@ -314,5 +325,9 @@ class ChatSession < ApplicationRecord
   def handle_container_capability_transition
     from, to = saved_change_to_container_capability
     ChatSessions::HandleCapabilityTransition.call(chat_session: self, from:, to:)
+  end
+
+  def broadcast_capability_state_refresh
+    ChatSessions::BroadcastCapabilityState.call(chat_session: self)
   end
 end

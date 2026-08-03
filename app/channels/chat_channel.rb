@@ -1,11 +1,13 @@
 # frozen_string_literal: true
 
 class ChatChannel < ApplicationCable::Channel
+  # @spec CHAT-SESSION-REOPEN-005
   def subscribed
     session = find_session
     if session
       @chat_session = session
       stream_from stream_name
+      transmit(ChatSessions::CapabilitySnapshot.call(chat_session: @chat_session))
     else
       reject
     end

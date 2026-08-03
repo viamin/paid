@@ -383,6 +383,20 @@ RSpec.describe "ChatSessions" do
         expect(response.body).to include("Projects - Paid")
       end
 
+      it "wraps the popup capability panel inside the chat controller scope" do
+        get chat_session_path(chat_session), params: { display: "popup" }, headers: { "Accept" => "text/html" }
+
+        expect(response).to have_http_status(:ok)
+
+        doc = Nokogiri::HTML(response.body)
+        chat_root = doc.at_css("section[data-controller='chat'][data-chat-session-id-value]")
+        capability_panel = doc.at_css("[data-chat-target='capabilityPanel']")
+
+        expect(chat_root).to be_present
+        expect(capability_panel).to be_present
+        expect(chat_root.at_css("[data-chat-target='capabilityPanel']")).to eq(capability_panel)
+      end
+
       it "renders mobile archive controls without expanding the sidebar by default" do
         get chat_session_path(chat_session)
 
@@ -753,11 +767,69 @@ RSpec.describe "ChatSessions" do
       expect(chat_session.reload.status).to eq("archived")
     end
 
+    it "rejects POST /chat/:id/clone_project on an archived session via json" do
+      project = create(:project, account: account)
+
+      expect {
+        post clone_project_chat_session_path(chat_session, format: :json), params: { project_id: project.id }
+      }.not_to change(ChatMessage, :count)
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body["error"]).to eq("Chat session is archived.")
+      expect(chat_session.reload.clone_manifest).to be_empty
+    end
+
+    it "rejects POST /chat/:id/clone_project on an archived session via html" do
+      project = create(:project, account: account)
+
+      expect {
+        post clone_project_chat_session_path(chat_session), params: { project_id: project.id }
+      }.not_to change(ChatMessage, :count)
+
+      expect(response).to redirect_to(chat_session_path(chat_session))
+      expect(flash[:alert]).to eq("Chat session is archived.")
+      expect(chat_session.reload.clone_manifest).to be_empty
+    end
+
     it "redirects html mutating requests back to the archived session show page" do
       patch chat_session_path(chat_session), params: { title: "Renamed after archive" }
 
       expect(response).to redirect_to(chat_session_path(chat_session))
       expect(flash[:alert]).to eq("Chat session is archived.")
+    end
+  end
+
+  describe "capability panel reopen control" do
+    let(:account) { create(:account) }
+    let(:user) { create(:user, :owner, account: account) }
+    let(:chat_session) { create(:chat_session, account: account, created_by: user) }
+
+    before { sign_in user }
+
+    it "renders the reopen form visible with the toggle attribute on the form when stopped" do
+      chat_session.update!(container_capability: "stopped")
+
+      get chat_session_path(chat_session)
+
+      form = Nokogiri::HTML(response.body).at_css("form[action='#{reopen_chat_session_path(chat_session)}']")
+
+      expect(form).to be_present
+      expect(form["class"]).not_to include('hidden')
+      # The Stimulus toggle target must live on the same element that carries
+      # the initial hidden state, so a live transition to stopped reveals the CTA.
+      expect(form["data-chat-capability-stopped-only"]).to be_present
+    end
+
+    it "hides the reopen form but keeps the toggle attribute on the same element when not stopped" do
+      chat_session.update!(container_capability: "ready")
+
+      get chat_session_path(chat_session)
+
+      form = Nokogiri::HTML(response.body).at_css("form[action='#{reopen_chat_session_path(chat_session)}']")
+
+      expect(form).to be_present
+      expect(form["class"]).to include('hidden')
+      expect(form["data-chat-capability-stopped-only"]).to be_present
     end
   end
 end

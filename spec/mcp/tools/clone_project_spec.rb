@@ -165,6 +165,101 @@ RSpec.describe Tools::CloneProject do
       expect(result[:token_identity]).to be_present
     end
 
+    it "re-clones a manifest entry marked stale by a reopen restore" do
+      session.append_clone_manifest_entry(
+        project_id: project.id,
+        cloned_at: 1.hour.ago,
+        path: "/workspace/#{project.full_name.tr('/', '-')}",
+        token_identity: "project-token:#{project.github_token.name}",
+        status: "stale",
+        stale: true,
+        stale_reason: "clone_failed"
+      )
+      session.save!
+
+      result = tool.call(project_id: project.id, confirmed: true)
+
+      expect(result[:status]).to eq("cloned")
+      entry = session.reload.clone_manifest_entries.first
+      expect(entry).to include(status: "ready", stale: false)
+      # The fresh entry fully replaces the stale one, so stale markers are gone.
+      expect(entry.key?(:stale_reason)).to be(false)
+    end
+
+    it "removes the stale partial clone directory before re-cloning" do
+      slug = project.full_name.tr("/", "-")
+      session.append_clone_manifest_entry(
+        project_id: project.id,
+        cloned_at: 1.hour.ago,
+        path: "/workspace/#{slug}",
+        token_identity: "project-token:#{project.github_token.name}",
+        status: "stale",
+        stale: true,
+        stale_reason: "clone_failed"
+      )
+      session.save!
+
+      commands = []
+      allow(Containers.backend).to receive(:exec_in_container) do |_container, command, **_opts|
+        commands << command
+        [ [], [], 0 ]
+      end
+
+      tool.call(project_id: project.id, confirmed: true)
+
+      cleanup = commands.find { |cmd| cmd.last.to_s.include?("rm -rf /workspace/#{slug}") }
+      expect(cleanup).to be_present
+    end
+
+    it "never wipes the workspace root when recovering a stale seed entry" do
+      slug = project.full_name.tr("/", "-")
+      session.append_clone_manifest_entry(
+        project_id: project.id,
+        cloned_at: 1.hour.ago,
+        path: "/workspace",
+        token_identity: "project-token:#{project.github_token.name}",
+        status: "stale",
+        stale: true,
+        stale_reason: "clone_failed"
+      )
+      session.save!
+
+      commands = []
+      allow(Containers.backend).to receive(:exec_in_container) do |_container, command, **_opts|
+        commands << command
+        [ [], [], 0 ]
+      end
+
+      tool.call(project_id: project.id, confirmed: true)
+
+      # The seed entry's path is /workspace (the root) — it must be skipped, but
+      # the target clone subdir /workspace/<slug> is still cleared.
+      root_wipe = commands.find { |cmd| cmd.last.to_s.match?(/rm -rf (['"]?)\/workspace\1( |'\z|"\z|\z)/) }
+      expect(root_wipe).to be_nil
+      expect(commands.any? { |cmd| cmd.last.to_s.include?("rm -rf /workspace/#{slug}") }).to be(true)
+    end
+
+    it "re-clones a stale entry even when the manifest is at the clone limit" do
+      tenant_setting = create(:tenant_setting, account:)
+      allow(account).to receive(:tenant_setting).and_return(tenant_setting)
+      allow(tenant_setting).to receive(:chat_max_cloned_repos).and_return(1)
+      session.append_clone_manifest_entry(
+        project_id: project.id,
+        cloned_at: 1.hour.ago,
+        path: "/workspace/#{project.full_name.tr('/', '-')}",
+        token_identity: "project-token:#{project.github_token.name}",
+        status: "stale",
+        stale: true,
+        stale_reason: "clone_failed"
+      )
+      session.save!
+
+      result = tool.call(project_id: project.id, confirmed: true)
+
+      expect(result[:status]).to eq("cloned")
+      expect(session.reload.clone_manifest_entries.first).to include(status: "ready", stale: false)
+    end
+
     it "returns already_cloned when the manifest is already at the clone limit" do
       tenant_setting = create(:tenant_setting, account:)
       allow(account).to receive(:tenant_setting).and_return(tenant_setting)

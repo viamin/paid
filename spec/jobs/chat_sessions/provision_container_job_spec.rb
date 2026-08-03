@@ -16,11 +16,16 @@ RSpec.describe ChatSessions::ProvisionContainerJob, type: :job do
     # job's orchestration (guarding, broadcasting, error containment) without
     # standing up a real container, matching the ProcessMessageJob spec pattern.
     allow(Containers::ProvisionForChat).to receive(:call) do |kwargs|
-      kwargs[:chat_session].update!(
-        container_capability: "ready",
+      # The reopen path passes `ready: false` so the session stays non-ready
+      # until restore completes; honor it to exercise the real flow.
+      ready = kwargs[:ready] != false
+      attrs = {
         container_id: "chat-container-1",
-        container_ready_at: Time.current
-      )
+        workspace_volume: "paid-chat-workspace-#{kwargs[:chat_session].id}"
+      }
+      attrs[:container_capability] = ready ? "ready" : "provisioning"
+      attrs[:container_ready_at] = Time.current if ready
+      kwargs[:chat_session].update!(**attrs)
       Containers::Provision::Result.success(container_id: "chat-container-1")
     end
   end
@@ -32,7 +37,7 @@ RSpec.describe ChatSessions::ProvisionContainerJob, type: :job do
       it "provisions the container and transitions to ready" do
         described_class.perform_now(chat_session_id: chat_session.id, account_id: account.id)
 
-        expect(Containers::ProvisionForChat).to have_received(:call).with(chat_session: chat_session)
+        expect(Containers::ProvisionForChat).to have_received(:call).with(hash_including(chat_session: chat_session, seed_project: true))
         expect(chat_session.reload.container_capability).to eq("ready")
       end
 
@@ -41,6 +46,7 @@ RSpec.describe ChatSessions::ProvisionContainerJob, type: :job do
           described_class.perform_now(chat_session_id: chat_session.id, account_id: account.id)
         }.to have_broadcasted_to(stream_name)
           .with(hash_including(type: "capability_changed", container_capability: "ready"))
+          .at_least(:once)
       end
 
       it "schedules a follow-up drain for other pending sessions in the account" do
@@ -58,6 +64,81 @@ RSpec.describe ChatSessions::ProvisionContainerJob, type: :job do
         described_class.perform_now(chat_session_id: chat_session.id, account_id: account.id)
 
         expect(Containers::ProvisionForChat).to have_received(:call)
+      end
+    end
+
+    context "when reopening a previously provisioned workspace" do
+      let(:project) { create(:project, account: account) }
+      let(:chat_session) do
+        create(:chat_session, account: account, created_by: user,
+          container_capability: "pending",
+          metadata: { "workspace_reopen_requested_at" => Time.current.iso8601 }).tap do |session|
+            session.update!(clone_manifest: [
+              { project_id: project.id, project_name: project.name,
+                project_full_name: project.full_name, path: "/workspace",
+                token_identity: "project-token:#{project.github_token.name}" }
+            ])
+          end
+      end
+
+      it "skips project seeding and restores the clone manifest" do
+        allow(ChatSessions::RestoreCloneManifest).to receive(:call)
+
+        described_class.perform_now(chat_session_id: chat_session.id)
+
+        expect(Containers::ProvisionForChat).to have_received(:call)
+          .with(hash_including(chat_session: chat_session, seed_project: false))
+        expect(ChatSessions::RestoreCloneManifest).to have_received(:call)
+      end
+
+      context "when restore fails after provisioning succeeded" do
+        let(:mock_container) { instance_double(Docker::Container, stop: true, delete: true) }
+        let(:mock_volume) { instance_double(Docker::Volume, remove: true) }
+
+        before do
+          allow(ChatSessions::RestoreCloneManifest).to receive(:call) do
+            raise "Workspace reset failed: permission denied"
+          end
+          allow(Docker::Container).to receive(:get).and_return(mock_container)
+          allow(Docker::Volume).to receive(:get).and_return(mock_volume)
+        end
+
+        it "tears down the provisioned container and clears recorded ids so a retry does not leak it" do
+          expect(mock_container).to receive(:stop).with(timeout: 10)
+          expect(mock_container).to receive(:delete).with(force: true, v: true)
+          expect(mock_volume).to receive(:remove).twice
+
+          described_class.perform_now(chat_session_id: chat_session.id)
+
+          session = chat_session.reload
+          expect(session.container_capability).to eq("stopped")
+          expect(session.container_id).to be_nil
+          expect(session.workspace_volume).to be_nil
+          expect(session.container_ready_at).to be_nil
+        end
+
+        it "moves the session to stopped and persists a reopen-failure notice" do
+          expect {
+            described_class.perform_now(chat_session_id: chat_session.id)
+          }.not_to raise_error
+
+          expect(chat_session.reload.container_capability).to eq("stopped")
+
+          notice = chat_session.messages.system.find_by("metadata ->> 'reopen_clone_failures' = 'true'")
+          expect(notice).to be_present
+          expect(notice.content).to include("Workspace reopen failed")
+          expect(notice.content).to include("Workspace reset failed")
+        end
+
+        it "broadcasts the stopped capability rather than ready" do
+          # The ready -> stopped update fires the capability-transition callback
+          # broadcast, and the handler also broadcasts explicitly; both carry
+          # the stopped state, so assert the event is emitted at least once.
+          expect {
+            described_class.perform_now(chat_session_id: chat_session.id)
+          }.to have_broadcasted_to(stream_name)
+            .with(hash_including(type: "capability_changed", container_capability: "stopped")).at_least(:once)
+        end
       end
     end
 

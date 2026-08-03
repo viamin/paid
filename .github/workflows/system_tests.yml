@@ -43,9 +43,10 @@ jobs:
       SECRET_KEY_BASE: test-secret-key-base
       RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY }}
       PAID_TEST_DATABASE: paid_test
+      DATABASE_URL: postgres://paid:paid@localhost:5432/paid_test
       DB_HOST: localhost
-      DB_USERNAME: postgres
-      DB_PASSWORD: postgres
+      DB_USERNAME: paid
+      DB_PASSWORD: paid
       TMPDIR: ${{ github.workspace }}/.tmp-build
       YARN_CACHE_FOLDER: ${{ github.workspace }}/.cache-yarn
       XDG_CACHE_HOME: ${{ github.workspace }}/.cache
@@ -103,18 +104,39 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client-16
 
-      - name: Locate Chromium-family browser
-        # Prefer a preinstalled browser when one exists, but don't fail the
-        # workflow if the runner image changes. The system suite falls back to
-        # rack_test automatically when CHROMIUM_PATH is absent, and browser-only
-        # coverage lives in explicitly opted-in specs.
+      - name: Create application database role
+        env:
+          PGPASSWORD: postgres
         run: |
-          path="$(command -v google-chrome || command -v chromium-browser || command -v chromium || true)"
-          if [ -n "$path" ]; then
-            echo "CHROMIUM_PATH=$path" >> "$GITHUB_ENV"
-            "$path" --version
+          psql -h "$DB_HOST" -U postgres -d postgres <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'paid') THEN
+              CREATE ROLE paid LOGIN PASSWORD 'paid';
+            ELSE
+              ALTER ROLE paid WITH LOGIN PASSWORD 'paid';
+            END IF;
+          END
+          $$;
+          ALTER ROLE paid CREATEDB NOSUPERUSER NOBYPASSRLS;
+          SQL
+
+      - name: Set up Chrome
+        id: setup_chrome
+        uses: browser-actions/setup-chrome@2e1d749697dd1612b833dba4a722266286fbefcd # v2.1.2
+
+      - name: Export Chromium path
+        env:
+          INSTALLED_CHROME_PATH: ${{ steps.setup_chrome.outputs.chrome-path }}
+        run: |
+          chrome_path="${INSTALLED_CHROME_PATH}"
+          if [ -n "$chrome_path" ] && [ -x "$chrome_path" ]; then
+            echo "CHROMIUM_PATH=$chrome_path" >> "$GITHUB_ENV"
+            echo "Chrome available at ${chrome_path}"
+            "$chrome_path" --version
           else
-            echo "No Chromium-family browser found; falling back to rack_test."
+            echo "::error::No Chrome/Chromium binary found after setup"
+            exit 1
           fi
 
       - name: Build assets

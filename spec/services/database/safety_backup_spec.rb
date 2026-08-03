@@ -169,6 +169,14 @@ RSpec.describe Database::SafetyBackup do
     end
   end
 
+  describe ".dump_env" do
+    it "uses a PostgreSQL-compatible statement_timeout default" do
+      env = described_class.send(:dump_env, primary)
+
+      expect(env.fetch("PGOPTIONS")).to eq("-c statement_timeout=300000")
+    end
+  end
+
   describe "skip conditions" do
     it "is skipped in production" do
       allow(Rails.env).to receive(:production?).and_return(true)

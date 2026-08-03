@@ -44,9 +44,5 @@ rules:
       # trusted source, not attacker-controlled PR content:
       # - The "Normalize test master key" step writes a repo secret
       #   (`secrets.RAILS_MASTER_KEY`), not PR-controlled data.
-      # - The "Export Chromium path" step writes a locally-resolved
-      #   filesystem path (from `command -v` / a pinned setup action's
-      #   output), not PR-controlled data.
       - pr-screenshots-publish.yml:73
       - pr-screenshots.yml:143
-      - pr-screenshots.yml:222

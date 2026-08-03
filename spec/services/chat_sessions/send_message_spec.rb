@@ -632,7 +632,7 @@ RSpec.describe ChatSessions::SendMessage do
 
         described_class.call(chat_session: chat_session, content: "Use the workspace", llm_client: container_tool_llm_client)
 
-        expect(Containers::ProvisionForChat).to have_received(:call).with(chat_session: chat_session)
+        expect(Containers::ProvisionForChat).to have_received(:call).with(hash_including(chat_session: chat_session))
         expect(chat_session.messages.where(content: "Preparing workspace...")).to exist
         expect(chat_session.messages.where(role: "tool", content: container_tool_result.to_json)).to exist
       end
@@ -646,7 +646,7 @@ RSpec.describe ChatSessions::SendMessage do
 
         described_class.call(chat_session: chat_session, content: "Use the workspace", llm_client: container_tool_llm_client)
 
-        expect(Containers::ProvisionForChat).to have_received(:call).with(chat_session: chat_session)
+        expect(Containers::ProvisionForChat).to have_received(:call).with(hash_including(chat_session: chat_session))
         expect(chat_session.messages.where(content: "Preparing workspace...")).to exist
         expect(chat_session.messages.where(role: "tool", content: container_tool_result.to_json)).to exist
       end

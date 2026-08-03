@@ -142,19 +142,27 @@ module Containers
     # @param preserve_state [Boolean] Whether to keep the workspace and state volumes
     def cleanup!(preserve_state: false)
       log("cleanup.start")
-
-      if chat_session.container_id.present?
-        stop_and_remove_container
-      end
-
-      unless preserve_state
-        remove_workspace_volume
-        remove_state_volume
-      end
-
+      release_resources!(preserve_state:)
       chat_session.update!(container_capability: "stopped", container_id: nil, workspace_volume: nil)
       @container = nil
       log("cleanup.success")
+    end
+
+    # Stops and removes the provisioned container and (unless +preserve_state+)
+    # its workspace and state volumes. Unlike #cleanup!, it does not change
+    # chat-session state — the caller owns the resulting capability transition.
+    # Used by failure paths (e.g. reopen-restore failure) that must reclaim the
+    # just-provisioned resources before recording a failure, so a retry provisions
+    # fresh resources instead of leaking a running container whose stale ids stay
+    # attached to the session.
+    #
+    # @param preserve_state [Boolean] Whether to keep the workspace and state volumes
+    def release_resources!(preserve_state: false)
+      stop_and_remove_container if chat_session.container_id.present?
+      return if preserve_state
+
+      remove_workspace_volume
+      remove_state_volume
     end
 
     private

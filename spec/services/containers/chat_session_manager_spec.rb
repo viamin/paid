@@ -335,4 +335,24 @@ RSpec.describe Containers::ChatSessionManager do
       end
     end
   end
+
+  describe "#release_resources!" do
+    it "removes the container and volumes without recording a state transition" do
+      expect(mock_container).to receive(:stop).with(timeout: 10)
+      expect(mock_container).to receive(:delete).with(force: true, v: true)
+      expect(mock_volume).to receive(:remove).twice
+
+      expect {
+        manager.release_resources!
+      }.not_to change {
+        chat_session.reload.attributes.slice("container_capability", "container_id", "workspace_volume")
+      }
+    end
+
+    it "keeps the workspace and state volumes when preserve_state is true" do
+      expect(Docker::Volume).not_to receive(:get)
+
+      manager.release_resources!(preserve_state: true)
+    end
+  end
 end

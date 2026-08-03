@@ -156,9 +156,14 @@ RSpec.describe RetryTimedOutIssueGoalJob do
       # Create an active (queued) run for the same project+issue to trigger unique index
       create(:agent_run, :create_issue_goal, project: project, issue: issue, status: "queued")
 
-      expect { described_class.perform_now(agent_run.id) }
-        .to have_enqueued_job(ProcessRunQueueJob)
+      ActiveJob::Base.queue_adapter.enqueued_jobs.clear
+      described_class.perform_now(agent_run.id)
 
+      process_queue_jobs = ActiveJob::Base.queue_adapter.enqueued_jobs.count do |job|
+        job[:job] == ProcessRunQueueJob
+      end
+
+      expect(process_queue_jobs).to eq(1)
       expect(AgentRun.count).to eq(2) # original + existing active, no new retry
       expect(agent_run.reload.status).to eq("retried")
       expect(OrchestrationDecision.last.outputs["retry_attempt"]).to eq(1)
