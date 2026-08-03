@@ -137,7 +137,7 @@ RSpec.describe Containers::ProvisionForChat do
   end
 
   it "provisions the workspace and writes a file via the mutation tool" do
-    result = described_class.call(chat_session:)
+    result = described_class.call(chat_session:, seed_project: true)
     expect(result).to be_success
 
     chat_session.reload
@@ -158,7 +158,7 @@ RSpec.describe Containers::ProvisionForChat do
   end
 
   it "lets the mutation tool authorize against the manifest entry recorded by provisioning" do
-    described_class.call(chat_session:)
+    described_class.call(chat_session:, seed_project: true)
 
     chat_session.reload
     expect(chat_session.clone_manifest_entries).not_to be_empty

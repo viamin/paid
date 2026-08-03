@@ -300,6 +300,7 @@
               <%= link_to "Labels", edit_project_path(@project, anchor: "labels"), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
               <%= link_to "MCP Servers", edit_project_path(@project, anchor: "mcp-servers"), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
               <%= link_to "Conventions", project_convention_settings_path(@project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+              <%= link_to "Health", project_health_check_path(@project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
             </div>
           </div>
         </div>

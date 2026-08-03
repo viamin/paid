@@ -5,15 +5,19 @@
 ## Metadata
 
 - **Date**: 2025-01-23
-- **Status**: Superseded
+- **Status**: Partially Implemented, Partially Superseded
 - **Type**: Architecture
 - **Priority**: High
-- **Related Issues**: N/A (foundational decision)
+- **Related Issues**: #3113 (Gitleaks secret scanning — closed, shipped via #3123), #3114 (Zizmor workflow security scanning — closed, shipped via this change)
 - **Related Tests**: Hook execution tests, CI pipeline tests, linter integration tests
 
 ## Implementation Status
 
-Superseded by later concrete quality systems rather than implemented exactly as written. Paid now enforces quality through repository CI/security workflows, `.githooks/pre-commit`, container pre-commit hooks, `PreCommitRequirement` evaluation, project convention guardrails, quality gates/recovery, and mutation backpressure from RDR-036. The original Lefthook/pre-push/SARIF-oriented shape and broad `QualityConfiguratorService` / `RunQualityChecksActivity` design were not adopted as-is.
+Most of this RDR was superseded by later concrete quality systems rather than implemented as written:
+
+- **Superseded** (different mechanism, same purpose — no gap): Lefthook → `.githooks/pre-commit` + `bin/lint`; the proposed CI lint/security/test/performance jobs → `.github/workflows/ci.yml` + `security.yml` (`bin/audit`: secret scan, Brakeman, bundler-audit, yarn audit); `PrReviewService` → `paid-code-reviewer[bot]` GitHub App + `claude-code-review.yml`; Layer 2's per-language container feedback loop → `Containers::QualityHooks` / container git hooks; Layer 3's `QualityConfiguratorService` → `PreCommitRequirement` (DB-backed, account/user/project-configurable); the per-run `RunQualityChecksActivity` retry loop → cross-run statistical gating via `CheckQualityGateActivity` and mutation backpressure from RDR-036.
+- **Implemented** (matches original intent): Gitleaks secret-content scanning, both pre-commit (`bin/secret-scan --staged` via `.githooks/pre-commit`) and CI (`bin/audit` / `security.yml`), shipped in #3123 closing #3113. Zizmor GitHub Actions workflow security scanning, CI-only via `bin/zizmor-scan` and the `workflow-scan` job in `security.yml`, closing #3114. Findings are triaged directly (fixed) or suppressed narrowly with a justification comment in `.github/zizmor.yml`, matching the plain job-failure model the other `bin/audit` tools already use rather than SARIF/code-scanning upload.
+- **Not adopted, not tracked as a gap**: the broad `QualityConfiguratorService` file-generation approach for target/customer projects, and the literal `QualityFeedbackService`/`RunQualityChecksActivity` class shapes — the functional needs these addressed are covered by the superseded mechanisms above.
 
 ## Problem Statement
 

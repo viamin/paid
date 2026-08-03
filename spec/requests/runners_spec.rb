@@ -607,20 +607,8 @@ RSpec.describe "Runners" do
 
     it "creates an openrouter_free runner with default free tier mappings" do
       api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
-      create(:llm_model, model_id: "free-low", provider: "openrouter", tier: "low", pricing_tier: "free", capability_score: 4.0)
-      create(:llm_model, model_id: "free-mid", provider: "openrouter", tier: "mid", pricing_tier: "free", capability_score: 6.0)
-      create(:llm_model, model_id: "free-high", provider: "openrouter", tier: "high", pricing_tier: "free", capability_score: 8.0)
-
-      post runners_path, params: {
-        runner: {
-          runner_key: "openrouter_free",
-          auth_type: "api_key",
-          provider_api_key_id: api_key.id,
-          enabled_for_agent_runs: true,
-          enabled_for_fallback: true
-        }
-      }
-
+      seed_openrouter_synced_free_models
+      post_create_openrouter_free_runner(api_key:)
       expect(response).to redirect_to(runners_path)
       expect(user.runners.find_by!(runner_key: "openrouter_free", auth_type: "api_key").tier_model_ids).to eq(
         "low" => "free-low",
@@ -904,7 +892,8 @@ RSpec.describe "Runners" do
 
     it "prefills openrouter_free setup from the catalog link" do
       create(:provider_api_key, user: user, api_service_type: "openrouter", name: "OpenRouter")
-      create(:llm_model, model_id: "high-free", provider: "openrouter", tier: "high", pricing_tier: "free")
+      create(:llm_model, model_id: "high-free", provider: "deepseek", tier: "high", pricing_tier: "free",
+        catalog_source: "openrouter_sync")
       allow(RunnerSupport).to receive(:addable_runner_keys).and_return(%w[claude openrouter_free])
 
       get new_runner_path(form_variant: "api_key", runner_key: "openrouter_free")
@@ -1226,5 +1215,26 @@ RSpec.describe "Runners" do
       expect(Runner.kept_only.find_by(id: runner.id)).to be_nil
       expect(Runner.with_discarded.find(runner.id)).to be_discarded
     end
+  end
+
+  def seed_openrouter_synced_free_models
+    create(:llm_model, model_id: "free-low", provider: "deepseek", tier: "low", pricing_tier: "free", capability_score: 4.0,
+      catalog_source: "openrouter_sync")
+    create(:llm_model, model_id: "free-mid", provider: "moonshotai", tier: "mid", pricing_tier: "free", capability_score: 6.0,
+      catalog_source: "openrouter_sync")
+    create(:llm_model, model_id: "free-high", provider: "qwen", tier: "high", pricing_tier: "free", capability_score: 8.0,
+      catalog_source: "openrouter_sync")
+  end
+
+  def post_create_openrouter_free_runner(api_key:)
+    post runners_path, params: {
+      runner: {
+        runner_key: "openrouter_free",
+        auth_type: "api_key",
+        provider_api_key_id: api_key.id,
+        enabled_for_agent_runs: true,
+        enabled_for_fallback: true
+      }
+    }
   end
 end

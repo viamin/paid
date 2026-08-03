@@ -10,8 +10,10 @@ module Runners
   # - `harvest(provisioner:)` delegates provider-specific writeback ownership.
   # - `rotation_risk` / `remote_safe?` expose scheduler-facing facts.
   #
-  # Claude is the first fully wired adapter here. Other providers keep an
-  # explicit unsupported adapter entry until their lifecycle work lands.
+  # Claude, Codex, Gemini, and Copilot each have a concrete adapter. Gemini and
+  # Copilot materialize the minimal native CLI config from a managed
+  # RunnerCredential (#2964); their refresh/harvest ownership is deferred until
+  # telemetry proves reliability, so those methods return unsupported.
   class SubscriptionAuthProviders
     Status = Struct.new(
       :state,
@@ -417,11 +419,184 @@ module Runners
       end
     end
 
+    # Gemini managed subscription auth (RDR-041 / #2964). The stored secret is
+    # the Gemini CLI's native `~/.gemini/oauth_creds.json` (a Google OAuth
+    # access/refresh token payload). The adapter regenerates only the fields
+    # the CLI reads for authentication, so a managed credential can carry a run
+    # to a remote Docker backend without a host bind mount.
+    #
+    # Refresh and harvest are deferred until a provider login flow and
+    # lease-through-run harvest land (#2964 follow-up), so those methods return
+    # the unsupported contract result.
+    class Gemini < Base
+      CREDS_PATH = "/home/agent/.gemini/oauth_creds.json"
+
+      def initialize
+        super(runner_key: "gemini")
+      end
+
+      def status(secret:)
+        classify(secret).first
+      end
+
+      def materialize(secret:)
+        status, parsed = classify(secret)
+        return unsupported_materialization if status.unsupported?
+        return malformed_materialization(status) unless status.materializable?
+
+        Materialization.new(
+          supported: true,
+          mode: SubscriptionAuthMaterializers::MATERIALIZE_NATIVE_FILE,
+          env: {},
+          files: { CREDS_PATH => parsed.oauth_creds_json },
+          redacted_metadata: status.redacted_metadata,
+          error: nil
+        )
+      end
+
+      private
+
+      def blank_status
+        Status.new(
+          state: :blank,
+          expires_at: nil,
+          refreshable: false,
+          materialization_mode: materialization_mode,
+          rotation_risk: rotation_risk,
+          remote_safe: remote_safe?,
+          redacted_metadata: { "materialized" => false },
+          error: "blank"
+        )
+      end
+
+      def malformed_materialization(status)
+        Materialization.new(
+          supported: false,
+          mode: status.materialization_mode,
+          env: {},
+          files: {},
+          redacted_metadata: status.redacted_metadata,
+          error: status.error
+        )
+      end
+
+      # GeminiCredentials::Secret treats any non-oath JSON payload as blank
+      # (no malformed distinction), so classify only needs blank vs valid/expired.
+      def classify(secret)
+        value = secret.to_s
+        return [ blank_status, nil ] if value.blank?
+
+        parsed = GeminiCredentials::Secret.parse(value)
+        return [ blank_status, nil ] unless parsed.oauth_credentials?
+        return [ blank_status, nil ] if parsed.access_token.blank? && parsed.refresh_token.blank?
+
+        expires_at = parsed.expires_at
+        expired = expires_at.present? && expires_at <= Time.current
+        [ Status.new(
+          state: expired ? :expired : :valid,
+          expires_at: expires_at,
+          refreshable: parsed.refresh_token.present?,
+          materialization_mode: SubscriptionAuthMaterializers::MATERIALIZE_NATIVE_FILE,
+          rotation_risk: SubscriptionAuthMaterializers::ROTATION_CONTAINER_MAY_ROTATE,
+          remote_safe: remote_safe?,
+          redacted_metadata: parsed.redacted_metadata,
+          error: expired ? "expired" : nil
+        ), parsed ]
+      end
+    end
+
+    # Copilot managed subscription auth (RDR-041 / #2964). The stored secret is
+    # the Copilot CLI's native `~/.copilot/config.json`, whose OAuth token may
+    # live under any of the keys the CLI has used across versions. The adapter
+    # regenerates a minimal config carrying only the OAuth token plus non-secret
+    # lifecycle hints, so a managed credential can carry a run to a remote
+    # Docker backend without a host bind mount.
+    #
+    # Refresh and harvest are deferred until a provider login flow and
+    # lease-through-run harvest land (#2964 follow-up), so those methods return
+    # the unsupported contract result.
+    class Copilot < Base
+      CONFIG_PATH = "/home/agent/.copilot/config.json"
+
+      def initialize
+        super(runner_key: "copilot")
+      end
+
+      def status(secret:)
+        classify(secret).first
+      end
+
+      def materialize(secret:)
+        status, parsed = classify(secret)
+        return unsupported_materialization if status.unsupported?
+        return malformed_materialization(status) unless status.materializable?
+
+        Materialization.new(
+          supported: true,
+          mode: SubscriptionAuthMaterializers::MATERIALIZE_NATIVE_FILE,
+          env: {},
+          files: { CONFIG_PATH => parsed.config_json },
+          redacted_metadata: status.redacted_metadata,
+          error: nil
+        )
+      end
+
+      private
+
+      def blank_status
+        Status.new(
+          state: :blank,
+          expires_at: nil,
+          refreshable: false,
+          materialization_mode: materialization_mode,
+          rotation_risk: rotation_risk,
+          remote_safe: remote_safe?,
+          redacted_metadata: { "materialized" => false },
+          error: "blank"
+        )
+      end
+
+      def malformed_materialization(status)
+        Materialization.new(
+          supported: false,
+          mode: status.materialization_mode,
+          env: {},
+          files: {},
+          redacted_metadata: status.redacted_metadata,
+          error: status.error
+        )
+      end
+
+      # CopilotCredentials::Secret treats any non-Copilot JSON payload as blank
+      # (no malformed distinction), so classify only needs blank vs valid/expired.
+      def classify(secret)
+        value = secret.to_s
+        return [ blank_status, nil ] if value.blank?
+
+        parsed = CopilotCredentials::Secret.parse(value)
+        return [ blank_status, nil ] unless parsed.copilot_config?
+        return [ blank_status, nil ] if parsed.oauth_token.blank?
+
+        expires_at = parsed.expires_at
+        expired = expires_at.present? && expires_at <= Time.current
+        [ Status.new(
+          state: expired ? :expired : :valid,
+          expires_at: expires_at,
+          refreshable: parsed.refresh_token.present?,
+          materialization_mode: SubscriptionAuthMaterializers::MATERIALIZE_NATIVE_FILE,
+          rotation_risk: SubscriptionAuthMaterializers::ROTATION_CONTAINER_MAY_ROTATE,
+          remote_safe: remote_safe?,
+          redacted_metadata: parsed.redacted_metadata,
+          error: expired ? "expired" : nil
+        ), parsed ]
+      end
+    end
+
     REGISTRY = {
       "claude" => Claude.new,
       "codex" => Codex.new,
-      "gemini" => Base.new(runner_key: "gemini"),
-      "copilot" => Base.new(runner_key: "copilot")
+      "gemini" => Gemini.new,
+      "copilot" => Copilot.new
     }.freeze
 
     class << self

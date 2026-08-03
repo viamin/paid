@@ -581,6 +581,18 @@ RSpec.describe "ChatSessions" do
         expect(chat_session.reload).to be_auto_approve
       end
 
+      # @spec CHAT-SESSION-PREFERENCES-001
+      it "updates the auto-approve flag in place for Turbo Stream requests" do
+        patch chat_session_path(chat_session),
+          params: { chat_session: { auto_approve: "true" } },
+          headers: { "Accept" => "text/vnd.turbo-stream.html" }
+
+        expect(response).to have_http_status(:no_content)
+        expect(response.headers["Location"]).to be_blank
+        expect(response.body).to be_blank
+        expect(chat_session.reload).to be_auto_approve
+      end
+
       it "updates values submitted under chat_session params" do
         patch chat_session_path(chat_session), params: { chat_session: { title: "Updated From Form", model: "gpt-4.1" } }
 

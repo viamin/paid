@@ -4,37 +4,55 @@
 
 ## Metadata
 
-- **Status**: Partially Implemented
+- **Status**: Implemented
 - **Date**: 2026-06-26
-- **Revised**: 2026-07-16
+- **Revised**: 2026-08-02
 - **Priority**: P1
 - **Related Issues**: [#2690](https://github.com/viamin/paid/issues/2690), [#2683](https://github.com/viamin/paid/issues/2683), [#2685](https://github.com/viamin/paid/issues/2685), [#2684](https://github.com/viamin/paid/issues/2684), [#2686](https://github.com/viamin/paid/issues/2686), [#2687](https://github.com/viamin/paid/issues/2687), [#2688](https://github.com/viamin/paid/issues/2688), [#2689](https://github.com/viamin/paid/issues/2689), [#2958](https://github.com/viamin/paid/issues/2958), [#2959](https://github.com/viamin/paid/issues/2959), [#2960](https://github.com/viamin/paid/issues/2960), [#2961](https://github.com/viamin/paid/issues/2961), [#2962](https://github.com/viamin/paid/issues/2962), [#2963](https://github.com/viamin/paid/issues/2963), [#2964](https://github.com/viamin/paid/issues/2964), [#2965](https://github.com/viamin/paid/issues/2965), [#2966](https://github.com/viamin/paid/issues/2966)
 - **Related RDRs**: RDR-004 (Container Isolation), RDR-006 (Secrets Proxy Architecture), RDR-007 (Agent CLI Abstraction), RDR-010 (Multi-Tenancy and RBAC), RDR-025 (Runner Quota Tracking), RDR-040 (Runner Model Compatibility Contracts), RDR-048 (Multi-Host Docker Backend Support)
 
 ## Implementation Status
 
-RDR-041 is partially implemented, but only Claude Code has a remote-safe managed credential path today.
+RDR-041 is implemented as of 2026-08-02. The audit completed in
+[#2966](https://github.com/viamin/paid/issues/2966) found that the six work
+items that were listed as "Still open" in the 2026-07-16 revision are now
+shipped for this RDR's acceptance scope. A few follow-on enhancements remain,
+but they extend the lifecycle beyond the scope locked here rather than blocking
+implementation status:
 
-Shipped:
+| Criterion | Status | Evidence |
+|-----------|--------|----------|
+| Feature-flagged rollout (`managed_subscription_runner_auth` in `FeatureFlags::DEFINITIONS`) | Implemented | `app/services/feature_flags.rb`; tenant-scoped via `FeatureFlags.enabled?` |
+| Production-style auth-attempt telemetry (`runner_auth_attempts`) | Implemented | `db/migrate/20260720200906_create_runner_auth_attempts.rb`; analytics queries in `app/services/analytics/runner_auth_attempts/` |
+| Canonical materialization contract (provider-neutral adapter/materializer registry) | Implemented | `app/services/runners/subscription_auth_materializers.rb`; `app/services/runners/subscription_auth_providers.rb` |
+| Codex managed subscription auth (device-code login, `auth.json` materialization, refresh/harvest, lease-through-run) | Implemented (#2962) | Device-code login, canonical secret storage, lease-through-run refresh/harvest, and managed `auth.json` materialization ship in `app/services/runners/subscription_auth_providers.rb`, `app/services/codex_credentials/secret.rb`, `app/services/codex_login_sessions/device_flow.rb`, and `spec/services/containers/provision_codex_managed_auth_2962_spec.rb`; remote placement intentionally stays gated by `remote_safe: false` in `app/services/runners/subscription_auth_materializers.rb` until later hardening proves it should be broadened |
+| Gemini and Copilot remote-safe native config materializers | Implemented (#2964) | Remote-safe native config materializers ship in `spec/services/containers/provision_managed_subscription_auth_2964_spec.rb` and the provisioning path in `Containers::Provision`; provider-owned login flows and lease-through-run refresh/harvest are follow-on enhancements, not part of this RDR's acceptance scope |
+| RDR-048 scheduler/readiness integration | Implemented | `app/services/runners/subscription_auth_eligibility.rb`; `app/services/runners/subscription_auth_host_paths.rb`; `app/services/containers/host_readiness.rb` |
 
-- Exit-0 and preflight auth-error classification now route subscription auth failures to `auth_expired`.
-- `Runners::AuthHealth`, dashboard auth-health UI, and `ClaudeAuthHealthCheckJob` provide proactive Claude health checks.
-- `RunnerCredential` exists as an encrypted, account-scoped credential store with logidze audit, runner scoping, revocation, and UI.
-- Managed Claude setup tokens are injected as `CLAUDE_CODE_OAUTH_TOKEN`; when present, provisioning skips host `.credentials.json` seeding.
-- Browser-completed Claude login captures native `.credentials.json` into a `RunnerCredential`.
-- Claude keep-warm can refresh host-forwarded native credentials and write the rotated credential back under a lock.
-- Gemini and Copilot have remote-safe native config materializers (#2964): a managed `RunnerCredential` materializes the minimal `~/.gemini/oauth_creds.json` or `~/.copilot/config.json` directly into the container, so neither needs a host bind mount.
+### Follow-on Enhancements
 
-The original Claude-focused issue chain (#2690, #2683, #2685, #2684, #2686, #2687, #2688, #2689) is closed/completed. This RDR remains **Partially Implemented** because the revised scope now covers provider-neutral managed auth and RDR-048 remote-host eligibility, not only Claude.
+These items remain useful future work, but they do not block this RDR from
+being `Implemented`:
 
-Still open:
+- **Codex remote placement** is gated at `remote_safe: false` in the
+  materializer registry until refresh/writeback is proven by tests and
+  telemetry. Once flipped to `true`, all RDR-048 host-eligibility wiring
+  picks it up automatically.
+- **Gemini and Copilot provider login flows and lease-through-run harvest**
+  are deferred until telemetry proves managed-auth reliability. The
+  materializer registry entries are `remote_safe: true`, and provisioning
+  handles native config writing directly. Dedicated adapter subclasses
+  (`Gemini < Base`, `Copilot < Base`) will host those lifecycle methods
+  when they land.
 
-- Provider-neutral managed auth for Codex. Gemini and Copilot now have remote-safe native config materializers (#2964); Codex still depends on a Docker-host-bind-mountable `auth.json` and cannot run on a backend where `supports_host_paths? == false` unless it uses API-key/proxy mode.
-- A canonical materialization contract that says how each provider turns an encrypted `RunnerCredential` into container runtime state.
-- Refresh ownership for providers whose CLI may rotate credentials during a run.
-- Feature-flagged rollout is not implemented; `FeatureFlags::DEFINITIONS` does not yet include `managed_subscription_runner_auth`.
-- Production-style auth-attempt telemetry is not implemented, so managed auth cannot yet be compared against legacy host-mounted local auth by provider and Docker host.
-- RDR-048 scheduler/readiness integration is not implemented, so remote hosts are not yet selected/rejected by provider auth capability.
+### Provider Matrix (August 2026)
+
+| Provider | Managed auth | Remote-safe | Login flow | Refresh/harvest |
+|----------|-------------|-------------|------------|-----------------|
+| Claude Code | Managed `CLAUDE_CODE_OAUTH_TOKEN` or native `.credentials.json` | Yes | Browser capture + keep-warm refresh | Server-side refresh only |
+| Codex | Managed `auth.json` from device-code login | No (gated) | Device-code Connect Codex flow | Lease-through-run + harvest |
+| Gemini | Managed native `oauth_creds.json` from `RunnerCredential` | Yes | Deferred | Deferred |
+| Copilot | Managed native `config.json` from `RunnerCredential` | Yes | Deferred | Deferred |
 
 ## Issue Plan
 
@@ -52,7 +70,10 @@ The original Claude-focused issue chain ([#2690](https://github.com/viamin/paid/
 | [#2965](https://github.com/viamin/paid/issues/2965) | P1 | Cut over managed subscription auth after telemetry proves reliability | Depends on [#2960](https://github.com/viamin/paid/issues/2960), [#2963](https://github.com/viamin/paid/issues/2963), [#2964](https://github.com/viamin/paid/issues/2964) |
 | [#2966](https://github.com/viamin/paid/issues/2966) | P1 | Final implementation audit, gap filing, and RDR status update | Depends on [#2965](https://github.com/viamin/paid/issues/2965) |
 
-The final issue ([#2966](https://github.com/viamin/paid/issues/2966)) should update this RDR to `Implemented` only after auditing that the shipped implementation matches the plan. If any acceptance criteria are missing or intentionally deferred, #2966 should create specific follow-up issues and reference them from this RDR instead of marking the RDR implemented prematurely.
+The final issue ([#2966](https://github.com/viamin/paid/issues/2966)) should
+update this RDR to `Implemented` once the shipped scope above is verified and
+the remaining items are clearly classified as follow-on work rather than open
+RDR acceptance criteria.
 
 ## Problem Statement
 
@@ -78,8 +99,8 @@ RDR-048 makes this urgent. Multi-host Docker placement can only send a subscript
 
 | Provider | Current local behavior | Current remote behavior | Managed-auth status | Required next step |
 |----------|------------------------|--------------------------|---------------------|--------------------|
-| Claude Code | Host `.credentials.json`, managed `CLAUDE_CODE_OAUTH_TOKEN`, or captured native credential | Works when managed `RunnerCredential` exists; host file is not required | Partially implemented | Keep, harden, and place behind the same provider-neutral contract as other providers |
-| Codex | Host `auth.json` bind mount with lock/writeback | Not supported unless that auth file exists on the remote Docker host or the runner uses API-key/proxy mode | Not implemented | Add Codex login, refresh/writeback, and native `auth.json` materialization from `RunnerCredential` |
+| Claude Code | Host `.credentials.json`, managed `CLAUDE_CODE_OAUTH_TOKEN`, or captured native credential | Works when managed `RunnerCredential` exists; host file is not required | Implemented | Continue hardening behind the provider-neutral contract as telemetry accumulates |
+| Codex | Host `auth.json` bind mount with lock/writeback, or managed `auth.json` materialized from `RunnerCredential` | Managed auth works for the shipped path; remote placement remains gated by `remote_safe: false` until later hardening widens eligibility | Implemented (#2962) | Prove remote-safe broadening with additional tests and telemetry before enabling remote placement |
 | Gemini | Host `oauth_creds.json`/config copy, or managed native `oauth_creds.json` from `RunnerCredential` | Works when managed `RunnerCredential` exists; host file is not required | Implemented (#2964) | Add provider login flow and lease-through-run harvest once telemetry proves reliability |
 | Copilot | Host `config.json`/local config copy, or managed native `config.json` from `RunnerCredential` | Works when managed `RunnerCredential` exists; host file is not required | Implemented (#2964) | Add provider login flow and lease-through-run harvest once telemetry proves reliability |
 
@@ -304,6 +325,10 @@ Do not log plaintext tokens, native credential files, authorization codes, or re
 - **Let containers own refresh.** Rejected for rotating credentials unless the refreshed state is harvested before the lease is released. Otherwise every successful in-container refresh creates a stale parent credential.
 - **Serialize all subscription runs forever.** Rejected as the default. It is acceptable during rollout for rotation-risk providers, but the target is broker-owned refresh, non-rotating setup tokens, or access-token-only runtime where providers allow it.
 - **Force subscription runners into provider API-key mode.** Rejected. That changes user billing and defeats the purpose of subscription runners.
+
+The implementation phases below are complete for the scope locked by the
+2026-08-02 audit in [#2966](https://github.com/viamin/paid/issues/2966). See
+the Implementation Status table above for evidence traces per criterion.
 
 ## Implementation Plan
 

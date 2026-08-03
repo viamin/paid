@@ -205,6 +205,47 @@ class ChatControllerNodeHarness
       }
     }
 
+    function testSystemNoticeReplacementTargetsTopLevelElement() {
+      const replacement = { outerHTML: "<details>replacement</details>" };
+      let replacedWith = null;
+      const renderedRoot = {
+        replaceWith: (element) => { replacedWith = element; }
+      };
+      const messageElement = {
+        closest: (selector) => selector === "details, div.flex.justify-start, div.justify-end, div.justify-center" ? renderedRoot : null
+      };
+      const { controller } = makeController({
+        buildMessageElement: () => replacement,
+        messageElementById: () => messageElement,
+        scrollToBottom: () => {}
+      });
+
+      controller.handleMessageCreated({ html: replacement.outerHTML, message_id: "system-1" });
+
+      if (replacedWith !== replacement) {
+        throw new Error("Expected handleMessageCreated to replace the top-level rendered system notice element");
+      }
+    }
+
+    function testSystemNoticeDeletionTargetsTopLevelElement() {
+      let removed = false;
+      const renderedRoot = {
+        remove: () => { removed = true; }
+      };
+      const messageElement = {
+        closest: (selector) => selector === "details, div.flex.justify-start, div.justify-end, div.justify-center" ? renderedRoot : null
+      };
+      const { controller } = makeController({
+        messageElementById: () => messageElement
+      });
+
+      controller.handleMessageDeleted({ message_id: "system-1" });
+
+      if (!removed) {
+        throw new Error("Expected handleMessageDeleted to remove the top-level rendered system notice element");
+      }
+    }
+
     function run() {
       testToolCallAppendsCardAndUpdatesStatus();
       testToolCallWithUnknownToolName();
@@ -216,6 +257,8 @@ class ChatControllerNodeHarness
       testHandleEventDispatchesToolCall();
       testFallbackNoticeRemovesStaleToolCards();
       testRegularMessageCreatedKeepsAttemptToolCards();
+      testSystemNoticeReplacementTargetsTopLevelElement();
+      testSystemNoticeDeletionTargetsTopLevelElement();
     }
 
     try {

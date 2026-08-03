@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 module HealthChecks
+  # Registry of health check classes.
   class Registry
     class << self
       def all
@@ -33,6 +34,9 @@ module HealthChecks
         register(HealthChecks::Checks::Project::MissingGitHubCredential)
         register(HealthChecks::Checks::Project::SensitiveDataFreeModel)
         register(HealthChecks::Checks::Runner::DeprecatedModel)
+        register(HealthChecks::Checks::User::NoAgentRunners)
+        register(HealthChecks::Checks::User::InvalidFallbackChain)
+        register(HealthChecks::Checks::User::MissingDefaultRunner)
         @defaults_loaded = true
       end
     end

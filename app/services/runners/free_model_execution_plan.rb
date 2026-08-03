@@ -18,6 +18,7 @@ module Runners
       @project = project
     end
 
+    # @spec FREE-MODEL-001
     def call
       raise ArgumentError, "OpenRouter API key required" if @runner.effective_api_secret.to_s.blank?
       unless @runner.required_api_service_type == OPENROUTER_PROVIDER_KEY

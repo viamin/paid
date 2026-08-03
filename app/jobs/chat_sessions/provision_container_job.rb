@@ -19,7 +19,7 @@ module ChatSessions
   class ProvisionContainerJob < ApplicationJob
     include GoodJob::ActiveJobExtensions::Concurrency
 
-    queue_as :default
+    queue_as :low_priority
 
     # Container provisioning can take 30-60s (image layer pulls, clone). Bound
     # it so a stuck provision fails loudly instead of pinning a worker thread.
@@ -28,21 +28,20 @@ module ChatSessions
     good_job_control_concurrency_with(
       total_limit: 1,
       enqueue_limit: 1,
-      key: -> { self.class.concurrency_key_for(arguments.first[:chat_session_id]) }
+      key: -> { self.class.concurrency_key_for(arguments.first[:account_id]) }
     )
 
     discard_on ActiveRecord::RecordNotFound
 
-    def self.concurrency_key_for(chat_session_id)
-      "chat_sessions_provision_#{chat_session_id}"
+    def self.concurrency_key_for(account_id)
+      "chat_sessions_provision_account_#{account_id}"
     end
 
-    def perform(chat_session_id:)
+    def perform(chat_session_id:, account_id: nil)
       chat_session = ChatSession.find(chat_session_id)
       return unless chat_session.container_pending? || chat_session.container_provisioning?
 
       Containers::ProvisionForChat.call(chat_session: chat_session)
-      broadcast_capability(chat_session.reload)
     rescue Containers::ProvisionForChat::ProvisionError, Docker::Error::DockerError => e
       handle_provision_failure(chat_session_id, e)
     rescue ActiveRecord::RecordNotFound
@@ -50,6 +49,8 @@ module ChatSessions
     rescue StandardError => e
       handle_provision_failure(chat_session_id, e)
       raise
+    ensure
+      enqueue_next_pending_session(account_id || chat_session&.account_id, exclude_chat_session_id: chat_session_id)
     end
 
     private
@@ -81,6 +82,17 @@ module ChatSessions
         message: "chat_session.provision_container_job.#{action}",
         **metadata
       )
+    end
+
+    def enqueue_next_pending_session(account_id, exclude_chat_session_id:)
+      return if account_id.blank?
+
+      ChatSessions::ReenqueuePendingProvisionJob.perform_later(
+        account_id: account_id,
+        exclude_chat_session_id: exclude_chat_session_id
+      )
+    rescue GoodJob::ActiveJobExtensions::Concurrency::ConcurrencyExceededError
+      nil
     end
   end
 end

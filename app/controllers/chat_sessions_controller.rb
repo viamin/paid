@@ -143,6 +143,8 @@ class ChatSessionsController < ApplicationController
     regenerate_system_message! if project_changed || metadata_changed
 
     respond_to do |format|
+      # @spec CHAT-SESSION-PREFERENCES-001
+      format.turbo_stream { head :no_content }
       format.html { redirect_to chat_session_path(@chat_session), notice: "Chat session updated." }
       format.json { render json: session_json(@chat_session) }
     end

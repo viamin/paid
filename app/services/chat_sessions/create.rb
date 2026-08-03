@@ -99,7 +99,17 @@ module ChatSessions
       return unless session.container_pending?
       return unless eager_provisioning_enabled?
 
-      ChatSessions::ProvisionContainerJob.perform_later(chat_session_id: session.id)
+      ChatSessions::ProvisionContainerJob.perform_later(
+        chat_session_id: session.id,
+        account_id: account.id
+      )
+    rescue GoodJob::ActiveJobExtensions::Concurrency::ConcurrencyExceededError
+      enqueue_pending_provision_recheck
+      Rails.logger.info(
+        message: "chat_sessions.create.provision_container_job_deferred",
+        chat_session_id: session.id,
+        account_id: account.id
+      )
     end
 
     def eager_provisioning_enabled?
@@ -111,6 +121,12 @@ module ChatSessions
       return "none" if ChatSession::CONTAINER_REQUESTED_CAPABILITIES.include?(container_capability)
 
       container_capability
+    end
+
+    def enqueue_pending_provision_recheck
+      ChatSessions::ReenqueuePendingProvisionJob.perform_later(account_id: account.id)
+    rescue GoodJob::ActiveJobExtensions::Concurrency::ConcurrencyExceededError
+      nil
     end
 
     def build_system_prompt(session)
