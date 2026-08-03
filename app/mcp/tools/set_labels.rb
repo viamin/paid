@@ -24,13 +24,20 @@ module Tools
             type: "array",
             items: { type: "string" },
             description: "Complete desired label set"
+          },
+          confirmed: {
+            type: "boolean",
+            description: "Must be true to execute this write operation"
           }
         },
-        required: %w[project_id issue_number labels]
+        required: %w[project_id issue_number labels confirmed]
       }
     end
 
-    def perform(project_id:, issue_number:, labels:)
+    # @spec CHAT-TOOL-CONFIRMATION-001
+    def perform(project_id:, issue_number:, labels:, confirmed: false)
+      raise ArgumentError, "Confirmation required: set confirmed=true to set issue labels" unless confirmed
+
       project = project_for(project_id)
       client = require_github_client!(project)
       repo = project.full_name
