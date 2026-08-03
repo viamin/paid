@@ -499,7 +499,7 @@ module ApplicationHelper
   # request.referer, then falls back to the provided default path.
   # Only internal (same-host, path-only) URLs are accepted to prevent open redirects.
   def back_link_path(default_path)
-    return_to = params[:return_to]
+    return_to = params[:return_to].to_s if params[:return_to].present?
     if return_to.present? && safe_return_path?(return_to)
       return_to
     elsif request.referer.present? && safe_referer?(request.referer)
@@ -798,7 +798,18 @@ module ApplicationHelper
   end
 
   def safe_return_path?(path)
-    path.start_with?("/") && !path.start_with?("//")
+    return false if path.blank?
+
+    # Parse the URI to validate it's a relative path without scheme or host
+    parsed = URI.parse(path.to_s)
+
+    # Reject if scheme or host are present (prevents absolute URLs)
+    return false if parsed.scheme.present? || parsed.host.present?
+
+    # Only accept paths that start with "/" but not "//"
+    path.to_s.start_with?("/") && !path.to_s.start_with?("//")
+  rescue URI::InvalidURIError
+    false
   end
 
   def safe_referer?(url)
