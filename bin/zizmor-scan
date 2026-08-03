@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# @spec REPO-WORKFLOW-SCAN-001, REPO-WORKFLOW-SCAN-002
+set -euo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd "${script_dir}/.." && pwd)"
+
+zizmor_bin="${ZIZMOR_BIN:-$("${repo_root}/bin/install-zizmor" --print-path)}"
+
+cd "${repo_root}"
+
+echo "== Security: GitHub Actions workflow scan (Zizmor) =="
+
+if "${zizmor_bin}" .github/workflows; then
+  exit 0
+fi
+
+echo "Zizmor found workflow security issues: fix them or add a narrow suppression to .github/zizmor.yml with a justification comment." >&2
+exit 1

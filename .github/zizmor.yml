@@ -1,0 +1,52 @@
+# Zizmor configuration for GitHub Actions workflow security scanning.
+# See https://docs.zizmor.sh/configuration/ for the schema.
+#
+# Every ignore below is a deliberate, reviewed suppression — not a blanket
+# disable. When editing a referenced workflow, re-run `bin/zizmor-scan` and
+# update the line reference (or remove the entry) if it no longer applies.
+rules:
+  cache-poisoning:
+    ignore:
+      # agent-image.yml builds and pushes the agent Docker image itself; it
+      # does not consume a third-party build/publish action whose cache could
+      # be poisoned by an untrusted PR. `ruby/setup-ruby`'s bundler cache is
+      # scoped to this trusted, same-repo workflow (schedule/push to main
+      # only — no `pull_request` trigger), so there is no untrusted input
+      # that could poison it.
+      - agent-image.yml:243
+
+  artipacked:
+    ignore:
+      # ephemeral-cleanup.yml intentionally relies on the checkout step's
+      # persisted credential: it commits a cleanup change and pushes it back
+      # to `main` (`git push origin "$branch"`). Setting
+      # `persist-credentials: false` here would break that push. The
+      # workflow only runs on a schedule (no `pull_request` trigger), so
+      # there is no untrusted-PR exposure.
+      - ephemeral-cleanup.yml:35
+
+  dangerous-triggers:
+    ignore:
+      # Both workflows gate all `pull_request_target`/`pull_request` handling
+      # of secrets and privileged actions behind same-repo and trusted-author
+      # checks, and never check out or execute untrusted PR head content:
+      # - pr-screenshots-publish.yml only checks out
+      #   `github.event.pull_request.base.sha` (trusted base-branch code).
+      # - pr-screenshots.yml's `pull_request_target` usage is scoped to
+      #   `types: [ closed ]` for the `cleanup-storage` job, which also
+      #   checks out trusted `main` code, not the PR head.
+      - pr-screenshots-publish.yml:3
+      - pr-screenshots.yml:4
+
+  github-env:
+    ignore:
+      # Each of these writes a value to $GITHUB_ENV that originates from a
+      # trusted source, not attacker-controlled PR content:
+      # - The "Normalize test master key" step writes a repo secret
+      #   (`secrets.RAILS_MASTER_KEY`), not PR-controlled data.
+      # - The "Export Chromium path" step writes a locally-resolved
+      #   filesystem path (from `command -v` / a pinned setup action's
+      #   output), not PR-controlled data.
+      - pr-screenshots-publish.yml:73
+      - pr-screenshots.yml:143
+      - pr-screenshots.yml:222

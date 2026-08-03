@@ -53,6 +53,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Normalize test master key
         if: env.RAILS_TEST_KEY == ''
@@ -73,10 +74,12 @@ jobs:
         run: bundle exec bin/rails db:prepare
 
       - name: Mutant incremental
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
           mkdir -p tmp
           set +e
-          bundle exec mutant run --since origin/${{ github.base_ref }} 2>&1 | tee "$MUTANT_OUTPUT_FILE"
+          bundle exec mutant run --since "origin/${BASE_REF}" 2>&1 | tee "$MUTANT_OUTPUT_FILE"
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ] && grep -Fq "No subjects matched the configured diff filter. No mutations to test." "$MUTANT_OUTPUT_FILE"; then
             echo "Mutant found no changed configured subjects; treating incremental run as a pass."
@@ -115,6 +118,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Normalize test master key
         if: env.RAILS_TEST_KEY == ''

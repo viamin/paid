@@ -6,8 +6,9 @@ name: Ephemeral PR Tests
 # Security model:
 #   - Only runs for same-repo PRs (trusted collaborators).
 #   - Fork PRs are explicitly excluded — no secret access, no execution.
-#   - GITHUB_TOKEN is scoped to contents:read + checks:write +
-#     pull-requests:write + issues:write (for posting result comments) only.
+#   - GITHUB_TOKEN is scoped to contents:read at the workflow level; only the
+#     comment-results job additionally needs issues:write (for posting result
+#     comments via the Issues API, which PR conversation comments use).
 #   - Tests run through standard RSpec / Capybara / Playwright — no raw
 #     shell execution from PR content.
 #   - Hard 20-minute timeout prevents runaway tests.
@@ -18,9 +19,6 @@ on:
 
 permissions:
   contents: read
-  checks: write
-  pull-requests: write
-  issues: write
 
 concurrency:
   group: ephemeral-tests-${{ github.workflow }}-${{ github.ref }}
@@ -38,6 +36,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
 
       - name: Check for test files
         id: check
@@ -96,6 +96,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
 
       - name: Normalize test master key
         if: env.RAILS_TEST_KEY == ''
@@ -193,12 +195,16 @@ jobs:
       )
       && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     steps:
       - name: Update PR comment
         env:
           GITHUB_TOKEN: ${{ github.token }}
           HAS_TESTS: ${{ needs.detect.outputs.has_tests }}
           RUN_TESTS_RESULT: ${{ needs.run-tests.result }}
+          BASE_REF: ${{ github.base_ref }}
         run: |
           marker="<!-- ephemeral-tests-result -->"
           existing_comment_id=$(gh api \
@@ -221,7 +227,7 @@ jobs:
             body="${marker}
           ## Ephemeral Tests: passed
 
-          All one-off tests passed. These tests will not run on \`${{ github.base_ref }}\` after merge."
+          All one-off tests passed. These tests will not run on \`${BASE_REF}\` after merge."
           else
             body="${marker}
           ## Ephemeral Tests: ${conclusion}

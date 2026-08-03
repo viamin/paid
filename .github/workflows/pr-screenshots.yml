@@ -41,6 +41,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b
@@ -132,6 +133,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
 
       - name: Normalize test master key
         if: env.RAILS_TEST_KEY == ''
@@ -210,7 +213,7 @@ jobs:
       - name: Set up Chrome fallback
         id: setup_chrome
         if: steps.locate_chromium.outputs.chrome_path == ''
-        uses: browser-actions/setup-chrome@v2
+        uses: browser-actions/setup-chrome@2e1d749697dd1612b833dba4a722266286fbefcd # v2.1.2
 
       - name: Export Chromium path
         env:
@@ -231,7 +234,16 @@ jobs:
         env:
           UI_FILES_B64: ${{ needs.detect.outputs.ui_files }}
         run: |
-          printf 'CHANGED_FILES<<EOF\n%s\nEOF\n' "$(printf '%s' "$UI_FILES_B64" | base64 -d)" >> "$GITHUB_ENV"
+          # Use a random delimiter (rather than a static "EOF") so a crafted
+          # changed-file path cannot break out of the heredoc and inject
+          # arbitrary GITHUB_ENV assignments.
+          delimiter="ghadelim_$(openssl rand -hex 16)"
+          {
+            echo "CHANGED_FILES<<${delimiter}"
+            printf '%s' "$UI_FILES_B64" | base64 -d
+            echo
+            echo "${delimiter}"
+          } >> "$GITHUB_ENV"
 
       - name: Build assets
         run: yarn build && yarn build:css
@@ -287,6 +299,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b
