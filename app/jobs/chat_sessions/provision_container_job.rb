@@ -49,6 +49,8 @@ module ChatSessions
     rescue StandardError => e
       handle_provision_failure(chat_session_id, e)
       raise
+    ensure
+      enqueue_next_pending_session(account_id || chat_session&.account_id, exclude_chat_session_id: chat_session_id)
     end
 
     private
@@ -80,6 +82,17 @@ module ChatSessions
         message: "chat_session.provision_container_job.#{action}",
         **metadata
       )
+    end
+
+    def enqueue_next_pending_session(account_id, exclude_chat_session_id:)
+      return if account_id.blank?
+
+      ChatSessions::ReenqueuePendingProvisionJob.perform_later(
+        account_id: account_id,
+        exclude_chat_session_id: exclude_chat_session_id
+      )
+    rescue GoodJob::ActiveJobExtensions::Concurrency::ConcurrencyExceededError
+      nil
     end
   end
 end

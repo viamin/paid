@@ -42,6 +42,13 @@ RSpec.describe ChatSessions::ProvisionContainerJob, type: :job do
         }.to have_broadcasted_to(stream_name)
           .with(hash_including(type: "capability_changed", container_capability: "ready"))
       end
+
+      it "schedules a follow-up drain for other pending sessions in the account" do
+        expect {
+          described_class.perform_now(chat_session_id: chat_session.id, account_id: account.id)
+        }.to have_enqueued_job(ChatSessions::ReenqueuePendingProvisionJob)
+          .with(account_id: account.id, exclude_chat_session_id: chat_session.id)
+      end
     end
 
     context "when the session is already provisioning" do

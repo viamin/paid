@@ -133,7 +133,7 @@ RSpec.describe ChatSessions::Create do
         .with(hash_including(chat_session_id: kind_of(Integer), account_id: account.id))
     end
 
-    it "returns the session when account-scoped provisioning enqueue is already saturated" do
+    it "returns the session and schedules a recheck when account-scoped provisioning enqueue is saturated" do
       allow(ChatSessions::ProvisionContainerJob).to receive(:perform_later)
         .and_raise(GoodJob::ActiveJobExtensions::Concurrency::ConcurrencyExceededError)
       allow(Rails.logger).to receive(:info).and_call_original
@@ -141,13 +141,14 @@ RSpec.describe ChatSessions::Create do
       session = nil
       expect {
         session = described_class.call(account: account, user: user, container_capability: "pending")
-      }.not_to raise_error
+      }.to have_enqueued_job(ChatSessions::ReenqueuePendingProvisionJob)
+        .with(account_id: account.id)
 
       expect(session).to be_persisted
       expect(session.container_capability).to eq("pending")
       expect(Rails.logger).to have_received(:info).with(
         hash_including(
-          message: "chat_sessions.create.provision_container_job_already_enqueued",
+          message: "chat_sessions.create.provision_container_job_deferred",
           chat_session_id: session.id,
           account_id: account.id
         )
