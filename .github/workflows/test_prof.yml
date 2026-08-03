@@ -110,7 +110,7 @@ jobs:
           sudo apt-get install -y postgresql-client-16
 
       - name: Set up database
-        run: env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails db:create db:schema:load
+        run: env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails db:create db:migrate
 
       - name: Bootstrap test defaults
         run: env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails ci:bootstrap_test_defaults

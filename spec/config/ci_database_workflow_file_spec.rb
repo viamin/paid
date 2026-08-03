@@ -13,14 +13,14 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
         "db_username" => "paid",
         "db_password" => "paid",
         "creates_application_role" => true,
-        "database_setup_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails db:create db:schema:load",
+        "database_setup_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails db:create db:migrate",
         "bootstrap_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails ci:bootstrap_test_defaults"
       },
       "performance" => {
         "db_username" => "paid",
         "db_password" => "paid",
         "creates_application_role" => true,
-        "database_setup_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails db:create db:schema:load",
+        "database_setup_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails db:create db:migrate",
         "bootstrap_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails ci:bootstrap_test_defaults"
       }
     },
@@ -33,7 +33,7 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
             "env -u DATABASE_URL -u CABLE_DATABASE_URL yarn build",
             "env -u DATABASE_URL -u CABLE_DATABASE_URL yarn build:css"
           ],
-          "database_setup_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails db:create db:schema:load",
+          "database_setup_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails db:create db:migrate",
           "bootstrap_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails ci:bootstrap_test_defaults",
           "test_command_snippets" => [ "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rspec spec/system" ]
         }
@@ -53,7 +53,7 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
           "db_username" => "postgres",
           "db_password" => "postgres",
           "creates_application_role" => false,
-          "database_setup_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails db:create db:schema:load",
+          "database_setup_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails db:create db:migrate",
           "bootstrap_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails ci:bootstrap_test_defaults",
           "test_command_snippets" => [
             "env -u DATABASE_URL -u CABLE_DATABASE_URL FPROF=1 bin/rspec",
@@ -70,7 +70,7 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
             "env -u DATABASE_URL -u CABLE_DATABASE_URL yarn build",
             "env -u DATABASE_URL -u CABLE_DATABASE_URL yarn build:css"
           ],
-          "database_setup_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails db:create db:schema:load",
+          "database_setup_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails db:create db:migrate",
           "bootstrap_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails ci:bootstrap_test_defaults",
           "test_command_snippets" => [ "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rspec $spec_files" ]
         }
@@ -160,7 +160,7 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
           expect(setup_step.fetch("run")).to eq(expectations.fetch("database_setup_command"))
         end
 
-        it "bootstraps required orchestration defaults after schema load for #{job_name}" do
+        it "bootstraps required orchestration defaults after database setup for #{job_name}" do
           job = workflow.fetch("jobs").fetch(job_name)
           bootstrap_step = job.fetch("steps").find { |step| step["name"] == "Bootstrap test defaults" }
 
