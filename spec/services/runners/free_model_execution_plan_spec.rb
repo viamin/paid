@@ -16,6 +16,7 @@ RSpec.describe Runners::FreeModelExecutionPlan do
       )
     end
 
+    # @spec FREE-MODEL-001
     it "uses the OpenRouter provider config and open classification routing" do
       project = Struct.new(:data_classification).new("open")
 
@@ -29,6 +30,7 @@ RSpec.describe Runners::FreeModelExecutionPlan do
       )
     end
 
+    # @spec FREE-MODEL-001
     it "treats nil classification as internal" do
       project = Struct.new(:data_classification).new(nil)
 
@@ -37,6 +39,7 @@ RSpec.describe Runners::FreeModelExecutionPlan do
       expect(result.config.fetch(:provider_routing)).to eq(data_collection: "allow")
     end
 
+    # @spec FREE-MODEL-001
     it "denies data collection for confidential projects" do
       project = Struct.new(:data_classification).new("confidential")
 
@@ -45,6 +48,7 @@ RSpec.describe Runners::FreeModelExecutionPlan do
       expect(result.config.fetch(:provider_routing)).to eq(data_collection: "deny")
     end
 
+    # @spec FREE-MODEL-001
     it "enables zdr for restricted projects" do
       project = Struct.new(:data_classification).new("restricted")
 
