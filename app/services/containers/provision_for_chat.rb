@@ -9,8 +9,7 @@ module Containers
   # Chat containers differ from agent run containers:
   # - Lower resource defaults (2GB RAM, 1 CPU vs 4GB/2 CPU)
   # - Persistent named volume for agent CLI state (~/.claude, ~/.codex, etc.)
-  # - Workspace volume left empty by default; optional project seeding remains
-  #   available for migration callers via `seed_project:`
+  # - Workspace volume seeded from the project's git repo (when project is present)
   # - Idle timeout management (30 min default)
   # - Network access to Paid MCP server
   #
@@ -46,15 +45,14 @@ module Containers
     class Error < StandardError; end
     class ProvisionError < Error; end
 
-    attr_reader :chat_session, :container, :options, :seed_project
+    attr_reader :chat_session, :container, :options
 
     def self.call(chat_session:, **options)
       new(chat_session: chat_session, **options).call
     end
 
-    def initialize(chat_session:, seed_project: nil, **options)
+    def initialize(chat_session:, **options)
       @chat_session = chat_session
-      @seed_project = resolve_seed_project(seed_project)
       @options = CHAT_DEFAULTS.merge(options)
       @container = nil
     end
@@ -74,14 +72,7 @@ module Containers
       fix_ownership!
       seed_workspace!(workspace_volume_created:)
 
-      chat_session.update!(
-        container_capability: "ready",
-        container_id: @container.id,
-        container_ready_at: Time.current,
-        workspace_volume: workspace_volume,
-        idle_timeout_at: options[:idle_timeout].from_now,
-        metadata: metadata_without_container_failure
-      )
+      chat_session.update!(final_session_attributes(workspace_volume))
 
       log("provision.success", container_id: @container.id)
       Result.success(
@@ -131,6 +122,25 @@ module Containers
         workspace_volume: nil,
         metadata: metadata_with_container_failure(error)
       )
+    end
+
+    # When +ready+ is false the caller (ProvisionWorkspace's reopen path) keeps
+    # the session in the +provisioning+ capability so it never broadcasts ready
+    # — and the tools/UI that key off ready — before the clone manifest has been
+    # replayed. The caller flips to ready once restore succeeds.
+    def final_session_attributes(workspace_volume)
+      {
+        container_capability: ready? ? "ready" : "provisioning",
+        container_id: @container.id,
+        container_ready_at: ready? ? Time.current : nil,
+        workspace_volume: workspace_volume,
+        idle_timeout_at: options[:idle_timeout].from_now,
+        metadata: metadata_without_container_failure
+      }
+    end
+
+    def ready?
+      options[:ready] != false
     end
 
     def project
@@ -258,31 +268,31 @@ module Containers
       Containers.backend.exec_in_container(@container, [ "mkdir", "-p", *STATE_VOLUME_DIRS ], user: "root")
     end
 
-    # Seeds the workspace volume by cloning the requested project's git
-    # repository.
+    # Seeds the workspace volume by cloning the project's git repository.
     # The GitHub token is passed as an ephemeral environment variable for the
     # clone command only, not stored in the container environment.
-    # Skipped unless `seed_project:` was explicitly requested.
+    # Skipped when no project is associated.
     # Raises ProvisionError if the project has no active token or the clone fails,
-    # since callers opting into project seeding expect a ready-to-use clone.
+    # since mounting the project repo is a core acceptance criterion for workspace mode.
     #
     # On a successful clone, persists a manifest entry on the chat session so
     # workspace mutation tools (write_repo_file, apply_patch, git_*) can
     # authorize against the cloned repo via session.clone_manifest_entries.
     def seed_workspace!(workspace_volume_created:)
-      return unless seed_project
+      return if options[:seed_project] == false
+      return unless project
 
       unless workspace_volume_created || workspace_empty?
-        log("provision.workspace_reused", project_id: seed_project.id)
+        log("provision.workspace_reused", project_id: project.id)
         return
       end
 
-      github_token = seed_project.github_token
+      github_token = project.github_token
       unless github_token&.active?
-        raise ProvisionError, "Project #{seed_project.full_name} has no active GitHub token; cannot seed workspace"
+        raise ProvisionError, "Project #{project.full_name} has no active GitHub token; cannot seed workspace"
       end
 
-      clone_cmd = "git clone --depth 1 https://x-access-token:$CLONE_TOKEN@github.com/#{Shellwords.escape(seed_project.full_name)}.git . 2>&1"
+      clone_cmd = "git clone --depth 1 https://x-access-token:$CLONE_TOKEN@github.com/#{Shellwords.escape(project.full_name)}.git . 2>&1"
 
       result = Containers.backend.exec_in_container(
         @container,
@@ -303,16 +313,24 @@ module Containers
         raise ProvisionError, "Workspace clone failed (exit #{exit_code}): #{output}"
       end
 
-      record_clone_manifest_entry!
-      log("provision.workspace_seeded", project_id: seed_project.id)
+      record_clone_manifest_entry!(github_token)
+      log("provision.workspace_seeded", project_id: project.id)
     end
 
-    def record_clone_manifest_entry!
+    # Records the seed clone using the same append path as Tools::CloneProject so
+    # the primary repo carries the same manifest metadata (cloned_at,
+    # token_identity) as an explicit clone — otherwise the capability panel
+    # renders "unknown" for the very first repo in a fresh workspace.
+    def record_clone_manifest_entry!(github_token)
       chat_session.append_clone_manifest_entry(
-        project_id: seed_project.id,
+        project_id: project.id,
         cloned_at: Time.current,
         path: options[:workspace_mount],
-        token_identity: "project_token"
+        token_identity: "project-token:#{github_token.name}",
+        project_name: project.name,
+        project_full_name: project.full_name,
+        status: "ready",
+        stale: false
       )
       chat_session.save!
     end
@@ -362,13 +380,6 @@ module Containers
         project_id: project&.id,
         **metadata
       )
-    end
-
-    def resolve_seed_project(seed_project)
-      return if seed_project.blank? || seed_project == false
-      return project if seed_project == true
-
-      seed_project
     end
 
     def metadata_without_container_failure

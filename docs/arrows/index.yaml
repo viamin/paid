@@ -19,6 +19,9 @@ taxonomy:
   automation:
     label: Automation
     description: Automated work selection and queueing behavior.
+  chat:
+    label: Chat
+    description: Interactive chat session behavior and workspace lifecycle.
   catalog:
     label: Catalog
     description: Model and configuration catalog synchronization behavior.
@@ -45,6 +48,14 @@ arrows:
     taxonomy: security
     status: OK
     audited: 2026-08-02
+  chat-session-reopen:
+    title: Chat Session Reopen
+    path: docs/intent/chat-session-reopen/chat-session-reopen-design.md
+    specs: docs/intent/chat-session-reopen/chat-session-reopen-specs.md
+    parent: PAID
+    taxonomy: chat
+    status: OK
+    audited: 2026-08-03
   free-model-sync:
     title: Free Model Sync
     path: docs/intent/free-model-sync/free-model-sync-design.md

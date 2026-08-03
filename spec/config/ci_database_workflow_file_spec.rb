@@ -22,9 +22,9 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
     },
     ".github/workflows/system_tests.yml" => {
       "system" => {
-        "db_username" => "postgres",
-        "db_password" => "postgres",
-        "creates_application_role" => false
+        "db_username" => "paid",
+        "db_password" => "paid",
+        "creates_application_role" => true
       }
     },
     ".github/workflows/pr-screenshots.yml" => {

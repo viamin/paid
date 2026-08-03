@@ -207,8 +207,8 @@ RSpec.describe Containers::ProvisionForChat do
       described_class.call(chat_session: chat_session)
     end
 
-    context "when project has an active GitHub token and seeding is requested" do
-      let(:github_token) { instance_double(GithubToken, active?: true, token: "ghp_test123") }
+    context "when project has an active GitHub token" do
+      let(:github_token) { instance_double(GithubToken, active?: true, token: "ghp_test123", name: "primary-token") }
 
       before do
         allow(project).to receive(:github_token).and_return(github_token)
@@ -236,7 +236,12 @@ RSpec.describe Containers::ProvisionForChat do
         described_class.call(chat_session: chat_session, seed_project: true)
 
         expect(chat_session.reload.clone_manifest_entries).to contain_exactly(
-          a_hash_including(project_id: project.id, path: "/workspace")
+          a_hash_including(
+            project_id: project.id,
+            path: "/workspace",
+            token_identity: "project-token:primary-token",
+            cloned_at: a_string_matching(/\A\d{4}-\d{2}-\d{2}T/)
+          )
         )
       end
 
@@ -293,17 +298,6 @@ RSpec.describe Containers::ProvisionForChat do
         expect { described_class.call(chat_session: chat_session, seed_project: true) }
           .to raise_error(Containers::ProvisionForChat::ProvisionError, /Workspace clone failed/)
       end
-    end
-
-    it "leaves the default workspace empty even when the session has a primary project" do
-      expect(mock_container).not_to receive(:exec).with(
-        [ "sh", "-c", a_string_matching(/git clone/) ],
-        anything
-      )
-
-      described_class.call(chat_session: chat_session)
-
-      expect(chat_session.reload.clone_manifest_entries).to be_empty
     end
 
     context "when provisioning fails" do

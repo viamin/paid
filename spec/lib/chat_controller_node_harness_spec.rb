@@ -205,6 +205,80 @@ class ChatControllerNodeHarness
       }
     }
 
+    function testCapabilityChangedUpdatesPanelIconAndActions() {
+      const actions = [];
+      const repos = [];
+      let iconClassName = "";
+      let iconSetAttributeCalls = 0;
+      const { controller, statusMessages } = makeController({
+        capabilityBadgeTargets: [ { textContent: "", className: "", dataset: {} } ],
+        capabilityPanelTargets: [ { dataset: {} } ],
+        capabilityLabelTargets: [ { textContent: "" } ],
+        capabilityIconTargets: [ {
+          get className() {
+            throw new Error("SVG className setter should not be used");
+          },
+          setAttribute(name, value) {
+            if (name !== "class") {
+              throw new Error(`Expected setAttribute to target class, got ${name}`);
+            }
+
+            iconSetAttributeCalls += 1;
+            iconClassName = value;
+          }
+        } ],
+        updateCapabilityActions: (capability) => actions.push(capability),
+        updateCapabilityRepos: (entries) => repos.push(entries),
+        setStatus: (message) => statusMessages.push(message)
+      });
+
+      controller.handleCapabilityChanged({
+        container_capability: "ready",
+        container_capability_label: "Workspace ready",
+        cloned_repos: [ { project_id: 1, project_name: "Repo" } ]
+      });
+
+      if (controller.capabilityBadgeTargets[0].textContent !== "Workspace ready") {
+        throw new Error(`Expected capability badge text to update, saw '${controller.capabilityBadgeTargets[0].textContent}'`);
+      }
+
+      if (controller.capabilityBadgeTargets[0].dataset.capability !== "ready") {
+        throw new Error(`Expected capability badge dataset to update, saw '${controller.capabilityBadgeTargets[0].dataset.capability}'`);
+      }
+
+      if (!controller.capabilityBadgeTargets[0].className.includes("bg-green-100")) {
+        throw new Error(`Expected capability badge classes to switch to ready, saw '${controller.capabilityBadgeTargets[0].className}'`);
+      }
+
+      if (controller.capabilityPanelTargets[0].dataset.chatCapability !== "ready") {
+        throw new Error(`Expected capability panel dataset to update, saw '${controller.capabilityPanelTargets[0].dataset.chatCapability}'`);
+      }
+
+      if (controller.capabilityLabelTargets[0].textContent !== "Workspace ready") {
+        throw new Error(`Expected capability label text to update, saw '${controller.capabilityLabelTargets[0].textContent}'`);
+      }
+
+      if (iconSetAttributeCalls !== 1) {
+        throw new Error(`Expected capability icon classes to be set once, saw ${iconSetAttributeCalls}`);
+      }
+
+      if (iconClassName !== "h-4 w-4 text-green-500 fill-current") {
+        throw new Error(`Expected capability icon classes to switch to ready, saw '${iconClassName}'`);
+      }
+
+      if (actions.length !== 1 || actions[0] !== "ready") {
+        throw new Error(`Expected capability actions to update once with 'ready', saw ${JSON.stringify(actions)}`);
+      }
+
+      if (repos.length !== 1 || repos[0].length !== 1) {
+        throw new Error(`Expected capability repos to update once, saw ${JSON.stringify(repos)}`);
+      }
+
+      if (statusMessages[statusMessages.length - 1] !== "Workspace ready") {
+        throw new Error(`Expected ready capability to set a ready status message, saw '${statusMessages[statusMessages.length - 1]}'`);
+      }
+    }
+
     function testSystemNoticeReplacementTargetsTopLevelElement() {
       const replacement = { outerHTML: "<details>replacement</details>" };
       let replacedWith = null;
@@ -257,6 +331,7 @@ class ChatControllerNodeHarness
       testHandleEventDispatchesToolCall();
       testFallbackNoticeRemovesStaleToolCards();
       testRegularMessageCreatedKeepsAttemptToolCards();
+      testCapabilityChangedUpdatesPanelIconAndActions();
       testSystemNoticeReplacementTargetsTopLevelElement();
       testSystemNoticeDeletionTargetsTopLevelElement();
     }
@@ -275,7 +350,7 @@ class ChatControllerNodeHarness
 end
 
 RSpec.describe ChatControllerNodeHarness, :no_db do
-  it "handles tool events inline without resetting streaming state" do
+  it "keeps chat tool streaming and live capability UI updates consistent" do
     stdout, stderr, status = described_class.run
 
     expect(status.success?).to be(true), <<~MESSAGE

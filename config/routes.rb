@@ -357,6 +357,8 @@ Rails.application.routes.draw do
   resources :chat_sessions, path: "chat", only: %i[index create show update destroy] do
     patch :archive, on: :member
     patch :unarchive, on: :member
+    patch :reopen, on: :member
+    post :clone_project, on: :member
     collection do
       get :sidebar_page
     end

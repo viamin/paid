@@ -37,7 +37,8 @@ module Tools
       }
     end
 
-    # @spec clone_project returns already_cloned for manifest entries even when the session is at capacity.
+    # @spec clone_project returns already_cloned for non-stale manifest entries even when the session is at capacity.
+    # @spec clone_project re-clones manifest entries marked stale by a reopen-restore so they can be recovered.
     # @spec clone_project uses the resolved project GitHub credential, including GitHub App tokens, for clones.
     def perform(project_id:, confirmed: false)
       raise ArgumentError, "Confirmation required: set confirmed=true to clone a project" unless confirmed
@@ -46,17 +47,20 @@ module Tools
 
       project = project_for(project_id)
 
-      existing = session.clone_manifest.find { |entry| entry.project_id == project.id }
-      if existing
+      existing = session.clone_manifest_entries.find { |entry| entry[:project_id].to_i == project.id }
+      if existing && !manifest_entry_stale?(existing)
         return already_cloned_result(project, existing)
       end
 
-      enforce_clone_limit!
+      # A stale entry being re-cloned replaces an existing manifest slot, so it
+      # does not consume a new one — only genuinely new repos count here.
+      enforce_clone_limit! unless existing
 
       token, identity = resolve_clone_token(project)
       slug = project_slug(project)
       repo_path = "/workspace/#{slug}"
 
+      remove_stale_clone!(existing, repo_path) if existing
       execute_clone!(project, token, repo_path)
 
       cloned_at = Time.current
@@ -64,7 +68,11 @@ module Tools
         project_id: project.id,
         cloned_at: cloned_at,
         path: repo_path,
-        token_identity: identity
+        token_identity: identity,
+        project_name: project.name,
+        project_full_name: project.full_name,
+        status: "ready",
+        stale: false
       )
       session.save!
 
@@ -89,11 +97,11 @@ module Tools
 
     def already_cloned_result(project, entry)
       {
-        repo_path: entry.path,
+        repo_path: entry[:path],
         project_id: project.id,
         project_slug: project_slug(project),
-        token_identity: entry.token_identity,
-        cloned_at: entry.cloned_at&.iso8601,
+        token_identity: entry[:token_identity],
+        cloned_at: entry[:cloned_at],
         status: "already_cloned"
       }
     end
@@ -174,6 +182,19 @@ module Tools
       )
     rescue StandardError
       # Swallowed deliberately — see method comment.
+    end
+
+    # A stale manifest entry (from a failed reopen restore) may have left a
+    # partial clone directory behind. Wipe the recorded path and the target
+    # clone path so the fresh clone lands in an empty directory instead of
+    # failing with "destination path already exists". The workspace root is
+    # never wiped — the seed project lives there.
+    def remove_stale_clone!(entry, repo_path)
+      [ entry[:path], repo_path ].compact.uniq.each do |path|
+        next if path == WORKSPACE_ROOT
+
+        cleanup_partial_clone!(Shellwords.escape(path))
+      end
     end
 
     def redact_clone_output(output, token)

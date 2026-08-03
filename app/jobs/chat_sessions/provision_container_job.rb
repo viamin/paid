@@ -41,7 +41,9 @@ module ChatSessions
       chat_session = ChatSession.find(chat_session_id)
       return unless chat_session.container_pending? || chat_session.container_provisioning?
 
-      Containers::ProvisionForChat.call(chat_session: chat_session)
+      ChatSessions::ProvisionWorkspace.call(chat_session: chat_session.reload)
+    rescue ChatSessions::ProvisionWorkspace::RestoreFailed
+      # Recovered to the stopped state and surfaced to the user by ProvisionWorkspace.
     rescue Containers::ProvisionForChat::ProvisionError, Docker::Error::DockerError => e
       handle_provision_failure(chat_session_id, e)
     rescue ActiveRecord::RecordNotFound
@@ -61,20 +63,12 @@ module ChatSessions
       end
     end
 
-    def broadcast_capability(chat_session)
-      ActionCable.server.broadcast("chat_session:#{chat_session.id}", {
-        type: "capability_changed",
-        container_capability: chat_session.container_capability,
-        container_ready_at: chat_session.container_ready_at
-      })
-    end
-
     def handle_provision_failure(chat_session_id, error)
       chat_session = ChatSession.find_by(id: chat_session_id)
       return unless chat_session
 
       log("failed", chat_session_id:, error: error.message)
-      broadcast_capability(chat_session.reload)
+      ChatSessions::BroadcastCapabilityState.call(chat_session: chat_session.reload)
     end
 
     def log(action, **metadata)
