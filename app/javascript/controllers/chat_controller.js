@@ -295,7 +295,7 @@ export default class extends Controller {
 
     const existing = this.messageElementById(data.message_id)
     if (existing) {
-      existing.closest("div")?.replaceWith(card)
+      this.renderedMessageElement(existing)?.replaceWith(card)
     } else {
       this.messagesTarget.append(card)
     }
@@ -332,7 +332,7 @@ export default class extends Controller {
     if (data.message_id) {
       const existingMessage = this.messageElementById(data.message_id)
       if (existingMessage) {
-        existingMessage.closest("div")?.replaceWith(messageElement)
+        this.renderedMessageElement(existingMessage)?.replaceWith(messageElement)
         this.scrollToBottom()
         return
       }
@@ -341,7 +341,7 @@ export default class extends Controller {
     if (data.stream_message_id) {
       const existingMessage = this.messagesTarget.querySelector(`article[data-stream-message-id="${data.stream_message_id}"]`)
       if (existingMessage) {
-        existingMessage.closest("div")?.replaceWith(messageElement)
+        this.renderedMessageElement(existingMessage)?.replaceWith(messageElement)
         this.scrollToBottom()
         return
       }
@@ -354,7 +354,8 @@ export default class extends Controller {
   handleMessageDeleted(data) {
     if (!data.message_id) return
 
-    this.messageElementById(data.message_id)?.closest("div")?.remove()
+    const messageElement = this.messageElementById(data.message_id)
+    this.renderedMessageElement(messageElement)?.remove()
   }
 
   buildMessageElement(html) {
@@ -418,6 +419,10 @@ export default class extends Controller {
 
   messageElementById(messageId) {
     return this.messagesTarget.querySelector(`[data-message-id="${messageId}"]`)
+  }
+
+  renderedMessageElement(element) {
+    return element?.closest("details, div.flex.justify-start, div.justify-end, div.justify-center")
   }
 
   messageIdFor(element) {
