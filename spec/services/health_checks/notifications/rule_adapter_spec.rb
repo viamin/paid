@@ -3,250 +3,216 @@
 require "rails_helper"
 
 RSpec.describe HealthChecks::Notifications::RuleAdapter do
-  let(:account) { create(:account) }
+  let(:account) { create(:account, name: "Account #{SecureRandom.hex(4)}", slug: "account-#{SecureRandom.hex(4)}") }
+  let(:owner) { create(:user, :owner, account: account) }
+  let(:project) { create(:project, account: account, created_by: owner) }
+  let(:runner) { create(:runner, user: owner) }
+  let(:rule_class) { described_class.for(HealthChecks::Checks::Project::AutoMergeWithoutOwner) }
 
   before do
     allow(Turbo::StreamsChannel).to receive(:broadcast_replace_to)
   end
 
+  def finding(**attrs)
+    HealthChecks::Finding.new(
+      code: :auto_merge_without_owner,
+      scope: :project,
+      severity: :error,
+      title: "Auto-merge enabled without an owner reviewer",
+      description: "Human-authored PRs will stall.",
+      remediation: "Set an owner reviewer login.",
+      subject_type: "Project",
+      subject_id: project.id,
+      metadata: {},
+      **attrs
+    )
+  end
+
+  def deprecated_model_finding(model_id:, tier:, subject_id: runner.id)
+    finding(
+      code: :deprecated_model,
+      scope: :runner,
+      severity: :warning,
+      title: "Runner pinned to a deprecated model",
+      subject_type: "Runner",
+      subject_id: subject_id,
+      metadata: { model_id: model_id, tier: tier }
+    )
+  end
+
+  def user_finding(user:)
+    finding(
+      code: :missing_default_runner,
+      scope: :user,
+      severity: :warning,
+      title: "User has no default runner",
+      subject_type: "User",
+      subject_id: user.id
+    )
+  end
+
+  def sync_rule(check_class:, project_results:)
+    described_class.for(check_class).call(scope: account, health_check_results_by_project_id: project_results)
+  end
+
   describe ".for" do
     it "returns an anonymous rule subclass bound to the check class" do
-      rule = described_class.for(HealthChecks::Checks::Project::AutoMergeWithoutOwner)
-
-      expect(rule.superclass).to eq(described_class)
-      expect(rule.check_class).to eq(HealthChecks::Checks::Project::AutoMergeWithoutOwner)
+      expect(rule_class.superclass).to eq(described_class)
+      expect(rule_class.check_class).to eq(HealthChecks::Checks::Project::AutoMergeWithoutOwner)
     end
   end
 
-  describe "#source" do
-    it "derives the source from the check code" do
-      rule = described_class.for(HealthChecks::Checks::Project::AutoMergeWithoutOwner)
+  # @spec HEALTH-CHECKS-001
+  it "publishes notifications for cached findings on the project health page path" do
+    result = HealthChecks::Result.new(findings: [ finding ], checked_at: Time.current, duration_ms: 5)
 
-      expect(rule.new.send(:source)).to eq("health_check_auto_merge_without_owner")
-    end
+    expect {
+      sync_rule(check_class: HealthChecks::Checks::Project::AutoMergeWithoutOwner, project_results: { project.id => result })
+    }.to change(Notification, :count).by(1)
+
+    notification = Notification.find_by!(account: account, subject: project)
+    expect(notification.source).to start_with("health_check/project/#{project.id}/auto_merge_without_owner/")
+    expect(notification.action_url).to eq(Rails.application.routes.url_helpers.project_health_check_path(project))
+    expect(notification.nav_section).to eq("projects")
+    expect(notification.description).to include("Human-authored PRs will stall.")
+    expect(notification.description).to include("Set an owner reviewer login.")
   end
 
-  describe "#detect" do
-    it "returns projects where a project-scope check fires" do
-      matching = create(:project, account: account, auto_merge_mode: "all", owner_reviewer_login: nil)
-      healthy = create(:project, account: account, auto_merge_mode: "off")
-      create(:project, auto_merge_mode: "all", owner_reviewer_login: nil) # other account
+  # @spec HEALTH-CHECKS-002
+  it "auto-resolves notifications when the cached finding disappears" do
+    result = HealthChecks::Result.new(findings: [ finding ], checked_at: Time.current, duration_ms: 5)
+    sync_rule(check_class: HealthChecks::Checks::Project::AutoMergeWithoutOwner, project_results: { project.id => result })
 
-      rule = described_class.for(HealthChecks::Checks::Project::AutoMergeWithoutOwner)
-      matches = rule.new.send(:detect, account)
+    cleared = HealthChecks::Result.new(findings: [], checked_at: Time.current, duration_ms: 3)
 
-      expect(matches).to include(matching)
-      expect(matches).not_to include(healthy)
-      expect(matches.size).to eq(1)
-    end
+    expect {
+      sync_rule(check_class: HealthChecks::Checks::Project::AutoMergeWithoutOwner, project_results: { project.id => cleared })
+    }.not_to change(Notification, :count)
 
-    it "returns projects where a user-scope check fires via effective_owner" do
-      owner = create(:user, account: account)
-      # Disable the auto-created default runner so NoAgentRunners fires.
-      owner.runners.update_all(enabled_for_agent_runs: false)
-      matching = create(:project, account: account, created_by: owner)
-
-      healthy_owner = create(:user, account: account)
-      healthy = create(:project, account: account, created_by: healthy_owner)
-
-      rule = described_class.for(HealthChecks::Checks::User::NoAgentRunners)
-      matches = rule.new.send(:detect, account)
-
-      expect(matches).to include(matching)
-      expect(matches).not_to include(healthy)
-    end
-
-    it "returns projects where a runner-scope check fires via effective_owner" do
-      owner = create(:user, account: account)
-      project = create(:project, account: account, created_by: owner)
-
-      # Use a rule adapter with a custom check_class that always fires on runners.
-      stub_check = Class.new(HealthChecks::Check) do
-        self.scope = :runner
-
-        def call
-          finding(severity: :error, title: "Stub", description: "stub")
-        end
-      end
-      stub_check.define_singleton_method(:code) { :stub_runner_check }
-      stub_check.define_singleton_method(:name) { "StubRunnerCheck" }
-
-      rule = described_class.for(stub_check)
-      matches = rule.new.send(:detect, account)
-
-      expect(matches).to include(project)
-    end
-
-    it "reuses cached sweep results instead of rerunning the bound check" do
-      project = create(:project, account: account, auto_merge_mode: "off")
-      finding = HealthChecks::Finding.new(
-        code: :auto_merge_without_owner,
-        scope: :project,
-        severity: :error,
-        title: "Cached finding",
-        description: "cached"
-      )
-      result = HealthChecks::Result.new(findings: [ finding ], checked_at: Time.current, duration_ms: 3)
-
-      allow(HealthChecks::Checks::Project::AutoMergeWithoutOwner).to receive(:call).and_call_original
-
-      rule = described_class.for(HealthChecks::Checks::Project::AutoMergeWithoutOwner).new(
-        health_check_results_by_project_id: { project.id => result }
-      )
-      matches = rule.send(:detect, account)
-
-      expect(matches).to contain_exactly(project)
-      expect(HealthChecks::Checks::Project::AutoMergeWithoutOwner).not_to have_received(:call)
-    end
+    expect(Notification.find_by!(account: account, subject: project).resolved_at).to be_present
   end
 
-  describe "#build" do
-    it "returns notification attrs from the first finding" do
-      project = create(:project, account: account, auto_merge_mode: "all", owner_reviewer_login: nil)
+  it "leaves existing notifications intact on a transient cache miss" do
+    allow(HealthChecks::Cache).to receive(:read).with(project).and_return(
+      HealthChecks::Result.new(findings: [ finding ], checked_at: Time.current, duration_ms: 5)
+    )
+    rule_class.call(scope: project)
+    notification = Notification.find_by!(account: account, subject: project)
 
-      rule = described_class.for(HealthChecks::Checks::Project::AutoMergeWithoutOwner)
-      attrs = rule.new.send(:build, project)
+    allow(HealthChecks::Cache).to receive(:read).with(project).and_return(nil)
 
-      expect(attrs[:severity]).to eq(:error)
-      expect(attrs[:title]).to eq("Auto-merge enabled without an owner reviewer")
-      expect(attrs[:description]).to include("Auto-merge")
-      expect(attrs[:nav_section]).to eq("projects")
-      expect(attrs[:action_url]).to be_present
-      expect(attrs[:metadata]).to be_a(Hash)
-    end
+    expect {
+      rule_class.call(scope: project)
+    }.not_to change { notification.reload.resolved_at }
 
-    it "raises when no finding exists for the project" do
-      project = create(:project, account: account, auto_merge_mode: "off")
-
-      rule = described_class.for(HealthChecks::Checks::Project::AutoMergeWithoutOwner)
-
-      expect { rule.new.send(:build, project) }.to raise_error(/no finding/)
-    end
+    expect(notification.resolved_at).to be_nil
   end
 
-  describe "#call (publish + auto-resolve)" do
-    let(:check_class) { HealthChecks::Checks::Project::AutoMergeWithoutOwner }
-    let(:source) { "health_check_auto_merge_without_owner" }
-    let(:raising_project_check) do
-      Class.new(HealthChecks::Check) do
-        self.scope = :project
+  # @spec HEALTH-CHECKS-003
+  it "deduplicates by finding fingerprint so one runner can emit multiple notifications for the same code" do
+    result = HealthChecks::Result.new(
+      findings: [
+        deprecated_model_finding(model_id: "gpt-4.1-mini", tier: "fast"),
+        deprecated_model_finding(model_id: "gpt-4.1", tier: "deep")
+      ],
+      checked_at: Time.current,
+      duration_ms: 5
+    )
 
-        def call
-          raise "boom"
-        end
-      end.tap do |check|
-        check.define_singleton_method(:code) { :raising_project_check }
-        check.define_singleton_method(:name) { "RaisingProjectCheck" }
-      end
+    expect {
+      sync_rule(check_class: HealthChecks::Checks::Runner::DeprecatedModel, project_results: { project.id => result })
+    }.to change(Notification, :count).by(2)
+
+    expect(Notification.where(account: account, subject: runner).pluck(:source).uniq.size).to eq(2)
+  end
+
+  it "batches subject lookups per table when syncing mixed findings" do
+    teammate = create(:user, account: account)
+    other_runner = create(:runner, user: teammate, runner_key: "codex")
+    result = HealthChecks::Result.new(
+      findings: [
+        deprecated_model_finding(model_id: "gpt-4.1-mini", tier: "fast"),
+        deprecated_model_finding(model_id: "gpt-4.1", tier: "deep", subject_id: other_runner.id),
+        user_finding(user: owner),
+        user_finding(user: teammate)
+      ],
+      checked_at: Time.current,
+      duration_ms: 5
+    )
+    allow(Notifications::Publish).to receive(:call)
+    allow(Notifications::Resolve).to receive(:call)
+
+    queries = capture_queries do
+      sync_rule(check_class: HealthChecks::Checks::Runner::DeprecatedModel, project_results: { project.id => result })
+      sync_rule(check_class: HealthChecks::Checks::User::MissingDefaultRunner, project_results: { project.id => result })
     end
 
-    it "publishes a notification for a project where the check fires" do
-      matching = create(:project, account: account, auto_merge_mode: "all", owner_reviewer_login: nil)
+    expect(queries.count { |sql| sql.include?('FROM "runners"') }).to eq(1)
+    expect(queries.count { |sql| sql.include?('FROM "users"') }).to eq(1)
+  end
 
-      rule = described_class.for(check_class)
+  it "preserves the original subject identity when the subject row has been deleted" do
+    result = HealthChecks::Result.new(
+      findings: [ deprecated_model_finding(model_id: "gpt-4.1-mini", tier: "fast") ],
+      checked_at: Time.current,
+      duration_ms: 5
+    )
 
-      expect {
-        rule.call(scope: account)
-      }.to change(Notification, :count).by(1)
+    sync_rule(check_class: HealthChecks::Checks::Runner::DeprecatedModel, project_results: { project.id => result })
+    runner_id = runner.id
+    existing_source = Notification.last.source
+    runner.destroy!
 
-      notification = Notification.find_by!(account: account, source: source, subject: matching)
-      expect(notification.severity).to eq("error")
-      expect(notification.nav_section).to eq("projects")
-      expect(notification.resolved_at).to be_nil
-    end
+    expect {
+      sync_rule(check_class: HealthChecks::Checks::Runner::DeprecatedModel, project_results: { project.id => result })
+    }.not_to change(Notification, :count)
 
-    it "auto-resolves a notification for a project that becomes healthy" do
-      cleared = create(:project, account: account, auto_merge_mode: "off")
-      create(:notification, account: account, source: source, subject: cleared)
+    notification = Notification.find_by!(account: account, source: existing_source)
+    expect(notification.subject_type).to eq("Runner")
+    expect(notification.subject_id).to eq(runner_id)
+    expect(notification.subject).to be_nil
+  end
 
-      rule = described_class.for(check_class)
+  it "resolves stale notifications even when the original subject row has been deleted" do
+    source = "health_check/project/#{project.id}/deprecated_model/Runner/#{runner.id}/abc123def456"
+    create(:notification, account: account, source: source, subject: runner)
+    runner.destroy!
 
-      expect {
-        rule.call(scope: account)
-      }.not_to change(Notification, :count)
+    cleared = HealthChecks::Result.new(findings: [], checked_at: Time.current, duration_ms: 5)
+    sync_rule(check_class: HealthChecks::Checks::Runner::DeprecatedModel, project_results: { project.id => cleared })
 
-      notification = Notification.find_by!(account: account, source: source, subject: cleared)
-      expect(notification.resolved_at).to be_present
-    end
+    notification = Notification.find_by!(account: account, source: source)
+    expect(notification.resolved_at).to be_present
+    expect(notification.subject_type).to eq("Runner")
+    expect(notification.subject_id).to eq(runner.id)
+  end
 
-    it "updates an existing notification rather than creating a duplicate" do
-      project = create(:project, account: account, auto_merge_mode: "all", owner_reviewer_login: nil)
+  it "publishes an internal-error notification when the cached sweep result captured a check failure" do
+    source = "health_check/project/#{project.id}/auto_merge_without_owner/Project/#{project.id}/abc123def456"
+    create(:notification, account: account, source: source, subject: project)
+    error_finding = HealthChecks::Coordinator.internal_error_finding(
+      check_class: HealthChecks::Checks::Project::AutoMergeWithoutOwner,
+      subject: project,
+      error: RuntimeError.new("boom")
+    )
+    result = HealthChecks::Result.new(findings: [ error_finding ], checked_at: Time.current, duration_ms: 5)
 
-      rule = described_class.for(check_class)
+    sync_rule(check_class: HealthChecks::Checks::Project::AutoMergeWithoutOwner, project_results: { project.id => result })
 
-      2.times { rule.call(scope: account) }
+    stale_notification = Notification.find_by!(account: account, source: source, subject: project)
+    expect(stale_notification.resolved_at).to be_present
 
-      expect(Notification.where(source: source, subject: project).count).to eq(1)
-    end
-
-    it "does not publish for a fully healthy account" do
-      create(:project, account: account, auto_merge_mode: "off")
-
-      rule = described_class.for(check_class)
-
-      expect {
-        rule.call(scope: account)
-      }.not_to change(Notification, :count)
-    end
-
-    it "handles multiple projects in the same account" do
-      bad = create(:project, account: account, auto_merge_mode: "all", owner_reviewer_login: nil)
-      create(:project, account: account, auto_merge_mode: "off")
-
-      rule = described_class.for(check_class)
-
-      expect {
-        rule.call(scope: account)
-      }.to change(Notification, :count).by(1)
-
-      expect(Notification.find_by!(subject: bad).resolved_at).to be_nil
-    end
-
-    it "keeps a notification active when the cached sweep result captured a check failure" do
-      project = create(:project, account: account, auto_merge_mode: "off")
-      create(:notification, account: account, source: source, subject: project)
-      error_finding = HealthChecks::Finding.new(
-        code: HealthChecks::Coordinator::INTERNAL_ERROR_CODE,
-        scope: :project,
-        severity: :error,
-        title: "Internal health check error",
-        description: "Check failed",
-        metadata: { check_class: check_class.name, error_class: "RuntimeError" }
-      )
-      result = HealthChecks::Result.new(findings: [ error_finding ], checked_at: Time.current, duration_ms: 5)
-
-      rule = described_class.for(check_class)
-      rule.call(scope: account, health_check_results_by_project_id: { project.id => result })
-
-      notification = Notification.find_by!(account: account, source: source, subject: project)
-      expect(notification.resolved_at).to be_nil
-      expect(notification.title).to eq("Internal health check error")
-    end
-
-    it "publishes an internal-error notification when the bound check raises" do
-      project = create(:project, account: account)
-      rule = described_class.for(raising_project_check)
-
-      expect {
-        rule.call(scope: account)
-      }.to change(Notification, :count).by(1)
-
-      notification = Notification.find_by!(
-        account: account,
-        source: "health_check_raising_project_check",
-        subject: project
-      )
-      expect(notification.resolved_at).to be_nil
-      expect(notification.title).to eq("Internal health check error")
-      expect(notification.description).to include("RaisingProjectCheck raised RuntimeError: boom")
-    end
+    internal_notification = Notification.active.find_by!(
+      account: account,
+      title: "Internal health check error",
+      subject: project
+    )
+    expect(internal_notification.description).to include("RuntimeError: boom")
   end
 
   describe ".evaluate_all integration" do
     before do
-      Notifications::Rule.register(
-        described_class.for(HealthChecks::Checks::Project::AutoMergeWithoutOwner)
-      )
+      Notifications::Rule.register(described_class.for(HealthChecks::Checks::Project::AutoMergeWithoutOwner))
     end
 
     after do
@@ -254,10 +220,13 @@ RSpec.describe HealthChecks::Notifications::RuleAdapter do
     end
 
     it "publishes notifications for all registered rules" do
-      create(:project, account: account, auto_merge_mode: "all", owner_reviewer_login: nil)
+      result = HealthChecks::Result.new(findings: [ finding ], checked_at: Time.current, duration_ms: 5)
 
       expect {
-        Notifications::Rule.evaluate_all(account: account)
+        Notifications::Rule.evaluate_all(
+          account: account,
+          health_check_results_by_project_id: { project.id => result }
+        )
       }.to change(Notification, :count).by(1)
     end
   end

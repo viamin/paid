@@ -43,7 +43,7 @@ RSpec.describe AccountHealthCheckSweepJob do
       allow(Notifications::Rule).to receive(:evaluate_all)
     end
 
-    it "writes the cached result for each project and emits the sweep_completed log" do
+    it "writes the cached result for each project, evaluates notifications, and emits the sweep_completed log" do
       projects = create_list(:project, 2)
       allow(HealthChecks::Coordinator).to receive(:call).and_return(clean_result)
 
@@ -56,6 +56,7 @@ RSpec.describe AccountHealthCheckSweepJob do
         )
         expect(HealthChecks::Cache).to have_received(:write).with(project, clean_result)
       end
+      expect(Notifications::Rule).to have_received(:evaluate_all).twice
       expect(Rails.logger).to have_received(:info).with(
         hash_including(message: "project_health.sweep_completed", projects_checked: 2, total_findings: 0)
       )

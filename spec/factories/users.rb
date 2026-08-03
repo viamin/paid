@@ -3,7 +3,7 @@
 FactoryBot.define do
   factory :user do
     account
-    sequence(:email) { |n| "user#{n}@example.com" }
+    sequence(:email) { |n| "user#{n}-#{SecureRandom.hex(3)}@example.com" }
     password { "password123" }
     password_confirmation { "password123" }
     name { Faker::Name.name }
