@@ -32,15 +32,19 @@ RSpec.describe ChatSessions::ProvisionContainerJob, type: :job do
       it "provisions the container and transitions to ready" do
         described_class.perform_now(chat_session_id: chat_session.id)
 
-        expect(Containers::ProvisionForChat).to have_received(:call).with(chat_session: chat_session)
+        expect(Containers::ProvisionForChat).to have_received(:call).with(chat_session: chat_session, seed_project: true)
         expect(chat_session.reload.container_capability).to eq("ready")
       end
 
       it "broadcasts the capability change to the chat stream" do
-        expect {
-          described_class.perform_now(chat_session_id: chat_session.id)
-        }.to have_broadcasted_to(stream_name)
-          .with(hash_including(type: "capability_changed", container_capability: "ready"))
+        allow(ActionCable.server).to receive(:broadcast).and_call_original
+
+        described_class.perform_now(chat_session_id: chat_session.id)
+
+        expect(ActionCable.server).to have_received(:broadcast).with(
+          stream_name,
+          hash_including(type: "capability_changed", container_capability: "ready")
+        )
       end
     end
 

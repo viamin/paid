@@ -18,6 +18,7 @@ module ChatSessions
       TenantContext.with(chat_session.account) do
         sync_capability_notice!
         publish_tools_list_changed
+        broadcast_capability_state
       end
     end
 
@@ -59,6 +60,10 @@ module ChatSessions
       elsif existing_notice
         existing_notice.destroy!
       end
+    end
+
+    def broadcast_capability_state
+      ChatSessions::BroadcastCapabilityState.call(chat_session:)
     end
 
     def capability_notice

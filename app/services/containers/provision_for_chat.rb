@@ -257,6 +257,7 @@ module Containers
     # workspace mutation tools (write_repo_file, apply_patch, git_*) can
     # authorize against the cloned repo via session.clone_manifest_entries.
     def seed_workspace!(workspace_volume_created:)
+      return if options[:seed_project] == false
       return unless project
 
       unless workspace_volume_created || workspace_empty?
@@ -295,7 +296,14 @@ module Containers
     end
 
     def record_clone_manifest_entry!
-      entry = { project_id: project.id, path: options[:workspace_mount] }
+      entry = {
+        project_id: project.id,
+        path: options[:workspace_mount],
+        project_name: project.name,
+        project_full_name: project.full_name,
+        status: "ready",
+        stale: false
+      }
       existing = Array(chat_session.clone_manifest)
       chat_session.update!(clone_manifest: existing + [ entry ])
     end

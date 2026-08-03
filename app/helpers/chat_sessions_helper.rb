@@ -36,8 +36,35 @@ module ChatSessionsHelper
   def chat_container_status_badge(chat_session)
     capability = chat_session.container_capability
     classes = CHAT_CONTAINER_CAPABILITY_STYLES.fetch(capability, CHAT_CONTAINER_CAPABILITY_STYLES["none"])
-    tag.span(capability.to_s.titleize, class: "inline-flex items-center rounded-full px-2 py-1 text-xs font-medium #{classes}",
+    tag.span(chat_container_capability_label(capability), class: "inline-flex items-center rounded-full px-2 py-1 text-xs font-medium #{classes}",
       data: { chat_target: "capabilityBadge", capability: capability })
+  end
+
+  def chat_container_capability_label(capability)
+    case capability.to_s
+    when "none" then "No workspace"
+    when "pending" then "Workspace pending"
+    when "provisioning" then "Workspace preparing"
+    when "ready" then "Workspace ready"
+    when "failed" then "Workspace failed"
+    when "stopped" then "Workspace stopped"
+    else capability.to_s.titleize
+    end
+  end
+
+  def chat_container_capability_icon_classes(capability)
+    {
+      "none" => "text-gray-500 fill-current",
+      "pending" => "text-amber-500 fill-current",
+      "provisioning" => "text-amber-500 fill-current",
+      "ready" => "text-green-500 fill-current",
+      "failed" => "text-rose-500 fill-current",
+      "stopped" => "text-gray-500 fill-current"
+    }.fetch(capability.to_s, "text-gray-500 fill-current")
+  end
+
+  def chat_session_capability_snapshot(chat_session)
+    ChatSessions::CapabilitySnapshot.call(chat_session:)
   end
 
   def chat_session_title(chat_session)

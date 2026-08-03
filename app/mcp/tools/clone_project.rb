@@ -64,7 +64,11 @@ module Tools
         project_id: project.id,
         cloned_at: cloned_at,
         path: repo_path,
-        token_identity: identity
+        token_identity: identity,
+        project_name: project.name,
+        project_full_name: project.full_name,
+        status: "ready",
+        stale: false
       )
       session.save!
 
