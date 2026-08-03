@@ -51,9 +51,9 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
       },
     ".github/workflows/test_prof.yml" => {
         "profile" => {
-          "db_username" => "postgres",
-          "db_password" => "postgres",
-          "creates_application_role" => false,
+          "db_username" => "paid",
+          "db_password" => "paid",
+          "creates_application_role" => true,
           "database_setup_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails db:create db:migrate",
           "bootstrap_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails ci:bootstrap_test_defaults",
           "test_command_snippets" => [
@@ -64,9 +64,9 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
       },
     ".github/workflows/ephemeral_tests.yml" => {
         "run-tests" => {
-          "db_username" => "postgres",
-          "db_password" => "postgres",
-          "creates_application_role" => false,
+          "db_username" => "paid",
+          "db_password" => "paid",
+          "creates_application_role" => true,
           "asset_build_command" => [
             "env -u DATABASE_URL -u CABLE_DATABASE_URL yarn build",
             "env -u DATABASE_URL -u CABLE_DATABASE_URL yarn build:css"

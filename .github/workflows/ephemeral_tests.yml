@@ -84,8 +84,8 @@ jobs:
       RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY }}
       PAID_TEST_DATABASE: paid_test
       DB_HOST: localhost
-      DB_USERNAME: postgres
-      DB_PASSWORD: postgres
+      DB_USERNAME: paid
+      DB_PASSWORD: paid
       TMPDIR: ${{ github.workspace }}/.tmp-build
       YARN_CACHE_FOLDER: ${{ github.workspace }}/.cache-yarn
       XDG_CACHE_HOME: ${{ github.workspace }}/.cache
@@ -142,6 +142,23 @@ jobs:
           sudo find /etc/apt/sources.list.d -maxdepth 1 -type f -print0 | xargs -0 --no-run-if-empty grep -lZ 'packages.microsoft.com' | sudo xargs -0 --no-run-if-empty rm -f
           sudo apt-get update
           sudo apt-get install -y postgresql-client-16
+
+      - name: Create application database role
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h "$DB_HOST" -U postgres -d postgres <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'paid') THEN
+              CREATE ROLE paid LOGIN PASSWORD 'paid';
+            ELSE
+              ALTER ROLE paid WITH LOGIN PASSWORD 'paid';
+            END IF;
+          END
+          $$;
+          ALTER ROLE paid CREATEDB NOSUPERUSER NOBYPASSRLS;
+          SQL
 
       - name: Locate Chromium-family browser
         run: |
