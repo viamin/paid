@@ -5,7 +5,8 @@
 ## Metadata
 
 - **Date**: 2026-07-16
-- **Status**: Draft
+- **Status**: Implemented
+- **Revised**: 2026-08-03
 - **Type**: Operations + Architecture
 - **Priority**: P1
 - **Related Issues**: [#2944](https://github.com/viamin/paid/issues/2944) (tracking), [#2945](https://github.com/viamin/paid/issues/2945) (backend configuration and registry), [#2946](https://github.com/viamin/paid/issues/2946) (scheduler and manual placement), [#2947](https://github.com/viamin/paid/issues/2947) (per-host concurrency), [#2948](https://github.com/viamin/paid/issues/2948) (multi-host lifecycle operations), [#2949](https://github.com/viamin/paid/issues/2949) (readiness checks), [#2950](https://github.com/viamin/paid/issues/2950) (management UI), [#2951](https://github.com/viamin/paid/issues/2951) (setup guide and automation helpers), [#2952](https://github.com/viamin/paid/issues/2952) (optional capacity-aware placement), [#2953](https://github.com/viamin/paid/issues/2953) (implementation audit and RDR closeout), [#2963](https://github.com/viamin/paid/issues/2963) (subscription auth host eligibility)
@@ -14,36 +15,27 @@
 
 ## Implementation Status
 
-Not implemented. Paid currently supports selecting exactly one active Docker backend for new paid-agent provisioning:
+RDR-048 is implemented as of 2026-08-03. The audit completed in
+[#2953](https://github.com/viamin/paid/issues/2953) found that the planned
+multi-host Docker scope is shipped, with one intentional design clarification:
+host readiness validates per-host callback URL configuration, while actual
+container-to-Paid reachability is exercised by the setup guide's disposable
+container probe rather than by a control-plane network check.
 
-- `CONTAINER_BACKEND=local` provisions paid-agent containers on local Docker.
-- `CONTAINER_BACKEND=remote` provisions paid-agent containers on one configured remote Docker daemon.
-- `CONTAINER_BACKEND=swarm` provisions paid-agent containers through the Swarm backend.
+| Criterion | Status | Evidence |
+|-----------|--------|----------|
+| Backward-compatible `local`, `remote`, and `swarm` singleton modes | Implemented | `config/initializers/container_backend.rb`; `spec/services/containers/backends/resolver_initializer_spec.rb` |
+| Structured multi-host registry with named local + remote hosts such as `elguapo` | Implemented | `app/services/containers/host_registry.rb`; `spec/services/containers/host_registry_spec.rb` |
+| Explicit placement plus first-healthy and capacity-aware fallback | Implemented | `app/services/containers/resolve_host_for_run.rb`; `app/services/containers/backend_scheduler.rb`; `spec/requests/agent_runs_spec.rb`; `spec/jobs/process_run_queue_job_spec.rb` |
+| Independent per-host concurrency limits in queue admission | Implemented | `app/services/capacity/run_admission.rb`; `spec/services/capacity/run_admission_spec.rb` |
+| Persisted host ownership from claim through lifecycle routing | Implemented | `app/models/agent_run.rb`; `app/temporal/workflows/agent_execution_workflow.rb`; `spec/models/agent_run_spec.rb`; `spec/jobs/process_run_queue_job_spec.rb` |
+| Cleanup, warm pools, and metrics follow persisted host identity | Implemented | `app/jobs/docker_orphan_cleanup_job.rb`; `app/jobs/agent_run_resource_janitor_job.rb`; `app/services/containers/pool_manager.rb`; `app/services/containers/collect_metrics.rb`; related specs |
+| Docker Hosts UI for add/edit/disable/inspect/setup plus per-host placement controls | Implemented | `app/controllers/docker_hosts_controller.rb`; `app/views/docker_hosts/`; `spec/requests/docker_hosts_spec.rb`; `spec/system/docker_hosts_management_spec.rb` |
+| Per-host readiness checks and setup helper workflow | Implemented | `app/services/containers/host_readiness.rb`; `app/services/docker_hosts/setup_guide.rb`; `app/services/docker_hosts/setup_action_runner.rb`; related specs |
+| RDR-041 host eligibility contract for subscription runners | Implemented | `app/services/runners/subscription_auth_eligibility.rb`; `app/services/containers/provision.rb`; `spec/services/containers/provision_spec.rb`; `spec/requests/agent_runs_spec.rb` |
 
-The current remote Docker backend has been verified against the QNAP host `elguapo` at `100.113.201.1:2376` using mTLS, with `paid-agent:latest` and the required Docker networks present. In that mode, however, `elguapo` replaces local Docker for new agent containers; it is not additional capacity beside local Docker on `barts-macbook-pro`.
-
-Paid already has several primitives needed for multi-host operation:
-
-- `agent_runs.container_host` persists the host/backend selected for a run.
-- `container_pool_entries.container_host` persists the backend used for warm pool entries.
-- `Containers::Backends::Resolver` can register named backends.
-- `Containers.backend_for(host)` can reconnect to a backend by persisted `container_host`.
-- `Containers.all_backends` lets orphan cleanup scan more than the active backend in some modes.
-- Metrics collection uses `Containers.backend_for(agent_run.container_host)`.
-- Backend interfaces already expose `identifier`, `remote?`, `supports_host_paths?`, `owns_host?`, `all_host_identifiers`, and `container_host_for(container)`.
-
-Paid still assumes one active backend for placement and admission:
-
-- `config/initializers/container_backend.rb` resolves one `Rails.application.config.x.container_backend` from `CONTAINER_BACKEND`.
-- Fresh provisioning defaults to `Containers.backend`.
-- Warm pool replenishment creates entries with `Containers.backend.identifier`.
-- `ProcessRunQueueJob` fetches one Docker capacity policy/snapshot per pass.
-- `Capacity::RunAdmission#active_local_agent_reserved_bytes` only accounts for local-style hosts (`nil`, blank, and `local`).
-- `ServiceContainerReconciliationJob` checks running service containers through `Containers.backend`.
-- Network and proxy readiness are evaluated for the backend passed to provisioning, but no scheduler chooses among several backend candidates.
-- The account operations dashboard can already surface capacity state, but there is no UI for adding Docker hosts, setting per-host concurrency limits, checking readiness, or guiding remote-host setup.
-
-Subscription-runner auth is also not multi-host aware yet. RDR-041 now defines the required auth eligibility contract: managed provider materializers can make a subscription runner remote-safe, but legacy host-mounted subscription credentials remain local-only unless the selected backend supports host paths.
+No remaining acceptance gaps were found in the locked RDR-048 scope, so this
+audit does not create follow-up issues.
 
 ## Issue Plan
 
@@ -339,7 +331,9 @@ Each configured backend should have a health/readiness check that can be evaluat
   - `paid_agent`;
   - `paid_internal`.
 - `paid-agent:latest` exists locally on that Docker host or can be pulled/created according to configured policy.
-- Remote containers can reach that host’s configured Paid callback/proxy URL.
+- The host's configured Paid callback/proxy URL is present and valid for that
+  backend, and the setup guide provides a disposable-container reachability
+  probe to verify actual container access.
 - Backend supports the selected run’s mount/auth/network requirements.
 - TLS credentials for remote Docker are present and valid enough to connect.
 
@@ -366,6 +360,11 @@ Networks are per-host state. `NetworkPolicy.ensure_network!` already accepts a b
 #### Proxy and Callback URLs
 
 Remote backends need a URL reachable from containers on that host. The current global `PAID_PROXY_EXTERNAL_URL` is sufficient for one remote host, but multi-host mode needs per-host callback configuration because different hosts may reach Paid through different addresses.
+
+The shipped readiness contract is intentionally split:
+
+- host readiness validates that the per-host callback URL is present and well-formed;
+- the setup guide's disposable-container probe validates actual container-to-Paid reachability on that host.
 
 For the verified QNAP setup:
 
@@ -574,7 +573,7 @@ Rejected. This would technically enable multiple Docker hosts, but it would keep
 - Cleanup scans all configured hosts in multi-host mode.
 - Metrics collection reads from the persisted host for each running container.
 - Remote hosts are rejected for runs that require unsupported host bind mounts.
-- Remote proxy readiness validates that containers can reach the configured Paid callback URL.
+- Remote proxy readiness validates per-host callback URL configuration, and the setup guide validates actual container reachability with a disposable-container probe.
 - The setup guide can generate or accept certificate material, test Docker TLS connectivity, and show copyable remaining setup commands.
 - The setup guide can verify or guide image availability and required networks per host.
 - Tests cover backward compatibility, host selection, fallback, host concurrency, persisted host lookup, setup wizard behavior, cleanup, and metrics.
