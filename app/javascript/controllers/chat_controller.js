@@ -477,7 +477,7 @@ export default class extends Controller {
 
       container.innerHTML = repos.map((repo) => {
         const staleBadge = repo.stale ? "<span class=\"inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-medium text-rose-700\">stale</span>" : ""
-        const staleReason = repo.stale_reason ? `<p class=\"mt-1 text-xs text-rose-600\">${this.escapeHtml(repo.stale_reason)}</p>` : ""
+        const staleReason = repo.stale_reason ? `<p class="mt-1 text-xs text-rose-600">${this.escapeHtml(repo.stale_reason)}</p>` : ""
 
         return `<div class="rounded-md bg-white px-3 py-2 text-sm text-gray-700 ring-1 ring-gray-200">
           <div class="flex items-center justify-between gap-2">
