@@ -383,6 +383,20 @@ RSpec.describe "ChatSessions" do
         expect(response.body).to include("Projects - Paid")
       end
 
+      it "wraps the popup capability panel inside the chat controller scope" do
+        get chat_session_path(chat_session), params: { display: "popup" }, headers: { "Accept" => "text/html" }
+
+        expect(response).to have_http_status(:ok)
+
+        doc = Nokogiri::HTML(response.body)
+        chat_root = doc.at_css("section[data-controller='chat'][data-chat-session-id-value]")
+        capability_panel = doc.at_css("[data-chat-target='capabilityPanel']")
+
+        expect(chat_root).to be_present
+        expect(capability_panel).to be_present
+        expect(chat_root.at_css("[data-chat-target='capabilityPanel']")).to eq(capability_panel)
+      end
+
       it "renders mobile archive controls without expanding the sidebar by default" do
         get chat_session_path(chat_session)
 

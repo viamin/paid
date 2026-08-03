@@ -59,6 +59,20 @@ RSpec.describe ChatSessions::Reopen do
     expect(session.clone_manifest_entries.first).to include(status: "ready", stale: false)
   end
 
+  it "clears any existing workspace contents before replaying the clone manifest" do
+    session = create(:chat_session, :closed, :workspace, account:, created_by: user, container_capability: "stopped", container_id: nil)
+    session.update!(clone_manifest: reopen_manifest(project))
+
+    expect_workspace_reset
+    expect_clone_restore(project)
+
+    perform_enqueued_jobs do
+      described_class.call(chat_session: session)
+    end
+
+    expect(session.reload.clone_manifest_entries.first).to include(status: "ready", stale: false)
+  end
+
   it "marks failed clones stale and persists a system notice naming them" do
     session = create(:chat_session, :closed, :workspace, account:, created_by: user, container_capability: "stopped", container_id: nil)
     session.update!(clone_manifest: reopen_manifest(project, other_project))
@@ -79,7 +93,8 @@ RSpec.describe ChatSessions::Reopen do
   it "redacts clone tokens from reopen failure notices" do
     session = create(:chat_session, :closed, :workspace, account:, created_by: user, container_capability: "stopped", container_id: nil)
     session.update!(clone_manifest: reopen_manifest(project))
-    allow(backend).to receive(:exec_in_container).and_return([
+    stub_workspace_reset
+    stub_clone_restore(project, result: [
       "",
       "fatal: repository 'https://x-access-token:#{project.github_token.token}@github.com/#{project.full_name}.git/' not found",
       128
@@ -114,5 +129,47 @@ RSpec.describe ChatSessions::Reopen do
         token_identity: "project-token:#{manifest_project.github_token.name}"
       }
     end
+  end
+
+  def workspace_reset_command
+    [ "sh", "-c", "find /workspace -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +" ]
+  end
+
+  def clone_restore_command(project)
+    [ "sh", "-c", "git clone --depth 1 https://x-access-token:$CLONE_TOKEN@github.com/#{project.full_name}.git /workspace/#{project.full_name.tr('/', '-')} 2>&1" ]
+  end
+
+  def clone_restore_options(project)
+    {
+      user: "agent",
+      wait: account.tenant_setting&.chat_clone_timeout || ChatSessions::RestoreCloneManifest::CLONE_TIMEOUT,
+      Env: [ "CLONE_TOKEN=#{project.github_token.token}" ]
+    }
+  end
+
+  def expect_workspace_reset
+    expect(backend).to receive(:exec_in_container)
+      .with(container, workspace_reset_command, user: "agent", wait: ChatSessions::RestoreCloneManifest::WORKSPACE_RESET_TIMEOUT)
+      .ordered
+      .and_return([ "", "", 0 ])
+  end
+
+  def stub_workspace_reset
+    allow(backend).to receive(:exec_in_container)
+      .with(container, workspace_reset_command, user: "agent", wait: ChatSessions::RestoreCloneManifest::WORKSPACE_RESET_TIMEOUT)
+      .and_return([ "", "", 0 ])
+  end
+
+  def expect_clone_restore(project)
+    expect(backend).to receive(:exec_in_container)
+      .with(container, clone_restore_command(project), clone_restore_options(project))
+      .ordered
+      .and_return([ "", "", 0 ])
+  end
+
+  def stub_clone_restore(project, result:)
+    allow(backend).to receive(:exec_in_container)
+      .with(container, clone_restore_command(project), clone_restore_options(project))
+      .and_return(result)
   end
 end

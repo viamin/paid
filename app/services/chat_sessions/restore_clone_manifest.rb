@@ -5,6 +5,7 @@ require "shellwords"
 module ChatSessions
   class RestoreCloneManifest
     CLONE_TIMEOUT = 120
+    WORKSPACE_RESET_TIMEOUT = 30
 
     attr_reader :chat_session
 
@@ -17,12 +18,28 @@ module ChatSessions
     end
 
     def call
+      reset_workspace! if chat_session.clone_manifest_entries.any?
+
       failures = chat_session.clone_manifest_entries.filter_map { |entry| restore_entry(entry) }
       persist_failure_notice!(failures) if failures.any?
       failures
     end
 
     private
+
+    def reset_workspace!
+      result = Containers.backend.exec_in_container(
+        Containers.backend.get_container(chat_session.container_id),
+        [ "sh", "-c", "find /workspace -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +" ],
+        user: "agent",
+        wait: WORKSPACE_RESET_TIMEOUT
+      )
+
+      return if result.is_a?(Array) && result[2].to_i.zero?
+
+      output = result.is_a?(Array) ? result[0..1].flatten.join("\n").presence || "workspace reset failed" : "workspace reset failed"
+      raise "Workspace reset failed: #{output.truncate(300)}"
+    end
 
     def restore_entry(entry)
       project = Project.find_by(id: entry[:project_id])

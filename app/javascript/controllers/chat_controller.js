@@ -2,7 +2,7 @@ import { Controller } from "@hotwired/stimulus"
 import consumer from "../channels/consumer"
 
 export default class extends Controller {
-  static targets = ["container", "messages", "input", "status", "typingIndicator", "tokenUsage", "capabilityBadge", "capabilityLabel", "capabilityRepos"]
+  static targets = ["container", "messages", "input", "status", "typingIndicator", "tokenUsage", "capabilityBadge", "capabilityPanel", "capabilityLabel", "capabilityIcon", "capabilityRepos"]
   static values = { sessionId: Number }
 
   connect() {
@@ -152,7 +152,7 @@ export default class extends Controller {
     const capability = data.container_capability
     if (!capability) return
 
-    const styles = {
+    const badgeStyles = {
       none: "bg-gray-100 text-gray-600",
       pending: "bg-amber-100 text-amber-800",
       provisioning: "bg-amber-100 text-amber-800",
@@ -160,16 +160,33 @@ export default class extends Controller {
       failed: "bg-rose-100 text-rose-700",
       stopped: "bg-gray-100 text-gray-600"
     }
-    const classes = styles[capability] || styles.none
+    const iconStyles = {
+      none: "text-gray-500 fill-current",
+      pending: "text-amber-500 fill-current",
+      provisioning: "text-amber-500 fill-current",
+      ready: "text-green-500 fill-current",
+      failed: "text-rose-500 fill-current",
+      stopped: "text-gray-500 fill-current"
+    }
+    const badgeClasses = badgeStyles[capability] || badgeStyles.none
+    const iconClasses = iconStyles[capability] || iconStyles.none
 
     this.capabilityBadgeTargets.forEach((badge) => {
       badge.textContent = data.container_capability_label || capability.charAt(0).toUpperCase() + capability.slice(1)
-      badge.className = `inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${classes}`
+      badge.className = `inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${badgeClasses}`
       badge.dataset.capability = capability
+    })
+
+    this.capabilityPanelTargets.forEach((panel) => {
+      panel.dataset.chatCapability = capability
     })
 
     this.capabilityLabelTargets.forEach((label) => {
       label.textContent = data.container_capability_label || capability
+    })
+
+    this.capabilityIconTargets.forEach((icon) => {
+      icon.className = `h-4 w-4 ${iconClasses}`
     })
 
     this.updateCapabilityActions(capability)
