@@ -27,7 +27,9 @@ RSpec.describe HealthChecks::Checks::Project::ReviewWithoutBot do
           code: :review_without_bot,
           scope: :project,
           severity: :error,
-          title: "Paid Agent review is enabled but the paid-code-reviewer GitHub App is not configured."
+          title: "Review enabled without the review bot configured",
+          remediation: a_string_including("paid-code-reviewer GitHub App"),
+          action_url: nil
         )
       )
     end

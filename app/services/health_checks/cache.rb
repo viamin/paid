@@ -22,6 +22,7 @@ module HealthChecks
       def clear(subject)
         Rails.cache.delete(cache_key(subject))
       end
+      alias_method :delete, :clear
 
       private
 

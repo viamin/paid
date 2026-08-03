@@ -157,6 +157,7 @@ class ApplicationJob < ActiveJob::Base
       EmbedChunksJob,
       EnqueueKnowledgeCollectionJob,
       ProjectConventions::OpenHookGuardrailPullRequestJob,
+      ProjectHealthCheckJob,
       PoolReplenishmentJob,
       RunCollectorsJob,
       StyleGuideExtractionJob

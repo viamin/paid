@@ -11,7 +11,9 @@ RSpec.describe HealthChecks::Checks::Project::AutoMergeWithoutOwner do
         code: :auto_merge_without_owner,
         scope: :project,
         severity: :error,
-        title: "Auto-merge is enabled but owner reviewer login is blank."
+        title: "Auto-merge enabled without an owner reviewer",
+        remediation: a_string_including("owner reviewer login"),
+        action_url: nil
       )
     )
   end

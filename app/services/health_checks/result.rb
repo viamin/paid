@@ -8,15 +8,15 @@ module HealthChecks
     end
 
     def healthy?
-      findings.none? { |f| f.severity == :error }
+      findings.none?(&:error?)
     end
 
     def warnings?
-      findings.any? { |f| f.severity == :warning }
+      findings.any?(&:warning?)
     end
 
     def for_scope(scope)
-      findings.select { |f| f.scope == scope }
+      findings.select { |finding| finding.scope == scope.to_sym }
     end
 
     def counts

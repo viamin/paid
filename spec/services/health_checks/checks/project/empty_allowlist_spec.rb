@@ -11,7 +11,9 @@ RSpec.describe HealthChecks::Checks::Project::EmptyAllowlist do
         code: :empty_allowlist,
         scope: :project,
         severity: :error,
-        title: "Trusted GitHub usernames allowlist is empty."
+        title: "Trusted usernames allowlist is empty",
+        remediation: a_string_including("trusted GitHub username"),
+        action_url: nil
       )
     )
   end

@@ -525,6 +525,39 @@ class UserSetting < ApplicationRecord
 
   alias_method :provider_state_for, :runner_state_for
 
+  # Tokens in +fallback_runners+ that no longer resolve to a currently enabled
+  # fallback runner (i.e. reference discarded or disabled runners). Read-only
+  # advisory query used by the configuration health checks (RDR-049); it does
+  # not mutate +fallback_runners+ the way validate_fallback_runners does.
+  def stale_fallback_runner_tokens
+    tokens = fallback_runners
+    return [] unless tokens.is_a?(Array)
+
+    candidates = allowed_runner_identifiers_for_fallback
+    tokens.filter_map do |token|
+      token = token.to_s
+      next if token.blank?
+      next if candidates.include?(token)
+      next if identifiers_for_runner_token(token, candidates: candidates).any?
+
+      token
+    end
+  end
+
+  # True when +default_agent_runner+ is set but resolves to no currently
+  # enabled agent-run runner. Returns false when no enabled runner exists at
+  # all (that deeper problem is covered by the NoAgentRunners check). Read-only
+  # advisory query used by the configuration health checks (RDR-049).
+  def default_runner_unavailable?
+    token = default_agent_runner.to_s
+    return false if token.blank?
+
+    allowed = allowed_runner_identifiers_for_agent_runs
+    return false unless allowed.any?
+
+    !allowed.include?(token) && normalized_default_agent_runner.blank?
+  end
+
   private
 
   def sync_legacy_provider_bridge_columns
