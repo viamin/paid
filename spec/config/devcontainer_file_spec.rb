@@ -34,4 +34,10 @@ RSpec.describe DevcontainerFile, :no_db do
     expect(oh_my_pi_installer).to include("sha256sum -c -")
     expect(oh_my_pi_installer).not_to include("https://bun.sh/install")
   end
+
+  it "uses a lightweight post-start command to restore the detached dev supervisor" do
+    command = devcontainer.fetch("postStartCommand").fetch("start-dev")
+
+    expect(command).to eq("bin/dev --detach --restart-if-running")
+  end
 end
