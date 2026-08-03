@@ -318,7 +318,7 @@ module Projects
 
     def resume
       authorize @agent_run
-      redirect_target = safe_return_target || project_agent_run_path(@project, @agent_run)
+      redirect_target = url_from(params[:return_to]) || project_agent_run_path(@project, @agent_run)
 
       unless @agent_run.paused?
         redirect_to redirect_target,
@@ -1049,22 +1049,6 @@ module Projects
       agent_run.guardrail_violation_type.presence ||
         agent_run.guardrail_context&.dig("violation_type").presence ||
         "unknown"
-    end
-
-    def safe_return_target
-      normalized_return_to(params[:return_to])
-    end
-
-    def normalized_return_to(candidate)
-      return if candidate.blank?
-
-      parsed = URI.parse(candidate.to_s)
-      return unless parsed.scheme.nil? && parsed.host.nil?
-      return unless candidate.to_s.start_with?("/") && !candidate.to_s.start_with?("//")
-
-      candidate.to_s
-    rescue URI::InvalidURIError
-      nil
     end
 
     def create_review_runs_and_redirect(pr_ids:, on_error_path:, custom_prompt:, goal:)
