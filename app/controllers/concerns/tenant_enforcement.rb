@@ -49,11 +49,11 @@ module TenantEnforcement
     if request.format.json?
       render_json_tenant_block(message)
     elsif request.format.turbo_stream?
-      redirect_back_safely(fallback_location, alert: message, status: :see_other)
+      redirect_back(fallback_location:, alert: message, status: :see_other)
     elsif sse_request?
       render_sse_tenant_block(message)
     else
-      redirect_back_safely(fallback_location, alert: message)
+      redirect_back(fallback_location:, alert: message)
     end
   end
 

@@ -65,7 +65,7 @@ class ApplicationController < ActionController::Base
 
   def user_not_authorized
     flash[:alert] = "You are not authorized to perform this action."
-    redirect_back_safely(root_path)
+    redirect_back(fallback_location: root_path)
   end
 
   def skip_pundit?
@@ -74,24 +74,5 @@ class ApplicationController < ActionController::Base
 
   def verify_policy_scoped?
     action_name == "index" && !skip_pundit?
-  end
-
-  def redirect_back_safely(fallback_location, **options)
-    redirect_to safe_back_location(fallback_location), allow_other_host: false, **options
-  end
-
-  def safe_back_location(fallback_location)
-    referer = request.referer
-    return fallback_location if referer.blank?
-
-    uri = URI.parse(referer)
-    return fallback_location unless uri.host == request.host
-
-    path = uri.request_uri
-    return fallback_location unless path&.start_with?("/")
-
-    path
-  rescue URI::InvalidURIError
-    fallback_location
   end
 end

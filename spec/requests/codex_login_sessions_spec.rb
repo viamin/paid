@@ -15,6 +15,18 @@ RSpec.describe "CodexLoginSessions" do
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("Connect Codex")
     end
+
+    it "drops unsafe return_to targets before rendering links" do
+      get new_codex_login_session_path(return_to: "https://evil.example/phish")
+
+      document = Nokogiri::HTML.parse(response.body)
+      cancel_link = document.at_css("a[href^='/integration_credentials']")
+      hidden_return_to = document.at_css("input[name='codex_login_session[metadata][return_to]']")
+
+      expect(response).to have_http_status(:ok)
+      expect(cancel_link["href"]).to eq(integration_credentials_path(category: "llm_provider", service_key: "openai"))
+      expect(hidden_return_to["value"]).to be_nil
+    end
   end
 
   describe "POST /codex_login_sessions" do
@@ -35,6 +47,19 @@ RSpec.describe "CodexLoginSessions" do
       session = CodexLoginSession.order(:id).last
       expect(CodexLoginSessions::DeviceFlow).to have_received(:call).with(session: session)
       expect(response).to redirect_to(codex_login_session_path(session.external_id))
+    end
+
+    it "sanitizes a tampered return_to before persisting metadata" do
+      post codex_login_sessions_path, params: {
+        codex_login_session: {
+          credential_name: "Codex Connect Login",
+          metadata: {
+            return_to: "https://evil.example/phish"
+          }
+        }
+      }
+
+      expect(CodexLoginSession.order(:id).last.metadata["return_to"]).to be_nil
     end
   end
 
@@ -95,6 +120,28 @@ RSpec.describe "CodexLoginSessions" do
 
       expect(response).to have_http_status(:unprocessable_content)
       expect(response.body).to include("expired")
+    end
+  end
+
+  describe "GET /codex_login_sessions/:id" do
+    let!(:session_record) do
+      create(
+        :codex_login_session,
+        :awaiting_authorization,
+        account: account,
+        created_by: owner_user,
+        metadata: { "return_to" => "https://evil.example/phish" }
+      )
+    end
+
+    before { sign_in owner_user }
+
+    it "does not render an unsafe persisted return_to link" do
+      get codex_login_session_path(session_record.external_id)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).not_to include("https://evil.example/phish")
+      expect(response.body).not_to include("Return to Previous Page")
     end
   end
 end

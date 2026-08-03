@@ -74,7 +74,7 @@ class StyleGuidesController < ApplicationController
 
   def extract
     if params[:project_id].blank?
-      redirect_back fallback_location: style_guides_path, allow_other_host: false, alert: "Please select a project before extracting a style guide."
+      redirect_back fallback_location: style_guides_path, alert: "Please select a project before extracting a style guide."
       return
     end
 

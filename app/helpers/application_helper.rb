@@ -800,23 +800,14 @@ module ApplicationHelper
   def safe_return_path?(path)
     return false if path.blank?
 
-    # Parse the URI to validate it's a relative path without scheme or host
-    parsed = URI.parse(path.to_s)
+    path = path.to_s
+    return false unless path.start_with?("/") && !path.start_with?("//")
 
-    # Reject if scheme or host are present (prevents absolute URLs)
-    return false if parsed.scheme.present? || parsed.host.present?
-
-    # Only accept paths that start with "/" but not "//"
-    path.to_s.start_with?("/") && !path.to_s.start_with?("//")
-  rescue URI::InvalidURIError
-    false
+    safe_url_from(path).present?
   end
 
   def safe_referer?(url)
-    uri = URI.parse(url)
-    uri.host == request.host
-  rescue URI::InvalidURIError
-    false
+    safe_url_from(url.to_s).present?
   end
 
   def priority_tier_for_label(project, label)
@@ -826,5 +817,13 @@ module ApplicationHelper
     Project::PRIORITY_TIERS.find do |tier|
       label == project.priority_label_for(tier)
     end
+  end
+
+  def safe_url_from(url)
+    return unless respond_to?(:controller) && controller.respond_to?(:url_from)
+
+    controller.url_from(url)
+  rescue URI::InvalidURIError
+    nil
   end
 end
