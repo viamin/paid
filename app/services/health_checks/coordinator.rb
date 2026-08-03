@@ -42,6 +42,20 @@ module HealthChecks
       ).call
     end
 
+    def self.internal_error_finding(check_class:, subject:, error:)
+      Finding.new(
+        code: INTERNAL_ERROR_CODE,
+        scope: check_class.scope,
+        severity: :error,
+        title: "Internal health check error",
+        description: "#{check_class.name || check_class} raised #{error.class}: #{error.message}",
+        remediation: "Re-run the health checks. If this persists, investigate the check implementation.",
+        subject_type: subject.class.name,
+        subject_id: subject.try(:id),
+        metadata: { check_class: check_class.name || check_class.to_s, error_class: error.class.name }
+      )
+    end
+
     def initialize(scope:, subject:, include_network: false, owner_findings_cache: {}, effective_owner: nil)
       @scope = scope
       @subject = subject
@@ -114,19 +128,8 @@ module HealthChecks
     end
 
     def internal_error_finding(check_class, check_subject, error)
-      Finding.new(
-        code: INTERNAL_ERROR_CODE,
-        scope: check_class.scope,
-        severity: :error,
-        title: "Internal health check error",
-        description: "#{check_class.name || check_class} raised #{error.class}: #{error.message}",
-        remediation: "Re-run the health checks. If this persists, investigate the check implementation.",
-        subject_type: check_subject.class.name,
-        subject_id: check_subject.try(:id),
-        metadata: { check_class: check_class.name || check_class.to_s, error_class: error.class.name }
-      )
+      self.class.internal_error_finding(check_class:, subject: check_subject, error:)
     end
-
 
     def effective_owner
       @effective_owner || subject.effective_owner

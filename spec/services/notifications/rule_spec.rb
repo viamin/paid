@@ -50,4 +50,15 @@ RSpec.describe Notifications::Rule do
       rule_class.call(scope: [ project ])
     }.to change(NotificationRuleState, :count).by(-1)
   end
+
+  it "forwards evaluation context to each registered rule" do
+    rule = class_double(rule_class, call: nil)
+    described_class.register(rule)
+
+    described_class.evaluate_all(account: account, test_context: { project_id: project.id })
+
+    expect(rule).to have_received(:call).with(scope: account, test_context: { project_id: project.id })
+  ensure
+    described_class.rule_classes.clear
+  end
 end
