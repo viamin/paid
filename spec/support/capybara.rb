@@ -27,7 +27,11 @@ Capybara.register_driver(:paid_cuprite) do |app|
   )
 end
 
-SYSTEM_DRIVER = if File.exist?(ENV["CHROMIUM_PATH"] || "/usr/bin/chromium")
+def browser_system_tests_enabled?
+  ENV.fetch("BROWSER_SYSTEM_TESTS", "false") == "true"
+end
+
+SYSTEM_DRIVER = if browser_system_tests_enabled? && File.exist?(ENV["CHROMIUM_PATH"] || "/usr/bin/chromium")
   :paid_cuprite
 else
   :rack_test

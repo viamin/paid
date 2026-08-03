@@ -45,6 +45,7 @@ RSpec.describe SystemWorkflowFile, :no_db do
     locate_step = system_step("Locate Chromium-family browser")
 
     expect(locate_step.fetch("run")).to include("command -v chromium || true")
+    expect(locate_step.fetch("run")).to include('echo "BROWSER_SYSTEM_TESTS=true" >> "$GITHUB_ENV"')
     expect(locate_step.fetch("run")).to include('echo "CHROMIUM_PATH=$path" >> "$GITHUB_ENV"')
   end
 

@@ -129,6 +129,7 @@ jobs:
         run: |
           path="$(command -v google-chrome || command -v chromium-browser || command -v chromium || true)"
           if [ -n "$path" ]; then
+            echo "BROWSER_SYSTEM_TESTS=true" >> "$GITHUB_ENV"
             echo "CHROMIUM_PATH=$path" >> "$GITHUB_ENV"
             "$path" --version
           else
