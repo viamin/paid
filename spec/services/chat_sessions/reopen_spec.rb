@@ -76,6 +76,24 @@ RSpec.describe ChatSessions::Reopen do
     expect(notice.content).to include("could not be cloned")
   end
 
+  it "redacts clone tokens from reopen failure notices" do
+    session = create(:chat_session, :closed, :workspace, account:, created_by: user, container_capability: "stopped", container_id: nil)
+    session.update!(clone_manifest: reopen_manifest(project))
+    allow(backend).to receive(:exec_in_container).and_return([
+      "",
+      "fatal: repository 'https://x-access-token:#{project.github_token.token}@github.com/#{project.full_name}.git/' not found",
+      128
+    ])
+
+    perform_enqueued_jobs do
+      described_class.call(chat_session: session)
+    end
+
+    notice = session.reload.messages.system.find_by("metadata ->> 'reopen_clone_failures' = 'true'")
+    expect(notice.content).to include("x-access-token:[REDACTED]@github.com")
+    expect(notice.content).not_to include(project.github_token.token)
+  end
+
   it "is a no-op for an already-active workspace session" do
     session = create(:chat_session, :workspace, account:, created_by: user)
 

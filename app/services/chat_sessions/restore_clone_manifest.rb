@@ -44,10 +44,10 @@ module ChatSessions
       exit_code = result.is_a?(Array) ? result[2].to_i : -1
       return clear_stale(entry, project) if exit_code.zero?
 
-      output = result.is_a?(Array) ? result[0..1].flatten.join("\n").truncate(300) : "clone command failed"
+      output = clone_failure_output(result, github_token.token)
       mark_stale(entry, "clone_failed", output)
     rescue Docker::Error::DockerError => e
-      mark_stale(entry, "clone_failed", e.message)
+      mark_stale(entry, "clone_failed", redact_clone_output(e.message, github_token&.token))
     end
 
     def clear_stale(entry, project)
@@ -98,6 +98,18 @@ module ChatSessions
       }
 
       existing_notice ? existing_notice.update!(**attributes) : chat_session.messages.create!(**attributes)
+    end
+
+    def clone_failure_output(result, token)
+      raw_output = result.is_a?(Array) ? result[0..1].flatten.join("\n") : "clone command failed"
+      redact_clone_output(raw_output, token).truncate(300)
+    end
+
+    def redact_clone_output(output, token)
+      redacted = output.to_s.dup
+      redacted.gsub!(token, "[REDACTED]") if token.present?
+      redacted.gsub!(%r{x-access-token:[^@/\s]+@github\.com}, "x-access-token:[REDACTED]@github.com")
+      redacted
     end
   end
 end
