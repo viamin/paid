@@ -6,7 +6,7 @@
 
 ## Auto-approve
 
-- [ ] **CHAT-SESSION-PREFERENCES-001** - When a user toggles the
+- [x] **CHAT-SESSION-PREFERENCES-001** - When a user toggles the
   auto-approve checkbox from an active chat conversation, the system SHALL
   persist the new `auto_approve` value and complete the update in place
   without a redirect or full-page reload, so unsent message input remains in
