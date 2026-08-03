@@ -62,7 +62,7 @@ module HealthChecks
 
     private
 
-    attr_reader :scope, :subject, :include_network
+    attr_reader :scope, :subject, :include_network, :owner_findings_cache
 
     def compose_findings
       return run_scope(scope, subject) unless scope == :project
@@ -127,9 +127,6 @@ module HealthChecks
       )
     end
 
-    def owner_findings_cache
-      @owner_findings_cache
-    end
 
     def effective_owner
       @effective_owner || subject.effective_owner
