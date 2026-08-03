@@ -77,7 +77,7 @@ class ApplicationController < ActionController::Base
   end
 
   def redirect_back_safely(fallback_location, **options)
-    redirect_to safe_back_location(fallback_location), **options
+    redirect_to safe_back_location(fallback_location), allow_other_host: false, **options
   end
 
   def safe_back_location(fallback_location)
@@ -87,7 +87,10 @@ class ApplicationController < ActionController::Base
     uri = URI.parse(referer)
     return fallback_location unless uri.host == request.host
 
-    uri.request_uri || fallback_location
+    path = uri.request_uri
+    return fallback_location unless path&.start_with?("/")
+
+    path
   rescue URI::InvalidURIError
     fallback_location
   end
