@@ -120,10 +120,9 @@
     // the end of the "setup" chain above (ordering-sensitive), not here.
   },
   // Use 'postStartCommand' to run commands every time the container starts.
-  "postStartCommand": {
-    "git-https": "git config --local remote.origin.url https://github.com/viamin/paid.git && git config --local credential.helper '!/usr/bin/gh auth git-credential'",
-    "ensure-networks-and-qdrant": "bash .devcontainer/ensure-networks-and-qdrant.sh"
-  },
+  // Keep post-start work serialized: bin/setup reaches qdrant:check, so Qdrant
+  // must already be up before setup runs on a cold container start.
+  "postStartCommand": "git config --local remote.origin.url https://github.com/viamin/paid.git && git config --local credential.helper '!/usr/bin/gh auth git-credential' && bash .devcontainer/ensure-networks-and-qdrant.sh && bin/setup",
   "waitFor": "postStartCommand",
   "customizations": {
     "vscode": {
