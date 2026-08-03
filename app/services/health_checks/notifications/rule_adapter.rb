@@ -5,8 +5,8 @@ require "json"
 
 module HealthChecks
   module Notifications
-    # Adapts cached per-project health-check findings into the existing
-    # Notifications::Rule publish/resolve flow.
+    # Bridges cached project health findings into the existing notification
+    # pipeline while preserving one notification per distinct finding.
     # @spec HEALTH-CHECKS-001
     # @spec HEALTH-CHECKS-002
     # @spec HEALTH-CHECKS-003
@@ -14,18 +14,44 @@ module HealthChecks
       SOURCE_PREFIX = "health_check".freeze
       NAV_SECTION = "projects"
 
-      def call(scope:)
-        Array(scope).each { |project| sync_project(project) }
+      class << self
+        def for(check_class)
+          Class.new(self) do
+            define_singleton_method(:check_class) { check_class }
+          end
+        end
+      end
+
+      def initialize(health_check_results_by_project_id: {})
+        @health_check_results_by_project_id = health_check_results_by_project_id
+      end
+
+      def call(scope: nil, health_check_results_by_project_id: nil, **_kwargs)
+        @health_check_results_by_project_id = health_check_results_by_project_id || @health_check_results_by_project_id
+        projects_for(scope).each { |project| sync_project(project) }
       end
 
       private
 
+      attr_reader :health_check_results_by_project_id
+
+      def check_class
+        self.class.check_class
+      end
+
+      def projects_for(scope)
+        case scope
+        when Account
+          Project.where(account: scope).includes(:account)
+        when Project
+          Array(scope)
+        else
+          Array(scope)
+        end
+      end
+
       def sync_project(project)
-        # A nil result is a transient cache miss (eviction, cold start), not
-        # "healthy" — the health-check UI renders nil as "no result yet". Treat
-        # only a real result as actionable so a cache gap never clears active
-        # notifications. Only a result with empty findings means "healthy".
-        result = HealthChecks::Cache.read(project)
+        result = health_check_result_for(project)
         return if result.nil?
 
         active_sources = current_entries(project, result).map do |entry|
@@ -37,8 +63,8 @@ module HealthChecks
       end
 
       def current_entries(project, result)
-        findings = result.findings
-        subjects = preload_subjects(project, findings)
+        findings = result.findings.select { |finding| matching_finding?(finding) }
+        subjects = preload_subjects(findings)
 
         findings
           .map { |finding| entry_for(project, finding, subjects:) }
@@ -81,7 +107,7 @@ module HealthChecks
       end
 
       def source_prefix(project)
-        "#{SOURCE_PREFIX}/project/#{project.id}/%"
+        "#{SOURCE_PREFIX}/project/#{project.id}/#{check_class.code}/%"
       end
 
       def notification_source(project, finding)
@@ -111,7 +137,16 @@ module HealthChecks
         end
       end
 
-      def preload_subjects(project, findings)
+      def matching_finding?(finding)
+        finding.code == check_class.code || internal_error_for_check?(finding)
+      end
+
+      def internal_error_for_check?(finding)
+        finding.code == HealthChecks::Coordinator::INTERNAL_ERROR_CODE &&
+          finding.metadata.to_h.with_indifferent_access[:check_class] == (check_class.name || check_class.to_s)
+      end
+
+      def preload_subjects(findings)
         findings
           .group_by { |finding| subject_class_for(finding) }
           .each_with_object({}) do |(subject_class, grouped_findings), subjects|
@@ -162,6 +197,12 @@ module HealthChecks
           health_check_subject_id: finding.subject_id,
           project_id: project.id
         ).compact
+      end
+
+      def health_check_result_for(project)
+        return health_check_results_by_project_id[project.id] if health_check_results_by_project_id.key?(project.id)
+
+        HealthChecks::Cache.read(project)
       end
 
       def subject_reference(subject_class, subject_id)

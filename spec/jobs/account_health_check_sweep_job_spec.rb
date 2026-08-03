@@ -38,12 +38,12 @@ RSpec.describe AccountHealthCheckSweepJob do
   describe "#perform" do
     before do
       allow(HealthChecks::Cache).to receive(:write)
-      allow(HealthChecks::Notifications::RuleAdapter).to receive(:call)
       allow(Rails.logger).to receive(:info)
       allow(Rails.logger).to receive(:warn)
+      allow(Notifications::Rule).to receive(:evaluate_all)
     end
 
-    it "writes the cached result for each project, syncs notifications, and emits the sweep_completed log" do
+    it "writes the cached result for each project, evaluates notifications, and emits the sweep_completed log" do
       projects = create_list(:project, 2)
       allow(HealthChecks::Coordinator).to receive(:call).and_return(clean_result)
 
@@ -55,8 +55,8 @@ RSpec.describe AccountHealthCheckSweepJob do
           owner_findings_cache: anything, effective_owner: anything
         )
         expect(HealthChecks::Cache).to have_received(:write).with(project, clean_result)
-        expect(HealthChecks::Notifications::RuleAdapter).to have_received(:call).with(scope: project)
       end
+      expect(Notifications::Rule).to have_received(:evaluate_all).twice
       expect(Rails.logger).to have_received(:info).with(
         hash_including(message: "project_health.sweep_completed", projects_checked: 2, total_findings: 0)
       )
@@ -152,24 +152,38 @@ RSpec.describe AccountHealthCheckSweepJob do
       )
     end
 
-    it "does not count notification sync failures as project sweep failures" do
-      good = create(:project)
-      allow(HealthChecks::Coordinator).to receive(:call).and_return(warning_result)
-      allow(HealthChecks::Notifications::RuleAdapter).to receive(:call) do |scope:|
-        raise "notify boom" if scope == good
-      end
+    it "invokes evaluate_all for each distinct account after the sweep" do
+      account1 = create(:account)
+      account2 = create(:account)
+      project1 = create(:project, account: account1)
+      project2 = create(:project, account: account2)
+      allow(HealthChecks::Coordinator).to receive(:call).and_return(clean_result)
 
       described_class.perform_now
 
-      expect(HealthChecks::Cache).to have_received(:write).with(good, warning_result)
-      expect(Rails.logger).to have_received(:warn).with(
-        hash_including(message: "project_health.notification_sync_failed", project_id: good.id, error: "notify boom")
+      expect(Notifications::Rule).to have_received(:evaluate_all).with(
+        account: account1,
+        health_check_results_by_project_id: { project1.id => clean_result }
       )
-      expect(Rails.logger).not_to have_received(:warn).with(
-        hash_including(message: "project_health.sweep_project_failed", project_id: good.id)
+      expect(Notifications::Rule).to have_received(:evaluate_all).with(
+        account: account2,
+        health_check_results_by_project_id: { project2.id => clean_result }
+      )
+    end
+
+    it "isolates a failing evaluate_all call so the sweep continues" do
+      account = create(:account)
+      create(:project, account: account)
+      allow(HealthChecks::Coordinator).to receive(:call).and_return(clean_result)
+      allow(Notifications::Rule).to receive(:evaluate_all).and_raise("boom")
+
+      described_class.perform_now
+
+      expect(Rails.logger).to have_received(:warn).with(
+        hash_including(message: "project_health.notification_evaluate_all_failed", account_id: account.id, error: "boom")
       )
       expect(Rails.logger).to have_received(:info).with(
-        hash_including(message: "project_health.sweep_completed", projects_checked: 1, total_findings: 1)
+        hash_including(message: "project_health.sweep_completed")
       )
     end
   end
