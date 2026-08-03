@@ -41,7 +41,7 @@ module Tools
 
     def project_for_manifest_entry(project_id)
       @manifest_projects ||= {}
-      @manifest_projects[project_id] ||= TenantContext.with(session.account) { Project.find(project_id) }
+      @manifest_projects[project_id] ||= Project.find(project_id)
     end
 
     def project_for_authorization!(repo_path)
