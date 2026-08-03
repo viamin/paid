@@ -16,9 +16,10 @@ module ChatSessions
 
     def call
       TenantContext.with(chat_session.account) do
-        notice_message = sync_capability_notice!
+        notice_message, deleted_notice_id = sync_capability_notice!
         broadcast_capability_changed
         broadcast_notice_message(notice_message) if notice_message
+        broadcast_deleted_notice(deleted_notice_id) if deleted_notice_id
         publish_tools_list_changed
       end
     end
@@ -63,13 +64,16 @@ module ChatSessions
 
         if existing_notice
           existing_notice.update!(**attributes)
-          existing_notice
+          [ existing_notice, nil ]
         else
-          chat_session.messages.create!(**attributes)
+          [ chat_session.messages.create!(**attributes), nil ]
         end
       elsif existing_notice
+        deleted_notice_id = existing_notice.id
         existing_notice.destroy!
-        nil
+        [ nil, deleted_notice_id ]
+      else
+        [ nil, nil ]
       end
     end
 
@@ -91,6 +95,13 @@ module ChatSessions
           partial: "chat_messages/message",
           locals: { message: message }
         )
+      })
+    end
+
+    def broadcast_deleted_notice(message_id)
+      ActionCable.server.broadcast("chat_session:#{chat_session.id}", {
+        type: "message_deleted",
+        message_id: message_id
       })
     end
   end

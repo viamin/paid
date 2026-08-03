@@ -103,6 +103,12 @@ module ChatSessions
         chat_session_id: session.id,
         account_id: account.id
       )
+    rescue GoodJob::ActiveJobExtensions::Concurrency::ConcurrencyExceededError
+      Rails.logger.info(
+        message: "chat_sessions.create.provision_container_job_already_enqueued",
+        chat_session_id: session.id,
+        account_id: account.id
+      )
     end
 
     def eager_provisioning_enabled?

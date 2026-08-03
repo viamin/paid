@@ -90,6 +90,9 @@ export default class extends Controller {
     case "message_created":
       this.handleMessageCreated(data)
       break
+    case "message_deleted":
+      this.handleMessageDeleted(data)
+      break
     case "message_tool_call":
       this.handleMessageToolCall(data)
       break
@@ -346,6 +349,12 @@ export default class extends Controller {
 
     this.messagesTarget.append(messageElement)
     this.scrollToBottom()
+  }
+
+  handleMessageDeleted(data) {
+    if (!data.message_id) return
+
+    this.messageElementById(data.message_id)?.closest("div")?.remove()
   }
 
   buildMessageElement(html) {
