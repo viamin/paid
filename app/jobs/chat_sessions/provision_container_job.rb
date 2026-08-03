@@ -91,9 +91,17 @@ module ChatSessions
       # restore failed. Reclaim them and clear the recorded ids so a reopen retry
       # provisions fresh resources instead of leaking a running paid-chat-*
       # container while the orphaned one stays attached to the session.
+      #
+      # After release there are no live resources, so the session is functionally
+      # stopped, not failed. Restore errors are transient (clone/reset races), and
+      # another reopen is a valid retry. The UI's "Reopen with workspace" button is
+      # only surfaced for the stopped state, so leaving it failed would strand the
+      # user with no retry affordance even though the backend (ChatSessions::Reopen)
+      # accepts the retry. The specific failure is still surfaced to the user via
+      # persist_reopen_failure_notice!.
       Containers::ChatSessionManager.new(chat_session).release_resources!
       persist_reopen_failure_notice!(chat_session, error)
-      chat_session.update!(container_capability: "failed", container_id: nil, workspace_volume: nil)
+      chat_session.update!(container_capability: "stopped", container_id: nil, workspace_volume: nil)
       ChatSessions::BroadcastCapabilityState.call(chat_session: chat_session.reload)
     end
 

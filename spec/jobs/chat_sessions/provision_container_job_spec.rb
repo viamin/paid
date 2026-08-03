@@ -96,17 +96,17 @@ RSpec.describe ChatSessions::ProvisionContainerJob, type: :job do
           described_class.perform_now(chat_session_id: chat_session.id)
 
           session = chat_session.reload
-          expect(session.container_capability).to eq("failed")
+          expect(session.container_capability).to eq("stopped")
           expect(session.container_id).to be_nil
           expect(session.workspace_volume).to be_nil
         end
 
-        it "moves the session to failed and persists a reopen-failure notice" do
+        it "moves the session to stopped and persists a reopen-failure notice" do
           expect {
             described_class.perform_now(chat_session_id: chat_session.id)
           }.not_to raise_error
 
-          expect(chat_session.reload.container_capability).to eq("failed")
+          expect(chat_session.reload.container_capability).to eq("stopped")
 
           notice = chat_session.messages.system.find_by("metadata ->> 'reopen_clone_failures' = 'true'")
           expect(notice).to be_present
@@ -114,14 +114,14 @@ RSpec.describe ChatSessions::ProvisionContainerJob, type: :job do
           expect(notice.content).to include("Workspace reset failed")
         end
 
-        it "broadcasts the failed capability rather than ready" do
-          # The ready -> failed update fires the capability-transition callback
+        it "broadcasts the stopped capability rather than ready" do
+          # The ready -> stopped update fires the capability-transition callback
           # broadcast, and the handler also broadcasts explicitly; both carry
-          # the failed state, so assert the event is emitted at least once.
+          # the stopped state, so assert the event is emitted at least once.
           expect {
             described_class.perform_now(chat_session_id: chat_session.id)
           }.to have_broadcasted_to(stream_name)
-            .with(hash_including(type: "capability_changed", container_capability: "failed")).at_least(:once)
+            .with(hash_including(type: "capability_changed", container_capability: "stopped")).at_least(:once)
         end
       end
     end
