@@ -37,4 +37,14 @@ RSpec.describe HealthChecks::Registry do
       expect(described_class.local_for_scope(:runner)).to eq([])
     end
   end
+
+  describe ".register" do
+    it "adds a check class to the registry without duplicating it" do
+      described_class.register(HealthChecks::Checks::Runner::DeprecatedModel)
+
+      expect(described_class.for_scope(:runner)).to contain_exactly(
+        HealthChecks::Checks::Runner::DeprecatedModel
+      )
+    end
+  end
 end

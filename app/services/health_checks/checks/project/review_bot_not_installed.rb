@@ -17,7 +17,7 @@ module HealthChecks
         rescue Github::ReviewBotInstallationToken::NotInstalledError
           finding(
             severity: :warning,
-            message: "Paid Agent review is enabled but the paid-code-reviewer GitHub App is not installed on this repository."
+            title: "Paid Agent review is enabled but the paid-code-reviewer GitHub App is not installed on this repository."
           )
         rescue Github::ReviewBotInstallationToken::Error
           []
