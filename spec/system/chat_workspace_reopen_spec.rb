@@ -79,7 +79,12 @@ RSpec.describe "Chat workspace continuity", :js, type: :system do
     expect(page).to have_text("/workspace/#{project.full_name.tr('/', '-')}")
   end
 
-  it "updates the capability indicator live when provisioning completes" do
+  # Server-rendered capability indicator only. The broadcast-driven *in-place*
+  # update (no reload) is exercised end-to-end by the ChatChannel broadcast
+  # delivery specs — see spec/channels/chat_channel_spec.rb
+  # (CHAT-SESSION-REOPEN-005). System specs fall back to rack_test (no JS) where
+  # chromium is absent, so the in-place indicator flip cannot be asserted here.
+  it "renders the persisted workspace capability on page load" do
     session = create(:chat_session, account:, created_by: user, container_capability: "pending")
 
     visit chat_session_path(session, format: :html)

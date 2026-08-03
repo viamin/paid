@@ -41,7 +41,7 @@
 - [x] **CHAT-SESSION-REOPEN-005** - Capability changes and clone-manifest
   updates SHALL broadcast the current workspace state over the chat session's
   ActionCable stream so the header indicator updates without a full reload.
-  *Tests:* `spec/system/chat_workspace_reopen_spec.rb`,
+  *Tests:* `spec/channels/chat_channel_spec.rb`,
   `spec/jobs/chat_sessions/provision_container_job_spec.rb`.
   *Code:* `ChatSessions::BroadcastCapabilityState`,
   `ChatSessions::CapabilitySnapshot`,

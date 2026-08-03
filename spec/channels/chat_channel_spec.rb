@@ -32,6 +32,50 @@ RSpec.describe ChatChannel do
     end
   end
 
+  # @spec CHAT-SESSION-REOPEN-005
+  # The browser opens a ChatChannel subscription over this stream and the
+  # Stimulus `capability_changed` handler updates the header indicator from it.
+  # Pinning the exact stream name the subscriber listens on against the stream
+  # the production broadcaster targets is what proves the broadcast-driven
+  # update path is wired end-to-end — a rename in either place breaks here, the
+  # thing a reload-based system spec cannot catch.
+  describe "capability broadcast delivery" do
+    it "delivers capability_changed on the stream the ChatChannel subscribes to" do
+      session = create(:chat_session, account:, created_by: user, container_capability: "pending")
+
+      subscribe(session_id: session.id)
+      expect(subscription).to be_confirmed
+      expect(subscription).to have_stream_from("chat_session:#{session.id}")
+
+      expect {
+        session.update!(container_capability: "ready", container_ready_at: Time.current)
+      }.to have_broadcasted_to("chat_session:#{session.id}")
+        .with(hash_including(type: "capability_changed", container_capability: "ready", container_capability_label: "Workspace ready"))
+    end
+
+    it "broadcasts the capability snapshot when the clone manifest changes" do
+      project = create(:project, account:)
+      session = create(:chat_session, account:, created_by: user)
+
+      subscribe(session_id: session.id)
+
+      expect {
+        session.append_clone_manifest_entry(
+          project_id: project.id,
+          project_name: project.name,
+          project_full_name: project.full_name,
+          cloned_at: Time.current,
+          path: "/workspace/#{project.full_name.tr('/', '-')}",
+          token_identity: "project-token:#{project.github_token.name}",
+          status: "ready",
+          stale: false
+        )
+        session.save!
+      }.to have_broadcasted_to("chat_session:#{session.id}")
+        .with(hash_including(type: "capability_changed"))
+    end
+  end
+
   describe "#send_message" do
     before do
       subscribe(session_id: chat_session.id)
