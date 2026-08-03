@@ -897,7 +897,8 @@ class Runner < ApplicationRecord
     if runner_key == "openrouter_free"
       return unless tier_model_ids.blank?
 
-      default_tier_model_ids = Runners::DefaultTierModelIds.call(runner_key: runner_key)
+      # @spec FREE-MODEL-RUNNER-002
+      default_tier_model_ids = FreeModels::DefaultTierModels.call
       self.tier_model_ids = default_tier_model_ids if default_tier_model_ids.present?
       return
     end
