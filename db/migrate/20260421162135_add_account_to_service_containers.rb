@@ -167,12 +167,16 @@ class AddAccountToServiceContainers < ActiveRecord::Migration[8.1]
 
   def down
     safety_assured do
-      drop_service_container_tenant_policies
-      perform_down
+      transaction do
+        drop_service_container_tenant_policies
+        perform_down
+      end
     end
   end
 
   def perform_down
+    lock_tables_for_rollback!
+
     execute <<~SQL.squish
       WITH primary_service_containers AS (
         SELECT DISTINCT ON (name)
@@ -209,6 +213,17 @@ class AddAccountToServiceContainers < ActiveRecord::Migration[8.1]
   end
 
   private
+
+  def lock_tables_for_rollback!
+    %w[
+      accounts
+      service_containers
+      project_service_containers
+      service_container_metrics
+    ].each do |table|
+      execute "LOCK TABLE #{quote_table_name(table)} IN ACCESS EXCLUSIVE MODE"
+    end
+  end
 
   def drop_service_container_tenant_policies
     %w[
