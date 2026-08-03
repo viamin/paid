@@ -9,7 +9,7 @@ class ChatSessionsController < ApplicationController
 
   skip_after_action :verify_authorized, only: %i[index sidebar_page]
   before_action :set_chat_session, only: %i[show update destroy archive unarchive reopen clone_project older_messages]
-  before_action :reject_archived_chat_session, only: %i[update destroy archive]
+  before_action :reject_archived_chat_session, only: %i[update destroy archive clone_project]
   before_action :enforce_create_rate_limit, only: :create
   before_action :default_request_format_to_json, only: %i[index create show update destroy archive unarchive]
 

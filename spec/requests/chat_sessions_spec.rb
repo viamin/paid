@@ -755,6 +755,30 @@ RSpec.describe "ChatSessions" do
       expect(chat_session.reload.status).to eq("archived")
     end
 
+    it "rejects POST /chat/:id/clone_project on an archived session via json" do
+      project = create(:project, account: account)
+
+      expect {
+        post clone_project_chat_session_path(chat_session, format: :json), params: { project_id: project.id }
+      }.not_to change(ChatMessage, :count)
+
+      expect(response).to have_http_status(:unprocessable_entity)
+      expect(response.parsed_body["error"]).to eq("Chat session is archived.")
+      expect(chat_session.reload.clone_manifest).to be_empty
+    end
+
+    it "rejects POST /chat/:id/clone_project on an archived session via html" do
+      project = create(:project, account: account)
+
+      expect {
+        post clone_project_chat_session_path(chat_session), params: { project_id: project.id }
+      }.not_to change(ChatMessage, :count)
+
+      expect(response).to redirect_to(chat_session_path(chat_session))
+      expect(flash[:alert]).to eq("Chat session is archived.")
+      expect(chat_session.reload.clone_manifest).to be_empty
+    end
+
     it "redirects html mutating requests back to the archived session show page" do
       patch chat_session_path(chat_session), params: { title: "Renamed after archive" }
 
@@ -778,7 +802,7 @@ RSpec.describe "ChatSessions" do
       form = Nokogiri::HTML(response.body).at_css("form[action='#{reopen_chat_session_path(chat_session)}']")
 
       expect(form).to be_present
-      expect(form["class"]).not_to match(/hidden/)
+      expect(form["class"]).not_to include('hidden')
       # The Stimulus toggle target must live on the same element that carries
       # the initial hidden state, so a live transition to stopped reveals the CTA.
       expect(form["data-chat-capability-stopped-only"]).to be_present
@@ -792,7 +816,7 @@ RSpec.describe "ChatSessions" do
       form = Nokogiri::HTML(response.body).at_css("form[action='#{reopen_chat_session_path(chat_session)}']")
 
       expect(form).to be_present
-      expect(form["class"]).to match(/hidden/)
+      expect(form["class"]).to include('hidden')
       expect(form["data-chat-capability-stopped-only"]).to be_present
     end
   end
