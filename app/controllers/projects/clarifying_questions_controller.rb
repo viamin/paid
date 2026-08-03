@@ -33,8 +33,7 @@ module Projects
           next_issue.project,
           next_issue,
           queue: queue_param,
-          queue_project_id: queue_project&.id,
-          return_to: queue_return_to
+          queue_project_id: queue_project&.id
         ), notice: "Answers posted to GitHub issue ##{@issue.github_number}. Next questionnaire ready."
       elsif queue_mode?
         redirect_to queue_return_to, notice: "Answers posted to GitHub issue ##{@issue.github_number}. You've completed the needs-input queue."
@@ -101,13 +100,7 @@ module Projects
     end
 
     def queue_return_to
-      @queue_return_to ||= begin
-        requested_path = params[:return_to].to_s
-        validated_path = validated_queue_return_path(requested_path)
-        return validated_path if validated_path
-
-        dashboard_needs_input_path(project_id: queue_project&.id)
-      end
+      @queue_return_to ||= dashboard_needs_input_path(project_id: queue_project&.id)
     end
 
     def queue_redirect_params
@@ -115,8 +108,7 @@ module Projects
 
       {
         queue: queue_param,
-        queue_project_id: queue_project&.id,
-        return_to: queue_return_to
+        queue_project_id: queue_project&.id
       }
     end
 
@@ -146,13 +138,6 @@ module Projects
       return false if params[:queue_project_id].present? && queue_project.nil?
 
       queue_scope_issues(project: queue_project).any? { |issue| issue.id == @issue.id }
-    end
-
-    def validated_queue_return_path(path)
-      return if path.blank?
-      return unless path == dashboard_needs_input_path(project_id: queue_project&.id)
-
-      path
     end
   end
 end

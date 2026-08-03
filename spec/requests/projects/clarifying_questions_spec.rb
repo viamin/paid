@@ -141,8 +141,7 @@ RSpec.describe "Projects::ClarifyingQuestions" do
           questions: questions,
           answers: answers,
           queue: "dashboard_needs_input",
-          queue_project_id: project.id,
-          return_to: dashboard_needs_input_path(project_id: project.id)
+          queue_project_id: project.id
         }
 
         expect(response).to redirect_to(
@@ -150,8 +149,7 @@ RSpec.describe "Projects::ClarifyingQuestions" do
             project,
             next_issue,
             queue: "dashboard_needs_input",
-            queue_project_id: project.id,
-            return_to: dashboard_needs_input_path(project_id: project.id)
+            queue_project_id: project.id
           )
         )
       end
