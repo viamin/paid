@@ -13,20 +13,21 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
         "db_username" => "paid",
         "db_password" => "paid",
         "creates_application_role" => true,
-        "uses_database_url" => true
+        "database_setup_command" => "bin/rails db:create db:schema:load"
       },
       "performance" => {
         "db_username" => "paid",
         "db_password" => "paid",
         "creates_application_role" => true,
-        "uses_database_url" => true
+        "database_setup_command" => "bin/rails db:create db:schema:load"
       }
     },
     ".github/workflows/system_tests.yml" => {
       "system" => {
         "db_username" => "postgres",
         "db_password" => "postgres",
-        "creates_application_role" => false
+        "creates_application_role" => false,
+        "database_setup_command" => "bin/rails db:create db:schema:load"
       }
     },
     ".github/workflows/pr-screenshots.yml" => {
@@ -34,21 +35,24 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
         "db_username" => "paid",
         "db_password" => "paid",
         "creates_application_role" => true,
-        "uses_database_url" => true
+        "uses_database_url" => true,
+        "database_setup_command" => "bin/rails db:create db:schema:load"
       }
     },
     ".github/workflows/test_prof.yml" => {
       "profile" => {
         "db_username" => "postgres",
         "db_password" => "postgres",
-        "creates_application_role" => false
+        "creates_application_role" => false,
+        "database_setup_command" => "bin/rails db:create db:schema:load"
       }
     },
     ".github/workflows/ephemeral_tests.yml" => {
       "run-tests" => {
         "db_username" => "postgres",
         "db_password" => "postgres",
-        "creates_application_role" => false
+        "creates_application_role" => false,
+        "database_setup_command" => "bin/rails db:create db:schema:load"
       }
     }
   }.freeze
@@ -129,11 +133,11 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
           expect(prepare_index).to be < node_index
         end
 
-        it "bootstraps a schema-only test database for #{job_name}" do
+        it "uses the expected database bootstrap command for #{job_name}" do
           job = workflow.fetch("jobs").fetch(job_name)
           setup_step = job.fetch("steps").find { |step| step["name"] == "Set up database" }
 
-          expect(setup_step.fetch("run")).to eq("bin/rails db:create db:schema:load")
+          expect(setup_step.fetch("run")).to eq(expectations.fetch("database_setup_command"))
         end
 
         it "bootstraps required orchestration defaults after schema load for #{job_name}" do
