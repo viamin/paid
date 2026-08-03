@@ -281,10 +281,10 @@ jobs:
         run: yarn build && yarn build:css
 
       - name: Set up database
-        run: bin/rails db:create db:schema:load
+        run: env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails db:create db:schema:load
 
       - name: Bootstrap test defaults
-        run: bin/rails ci:bootstrap_test_defaults
+        run: env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails ci:bootstrap_test_defaults
 
       - name: Verify Qdrant health
         run: |
@@ -293,10 +293,10 @@ jobs:
       - name: Run tests
         # System specs run in a separate workflow (.github/workflows/system_tests.yml)
         # because they need Chromium and built JS/CSS assets.
-        run: bin/rspec --exclude-pattern "spec/performance/**/*_spec.rb,spec/system/**/*_spec.rb"
+        run: env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rspec --exclude-pattern "spec/performance/**/*_spec.rb,spec/system/**/*_spec.rb"
 
       - name: Run query performance benchmarks
-        run: COVERAGE=false bin/rspec spec/performance
+        run: env -u DATABASE_URL -u CABLE_DATABASE_URL COVERAGE=false bin/rspec spec/performance
 
   migrations:
     if: >-
@@ -352,7 +352,7 @@ jobs:
           bundler-cache: true
 
       - name: Replay migrations
-        run: bin/rails db:create db:migrate
+        run: env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails db:create db:migrate
 
   fasterer:
     if: >-
@@ -483,14 +483,14 @@ jobs:
           SQL
 
       - name: Set up database
-        run: bin/rails db:create db:schema:load
+        run: env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails db:create db:schema:load
 
       - name: Bootstrap test defaults
-        run: bin/rails ci:bootstrap_test_defaults
+        run: env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails ci:bootstrap_test_defaults
 
       - name: Run performance benchmarks
         run: >
-          scripts/performance/benchmark.rb
+          env -u DATABASE_URL -u CABLE_DATABASE_URL scripts/performance/benchmark.rb
           --seed-ci-data
           --require-metrics container_startup_time,workflow_latency,dashboard_load_time,search_latency
           --baseline docs/performance/baseline.json
