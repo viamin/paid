@@ -51,6 +51,14 @@ RSpec.describe CiWorkflowFile, :no_db do
     expect(install_step.fetch("run")).to include('INSTALL_DIR="$HOME/.local/bin" bin/install-ast-grep')
   end
 
+  it "unsets DATABASE_URL for the test job asset build commands" do
+    build_step = workflow.fetch("jobs").fetch("test").fetch("steps")
+      .find { |step| step["name"] == "Build assets" }
+
+    expect(build_step.fetch("run")).to include("env -u DATABASE_URL -u CABLE_DATABASE_URL yarn build")
+    expect(build_step.fetch("run")).to include("env -u DATABASE_URL -u CABLE_DATABASE_URL yarn build:css")
+  end
+
   it "gives the test job enough time to complete the full RSpec suite" do
     expect(workflow.fetch("jobs").fetch("test").fetch("timeout-minutes")).to eq(60)
   end

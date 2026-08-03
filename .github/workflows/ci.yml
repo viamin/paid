@@ -278,7 +278,9 @@ jobs:
           SQL
 
       - name: Build assets
-        run: yarn build && yarn build:css
+        run: |
+          env -u DATABASE_URL -u CABLE_DATABASE_URL yarn build
+          env -u DATABASE_URL -u CABLE_DATABASE_URL yarn build:css
 
       - name: Set up database
         run: env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails db:create db:schema:load
