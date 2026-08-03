@@ -30,13 +30,20 @@ module Tools
             type: "array",
             items: { type: "string" },
             description: "GitHub usernames to assign"
+          },
+          confirmed: {
+            type: "boolean",
+            description: "Must be true to execute this write operation"
           }
         },
-        required: %w[project_id title]
+        required: %w[project_id title confirmed]
       }
     end
 
-    def perform(project_id:, title:, body: "", labels: [], assignees: [])
+    # @spec CHAT-TOOL-CONFIRMATION-001
+    def perform(project_id:, title:, confirmed: false, body: "", labels: [], assignees: [])
+      raise ArgumentError, "Confirmation required: set confirmed=true to create an issue" unless confirmed
+
       project = project_for(project_id)
       client = require_github_client!(project)
       repo = project.full_name

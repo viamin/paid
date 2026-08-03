@@ -25,19 +25,20 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
       }
     },
     ".github/workflows/system_tests.yml" => {
-        "system" => {
-          "db_username" => "postgres",
-          "db_password" => "postgres",
-          "creates_application_role" => false,
-          "asset_build_command" => [
-            "env -u DATABASE_URL -u CABLE_DATABASE_URL yarn build",
-            "env -u DATABASE_URL -u CABLE_DATABASE_URL yarn build:css"
-          ],
-          "database_setup_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails db:create db:migrate",
-          "bootstrap_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails ci:bootstrap_test_defaults",
-          "test_command_snippets" => [ "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rspec spec/system" ]
-        }
-      },
+      "system" => {
+        "db_username" => "paid",
+        "db_password" => "paid",
+        "creates_application_role" => true,
+        "uses_database_url" => true,
+        "asset_build_command" => [
+          "env -u DATABASE_URL -u CABLE_DATABASE_URL yarn build",
+          "env -u DATABASE_URL -u CABLE_DATABASE_URL yarn build:css"
+        ],
+        "database_setup_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails db:create db:migrate",
+        "bootstrap_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails ci:bootstrap_test_defaults",
+        "test_command_snippets" => [ "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rspec spec/system" ]
+      }
+    },
     ".github/workflows/pr-screenshots.yml" => {
         "capture" => {
           "db_username" => "paid",
@@ -83,10 +84,16 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
 
       def expect_application_role_database_url!(job, expectations)
         return unless expectations.fetch("creates_application_role")
-        return if expectations.fetch("uses_database_url", false)
 
-        expect(job.fetch("env")).not_to have_key("DATABASE_URL")
-        expect(job.fetch("env")).not_to have_key("CABLE_DATABASE_URL")
+        if expectations.fetch("uses_database_url", false)
+          expect(job.fetch("env")).to include(
+            "DATABASE_URL" => "postgres://paid:paid@localhost:5432/paid_test"
+          )
+          expect(job.fetch("env")).not_to have_key("CABLE_DATABASE_URL")
+        else
+          expect(job.fetch("env")).not_to have_key("DATABASE_URL")
+          expect(job.fetch("env")).not_to have_key("CABLE_DATABASE_URL")
+        end
       end
 
       def expect_database_yml_connection!(job, expectations)

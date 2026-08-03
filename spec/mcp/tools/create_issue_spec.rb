@@ -53,8 +53,18 @@ RSpec.describe Tools::CreateIssue do
       ])
     end
 
+    # @spec CHAT-TOOL-CONFIRMATION-001
+    it "raises when not confirmed" do
+      expect do
+        tool.call(project_id: project.id, title: "Test issue", confirmed: false)
+      end.to raise_error(ArgumentError, /Confirmation required/)
+
+      expect(github_client).not_to have_received(:create_issue)
+    end
+
+    # @spec CHAT-TOOL-CONFIRMATION-001
     it "creates an issue and returns number and url" do
-      result = tool.call(project_id: project.id, title: "Test issue", body: "Test body")
+      result = tool.call(project_id: project.id, title: "Test issue", body: "Test body", confirmed: true)
 
       expect(github_client).to have_received(:create_issue).with(
         project.full_name, title: "Test issue", body: "Test body", labels: [], assignees: []
@@ -66,7 +76,7 @@ RSpec.describe Tools::CreateIssue do
     end
 
     it "creates an issue with labels" do
-      result = tool.call(project_id: project.id, title: "Test issue", labels: %w[bug enhancement])
+      result = tool.call(project_id: project.id, title: "Test issue", labels: %w[bug enhancement], confirmed: true)
 
       expect(github_client).to have_received(:create_issue).with(
         project.full_name, title: "Test issue", body: "", labels: %w[bug enhancement], assignees: []
@@ -75,7 +85,7 @@ RSpec.describe Tools::CreateIssue do
     end
 
     it "creates an issue with assignees" do
-      result = tool.call(project_id: project.id, title: "Test issue", assignees: %w[octocat])
+      result = tool.call(project_id: project.id, title: "Test issue", assignees: %w[octocat], confirmed: true)
 
       expect(github_client).to have_received(:create_issue).with(
         project.full_name, title: "Test issue", body: "", labels: [], assignees: %w[octocat]
@@ -85,7 +95,7 @@ RSpec.describe Tools::CreateIssue do
 
     it "records an audit event" do
       expect do
-        tool.call(project_id: project.id, title: "Test issue")
+        tool.call(project_id: project.id, title: "Test issue", confirmed: true)
       end.to change(AccountActivityEvent, :count).by(1)
 
       event = AccountActivityEvent.last
@@ -97,7 +107,7 @@ RSpec.describe Tools::CreateIssue do
 
     it "rejects unknown labels" do
       expect do
-        tool.call(project_id: project.id, title: "Test issue", labels: %w[nonexistent])
+        tool.call(project_id: project.id, title: "Test issue", labels: %w[nonexistent], confirmed: true)
       end.to raise_error(ArgumentError, /Unknown labels: nonexistent/)
     end
 
@@ -105,7 +115,7 @@ RSpec.describe Tools::CreateIssue do
       other_project = create(:project)
 
       expect do
-        tool.call(project_id: other_project.id, title: "Test issue")
+        tool.call(project_id: other_project.id, title: "Test issue", confirmed: true)
       end.to raise_error(ActiveRecord::RecordNotFound)
     end
 
@@ -115,7 +125,7 @@ RSpec.describe Tools::CreateIssue do
       other_tool = described_class.new(user: other_user, session:)
 
       expect do
-        other_tool.call(project_id: project.id, title: "Test issue")
+        other_tool.call(project_id: project.id, title: "Test issue", confirmed: true)
       end.to raise_error(ActiveRecord::RecordNotFound)
     end
 
@@ -123,7 +133,7 @@ RSpec.describe Tools::CreateIssue do
       allow(github_client).to receive(:create_issue).and_raise(GithubClient::Error, "API error")
 
       expect do
-        tool.call(project_id: project.id, title: "Test issue")
+        tool.call(project_id: project.id, title: "Test issue", confirmed: true)
       end.to raise_error(GithubClient::Error, "API error")
     end
 
@@ -131,7 +141,7 @@ RSpec.describe Tools::CreateIssue do
       allow(github_client).to receive(:labels).and_raise(GithubClient::Error, "rate limited")
 
       expect do
-        tool.call(project_id: project.id, title: "Test issue", labels: %w[bug])
+        tool.call(project_id: project.id, title: "Test issue", labels: %w[bug], confirmed: true)
       end.to raise_error(GithubClient::Error, "rate limited")
     end
 
@@ -157,7 +167,8 @@ RSpec.describe Tools::CreateIssue do
         result = tool.call(
           project_id: project.id,
           title: "Test issue",
-          body: "Depends on viamin/foo#42"
+          body: "Depends on viamin/foo#42",
+          confirmed: true
         )
 
         expect(result[:number]).to eq(42)
@@ -180,7 +191,7 @@ RSpec.describe Tools::CreateIssue do
       end
 
       it "creates an issue using the installation credential" do
-        result = tool.call(project_id: project.id, title: "Test issue")
+        result = tool.call(project_id: project.id, title: "Test issue", confirmed: true)
 
         expect(github_client).to have_received(:create_issue).with(
           project.full_name, title: "Test issue", body: "", labels: [], assignees: []

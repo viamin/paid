@@ -27,7 +27,7 @@ module Runners
     end
 
     def call
-      return tier_defaults_for_openrouter_free if @runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
+      return FreeModels::DefaultTierModels.call if @runner_key == Runner::OPENROUTER_FREE_RUNNER_KEY
 
       model_provider = RUNNER_KEY_TO_MODEL_PROVIDER[@runner_key]
       return {} if model_provider.blank? && !DIRECT_OUTBOUND_RUNNER_KEYS.include?(@runner_key)
@@ -68,15 +68,6 @@ module Runners
         )
       end
       !result.unsupported?
-    end
-
-    def tier_defaults_for_openrouter_free
-      models = LlmModel.openrouter_synced_free.active.by_capability.to_a.reject(&:below_quality_bar?)
-
-      LlmModel::TIERS.each_with_object({}) do |tier, mapping|
-        model = models.find { |entry| entry.tier == tier }
-        mapping[tier] = model.model_id if model
-      end
     end
   end
 end

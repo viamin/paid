@@ -337,6 +337,32 @@ RSpec.describe Tools::Registry do
       [ { project_id: 123, path: "/workspace/repo-one" } ]
     end
 
+    def dispatch_git_status(session)
+      described_class.dispatch_mcp(
+        name: "git_status",
+        arguments: { "repo_path" => "/workspace/repo-one" },
+        user: user,
+        session: session
+      )
+    end
+
+    def stub_provision_ready(session, with_volume: false)
+      allow(Containers::ProvisionForChat).to receive(:call) do
+        updates = { container_capability: "ready", container_id: "container-123" }
+        updates[:workspace_volume] = "paid-chat-workspace-#{session.id}" if with_volume
+        session.update!(**updates)
+      end
+    end
+
+    def stub_resource_release
+      allow(Docker::Container).to receive(:get).and_return(
+        instance_double(Docker::Container, stop: true, delete: true)
+      )
+      allow(Docker::Volume).to receive(:get).and_return(
+        instance_double(Docker::Volume, remove: true)
+      )
+    end
+
     %w[pending provisioning failed].each do |capability|
       it "returns a structured unavailable result for container tools when #{capability}" do
         session = create(
@@ -365,29 +391,49 @@ RSpec.describe Tools::Registry do
     end
 
     %w[none stopped].each do |capability|
-      it "lazily provisions container tools when #{capability}" do
-        session = create(
-          :chat_session,
-          account: account,
-          created_by: user,
-          container_capability: capability,
-          clone_manifest: clone_manifest
-        )
-        allow(Containers::ProvisionForChat).to receive(:call) do
-          session.update!(container_capability: "ready", container_id: "container-123")
-        end
+      it "lazily provisions container tools and replays the clone manifest when #{capability}" do
+        session = create(:chat_session, account: account, created_by: user,
+          container_capability: capability, clone_manifest: clone_manifest)
+        stub_provision_ready(session)
+        allow(ChatSessions::RestoreCloneManifest).to receive(:call)
         allow(described_class).to receive(:dispatch_via_registry).and_return({ status: "ok" })
 
-        result = described_class.dispatch_mcp(
-          name: "git_status",
-          arguments: { "repo_path" => "/workspace/repo-one" },
-          user: user,
-          session: session
-        )
+        result = dispatch_git_status(session)
 
-        expect(Containers::ProvisionForChat).to have_received(:call).with(chat_session: session)
+        expect(Containers::ProvisionForChat).to have_received(:call)
+          .with(hash_including(chat_session: session, seed_project: false))
+        expect(ChatSessions::RestoreCloneManifest).to have_received(:call).with(chat_session: session)
         expect(result).to eq(status: "ok")
       end
+    end
+
+    it "seeds the primary project instead of restoring when no manifest is recorded" do
+      session = create(:chat_session, account: account, created_by: user, container_capability: "stopped")
+      stub_provision_ready(session)
+      allow(ChatSessions::RestoreCloneManifest).to receive(:call)
+      allow(described_class).to receive(:dispatch_via_registry).and_return({ status: "ok" })
+
+      dispatch_git_status(session)
+
+      expect(Containers::ProvisionForChat).to have_received(:call)
+        .with(hash_including(chat_session: session, seed_project: true))
+      expect(ChatSessions::RestoreCloneManifest).not_to have_received(:call)
+    end
+
+    it "returns the session to stopped and surfaces a failure when manifest restore fails" do
+      session = create(:chat_session, account: account, created_by: user,
+                                       container_capability: "stopped", clone_manifest: clone_manifest)
+      stub_provision_ready(session, with_volume: true)
+      allow(ChatSessions::RestoreCloneManifest).to receive(:call)
+        .and_raise("Workspace reset failed: permission denied")
+      stub_resource_release
+
+      result = dispatch_git_status(session)
+
+      expect(session.reload.container_capability).to eq("stopped")
+      expect(session.container_id).to be_nil
+      expect(session.messages.system.find_by("metadata ->> 'reopen_clone_failures' = 'true'")).to be_present
+      expect(result).to include(status: "error", error: "container_unavailable", container_capability: "stopped")
     end
 
     it "does not provision when a concurrent request already won the transition" do

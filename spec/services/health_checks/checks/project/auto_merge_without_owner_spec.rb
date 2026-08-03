@@ -3,6 +3,7 @@
 require "rails_helper"
 
 RSpec.describe HealthChecks::Checks::Project::AutoMergeWithoutOwner do
+  # @spec HEALTH-CHECKS-004
   it "returns a finding when auto-merge is enabled without an owner reviewer" do
     project = build(:project, auto_merge_mode: "all", owner_reviewer_login: nil)
 

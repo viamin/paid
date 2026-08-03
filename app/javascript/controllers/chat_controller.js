@@ -2,7 +2,7 @@ import { Controller } from "@hotwired/stimulus"
 import consumer from "../channels/consumer"
 
 export default class extends Controller {
-  static targets = ["container", "messages", "input", "status", "typingIndicator", "tokenUsage", "capabilityBadge"]
+  static targets = ["container", "messages", "input", "status", "typingIndicator", "tokenUsage", "capabilityBadge", "capabilityPanel", "capabilityLabel", "capabilityIcon", "capabilityRepos"]
   static values = { sessionId: Number }
 
   connect() {
@@ -155,7 +155,7 @@ export default class extends Controller {
     const capability = data.container_capability
     if (!capability) return
 
-    const styles = {
+    const badgeStyles = {
       none: "bg-gray-100 text-gray-600",
       pending: "bg-amber-100 text-amber-800",
       provisioning: "bg-amber-100 text-amber-800",
@@ -163,13 +163,37 @@ export default class extends Controller {
       failed: "bg-rose-100 text-rose-700",
       stopped: "bg-gray-100 text-gray-600"
     }
-    const classes = styles[capability] || styles.none
+    const iconStyles = {
+      none: "text-gray-500 fill-current",
+      pending: "text-amber-500 fill-current",
+      provisioning: "text-amber-500 fill-current",
+      ready: "text-green-500 fill-current",
+      failed: "text-rose-500 fill-current",
+      stopped: "text-gray-500 fill-current"
+    }
+    const badgeClasses = badgeStyles[capability] || badgeStyles.none
+    const iconClasses = iconStyles[capability] || iconStyles.none
 
     this.capabilityBadgeTargets.forEach((badge) => {
-      badge.textContent = capability.charAt(0).toUpperCase() + capability.slice(1)
-      badge.className = `inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${classes}`
+      badge.textContent = data.container_capability_label || capability.charAt(0).toUpperCase() + capability.slice(1)
+      badge.className = `inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${badgeClasses}`
       badge.dataset.capability = capability
     })
+
+    this.capabilityPanelTargets.forEach((panel) => {
+      panel.dataset.chatCapability = capability
+    })
+
+    this.capabilityLabelTargets.forEach((label) => {
+      label.textContent = data.container_capability_label || capability
+    })
+
+    this.capabilityIconTargets.forEach((icon) => {
+      this.setElementClassName(icon, `h-4 w-4 ${iconClasses}`)
+    })
+
+    this.updateCapabilityActions(capability)
+    this.updateCapabilityRepos(data.cloned_repos || [])
 
     if (capability === "ready") {
       this.setStatus("Workspace ready")
@@ -432,6 +456,58 @@ export default class extends Controller {
 
   messageControllerFor(element) {
     return this.application.getControllerForElementAndIdentifier(element, "chat-message")
+  }
+
+  updateCapabilityActions(capability) {
+    this.element.querySelectorAll("[data-chat-capability-ready-only]").forEach((element) => {
+      element.classList.toggle("hidden", capability !== "ready")
+    })
+
+    this.element.querySelectorAll("[data-chat-capability-stopped-only]").forEach((element) => {
+      element.classList.toggle("hidden", capability !== "stopped")
+    })
+  }
+
+  updateCapabilityRepos(repos) {
+    this.capabilityReposTargets.forEach((container) => {
+      if (repos.length === 0) {
+        container.innerHTML = "<p class=\"rounded-md bg-white px-3 py-2 text-sm text-gray-500 ring-1 ring-gray-200\">No repos cloned yet.</p>"
+        return
+      }
+
+      container.innerHTML = repos.map((repo) => {
+        const staleBadge = repo.stale ? "<span class=\"inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-medium text-rose-700\">stale</span>" : ""
+        const staleReason = repo.stale_reason ? `<p class="mt-1 text-xs text-rose-600">${this.escapeHtml(repo.stale_reason)}</p>` : ""
+
+        return `<div class="rounded-md bg-white px-3 py-2 text-sm text-gray-700 ring-1 ring-gray-200">
+          <div class="flex items-center justify-between gap-2">
+            <p class="font-medium text-gray-900">${this.escapeHtml(repo.project_full_name || repo.project_name || `Project #${repo.project_id}`)}</p>
+            ${staleBadge}
+          </div>
+          <p class="mt-1 font-mono text-xs text-gray-500">${this.escapeHtml(repo.path || "")}</p>
+          <p class="mt-1 text-xs text-gray-500">Clone identity: ${this.escapeHtml(repo.token_identity || "unknown")}</p>
+          ${staleReason}
+        </div>`
+      }).join("")
+    })
+  }
+
+  escapeHtml(value) {
+    return String(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll("\"", "&quot;")
+      .replaceAll("'", "&#39;")
+  }
+
+  setElementClassName(element, className) {
+    if (typeof element.setAttribute === "function") {
+      element.setAttribute("class", className)
+      return
+    }
+
+    element.className = className
   }
 
   incrementTokenUsage(tokens) {

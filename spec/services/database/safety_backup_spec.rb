@@ -175,6 +175,14 @@ RSpec.describe Database::SafetyBackup do
 
       expect(env.fetch("PGOPTIONS")).to eq("-c statement_timeout=300000")
     end
+
+    it "strips numeric separators from a configured statement timeout" do
+      allow(ENV).to receive(:fetch).with("DB_DUMP_STATEMENT_TIMEOUT_MS", "300000").and_return("300_000")
+
+      env = described_class.send(:dump_env, primary)
+
+      expect(env.fetch("PGOPTIONS")).to eq("-c statement_timeout=300000")
+    end
   end
 
   describe "skip conditions" do

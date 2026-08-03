@@ -23,7 +23,7 @@ RSpec.describe "Chat background provisioning", type: :system do
   end
 
   it "renders the assistant response and the ready capability after background provisioning completes" do
-    allow(Containers::ProvisionForChat).to receive(:call) do |chat_session:|
+    allow(Containers::ProvisionForChat).to receive(:call) do |chat_session:, **|
       chat_session.update!(
         container_capability: "ready",
         container_id: "chat-container-1",
@@ -36,17 +36,16 @@ RSpec.describe "Chat background provisioning", type: :system do
 
     visit_chat_session
 
-    expect {
-      perform_enqueued_jobs(only: ChatSessions::ProvisionContainerJob)
-    }.to have_broadcasted_to("chat_session:#{chat_session.id}")
-      .with(hash_including(type: "capability_changed", container_capability: "ready"))
+    perform_enqueued_jobs(only: ChatSessions::ProvisionContainerJob)
 
+    broadcasts = ActionCable.server.pubsub.broadcasts("chat_session:#{chat_session.id}").map { |payload| JSON.parse(payload) }
+    expect(broadcasts).to include(hash_including("type" => "capability_changed", "container_capability" => "ready"))
     expect(page).to have_text("Inline response")
     expect(chat_session.reload.container_capability).to eq("ready")
   end
 
   it "shows the provisioning failure notice while chat remains usable inline" do
-    allow(Containers::ProvisionForChat).to receive(:call) do |chat_session:|
+    allow(Containers::ProvisionForChat).to receive(:call) do |chat_session:, **|
       chat_session.update!(container_capability: "failed")
       raise Containers::ProvisionForChat::ProvisionError, "Docker error: image pull failed"
     end
@@ -74,6 +73,6 @@ RSpec.describe "Chat background provisioning", type: :system do
   def visit_chat_session
     visit chat_session_path(chat_session, format: :html)
     expect(page).to have_css("div[data-controller='chat']", wait: 10)
-    expect(page).to have_text(chat_session.container_capability.titleize)
+    expect(page).to have_text(ChatSessions::CapabilitySnapshot::LABELS.fetch(chat_session.container_capability))
   end
 end

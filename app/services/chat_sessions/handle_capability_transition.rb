@@ -21,6 +21,7 @@ module ChatSessions
         broadcast_notice_message(notice_message) if notice_message
         broadcast_deleted_notice(deleted_notice_id) if deleted_notice_id
         publish_tools_list_changed
+        broadcast_capability_state
       end
     end
 
@@ -75,6 +76,10 @@ module ChatSessions
       else
         [ nil, nil ]
       end
+    end
+
+    def broadcast_capability_state
+      ChatSessions::BroadcastCapabilityState.call(chat_session:)
     end
 
     def capability_notice

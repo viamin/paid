@@ -333,7 +333,7 @@ class GithubClient
   # @param repo [String] Repository in "owner/name" format
   # @return [Array<Sawyer::Resource>] List of labels
   def labels(repo)
-    handle_errors { client.labels(repo) }
+    handle_errors { with_auto_paginate { client.labels(repo, per_page: 100) } }
   end
 
   # Creates a label on a repository.

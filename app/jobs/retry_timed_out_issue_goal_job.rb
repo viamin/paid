@@ -49,6 +49,12 @@ class RetryTimedOutIssueGoalJob < ApplicationJob
           next
         end
 
+        existing_run = existing_active_run_for(locked_run)
+        if existing_run
+          mark_existing_run_retry!(locked_run, existing_run, previous_retries: previous_retries, retry_attempt: retry_attempt)
+          next :existing_active_run
+        end
+
         created = AgentRun.create!(
           project: locked_run.project,
           issue: locked_run.issue,
@@ -100,32 +106,17 @@ class RetryTimedOutIssueGoalJob < ApplicationJob
       raise unless existing_run
 
       previous_retries = count_previous_retries(agent_run)
-      retry_attempt = previous_retries + 1
-      agent_run.retry!(
-        decision_point: "timeout_auto_retry",
-        signals: {
-          previous_retries: previous_retries,
-          retry_attempt: retry_attempt,
-          max_retries: MAX_RETRIES
-        },
-        result: { existing_agent_run_id: existing_run.id, reason: "existing_active_run", retry_attempt: retry_attempt }
+      mark_existing_run_retry!(
+        agent_run,
+        existing_run,
+        previous_retries: previous_retries,
+        retry_attempt: previous_retries + 1
       )
-
-      Rails.logger.info(
-        message: "agent_execution.issue_goal_auto_retry_skipped_existing_run",
-        original_agent_run_id: agent_run.id,
-        existing_agent_run_id: existing_run.id,
-        issue_id: agent_run.issue_id,
-        project_id: agent_run.project_id
-      )
-
-      # Ensure the run queue is processed even when we skip creating a new run
-      # due to an existing active run. This job is idempotent.
-      ProcessRunQueueJob.perform_later
-      return
+      return enqueue_queue_processing
     end
 
     return unless new_run
+    return enqueue_queue_processing if new_run == :existing_active_run
 
     Rails.logger.info(
       message: "agent_execution.issue_goal_auto_retry",
@@ -139,7 +130,7 @@ class RetryTimedOutIssueGoalJob < ApplicationJob
     # AgentRun's after_commit callback when a run transitions to "timeout",
     # regardless of whether the timeout was set by Temporal activities or by
     # StaleRunDetectorJob.
-    ProcessRunQueueJob.perform_later
+    enqueue_queue_processing
   end
 
   private
@@ -172,6 +163,44 @@ class RetryTimedOutIssueGoalJob < ApplicationJob
       .where(status: %w[timeout retried])
       .where.not(id: agent_run.id)
       .count
+  end
+
+  def existing_active_run_for(agent_run)
+    scope = AgentRun.where(
+      project_id: agent_run.project_id,
+      goal: agent_run.goal,
+      status: AgentRun::UNFINISHED_STATUSES
+    ).where.not(id: agent_run.id)
+
+    if agent_run.issue_id.present?
+      scope.find_by(issue_id: agent_run.issue_id)
+    elsif agent_run.source_pull_request_number.present?
+      scope.find_by(source_pull_request_number: agent_run.source_pull_request_number)
+    end
+  end
+
+  def mark_existing_run_retry!(agent_run, existing_run, previous_retries:, retry_attempt:)
+    agent_run.retry!(
+      decision_point: "timeout_auto_retry",
+      signals: {
+        previous_retries: previous_retries,
+        retry_attempt: retry_attempt,
+        max_retries: MAX_RETRIES
+      },
+      result: { existing_agent_run_id: existing_run.id, reason: "existing_active_run", retry_attempt: retry_attempt }
+    )
+
+    Rails.logger.info(
+      message: "agent_execution.issue_goal_auto_retry_skipped_existing_run",
+      original_agent_run_id: agent_run.id,
+      existing_agent_run_id: existing_run.id,
+      issue_id: agent_run.issue_id,
+      project_id: agent_run.project_id
+    )
+  end
+
+  def enqueue_queue_processing
+    ProcessRunQueueJob.perform_later
   end
 
   def log_retry_decision(agent_run:, status:, signals:, result:)

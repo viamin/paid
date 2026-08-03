@@ -27,11 +27,7 @@ Capybara.register_driver(:paid_cuprite) do |app|
   )
 end
 
-SYSTEM_DRIVER = if File.exist?(ENV["CHROMIUM_PATH"] || "/usr/bin/chromium")
-  :paid_cuprite
-else
-  :rack_test
-end
+SYSTEM_DRIVER = :rack_test
 
 Capybara.server = :puma, { Silent: true }
 Capybara.server_host = "127.0.0.1"
