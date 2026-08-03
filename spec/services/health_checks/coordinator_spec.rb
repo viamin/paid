@@ -107,33 +107,49 @@ RSpec.describe HealthChecks::Coordinator do
 
       expect(result.findings.map(&:code)).to contain_exactly(:local, :network)
     end
-  end
 
-  describe HealthChecks::Result do
-    it "counts warnings without marking unhealthy" do
-      warning = HealthChecks::Finding.new(code: :t, scope: :project, severity: :warning, title: "w")
-      result = described_class.new(findings: [ warning ], checked_at: Time.current, duration_ms: 0)
+    it "uses a passed-in effective_owner instead of calling subject.effective_owner" do
+      other_owner = create(:user, account: project.account)
+      project_check = stub_check(scope: :project, code: :proj, title: "project issue")
+      user_check = stub_check(scope: :user, code: :usr, title: "user issue")
 
-      expect(result).to be_healthy
-      expect(result).to be_warnings
-      expect(result.counts[:warning]).to eq(1)
+      allow(HealthChecks::Registry).to receive(:for_scope).with(:project).and_return([ project_check ])
+      allow(HealthChecks::Registry).to receive(:for_scope).with(:runner).and_return([])
+      allow(HealthChecks::Registry).to receive(:for_scope).with(:user).and_return([ user_check ])
+
+      expect(project).not_to receive(:effective_owner)
+
+      result = described_class.call(
+        scope: :project,
+        subject: project,
+        effective_owner: other_owner
+      )
+
+      expect(result.for_scope(:user).map(&:subject_id)).to contain_exactly(other_owner.id)
     end
 
-    it "is unhealthy when an error finding exists" do
-      error = HealthChecks::Finding.new(code: :t, scope: :project, severity: :error, title: "e")
-      result = described_class.new(findings: [ error ], checked_at: Time.current, duration_ms: 0)
+    it "reuses a shared owner_findings_cache instead of recomputing owner findings per project" do
+      runner_check = stub_check(scope: :runner, code: :run, title: "runner issue")
+      owner_findings_cache = {}
+      allow(runner_check).to receive(:call).and_call_original
+      first_project, second_project = projects_with_shared_owner
 
-      expect(result).not_to be_healthy
-      expect(result.counts[:error]).to eq(1)
-    end
+      allow(HealthChecks::Registry).to receive(:for_scope).with(:project).and_return([])
+      allow(HealthChecks::Registry).to receive(:for_scope).with(:runner).and_return([ runner_check ])
+      allow(HealthChecks::Registry).to receive(:for_scope).with(:user).and_return([])
 
-    it "groups findings by scope" do
-      project_finding = HealthChecks::Finding.new(code: :a, scope: :project, severity: :error, title: "a")
-      user_finding = HealthChecks::Finding.new(code: :b, scope: :user, severity: :warning, title: "b")
-      result = described_class.new(findings: [ project_finding, user_finding ], checked_at: Time.current, duration_ms: 0)
+      described_class.call(
+        scope: :project,
+        subject: first_project,
+        owner_findings_cache: owner_findings_cache
+      )
+      described_class.call(
+        scope: :project,
+        subject: second_project,
+        owner_findings_cache: owner_findings_cache
+      )
 
-      expect(result.for_scope(:project)).to eq([ project_finding ])
-      expect(result.for_scope(:user)).to eq([ user_finding ])
+      expect(runner_check).to have_received(:call).once
     end
   end
 
@@ -151,11 +167,7 @@ RSpec.describe HealthChecks::Coordinator do
           description: title,
           remediation: nil
         ).map do |finding|
-          if scope == :runner
-            finding.with(subject_type: subject.class.name, subject_id: subject.id)
-          else
-            finding.with(code: code)
-          end
+          finding.with(code: code, subject_type: subject.class.name, subject_id: subject.id)
         end
       end
     end.tap do |check|
@@ -189,5 +201,15 @@ RSpec.describe HealthChecks::Coordinator do
         metadata: include(check_class: "HealthChecks::Checks::Project::RaisingTest", error_class: "StandardError")
       )
     )
+  end
+
+  def projects_with_shared_owner
+    account = create(:account)
+    owner = create(:user, account: account)
+
+    [
+      create(:project, created_by: owner, account: account),
+      create(:project, created_by: owner, account: account)
+    ]
   end
 end

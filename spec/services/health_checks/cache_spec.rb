@@ -10,7 +10,7 @@ RSpec.describe HealthChecks::Cache do
         HealthChecks::Finding.new(code: :test, scope: :project, severity: :info, title: "test")
       ],
       checked_at: Time.current,
-      duration_ms: 42
+      duration_ms: 7
     )
   end
 
@@ -62,7 +62,7 @@ RSpec.describe HealthChecks::Cache do
   end
 
   describe "TTL" do
-    it "sets an expires_in on the cache entry" do
+    it "keeps the entry before the TTL elapses" do
       described_class.write(project, result, ttl: 5.seconds)
 
       travel_to(4.seconds.from_now) do
