@@ -29,20 +29,22 @@ RSpec.describe ClaudeAuthHealthCheckJob do
 
   describe "#perform" do
     it "logs aggregate auth-health counts for configured accounts" do
-      account = create(:account)
+      target_account = create(:account)
       create(:account)
       health = [
         auth_health_result(valid: false, expires_at: 2.hours.ago, error: "Session expired"),
         auth_health_result(valid: true, expires_at: 2.hours.from_now, error: nil)
       ]
 
-      allow(Runners::AuthHealth).to receive(:call).and_return([], health)
+      allow(Runners::AuthHealth).to receive(:call) do |account:, **|
+        account.id == target_account.id ? health : []
+      end
       allow(Rails.logger).to receive(:info)
 
       described_class.perform_now
 
       expect(Runners::AuthHealth).to have_received(:call).with(
-        account: account,
+        account: target_account,
         host_forwarded_status_by_runner_key: kind_of(Hash)
       )
       expect(Rails.logger).to have_received(:info).with(completed_log_payload)
@@ -58,8 +60,10 @@ RSpec.describe ClaudeAuthHealthCheckJob do
 
       described_class.perform_now
 
-      expect(Runners::AuthHealth).to have_received(:call).twice
-      expect(caches.size).to eq(2)
+      expected_account_count = Account.count
+
+      expect(Runners::AuthHealth).to have_received(:call).exactly(expected_account_count).times
+      expect(caches.size).to eq(expected_account_count)
       expect(caches.map(&:object_id).uniq.size).to eq(1)
     end
   end
