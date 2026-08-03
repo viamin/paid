@@ -35,21 +35,25 @@ RSpec.describe ChatSessions::ProvisionContainerJob, type: :job do
       let(:chat_session) { create(:chat_session, account: account, created_by: user, container_capability: "pending") }
 
       it "provisions the container and transitions to ready" do
-        described_class.perform_now(chat_session_id: chat_session.id)
+        described_class.perform_now(chat_session_id: chat_session.id, account_id: account.id)
 
         expect(Containers::ProvisionForChat).to have_received(:call).with(hash_including(chat_session: chat_session, seed_project: true))
         expect(chat_session.reload.container_capability).to eq("ready")
       end
 
       it "broadcasts the capability change to the chat stream" do
-        allow(ActionCable.server).to receive(:broadcast).and_call_original
+        expect {
+          described_class.perform_now(chat_session_id: chat_session.id, account_id: account.id)
+        }.to have_broadcasted_to(stream_name)
+          .with(hash_including(type: "capability_changed", container_capability: "ready"))
+          .at_least(:once)
+      end
 
-        described_class.perform_now(chat_session_id: chat_session.id)
-
-        expect(ActionCable.server).to have_received(:broadcast).with(
-          stream_name,
-          hash_including(type: "capability_changed", container_capability: "ready")
-        )
+      it "schedules a follow-up drain for other pending sessions in the account" do
+        expect {
+          described_class.perform_now(chat_session_id: chat_session.id, account_id: account.id)
+        }.to have_enqueued_job(ChatSessions::ReenqueuePendingProvisionJob)
+          .with(account_id: account.id, exclude_chat_session_id: chat_session.id)
       end
     end
 
@@ -57,7 +61,7 @@ RSpec.describe ChatSessions::ProvisionContainerJob, type: :job do
       let(:chat_session) { create(:chat_session, account: account, created_by: user, container_capability: "provisioning") }
 
       it "provisions the container" do
-        described_class.perform_now(chat_session_id: chat_session.id)
+        described_class.perform_now(chat_session_id: chat_session.id, account_id: account.id)
 
         expect(Containers::ProvisionForChat).to have_received(:call)
       end
@@ -144,7 +148,7 @@ RSpec.describe ChatSessions::ProvisionContainerJob, type: :job do
 
         it "does not provision or broadcast" do
           expect {
-            described_class.perform_now(chat_session_id: chat_session.id)
+            described_class.perform_now(chat_session_id: chat_session.id, account_id: account.id)
           }.not_to have_broadcasted_to(stream_name)
 
           expect(Containers::ProvisionForChat).not_to have_received(:call)
@@ -157,26 +161,35 @@ RSpec.describe ChatSessions::ProvisionContainerJob, type: :job do
 
       it "broadcasts the failed capability without re-raising" do
         allow(Containers::ProvisionForChat).to receive(:call) do |kwargs|
-          kwargs[:chat_session].update_columns(container_capability: "failed")
+          kwargs[:chat_session].update!(
+            container_capability: "failed",
+            metadata: (kwargs[:chat_session].metadata || {}).merge("container_failure_reason" => "Docker error: image pull failed")
+          )
           raise Containers::ProvisionForChat::ProvisionError, "Docker error: image pull failed"
         end
+        allow(ActionCable.server).to receive(:broadcast).and_call_original
 
-        expect {
-          described_class.perform_now(chat_session_id: chat_session.id)
-        }.to have_broadcasted_to(stream_name)
-          .with(hash_including(type: "capability_changed", container_capability: "failed"))
+        described_class.perform_now(chat_session_id: chat_session.id, account_id: account.id)
 
+        expect(ActionCable.server).to have_received(:broadcast).with(
+          stream_name,
+          hash_including(type: "capability_changed", container_capability: "failed")
+        ).at_least(:once)
         expect(chat_session.reload.container_capability).to eq("failed")
+        expect(chat_session.metadata["container_failure_reason"]).to eq("Docker error: image pull failed")
       end
 
       it "contains a raw Docker error without re-raising" do
         allow(Containers::ProvisionForChat).to receive(:call) do |kwargs|
-          kwargs[:chat_session].update_columns(container_capability: "failed")
+          kwargs[:chat_session].update!(
+            container_capability: "failed",
+            metadata: (kwargs[:chat_session].metadata || {}).merge("container_failure_reason" => "daemon unavailable")
+          )
           raise Docker::Error::DockerError, "daemon unavailable"
         end
 
         expect {
-          described_class.perform_now(chat_session_id: chat_session.id)
+          described_class.perform_now(chat_session_id: chat_session.id, account_id: account.id)
         }.not_to raise_error
 
         expect(chat_session.reload.container_capability).to eq("failed")
@@ -190,7 +203,7 @@ RSpec.describe ChatSessions::ProvisionContainerJob, type: :job do
 
         expect {
           expect {
-            described_class.perform_now(chat_session_id: chat_session.id)
+            described_class.perform_now(chat_session_id: chat_session.id, account_id: account.id)
           }.to raise_error(ApplicationJob::PerformTimeoutError)
         }.to have_broadcasted_to(stream_name)
           .with(hash_including(type: "capability_changed", container_capability: "failed"))
@@ -204,7 +217,7 @@ RSpec.describe ChatSessions::ProvisionContainerJob, type: :job do
 
         expect {
           expect {
-            described_class.perform_now(chat_session_id: chat_session.id)
+            described_class.perform_now(chat_session_id: chat_session.id, account_id: account.id)
           }.to raise_error(StandardError, "unexpected provision failure")
         }.to have_broadcasted_to(stream_name)
           .with(hash_including(type: "capability_changed", container_capability: "failed"))
@@ -214,21 +227,25 @@ RSpec.describe ChatSessions::ProvisionContainerJob, type: :job do
     context "when the session no longer exists" do
       it "is discarded without raising" do
         expect {
-          described_class.perform_now(chat_session_id: 999_999_999)
+          described_class.perform_now(chat_session_id: 999_999_999, account_id: account.id)
         }.not_to raise_error
       end
     end
   end
 
   describe ".good_job_concurrency_config" do
-    it "limits provisioning to one job per chat session" do
+    it "runs on the low-priority queue" do
+      expect(described_class.queue_name).to eq("low_priority")
+    end
+
+    it "limits provisioning to one job per account" do
       chat_session = create(:chat_session, account: account, created_by: user, container_capability: "pending")
 
       config = described_class.good_job_concurrency_config
       expect(config[:total_limit]).to eq(1)
       expect(config[:enqueue_limit]).to eq(1)
-      expect(described_class.new(chat_session_id: chat_session.id).good_job_concurrency_key)
-        .to eq(described_class.concurrency_key_for(chat_session.id))
+      expect(described_class.new(chat_session_id: chat_session.id, account_id: account.id).good_job_concurrency_key)
+        .to eq(described_class.concurrency_key_for(account.id))
     end
   end
 end

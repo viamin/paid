@@ -25,6 +25,7 @@ RSpec.describe ApplicationJob, :no_db do
       ],
       maintenance: %w[
         AnalyzeIssueFollowupBackfillJob
+        AccountHealthCheckSweepJob
         AutoPickEligibilitySweepJob
         AutoPickQueueBackfillJob
         AgentRunPatternDetectorJob
@@ -38,6 +39,7 @@ RSpec.describe ApplicationJob, :no_db do
         ClaudeCredentialKeepWarmJob
         CoordinationExperimentResolutionJob
         CoordinationPolicyEvolutionJob
+        FreeModels::SyncJob
         GithubTokenHealthCheckJob
         KnowledgeAuditRetentionJob
         ModelHealthCheckJob

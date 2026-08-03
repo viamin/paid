@@ -265,7 +265,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
     it "appends a LID phase report when the project declares lid_mode" do
       allow(AgentRun).to receive(:find).with(agent_run.id).and_return(agent_run)
       project.update!(lid_mode: "full")
-      agent_run.log!("stdout", "Added regression coverage with @spec LID-RUN-001")
+      agent_run.log!("stdout", "Added regression coverage with @#{'spec'} LID-RUN-001")
       agent_run.log!("stdout", "bin/coherence-check.mjs completed with 0 failures")
 
       captured_body = nil

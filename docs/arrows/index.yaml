@@ -22,6 +22,9 @@ taxonomy:
   chat:
     label: Chat
     description: Interactive chat session behavior and workspace lifecycle.
+  catalog:
+    label: Catalog
+    description: Model and configuration catalog synchronization behavior.
   security:
     label: Security
     description: Repository and runtime security controls.
@@ -51,6 +54,14 @@ arrows:
     specs: docs/intent/chat-session-reopen/chat-session-reopen-specs.md
     parent: PAID
     taxonomy: chat
+    status: OK
+    audited: 2026-08-03
+  free-model-sync:
+    title: Free Model Sync
+    path: docs/intent/free-model-sync/free-model-sync-design.md
+    specs: docs/intent/free-model-sync/free-model-sync-specs.md
+    parent: PAID
+    taxonomy: catalog
     status: OK
     audited: 2026-08-03
 

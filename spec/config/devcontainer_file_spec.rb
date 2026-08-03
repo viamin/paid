@@ -34,4 +34,12 @@ RSpec.describe DevcontainerFile, :no_db do
     expect(oh_my_pi_installer).to include("sha256sum -c -")
     expect(oh_my_pi_installer).not_to include("https://bun.sh/install")
   end
+
+  it "re-runs setup on every start to restore the detached dev supervisor" do
+    command = devcontainer.fetch("postStartCommand")
+
+    expect(command).to include("git config --local remote.origin.url https://github.com/viamin/paid.git")
+    expect(command).to include("git config --local credential.helper '!/usr/bin/gh auth git-credential'")
+    expect(command).to include("bash .devcontainer/ensure-networks-and-qdrant.sh && bin/setup")
+  end
 end

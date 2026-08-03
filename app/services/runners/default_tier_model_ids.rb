@@ -71,7 +71,7 @@ module Runners
     end
 
     def tier_defaults_for_openrouter_free
-      models = LlmModel.free.active.by_provider(Runner::OPENROUTER_FREE_MODEL_PROVIDER).by_capability.to_a.reject(&:below_quality_bar?)
+      models = LlmModel.openrouter_synced_free.active.by_capability.to_a.reject(&:below_quality_bar?)
 
       LlmModel::TIERS.each_with_object({}) do |tier, mapping|
         model = models.find { |entry| entry.tier == tier }

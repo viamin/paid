@@ -81,7 +81,7 @@ module Containers
         state_volume: state_volume
       )
     rescue Docker::Error::DockerError => e
-      mark_failed!
+      mark_failed!(e)
       log("provision.failed", error: e.message)
       cleanup_on_failure(
         workspace_volume,
@@ -91,7 +91,7 @@ module Containers
       )
       raise ProvisionError, "Docker error: #{e.message}"
     rescue StandardError => e
-      mark_failed!
+      mark_failed!(e)
       log("provision.failed", error: e.message)
       cleanup_on_failure(
         workspace_volume,
@@ -107,12 +107,21 @@ module Containers
     def mark_provisioning!
       chat_session.update!(
         container_capability: "provisioning",
-        container_requested_at: chat_session.container_requested_at || Time.current
+        container_requested_at: chat_session.container_requested_at || Time.current,
+        metadata: metadata_without_container_failure
       )
     end
 
-    def mark_failed!
-      chat_session.update!(container_capability: "failed") if chat_session.persisted?
+    def mark_failed!(error)
+      return unless chat_session.persisted?
+
+      chat_session.update!(
+        container_capability: "failed",
+        container_id: nil,
+        container_ready_at: nil,
+        workspace_volume: nil,
+        metadata: metadata_with_container_failure(error)
+      )
     end
 
     # When +ready+ is false the caller (ProvisionWorkspace's reopen path) keeps
@@ -125,7 +134,8 @@ module Containers
         container_id: @container.id,
         container_ready_at: ready? ? Time.current : nil,
         workspace_volume: workspace_volume,
-        idle_timeout_at: options[:idle_timeout].from_now
+        idle_timeout_at: options[:idle_timeout].from_now,
+        metadata: metadata_without_container_failure
       }
     end
 
@@ -369,6 +379,17 @@ module Containers
         chat_session_id: chat_session.id,
         project_id: project&.id,
         **metadata
+      )
+    end
+
+    def metadata_without_container_failure
+      (chat_session.metadata || {}).except("container_failure_reason", "container_failure_at")
+    end
+
+    def metadata_with_container_failure(error)
+      metadata_without_container_failure.merge(
+        "container_failure_reason" => error.message.to_s.truncate(500),
+        "container_failure_at" => Time.current.iso8601
       )
     end
   end

@@ -42,6 +42,24 @@ RSpec.describe ChatSessions::HandleCapabilityTransition do
     )
   end
 
+  it "broadcasts message_deleted when recovery clears an existing capability notice" do
+    notice = chat_session.messages.create!(
+      role: "system",
+      content: Containers::CapabilityMessages.notice_for("failed"),
+      metadata: {
+        "container_capability_notice" => true,
+        "container_capability" => "failed"
+      }
+    )
+
+    expect {
+      described_class.call(chat_session:, from: "failed", to: "ready")
+    }.to have_broadcasted_to("chat_session:#{chat_session.id}")
+      .with(hash_including(type: "message_deleted", message_id: notice.id))
+
+    expect(chat_session.messages.find_by(id: notice.id)).to be_nil
+  end
+
   it "does not persist a stopped notice for intentionally closed sessions" do
     chat_session.update!(status: "closed")
 

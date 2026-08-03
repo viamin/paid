@@ -1,31 +1,71 @@
 # frozen_string_literal: true
 
 module HealthChecks
-  # Orchestrates health checks for a subject across scopes.
+  # Runs the registered checks for a scope against a subject and aggregates
+  # their findings into a single Result. Each check is isolated: a raising
+  # check becomes an internal-error Finding instead of failing the run, so one
+  # broken check cannot hide the others' results.
   #
-  #   result = HealthChecks::Coordinator.call(scope: :project, subject: project)
+  # A :project run composes all three scopes (RDR-049): it runs the project
+  # checks on the project itself, the runner checks over the project's
+  # effective owner's agent-eligible runners, and the user checks over that
+  # effective owner — so one project health report spans project, runner, and
+  # user settings.
   #
-  # When +scope+ is +:project+, runner and user checks are composed automatically:
-  #   - runner checks run against project.effective_owner.runners.kept_only.for_agent_runs
-  #   - user checks run against project.effective_owner
+  # Network checks (those that hit GitHub / the model registry) are skipped
+  # unless +include_network+ is true. They run only from the scheduled sweep
+  # job, never synchronously in a request.
   #
-  # Each check is isolated: a raise inside one check becomes an internal-error
-  # Finding instead of failing the whole run.
+  # +owner_findings_cache+ memoizes the runner/user findings composed for a
+  # :project run, keyed by owner id. Runner and user findings depend only on
+  # the project's effective owner, not the project itself, so a caller that
+  # sweeps many projects (e.g. AccountHealthCheckSweepJob) should pass in one
+  # Hash shared across calls to avoid recomputing the same owner's findings
+  # — including network-backed checks — once per project.
+  #
+  # +effective_owner+ lets a caller pass a pre-resolved owner for a :project
+  # run instead of falling back to +subject.effective_owner+. Project#effective_owner
+  # falls back to Account#fallback_owner for orphaned projects (no created_by),
+  # which queries account_memberships/users per call — a caller sweeping many
+  # projects should batch-resolve fallback owners once and pass the result
+  # here to avoid a query per orphaned project.
   class Coordinator
     INTERNAL_ERROR_CODE = :health_check_internal_error
 
-    def self.call(scope:, subject:, include_network: false)
-      new(scope: scope, subject: subject, include_network: include_network).call
+    def self.call(scope:, subject:, include_network: false, owner_findings_cache: {}, effective_owner: nil)
+      new(
+        scope: scope,
+        subject: subject,
+        include_network: include_network,
+        owner_findings_cache: owner_findings_cache,
+        effective_owner: effective_owner
+      ).call
     end
 
-    def initialize(scope:, subject:, include_network: false)
+    def self.internal_error_finding(check_class:, subject:, error:)
+      Finding.new(
+        code: INTERNAL_ERROR_CODE,
+        scope: check_class.scope,
+        severity: :error,
+        title: "Internal health check error",
+        description: "#{check_class.name || check_class} raised #{error.class}: #{error.message}",
+        remediation: "Re-run the health checks. If this persists, investigate the check implementation.",
+        subject_type: subject.class.name,
+        subject_id: subject.try(:id),
+        metadata: { check_class: check_class.name || check_class.to_s, error_class: error.class.name }
+      )
+    end
+
+    def initialize(scope:, subject:, include_network: false, owner_findings_cache: {}, effective_owner: nil)
       @scope = scope
       @subject = subject
       @include_network = include_network
+      @owner_findings_cache = owner_findings_cache
+      @effective_owner = effective_owner
     end
 
     def call
-      started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      started_at = monotonic_clock
 
       Result.new(
         findings: compose_findings,
@@ -36,27 +76,24 @@ module HealthChecks
 
     private
 
-    attr_reader :scope, :subject, :include_network
+    attr_reader :scope, :subject, :include_network, :owner_findings_cache
 
     def compose_findings
       return run_scope(scope, subject) unless scope == :project
 
-      run_scope(:project, subject) +
-        run_user_checks +
-        run_runner_checks
+      run_scope(:project, subject) + owner_scope_findings
     end
 
-    def run_user_checks
-      owner = subject.effective_owner
+    def owner_scope_findings
+      owner = effective_owner
       return [] unless owner
 
-      run_scope(:user, owner)
+      owner_findings_cache[owner.id] ||= begin
+        run_runner_checks(owner) + run_scope(:user, owner)
+      end
     end
 
-    def run_runner_checks
-      owner = subject.effective_owner
-      return [] unless owner
-
+    def run_runner_checks(owner)
       checks = scoped_checks(:runner)
       return [] if checks.empty?
 
@@ -91,17 +128,15 @@ module HealthChecks
     end
 
     def internal_error_finding(check_class, check_subject, error)
-      Finding.new(
-        code: INTERNAL_ERROR_CODE,
-        scope: check_class.scope,
-        severity: :error,
-        title: "Internal health check error",
-        description: "#{check_class.name || check_class} raised #{error.class}: #{error.message}",
-        remediation: "Re-run the health checks. If this persists, investigate the check implementation.",
-        subject_type: check_subject.class.name,
-        subject_id: check_subject.try(:id),
-        metadata: { check_class: check_class.name || check_class.to_s, error_class: error.class.name }
-      )
+      self.class.internal_error_finding(check_class:, subject: check_subject, error:)
+    end
+
+    def effective_owner
+      @effective_owner || subject.effective_owner
+    end
+
+    def monotonic_clock
+      Process.clock_gettime(Process::CLOCK_MONOTONIC)
     end
 
     def elapsed_ms(started_at)
