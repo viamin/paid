@@ -33,6 +33,8 @@ class LlmModel < ApplicationRecord
   scope :by_pricing_tier, ->(pricing_tier) { where(pricing_tier: pricing_tier) }
   scope :free, -> { by_pricing_tier("free") }
   scope :paid, -> { by_pricing_tier("paid") }
+  scope :openrouter_synced, -> { where(catalog_source: "openrouter_sync") }
+  scope :openrouter_synced_free, -> { free.openrouter_synced }
   scope :affordable, ->(budget_cents, avg_tokens) {
     return active if budget_cents.nil?
 
