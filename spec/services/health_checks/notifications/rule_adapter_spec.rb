@@ -27,16 +27,36 @@ RSpec.describe HealthChecks::Notifications::RuleAdapter do
     )
   end
 
-  def deprecated_model_finding(model_id:, tier:)
+  def deprecated_model_finding(model_id:, tier:, subject_id: runner.id)
     finding(
       code: :deprecated_model,
       scope: :runner,
       severity: :warning,
       title: "Runner pinned to a deprecated model",
       subject_type: "Runner",
-      subject_id: runner.id,
+      subject_id: subject_id,
       metadata: { model_id: model_id, tier: tier }
     )
+  end
+
+  def user_finding(user:)
+    finding(
+      code: :missing_default_runner,
+      scope: :user,
+      severity: :warning,
+      title: "User has no default runner",
+      subject_type: "User",
+      subject_id: user.id
+    )
+  end
+
+  def mixed_findings(other_runner:, teammate:)
+    [
+      deprecated_model_finding(model_id: "gpt-4.1-mini", tier: "fast"),
+      deprecated_model_finding(model_id: "gpt-4.1", tier: "deep", subject_id: other_runner.id),
+      user_finding(user: owner),
+      user_finding(user: teammate)
+    ]
   end
 
   # @spec HEALTH-CHECKS-001
@@ -91,5 +111,28 @@ RSpec.describe HealthChecks::Notifications::RuleAdapter do
     }.to change(Notification, :count).by(2)
 
     expect(Notification.where(account: account, subject: runner).pluck(:source).uniq.size).to eq(2)
+  end
+
+  # @spec HEALTH-CHECKS-001
+  it "batches subject lookups per table when syncing mixed findings" do
+    teammate = create(:user, account: account)
+    other_runner = create(:runner, user: teammate, runner_key: "codex")
+
+    allow(HealthChecks::Cache).to receive(:read).with(project).and_return(
+      HealthChecks::Result.new(
+        findings: mixed_findings(other_runner:, teammate:),
+        checked_at: Time.current,
+        duration_ms: 5
+      )
+    )
+    allow(Notifications::Publish).to receive(:call)
+    allow(Notifications::Resolve).to receive(:call)
+
+    queries = capture_queries do
+      described_class.call(scope: project)
+    end
+
+    expect(queries.count { |sql| sql.include?('FROM "runners"') }).to eq(1)
+    expect(queries.count { |sql| sql.include?('FROM "users"') }).to eq(1)
   end
 end

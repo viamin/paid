@@ -30,15 +30,18 @@ module HealthChecks
       end
 
       def current_entries(project)
-        Array(HealthChecks::Cache.read(project)&.findings)
-          .map { |finding| entry_for(project, finding) }
+        findings = Array(HealthChecks::Cache.read(project)&.findings)
+        subjects = preload_subjects(project, findings)
+
+        findings
+          .map { |finding| entry_for(project, finding, subjects:) }
           .uniq { |entry| entry.fetch(:source) }
       end
 
-      def entry_for(project, finding)
+      def entry_for(project, finding, subjects:)
         {
           source: notification_source(project, finding),
-          subject: notification_subject(project, finding),
+          subject: notification_subject(project, finding, subjects:),
           attributes: notification_attributes(project, finding)
         }
       end
@@ -101,11 +104,31 @@ module HealthChecks
         end
       end
 
-      def notification_subject(project, finding)
-        subject_class = finding.subject_type&.safe_constantize
-        return project unless finding.subject_id && subject_class&.<(ApplicationRecord)
+      def preload_subjects(project, findings)
+        findings
+          .group_by { |finding| subject_class_for(finding) }
+          .each_with_object({}) do |(subject_class, grouped_findings), subjects|
+            next unless subject_class
 
-        subject_class.find_by(id: finding.subject_id) || project
+            ids = grouped_findings.filter_map(&:subject_id).uniq
+            next if ids.empty?
+
+            subjects[subject_class.name] = subject_class.where(id: ids).index_by(&:id)
+          end
+      end
+
+      def notification_subject(project, finding, subjects:)
+        subject_class = subject_class_for(finding)
+        return project unless subject_class
+
+        subjects.dig(subject_class.name, finding.subject_id) || project
+      end
+
+      def subject_class_for(finding)
+        subject_class = finding.subject_type&.safe_constantize
+        return unless finding.subject_id && subject_class&.<(ApplicationRecord)
+
+        subject_class
       end
 
       def notification_attributes(project, finding)
