@@ -197,36 +197,21 @@ jobs:
           ALTER ROLE paid CREATEDB NOSUPERUSER NOBYPASSRLS;
           SQL
 
-      - name: Locate Chromium-family browser
-        id: locate_chromium
-        run: |
-          chrome_path="$(command -v google-chrome || command -v chromium-browser || command -v chromium || true)"
-          echo "chrome_path=$chrome_path" >> "$GITHUB_OUTPUT"
-
-          if [ -n "$chrome_path" ] && [ -x "$chrome_path" ]; then
-            echo "Chrome found at ${chrome_path}"
-            "$chrome_path" --version
-          else
-            echo "No Chromium-family browser found on PATH; installing a fallback copy."
-          fi
-
-      - name: Set up Chrome fallback
+      - name: Set up Chrome
         id: setup_chrome
-        if: steps.locate_chromium.outputs.chrome_path == ''
         uses: browser-actions/setup-chrome@2e1d749697dd1612b833dba4a722266286fbefcd # v2.1.2
 
       - name: Export Chromium path
         env:
-          LOCATED_CHROME_PATH: ${{ steps.locate_chromium.outputs.chrome_path }}
           INSTALLED_CHROME_PATH: ${{ steps.setup_chrome.outputs.chrome-path }}
         run: |
-          chrome_path="${LOCATED_CHROME_PATH:-$INSTALLED_CHROME_PATH}"
+          chrome_path="${INSTALLED_CHROME_PATH}"
           if [ -n "$chrome_path" ] && [ -x "$chrome_path" ]; then
             echo "CHROMIUM_PATH=$chrome_path" >> "$GITHUB_ENV"
             echo "Chrome available at ${chrome_path}"
             "$chrome_path" --version
           else
-            echo "::error::No Chrome/Chromium binary found after fallback installation"
+            echo "::error::No Chrome/Chromium binary found after setup"
             exit 1
           fi
 

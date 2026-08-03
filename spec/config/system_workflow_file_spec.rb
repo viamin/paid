@@ -41,17 +41,17 @@ RSpec.describe SystemWorkflowFile, :no_db do
     )
   end
 
-  it "locates Chromium from PATH and exports it when available" do
-    locate_step = system_step("Locate Chromium-family browser")
+  it "installs a known-good Chrome binary for explicit browser specs" do
+    setup_step = system_step("Set up Chrome")
+    export_step = system_step("Export Chromium path")
 
-    expect(locate_step.fetch("run")).to include("command -v chromium || true")
-    expect(locate_step.fetch("run")).to include('echo "BROWSER_SYSTEM_TESTS=true" >> "$GITHUB_ENV"')
-    expect(locate_step.fetch("run")).to include('echo "CHROMIUM_PATH=$path" >> "$GITHUB_ENV"')
-  end
-
-  it "falls back to rack_test when no Chromium binary is available" do
-    locate_step = system_step("Locate Chromium-family browser")
-
-    expect(locate_step.fetch("run")).to include("falling back to rack_test")
+    expect(setup_step).to include(
+      "id" => "setup_chrome",
+      "uses" => "browser-actions/setup-chrome@2e1d749697dd1612b833dba4a722266286fbefcd"
+    )
+    expect(export_step.fetch("env")).to include(
+      "INSTALLED_CHROME_PATH" => "${{ steps.setup_chrome.outputs.chrome-path }}"
+    )
+    expect(export_step.fetch("run")).to include('echo "CHROMIUM_PATH=$chrome_path" >> "$GITHUB_ENV"')
   end
 end
