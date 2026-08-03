@@ -381,8 +381,8 @@ class ChatSessionsController < ApplicationController
 
   def render_create_rate_limit_exceeded
     respond_to do |format|
-      format.turbo_stream { redirect_back fallback_location: chat_sessions_path, allow_other_host: false, alert: "Rate limit exceeded" }
-      format.html { redirect_back fallback_location: chat_sessions_path, allow_other_host: false, alert: "Rate limit exceeded" }
+      format.turbo_stream { redirect_back fallback_location: chat_sessions_path, alert: "Rate limit exceeded" }
+      format.html { redirect_back fallback_location: chat_sessions_path, alert: "Rate limit exceeded" }
       format.json { render json: { error: "Rate limit exceeded" }, status: :too_many_requests }
     end
   end
