@@ -21,7 +21,14 @@ module HealthChecks
       private
 
       def sync_project(project)
-        active_sources = current_entries(project).map do |entry|
+        # A nil result is a transient cache miss (eviction, cold start), not
+        # "healthy" — the health-check UI renders nil as "no result yet". Treat
+        # only a real result as actionable so a cache gap never clears active
+        # notifications. Only a result with empty findings means "healthy".
+        result = HealthChecks::Cache.read(project)
+        return if result.nil?
+
+        active_sources = current_entries(project, result).map do |entry|
           publish_entry(project, entry)
           entry.fetch(:source)
         end
@@ -29,8 +36,8 @@ module HealthChecks
         resolve_stale(project, active_sources)
       end
 
-      def current_entries(project)
-        findings = Array(HealthChecks::Cache.read(project)&.findings)
+      def current_entries(project, result)
+        findings = result.findings
         subjects = preload_subjects(project, findings)
 
         findings

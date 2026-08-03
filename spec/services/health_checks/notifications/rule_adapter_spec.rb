@@ -93,6 +93,24 @@ RSpec.describe HealthChecks::Notifications::RuleAdapter do
     expect(Notification.find_by!(account: account, subject: project).resolved_at).to be_present
   end
 
+  # @spec HEALTH-CHECKS-001
+  it "leaves existing notifications intact on a transient cache miss" do
+    allow(HealthChecks::Cache).to receive(:read).with(project).and_return(
+      HealthChecks::Result.new(findings: [ finding ], checked_at: Time.current, duration_ms: 5)
+    )
+    described_class.call(scope: project)
+    notification = Notification.find_by!(account: account, subject: project)
+
+    # A nil cache read is a transient miss (eviction, cold start), not "healthy".
+    allow(HealthChecks::Cache).to receive(:read).with(project).and_return(nil)
+
+    expect {
+      described_class.call(scope: project)
+    }.not_to change { notification.reload.resolved_at }
+
+    expect(notification.resolved_at).to be_nil
+  end
+
   # @spec HEALTH-CHECKS-003
   it "deduplicates by finding fingerprint so one runner can emit multiple notifications for the same code" do
     allow(HealthChecks::Cache).to receive(:read).with(project).and_return(
