@@ -574,10 +574,11 @@ RSpec.describe "Projects" do
 
         expect(response.body).to include(
           "Live Preview",
+          "Ready",
           "feature/preview",
-          "phoenix",
+          "Phoenix",
           "8242",
-          "Preview session is ready.",
+          "Preview is live.",
           %(src="#{preview_path(session.token)}"),
           %(sandbox="allow-forms allow-modals allow-popups allow-presentation allow-scripts"),
           %(referrerpolicy="no-referrer"),
@@ -585,6 +586,29 @@ RSpec.describe "Projects" do
           restart_preview_project_path(project)
         )
         expect(response.body).not_to include("allow-same-origin")
+      end
+
+      it "surfaces a provisioning lifecycle state without embedding an iframe" do
+        project = create(:project, account: account, github_token: github_token)
+        create(:preview_session, :provisioning, project: project, branch_name: "feature/wip",
+          tunnel_port: nil, expires_at: 20.minutes.from_now)
+
+        get project_path(project)
+
+        expect(response.body).to include("Provisioning")
+        expect(response.body).to include("Booting the container and installing dependencies")
+        expect(response.body).not_to include("<iframe")
+      end
+
+      it "surfaces a failed state with the error message" do
+        project = create(:project, account: account, github_token: github_token)
+        create(:preview_session, :failed, project: project, branch_name: "feature/broken",
+          error_message: "Could not install dependencies")
+
+        get project_path(project)
+
+        expect(response.body).to include("Failed")
+        expect(response.body).to include("Could not install dependencies")
       end
 
       it "shows the latest terminal preview session instead of an expired active session" do
@@ -1226,17 +1250,18 @@ RSpec.describe "Projects" do
   describe "POST /projects/:id/start_preview" do
     before { sign_in user }
 
-    it "starts a preview session and redirects back to the preview panel" do
+    it "queues a preview session in the provisioning state and redirects back to the preview panel" do
       project = create(:project, account: account, github_token: github_token, default_branch: "develop")
 
       post start_preview_project_path(project)
 
       expect(response).to redirect_to("#{project_path(project)}#preview")
-      expect(flash[:notice]).to eq("Preview started for develop.")
+      expect(flash[:notice]).to include("Preview queued for develop.")
       session = project.preview_sessions.recent.first
       expect(session).to be_present
       expect(session.branch_name).to eq("develop")
-      expect(session.status).to eq("ready")
+      expect(session.status).to eq("provisioning")
+      expect(session.tunnel_port).to be_nil
     end
 
     it "starts a preview session for an explicit branch name" do
@@ -1245,7 +1270,7 @@ RSpec.describe "Projects" do
       post start_preview_project_path(project), params: { branch_name: "feature/review-me" }
 
       expect(response).to redirect_to("#{project_path(project)}#preview")
-      expect(flash[:notice]).to eq("Preview started for feature/review-me.")
+      expect(flash[:notice]).to include("feature/review-me")
       expect(project.preview_sessions.recent.first.branch_name).to eq("feature/review-me")
     end
 
@@ -1288,43 +1313,43 @@ RSpec.describe "Projects" do
       post restart_preview_project_path(project)
 
       expect(response).to redirect_to("#{project_path(project)}#preview")
-      expect(flash[:notice]).to eq("Preview restarted for feature/restart.")
+      expect(flash[:notice]).to include("Preview restarted for feature/restart.")
       expect(previous.reload.status).to eq("stopped")
 
       current = project.preview_sessions.recent.first
       expect(current.id).not_to eq(previous.id)
       expect(current.branch_name).to eq("feature/restart")
-      expect(current.status).to eq("ready")
+      expect(current.status).to eq("provisioning")
     end
   end
 
   describe "GET /previews/:token" do
     before { sign_in user }
 
-    it "renders the embedded simulated preview for a live session" do
+    it "serves the proxied app for a live session through the controller token path" do
       project = create(:project, account: account, github_token: github_token, name: "My Project")
       session = create(:preview_session, :ready, project: project, branch_name: "feature/preview", framework: "rails",
         tunnel_port: 8242, expires_at: 20.minutes.from_now)
+      stub_preview_proxy_response
 
       get preview_path(session.token)
 
       expect(response).to have_http_status(:ok)
       expect(response.headers["Content-Security-Policy"]).to include("frame-ancestors 'self'")
       expect(response.headers["X-Frame-Options"]).to eq("SAMEORIGIN")
-      expect(response.body).to include("Simulated preview")
-      expect(response.body).to include("feature/preview")
-      expect(response.body).to include(project.full_name)
+      expect(response.body).to eq("<html>ok</html>")
     end
 
     it "supports nested preview paths on the same token route" do
       project = create(:project, account: account, github_token: github_token)
       session = create(:preview_session, :ready, project: project, branch_name: "feature/preview",
         tunnel_port: 8242, expires_at: 20.minutes.from_now)
+      stub_preview_proxy_response
 
       get preview_path(session.token, path: "health")
 
       expect(response).to have_http_status(:ok)
-      expect(response.body).to include("/health")
+      expect(response.body).to eq("<html>ok</html>")
     end
 
     it "strips sensitive upstream headers while preserving safe caching headers" do

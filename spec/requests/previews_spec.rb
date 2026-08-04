@@ -32,13 +32,16 @@ RSpec.describe "Previews" do
 
         expect(response.body).to include("Live preview")
         expect(response.body).to include("feature/widget")
-        expect(response.body).to include("ready")
+        expect(response.body).to include("Ready")
       end
 
-      it "renders the stop control" do
+      it "hides the stop control from non-admin project members" do
         get preview_session_path(preview_session)
 
-        expect(response.body).to include("Stop preview")
+        # stop? requires an owner/admin account role; a plain project member
+        # can view the preview but must not tear it down.
+        expect(response.body).not_to include("Stop preview")
+        expect(response.body).to include("Back to project")
       end
     end
 
@@ -52,6 +55,12 @@ RSpec.describe "Previews" do
 
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("/previews/iframe-token/")
+      end
+
+      it "renders the stop control" do
+        get preview_session_path(preview_session)
+
+        expect(response.body).to include("Stop preview")
       end
     end
 
@@ -99,6 +108,61 @@ RSpec.describe "Previews" do
         get preview_session_path(id: 999_999_999)
 
         expect(response).to redirect_to(root_path)
+      end
+    end
+
+    context "with lifecycle states" do
+      let(:user) { create(:user, :admin, account: account) }
+
+      before { sign_in user }
+
+      it "surfaces a provisioning state without an iframe" do
+        session = create(:preview_session, :provisioning, project: project,
+          branch_name: "feature/wip", tunnel_port: nil)
+
+        get preview_session_path(session)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Provisioning")
+        expect(response.body).to include("Booting the container and installing dependencies")
+        expect(response.body).not_to include("<iframe")
+      end
+
+      it "surfaces a failed state with the error message" do
+        session = create(:preview_session, :failed, project: project,
+          branch_name: "feature/broken", error_message: "Could not start the app server")
+
+        get preview_session_path(session)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Failed")
+        expect(response.body).to include("Could not start the app server")
+        expect(response.body).not_to include("<iframe")
+      end
+
+      it "surfaces a stopped state with guidance to start a new preview" do
+        session = create(:preview_session, :stopped, project: project,
+          branch_name: "feature/old")
+
+        get preview_session_path(session)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Stopped")
+        expect(response.body).to include("Start a new preview")
+        expect(response.body).not_to include("<iframe")
+      end
+
+      it "only renders the stop control for an active session" do
+        active = create(:preview_session, :provisioning, project: project,
+          branch_name: "feature/active", tunnel_port: nil)
+        stopped = create(:preview_session, :stopped, project: project,
+          branch_name: "feature/done")
+
+        get preview_session_path(active)
+        expect(response.body).to include("Stop preview")
+
+        get preview_session_path(stopped)
+        expect(response.body).not_to include("Stop preview")
       end
     end
   end

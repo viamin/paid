@@ -24,11 +24,17 @@
 - [ ] **LIVE-PREVIEW-003** — When a user starts or restarts a project preview,
   the system SHALL invoke real preview provisioning rather than marking a new
   `PreviewSession` ready without a live app, tunnel, or container.
+  *Progress:* start/restart now leave the session in the `provisioning`
+  lifecycle state (decoupled from the stubbed instant-ready state); wiring the
+  real container provisioning worker remains.
 
-- [ ] **LIVE-PREVIEW-004** — When a preview is served at `/previews/:token`,
+- [x] **LIVE-PREVIEW-004** — When a preview is served at `/previews/:token`,
   the system SHALL route the root-path experience through the tunnel-backed
   proxy path instead of mixing real proxying with controller-side simulated
   preview fallback.
+  *Code:* `app/middleware/previews_proxy.rb`, `app/controllers/previews_controller.rb`.
+  *Test:* `spec/middleware/previews_proxy_spec.rb`, `spec/requests/previews_spec.rb`,
+  `spec/requests/projects_spec.rb`.
 
 - [ ] **LIVE-PREVIEW-005** — When an agent performs interactive verification,
   the system SHALL persist a verification outcome and related artifacts beyond

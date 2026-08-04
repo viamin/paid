@@ -117,6 +117,20 @@ RSpec.describe PreviewSession do
       end
     end
 
+    it "distinguishes in-progress, pending, provisioning, and starting states" do
+      expect(build(:preview_session, status: "pending")).to be_pending
+      expect(build(:preview_session, status: "provisioning")).to be_provisioning
+      expect(build(:preview_session, status: "starting")).to be_starting
+
+      %w[pending provisioning starting].each do |status|
+        expect(build(:preview_session, status:)).to be_in_progress,
+          "#{status} should be in progress"
+      end
+
+      expect(build(:preview_session, :ready)).not_to be_in_progress
+      expect(build(:preview_session, :stopped)).not_to be_in_progress
+    end
+
     it "clears error_message when leaving failed" do
       session = create(:preview_session, :failed)
 
@@ -124,6 +138,17 @@ RSpec.describe PreviewSession do
       session.valid?
 
       expect(session.error_message).to be_nil
+    end
+  end
+
+  describe "#status_label" do
+    it "maps each lifecycle status to a user-facing label" do
+      expect(build(:preview_session, status: "pending").status_label).to eq("Queued")
+      expect(build(:preview_session, status: "provisioning").status_label).to eq("Provisioning")
+      expect(build(:preview_session, status: "starting").status_label).to eq("Starting")
+      expect(build(:preview_session, status: "ready").status_label).to eq("Ready")
+      expect(build(:preview_session, status: "stopped").status_label).to eq("Stopped")
+      expect(build(:preview_session, status: "failed").status_label).to eq("Failed")
     end
   end
 

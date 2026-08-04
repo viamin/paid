@@ -76,6 +76,24 @@ class PreviewSession < ApplicationRecord
     status == "stopped"
   end
 
+  def pending?
+    status == "pending"
+  end
+
+  def provisioning?
+    status == "provisioning"
+  end
+
+  def starting?
+    status == "starting"
+  end
+
+  # True while the preview is advancing toward ready but not yet serving
+  # traffic (queued, provisioning the container, or starting the app/tunnel).
+  def in_progress?
+    %w[pending provisioning starting].include?(status)
+  end
+
   def accessible?
     live? && !expired?
   end
@@ -133,6 +151,19 @@ class PreviewSession < ApplicationRecord
 
   def framework_label
     Projects::FrameworkProfile.label_for(framework)
+  end
+
+  STATUS_LABELS = {
+    "pending" => "Queued",
+    "provisioning" => "Provisioning",
+    "starting" => "Starting",
+    "ready" => "Ready",
+    "stopped" => "Stopped",
+    "failed" => "Failed"
+  }.freeze
+
+  def status_label
+    STATUS_LABELS.fetch(status) { status.humanize }
   end
 
   def status=(value)

@@ -383,24 +383,20 @@ class ProjectsController < ApplicationController
     redirect_to project_path(@project), notice: message
   end
 
+  # @spec LIVE-PREVIEW-003
+  # Starts a preview and queues it for real provisioning. The session is left
+  # in the +provisioning+ lifecycle state so the UI reflects the asynchronous
+  # provisioning lifecycle rather than declaring readiness before a live app,
+  # tunnel, or container exists. The provisioning worker transitions it to
+  # +ready+ (or +failed+) once the app is actually serving.
   def start_preview
     authorize @project, :update?
 
     branch_name = preview_branch_name_param.presence || @project.default_branch
-    PreviewSession.transaction do
-      @project.with_lock do
-        PreviewSession.for_project(@project).non_terminal.find_each(&:mark_stopped!)
-        session = PreviewSession.build_for(
-          project: @project,
-          branch_name: branch_name,
-          created_by: current_user
-        )
-        session.save!
-        session.mark_ready!(tunnel_port: nil)
-      end
-    end
+    queue_preview_provision!(branch_name:)
 
-    redirect_to project_path(@project, anchor: "preview"), notice: "Preview started for #{branch_name}."
+    redirect_to project_path(@project, anchor: "preview"),
+      notice: "Preview queued for #{branch_name}. It will become available once provisioning completes."
   end
 
   def stop_preview
@@ -418,20 +414,10 @@ class ProjectsController < ApplicationController
 
     last_branch = PreviewSession.for_project(@project).recent.first&.branch_name
     branch_name = preview_branch_name_param.presence || last_branch.presence || @project.default_branch
-    PreviewSession.transaction do
-      @project.with_lock do
-        PreviewSession.for_project(@project).non_terminal.find_each(&:mark_stopped!)
-        session = PreviewSession.build_for(
-          project: @project,
-          branch_name: branch_name,
-          created_by: current_user
-        )
-        session.save!
-        session.mark_ready!(tunnel_port: nil)
-      end
-    end
+    queue_preview_provision!(branch_name:)
 
-    redirect_to project_path(@project, anchor: "preview"), notice: "Preview restarted for #{branch_name}."
+    redirect_to project_path(@project, anchor: "preview"),
+      notice: "Preview restarted for #{branch_name}. It will become available once provisioning completes."
   end
 
   def destroy
@@ -474,6 +460,26 @@ class ProjectsController < ApplicationController
 
   def preview_branch_name_param
     params[:branch_name].to_s.strip.presence
+  end
+
+  # @spec LIVE-PREVIEW-003
+  # Stops any in-flight previews for the project and creates a new session in
+  # the +provisioning+ lifecycle state. The session reflects the real
+  # asynchronous provisioning lifecycle; it is not marked ready until a live
+  # app, tunnel, and container exist.
+  def queue_preview_provision!(branch_name:)
+    PreviewSession.transaction do
+      @project.with_lock do
+        PreviewSession.for_project(@project).non_terminal.find_each(&:mark_stopped!)
+        session = PreviewSession.build_for(
+          project: @project,
+          branch_name: branch_name,
+          created_by: current_user
+        )
+        session.status = "provisioning"
+        session.save!
+      end
+    end
   end
 
   def apply_nulls_last_ordering(scope)

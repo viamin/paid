@@ -100,6 +100,7 @@ class PreviewsProxy
     error_response
   end
 
+  # @spec LIVE-PREVIEW-004
   def serve_preview(env, match:)
     token = match[1]
     proxied_path = match[2]
@@ -111,7 +112,6 @@ class PreviewsProxy
     return not_found unless authorized_viewer?(request, session)
 
     session.touch_last_accessed!
-    return simulated_response(session, proxied_path) if simulated_session?(session)
 
     if websocket_upgrade?(request)
       hijack_websocket(env, request:, session:, proxied_path:)
@@ -217,47 +217,6 @@ class PreviewsProxy
     path = proxied_path.to_s
     path = "/" if path.empty?
     query_string.to_s.empty? ? path : "#{path}?#{query_string}"
-  end
-
-  def simulated_session?(session)
-    session.container_id.to_s.start_with?("preview-")
-  end
-
-  def simulated_response(session, proxied_path)
-    current_path = proxied_path.presence || "/"
-    project_name = ERB::Util.html_escape(session.project.full_name)
-    branch_name = ERB::Util.html_escape(session.branch_name)
-    framework = ERB::Util.html_escape(session.framework_label.presence || "unknown")
-
-    body = <<~HTML
-      <!DOCTYPE html>
-      <html lang="en">
-        <head>
-          <meta charset="utf-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1">
-          <title>Preview for #{project_name}</title>
-        </head>
-        <body>
-          <main>
-            <p>Simulated preview</p>
-            <h1>#{project_name}</h1>
-            <p>Branch: #{branch_name}</p>
-            <p>Framework: #{framework}</p>
-            <p>Path: #{ERB::Util.html_escape(current_path)}</p>
-          </main>
-        </body>
-      </html>
-    HTML
-
-    [
-      200,
-      {
-        "content-type" => "text/html; charset=utf-8",
-        "content-security-policy" => "frame-ancestors 'self'",
-        "x-frame-options" => "SAMEORIGIN"
-      },
-      [ body ]
-    ]
   end
 
   def build_upstream_headers(request:, session:)
