@@ -19,6 +19,9 @@ module Automation
     #   strings, which the minimal {Data::CheckRun} contract intentionally
     #   does not carry. Routing them through the narrow data class would
     #   silently drop that detail.
+    # * Review comments / changed-files comparison — the stale-review
+    #   guard matches GitHub's raw +pull_request_review_id+ and diff file
+    #   paths, which no provider-neutral data class models yet.
     # * Dependency resolution — distinguishing "PR/issue not found" from
     #   other provider failures drives the PR-vs-issue fallback, and the
     #   provider error hierarchy does not yet expose a NotFound subclass.
@@ -108,14 +111,48 @@ module Automation
         nil
       end
 
-      def dependency_comment_bodies(issue:)
+      def fetch_issue_comments(issue:)
         providers.work_item_provider.fetch_issue_comments(
           repo: providers.repo,
           number: issue.github_number
-        ).filter_map(&:body)
+        )
       rescue Automation::Providers::WorkItemProvider::ProviderError => e
-        log_signal_error("dependencies_resolved", issue, e)
+        log_signal_error("issue_comments", issue, e)
         []
+      end
+
+      # Fetches conversation comments using the scanner's historical
+      # "recent comments, then paginate if the cutoff window might extend
+      # beyond the first page" behavior.
+      def fetch_recent_issue_comments(issue:, cutoff: nil)
+        comments = client.recent_issue_comments(providers.repo, issue.github_number)
+
+        if cutoff && comments.multi_page? && comments.any? &&
+            comments.all? { |comment| comment_created_at(comment).nil? || comment_created_at(comment) > cutoff }
+          client.issue_comments(providers.repo, issue.github_number)
+        else
+          comments
+        end
+      rescue GithubClient::AuthenticationError
+        raise
+      rescue GithubClient::Error => e
+        log_signal_error("recent_issue_comments", issue, e)
+        []
+      end
+
+      # Returns the raw review-comment hashes the stale-review guard
+      # already consumes, preserving +pull_request_review_id+ and +path+.
+      def fetch_review_comments(issue:)
+        client.pull_request_review_comments(providers.repo, issue.github_number)
+      rescue GithubClient::AuthenticationError
+        raise
+      rescue GithubClient::Error => e
+        log_signal_error("review_comments", issue, e)
+        []
+      end
+
+      def dependency_comment_bodies(issue:)
+        fetch_issue_comments(issue:).filter_map(&:body)
       end
 
       # A "Depends on #N" ref can point to either a PR or an issue. Treat
@@ -152,6 +189,34 @@ module Automation
       rescue GithubClient::Error => e
         log_signal_error("fetch_head_commit", issue, e)
         nil
+      end
+
+      # Returns true when the diff between the review's commit and the PR
+      # HEAD touches a file named in the review's inline comments.
+      def review_diff_touches_reviewed_files?(issue:, review:, pr_data: nil)
+        review_id = review[:id]
+        reviewed_commit = review[:commit_id]
+        return true if review_id.nil? || reviewed_commit.nil?
+
+        reviewed_paths = fetch_review_comments(issue:)
+          .select { |comment| comment[:pull_request_review_id] == review_id }
+          .filter_map { |comment| comment[:path] }
+          .to_set
+        return false if reviewed_paths.empty?
+
+        head_sha = pr_data&.head&.sha || fetch_pull_request(issue:)&.head&.sha
+        return true if head_sha.nil?
+        return false if head_sha == reviewed_commit
+
+        changed_files = client.compare_changed_files(
+          providers.repo, reviewed_commit, head_sha
+        )
+        changed_files.any? { |path| reviewed_paths.include?(path) }
+      rescue GithubClient::AuthenticationError
+        raise
+      rescue GithubClient::Error => e
+        log_signal_error("review_diff_check", issue, e)
+        true
       end
 
       def remove_label(issue:, label:)
@@ -198,6 +263,14 @@ module Automation
           pr_number: issue.github_number,
           error: error.message
         )
+      end
+
+      def comment_created_at(comment)
+        if comment.respond_to?(:created_at)
+          comment.created_at
+        elsif comment.respond_to?(:[])
+          comment[:created_at] || comment["created_at"]
+        end
       end
     end
   end

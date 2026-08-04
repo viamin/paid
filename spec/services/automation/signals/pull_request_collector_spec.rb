@@ -60,6 +60,24 @@ RSpec.describe Automation::Signals::PullRequestCollector do
     end
   end
 
+  describe "#fetch_issue_comments" do
+    it "returns provider-normalized issue comments for scanner conversation signals" do
+      comment = Automation::Providers::Data::Comment.new(
+        id: 5,
+        author_login: "reviewer",
+        body: "Looks good",
+        created_at: Time.current,
+        updated_at: nil,
+        url: "https://example.test/comment/5"
+      )
+      allow(work_item_provider).to receive(:fetch_issue_comments)
+        .with(repo: "acme/widgets", number: 42)
+        .and_return([ comment ])
+
+      expect(collector.fetch_issue_comments(issue:)).to eq([ comment ])
+    end
+  end
+
   describe "#fetch_check_runs" do
     let(:pr_snapshot) do
       Automation::Signals::PullRequestSnapshot.from_provider(build_provider_pr)
@@ -186,6 +204,38 @@ RSpec.describe Automation::Signals::PullRequestCollector do
 
     it "returns nil when the snapshot has no head sha" do
       expect(collector.fetch_head_commit_date(issue:, pr_data: nil)).to be_nil
+    end
+  end
+
+  describe "#review_diff_touches_reviewed_files?" do
+    let(:review) { { id: 99, commit_id: "base123" } }
+
+    it "returns true when the review touched files changed since the reviewed commit" do
+      allow(client).to receive(:pull_request_review_comments)
+        .with("acme/widgets", 42)
+        .and_return([ { pull_request_review_id: 99, path: "app/models/user.rb" } ])
+      allow(repository_provider).to receive(:fetch_pull_request)
+        .with(repo: "acme/widgets", number: 42)
+        .and_return(build_provider_pr)
+      allow(client).to receive(:compare_changed_files)
+        .with("acme/widgets", "base123", "abc123")
+        .and_return([ "app/models/user.rb" ])
+
+      expect(collector.review_diff_touches_reviewed_files?(issue:, review:)).to be(true)
+    end
+
+    it "returns false when no reviewed file changed" do
+      allow(client).to receive(:pull_request_review_comments)
+        .with("acme/widgets", 42)
+        .and_return([ { pull_request_review_id: 99, path: "app/models/user.rb" } ])
+      allow(repository_provider).to receive(:fetch_pull_request)
+        .with(repo: "acme/widgets", number: 42)
+        .and_return(build_provider_pr)
+      allow(client).to receive(:compare_changed_files)
+        .with("acme/widgets", "base123", "abc123")
+        .and_return([ "README.md" ])
+
+      expect(collector.review_diff_touches_reviewed_files?(issue:, review:)).to be(false)
     end
   end
 
