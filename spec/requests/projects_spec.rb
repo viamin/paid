@@ -1226,27 +1226,49 @@ RSpec.describe "Projects" do
   describe "POST /projects/:id/start_preview" do
     before { sign_in user }
 
-    it "starts a preview session and redirects back to the preview panel" do
+    it "starts a live preview session and redirects back to the preview panel" do
       project = create(:project, account: account, github_token: github_token, default_branch: "develop")
+      session = create(:preview_session, :ready, project: project, branch_name: "develop", tunnel_port: 8242,
+        container_id: "container-live", agent_run: create(:agent_run, :running, :with_custom_prompt, project: project))
+      allow(Previews::Lifecycle).to receive(:start!).and_return(session)
 
       post start_preview_project_path(project)
 
       expect(response).to redirect_to("#{project_path(project)}#preview")
       expect(flash[:notice]).to eq("Preview started for develop.")
-      session = project.preview_sessions.recent.first
-      expect(session).to be_present
-      expect(session.branch_name).to eq("develop")
-      expect(session.status).to eq("ready")
+      expect(Previews::Lifecycle).to have_received(:start!).with(
+        project: project,
+        branch_name: "develop",
+        created_by: user
+      )
+    end
+
+    it "surfaces provisioning failures on the preview session" do
+      project = create(:project, account: account, github_token: github_token, default_branch: "develop")
+      failed_session = create(:preview_session, :failed, project: project, branch_name: "develop", error_message: "preview boot failed")
+      error = Previews::Lifecycle::Error.new("preview boot failed", preview_session: failed_session)
+      allow(Previews::Lifecycle).to receive(:start!).and_raise(error)
+
+      post start_preview_project_path(project)
+
+      expect(response).to redirect_to("#{project_path(project)}#preview")
+      expect(flash[:alert]).to eq("Preview failed for develop: preview boot failed")
+      expect(project.preview_sessions.recent.first).to eq(failed_session)
     end
 
     it "starts a preview session for an explicit branch name" do
       project = create(:project, account: account, github_token: github_token, default_branch: "main")
+      allow(Previews::Lifecycle).to receive(:start!).and_return(build_stubbed(:preview_session, project: project))
 
       post start_preview_project_path(project), params: { branch_name: "feature/review-me" }
 
       expect(response).to redirect_to("#{project_path(project)}#preview")
       expect(flash[:notice]).to eq("Preview started for feature/review-me.")
-      expect(project.preview_sessions.recent.first.branch_name).to eq("feature/review-me")
+      expect(Previews::Lifecycle).to have_received(:start!).with(
+        project: project,
+        branch_name: "feature/review-me",
+        created_by: user
+      )
     end
 
     it "forbids viewers from starting a preview" do
@@ -1265,16 +1287,15 @@ RSpec.describe "Projects" do
   describe "POST /projects/:id/stop_preview" do
     before { sign_in user }
 
-    it "stops the active preview session" do
+    it "stops the active preview session and tears down its resources" do
       project = create(:project, account: account, github_token: github_token)
-      session = create(:preview_session, :ready, project: project, tunnel_port: 8251)
+      allow(Previews::Lifecycle).to receive(:stop_project!).and_return(1)
 
       post stop_preview_project_path(project)
 
       expect(response).to redirect_to("#{project_path(project)}#preview")
       expect(flash[:notice]).to eq("Preview stopped.")
-      expect(session.reload.status).to eq("stopped")
-      expect(session.tunnel_port).to be_nil
+      expect(Previews::Lifecycle).to have_received(:stop_project!).with(project: project)
     end
   end
 
@@ -1283,18 +1304,20 @@ RSpec.describe "Projects" do
 
     it "restarts the latest preview branch and replaces the active session" do
       project = create(:project, account: account, github_token: github_token)
-      previous = create(:preview_session, :ready, project: project, branch_name: "feature/restart", tunnel_port: 8252)
+      create(:preview_session, :ready, project: project, branch_name: "feature/restart")
+      current = create(:preview_session, :ready, project: project, branch_name: "feature/restart", tunnel_port: 8243,
+        container_id: "container-current", agent_run: create(:agent_run, :running, :with_custom_prompt, project: project))
+      allow(Previews::Lifecycle).to receive(:restart!).and_return(current)
 
       post restart_preview_project_path(project)
 
       expect(response).to redirect_to("#{project_path(project)}#preview")
       expect(flash[:notice]).to eq("Preview restarted for feature/restart.")
-      expect(previous.reload.status).to eq("stopped")
-
-      current = project.preview_sessions.recent.first
-      expect(current.id).not_to eq(previous.id)
-      expect(current.branch_name).to eq("feature/restart")
-      expect(current.status).to eq("ready")
+      expect(Previews::Lifecycle).to have_received(:restart!).with(
+        project: project,
+        branch_name: "feature/restart",
+        created_by: user
+      )
     end
   end
 

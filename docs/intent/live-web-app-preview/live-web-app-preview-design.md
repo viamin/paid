@@ -34,7 +34,6 @@ These are real execution surfaces, not placeholders.
 The remaining work is end-to-end wiring and lifecycle correctness:
 
 - `ProjectsController#start_preview` and `#restart_preview` still create
-  DB-visible ready sessions without invoking real preview provisioning
 - preview root-path serving is still split between tunnel-backed proxying and
   controller-side fallback/simulated behavior
 - preview UI still reflects stubbed states instead of a fully asynchronous

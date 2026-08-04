@@ -176,10 +176,15 @@ RSpec.describe "Previews" do
 
     before { sign_in user }
 
-    it "marks the preview as stopped and redirects to the project" do
+    it "tears down the preview and redirects to the project" do
+      allow(Previews::Lifecycle).to receive(:stop_session!).and_return(true)
+
       post stop_project_preview_session_path(project, preview_session)
 
-      expect(preview_session.reload.status).to eq("stopped")
+      expect(Previews::Lifecycle).to have_received(:stop_session!).with(
+        preview_session: preview_session,
+        terminal_status: "stopped"
+      )
       expect(response).to redirect_to(project_path(project))
     end
 

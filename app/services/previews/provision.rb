@@ -192,7 +192,7 @@ module Previews
         agent_run:
       )
       git_ops.clone_and_checkout_branch(
-        branch_name: agent_run.branch_name,
+        branch_name: preview_branch_name,
         pull_request_number: agent_run.pull_request_number,
         persist: false
       )
@@ -368,6 +368,10 @@ module Previews
           project.detected_framework
         framework&.to_sym || Screenshots::DetectFramework.detect_framework_only(repo_path:)
       end
+    end
+
+    def preview_branch_name
+      preview_session&.branch_name.presence || agent_run.branch_name
     end
 
     def readiness_probe_command
