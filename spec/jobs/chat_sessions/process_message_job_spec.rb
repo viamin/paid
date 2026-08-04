@@ -3,6 +3,7 @@
 require "rails_helper"
 
 RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
+  # @spec CHAT-API-002
   let(:account) { create(:account) }
   let(:user) { create(:user, :owner, account: account) }
   let(:chat_session) { create(:chat_session, account: account, created_by: user) }
