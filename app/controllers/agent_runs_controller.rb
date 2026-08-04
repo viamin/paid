@@ -7,10 +7,11 @@ class AgentRunsController < ApplicationController
   def index
     base_scope = policy_scope(AgentRun).includes(:runner, project: [ :created_by, :account ], issue: :project)
     @q = base_scope.ransack(params[:q])
+    queue_fairness_mode = current_account.tenant_setting!.resolved_queue_fairness_mode
 
     if params[:sort] == "queue" && queue_sort_compatible?
       @q.sorts.clear if @q.sorts.any?
-      @agent_runs = apply_ransack_filters(@q).queue_order_display
+      @agent_runs = apply_ransack_filters(@q).queue_order_display(mode: queue_fairness_mode)
     else
       @q.sorts = "created_at desc" if @q.sorts.empty?
       @agent_runs = @q.result

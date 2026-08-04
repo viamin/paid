@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec BUNDLE-OPT-001
 RSpec.describe ConfigurationBundles::Optimizer do
   let(:project) { create(:project) }
   let(:agent_run) { create(:agent_run, project: project, issue: create(:issue, project: project)) }

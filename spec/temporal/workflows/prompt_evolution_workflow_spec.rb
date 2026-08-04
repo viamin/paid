@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec PROMPT-EVOLUTION-004
 RSpec.describe Workflows::PromptEvolutionWorkflow do
   let(:workflow) { described_class.new }
 

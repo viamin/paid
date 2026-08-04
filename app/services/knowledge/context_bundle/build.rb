@@ -16,6 +16,8 @@ module Knowledge
     #   result[:total_tokens]  # => 3847
     #   result[:sections]      # => [:routes, :symbols, :hotspots, ...]
     class Build
+      # @spec KNOWLEDGE-004
+      # @spec KNOWLEDGE-005
       DEFAULT_TOKEN_BUDGET = 4000
 
       # Section builders in priority order.
@@ -231,6 +233,7 @@ module Knowledge
       end
 
       def build_change_intents_section
+        # @spec CHANGE-INTENT-003
         records = ChangeIntent.for_project(project)
                               .where(status: %w[active draft])
                               .order(created_at: :desc)

@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec LIVE-PREVIEW-002
 RSpec.describe AgentRuns::Verification do
   let(:account) { create(:account) }
   let(:project) { create(:project, account: account) }

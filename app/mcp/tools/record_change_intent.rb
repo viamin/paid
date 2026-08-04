@@ -52,6 +52,7 @@ module Tools
     end
 
     def perform(title:, intent:, behavior: nil, constraints: nil, decisions_made: nil)
+      # @spec CHANGE-INTENT-001
       change_intent = ChangeIntent.create!(
         project: project_for_session!,
         chat_session: session,
@@ -68,6 +69,7 @@ module Tools
     end
 
     def resolve_confirmation(decision:, pending_result:)
+      # @spec CHANGE-INTENT-002
       change_intent_id = pending_result["id"] || pending_result[:id]
       raise ArgumentError, "pending result must include an id" if change_intent_id.blank?
 

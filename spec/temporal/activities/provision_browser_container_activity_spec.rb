@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec LIVE-PREVIEW-002
 RSpec.describe Activities::ProvisionBrowserContainerActivity do
   let(:activity) { described_class.new }
   let(:project) { create(:project) }

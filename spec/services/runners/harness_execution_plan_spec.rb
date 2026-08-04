@@ -3,6 +3,7 @@
 require "rails_helper"
 require "securerandom"
 
+# @spec AGENT-HARNESS-001
 RSpec.describe Runners::HarnessExecutionPlan do
   describe ".for_runner_key", :no_db do
     let(:configured_mcp_servers) do

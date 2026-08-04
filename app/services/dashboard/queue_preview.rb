@@ -5,6 +5,7 @@ module Dashboard
     Entry = Struct.new(:position, :run, keyword_init: true)
     CACHE_TTL = 10.seconds
 
+    # @spec ACCOUNT-QUEUE-001
     # Sample more queued rows than we display so the fair-share replay can see
     # additional projects before the preview limit truncates the result.
     MAX_SCAN = 500
@@ -13,9 +14,12 @@ module Dashboard
       new(...).call
     end
 
-    def initialize(user:, limit: 20)
+    def initialize(user:, limit: 20, queue_fairness_mode: nil)
       @user = user
       @limit = limit
+      @queue_fairness_mode = AgentRun.resolve_queue_fairness_mode(
+        queue_fairness_mode || user.account.tenant_setting!.resolved_queue_fairness_mode
+      )
     end
 
     def call
@@ -26,19 +30,20 @@ module Dashboard
 
     private
 
-    attr_reader :user, :limit
+    attr_reader :user, :limit, :queue_fairness_mode
 
     def build_entries
       snapshot = fetch_snapshot
       visible_runs = snapshot.select { |run| visible_project_ids.include?(run.project_id) }
-      interleaved = interleave_by_dispatch_order(visible_runs)
-      preload_associations(interleaved)
+      ordered_runs = queue_fairness_mode == "strict_priority" ? visible_runs.first(limit) : interleave_by_dispatch_order(visible_runs)
+      preload_associations(ordered_runs)
 
-      interleaved.each_with_index.map do |run, index|
+      ordered_runs.each_with_index.map do |run, index|
         Entry.new(position: index + 1, run:)
       end
     end
 
+    # @spec ACCOUNT-QUEUE-001
     # Renders the queue in the round-robin dispatch order the scheduler aims
     # for, instead of the static project_active_count snapshot. QUEUE_ORDER
     # clusters every run from an idle project at the top (they share the same
@@ -73,7 +78,7 @@ module Dashboard
         candidates = queues.reject { |_, queued| queued.empty? }
         break if candidates.empty?
 
-        project_id = candidates.min_by { |pid, queued| [ active[pid].to_i, queued.first.queue_order_rank ] }.first
+        project_id = candidates.min_by { |pid, queued| [ active[pid].to_i, queued.first.scheduler_queue_rank ] }.first
         run = queues[project_id].shift
         active[project_id] = active[project_id].to_i + 1
         interleaved << run
@@ -93,8 +98,8 @@ module Dashboard
     end
 
     def fetch_snapshot
-      AgentRun.schedulable_queued_with_priority
-              .reorder(*AgentRun::QUEUE_ORDER)
+      AgentRun.schedulable_queued_with_priority(mode: queue_fairness_mode)
+              .reorder(*AgentRun.scheduler_queue_order_for(mode: queue_fairness_mode))
               .limit(MAX_SCAN)
               .to_a
     end
@@ -109,7 +114,7 @@ module Dashboard
     end
 
     def cache_key
-      "dashboard/queue_preview/#{user.account_id}/#{user.id}/#{Dashboard::CacheVersion.current(user.account, scope: Dashboard::CacheVersion::LISTS_SCOPE)}"
+      "dashboard/queue_preview/#{user.account_id}/#{user.id}/#{queue_fairness_mode}/#{Dashboard::CacheVersion.current(user.account, scope: Dashboard::CacheVersion::LISTS_SCOPE)}"
     end
   end
 end

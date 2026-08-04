@@ -124,6 +124,7 @@ module Activities
     end
 
     def build_context(agent_run, project, issue)
+      # @spec KNOWLEDGE-005
       search = knowledge_search(agent_run, project, issue)
       bundle = context_bundle(agent_run, project, issue)
 

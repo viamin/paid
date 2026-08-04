@@ -27,6 +27,7 @@ module Knowledge
     # All non-dry-run actions emit KnowledgeAuditEvent records so operators
     # can audit what was scrubbed, when, and by whom.
     class Scrubber
+      # @spec KNOWLEDGE-006
       Result = Data.define(
         :scanned_chunks,
         :scrubbed_chunks,

@@ -170,6 +170,17 @@ RSpec.describe "TenantConfigurations" do
       expect(account.tenant_setting.reload.marketplace_auto_attach_required?).to be(true)
     end
 
+    it "updates the queue fairness mode" do
+      patch tenant_configuration_path, params: {
+        tenant_setting: {
+          queue_fairness_mode: "strict_priority"
+        }
+      }
+
+      expect(response).to redirect_to(edit_tenant_configuration_path)
+      expect(account.tenant_setting.reload.queue_fairness_mode).to eq("strict_priority")
+    end
+
     it "updates feature flag rollout percentages" do
       api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
 

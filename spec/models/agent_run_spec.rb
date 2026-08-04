@@ -2355,7 +2355,7 @@ RSpec.describe AgentRun do
       expect(described_class.next_queued_run).to eq(issue_run)
     end
 
-    it "picks review runs before create_pr runs without changing visible queue order" do
+    it "shows review runs ahead of create_pr runs when scheduler ordering breaks a tie" do
       project = create(:project)
       create_pr_run = create(:agent_run, :queued, :automatic, :existing_pr,
         project: project, goal: "create_pr", source_pull_request_number: 42, created_at: 2.minutes.ago)
@@ -2367,7 +2367,7 @@ RSpec.describe AgentRun do
 
       expect(described_class.next_queued_run).to eq(review_run)
       expect(queue_preview_ids).to eq([ create_pr_run.id, review_run.id ])
-      expect(index_display_ids).to eq([ create_pr_run.id, review_run.id ])
+      expect(index_display_ids).to eq([ review_run.id, create_pr_run.id ])
       expect(review_run.queue_priority_label).to eq(create_pr_run.queue_priority_label)
     end
 
@@ -2463,6 +2463,30 @@ RSpec.describe AgentRun do
             issue_p1_run, issue_p2_run, issue_p3_run, auto_pick ].map(&:id)
         )
       end
+    end
+  end
+
+  describe ".queue_order_for" do
+    it "keeps fair_share as the default ordering" do
+      expect(described_class.queue_order_for(mode: "fair_share")).to eq(described_class::QUEUE_ORDER)
+    end
+
+    it "drops active-count fairness keys in strict_priority mode" do
+      expect(described_class.queue_order_for(mode: "strict_priority")).to eq(
+        described_class::STRICT_PRIORITY_QUEUE_ORDER
+      )
+      expect(described_class.queue_order_for(mode: "strict_priority")).not_to include(
+        described_class::PROJECT_ACTIVE_COUNT_SQL,
+        described_class::USER_ACTIVE_COUNT_SQL
+      )
+    end
+  end
+
+  describe ".queue_order_display_for" do
+    it "matches the scheduler ordering after status sorting in strict_priority mode" do
+      expect(described_class.queue_order_display_for(mode: "strict_priority")).to eq(
+        [ described_class::STATUS_ORDER_SQL, *described_class::STRICT_PRIORITY_SCHEDULER_QUEUE_ORDER ]
+      )
     end
   end
 
@@ -2750,6 +2774,29 @@ RSpec.describe AgentRun do
         issue: idle_p2, created_at: 1.minute.ago)
 
       expect(described_class.peek_next_queued_run).to eq(idle_p2_run)
+    end
+
+    it "lets strict-priority mode pre-empt an idle lower-priority project" do
+      account = create(:account)
+      account.tenant_setting!.update!(queue_fairness_mode: "strict_priority")
+      user = create(:user, account: account)
+      user.settings.update!(max_concurrent_runs: 10)
+      flooded = create(:project, account: account, created_by: user)
+      idle = create(:project, account: account, created_by: user)
+
+      flooded_p1_a = create(:issue, project: flooded, labels: [ "P1" ])
+      flooded_p1_b = create(:issue, project: flooded, labels: [ "P1" ])
+      flooded_p1_c = create(:issue, project: flooded, labels: [ "P1" ])
+      create(:agent_run, :running, project: flooded, trigger_type: "automatic", issue: flooded_p1_a)
+      create(:agent_run, :running, project: flooded, trigger_type: "automatic", issue: flooded_p1_b)
+      flooded_run = create(:agent_run, :queued, trigger_type: "automatic", project: flooded,
+        issue: flooded_p1_c, created_at: 5.minutes.ago)
+
+      idle_p2 = create(:issue, project: idle, labels: [ "P2" ])
+      create(:agent_run, :queued, trigger_type: "automatic", project: idle,
+        issue: idle_p2, created_at: 1.minute.ago)
+
+      expect(described_class.peek_next_queued_run(mode: "strict_priority")).to eq(flooded_run)
     end
 
     it "preserves strict priority order within a single project" do

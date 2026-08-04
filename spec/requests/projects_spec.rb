@@ -2980,6 +2980,7 @@ RSpec.describe "Projects" do
 
     before { sign_in user }
 
+    # @spec LID-RUNS-002
     it "queues a lid_planning run and redirects" do
       expect {
         post start_lid_project_path(project)
@@ -2992,6 +2993,7 @@ RSpec.describe "Projects" do
       expect(run.trigger_type).to eq("manual")
     end
 
+    # @spec LID-RUNS-002
     it "passes the plan_doc_source into the queued run" do
       post start_lid_project_path(project), params: { plan_doc_source: "docs/rdrs/RDR-051.md" }
 

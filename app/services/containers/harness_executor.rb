@@ -3,6 +3,7 @@
 require "shellwords"
 
 module Containers
+  # @spec AGENT-HARNESS-002
   class HarnessExecutor
     KILOCODE_AUTO_FLAGS = %w[--auto --print-logs].freeze
     private_constant :KILOCODE_AUTO_FLAGS

@@ -3,6 +3,7 @@
 module Knowledge
   class Search
     class Reranker
+      # @spec KNOWLEDGE-003
       VERSION_BOOST = 0.15
       ACTIVE_BOOST = 0.10
       LINK_BOOST = 0.05
