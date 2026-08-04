@@ -53,5 +53,16 @@ RSpec.describe Tools::RepoWriteCredentialResolver do
       expect(resolved.identity).to eq("project-token:#{project.github_token.name}")
       expect(resolved.from_user_token).to be(false)
     end
+
+    # @spec CHAT-PR-PROPOSAL-001
+    it "raises the configured missing-credential error without constructing a project client" do
+      allow(project).to receive_messages(github_credential: nil, client: project_github_client)
+
+      expect {
+        described_class.new(project:, user:, session:).resolve
+      }.to raise_error(ArgumentError, "Project has no GitHub credentials configured")
+
+      expect(project).not_to have_received(:client)
+    end
   end
 end

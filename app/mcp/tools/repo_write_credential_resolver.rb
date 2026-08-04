@@ -37,9 +37,11 @@ module Tools
     end
 
     def resolve_project_credential
-      client = project.client
       credential = project.github_credential
-      return if client.blank? || credential.blank?
+      return if credential.blank?
+
+      client = project.client
+      return if client.blank?
 
       ResolvedCredential.new(
         client: client,

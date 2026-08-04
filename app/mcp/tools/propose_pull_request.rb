@@ -302,8 +302,10 @@ module Tools
 
     def resolved_project_credential(project)
       credential = project.github_credential
+      return if credential.blank?
+
       client = project.client
-      return if credential.blank? || client.blank?
+      return if client.blank?
 
       Tools::RepoWriteCredentialResolver::ResolvedCredential.new(
         client:,
