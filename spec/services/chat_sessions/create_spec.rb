@@ -10,6 +10,7 @@ RSpec.describe ChatSessions::Create do
 
   describe ".call" do
     it "creates an active inline-only session" do
+      # @spec CHAT-API-001
       session = described_class.call(account: account, user: user)
 
       expect(session).to be_persisted
@@ -21,6 +22,7 @@ RSpec.describe ChatSessions::Create do
     end
 
     it "persists a system prompt as the first message" do
+      # @spec CHAT-API-001
       session = described_class.call(account: account, user: user)
 
       system_message = session.messages.find_by(role: "system")
@@ -29,6 +31,7 @@ RSpec.describe ChatSessions::Create do
     end
 
     it "uses a custom system prompt when provided" do
+      # @spec CHAT-API-001
       session = described_class.call(
         account: account,
         user: user,

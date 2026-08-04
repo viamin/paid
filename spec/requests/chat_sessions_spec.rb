@@ -18,6 +18,7 @@ RSpec.describe "ChatSessions" do
       before { sign_in user }
 
       it "lists chat sessions ordered by updated_at desc" do
+        # @spec CHAT-API-005
         old_session = create(:chat_session, account: account, created_by: user, updated_at: 1.day.ago)
         new_session = create(:chat_session, account: account, created_by: user, updated_at: 1.hour.ago)
 
@@ -135,12 +136,14 @@ RSpec.describe "ChatSessions" do
       end
 
       it "creates a session with default container capability" do
+        # @spec CHAT-API-001
         post chat_sessions_path(format: :json)
         expect(response).to have_http_status(:created)
         expect(response.parsed_body["container_capability"]).to eq("none")
       end
 
       it "maps legacy api mode to inline-only sessions" do
+        # @spec CHAT-API-001
         post chat_sessions_path(format: :json), params: { mode: "api", title: "Legacy API Chat" }
 
         expect(response).to have_http_status(:created)
@@ -148,6 +151,7 @@ RSpec.describe "ChatSessions" do
       end
 
       it "maps legacy workspace mode to pending container capability" do
+        # @spec CHAT-API-001
         post chat_sessions_path(format: :json), params: { mode: "workspace", title: "Legacy Workspace Chat" }
 
         expect(response).to have_http_status(:created)
@@ -266,6 +270,7 @@ RSpec.describe "ChatSessions" do
       before { sign_in user }
 
       it "returns session detail with messages" do
+        # @spec CHAT-API-001
         create(:chat_message, chat_session: chat_session, role: "user", content: "Hello")
         create(:chat_message, :assistant, chat_session: chat_session)
 

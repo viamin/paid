@@ -38,8 +38,10 @@ class ChatMessagesController < ApplicationController
     end
 
     if sse_requested?
+      # @spec CHAT-API-002
       stream_sse_response
     else
+      # @spec CHAT-API-002
       json_response
     end
   end
@@ -55,8 +57,10 @@ class ChatMessagesController < ApplicationController
     end
 
     if sse_requested?
+      # @spec CHAT-API-004
       stream_resolve_response(tool_call_message, decision)
     else
+      # @spec CHAT-API-004
       json_resolve_response(tool_call_message, decision)
     end
   end
@@ -288,6 +292,7 @@ class ChatMessagesController < ApplicationController
   # pause the loop and return +nil+ — see ChatSessions::AgentLoop). Shared by
   # the create and resolve JSON paths.
   def assistant_response_payload(assistant_message)
+    # @spec CHAT-API-002
     return { status: "paused" } unless assistant_message
 
     message_json(assistant_message)

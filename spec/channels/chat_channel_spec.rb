@@ -97,6 +97,7 @@ RSpec.describe ChatChannel do
     end
 
     it "broadcasts message_start and enqueues the job" do
+      # @spec CHAT-API-002
       expect(ChatSessions::ProcessMessageJob).to receive(:perform_later).with(
         hash_including(chat_session_id: chat_session.id, content: "Hello")
       )

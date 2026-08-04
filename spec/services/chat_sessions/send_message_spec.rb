@@ -3,6 +3,8 @@
 require "rails_helper"
 
 RSpec.describe ChatSessions::SendMessage do
+  # @spec CHAT-API-002
+  # @spec CHAT-API-005
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
   let(:chat_session) { create(:chat_session, account: account, created_by: user) }

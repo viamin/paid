@@ -39,6 +39,7 @@ module ChatSessions
     end
 
     def call
+      # @spec CHAT-API-004
       validate_decision!
       validate_session_state!
       claim_resolution!
@@ -69,6 +70,7 @@ module ChatSessions
     # before producing any side effects — a write tool can never run twice for a
     # single request.
     def claim_resolution!
+      # @spec CHAT-API-004
       rows = chat_session.messages
         .where(id: tool_call_message.id, tool_status: "pending")
         .update_all(tool_status: decision_status)
@@ -148,6 +150,7 @@ module ChatSessions
     # schemas). Approval injects it here so the write tool's guard passes — the
     # human approver, not the model, authorizes the mutation.
     def confirmed_arguments
+      # @spec CHAT-API-004
       (tool_call_message.tool_arguments || {}).merge("confirmed" => true)
     end
 

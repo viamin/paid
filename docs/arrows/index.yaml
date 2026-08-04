@@ -73,6 +73,14 @@ arrows:
     taxonomy: chat
     status: OK
     audited: 2026-08-03
+  api-mode-chat:
+    title: API-Mode Chat
+    path: docs/intent/api-mode-chat/api-mode-chat-design.md
+    specs: docs/intent/api-mode-chat/api-mode-chat-specs.md
+    parent: PAID
+    taxonomy: chat
+    status: OK
+    audited: 2026-08-04
   free-model-sync:
     title: Free Model Sync
     path: docs/intent/free-model-sync/free-model-sync-design.md

@@ -35,6 +35,7 @@ module ChatSessions
     # @return [ChatMessage, nil] the final assistant message, or +nil+ when the
     #   loop paused to await confirmation for a write tool.
     def run
+      # @spec CHAT-API-003
       conversation = build_conversation
       final_assistant_message = run_loop(conversation)
       finalize_token_usage(final_assistant_message) if final_assistant_message
@@ -186,6 +187,7 @@ module ChatSessions
     # pending confirmation is settled — the rebuilt conversation never contains an
     # unanswered tool call. See RDR-028.
     def pause_for_confirmation(aggregate_tokens:, model:)
+      # @spec CHAT-API-003
       record_token_usage(aggregate_tokens[:input], aggregate_tokens[:output], model:)
       nil
     end
@@ -210,6 +212,7 @@ module ChatSessions
     end
 
     def process_write_tool_calls(write_calls)
+      # @spec CHAT-API-003
       executed_results = []
       paused_for_confirmation = false
 
