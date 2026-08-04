@@ -1302,19 +1302,15 @@ RSpec.describe "Projects" do
     before { sign_in user }
 
     # @spec LIVE-PREVIEW-004
-    it "routes a live preview token through the proxy instead of controller-side simulated markup" do
+    it "redirects a live preview token to the canonical proxy root" do
       project = create(:project, account: account, github_token: github_token, name: "My Project")
       session = create(:preview_session, :ready, project: project, branch_name: "feature/preview", framework: "rails",
         tunnel_port: 8242, expires_at: 20.minutes.from_now)
       session.update!(container_id: "container-live")
-      stub_preview_proxy_response
 
       get preview_path(session.token)
 
-      expect(response).to have_http_status(:ok)
-      expect(response.headers["Content-Security-Policy"]).to include("frame-ancestors 'self'")
-      expect(response.headers["X-Frame-Options"]).to eq("SAMEORIGIN")
-      expect(response.body).to eq("<html>ok</html>")
+      expect(response).to redirect_to("#{session.proxy_prefix}/")
     end
 
     it "supports nested preview paths on the same token route" do

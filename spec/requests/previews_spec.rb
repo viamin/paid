@@ -128,11 +128,10 @@ RSpec.describe "Previews" do
         expect(response.body).to eq("proxied app")
       end
 
-      it "serves the live root document through the same proxy implementation for the exact token path" do
+      it "redirects the exact token path to the canonical trailing-slash root" do
         get preview_path(preview_session.token)
 
-        expect(response).to have_http_status(:ok)
-        expect(response.body).to eq("proxied app")
+        expect(response).to redirect_to("#{preview_session.proxy_prefix}/")
       end
 
       it "looks up the preview session from the path token, not the query string" do

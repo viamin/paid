@@ -121,6 +121,7 @@ class PreviewsProxy
     return not_found unless authorized_viewer?(request, session)
 
     session.touch_last_accessed!
+    return canonical_root_redirect(request, session) if exact_preview_root?(match)
     return simulated_response(session, proxied_path) if simulated_session?(session)
 
     if websocket_upgrade?(request)
@@ -272,6 +273,17 @@ class PreviewsProxy
       },
       [ body ]
     ]
+  end
+
+  def exact_preview_root?(match)
+    match[2].nil?
+  end
+
+  def canonical_root_redirect(request, session)
+    target = "#{session.proxy_prefix}/"
+    target = "#{target}?#{request.query_string}" if request.query_string.present?
+
+    [ 302, { "location" => target, "cache-control" => "no-store" }, [] ]
   end
 
   def build_upstream_headers(request:, session:)
