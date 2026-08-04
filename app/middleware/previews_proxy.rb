@@ -227,7 +227,7 @@ class PreviewsProxy
     current_path = proxied_path.presence || "/"
     project_name = ERB::Util.html_escape(session.project.full_name)
     branch_name = ERB::Util.html_escape(session.branch_name)
-    framework = ERB::Util.html_escape(session.framework.presence || "unknown")
+    framework = ERB::Util.html_escape(session.framework_label.presence || "unknown")
 
     body = <<~HTML
       <!DOCTYPE html>
