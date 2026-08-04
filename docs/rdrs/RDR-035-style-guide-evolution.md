@@ -5,20 +5,27 @@
 ## Metadata
 
 - **Date**: 2026-05-24
-- **Status**: Accepted
+- **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: High
 - **Related Issues**: #2254, #2249
 - **Related RDRs**: [RDR-009](RDR-009-prompt-evolution.md) (Prompt Evolution)
-- **Related Tests**: (to be created during implementation)
+- **Related Tests**: `spec/services/style_guides/inject_into_prompt_spec.rb`, `spec/services/style_guide_evolution/mutate_spec.rb`, `spec/services/style_guide_ab_tests/{analyze,record_result,promote_winner}_spec.rb`, `spec/jobs/style_guide_evolution_job_spec.rb`, `spec/temporal/activities/sample_style_guide_runs_activity_spec.rb`
 
 ## Implementation Status
 
-Accepted but not implemented. Paid still has direct `StyleGuide` records with Logidze history and prompt injection through `StyleGuides::InjectIntoPrompt`; the versioning, style-guide A/B tests, exposure tracking, evolution workflow, and quality attribution pipeline described here have not been added.
+Implemented and audited on Tuesday, August 4, 2026. Paid now ships the full style-guide evolution pipeline:
+
+- Immutable style-guide versions and current-version pointers via `db/migrate/20260709225313_create_style_guide_evolution_pipeline.rb` and `app/models/style_guide_version.rb`
+- Style-guide-specific A/B tests, assignments, and result attribution via `app/models/style_guide_ab_test*.rb` and `app/services/style_guide_ab_tests/`
+- Runtime exposure recording and assigned-arm injection in `app/services/style_guides/inject_into_prompt.rb`
+- Weekly discovery plus Temporal orchestration via `app/jobs/style_guide_evolution_job.rb` and `app/temporal/workflows/style_guide_evolution_workflow.rb`
+
+The close-out audit is recorded in [audit-report-2026-08-04-rdr-035.md](audit-report-2026-08-04-rdr-035.md).
 
 ## Problem Statement
 
-The prompt evolution pipeline (`PromptEvolution::Mutate`, `PromptEvolutionWorkflow`) currently only mutates `Prompt` / `PromptVersion` records. `StyleGuide` records are versioned via logidze for audit purposes but are never evolved. PR #2249 seeded an initial set of global style guides on the expectation that they would later be improved over time by the evolution code, but there is no mechanism to do so.
+When this RDR was drafted, the prompt evolution pipeline (`PromptEvolution::Mutate`, `PromptEvolutionWorkflow`) only mutated `Prompt` / `PromptVersion` records. `StyleGuide` records were versioned via Logidze for audit purposes but were never evolved. PR #2249 seeded an initial set of global style guides on the expectation that they would later be improved over time by the evolution code, but there was no mechanism to do so.
 
 Four hard design questions must be resolved before implementation:
 
@@ -37,7 +44,7 @@ Four hard design questions must be resolved before implementation:
 - `raw_content` is the canonical content (authored by users or LLM-extracted via `StyleGuides::Extract`)
 - `compressed_content` is an LLM-compressed token-efficient variant used for prompt injection (`StyleGuides::Compress`)
 - Logidze tracks every update to `log_data` jsonb for audit history, but logidze records every change (including name, active flag, language toggles) and does not provide semantic version snapshots
-- **No `style_guide_versions` table exists** — there is no immutable version store, no parent lineage, no usage statistics per version
+- **At draft time no `style_guide_versions` table existed** — there was no immutable version store, no parent lineage, and no usage statistics per version
 
 **Style guide injection** happens at prompt-build time via `StyleGuides::InjectIntoPrompt`:
 
@@ -604,62 +611,32 @@ end
 | LLM cost for weekly mutations | Mutation is cheap (one short LLM call per guide per week). Guides with `avg_quality_score >= 0.85` skip mutation entirely. |
 | Sampling misattributes runs after guide edits or shadowing changes | Persist `style_guide_run_exposures` at runtime and sample from those immutable exposure records |
 
-## Implementation Plan
+## Implemented Scope
 
-### Prerequisites
+The accepted scope shipped in July 2026 and was reconciled against the repository on Tuesday, August 4, 2026.
 
-- [ ] Merge RDR-035 (this document)
-- [ ] Ensure `StyleGuide` model has `has_many :versions` association prepared
-- [ ] Verify logidze trigger on `style_guides` continues to work alongside the version table
+### Shipped components
 
-### Steps
+1. **Version store and current-version pointers**
+   - `style_guide_versions`, `style_guide_ab_tests`, `style_guide_ab_test_variants`, `style_guide_ab_test_assignments`, and `style_guide_run_exposures` are present in `db/schema.rb`.
+   - `StyleGuideVersion`, `StyleGuideAbTest`, `StyleGuideAbTestVariant`, `StyleGuideAbTestAssignment`, and `StyleGuideRunExposure` implement the model layer and invariants.
 
-1. **Database migrations** (Phase A):
-   - [ ] Create `style_guide_versions` table with indexes
-   - [ ] Add `current_version_id` FK to `style_guides` table (nullable, referencing `style_guide_versions`)
-   - [ ] Add `last_evolved_at` timestamp to `style_guides`
-   - [ ] Create `style_guide_ab_tests` table
-   - [ ] Create `style_guide_ab_test_variants` table
-   - [ ] Create `style_guide_ab_test_assignments` table
-   - [ ] Create `style_guide_run_exposures` table
+2. **Mutation, sampling, and persistence**
+   - `StyleGuideEvolution::Mutate`, `StyleGuideEvolution::SampleRuns`, and `StyleGuideEvolution::CreateVariants` implement the generation pipeline.
 
-2. **Models** (Phase A):
-   - [ ] `StyleGuideVersion` model with associations, immutability validations, scopes
-   - [ ] `StyleGuideAbTest` model with lifecycle (`draft → running → completed → cancelled`), associations
-   - [ ] `StyleGuideAbTestVariant` model with sample tracking and `style_guide_ab_test_variant_count_within_limit` create validation
-   - [ ] `StyleGuideAbTestAssignment` model
-   - [ ] `StyleGuideRunExposure` model
-   - [ ] `StyleGuide` model: add `belongs_to :current_version`, `has_many :versions`, `has_many :style_guide_ab_tests`
-   - [ ] `AgentRun` model: add `has_many :style_guide_ab_test_assignments`, `has_many :style_guide_run_exposures`
+3. **A/B testing and quality attribution**
+   - `StyleGuideAbTests::Assign`, `StyleGuideAbTests::Analyze`, `StyleGuideAbTests::RecordResult`, and `StyleGuideAbTests::PromoteWinner` implement enrollment, scoring, statistical analysis, and winner promotion.
 
-3. **Services** (Phase B):
-   - [ ] `StyleGuideEvolution::Mutate` — LLM-driven mutation generation (parallel to `PromptEvolution::Mutate`)
-   - [ ] `StyleGuideEvolution::SampleRuns` — sample agent runs for a given style guide
-   - [ ] `StyleGuideEvolution::CreateVariants` — persist mutations as `StyleGuideVersion` records
-   - [ ] `StyleGuideAbTests::Assign` — assign variant to agent run at injection time
-   - [ ] `StyleGuideAbTests::RecordResult` — record quality score against variant
-   - [ ] `StyleGuideAbTests::Analyze` — Welch's t-test comparing variants against control
-   - [ ] `StyleGuideAbTests::PromoteWinner` — promote winning variant to `current_version` and mirror its raw content onto the `style_guides` row
-   - [ ] `StyleGuides::RecordRunExposures` — persist resolved guide/version IDs for each `AgentRun`
-   - [ ] `StyleGuides::BuildInjectedGuideSet` — shared resolver/renderer used by both normal injection and experiment overrides
-   - [ ] `StyleGuides::RenderContentForPrompt` — shared compression/truncation helper used by both production guides and experiment overrides
-   - [ ] `StyleGuides::InjectIntoPrompt` — add `overrides` and `agent_run` parameters, route all agent-run paths through the shared renderer, and record exposures
+4. **Runtime injection and exposure capture**
+   - `StyleGuides::InjectIntoPrompt` resolves the effective version, serves the assigned A/B variant when present, and records `StyleGuideRunExposure` rows for each injected guide.
 
-4. **Temporal** (Phase B):
-   - [ ] `StyleGuideEvolutionWorkflow` — orchestrate the four-stage pipeline
-   - [ ] `SampleRunsActivity`, `GenerateMutationsActivity`, `CreateStyleGuideVariantsActivity`, `CreateStyleGuideAbTestActivity`
+5. **Workflow and scheduling**
+   - `StyleGuideEvolutionJob` discovers eligible non-global guides.
+   - `Workflows::StyleGuideEvolutionWorkflow` and the style-guide Temporal activities orchestrate sample → mutate → persist → create test.
 
-5. **Jobs** (Phase B):
-   - [ ] `StyleGuideEvolutionJob` — weekly cron discovering eligible account/project guides
+### Accepted implementation divergence
 
-6. **Integration** (Phase C):
-   - [ ] Wire `RunAgentActivity` prompt assembly to pass `agent_run` into the style-guide assignment/exposure path
-   - [ ] Wire `QualityMetrics::Collect` to call `StyleGuideAbTests::RecordResult`
-   - [ ] Wire `StyleGuides::InjectIntoPrompt` throughout `BuildForIssue` and `BuildForPr`
-   - [ ] Refactor the issue `custom_prompt` branch in `CreateAgentRunActivity` to use the same style-guide resolver/exposure recorder before `ProjectConventions::InjectIntoPrompt`
-
-7. **Deferred / Out of Scope**:
-   - [ ] Design a separate chat-session assignment/exposure/result model before reusing style-guide experiment variants in `ChatSessions::BuildSystemPrompt`
+The shipped runtime path keeps exposure recording inside `StyleGuides::InjectIntoPrompt` rather than extracting separate `StyleGuides::RecordRunExposures`, `BuildInjectedGuideSet`, and `RenderContentForPrompt` service objects. The audit found this to be a consolidation choice, not a functional gap.
 
 ### Dependencies
 

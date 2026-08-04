@@ -386,15 +386,20 @@ RSpec.describe Projects::BundlePerformanceDashboardStats do
       project = create(:project, account: experiment.account)
       next if experiment.includes_traffic?(project: project)
 
-      runs = Array.new(run_count) do
-        create(:agent_run,
+      runs = []
+      issue = create(:issue, project: project)
+
+      200.times do
+        run = create(:agent_run,
           :completed,
           project: project,
-          issue: create(:issue, project: project),
+          issue: issue,
           goal: "create_pr")
+        runs << run if experiment.includes_traffic?(agent_run: run)
+        break if runs.size == run_count
       end
 
-      next unless runs.all? { |run| experiment.includes_traffic?(agent_run: run) }
+      next unless runs.size == run_count
 
       return [ project, runs ]
     end
