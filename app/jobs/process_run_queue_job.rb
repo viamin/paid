@@ -987,34 +987,70 @@ class ProcessRunQueueJob < ApplicationJob
 
   def next_queued_run_for_scheduler(skipped_ids:, blocked_project_ids:, blocked_user_ids:,
     blocked_account_create_pr_ids:, blocked_account_dispatch_ids:)
-    filters = {
-      exclude_ids: skipped_ids.to_a,
-      exclude_project_ids: blocked_project_ids.to_a,
-      exclude_user_ids: blocked_user_ids.to_a,
-      exclude_account_create_pr_ids: blocked_account_create_pr_ids.to_a,
-      exclude_account_ids: blocked_account_dispatch_ids.to_a
-    }
+    ranked_scope = schedulable_queue_scope(
+      skipped_ids: skipped_ids,
+      blocked_project_ids: blocked_project_ids,
+      blocked_user_ids: blocked_user_ids,
+      blocked_account_create_pr_ids: blocked_account_create_pr_ids,
+      blocked_account_dispatch_ids: blocked_account_dispatch_ids
+    ).select("#{account_scheduler_rank_sql} AS account_queue_rank")
 
-    fair_share_run = AgentRun.peek_next_queued_run(
-      mode: "fair_share",
-      queue_fairness_mode_filter: "fair_share",
-      **filters
-    )
-    strict_priority_run = AgentRun.peek_next_queued_run(
-      mode: "strict_priority",
-      queue_fairness_mode_filter: "strict_priority",
-      **filters
-    )
-
-    choose_next_run(fair_share_run:, strict_priority_run:)
+    AgentRun.from("(#{ranked_scope.to_sql}) agent_runs")
+      .where(account_queue_rank: 1)
+      .to_a
+      .min_by { |agent_run| fair_share_scheduler_rank(agent_run) }
   end
 
-  def choose_next_run(fair_share_run:, strict_priority_run:)
-    return strict_priority_run if fair_share_run.blank?
-    return fair_share_run if strict_priority_run.blank?
+  # Each account first picks its own queue head using its configured mode.
+  # Cross-account competition stays mode-neutral, so one tenant enabling
+  # strict priority cannot globally reorder another tenant's work.
+  def account_scheduler_rank_sql
+    <<~SQL.squish
+      ROW_NUMBER() OVER (
+        PARTITION BY projects.account_id
+        ORDER BY
+          CASE
+            WHEN #{queue_fairness_mode_sql} = 'fair_share'
+            THEN COALESCE(project_active_counts.project_active_count, 0)
+          END ASC NULLS LAST,
+          CASE
+            WHEN #{queue_fairness_mode_sql} = 'fair_share'
+            THEN COALESCE(user_active_counts.user_active_count, 0)
+          END ASC NULLS LAST,
+          #{AgentRun::QUEUE_PRIORITY_CASE_SQL} ASC,
+          #{AgentRun::IN_PROGRESS_CASE_SQL} ASC,
+          #{AgentRun::GOAL_PRIORITY_CASE_SQL} ASC,
+          #{AgentRun::REVIEW_PICKUP_PRIORITY_CASE_SQL} ASC,
+          agent_runs.created_at ASC,
+          agent_runs.id ASC
+      )
+    SQL
+  end
 
-    strict_priority_scheduler_rank(strict_priority_run) < fair_share_scheduler_rank(fair_share_run) ?
-      strict_priority_run : fair_share_run
+  def schedulable_queue_scope(skipped_ids:, blocked_project_ids:, blocked_user_ids:,
+    blocked_account_create_pr_ids:, blocked_account_dispatch_ids:)
+    scope = AgentRun.unclaimed_with_priority
+      .joins(project: :account)
+      .joins("LEFT JOIN tenant_settings ON tenant_settings.account_id = projects.account_id")
+      .where(accounts: { scheduler_paused_at: nil })
+      .where(projects: { scheduler_paused_at: nil })
+      .where("agent_runs.trigger_type = 'manual' OR projects.quality_paused_at IS NULL")
+      .where("agent_runs.trigger_type = 'manual' OR projects.paused = FALSE")
+    scope = scope.where.not(id: skipped_ids.to_a) if skipped_ids.any?
+    scope = scope.where.not(project_id: blocked_project_ids.to_a) if blocked_project_ids.any?
+    scope = scope.where("project_owner.user_id NOT IN (?)", blocked_user_ids.to_a) if blocked_user_ids.any?
+    scope = scope.where.not(projects: { account_id: blocked_account_dispatch_ids.to_a }) if blocked_account_dispatch_ids.any?
+    if blocked_account_create_pr_ids.any?
+      scope = scope.where(
+        "agent_runs.goal != 'create_pr' OR projects.account_id NOT IN (?)",
+        blocked_account_create_pr_ids.to_a
+      )
+    end
+    scope
+  end
+
+  def queue_fairness_mode_sql
+    "COALESCE(tenant_settings.queue_fairness_mode, '#{TenantSetting::DEFAULT_QUEUE_FAIRNESS_MODE}')"
   end
 
   def strict_priority_scheduler_rank(agent_run)
@@ -1030,8 +1066,6 @@ class ProcessRunQueueJob < ApplicationJob
   end
 
   def temporal_fairness_key_for(agent_run)
-    return "strict_priority" if agent_run.project.account.tenant_setting&.strict_priority_queue?
-
     agent_run.project.account_id.to_s
   end
 end
