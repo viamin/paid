@@ -20,6 +20,7 @@ class ChatChannel < ApplicationCable::Channel
   def send_message(data)
     return unless @chat_session
 
+    # @spec CHAT-API-002
     # ActionCable channels run outside ApplicationController; TenantContext.with
     # does not propagate the RLS session variable to the query connection here,
     # so role/rate-limit lookups silently come back empty. Bypass RLS and rely
@@ -50,6 +51,7 @@ class ChatChannel < ApplicationCable::Channel
   def resolve_tool_call(data)
     return unless @chat_session
 
+    # @spec CHAT-API-004
     TenantContext.with_system_access do
       decision = data["decision"].to_s
       message = @chat_session.messages.find_by(id: data["message_id"])
