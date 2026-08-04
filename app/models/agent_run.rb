@@ -1481,7 +1481,7 @@ class AgentRun < ApplicationRecord
     ]
   end
 
-  def strict_priority_scheduler_rank
+  def scheduler_queue_rank
     [
       queue_priority_rank,
       existing_pr? ? 0 : 1,

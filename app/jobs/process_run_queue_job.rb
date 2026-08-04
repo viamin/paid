@@ -1053,15 +1053,15 @@ class ProcessRunQueueJob < ApplicationJob
     "COALESCE(tenant_settings.queue_fairness_mode, '#{TenantSetting::DEFAULT_QUEUE_FAIRNESS_MODE}')"
   end
 
-  def strict_priority_scheduler_rank(agent_run)
-    agent_run.strict_priority_scheduler_rank
+  def scheduler_queue_rank(agent_run)
+    agent_run.scheduler_queue_rank
   end
 
   def fair_share_scheduler_rank(agent_run)
     [
       agent_run.read_attribute(:project_active_count).to_i,
       agent_run.read_attribute(:user_active_count).to_i,
-      *strict_priority_scheduler_rank(agent_run)
+      *scheduler_queue_rank(agent_run)
     ]
   end
 

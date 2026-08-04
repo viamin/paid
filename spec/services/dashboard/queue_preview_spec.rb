@@ -121,6 +121,22 @@ RSpec.describe Dashboard::QueuePreview do
       expect(preview.map { |entry| entry.run.id }).to eq([ review_run.id, create_pr_run.id ])
     end
 
+    it "uses the scheduler review tiebreak during fair-share replay" do
+      account = create(:account)
+      user = create(:user, account: account)
+      alpha = create(:project, account: account, created_by: user, owner: "octo", repo: "alpha")
+      beta = create(:project, account: account, created_by: user, owner: "octo", repo: "beta")
+
+      create_pr_run = create(:agent_run, :queued, :automatic, :existing_pr,
+        project: alpha, goal: "create_pr", source_pull_request_number: 42, created_at: 2.minutes.ago)
+      review_run = create(:agent_run, :queued, :automatic, :review_goal,
+        project: beta, source_pull_request_number: 43, created_at: 1.minute.ago)
+
+      preview = described_class.call(user:)
+
+      expect(preview.map { |entry| entry.run.id }).to eq([ review_run.id, create_pr_run.id ])
+    end
+
     it "does not promise every queued project is represented in the preview sample" do
       rendered = ApplicationController.render(
         partial: "dashboard/queue_preview",

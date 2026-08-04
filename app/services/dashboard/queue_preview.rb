@@ -76,7 +76,7 @@ module Dashboard
         candidates = queues.reject { |_, queued| queued.empty? }
         break if candidates.empty?
 
-        project_id = candidates.min_by { |pid, queued| [ active[pid].to_i, queued.first.queue_order_rank ] }.first
+        project_id = candidates.min_by { |pid, queued| [ active[pid].to_i, queued.first.scheduler_queue_rank ] }.first
         run = queues[project_id].shift
         active[project_id] = active[project_id].to_i + 1
         interleaved << run
