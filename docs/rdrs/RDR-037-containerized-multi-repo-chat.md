@@ -13,7 +13,7 @@
 
 ## Implementation Status
 
-Final and tracked, not implemented. API-mode chat prerequisites and source-code read tools exist, and #2354 plus child issues track the containerized multi-repo work. Core RDR-037 requirements such as capability state, background provisioning, multi-repo clone manifests, mutation tools, shell execution, and PR proposal tooling remain open.
+Partially Implemented. Five of the six core requirements shipped with test coverage: the capability state machine (`container_capability`), background provisioning, multi-repo clone manifests, the container-only mutation tools (`write_repo_file`, `apply_patch`, `git_*`), and shell execution (`run_shell`), plus the capability-aware tool registry with `tools/list_changed`, the SendMessage "preparing workspace…" integration, and the reopen/restore lifecycle. The remaining open requirement is PR-proposal tooling (`propose_pull_request`): the cross-repo `propose_pull_request` tool that pushes branches and opens `Depends on owner/repo#N` PRs is not implemented and is the motivating use case for this RDR. See the [2026-08-04 audit](audit-report-2026-08-04-rdr-037.md) for the full reconciliation against #2354 and its child issues.
 
 ## Problem Statement
 
