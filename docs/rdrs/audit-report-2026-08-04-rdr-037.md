@@ -153,14 +153,16 @@ existing dependency parser coordinates auto-merge.
 
 - `Tools::ProposePullRequest` (`app/mcp/tools/propose_pull_request.rb`) does not
   exist and `propose_pull_request` is not in `Tools::Registry::TOOL_CLASSES`.
-- The only references to `propose_pull_request` in the repository are inside the
-  RDR document itself.
+- The current `propose_pull_request` references in this repo are intent/docs
+  references; there is still no corresponding implementation under
+  `app/mcp/tools/` or registry entry in `Tools::Registry::TOOL_CLASSES`.
 - The workspace can now clone multiple repos, mutate files, create branches, and
   run shell — but it cannot surface those changes as coordinated cross-repo PRs.
 
 This is the motivating cross-repo coordination capability and the only one of the
 six core requirements that did not ship. It should be represented by one focused
-follow-up issue.
+follow-up issue before RDR-037 can move from Partially Implemented to
+Implemented.
 
 ## Conclusion
 
@@ -172,7 +174,7 @@ RDR-037 should now be treated as **Partially Implemented**:
   notification, SendMessage integration, and reopen/restore lifecycle.
 - The remaining requirement — PR-proposal tooling (`propose_pull_request`) — is
   genuinely unimplemented and is the cross-repo coordination use case that
-  motivates the RDR. It is tracked as the single open follow-up.
+  motivates the RDR.
 
 The repo docs should stop saying "tracked but not implemented" and should instead
 distinguish the shipped capability model and mutation surface from the open

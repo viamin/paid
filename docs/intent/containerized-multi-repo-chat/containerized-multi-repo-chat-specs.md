@@ -53,4 +53,4 @@
   project. *Open gap:* `Tools::ProposePullRequest` is not implemented and
   `propose_pull_request` is not registered. This is the motivating cross-repo
   coordination capability for this segment and the single remaining RDR-037
-  requirement; tracked by the RDR-037 closeout follow-up.
+  requirement.
