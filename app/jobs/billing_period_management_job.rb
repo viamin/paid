@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+# @spec BILLING-AGG-002
 class BillingPeriodManagementJob < ApplicationJob
   include GoodJob::ActiveJobExtensions::Concurrency
 

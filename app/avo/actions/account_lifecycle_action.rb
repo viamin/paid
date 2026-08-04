@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+# @spec ACCOUNT-ADMIN-002
 class Avo::Actions::AccountLifecycleAction < Avo::BaseAction
   self.visible = -> { resource.record.present? }
 

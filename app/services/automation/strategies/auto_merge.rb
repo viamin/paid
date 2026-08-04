@@ -33,6 +33,8 @@ module Automation
     #
     # Bot-authored PRs skip owner-approval and review-feedback gates
     # because bot dependency updates are treated as trusted.
+    # @spec AUTO-MERGE-001
+    # @spec AUTO-MERGE-002
     class AutoMerge
       include Automation::Strategy
 

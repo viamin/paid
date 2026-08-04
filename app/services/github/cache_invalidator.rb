@@ -13,6 +13,7 @@ module Github
   #     event: "pull_request",
   #     payload: webhook_payload
   #   )
+  # @spec GITHUB-SYNC-002
   class CacheInvalidator
     attr_reader :project, :event, :payload
 

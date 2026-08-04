@@ -30,6 +30,12 @@ taxonomy:
   knowledge:
     label: Knowledge
     description: Intent and decision artifacts captured for reuse by agents.
+  integrations:
+    label: Integrations
+    description: External repository and service connectivity behavior.
+  operations:
+    label: Operations
+    description: Billing, administration, and operator-facing control surfaces.
   runtime:
     label: Runtime
     description: Runner, preview, and language-runtime execution behavior.
@@ -150,6 +156,38 @@ arrows:
     specs: docs/intent/live-web-app-preview/live-web-app-preview-specs.md
     parent: PAID
     taxonomy: runtime
+    status: OK
+    audited: 2026-08-04
+  github-sync-and-auth:
+    title: GitHub Sync and Auth
+    path: docs/intent/github-sync-and-auth/github-sync-and-auth-design.md
+    specs: docs/intent/github-sync-and-auth/github-sync-and-auth-specs.md
+    parent: PAID
+    taxonomy: integrations
+    status: OK
+    audited: 2026-08-04
+  auto-merge-strategy:
+    title: Auto-Merge Strategy
+    path: docs/intent/auto-merge-strategy/auto-merge-strategy-design.md
+    specs: docs/intent/auto-merge-strategy/auto-merge-strategy-specs.md
+    parent: PAID
+    taxonomy: automation
+    status: OK
+    audited: 2026-08-04
+  billing-aggregation:
+    title: Billing Aggregation
+    path: docs/intent/billing-aggregation/billing-aggregation-design.md
+    specs: docs/intent/billing-aggregation/billing-aggregation-specs.md
+    parent: PAID
+    taxonomy: operations
+    status: OK
+    audited: 2026-08-04
+  account-administration:
+    title: Account Administration
+    path: docs/intent/account-administration/account-administration-design.md
+    specs: docs/intent/account-administration/account-administration-specs.md
+    parent: PAID
+    taxonomy: operations
     status: OK
     audited: 2026-08-04
 

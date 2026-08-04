@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec ACCOUNT-ADMIN-002
 RSpec.describe Avo::Actions::AccountLifecycleAction, :no_db do
   let(:account_class) do
     Struct.new(:id, :name) do

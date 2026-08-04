@@ -1338,6 +1338,7 @@ RSpec.describe Project do
       end
     end
 
+    # @spec GITHUB-SYNC-003
     describe "#github_credential" do
       it "returns PAT token for PAT-backed project" do
         github_token = build(:github_token, token: "ghp_test123")

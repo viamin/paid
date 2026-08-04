@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec BILLING-AGG-002
 RSpec.describe BillingPeriodManagementJob do
   let(:summary) do
     Billing::AdvanceScheduledPeriods::Result.new(

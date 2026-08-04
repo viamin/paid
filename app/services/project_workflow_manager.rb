@@ -6,6 +6,7 @@
 # for labeled issues.
 class ProjectWorkflowManager
   class << self
+    # @spec GITHUB-SYNC-001
     def start_polling(project, restart_reason: nil, raise_on_conflict: false)
       Paid.temporal_client.start_workflow(
         Workflows::GitHubPollWorkflow,
@@ -36,6 +37,7 @@ class ProjectWorkflowManager
       false
     end
 
+    # @spec GITHUB-SYNC-001
     def stop_polling(project)
       handle = Paid.temporal_client.workflow_handle(workflow_id_for(project))
       handle.cancel

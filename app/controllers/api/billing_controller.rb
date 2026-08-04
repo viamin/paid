@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 module Api
+  # @spec BILLING-AGG-001
   class BillingController < ApplicationController
     RATE_LIMIT_MAX_REQUESTS = 60
     RATE_LIMIT_PERIOD = 1.minute

@@ -10,6 +10,7 @@
 # - Poll loop via EvaluateDependabotAutoMergeActivity (every cycle when auto_merge enabled)
 #
 # Concurrency: at most one evaluation per project+PR at a time.
+# @spec AUTO-MERGE-003
 class DependabotAutoMergeJob < ApplicationJob
   include GoodJob::ActiveJobExtensions::Concurrency
   include CiStatusVerification

@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec GITHUB-SYNC-006
 RSpec.describe "GithubApp::Webhooks", type: :request do
   let(:account) { create(:account) }
   let(:webhook_secret) { "shhh-shhh-shhh" }

@@ -3,6 +3,7 @@
 class AccountAuditLogsController < ApplicationController
   include AccountAdministrationPage
 
+  # @spec ACCOUNT-ADMIN-004
   before_action :load_account_administration_page
 
   def index

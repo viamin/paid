@@ -2,6 +2,8 @@
 
 require "rails_helper"
 
+# @spec AUTO-MERGE-001
+# @spec AUTO-MERGE-002
 RSpec.describe Automation::Strategies::AutoMerge, :no_db do
   subject(:strategy) { described_class.new }
 

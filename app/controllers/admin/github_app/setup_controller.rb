@@ -18,6 +18,7 @@ module Admin
     #
     # Once the App is configured, new projects can use the App-managed
     # auth flow via `GithubApp::InstallationsController`.
+    # @spec GITHUB-SYNC-007
     class SetupController < ApplicationController
       include OperatorConsole::RequestContext
       include AuditLogging

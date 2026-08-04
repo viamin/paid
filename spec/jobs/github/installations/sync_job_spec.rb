@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec GITHUB-SYNC-005
 RSpec.describe Github::Installations::SyncJob do
   let(:account) { create(:account) }
   let(:installation_id) { 12_345 }
