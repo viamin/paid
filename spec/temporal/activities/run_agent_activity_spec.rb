@@ -2488,6 +2488,30 @@ expect(container_service).to receive(:execute).with(
         FileUtils.rm_rf(repo_path) if repo_path
       end
 
+      it "persists the agent-recorded verification result when the runner exits non-zero" do
+        repo_path = Dir.mktmpdir("run-agent-verification-failure-spec")
+        project.update!(screenshot_settings: { "verification_enabled" => true })
+        agent_run.update!(worktree_path: repo_path)
+        prepare_verification_fixture(repo_path)
+        allow(activity).to receive(:run_agent_with_runner).and_raise(
+          described_class::RunnerExecutionError,
+          "Agent exited with code 1: verification failed"
+        )
+
+        expect_all_runners_exhausted(activity: activity, agent_run: agent_run)
+
+        expect(agent_run.reload.verification_result).to include(
+          "status" => "passed",
+          "summary" => "Verified the updated issue flow.",
+          "used_browser_tools" => true,
+          "browser_steps" => [ "Opened the page", "Submitted the form" ],
+          "app_log_tail" => "booted successfully\n"
+        )
+        expect(File).not_to exist(File.join(repo_path, AgentRuns::VerificationPrompt::RESULT_PATH))
+      ensure
+        FileUtils.rm_rf(repo_path) if repo_path
+      end
+
       it "passes verification fallback state through the current execution" do
         repo_path = Dir.mktmpdir("run-agent-verification-fallback-spec")
         project.update!(screenshot_settings: { "verification_enabled" => true })
@@ -2502,7 +2526,12 @@ expect(container_service).to receive(:execute).with(
 
         activity.execute(agent_run_id: agent_run.id)
 
-        expect(AgentRuns::VerificationResultRecorder).to have_received(:call).with(agent_run:, repo_path:, fallback_result:)
+        expect(AgentRuns::VerificationResultRecorder).to have_received(:call).with(
+          agent_run:,
+          repo_path:,
+          fallback_result:,
+          record_missing: true
+        )
       ensure
         FileUtils.rm_rf(repo_path) if repo_path
       end

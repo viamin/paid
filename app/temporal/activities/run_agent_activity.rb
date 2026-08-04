@@ -298,6 +298,7 @@ module Activities
           end
 
           begin
+            attempt_finished = false
             last_attempted_label = attempt_label
             attempt_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
             runner_result = run_agent_with_runner(agent_run, runner_candidate, prompt, user_settings)
@@ -364,6 +365,7 @@ module Activities
               { has_changes: agent_run.repo_cloned? ? check_for_changes(agent_run, pre_agent_sha) : false }
             end
 
+            attempt_finished = true
             return bookkeeping_result[:early_return] if bookkeeping_result[:early_return]
 
             has_changes = bookkeeping_result.fetch(:has_changes)
@@ -619,6 +621,8 @@ module Activities
                 fallback_remaining: fallback_remaining
               )
             end
+          ensure
+            record_verification_result_from_failed_attempt(agent_run) unless attempt_finished
           end
 
           index += 1
@@ -3099,7 +3103,7 @@ module Activities
       agent_run.log!("system", "Auto-committed uncommitted agent changes") if committed
     end
 
-    def record_verification_result(agent_run, fallback_result:)
+    def record_verification_result(agent_run, fallback_result:, record_missing: true)
       return unless agent_run.create_pr_goal?
       return unless agent_run.project.verification_enabled?
       return if agent_run.worktree_path.blank?
@@ -3107,7 +3111,18 @@ module Activities
       AgentRuns::VerificationResultRecorder.call(
         agent_run: agent_run,
         repo_path: agent_run.worktree_path,
-        fallback_result:
+        fallback_result:,
+        record_missing:
+      )
+    end
+
+    def record_verification_result_from_failed_attempt(agent_run)
+      record_verification_result(agent_run, fallback_result: nil, record_missing: false)
+    rescue => e
+      logger.warn(
+        message: "agent_execution.verification_result_record_failed",
+        agent_run_id: agent_run.id,
+        error: e.message
       )
     end
 

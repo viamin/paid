@@ -14,19 +14,21 @@ module AgentRuns
       new(...).call
     end
 
-    def initialize(agent_run:, repo_path:, fallback_result: nil, logger: Rails.logger)
+    def initialize(agent_run:, repo_path:, fallback_result: nil, record_missing: true, logger: Rails.logger)
       @agent_run = agent_run
       @repo_path = repo_path
       @fallback_result = fallback_result
+      @record_missing = record_missing
       @logger = logger
     end
 
     def call
-      return if @agent_run.verification_result.present? && @agent_run.verification_result["status"].present?
       return unless @agent_run.project.verification_enabled?
       return if @repo_path.blank?
 
-      payload = recorded_result || @fallback_result.presence || missing_result
+      payload = recorded_result || @fallback_result.presence || (@record_missing ? missing_result : nil)
+      return if payload.nil?
+
       persisted = normalize(payload)
       @agent_run.update!(verification_result: persisted)
       persisted

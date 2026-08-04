@@ -69,4 +69,16 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
       "reason" => "app_start_command_unavailable"
     )
   end
+
+  it "overwrites an existing verification result when a newer result file exists" do
+    agent_run.update!(verification_result: { "status" => "failed", "reason" => "stale" })
+    File.write(result_path, JSON.generate(status: "passed", summary: "Verified after resume."))
+
+    described_class.call(agent_run:, repo_path:)
+
+    expect(agent_run.reload.verification_result).to include(
+      "status" => "passed",
+      "summary" => "Verified after resume."
+    )
+  end
 end
