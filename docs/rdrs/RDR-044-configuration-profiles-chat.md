@@ -10,7 +10,7 @@
 - **Priority**: High
 - **Related Issues**: #3163 (closeout), #3204 (multi-scope profile application), #3205 (chat/legacy profile coverage reconciliation), #3206 (profile audit + rollback follow-up), #2820 (epic), #2821 (Phase 1), #2822 (Phase 2), #2823 (Phase 3)
 - **Related RDRs**: [RDR-028](RDR-028-interactive-chat.md) (Interactive Chat), [RDR-042](RDR-042-change-intent-records.md) (Change Intent Records), [RDR-024](RDR-024-multi-tenancy-isolation-strategy.md) (Multi-Tenancy Isolation), [RDR-023](RDR-023-automation-modularization-architecture.md) (Automation Modularization), [RDR-022](RDR-022-auto-merge-pr-strategy.md) (Auto-Merge Strategy), [RDR-014](RDR-014-learned-orchestration.md) (Learned Orchestration)
-- **Related Tests**: `spec/mcp/tools/{plan_configuration_profile,apply_configuration_profile,update_project_settings}_spec.rb`, `spec/services/configuration/profiles/{registry,settings,planner,applier}_spec.rb`, `spec/services/chat_sessions/build_system_prompt_spec.rb`, `spec/helpers/chat_sessions_helper_spec.rb`, `spec/views/chat_messages/tool_call_partial_spec.rb`
+- **Related Tests**: `spec/mcp/tools/{plan_configuration_profile,apply_configuration_profile,update_project_settings,registry,registry_authorization_parity}_spec.rb`, `spec/services/configuration/profiles/{registry,settings,planner,applier}_spec.rb`, `spec/services/chat_sessions/build_system_prompt_spec.rb`, `spec/helpers/chat_sessions_helper_spec.rb`, `spec/views/chat_messages/tool_call_partial_spec.rb`
 
 ## Implementation Status
 
@@ -22,11 +22,11 @@ The shipped scope is narrower than the original RDR:
 - the chat profile field coverage is materially smaller than the richer operating-mode field set still modeled in the older `ConfigurationProfiles::*` stack
 - chat-applied profiles record generic `project.settings_changed` activity, not dedicated `configuration_profile.applied` / `configuration_profile.reverted` events with a supported rollback path
 
-The remaining gaps are tracked by #3204, #3205, and #3206.
+See [audit-report-2026-08-04-rdr-044.md](audit-report-2026-08-04-rdr-044.md). The remaining gaps are tracked by #3204, #3205, and #3206.
 
 ## 2026-08-04 Closeout
 
-The original RDR text no longer matches the codebase. The closeout audit for issue #3163 confirmed these shipped behaviors:
+The original RDR text no longer matches the codebase. The closeout audit for issue #3163, recorded in [audit-report-2026-08-04-rdr-044.md](audit-report-2026-08-04-rdr-044.md), confirmed these shipped behaviors:
 
 - `app/mcp/tools/update_project_settings.rb` now gives chat a project-settings write primitive with permitted-attribute filtering, confirmation, authorization, and activity logging.
 - `app/mcp/tools/list_configuration_profiles.rb`, `plan_configuration_profile.rb`, and `apply_configuration_profile.rb` expose curated profile discovery plus a deterministic plan-then-apply flow.
