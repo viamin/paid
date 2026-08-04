@@ -412,6 +412,25 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "treats disown as best-effort after launching detached bin/dev" do
+    Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir)
+      bash_env = File.join(dir, "disable-disown.sh")
+      File.write(bash_env, "enable -n disown || true\n")
+
+      env = poll_env.merge(
+        "BASH_ENV" => bash_env,
+        "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+        "OVERMIND_SOCKET" => ".overmind.sock"
+      )
+      stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(File.exist?(File.join(dir, "setup-ran"))).to be(true)
+      expect(File.exist?(File.join(dir, "dev-ran"))).to be(true)
+    end
+  end
+
   it "clears bundler env before calling overmind during restart" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, start_overmind_running: true)

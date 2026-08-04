@@ -144,7 +144,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
-| [RDR-051](RDR-051-lid-aware-agent-runs.md) | LID-Aware Agent Runs and Brownfield Adoption | Draft | P1 |
+| [RDR-051](RDR-051-lid-aware-agent-runs.md) | LID-Aware Agent Runs and Brownfield Adoption | Partially Implemented | P1 |
 
 ## Decision Summary
 

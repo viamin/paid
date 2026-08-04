@@ -543,7 +543,10 @@ start_dev() {
   dev_supervisor_run_clean env -u PORT -u TMUX \
     STARTUP_CLEANUP_KILL_ALL="$STARTUP_CLEANUP_KILL_ALL" \
     nohup bin/dev >>"$START_DEV_LOG" 2>&1 &
-  disown
+  # `disown` is best-effort here: the detached start has already been launched,
+  # and fast stubbed/failed `bin/dev` processes can disappear before Bash
+  # resolves the jobspec in CI.
+  disown || true
   log "Dev environment start command launched (PID $!)."
 
   wait_for_overmind_health
