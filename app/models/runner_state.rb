@@ -9,6 +9,7 @@ class RunnerState < ApplicationRecord
   DEFAULT_HALF_OPEN_SUCCESS_THRESHOLD = 3
   DEFAULT_HALF_OPEN_FAILURE_THRESHOLD = 2
   DEFAULT_MAX_FAILURE_COUNT = 100
+  QUOTA_STATUS_STALE_AFTER = 45.minutes
 
   belongs_to :user
 
@@ -146,8 +147,9 @@ class RunnerState < ApplicationRecord
   # Runners::QuotaScore, and RunnersController::CachedState.
   # Returns a fraction 0.0–1.0 (remaining / limit), or nil when the snapshot
   # is absent, quota is unavailable, or the limit is zero/missing.
-  def self.headroom_from_snapshot(snapshot)
-    return nil unless snapshot.is_a?(Hash) && snapshot["available"] == true
+  # @spec RUNNER-QUOTA-004
+  def self.headroom_from_snapshot(snapshot, now: Time.current, stale_after: QUOTA_STATUS_STALE_AFTER)
+    return nil unless quota_snapshot_available?(snapshot, now:, stale_after:)
 
     remaining = snapshot["remaining"]&.to_i
     limit = snapshot["limit"]&.to_i
@@ -156,15 +158,38 @@ class RunnerState < ApplicationRecord
     (remaining.to_f / limit).clamp(0.0, 1.0)
   end
 
+  def self.quota_snapshot_available?(snapshot, now: Time.current, stale_after: QUOTA_STATUS_STALE_AFTER)
+    snapshot.is_a?(Hash) && snapshot["available"] == true && !quota_snapshot_stale?(snapshot, now:, stale_after:)
+  end
+
+  def self.quota_snapshot_stale?(snapshot, now: Time.current, stale_after: QUOTA_STATUS_STALE_AFTER)
+    checked_at = parse_quota_snapshot_time(snapshot&.fetch("checked_at", nil))
+    return false if checked_at.nil?
+
+    checked_at <= now - stale_after
+  end
+
+  def self.parse_quota_snapshot_time(value)
+    return nil if value.blank?
+
+    Time.iso8601(value.to_s)
+  rescue ArgumentError
+    nil
+  end
+
   def quota_headroom
     self.class.headroom_from_snapshot(quota_status_snapshot)
   end
 
   def quota_status_checked_at
-    parse_snapshot_time(quota_status_snapshot&.fetch("checked_at", nil))
+    self.class.parse_quota_snapshot_time(quota_status_snapshot&.fetch("checked_at", nil))
   end
 
-  def record_quota_status!(remaining:, limit:, reset_at:, unit:, available:, source:)
+  def quota_status_stale?
+    self.class.quota_snapshot_stale?(quota_status_snapshot)
+  end
+
+  def record_quota_status!(remaining:, limit:, reset_at:, unit:, available:, source:, checked_at: Time.current)
     snapshot = {
       "remaining" => integer_or_nil(remaining),
       "limit" => integer_or_nil(limit),
@@ -172,7 +197,7 @@ class RunnerState < ApplicationRecord
       "unit" => unit.to_s.presence,
       "available" => ActiveModel::Type::Boolean.new.cast(available),
       "source" => source.to_s,
-      "checked_at" => Time.current.iso8601
+      "checked_at" => checked_at&.iso8601
     }.compact
 
     with_lock do
@@ -321,14 +346,6 @@ class RunnerState < ApplicationRecord
   end
 
   private
-
-  def parse_snapshot_time(value)
-    return nil if value.blank?
-
-    Time.iso8601(value.to_s)
-  rescue ArgumentError
-    nil
-  end
 
   def integer_or_nil(value)
     Integer(value, exception: false)

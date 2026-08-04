@@ -38,14 +38,13 @@ RSpec.describe InstallContractScripts, :no_db do
     expect(stdout).not_to include("postinstall.mjs")
   end
 
-  it "adds the trusted opencode postinstall fallback for the current upstream contract" do
+  it "includes the trusted opencode postinstall step from the upstream contract" do
     stdout, stderr, status = run_script("scripts/extract-provider-install-contract.rb", "opencode")
 
     expect(status.success?).to be(true), -> { stderr }
     expect(stdout).to include("SOURCE=npm")
     expect(stdout).to include("INSTALL_COMMAND=npm install -g --ignore-scripts opencode-ai@")
     expect(stdout).to include("node $(npm root -g)/opencode-ai/postinstall.mjs")
-    expect(supported_version(stdout)).to eq(opencode_supported_version)
   end
 
   it "emits the opencode install command for the agent image build path" do
@@ -54,7 +53,16 @@ RSpec.describe InstallContractScripts, :no_db do
     expect(status.success?).to be(true), -> { stderr }
     expect(stdout).to include("INSTALL_COMMAND=npm install -g --ignore-scripts opencode-ai@")
     expect(stdout).to include("node $(npm root -g)/opencode-ai/postinstall.mjs")
-    expect(supported_version(stdout)).to eq(opencode_supported_version)
+  end
+
+  it "ships an opencode-ai version that recognizes the zai_coding / glm model family" do
+    # agent-harness 0.31.0 pinned opencode-ai to 1.3.2, which predates z.ai/glm
+    # support and caused ProviderModelNotFoundError for zai_coding/glm-5.x (#3045).
+    # The upstream contract now ships >= 1.18.9, which recognizes those models.
+    stdout, stderr, status = run_script("scripts/extract-runner-install-contract.rb", "opencode")
+
+    expect(status.success?).to be(true), -> { stderr }
+    expect(supported_version(stdout)).to be >= opencode_supported_version
   end
 
   it "falls back to runtime installation metadata for omp" do

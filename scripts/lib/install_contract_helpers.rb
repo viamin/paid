@@ -41,33 +41,13 @@ module InstallContractHelpers
     command = Array(contract[:install_command]).dup
     return command if command.empty?
 
-    command =
-      if postinstall_sensitive_contract?(contract)
-        append_postinstall(ensure_ignore_scripts(command), contract)
-      else
-        fallback_command = opencode_fallback_install_command(contract)
-        fallback_command != command ? ensure_ignore_scripts(fallback_command) : ensure_ignore_scripts(command)
-      end
+    command = ensure_ignore_scripts(command)
+    command = append_postinstall(command, contract) if postinstall_sensitive_contract?(contract)
     command
   end
 
   def postinstall_sensitive_contract?(contract)
     POSTINSTALL_SIGNAL_KEYS.any? { |key| contract[key] }
-  end
-
-  def npm_package_name(contract)
-    contract[:package_name] || contract[:package] || contract.dig(:source, :package)
-  end
-
-  def opencode_fallback_install_command(contract)
-    command = Array(contract[:install_command]).dup
-    return command unless npm_package_name(contract) == "opencode-ai"
-
-    # agent-harness 0.18.2 still models OpenCode as a plain npm install even
-    # though the package needs a trusted postinstall step to extract its native
-    # binary. Keep the hardening default for dependencies, then run the single
-    # allowlisted postinstall explicitly until the upstream contract is released.
-    command + [ "&&", "node", "$(npm root -g)/opencode-ai/postinstall.mjs" ]
   end
 
   def append_postinstall(command, contract)

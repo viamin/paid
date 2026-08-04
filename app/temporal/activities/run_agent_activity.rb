@@ -1118,9 +1118,12 @@ module Activities
       # run cleanly.
       runners = apply_issue_runner_retry_cap(runners, agent_run, user_settings.user)
 
+      # @spec RUNNER-QUOTA-003, RUNNER-QUOTA-004
       # Incorporate upstream quota headroom: if the primary runner has < 20%
       # remaining and a fallback has ≥ 50%, prefer the fallback to avoid
-      # routing into an almost-exhausted provider.
+      # routing into an almost-exhausted provider. Stale or unavailable quota
+      # snapshots are ignored so routing falls back to the existing reactive
+      # runner order.
       runners = apply_quota_aware_ordering(runners, agent_run, user_settings.user)
 
       # @spec RUNNER-SCHED-005, RUNNER-SCHED-006, RUNNER-SCHED-007
