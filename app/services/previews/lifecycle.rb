@@ -4,6 +4,9 @@ module Previews
   class Lifecycle
     # @spec LIVE-PREVIEW-003
     PREVIEW_CUSTOM_PROMPT = "Project preview session provisioning"
+    ADVISORY_LOCK_SQL = "SELECT pg_advisory_lock($1, $2)".freeze
+    ADVISORY_UNLOCK_SQL = "SELECT pg_advisory_unlock($1, $2)".freeze
+    LOCK_NAMESPACE = 1_357_180_003
 
     class Error < StandardError
       attr_reader :preview_session
@@ -33,6 +36,44 @@ module Previews
     end
 
     def start!(project:, branch_name:, created_by:)
+      with_project_start_lock(project) do
+        start_unlocked(project:, branch_name:, created_by:)
+      end
+    end
+
+    def restart!(project:, branch_name:, created_by:)
+      with_project_start_lock(project) do
+        start_unlocked(project:, branch_name:, created_by:)
+      end
+    end
+
+    def stop_project!(project:)
+      sessions = PreviewSession.for_project(project).non_terminal.recent.to_a
+      sessions.each do |preview_session|
+        stop_session!(preview_session:, terminal_status: "stopped")
+      end
+      sessions.size
+    end
+
+    def stop_session!(preview_session:, terminal_status: "stopped")
+      return false if preview_session.terminal? && terminal_status == "stopped"
+
+      agent_run = preview_session.agent_run
+      finalize_agent_run!(agent_run, terminal_status:)
+      cleanup_service_dependencies!(agent_run)
+      cleanup_container!(preview_session, agent_run)
+      release_tunnel_port!(preview_session)
+      remove_worktree!(agent_run)
+      finalize_preview_session!(preview_session, terminal_status:)
+
+      true
+    rescue StandardError => e
+      raise Error.new(e.message, preview_session: preview_session)
+    end
+
+    private
+
+    def start_unlocked(project:, branch_name:, created_by:)
       stop_project!(project:)
 
       preview_session = nil
@@ -65,37 +106,6 @@ module Previews
       raise Error.new(e.message, preview_session: preview_session)
     end
 
-    def restart!(project:, branch_name:, created_by:)
-      stop_project!(project:)
-      start!(project:, branch_name:, created_by:)
-    end
-
-    def stop_project!(project:)
-      sessions = PreviewSession.for_project(project).non_terminal.recent.to_a
-      sessions.each do |preview_session|
-        stop_session!(preview_session:, terminal_status: "stopped")
-      end
-      sessions.size
-    end
-
-    def stop_session!(preview_session:, terminal_status: "stopped")
-      return false if preview_session.terminal? && terminal_status == "stopped"
-
-      agent_run = preview_session.agent_run
-      finalize_agent_run!(agent_run, terminal_status:)
-      cleanup_service_dependencies!(agent_run)
-      cleanup_container!(preview_session, agent_run)
-      release_tunnel_port!(preview_session)
-      remove_worktree!(agent_run)
-      finalize_preview_session!(preview_session, terminal_status:)
-
-      true
-    rescue StandardError => e
-      raise Error.new(e.message, preview_session: preview_session)
-    end
-
-    private
-
     def create_preview_agent_run!(project:, created_by:)
       AgentRun.create!(
         project: project,
@@ -103,6 +113,7 @@ module Previews
         agent_type: "internal_agent",
         goal: "create_pr",
         custom_prompt: PREVIEW_CUSTOM_PROMPT,
+        external_metadata: { AgentRun::PREVIEW_SESSION_EXTERNAL_METADATA_KEY => true },
         trigger_type: "manual",
         status: "running",
         started_at: Time.current
@@ -231,6 +242,16 @@ module Previews
       end
 
       preview_session.update!(attributes)
+    end
+
+    def with_project_start_lock(project)
+      connection = ActiveRecord::Base.connection
+      lock_key = project.id % 2_147_483_647
+      raw_connection = connection.raw_connection
+      raw_connection.exec_params(ADVISORY_LOCK_SQL, [ LOCK_NAMESPACE, lock_key ])
+      yield
+    ensure
+      raw_connection&.exec_params(ADVISORY_UNLOCK_SQL, [ LOCK_NAMESPACE, lock_key ])
     end
   end
 end

@@ -164,6 +164,7 @@ class AgentRun < ApplicationRecord
   # cleanup, not by the runner — in particular, do not increment runner
   # circuit-breaker counters on its behalf.
   STALE_CLEANUP_ERROR_PREFIX = "Marked stale on startup"
+  PREVIEW_SESSION_EXTERNAL_METADATA_KEY = "preview_session".freeze
 
   STALE_DETECTOR_ERROR_PREFIX = "Stale run detected"
 
@@ -339,6 +340,9 @@ class AgentRun < ApplicationRecord
   }
   scope :active, -> { where(status: ACTIVE_STATUSES) }
   scope :capacity_inflight, -> { running.or(claimed) }
+  scope :excluding_preview_provisioning, -> {
+    where("COALESCE(agent_runs.external_metadata->>?, 'false') != 'true'", PREVIEW_SESSION_EXTERNAL_METADATA_KEY)
+  }
   scope :finished, -> { where(status: FINISHED_STATUSES) }
   scope :paid_native, -> { where(execution_origin: "paid_native") }
   scope :external_execution, -> { where(execution_origin: "external") }
@@ -721,6 +725,7 @@ class AgentRun < ApplicationRecord
   # Used to enforce the account-level create_pr concurrency cap.
   def self.active_create_pr_count_for_account(account)
     capacity_inflight
+      .excluding_preview_provisioning
       .joins(:project)
       .where(projects: { account_id: account.id }, goal: "create_pr")
       .count

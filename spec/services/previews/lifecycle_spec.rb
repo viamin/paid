@@ -77,6 +77,20 @@ RSpec.describe Previews::Lifecycle do
       expect(agent_run.error_message).to eq("preview boot failed")
       expect(worktree_service).to have_received(:remove_worktree).with(agent_run)
     end
+
+    it "holds a project advisory lock for the full startup flow" do
+      raw_connection = instance_double(PG::Connection, exec_params: true)
+      connection = ActiveRecord::Base.connection
+      allow(connection).to receive(:raw_connection).and_return(raw_connection)
+      lock_key = project.id % 2_147_483_647
+
+      described_class.start!(project:, branch_name: "feature/live-preview", created_by: user)
+
+      expect(raw_connection).to have_received(:exec_params)
+        .with("SELECT pg_advisory_lock($1, $2)", [ described_class::LOCK_NAMESPACE, lock_key ]).once
+      expect(raw_connection).to have_received(:exec_params)
+        .with("SELECT pg_advisory_unlock($1, $2)", [ described_class::LOCK_NAMESPACE, lock_key ]).once
+    end
   end
 
   describe ".restart!" do
@@ -121,6 +135,7 @@ RSpec.describe Previews::Lifecycle do
       expect(agent_run.branch_name).to match(%r{\Apaid/paid-agent-})
       expect(agent_run.worktree_path).to eq(repo_path)
       expect(agent_run.custom_prompt).to eq("Project preview session provisioning")
+      expect(agent_run.external_metadata).to include("preview_session" => true)
     end
   end
 

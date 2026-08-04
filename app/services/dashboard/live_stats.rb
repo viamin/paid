@@ -64,7 +64,9 @@ module Dashboard
     end
 
     def active_create_pr_sql
-      "COUNT(*) FILTER (WHERE goal = 'create_pr' AND (status = 'running' OR (status = 'queued' AND temporal_workflow_id IS NOT NULL)))"
+      "COUNT(*) FILTER (WHERE goal = 'create_pr' " \
+        "AND COALESCE(external_metadata->>'#{AgentRun::PREVIEW_SESSION_EXTERNAL_METADATA_KEY}', 'false') != 'true' " \
+        "AND (status = 'running' OR (status = 'queued' AND temporal_workflow_id IS NOT NULL)))"
     end
   end
 end
