@@ -176,6 +176,7 @@ module Previews
 
     def provision_container!
       @container_service = Containers::Provision.new(
+        agent_run: agent_run,
         project:,
         worktree_path: repo_path,
         memory_bytes: MEMORY_BYTES,

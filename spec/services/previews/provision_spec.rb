@@ -83,6 +83,20 @@ RSpec.describe Previews::Provision do
       .with(agent_run, network: "paid-test", service_names: contain_exactly("postgres", "redis"))
   end
 
+  it "provisions the preview container with the live preview agent run" do
+    service.call(start_tunnel: false, allow_seed: false)
+
+    expect(Containers::Provision).to have_received(:new).with(
+      agent_run: agent_run,
+      project: project,
+      worktree_path: repo_path,
+      memory_bytes: described_class::MEMORY_BYTES,
+      cpu_quota: described_class::CPU_QUOTA,
+      pids_limit: described_class::PIDS_LIMIT,
+      timeout_seconds: described_class::PROVISION_TIMEOUT_SECONDS
+    )
+  end
+
   it "cleans up provisioned service containers and per-run databases via the service provisioner" do
     captured_env = { "DATABASE_URL" => "postgres://agent:agent@paid-svc/agent_run_preview" }
     allow(service_provisioner).to receive(:provision) do
