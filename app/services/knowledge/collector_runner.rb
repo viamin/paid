@@ -2,6 +2,7 @@
 
 module Knowledge
   class CollectorRunner
+    # @spec KNOWLEDGE-001
     attr_reader :project, :commit_sha, :branch, :committed_at, :options
 
     def initialize(project:, commit_sha:, branch: "main", committed_at: nil, options: {})

@@ -2,6 +2,8 @@
 
 module Knowledge
   class Search
+    # @spec KNOWLEDGE-003
+    # @spec KNOWLEDGE-005
     MODES = %w[exact semantic hybrid].freeze
     DEFAULT_MODE = "hybrid"
     DEFAULT_LIMIT = 20

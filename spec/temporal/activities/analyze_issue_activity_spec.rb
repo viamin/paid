@@ -3,6 +3,7 @@
 require "rails_helper"
 require "ostruct"
 
+# @spec KNOWLEDGE-005
 RSpec.describe Activities::AnalyzeIssueActivity do
   let(:activity) { described_class.new }
   let(:project) { create(:project) }
