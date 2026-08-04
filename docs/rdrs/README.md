@@ -86,7 +86,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 |-----|-------|--------|----------|
 | [RDR-028](RDR-028-interactive-chat.md) | Interactive Chat for Agent-Driven Development | Implemented | High |
 | [RDR-037](RDR-037-containerized-multi-repo-chat.md) | Containerized Multi-Repo Chat Sessions | Final | High |
-| [RDR-044](RDR-044-configuration-profiles-chat.md) | Chat-Driven Configuration Profiles (Operating Modes) | Draft | High |
+| [RDR-044](RDR-044-configuration-profiles-chat.md) | Chat-Driven Configuration Profiles (Operating Modes) | Partially Implemented | High |
 
 ### Scaling & Distribution
 
@@ -194,7 +194,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 2. **Research**: Investigation, findings integration, alternative exploration
 3. **Finalize**: Lock before development; status becomes "Final"
 4. **Implement**: Use as specification; no modifications during coding
-5. **Close Out**: Use a final audit issue that depends on the implementation chain. That issue updates the RDR and README statuses to "Implemented" only after validating the shipped implementation against the RDR plan and acceptance criteria. If gaps are found, it creates specific dependent follow-up issues and leaves the RDR status unchanged or "Partially Implemented".
+5. **Close Out**: Use a final audit issue that depends on the implementation chain. That issue updates the RDR and README statuses to "Implemented" only after validating the shipped implementation against the RDR plan and acceptance criteria. If gaps are found, it creates specific dependent follow-up issues and leaves the RDR status unchanged or "Partially Implemented". Store the audit as an RDR-specific artifact such as `audit-report-2026-08-04-rdr-044.md` so multiple closeouts on the same date do not collide on one generic filename.
 6. **Post-Mortem**: Add lessons learned after implementation, when useful.
 
 **Critical Rule**: If implementation exposes fundamental flaws in an RDR, abandon the code, incorporate learnings back into the RDR, and restart.
