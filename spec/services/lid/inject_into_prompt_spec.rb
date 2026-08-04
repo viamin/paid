@@ -3,6 +3,7 @@
 require "rails_helper"
 require "ostruct"
 
+# @spec LID-RUNS-001
 RSpec.describe Lid::InjectIntoPrompt do
   let(:base_prompt) { "# Task\n\nImplement the requested change." }
 
