@@ -1253,7 +1253,9 @@ RSpec.describe "Projects" do
     it "queues a preview session in the provisioning state and redirects back to the preview panel" do
       project = create(:project, account: account, github_token: github_token, default_branch: "develop")
 
-      post start_preview_project_path(project)
+      expect {
+        post start_preview_project_path(project)
+      }.to have_enqueued_job(PreviewSessions::ProvisionJob)
 
       expect(response).to redirect_to("#{project_path(project)}#preview")
       expect(flash[:notice]).to include("Preview queued for develop.")
@@ -1262,6 +1264,10 @@ RSpec.describe "Projects" do
       expect(session.branch_name).to eq("develop")
       expect(session.status).to eq("provisioning")
       expect(session.tunnel_port).to be_nil
+      preview_job = ActiveJob::Base.queue_adapter.enqueued_jobs.find do |job|
+        job[:job] == PreviewSessions::ProvisionJob
+      end
+      expect(preview_job[:args]).to eq([ session.id ])
     end
 
     it "starts a preview session for an explicit branch name" do
@@ -1310,7 +1316,9 @@ RSpec.describe "Projects" do
       project = create(:project, account: account, github_token: github_token)
       previous = create(:preview_session, :ready, project: project, branch_name: "feature/restart", tunnel_port: 8252)
 
-      post restart_preview_project_path(project)
+      expect {
+        post restart_preview_project_path(project)
+      }.to have_enqueued_job(PreviewSessions::ProvisionJob)
 
       expect(response).to redirect_to("#{project_path(project)}#preview")
       expect(flash[:notice]).to include("Preview restarted for feature/restart.")
@@ -1320,6 +1328,10 @@ RSpec.describe "Projects" do
       expect(current.id).not_to eq(previous.id)
       expect(current.branch_name).to eq("feature/restart")
       expect(current.status).to eq("provisioning")
+      preview_job = ActiveJob::Base.queue_adapter.enqueued_jobs.find do |job|
+        job[:job] == PreviewSessions::ProvisionJob
+      end
+      expect(preview_job[:args]).to eq([ current.id ])
     end
   end
 

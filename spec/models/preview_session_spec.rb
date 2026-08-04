@@ -279,4 +279,25 @@ RSpec.describe PreviewSession do
       expect(session.reload.last_active_at.to_i).to eq(original.to_i)
     end
   end
+
+  describe "project preview broadcasts" do
+    it "refreshes the project preview stream on lifecycle changes" do
+      project = create(:project)
+      allow(Turbo::StreamsChannel).to receive(:broadcast_refresh_to)
+
+      preview_session = create(:preview_session, project:)
+      preview_session.update!(status: "failed", error_message: "boom")
+
+      expect(Turbo::StreamsChannel).to have_received(:broadcast_refresh_to).with(project, :project_updates).twice
+    end
+
+    it "does not broadcast for access timestamp touches" do
+      preview_session = create(:preview_session, :ready)
+      allow(Turbo::StreamsChannel).to receive(:broadcast_refresh_to)
+
+      preview_session.touch_last_active!
+
+      expect(Turbo::StreamsChannel).not_to have_received(:broadcast_refresh_to)
+    end
+  end
 end

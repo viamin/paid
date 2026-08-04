@@ -468,6 +468,8 @@ class ProjectsController < ApplicationController
   # asynchronous provisioning lifecycle; it is not marked ready until a live
   # app, tunnel, and container exist.
   def queue_preview_provision!(branch_name:)
+    session = nil
+
     PreviewSession.transaction do
       @project.with_lock do
         PreviewSession.for_project(@project).non_terminal.find_each(&:mark_stopped!)
@@ -480,6 +482,8 @@ class ProjectsController < ApplicationController
         session.save!
       end
     end
+
+    PreviewSessions::ProvisionJob.perform_later(session.id)
   end
 
   def apply_nulls_last_ordering(scope)

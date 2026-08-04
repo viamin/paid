@@ -17,6 +17,7 @@ class PreviewSession < ApplicationRecord
   belongs_to :created_by, class_name: "User", optional: true
 
   before_validation :generate_token, on: :create
+  after_commit :broadcast_project_preview_refresh, on: [ :create, :update ], if: :broadcast_project_preview_refresh?
 
   validates :token, presence: true, uniqueness: true, length: { maximum: 64 }
   validates :branch_name, presence: true
@@ -181,5 +182,18 @@ class PreviewSession < ApplicationRecord
     return unless agent_run && agent_run.project_id != project_id
 
     errors.add(:agent_run, "must belong to the same project")
+  end
+
+  def broadcast_project_preview_refresh?
+    previous_changes.key?("id") ||
+      saved_change_to_status? ||
+      saved_change_to_tunnel_port? ||
+      saved_change_to_error_message? ||
+      saved_change_to_expires_at? ||
+      saved_change_to_branch_name?
+  end
+
+  def broadcast_project_preview_refresh
+    Turbo::StreamsChannel.broadcast_refresh_to(project, :project_updates)
   end
 end
