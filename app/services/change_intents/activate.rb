@@ -13,6 +13,7 @@ module ChangeIntents
     end
 
     def call
+      # @spec CHANGE-INTENT-002
       ChangeIntent.transaction do
         change_intent.activate!
         ChangeIntents::SyncKnowledgeArtifact.call(change_intent:)

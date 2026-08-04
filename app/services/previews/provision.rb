@@ -6,6 +6,7 @@ require "uri"
 
 module Previews
   class Provision
+    # @spec LIVE-PREVIEW-001
     APP_LOG_PATH = "tmp/paid-preview-app.log"
     APP_PID_PATH = "tmp/paid-preview-app.pid"
     PHOENIX_PREVIEW_CONFIG_PATH = "config/paid_preview.exs"

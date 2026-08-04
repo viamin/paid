@@ -2,6 +2,7 @@
 
 module Lid
   class InjectIntoPrompt
+    # @spec LID-RUNS-001
     SECTION_HEADING = "## LID-Aware Workflow"
     PROMPT_SLUG = "coding.lid_aware_section"
 

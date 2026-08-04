@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec LID-RUNS-002
 RSpec.describe Prompts::BuildForLidPlanning do
   it "weights named plan docs ahead of code inference and includes the RDR mapping" do
     prompt = described_class.call(

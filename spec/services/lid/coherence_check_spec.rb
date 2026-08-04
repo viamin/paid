@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec LID-RUNS-003
 RSpec.describe Lid::CoherenceCheck do
   subject(:service) { described_class.call(agent_run: agent_run, container_service: container_service, logger: logger) }
 

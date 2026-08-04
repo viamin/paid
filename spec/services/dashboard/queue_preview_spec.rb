@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec ACCOUNT-QUEUE-001
 RSpec.describe Dashboard::QueuePreview do
   around do |example|
     original_store = Rails.cache

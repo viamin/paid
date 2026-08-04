@@ -3,6 +3,7 @@
 require "rails_helper"
 require "ostruct"
 
+# @spec LID-RUNS-003
 RSpec.describe Activities::CreatePullRequestActivity do
   fixture "activities/create_pull_request/base"
 

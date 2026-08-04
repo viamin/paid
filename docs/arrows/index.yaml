@@ -6,15 +6,14 @@
 #
 # Schema: https://github.com/jszmajda/lid/blob/main/plugins/arrow-maintenance/skills/arrow-maintenance/references/index-schema.md
 #
-# Paid adopts LID going-forward (Full mode, brownfield). No segments are
-# mapped yet — the tree is intentionally empty. Add nodes here as arrow
-# segments are created under docs/intent/. See docs/intent/README.md.
+# Paid adopts LID going-forward (Full mode, brownfield). The map below covers
+# audited intent segments created under docs/intent/ while older brownfield
+# areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-08-01
+last_updated: 2026-08-04
 
-# Taxonomy groups segments by domain cluster. Purely organizational.
-# Empty until segments exist to cluster.
+# Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
   automation:
     label: Automation
@@ -25,6 +24,15 @@ taxonomy:
   catalog:
     label: Catalog
     description: Model and configuration catalog synchronization behavior.
+  configuration:
+    label: Configuration
+    description: Tenant, user, and project configuration posture management.
+  knowledge:
+    label: Knowledge
+    description: Intent and decision artifacts captured for reuse by agents.
+  runtime:
+    label: Runtime
+    description: Runner, preview, and language-runtime execution behavior.
   security:
     label: Security
     description: Repository and runtime security controls.
@@ -72,6 +80,70 @@ arrows:
     taxonomy: catalog
     status: OK
     audited: 2026-08-03
+  runner-quota-tracking:
+    title: Runner Quota Tracking
+    path: docs/intent/runner-quota-tracking/runner-quota-tracking-design.md
+    specs: docs/intent/runner-quota-tracking/runner-quota-tracking-specs.md
+    parent: PAID
+    taxonomy: runtime
+    status: OK
+    audited: 2026-08-04
+  account-queue-fairness:
+    title: Account Queue Fairness
+    path: docs/intent/account-queue-fairness/account-queue-fairness-design.md
+    specs: docs/intent/account-queue-fairness/account-queue-fairness-specs.md
+    parent: PAID
+    taxonomy: automation
+    status: OK
+    audited: 2026-08-04
+  lid-aware-agent-runs:
+    title: LID-Aware Agent Runs
+    path: docs/intent/lid-aware-agent-runs/lid-aware-agent-runs-design.md
+    specs: docs/intent/lid-aware-agent-runs/lid-aware-agent-runs-specs.md
+    parent: PAID
+    taxonomy: automation
+    status: OK
+    audited: 2026-08-04
+  change-intent-records:
+    title: Change Intent Records
+    path: docs/intent/change-intent-records/change-intent-records-design.md
+    specs: docs/intent/change-intent-records/change-intent-records-specs.md
+    parent: PAID
+    taxonomy: knowledge
+    status: OK
+    audited: 2026-08-04
+  configuration-profiles-chat:
+    title: Configuration Profiles Chat
+    path: docs/intent/configuration-profiles-chat/configuration-profiles-chat-design.md
+    specs: docs/intent/configuration-profiles-chat/configuration-profiles-chat-specs.md
+    parent: PAID
+    taxonomy: configuration
+    status: OK
+    audited: 2026-08-04
+  polyglot-test-execution:
+    title: Polyglot Test Execution
+    path: docs/intent/polyglot-test-execution/polyglot-test-execution-design.md
+    specs: docs/intent/polyglot-test-execution/polyglot-test-execution-specs.md
+    parent: PAID
+    taxonomy: runtime
+    status: OK
+    audited: 2026-08-04
+  containerized-multi-repo-chat:
+    title: Containerized Multi-Repo Chat
+    path: docs/intent/containerized-multi-repo-chat/containerized-multi-repo-chat-design.md
+    specs: docs/intent/containerized-multi-repo-chat/containerized-multi-repo-chat-specs.md
+    parent: PAID
+    taxonomy: chat
+    status: OK
+    audited: 2026-08-04
+  live-web-app-preview:
+    title: Live Web App Preview
+    path: docs/intent/live-web-app-preview/live-web-app-preview-design.md
+    specs: docs/intent/live-web-app-preview/live-web-app-preview-specs.md
+    parent: PAID
+    taxonomy: runtime
+    status: OK
+    audited: 2026-08-04
 
 # Items found during mapping that don't yet belong to a segment.
 # arrow-maintenance cleans this up on each audit.
