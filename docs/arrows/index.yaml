@@ -6,15 +6,14 @@
 #
 # Schema: https://github.com/jszmajda/lid/blob/main/plugins/arrow-maintenance/skills/arrow-maintenance/references/index-schema.md
 #
-# Paid adopts LID going-forward (Full mode, brownfield). No segments are
-# mapped yet — the tree is intentionally empty. Add nodes here as arrow
-# segments are created under docs/intent/. See docs/intent/README.md.
+# Paid adopts LID going-forward (Full mode, brownfield). The map below covers
+# audited intent segments created under docs/intent/ while older brownfield
+# areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
 last_updated: 2026-08-04
 
-# Taxonomy groups segments by domain cluster. Purely organizational.
-# Empty until segments exist to cluster.
+# Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
   automation:
     label: Automation
