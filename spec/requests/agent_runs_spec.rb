@@ -1724,6 +1724,7 @@ RSpec.describe "AgentRuns" do
         )
       end
 
+      # @spec CONTAINER-RUNTIME-002
       it "defers host assignment to the queue for capacity-aware placement" do
         create_placement_ready_remote_host(project: project, identifier: "preferred-host")
         configure_codex_create_pr_default!(project)

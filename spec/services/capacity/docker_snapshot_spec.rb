@@ -62,6 +62,7 @@ RSpec.describe Capacity::DockerSnapshot do
   end
 
   describe ".call" do
+    # @spec CONTAINER-RUNTIME-005
     it "returns Docker capacity, aggregate usage buckets, timestamp, and confidence" do
       snapshot = described_class.call(backend: backend, now: now, cache: cache)
 

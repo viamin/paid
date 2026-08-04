@@ -51,6 +51,7 @@ RSpec.describe Capacity::RunAdmission do
       expect(aws_result[:host_available_slots]).to eq(8)
     end
 
+    # @spec CONTAINER-RUNTIME-003
     it "counts claimed runs against their planned host before provisioning commits" do
       # Claimed run admitted for elguapo but not yet provisioned: container_host
       # is blank and the planned host is recorded in external_metadata, exactly
@@ -202,6 +203,7 @@ RSpec.describe Capacity::RunAdmission do
       expect(result[:degraded]).to be true
     end
 
+    # @spec CONTAINER-RUNTIME-006
     it "fails closed when Docker sampling times out even if slot ceilings still have room" do
       result = described_class.call(
         user: user,
