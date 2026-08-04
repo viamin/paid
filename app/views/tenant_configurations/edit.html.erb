@@ -92,6 +92,14 @@
         <%= number_field_tag "tenant_setting[quality_thresholds][min_recent_runs]", quality["min_recent_runs"], min: 1, class: "rounded-md border-gray-300 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
         <%= number_field_tag "tenant_setting[quality_thresholds][lookback_window_hours]", quality["lookback_window_hours"], min: 1, class: "rounded-md border-gray-300 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
       </div>
+
+      <div class="mt-6 max-w-md">
+        <%= label_tag "tenant_setting_queue_fairness_mode", "Queue fairness mode", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+        <%= select_tag "tenant_setting[queue_fairness_mode]",
+          options_for_select(TenantSetting::QUEUE_FAIRNESS_MODES.map { |value| [value.humanize, value] }, @tenant_setting.resolved_queue_fairness_mode),
+          class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Fair share keeps the current round-robin across projects. Strict priority lets high-priority work outrank cross-project fairness and can starve lower-priority queues.</p>
+      </div>
     </section>
 
     <section>

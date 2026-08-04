@@ -1177,12 +1177,12 @@ class AgentRun < ApplicationRecord
   # Cross-project fair-share: a project's count of currently in-flight runs
   # (running + claimed-queued). Projects with fewer in-flight runs sort ahead
   # so a high-volume project cannot fully starve a low-volume one. This is
-  # the primary sort in QUEUE_ORDER; priority is strict only within a tie at
-  # this and the user-active-count tier.
+  # the primary sort in the default fair-share queue mode; strict-priority
+  # mode omits these active-count keys entirely.
   PROJECT_ACTIVE_COUNT_EXPR_SQL = "COALESCE(project_active_counts.project_active_count, 0)"
   PROJECT_ACTIVE_COUNT_SQL = Arel.sql("#{PROJECT_ACTIVE_COUNT_EXPR_SQL} ASC").freeze
   USER_ACTIVE_COUNT_SQL = Arel.sql("COALESCE(user_active_counts.user_active_count, 0) ASC").freeze
-  # Visible queue sort key order:
+  # Visible queue sort key order in the default fair-share mode:
   #   project_active_count → cross-project round-robin
   #   user_active_count    → cross-user fairness within a project tie
   #   queue_priority       → strict priority within a project
@@ -1198,9 +1198,16 @@ class AgentRun < ApplicationRecord
     GOAL_PRIORITY_SQL,
     { created_at: :asc, id: :asc }
   ].freeze
-  # Scheduler-only sort. Keep QUEUE_ORDER as the user-visible ordering; this
-  # adds only a hidden tiebreaker so short review runs drain before create_pr
-  # runs when all visible priority keys are otherwise tied.
+  STRICT_PRIORITY_QUEUE_ORDER = [
+    QUEUE_PRIORITY_SQL,
+    IN_PROGRESS_SQL,
+    GOAL_PRIORITY_SQL,
+    { created_at: :asc, id: :asc }
+  ].freeze
+  # Scheduler sort used for dequeueing and queue displays. The review-only
+  # tiebreak ensures short review runs drain before create_pr runs when all
+  # visible priority keys are otherwise tied. Strict-priority mode uses the
+  # same review-only tiebreak without the active-count fairness keys.
   SCHEDULER_QUEUE_ORDER = [
     PROJECT_ACTIVE_COUNT_SQL,
     USER_ACTIVE_COUNT_SQL,
@@ -1210,6 +1217,40 @@ class AgentRun < ApplicationRecord
     REVIEW_PICKUP_PRIORITY_SQL,
     { created_at: :asc, id: :asc }
   ].freeze
+  STRICT_PRIORITY_SCHEDULER_QUEUE_ORDER = [
+    QUEUE_PRIORITY_SQL,
+    IN_PROGRESS_SQL,
+    GOAL_PRIORITY_SQL,
+    REVIEW_PICKUP_PRIORITY_SQL,
+    { created_at: :asc, id: :asc }
+  ].freeze
+
+  def self.resolve_queue_fairness_mode(mode)
+    mode.to_s.presence_in(TenantSetting::QUEUE_FAIRNESS_MODES) || TenantSetting::DEFAULT_QUEUE_FAIRNESS_MODE
+  end
+
+  def self.queue_order_for(mode:)
+    case resolve_queue_fairness_mode(mode)
+    when "strict_priority"
+      STRICT_PRIORITY_QUEUE_ORDER
+    else
+      QUEUE_ORDER
+    end
+  end
+
+  def self.scheduler_queue_order_for(mode:)
+    case resolve_queue_fairness_mode(mode)
+    when "strict_priority"
+      STRICT_PRIORITY_SCHEDULER_QUEUE_ORDER
+    else
+      SCHEDULER_QUEUE_ORDER
+    end
+  end
+
+  def self.queue_order_display_for(mode:)
+    [ STATUS_ORDER_SQL, *scheduler_queue_order_for(mode:) ]
+  end
+
   STATUS_ORDER_CASE_SQL = <<~SQL.squish.freeze
     CASE WHEN agent_runs.status = 'running' THEN 0
          WHEN agent_runs.status = 'queued' AND agent_runs.temporal_workflow_id IS NOT NULL THEN 1
@@ -1244,7 +1285,7 @@ class AgentRun < ApplicationRecord
   # priority so the user sees an approximate scheduler sort. Claimed queued
   # runs (temporal_workflow_id set) sort ahead of unclaimed ones at the same
   # tier; mirrors QUEUE_ORDER below STATUS_ORDER_SQL.
-  scope :queue_order_display, -> {
+  scope :queue_order_display, ->(mode: TenantSetting::DEFAULT_QUEUE_FAIRNESS_MODE) {
     where(status: UNFINISHED_STATUSES)
       .with(
         project_active_counts: project_active_counts_cte,
@@ -1261,16 +1302,7 @@ class AgentRun < ApplicationRecord
         "COALESCE(user_active_counts.user_active_count, 0) AS user_active_count",
         "#{STATUS_ORDER_CASE_SQL} AS status_order"
       )
-      .reorder(
-        STATUS_ORDER_SQL,
-        PROJECT_ACTIVE_COUNT_SQL,
-        USER_ACTIVE_COUNT_SQL,
-        QUEUE_PRIORITY_SQL,
-        IN_PROGRESS_SQL,
-        GOAL_PRIORITY_SQL,
-        created_at: :asc,
-        id: :asc
-      )
+      .reorder(*queue_order_display_for(mode:))
   }
 
   # Scope that includes all queued runs (claimed + unclaimed) with priority
@@ -1335,8 +1367,8 @@ class AgentRun < ApplicationRecord
     SQL
   end
 
-  def self.next_queued_run
-    next_queued_run_from(unclaimed_with_priority)
+  def self.next_queued_run(mode: TenantSetting::DEFAULT_QUEUE_FAIRNESS_MODE)
+    next_queued_run_from(unclaimed_with_priority, mode:)
   end
 
   # Returns the next unclaimed queued run without claiming it.
@@ -1345,7 +1377,9 @@ class AgentRun < ApplicationRecord
   # Runs whose project belongs to an account with a paused scheduler are
   # excluded so a "pause all" toggle can hold new starts while still
   # accepting new queue entries from the project trigger button.
-  def self.peek_next_queued_run(exclude_ids: [], exclude_project_ids: [], exclude_user_ids: [],
+  def self.peek_next_queued_run(mode: TenantSetting::DEFAULT_QUEUE_FAIRNESS_MODE,
+    queue_fairness_mode_filter: nil,
+    exclude_ids: [], exclude_project_ids: [], exclude_user_ids: [],
     exclude_account_create_pr_ids: [], exclude_account_ids: [])
     scope = unclaimed_with_priority
       .joins(project: :account)
@@ -1353,6 +1387,10 @@ class AgentRun < ApplicationRecord
       .where(projects: { scheduler_paused_at: nil })
       .where("agent_runs.trigger_type = 'manual' OR projects.quality_paused_at IS NULL")
       .where("agent_runs.trigger_type = 'manual' OR projects.paused = FALSE")
+    if queue_fairness_mode_filter.present?
+      scope = scope.joins("INNER JOIN tenant_settings ON tenant_settings.account_id = projects.account_id")
+      scope = scope.where(tenant_settings: { queue_fairness_mode: resolve_queue_fairness_mode(queue_fairness_mode_filter) })
+    end
     scope = scope.where.not(id: exclude_ids) if exclude_ids.any?
     scope = scope.where.not(project_id: exclude_project_ids) if exclude_project_ids.any?
     scope = scope.where.not(project_owner: { user_id: exclude_user_ids }) if exclude_user_ids.any?
@@ -1363,20 +1401,21 @@ class AgentRun < ApplicationRecord
         exclude_account_create_pr_ids
       )
     end
-    next_queued_run_from(scope)
+    next_queued_run_from(scope, mode:)
   end
 
-  def self.schedulable_queued_with_priority
+  def self.schedulable_queued_with_priority(mode: TenantSetting::DEFAULT_QUEUE_FAIRNESS_MODE)
     queued_with_priority
       .joins(project: :account)
       .where(accounts: { scheduler_paused_at: nil })
       .where(projects: { scheduler_paused_at: nil })
       .where("agent_runs.trigger_type = 'manual' OR projects.quality_paused_at IS NULL")
       .where("agent_runs.trigger_type = 'manual' OR projects.paused = FALSE")
+      .reorder(*queue_order_for(mode:))
   end
 
-  def self.next_queued_run_from(scope)
-    scope.reorder(SCHEDULER_QUEUE_ORDER).first
+  def self.next_queued_run_from(scope, mode:)
+    scope.reorder(*scheduler_queue_order_for(mode:)).first
   end
   private_class_method :next_queued_run_from
 
@@ -1437,6 +1476,17 @@ class AgentRun < ApplicationRecord
       queue_priority_rank,
       existing_pr? ? 0 : 1,
       queue_goal_priority_rank,
+      created_at,
+      id
+    ]
+  end
+
+  def scheduler_queue_rank
+    [
+      queue_priority_rank,
+      existing_pr? ? 0 : 1,
+      queue_goal_priority_rank,
+      review_goal? ? 0 : 1,
       created_at,
       id
     ]

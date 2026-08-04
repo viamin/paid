@@ -5,10 +5,10 @@
 ## Metadata
 
 - **Date**: 2026-07-29
-- **Status**: Draft
+- **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: P1
-- **Related Issues**: TBD (file against this RDR before implementation)
+- **Related Issues**: #3159
 - **Related RDRs**: RDR-047 (Work-Category Queue Priority — treats cross-project fairness as a fixed requirement; this RDR makes it configurable), RDR-032 (Eager Queue Seeding — made `QUEUE_ORDER` the sole ordering mechanism), RDR-031 (Focused Agent Runs — introduced the project/user fair-stride keys)
 - **Related PRs**: [#3065](https://github.com/viamin/paid/pull/3065) (display-only fair-share preview — the upcoming-queue UI this RDR must keep consistent)
 
@@ -91,7 +91,7 @@ The `*_active_counts` CTEs can remain as LEFT JOINs (harmless when the sort key 
 
 ### Temporal fairness key
 
-`temporal_fairness_key_for` (`process_run_queue_job.rb:922`) returns `account_id.to_s`. In `strict_priority` mode, collapse it to a constant (e.g., `"strict"`) so Temporal does not re-impose per-account fair-share. This must be validated against actual Temporal worker behavior during implementation (confirm whether the SQL claim or Temporal admission is the binding constraint) — see Risks.
+`temporal_fairness_key_for` (`process_run_queue_job.rb:922`) returns `account_id.to_s`. Keep that tenant-isolating key in both modes: the queue-fairness toggle only changes how an account orders its own project pool, not how different accounts compete at the worker layer. Collapsing strict-priority tenants onto one shared Temporal key would turn an account-scoped policy into a global one and let one strict tenant's backlog starve another's.
 
 ### Display parity
 
@@ -200,7 +200,7 @@ Issue 5 (docs + specs)       ← accompanies Issues 2–3
 - Fair-share account: a busy project's P1 does NOT preempt an idle project's P3 (current behavior preserved).
 - Strict-priority account: the same P1 DOES dequeue ahead of the P3 (worked example).
 - Display/scheduler parity: the `Dashboard::QueuePreview` order matches actual dequeue under both modes.
-- Temporal fairness key is constant in strict mode.
+- Temporal fairness key remains account-scoped in strict mode.
 
 ### Backward Compatibility
 
