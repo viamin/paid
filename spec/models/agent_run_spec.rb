@@ -2328,6 +2328,24 @@ RSpec.describe AgentRun do
     end
   end
 
+  describe ".reported_create_pr" do
+    it "includes user-facing create_pr runs and excludes preview provisioning runs" do
+      project = create(:project)
+      included_run = create(:agent_run, :completed, project: project, goal: "create_pr")
+      create(
+        :agent_run,
+        :completed,
+        :internal_agent,
+        project: project,
+        goal: "create_pr",
+        external_metadata: { "preview_session" => true }
+      )
+      create(:agent_run, :completed, :review_goal, project: project)
+
+      expect(described_class.reported_create_pr).to contain_exactly(included_run)
+    end
+  end
+
   describe ".next_queued_run" do
     it "returns the oldest queued run when all have the same priority" do
       older = create(:agent_run, :queued, created_at: 2.minutes.ago)

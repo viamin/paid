@@ -341,8 +341,9 @@ class AgentRun < ApplicationRecord
   scope :active, -> { where(status: ACTIVE_STATUSES) }
   scope :capacity_inflight, -> { running.or(claimed) }
   scope :excluding_preview_provisioning, -> {
-    where("COALESCE(agent_runs.external_metadata->>?, 'false') != 'true'", PREVIEW_SESSION_EXTERNAL_METADATA_KEY)
+    where(preview_provisioning_exclusion_sql)
   }
+  scope :reported_create_pr, -> { where(goal: "create_pr").excluding_preview_provisioning }
   scope :finished, -> { where(status: FINISHED_STATUSES) }
   scope :paid_native, -> { where(execution_origin: "paid_native") }
   scope :external_execution, -> { where(execution_origin: "external") }
@@ -357,6 +358,10 @@ class AgentRun < ApplicationRecord
 
   def external_execution?
     execution_origin == "external"
+  end
+
+  def preview_provisioning?
+    ActiveModel::Type::Boolean.new.cast(external_metadata&.[](PREVIEW_SESSION_EXTERNAL_METADATA_KEY))
   end
 
   scope :recent, -> { order(created_at: :desc) }
@@ -725,10 +730,17 @@ class AgentRun < ApplicationRecord
   # Used to enforce the account-level create_pr concurrency cap.
   def self.active_create_pr_count_for_account(account)
     capacity_inflight
-      .excluding_preview_provisioning
       .joins(:project)
-      .where(projects: { account_id: account.id }, goal: "create_pr")
+      .where(projects: { account_id: account.id })
+      .reported_create_pr
       .count
+  end
+
+  def self.preview_provisioning_exclusion_sql(table_name: self.table_name)
+    sanitize_sql_array([
+      "COALESCE(#{table_name}.external_metadata->>?, 'false') != 'true'",
+      PREVIEW_SESSION_EXTERNAL_METADATA_KEY
+    ])
   end
 
   def self.stale_running_timeout(goal: nil)

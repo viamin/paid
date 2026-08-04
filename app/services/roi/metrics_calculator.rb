@@ -117,7 +117,7 @@ module Roi
     end
 
     def scoped_relation(runs)
-      scope = runs.where(goal: "create_pr", status: "completed").where.not(pull_request_number: nil)
+      scope = runs.reported_create_pr.where(status: "completed").where.not(pull_request_number: nil)
       scope = scope.where(created_at: window) if window
       scope
     end
@@ -126,6 +126,7 @@ module Roi
       runs
         .select do |run|
           run.goal == "create_pr" &&
+            !run.preview_provisioning? &&
             run.status == "completed" &&
             run.pull_request_number.present? &&
             (window.nil? || window.cover?(run.created_at))
