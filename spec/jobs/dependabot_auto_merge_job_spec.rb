@@ -3,6 +3,7 @@
 require "rails_helper"
 require "ostruct"
 
+# @spec AUTO-MERGE-003
 RSpec.describe DependabotAutoMergeJob do
   let(:project) { create(:project, auto_merge_mode: "dependabot_only") }
   let(:client) { instance_double(GithubClient) }

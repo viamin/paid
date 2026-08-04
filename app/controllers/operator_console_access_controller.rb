@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+# @spec ACCOUNT-ADMIN-001
 class OperatorConsoleAccessController < ApplicationController
   skip_after_action :verify_authorized
   skip_after_action :verify_policy_scoped

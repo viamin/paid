@@ -5,6 +5,7 @@ module Activities
   #
   # Returns a list of synced issue summaries for downstream processing.
   # Handles rate limiting by re-raising as a retryable Temporal error.
+  # @spec GITHUB-SYNC-001
   class FetchIssuesActivity < BaseActivity
     DEFAULT_PER_PAGE = 100
     DEFAULT_RELATIONSHIP_PARSE_ISSUE_LIMIT = 100

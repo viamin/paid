@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec GITHUB-SYNC-004
 RSpec.describe "GithubApp::Installations lifecycle" do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }

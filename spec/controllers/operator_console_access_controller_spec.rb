@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec ACCOUNT-ADMIN-001
 RSpec.describe OperatorConsoleAccessController, :no_db, type: :controller do
   # Isolate this spec's routes to avoid mutating Rails.application.routes,
   # which would clear the application's real routes for the remainder of the
