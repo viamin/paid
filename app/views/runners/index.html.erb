@@ -101,11 +101,32 @@
                 <% quota_color = pct >= 50 ? "text-green-700" : pct >= 20 ? "text-yellow-700" : "text-red-700" %>
                 <span class="font-medium <%= quota_color %>"><%= pct %>%</span>
                 <span class="text-xs text-gray-500">remaining</span>
+                <% if quota_state.quota_remaining && quota_state.quota_limit %>
+                  <p class="mt-0.5 text-xs text-gray-500">
+                    <%= number_with_delimiter(quota_state.quota_remaining) %> / <%= number_with_delimiter(quota_state.quota_limit) %>
+                    <%= quota_state.quota_unit.to_s.tr("_", " ") %>
+                  </p>
+                <% end %>
                 <% if quota_state.quota_checked_at %>
                   <p class="mt-0.5 text-xs text-gray-400">checked <%= local_time(quota_state.quota_checked_at, format: :relative) %></p>
                 <% end %>
+                <% if quota_state.quota_reset_at %>
+                  <p class="mt-0.5 text-xs text-gray-400">resets <%= local_time(quota_state.quota_reset_at, format: :relative) %></p>
+                <% end %>
+              <% elsif quota_state&.quota_stale? %>
+                <span class="text-xs font-medium text-yellow-700">Stale</span>
+                <p class="mt-0.5 text-xs text-gray-500">Quota routing paused until the next refresh.</p>
               <% elsif quota_state&.quota_source == "monthly_budget_missing" %>
                 <span class="text-xs text-gray-500">No budget set</span>
+              <% elsif quota_state&.quota_source == "provider_unsupported" %>
+                <span class="text-xs text-gray-500">Reactive only</span>
+                <p class="mt-0.5 text-xs text-gray-400">No upstream quota API for this runner.</p>
+              <% elsif quota_state&.quota_source == "refresh_failed" %>
+                <span class="text-xs text-red-600">Refresh failed</span>
+                <p class="mt-0.5 text-xs text-gray-400">Routing fell back to reactive availability.</p>
+              <% elsif quota_state&.quota_source == "provider_no_data" %>
+                <span class="text-xs text-gray-500">No quota data</span>
+                <p class="mt-0.5 text-xs text-gray-400">Routing fell back to reactive availability.</p>
               <% else %>
                 <span class="text-gray-400">&mdash;</span>
               <% end %>

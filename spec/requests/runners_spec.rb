@@ -250,6 +250,47 @@ RSpec.describe "Runners" do
 
         expect(response.body).to match(/#{Regexp.escape(cursor.display_name)}.*Circuit open/m)
       end
+
+      # @spec RUNNER-QUOTA-002
+      it "shows fresh proactive quota details for supported runners" do
+        state = user.runner_states.find_or_create_by!(runner_name: "claude")
+        state.record_quota_status!(
+          remaining: 700,
+          limit: 1000,
+          reset_at: 2.hours.from_now,
+          unit: "tokens",
+          available: true,
+          source: "provider",
+          checked_at: 3.minutes.ago
+        )
+
+        get runners_path
+
+        expect(response.body).to include("70%")
+        expect(response.body).to include("700 / 1,000")
+        expect(response.body).to include("tokens")
+        expect(response.body).to include("checked")
+        expect(response.body).to include("resets")
+      end
+
+      # @spec RUNNER-QUOTA-002
+      it "shows reactive-only fallback messaging when no upstream quota API is available" do
+        state = user.runner_states.find_or_create_by!(runner_name: "claude")
+        state.record_quota_status!(
+          remaining: nil,
+          limit: nil,
+          reset_at: nil,
+          unit: "tokens",
+          available: false,
+          source: "provider_unsupported",
+          checked_at: 1.minute.ago
+        )
+
+        get runners_path
+
+        expect(response.body).to include("Reactive only")
+        expect(response.body).to include("No upstream quota API for this runner.")
+      end
     end
   end
 

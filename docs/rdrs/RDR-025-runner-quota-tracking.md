@@ -5,15 +5,30 @@
 ## Metadata
 
 - **Date**: 2026-04-19
-- **Status**: Partially Implemented
+- **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: Medium
-- **Related Issues**: TBD
+- **Related Issues**: #3160
 - **Related RDRs**: [RDR-007](RDR-007-agent-cli-abstraction.md) (agent-harness), [RDR-008](RDR-008-model-selection.md) (model selection), [RDR-006](RDR-006-secrets-proxy.md) (secrets proxy)
 
 ## Implementation Status
 
-Partially implemented. Paid shows recent runner usage from internal run/token data, records reactive runner rate-limit/circuit state, skips currently limited runners, and surfaces reactive quota notifications. Proactive upstream quota polling, quota credentials/snapshots, scheduled refresh, upstream quota display, and quota-aware routing scores are not implemented yet.
+Implemented. Paid now persists runner-scoped quota snapshots on
+`RunnerState#metadata["quota_status"]`, refreshes them on a schedule via
+`Runners::RefreshQuotaSnapshotsJob`, shows proactive quota state on
+`/runners`, and feeds fresh quota headroom into runner ordering before
+reactive rate-limit failures happen. Unsupported, missing, stale, or failed
+quota checks degrade immediately to the existing reactive runner-health path.
+
+The shipped implementation uses the current auth architecture rather than
+introducing a second quota-credential store:
+
+- Subscription runners reuse the existing managed `RunnerCredential` /
+  subscription-auth runtime surfaces that already feed `agent_harness`.
+- API-key direct-outbound runners use Paid's existing monthly token budget as
+  the actionable quota source.
+- Freshness is tracked with the `checked_at` timestamp provided by
+  `AgentHarness::QuotaStatus` and enforced by `RunnerState`.
 
 ## Problem Statement
 
@@ -380,6 +395,50 @@ This scoring logic stays in **Paid** (orchestration policy, not provider-specifi
 1. Phase 2 first (1 week) — immediate value with existing data
 2. Phase 0 next (2-3 weeks) — tech debt payoff that enables everything after
 3. Phase 1 for Z.ai only (1 week) — prove the interface with simplest provider
+
+## Shipped Shape
+
+The implemented design differs from the early draft in one important way:
+quota snapshots are stored on the existing `RunnerState` record instead of in a
+new `runner_quota_snapshots` table. This keeps proactive quota state attached
+to the same runner-scoped health record that already carries reactive rate
+limits and circuit state, and lets the UI/routing read one canonical source.
+
+Current implementation:
+
+- `app/services/runners/refresh_quota_snapshots.rb` refreshes proactive quota
+  state for each runnable runner and persists the normalized snapshot.
+- `app/jobs/runners/refresh_quota_snapshots_job.rb` schedules the refresh path.
+- `app/models/runner_state.rb` enforces snapshot freshness and computes routing
+  headroom only for fresh available snapshots.
+- `app/controllers/runners_controller.rb` and `app/views/runners/index.html.erb`
+  show fresh, stale, unsupported, and failed-refresh quota states explicitly.
+- `app/temporal/activities/run_agent_activity.rb` uses
+  `Runners::QuotaScore` to promote a fresher, healthier fallback before the
+  primary runner exhausts its quota.
+
+## Closeout Evidence
+
+- Proactive polling and snapshot persistence:
+  `app/services/runners/refresh_quota_snapshots.rb`,
+  `app/jobs/runners/refresh_quota_snapshots_job.rb`,
+  `spec/services/runners/refresh_quota_snapshots_spec.rb`,
+  `spec/jobs/runners/refresh_quota_snapshots_job_spec.rb`
+- Runner UI display:
+  `app/controllers/runners_controller.rb`,
+  `app/views/runners/index.html.erb`,
+  `spec/requests/runners_spec.rb`
+- Quota-aware routing:
+  `app/models/runner_state.rb`,
+  `app/services/runners/quota_score.rb`,
+  `app/temporal/activities/run_agent_activity.rb`,
+  `spec/services/runners/quota_score_spec.rb`,
+  `spec/temporal/activities/run_agent_activity_spec.rb`
+- Reactive fallback preservation for unsupported/stale/failed quota data:
+  `app/services/runners/refresh_quota_snapshots.rb`,
+  `app/models/runner_state.rb`,
+  `spec/services/runners/refresh_quota_snapshots_spec.rb`,
+  `spec/services/runners/quota_score_spec.rb`
 
 ### Prerequisites
 

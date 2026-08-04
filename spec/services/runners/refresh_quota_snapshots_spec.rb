@@ -21,6 +21,20 @@ RSpec.describe Runners::RefreshQuotaSnapshots do
       )
     end
 
+    def record_subscription_quota!(remaining:, checked_at:)
+      state = user.runner_states.create!(runner_name: "claude")
+      state.record_quota_status!(
+        remaining: remaining,
+        limit: 1000,
+        reset_at: 2.hours.from_now,
+        unit: "tokens",
+        available: true,
+        source: "provider",
+        checked_at: checked_at
+      )
+      state
+    end
+
     it "persists quota snapshot for API-key runners with a monthly budget" do
       runner = build_api_runner(key: "opencode", budget: 1_000)
       project = create(:project, account: user.account, created_by: user)
@@ -62,6 +76,7 @@ RSpec.describe Runners::RefreshQuotaSnapshots do
       provider_name = RunnerSupport.harness_runner_key_for("claude").to_sym
       status = Struct.new(:remaining, :limit, :reset_at, :unit) do
         def available? = true
+        def checked_at = 5.minutes.ago
       end.new(600, 1000, 1.hour.from_now, "requests")
       provider = double(subscription_unset_vars: [], check_quota: status)
 
@@ -77,24 +92,42 @@ RSpec.describe Runners::RefreshQuotaSnapshots do
         "available" => true,
         "source" => "provider"
       )
+      expect(Time.iso8601(snapshot.fetch("checked_at"))).to be_within(1.second).of(5.minutes.ago)
     end
 
-    it "skips subscription runners whose provider does not implement check_quota" do
+    # @spec RUNNER-QUOTA-001
+    it "replaces stale snapshots with a reactive-only marker when quota polling is unsupported" do
       provider_name = RunnerSupport.harness_runner_key_for("claude").to_sym
       provider = double(subscription_unset_vars: [])
       allow(AgentHarness).to receive(:provider).with(provider_name).and_return(provider)
+      state = record_subscription_quota!(remaining: 400, checked_at: 10.minutes.ago)
 
       expect { described_class.call(user: user) }.not_to raise_error
+
+      snapshot = state.reload.quota_status_snapshot
+      expect(snapshot).to include(
+        "available" => false,
+        "source" => "provider_unsupported"
+      )
+      expect(snapshot["remaining"]).to be_nil
     end
 
+    # @spec RUNNER-QUOTA-001
     it "continues processing other runners when one provider raises an error" do
       good_runner = build_api_runner(key: "opencode", budget: 500)
+      state = record_subscription_quota!(remaining: 250, checked_at: 15.minutes.ago)
 
       # Stub the claude provider to raise so the subscription runner fails
       provider_name = RunnerSupport.harness_runner_key_for("claude").to_sym
       allow(AgentHarness).to receive(:provider).with(provider_name).and_raise("provider unavailable")
 
       expect { described_class.call(user: user) }.not_to raise_error
+
+      failed_snapshot = state.reload.quota_status_snapshot
+      expect(failed_snapshot).to include(
+        "available" => false,
+        "source" => "refresh_failed"
+      )
 
       # The API-key runner should still have been processed
       good_snapshot = user.runner_states.find_by(runner_name: good_runner.routing_key)&.quota_status_snapshot

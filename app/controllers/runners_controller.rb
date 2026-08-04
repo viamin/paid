@@ -13,7 +13,7 @@ class RunnersController < ApplicationController
     def circuit_half_open?  = circuit_state == "half_open"
 
     def quota_available?
-      quota_snapshot.is_a?(Hash) && quota_snapshot["available"] == true
+      RunnerState.quota_snapshot_available?(quota_snapshot)
     end
 
     def quota_headroom
@@ -27,29 +27,31 @@ class RunnersController < ApplicationController
     end
 
     def quota_checked_at
-      return nil unless quota_snapshot.is_a?(Hash)
-
-      raw = quota_snapshot["checked_at"]
-      return nil if raw.blank?
-
-      Time.zone.parse(raw.to_s)
-    rescue ArgumentError
-      nil
+      RunnerState.parse_quota_snapshot_time(quota_snapshot&.fetch("checked_at", nil))
     end
 
     def quota_reset_at
-      return nil unless quota_snapshot.is_a?(Hash)
-
-      raw = quota_snapshot["reset_at"]
-      return nil if raw.blank?
-
-      Time.zone.parse(raw.to_s)
-    rescue ArgumentError
-      nil
+      RunnerState.parse_quota_snapshot_time(quota_snapshot&.fetch("reset_at", nil))
     end
 
     def quota_source
       quota_snapshot.is_a?(Hash) ? quota_snapshot["source"] : nil
+    end
+
+    def quota_remaining
+      quota_snapshot.is_a?(Hash) ? quota_snapshot["remaining"]&.to_i : nil
+    end
+
+    def quota_limit
+      quota_snapshot.is_a?(Hash) ? quota_snapshot["limit"]&.to_i : nil
+    end
+
+    def quota_unit
+      quota_snapshot.is_a?(Hash) ? quota_snapshot["unit"] : nil
+    end
+
+    def quota_stale?
+      RunnerState.quota_snapshot_stale?(quota_snapshot)
     end
   end
   before_action :set_runner, only: [ :edit, :update, :destroy, :test_agent, :toggle_agent_runs, :toggle_fallback ]

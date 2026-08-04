@@ -18,6 +18,7 @@ module Runners
       :unit,
       :available,
       :source,
+      :checked_at,
       keyword_init: true
     )
 
@@ -112,7 +113,8 @@ module Runners
             reset_at: current_month_reset_at,
             unit: CURRENT_MONTH_UNIT,
             available: false,
-            source: "monthly_budget_missing"
+            source: "monthly_budget_missing",
+            checked_at: now
           )
         )
       end
@@ -132,7 +134,8 @@ module Runners
           reset_at: current_month_reset_at,
           unit: CURRENT_MONTH_UNIT,
           available: true,
-          source: "monthly_token_budget"
+          source: "monthly_token_budget",
+          checked_at: now
         )
       )
     end
@@ -158,7 +161,8 @@ module Runners
         available: ActiveModel::Type::Boolean.new.cast(
           raw_status.respond_to?(:available?) ? raw_status.available? : raw_status.available
         ),
-        source: source
+        source: source,
+        checked_at: normalize_time(raw_status.respond_to?(:checked_at) ? raw_status.checked_at : nil) || now
       )
     end
 
@@ -180,7 +184,8 @@ module Runners
         reset_at: status.reset_at,
         unit: status.unit,
         available: status.available,
-        source: status.source
+        source: status.source,
+        checked_at: status.checked_at || now
       )
       status
     end

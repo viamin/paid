@@ -69,9 +69,10 @@ module Runners
       return runner.state_key if runner
 
       # Strip routing key prefix to get the bare runner_name used in RunnerState
-      runner_candidate.to_s
+      normalized = runner_candidate.to_s
         .delete_prefix(Runner::ROUTING_KEY_PREFIX)
         .delete_prefix(Runner::LEGACY_ROUTING_KEY_PREFIX)
+      RunnerSupport.runner_key_for_agent_type(normalized)
     end
 
     def runner_entry_for(runner_candidate)

@@ -8,8 +8,14 @@ module Runners
   # QuotaBalanceService is used only by the auto-weight rebalancer.
   class RefreshQuotaSnapshots
     CURRENT_MONTH_UNIT = "tokens"
+    PROVIDER_SOURCE = "provider"
+    PROVIDER_UNSUPPORTED_SOURCE = "provider_unsupported"
+    PROVIDER_NO_DATA_SOURCE = "provider_no_data"
+    REFRESH_FAILED_SOURCE = "refresh_failed"
+    MONTHLY_BUDGET_SOURCE = "monthly_token_budget"
+    MONTHLY_BUDGET_MISSING_SOURCE = "monthly_budget_missing"
 
-    QuotaStatus = Struct.new(:remaining, :limit, :reset_at, :unit, :available, :source, keyword_init: true)
+    QuotaStatus = Struct.new(:remaining, :limit, :reset_at, :unit, :available, :source, :checked_at, keyword_init: true)
 
     def self.call(user:)
       new(user: user).call
@@ -45,6 +51,7 @@ module Runners
     end
 
     def refresh_quota!(runner)
+      # @spec RUNNER-QUOTA-001
       status = runner.subscription? ? subscription_quota_for(runner) : api_key_quota_for(runner)
       return unless status
 
@@ -54,7 +61,8 @@ module Runners
         reset_at: status.reset_at,
         unit: status.unit,
         available: status.available,
-        source: status.source
+        source: status.source,
+        checked_at: status.checked_at || now
       )
 
       logger.info(
@@ -68,6 +76,7 @@ module Runners
         source: status.source
       )
     rescue => e
+      persist_unavailable_snapshot!(runner, source: REFRESH_FAILED_SOURCE)
       logger.warn(
         message: "runner_quota_snapshots.refresh_failed",
         user_id: user.id,
@@ -81,6 +90,7 @@ module Runners
       harness_key = RunnerSupport.harness_runner_key_for(runner.runner_key).to_sym
       provider = AgentHarness.provider(harness_key)
 
+      # @spec RUNNER-QUOTA-001
       unless provider.respond_to?(:check_quota)
         logger.info(
           message: "runner_quota_snapshots.quota_check_unsupported",
@@ -88,13 +98,13 @@ module Runners
           runner_id: runner.id,
           runner_key: runner.runner_key
         )
-        return nil
+        return unavailable_status(source: PROVIDER_UNSUPPORTED_SOURCE)
       end
 
       runtime = runner.quota_check_runtime
       env = runtime ? runtime.env.to_h.compact.except(*runtime.unset_env) : {}
       raw = provider.check_quota(env: env)
-      normalize_quota(raw, source: "provider")
+      normalize_quota(raw, source: PROVIDER_SOURCE)
     end
 
     def api_key_quota_for(runner)
@@ -105,7 +115,8 @@ module Runners
           reset_at: current_month_reset_at,
           unit: CURRENT_MONTH_UNIT,
           available: false,
-          source: "monthly_budget_missing"
+          source: MONTHLY_BUDGET_MISSING_SOURCE,
+          checked_at: now
         )
       end
 
@@ -122,12 +133,13 @@ module Runners
         reset_at: current_month_reset_at,
         unit: CURRENT_MONTH_UNIT,
         available: true,
-        source: "monthly_token_budget"
+        source: MONTHLY_BUDGET_SOURCE,
+        checked_at: now
       )
     end
 
     def normalize_quota(raw, source:)
-      return nil unless raw
+      return unavailable_status(source: PROVIDER_NO_DATA_SOURCE) unless raw
 
       QuotaStatus.new(
         remaining: Integer(raw.remaining, exception: false),
@@ -137,7 +149,32 @@ module Runners
         available: ActiveModel::Type::Boolean.new.cast(
           raw.respond_to?(:available?) ? raw.available? : raw.available
         ),
-        source: source
+        source: source,
+        checked_at: parse_time(raw.respond_to?(:checked_at) ? raw.checked_at : nil) || now
+      )
+    end
+
+    def persist_unavailable_snapshot!(runner, source:)
+      runner_state_for(runner).record_quota_status!(
+        remaining: nil,
+        limit: nil,
+        reset_at: nil,
+        unit: CURRENT_MONTH_UNIT,
+        available: false,
+        source: source,
+        checked_at: now
+      )
+    end
+
+    def unavailable_status(source:)
+      QuotaStatus.new(
+        remaining: nil,
+        limit: nil,
+        reset_at: nil,
+        unit: CURRENT_MONTH_UNIT,
+        available: false,
+        source: source,
+        checked_at: now
       )
     end
 

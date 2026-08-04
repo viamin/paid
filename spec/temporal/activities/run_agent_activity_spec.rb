@@ -1353,6 +1353,18 @@ RSpec.describe Activities::RunAgentActivity do
   end
 
   describe "#build_runner_order" do
+    def record_runner_quota!(runner_name:, remaining:, checked_at:)
+      user.runner_states.find_or_create_by!(runner_name: runner_name).record_quota_status!(
+        remaining: remaining,
+        limit: 1000,
+        reset_at: 1.hour.from_now,
+        unit: "tokens",
+        available: true,
+        source: "provider",
+        checked_at: checked_at
+      )
+    end
+
     it "preserves routing-key fallback entries for agent-type runs" do
       api_key = create(:runner_api_key, user: user, api_service_type: "openrouter")
       opencode_runner = create_opencode_runner_entry(
@@ -1587,6 +1599,36 @@ RSpec.describe Activities::RunAgentActivity do
         # claude_code and codex (1 failure each) follow in their original order
         expect(runners[1]).to eq("claude_code")
         expect(runners[2]).to eq(codex_runner.routing_key)
+      end
+    end
+
+    context "with quota-aware runner ordering" do
+      # @spec RUNNER-QUOTA-003
+      it "promotes a fallback runner with more fresh quota headroom when the primary is near exhaustion" do
+        codex_runner = create(:runner, user: user, runner_key: "codex")
+        user.settings.update!(fallback_enabled: true, fallback_runners: [ codex_runner.routing_key ])
+
+        record_runner_quota!(runner_name: "claude", remaining: 100, checked_at: 5.minutes.ago)
+        record_runner_quota!(runner_name: "codex", remaining: 800, checked_at: 5.minutes.ago)
+
+        runners = activity.send(:build_runner_order, agent_run, user.settings)
+
+        expect(runners.first).to eq(codex_runner.routing_key)
+        expect(runners.second).to eq("claude_code")
+      end
+
+      # @spec RUNNER-QUOTA-004
+      it "ignores stale proactive quota data and preserves the reactive order" do
+        codex_runner = create(:runner, user: user, runner_key: "codex")
+        user.settings.update!(fallback_enabled: true, fallback_runners: [ codex_runner.routing_key ])
+
+        record_runner_quota!(runner_name: "claude", remaining: 100, checked_at: 2.hours.ago)
+        record_runner_quota!(runner_name: "codex", remaining: 800, checked_at: 5.minutes.ago)
+
+        runners = activity.send(:build_runner_order, agent_run, user.settings)
+
+        expect(runners.first).to eq("claude_code")
+        expect(runners.second).to eq(codex_runner.routing_key)
       end
     end
   end
