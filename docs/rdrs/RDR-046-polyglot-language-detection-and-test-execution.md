@@ -5,18 +5,32 @@
 ## Metadata
 
 - **Date**: 2026-07-11
-- **Status**: Draft
+- **Status**: Partially Implemented
 - **Type**: Architecture
 - **Priority**: High
-- **Related Issues**: #2845 (Phoenix detection), #2891 (Project type badge), #2844 (Live preview epic)
+- **Related Issues**: #2845 (closed Phoenix preview/runtime detection work), #2891 (closed project type badge), #3197 (RDR-045 runtime-detection follow-up), #3207 (unified repo language/framework profile), #3208 (container image resolution), #3209 (polyglot test/lint routing), #2844 (closed live preview epic)
 - **Related RDRs**: [RDR-004](RDR-004-container-isolation.md) (Container Isolation), [RDR-013](RDR-013-code-quality-backpressure.md) (Code Quality Backpressure — Superseded), [RDR-020](RDR-020-service-container-architecture.md) (Service Container Architecture), [RDR-035](RDR-035-style-guide-evolution.md) (Style Guide Evolution), [RDR-045](RDR-045-live-web-app-preview-agent-verification.md) (Live Web App Preview)
 - **Related Tests**: `spec/services/prompts/language_commands_spec.rb`, `spec/services/containers/quality_hooks_spec.rb`, `spec/services/projects/`
 
 ## Implementation Status
 
-Draft. Not implemented end-to-end. Language detection for test/runtime selection is still a stub (`Project` has no `detected_language` method or column — every project defaults to Ruby), the Docker agent image is still monolithic, and the test command map is still effectively Ruby-only.
+Partially implemented as of Tuesday, August 4, 2026.
 
-Important nuance for RDR-045 coordination: preview-specific Phoenix support did ship in July 2026 inside the screenshot/live-preview stack, so Elixir is no longer "entirely unsupported" everywhere. What is still missing is the repo-wide shared detection/runtime model that preview, verification, test-command selection, and runtime/image selection should all consume.
+What shipped already:
+
+- `projects.primary_language` was added on July 10, 2026 and is populated from GitHub repository metadata during project creation/onboarding.
+- `Project#detected_language` now normalizes that persisted value for prompt and hook consumers.
+- `Projects::LanguageProfile` and the project-type badge UI ship human-friendly labels such as `Ruby on Rails`, `Phoenix / Elixir`, and `macOS / Swift`.
+- Prompt builders and `Containers::QualityHooks` now read `Project#detected_language` instead of an always-false stub path.
+
+What remains incomplete:
+
+- detection is still only GitHub-primary-language based; there is no shared persisted repo-derived polyglot/framework profile yet
+- test/lint command routing still omits Elixir and Swift and still assumes one language per project
+- `Containers::QualityHooks` still only treats Ruby as DB-dependent and cannot run a polyglot command set
+- execution images are still hardcoded to `paid-agent:latest` with no project/runtime-aware resolver
+
+Focused follow-up issues now track the remaining gaps: #3207, #3208, and #3209. Because meaningful parts of the RDR have shipped but the execution/runtime path is still incomplete, this RDR should remain **Partially Implemented**, not `Draft`.
 
 ## Problem Statement
 
@@ -24,17 +38,17 @@ Paid's code review bot left this comment on a Phoenix/Elixir PR ([color_matching
 
 > I could not run `mix test` to confirm here (Elixir isn't available in this review environment).
 
-This is the visible symptom of a system-wide gap: the entire multi-language test execution pipeline is non-functional.
+This is the visible symptom of a system-wide gap: the multi-language execution pipeline is only partially wired.
 
-1. **Language detection is a stub.** `Prompts::LanguageCommands.detected_language(project)` checks `project.respond_to?(:detected_language)` — but `Project` never defines this method and has no corresponding column. Every project silently defaults to `"ruby"`, receiving `bundle exec rspec` as its test command regardless of actual language.
+1. **Language detection shipped only as a GitHub-primary-language shortcut.** `Prompts::LanguageCommands.detected_language(project)` now resolves through `Project#detected_language`, but that method only normalizes `projects.primary_language` as reported by GitHub. There is still no shared persisted repo-derived profile for framework detection, polyglot repos, or runtime/image selection.
 
-2. **The command map is dead code for 5 of 6 languages.** `LANGUAGE_TEST_COMMANDS` maps Ruby, JavaScript, TypeScript, Python, Go, and Rust — but since detection always returns Ruby, the other 5 entries are unreachable. Elixir and Swift are absent entirely.
+2. **The command map is still incomplete and single-language.** `LANGUAGE_TEST_COMMANDS` and `LANGUAGE_LINT_COMMANDS` are now reachable for Ruby, JavaScript, TypeScript, Python, Go, and Rust because `Project#detected_language` exists, but Elixir and Swift are still absent and the routing model still assumes one language per project.
 
 3. **The Docker agent image is monolithic and incomplete.** `paid-agent:latest` bundles Ruby, Node, and Python, but lacks Erlang/Elixir, Go, Rust, and Swift. Every container uses the same hardcoded image reference (`"paid-agent:latest"` in 5 locations) with no selection logic.
 
 4. **Detection is fragmented across 6+ services.** `Screenshots::DetectFramework`, `Screenshots::FrameworkPatterns`, `ContainerCapture#application_start_command`, `StyleGuides::DetectLanguage`, `Knowledge::Collectors::LanguageStatsCollector`, and `Prompts::LanguageCommands` all perform overlapping but inconsistent language/framework detection, storing results in different places (or not at all).
 
-5. **Open issues are blocked.** #2845 (Phoenix detection) needs a detection system to build on. #2891 (project type badge) needs persisted detection results. Both are P1.
+5. **The remaining work is now execution and unification, not badge/bootstrap detection.** #2845 and #2891 are closed because preview-specific Phoenix support and the project-type badge shipped. The open gaps are now tracked by #3207 (shared repo profile), #3208 (image resolution), and #3209 (polyglot command routing).
 
 Requirements:
 
@@ -54,7 +68,7 @@ Requirements:
 
 Paid already has substantial detection-adjacent infrastructure. `Knowledge::Collectors::LanguageStatsCollector` runs `scc` inside a container at project import and produces per-language line/file counts — but stores them as `KnowledgeArtifact` records that are never read back for test command selection. `Screenshots::DetectFramework` (816 lines) scores frameworks by fetching `Gemfile` and `package.json` from the GitHub API. `ContainerCapture#application_start_command` checks for `bin/dev`, `bin/rails`, `manage.py`, and `package.json` to determine how to start a web app. None of these systems talk to each other or feed into test execution.
 
-The quality hooks system (`Containers::QualityHooks`) installs a git pre-commit hook inside agent containers. It looks up test and lint commands from `LANGUAGE_TEST_COMMANDS` / `LANGUAGE_LINT_COMMANDS` based on the detected language, then writes a shell hook that runs those commands before each commit. A database-dependent guard (`DB_DEPENDENT_TEST_LANGUAGES = %w[ruby]`) disables the test command when no PostgreSQL container is running, preventing infinite commit loops. This system is architecturally sound — it just receives the wrong language input.
+The quality hooks system (`Containers::QualityHooks`) installs a git pre-commit hook inside agent containers. It looks up test and lint commands from `LANGUAGE_TEST_COMMANDS` / `LANGUAGE_LINT_COMMANDS` based on the detected language, then writes a shell hook that runs those commands before each commit. A database-dependent guard (`DB_DEPENDENT_TEST_LANGUAGES = %w[ruby]`) disables the test command when no PostgreSQL container is running, preventing infinite commit loops. This system is architecturally sound, but it still needs broader language coverage, multi-command routing, and service-aware gating beyond Ruby.
 
 ### Technical Environment
 
@@ -69,7 +83,7 @@ The quality hooks system (`Containers::QualityHooks`) installs a git pre-commit 
   - `ContainerCapture#application_start_command` — local file existence checks (bin/dev, bin/rails, manage.py, package.json)
   - `StyleGuides::DetectLanguage` — keyword scoring of style guide content text
   - `Knowledge::Collectors::LanguageStatsCollector` — `scc` output stored as KnowledgeArtifact
-  - `Prompts::LanguageCommands` — static hash lookup, always defaults to Ruby
+  - `Prompts::LanguageCommands` — static hash lookup over `Project#detected_language`, still centered on a single language key
 
 ## Research Findings
 
@@ -77,7 +91,7 @@ The quality hooks system (`Containers::QualityHooks`) installs a git pre-commit 
 
 1. Analyzed the `color_matching` PR review where the bot noted Elixir was unavailable — confirmed the bot is LLM-only and cannot run tests for any language.
 2. Traced the full test command resolution path: `LanguageCommands.detected_language` → `LANGUAGE_TEST_COMMANDS` lookup → `QualityHooks.install_quality_hooks` → `GitOperations.install_git_hooks` → `pre_commit_script`.
-3. Confirmed `Project` has no `detected_language` column in `db/schema.rb` and no method definition — the `respond_to?` guard always returns false.
+3. Verified the shipped July 10, 2026 detection/badge work: `projects.primary_language`, `Project#detected_language`, `Projects::LanguageProfile`, and project badge coverage now exist in the codebase.
 4. Read `docker/agent/Dockerfile` (384 lines) and `scripts/build-agent-image.sh` (214 lines) to understand image build — confirmed monolithic, no modular layer support.
 5. Traced image selection in `Containers::Provision` — confirmed hardcoded `"paid-agent:latest"` with no per-project selection.
 6. Examined all 6 existing detection systems — confirmed fragmentation and inconsistency.
@@ -94,7 +108,7 @@ The quality hooks system (`Containers::QualityHooks`) installs a git pre-commit 
 
 **Discovery 4 — Docker layer caching bounds storage cost.** A shared base layer (~2-3GB) deduplicates across all combo images. Each language runtime is an incremental layer (~0.5-1.5GB). Total incremental storage for all 8 languages: ~6.5GB on top of the existing base — not 6.5GB multiplied by N images. The practical combination count is small (10-15 variants).
 
-**Discovery 5 — The quality hooks system is architecturally sound.** The pre-commit hook installation, command validation (`SAFE_WORD_PATTERN`), and DB-dependent guard all work correctly. The system just receives the wrong language input. Fixing detection automatically fixes test command selection, pre-commit hooks, and prompt injection.
+**Discovery 5 — The quality hooks system is architecturally sound but no longer blocked on a missing method.** The pre-commit hook installation, command validation (`SAFE_WORD_PATTERN`), and DB-dependent guard all work correctly. The current gaps are the narrow command matrix, single-language routing, and Ruby-only DB/service assumptions.
 
 **Discovery 6 — `EnqueueKnowledgeCollectionJob` is the ideal detection hook point.** It already runs at project creation, already clones the repo, and already runs collectors inside a container. Adding a language detection collector here requires no new infrastructure — just a new collector and a persistence target on the project.
 
@@ -150,11 +164,11 @@ A new service (`Projects::DetectLanguageFramework`) performs detection by scanni
 }
 ```
 
-This subsumes `screenshot_settings["detection"]` (currently where `DetectFramework` stores its result) and the `detected_language` stub on `Project`.
+This subsumes `screenshot_settings["detection"]` (currently where `DetectFramework` stores its result) and extends the shipped `projects.primary_language` / `Project#detected_language` shortcut into a richer shared profile instead of replacing those fields outright.
 
 **Re-detection:** Triggered on repo sync (same job that re-runs knowledge collectors) or manually from project settings. User overrides survive re-detection unless explicitly cleared.
 
-**Relationship to #2845:** Instead of #2845 adding Phoenix detection to `Screenshots::DetectFramework`, the unified detection service detects Phoenix and stores the result. `Screenshots::DetectFramework` reads from `language_profile` rather than performing its own GitHub API fetch. `ContainerCapture#application_start_command` reads from `language_profile` rather than checking file existence.
+**Relationship to shipped work:** The unified detection service should preserve the shipped `primary_language`/badge behavior as the fallback path while adding the richer repo-derived profile. Preview-specific Phoenix support from closed issue #2845 remains in place, but its consumers should eventually read the shared profile rather than bespoke detection paths.
 
 #### Docker Combo Image System
 
@@ -230,11 +244,11 @@ setup_steps:
 
 | Consumer | Current source | After RDR-046 |
 |---|---|---|
-| Test/lint commands (`QualityHooks`) | `LanguageCommands.detected_language` (always Ruby) | `project.language_profile` → command map |
-| Agent prompt (`BuildForIssue`, `BuildForPr`) | Same stub | Same `language_profile` → command map |
+| Test/lint commands (`QualityHooks`) | `Project#detected_language` (single GitHub-primary-language key) | `project.language_profile` → command map |
+| Agent prompt (`BuildForIssue`, `BuildForPr`) | Same single-language key | Same `language_profile` → command map |
 | Docker image selection (`Provision`) | Hardcoded `"paid-agent:latest"` | `ImageResolver.resolve(project)` |
-| Badge (#2891) | Nothing | `project.language_profile["framework"]` |
-| App startup (#2845) | `ContainerCapture#application_start_command` file checks | `language_profile["framework"]` → startup command lookup |
+| Badge (#2891) | Shipped from `projects.primary_language` / `Projects::LanguageProfile` | Keep shipped badge behavior; optionally enrich with `language_profile["framework"]` later |
+| App startup (#2845) | Closed preview/runtime-specific detection paths | `language_profile["framework"]` → startup command lookup |
 | Screenshot framework detection | `Screenshots::DetectFramework` GitHub API fetch | Reads `language_profile` (detection already done at import) |
 | Knowledge base route collection | Separate collector per framework | Unified detection feeds route parser selection |
 
@@ -279,7 +293,7 @@ Build a separate image per language: `paid-agent:ruby`, `paid-agent:elixir`, `pa
 - **Multi-language projects finally work.** Elixir, Go, Rust, and Swift projects get correct test commands, correct runtimes, and correct pre-commit hooks — automatically.
 - **Detection unification reduces maintenance.** Six fragmented detection paths collapse into one. Adding a new framework means one new entry in the detection matrix, not changes to 3-4 services.
 - **Adding a 9th language is data-only.** A new marker file rule, a new command map entry, and a new Dockerfile layer. No architectural changes.
-- **#2845 and #2891 unblock naturally.** Both consume the unified detection result rather than building parallel systems.
+- **Closed badge/preview work can converge on the shared profile.** The shipped badge UI and the reopened RDR-045 runtime-detection follow-up can consume the same persisted detection result instead of maintaining parallel heuristics.
 - **Docker layer caching keeps storage bounded.** ~6.5GB incremental for all 8 languages, shared across all projects via layer deduplication.
 
 ### Negative Consequences
@@ -301,16 +315,24 @@ Build a separate image per language: `paid-agent:ruby`, `paid-agent:elixir`, `pa
 
 ### Phase 1: Detection Foundation
 
-**Goal:** Detect languages and framework at import, persist on project, surface as badge.
+**Status:** Partially shipped on July 10, 2026.
+
+**Shipped already:**
+
+- `projects.primary_language`
+- `Project#detected_language`
+- `Projects::LanguageProfile`
+- project-type badge wiring
+
+**Remaining goal:** Extend the shipped single-language shortcut into a persisted repo-derived framework/polyglot profile.
 
 - New migration: add `language_profile` JSONB column to `projects`
 - New service: `Projects::DetectLanguageFramework` — scans repo for marker files, identifies languages and framework
 - Hook into `EnqueueKnowledgeCollectionJob` — run detection alongside existing collectors
-- `Project#language_profile` reader method (replaces the `detected_language` stub)
-- Badge display on project tiles (#2891)
+- `Project#language_profile` reader method layered alongside the shipped `detected_language` shortcut
 - User override via project settings (write to `language_profile["override"]`)
 
-**Unblocks:** #2891 (badge)
+**Tracked by:** #3207
 
 ### Phase 2: Command Map and Agent Execution
 
@@ -318,12 +340,12 @@ Build a separate image per language: `paid-agent:ruby`, `paid-agent:elixir`, `pa
 
 - Add Elixir and Swift to `LANGUAGE_TEST_COMMANDS` / `LANGUAGE_LINT_COMMANDS`
 - Add `"elixir"` to `DB_DEPENDENT_TEST_LANGUAGES`
-- Wire `LanguageCommands` to read from `project.language_profile` instead of the stub
+- Wire `LanguageCommands` to read from `project.language_profile` instead of the current single-language shortcut where appropriate
 - Wire `QualityHooks` to handle polyglot (multiple test commands)
 - Wire `BuildForIssue` and `BuildForPr` prompt builders to inject correct commands
 - Polyglot: run test suites for all `test_languages` in sequence
 
-**Unblocks:** Correct test commands for all 8 languages in agent runs
+**Tracked by:** #3209
 
 ### Phase 3: Combo Image System
 
@@ -332,11 +354,11 @@ Build a separate image per language: `paid-agent:ruby`, `paid-agent:elixir`, `pa
 - Language layer Dockerfiles: `docker/agent/languages/{elixir,go,rust,swift}.dockerfile`
 - New service: `Containers::ImageResolver` — maps language set to image tag, triggers lazy build
 - Update `Containers::Provision` to resolve image via `ImageResolver` instead of hardcoded constant
-- Update remaining 4 hardcoded image references (chat, knowledge runners)
+- Update remaining hardcoded image references (chat, knowledge runners)
 - Image build logging and observability
 - Scheduled cleanup job for stale images
 
-**Unblocks:** Actual test execution for Elixir, Go, Rust, Swift in agent containers
+**Tracked by:** #3208
 
 ### Phase 4: Manifest Support
 
@@ -356,9 +378,9 @@ Build a separate image per language: `paid-agent:ruby`, `paid-agent:elixir`, `pa
 - `ContainerCapture#application_start_command` reads from `language_profile` instead of file checks
 - `Screenshots::FrameworkPatterns` reads from `language_profile` for pattern selection
 - Knowledge base route collector uses detected framework for parser selection
-- Update #2845 to consume unified detection (Phoenix detection comes free from Phase 1)
+- RDR-045 runtime-detection follow-up reads the shared profile instead of keeping preview/runtime-specific heuristics
 
-**Unblocks:** #2845 (Phoenix detection and startup)
+**Tracked by:** #3197, #3207
 
 ### Sequencing Dependencies
 
