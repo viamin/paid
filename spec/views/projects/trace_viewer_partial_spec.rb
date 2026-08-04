@@ -28,6 +28,7 @@ RSpec.describe "projects/_trace_viewer", :no_db, type: :view do
 
       expect(rendered).to have_selector("[data-testid='trace-viewer-unavailable']")
       expect(rendered).to include("No trace available")
+      expect(rendered).not_to include("Open in new tab")
       expect(rendered).not_to have_selector("iframe")
     end
   end

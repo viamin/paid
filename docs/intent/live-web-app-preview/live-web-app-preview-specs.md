@@ -35,6 +35,17 @@
   browser-sidecar provisioning so review flows can see what the agent actually
   verified.
 
-- [ ] **LIVE-PREVIEW-006** — When a Playwright trace is recorded for a real
+- [x] **LIVE-PREVIEW-006** — When a Playwright trace is recorded for a real
   agent run, the system SHALL publish it through the same durable key contract
   that the trace viewer UI expects.
+  *Code:* `app/services/screenshots/storage.rb`,
+  `app/services/previews/trace_viewer.rb`, `app/helpers/application_helper.rb`.
+  *Test:* `spec/services/screenshots/storage_spec.rb`,
+  `spec/services/previews/trace_viewer_spec.rb`,
+  `spec/helpers/application_helper_trace_viewer_spec.rb`,
+  `spec/views/projects/trace_viewer_partial_spec.rb`.
+
+- [D] **LIVE-PREVIEW-007** — When future live-preview sessions record their own
+  human-driven traces, the system SHALL expose those session-specific viewer
+  links as a separate contract from screenshot-comment / agent-run trace
+  artifacts.
