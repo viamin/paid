@@ -58,6 +58,13 @@ RSpec.describe TenantSetting do
       expect(setting).to be_valid
     end
 
+    it "validates queue_fairness_mode is supported" do
+      setting = build(:tenant_setting, queue_fairness_mode: "typo")
+
+      expect(setting).not_to be_valid
+      expect(setting.errors[:queue_fairness_mode]).to include("is not included in the list")
+    end
+
     it "validates the default agent goal" do
       setting = build(:tenant_setting, agent_settings: { "default_goal" => "typo" })
 
@@ -83,6 +90,7 @@ RSpec.describe TenantSetting do
       expect(setting.max_users).to eq(25)
       expect(setting.max_tokens_per_run).to eq(10_000_000)
       expect(setting.max_monthly_cost_cents).to be_nil
+      expect(setting.queue_fairness_mode).to eq("fair_share")
       expect(setting.allowed_runner_keys).to eq([])
       expect(setting.features).to eq({})
     end
@@ -138,6 +146,24 @@ RSpec.describe TenantSetting do
       setting = build(:tenant_setting)
 
       expect(setting.marketplace_auto_attach_required?).to be(false)
+    end
+  end
+
+  describe "queue fairness mode" do
+    it "treats fair_share as the default resolved mode" do
+      setting = build(:tenant_setting, queue_fairness_mode: nil)
+
+      expect(setting.resolved_queue_fairness_mode).to eq("fair_share")
+      expect(setting.fair_share_queue?).to be(true)
+      expect(setting.strict_priority_queue?).to be(false)
+    end
+
+    it "detects strict_priority mode" do
+      setting = build(:tenant_setting, queue_fairness_mode: "strict_priority")
+
+      expect(setting.resolved_queue_fairness_mode).to eq("strict_priority")
+      expect(setting.fair_share_queue?).to be(false)
+      expect(setting.strict_priority_queue?).to be(true)
     end
   end
 

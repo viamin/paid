@@ -3,6 +3,7 @@
 module Lid
   class CoherenceCheck
     CHECK_TIMEOUT_SECONDS = 60
+    # @spec LID-RUNS-003
     GOALS = %w[create_pr review lid_planning].freeze
     MARKER = "__PAID_LID_STATUS__"
 

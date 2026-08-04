@@ -3,7 +3,7 @@
 require "spec_helper"
 require_relative "../../../lib/paid/temporal_worker_config"
 
-RSpec.describe Paid::TemporalWorkerConfig do
+RSpec.describe Paid::TemporalWorkerConfig do # @spec TEMPORAL-ORCHESTRATION-002
   describe ".worker_mode" do
     it "defaults to both" do
       expect(described_class.worker_mode({})).to eq("both")

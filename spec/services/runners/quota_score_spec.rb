@@ -30,8 +30,32 @@ RSpec.describe Runners::QuotaScore do
       expect(result.headroom_for("claude")).to be_within(0.001).of(0.3)
     end
 
+    it "normalizes agent-type runner candidates back to their runner state key" do
+      record_quota!(runner_name: "claude", remaining: 300, limit: 1000)
+
+      result = described_class.call(runners: [ "claude_code" ], user: user)
+      expect(result.headroom_for("claude_code")).to be_within(0.001).of(0.3)
+    end
+
     it "returns nil headroom when available is false" do
       record_quota!(runner_name: "claude", remaining: 0, limit: 1000, available: false)
+
+      result = described_class.call(runners: [ "claude" ], user: user)
+      expect(result.headroom_for("claude")).to be_nil
+    end
+
+    # @spec RUNNER-QUOTA-004
+    it "returns nil headroom when the stored snapshot is stale" do
+      state = user.runner_states.find_or_create_by!(runner_name: "claude")
+      state.record_quota_status!(
+        remaining: 700,
+        limit: 1000,
+        reset_at: 1.day.from_now,
+        unit: "tokens",
+        available: true,
+        source: "provider",
+        checked_at: 2.hours.ago
+      )
 
       result = described_class.call(runners: [ "claude" ], user: user)
       expect(result.headroom_for("claude")).to be_nil

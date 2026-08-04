@@ -6,6 +6,7 @@ require "securerandom"
 module AgentRuns
   # Provisions the headless browser container that the playwright-mcp MCP server
   # connects to during interactive agent verification (RDR-045 Phase 2).
+  # @spec LIVE-PREVIEW-002
   #
   # The browser container (ghcr.io/browserless/chromium) is created with a
   # per-run container name on the agent run's Docker network and exposes a

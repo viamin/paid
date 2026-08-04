@@ -8,6 +8,7 @@ module Github
     #
     # The job runs under system tenant context because it may be processing
     # webhooks or callbacks for accounts the worker does not belong to.
+    # @spec GITHUB-SYNC-005
     class SyncJob < ApplicationJob
       # Raised when GitHub is temporarily unavailable (5xx / 429 / timeout /
       # connection failure). These are retried so a transient blip does not

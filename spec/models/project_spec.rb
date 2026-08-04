@@ -294,6 +294,15 @@ RSpec.describe Project do
       expect(project.project_type_label).to eq("Ruby on Rails")
     end
 
+    it "prefers the detected framework label when screenshot detection metadata exists" do
+      project = build(:project, screenshot_settings: {
+        "detection" => { "framework" => "Phoenix" }
+      })
+      project.define_singleton_method(:primary_language) { "Ruby" }
+
+      expect(project.project_type_label).to eq("Phoenix")
+    end
+
     it "falls back to the primary language when no profile label exists" do
       allow(Projects::LanguageProfile).to receive(:label_for).with("Elixir").and_return(nil)
       project = build(:project)
@@ -420,6 +429,34 @@ RSpec.describe Project do
       end
     end
 
+    describe "#detected_framework" do
+      it "normalizes persisted screenshot detection metadata" do
+        project = build(:project, screenshot_settings: {
+          "detection" => { "framework" => "Next.js" }
+        })
+
+        expect(project.detected_framework).to eq("nextjs")
+      end
+
+      it "returns nil when no framework is set" do
+        expect(build(:project).detected_framework).to be_nil
+      end
+    end
+
+    describe "#detected_framework_label" do
+      it "returns the human-friendly framework label" do
+        project = build(:project, screenshot_settings: {
+          "detection" => { "framework" => "phoenix" }
+        })
+
+        expect(project.detected_framework_label).to eq("Phoenix")
+      end
+
+      it "returns nil when no framework is set" do
+        expect(build(:project).detected_framework_label).to be_nil
+      end
+    end
+
     describe "#project_type_label" do
       it "maps known languages to a framework label" do
         expect(build(:project, primary_language: "Ruby").project_type_label).to eq("Ruby on Rails")
@@ -433,6 +470,14 @@ RSpec.describe Project do
 
       it "falls back to the raw language when unmapped" do
         expect(build(:project, primary_language: "Brainfuck").project_type_label).to eq("Brainfuck")
+      end
+
+      it "prefers the detected framework label when available" do
+        project = build(:project,
+          primary_language: "Ruby",
+          screenshot_settings: { "detection" => { "framework" => "Phoenix" } })
+
+        expect(project.project_type_label).to eq("Phoenix")
       end
 
       it "returns nil when no language is set" do
@@ -1338,6 +1383,7 @@ RSpec.describe Project do
       end
     end
 
+    # @spec GITHUB-SYNC-003
     describe "#github_credential" do
       it "returns PAT token for PAT-backed project" do
         github_token = build(:github_token, token: "ghp_test123")

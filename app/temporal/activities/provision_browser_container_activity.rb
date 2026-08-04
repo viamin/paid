@@ -3,6 +3,7 @@
 module Activities
   # Provisions the headless browser container that powers playwright-mcp
   # during agent verification (RDR-045 Phase 2).
+  # @spec LIVE-PREVIEW-002
   #
   # The browser container is created on the agent run's Docker network with
   # the well-known alias `paid-screenshot-browser`. playwright-mcp reaches it

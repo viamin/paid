@@ -86,7 +86,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 |-----|-------|--------|----------|
 | [RDR-028](RDR-028-interactive-chat.md) | Interactive Chat for Agent-Driven Development | Implemented | High |
 | [RDR-037](RDR-037-containerized-multi-repo-chat.md) | Containerized Multi-Repo Chat Sessions | Final | High |
-| [RDR-044](RDR-044-configuration-profiles-chat.md) | Chat-Driven Configuration Profiles (Operating Modes) | Draft | High |
+| [RDR-044](RDR-044-configuration-profiles-chat.md) | Chat-Driven Configuration Profiles (Operating Modes) | Partially Implemented | High |
 
 ### Scaling & Distribution
 
@@ -108,10 +108,10 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | [RDR-032](RDR-032-eager-queue-seeding.md) | Eager Queue Seeding — Eliminate Auto-Pick Throttling | Implemented | P1 |
 | [RDR-035](RDR-035-style-guide-evolution.md) | Style Guide Evolution | Accepted | High |
 | [RDR-036](RDR-036-mutation-testing-for-ai-generated-tests.md) | Mutation Testing for AI-Generated Tests (Mutant) | Partially Implemented | P1 |
-| [RDR-045](RDR-045-live-web-app-preview-agent-verification.md) | Live Web App Preview and Interactive Agent Verification | Draft | High |
-| [RDR-046](RDR-046-polyglot-language-detection-and-test-execution.md) | Polyglot Language Detection and Test Execution | Draft | High |
+| [RDR-045](RDR-045-live-web-app-preview-agent-verification.md) | Live Web App Preview and Interactive Agent Verification | Partially Implemented | High |
+| [RDR-046](RDR-046-polyglot-language-detection-and-test-execution.md) | Polyglot Language Detection and Test Execution | Partially Implemented | High |
 | [RDR-047](RDR-047-work-category-queue-priority.md) | Work-Category-Aware Queue Priority — PR Continuation Over Fresh Issues | Implemented | P1 |
-| [RDR-050](RDR-050-account-queue-fairness-mode.md) | Account-Level Queue Fairness Mode — Strict Priority vs. Cross-Project Fair Share | Draft | P1 |
+| [RDR-050](RDR-050-account-queue-fairness-mode.md) | Account-Level Queue Fairness Mode — Strict Priority vs. Cross-Project Fair Share | Implemented | P1 |
 
 ### Runner Intelligence
 
@@ -129,7 +129,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | [RDR-018](RDR-018-semantic-code-search.md) | Semantic Code Search (Qdrant + PostgreSQL full-text) | Implemented | Medium |
 | [RDR-021](RDR-021-knowledge-base.md) | Knowledge Base Architecture | Implemented | High |
 | [RDR-027](RDR-027-auto-enhance-knowledge-evolution.md) | Auto-Enhance and Knowledge Base Evolution | Partially Implemented | High |
-| [RDR-042](RDR-042-change-intent-records.md) | Change Intent Records for the Knowledge Base | Accepted | Medium |
+| [RDR-042](RDR-042-change-intent-records.md) | Change Intent Records for the Knowledge Base | Partially Implemented | Medium |
 
 ### AI-Native Evolution (Phase 4)
 
@@ -144,7 +144,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
-| [RDR-051](RDR-051-lid-aware-agent-runs.md) | LID-Aware Agent Runs and Brownfield Adoption | Draft | P1 |
+| [RDR-051](RDR-051-lid-aware-agent-runs.md) | LID-Aware Agent Runs and Brownfield Adoption | Partially Implemented | P1 |
 
 ## Decision Summary
 
@@ -194,7 +194,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 2. **Research**: Investigation, findings integration, alternative exploration
 3. **Finalize**: Lock before development; status becomes "Final"
 4. **Implement**: Use as specification; no modifications during coding
-5. **Close Out**: Use a final audit issue that depends on the implementation chain. That issue updates the RDR and README statuses to "Implemented" only after validating the shipped implementation against the RDR plan and acceptance criteria. If gaps are found, it creates specific dependent follow-up issues and leaves the RDR status unchanged or "Partially Implemented".
+5. **Close Out**: Use a final audit issue that depends on the implementation chain. That issue updates the RDR and README statuses to "Implemented" only after validating the shipped implementation against the RDR plan and acceptance criteria. If gaps are found, it creates specific dependent follow-up issues and leaves the RDR status unchanged or "Partially Implemented". Store the audit as an RDR-specific artifact such as `audit-report-2026-08-04-rdr-044.md` so multiple closeouts on the same date do not collide on one generic filename.
 6. **Post-Mortem**: Add lessons learned after implementation, when useful.
 
 **Critical Rule**: If implementation exposes fundamental flaws in an RDR, abandon the code, incorporate learnings back into the RDR, and restart.

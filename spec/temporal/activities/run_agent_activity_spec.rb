@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec PROMPT-EVOLUTION-003, RUNNER-FALLBACK-001, RUNNER-FALLBACK-002
 RSpec.describe Activities::RunAgentActivity do
   let(:activity) { described_class.new }
   let(:user) { create(:user) }
@@ -1257,7 +1258,7 @@ RSpec.describe Activities::RunAgentActivity do
       TEXT
     end
 
-    it "assigns a running test before rendering the issue-goal prompt" do
+    it "assigns a running test before rendering the issue-goal prompt" do # @spec PROMPT-EVOLUTION-003
       run = create(:agent_run, :create_issue_goal, project: project)
       ab_test = create_running_ab_test(slug: described_class::ISSUE_GOAL_PROMPT_SLUG)
 
@@ -1271,7 +1272,7 @@ RSpec.describe Activities::RunAgentActivity do
       expect(run.reload.prompt_version).to eq(assigned_version)
     end
 
-    it "uses an assigned issue-goal variant prompt version" do
+    it "uses an assigned issue-goal variant prompt version" do # @spec PROMPT-EVOLUTION-003
       run = create(:agent_run, :create_issue_goal, project: project)
       variant_version = create_ab_test_assignment(
         slug: described_class::ISSUE_GOAL_PROMPT_SLUG,
@@ -1353,6 +1354,18 @@ RSpec.describe Activities::RunAgentActivity do
   end
 
   describe "#build_runner_order" do
+    def record_runner_quota!(runner_name:, remaining:, checked_at:)
+      user.runner_states.find_or_create_by!(runner_name: runner_name).record_quota_status!(
+        remaining: remaining,
+        limit: 1000,
+        reset_at: 1.hour.from_now,
+        unit: "tokens",
+        available: true,
+        source: "provider",
+        checked_at: checked_at
+      )
+    end
+
     it "preserves routing-key fallback entries for agent-type runs" do
       api_key = create(:runner_api_key, user: user, api_service_type: "openrouter")
       opencode_runner = create_opencode_runner_entry(
@@ -1587,6 +1600,36 @@ RSpec.describe Activities::RunAgentActivity do
         # claude_code and codex (1 failure each) follow in their original order
         expect(runners[1]).to eq("claude_code")
         expect(runners[2]).to eq(codex_runner.routing_key)
+      end
+    end
+
+    context "with quota-aware runner ordering" do
+      # @spec RUNNER-QUOTA-003
+      it "promotes a fallback runner with more fresh quota headroom when the primary is near exhaustion" do
+        codex_runner = create(:runner, user: user, runner_key: "codex")
+        user.settings.update!(fallback_enabled: true, fallback_runners: [ codex_runner.routing_key ])
+
+        record_runner_quota!(runner_name: "claude", remaining: 100, checked_at: 5.minutes.ago)
+        record_runner_quota!(runner_name: "codex", remaining: 800, checked_at: 5.minutes.ago)
+
+        runners = activity.send(:build_runner_order, agent_run, user.settings)
+
+        expect(runners.first).to eq(codex_runner.routing_key)
+        expect(runners.second).to eq("claude_code")
+      end
+
+      # @spec RUNNER-QUOTA-004
+      it "ignores stale proactive quota data and preserves the reactive order" do
+        codex_runner = create(:runner, user: user, runner_key: "codex")
+        user.settings.update!(fallback_enabled: true, fallback_runners: [ codex_runner.routing_key ])
+
+        record_runner_quota!(runner_name: "claude", remaining: 100, checked_at: 2.hours.ago)
+        record_runner_quota!(runner_name: "codex", remaining: 800, checked_at: 5.minutes.ago)
+
+        runners = activity.send(:build_runner_order, agent_run, user.settings)
+
+        expect(runners.first).to eq("claude_code")
+        expect(runners.second).to eq(codex_runner.routing_key)
       end
     end
   end

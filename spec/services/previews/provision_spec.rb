@@ -2,11 +2,13 @@
 
 require "rails_helper"
 
+# @spec LIVE-PREVIEW-001
 RSpec.describe Previews::Provision do
   let(:project) do
     create(:project, screenshot_settings: {
       "enabled" => true,
-      "service_dependencies" => [ "postgres" ]
+      "service_dependencies" => [ "postgres" ],
+      "detection" => { "framework" => "Rails" }
     })
   end
   let(:agent_run) do
@@ -53,8 +55,6 @@ RSpec.describe Previews::Provision do
     allow(container_service).to receive(:execute).and_return(container_result)
     allow(service_provisioner).to receive(:provision)
     allow(Screenshots::ConfigParser).to receive_messages(from_repo_path: config, ui_detection_overrides: {})
-    allow(Screenshots::DetectFramework).to receive(:detect_framework_only).and_return(:rails)
-
     FileUtils.mkdir_p(File.join(repo_path, "bin"))
     File.write(File.join(repo_path, "bin/rails"), "#!/bin/sh\n")
   end
@@ -387,7 +387,9 @@ RSpec.describe Previews::Provision do
   end
 
   it "raises a config error when a Phoenix project has seed configuration" do
-    allow(Screenshots::DetectFramework).to receive(:detect_framework_only).and_return(:phoenix)
+    project.update!(screenshot_settings: project.screenshot_settings.merge(
+      "detection" => { "framework" => "Phoenix" }
+    ))
     seeded_config = seed_enabled_config
     allow(Screenshots::ConfigParser).to receive(:from_repo_path).and_return(seeded_config)
     write_repo_seed_config
@@ -398,7 +400,9 @@ RSpec.describe Previews::Provision do
   end
 
   it "starts Phoenix apps through mix phx.server with a preview bind override" do
-    allow(Screenshots::DetectFramework).to receive(:detect_framework_only).and_return(:phoenix)
+    project.update!(screenshot_settings: project.screenshot_settings.merge(
+      "detection" => { "framework" => "Phoenix" }
+    ))
 
     File.write(File.join(repo_path, "mix.exs"), "defmodule Demo.MixProject do\nend\n")
     FileUtils.mkdir_p(File.join(repo_path, "config"))
@@ -412,6 +416,22 @@ RSpec.describe Previews::Provision do
     )
     expect(File.read(File.join(repo_path, "config/dev.exs"))).to include(%(import_config "paid_preview.exs"))
     expect(File.read(File.join(repo_path, "config/paid_preview.exs"))).to include("Keyword.put(:ip, {0, 0, 0, 0})")
+  end
+
+  it "falls back to repo detection when shared project detection metadata is absent" do
+    project.update!(screenshot_settings: project.screenshot_settings.except("detection"))
+    allow(Screenshots::DetectFramework).to receive(:detect_framework_only).and_return(:phoenix)
+    File.write(File.join(repo_path, "mix.exs"), "defmodule Demo.MixProject do\nend\n")
+    FileUtils.mkdir_p(File.join(repo_path, "config"))
+    File.write(File.join(repo_path, "config/dev.exs"), "import Config\n")
+
+    service.call(start_tunnel: false, allow_seed: false)
+
+    expect(Screenshots::DetectFramework).to have_received(:detect_framework_only).with(repo_path:)
+    expect(container_service).to have_received(:execute).with(
+      a_string_including("mix phx.server"),
+      hash_including(timeout: 30, env: hash_including("CI" => "1"), stream: false)
+    )
   end
 
   def container_result

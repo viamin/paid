@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+# @spec POSTGRESQL-PERSISTENCE-004
 class AddTextSearchToKnowledge < ActiveRecord::Migration[8.1]
   disable_ddl_transaction!
 

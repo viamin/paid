@@ -3,7 +3,7 @@
 require "rails_helper"
 require "temporalio/client"
 
-RSpec.describe KnowledgeEvolutionJob do
+RSpec.describe KnowledgeEvolutionJob do # @spec TEMPORAL-ORCHESTRATION-001
   let(:job) { described_class.new }
   let(:temporal_client) { instance_double(Temporalio::Client) }
 

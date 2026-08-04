@@ -41,6 +41,7 @@ module GithubApp
   #
   # Webhook-driven lifecycle updates (suspend, repositories added/removed,
   # uninstall) are handled by `GithubApp::WebhooksController`, not here.
+  # @spec GITHUB-SYNC-004
   class InstallationsController < ApplicationController
     include AuditLogging
 

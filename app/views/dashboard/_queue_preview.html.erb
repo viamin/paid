@@ -1,10 +1,12 @@
+<% queue_fairness_mode = local_assigns[:queue_fairness_mode].presence || TenantSetting::DEFAULT_QUEUE_FAIRNESS_MODE %>
+<% fair_share_mode = queue_fairness_mode == "fair_share" %>
 <div id="queue-preview" class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
   <div class="flex items-center justify-between gap-4">
     <div>
       <h3 class="text-base font-semibold text-gray-900">Upcoming Queue</h3>
       <p class="mt-1 text-sm text-gray-500"
-         title="Runs are shown in approximate dispatch order from the next batch of queued work. The scheduler gives each sampled project a turn based on its in-flight run count, and priority labels only order runs within the same project.">
-        Balanced across sampled projects; priority ranks within each project.
+         title="<%= fair_share_mode ? "Runs are shown in approximate dispatch order from the next batch of queued work. The scheduler gives each sampled project a turn based on its in-flight run count, and priority labels only order runs within the same project." : "Runs are shown in scheduler dispatch order. Strict priority lets queue priority outrank cross-project fairness, so high-priority work can jump ahead across the account." %>">
+        <%= fair_share_mode ? "Balanced across sampled projects; priority ranks within each project." : "Strict priority across the account; high-priority work can outrank other projects." %>
       </p>
     </div>
   </div>

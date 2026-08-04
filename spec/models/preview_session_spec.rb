@@ -57,6 +57,18 @@ RSpec.describe PreviewSession do
     end
   end
 
+  describe "#framework_label" do
+    it "formats the stored framework key for preview metadata" do
+      session = build(:preview_session, framework: "phoenix")
+
+      expect(session.framework_label).to eq("Phoenix")
+    end
+
+    it "returns nil when no framework is stored" do
+      expect(build(:preview_session, framework: nil).framework_label).to be_nil
+    end
+  end
+
   describe ".find_accessible_by_token" do
     it "returns a live session by token" do
       session = create(:preview_session, :ready, token: "active-token")

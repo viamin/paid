@@ -6,15 +6,14 @@
 #
 # Schema: https://github.com/jszmajda/lid/blob/main/plugins/arrow-maintenance/skills/arrow-maintenance/references/index-schema.md
 #
-# Paid adopts LID going-forward (Full mode, brownfield). No segments are
-# mapped yet — the tree is intentionally empty. Add nodes here as arrow
-# segments are created under docs/intent/. See docs/intent/README.md.
+# Paid adopts LID going-forward (Full mode, brownfield). The map below covers
+# audited intent segments created under docs/intent/ while older brownfield
+# areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-08-01
+last_updated: 2026-08-04
 
-# Taxonomy groups segments by domain cluster. Purely organizational.
-# Empty until segments exist to cluster.
+# Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
   automation:
     label: Automation
@@ -25,9 +24,27 @@ taxonomy:
   catalog:
     label: Catalog
     description: Model and configuration catalog synchronization behavior.
+  configuration:
+    label: Configuration
+    description: Tenant, user, and project configuration posture management.
+  knowledge:
+    label: Knowledge
+    description: Intent and decision artifacts captured for reuse by agents.
+  integrations:
+    label: Integrations
+    description: External repository and service connectivity behavior.
+  operations:
+    label: Operations
+    description: Billing, administration, and operator-facing control surfaces.
+  runtime:
+    label: Runtime
+    description: Runner, preview, and language-runtime execution behavior.
   security:
     label: Security
     description: Repository and runtime security controls.
+  foundation:
+    label: Foundation
+    description: Core control-plane, orchestration, and persistence architecture.
 
 # The design tree of nodes. Leaf nodes are arrow segments (own EARS + an arrow
 # doc); intermediate nodes (sub-HLDs) group children.
@@ -78,6 +95,132 @@ arrows:
     taxonomy: catalog
     status: OK
     audited: 2026-08-03
+  rails-control-plane:
+    title: Rails Control Plane
+    path: docs/intent/rails-control-plane/rails-control-plane-design.md
+    specs: docs/intent/rails-control-plane/rails-control-plane-specs.md
+    parent: PAID
+    taxonomy: foundation
+    status: OK
+    audited: 2026-08-04
+  temporal-orchestration:
+    title: Temporal Orchestration
+    path: docs/intent/temporal-orchestration/temporal-orchestration-design.md
+    specs: docs/intent/temporal-orchestration/temporal-orchestration-specs.md
+    parent: PAID
+    taxonomy: foundation
+    status: OK
+    audited: 2026-08-04
+  postgresql-persistence:
+    title: PostgreSQL Persistence
+    path: docs/intent/postgresql-persistence/postgresql-persistence-design.md
+    specs: docs/intent/postgresql-persistence/postgresql-persistence-specs.md
+    parent: PAID
+    taxonomy: foundation
+  runner-quota-tracking:
+    title: Runner Quota Tracking
+    path: docs/intent/runner-quota-tracking/runner-quota-tracking-design.md
+    specs: docs/intent/runner-quota-tracking/runner-quota-tracking-specs.md
+    parent: PAID
+    taxonomy: runtime
+    status: OK
+    audited: 2026-08-04
+  account-queue-fairness:
+    title: Account Queue Fairness
+    path: docs/intent/account-queue-fairness/account-queue-fairness-design.md
+    specs: docs/intent/account-queue-fairness/account-queue-fairness-specs.md
+    parent: PAID
+    taxonomy: automation
+    status: OK
+    audited: 2026-08-04
+  lid-aware-agent-runs:
+    title: LID-Aware Agent Runs
+    path: docs/intent/lid-aware-agent-runs/lid-aware-agent-runs-design.md
+    specs: docs/intent/lid-aware-agent-runs/lid-aware-agent-runs-specs.md
+    parent: PAID
+    taxonomy: automation
+    status: OK
+    audited: 2026-08-04
+  change-intent-records:
+    title: Change Intent Records
+    path: docs/intent/change-intent-records/change-intent-records-design.md
+    specs: docs/intent/change-intent-records/change-intent-records-specs.md
+    parent: PAID
+    taxonomy: knowledge
+    status: OK
+    audited: 2026-08-04
+  knowledge-base:
+    title: Knowledge Base
+    path: docs/intent/knowledge-base/knowledge-base-design.md
+    specs: docs/intent/knowledge-base/knowledge-base-specs.md
+    parent: PAID
+    taxonomy: knowledge
+    status: OK
+    audited: 2026-08-04
+  configuration-profiles-chat:
+    title: Configuration Profiles Chat
+    path: docs/intent/configuration-profiles-chat/configuration-profiles-chat-design.md
+    specs: docs/intent/configuration-profiles-chat/configuration-profiles-chat-specs.md
+    parent: PAID
+    taxonomy: configuration
+    status: OK
+    audited: 2026-08-04
+  polyglot-test-execution:
+    title: Polyglot Test Execution
+    path: docs/intent/polyglot-test-execution/polyglot-test-execution-design.md
+    specs: docs/intent/polyglot-test-execution/polyglot-test-execution-specs.md
+    parent: PAID
+    taxonomy: runtime
+    status: OK
+    audited: 2026-08-04
+  containerized-multi-repo-chat:
+    title: Containerized Multi-Repo Chat
+    path: docs/intent/containerized-multi-repo-chat/containerized-multi-repo-chat-design.md
+    specs: docs/intent/containerized-multi-repo-chat/containerized-multi-repo-chat-specs.md
+    parent: PAID
+    taxonomy: chat
+    status: OK
+    audited: 2026-08-04
+  live-web-app-preview:
+    title: Live Web App Preview
+    path: docs/intent/live-web-app-preview/live-web-app-preview-design.md
+    specs: docs/intent/live-web-app-preview/live-web-app-preview-specs.md
+    parent: PAID
+    taxonomy: runtime
+    status: OK
+    audited: 2026-08-04
+  github-sync-and-auth:
+    title: GitHub Sync and Auth
+    path: docs/intent/github-sync-and-auth/github-sync-and-auth-design.md
+    specs: docs/intent/github-sync-and-auth/github-sync-and-auth-specs.md
+    parent: PAID
+    taxonomy: integrations
+    status: OK
+    audited: 2026-08-04
+  auto-merge-strategy:
+    title: Auto-Merge Strategy
+    path: docs/intent/auto-merge-strategy/auto-merge-strategy-design.md
+    specs: docs/intent/auto-merge-strategy/auto-merge-strategy-specs.md
+    parent: PAID
+    taxonomy: automation
+    status: OK
+    audited: 2026-08-04
+  billing-aggregation:
+    title: Billing Aggregation
+    path: docs/intent/billing-aggregation/billing-aggregation-design.md
+    specs: docs/intent/billing-aggregation/billing-aggregation-specs.md
+    parent: PAID
+    taxonomy: operations
+    status: OK
+    audited: 2026-08-04
+  account-administration:
+    title: Account Administration
+    path: docs/intent/account-administration/account-administration-design.md
+    specs: docs/intent/account-administration/account-administration-specs.md
+    parent: PAID
+    taxonomy: operations
+    status: OK
+    audited: 2026-08-04
 
 # Items found during mapping that don't yet belong to a segment.
 # arrow-maintenance cleans this up on each audit.

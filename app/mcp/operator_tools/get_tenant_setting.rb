@@ -10,7 +10,7 @@ module OperatorTools
     def self.resource_label = "tenant setting"
     def self.attributes = %i[
       id account_id max_concurrent_runs max_projects max_users max_tokens_per_run max_monthly_cost_cents
-      self_repo_full_name allowed_runner_keys runner_preferences default_budgets guardrails
+      self_repo_full_name queue_fairness_mode allowed_runner_keys runner_preferences default_budgets guardrails
       quality_thresholds agent_settings worker_settings features created_at updated_at
     ]
   end

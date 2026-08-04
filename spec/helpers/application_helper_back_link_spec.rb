@@ -74,4 +74,20 @@ RSpec.describe ApplicationHelper do
       end
     end
   end
+
+  describe "#safe_return_path_or" do
+    let(:fallback) { "/integrations" }
+
+    it "returns the path when it is a safe internal path" do
+      expect(helper.safe_return_path_or("/agent_runs?status=running", fallback)).to eq("/agent_runs?status=running")
+    end
+
+    it "falls back for external URLs" do
+      expect(helper.safe_return_path_or("https://evil.com/steal", fallback)).to eq(fallback)
+    end
+
+    it "falls back for protocol-relative URLs" do
+      expect(helper.safe_return_path_or("//evil.com/steal", fallback)).to eq(fallback)
+    end
+  end
 end

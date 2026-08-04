@@ -2,6 +2,8 @@
 
 require "rails_helper"
 
+# @spec KNOWLEDGE-003
+# @spec KNOWLEDGE-005
 RSpec.describe Knowledge::Search do
   include_context "without qdrant vector search"
 

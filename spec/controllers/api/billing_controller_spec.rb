@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec BILLING-AGG-001
 RSpec.describe Api::BillingController, type: :request do
   let(:account) { create(:account) }
   let(:user) { create(:user, :admin, account: account) }

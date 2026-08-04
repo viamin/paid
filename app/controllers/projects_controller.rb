@@ -250,6 +250,7 @@ class ProjectsController < ApplicationController
   end
 
   def start_lid
+    # @spec LID-RUNS-002
     authorize @project, :run_agent?
 
     if @project.lid_mode.present?

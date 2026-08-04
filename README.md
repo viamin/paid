@@ -27,9 +27,12 @@ Paid stores every decision point as data—prompts, model preferences, workflow 
 - **MCP Server Support**: Configure MCP (Model Context Protocol) servers per project so agents can use external tools during execution. Both npx-based and docker-image sidecar servers are supported. Paid also exposes its own operations as MCP tools for the chat interface.
 - **Interactive Chat**: Conversational interface with real-time streaming (SSE), project context injection, cost tracking, and container workspace sessions
 - **Screenshot Visual Regression**: Automatically capture and display rendered screenshots in PR comments when UI changes are detected
+- **Live Preview and Playwright Verification Foundations**: Phoenix-aware screenshot capture, Playwright traces, preview-session/tunnel/proxy infrastructure, and verification browser-sidecar provisioning are in the repo
+  - Gap: the end-to-end live preview lifecycle and agent self-verification flows are still being reconciled after the July 2026 epic was closed; tracked by [#3166](https://github.com/viamin/paid/issues/3166) and follow-up issues [#3192](https://github.com/viamin/paid/issues/3192)-[#3197](https://github.com/viamin/paid/issues/3197).
 - **Self-Healing Exception Handling**: Centralized exception pipeline that fingerprints, classifies, deduplicates, and auto-files GitHub issues for P1/P2 errors
 - **Notification Subscriptions**: Subscribe to individual issue and PR merge events with real-time Turbo Stream delivery
 - **Provider and Integration Management**: Test provider auth from the UI and manage GitHub, Linear, provider API keys, and generic integration credentials (GitLab, Jira, Azure DevOps, signing) for account admins
+- **Proactive Runner Quota Tracking**: Refresh fresh per-runner quota snapshots, show remaining headroom and reset timing on `/runners`, and prefer healthier fallback runners before reactive rate-limit failures occur
 - **Service Containers**: Attach approved supporting services like Postgres, Redis, or Selenium to project runs when agents need dependencies beyond the app code. Service containers are attached to the same Docker network selected for the agent run across proxy-mode, subscription-auth, and direct-outbound provider runs. Shared-database isolation fallout is tracked separately by [#1280](https://github.com/viamin/paid/issues/1280).
 
 ## How It Works

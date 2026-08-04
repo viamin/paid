@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec LEARNED-ORCH-001
 RSpec.describe Strategies::Select do
   describe ".call" do
     let(:account) { create(:account) }

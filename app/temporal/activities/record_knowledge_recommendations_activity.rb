@@ -12,6 +12,7 @@ module Activities
   # attempt already created instead of duplicating them, and stale-dismissal
   # is a pure function of the flagged recommendation set.
   class RecordKnowledgeRecommendationsActivity < BaseActivity
+    # @spec KNOWLEDGE-008
     activity_name "RecordKnowledgeRecommendations"
 
     def execute(input)

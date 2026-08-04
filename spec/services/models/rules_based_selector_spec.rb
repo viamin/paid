@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec MODEL-SELECTION-003
 RSpec.describe Models::RulesBasedSelector do
   describe ".call" do
     let(:agent_run) { create(:agent_run) }

@@ -4,6 +4,9 @@ require "rails_helper"
 
 RSpec::Matchers.define_negated_matcher :not_change, :change
 
+# @spec BILLING-AGG-003
+# @spec ACCOUNT-ADMIN-003
+# @spec ACCOUNT-ADMIN-004
 RSpec.describe "Accounts" do
   include_context "with auto capacity payload"
 
