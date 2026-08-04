@@ -4,21 +4,45 @@
 
 ## Metadata
 
-- **Date**: 2026-07-30
-- **Status**: Draft
+- **Date**: 2026-08-04
+- **Status**: Partially Implemented
 - **Type**: Architecture + Process
 - **Priority**: P1
-- **Related Issues**: TBD (implementation chain to be filed per phase below)
-- **Related Tests**: LID detection specs, LID-aware prompt injection specs, `lid_planning` goal specs, intent-confirmation (PR review) specs
+- **Related Issues**: #3161 (reconciliation), #3198 (`lid_planning` output contract), #3199 (Planning PR review corrections), #3200 (elicited-intent materialization), #3201 (external-agent exposure)
+- **Related Tests**: `spec/services/projects/detect_lid_mode_spec.rb`, `spec/services/lid/inject_into_prompt_spec.rb`, `spec/services/prompts/build_for_issue_spec.rb`, `spec/services/prompts/build_for_lid_planning_spec.rb`, `spec/temporal/activities/create_pull_request_activity_spec.rb`, `spec/services/lid/coherence_check_spec.rb`
 
 ## Implementation Status
 
-Draft. Two architectural directions are settled (see Decision Rationale): implementation
-runs use **prompt-side enforcement with the PR as the human gate**, and LID bootstrap /
-brownfield conversion open a **docs-only Planning PR whose `[inferred]` markers are
-confirmed or corrected through the PR review (request-changes) flow** — one surface, no
-separate Q&A channel. No model, prompt slug, or migration exists yet. Phases below trace the
-build order.
+Partially implemented as of **August 4, 2026**. The original draft text is stale: the
+project data model, repository detection, override/redetect UI, LID-aware prompt injection,
+seeded prompt fragment, vendored checker, LID-aware enhancement question style, elicited
+intent prompt section, `lid_planning` goal, planning prompt builder, Planning-PR title/body
+path, docs-only changed-file guard, and PR-description LID phase reporting are all shipped.
+
+Phase-by-phase reconciliation:
+
+- **Phase 0 (detection + data model)**: shipped. `projects.lid_mode`,
+  `projects.lid_detection`, and `projects.lid_mode_overridden` exist; detection runs from
+  the project-conventions collector and project settings support override plus re-detect.
+- **Phase 1 (LID-aware implementation runs)**: shipped. `Lid::InjectIntoPrompt` is wired
+  into `Prompts::BuildForIssue` and `Prompts::BuildForPr`, the
+  `coding.lid_aware_section` prompt exists, the agent image vendors `docs/lid/` and
+  `bin/coherence-check.mjs`, and PR descriptions append LID phase/coherence reporting.
+- **Phase 2 (LID-aware issue enhancement)**: partially shipped. Enhancement already asks
+  plain-language intent questions for all projects, and LID projects surface answered
+  clarifying questions as `# Elicited Intent` in `create_pr` prompts. The stronger
+  materialization promise remains open in #3200.
+- **Phase 3 (`lid_planning` goal)**: foundation shipped. The goal exists end-to-end with
+  prompt building, UI/API trigger surfaces, stored `plan_doc_source`, Planning-PR body
+  handling, and docs-only diff validation. The remaining output-contract and
+  plan-doc-weighting work is tracked in #3198.
+- **Phase 4 (Planning PR confirmation via review)**: partially shipped. Planning PRs can
+  carry the expected checklist, but the dedicated `review`-goal correction loop for
+  `[inferred]` review feedback remains open in #3199.
+- **Phase 5 (conversion polish, coherence gating, incremental tagging)**: partially
+  shipped. Coherence checking and PR reporting exist for `create_pr`, `review`, and
+  `lid_planning` runs. Incremental `@spec` maturation remains the intended posture, and the
+  remaining external-agent exposure work is tracked in #3201.
 
 ## Problem Statement
 
@@ -697,16 +721,16 @@ checker, carried in the agent image. The `lid_planning` prompt encodes the proce
 
 **Prerequisites:**
 
-- [ ] Repo import/sync path identified (where the instruction file is already read)
+- [x] Repo import/sync path identified (where the instruction file is already read)
 
-**Step 1**: `rails generate migration AddLidModeToProjects` — add `lid_mode` (string) and
+**Step 1**: [x] `rails generate migration AddLidModeToProjects` — add `lid_mode` (string) and
 `lid_detection` (jsonb) to `projects` with comments.
 
-**Step 2**: `Projects::DetectLidMode` service — parse the `## LID` block from the repo's
+**Step 2**: [x] `Projects::DetectLidMode` service — parse the `## LID` block from the repo's
 `AGENTS.md`/`CLAUDE.md` and check for `docs/intent/`, `docs/high-level-design.md`,
 `docs/arrows/index.yaml`. Wire into import and sync.
 
-**Step 3**: Project-settings UI to view/override `lid_mode` and trigger re-detection.
+**Step 3**: [x] Project-settings UI to view/override `lid_mode` and trigger re-detection.
 
 **Files to create/modify:**
 
@@ -719,17 +743,17 @@ checker, carried in the agent image. The `lid_planning` prompt encodes the proce
 
 **Prerequisites:**
 
-- [ ] Phase 0 complete
-- [ ] Agent image vendors `docs/lid/` + `bin/coherence-check.mjs`
+- [x] Phase 0 complete
+- [x] Agent image vendors `docs/lid/` + `bin/coherence-check.mjs`
 
-**Step 1**: `Lid::InjectIntoPrompt` — appends the LID-aware section when
+**Step 1**: [x] `Lid::InjectIntoPrompt` — appends the LID-aware section when
 `project.lid_mode` is present. Compose into `Prompts::BuildForIssue` and
 `Prompts::BuildForPr` alongside the existing `*::InjectIntoPrompt` calls.
 
-**Step 2**: Seed the LID-aware prompt section as a DB prompt fragment (RDR-009 pipeline)
+**Step 2**: [x] Seed the LID-aware prompt section as a DB prompt fragment (RDR-009 pipeline)
 with a fallback constant.
 
-**Step 3**: Agent-image change (`docker/agent/Dockerfile`) to vendor the method reference +
+**Step 3**: [x] Agent-image change (`docker/agent/Dockerfile`) to vendor the method reference +
 checker.
 
 **Files to create/modify:**
@@ -743,16 +767,17 @@ checker.
 
 **Prerequisites:**
 
-- [ ] Phase 0 complete (enhancement's materialization branch keys off `lid_mode`)
+- [x] Phase 0 complete (enhancement's materialization branch keys off `lid_mode`)
 
-**Step 1**: Update the enhancement prompt (`EnhanceIssueActivity#prompt_for`, seeded as a DB
+**Step 1**: [x] Update the enhancement prompt (`EnhanceIssueActivity#prompt_for`, seeded as a DB
 prompt) to ask intent-focused questions in plain language for *all* projects — problem,
 desired behavior (when/then), constraints, rejected alternatives, scope, done-ness.
 
-**Step 2**: For LID-configured projects, pass the captured clarifying-question answers
+**Step 2**: [ ] For LID-configured projects, pass the captured clarifying-question answers
 forward as **elicited intent** so the `create_pr` run (Phase 1) materializes them into the
 segment's LLD/EARS. (The answers already persist in the issue via the existing
-clarifying-questions flow; the create_pr prompt consumes them.)
+clarifying-questions flow; the create_pr prompt already consumes them, and the remaining
+artifact-materialization work is tracked in #3200.)
 
 **Files to create/modify:**
 
@@ -764,17 +789,18 @@ clarifying-questions flow; the create_pr prompt consumes them.)
 
 **Prerequisites:**
 
-- [ ] Phase 0 complete
+- [x] Phase 0 complete
 
-**Step 1**: Add `"lid_planning"` to `AgentRun::GOALS`; add the predicate and the
+**Step 1**: [x] Add `"lid_planning"` to `AgentRun::GOALS`; add the predicate and the
 `prompt_for_goal` branch.
 
-**Step 2**: `Prompts::BuildForLidPlanning` — encodes the brownfield procedure (read repo +
+**Step 2**: [x] `Prompts::BuildForLidPlanning` — encodes the brownfield procedure (read repo +
 named plan docs; produce docs-only HLD/LLD/EARS with `[inferred]`/authored markers; add the
 `## LID` block on adoption; create `docs/arrows/index.yaml`); instructs a docs-only PR.
 
-**Step 3**: Trigger surface — "Start using LID" project action (adoption) and a
-plan-doc-source input (conversion). Both queue a `lid_planning` run.
+**Step 3**: [x] Trigger surface — "Start using LID" project action (adoption) and a
+plan-doc-source input (conversion). Both queue a `lid_planning` run. Output-contract
+hardening remains open in #3198.
 
 **Files to create/modify:**
 
@@ -787,15 +813,19 @@ plan-doc-source input (conversion). Both queue a `lid_planning` run.
 
 **Prerequisites:**
 
-- [ ] Phase 3 complete
-- [ ] `review`-goal runs can act on a Planning PR (exists; verify docs-only diff handling)
+- [x] Phase 3 foundation complete
+- [x] `review`-goal runs can act on a Planning PR (docs-only diff handling exists; the
+  dedicated correction loop remains open)
 
-**Step 1**: On Planning-PR creation, build the "Confirm these inferred decisions" checklist
+**Step 1**: [ ] On Planning-PR creation, build the "Confirm these inferred decisions" checklist
 into the PR description from the load-bearing `[inferred]` markers and edge-audit gaps.
+The current Planning-PR path appends a checklist by extracting it heuristically from the
+agent summary; a dedicated checklist builder still belongs here.
 
-**Step 2**: Wire the existing `review`-goal run to revise Planning PRs: when a reviewer
+**Step 2**: [ ] Wire the existing `review`-goal run to revise Planning PRs: when a reviewer
 requests changes with an inline comment on a `[inferred]` line, the run applies the
 correction to the LLD/EARS and replaces the marker with the user's authored rationale.
+Tracked in #3199.
 
 **Files to create/modify:**
 
@@ -809,13 +839,14 @@ correction to the LLD/EARS and replaces the marker with the user's authored rati
 
 - [ ] Phases 3 and 4 complete
 
-**Step 1**: Conversion-specific prompt weighting (favor named plan docs; map
+**Step 1**: [ ] Conversion-specific prompt weighting (favor named plan docs; map
 problem/alternatives/validation → HLD/LLD/EARS as in the table above).
+Tracked with the `lid_planning` output-contract work in #3198.
 
-**Step 2**: Run `bin/coherence-check.mjs` as a structural soft-block at the end of every
+**Step 2**: [x] Run `bin/coherence-check.mjs` as a structural soft-block at the end of every
 `lid_planning` and LID-aware run; surface failures in the PR description.
 
-**Step 3 (incremental, no separate phase)**: `@spec` tagging matures as Phase 1
+**Step 3 (incremental, no separate phase)**: [ ] `@spec` tagging matures as Phase 1
 implementation runs touch each area (no retroactive tagging pass by default). The coherence
 checker surfaces unlinked code/tests as drift signals so progress is visible. A dedicated
 tagging pass remains a possible future enhancement, not built here.
