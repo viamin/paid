@@ -18,6 +18,17 @@ RSpec.describe InstallContractScripts, :no_db do
     Open3.capture3("bundle", "exec", "ruby", script_path, provider, chdir: Rails.root.to_s)
   end
 
+  def supported_version(stdout)
+    version = stdout[/^SUPPORTED_VERSION=(.+)$/, 1]
+    raise "SUPPORTED_VERSION missing from script output: #{stdout}" unless version
+
+    Gem::Version.new(version)
+  end
+
+  def opencode_minimum_safe_version
+    Gem::Version.new("1.18.0")
+  end
+
   it "keeps codex installs scriptless by default" do
     stdout, stderr, status = run_script("scripts/extract-provider-install-contract.rb", "codex")
 
@@ -34,6 +45,7 @@ RSpec.describe InstallContractScripts, :no_db do
     expect(stdout).to include("SOURCE=npm")
     expect(stdout).to include("INSTALL_COMMAND=npm install -g --ignore-scripts opencode-ai@")
     expect(stdout).to include("node $(npm root -g)/opencode-ai/postinstall.mjs")
+    expect(supported_version(stdout)).to be >= opencode_minimum_safe_version
   end
 
   it "emits the opencode install command for the agent image build path" do
@@ -42,6 +54,7 @@ RSpec.describe InstallContractScripts, :no_db do
     expect(status.success?).to be(true), -> { stderr }
     expect(stdout).to include("INSTALL_COMMAND=npm install -g --ignore-scripts opencode-ai@")
     expect(stdout).to include("node $(npm root -g)/opencode-ai/postinstall.mjs")
+    expect(supported_version(stdout)).to be >= opencode_minimum_safe_version
   end
 
   it "falls back to runtime installation metadata for omp" do
