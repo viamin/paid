@@ -13,31 +13,33 @@ module Accounts
     end
 
     def call
-      current_owner = account.account_memberships.find_by!(user: actor)
-      new_owner = new_owner_membership.user
+      TenantContext.with_system_access do
+        current_owner = account.account_memberships.find_by!(user: actor)
+        new_owner = new_owner_membership.user
 
-      raise AdministrationError, "Only an owner can transfer ownership." unless current_owner.owner?
-      raise AdministrationError, "Membership does not belong to this account." unless new_owner_membership.account_id == account.id
-      raise AdministrationError, "Select a different member." if new_owner_membership.user_id == actor.id
+        raise AdministrationError, "Only an owner can transfer ownership." unless current_owner.owner?
+        raise AdministrationError, "Membership does not belong to this account." unless new_owner_membership.account_id == account.id
+        raise AdministrationError, "Select a different member." if new_owner_membership.user_id == actor.id
 
-      ActiveRecord::Base.transaction do
-        account.account_memberships.where(role: :owner).find_each do |membership|
-          membership.update!(role: :admin)
+        ActiveRecord::Base.transaction do
+          account.account_memberships.where(role: :owner).find_each do |membership|
+            membership.update!(role: :admin)
+          end
+
+          new_owner_membership.update!(role: :owner)
+          new_owner.update!(account: account) if new_owner.account_id != account.id
+
+          Accounts::RecordActivity.call(
+            account: account,
+            actor: actor,
+            action: "ownership.transferred",
+            subject: new_owner_membership,
+            metadata: {
+              from_email: actor.email,
+              to_email: new_owner_membership.user.email
+            }
+          )
         end
-
-        new_owner_membership.update!(role: :owner)
-        new_owner.update!(account: account) if new_owner.account_id != account.id
-
-        Accounts::RecordActivity.call(
-          account: account,
-          actor: actor,
-          action: "ownership.transferred",
-          subject: new_owner_membership,
-          metadata: {
-            from_email: actor.email,
-            to_email: new_owner_membership.user.email
-          }
-        )
       end
     end
 

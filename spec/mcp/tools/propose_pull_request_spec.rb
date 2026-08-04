@@ -442,6 +442,8 @@ RSpec.describe Tools::ProposePullRequest do
       before do
         create(:project_membership, :member, user:, project: project_two)
         run_cmd!("git", "-C", repo_two.fetch(:host_path), "switch", "-c", "feature/upstream")
+        run_cmd!("git", "-C", repo_two.fetch(:host_path), "config", "user.name", "RSpec")
+        run_cmd!("git", "-C", repo_two.fetch(:host_path), "config", "user.email", "rspec@example.test")
         File.write(File.join(repo_two.fetch(:host_path), "README.md"), "# Upstream change\n")
         run_cmd!("git", "-C", repo_two.fetch(:host_path), "add", "README.md")
         run_cmd!("git", "-C", repo_two.fetch(:host_path), "commit", "-m", "Upstream change")

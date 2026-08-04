@@ -6,7 +6,7 @@ class AccountOwnershipTransfersController < ApplicationController
   def create
     authorize current_account, :destroy?
 
-    membership = current_account.account_memberships.includes(:user).find(params[:membership_id])
+    membership = current_account.account_memberships.find(params[:membership_id])
 
     Accounts::TransferOwnership.call(
       account: current_account,
