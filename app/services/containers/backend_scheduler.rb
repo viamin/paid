@@ -85,6 +85,7 @@ module Containers
     end
 
     def compatible_candidates_for(requested_host, fallback_policy:, selection_source:, compatibility_failures:, health_failures:)
+      # @spec CONTAINER-RUNTIME-002
       candidates = [ requested_host.to_s ]
       if [
         HostRegistry::FALLBACK_FIRST_HEALTHY,
