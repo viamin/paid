@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module ApplicationCable
-  class Connection < ActionCable::Connection::Base
+  class Connection < ActionCable::Connection::Base # @spec RAILS-CONTROL-PLANE-002
     identified_by :current_user
 
     # Cookie read by the connection to authorize the websocket. ActionCable

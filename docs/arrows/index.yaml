@@ -42,6 +42,9 @@ taxonomy:
   security:
     label: Security
     description: Repository and runtime security controls.
+  foundation:
+    label: Foundation
+    description: Core control-plane, orchestration, and persistence architecture.
 
 # The design tree of nodes. Leaf nodes are arrow segments (own EARS + an arrow
 # doc); intermediate nodes (sub-HLDs) group children.
@@ -86,6 +89,28 @@ arrows:
     taxonomy: catalog
     status: OK
     audited: 2026-08-03
+  rails-control-plane:
+    title: Rails Control Plane
+    path: docs/intent/rails-control-plane/rails-control-plane-design.md
+    specs: docs/intent/rails-control-plane/rails-control-plane-specs.md
+    parent: PAID
+    taxonomy: foundation
+    status: OK
+    audited: 2026-08-04
+  temporal-orchestration:
+    title: Temporal Orchestration
+    path: docs/intent/temporal-orchestration/temporal-orchestration-design.md
+    specs: docs/intent/temporal-orchestration/temporal-orchestration-specs.md
+    parent: PAID
+    taxonomy: foundation
+    status: OK
+    audited: 2026-08-04
+  postgresql-persistence:
+    title: PostgreSQL Persistence
+    path: docs/intent/postgresql-persistence/postgresql-persistence-design.md
+    specs: docs/intent/postgresql-persistence/postgresql-persistence-specs.md
+    parent: PAID
+    taxonomy: foundation
   runner-quota-tracking:
     title: Runner Quota Tracking
     path: docs/intent/runner-quota-tracking/runner-quota-tracking-design.md

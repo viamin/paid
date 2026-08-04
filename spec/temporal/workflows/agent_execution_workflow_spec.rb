@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe Workflows::AgentExecutionWorkflow do
+RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATION-003
   let(:workflow) { described_class.new }
 
   describe "class" do

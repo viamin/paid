@@ -7,7 +7,7 @@ require "rails_helper"
 # uses `stub_connection current_user: ...`, so a regression in connection auth
 # (e.g. relying on request.env["warden"], which ActionCable websocket requests
 # do not carry) would not surface there.
-RSpec.describe ApplicationCable::Connection, type: :channel do
+RSpec.describe ApplicationCable::Connection, type: :channel do # @spec RAILS-CONTROL-PLANE-002
   let(:user) { create(:user) }
 
   it "authorizes the connection when the cable auth cookie is present and valid" do

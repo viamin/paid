@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module Paid
-  module TemporalWorkerConfig
+  module TemporalWorkerConfig # @spec TEMPORAL-ORCHESTRATION-002
     VALID_MODES = %w[poll agent both].freeze
 
     module_function

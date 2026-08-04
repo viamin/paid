@@ -17,7 +17,7 @@ RSpec.describe ApplicationController, type: :controller do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
 
-  it "clears tenant context when an exception escapes the request" do
+  it "clears tenant context when an exception escapes the request" do # @spec RAILS-CONTROL-PLANE-001
     expect { get :index }.to raise_error(RuntimeError, "request failed")
 
     expect(Current.account).to be_nil

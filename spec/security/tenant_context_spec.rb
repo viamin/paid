@@ -21,7 +21,7 @@ require Rails.root.join("db/migrate/20260509083302_ensure_strategy_version_id_on
 require Rails.root.join("db/migrate/20260511040425_fix_strategies_rls_infinite_recursion")
 require Rails.root.join("db/migrate/20260730190357_make_projects_github_token_optional_in_rls")
 
-RSpec.describe TenantContext, :tenant_isolation do
+RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENCE-001
   around do |example|
     setup_complete = false
 
@@ -111,7 +111,7 @@ RSpec.describe TenantContext, :tenant_isolation do
     end
   end
 
-  it "does not return tenant rows without tenant context" do
+  it "does not return tenant rows without tenant context" do # @spec POSTGRESQL-PERSISTENCE-001
     described_class.with_system_access { create(:project, account: account_a) }
 
     as_restricted_role do

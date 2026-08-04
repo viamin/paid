@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+# @spec POSTGRESQL-PERSISTENCE-003
 class GithubToken < ApplicationRecord
   has_logidze
   # GitHub token format patterns

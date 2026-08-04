@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe GoodJob, :no_db do
+RSpec.describe GoodJob, :no_db do # @spec RAILS-CONTROL-PLANE-003
   around do |example|
     original_env = ENV.to_h.slice(
       "GOOD_JOB_EXECUTION_MODE",
@@ -125,7 +125,7 @@ RSpec.describe GoodJob, :no_db do
       }
     end
 
-    it "defines expected cron jobs" do
+    it "defines expected cron jobs" do # @spec TEMPORAL-ORCHESTRATION-003
       expected_jobs = %i[
         worktree_cleanup poll_workflow_health_check stale_run_detector
         docker_orphan_cleanup recover_missing_pull_request_labels models_sync
