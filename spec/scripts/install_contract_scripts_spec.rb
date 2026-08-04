@@ -44,26 +44,16 @@ RSpec.describe InstallContractScripts, :no_db do
     expect(stdout).to include("node $(npm root -g)/opencode-ai/postinstall.mjs")
   end
 
-  it "overrides the opencode version past agent-harness's 1.3.2 pin until the upstream bump ships" do
+  it "ships an opencode-ai version that recognizes the zai_coding / glm model family" do
+    # agent-harness 0.31.0 pinned opencode-ai to 1.3.2, which predates z.ai/glm
+    # support and caused ProviderModelNotFoundError for zai_coding/glm-5.x (#3045).
+    # The upstream contract now ships >= 1.18, which recognizes those models.
     stdout, stderr, status = run_script("scripts/extract-runner-install-contract.rb", "opencode")
 
     expect(status.success?).to be(true), -> { stderr }
-    # agent-harness 0.31.0 pins opencode to 1.3.2, which lacks z.ai/glm support.
-    # install_contract_helpers forces a newer pin (>= 1.18) pending the upstream
-    # bump. When the override is removed this test should be deleted with it.
-    expect(stdout).to include("opencode-ai@1.1")
-    expect(stdout).not_to include("opencode-ai@1.3.2")
-  end
-
-  it "lets OPENCODE_VERSION_OVERRIDE opt out of the opencode version pin" do
-    stdout, stderr, status = Open3.capture3(
-      { "OPENCODE_VERSION_OVERRIDE" => "" },
-      "bundle", "exec", "ruby", "scripts/extract-runner-install-contract.rb", "opencode",
-      chdir: Rails.root.to_s
-    )
-
-    expect(status.success?).to be(true), -> { stderr }
-    expect(stdout).to include("opencode-ai@1.3.2")
+    version = stdout.lines.find { |line| line.start_with?("SUPPORTED_VERSION=") }
+                       &.split("=")&.last&.strip
+    expect(Gem::Version.new(version)).to be >= Gem::Version.new("1.18")
   end
 
   it "falls back to runtime installation metadata for omp" do
@@ -80,39 +70,5 @@ RSpec.describe InstallContractScripts, :no_db do
   it "verifies npm install commands stay scriptless before eval" do
     expect(install_wrapper_source).to include('case "$INSTALL_COMMAND" in')
     expect(install_wrapper_source).to include("must include --ignore-scripts")
-  end
-
-  describe "opencode version override" do
-    def override_command(contract_version, install_version = contract_version)
-      InstallContractHelpers.apply_opencode_version_override(
-        { package_name: "opencode-ai", version: contract_version },
-        %W[npm install -g --ignore-scripts opencode-ai@#{install_version}]
-      ).join(" ")
-    end
-
-    it "upgrades an older contract version up to the fallback" do
-      expect(override_command("1.3.2")).to include("opencode-ai@1.18.10")
-    end
-
-    it "does not downgrade once the upstream contract reaches the fallback" do
-      # Guards against the temporary override silently pinning opencode to a
-      # stale floor after agent-harness#316 ships a newer pin.
-      expect(override_command("2.0.0")).to include("opencode-ai@2.0.0")
-      expect(override_command("2.0.0")).not_to include("opencode-ai@1.18.10")
-    end
-
-    it "treats an unparseable contract version as below the floor" do
-      # The contract *metadata* version is unparseable, but the install command
-      # still carries a normal numeric version the regex can rewrite.
-      expect(override_command("not-a-version", "1.3.2")).to include("opencode-ai@1.18.10")
-    end
-
-    it "leaves non-opencode packages untouched" do
-      out = InstallContractHelpers.apply_opencode_version_override(
-        { package_name: "@oh-my-pi/pi-coding-agent", version: "1.0.0" },
-        %w[npm install @oh-my-pi/pi-coding-agent@1.0.0]
-      )
-      expect(out.join(" ")).to include("@oh-my-pi/pi-coding-agent@1.0.0")
-    end
   end
 end

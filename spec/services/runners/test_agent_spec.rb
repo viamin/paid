@@ -77,6 +77,8 @@ RSpec.describe Runners::TestAgent do
       "model" => "anthropic/claude-sonnet-4-20250514",
       "permission" => {
         "external_directory" => {
+          "/home/agent/**" => "allow",
+          "/tmp/**" => "allow",
           "/usr/local/lib/ruby/gems/*/gems/agent-harness-*/**" => "allow"
         }
       }

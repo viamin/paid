@@ -13,17 +13,19 @@ RSpec.describe InstallContractHelpers, :no_db do
       expect(command).to eq([ "npm", "install", "-g", "codex@latest", "--ignore-scripts" ])
     end
 
-    it "keeps the opencode fallback scriptless before the trusted postinstall step" do
+    it "appends the trusted postinstall step when the contract requires it" do
       contract = {
         install_command: [ "npm", "install", "-g", "opencode-ai@latest" ],
-        package: "opencode-ai"
+        package: "opencode-ai",
+        requires_postinstall: true,
+        postinstall_command: "node $(npm root -g)/opencode-ai/postinstall.mjs"
       }
 
       command = described_class.normalized_install_command(contract)
 
       expect(command).to eq([
         "npm", "install", "-g", "opencode-ai@latest", "--ignore-scripts",
-        "&&", "node", "$(npm root -g)/opencode-ai/postinstall.mjs"
+        "&&", "node", "$(npm", "root", "-g)/opencode-ai/postinstall.mjs"
       ])
     end
   end
