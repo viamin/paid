@@ -20,8 +20,9 @@ RDR-037 turns several chat limitations into explicit future intent:
   session
 - cloned-repo state should survive container teardown and session reopen
 
-The current repo ships chat and single-repo container foundations, but not the
-multi-repo capability model itself.
+The repo now ships the multi-repo capability model itself (capability state,
+background provisioning, clone manifests, and container-only mutation tools),
+with cross-repo PR-proposal tooling as the remaining open gap.
 
 ## Existing Foundations
 
@@ -32,17 +33,28 @@ The missing feature can build on already-shipped chat infrastructure:
 - repo-read tools and authorization surfaces
 - session reopen/container lifecycle work in adjacent chat segments
 
-## Active Gap
+## Current State
 
-The feature remains unimplemented end-to-end. In particular, the system still
-needs:
+The capability model is now **partially implemented**. The capability-state
+tracking, background provisioning, clone manifests, container-only mutation
+tools, and shell execution all shipped (see the segment's EARS specs and the
+RDR-037 audit). The remaining open gap is PR-proposal tooling.
+
+What is in place:
 
 - capability-state tracking (`none`, `pending`, `provisioning`, `ready`,
   `failed`, `stopped`) instead of a fixed workspace decision at create time
 - background provisioning that accepts the first message immediately
 - clone manifests that persist which repos were added to a session
-- container-only mutation tools and PR-proposal flows that understand
-  multi-repo authorization and dependency coordination
+- container-only mutation tools (`write_repo_file`, `apply_patch`, `git_*`,
+  `run_shell`) that recompute multi-repo authorization per project
+
+## Remaining Gap
+
+- `propose_pull_request` — the cross-repo PR-proposal tool that pushes branches
+  via the resolved GitHub identity and opens `Depends on owner/repo#N` PRs for
+  coordinated dependent changes. This is the headline cross-repo coordination
+  use case for this segment and the single RDR-037 requirement that did not ship.
 
 ## What this is not
 
