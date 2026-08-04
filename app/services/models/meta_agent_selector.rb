@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 module Models
+  # @spec AGENT-HARNESS-003, MODEL-SELECTION-002
   class MetaAgentSelector
     include RunnerTierLookup
 

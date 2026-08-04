@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec PROMPT-EVOLUTION-003, RUNNER-FALLBACK-001, RUNNER-FALLBACK-002
 RSpec.describe Activities::RunAgentActivity do
   let(:activity) { described_class.new }
   let(:user) { create(:user) }
@@ -1257,7 +1258,7 @@ RSpec.describe Activities::RunAgentActivity do
       TEXT
     end
 
-    it "assigns a running test before rendering the issue-goal prompt" do
+    it "assigns a running test before rendering the issue-goal prompt" do # @spec PROMPT-EVOLUTION-003
       run = create(:agent_run, :create_issue_goal, project: project)
       ab_test = create_running_ab_test(slug: described_class::ISSUE_GOAL_PROMPT_SLUG)
 
@@ -1271,7 +1272,7 @@ RSpec.describe Activities::RunAgentActivity do
       expect(run.reload.prompt_version).to eq(assigned_version)
     end
 
-    it "uses an assigned issue-goal variant prompt version" do
+    it "uses an assigned issue-goal variant prompt version" do # @spec PROMPT-EVOLUTION-003
       run = create(:agent_run, :create_issue_goal, project: project)
       variant_version = create_ab_test_assignment(
         slug: described_class::ISSUE_GOAL_PROMPT_SLUG,

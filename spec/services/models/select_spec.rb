@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec MODEL-SELECTION-001, MODEL-SELECTION-004
 RSpec.describe Models::Select do
   describe ".call" do
     let(:project) { create(:project) }

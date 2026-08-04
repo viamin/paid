@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec AGENT-HARNESS-003, MODEL-SELECTION-002
 RSpec.describe Models::MetaAgentSelector do
   describe ".call" do
     let(:agent_run) { create(:agent_run) }

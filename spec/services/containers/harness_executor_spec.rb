@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec AGENT-HARNESS-002
 RSpec.describe Containers::HarnessExecutor do
   let(:agent_run) { instance_double(AgentRun) }
   let(:executor) { described_class.new(agent_run) }
