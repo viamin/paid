@@ -13,6 +13,7 @@ RSpec.describe DevcontainerFile, :no_db do
   end
 
   let(:oh_my_pi_installer) { Rails.root.join(".devcontainer/install-oh-my-pi.sh").read }
+  let(:ponytail_installer) { Rails.root.join(".devcontainer/install-ponytail.sh").read }
 
   it "installs opencode through the shared contract wrapper" do
     command = devcontainer.fetch("postCreateCommand").fetch("opencode")
@@ -33,6 +34,20 @@ RSpec.describe DevcontainerFile, :no_db do
     expect(oh_my_pi_installer).to include("SHASUMS256.txt")
     expect(oh_my_pi_installer).to include("sha256sum -c -")
     expect(oh_my_pi_installer).not_to include("https://bun.sh/install")
+  end
+
+  it "installs Ponytail for the devcontainer agent CLIs" do
+    command = devcontainer.fetch("postCreateCommand").fetch("setup")
+
+    expect(command).to include("bash .devcontainer/install-ponytail.sh")
+    expect(command).to match(/install-lid\.sh.*install-ponytail\.sh.*configure-llm-tools\.sh/)
+    expect(ponytail_installer).to include('STEP_TIMEOUT="${PONYTAIL_STEP_TIMEOUT:-180}"')
+    expect(ponytail_installer).to include('timeout -k 10 "$STEP_TIMEOUT" "$@" </dev/null')
+    expect(ponytail_installer).to include("known_marketplaces.json")
+    expect(ponytail_installer).to include('run_install "Claude Ponytail" install_claude_ponytail')
+    expect(ponytail_installer).to include("codex plugin marketplace add DietrichGebert/ponytail")
+    expect(ponytail_installer).to include('opencode plugin --global "$PONYTAIL_NPM_PACKAGE"')
+    expect(ponytail_installer).to include('omp plugin install "$PONYTAIL_OMP_TARGET"')
   end
 
   it "re-runs setup on every start to restore the detached dev supervisor" do
