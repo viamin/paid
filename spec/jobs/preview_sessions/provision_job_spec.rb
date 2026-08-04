@@ -74,6 +74,11 @@ RSpec.describe PreviewSessions::ProvisionJob do
 
     expect(preview_session.reload).to be_stopped
     expect(provision).to have_received(:cleanup!)
-    expect(preview_session.agent_run.reload.status).to eq("running")
+
+    agent_run = preview_session.agent_run.reload
+    expect(agent_run.status).to eq("cancelled")
+    expect(agent_run).to be_finished
+    expect(agent_run.completed_at).to be_present
+    expect(agent_run.duration_seconds).to be >= 0
   end
 end

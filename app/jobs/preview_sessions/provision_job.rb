@@ -55,11 +55,13 @@ module PreviewSessions
 
       # A concurrent stop may have flipped the session to a terminal state
       # while provision.call was running. If so, tear down the now-orphaned
-      # container and tunnel so they don't leak. Previews::Provision guards its
-      # own status writes against terminal sessions, so the session is not
-      # resurrected to "ready".
+      # container and tunnel so they don't leak, and transition the synthetic
+      # agent run to a terminal status so it does not leak as an unfinished run.
+      # Previews::Provision guards its own status writes against terminal
+      # sessions, so the session is not resurrected to "ready".
       if preview_session.reload.terminal?
         provision&.cleanup!
+        cancel_agent_run!(agent_run)
         return
       end
 
@@ -87,6 +89,17 @@ module PreviewSessions
     def complete_agent_run!(agent_run)
       agent_run.update!(
         status: "completed",
+        completed_at: Time.current,
+        duration_seconds: duration_seconds_for(agent_run)
+      )
+    end
+
+    def cancel_agent_run!(agent_run)
+      return unless agent_run
+      return if agent_run.finished?
+
+      agent_run.update!(
+        status: "cancelled",
         completed_at: Time.current,
         duration_seconds: duration_seconds_for(agent_run)
       )
