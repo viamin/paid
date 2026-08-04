@@ -30,6 +30,7 @@ Paid stores every decision point as data—prompts, model preferences, workflow 
 - **Self-Healing Exception Handling**: Centralized exception pipeline that fingerprints, classifies, deduplicates, and auto-files GitHub issues for P1/P2 errors
 - **Notification Subscriptions**: Subscribe to individual issue and PR merge events with real-time Turbo Stream delivery
 - **Provider and Integration Management**: Test provider auth from the UI and manage GitHub, Linear, provider API keys, and generic integration credentials (GitLab, Jira, Azure DevOps, signing) for account admins
+- **Proactive Runner Quota Tracking**: Refresh fresh per-runner quota snapshots, show remaining headroom and reset timing on `/runners`, and prefer healthier fallback runners before reactive rate-limit failures occur
 - **Service Containers**: Attach approved supporting services like Postgres, Redis, or Selenium to project runs when agents need dependencies beyond the app code. Service containers are attached to the same Docker network selected for the agent run across proxy-mode, subscription-auth, and direct-outbound provider runs. Shared-database isolation fallout is tracked separately by [#1280](https://github.com/viamin/paid/issues/1280).
 
 ## How It Works
