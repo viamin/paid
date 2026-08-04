@@ -131,6 +131,10 @@ class PreviewSession < ApplicationRecord
     "/previews/#{token}"
   end
 
+  def framework_label
+    Projects::FrameworkProfile.label_for(framework)
+  end
+
   def status=(value)
     super
     self.error_message = nil if value != "failed" && error_message.present?

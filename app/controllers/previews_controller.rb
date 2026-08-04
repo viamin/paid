@@ -71,7 +71,7 @@ class PreviewsController < ApplicationController
     current_path = params[:path].to_s
     project_name = ERB::Util.html_escape(@preview_session.project.full_name)
     branch_name = ERB::Util.html_escape(@preview_session.branch_name)
-    framework = ERB::Util.html_escape(@preview_session.framework.presence || "unknown")
+    framework = ERB::Util.html_escape(@preview_session.framework_label.presence || "unknown")
 
     <<~HTML
       <!DOCTYPE html>

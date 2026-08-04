@@ -17,6 +17,16 @@ RSpec.describe ApplicationHelper, :no_db do
       expect(badge).to include("Phoenix / Elixir")
     end
 
+    it "prefers the detected framework label when screenshot detection has run" do
+      badge = helper.project_type_badge(Project.new(
+        primary_language: "Ruby",
+        screenshot_settings: { "detection" => { "framework" => "Phoenix" } }
+      ))
+
+      expect(badge).to include("Phoenix")
+      expect(badge).not_to include("Ruby on Rails")
+    end
+
     it "falls back to the raw language when unmapped" do
       badge = helper.project_type_badge(Project.new(primary_language: "Brainfuck"))
       expect(badge).to include("Brainfuck")

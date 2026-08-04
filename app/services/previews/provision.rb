@@ -118,6 +118,10 @@ module Previews
       boot!(start_tunnel:, allow_seed:)
     end
 
+    def framework_key
+      detected_framework.to_s.presence
+    end
+
     def prepare_workspace!
       return self if @config.present?
 
@@ -360,7 +364,9 @@ module Previews
     def detected_framework
       @detected_framework ||= begin
         overrides = Screenshots::ConfigParser.ui_detection_overrides(project:, repo_path:)
-        overrides[:framework] || Screenshots::DetectFramework.detect_framework_only(repo_path:)
+        framework = Projects::FrameworkProfile.normalize(overrides[:framework]) ||
+          project.detected_framework
+        framework&.to_sym || Screenshots::DetectFramework.detect_framework_only(repo_path:)
       end
     end
 

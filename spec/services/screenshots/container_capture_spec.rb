@@ -29,6 +29,7 @@ RSpec.describe Screenshots::ContainerCapture do
       Previews::Provision,
       prepare_workspace!: true,
       boot!: true,
+      framework_key: "rails",
       container_service: instance_double(Containers::Provision),
       network_name: "paid-test",
       config: config,
@@ -113,9 +114,8 @@ RSpec.describe Screenshots::ContainerCapture do
   end
 
   it "rejects seed configuration for Phoenix projects with a config error" do
-    tmpdir = Dir.mktmpdir("phoenix-seed")
-    File.write(File.join(tmpdir, "mix.exs"), "defmodule Demo.MixProject do end")
-    service.instance_variable_set(:@tmpdir, tmpdir)
+    allow(preview_provision).to receive(:framework_key).and_return("phoenix")
+    service.instance_variable_set(:@preview_provision, preview_provision)
     allow(service).to receive(:config).and_return(
       Screenshots::Configuration.from_hash(
         "base_url" => "http://localhost:4100",
@@ -127,8 +127,6 @@ RSpec.describe Screenshots::ContainerCapture do
     expect { service.send(:validate_supported_config!) }.to raise_error(
       Screenshots::ConfigError, /not supported for Phoenix projects yet/
     )
-  ensure
-    FileUtils.rm_rf(tmpdir)
   end
 
   describe "#screenshot_config_json (capture scoping and annotation)" do
