@@ -118,6 +118,10 @@ module Previews
       boot!(start_tunnel:, allow_seed:)
     end
 
+    def framework_key
+      detected_framework.to_s.presence
+    end
+
     def prepare_workspace!
       return self if @config.present?
 
@@ -256,7 +260,7 @@ module Previews
     end
 
     def run_setup_commands!
-      runtime_plan.setup_commands.each do |command|
+      config.setup_commands.each do |command|
         result = container_service.execute(command, timeout: PROVISION_TIMEOUT_SECONDS, env: preview_env, stream: false)
         next if result.success?
 
@@ -268,7 +272,7 @@ module Previews
       return unless repo_seed_configured?
       return if config.seed.empty?
 
-      if runtime_plan.framework == :phoenix
+      if detected_framework == :phoenix
         raise Screenshots::ConfigError,
           "seed configuration is not supported for Phoenix projects yet " \
           "(seeds run via bin/rails runner, which is unavailable in an Elixir/Phoenix repo)"
@@ -284,8 +288,8 @@ module Previews
     end
 
     def start_application!
-      prepare_phoenix_preview_config! if runtime_plan.framework == :phoenix
-      command = runtime_plan.start_command
+      prepare_phoenix_preview_config! if detected_framework == :phoenix
+      command = application_start_command
       raise Screenshots::ConfigError, "could not determine how to start the preview application" if command.blank?
 
       launch_command = <<~SH
@@ -311,10 +315,10 @@ module Previews
 
     def start_tunnel!
       @tunnel_port = @tunnel_manager.allocate_port!
-      @tunnel_manager.start_client!(container_service:, local_port: runtime_plan.app_port, remote_port: @tunnel_port)
+      @tunnel_manager.start_client!(container_service:, local_port: app_port, remote_port: @tunnel_port)
       @tunnel_manager.wait_until_healthy!(
         port: @tunnel_port,
-        path: runtime_plan.readiness_path,
+        path: readiness_path,
         timeout_seconds: STARTUP_TIMEOUT_SECONDS
       )
     end
@@ -336,10 +340,40 @@ module Previews
       end
     end
 
+    def application_start_command
+      framework = detected_framework
+      port = app_port
+
+      if File.exist?(File.join(repo_path, "bin/dev"))
+        "PORT=#{port} bin/dev"
+      elsif framework == :rails && File.exist?(File.join(repo_path, "bin/rails"))
+        "bundle exec bin/rails server -b 0.0.0.0 -p #{port}"
+      elsif framework == :phoenix && File.exist?(File.join(repo_path, "mix.exs"))
+        "PORT=#{port} MIX_ENV=dev mix phx.server"
+      elsif framework == :django && File.exist?(File.join(repo_path, "manage.py"))
+        "python3 manage.py runserver 0.0.0.0:#{port}"
+      elsif framework == :nextjs && package_dependency?("next")
+        "yarn next dev --hostname 0.0.0.0 --port #{port}"
+      elsif package_dependency?("vite")
+        "yarn vite --host 0.0.0.0 --port #{port}"
+      elsif File.exist?(File.join(repo_path, "package.json"))
+        "yarn dev --host 0.0.0.0 --port #{port}"
+      end
+    end
+
+    def detected_framework
+      @detected_framework ||= begin
+        overrides = Screenshots::ConfigParser.ui_detection_overrides(project:, repo_path:)
+        framework = Projects::FrameworkProfile.normalize(overrides[:framework]) ||
+          project.detected_framework
+        framework&.to_sym || Screenshots::DetectFramework.detect_framework_only(repo_path:)
+      end
+    end
+
     def readiness_probe_command
-      host = runtime_plan.readiness_host
-      port = runtime_plan.app_port
-      path = runtime_plan.readiness_path
+      host = readiness_host
+      port = app_port
+      path = readiness_path
 
       <<~SH.squish
         PREVIEW_APP_HOST=#{Shellwords.escape(host)}
@@ -359,6 +393,33 @@ module Previews
           end
         '
       SH
+    end
+
+    def app_port
+      uri = URI.parse(config&.base_url || Screenshots::Configuration::DEFAULT_BASE_URL)
+      uri.port || 3000
+    end
+
+    def readiness_host
+      uri = URI.parse(config.base_url)
+      uri.host.presence || "127.0.0.1"
+    end
+
+    def readiness_path
+      uri = URI.parse(config.base_url)
+      uri.path.presence || "/"
+    end
+
+    def package_dependency?(name)
+      package_json_path = File.join(repo_path, "package.json")
+      return false unless File.exist?(package_json_path)
+
+      package_json = JSON.parse(File.read(package_json_path))
+      %w[dependencies devDependencies].any? do |key|
+        package_json.fetch(key, {}).key?(name)
+      end
+    rescue JSON::ParserError
+      false
     end
 
     def repo_seed_configured?
@@ -478,10 +539,6 @@ module Previews
       )
 
       [ result[:stdout].to_s, result[:stderr].to_s, result.success? ]
-    end
-
-    def runtime_plan
-      @runtime_plan ||= Screenshots::RuntimePlan.call(project:, repo_path:, config:)
     end
 
     def prepare_phoenix_preview_config!

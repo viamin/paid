@@ -341,6 +341,9 @@ class Project < ApplicationRecord
   # Human-friendly project-type label (e.g. "Ruby on Rails") shown as a badge
   # on project tiles. Returns nil when no language has been detected.
   def project_type_label
+    framework_label = detected_framework_label
+    return framework_label if framework_label.present? && detected_framework != "generic"
+
     return if primary_language.blank?
 
     Projects::LanguageProfile.label_for(primary_language) || primary_language
@@ -717,7 +720,15 @@ class Project < ApplicationRecord
   # Framework detected by the screenshot framework detector, surfaced as
   # preview metadata (RDR-045). Returns nil when no detection has run.
   def detected_framework
-    effective_screenshot_settings.dig("detection", "framework").presence
+    Projects::FrameworkProfile.normalize(
+      effective_screenshot_settings.dig("detection", "framework")
+    )
+  end
+
+  def detected_framework_label
+    Projects::FrameworkProfile.label_for(
+      effective_screenshot_settings.dig("detection", "framework")
+    )
   end
 
   def screenshot_preview_config(repo_config: {}, settings: nil)

@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe ApplicationController, type: :controller do
+RSpec.describe ApplicationController, type: :controller do # @spec RAILS-CONTROL-PLANE-001
   controller do
     def index
       raise "request failed"

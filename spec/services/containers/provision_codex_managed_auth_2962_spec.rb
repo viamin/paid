@@ -3,7 +3,7 @@
 require "rails_helper"
 require "tmpdir"
 
-RSpec.describe Containers::Provision do
+RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-002
   # Codex managed subscription auth (RDR-041 / #2962).
   let(:local_backend) do
     instance_double(

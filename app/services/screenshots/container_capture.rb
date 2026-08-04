@@ -495,9 +495,11 @@ module Screenshots
     end
 
     def phoenix_project?
-      return false if @tmpdir.blank?
+      resolved_framework == "phoenix"
+    end
 
-      File.exist?(File.join(@tmpdir, "mix.exs"))
+    def resolved_framework
+      @preview_provision&.framework_key || project.detected_framework
     end
 
     def collected_screenshots
