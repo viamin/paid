@@ -9,6 +9,7 @@ RDR-042 is no longer accurately described as "accepted, not implemented." As of 
 - Closeout issue [#3162](https://github.com/viamin/paid/issues/3162) is open.
 - Original implementation issues [#2695](https://github.com/viamin/paid/issues/2695), [#2696](https://github.com/viamin/paid/issues/2696), and [#2697](https://github.com/viamin/paid/issues/2697) are closed.
 - Implementation follow-up issues [#2740](https://github.com/viamin/paid/issues/2740), [#2739](https://github.com/viamin/paid/issues/2739), and [#2761](https://github.com/viamin/paid/issues/2761) are closed.
+- Remaining gap follow-up issue [#3213](https://github.com/viamin/paid/issues/3213) is open.
 
 ## What Shipped
 
@@ -45,13 +46,11 @@ The current [`EnhanceIssueActivity`](../../app/temporal/activities/enhance_issue
 
 That means RDR-042's issue-detection part of Phase 3 is still missing, despite [#2697](https://github.com/viamin/paid/issues/2697) and [#2761](https://github.com/viamin/paid/issues/2761) being closed.
 
-## Proposed Follow-Up Issue
+## Tracked Follow-Up Issue
 
-No writable GitHub credential was available in this workspace, so the follow-up issue could not be filed directly from this run. The issue that should be filed is:
+The remaining Phase 3 gap is tracked in [#3213](https://github.com/viamin/paid/issues/3213): `RDR-042: restore CIR auto-detection and draft creation in EnhanceIssueActivity`.
 
-- Title: `RDR-042: restore CIR auto-detection and draft creation in EnhanceIssueActivity`
-
-Suggested acceptance criteria:
+Tracked acceptance criteria:
 
 - `EnhanceIssueActivity` explicitly evaluates whether an issue contains a non-obvious constraint or a rejected reasonable alternative worth preserving as a CIR.
 - When the enhancement flow identifies such a case, it produces a draft CIR payload linked to the issue instead of only asking generic clarifying questions.
@@ -66,4 +65,4 @@ RDR-042 should now be treated as **partially implemented**:
 - Phase 1 shipped.
 - Phase 2 shipped.
 - Phase 3's external-agent lookup tools shipped.
-- Phase 3's issue-enhancement CIR detection is still missing and needs a focused follow-up issue.
+- Phase 3's issue-enhancement CIR detection is still missing and is now tracked in [#3213](https://github.com/viamin/paid/issues/3213).

@@ -8,7 +8,7 @@
 - **Status**: Partially Implemented
 - **Type**: Process + Architecture
 - **Priority**: Medium
-- **Related Issues**: #3162 (closeout), #2695 (phase 1), #2696 (phase 2), #2697 (original phase 3), #2740 (phase 1 implementation), #2739 (phase 2 implementation), #2761 (phase 3 implementation claim)
+- **Related Issues**: #3162 (closeout), #2695 (phase 1), #2696 (phase 2), #2697 (original phase 3), #2740 (phase 1 implementation), #2739 (phase 2 implementation), #2761 (phase 3 implementation claim), #3213 (remaining phase 3 issue-enhancement gap)
 - **Related Tests**: Knowledge artifact integration tests, context bundle tests, decision record collector tests
 
 ## Implementation Status
@@ -23,7 +23,7 @@ Shipped behavior:
 
 Remaining gap:
 
-- Phase 3 issue enhancement is still missing. `EnhanceIssueActivity` currently asks clarifying questions, but it does not create or surface linked CIR drafts from issue bodies. See [audit-report-2026-08-04.md](audit-report-2026-08-04.md).
+- Phase 3 issue enhancement is still missing. `EnhanceIssueActivity` currently asks clarifying questions, but it does not create or surface linked CIR drafts from issue bodies. That remaining gap is now tracked in [#3213](https://github.com/viamin/paid/issues/3213). See [audit-report-2026-08-04.md](audit-report-2026-08-04.md).
 
 The original RDR text below is kept as the architectural plan. The closeout above records what actually shipped and where implementation still diverges.
 
@@ -35,7 +35,7 @@ The original RDR and its phase issues assumed the whole feature was still ahead 
 - Closed issues [#2696](https://github.com/viamin/paid/issues/2696) and [#2739](https://github.com/viamin/paid/issues/2739) correspond to shipped chat creation flow work.
 - Closed issues [#2697](https://github.com/viamin/paid/issues/2697) and [#2761](https://github.com/viamin/paid/issues/2761) overstate current Phase 3 completeness: external lookup tools shipped, but issue-enhancement CIR drafting does not currently exist in `EnhanceIssueActivity`.
 
-As a result, RDR-042 should no longer be marked "Accepted" in the index. It is partially implemented until the issue-enhancement gap is tracked and shipped.
+As a result, RDR-042 should no longer be marked "Accepted" in the index. It is partially implemented until [#3213](https://github.com/viamin/paid/issues/3213) ships.
 
 ## Problem Statement
 
