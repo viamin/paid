@@ -5,16 +5,41 @@
 ## Metadata
 
 - **Date**: 2026-07-08
-- **Status**: Draft
+- **Status**: Partially Implemented
 - **Type**: Architecture
 - **Priority**: High
-- **Related Issues**: #2844 (Epic), #2845 (Phoenix detection), #2847 (Playwright traces), #2846 (Seed data), #2852 (Agent verification), #2853 (Rathole tunnel), #2849 (PreviewSession model), #2848 (Preview provisioning), #2850 (Reverse proxy), #2851 (Preview UI), #2854 (Trace viewer), #2855 (Demo video/GIF)
+- **Related Issues**: #3166 (gap reconciliation), #3192 (live preview provisioning), #3193 (proxy/root-path unification), #3194 (preview UI lifecycle), #3195 (trace viewer end-to-end wiring), #3196 (agent self-verification), #3197 (RDR-046 follow-up), #2844 (closed epic), #2845 (closed Phoenix detection issue), #2846 (closed seed-data issue), #2847 (closed trace-recording issue), #2848 (closed preview provisioning issue), #2849 (closed PreviewSession issue), #2850 (closed reverse-proxy issue), #2851 (closed preview UI issue), #2852 (closed agent-verification issue), #2853 (closed tunnel issue), #2854 (closed trace-viewer issue), #2855 (closed demo-video/GIF issue)
 - **Related RDRs**: [RDR-004](RDR-004-container-isolation.md) (Container Isolation), [RDR-006](RDR-006-secrets-proxy.md) (Secrets Proxy), [RDR-019](RDR-019-remote-container-execution.md) (Remote Container Execution), [RDR-020](RDR-020-service-container-architecture.md) (Service Container Architecture), [RDR-028](RDR-028-interactive-chat.md) (Interactive Chat)
 - **Related Tests**: `spec/services/screenshots/`, `spec/services/containers/`
 
 ## Implementation Status
 
-Draft. Not implemented. The existing screenshot infrastructure (`Screenshots::ContainerCapture`) starts web apps in containers, connects a headless browser via CDP, and captures static screenshots — but tears everything down immediately. No live preview, no interactive agent verification, no tunneling, and no Playwright trace recording exist. Phoenix/Elixir is not detected by the framework detector.
+Partially implemented as of 2026-08-04. The July 2026 RDR-045 work shipped important foundations that are now present in the repository:
+
+- Phoenix/Elixir detection and Phoenix route discovery in the screenshot and route-collection stack
+- Playwright trace recording in `Screenshots::ContainerCapture`
+- trace-derived GIF/video export and a trace-viewer UI
+- `PreviewSession`, preview tunnel reservations, `Previews::Provision`, `Previews::TunnelManager`, `PreviewsProxy`, preview routes/views/policies, and the preview tunnel server
+- Playwright MCP definition wiring plus verification browser sidecar provisioning for agent runs
+
+The remaining gap is not absence of infrastructure; it is missing end-to-end wiring. In particular:
+
+- project preview actions still create DB-only `PreviewSession` records instead of provisioning real live previews
+- preview root-path serving is still split between the middleware and controller-side fallback/simulated paths
+- preview UI still reflects simulated/stubbed states rather than a real async lifecycle
+- trace viewing needs end-to-end producer/consumer confirmation for real runs
+- agent self-verification still stops at browser-sidecar provisioning instead of a full app-verification flow
+
+See [audit-report-2026-08-04.md](audit-report-2026-08-04.md) and issues #3192 through #3197.
+
+## 2026-08-04 Reconciliation
+
+The original RDR and epic issue [#2844](https://github.com/viamin/paid/issues/2844) assumed these capabilities were uniformly unshipped. That is no longer true. The current state is:
+
+- **Closed and shipped foundation work**: July 2026 issues #2845 through #2855
+- **Open reconciliation / follow-up work**: August 4, 2026 issue #3166 and implementation issues #3192 through #3197
+
+This RDR remains the architectural source for the full feature, but its status is now "partially implemented" until the reopened end-to-end gaps close.
 
 ## Problem Statement
 
