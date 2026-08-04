@@ -59,4 +59,21 @@ RSpec.describe PreviewSessions::ProvisionJob do
     expect { described_class.perform_now(preview_session.id) }.not_to change(AgentRun, :count)
     expect(Previews::Provision).not_to have_received(:new)
   end
+
+  it "cleans up and does not resurrect a session stopped during provisioning" do
+    preview_session = create(:preview_session, :provisioning, project:, account:, created_by: user)
+    provision = instance_double(Previews::Provision, cleanup!: true)
+
+    allow(Dir).to receive(:mktmpdir).and_yield("/tmp/paid-preview-session-spec")
+    allow(Previews::Provision).to receive(:new).and_return(provision)
+    allow(provision).to receive(:call) do
+      preview_session.mark_stopped!
+    end
+
+    described_class.perform_now(preview_session.id)
+
+    expect(preview_session.reload).to be_stopped
+    expect(provision).to have_received(:cleanup!)
+    expect(preview_session.agent_run.reload.status).to eq("running")
+  end
 end

@@ -53,6 +53,16 @@ module PreviewSessions
         provision.call
       end
 
+      # A concurrent stop may have flipped the session to a terminal state
+      # while provision.call was running. If so, tear down the now-orphaned
+      # container and tunnel so they don't leak. Previews::Provision guards its
+      # own status writes against terminal sessions, so the session is not
+      # resurrected to "ready".
+      if preview_session.reload.terminal?
+        provision&.cleanup!
+        return
+      end
+
       complete_agent_run!(agent_run)
     rescue StandardError => e
       provision&.cleanup!

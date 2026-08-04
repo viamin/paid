@@ -46,6 +46,7 @@ class PreviewsController < ApplicationController
     @preview_session = PreviewSession.find_accessible_by_token(request.path_parameters[:token])
     return show_wrapper_fallback if @preview_session.nil? && params[:path].blank? && request.path_parameters[:token].match?(/\A\d+\z/)
     return head :not_found unless @preview_session && policy(@preview_session).show?
+    return head :not_found unless @preview_session.proxiable?
 
     apply_embed_headers
     @preview_session.touch_last_active!

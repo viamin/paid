@@ -434,6 +434,23 @@ RSpec.describe Previews::Provision do
     )
   end
 
+  it "does not resurrect a terminal preview session when writing status" do
+    preview_session = create(:preview_session, :stopped, project:)
+    service_with_session = described_class.new(
+      agent_run:,
+      repo_path:,
+      preview_session:,
+      service_provisioner:,
+      seed_runner:,
+      tunnel_manager:
+    )
+
+    service_with_session.send(:update_preview_session!, status: "ready", tunnel_port: 8201)
+
+    expect(preview_session.reload).to be_stopped
+    expect(preview_session.reload.tunnel_port).to be_nil
+  end
+
   def container_result
     @container_result ||= double(success?: true)
   end

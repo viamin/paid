@@ -583,7 +583,11 @@ module Previews
     def update_preview_session!(attributes)
       return unless preview_session&.respond_to?(:update!)
 
-      preview_session.update!(attributes)
+      preview_session.with_lock do
+        next if preview_session.terminal?
+
+        preview_session.update!(attributes)
+      end
     end
   end
 end

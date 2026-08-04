@@ -233,6 +233,24 @@ RSpec.describe "Previews" do
         expect(response).to have_http_status(:not_found)
       end
     end
+
+    context "when the session is live but not yet proxiable" do
+      let(:user) { create(:user, :viewer, account: account) }
+
+      before do
+        create(:project_membership, project: project, user: user, role: :member)
+        sign_in user
+      end
+
+      it "returns 404 instead of proxying to a nil port" do
+        session = create(:preview_session, :ready, :without_port, project: project,
+          branch_name: "feature/transitional", token: "no-port-token")
+
+        get "/previews/#{session.token}"
+
+        expect(response).to have_http_status(:not_found)
+      end
+    end
   end
 
   describe "POST /projects/:project_id/preview_sessions/:id/stop" do
