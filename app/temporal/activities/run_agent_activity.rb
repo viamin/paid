@@ -338,7 +338,10 @@ module Activities
               # Evaluate pre-commit requirements against the working directory
               # before committing, so blocking failures prevent commits.
               if agent_run.repo_cloned?
-                record_verification_result(agent_run)
+                record_verification_result(
+                  agent_run,
+                  fallback_result: runner_result[:verification_fallback_result]
+                )
                 pre_commit_result = evaluate_pre_commit_requirements(agent_run)
                 if pre_commit_result[:blocking]
                   agent_run.log!("system", "Blocked by failing pre-commit requirements",
@@ -1510,7 +1513,7 @@ module Activities
         refresh_co_author_trailer(container_service, agent_run, runner_candidate, user_settings.user)
       end
 
-      prompt = augment_prompt_for_goal(agent_run, prompt)
+      prompt, verification_fallback_result = augment_prompt_for_goal(agent_run, prompt)
       command_context = CommandContext.new(
         runner_candidate: runner_candidate,
         runner: runner,
@@ -1664,6 +1667,7 @@ module Activities
           pre_agent_sha: pre_agent_sha,
           output_present: output_present,
           output_chars: output_chars,
+          verification_fallback_result: verification_fallback_result,
           review_threads_already_addressed: review_threads_already_addressed?(stdout: stdout, stderr: stderr, prompt: prompt)
         }
       end
@@ -3095,7 +3099,7 @@ module Activities
       agent_run.log!("system", "Auto-committed uncommitted agent changes") if committed
     end
 
-    def record_verification_result(agent_run)
+    def record_verification_result(agent_run, fallback_result:)
       return unless agent_run.create_pr_goal?
       return unless agent_run.project.verification_enabled?
       return if agent_run.worktree_path.blank?
@@ -3103,7 +3107,7 @@ module Activities
       AgentRuns::VerificationResultRecorder.call(
         agent_run: agent_run,
         repo_path: agent_run.worktree_path,
-        fallback_result: @verification_fallback_result
+        fallback_result:
       )
     end
 
@@ -3386,15 +3390,15 @@ module Activities
 
     def augment_prompt_for_goal(agent_run, prompt)
       if agent_run.create_issue_goal?
-        augment_prompt_for_issue_goal(agent_run, prompt)
+        [ augment_prompt_for_issue_goal(agent_run, prompt), nil ]
       elsif agent_run.enhance_issue_goal?
-        augment_prompt_for_enhance_issue_goal(agent_run, prompt)
+        [ augment_prompt_for_enhance_issue_goal(agent_run, prompt), nil ]
       elsif agent_run.review_goal?
-        augment_prompt_for_review_goal(agent_run, prompt)
+        [ augment_prompt_for_review_goal(agent_run, prompt), nil ]
       elsif agent_run.create_pr_goal?
         augment_prompt_for_verification(agent_run, prompt)
       else
-        prompt
+        [ prompt, nil ]
       end
     end
 
@@ -3403,11 +3407,10 @@ module Activities
         agent_run: agent_run,
         repo_path: agent_run.worktree_path
       )
-      @verification_fallback_result = section.fallback_result
 
-      return prompt if section.content.blank?
+      return [ prompt, section.fallback_result ] if section.content.blank?
 
-      "#{prompt}\n#{section.content}"
+      [ "#{prompt}\n#{section.content}", section.fallback_result ]
     end
 
     # Goal-augmentation prompts.

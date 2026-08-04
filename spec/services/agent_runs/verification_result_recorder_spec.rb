@@ -44,6 +44,19 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     expect(File).not_to exist(log_path)
   end
 
+  it "stores only the last 40 lines from a larger app log" do
+    File.write(result_path, JSON.generate(status: "passed"))
+    File.write(log_path, Array.new(80) { |index| "line #{index + 1}\n" }.join)
+
+    described_class.call(agent_run:, repo_path:)
+
+    expected_tail = Array.new(40) { |index| "line #{index + 41}\n" }.join
+    expect(agent_run.reload.verification_result).to include(
+      "status" => "passed",
+      "app_log_tail" => expected_tail
+    )
+  end
+
   it "records a fallback status when no verification result file exists" do
     described_class.call(
       agent_run:,

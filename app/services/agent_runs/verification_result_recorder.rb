@@ -7,6 +7,8 @@ module AgentRuns
   class VerificationResultRecorder
     VALID_STATUSES = %w[passed failed skipped not_run].freeze
     LOG_TAIL_LINES = 40
+    LOG_TAIL_CHUNK_BYTES = 4096
+    LOG_TAIL_MAX_BYTES = 32 * 1024
 
     def self.call(...)
       new(...).call
@@ -109,7 +111,7 @@ module AgentRuns
     def app_log_tail
       return if !File.exist?(app_log_path) || File.directory?(app_log_path)
 
-      File.readlines(app_log_path).last(LOG_TAIL_LINES).join
+      read_log_tail(app_log_path, max_lines: LOG_TAIL_LINES)
     rescue StandardError => e
       @logger.warn(
         message: "agent_runs.verification_result.log_tail_failed",
@@ -117,6 +119,28 @@ module AgentRuns
         error: e.message
       )
       nil
+    end
+
+    def read_log_tail(path, max_lines:)
+      File.open(path, "rb") do |file|
+        buffer = +""
+        position = file.size
+
+        while position.positive? && buffer.count("\n") <= max_lines && buffer.bytesize < LOG_TAIL_MAX_BYTES
+          read_size = [ LOG_TAIL_CHUNK_BYTES, position ].min
+          position -= read_size
+          file.seek(position)
+          buffer.prepend(file.read(read_size))
+        end
+
+        normalize_log_tail(buffer, max_lines:)
+      end
+    end
+
+    def normalize_log_tail(content, max_lines:)
+      content = content.encode(Encoding::UTF_8, invalid: :replace, undef: :replace, replace: "")
+      lines = content.lines.last(max_lines)
+      lines.join.presence
     end
 
     def cleanup_transient_files

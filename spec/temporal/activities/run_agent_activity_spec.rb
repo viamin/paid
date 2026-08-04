@@ -2488,6 +2488,25 @@ expect(container_service).to receive(:execute).with(
         FileUtils.rm_rf(repo_path) if repo_path
       end
 
+      it "passes verification fallback state through the current execution" do
+        repo_path = Dir.mktmpdir("run-agent-verification-fallback-spec")
+        project.update!(screenshot_settings: { "verification_enabled" => true })
+        agent_run.update!(worktree_path: repo_path)
+        allow(git_ops).to receive(:has_changes_since?).and_return(false)
+
+        fallback_result = { "status" => "skipped", "reason" => "app_start_command_unavailable" }
+        allow(AgentRuns::VerificationPrompt).to receive(:call).and_return(
+          AgentRuns::VerificationPrompt::Section.new(content: "Verification instructions", fallback_result:)
+        )
+        allow(AgentRuns::VerificationResultRecorder).to receive(:call).and_return({})
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(AgentRuns::VerificationResultRecorder).to have_received(:call).with(agent_run:, repo_path:, fallback_result:)
+      ensure
+        FileUtils.rm_rf(repo_path) if repo_path
+      end
+
       it "returns the selected runner when pre-commit requirements block completion" do
         allow(activity).to receive(:evaluate_pre_commit_requirements).and_return(
           { blocking: true, results: [ { name: "rubocop", status: "failed" } ] }
