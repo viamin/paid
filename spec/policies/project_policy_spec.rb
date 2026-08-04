@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe ProjectPolicy do
+RSpec.describe ProjectPolicy do # @spec TENANT-ACCESS-001 # @spec TENANT-ACCESS-002
   subject { described_class }
 
   describe "permissions" do

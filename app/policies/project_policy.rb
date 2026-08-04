@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+# @spec TENANT-ACCESS-001
+# @spec TENANT-ACCESS-002
 class ProjectPolicy < ApplicationPolicy
   # Inherits from ApplicationPolicy:
   # - index?, show?: user_in_account?
