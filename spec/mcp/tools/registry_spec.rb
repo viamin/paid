@@ -218,6 +218,7 @@ RSpec.describe Tools::Registry do
     before { create(:project_membership, :member, user: user, project: project) }
 
     it "advertises write tools so the chat agent can propose them" do
+      # @spec CHAT-API-003
       names = described_class.chat_definitions_for(user: user, session: chat_session).map { |definition| definition[:name] }
 
       expect(names).to include(
@@ -237,6 +238,7 @@ RSpec.describe Tools::Registry do
     # advertised write-tool schema — not just operator tools — so confirmation
     # always originates from the human approver, never the model itself.
     it "strips the confirmed argument from write-tool schemas so the model cannot self-confirm" do
+      # @spec CHAT-API-003
       trigger_definition = described_class.chat_definitions_for(user: user, session: chat_session).find { |definition| definition[:name] == "trigger_agent_run" }
       schema = trigger_definition[:inputSchema]
 
