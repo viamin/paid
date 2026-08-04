@@ -23,7 +23,7 @@ Shipped behavior:
 
 Remaining gap:
 
-- Phase 3 issue enhancement is still missing. `EnhanceIssueActivity` currently asks clarifying questions, but it does not create or surface linked CIR drafts from issue bodies. That remaining gap is now tracked in [#3213](https://github.com/viamin/paid/issues/3213). See [audit-report-2026-08-04.md](audit-report-2026-08-04.md).
+- Phase 3 issue enhancement is still missing. `EnhanceIssueActivity` currently asks clarifying questions, but it does not create or surface linked CIR drafts from issue bodies. That remaining gap is now tracked in [#3213](https://github.com/viamin/paid/issues/3213). See [audit-report-2026-08-04-rdr-042.md](audit-report-2026-08-04-rdr-042.md).
 
 The original RDR text below is kept as the architectural plan. The closeout above records what actually shipped and where implementation still diverges.
 

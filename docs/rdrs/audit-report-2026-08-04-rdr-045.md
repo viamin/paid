@@ -1,68 +1,93 @@
-# RDR-042 Audit Report — 2026-08-04
+# RDR-045 Audit Report — 2026-08-04
 
 ## Summary
 
-RDR-042 is no longer accurately described as "accepted, not implemented." As of Tuesday, August 4, 2026, the repository ships the core Change Intent Record (CIR) model, lifecycle, authorization, knowledge-artifact integration, chat write-tool flow, and external lookup tools. The remaining gap is narrower: issue enhancement does not currently auto-detect and draft CIRs from constraint-heavy issue bodies, even though Phase 3's original issue was closed.
+RDR-045 is no longer accurately described as "not implemented". Between July 9 and July 18, 2026, the repo shipped substantial preview and verification foundations under epic [#2844](https://github.com/viamin/paid/issues/2844) and child issues [#2845](https://github.com/viamin/paid/issues/2845) through [#2855](https://github.com/viamin/paid/issues/2855). As of Tuesday, August 4, 2026, all of those issues are closed on GitHub, but the work is only partially end-to-end.
+
+The closed epic currently hides two different truths:
+
+1. Important preview, trace, tunnel, Phoenix, and verification-browser infrastructure did ship.
+2. The user-facing live-preview and agent self-verification flows are still incomplete and need reopened follow-up issues.
 
 ## GitHub State
 
-- Closeout issue [#3162](https://github.com/viamin/paid/issues/3162) is open.
-- Original implementation issues [#2695](https://github.com/viamin/paid/issues/2695), [#2696](https://github.com/viamin/paid/issues/2696), and [#2697](https://github.com/viamin/paid/issues/2697) are closed.
-- Implementation follow-up issues [#2740](https://github.com/viamin/paid/issues/2740), [#2739](https://github.com/viamin/paid/issues/2739), and [#2761](https://github.com/viamin/paid/issues/2761) are closed.
-- Remaining gap follow-up issue [#3213](https://github.com/viamin/paid/issues/3213) is open.
+- Epic [#2844](https://github.com/viamin/paid/issues/2844) is closed.
+- Child issues [#2845](https://github.com/viamin/paid/issues/2845), [#2846](https://github.com/viamin/paid/issues/2846), [#2847](https://github.com/viamin/paid/issues/2847), [#2848](https://github.com/viamin/paid/issues/2848), [#2849](https://github.com/viamin/paid/issues/2849), [#2850](https://github.com/viamin/paid/issues/2850), [#2851](https://github.com/viamin/paid/issues/2851), [#2852](https://github.com/viamin/paid/issues/2852), [#2853](https://github.com/viamin/paid/issues/2853), [#2854](https://github.com/viamin/paid/issues/2854), and [#2855](https://github.com/viamin/paid/issues/2855) are all closed.
+- Gap-reconciliation issue [#3166](https://github.com/viamin/paid/issues/3166) is open.
 
 ## What Shipped
 
-### Phase 1: model and knowledge pipeline
+### Phoenix / framework support
 
-- `change_intents` table, foreign keys, indexes, and RLS policies are present in `db/schema.rb`.
-- [`ChangeIntent`](../../app/models/change_intent.rb) exists with project/chat/issue associations, immutable content fields, and lifecycle methods for `activate!`, `supersede!`, and `revert!`.
-- [`ChangeIntentPolicy`](../../app/policies/change_intent_policy.rb) enforces project-scoped authorization.
-- knowledge indexing exists through [`Knowledge::Collectors::ChangeIntentCollector`](../../app/services/knowledge/collectors/change_intent_collector.rb), [`Knowledge::Collectors::DecisionCollector`](../../app/services/knowledge/collectors/decision_collector.rb), and [`ChangeIntents::SyncKnowledgeArtifact`](../../app/services/change_intents/sync_knowledge_artifact.rb).
-- context bundles include CIRs via [`Knowledge::ContextBundle::Build`](../../app/services/knowledge/context_bundle/build.rb).
+- `Screenshots::DetectFramework` now detects Phoenix and discovers Phoenix routes.
+- `Screenshots::FrameworkPatterns` includes Phoenix patterns.
+- screenshot and route-collection specs cover Phoenix repositories.
+- `ContainerCapture` recognizes Phoenix projects.
 
-### Phase 2: chat creation flow
+### Playwright traces and derived media
 
-- the `record_change_intent` MCP write tool exists in [`app/mcp/tools/record_change_intent.rb`](../../app/mcp/tools/record_change_intent.rb).
-- post-dispatch human approval is implemented through `Tools::Registry.post_dispatch_confirmation?`, `ChatSessions::AgentLoop`, and `ChatSessions::ResolveToolCall`.
-- approval activates and indexes the CIR; denial deletes the draft via [`ChangeIntents::Activate`](../../app/services/change_intents/activate.rb) and [`ChangeIntents::DiscardDraft`](../../app/services/change_intents/discard_draft.rb).
-- the chat system prompt explicitly tells the model to offer a CIR when the user provides a non-obvious constraint or rejects a reasonable alternative in [`ChatSessions::BuildSystemPrompt`](../../app/services/chat_sessions/build_system_prompt.rb) and [`db/seeds/prompts.rb`](../../db/seeds/prompts.rb).
+- `Screenshots::ContainerCapture` records `.trace.zip` artifacts.
+- trace upload/export helpers exist in `Screenshots::Storage`, `Screenshots::Publish`, and `Screenshots::TraceArtifactExporter`.
+- GIF/video derivation exists via `Screenshots::TraceToGif`.
+- `Previews::TraceViewer` and the `projects/_trace_viewer` UI partial exist.
 
-### Phase 3: external agent exposure
+### Preview/tunnel/proxy foundations
 
-- external lookup tools shipped as [`search_intents`](../../app/mcp/tools/search_intents.rb) and [`get_intent`](../../app/mcp/tools/get_intent.rb).
-- those tools are registered in [`Tools::Registry`](../../app/mcp/tools/registry.rb) and covered by tool specs.
+- `PreviewSession` and supporting reservation/provision-state tables exist.
+- `Previews::Provision`, `Previews::TunnelManager`, `Previews::TunnelPortPool`, and `Previews::Expire` exist with specs.
+- `PreviewsProxy` exists with request/middleware coverage for cookies, redirects, CSP/X-Frame-Options rewriting, and WebSocket upgrades.
+- `bin/preview-tunnel-server`, `Procfile.dev`, and deploy wiring for the preview tunnel server exist.
+- project and preview views/policies/routes exist.
 
-## What Is Still Missing
+### Agent verification foundations
 
-### Issue enhancement CIR detection and draft creation
+- `Project#verification_enabled?` and Playwright MCP definition attachment exist.
+- `AgentRuns::Verification` and `Activities::ProvisionBrowserContainerActivity` provision the browser sidecar and MCP wiring.
+- the agent execution workflow schedules browser-container provisioning when verification is enabled.
 
-The current [`EnhanceIssueActivity`](../../app/temporal/activities/enhance_issue_activity.rb) asks clarifying questions that surface constraints and rejected alternatives, but it does not:
+## What Is Still Missing or Stubbed
 
-- detect CIR-worthy issue language as a distinct step
-- draft a linked `ChangeIntent`
-- include a CIR draft proposal in the enhancement output
-- persist an issue-linked draft for later approval
+### 1. Project preview actions are not wired to real provisioning
 
-That means RDR-042's issue-detection part of Phase 3 is still missing, despite [#2697](https://github.com/viamin/paid/issues/2697) and [#2761](https://github.com/viamin/paid/issues/2761) being closed.
+`ProjectsController#start_preview` and `#restart_preview` create a `PreviewSession`, mark it `ready`, and never call `Previews::Provision`. That produces a DB-visible session without a live container, tunnel, or app startup.
 
-## Tracked Follow-Up Issue
+Evidence:
 
-The remaining Phase 3 gap is tracked in [#3213](https://github.com/viamin/paid/issues/3213): `RDR-042: restore CIR auto-detection and draft creation in EnhanceIssueActivity`.
+- `app/controllers/projects_controller.rb`
+- `session.mark_ready!(tunnel_port: nil)`
 
-Tracked acceptance criteria:
+### 2. Preview serving is split between real proxy code and controller-side fallback
 
-- `EnhanceIssueActivity` explicitly evaluates whether an issue contains a non-obvious constraint or a rejected reasonable alternative worth preserving as a CIR.
-- When the enhancement flow identifies such a case, it produces a draft CIR payload linked to the issue instead of only asking generic clarifying questions.
-- The enhancement output makes the proposed CIR visible to the human reviewer with a clear approve/edit path.
-- The resulting draft `ChangeIntent` is issue-linked, remains `draft` until approval, and enters the knowledge pipeline only after approval.
-- request, activity, and service specs cover both CIR-worthy and non-CIR-worthy issue bodies.
+The intended proxy path exists in `PreviewsProxy`, but `PreviewsController` still contains simulated preview markup and controller-side HTTP proxy logic for `/previews/:token`. The architecture is partly there, but the root-path experience is not yet cleanly unified on the tunnel-backed middleware path.
+
+### 3. UI still reflects simulated/stubbed behavior
+
+The project page, preview page, and request specs still allow simulated-preview flows and do not yet reflect a real asynchronous lifecycle from queued/provisioning to ready/failed/stopped backed by real resources.
+
+### 4. Trace viewing needs end-to-end confirmation, not just producer/consumer pieces
+
+Trace recording, upload helpers, and the viewer UI all exist, but the remaining question is whether real agent-run traces are durably uploaded and discoverable through the exact key contract the viewer expects in all intended scenarios.
+
+### 5. Agent self-verification is not end-to-end
+
+The browser sidecar and MCP definition are provisioned, but that is not yet the same as an agent starting the changed app, using Playwright meaningfully, and persisting a verification outcome/artifact onto the run.
+
+## Reopened Follow-Up Issues
+
+The remaining work has been re-opened into focused issues on August 4, 2026:
+
+- [#3192](https://github.com/viamin/paid/issues/3192) — Wire project preview actions to real `PreviewSession` provisioning and teardown
+- [#3193](https://github.com/viamin/paid/issues/3193) — Complete preview proxy routing and tunnel-backed root-path handling
+- [#3194](https://github.com/viamin/paid/issues/3194) — Finish live preview UI lifecycle and access flows around real preview sessions
+- [#3195](https://github.com/viamin/paid/issues/3195) — Close the loop from recorded Playwright traces to durable viewer artifacts
+- [#3196](https://github.com/viamin/paid/issues/3196) — Implement end-to-end agent self-verification beyond browser sidecar provisioning
+- [#3197](https://github.com/viamin/paid/issues/3197) — Re-open preview/runtime detection follow-up after RDR-046 lands
 
 ## Conclusion
 
-RDR-042 should now be treated as **partially implemented**:
+RDR-045 should now be treated as **partially implemented**:
 
-- Phase 1 shipped.
-- Phase 2 shipped.
-- Phase 3's external-agent lookup tools shipped.
-- Phase 3's issue-enhancement CIR detection is still missing and is now tracked in [#3213](https://github.com/viamin/paid/issues/3213).
+- July 2026 shipped the foundational components.
+- August 2026 re-opened the still-missing end-to-end preview and verification work.
+
+The repo docs should stop saying "not implemented" and should instead distinguish shipped foundations from the reopened gaps tracked by [#3166](https://github.com/viamin/paid/issues/3166) and [#3192](https://github.com/viamin/paid/issues/3192) through [#3197](https://github.com/viamin/paid/issues/3197).
