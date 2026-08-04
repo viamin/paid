@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+# @spec POSTGRESQL-PERSISTENCE-001
 class EnableTenantRowLevelSecurity < ActiveRecord::Migration[8.1]
   DIRECT_ACCOUNT_TABLES = %w[
     account_memberships

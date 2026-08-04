@@ -57,6 +57,8 @@ module Paid
   end
 end
 
+# @spec RAILS-CONTROL-PLANE-003
+# @spec TEMPORAL-ORCHESTRATION-003
 # Configure GoodJob worker pools, queue roles, and cron schedule.
 #
 # Queue priority order (highest to lowest):

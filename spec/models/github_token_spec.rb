@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe GithubToken do
+RSpec.describe GithubToken do # @spec POSTGRESQL-PERSISTENCE-003
   describe "associations" do
     it { is_expected.to belong_to(:account) }
     it { is_expected.to belong_to(:created_by).class_name("User").optional }
@@ -106,7 +106,7 @@ RSpec.describe GithubToken do
   end
 
   describe "encryption" do
-    it "encrypts the token field" do
+    it "encrypts the token field" do # @spec POSTGRESQL-PERSISTENCE-003
       token = create(:github_token, token: "ghp_#{SecureRandom.alphanumeric(36)}")
       raw_token_in_db = described_class.connection.select_value(
         "SELECT token FROM github_tokens WHERE id = #{token.id}"

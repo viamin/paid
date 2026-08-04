@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+# @spec RAILS-CONTROL-PLANE-001
+# @spec RAILS-CONTROL-PLANE-002
 class ApplicationController < ActionController::Base
   include Pagy::Method
   include Pundit::Authorization
@@ -50,7 +52,7 @@ class ApplicationController < ActionController::Base
   # authorize the subscriber (see app/channels/application_cable/connection.rb).
   # httponly denies JS access (defense vs. XSS exfiltration); secure scopes it
   # to HTTPS where the app enforces SSL.
-  def stamp_cable_auth_cookie
+  def stamp_cable_auth_cookie # @spec RAILS-CONTROL-PLANE-002
     cookies.encrypted[ApplicationCable::Connection::CABLE_USER_COOKIE] = {
       value: current_user.id,
       httponly: true,

@@ -3,7 +3,7 @@
 require "rails_helper"
 require "temporalio/client"
 
-RSpec.describe PollWorkflowHealthCheckJob do
+RSpec.describe PollWorkflowHealthCheckJob do # @spec TEMPORAL-ORCHESTRATION-001
   let(:temporal_client) { instance_double(Temporalio::Client) }
 
   before do
