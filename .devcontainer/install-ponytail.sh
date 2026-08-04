@@ -12,6 +12,28 @@ PONYTAIL_MARKETPLACE="${PONYTAIL_MARKETPLACE:-ponytail}"
 PONYTAIL_PLUGIN="${PONYTAIL_PLUGIN:-ponytail}"
 PONYTAIL_NPM_PACKAGE="${PONYTAIL_NPM_PACKAGE:-@dietrichgebert/ponytail}"
 PONYTAIL_OMP_TARGET="${PONYTAIL_OMP_TARGET:-git:github.com/DietrichGebert/ponytail}"
+STEP_TIMEOUT="${PONYTAIL_STEP_TIMEOUT:-180}"
+
+run_step() {
+  local desc="$1"
+  shift
+
+  if ! timeout -k 10 "$STEP_TIMEOUT" "$@" </dev/null; then
+    echo "WARNING: ${desc} failed or timed out (${STEP_TIMEOUT}s); skipping." >&2
+    return 1
+  fi
+
+  return 0
+}
+
+run_install() {
+  local desc="$1"
+  shift
+
+  if ! "$@"; then
+    echo "WARNING: ${desc} install failed; continuing with remaining Ponytail installs." >&2
+  fi
+}
 
 wait_for_command() {
   local command_name="$1"
@@ -40,13 +62,13 @@ install_claude_ponytail() {
   mkdir -p "$claude_root/marketplaces" "$claude_root/cache"
 
   if [ -d "$marketplace_dir/.git" ]; then
-    git -C "$marketplace_dir" fetch --depth=1 origin main
+    run_step "Claude Ponytail marketplace fetch" git -C "$marketplace_dir" fetch --depth=1 origin main || return 1
     git -C "$marketplace_dir" checkout --quiet FETCH_HEAD
   elif [ -e "$marketplace_dir" ]; then
     echo "WARNING: $marketplace_dir exists but is not a git checkout; skipping Claude Ponytail install." >&2
     return 0
   else
-    git clone --depth=1 "$PONYTAIL_REPO" "$marketplace_dir"
+    run_step "Claude Ponytail marketplace clone" git clone --depth=1 "$PONYTAIL_REPO" "$marketplace_dir" || return 1
   fi
 
   manifest="$marketplace_dir/.claude-plugin/plugin.json"
@@ -114,8 +136,8 @@ install_codex_ponytail() {
     return 0
   fi
 
-  codex plugin marketplace add DietrichGebert/ponytail
-  codex plugin add ponytail@ponytail
+  run_step "Codex Ponytail marketplace add" codex plugin marketplace add DietrichGebert/ponytail || return 1
+  run_step "Codex Ponytail plugin add" codex plugin add ponytail@ponytail || return 1
 }
 
 install_opencode_ponytail() {
@@ -124,7 +146,7 @@ install_opencode_ponytail() {
     return 0
   fi
 
-  opencode plugin --global "$PONYTAIL_NPM_PACKAGE"
+  run_step "OpenCode Ponytail plugin install" opencode plugin --global "$PONYTAIL_NPM_PACKAGE" || return 1
 }
 
 install_omp_ponytail() {
@@ -133,12 +155,12 @@ install_omp_ponytail() {
     return 0
   fi
 
-  omp plugin install "$PONYTAIL_OMP_TARGET"
+  run_step "OMP Ponytail plugin install" omp plugin install "$PONYTAIL_OMP_TARGET" || return 1
 }
 
 echo "Installing Ponytail plugins for devcontainer agent CLIs..."
-install_claude_ponytail
-install_codex_ponytail
-install_opencode_ponytail
-install_omp_ponytail
+run_install "Claude Ponytail" install_claude_ponytail
+run_install "Codex Ponytail" install_codex_ponytail
+run_install "OpenCode Ponytail" install_opencode_ponytail
+run_install "OMP Ponytail" install_omp_ponytail
 echo "Ponytail plugin installation complete."
