@@ -5,10 +5,10 @@
 ## Metadata
 
 - **Date**: 2026-05-25
-- **Status**: Partially Implemented
+- **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: P1
-- **Related Issues**: viamin/paid#2371 (this amendment), viamin/paid#2367 (gem-source switch), viamin/paid#2368 (`--usage` cleanup), viamin/paid#2370 (customer UI)
+- **Related Issues**: viamin/paid#3169 (closeout audit), viamin/paid#2371 (this amendment), viamin/paid#2367 (gem-source switch), viamin/paid#2368 (`--usage` cleanup), viamin/paid#2370 (customer UI)
 - **Related RDRs**:
   - [RDR-013](RDR-013-code-quality-backpressure.md) (Code Quality and Backpressure)
   - [RDR-009](RDR-009-prompt-evolution.md) (Prompt Evolution)
@@ -18,7 +18,19 @@
 
 ## Implementation Status
 
-Partially implemented. Paid has mutation CI, `bin/mutation`, managed-project mutation pre-commit requirements, container quality-hook support, Mutant feedback parsing, mutation quality metrics, scheduled sweeps, and dashboard reporting. Remaining work includes completing the sanctioned-source transition to `viamin/mutant` as the default, cleaning stale `--usage`/licensing artifacts, and finishing customer-facing configuration tracked by #2370.
+Implemented as of 2026-08-04. Paid ships mutation CI, `bin/mutation`, managed-project mutation pre-commit requirements, container quality-hook support, Mutant feedback parsing, mutation quality metrics, scheduled sweeps, dashboard reporting, the `viamin/mutant` default source, the `--usage`/licensing cleanup, and the project settings UI for customer-facing mutation-test configuration.
+
+See [audit-report-2026-08-04-rdr-036.md](audit-report-2026-08-04-rdr-036.md).
+
+## 2026-08-04 Closeout
+
+The closeout audit for issue [#3169](https://github.com/viamin/paid/issues/3169), recorded in [audit-report-2026-08-04-rdr-036.md](audit-report-2026-08-04-rdr-036.md), confirmed that the three remaining follow-up issues referenced by this RDR are fully shipped:
+
+- `#2367` landed the sanctioned-source switch to `viamin/mutant` for `Gemfile`, `bin/mutation`, and `.github/workflows/mutation.yml`.
+- `#2368` removed stale `--usage` handling and `MUTANT_LICENSE_KEY` plumbing from the mutation command path.
+- `#2370` shipped the project settings UI and seeded defaults for opt-in `mutation_test` pre-commit requirements.
+
+No additional mutation-testing gap remained from the original RDR scope after reconciling the repo state against those issues, so this RDR now closes as fully implemented.
 
 ## Amendment 1 (2026-05-29)
 
