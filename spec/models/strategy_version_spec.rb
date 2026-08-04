@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec LEARNED-ORCH-002
 RSpec.describe StrategyVersion do
   describe "associations" do
     it { is_expected.to belong_to(:strategy) }

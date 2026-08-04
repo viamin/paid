@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec MODEL-SELECTION-004
 RSpec.describe ModelSelection do
   describe "validations" do
     subject { build(:model_selection) }

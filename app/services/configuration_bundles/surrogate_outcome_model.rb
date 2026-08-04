@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 module ConfigurationBundles
+  # @spec BUNDLE-OPT-002
   class SurrogateOutcomeModel
     Prediction = Struct.new(
       :predicted_objective_score,

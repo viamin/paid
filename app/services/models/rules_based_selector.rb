@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 module Models
+  # @spec MODEL-SELECTION-003
   class RulesBasedSelector
     include RunnerTierLookup
 

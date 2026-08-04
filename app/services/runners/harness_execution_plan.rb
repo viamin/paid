@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 module Runners
+  # @spec AGENT-HARNESS-001
   class HarnessExecutionPlan
     Result = Struct.new(:command, :env, :preparation, keyword_init: true)
 

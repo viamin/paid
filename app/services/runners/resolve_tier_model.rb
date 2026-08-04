@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 module Runners
+  # @spec RUNNER-FALLBACK-001, RUNNER-FALLBACK-002
   class ResolveTierModel
     def self.call(...)
       new(...).call

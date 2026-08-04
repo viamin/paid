@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec PROMPT-EVOLUTION-001, PROMPT-EVOLUTION-002
 RSpec.describe PromptEvolution::CreateVariants do
   let(:user) { create(:user) }
   let(:prompt) { create(:prompt, :global, :with_version) }

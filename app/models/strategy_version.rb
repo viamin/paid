@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class StrategyVersion < ApplicationRecord
+  # @spec LEARNED-ORCH-002
   IMMUTABLE_ATTRIBUTES = %w[
     content
     version

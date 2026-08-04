@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec BUNDLE-OPT-002
 RSpec.describe ConfigurationBundles::SurrogateOutcomeModel, :no_db do
   def build_row(goal:, agent_type:, quality_score:, experiment_features: {}, success: true,
                 cost_cents: 40, duration_seconds: 120, weight: 1.0, objective_score: nil,

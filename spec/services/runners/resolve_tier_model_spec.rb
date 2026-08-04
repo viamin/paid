@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec RUNNER-FALLBACK-001, RUNNER-FALLBACK-002
 RSpec.describe Runners::ResolveTierModel do
   describe ".call" do
     let(:user) { create(:user) }

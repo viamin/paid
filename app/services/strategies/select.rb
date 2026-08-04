@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 module Strategies
+  # @spec LEARNED-ORCH-001
   # Public API for context-aware strategy selection from database-backed
   # Strategy records. Wraps OrchestrationStrategySelector with enriched
   # context (task_type injection) and a structured Result that includes

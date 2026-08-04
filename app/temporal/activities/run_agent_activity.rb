@@ -939,6 +939,7 @@ module Activities
     end
 
     def runner_supports_tier?(runner_candidate, tier, user)
+      # @spec RUNNER-FALLBACK-001
       return true if tier.blank?
 
       # Direct-outbound runners bring their own model from config and bypass the
@@ -975,6 +976,7 @@ module Activities
     end
 
     def resolve_tier_model_for(runner_candidate, agent_run, user)
+      # @spec RUNNER-FALLBACK-002
       tier = requested_tier_for(agent_run)
       return nil if tier.blank?
 

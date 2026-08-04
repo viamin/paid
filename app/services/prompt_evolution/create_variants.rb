@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 module PromptEvolution
+  # @spec PROMPT-EVOLUTION-001, PROMPT-EVOLUTION-002
   # Persists mutation variants produced by +PromptEvolution::Mutate+ as
   # PromptVersion records. Honors the prompt's review gate:
   #
