@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe "TenantEnforcement" do
+RSpec.describe "TenantEnforcement" do # @spec RAILS-CONTROL-PLANE-006
   describe "active account" do
     let(:account) { create(:account, status: :active) }
     let(:user) { create(:user, account: account) }

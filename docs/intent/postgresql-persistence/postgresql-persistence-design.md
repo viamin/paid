@@ -24,7 +24,10 @@ triggers handled through `fx` where applicable.
 
 Tenant isolation is enforced in PostgreSQL with helper functions driven by
 `paid.current_account_id` and `paid.bypass_tenant_rls`. The application also
-guards against unsafe runtime roles that would bypass those policies.
+guards against unsafe runtime roles that would bypass those policies. The
+shipped policy set does not just hide rows on reads; it also rejects
+cross-tenant join rows and direct-account writes whose foreign keys point at a
+different tenant.
 
 Sensitive GitHub tokens are encrypted at rest through Rails encrypted
 attributes, and the token records retain change history through Logidze.

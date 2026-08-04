@@ -1,6 +1,9 @@
 # frozen_string_literal: true
 
 module Api
+  # @spec SECRETS-PROXY-001
+  # @spec SECRETS-PROXY-002
+  # @spec SECRETS-PROXY-003
   class SecretsProxyController < ActionController::API
     include Api::ContainerAuthentication
     allow_knowledge_run_authentication!
@@ -57,7 +60,7 @@ module Api
 
     private
 
-    def check_rate_limit
+    def check_rate_limit # @spec SECRETS-PROXY-003
       limit = resolve_max_tokens_per_run
       current_tokens = authenticated_run.total_tokens
 
@@ -152,7 +155,7 @@ module Api
       nil
     end
 
-    def fetch_api_key(provider)
+    def fetch_api_key(provider) # @spec SECRETS-PROXY-001
       key = agent_run_api_key(provider)
       return if performed?
 
@@ -205,7 +208,7 @@ module Api
       entry
     end
 
-    def knowledge_run_api_key(provider)
+    def knowledge_run_api_key(provider) # @spec SECRETS-PROXY-002
       return unless @knowledge_run
 
       runner_key = resolved_knowledge_run_runner_key

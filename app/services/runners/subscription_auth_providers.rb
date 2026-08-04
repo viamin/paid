@@ -14,6 +14,9 @@ module Runners
   # Copilot materialize the minimal native CLI config from a managed
   # RunnerCredential (#2964); their refresh/harvest ownership is deferred until
   # telemetry proves reliability, so those methods return unsupported.
+  # @spec SUBSCRIPTION-RUNNER-AUTH-001
+  # @spec SUBSCRIPTION-RUNNER-AUTH-002
+  # @spec SUBSCRIPTION-RUNNER-AUTH-003
   class SubscriptionAuthProviders
     Status = Struct.new(
       :state,

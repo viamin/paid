@@ -18,6 +18,12 @@
   traffic cannot silently bypass tenant RLS.
   *Code:* `Database::RuntimeRoleGuard`.
 
+- [x] **POSTGRESQL-PERSISTENCE-006** — Tenant RLS policies SHALL reject
+  cross-tenant writes for direct account rows, join rows, and project-owned
+  records instead of relying on application checks alone.
+  *Tests:* `spec/security/tenant_context_spec.rb`.
+  *Code:* `EnableTenantRowLevelSecurity`, `TenantContext`.
+
 ## Encrypted and Audited Credentials
 
 - [x] **POSTGRESQL-PERSISTENCE-003** — Stored GitHub tokens SHALL be encrypted

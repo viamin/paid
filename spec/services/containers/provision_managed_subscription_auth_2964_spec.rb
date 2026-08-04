@@ -4,7 +4,7 @@ require "rails_helper"
 require "json"
 require "tmpdir"
 
-RSpec.describe Containers::Provision do
+RSpec.describe Containers::Provision do # @spec SUBSCRIPTION-RUNNER-AUTH-003
   let(:local_backend) do
     instance_double(
       Containers::Backends::Base,

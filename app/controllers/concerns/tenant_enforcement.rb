@@ -5,6 +5,7 @@
 #
 # Include in ApplicationController after authentication:
 #   include TenantEnforcement
+# @spec RAILS-CONTROL-PLANE-006
 module TenantEnforcement
   extend ActiveSupport::Concern
 
@@ -14,7 +15,7 @@ module TenantEnforcement
 
   private
 
-  def enforce_tenant_status
+  def enforce_tenant_status # @spec RAILS-CONTROL-PLANE-006
     return unless current_account
 
     if current_account.deactivated?

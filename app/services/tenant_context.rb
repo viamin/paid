@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+# @spec POSTGRESQL-PERSISTENCE-001
+# @spec POSTGRESQL-PERSISTENCE-006
 class TenantContext
   class << self
     def apply!(account)

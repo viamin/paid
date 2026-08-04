@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe Runners::SubscriptionAuthProviders, :no_db do
+RSpec.describe Runners::SubscriptionAuthProviders, :no_db do # @spec SUBSCRIPTION-RUNNER-AUTH-001 # @spec SUBSCRIPTION-RUNNER-AUTH-002
   let(:claude_provider) { described_class.for_runner("claude") }
 
   describe ".for_runner" do

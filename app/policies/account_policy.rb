@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+# @spec TENANT-ACCESS-001
 class AccountPolicy < ApplicationPolicy
   def show?
     user_in_account?

@@ -20,6 +20,14 @@
   *Tests:* `spec/channels/application_cable/connection_spec.rb`.
   *Code:* `ApplicationController#stamp_cable_auth_cookie`, `ApplicationCable::Connection`.
 
+- [x] **RAILS-CONTROL-PLANE-006** — When an authenticated request belongs to a
+  suspended or deactivated account, the control plane SHALL fail closed at the
+  controller layer by allowing suspended accounts read-only access, rejecting
+  suspended write attempts, and revoking deactivated account access across
+  HTML, JSON, and SSE request paths.
+  *Tests:* `spec/requests/tenant_enforcement_spec.rb`.
+  *Code:* `TenantEnforcement`, `ApplicationController`.
+
 ## Background Work
 
 - [x] **RAILS-CONTROL-PLANE-003** — The control plane SHALL use GoodJob as its
