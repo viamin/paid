@@ -104,6 +104,7 @@ RSpec.describe "Previews" do
   end
 
   describe "GET /previews/:token/*" do
+    # @spec LIVE-PREVIEW-004
     before do
       # The :ready factory defaults to a simulated container id; this block
       # exercises the real reverse-proxy path, so swap in a real container id.
@@ -122,6 +123,13 @@ RSpec.describe "Previews" do
 
       it "serves the proxied preview content" do
         get "#{preview_session.proxy_prefix}/"
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to eq("proxied app")
+      end
+
+      it "serves the live root document through the same proxy implementation for the exact token path" do
+        get preview_path(preview_session.token)
 
         expect(response).to have_http_status(:ok)
         expect(response.body).to eq("proxied app")

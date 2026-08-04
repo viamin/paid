@@ -36,8 +36,8 @@ RSpec.describe PreviewsProxy do
       expect(response.body).to eq("fallback")
     end
 
-    it "passes the exact /previews/:id through to the app (controller route)" do
-      response = mock_request.get("/previews/s3cret-token")
+    it "passes wrapper-style paths without a live token through to the app" do
+      response = mock_request.get("/previews/999999")
 
       expect(response.body).to eq("fallback")
     end
@@ -125,8 +125,19 @@ RSpec.describe PreviewsProxy do
   end
 
   describe "HTTP forwarding" do
+    # @spec LIVE-PREVIEW-004
     before do
       stub_request(:any, %r{\Ahttp://127\.0\.0\.1:#{port}/})
+    end
+
+    it "forwards the exact /previews/:token root through the same proxy path as nested requests" do
+      stub_request(:get, "http://127.0.0.1:#{port}/")
+        .to_return(status: 200, body: "<h1>Preview root</h1>")
+
+      response = mock_request.get("/previews/s3cret-token")
+
+      expect(response.status).to eq(200)
+      expect(response.body).to eq("<h1>Preview root</h1>")
     end
 
     it "forwards the request to the resolved tunnel port and returns the body" do
