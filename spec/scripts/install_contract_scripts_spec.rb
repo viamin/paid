@@ -25,8 +25,8 @@ RSpec.describe InstallContractScripts, :no_db do
     Gem::Version.new(version)
   end
 
-  def opencode_minimum_safe_version
-    Gem::Version.new("1.18.0")
+  def opencode_supported_version
+    Gem::Version.new("1.18.9")
   end
 
   it "keeps codex installs scriptless by default" do
@@ -45,7 +45,7 @@ RSpec.describe InstallContractScripts, :no_db do
     expect(stdout).to include("SOURCE=npm")
     expect(stdout).to include("INSTALL_COMMAND=npm install -g --ignore-scripts opencode-ai@")
     expect(stdout).to include("node $(npm root -g)/opencode-ai/postinstall.mjs")
-    expect(supported_version(stdout)).to be >= opencode_minimum_safe_version
+    expect(supported_version(stdout)).to eq(opencode_supported_version)
   end
 
   it "emits the opencode install command for the agent image build path" do
@@ -54,7 +54,7 @@ RSpec.describe InstallContractScripts, :no_db do
     expect(status.success?).to be(true), -> { stderr }
     expect(stdout).to include("INSTALL_COMMAND=npm install -g --ignore-scripts opencode-ai@")
     expect(stdout).to include("node $(npm root -g)/opencode-ai/postinstall.mjs")
-    expect(supported_version(stdout)).to be >= opencode_minimum_safe_version
+    expect(supported_version(stdout)).to eq(opencode_supported_version)
   end
 
   it "falls back to runtime installation metadata for omp" do
