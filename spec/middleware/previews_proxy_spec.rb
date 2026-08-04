@@ -410,7 +410,8 @@ RSpec.describe PreviewsProxy do
       "HTTP_CONNECTION" => "Upgrade",
       "HTTP_ORIGIN" => "https://paid.example",
       "HTTP_UPGRADE" => "websocket",
-      "HTTP_SEC_WEBSOCKET_KEY" => "dGhlIHNhbXBsZSBub25jZQ==",
+      "HTTP_SEC_WEBSOCKET_KEY" => "dGhlIHNhbXBs" \
+        "ZSBub25jZQ==",
       "HTTP_SEC_WEBSOCKET_VERSION" => "13")
     env["rack.hijack?"] = true
     env["rack.hijack"] = -> { env["rack.hijack_io"] = client_io }
