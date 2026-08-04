@@ -37,6 +37,7 @@ RSpec.describe Containers::ServiceProvisioner do
 
     context "when project has no service containers" do
       it "returns empty hash" do
+        # @spec CONTAINER-RUNTIME-004
         result = provisioner.provision(agent_run)
         expect(result).to eq({})
       end

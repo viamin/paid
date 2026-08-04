@@ -24,6 +24,7 @@ module Capacity
     end
 
     def call
+      # @spec CONTAINER-RUNTIME-006
       return owner_missing_result unless user
 
       mode = @mode || user.settings.run_concurrency_mode

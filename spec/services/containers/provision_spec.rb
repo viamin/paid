@@ -740,6 +740,7 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
+      # @spec CONTAINER-RUNTIME-001
       it "creates a Docker volume instead of bind-mounting when worktree_path is the container mount point" do
         container_internal_service = described_class.new(
           agent_run: agent_run,

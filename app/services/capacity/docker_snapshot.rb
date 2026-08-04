@@ -244,6 +244,7 @@ module Capacity
     end
 
     def call
+      # @spec CONTAINER-RUNTIME-005
       cached_snapshot = read_cached_snapshot
       return cached_snapshot if cached_snapshot.present? && !force_refresh && cached_snapshot.fresh?(now: now)
 
@@ -257,6 +258,7 @@ module Capacity
     end
 
     def fetch
+      # @spec CONTAINER-RUNTIME-005
       call.to_run_admission_h
     end
 

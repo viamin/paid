@@ -26,6 +26,7 @@ module Containers
 
     # Returns { container_host: String|nil, external_metadata: Hash|nil }.
     # external_metadata is only present when non-empty.
+    # @spec CONTAINER-RUNTIME-002
     def call
       selected_host = resolve_identifier
       metadata = selection_metadata(selected_host)

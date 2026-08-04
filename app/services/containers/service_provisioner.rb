@@ -100,6 +100,7 @@ module Containers
     #   Defaults to NETWORK_NAME (paid_agent). Callers should pass the same
     #   network the agent container will use so services are reachable.
     # @return [Hash] Environment variables hash for the agent container
+    # @spec CONTAINER-RUNTIME-004
     def provision(agent_run, network: NetworkPolicy::NETWORK_NAME, service_names: nil)
       service_containers = selected_service_containers(agent_run.project, service_names)
       return {} if service_containers.empty?
@@ -164,6 +165,7 @@ module Containers
     # Only stops containers with no in-flight capacity runs still using them.
     #
     # @param agent_run [AgentRun] The agent run to clean up services for
+    # @spec CONTAINER-RUNTIME-004
     def cleanup(agent_run, stale_requeue_count: nil)
       container_ids = agent_run.service_container_ids
       return if container_ids.blank?
