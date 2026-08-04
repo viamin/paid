@@ -14,7 +14,9 @@
 
 ## Implementation Status
 
-Draft. Not implemented. Language detection is a stub (`Project` has no `detected_language` method or column — every project defaults to Ruby). The Docker agent image is monolithic with no per-language selection. The test command map includes 6 languages but none are reachable because detection never returns a non-Ruby result. Elixir and Swift are entirely unsupported.
+Draft. Not implemented end-to-end. Language detection for test/runtime selection is still a stub (`Project` has no `detected_language` method or column — every project defaults to Ruby), the Docker agent image is still monolithic, and the test command map is still effectively Ruby-only.
+
+Important nuance for RDR-045 coordination: preview-specific Phoenix support did ship in July 2026 inside the screenshot/live-preview stack, so Elixir is no longer "entirely unsupported" everywhere. What is still missing is the repo-wide shared detection/runtime model that preview, verification, test-command selection, and runtime/image selection should all consume.
 
 ## Problem Statement
 
