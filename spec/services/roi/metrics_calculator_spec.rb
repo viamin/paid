@@ -19,6 +19,28 @@ RSpec.describe Roi::MetricsCalculator do
         cost_per_accepted_pr_cents: 6_000
       )
     end
+
+    it "does not count preview provisioning runs as later defect escapes for array-backed inputs" do
+      project = create(:project)
+      issue = create(:issue, project:, github_created_at: 5.days.ago)
+      accepted_run = create_accepted_run(project:, issue:)
+      preview_run = create_preview_run(project:, issue:)
+
+      stats = described_class.call(agent_runs: [ accepted_run ], related_runs: [ accepted_run, preview_run ])
+
+      expect(stats[:defect_escape_rate]).to eq(0.0)
+    end
+
+    it "does not count preview provisioning runs as later defect escapes for relation-backed inputs" do
+      project = create(:project)
+      issue = create(:issue, project:, github_created_at: 5.days.ago)
+      create_accepted_run(project:, issue:)
+      create_preview_run(project:, issue:)
+
+      stats = described_class.call(agent_runs: AgentRun.all, related_runs: AgentRun.all)
+
+      expect(stats[:defect_escape_rate]).to eq(0.0)
+    end
   end
 
   def create_accepted_run(project:, issue:)
