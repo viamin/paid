@@ -2859,7 +2859,7 @@ RSpec.describe AgentRun do
     end
   end
 
-  describe "#queue_priority_tier" do
+  describe "#queue_priority_tier" do # @spec QUEUE-TIER-002
     it "returns :manual for manual trigger type" do
       run = create(:agent_run, trigger_type: "manual")
 

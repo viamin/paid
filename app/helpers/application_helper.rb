@@ -103,7 +103,7 @@ module ApplicationHelper
     [ (completed_at - start_time).to_i, 0 ].max
   end
 
-  AGENT_RUN_PRIORITY_STYLES = {
+  AGENT_RUN_PRIORITY_STYLES = { # @spec QUEUE-TIER-004
     manual: { bg: "bg-sky-100", text: "text-sky-700" },
     pr_p1: { bg: "bg-red-100", text: "text-red-700" },
     pr_p2: { bg: "bg-orange-100", text: "text-orange-700" },

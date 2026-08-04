@@ -26,7 +26,7 @@ class QualityMetric < ApplicationRecord
     "mutation_kill_rate" => MUTATION_KILL_RATE_WEIGHT
   }.freeze
 
-  FOCUS_WEIGHTS = {
+  FOCUS_WEIGHTS = { # @spec FOCUSED-RUN-004
     "ci_fix" => {
       "ci_passed" => 0.45,
       "lint_clean" => 0.18,
@@ -163,7 +163,7 @@ class QualityMetric < ApplicationRecord
     (weighted_sum / total_weight).round(4)
   end
 
-  def self.weights_for(goal: "create_pr", focus: "general")
+  def self.weights_for(goal: "create_pr", focus: "general") # @spec FOCUSED-RUN-004
     goal_weights = GOAL_WEIGHTS.fetch(goal, SCORE_WEIGHTS)
     return goal_weights unless goal == "create_pr"
 

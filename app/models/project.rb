@@ -1492,7 +1492,7 @@ class Project < ApplicationRecord
     DEFAULT_SCREENSHOT_SETTINGS.deep_merge(settings)
   end
 
-  def seed_eligible_issues
+  def seed_eligible_issues # @spec EAGER-QUEUE-004
     return unless Issues::AutoPickProjectGate.call(self)
 
     Issues::BulkEnqueueEligible.call(project: self, skip_project_gate: true)

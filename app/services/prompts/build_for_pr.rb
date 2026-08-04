@@ -181,7 +181,7 @@ module Prompts
       priorities.each_with_index.map { |p, i| "#{i + 1}. #{p}" }.join("\n")
     end
 
-    def focused?
+    def focused? # @spec FOCUSED-RUN-003
       focus != "general"
     end
 
@@ -400,7 +400,7 @@ module Prompts
         "containing exactly `#{ALREADY_ADDRESSED_MARKER}`."
     end
 
-    def include_section?(section)
+    def include_section?(section) # @spec FOCUSED-RUN-003
       return true if general_or_label_action_focus?
 
       scoped_section_for_focus == section

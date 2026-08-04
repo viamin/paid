@@ -75,7 +75,7 @@ module Scaling
 
     # --- Raw decision (before constraints) ---
 
-    def compute_raw_decision
+    def compute_raw_decision # @spec WORKER-POOL-SCALING-003
       # Priority 1: scale up if queue is deep or utilization is high
       if scale_up_needed?
         target = snapshot.active_workers + config.scale_up_step
@@ -125,7 +125,7 @@ module Scaling
 
     # Returns true when recent queue depth shows a consistently rising trend
     # that will likely breach the scale-up threshold soon.
-    def trend_indicates_scale_up?
+    def trend_indicates_scale_up? # @spec WORKER-POOL-SCALING-004
       return false if history.size < TREND_WINDOW_MIN
       return false if scale_up_needed? # already reactive
 
@@ -144,7 +144,7 @@ module Scaling
 
     # --- Constraints ---
 
-    def apply_constraints(raw)
+    def apply_constraints(raw) # @spec WORKER-POOL-SCALING-005
       target = raw[:target]
       action = raw[:action]
       reason = raw[:reason]

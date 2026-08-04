@@ -36,7 +36,7 @@ module Scaling
       new(...).call
     end
 
-    def call
+    def call # @spec WORKER-POOL-SCALING-006
       decisions = []
       current_workers = initial_workers
       last_scaled_at = nil

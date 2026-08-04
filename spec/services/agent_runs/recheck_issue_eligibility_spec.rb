@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe AgentRuns::RecheckIssueEligibility do
+RSpec.describe AgentRuns::RecheckIssueEligibility do # @spec EAGER-QUEUE-005 @spec EAGER-QUEUE-006
   let(:project) { create(:project, auto_pick_enabled: true) }
 
   # Builds a queued auto-pick run for +issue+. The issue is created in its

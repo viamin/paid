@@ -17,7 +17,7 @@ class AgentRun < ApplicationRecord
   ].freeze
   STATUSES = %w[queued running paused completed no_output failed cancelled timeout token_budget_exceeded retried auth_expired rate_limited].freeze
   AGENT_TYPES = %w[claude_code cursor codex copilot gemini opencode kilocode pi api devin factory internal_agent].freeze
-  FOCUSES = %w[general ci_fix review_feedback merge_conflict conversation issue_implementation label_action].freeze
+  FOCUSES = %w[general ci_fix review_feedback merge_conflict conversation issue_implementation label_action].freeze # @spec FOCUSED-RUN-001
   # analyze_issue is automation-only (triggered via Automation::Decision), not exposed in the manual run form.
   GOALS = %w[create_pr create_issue review enhance_issue analyze_issue lid_planning].freeze
   TRIGGER_TYPES = %w[manual automatic].freeze
@@ -925,7 +925,7 @@ class AgentRun < ApplicationRecord
   # runs because issue creation is lighter-weight and often unblocks
   # downstream PR work. Within each goal type, runs are FIFO by
   # created_at, with id as a stable tiebreaker.
-  QUEUE_PRIORITIES = {
+  QUEUE_PRIORITIES = { # @spec QUEUE-TIER-001
     manual: { label: "Manual", indicator: 1 },
     pr_p1: { label: "PR · P1", indicator: 2 },
     pr_p2: { label: "PR · P2", indicator: 3 },
@@ -939,7 +939,7 @@ class AgentRun < ApplicationRecord
   UNKNOWN_PRIORITY = { label: "Unknown", indicator: nil }.freeze
   QUEUE_GOAL_PRIORITY_GOALS = %w[create_issue enhance_issue analyze_issue lid_planning].freeze
 
-  def queue_priority_tier
+  def queue_priority_tier # @spec QUEUE-TIER-002
     return :manual if manual?
 
     category = existing_pr? ? "pr" : "issue"
@@ -1147,7 +1147,7 @@ class AgentRun < ApplicationRecord
   # trigger_type = 'automatic' is not re-checked below the first WHEN:
   # TRIGGER_TYPES only has 'manual'/'automatic', so anything that reaches
   # the second WHEN is already known to be automatic.
-  QUEUE_PRIORITY_CASE_SQL = <<~SQL.squish.freeze
+  QUEUE_PRIORITY_CASE_SQL = <<~SQL.squish.freeze # @spec QUEUE-TIER-001
     CASE
       WHEN trigger_type = 'manual' THEN 0
       WHEN source_pull_request_number IS NOT NULL THEN (#{LABEL_RANK_CASE_SQL})
@@ -1191,7 +1191,7 @@ class AgentRun < ApplicationRecord
   #   in_progress          → tie-break within the manual tier only (PR continuation first)
   #   goal_priority        → create_issue ahead of create_pr
   #   created_at, id       → FIFO tiebreaker
-  QUEUE_ORDER = [
+  QUEUE_ORDER = [ # @spec QUEUE-TIER-003 @spec QUEUE-TIER-005 @spec EAGER-QUEUE-008
     PROJECT_ACTIVE_COUNT_SQL,
     USER_ACTIVE_COUNT_SQL,
     QUEUE_PRIORITY_SQL,
@@ -1468,7 +1468,7 @@ class AgentRun < ApplicationRecord
     end
   end
 
-  def existing_pr?
+  def existing_pr? # @spec QUEUE-TIER-002
     source_pull_request_number.present?
   end
 
@@ -1523,7 +1523,7 @@ class AgentRun < ApplicationRecord
     Array(external_metadata["plan_docs"]).any? { |doc| doc.respond_to?(:[]) && doc["name"].present? }
   end
 
-  def focused?
+  def focused? # @spec FOCUSED-RUN-001
     focus != "general"
   end
 

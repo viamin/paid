@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe Activities::ScanPaidPrsActivity do
+RSpec.describe Activities::ScanPaidPrsActivity do # @spec FOCUSED-RUN-002
   describe "#review_feedback_resolution_scores", :no_db do
     let(:activity) { described_class.new }
     let(:project) { instance_double(ProjectDouble) }

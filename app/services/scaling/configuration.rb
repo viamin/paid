@@ -9,7 +9,7 @@ module Scaling
   # @example
   #   config = Scaling::Configuration.new(max_workers: 20, cost_per_worker_hour_cents: 50)
   #   config.max_workers  # => 20
-  class Configuration
+  class Configuration # @spec WORKER-POOL-SCALING-001
     DEFAULTS = {
       min_workers: 1,
       max_workers: 10,

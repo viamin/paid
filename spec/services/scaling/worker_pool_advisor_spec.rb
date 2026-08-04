@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe Scaling::WorkerPoolAdvisor do
+RSpec.describe Scaling::WorkerPoolAdvisor do # @spec WORKER-POOL-SCALING-003 @spec WORKER-POOL-SCALING-004 @spec WORKER-POOL-SCALING-005
   let(:now) { Time.current }
   let(:config) { Scaling::Configuration.new(**config_overrides) }
   let(:config_overrides) { {} }

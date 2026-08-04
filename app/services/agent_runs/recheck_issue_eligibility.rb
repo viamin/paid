@@ -28,7 +28,7 @@ module AgentRuns
 
     # Returns true when the run was cancelled because its issue is no
     # longer eligible; false when the run should proceed normally.
-    def call
+    def call # @spec EAGER-QUEUE-005
       return false unless recheck_applicable?
       return false if issue_still_eligible?
 
@@ -39,7 +39,7 @@ module AgentRuns
 
     attr_reader :agent_run
 
-    def recheck_applicable?
+    def recheck_applicable? # @spec EAGER-QUEUE-006
       agent_run.auto_pick? &&
         agent_run.issue_id.present? &&
         !agent_run.review_goal?
