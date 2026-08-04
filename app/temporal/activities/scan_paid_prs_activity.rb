@@ -191,66 +191,18 @@ module Activities
     private
 
     def collect_scan_result(issue, result, prs_to_trigger, automation_results, lifecycle:)
-      automation_result = Automation::StrategyCoordinator.new(project: issue.project)
-        .evaluate_pull_request(
+      scan_outcome = Automation::StrategyCoordinator.new(project: issue.project)
+        .evaluate_pull_request_scan(
           record: issue,
-          metadata: {
-            scan: result,
-            lifecycle: lifecycle
-          },
+          scan: result,
+          lifecycle: lifecycle,
           strategy_types: %i[auto_continue]
         )
 
-      legacy_trigger = legacy_trigger_payload(issue, result, lifecycle, automation_result)
-      prs_to_trigger << legacy_trigger if legacy_trigger
+      prs_to_trigger << scan_outcome.legacy_trigger if scan_outcome.legacy_trigger
+      return if scan_outcome.noop?
 
-      metadata = {
-        issue_id: issue.id,
-        pr_number: issue.github_number,
-        phase: lifecycle&.dig(:phase),
-        draft: lifecycle&.dig(:draft),
-        lifecycle_phase: lifecycle&.dig(:phase),
-        lifecycle_draft: lifecycle&.dig(:draft),
-        owner_reviewer_login: lifecycle&.dig(:owner_reviewer_login)
-      }
-      metadata.merge!(result.except(:decisions)) if result.is_a?(Hash)
-
-      return if automation_result.decisions.all? { |decision| decision.type == "noop" }
-
-      automation_results << metadata.merge(automation_result.to_h)
-    end
-
-    def legacy_trigger_payload(issue, result, lifecycle, automation_result)
-      decisions = automation_result.decisions
-      escalate = decisions.find { |decision| decision.type == "escalate" }
-      return {
-        pr_number: issue.github_number,
-        phase: lifecycle&.dig(:phase),
-        draft: lifecycle&.dig(:draft),
-        owner_reviewer_login: escalate.payload[:owner_reviewer_login],
-        triggers: [ { type: "escalate_to_owner", details: escalate.payload[:reason], reason_key: escalate.payload[:reason_key] } ]
-      } if escalate
-
-      return result if result.is_a?(Hash)
-
-      mark_ready = decisions.find { |decision| decision.type == "mark_ready" }
-      return {
-        pr_number: issue.github_number,
-        phase: lifecycle&.dig(:phase),
-        draft: lifecycle&.dig(:draft),
-        owner_reviewer_login: mark_ready.payload[:owner_reviewer_login],
-        triggers: [ { type: "ready_for_owner" } ]
-      } if mark_ready
-
-      merge = decisions.find { |decision| decision.type == "merge" }
-      return {
-        pr_number: issue.github_number,
-        phase: lifecycle&.dig(:phase),
-        draft: lifecycle&.dig(:draft),
-        triggers: [ { type: "owner_approved" } ]
-      } if merge
-
-      nil
+      automation_results << scan_outcome.to_h
     end
 
     def build_lifecycle_signals(project, issue)
@@ -2264,7 +2216,7 @@ module Activities
       return false if allowed_bot_logins.nil? || allowed_bot_logins.empty?
       return false unless allowed_bot_logins.subset?(BODY_ONLY_REVIEW_BOT_LOGINS)
 
-      comments = client.recent_issue_comments(project.full_name, issue.github_number)
+      comments = pull_request_collector(project, client:).fetch_recent_issue_comments(issue:)
       bot_comments = comments.select do |c|
         login = c.user&.login&.downcase
         login && allowed_bot_logins.include?(login)
@@ -2330,45 +2282,8 @@ module Activities
     def review_diff_touches_reviewed_files?(client, project, issue, review)
       return true if client.nil? || project.nil? || issue.nil?
 
-      review_id = review[:id]
-      reviewed_commit = review[:commit_id]
-      return true if review_id.nil? || reviewed_commit.nil?
-
-      # NOTE: The GitHub API does not support filtering review comments by
-      # review ID server-side, so we fetch all comments for the PR and
-      # filter client-side. This is O(total comments) rather than
-      # O(comments on this review), which is fine for typical PR sizes.
-      comments = client.pull_request_review_comments(
-        project.full_name, issue.github_number
-      )
-      reviewed_paths = comments
-        .select { |c| c[:pull_request_review_id] == review_id }
-        .filter_map { |c| c[:path] }
-        .to_set
-      return false if reviewed_paths.empty?
-
-      # NOTE: pr_data is already fetched in scan_pr, but check_review_bot_status
-      # does not receive it. This extra API call is behind multiple guard
-      # clauses so it only fires when all other conditions align. Passing
-      # pr_data through would avoid this call but adds complexity to
-      # check_review_bot_status's already long keyword-arg list.
-      #
-      # pr_data returns a Sawyer::Resource, so `.head.sha` uses method
-      # dispatch. If pull_request is ever changed to return a plain Hash,
-      # this would need to switch to dig-style access. The nil guard below
-      # keeps this safe in either case.
-      pr_data = client.pull_request(project.full_name, issue.github_number)
-      head_sha = pr_data&.head&.sha
-      return true if head_sha.nil?
-      return false if head_sha == reviewed_commit
-
-      changed_files = client.compare_changed_files(
-        project.full_name, reviewed_commit, head_sha
-      )
-      changed_files.any? { |f| reviewed_paths.include?(f) }
-    rescue GithubClient::Error => e
-      log_signal_error("review_diff_check", project, issue, e)
-      true
+      pull_request_collector(project, client:)
+        .review_diff_touches_reviewed_files?(issue:, review:)
     end
 
     def review_bot_thread_triggers(unresolved_threads)
@@ -2385,7 +2300,8 @@ module Activities
 
     def check_conversation_comments(client, project, issue, last_run)
       cutoff = last_run&.completed_at
-      comments = fetch_conversation_comments(client, project, issue, cutoff)
+      comments = pull_request_collector(project, client:)
+        .fetch_recent_issue_comments(issue:, cutoff:)
 
       relevant = comments.select do |c|
         login = c.user&.login
@@ -2402,28 +2318,6 @@ module Activities
       return [] if relevant.empty?
 
       [ { type: "conversation_comments", details: "#{relevant.size} new comment(s)" } ]
-    rescue GithubClient::Error => e
-      log_signal_error("conversation_comments", project, issue, e)
-      []
-    end
-
-    # Fetches conversation comments, preferring the lightweight single-page
-    # recent_issue_comments call. Falls back to full auto-paginated
-    # issue_comments when the returned page is from a multi-page result and
-    # the cutoff window extends beyond it (i.e., every comment on the page
-    # is newer than the cutoff, meaning older post-cutoff comments may exist
-    # on earlier pages).
-    def fetch_conversation_comments(client, project, issue, cutoff)
-      comments = client.recent_issue_comments(project.full_name, issue.github_number)
-
-      # Treat nil created_at as newer than cutoff (safe: triggers fallback to
-      # full pagination rather than silently missing comments).
-      if cutoff && comments.multi_page? && comments.any? &&
-          comments.all? { |c| c.created_at.nil? || c.created_at > cutoff }
-        client.issue_comments(project.full_name, issue.github_number)
-      else
-        comments
-      end
     end
 
     def fetch_reviews(client, project, issue)

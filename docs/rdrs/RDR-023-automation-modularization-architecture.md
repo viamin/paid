@@ -5,7 +5,7 @@
 ## Metadata
 
 - **Date**: 2026-04-15
-- **Status**: Partially Implemented
+- **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: High
 - **Related Issues**: #1114, #1116
@@ -14,7 +14,7 @@
 
 ## Implementation Status
 
-Partially implemented. Paid has provider capability interfaces, provider data objects, GitHub provider adapters, strategy classes, provider resolver wiring, and some merge/review paths using the modular automation layer. Remaining work includes extracting signal collection from `ScanPaidPrsActivity`, adding the strategy coordinator described here, removing remaining direct scanner provider calls, and shrinking `ScanPaidPrsActivity` into orchestration glue.
+Implemented. Paid now routes PR scan orchestration through provider-backed signal collectors and the shared `Automation::StrategyCoordinator`. `ScanPaidPrsActivity` delegates PR scan decision packaging to the coordinator, uses `Automation::Signals::PullRequestCollector` for the remaining review/conversation signal reads, and limits provider-specific exceptions to the collector layer where the RDR allows GitHub-specific client-backed fallbacks (raw check-run output, review-comment diff matching, dependency fallback behavior).
 
 ## Problem Statement
 
