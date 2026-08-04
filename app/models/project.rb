@@ -1153,6 +1153,7 @@ class Project < ApplicationRecord
   # callers that touch both (e.g. RepoReadClientResolver) would otherwise
   # fetch the App installation token twice. #installation_token_refresher
   # clears the memo so a 401 mid-request still mints a fresh token.
+  # @spec GITHUB-SYNC-003
   def github_credential
     return @github_credential if defined?(@github_credential)
 

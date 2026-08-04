@@ -15,6 +15,7 @@ module Api
     # `paid_agent_app_webhook_secret` Rails credential). In multi-tenant SaaS
     # this secret is rotated with the App itself; in self-hosted deployments it
     # is supplied via Rails credentials at app setup time.
+    # @spec GITHUB-SYNC-006
     class WebhooksController < ActionController::API
       before_action :verify_signature
 

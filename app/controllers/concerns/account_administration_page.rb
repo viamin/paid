@@ -5,6 +5,8 @@ module AccountAdministrationPage
 
   private
 
+  # @spec BILLING-AGG-003
+  # @spec ACCOUNT-ADMIN-003
   def load_account_administration_page
     @tenant_setting = current_account.tenant_setting!
     @memberships = current_account.account_memberships.includes(:user).order(role: :desc, created_at: :asc)

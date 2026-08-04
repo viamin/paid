@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec GITHUB-SYNC-007
 RSpec.describe "Admin::GithubApp::Setup" do
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account, email: "operator@example.com") }
