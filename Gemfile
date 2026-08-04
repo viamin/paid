@@ -64,8 +64,9 @@ gem "qdrant-ruby", require: false
 gem "aws-sdk-s3", require: false
 
 # Unified interface for AI agent CLIs [https://github.com/viamin/agent-harness]
-# 0.31.0 is the published RubyGems release that includes the omp contract.
-gem "agent-harness", "0.31.0"
+# 0.33.0 is the published RubyGems release that includes the opencode contract
+# bump needed for z.ai/glm support.
+gem "agent-harness", "0.33.0"
 
 # Runtime model registry for canonical model metadata, pricing, and capabilities.
 gem "ruby_llm", "~> 1.16"
