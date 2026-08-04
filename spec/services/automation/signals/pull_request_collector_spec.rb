@@ -237,6 +237,17 @@ RSpec.describe Automation::Signals::PullRequestCollector do
 
       expect(collector.review_diff_touches_reviewed_files?(issue:, review:)).to be(false)
     end
+
+    it "returns true when review comments cannot be fetched" do
+      allow(client).to receive(:pull_request_review_comments)
+        .with("acme/widgets", 42)
+        .and_raise(GithubClient::Error, "boom")
+
+      expect(collector.review_diff_touches_reviewed_files?(issue:, review:)).to be(true)
+      expect(logger).to have_received(:warn).with(
+        hash_including(message: "pr_scanner.signal_check_failed", signal: "review_comments")
+      )
+    end
   end
 
   def build_provider_pr(head_repo_fork: nil)

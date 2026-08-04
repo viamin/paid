@@ -148,7 +148,7 @@ module Automation
         raise
       rescue GithubClient::Error => e
         log_signal_error("review_comments", issue, e)
-        []
+        nil
       end
 
       def dependency_comment_bodies(issue:)
@@ -198,7 +198,10 @@ module Automation
         reviewed_commit = review[:commit_id]
         return true if review_id.nil? || reviewed_commit.nil?
 
-        reviewed_paths = fetch_review_comments(issue:)
+        review_comments = fetch_review_comments(issue:)
+        return true if review_comments.nil?
+
+        reviewed_paths = review_comments
           .select { |comment| comment[:pull_request_review_id] == review_id }
           .filter_map { |comment| comment[:path] }
           .to_set
