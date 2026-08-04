@@ -2355,7 +2355,7 @@ RSpec.describe AgentRun do
       expect(described_class.next_queued_run).to eq(issue_run)
     end
 
-    it "picks review runs before create_pr runs without changing visible queue order" do
+    it "shows review runs ahead of create_pr runs when scheduler ordering breaks a tie" do
       project = create(:project)
       create_pr_run = create(:agent_run, :queued, :automatic, :existing_pr,
         project: project, goal: "create_pr", source_pull_request_number: 42, created_at: 2.minutes.ago)
@@ -2367,7 +2367,7 @@ RSpec.describe AgentRun do
 
       expect(described_class.next_queued_run).to eq(review_run)
       expect(queue_preview_ids).to eq([ create_pr_run.id, review_run.id ])
-      expect(index_display_ids).to eq([ create_pr_run.id, review_run.id ])
+      expect(index_display_ids).to eq([ review_run.id, create_pr_run.id ])
       expect(review_run.queue_priority_label).to eq(create_pr_run.queue_priority_label)
     end
 
@@ -2478,6 +2478,14 @@ RSpec.describe AgentRun do
       expect(described_class.queue_order_for(mode: "strict_priority")).not_to include(
         described_class::PROJECT_ACTIVE_COUNT_SQL,
         described_class::USER_ACTIVE_COUNT_SQL
+      )
+    end
+  end
+
+  describe ".queue_order_display_for" do
+    it "matches the scheduler ordering after status sorting in strict_priority mode" do
+      expect(described_class.queue_order_display_for(mode: "strict_priority")).to eq(
+        [ described_class::STATUS_ORDER_SQL, *described_class::STRICT_PRIORITY_SCHEDULER_QUEUE_ORDER ]
       )
     end
   end

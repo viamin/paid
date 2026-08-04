@@ -97,7 +97,7 @@ module Dashboard
 
     def fetch_snapshot
       AgentRun.schedulable_queued_with_priority(mode: queue_fairness_mode)
-              .reorder(*AgentRun.queue_order_for(mode: queue_fairness_mode))
+              .reorder(*AgentRun.scheduler_queue_order_for(mode: queue_fairness_mode))
               .limit(MAX_SCAN)
               .to_a
     end

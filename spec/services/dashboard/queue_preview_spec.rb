@@ -93,15 +93,32 @@ RSpec.describe Dashboard::QueuePreview do
       alpha = create(:project, account: account, created_by: user, owner: "octo", repo: "alpha")
       beta = create(:project, account: account, created_by: user, owner: "octo", repo: "beta")
 
-      alpha_issue = create(:issue, project: alpha, labels: [ "P1" ])
+      alpha_running_issue = create(:issue, project: alpha, labels: [ "P1" ])
+      alpha_queued_issue = create(:issue, project: alpha, labels: [ "P1" ])
       beta_issue = create(:issue, project: beta, labels: [ "P2" ])
-      create(:agent_run, :running, project: alpha, trigger_type: "automatic", issue: alpha_issue)
-      create(:agent_run, :queued, project: alpha, trigger_type: "automatic", issue: alpha_issue, created_at: 2.minutes.ago)
+      create(:agent_run, :running, project: alpha, trigger_type: "automatic", issue: alpha_running_issue)
+      create(:agent_run, :queued, project: alpha, trigger_type: "automatic", issue: alpha_queued_issue, created_at: 2.minutes.ago)
       create(:agent_run, :queued, project: beta, trigger_type: "automatic", issue: beta_issue, created_at: 1.minute.ago)
 
       preview = described_class.call(user:, queue_fairness_mode: "strict_priority")
 
       expect(preview.map { |entry| entry.run.project.repo }).to eq(%w[alpha beta])
+    end
+
+    it "uses the scheduler review tiebreak in strict-priority mode" do
+      account = create(:account)
+      account.tenant_setting!.update!(queue_fairness_mode: "strict_priority")
+      user = create(:user, account: account)
+      project = create(:project, account: account, created_by: user, owner: "octo", repo: "alpha")
+
+      create_pr_run = create(:agent_run, :queued, :automatic, :existing_pr,
+        project:, goal: "create_pr", source_pull_request_number: 42, created_at: 2.minutes.ago)
+      review_run = create(:agent_run, :queued, :automatic, :review_goal,
+        project:, source_pull_request_number: 43, created_at: 1.minute.ago)
+
+      preview = described_class.call(user:, queue_fairness_mode: "strict_priority")
+
+      expect(preview.map { |entry| entry.run.id }).to eq([ review_run.id, create_pr_run.id ])
     end
 
     it "does not promise every queued project is represented in the preview sample" do

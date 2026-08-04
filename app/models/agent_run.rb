@@ -1204,11 +1204,10 @@ class AgentRun < ApplicationRecord
     GOAL_PRIORITY_SQL,
     { created_at: :asc, id: :asc }
   ].freeze
-  # Scheduler-only sort. Keep QUEUE_ORDER as the default user-visible
-  # ordering; this adds only a hidden tiebreaker so short review runs drain
-  # before create_pr runs when all visible priority keys are otherwise tied.
-  # Strict-priority mode uses the same review-only tiebreak without the
-  # active-count fairness keys.
+  # Scheduler sort used for dequeueing and queue displays. The review-only
+  # tiebreak ensures short review runs drain before create_pr runs when all
+  # visible priority keys are otherwise tied. Strict-priority mode uses the
+  # same review-only tiebreak without the active-count fairness keys.
   SCHEDULER_QUEUE_ORDER = [
     PROJECT_ACTIVE_COUNT_SQL,
     USER_ACTIVE_COUNT_SQL,
@@ -1249,7 +1248,7 @@ class AgentRun < ApplicationRecord
   end
 
   def self.queue_order_display_for(mode:)
-    [ STATUS_ORDER_SQL, *queue_order_for(mode:) ]
+    [ STATUS_ORDER_SQL, *scheduler_queue_order_for(mode:) ]
   end
 
   STATUS_ORDER_CASE_SQL = <<~SQL.squish.freeze
