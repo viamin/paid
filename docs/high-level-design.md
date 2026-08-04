@@ -50,8 +50,10 @@ a record, Paid stores the record.
 
 Agents run in Docker containers built from a dedicated agent image
 (`docker/agent/Dockerfile`). They receive scoped, short-lived credentials via a
-secrets proxy rather than long-lived tokens; they operate on git worktrees, not
-the working repo; and they cannot interfere with each other or reach the host.
+secrets proxy rather than long-lived tokens; they operate in isolated
+backend-selected workspaces (named-volume clones by default, legacy worktree
+bind mounts only when explicitly requested); and they cannot interfere with
+each other or reach the host.
 Isolation is the precondition for running multiple agents in parallel and for
 giving an agent broad permissions inside its container without broad
 permissions on the system.
@@ -88,7 +90,7 @@ The operating principles that tie the approaches above to day-to-day work:
   auto-merge configuration that delegates the per-merge decision under rules
   the owner defined.
 - **Isolation by default.** Agents run in containers with scoped credentials,
-  on worktrees, unable to reach one another or the host.
+  in isolated workspaces, unable to reach one another or the host.
 - **Observable everything.** Token cost, iteration counts, success rates, and
   prompt effectiveness are tracked as data so the system can learn.
 - **One LLM interface.** All application-level LLM calls flow through
@@ -104,8 +106,8 @@ The operating principles that tie the approaches above to day-to-day work:
 1. **Turn labeled issues into merged PRs, end to end.** Watch, plan, execute in
    an isolated container, open a PR, and respond to review — as a durable,
    resumable workflow.
-2. **Keep agents safe and isolated.** Scoped credentials, worktree-based
-   execution, and no path from an agent to a secret or to another agent's run.
+2. **Keep agents safe and isolated.** Scoped credentials, isolated container
+   workspaces, and no path from an agent to a secret or to another agent's run.
 3. **Make agent work observable and improvable.** Capture the data — tokens,
    cost, iterations, prompt lineage, quality — that turns guesswork into
    measurement.
@@ -142,8 +144,9 @@ between them.
    canonical, self-documenting schema.
 2. **Temporal orchestration** — durable workflows for agent execution.
 3. **Container management** — Docker containers built from the agent image,
-   using git worktrees for isolated agent execution; a secrets proxy supplies
-   scoped credentials.
+   using backend-selected isolated workspaces (named-volume clones by default,
+   legacy bind mounts only for explicit compatibility paths); a secrets proxy
+   supplies scoped credentials.
 4. **Agent layer** — the `agent_harness` gem: a unified interface to CLI agents
    (Claude Code, Codex, Cursor, Gemini CLI, OpenCode, and others) and the
    single interface for all application-level LLM calls.
@@ -151,7 +154,8 @@ between them.
 Intent flows from the control plane (an issue is picked, a prompt is built, a
 strategy is chosen) into orchestration (a durable workflow), into container
 management (an isolated environment is provisioned), into the agent layer (the
-agent executes against a worktree and opens a PR), and back to the control plane
+agent executes against its isolated workspace and opens a PR), and back to the
+control plane
 (metrics, review, the human merge decision).
 
 ### Directory layout
@@ -175,7 +179,7 @@ docs/                 # Long-form docs; docs/intent/ holds the LID arrow
 | Tenant isolation | PostgreSQL row-level security on core tables | Enforced tenant scoping at the database, not just the application. |
 | Change tracking | Logidze on configuration/access/financial tables | "Who changed what and when" where it matters; not on high-volume operational tables. |
 | LLM interface | `agent_harness` for all calls | One place for provider behavior; swap models without scattered call sites. |
-| Agent execution | Docker + git worktrees + secrets proxy | Isolation and scoped credentials by default. |
+| Agent execution | Docker + isolated workspaces + secrets proxy | Isolation and scoped credentials by default. |
 | Agent image tooling | Versions pinned from `agent_harness` contracts | Control plane and agent image stay in lockstep without separate pins. |
 | Release management | release-please + Conventional Commits | Semantic releases from conventional commit headers. |
 
