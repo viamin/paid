@@ -2778,7 +2778,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_04_055102) do
     t.datetime "updated_at", null: false
     t.jsonb "worker_settings", default: {}, null: false
     t.index ["account_id"], name: "index_tenant_settings_on_account_id", unique: true
-    t.check_constraint "queue_fairness_mode::text = ANY (ARRAY['fair_share'::character varying, 'strict_priority'::character varying]::text[])", name: "chk_queue_fairness_mode"
+    t.check_constraint "queue_fairness_mode::text = ANY (ARRAY['fair_share'::character varying::text, 'strict_priority'::character varying::text])", name: "chk_queue_fairness_mode"
   end
 
   create_table "token_usages", force: :cascade do |t|
