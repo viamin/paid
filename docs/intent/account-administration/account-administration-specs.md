@@ -31,5 +31,5 @@
   system SHALL render recent account activity in the UI and SHALL support JSON
   export of that same activity from the customer-facing account audit log
   surface.
-  *Code:* `app/controllers/accounts/audit_logs_controller.rb`.
+  *Code:* `app/controllers/account_audit_logs_controller.rb`.
   *Test:* `spec/requests/accounts_spec.rb`.
