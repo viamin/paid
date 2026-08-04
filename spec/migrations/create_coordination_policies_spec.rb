@@ -7,22 +7,20 @@ RSpec.describe CreateCoordinationPolicies, :aggregate_failures do
 
   let(:migration) { described_class.new }
   let(:connection) { ActiveRecord::Base.connection }
-  let(:schema_name) { "coordination_policy_spec_#{SecureRandom.hex(6)}" }
 
   around do |example|
-    previous_search_path = connection.schema_search_path
+    policies_table_existed = connection.table_exists?(:coordination_policies)
+    versions_table_existed = connection.table_exists?(:coordination_policy_versions)
 
-    drop_coordination_policy_test_schemas!
-    connection.execute("CREATE SCHEMA #{schema_name}")
-    connection.schema_search_path = "#{schema_name},public"
+    migration.down if policies_table_existed || versions_table_existed
     clear_schema_metadata!(connection)
 
     example.run
   ensure
-    connection.schema_search_path = previous_search_path
+    migration.down if connection.table_exists?(:coordination_policies) || connection.table_exists?(:coordination_policy_versions)
+
+    migration.up if policies_table_existed || versions_table_existed
     clear_schema_metadata!(connection)
-    connection.execute("DROP SCHEMA IF EXISTS #{schema_name} CASCADE")
-    drop_coordination_policy_test_schemas!
   end
 
   it "creates the policy catalog and version tables with indexes, comments, and tenant RLS" do
@@ -52,7 +50,7 @@ RSpec.describe CreateCoordinationPolicies, :aggregate_failures do
 
   def clear_schema_metadata!(connection)
     connection.schema_cache.clear!
-    connection.data_sources.each do |table_name|
+    %w[coordination_policies coordination_policy_versions].each do |table_name|
       connection.schema_cache.clear_data_source_cache!(table_name)
     end
     [ CoordinationPolicy, CoordinationPolicyVersion ].each(&:reset_column_information)
@@ -128,7 +126,7 @@ RSpec.describe CreateCoordinationPolicies, :aggregate_failures do
     connection.select_one(<<~SQL.squish)
       SELECT qual, with_check
       FROM pg_policies
-      WHERE schemaname = '#{schema_name}'
+      WHERE schemaname = 'public'
         AND tablename = 'coordination_policies'
         AND policyname = 'tenant_isolation'
     SQL
@@ -144,11 +142,11 @@ RSpec.describe CreateCoordinationPolicies, :aggregate_failures do
         <<~SQL.squish,
           SELECT col_description('#{qualified_table_name(table_name)}'::regclass, ordinal_position)
           FROM information_schema.columns
-          WHERE table_schema = ?
+          WHERE table_schema = 'public'
             AND table_name = ?
             AND column_name = ?
         SQL
-        schema_name, table_name, column_name
+        table_name, column_name
       ])
     )
   end
@@ -182,32 +180,21 @@ RSpec.describe CreateCoordinationPolicies, :aggregate_failures do
     connection.select_value(<<~SQL.squish).to_i.positive?
       SELECT COUNT(*)
       FROM pg_policies
-      WHERE schemaname = '#{schema_name}'
+      WHERE schemaname = 'public'
         AND tablename = '#{table_name}'
         AND policyname = 'tenant_isolation'
     SQL
   end
 
   def table_exists_in_test_schema?(table_name)
-    connection.data_source_exists?(qualified_table_name(table_name))
+    connection.data_source_exists?(table_name)
   end
 
   def qualified_table_name(table_name)
-    "#{schema_name}.#{table_name}"
+    "public.#{table_name}"
   end
 
   def truthy?(value)
     value == true || value == "t"
-  end
-
-  def drop_coordination_policy_test_schemas!
-    connection.select_values(<<~SQL.squish).each do |name|
-      SELECT nspname
-      FROM pg_namespace
-      WHERE nspname LIKE 'coordination_policy_spec_%'
-    SQL
-
-      connection.execute(%(DROP SCHEMA IF EXISTS "#{name}" CASCADE))
-    end
   end
 end
