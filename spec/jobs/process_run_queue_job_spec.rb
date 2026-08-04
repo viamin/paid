@@ -25,6 +25,34 @@ RSpec.describe ProcessRunQueueJob do
     job.send(:temporal_priority_for, run)
   end
 
+  def create_strict_priority_vs_fair_share_runs
+    strict_account = create(:account)
+    strict_account.tenant_setting!.update!(queue_fairness_mode: "strict_priority")
+    strict_user = create(:user, account: strict_account)
+    strict_user.settings.update!(max_concurrent_runs: 1)
+    busy_project = create(:project, account: strict_account, created_by: strict_user)
+
+    fair_account = create(:account)
+    fair_account.tenant_setting!.update!(queue_fairness_mode: "fair_share")
+    fair_user = create(:user, account: fair_account)
+    fair_user.settings.update!(max_concurrent_runs: 1)
+    idle_project = create(:project, account: fair_account, created_by: fair_user)
+
+    strict_issue_a = create(:issue, project: busy_project, labels: [ "P1" ])
+    strict_issue_b = create(:issue, project: busy_project, labels: [ "P1" ])
+    strict_issue_c = create(:issue, project: busy_project, labels: [ "P1" ])
+    create(:agent_run, :running, project: busy_project, trigger_type: "automatic", issue: strict_issue_a)
+    create(:agent_run, :running, project: busy_project, trigger_type: "automatic", issue: strict_issue_b)
+    strict_run = create(:agent_run, :queued, project: busy_project, trigger_type: "automatic",
+      issue: strict_issue_c, created_at: 2.minutes.ago)
+
+    fair_issue = create(:issue, project: idle_project, labels: [ "P2" ])
+    fair_run = create(:agent_run, :queued, project: idle_project, trigger_type: "automatic",
+      issue: fair_issue, created_at: 1.minute.ago)
+
+    [ strict_run, fair_run ]
+  end
+
   def build_host_registry(fallback_policy: "first_healthy")
     local_backend = instance_double(Containers::Backends::LocalDocker, identifier: "local", all_host_identifiers: [ "local" ], remote?: false, ping: true)
     elguapo_backend = instance_double(Containers::Backends::RemoteDocker, identifier: "elguapo", all_host_identifiers: [ "elguapo" ], remote?: true, ping: true)
@@ -500,6 +528,38 @@ RSpec.describe ProcessRunQueueJob do
       ).and_return(workflow_handle)
 
       job.perform
+    end
+
+    it "uses a constant Temporal fairness key for strict-priority accounts" do
+      queued_run = create(:agent_run, :queued)
+      queued_run.project.account.tenant_setting!.update!(queue_fairness_mode: "strict_priority")
+
+      expect(temporal_client).to receive(:start_workflow).with(
+        Workflows::AgentExecutionWorkflow,
+        hash_including(agent_run_id: queued_run.id),
+        hash_including(
+          priority: temporal_priority_for(queued_run)
+        )
+      ).and_return(workflow_handle)
+
+      job.perform
+
+      expect(temporal_priority_for(queued_run).fairness_key).to eq("strict_priority")
+    end
+
+    it "starts a strict-priority P1 run ahead of an idle fair-share P2 run" do
+      strict_run, fair_run = create_strict_priority_vs_fair_share_runs
+
+      started_ids = []
+      allow(temporal_client).to receive(:start_workflow) do |_wf, input, **_opts|
+        started_ids << input[:agent_run_id]
+        workflow_handle
+      end
+
+      described_class.new.perform
+
+      expect(started_ids.first).to eq(strict_run.id)
+      expect(started_ids).to include(fair_run.id)
     end
 
     it "processes runs in FIFO order within the same priority" do

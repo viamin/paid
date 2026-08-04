@@ -86,14 +86,42 @@ RSpec.describe Dashboard::QueuePreview do
       expect(preview.map { |entry| entry.run.queue_priority_tier }).to eq(%i[issue_p1 issue_p3])
     end
 
+    it "matches strict-priority ordering without fair-share replay" do
+      account = create(:account)
+      account.tenant_setting!.update!(queue_fairness_mode: "strict_priority")
+      user = create(:user, account: account)
+      alpha = create(:project, account: account, created_by: user, owner: "octo", repo: "alpha")
+      beta = create(:project, account: account, created_by: user, owner: "octo", repo: "beta")
+
+      alpha_issue = create(:issue, project: alpha, labels: [ "P1" ])
+      beta_issue = create(:issue, project: beta, labels: [ "P2" ])
+      create(:agent_run, :running, project: alpha, trigger_type: "automatic", issue: alpha_issue)
+      create(:agent_run, :queued, project: alpha, trigger_type: "automatic", issue: alpha_issue, created_at: 2.minutes.ago)
+      create(:agent_run, :queued, project: beta, trigger_type: "automatic", issue: beta_issue, created_at: 1.minute.ago)
+
+      preview = described_class.call(user:, queue_fairness_mode: "strict_priority")
+
+      expect(preview.map { |entry| entry.run.project.repo }).to eq(%w[alpha beta])
+    end
+
     it "does not promise every queued project is represented in the preview sample" do
       rendered = ApplicationController.render(
         partial: "dashboard/queue_preview",
-        locals: { queue_preview: [], paused_projects: [] }
+        locals: { queue_preview: [], paused_projects: [], queue_fairness_mode: "fair_share" }
       )
 
       expect(rendered).to include("Balanced across sampled projects; priority ranks within each project.")
       expect(rendered).to include("approximate dispatch order from the next batch of queued work")
+    end
+
+    it "updates the preview copy for strict-priority accounts" do
+      rendered = ApplicationController.render(
+        partial: "dashboard/queue_preview",
+        locals: { queue_preview: [], paused_projects: [], queue_fairness_mode: "strict_priority" }
+      )
+
+      expect(rendered).to include("Strict priority across the account; high-priority work can outrank other projects.")
+      expect(rendered).to include("Strict priority lets queue priority outrank cross-project fairness")
     end
 
     it "includes orphaned projects for the account fallback owner" do

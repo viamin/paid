@@ -5,10 +5,10 @@
 ## Metadata
 
 - **Date**: 2026-07-29
-- **Status**: Draft
+- **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: P1
-- **Related Issues**: TBD (file against this RDR before implementation)
+- **Related Issues**: #3159
 - **Related RDRs**: RDR-047 (Work-Category Queue Priority — treats cross-project fairness as a fixed requirement; this RDR makes it configurable), RDR-032 (Eager Queue Seeding — made `QUEUE_ORDER` the sole ordering mechanism), RDR-031 (Focused Agent Runs — introduced the project/user fair-stride keys)
 - **Related PRs**: [#3065](https://github.com/viamin/paid/pull/3065) (display-only fair-share preview — the upcoming-queue UI this RDR must keep consistent)
 

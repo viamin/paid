@@ -2466,6 +2466,22 @@ RSpec.describe AgentRun do
     end
   end
 
+  describe ".queue_order_for" do
+    it "keeps fair_share as the default ordering" do
+      expect(described_class.queue_order_for(mode: "fair_share")).to eq(described_class::QUEUE_ORDER)
+    end
+
+    it "drops active-count fairness keys in strict_priority mode" do
+      expect(described_class.queue_order_for(mode: "strict_priority")).to eq(
+        described_class::STRICT_PRIORITY_QUEUE_ORDER
+      )
+      expect(described_class.queue_order_for(mode: "strict_priority")).not_to include(
+        described_class::PROJECT_ACTIVE_COUNT_SQL,
+        described_class::USER_ACTIVE_COUNT_SQL
+      )
+    end
+  end
+
   describe ".retry_trigger_type_for" do
     let(:project) { create(:project) }
 
@@ -2750,6 +2766,29 @@ RSpec.describe AgentRun do
         issue: idle_p2, created_at: 1.minute.ago)
 
       expect(described_class.peek_next_queued_run).to eq(idle_p2_run)
+    end
+
+    it "lets strict-priority mode pre-empt an idle lower-priority project" do
+      account = create(:account)
+      account.tenant_setting!.update!(queue_fairness_mode: "strict_priority")
+      user = create(:user, account: account)
+      user.settings.update!(max_concurrent_runs: 10)
+      flooded = create(:project, account: account, created_by: user)
+      idle = create(:project, account: account, created_by: user)
+
+      flooded_p1_a = create(:issue, project: flooded, labels: [ "P1" ])
+      flooded_p1_b = create(:issue, project: flooded, labels: [ "P1" ])
+      flooded_p1_c = create(:issue, project: flooded, labels: [ "P1" ])
+      create(:agent_run, :running, project: flooded, trigger_type: "automatic", issue: flooded_p1_a)
+      create(:agent_run, :running, project: flooded, trigger_type: "automatic", issue: flooded_p1_b)
+      flooded_run = create(:agent_run, :queued, trigger_type: "automatic", project: flooded,
+        issue: flooded_p1_c, created_at: 5.minutes.ago)
+
+      idle_p2 = create(:issue, project: idle, labels: [ "P2" ])
+      create(:agent_run, :queued, trigger_type: "automatic", project: idle,
+        issue: idle_p2, created_at: 1.minute.ago)
+
+      expect(described_class.peek_next_queued_run(mode: "strict_priority")).to eq(flooded_run)
     end
 
     it "preserves strict priority order within a single project" do

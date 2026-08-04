@@ -91,12 +91,12 @@ class ProcessRunQueueJob < ApplicationJob
         # per-user capacity before claiming. This avoids an unnecessary claim +
         # unclaim cycle (and its associated broadcasts/metrics) for runs that
         # can't start yet.
-        next_run = AgentRun.peek_next_queued_run(
-          exclude_ids: skipped_ids.to_a,
-          exclude_project_ids: blocked_project_ids.to_a,
-          exclude_user_ids: blocked_user_ids.to_a,
-          exclude_account_create_pr_ids: blocked_account_create_pr_ids.to_a,
-          exclude_account_ids: blocked_account_dispatch_ids.to_a
+        next_run = next_queued_run_for_scheduler(
+          skipped_ids:,
+          blocked_project_ids:,
+          blocked_user_ids:,
+          blocked_account_create_pr_ids:,
+          blocked_account_dispatch_ids:
         )
 
         break unless next_run
@@ -985,7 +985,53 @@ class ProcessRunQueueJob < ApplicationJob
     )
   end
 
+  def next_queued_run_for_scheduler(skipped_ids:, blocked_project_ids:, blocked_user_ids:,
+    blocked_account_create_pr_ids:, blocked_account_dispatch_ids:)
+    filters = {
+      exclude_ids: skipped_ids.to_a,
+      exclude_project_ids: blocked_project_ids.to_a,
+      exclude_user_ids: blocked_user_ids.to_a,
+      exclude_account_create_pr_ids: blocked_account_create_pr_ids.to_a,
+      exclude_account_ids: blocked_account_dispatch_ids.to_a
+    }
+
+    fair_share_run = AgentRun.peek_next_queued_run(
+      mode: "fair_share",
+      queue_fairness_mode_filter: "fair_share",
+      **filters
+    )
+    strict_priority_run = AgentRun.peek_next_queued_run(
+      mode: "strict_priority",
+      queue_fairness_mode_filter: "strict_priority",
+      **filters
+    )
+
+    choose_next_run(fair_share_run:, strict_priority_run:)
+  end
+
+  def choose_next_run(fair_share_run:, strict_priority_run:)
+    return strict_priority_run if fair_share_run.blank?
+    return fair_share_run if strict_priority_run.blank?
+
+    strict_priority_scheduler_rank(strict_priority_run) < fair_share_scheduler_rank(fair_share_run) ?
+      strict_priority_run : fair_share_run
+  end
+
+  def strict_priority_scheduler_rank(agent_run)
+    agent_run.strict_priority_scheduler_rank
+  end
+
+  def fair_share_scheduler_rank(agent_run)
+    [
+      agent_run.read_attribute(:project_active_count).to_i,
+      agent_run.read_attribute(:user_active_count).to_i,
+      *strict_priority_scheduler_rank(agent_run)
+    ]
+  end
+
   def temporal_fairness_key_for(agent_run)
+    return "strict_priority" if agent_run.project.account.tenant_setting&.strict_priority_queue?
+
     agent_run.project.account_id.to_s
   end
 end

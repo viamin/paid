@@ -58,7 +58,8 @@
       <div class="mt-6">
         <%= render "dashboard/queue_preview_frame",
           queue_preview: @queue_preview,
-          paused_projects: @quality_paused_projects %>
+          paused_projects: @quality_paused_projects,
+          queue_fairness_mode: @queue_fairness_mode %>
       </div>
 
       <turbo-frame id="dashboard-eligibility-breakdown"
