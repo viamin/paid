@@ -5,6 +5,7 @@ module Dashboard
     Entry = Struct.new(:position, :run, keyword_init: true)
     CACHE_TTL = 10.seconds
 
+    # @spec ACCOUNT-QUEUE-001
     # Sample more queued rows than we display so the fair-share replay can see
     # additional projects before the preview limit truncates the result.
     MAX_SCAN = 500
@@ -39,6 +40,7 @@ module Dashboard
       end
     end
 
+    # @spec ACCOUNT-QUEUE-001
     # Renders the queue in the round-robin dispatch order the scheduler aims
     # for, instead of the static project_active_count snapshot. QUEUE_ORDER
     # clusters every run from an idle project at the top (they share the same

@@ -208,6 +208,7 @@ RSpec.describe Knowledge::ContextBundle::Build do
           status: "active")
       end
 
+      # @spec CHANGE-INTENT-003
       it "includes a change intents section after decisions" do
         result = described_class.call(issue: issue, project: project)
 

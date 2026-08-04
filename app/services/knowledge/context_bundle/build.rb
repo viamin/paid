@@ -231,6 +231,7 @@ module Knowledge
       end
 
       def build_change_intents_section
+        # @spec CHANGE-INTENT-003
         records = ChangeIntent.for_project(project)
                               .where(status: %w[active draft])
                               .order(created_at: :desc)

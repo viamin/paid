@@ -2,6 +2,8 @@
 
 require "rails_helper"
 
+# @spec CHANGE-INTENT-001
+# @spec CHANGE-INTENT-002
 RSpec.describe Tools::RecordChangeIntent do
   let(:account) { create(:account) }
   let(:owner) { create(:user, :owner, account:) }

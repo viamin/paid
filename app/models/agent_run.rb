@@ -2622,6 +2622,7 @@ class AgentRun < ApplicationRecord
   end
 
   def prompt_for_lid_planning
+    # @spec LID-RUNS-002
     docs = []
     docs << { name: plan_doc_source } if plan_doc_source.present?
     if external_metadata.present?
