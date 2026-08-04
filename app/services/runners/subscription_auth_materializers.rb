@@ -23,6 +23,7 @@ module Runners
   # managed `RunnerCredential`, but remote placement stays disabled here
   # (`remote_safe: false`) until refresh/writeback is proven by tests and
   # telemetry; flipping this to true opens up remote placement automatically.
+  # @spec SUBSCRIPTION-RUNNER-AUTH-001
   class SubscriptionAuthMaterializers
     MATERIALIZE_ENV = "env"
     MATERIALIZE_NATIVE_FILE = "native_file"

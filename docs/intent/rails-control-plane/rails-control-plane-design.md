@@ -27,6 +27,12 @@ Request handling establishes tenant context before application code runs and
 clears it after the request completes, including failure paths. This keeps the
 control plane aligned with the database RLS model.
 
+That same request lifecycle fail-closes tenant access at the controller layer.
+Active accounts proceed normally, suspended accounts stay read-only for
+mutating requests, and deactivated accounts lose both HTML and API access with
+their session revoked. This is the application-level guardrail that sits in
+front of the deeper PostgreSQL RLS isolation.
+
 Authenticated HTTP requests also stamp the encrypted Action Cable cookie used by
 `ApplicationCable::Connection`, because websocket requests do not carry the
 Devise/Warden middleware state that normal controller requests have.
