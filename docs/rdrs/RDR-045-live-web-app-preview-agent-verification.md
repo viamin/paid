@@ -30,7 +30,7 @@ The remaining gap is not absence of infrastructure; it is missing end-to-end wir
 - trace viewing needs end-to-end producer/consumer confirmation for real runs
 - agent self-verification still stops at browser-sidecar provisioning instead of a full app-verification flow
 
-See [audit-report-2026-08-04.md](audit-report-2026-08-04.md) and issues #3192 through #3197.
+See [audit-report-2026-08-04-rdr-045.md](audit-report-2026-08-04-rdr-045.md) and issues #3192 through #3197.
 
 ## 2026-08-04 Reconciliation
 
