@@ -7,29 +7,26 @@ RSpec.describe CreateCoordinationPolicies, :aggregate_failures do
 
   let(:migration) { described_class.new }
   let(:connection) { ActiveRecord::Base.connection }
+  let(:schema_name) { "coordination_policy_spec_#{SecureRandom.hex(6)}" }
 
   around do |example|
-    versions_existed = connection.table_exists?(:coordination_policy_versions)
-    policies_existed = connection.table_exists?(:coordination_policies)
-    drop_policy_tables!(connection)
+    previous_search_path = connection.schema_search_path
+
+    connection.execute("CREATE SCHEMA #{schema_name}")
+    connection.schema_search_path = "#{schema_name},public"
     clear_schema_metadata!(connection)
 
     example.run
   ensure
-    drop_policy_tables!(connection)
+    connection.schema_search_path = previous_search_path
     clear_schema_metadata!(connection)
-    if policies_existed || versions_existed
-      described_class.new.up
-      restore_columns_added_by_later_migrations(connection)
-      clear_schema_metadata!(connection)
-    end
   end
 
   it "creates the policy catalog and version tables with indexes, comments, and tenant RLS" do
     migration.up
 
-    expect(connection.table_exists?(:coordination_policies)).to be(true)
-    expect(connection.table_exists?(:coordination_policy_versions)).to be(true)
+    expect(table_exists_in_test_schema?("coordination_policies")).to be(true)
+    expect(table_exists_in_test_schema?("coordination_policy_versions")).to be(true)
     expect_policy_schema
     expect_version_schema
     expect_indexes
@@ -44,39 +41,10 @@ RSpec.describe CreateCoordinationPolicies, :aggregate_failures do
     connection.drop_table(:coordination_policy_versions)
 
     expect { migration.down }.not_to raise_error
-    expect(connection.table_exists?(:coordination_policies)).to be(false)
+    expect(table_exists_in_test_schema?("coordination_policies")).to be(false)
   end
 
   private
-
-  # +CreateCoordinationPolicies+ recreates the tables in their original form,
-  # which predates later migrations that added columns production code now
-  # depends on (e.g. +idempotency_key+ on +coordination_policy_versions+, added
-  # by +AddIdempotencyKeyToEvolutionTables+). Re-applying that later migration
-  # would use concurrent indexes, which is not safe inside this spec's cleanup
-  # path on CI. Repair the specific schema elements directly instead so
-  # downstream specs still see the canonical schema.
-  def restore_columns_added_by_later_migrations(connection)
-    return if connection.column_exists?(:coordination_policy_versions, :idempotency_key)
-
-    connection.add_column(:coordination_policy_versions, :idempotency_key, :string)
-    return if connection.index_exists?(:coordination_policy_versions,
-      [ :coordination_policy_id, :idempotency_key ],
-      name: "index_coordination_policy_versions_on_idempotency_key")
-
-    connection.add_index(
-      :coordination_policy_versions,
-      [ :coordination_policy_id, :idempotency_key ],
-      name: "index_coordination_policy_versions_on_idempotency_key",
-      unique: true,
-      where: "idempotency_key IS NOT NULL"
-    )
-  end
-
-  def drop_policy_tables!(connection)
-    connection.execute("DROP TABLE IF EXISTS coordination_policies CASCADE")
-    connection.execute("DROP TABLE IF EXISTS coordination_policy_versions CASCADE")
-  end
 
   def clear_schema_metadata!(connection)
     connection.schema_cache.clear!
@@ -156,27 +124,27 @@ RSpec.describe CreateCoordinationPolicies, :aggregate_failures do
     connection.select_one(<<~SQL.squish)
       SELECT qual, with_check
       FROM pg_policies
-      WHERE schemaname = 'public'
+      WHERE schemaname = '#{schema_name}'
         AND tablename = 'coordination_policies'
         AND policyname = 'tenant_isolation'
     SQL
   end
 
   def table_comment(table_name)
-    connection.select_value("SELECT obj_description('public.#{table_name}'::regclass, 'pg_class')")
+    connection.select_value("SELECT obj_description('#{qualified_table_name(table_name)}'::regclass, 'pg_class')")
   end
 
   def column_comment(table_name, column_name)
     connection.select_value(
       ActiveRecord::Base.sanitize_sql_array([
         <<~SQL.squish,
-          SELECT col_description('public.#{table_name}'::regclass, ordinal_position)
+          SELECT col_description('#{qualified_table_name(table_name)}'::regclass, ordinal_position)
           FROM information_schema.columns
-          WHERE table_schema = 'public'
+          WHERE table_schema = ?
             AND table_name = ?
             AND column_name = ?
         SQL
-        table_name, column_name
+        schema_name, table_name, column_name
       ])
     )
   end
@@ -190,7 +158,7 @@ RSpec.describe CreateCoordinationPolicies, :aggregate_failures do
           INNER JOIN pg_attrdef d
             ON d.adrelid = a.attrelid
            AND d.adnum = a.attnum
-          WHERE a.attrelid = 'public.#{table_name}'::regclass
+          WHERE a.attrelid = '#{qualified_table_name(table_name)}'::regclass
             AND a.attname = ?
         SQL
         column_name
@@ -199,21 +167,29 @@ RSpec.describe CreateCoordinationPolicies, :aggregate_failures do
   end
 
   def row_level_security_enabled?(table_name)
-    truthy?(connection.select_value("SELECT relrowsecurity FROM pg_class WHERE oid = 'public.#{table_name}'::regclass"))
+    truthy?(connection.select_value("SELECT relrowsecurity FROM pg_class WHERE oid = '#{qualified_table_name(table_name)}'::regclass"))
   end
 
   def row_level_security_forced?(table_name)
-    truthy?(connection.select_value("SELECT relforcerowsecurity FROM pg_class WHERE oid = 'public.#{table_name}'::regclass"))
+    truthy?(connection.select_value("SELECT relforcerowsecurity FROM pg_class WHERE oid = '#{qualified_table_name(table_name)}'::regclass"))
   end
 
   def tenant_policy_present?(table_name)
     connection.select_value(<<~SQL.squish).to_i.positive?
       SELECT COUNT(*)
       FROM pg_policies
-      WHERE schemaname = 'public'
+      WHERE schemaname = '#{schema_name}'
         AND tablename = '#{table_name}'
         AND policyname = 'tenant_isolation'
     SQL
+  end
+
+  def table_exists_in_test_schema?(table_name)
+    connection.data_source_exists?(qualified_table_name(table_name))
+  end
+
+  def qualified_table_name(table_name)
+    "#{schema_name}.#{table_name}"
   end
 
   def truthy?(value)
