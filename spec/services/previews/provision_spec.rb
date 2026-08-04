@@ -63,6 +63,19 @@ RSpec.describe Previews::Provision do
     FileUtils.rm_rf(repo_path)
   end
 
+  describe ".release_baseline" do
+    it "returns an empty snapshot without creating shared state when no preview overlap is tracked" do
+      snapshot = described_class.release_baseline(agent_run)
+
+      expect(snapshot).to eq(
+        count: 0,
+        service_container_ids: [],
+        service_environment: {}
+      )
+      expect(PreviewProvisionState.find_by(agent_run: agent_run)).to be_nil
+    end
+  end
+
   it "merges project and repo service dependencies for provisioning" do
     service.call(start_tunnel: false, allow_seed: false)
 

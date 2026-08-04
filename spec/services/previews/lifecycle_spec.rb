@@ -61,7 +61,8 @@ RSpec.describe Previews::Lifecycle do
     end
 
     it "fails the preview session and cleans up partial resources when provisioning fails" do
-      allow(provision).to receive(:call).and_raise("preview boot failed")
+      stub_failed_preview_provision_with_overlap_state
+      expect_overlap_state_to_be_released_before_cleanup
 
       expect {
         described_class.start!(project:, branch_name: "feature/broken-preview", created_by: user)
@@ -75,6 +76,7 @@ RSpec.describe Previews::Lifecycle do
       agent_run = session.agent_run
       expect(agent_run.reload.status).to eq("failed")
       expect(agent_run.error_message).to eq("preview boot failed")
+      expect(PreviewProvisionState.find_by(agent_run: agent_run)).to be_nil
       expect(worktree_service).to have_received(:remove_worktree).with(agent_run)
     end
 
@@ -110,12 +112,33 @@ RSpec.describe Previews::Lifecycle do
       agent_run = create_existing_preview_agent_run(service_container_ids: [ 101, 202 ], database_url: "postgres://preview")
       session = create_existing_preview_session(agent_run, branch_name: "feature/live-preview", tunnel_port: 8242,
         container_id: "container-live")
+      PreviewProvisionState.create!(agent_run: agent_run, active_count: 1)
+      expect_overlap_state_to_be_released_before_cleanup
 
       described_class.stop_session!(preview_session: session)
 
       expect_stopped_preview_session(session)
       expect_stopped_preview_agent_run(agent_run)
       expect_preview_resources_to_be_cleaned_up(agent_run, [ 101, 202 ], "postgres://preview")
+      expect(PreviewProvisionState.find_by(agent_run: agent_run)).to be_nil
+    end
+  end
+
+  def expect_overlap_state_to_be_released_before_cleanup
+    allow(service_provisioner).to receive(:cleanup_service_containers) do |_, agent_run:, **|
+      expect(PreviewProvisionState.find_by(agent_run: agent_run)).to be_nil
+    end
+  end
+
+  def stub_failed_preview_provision_with_overlap_state
+    allow(provision).to receive(:call) do
+      session = project.preview_sessions.recent.first
+      session.agent_run.update!(
+        service_container_ids: [ 101, 202 ],
+        service_environment: { "DATABASE_URL" => "postgres://preview" }
+      )
+      PreviewProvisionState.create!(agent_run: session.agent_run, active_count: 1)
+      raise "preview boot failed"
     end
   end
 

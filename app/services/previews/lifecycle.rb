@@ -171,6 +171,7 @@ module Previews
     def cleanup_service_dependencies!(agent_run)
       return unless agent_run&.persisted?
 
+      Previews::Provision.release_baseline(agent_run)
       service_container_ids = Array(agent_run.service_container_ids_before_last_save.presence || agent_run.service_container_ids)
       service_environment = agent_run.service_environment_before_last_save.presence || agent_run.service_environment
       return if service_container_ids.empty?

@@ -39,7 +39,7 @@ module Previews
       end
 
       def release_baseline(agent_run)
-        with_provision_state(agent_run) do |state|
+        with_provision_state(agent_run, create_if_missing: false) do |state|
           return empty_provision_state_snapshot unless state
 
           state.active_count -= 1
@@ -57,14 +57,15 @@ module Previews
 
       private
 
-      def with_provision_state(agent_run)
+      def with_provision_state(agent_run, create_if_missing: true)
         PreviewProvisionState.transaction do
-          yield(lock_provision_state(agent_run))
+          yield(lock_provision_state(agent_run, create_if_missing:))
         end
       end
 
-      def lock_provision_state(agent_run)
-        PreviewProvisionState.lock.find_by(agent_run_id: agent_run.id) || create_provision_state!(agent_run)
+      def lock_provision_state(agent_run, create_if_missing: true)
+        PreviewProvisionState.lock.find_by(agent_run_id: agent_run.id) ||
+          (create_provision_state!(agent_run) if create_if_missing)
       end
 
       def create_provision_state!(agent_run)
