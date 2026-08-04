@@ -6,6 +6,7 @@ module Previews
   # Serves the Playwright Trace Viewer from S3 and builds embeddable URLs so a
   # trace (`.zip`) recorded during an agent run can be scrubbed through inside
   # the Paid UI via an iframe.
+  # @spec LIVE-PREVIEW-006
   #
   # The Playwright Trace Viewer is a static web application. When it is hosted
   # (e.g. uploaded to S3 under {#viewer_object_key}) it loads a trace from a URL
@@ -53,7 +54,7 @@ module Previews
     #
     # @return [String]
     def trace_object_key(org:, repo:, pr_number:, commit_sha:)
-      "traces/#{org}/#{repo}/pr-#{pr_number}/#{commit_sha}/#{DEFAULT_TRACE_FILENAME}"
+      @storage.trace_object_key(org:, repo:, pr_number:, commit_sha:)
     end
 
     # Returns a presigned GET URL for a stored trace `.zip`.
@@ -143,9 +144,9 @@ module Previews
     # @param file_path [String] Local path to the trace `.zip`.
     # @return [String] Presigned GET URL for the uploaded trace.
     def upload_trace(file_path:, org:, repo:, pr_number:, commit_sha:)
-      key = trace_object_key(org:, repo:, pr_number:, commit_sha:)
-      put_object(key: key, file_path: file_path, content_type: "application/zip")
-      @storage.signed_url(key)
+      @storage.upload_trace(file_path:, org:, repo:, pr_number:, commit_sha:)
+    rescue Screenshots::Storage::StorageError => e
+      raise TraceViewerError, "trace viewer upload failed: #{e.message}"
     end
 
     private

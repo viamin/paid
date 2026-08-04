@@ -42,6 +42,20 @@ The remaining work is end-to-end wiring and lifecycle correctness:
 - agent verification still stops at provisioning the browser sidecar instead of
   driving the changed app and persisting a verification outcome
 
+## Trace Artifact Contract
+
+Real agent-run trace viewing is tied to the same durable storage contract used
+by screenshot capture publishing:
+`screenshots/<org>/<repo>/pr-<number>/<commit>/trace.zip`.
+The UI only embeds the viewer after a storage existence check succeeds for that
+exact object key, so disabled storage and failed uploads degrade to the
+"No trace available" state instead of a broken iframe.
+
+Future live-preview session recording may need its own directly shareable trace
+links, but that is a separate deferred contract. This segment does not treat
+session-specific trace URLs as interchangeable with the screenshot-comment /
+agent-run trace artifact path above.
+
 ## What this is not
 
 - **Not the polyglot runtime segment.** Phoenix support here is preview-specific
