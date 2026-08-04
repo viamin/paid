@@ -5,16 +5,54 @@
 ## Metadata
 
 - **Date**: 2026-07-05
-- **Status**: Draft
+- **Status**: Partially Implemented
 - **Type**: Architecture
 - **Priority**: High
-- **Related Issues**: #2820 (epic), #2821 (Phase 1), #2822 (Phase 2), #2823 (Phase 3)
+- **Related Issues**: #3163 (closeout), #3204 (multi-scope profile application), #3205 (chat/legacy profile coverage reconciliation), #3206 (profile audit + rollback follow-up), #2820 (epic), #2821 (Phase 1), #2822 (Phase 2), #2823 (Phase 3)
 - **Related RDRs**: [RDR-028](RDR-028-interactive-chat.md) (Interactive Chat), [RDR-042](RDR-042-change-intent-records.md) (Change Intent Records), [RDR-024](RDR-024-multi-tenancy-isolation-strategy.md) (Multi-Tenancy Isolation), [RDR-023](RDR-023-automation-modularization-architecture.md) (Automation Modularization), [RDR-022](RDR-022-auto-merge-pr-strategy.md) (Auto-Merge Strategy), [RDR-014](RDR-014-learned-orchestration.md) (Learned Orchestration)
-- **Related Tests**: `spec/mcp/tools/`, `spec/services/configuration/`
+- **Related Tests**: `spec/mcp/tools/{plan_configuration_profile,apply_configuration_profile,update_project_settings}_spec.rb`, `spec/services/configuration/profiles/{registry,settings,planner,applier}_spec.rb`, `spec/services/chat_sessions/build_system_prompt_spec.rb`, `spec/helpers/chat_sessions_helper_spec.rb`, `spec/views/chat_messages/tool_call_partial_spec.rb`
 
 ## Implementation Status
 
-Draft. Not implemented. No configuration-profile abstraction, no project-settings write tool, and no batched plan-then-apply path exist. The interactive chat (RDR-028) and its 33-tool registry are operational; `update_user_settings` and `update_tenant_settings` write tools exist, but there is no tool that reaches `Project` settings, and no concept of an "operating mode" that maps intent to a vetted bundle of settings across the tenant/user/project levels.
+Partially implemented as of 2026-08-04. The repository now ships a chat-integrated configuration-profile path built around `Configuration::Profiles::*`, the MCP tools `list_configuration_profiles`, `plan_configuration_profile`, `apply_configuration_profile`, and the granular `update_project_settings` write tool. The chat prompt and UI also explicitly support the recommend -> plan -> confirm -> apply flow.
+
+The shipped scope is narrower than the original RDR:
+
+- the chat profile planner/applier currently targets only a bounded project-level slice of settings, not tenant/user/project bundles
+- the chat profile field coverage is materially smaller than the richer operating-mode field set still modeled in the older `ConfigurationProfiles::*` stack
+- chat-applied profiles record generic `project.settings_changed` activity, not dedicated `configuration_profile.applied` / `configuration_profile.reverted` events with a supported rollback path
+
+The remaining gaps are tracked by #3204, #3205, and #3206.
+
+## 2026-08-04 Closeout
+
+The original RDR text no longer matches the codebase. The closeout audit for issue #3163 confirmed these shipped behaviors:
+
+- `app/mcp/tools/update_project_settings.rb` now gives chat a project-settings write primitive with permitted-attribute filtering, confirmation, authorization, and activity logging.
+- `app/mcp/tools/list_configuration_profiles.rb`, `plan_configuration_profile.rb`, and `apply_configuration_profile.rb` expose curated profile discovery plus a deterministic plan-then-apply flow.
+- `app/services/configuration/profiles/{registry,base,settings,planner,plan,applier}.rb` provide the shipped registry/planner/applier implementation, including bounded overrides, prerequisite blocking, transactional apply, and idempotent re-apply.
+- `app/services/chat_sessions/build_system_prompt.rb`, `app/helpers/chat_sessions_helper.rb`, and `app/views/chat_messages/_tool_call.html.erb` make configuration profiles a user-visible chat feature rather than a hidden backend primitive.
+
+The closeout also confirmed the following design deltas:
+
+1. **Project-settings write coverage**: satisfied for a broad project-level settings surface through `update_project_settings`, but not extended to tenant/user settings as originally envisioned.
+2. **Batched plan-then-apply behavior**: satisfied for the shipped project-level profile slice. One read-only planning tool shows the diff; one confirmed write applies the batch.
+3. **Confirmation flow**: satisfied. The chat registry strips `confirmed` from advertised write-tool schemas, and the write tools reject unconfirmed execution.
+4. **Profile activity/audit trail**: partially satisfied. Chat-applied profiles are auditable through `project.settings_changed` metadata, but they do not yet use dedicated profile activity events or a supported rollback helper.
+5. **Overall closeout status**: the feature is real and user-visible, but the original multi-scope/audit-complete design remains only partially implemented.
+
+### Shipped Test Evidence
+
+- Curated profile registry, settings normalization, planning, idempotent apply, and prerequisite blocking: `spec/services/configuration/profiles/{registry,settings,planner,applier}_spec.rb`
+- MCP tool behavior for planning, applying, and direct project-setting writes: `spec/mcp/tools/{plan_configuration_profile,apply_configuration_profile,update_project_settings}_spec.rb`
+- Tool-registry exposure and authorization parity: `spec/mcp/tools/{registry,registry_authorization_parity}_spec.rb`
+- User-visible prompt guidance, tool summaries, and plan rendering: `spec/services/chat_sessions/build_system_prompt_spec.rb`, `spec/helpers/chat_sessions_helper_spec.rb`, `spec/views/chat_messages/tool_call_partial_spec.rb`
+
+### Remaining Follow-Up Issues
+
+- #3204 — expand chat configuration profiles to tenant/user settings with per-level authorization and skipped-level reporting
+- #3205 — broaden chat profile coverage and reconcile the duplicate legacy `ConfigurationProfiles::*` posture registry
+- #3206 — restore dedicated audit and rollback semantics for chat-applied profiles
 
 ## Problem Statement
 

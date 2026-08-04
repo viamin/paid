@@ -86,7 +86,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 |-----|-------|--------|----------|
 | [RDR-028](RDR-028-interactive-chat.md) | Interactive Chat for Agent-Driven Development | Implemented | High |
 | [RDR-037](RDR-037-containerized-multi-repo-chat.md) | Containerized Multi-Repo Chat Sessions | Final | High |
-| [RDR-044](RDR-044-configuration-profiles-chat.md) | Chat-Driven Configuration Profiles (Operating Modes) | Draft | High |
+| [RDR-044](RDR-044-configuration-profiles-chat.md) | Chat-Driven Configuration Profiles (Operating Modes) | Partially Implemented | High |
 
 ### Scaling & Distribution
 
