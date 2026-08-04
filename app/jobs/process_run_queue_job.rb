@@ -997,8 +997,8 @@ class ProcessRunQueueJob < ApplicationJob
 
     AgentRun.from("(#{ranked_scope.to_sql}) agent_runs")
       .where(account_queue_rank: 1)
-      .to_a
-      .min_by { |agent_run| fair_share_scheduler_rank(agent_run) }
+      .order(*cross_account_scheduler_order)
+      .first
   end
 
   # Each account first picks its own queue head using its configured mode.
@@ -1053,15 +1053,15 @@ class ProcessRunQueueJob < ApplicationJob
     "COALESCE(tenant_settings.queue_fairness_mode, '#{TenantSetting::DEFAULT_QUEUE_FAIRNESS_MODE}')"
   end
 
-  def scheduler_queue_rank(agent_run)
-    agent_run.scheduler_queue_rank
-  end
-
-  def fair_share_scheduler_rank(agent_run)
+  def cross_account_scheduler_order
     [
-      agent_run.read_attribute(:project_active_count).to_i,
-      agent_run.read_attribute(:user_active_count).to_i,
-      *scheduler_queue_rank(agent_run)
+      Arel.sql("agent_runs.project_active_count ASC"),
+      Arel.sql("agent_runs.user_active_count ASC"),
+      Arel.sql("agent_runs.queue_priority ASC"),
+      Arel.sql("CASE WHEN agent_runs.source_pull_request_number IS NOT NULL THEN 0 ELSE 1 END ASC"),
+      Arel.sql("agent_runs.goal_priority ASC"),
+      Arel.sql("CASE WHEN agent_runs.goal = 'review' THEN 0 ELSE 1 END ASC"),
+      { created_at: :asc, id: :asc }
     ]
   end
 
