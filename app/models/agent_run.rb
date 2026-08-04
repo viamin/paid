@@ -4,6 +4,7 @@ class AgentRun < ApplicationRecord
   attribute :focus, :string, default: "general"
   attribute :execution_origin, :string, default: "paid_native"
   attribute :external_metadata, :json, default: {}
+  attribute :verification_result, :json, default: {}
   attr_accessor :preloaded_final_runner_record, :preloaded_final_runner_record_loaded
 
   MAX_RUNNER_ATTEMPT_ERROR_MESSAGE_LENGTH = 500

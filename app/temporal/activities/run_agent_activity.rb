@@ -338,6 +338,7 @@ module Activities
               # Evaluate pre-commit requirements against the working directory
               # before committing, so blocking failures prevent commits.
               if agent_run.repo_cloned?
+                record_verification_result(agent_run)
                 pre_commit_result = evaluate_pre_commit_requirements(agent_run)
                 if pre_commit_result[:blocking]
                   agent_run.log!("system", "Blocked by failing pre-commit requirements",
@@ -3094,6 +3095,18 @@ module Activities
       agent_run.log!("system", "Auto-committed uncommitted agent changes") if committed
     end
 
+    def record_verification_result(agent_run)
+      return unless agent_run.create_pr_goal?
+      return unless agent_run.project.verification_enabled?
+      return if agent_run.worktree_path.blank?
+
+      AgentRuns::VerificationResultRecorder.call(
+        agent_run: agent_run,
+        repo_path: agent_run.worktree_path,
+        fallback_result: @verification_fallback_result
+      )
+    end
+
     def persist_pre_run_head_sha(agent_run, sha)
       return if sha.blank?
       return unless agent_run.existing_pr?
@@ -3378,9 +3391,23 @@ module Activities
         augment_prompt_for_enhance_issue_goal(agent_run, prompt)
       elsif agent_run.review_goal?
         augment_prompt_for_review_goal(agent_run, prompt)
+      elsif agent_run.create_pr_goal?
+        augment_prompt_for_verification(agent_run, prompt)
       else
         prompt
       end
+    end
+
+    def augment_prompt_for_verification(agent_run, prompt)
+      section = AgentRuns::VerificationPrompt.call(
+        agent_run: agent_run,
+        repo_path: agent_run.worktree_path
+      )
+      @verification_fallback_result = section.fallback_result
+
+      return prompt if section.content.blank?
+
+      "#{prompt}\n#{section.content}"
     end
 
     # Goal-augmentation prompts.

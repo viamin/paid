@@ -1948,6 +1948,32 @@ RSpec.describe Activities::RunAgentActivity do
     )
   end
 
+  def prepare_verification_fixture(repo_path)
+    FileUtils.mkdir_p(File.join(repo_path, ".paid"))
+    FileUtils.mkdir_p(File.join(repo_path, "bin"))
+    FileUtils.mkdir_p(File.join(repo_path, "tmp"))
+    File.write(File.join(repo_path, ".paid/screenshots.yml"), <<~YAML)
+      base_url: http://localhost:3000
+      routes:
+        - path: /
+          name: home
+    YAML
+    File.write(File.join(repo_path, "bin/rails"), "#!/bin/sh\n")
+    File.write(
+      File.join(repo_path, AgentRuns::VerificationPrompt::RESULT_PATH),
+      JSON.generate(
+        status: "passed",
+        summary: "Verified the updated issue flow.",
+        used_browser_tools: true,
+        browser_steps: [ "Opened the page", "Submitted the form" ]
+      )
+    )
+    File.write(
+      File.join(repo_path, AgentRuns::VerificationPrompt::APP_LOG_PATH),
+      "booted successfully\n"
+    )
+  end
+
   def expect_preflight_failure_log(activity, agent_run_id, runner:, reason:)
     expect(activity.send(:logger)).to have_received(:warn).with(
       hash_including(
@@ -2439,6 +2465,27 @@ expect(container_service).to receive(:execute).with(
           .with("post_run_bookkeeping", "claude_code")
         expect(activity).not_to have_received(:with_periodic_heartbeat)
           .with("post_run_bookkeeping", "claude_code", agent_run: agent_run)
+      end
+
+      it "persists the agent-recorded verification result before auto-commit" do
+        repo_path = Dir.mktmpdir("run-agent-verification-spec")
+        project.update!(screenshot_settings: { "verification_enabled" => true })
+        agent_run.update!(worktree_path: repo_path)
+        prepare_verification_fixture(repo_path)
+        allow(git_ops).to receive(:has_changes_since?).and_return(false)
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(agent_run.reload.verification_result).to include(
+          "status" => "passed",
+          "summary" => "Verified the updated issue flow.",
+          "used_browser_tools" => true,
+          "browser_steps" => [ "Opened the page", "Submitted the form" ],
+          "app_log_tail" => "booted successfully\n"
+        )
+        expect(File).not_to exist(File.join(repo_path, AgentRuns::VerificationPrompt::RESULT_PATH))
+      ensure
+        FileUtils.rm_rf(repo_path) if repo_path
       end
 
       it "returns the selected runner when pre-commit requirements block completion" do
