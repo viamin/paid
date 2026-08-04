@@ -3,6 +3,7 @@
 require "digest"
 
 module ConfigurationBundles
+  # @spec BUNDLE-OPT-001
   class Optimizer
     include BundleFingerprinting
 
