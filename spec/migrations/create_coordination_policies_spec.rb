@@ -12,6 +12,7 @@ RSpec.describe CreateCoordinationPolicies, :aggregate_failures do
   around do |example|
     previous_search_path = connection.schema_search_path
 
+    drop_coordination_policy_test_schemas!
     connection.execute("CREATE SCHEMA #{schema_name}")
     connection.schema_search_path = "#{schema_name},public"
     clear_schema_metadata!(connection)
@@ -20,6 +21,8 @@ RSpec.describe CreateCoordinationPolicies, :aggregate_failures do
   ensure
     connection.schema_search_path = previous_search_path
     clear_schema_metadata!(connection)
+    connection.execute("DROP SCHEMA IF EXISTS #{schema_name} CASCADE")
+    drop_coordination_policy_test_schemas!
   end
 
   it "creates the policy catalog and version tables with indexes, comments, and tenant RLS" do
@@ -37,8 +40,9 @@ RSpec.describe CreateCoordinationPolicies, :aggregate_failures do
 
   it "allows rollback to continue when one policy table was already dropped" do
     migration.up
-    connection.remove_reference(:coordination_policies, :current_version, index: true)
-    connection.drop_table(:coordination_policy_versions)
+    connection.remove_reference(qualified_table_name("coordination_policies"), :current_version, index: true)
+    connection.drop_table(qualified_table_name("coordination_policy_versions"))
+    clear_schema_metadata!(connection)
 
     expect { migration.down }.not_to raise_error
     expect(table_exists_in_test_schema?("coordination_policies")).to be(false)
@@ -194,5 +198,16 @@ RSpec.describe CreateCoordinationPolicies, :aggregate_failures do
 
   def truthy?(value)
     value == true || value == "t"
+  end
+
+  def drop_coordination_policy_test_schemas!
+    connection.select_values(<<~SQL.squish).each do |name|
+      SELECT nspname
+      FROM pg_namespace
+      WHERE nspname LIKE 'coordination_policy_spec_%'
+    SQL
+
+      connection.execute(%(DROP SCHEMA IF EXISTS "#{name}" CASCADE))
+    end
   end
 end

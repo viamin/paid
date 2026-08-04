@@ -67,23 +67,30 @@ class CreateCoordinationPolicies < ActiveRecord::Migration[8.1]
   def down
     safety_assured do
       %w[coordination_policy_versions coordination_policies].each do |table|
-        next unless table_exists?(table)
+        qualified_table = current_schema_table_name(table)
+        next unless table_exists?(qualified_table)
 
-        execute "DROP POLICY IF EXISTS tenant_isolation ON #{table}"
-        execute "ALTER TABLE #{table} NO FORCE ROW LEVEL SECURITY"
-        execute "ALTER TABLE #{table} DISABLE ROW LEVEL SECURITY"
+        execute "DROP POLICY IF EXISTS tenant_isolation ON #{qualified_table}"
+        execute "ALTER TABLE #{qualified_table} NO FORCE ROW LEVEL SECURITY"
+        execute "ALTER TABLE #{qualified_table} DISABLE ROW LEVEL SECURITY"
       end
 
-      if column_exists?(:coordination_policies, :current_version_id)
-        remove_foreign_key :coordination_policies, column: :current_version_id
-        remove_reference :coordination_policies, :current_version, index: true
-      end
-      drop_table :coordination_policy_versions, if_exists: true
-      drop_table :coordination_policies, if_exists: true
+      execute "ALTER TABLE #{current_schema_table_name("coordination_policies")} DROP CONSTRAINT IF EXISTS fk_rails_e1e816c81c"
+      execute "ALTER TABLE #{current_schema_table_name("coordination_policies")} DROP COLUMN IF EXISTS current_version_id"
+      execute "DROP TABLE IF EXISTS #{current_schema_table_name("coordination_policy_versions")} CASCADE"
+      execute "DROP TABLE IF EXISTS #{current_schema_table_name("coordination_policies")} CASCADE"
     end
   end
 
   private
+
+  def current_schema_table_name(table_name)
+    %(#{connection.quote_table_name(current_schema_name)}.#{connection.quote_table_name(table_name)})
+  end
+
+  def current_schema_name
+    @current_schema_name ||= connection.select_value("SELECT current_schema()")
+  end
 
   def enable_row_level_security
     execute <<~SQL
