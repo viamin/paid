@@ -4,6 +4,7 @@ module Knowledge
   class Search
     class Semantic
       include LineRangeHelpers
+      # @spec KNOWLEDGE-003
 
       attr_reader :project, :query, :artifact_type, :limit
 

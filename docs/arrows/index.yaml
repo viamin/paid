@@ -112,6 +112,14 @@ arrows:
     taxonomy: knowledge
     status: OK
     audited: 2026-08-04
+  knowledge-base:
+    title: Knowledge Base
+    path: docs/intent/knowledge-base/knowledge-base-design.md
+    specs: docs/intent/knowledge-base/knowledge-base-specs.md
+    parent: PAID
+    taxonomy: knowledge
+    status: OK
+    audited: 2026-08-04
   configuration-profiles-chat:
     title: Configuration Profiles Chat
     path: docs/intent/configuration-profiles-chat/configuration-profiles-chat-design.md
