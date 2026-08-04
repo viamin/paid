@@ -15,6 +15,7 @@ module Issues
 
     def call
       # @spec AUTO-PICK-QUEUE-001
+      # @spec EAGER-QUEUE-002
       unless project.auto_pick_enabled?
         log_project_deferred
         return nil
@@ -35,7 +36,7 @@ module Issues
         preferred_agent_type: project.model_preferences["preferred_agent_type"]
       )
 
-      run = blocking_runs(goal).find_or_create_by!(project: project, issue: issue, goal: goal) do |agent_run|
+      run = blocking_runs(goal).find_or_create_by!(project: project, issue: issue, goal: goal) do |agent_run| # @spec EAGER-QUEUE-001
         agent_run.agent_type = intended_agent_type
         agent_run.status = "queued"
         agent_run.trigger_type = "automatic"

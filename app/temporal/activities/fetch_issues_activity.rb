@@ -286,7 +286,7 @@ module Activities
       eligible_issues << issue
     end
 
-    def seed_eligible_issues(project, eligible_issues, incremental:)
+    def seed_eligible_issues(project, eligible_issues, incremental:) # @spec EAGER-QUEUE-004
       if incremental
         eligible_issues.each_with_index do |issue, index|
           heartbeat(

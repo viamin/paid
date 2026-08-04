@@ -107,6 +107,7 @@ class ProcessRunQueueJob < ApplicationJob
         # Re-enqueue hooks recreate the run if the issue becomes eligible
         # again. Done before capacity/docker checks so ineligible runs
         # don't consume expensive admission work.
+        # @spec EAGER-QUEUE-005
         if AgentRuns::RecheckIssueEligibility.call(next_run)
           skipped_ids.add(next_run.id)
           next

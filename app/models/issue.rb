@@ -107,7 +107,7 @@ class Issue < ApplicationRecord
   scope :sub_issues_only, -> { where.not(parent_issue_id: nil) }
   scope :issues_only, -> { where(is_pull_request: false) }
   scope :pull_requests_only, -> { where(is_pull_request: true) }
-  scope :auto_continue_active, -> { where(auto_continue_paused: false) }
+  scope :auto_continue_active, -> { where(auto_continue_paused: false) } # @spec QUEUE-TIER-006
   scope :ready_for_work, ->(project) {
     # Match blocking_issues / lifecycle_statuses semantics: open dependencies
     # excluding recommend_close (treated as effectively resolved pending
@@ -663,7 +663,7 @@ class Issue < ApplicationRecord
     end
   end
 
-  def enqueue_newly_unblocked_dependents
+  def enqueue_newly_unblocked_dependents # @spec EAGER-QUEUE-004
     auto_pick_enabled_dependents.find_each do |dependent|
       next unless Issues::AutoPickProjectGate.call(dependent.project)
       next unless Issue.ready_for_work(dependent.project).where(id: dependent.id).exists?
@@ -703,7 +703,7 @@ class Issue < ApplicationRecord
     paid_state.in?(%w[new planning failed completed analyzed])
   end
 
-  def enqueue_self_if_became_auto_pick_eligible
+  def enqueue_self_if_became_auto_pick_eligible # @spec EAGER-QUEUE-007
     wait = auto_pick_reenqueue_delay
     job = Issues::ReenqueueEligibleJob
 
@@ -729,7 +729,7 @@ class Issue < ApplicationRecord
   # then grows quickly (~11m, ~22m, ~41m at n=5-7) and keeps growing — at
   # n=24 the delay is ~3.8 days, at n=49 it's ~72 days. See
   # https://github.com/sidekiq/sidekiq/wiki/Error-Handling#automatic-job-retry.
-  def auto_pick_reenqueue_delay
+  def auto_pick_reenqueue_delay # @spec EAGER-QUEUE-007
     return unless paid_state == "failed"
 
     n = [ consecutive_auto_pick_failure_count - 1, 0 ].max

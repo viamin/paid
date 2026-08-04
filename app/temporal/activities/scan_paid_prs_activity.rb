@@ -968,7 +968,7 @@ module Activities
       triggers
     end
 
-    def resolve_focus(triggers)
+    def resolve_focus(triggers) # @spec FOCUSED-RUN-002
       candidate_focuses = Array(triggers)
         .filter_map { |trigger| TRIGGER_TO_FOCUS[trigger[:type].to_s] }
         .uniq
@@ -1409,7 +1409,7 @@ module Activities
       FOCUS_RESOLUTION_ATTRIBUTION_FOCUSES.include?(focus.to_s)
     end
 
-    def record_focus_resolution(project, client, issue)
+    def record_focus_resolution(project, client, issue) # @spec FOCUSED-RUN-005
       focused_run = latest_completed_focused_run(project, issue)
       return unless focused_run && focus_resolution_pending?(focused_run)
 
