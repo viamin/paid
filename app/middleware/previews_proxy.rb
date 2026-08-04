@@ -44,10 +44,11 @@ class PreviewsProxy
     end
   end
 
-  # Matches `/previews/:token/<path>` where <path> is any non-empty segment,
-  # including the bare root `/`. The exact `/previews/:token` (no trailing path)
-  # intentionally does NOT match — that is served by PreviewsController#show.
-  PATH_PATTERN = %r{\A/previews/([^/]+)(/.*)\z}.freeze
+  # Matches preview proxy paths for both the canonical root document and nested
+  # assets/routes. Exact `/previews/:token` requests are intercepted only when
+  # the segment resolves to a live preview token; otherwise they fall through
+  # so the numeric wrapper route (`/previews/:id`) can still render normally.
+  PATH_PATTERN = %r{\A/previews/([^/]+)(/.*)?\z}.freeze
 
   # Hop-by-hop headers per RFC 7230 §6.1 — never forwarded verbatim on HTTP.
   # (WebSocket upgrades forward Connection/Upgrade via the raw request path.)
@@ -90,27 +91,37 @@ class PreviewsProxy
     # exception-handling middleware to render 404/500 responses.
     return @app.call(env) unless match
 
-    serve_preview_safely(env, match:)
+    response = preview_response_for(env, match:)
+    return response if response
+
+    @app.call(env)
   end
 
-  def serve_preview_safely(env, match:)
-    serve_preview(env, match:)
+  # @spec LIVE-PREVIEW-004
+  def serve_preview_safely(env, match:, session:)
+    serve_preview(env, match:, session:)
   rescue StandardError => e
     log_error("previews_proxy.request_failed", token: match[1], error: e.message)
     error_response
   end
 
-  def serve_preview(env, match:)
-    token = match[1]
-    proxied_path = match[2]
+  def preview_response_for(env, match:)
+    session = resolve_session(match[1])
+    return if passthrough_to_wrapper_route?(match, session)
 
-    session = resolve_session(token)
+    serve_preview_safely(env, match:, session:)
+  end
+
+  def serve_preview(env, match:, session:)
+    proxied_path = match[2].presence || "/"
+
     return not_found unless session&.proxiable?
 
     request = ActionDispatch::Request.new(env)
     return not_found unless authorized_viewer?(request, session)
 
     session.touch_last_accessed!
+    return canonical_root_redirect(request, session) if exact_preview_root?(match)
     return simulated_response(session, proxied_path) if simulated_session?(session)
 
     if websocket_upgrade?(request)
@@ -131,6 +142,10 @@ class PreviewsProxy
   rescue ActiveRecord::ConnectionNotEstablished, ActiveRecord::StatementInvalid => e
     log_error("previews_proxy.session_lookup_failed", token:, error: e.message)
     nil
+  end
+
+  def passthrough_to_wrapper_route?(match, session)
+    match[2].nil? && session.nil?
   end
 
   def authorized_viewer?(request, session)
@@ -258,6 +273,17 @@ class PreviewsProxy
       },
       [ body ]
     ]
+  end
+
+  def exact_preview_root?(match)
+    match[2].nil?
+  end
+
+  def canonical_root_redirect(request, session)
+    target = "#{session.proxy_prefix}/"
+    target = "#{target}?#{request.query_string}" if request.query_string.present?
+
+    [ 302, { "location" => target, "cache-control" => "no-store" }, [] ]
   end
 
   def build_upstream_headers(request:, session:)
