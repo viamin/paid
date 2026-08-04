@@ -3,6 +3,7 @@
 module Knowledge
   module Qdrant
     class PointSync
+      # @spec KNOWLEDGE-002
       # Payload keys that must never be sent to Qdrant. Prevents accidental
       # storage of source code or secrets in the vector database.
       FORBIDDEN_PAYLOAD_KEYS = %w[content text body secret password token].freeze

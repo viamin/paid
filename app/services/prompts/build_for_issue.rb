@@ -241,6 +241,7 @@ module Prompts
     end
 
     def inject_knowledge_context(prompt)
+      # @spec KNOWLEDGE-005
       bundle = Knowledge::ContextBundle::Build.call(
         issue: issue,
         project: project,

@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec KNOWLEDGE-005
 RSpec.describe Knowledge::UsageStats do
   let(:account) { create(:account) }
   let(:project) { create(:project, account: account) }

@@ -3,6 +3,7 @@
 module Knowledge
   module Embeddings
     class Pipeline
+      # @spec KNOWLEDGE-002
       DEFAULT_BATCH_SIZE = 100
 
       attr_reader :batch_size, :generator

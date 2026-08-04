@@ -3,6 +3,7 @@
 module Knowledge
   class Search
     class Hybrid
+      # @spec KNOWLEDGE-003
       attr_reader :project, :query, :artifact_type, :version, :limit
 
       def initialize(project:, query:, artifact_type: nil, version: nil, limit: 20)

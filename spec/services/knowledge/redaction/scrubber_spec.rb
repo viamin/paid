@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec KNOWLEDGE-006
 RSpec.describe Knowledge::Redaction::Scrubber do
   let(:project) { create(:project) }
   let(:project_version) { create(:project_version, project: project) }

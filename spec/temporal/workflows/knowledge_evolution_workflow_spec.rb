@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec KNOWLEDGE-008
 RSpec.describe Workflows::KnowledgeEvolutionWorkflow do
   let(:workflow) { described_class.new }
 

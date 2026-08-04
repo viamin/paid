@@ -3,6 +3,8 @@
 require "rails_helper"
 require "ostruct"
 
+# @spec KNOWLEDGE-004
+# @spec KNOWLEDGE-005
 RSpec.describe Knowledge::ContextBundle::Build do
   let(:project) { create(:project) }
   let(:agent_run) { create(:agent_run, project: project, issue: create(:issue, project: project)) }

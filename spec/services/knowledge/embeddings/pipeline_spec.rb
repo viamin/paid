@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec KNOWLEDGE-002
 RSpec.describe Knowledge::Embeddings::Pipeline do
   let(:project) { create(:project) }
   let(:project_version) { create(:project_version, project: project) }

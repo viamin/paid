@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec KNOWLEDGE-008
 RSpec.describe Activities::RecordKnowledgeRecommendationsActivity do
   let(:activity) { described_class.new }
 

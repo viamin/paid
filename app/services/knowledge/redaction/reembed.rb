@@ -18,6 +18,7 @@ module Knowledge
     # events (with `reembedded: true` in details) so operators can trace
     # what was re-embedded and when.
     class Reembed
+      # @spec KNOWLEDGE-007
       Result = Data.define(:reembedded_count, :skipped_count, :duration_seconds)
 
       DEFAULT_BATCH_SIZE = 100

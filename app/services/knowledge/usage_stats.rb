@@ -2,6 +2,7 @@
 
 module Knowledge
   class UsageStats
+    # @spec KNOWLEDGE-005
     attr_reader :project, :since
 
     def initialize(project:, since: 30.days.ago)
