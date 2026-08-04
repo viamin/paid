@@ -1192,7 +1192,7 @@ class AgentRun < ApplicationRecord
   #   in_progress          → tie-break within the manual tier only (PR continuation first)
   #   goal_priority        → create_issue ahead of create_pr
   #   created_at, id       → FIFO tiebreaker
-  QUEUE_ORDER = [ # @spec QUEUE-TIER-003 @spec QUEUE-TIER-005
+  QUEUE_ORDER = [ # @spec QUEUE-TIER-003 @spec QUEUE-TIER-005 @spec EAGER-QUEUE-008
     PROJECT_ACTIVE_COUNT_SQL,
     USER_ACTIVE_COUNT_SQL,
     QUEUE_PRIORITY_SQL,
