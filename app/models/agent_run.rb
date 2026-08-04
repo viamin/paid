@@ -4,6 +4,7 @@ class AgentRun < ApplicationRecord
   attribute :focus, :string, default: "general"
   attribute :execution_origin, :string, default: "paid_native"
   attribute :external_metadata, :json, default: {}
+  attribute :verification_result, :json, default: {}
   attr_accessor :preloaded_final_runner_record, :preloaded_final_runner_record_loaded
 
   MAX_RUNNER_ATTEMPT_ERROR_MESSAGE_LENGTH = 500
@@ -707,7 +708,6 @@ class AgentRun < ApplicationRecord
   # (their count stays 0 during the claim window) while starving the local
   # host with runs admitted elsewhere. Once container_host is set by a real
   # provision/pool result it is authoritative and the planned value is ignored.
-  # @spec CONTAINER-RUNTIME-003
   def self.active_count_for_host(container_host)
     scope = host_scope_for(container_host)
     capacity_inflight.where(
@@ -779,7 +779,6 @@ class AgentRun < ApplicationRecord
   # cleanup probes the backend that actually owns the volume instead of the
   # local default, which would leak the remote volume. Mirrors the COALESCE
   # fallback used by active_count_for_host.
-  # @spec CONTAINER-RUNTIME-003
   def workspace_volume_host
     container_host.presence || external_metadata["planned_container_host"].presence
   end
