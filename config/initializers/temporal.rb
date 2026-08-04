@@ -5,6 +5,7 @@ module Paid
   @temporal_worker_mutex = Mutex.new
 
   class << self
+    # @spec TEMPORAL-ORCHESTRATION-001
     # Returns a connected Temporal client. Connection is established lazily
     # on first call, not during Rails initialization. Thread-safe via Mutex
     # to prevent duplicate connections under concurrent Puma workers.
@@ -78,6 +79,7 @@ module Paid
       ENV.fetch("TEMPORAL_UI_URL", "http://localhost:8080").sub(%r{/+\z}, "")
     end
 
+    # @spec TEMPORAL-ORCHESTRATION-001
     # Dedicated task queue for GitHubPollWorkflow instances.
     # Isolates poll activities from agent-execution workloads so that
     # long-running agent runs cannot starve time-sensitive poll cycles.
@@ -85,6 +87,7 @@ module Paid
       ENV.fetch("TEMPORAL_POLL_TASK_QUEUE", "paid-poll-tasks")
     end
 
+    # @spec TEMPORAL-ORCHESTRATION-001
     # Dedicated task queue for AgentExecutionWorkflow and related workflows.
     # Keeps agent workloads on their own activity pool, independent of polling.
     def agent_task_queue

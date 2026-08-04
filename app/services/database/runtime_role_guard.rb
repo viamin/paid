@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module Database
-  class RuntimeRoleGuard
+  class RuntimeRoleGuard # @spec POSTGRESQL-PERSISTENCE-002
     SKIP_ENV = "PAID_SKIP_DATABASE_RUNTIME_ROLE_GUARD"
     CREATE_DATABASE_TASKS = %w[
       db:create
