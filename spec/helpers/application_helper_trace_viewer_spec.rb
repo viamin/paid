@@ -2,7 +2,8 @@
 
 require "rails_helper"
 
-RSpec.describe ApplicationHelper, type: :helper do
+# @spec LIVE-PREVIEW-006
+RSpec.describe ApplicationHelper, :no_db, type: :helper do
   describe "#agent_run_trace_viewer_data" do
     let(:project) { Struct.new(:owner, :repo).new("acme", "web") }
     let(:trace_viewer) { instance_double(Previews::TraceViewer) }
@@ -48,6 +49,22 @@ RSpec.describe ApplicationHelper, type: :helper do
         result = helper.agent_run_trace_viewer_data(agent_run)
 
         expect(result).to eq({ available: false, embed_url: nil })
+      end
+    end
+
+    context "when the run only has a base commit sha" do
+      let(:agent_run) { run_with(status: "completed", pr_number: 42, result_commit_sha: nil, base_commit_sha: "base123") }
+      let(:embed_url) { "https://example.test/trace-viewer/index.html&trace=..." }
+
+      it "uses the same fallback commit key the producer writes" do
+        allow(trace_viewer).to receive_messages(configured?: true, trace_available?: true, embed_url: embed_url)
+
+        result = helper.agent_run_trace_viewer_data(agent_run)
+
+        expect(trace_viewer).to have_received(:trace_available?).with(
+          org: "acme", repo: "web", pr_number: 42, commit_sha: "base123"
+        )
+        expect(result).to eq({ available: true, embed_url: embed_url })
       end
     end
 

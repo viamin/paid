@@ -3,7 +3,7 @@
 require "rails_helper"
 require "aws-sdk-s3"
 
-RSpec.describe Screenshots::Storage do
+RSpec.describe Screenshots::Storage, :no_db do
   let(:s3_client) { Aws::S3::Client.new(stub_responses: true) }
   let(:storage) { described_class.new(bucket: "test-bucket", region: "us-east-1") }
 

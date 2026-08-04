@@ -3,7 +3,8 @@
 require "rails_helper"
 require "aws-sdk-s3"
 
-RSpec.describe Previews::TraceViewer do
+# @spec LIVE-PREVIEW-006
+RSpec.describe Previews::TraceViewer, :no_db do
   let(:s3_client) { Aws::S3::Client.new(stub_responses: true) }
   let(:storage) do
     instance_double(Screenshots::Storage,
@@ -17,22 +18,25 @@ RSpec.describe Previews::TraceViewer do
   let(:trace_params) { { org: "acme", repo: "web", pr_number: 42, commit_sha: "abc1234" } }
 
   before do
+    allow(storage).to receive(:trace_object_key) do |org:, repo:, pr_number:, commit_sha:|
+      "screenshots/#{org}/#{repo}/pr-#{pr_number}/#{commit_sha}/trace.zip"
+    end
     allow(storage).to receive(:signed_url) do |key|
       "https://example.test/#{key}?X-Amz-Signature=abc"
     end
   end
 
   describe "#trace_object_key" do
-    it "builds the S3 key for a trace zip" do
+    it "uses the storage trace key contract" do
       expect(viewer.trace_object_key(**trace_params))
-        .to eq("traces/acme/web/pr-42/abc1234/trace.zip")
+        .to eq("screenshots/acme/web/pr-42/abc1234/trace.zip")
     end
   end
 
   describe "#trace_url" do
     it "returns a presigned URL for the trace object key" do
       expect(viewer.trace_url(**trace_params))
-        .to eq("https://example.test/traces/acme/web/pr-42/abc1234/trace.zip?X-Amz-Signature=abc")
+        .to eq("https://example.test/screenshots/acme/web/pr-42/abc1234/trace.zip?X-Amz-Signature=abc")
     end
   end
 
@@ -77,7 +81,7 @@ RSpec.describe Previews::TraceViewer do
 
       expect(url)
         .to start_with("https://example.test/trace-viewer/index.html?X-Amz-Signature=abc&trace=")
-      expect(url).to include("traces%2Facme%2Fweb%2Fpr-42%2Fabc1234%2Ftrace.zip")
+      expect(url).to include("screenshots%2Facme%2Fweb%2Fpr-42%2Fabc1234%2Ftrace.zip")
     end
   end
 
@@ -114,16 +118,14 @@ RSpec.describe Previews::TraceViewer do
       file = Tempfile.new([ "trace", ".zip" ])
       file.write("fake trace zip")
       file.rewind
-      allow(s3_client).to receive(:put_object)
+      allow(storage).to receive(:upload_trace)
+        .with(file_path: file.path, **trace_params)
+        .and_return("https://example.test/screenshots/acme/web/pr-42/abc1234/trace.zip?X-Amz-Signature=abc")
 
       url = viewer.upload_trace(file_path: file.path, **trace_params)
 
-      expect(url).to eq("https://example.test/traces/acme/web/pr-42/abc1234/trace.zip?X-Amz-Signature=abc")
-      expect(s3_client).to have_received(:put_object) do |args|
-        expect(args[:bucket]).to eq("paid-screenshots")
-        expect(args[:key]).to eq("traces/acme/web/pr-42/abc1234/trace.zip")
-        expect(args[:content_type]).to eq("application/zip")
-      end
+      expect(url).to eq("https://example.test/screenshots/acme/web/pr-42/abc1234/trace.zip?X-Amz-Signature=abc")
+      expect(storage).to have_received(:upload_trace).with(file_path: file.path, **trace_params)
     ensure
       file.close
       file.unlink
@@ -133,7 +135,9 @@ RSpec.describe Previews::TraceViewer do
       file = Tempfile.new([ "trace", ".zip" ])
       file.write("fake trace zip")
       file.rewind
-      s3_client.stub_responses(:put_object, "ServiceError")
+      allow(storage).to receive(:upload_trace)
+        .with(file_path: file.path, **trace_params)
+        .and_raise(Screenshots::Storage::StorageError, "S3 trace upload failed: boom")
 
       expect { viewer.upload_trace(file_path: file.path, **trace_params) }
         .to raise_error(Previews::TraceViewer::TraceViewerError, /trace viewer upload failed/)
