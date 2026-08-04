@@ -154,6 +154,8 @@ class TenantSetting < ApplicationRecord
   ENTERPRISE_OPERATIONS_RELEASE_CHANNELS = %w[stable canary lts].freeze
   ENTERPRISE_OPERATIONS_REMEDIATION_MODES = %w[approval_required operator_applied observe_only].freeze
   DOCKER_HOST_FALLBACK_BEHAVIORS = %w[disabled first_healthy capacity_aware].freeze
+  QUEUE_FAIRNESS_MODES = %w[fair_share strict_priority].freeze
+  DEFAULT_QUEUE_FAIRNESS_MODE = "fair_share"
   DEFAULT_WORKER_SETTINGS = {
     "temporal_workflow_slots" => 20,
     "temporal_activity_slots" => 4,
@@ -207,6 +209,7 @@ class TenantSetting < ApplicationRecord
     allow_nil: true,
     if: -> { self_repo_full_name.present? }
   validates :docker_host_fallback_behavior, inclusion: { in: DOCKER_HOST_FALLBACK_BEHAVIORS }
+  validates :queue_fairness_mode, inclusion: { in: QUEUE_FAIRNESS_MODES }
 
   def provider_preferences = runner_preferences
 
@@ -230,7 +233,8 @@ class TenantSetting < ApplicationRecord
       "worker_settings" => effective_worker_settings,
       "chat_settings" => effective_chat_settings,
       "self_repo_full_name" => self_repo_full_name,
-      "features" => features
+      "features" => features,
+      "queue_fairness_mode" => resolved_queue_fairness_mode
     }
   end
 
@@ -352,6 +356,18 @@ class TenantSetting < ApplicationRecord
     merged_features = normalize_hash(features)
     merged_features["chat_settings"] = normalize_chat_settings(value)
     self.features = merged_features
+  end
+
+  def resolved_queue_fairness_mode
+    queue_fairness_mode.presence_in(QUEUE_FAIRNESS_MODES) || DEFAULT_QUEUE_FAIRNESS_MODE
+  end
+
+  def fair_share_queue?
+    resolved_queue_fairness_mode == "fair_share"
+  end
+
+  def strict_priority_queue?
+    resolved_queue_fairness_mode == "strict_priority"
   end
 
   def cap_max_concurrent_runs(limit)

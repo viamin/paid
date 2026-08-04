@@ -11,6 +11,7 @@ module Tools
       max_tokens_per_run
       max_monthly_cost_cents
       self_repo_full_name
+      queue_fairness_mode
       allowed_runner_keys
       auto_pick_skip_labels
       runner_preferences

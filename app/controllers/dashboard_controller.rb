@@ -7,11 +7,12 @@ class DashboardController < ApplicationController
   before_action :set_live_agent_run, only: :cancel_run
 
   def show
+    @queue_fairness_mode = current_account.tenant_setting!.resolved_queue_fairness_mode
     @time_range = valid_time_range
     @status_filter = valid_status_filter
     @goal_filter = valid_goal_filter
     @live_stats = Dashboard::LiveStats.call(account: current_account)
-    @queue_preview = Dashboard::QueuePreview.call(user: current_user)
+    @queue_preview = Dashboard::QueuePreview.call(user: current_user, queue_fairness_mode: @queue_fairness_mode)
     @active_runs = live_agent_runs.active.includes(:runner, :issue, :model_selection, project: [ :created_by, :account ])
       .order("agent_runs.created_at DESC")
       .limit(20)
@@ -49,7 +50,8 @@ class DashboardController < ApplicationController
     render partial: "dashboard/queue_preview_frame",
       locals: {
         queue_preview: @queue_preview,
-        paused_projects: @quality_paused_projects
+        paused_projects: @quality_paused_projects,
+        queue_fairness_mode: @queue_fairness_mode
       }
   end
 
@@ -160,7 +162,8 @@ class DashboardController < ApplicationController
   end
 
   def load_queue_preview
-    @queue_preview = Dashboard::QueuePreview.call(user: current_user)
+    @queue_fairness_mode = current_account.tenant_setting!.resolved_queue_fairness_mode
+    @queue_preview = Dashboard::QueuePreview.call(user: current_user, queue_fairness_mode: @queue_fairness_mode)
     @quality_paused_projects = current_account.projects
       .where.not(quality_paused_at: nil)
       .order(quality_paused_at: :desc)

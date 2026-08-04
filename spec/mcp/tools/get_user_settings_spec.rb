@@ -91,6 +91,7 @@ RSpec.describe Tools::GetUserSettings do
       result = described_class.new(user:, session:).call
 
       expect(result["max_concurrent_runs"]).to eq(account.tenant_setting!.max_concurrent_runs)
+      expect(result["queue_fairness_mode"]).to eq(account.tenant_setting!.queue_fairness_mode)
     end
   end
 
@@ -101,12 +102,14 @@ RSpec.describe Tools::GetUserSettings do
       session = create(:chat_session, account:, created_by: user)
 
       result = described_class.new(user:, session:).call(
-        settings: { max_concurrent_runs: 7 },
+        settings: { max_concurrent_runs: 7, queue_fairness_mode: "strict_priority" },
         confirmed: true
       )
 
       expect(result["max_concurrent_runs"]).to eq(7)
+      expect(result["queue_fairness_mode"]).to eq("strict_priority")
       expect(account.tenant_setting!.reload.max_concurrent_runs).to eq(7)
+      expect(account.tenant_setting!.queue_fairness_mode).to eq("strict_priority")
     end
 
     it "records tenant configuration activity when settings change" do

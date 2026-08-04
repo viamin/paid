@@ -25,6 +25,62 @@ RSpec.describe ProcessRunQueueJob do
     job.send(:temporal_priority_for, run)
   end
 
+  def create_strict_priority_vs_fair_share_runs
+    strict_account = create(:account)
+    strict_account.tenant_setting!.update!(queue_fairness_mode: "strict_priority")
+    strict_user = create(:user, account: strict_account)
+    strict_user.settings.update!(max_concurrent_runs: 1)
+    busy_project = create(:project, account: strict_account, created_by: strict_user)
+
+    fair_account = create(:account)
+    fair_account.tenant_setting!.update!(queue_fairness_mode: "fair_share")
+    fair_user = create(:user, account: fair_account)
+    fair_user.settings.update!(max_concurrent_runs: 1)
+    idle_project = create(:project, account: fair_account, created_by: fair_user)
+
+    strict_issue_a = create(:issue, project: busy_project, labels: [ "P1" ])
+    strict_issue_b = create(:issue, project: busy_project, labels: [ "P1" ])
+    strict_issue_c = create(:issue, project: busy_project, labels: [ "P1" ])
+    create(:agent_run, :running, project: busy_project, trigger_type: "automatic", issue: strict_issue_a)
+    create(:agent_run, :running, project: busy_project, trigger_type: "automatic", issue: strict_issue_b)
+    strict_run = create(:agent_run, :queued, project: busy_project, trigger_type: "automatic",
+      issue: strict_issue_c, created_at: 2.minutes.ago)
+
+    fair_issue = create(:issue, project: idle_project, labels: [ "P2" ])
+    fair_run = create(:agent_run, :queued, project: idle_project, trigger_type: "automatic",
+      issue: fair_issue, created_at: 1.minute.ago)
+
+    [ strict_run, fair_run ]
+  end
+
+  def create_strict_priority_vs_strict_priority_runs
+    first_account = create(:account)
+    first_account.tenant_setting!.update!(queue_fairness_mode: "strict_priority")
+    first_user = create(:user, account: first_account)
+    first_user.settings.update!(max_concurrent_runs: 1)
+    busy_project = create(:project, account: first_account, created_by: first_user)
+
+    second_account = create(:account)
+    second_account.tenant_setting!.update!(queue_fairness_mode: "strict_priority")
+    second_user = create(:user, account: second_account)
+    second_user.settings.update!(max_concurrent_runs: 1)
+    idle_project = create(:project, account: second_account, created_by: second_user)
+
+    first_issue_a = create(:issue, project: busy_project, labels: [ "P1" ])
+    first_issue_b = create(:issue, project: busy_project, labels: [ "P1" ])
+    first_issue_c = create(:issue, project: busy_project, labels: [ "P1" ])
+    create(:agent_run, :running, project: busy_project, trigger_type: "automatic", issue: first_issue_a)
+    create(:agent_run, :running, project: busy_project, trigger_type: "automatic", issue: first_issue_b)
+    first_run = create(:agent_run, :queued, project: busy_project, trigger_type: "automatic",
+      issue: first_issue_c, created_at: 2.minutes.ago)
+
+    second_issue = create(:issue, project: idle_project, labels: [ "P2" ])
+    second_run = create(:agent_run, :queued, project: idle_project, trigger_type: "automatic",
+      issue: second_issue, created_at: 1.minute.ago)
+
+    [ first_run, second_run ]
+  end
+
   def build_host_registry(fallback_policy: "first_healthy")
     local_backend = instance_double(Containers::Backends::LocalDocker, identifier: "local", all_host_identifiers: [ "local" ], remote?: false, ping: true)
     elguapo_backend = instance_double(Containers::Backends::RemoteDocker, identifier: "elguapo", all_host_identifiers: [ "elguapo" ], remote?: true, ping: true)
@@ -502,6 +558,59 @@ RSpec.describe ProcessRunQueueJob do
       job.perform
     end
 
+    it "keeps the account id as the Temporal fairness key for strict-priority accounts" do
+      queued_run = create(:agent_run, :queued)
+      queued_run.project.account.tenant_setting!.update!(queue_fairness_mode: "strict_priority")
+
+      expect(temporal_client).to receive(:start_workflow).with(
+        Workflows::AgentExecutionWorkflow,
+        hash_including(agent_run_id: queued_run.id),
+        hash_including(
+          priority: temporal_priority_for(queued_run)
+        )
+      ).and_return(workflow_handle)
+
+      job.perform
+
+      expect(temporal_priority_for(queued_run).fairness_key).to eq(queued_run.project.account_id.to_s)
+    end
+
+    it "keeps strict-priority accounts isolated in Temporal fairness buckets" do
+      first_run, second_run = create_strict_priority_vs_strict_priority_runs
+
+      expect(temporal_priority_for(first_run).fairness_key).to eq(first_run.project.account_id.to_s)
+      expect(temporal_priority_for(second_run).fairness_key).to eq(second_run.project.account_id.to_s)
+      expect(temporal_priority_for(first_run).fairness_key).not_to eq(temporal_priority_for(second_run).fairness_key)
+    end
+
+    it "does not let a strict-priority account globally outrank an idle fair-share account" do
+      _strict_run, fair_run = create_strict_priority_vs_fair_share_runs
+
+      started_ids = []
+      allow(temporal_client).to receive(:start_workflow) do |_wf, input, **_opts|
+        started_ids << input[:agent_run_id]
+        workflow_handle
+      end
+
+      described_class.new.perform
+
+      expect(started_ids.first).to eq(fair_run.id)
+    end
+
+    it "does not let one strict-priority account globally outrank another account's idle work" do
+      _busy_run, idle_run = create_strict_priority_vs_strict_priority_runs
+
+      started_ids = []
+      allow(temporal_client).to receive(:start_workflow) do |_wf, input, **_opts|
+        started_ids << input[:agent_run_id]
+        workflow_handle
+      end
+
+      described_class.new.perform
+
+      expect(started_ids.first).to eq(idle_run.id)
+    end
+
     it "processes runs in FIFO order within the same priority" do
       project = create(:project)
       project.created_by.settings.update!(max_concurrent_runs: 1)
@@ -766,15 +875,16 @@ RSpec.describe ProcessRunQueueJob do
     end
 
     it "fails run when project owner cannot be resolved" do
+      job = described_class.new
       project = create(:project)
       queued_run = create(:agent_run, :queued, project: project)
       allow(project).to receive(:effective_owner).and_return(nil)
       allow(queued_run).to receive(:project).and_return(project)
-      allow(AgentRun).to receive(:peek_next_queued_run).and_return(queued_run, nil)
+      allow(job).to receive(:next_queued_run_for_scheduler).and_return(queued_run, nil)
 
       expect(temporal_client).not_to receive(:start_workflow)
 
-      described_class.new.perform
+      job.perform
 
       expect(queued_run.reload.status).to eq("failed")
       expect(queued_run.error_message).to include("Cannot resolve project owner")

@@ -57,6 +57,7 @@ RSpec.describe Avo::Resources::Account, :no_db do
         :max_projects,
         :max_users,
         :max_tokens_per_run,
+        :queue_fairness_mode,
         :allowed_runner_keys,
         :runner_preferences,
         :default_budgets,

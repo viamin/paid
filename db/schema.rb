@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_03_172151) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_04_055102) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2772,11 +2772,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_03_172151) do
     t.integer "max_users", default: 25, null: false
     t.string "preferred_docker_host_identifier", comment: "Account-wide preferred Docker host identifier for manual placement defaults."
     t.jsonb "quality_thresholds", default: {}, null: false
+    t.string "queue_fairness_mode", limit: 20, default: "fair_share", null: false, comment: "Account dequeue policy: fair_share (round-robin across projects) or strict_priority (global priority order)."
     t.jsonb "runner_preferences", default: {}, null: false
     t.string "self_repo_full_name"
     t.datetime "updated_at", null: false
     t.jsonb "worker_settings", default: {}, null: false
     t.index ["account_id"], name: "index_tenant_settings_on_account_id", unique: true
+    t.check_constraint "queue_fairness_mode::text = ANY (ARRAY['fair_share'::character varying, 'strict_priority'::character varying]::text[])", name: "chk_queue_fairness_mode"
   end
 
   create_table "token_usages", force: :cascade do |t|
