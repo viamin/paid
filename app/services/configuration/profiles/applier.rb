@@ -33,11 +33,7 @@ module Configuration
         return { applied_changes: [], skipped_levels: skipped_levels } if applied.empty?
 
         context.project.class.transaction do
-          applied.each do |change|
-            Settings.write(context, change.key, change.to)
-          end
-
-          save_changed_records!
+          persist!(apply_changes!(applied))
           record_activity!(applied)
         end
 
@@ -52,7 +48,7 @@ module Configuration
       attr_reader :plan, :project, :actor
 
       def context
-        @context ||= Context.build(project:, actor:, materialize_missing: true)
+        @context ||= Context.build(project:, actor:)
       end
 
       def authorization
@@ -73,8 +69,12 @@ module Configuration
         @skipped_levels ||= authorization.reject { |entry| entry.fetch("allowed", false) }
       end
 
-      def save_changed_records!
-        [ context.project, context.user_setting, context.tenant_setting ].compact.uniq.each do |record|
+      def apply_changes!(applied)
+        applied.map { |change| Settings.write(context, change.key, change.to) }.uniq
+      end
+
+      def persist!(records)
+        records.each do |record|
           next unless record.changed?
 
           record.save!

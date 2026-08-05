@@ -123,7 +123,9 @@ module Configuration
 
       def write(context, key, value)
         descriptor = fetch(key)
-        descriptor.write.call(descriptor.record.call(context), descriptor.coerce.call(value))
+        record = descriptor.record.call(context)
+        descriptor.write.call(record, descriptor.coerce.call(value))
+        record
       end
 
       def normalize(key, value)

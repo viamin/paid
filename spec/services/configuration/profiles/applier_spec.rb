@@ -86,6 +86,7 @@ RSpec.describe Configuration::Profiles::Applier do
 
       result = described_class.call(plan: mixed_scope_plan, project:, actor: member)
 
+      expect(TenantSetting.exists?(account_id: account.id)).to be(false)
       expect(result.fetch(:applied_changes)).to contain_exactly(
         include(key: "run_concurrency_mode", from: "auto", to: "manual", level: "user", applied: true)
       )
@@ -95,7 +96,12 @@ RSpec.describe Configuration::Profiles::Applier do
       )
       expect(member.settings.reload.run_concurrency_mode).to eq("manual")
       expect(project.reload.auto_pick_enabled).to be false
-      expect(project.account.tenant_setting!.effective_agent_settings["auto_continue"]).to be true
+    end
+
+    it "does not persist a tenant setting when its value already matches the effective default" do
+      expect {
+        described_class.call(plan:, project:, actor: owner)
+      }.not_to change(TenantSetting, :count)
     end
 
     it "is a no-op for a plan with no changes" do
