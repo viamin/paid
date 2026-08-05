@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe PreCommitRequirements::Evaluate do
+RSpec.describe PreCommitRequirements::Evaluate do # @spec QUALITY-LOOPS-002 # @spec QUALITY-LOOPS-003
   let(:account) { create(:account) }
   let(:project) { create(:project, account: account) }
   let(:owner) { project.effective_owner }
