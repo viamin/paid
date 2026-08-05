@@ -1426,18 +1426,18 @@ RSpec.describe "Projects" do
   describe "GET /previews/:token" do
     before { sign_in user }
 
-    it "serves the proxied app for a live session through the controller token path" do
+    it "redirects the exact token root to the trailing-slash proxy path" do
       project = create(:project, account: account, github_token: github_token, name: "My Project")
       session = create(:preview_session, :ready, project: project, branch_name: "feature/preview", framework: "rails",
         tunnel_port: 8242, expires_at: 20.minutes.from_now)
-      stub_preview_proxy_response
 
       get preview_path(session.token)
 
-      expect(response).to have_http_status(:ok)
-      expect(response.headers["Content-Security-Policy"]).to include("frame-ancestors 'self'")
-      expect(response.headers["X-Frame-Options"]).to eq("SAMEORIGIN")
-      expect(response.body).to eq("<html>ok</html>")
+      # The exact `/previews/:token` root is not matched by the PreviewsProxy
+      # middleware; the controller redirects to the trailing-slash URL so the
+      # full proxy path serves it instead of proxying directly here.
+      expect(response).to have_http_status(:moved_permanently)
+      expect(response).to redirect_to("/previews/#{session.token}/")
     end
 
     it "supports nested preview paths on the same token route" do
@@ -1469,21 +1469,16 @@ RSpec.describe "Projects" do
       expect(response.body).to eq("<html>ok</html>")
     end
 
-    it "returns bad gateway when the tunnel never accepts the connection" do
+    it "returns bad gateway over the proxy path when the tunnel never accepts the connection" do
       project = create(:project, account: account, github_token: github_token)
       session = create(:preview_session, project: project, branch_name: "feature/proxy", status: "ready",
         tunnel_port: 8242, container_id: "container-123", expires_at: 20.minutes.from_now)
+      allow(Net::HTTP).to receive(:new).with("127.0.0.1", 8242).and_raise(Errno::ECONNREFUSED, "Connection refused")
 
-      http = instance_double(Net::HTTP)
-      allow(Net::HTTP).to receive(:new).with("127.0.0.1", 8242).and_return(http)
-      allow(http).to receive(:open_timeout=).with(2)
-      allow(http).to receive(:read_timeout=).with(5)
-      allow(http).to receive(:get).and_raise(Net::OpenTimeout)
-
-      get preview_path(session.token)
+      get "#{session.proxy_prefix}/"
 
       expect(response).to have_http_status(:bad_gateway)
-      expect(response.body).to include("Preview is unavailable")
+      expect(response.body).to include("Preview upstream unavailable")
     end
 
     it "returns not found for expired preview sessions" do
@@ -1504,7 +1499,7 @@ RSpec.describe "Projects" do
     allow(Net::HTTP).to receive(:new).with("127.0.0.1", 8242).and_return(http)
     allow(http).to receive(:open_timeout=).with(2)
     allow(http).to receive(:read_timeout=).with(5)
-    allow(http).to receive_messages(active?: false, get: upstream_response)
+    allow(http).to receive(:active?).and_return(false)
     allow(http).to receive(:request).with(request).and_yield(upstream_response)
     allow(Net::HTTP::Get).to receive(:new).and_return(request)
     allow(request).to receive(:[]=)

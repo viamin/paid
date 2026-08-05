@@ -214,6 +214,28 @@ RSpec.describe "Previews" do
       end
     end
 
+    context "when the request hits the exact token root" do
+      let(:user) { create(:user, :viewer, account: account) }
+
+      before do
+        create(:project_membership, project: project, user: user, role: :member)
+        sign_in user
+      end
+
+      it "redirects to the trailing-slash proxy path so the middleware serves it" do
+        get "/previews/#{preview_session.token}"
+
+        expect(response).to have_http_status(:moved_permanently)
+        expect(response).to redirect_to("#{preview_session.proxy_prefix}/")
+      end
+
+      it "preserves the query string across the redirect" do
+        get "/previews/#{preview_session.token}?refresh=1"
+
+        expect(response).to redirect_to("#{preview_session.proxy_prefix}/?refresh=1")
+      end
+    end
+
     context "when the user is not authenticated" do
       it "returns 404 to avoid revealing that the preview exists" do
         get "#{preview_session.proxy_prefix}/"

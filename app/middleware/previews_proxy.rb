@@ -46,7 +46,8 @@ class PreviewsProxy
 
   # Matches `/previews/:token/<path>` where <path> is any non-empty segment,
   # including the bare root `/`. The exact `/previews/:token` (no trailing path)
-  # intentionally does NOT match — that is served by PreviewsController#show.
+  # intentionally does NOT match — PreviewsController#show redirects it to the
+  # trailing-slash root so this proxy path serves it with full header rewriting.
   PATH_PATTERN = %r{\A/previews/([^/]+)(/.*)\z}.freeze
 
   # Hop-by-hop headers per RFC 7230 §6.1 — never forwarded verbatim on HTTP.
