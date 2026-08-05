@@ -21,9 +21,14 @@
   *Test:* `spec/services/agent_runs/verification_spec.rb`,
   `spec/temporal/activities/provision_browser_container_activity_spec.rb`.
 
-- [ ] **LIVE-PREVIEW-003** — When a user starts or restarts a project preview,
+- [x] **LIVE-PREVIEW-003** — When a user starts or restarts a project preview,
   the system SHALL invoke real preview provisioning rather than marking a new
   `PreviewSession` ready without a live app, tunnel, or container.
+  *Code:* `app/services/previews/lifecycle.rb`,
+  `app/controllers/projects_controller.rb`.
+  *Test:* `spec/services/previews/lifecycle_spec.rb`,
+  `spec/requests/projects_spec.rb`,
+  `spec/jobs/preview_sessions/expire_job_spec.rb`.
 
 - [x] **LIVE-PREVIEW-004** — When a preview is served at `/previews/:token`,
   the system SHALL route the root-path experience through the tunnel-backed

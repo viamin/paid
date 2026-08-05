@@ -22,6 +22,8 @@ RSpec.describe Runners::ProviderOutcomeStats do
           create(:agent_run, :completed, project: project, agent_type: "claude_code")
           create(:agent_run, :failed, project: project, agent_type: "claude_code")
           create(:agent_run, :completed, project: project, agent_type: "codex")
+          create(:agent_run, :completed, :internal_agent, project: project, agent_type: "claude_code",
+            external_metadata: { "preview_session" => true })
         end
       end
 

@@ -129,7 +129,8 @@ module Accounts
 
     def current_window_runs
       @current_window_runs ||= account_runs
-        .where(goal: "create_pr", status: "completed")
+        .reported_create_pr
+        .where(status: "completed")
         .where.not(pull_request_number: nil)
         .where(created_at: current_window)
         .includes(:issue, :quality_metrics)

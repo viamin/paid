@@ -36,10 +36,10 @@ module PreviewSessions
 
     def reap_session(session)
       TenantContext.with(session.account) do
-        session.mark_stopped!
+        Previews::Lifecycle.stop_session!(preview_session: session, terminal_status: "stopped")
       end
       true
-    rescue StandardError => e
+    rescue Previews::Lifecycle::Error => e
       Rails.logger.error(
         message: "preview_session.expire_failed",
         preview_session_id: session.id,

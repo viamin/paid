@@ -107,6 +107,10 @@ module Dashboard
       @agent_runs ||= AgentRun.joins(:project).where(projects: { account_id: account.id })
     end
 
+    def reported_create_pr_runs(scope = agent_runs)
+      scope.reported_create_pr
+    end
+
     def time_filtered_runs
       @time_filtered_runs ||= apply_time_range(agent_runs)
     end
@@ -115,9 +119,21 @@ module Dashboard
       @performance_filtered_runs ||= begin
         scope = time_filtered_runs
         scope = scope.where(status: status_filter) unless status_filter == "all"
-        scope = scope.where(goal: goal_filter) unless goal_filter == "all"
+        scope = exclude_preview_create_pr_runs(scope) if goal_filter == "all"
+        scope = apply_goal_filter(scope)
         scope
       end
+    end
+
+    def exclude_preview_create_pr_runs(scope)
+      scope.where.not(goal: "create_pr").or(reported_create_pr_runs(scope))
+    end
+
+    def apply_goal_filter(scope)
+      return scope if goal_filter == "all"
+      return reported_create_pr_runs(scope) if goal_filter == "create_pr"
+
+      scope.where(goal: goal_filter)
     end
 
     def apply_time_range(scope, column: :created_at)
@@ -177,8 +193,8 @@ module Dashboard
     end
 
     def duration_trend_chart
-      scope = agent_runs
-        .where(status: "completed", goal: "create_pr")
+      scope = reported_create_pr_runs
+        .where(status: "completed")
         .where.not(duration_seconds: nil, completed_at: nil)
 
       scope = apply_time_range(scope, column: :completed_at)
@@ -245,8 +261,7 @@ module Dashboard
       # inside it — silently understating totals and completion rate. The
       # explicit completed_at range below already bounds the window, and
       # agent_runs is already scoped to the account so tenant isolation holds.
-      counts = agent_runs
-        .where(goal: "create_pr")
+      counts = reported_create_pr_runs
         .where.not(completed_at: nil)
         .where(completed_at: start_date.beginning_of_day..end_date.end_of_day)
         .where(status: OUTCOME_CHART_STATUSES)
@@ -300,8 +315,7 @@ module Dashboard
         # empty history, while max() bounds the chart. The entire build_stats
         # result (including this value) is cached via #call, so this extra query
         # only runs once per CACHE_TTL rather than per request.
-        earliest = agent_runs
-          .where(goal: "create_pr")
+        earliest = reported_create_pr_runs
           .where.not(completed_at: nil)
           .minimum(Arel.sql("DATE(agent_runs.completed_at)"))
 
@@ -664,35 +678,39 @@ module Dashboard
       # dedicated merged_at column yet. It can drift when a PR is updated
       # after merge (comments, labels, etc.). A future migration should add
       # issues.merged_at populated by MergePullRequestActivity (#230).
-      sql = <<~SQL.squish
-        WITH per_issue AS (
-          SELECT issues.id,
-                 COUNT(agent_runs.id) AS run_count,
-                 EXTRACT(EPOCH FROM issues.github_updated_at
-                   - MIN(COALESCE(agent_runs.started_at, agent_runs.created_at))) AS wall_seconds,
-                 COALESCE(SUM(agent_runs.duration_seconds), 0) AS total_run_seconds
-          FROM issues
-          INNER JOIN agent_runs ON agent_runs.issue_id = issues.id
-          WHERE issues.is_pull_request = true
-            AND issues.pr_review_phase = 'merged'
-            AND issues.project_id IN (#{project_ids_sql})
-            AND agent_runs.goal = 'create_pr'
-            AND COALESCE(agent_runs.started_at, agent_runs.created_at) <= issues.github_updated_at
-          GROUP BY issues.id, issues.github_updated_at
-        )
-        SELECT COUNT(*) AS merged_count,
-               AVG(run_count) AS avg_runs,
-               MIN(run_count) AS min_runs,
-               MAX(run_count) AS max_runs,
-               percentile_cont(0.5) WITHIN GROUP (ORDER BY run_count) AS median_runs,
-               AVG(wall_seconds) AS avg_wall_seconds,
-               percentile_cont(0.5) WITHIN GROUP (ORDER BY wall_seconds) AS p50_wall_seconds,
-               percentile_cont(0.9) WITHIN GROUP (ORDER BY wall_seconds) AS p90_wall_seconds,
-               AVG(total_run_seconds) AS avg_run_seconds,
-               percentile_cont(0.5) WITHIN GROUP (ORDER BY total_run_seconds) AS p50_run_seconds,
-               percentile_cont(0.9) WITHIN GROUP (ORDER BY total_run_seconds) AS p90_run_seconds
-        FROM per_issue
-      SQL
+      sql = ActiveRecord::Base.sanitize_sql_array([
+        <<~SQL.squish,
+          WITH per_issue AS (
+            SELECT issues.id,
+                   COUNT(agent_runs.id) AS run_count,
+                   EXTRACT(EPOCH FROM issues.github_updated_at
+                     - MIN(COALESCE(agent_runs.started_at, agent_runs.created_at))) AS wall_seconds,
+                   COALESCE(SUM(agent_runs.duration_seconds), 0) AS total_run_seconds
+            FROM issues
+            INNER JOIN agent_runs ON agent_runs.issue_id = issues.id
+            WHERE issues.is_pull_request = true
+              AND issues.pr_review_phase = 'merged'
+              AND issues.project_id IN (#{project_ids_sql})
+              AND agent_runs.goal = 'create_pr'
+              AND COALESCE(agent_runs.external_metadata->>?, 'false') != 'true'
+              AND COALESCE(agent_runs.started_at, agent_runs.created_at) <= issues.github_updated_at
+            GROUP BY issues.id, issues.github_updated_at
+          )
+          SELECT COUNT(*) AS merged_count,
+                 AVG(run_count) AS avg_runs,
+                 MIN(run_count) AS min_runs,
+                 MAX(run_count) AS max_runs,
+                 percentile_cont(0.5) WITHIN GROUP (ORDER BY run_count) AS median_runs,
+                 AVG(wall_seconds) AS avg_wall_seconds,
+                 percentile_cont(0.5) WITHIN GROUP (ORDER BY wall_seconds) AS p50_wall_seconds,
+                 percentile_cont(0.9) WITHIN GROUP (ORDER BY wall_seconds) AS p90_wall_seconds,
+                 AVG(total_run_seconds) AS avg_run_seconds,
+                 percentile_cont(0.5) WITHIN GROUP (ORDER BY total_run_seconds) AS p50_run_seconds,
+                 percentile_cont(0.9) WITHIN GROUP (ORDER BY total_run_seconds) AS p90_run_seconds
+          FROM per_issue
+        SQL
+        AgentRun::PREVIEW_SESSION_EXTERNAL_METADATA_KEY
+      ])
 
       ActiveRecord::Base.connection.select_one(sql)
     end

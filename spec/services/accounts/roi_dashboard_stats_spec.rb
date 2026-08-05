@@ -67,6 +67,20 @@ RSpec.describe Accounts::RoiDashboardStats do
         [ project.name, 6_000 ]
       ])
     end
+
+    it "excludes preview provisioning runs from ROI summaries" do
+      create_accepted_run(project:, issue_created_at: 5.days.ago, run_created_at: 4.days.ago, merged_at: 2.days.ago, cost_cents: 6_000,
+        pull_request_number: 11)
+      create_preview_run(project:, issue_created_at: 4.days.ago, run_created_at: 3.days.ago, merged_at: 1.day.ago, cost_cents: 20_000,
+        pull_request_number: 12)
+
+      stats = described_class.call(account: account)
+
+      expect(stats[:summary][:created_pr_count]).to eq(1)
+      expect(stats[:summary][:accepted_pr_count]).to eq(1)
+      expect(stats[:summary][:total_cost_cents]).to eq(6_000)
+      expect(stats[:project_rows].find { |row| row[:project] == project }.dig(:summary, :cost_per_accepted_pr_cents)).to eq(6_000)
+    end
   end
 
   def create_accepted_run(project:, issue_created_at:, run_created_at:, merged_at:, cost_cents:, pull_request_number:)
@@ -79,6 +93,20 @@ RSpec.describe Accounts::RoiDashboardStats do
       cost_cents:,
       goal: "create_pr",
       pull_request_number:)
+    create(:quality_metric, :human, agent_run: run, created_at: merged_at, scores: { "pr_merged" => 1.0 })
+  end
+
+  def create_preview_run(project:, issue_created_at:, run_created_at:, merged_at:, cost_cents:, pull_request_number:)
+    issue = create(:issue, project:, github_created_at: issue_created_at)
+    run = create(:agent_run, :completed, :internal_agent,
+      project:,
+      issue:,
+      created_at: run_created_at,
+      completed_at: run_created_at + 1.day,
+      cost_cents:,
+      goal: "create_pr",
+      pull_request_number:,
+      external_metadata: { "preview_session" => true })
     create(:quality_metric, :human, agent_run: run, created_at: merged_at, scores: { "pr_merged" => 1.0 })
   end
 end

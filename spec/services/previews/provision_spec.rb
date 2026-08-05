@@ -63,11 +63,38 @@ RSpec.describe Previews::Provision do
     FileUtils.rm_rf(repo_path)
   end
 
+  describe ".release_baseline" do
+    it "returns an empty snapshot without creating shared state when no preview overlap is tracked" do
+      snapshot = described_class.release_baseline(agent_run)
+
+      expect(snapshot).to eq(
+        count: 0,
+        service_container_ids: [],
+        service_environment: {}
+      )
+      expect(PreviewProvisionState.find_by(agent_run: agent_run)).to be_nil
+    end
+  end
+
   it "merges project and repo service dependencies for provisioning" do
     service.call(start_tunnel: false, allow_seed: false)
 
     expect(service_provisioner).to have_received(:provision)
       .with(agent_run, network: "paid-test", service_names: contain_exactly("postgres", "redis"))
+  end
+
+  it "provisions the preview container with the live preview agent run" do
+    service.call(start_tunnel: false, allow_seed: false)
+
+    expect(Containers::Provision).to have_received(:new).with(
+      agent_run: agent_run,
+      project: project,
+      worktree_path: repo_path,
+      memory_bytes: described_class::MEMORY_BYTES,
+      cpu_quota: described_class::CPU_QUOTA,
+      pids_limit: described_class::PIDS_LIMIT,
+      timeout_seconds: described_class::PROVISION_TIMEOUT_SECONDS
+    )
   end
 
   it "cleans up provisioned service containers and per-run databases via the service provisioner" do
