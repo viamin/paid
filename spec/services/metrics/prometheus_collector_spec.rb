@@ -88,6 +88,16 @@ RSpec.describe Metrics::PrometheusCollector do # @spec OBSERVABILITY-002
         expect(output).to include('paid_agent_run_outcomes{status="cancelled",outcome="failure"} 1')
       end
 
+      it "maps no_output to the success outcome bucket" do
+        create(:agent_run, :no_output, tokens_input: 400, tokens_output: 0, cost_cents: 3,
+               completed_at: Time.current, duration_seconds: 45)
+        Rails.cache.clear
+        refreshed = described_class.call
+
+        expect(refreshed).to include('paid_agent_run_outcomes{status="no_output",outcome="success"} 1')
+        expect(refreshed).to include('paid_agent_run_tokens{direction="input",outcome="success"} 10400')
+      end
+
       it "reports duration distribution gauges and aggregates" do
         expect(output).to include('paid_agent_run_duration_seconds_bucket{outcome="success",le="300"} 1')
         expect(output).to include('paid_agent_run_duration_seconds_bucket{outcome="failure",le="300"} 2')

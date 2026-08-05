@@ -276,8 +276,12 @@ module Metrics
       end
     end
 
+    # "no_output" is a success-like terminal state: the provider ran fine but produced
+    # no changes. The app consistently treats it as a successful provider outcome
+    # (see SUCCESSFUL_RUN_STATUSES in StrategyEvolution::PrepareInputs, circuit breaker,
+    # and STALE_RUNNING_HEALTHY_STATUSES).
     def normalized_outcome_for(status)
-      status == "completed" ? "success" : "failure"
+      %w[completed no_output].include?(status) ? "success" : "failure"
     end
 
     def append_metric_header(lines, name, type, help)
