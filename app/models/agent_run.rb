@@ -719,10 +719,16 @@ class AgentRun < ApplicationRecord
 
   # Returns the count of active create_pr runs for the given account.
   # Used to enforce the account-level create_pr concurrency cap.
+  #
+  # Synthetic `internal_agent` runs (e.g. live-preview provisioning) reuse the
+  # create_pr pipeline to drive container provisioning but never produce a PR.
+  # They are excluded so opening a preview cannot consume one of the tenant's
+  # PR-work slots and block unrelated issue/PR automation.
   def self.active_create_pr_count_for_account(account)
     capacity_inflight
       .joins(:project)
       .where(projects: { account_id: account.id }, goal: "create_pr")
+      .where.not(agent_type: "internal_agent")
       .count
   end
 

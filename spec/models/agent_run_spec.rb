@@ -2308,6 +2308,18 @@ RSpec.describe AgentRun do
 
       expect(described_class.active_create_pr_count_for_account(account)).to eq(0)
     end
+
+    it "excludes synthetic internal_agent runs (e.g. live-preview provisioning)" do
+      account = create(:account)
+      user = create(:user, account: account)
+      project = create(:project, account: account, created_by: user)
+
+      create(:agent_run, :running, project: project, goal: "create_pr")
+      create(:agent_run, :running, :internal_agent, :with_custom_prompt, project: project, goal: "create_pr")
+      create(:agent_run, :queued, :internal_agent, :with_custom_prompt, project: project, goal: "create_pr", temporal_workflow_id: "claimed")
+
+      expect(described_class.active_create_pr_count_for_account(account)).to eq(1)
+    end
   end
 
   describe ".next_queued_run" do
