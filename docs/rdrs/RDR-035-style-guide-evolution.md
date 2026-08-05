@@ -631,7 +631,7 @@ The accepted scope shipped in July 2026 and was reconciled against the repositor
    - `StyleGuides::InjectIntoPrompt` resolves the effective version, serves the assigned A/B variant when present, and records `StyleGuideRunExposure` rows for each injected guide.
 
 5. **Workflow and scheduling**
-   - `StyleGuideEvolutionJob` discovers eligible non-global guides.
+   - `StyleGuideEvolutionJob` discovers eligible account-level and project-level guides.
    - `Workflows::StyleGuideEvolutionWorkflow` and the style-guide Temporal activities orchestrate sample → mutate → persist → create test.
 
 ### Accepted implementation divergence

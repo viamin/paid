@@ -44,7 +44,7 @@ The closeout issue for this audit is [#3168](https://github.com/viamin/paid/issu
 - `app/services/style_guide_evolution/sample_runs.rb` samples recent `StyleGuideRunExposure` rows joined to automated `QualityMetric` records and flags underperforming current versions as mutation candidates.
 - `app/services/style_guide_evolution/mutate.rb` uses `AgentHarness.send_message` to generate full-guide mutations with bounded count and output-size filtering.
 - `app/services/style_guide_evolution/create_variants.rb` persists evolved versions with lineage and idempotency support.
-- `app/jobs/style_guide_evolution_job.rb` discovers eligible non-global guides and starts one Temporal workflow per guide.
+- `app/jobs/style_guide_evolution_job.rb` discovers eligible account-level and project-level guides and starts one Temporal workflow per guide.
 - `app/temporal/workflows/style_guide_evolution_workflow.rb` orchestrates sample → mutate → create variants → create A/B test.
 
 ### Quality attribution and promotion
