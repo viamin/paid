@@ -3,10 +3,13 @@
 module Previews
   # Stops preview sessions whose TTL has passed (RDR-045).
   #
-  # Releases tunnel ports back to the pool by transitioning the session to
-  # {PreviewSession::TERMINAL_STATUSES} via {PreviewSession#mark_stopped!}.
-  # Runs as a periodic job (see {PreviewSessions::ExpireJob}) and can also be
-  # invoked scoped to a single project as an opportunistic cleanup.
+  # Routes every expiring session through {Previews::Teardown} before
+  # transitioning it to {PreviewSession::TERMINAL_STATUSES} via
+  # {PreviewSession#mark_stopped!}, so the tunnel port reservation is released
+  # back to the pool and the preview container is removed immediately rather than
+  # lingering past TTL until a later orphan sweep. Runs as a periodic job (see
+  # {PreviewSessions::ExpireJob}) and can also be invoked scoped to a single
+  # project as an opportunistic cleanup.
   class Expire
     def self.call(...)
       new(...).call
@@ -31,6 +34,7 @@ module Previews
     end
 
     def stop_session(session)
+      Previews::Teardown.call(session)
       session.mark_stopped!
       true
     rescue StandardError => e

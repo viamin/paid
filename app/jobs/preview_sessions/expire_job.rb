@@ -36,6 +36,7 @@ module PreviewSessions
 
     def reap_session(session)
       TenantContext.with(session.account) do
+        Previews::Teardown.call(session)
         session.mark_stopped!
       end
       true
