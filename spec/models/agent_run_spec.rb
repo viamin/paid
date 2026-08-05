@@ -4567,6 +4567,35 @@ RSpec.describe AgentRun do
       end
     end
 
+    # Mirrors the AddSyntheticToAgentRuns backfill: before the `synthetic` column
+    # existed, preview-provisioning runs were tagged only via the
+    # external_metadata['preview_session'] marker (set by Previews::Lifecycle on
+    # main). The backfill must target that preview-specific marker rather than
+    # agent_type, so it does not also sweep up legitimate native internal_agent
+    # history.
+    describe "synthetic backfill from preview_session marker" do
+      it "marks only runs carrying the preview_session external_metadata marker" do
+        preview_run = create(:agent_run, :running, project: project,
+          external_metadata: { "preview_session" => true })
+        preview_run.update_column(:synthetic, false)
+
+        # A native internal_agent run without the preview marker: the old
+        # (agent_type + execution_origin) backfill would have wrongly swept
+        # this up as synthetic too.
+        native_run = create(:agent_run, :running, :internal_agent, :with_custom_prompt, project: project)
+        native_run.update_column(:synthetic, false)
+
+        described_class.connection.execute(<<~SQL.squish)
+          UPDATE agent_runs
+          SET synthetic = true
+          WHERE external_metadata @> '{"preview_session": true}'::jsonb
+        SQL
+
+        expect(preview_run.reload).to be_synthetic
+        expect(native_run.reload).not_to be_synthetic
+      end
+    end
+
     describe "agent_runs_count" do
       it "does not increment when a synthetic run is created" do
         expect { create(:agent_run, :running, :synthetic, project: project) }

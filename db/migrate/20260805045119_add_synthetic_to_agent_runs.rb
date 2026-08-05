@@ -11,17 +11,17 @@ class AddSyntheticToAgentRuns < ActiveRecord::Migration[8.1]
                "history and totals. Keyed off this flag rather than agent_type because " \
                "internal_agent is shared with legitimate externally-ingested runs."
 
-    # Backfill existing preview-provisioning runs. A synthetic preview run is created
-    # natively (execution_origin defaults to "paid_native") and never via external
-    # ingestion, which always sets execution_origin to "external". This is the
-    # preview-specific signal that distinguishes synthetic operational runs from
-    # legitimate imported internal_agent runs (internal_agent_workflows source).
+    # Backfill the existing preview-provisioning runs that, before this column,
+    # were tagged only via the preview-specific marker in
+    # external_metadata['preview_session'] (set by Previews::Lifecycle on main).
+    # Backfilling off that marker — not off agent_type + execution_origin —
+    # ensures only genuine preview runs are marked synthetic, leaving any other
+    # native internal_agent history (e.g. externally-ingested runs) intact.
     safety_assured do
       execute <<~SQL.squish
         UPDATE agent_runs
         SET synthetic = true
-        WHERE agent_type = 'internal_agent'
-          AND COALESCE(execution_origin, 'paid_native') <> 'external'
+        WHERE external_metadata @> '{"preview_session": true}'::jsonb
       SQL
     end
   end
