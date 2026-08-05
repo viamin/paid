@@ -299,7 +299,13 @@ module Activities
     end
 
     def trusted_comments(project, comments)
-      comments.select { |comment| project.trusted_github_user?(comment.user&.login) }
+      # Admit trusted human collaborators plus Paid's own structured marker
+      # comments (clarifying questions/answers) authored by the project's
+      # GitHub App bot. trusted_github_user? deliberately excludes the bot, so
+      # without this re-admission the re-evaluation LLM never sees the prior
+      # Q&A it posted and re-asks the same questions. See CommentAdmission and
+      # Project#paid_bot_author?.
+      comments.select { |comment| ClarifyingQuestions::CommentAdmission.admissible?(project:, comment:) }
     end
 
     def format_search_results(results)
