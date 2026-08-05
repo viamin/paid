@@ -20,6 +20,7 @@ RSpec.describe PreviewSessions::ProvisionJob do
     agent_run = preview_session.reload.agent_run
     expect(agent_run).to be_present
     expect(agent_run.agent_type).to eq("internal_agent")
+    expect(agent_run).to be_synthetic
     expect(agent_run.branch_name).to eq("feature/live-preview")
     expect(agent_run.status).to eq("completed")
     expect(Previews::Provision).to have_received(:new).with(

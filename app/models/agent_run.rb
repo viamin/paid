@@ -342,12 +342,14 @@ class AgentRun < ApplicationRecord
   scope :finished, -> { where(status: FINISHED_STATUSES) }
   scope :paid_native, -> { where(execution_origin: "paid_native") }
   scope :external_execution, -> { where(execution_origin: "external") }
-  # Synthetic `internal_agent` runs (e.g. live-preview provisioning) reuse the
+  # Synthetic operational runs (e.g. live-preview provisioning) reuse the
   # agent-run lifecycle to drive infrastructure but never execute a real agent
   # and cannot produce a PR/issue/review artifact. Excluded from user-facing run
   # history and metrics so previews do not masquerade as ordinary agent runs or
-  # inflate totals. See `synthetic_operational_run?`.
-  scope :excluding_synthetic, -> { where.not(agent_type: "internal_agent") }
+  # inflate totals. Keyed off the `synthetic` flag rather than `agent_type`,
+  # because `internal_agent` is shared with legitimate externally-ingested runs
+  # (AgentRuns::IngestExternal). See `synthetic_operational_run?`.
+  scope :excluding_synthetic, -> { where(synthetic: false) }
 
   def update_columns(attributes)
     super(attributes)
@@ -726,7 +728,7 @@ class AgentRun < ApplicationRecord
   # Returns the count of active create_pr runs for the given account.
   # Used to enforce the account-level create_pr concurrency cap.
   #
-  # Synthetic `internal_agent` runs (e.g. live-preview provisioning) reuse the
+  # Synthetic operational runs (e.g. live-preview provisioning) reuse the
   # create_pr pipeline to drive container provisioning but never produce a PR.
   # They are excluded so opening a preview cannot consume one of the tenant's
   # PR-work slots and block unrelated issue/PR automation.
@@ -734,7 +736,7 @@ class AgentRun < ApplicationRecord
     capacity_inflight
       .joins(:project)
       .where(projects: { account_id: account.id }, goal: "create_pr")
-      .where.not(agent_type: "internal_agent")
+      .where(synthetic: false)
       .count
   end
 
@@ -1529,14 +1531,16 @@ class AgentRun < ApplicationRecord
     goal == "lid_planning"
   end
 
-  # Synthetic `internal_agent` runs (e.g. live-preview provisioning) reuse the
+  # Synthetic operational runs (e.g. live-preview provisioning) reuse the
   # agent-run lifecycle to drive container provisioning but never execute a real
   # agent and cannot produce a PR, issue, or review artifact. They must bypass
   # run-quality collection, anomaly detection, dispatch circuit-breaker
   # accounting, and failure-recovery decisions so they don't record bogus
   # create-pr metrics or enqueue follow-up work for a run that produces nothing.
+  # Marked by an explicit `synthetic` flag at creation rather than `agent_type`,
+  # since `internal_agent` is also a legitimate externally-ingested run type.
   def synthetic_operational_run?
-    agent_type == "internal_agent"
+    synthetic?
   end
 
   def plan_docs_present?
@@ -2929,8 +2933,8 @@ class AgentRun < ApplicationRecord
   end
 
   # Maintains both project counter caches (`completed_agent_runs_count` and
-  # `agent_runs_count`) so synthetic `internal_agent` runs (live-preview
-  # provisioning) never inflate user-facing run totals.
+  # `agent_runs_count`) so synthetic operational runs (live-preview provisioning)
+  # never inflate user-facing run totals.
   #
   # `completed_agent_runs_count` is fully custom-managed here and skips synthetic
   # runs entirely. `agent_runs_count` is Rails' default `counter_cache: true`,
@@ -2966,8 +2970,8 @@ class AgentRun < ApplicationRecord
   end
 
   # True when a real (non-synthetic) agent run just reached a terminal state.
-  # Synthetic internal_agent runs (preview provisioning) finish via update too,
-  # but they must not trigger terminal-state side effects, so they are excluded.
+  # Synthetic operational runs (preview provisioning) finish via update too, but
+  # they must not trigger terminal-state side effects, so they are excluded.
   def real_run_just_finished?
     just_finished? && !synthetic_operational_run?
   end

@@ -84,6 +84,7 @@ module PreviewSessions
         project: preview_session.project,
         initiating_user: preview_session.created_by,
         agent_type: "internal_agent",
+        synthetic: true,
         goal: "create_pr",
         custom_prompt: "Provision preview session #{preview_session.id} for #{preview_session.branch_name}",
         trigger_type: "manual",

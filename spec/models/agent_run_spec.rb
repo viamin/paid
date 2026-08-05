@@ -2309,14 +2309,25 @@ RSpec.describe AgentRun do
       expect(described_class.active_create_pr_count_for_account(account)).to eq(0)
     end
 
-    it "excludes synthetic internal_agent runs (e.g. live-preview provisioning)" do
+    it "excludes synthetic operational runs (e.g. live-preview provisioning)" do
       account = create(:account)
       user = create(:user, account: account)
       project = create(:project, account: account, created_by: user)
 
       create(:agent_run, :running, project: project, goal: "create_pr")
-      create(:agent_run, :running, :internal_agent, :with_custom_prompt, project: project, goal: "create_pr")
-      create(:agent_run, :queued, :internal_agent, :with_custom_prompt, project: project, goal: "create_pr", temporal_workflow_id: "claimed")
+      create(:agent_run, :running, :synthetic, project: project, goal: "create_pr")
+      create(:agent_run, :queued, :synthetic, project: project, goal: "create_pr", temporal_workflow_id: "claimed")
+
+      expect(described_class.active_create_pr_count_for_account(account)).to eq(1)
+    end
+
+    it "counts legitimate externally-ingested internal_agent runs" do
+      account = create(:account)
+      user = create(:user, account: account)
+      project = create(:project, account: account, created_by: user)
+
+      create(:agent_run, :running, :imported_internal_agent,
+             project: project, goal: "create_pr")
 
       expect(described_class.active_create_pr_count_for_account(account)).to eq(1)
     end
@@ -4462,49 +4473,52 @@ RSpec.describe AgentRun do
   describe "synthetic operational run finish callbacks" do
     let(:project) { create(:project) }
 
-    it "flags internal_agent runs as synthetic operational runs" do
-      synthetic = create(:agent_run, :running, :internal_agent, :with_custom_prompt, project: project)
+    it "flags synthetic operational runs, not their shared agent_type" do
+      synthetic = create(:agent_run, :running, :synthetic, project: project)
+      # A legitimate externally-ingested internal_agent run shares the agent_type
+      # but must NOT be treated as synthetic.
+      imported = create(:agent_run, :running, :imported_internal_agent, project: project)
       real = create(:agent_run, :running, project: project)
 
       expect(synthetic).to be_synthetic_operational_run
+      expect(imported).not_to be_synthetic_operational_run
       expect(real).not_to be_synthetic_operational_run
     end
 
-    it "does not enqueue run-quality collection for an internal_agent run finishing" do
-      agent_run = create(:agent_run, :running, :internal_agent, :with_custom_prompt, project: project)
+    it "does not enqueue run-quality collection for a synthetic run finishing" do
+      agent_run = create(:agent_run, :running, :synthetic, project: project)
 
       expect {
         agent_run.update!(status: "completed", completed_at: Time.current, duration_seconds: 10)
       }.not_to have_enqueued_job(QualityMetricsCollectionJob)
     end
 
-    it "does not enqueue human feedback collection for an internal_agent run finishing" do
-      agent_run = create(:agent_run, :running, :internal_agent, :with_custom_prompt, project: project)
+    it "does not enqueue human feedback collection for a synthetic run finishing" do
+      agent_run = create(:agent_run, :running, :synthetic, project: project)
 
       expect {
         agent_run.update!(status: "completed", completed_at: Time.current, duration_seconds: 10)
       }.not_to have_enqueued_job(HumanFeedbackCollectionJob)
     end
 
-    it "does not enqueue anomaly detection for an internal_agent run finishing" do
-      agent_run = create(:agent_run, :running, :internal_agent, :with_custom_prompt, project: project)
+    it "does not enqueue anomaly detection for a synthetic run finishing" do
+      agent_run = create(:agent_run, :running, :synthetic, project: project)
 
       expect {
         agent_run.update!(status: "completed", completed_at: Time.current, duration_seconds: 10)
       }.not_to have_enqueued_job(AnomalyDetectionJob)
     end
 
-    it "does not record a dispatch circuit-breaker outcome for an internal_agent run finishing" do
-      agent_run = create(:agent_run, :running, :internal_agent, :with_custom_prompt,
-                         project: project, final_runner: "claude")
+    it "does not record a dispatch circuit-breaker outcome for a synthetic run finishing" do
+      agent_run = create(:agent_run, :running, :synthetic, project: project, final_runner: "claude")
 
       expect {
         agent_run.update!(status: "completed", completed_at: Time.current, duration_seconds: 10)
       }.not_to have_enqueued_job(DispatchCircuitBreakerOutcomeJob)
     end
 
-    it "does not enqueue failure-recovery for a failed internal_agent run" do
-      agent_run = create(:agent_run, :running, :internal_agent, :with_custom_prompt, project: project)
+    it "does not enqueue failure-recovery for a failed synthetic run" do
+      agent_run = create(:agent_run, :running, :synthetic, project: project)
 
       expect {
         agent_run.update!(status: "failed", completed_at: Time.current,
@@ -4520,6 +4534,14 @@ RSpec.describe AgentRun do
       }.to have_enqueued_job(QualityMetricsCollectionJob).with(agent_run.id)
         .and have_enqueued_job(AnomalyDetectionJob).with(agent_run.id)
     end
+
+    it "still enqueues run-quality for a legitimate imported internal_agent run finishing" do
+      agent_run = create(:agent_run, :running, :imported_internal_agent, project: project)
+
+      expect {
+        agent_run.update!(status: "completed", completed_at: Time.current, duration_seconds: 10)
+      }.to have_enqueued_job(QualityMetricsCollectionJob).with(agent_run.id)
+    end
   end
 
   # @spec LIVE-PREVIEW-003
@@ -4527,28 +4549,38 @@ RSpec.describe AgentRun do
     let(:project) { create(:project) }
 
     describe ".excluding_synthetic" do
-      it "omits internal_agent runs" do
+      it "omits synthetic operational runs" do
         real = create(:agent_run, :running, project: project)
-        create(:agent_run, :running, :internal_agent, :with_custom_prompt, project: project)
+        create(:agent_run, :running, :synthetic, project: project)
 
         expect(project.agent_runs.excluding_synthetic.recent).to eq([ real ])
+      end
+
+      it "keeps legitimate externally-ingested internal_agent runs" do
+        real = create(:agent_run, :running, project: project)
+        imported = create(:agent_run, :running, :imported_internal_agent, project: project)
+        create(:agent_run, :running, :synthetic, project: project)
+
+        expect(project.agent_runs.excluding_synthetic.recent).to include(real, imported)
+        expect(project.agent_runs.excluding_synthetic.recent).not_to be_empty
+        expect(project.agent_runs.excluding_synthetic.count).to eq(2)
       end
     end
 
     describe "agent_runs_count" do
       it "does not increment when a synthetic run is created" do
-        expect { create(:agent_run, :running, :internal_agent, :with_custom_prompt, project: project) }
+        expect { create(:agent_run, :running, :synthetic, project: project) }
           .not_to change { project.reload.agent_runs_count }.from(0)
       end
 
       it "stays unchanged when a synthetic run completes" do
-        agent_run = create(:agent_run, :running, :internal_agent, :with_custom_prompt, project: project)
+        agent_run = create(:agent_run, :running, :synthetic, project: project)
         expect { agent_run.update!(status: "completed", completed_at: Time.current, duration_seconds: 10) }
           .not_to change { project.reload.agent_runs_count }
       end
 
       it "does not change when a synthetic run is destroyed" do
-        agent_run = create(:agent_run, :running, :internal_agent, :with_custom_prompt, project: project)
+        agent_run = create(:agent_run, :running, :synthetic, project: project)
         expect { agent_run.destroy! }
           .not_to change { project.reload.agent_runs_count }.from(0)
       end
@@ -4561,7 +4593,7 @@ RSpec.describe AgentRun do
 
     describe "completed_agent_runs_count" do
       it "does not increment when a synthetic run completes" do
-        agent_run = create(:agent_run, :running, :internal_agent, :with_custom_prompt, project: project)
+        agent_run = create(:agent_run, :running, :synthetic, project: project)
         expect { agent_run.update!(status: "completed", completed_at: Time.current, duration_seconds: 10) }
           .not_to change { project.reload.completed_agent_runs_count }.from(0)
       end
