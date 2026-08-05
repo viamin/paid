@@ -345,6 +345,11 @@ jobs:
       - name: Replay migrations
         run: bin/rails db:create db:migrate
 
+      - name: Verify canonical schema dump
+        run: |
+          bin/rails db:schema:dump
+          git diff --exit-code db/schema.rb
+
   fasterer:
     if: >-
       github.event_name != 'pull_request'
