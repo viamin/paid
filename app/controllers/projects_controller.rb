@@ -384,54 +384,41 @@ class ProjectsController < ApplicationController
   end
 
   def start_preview
+    # @spec LIVE-PREVIEW-003
     authorize @project, :update?
 
     branch_name = preview_branch_name_param.presence || @project.default_branch
-    PreviewSession.transaction do
-      @project.with_lock do
-        PreviewSession.for_project(@project).non_terminal.find_each(&:mark_stopped!)
-        session = PreviewSession.build_for(
-          project: @project,
-          branch_name: branch_name,
-          created_by: current_user
-        )
-        session.save!
-        session.mark_ready!(tunnel_port: nil)
-      end
-    end
+    Previews::Lifecycle.start!(project: @project, branch_name:, created_by: current_user)
 
     redirect_to project_path(@project, anchor: "preview"), notice: "Preview started for #{branch_name}."
+  rescue Previews::Lifecycle::Error => e
+    message = e.preview_session&.error_message.presence || e.message
+    redirect_to project_path(@project, anchor: "preview"), alert: "Preview failed for #{branch_name}: #{message}"
   end
 
   def stop_preview
     authorize @project, :update?
 
-    sessions = PreviewSession.for_project(@project).non_terminal.to_a
-    sessions.each(&:mark_stopped!)
-    notice = sessions.empty? ? "No preview was running." : "Preview stopped."
+    stopped_count = Previews::Lifecycle.stop_project!(project: @project)
+    notice = stopped_count.zero? ? "No preview was running." : "Preview stopped."
 
     redirect_to project_path(@project, anchor: "preview"), notice: notice
+  rescue Previews::Lifecycle::Error => e
+    redirect_to project_path(@project, anchor: "preview"), alert: "Preview stop failed: #{e.message}"
   end
 
   def restart_preview
+    # @spec LIVE-PREVIEW-003
     authorize @project, :update?
 
     last_branch = PreviewSession.for_project(@project).recent.first&.branch_name
     branch_name = preview_branch_name_param.presence || last_branch.presence || @project.default_branch
-    PreviewSession.transaction do
-      @project.with_lock do
-        PreviewSession.for_project(@project).non_terminal.find_each(&:mark_stopped!)
-        session = PreviewSession.build_for(
-          project: @project,
-          branch_name: branch_name,
-          created_by: current_user
-        )
-        session.save!
-        session.mark_ready!(tunnel_port: nil)
-      end
-    end
+    Previews::Lifecycle.restart!(project: @project, branch_name:, created_by: current_user)
 
     redirect_to project_path(@project, anchor: "preview"), notice: "Preview restarted for #{branch_name}."
+  rescue Previews::Lifecycle::Error => e
+    message = e.preview_session&.error_message.presence || e.message
+    redirect_to project_path(@project, anchor: "preview"), alert: "Preview restart failed for #{branch_name}: #{message}"
   end
 
   def destroy

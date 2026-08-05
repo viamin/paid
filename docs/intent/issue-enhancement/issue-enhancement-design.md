@@ -44,6 +44,24 @@ The activity still emits the same markdown shape:
 That preserves the existing parser, `paid_state: "needs_input"` handling,
 dashboard queue, answer form, and answer-ingestion flow.
 
+## Re-evaluation comment admission
+
+When the user answers, the `needs_input` label is cleared and a re-evaluation
+run is queued (see `fetch_issues_activity#detect_enhance_issue_rechecks`). The
+re-evaluation LLM must see the prior clarifying questions and answers to decide
+whether the issue is now actionable.
+
+Both the questions and the captured-answers comments are posted by the
+project's GitHub App bot (`paid-agents[bot]`). The human-only comment trust
+filter (`Project#trusted_github_user?`) deliberately excludes the bot — Paid
+must not feed arbitrary bot comments back into the agent as an untrusted input
+channel. The re-evaluation therefore re-admits only Paid's own structured
+marker comments (`<!-- paid:enhance-issue -->`, `<!-- paid:clarifying-answers -->`)
+via `ClarifyingQuestions::CommentAdmission`, backed by the unspoofable
+`Project#paid_bot_author?` check. This is scoped: it never broadens the comment
+trust used for arbitrary conversation, so a spoofed marker in an attacker's
+comment is still rejected.
+
 ## LID-aware materialization
 
 For non-LID projects, answered clarifying questions only provide better human

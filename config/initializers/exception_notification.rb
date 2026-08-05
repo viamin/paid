@@ -4,7 +4,7 @@ return if Rails.env.test?
 
 require_relative "../../lib/paid/exception_notifier"
 
-ExceptionNotification.configure do |config|
+ExceptionNotification.configure do |config| # @spec EXCEPTION-NOTIFY-004
   config.ignored_exceptions += %w[
     ActionController::RoutingError
     ActiveRecord::RecordNotFound
@@ -20,7 +20,7 @@ end
 # without re-raising, so a notifier placed outside it would never see production
 # 500s. Placing it after ShowExceptions lets it rescue, notify, and re-raise
 # before ShowExceptions renders the response.
-Rails.application.config.middleware.insert_after(
+Rails.application.config.middleware.insert_after( # @spec EXCEPTION-NOTIFY-004
   ActionDispatch::ShowExceptions,
   ExceptionNotification::Rack
 )

@@ -31,9 +31,9 @@ module Previews
     end
 
     def stop_session(session)
-      session.mark_stopped!
+      Previews::Lifecycle.stop_session!(preview_session: session, terminal_status: "stopped")
       true
-    rescue StandardError => e
+    rescue Previews::Lifecycle::Error => e
       Rails.logger.warn(
         message: "previews.expire_failed",
         preview_session_id: session.id,

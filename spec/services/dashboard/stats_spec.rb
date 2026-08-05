@@ -264,6 +264,9 @@ RSpec.describe Dashboard::Stats do
           cost_cents: 50, tokens_input: 500, tokens_output: 250, duration_seconds: 30)
         create(:agent_run, project: project, goal: "create_pr", status: "failed",
           cost_cents: 100, tokens_input: 1000, tokens_output: 500, duration_seconds: 60)
+        create(:agent_run, :completed, :internal_agent, project: project, goal: "create_pr",
+          cost_cents: 9_999, tokens_input: 9000, tokens_output: 9000, duration_seconds: 999,
+          external_metadata: { "preview_session" => true })
       end
 
       it "breaks down by goal type" do
@@ -759,6 +762,15 @@ RSpec.describe Dashboard::Stats do
         expect(arm[:avg_seconds]).to eq(600)
         expect(arm[:p50_seconds]).to eq(600)
       end
+
+      it "excludes preview provisioning runs from merged PR aggregates" do
+        create(:agent_run, :completed, :internal_agent, project: project, issue: merged_issue,
+          duration_seconds: 9_999, created_at: 1.day.ago, started_at: 1.day.ago,
+          external_metadata: { "preview_session" => true })
+
+        expect(stats[:issue_completion][:runs_per_issue][:avg]).to eq(3.0)
+        expect(stats[:issue_completion][:agent_run_seconds][:avg_seconds]).to eq(600)
+      end
     end
 
     context "with multiple merged PRs" do
@@ -878,6 +890,16 @@ RSpec.describe Dashboard::Stats do
         end
 
         it "counts outcomes for create_pr goal only" do
+          result = stats[:daily_outcome_chart]
+          expect(result[:overall_total]).to eq(4)
+          expect(result[:overall_completed]).to eq(2)
+        end
+
+        it "excludes preview provisioning runs from create_pr totals" do
+          create(:agent_run, :completed, :internal_agent, project: project, goal: "create_pr",
+            completed_at: 2.days.ago,
+            external_metadata: { "preview_session" => true })
+
           result = stats[:daily_outcome_chart]
           expect(result[:overall_total]).to eq(4)
           expect(result[:overall_completed]).to eq(2)
@@ -1110,6 +1132,17 @@ RSpec.describe Dashboard::Stats do
         it "records run counts per day" do
           expect(chart[:run_counts]["2026-05-01"]).to eq(2)
           expect(chart[:run_counts]["2026-05-02"]).to eq(1)
+        end
+
+        it "excludes preview provisioning runs" do
+          create(:agent_run, :completed, :internal_agent, project: project, goal: "create_pr",
+            duration_seconds: 9_999,
+            completed_at: Time.zone.local(2026, 5, 1, 16, 0, 0),
+            external_metadata: { "preview_session" => true })
+
+          avg_series = chart[:series].find { |s| s[:name] == "Average" }
+          expect(avg_series[:data]["2026-05-01"]).to eq(150)
+          expect(chart[:run_counts]["2026-05-01"]).to eq(2)
         end
 
         it "returns a numeric slope" do
