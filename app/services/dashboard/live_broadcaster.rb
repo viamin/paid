@@ -100,6 +100,8 @@ module Dashboard
     end
 
     def alert_worthy?
+      return false if agent_run.synthetic_operational_run?
+
       AgentRun::FAILURE_STATUSES.include?(agent_run.status) || agent_run.paused?
     end
 

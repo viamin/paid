@@ -191,6 +191,19 @@ RSpec.describe Dashboard::LiveBroadcaster do
       expect(broadcasted_active_runs).to include(have_attributes(id: real_run.id))
       expect(broadcasted_active_runs).not_to include(have_attributes(synthetic: true))
     end
+
+    # @spec LIVE-PREVIEW-003
+    it "suppresses alert broadcasts for failed synthetic operational runs" do
+      synthetic_run = create(:agent_run, :failed, :synthetic, project: project,
+                            completed_at: Time.current, error_message: "Provisioning failed")
+
+      described_class.call(account: account, agent_run: synthetic_run.reload)
+
+      expect(Turbo::StreamsChannel).not_to have_received(:broadcast_prepend_to).with(
+        [ account, :live_dashboard ],
+        hash_including(target: "dashboard-alerts", partial: "dashboard/alert")
+      )
+    end
   end
 
   def broadcasted_active_runs
