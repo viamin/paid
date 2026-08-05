@@ -26,3 +26,15 @@
   `grafana/provisioning/dashboards/dashboards.yml`,
   `alertmanager/alertmanager.yml`.
   *Test:* `spec/config/checked_in_observability_assets_spec.rb`.
+
+- [x] **OBSERVABILITY-004** — The repository SHALL ship a supported self-hosted
+  log aggregation path that emits Rails and worker logs as structured JSON to
+  stdout, collects Docker logs with Promtail, stores them in Loki, and
+  provisions Grafana with a Loki datasource plus stable service labels for
+  querying.
+  *Code:* `lib/paid/json_log_formatter.rb`,
+  `config/initializers/structured_logging.rb`, `docker-compose.yml`,
+  `docker-compose.observability.yml`, `loki/config.yml`, `promtail/config.yml`,
+  `grafana/provisioning/datasources/loki.yml`.
+  *Test:* `spec/lib/paid/json_log_formatter_spec.rb`,
+  `spec/config/checked_in_observability_assets_spec.rb`.
