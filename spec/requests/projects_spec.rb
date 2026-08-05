@@ -608,7 +608,7 @@ RSpec.describe "Projects" do
           "Phoenix",
           "8242",
           "Preview is live.",
-          %(src="#{preview_path(session.token)}"),
+          %(src="#{preview_path(session.token)}/"),
           %(sandbox="allow-forms allow-modals allow-popups allow-presentation allow-scripts"),
           %(referrerpolicy="no-referrer"),
           stop_preview_project_path(project),
@@ -1430,6 +1430,23 @@ RSpec.describe "Projects" do
       expect(response.headers["Connection"]).to be_nil
       expect(response.headers["X-Frame-Options"]).to eq("SAMEORIGIN")
       expect(response.body).to eq("<html>ok</html>")
+    end
+
+    it "returns bad gateway when the tunnel never accepts the connection" do
+      project = create(:project, account: account, github_token: github_token)
+      session = create(:preview_session, project: project, branch_name: "feature/proxy", status: "ready",
+        tunnel_port: 8242, container_id: "container-123", expires_at: 20.minutes.from_now)
+
+      http = instance_double(Net::HTTP)
+      allow(Net::HTTP).to receive(:new).with("127.0.0.1", 8242).and_return(http)
+      allow(http).to receive(:open_timeout=).with(2)
+      allow(http).to receive(:read_timeout=).with(5)
+      allow(http).to receive(:get).and_raise(Net::OpenTimeout)
+
+      get preview_path(session.token)
+
+      expect(response).to have_http_status(:bad_gateway)
+      expect(response.body).to include("Preview is unavailable")
     end
 
     it "returns not found for expired preview sessions" do

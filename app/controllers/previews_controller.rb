@@ -52,7 +52,7 @@ class PreviewsController < ApplicationController
     apply_embed_headers
     @preview_session.touch_last_active!
     proxy_preview_request
-  rescue Errno::ECONNREFUSED, SocketError, Net::ReadTimeout, EOFError => e
+  rescue Errno::ECONNREFUSED, SocketError, Net::OpenTimeout, Net::ReadTimeout, EOFError => e
     render plain: "Preview is unavailable: #{e.message}", status: :bad_gateway
   end
 
