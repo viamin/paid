@@ -17,7 +17,7 @@ The checked-in observability stack assets use that split explicitly:
 | `paid_agent_runs_total` | gauge | `status` | Number of agent runs by status (queued, pending, running, completed, failed, etc.) |
 | `paid_agent_runs_active` | gauge | — | Currently active agent runs (pending + running) |
 | `paid_agent_runs_queued` | gauge | — | Agent runs waiting in queue |
-| `paid_agent_run_outcomes` | gauge | `status`, `outcome` | Current finished runs by terminal status, normalized to `success` (`completed`) or `failure` (all other finished statuses) |
+| `paid_agent_run_outcomes` | gauge | `status`, `outcome` | Current finished runs by terminal status, normalized to `success` (`completed`, `no_output`), `failure` (`failed`, `timeout`, `token_budget_exceeded`, `auth_expired`, `rate_limited`), or `non_provider` (`cancelled`, `retried`) |
 | `paid_agent_run_duration_seconds_bucket` | gauge | `outcome`, `le` | Current cumulative finished-run duration bucket counts in seconds |
 | `paid_agent_run_duration_seconds_sum` | gauge | `outcome` | Current total finished-run duration in seconds |
 | `paid_agent_run_duration_seconds_count` | gauge | `outcome` | Current number of finished runs with duration samples |

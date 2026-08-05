@@ -85,7 +85,7 @@ RSpec.describe Metrics::PrometheusCollector do # @spec OBSERVABILITY-002
       it "reports terminal run outcomes as snapshot gauges" do
         expect(output).to include('paid_agent_run_outcomes{status="completed",outcome="success"} 1')
         expect(output).to include('paid_agent_run_outcomes{status="failed",outcome="failure"} 1')
-        expect(output).to include('paid_agent_run_outcomes{status="cancelled",outcome="failure"} 1')
+        expect(output).to include('paid_agent_run_outcomes{status="cancelled",outcome="non_provider"} 1')
       end
 
       it "maps no_output to the success outcome bucket" do
@@ -100,21 +100,29 @@ RSpec.describe Metrics::PrometheusCollector do # @spec OBSERVABILITY-002
 
       it "reports duration distribution gauges and aggregates" do
         expect(output).to include('paid_agent_run_duration_seconds_bucket{outcome="success",le="300"} 1')
-        expect(output).to include('paid_agent_run_duration_seconds_bucket{outcome="failure",le="300"} 2')
+        expect(output).to include('paid_agent_run_duration_seconds_bucket{outcome="failure",le="300"} 1')
+        expect(output).to include('paid_agent_run_duration_seconds_bucket{outcome="non_provider",le="300"} 1')
         expect(output).to include('paid_agent_run_duration_seconds_sum{outcome="success"} 120')
-        expect(output).to include('paid_agent_run_duration_seconds_count{outcome="failure"} 2')
+        expect(output).to include('paid_agent_run_duration_seconds_sum{outcome="failure"} 300')
+        expect(output).to include('paid_agent_run_duration_seconds_sum{outcome="non_provider"} 90')
+        expect(output).to include('paid_agent_run_duration_seconds_count{outcome="success"} 1')
+        expect(output).to include('paid_agent_run_duration_seconds_count{outcome="failure"} 1')
+        expect(output).to include('paid_agent_run_duration_seconds_count{outcome="non_provider"} 1')
       end
 
       it "reports token gauges split by direction and outcome" do
         expect(output).to include('paid_agent_run_tokens{direction="input",outcome="success"} 10000')
         expect(output).to include('paid_agent_run_tokens{direction="output",outcome="success"} 5000')
-        expect(output).to include('paid_agent_run_tokens{direction="input",outcome="failure"} 50')
+        expect(output).to include('paid_agent_run_tokens{direction="input",outcome="failure"} 30')
         expect(output).to include('paid_agent_run_tokens{direction="output",outcome="failure"} 10')
+        expect(output).to include('paid_agent_run_tokens{direction="input",outcome="non_provider"} 20')
+        expect(output).to include('paid_agent_run_tokens{direction="output",outcome="non_provider"} 0')
       end
 
       it "reports cost gauges by outcome" do
         expect(output).to include('paid_agent_run_cost_cents{outcome="success"} 150')
         expect(output).to include('paid_agent_run_cost_cents{outcome="failure"} 7')
+        expect(output).to include('paid_agent_run_cost_cents{outcome="non_provider"} 0')
       end
 
       it "updates finished-run gauges when a terminal row mutates" do
@@ -126,7 +134,7 @@ RSpec.describe Metrics::PrometheusCollector do # @spec OBSERVABILITY-002
         refreshed_output = described_class.call
 
         expect(refreshed_output).to include('paid_agent_run_outcomes{status="failed",outcome="failure"} 0')
-        expect(refreshed_output).to include('paid_agent_run_outcomes{status="retried",outcome="failure"} 1')
+        expect(refreshed_output).to include('paid_agent_run_outcomes{status="retried",outcome="non_provider"} 1')
       end
 
       it "excludes finished runs older than the FINISHED_RUN_WINDOW" do

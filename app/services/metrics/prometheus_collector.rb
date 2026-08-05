@@ -6,7 +6,7 @@ module Metrics
   class PrometheusCollector
     DURATION_BUCKETS = [ 30, 60, 120, 300, 600, 900, 1_800, 3_600, 7_200 ].freeze
     FINISHED_RUN_WINDOW = 6.hours.freeze
-    RUN_OUTCOMES = %w[success failure].freeze
+  RUN_OUTCOMES = %w[success failure non_provider].freeze
     RUN_OUTCOME_METRIC = "paid_agent_run_outcomes".freeze
     RUN_DURATION_BUCKET_METRIC = "paid_agent_run_duration_seconds_bucket".freeze
     RUN_DURATION_SUM_METRIC = "paid_agent_run_duration_seconds_sum".freeze
@@ -276,12 +276,29 @@ module Metrics
       end
     end
 
+    # Maps each terminal status to a normalized outcome bucket for Prometheus metrics.
+    #
     # "no_output" is a success-like terminal state: the provider ran fine but produced
     # no changes. The app consistently treats it as a successful provider outcome
     # (see SUCCESSFUL_RUN_STATUSES in StrategyEvolution::PrepareInputs, circuit breaker,
     # and STALE_RUNNING_HEALTHY_STATUSES).
+    #
+    # FAILURE_STATUSES (%w[failed timeout token_budget_exceeded auth_expired rate_limited])
+    # are real provider failures that should drive failure-rate alerting.
+    #
+    # "cancelled" and "retried" are NOT real provider outcomes: "cancelled" means a
+    # human or system cancelled the run before provider execution; "retried" means the
+    # run was absorbed into a framework-level retry. The app explicitly skips these in
+    # the circuit breaker (see AgentRun#record_dispatch_circuit_breaker_outcome).
+    # Folding them into "failure" would inflate PaidAgentRunFailureRateHigh.
     def normalized_outcome_for(status)
-      %w[completed no_output].include?(status) ? "success" : "failure"
+      if %w[completed no_output].include?(status)
+        "success"
+      elsif AgentRun::FAILURE_STATUSES.include?(status)
+        "failure"
+      else
+        "non_provider"
+      end
     end
 
     def append_metric_header(lines, name, type, help)
