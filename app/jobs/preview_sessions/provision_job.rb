@@ -22,8 +22,8 @@ module PreviewSessions
       preview_session = TenantContext.with_system_access do
         PreviewSession.includes(:project, :account, :created_by).find(preview_session_id)
       end
-      return unless preview_session.provisioning?
       return if preview_session.expired?
+      return unless preview_session.pending? || preview_session.provisioning?
 
       TenantContext.with(preview_session.account) do
         provision_preview!(preview_session.reload)
@@ -34,7 +34,14 @@ module PreviewSessions
 
     def provision_preview!(preview_session)
       preview_session.with_lock do
-        return unless preview_session.provisioning?
+        return unless preview_session.pending? || preview_session.provisioning?
+
+        # Transition queued -> provisioning now that the worker has actually
+        # picked the session up and is beginning real work. The session is
+        # created as "pending" so the UI can show a distinct queued state while
+        # waiting for a worker; it must not advertise provisioning before any
+        # work has started.
+        preview_session.mark_provisioning! if preview_session.pending?
 
         preview_session.agent_run ||= create_preview_agent_run!(preview_session)
         preview_session.save! if preview_session.changed?

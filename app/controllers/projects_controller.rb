@@ -464,9 +464,11 @@ class ProjectsController < ApplicationController
 
   # @spec LIVE-PREVIEW-003
   # Stops any in-flight previews for the project and creates a new session in
-  # the +provisioning+ lifecycle state. The session reflects the real
-  # asynchronous provisioning lifecycle; it is not marked ready until a live
-  # app, tunnel, and container exist.
+  # the +pending+ (queued) lifecycle state, then enqueues provisioning. The
+  # session stays +pending+ until the worker actually picks it up and begins
+  # real work, so the UI can show a distinct "queued" state under worker
+  # backlog instead of advertising provisioning before anything has started.
+  # It is never marked ready until a live app, tunnel, and container exist.
   def queue_preview_provision!(branch_name:)
     previous_sessions = PreviewSession.for_project(@project).non_terminal.to_a
 
@@ -488,7 +490,6 @@ class ProjectsController < ApplicationController
           branch_name: branch_name,
           created_by: current_user
         )
-        session.status = "provisioning"
         session.save!
       end
     end

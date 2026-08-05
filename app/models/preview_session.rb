@@ -117,6 +117,10 @@ class PreviewSession < ApplicationRecord
     active? && time_remaining <= EXPIRY_WARNING_SECONDS
   end
 
+  def mark_provisioning!
+    update!(status: "provisioning")
+  end
+
   def mark_ready!(tunnel_port:, container_id: nil)
     update!(
       status: "ready",

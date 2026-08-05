@@ -57,6 +57,25 @@ RSpec.describe PreviewSession do
     end
   end
 
+  describe "#mark_provisioning!" do
+    it "transitions a queued session to the provisioning state" do
+      session = create(:preview_session, status: "pending")
+
+      session.mark_provisioning!
+
+      expect(session.reload).to be_provisioning
+    end
+
+    it "clears a stale error message when leaving the failed state" do
+      session = create(:preview_session, :failed)
+
+      session.mark_provisioning!
+
+      expect(session.reload).to be_provisioning
+      expect(session.error_message).to be_nil
+    end
+  end
+
   describe "#framework_label" do
     it "formats the stored framework key for preview metadata" do
       session = build(:preview_session, framework: "phoenix")

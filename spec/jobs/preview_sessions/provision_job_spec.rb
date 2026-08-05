@@ -31,6 +31,20 @@ RSpec.describe PreviewSessions::ProvisionJob do
     expect(provision).to have_received(:call)
   end
 
+  it "transitions a queued (pending) session to provisioning when the worker picks it up" do
+    preview_session = create(:preview_session, project:, account:, created_by: user, branch_name: "feature/live-preview")
+    expect(preview_session).to be_pending
+    provision = instance_double(Previews::Provision, call: true)
+
+    allow(Dir).to receive(:mktmpdir).and_yield("/tmp/paid-preview-session-spec")
+    allow(Previews::Provision).to receive(:new).and_return(provision)
+
+    described_class.perform_now(preview_session.id)
+
+    expect(preview_session.reload).to be_provisioning
+    expect(Previews::Provision).to have_received(:new)
+  end
+
   it "marks the preview session and agent run failed when provisioning raises" do
     preview_session = create(:preview_session, :provisioning, project:, account:, created_by: user)
     error = StandardError.new("preview boot failed")
@@ -51,7 +65,7 @@ RSpec.describe PreviewSessions::ProvisionJob do
     expect(provision).to have_received(:cleanup!)
   end
 
-  it "skips sessions that are no longer provisioning" do
+  it "skips sessions that are terminal (stopped) and never provisions them" do
     preview_session = create(:preview_session, :stopped, project:, account:, created_by: user)
 
     allow(Previews::Provision).to receive(:new)

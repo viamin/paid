@@ -1279,7 +1279,7 @@ RSpec.describe "Projects" do
   describe "POST /projects/:id/start_preview" do
     before { sign_in user }
 
-    it "queues a preview session in the provisioning state and redirects back to the preview panel" do
+    it "queues a preview session in the pending state and redirects back to the preview panel" do
       project = create(:project, account: account, github_token: github_token, default_branch: "develop")
 
       expect {
@@ -1291,7 +1291,7 @@ RSpec.describe "Projects" do
       session = project.preview_sessions.recent.first
       expect(session).to be_present
       expect(session.branch_name).to eq("develop")
-      expect(session.status).to eq("provisioning")
+      expect(session.status).to eq("pending")
       expect(session.tunnel_port).to be_nil
       preview_job = ActiveJob::Base.queue_adapter.enqueued_jobs.find do |job|
         job[:job] == PreviewSessions::ProvisionJob
@@ -1365,7 +1365,7 @@ RSpec.describe "Projects" do
       current = project.preview_sessions.recent.first
       expect(current.id).not_to eq(previous.id)
       expect(current.branch_name).to eq("feature/restart")
-      expect(current.status).to eq("provisioning")
+      expect(current.status).to eq("pending")
       expect(enqueued_preview_job_arg).to eq([ current.id ])
     end
 
