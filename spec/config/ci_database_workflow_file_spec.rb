@@ -82,6 +82,10 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
     context workflow_path do
       subject(:workflow) { Psych.safe_load_file(Rails.root.join(workflow_path), aliases: true) }
 
+      def step_by_name(job, name)
+        job.fetch("steps").find { |step| step["name"] == name }
+      end
+
       def expect_application_role_database_url!(job, expectations)
         return unless expectations.fetch("creates_application_role")
 
@@ -178,7 +182,7 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
           job = workflow.fetch("jobs").fetch(job_name)
 
           if expectations.key?("asset_build_command")
-            build_step = job.fetch("steps").find { |step| step["name"] == "Build assets" }
+            build_step = step_by_name(job, "Build assets")
 
             expect(build_step.fetch("run")).to include(*expectations.fetch("asset_build_command"))
           end
@@ -210,6 +214,15 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
           )
           expect(setup_step.fetch("run")).to eq("env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails db:create db:migrate")
           expect(drift_step.fetch("run").strip).to eq("bin/rails db:schema:dump\ngit diff --exit-code db/schema.rb")
+        end
+
+        it "runs the query performance suite through the database.yml test connection flow" do
+          job = workflow.fetch("jobs").fetch("test")
+          performance_step = step_by_name(job, "Run query performance benchmarks")
+
+          expect(performance_step.fetch("run")).to eq(
+            "env -u DATABASE_URL -u CABLE_DATABASE_URL COVERAGE=false bin/rspec spec/performance"
+          )
         end
       end
     end

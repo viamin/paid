@@ -59,6 +59,15 @@ RSpec.describe CiWorkflowFile, :no_db do
     expect(build_step.fetch("run")).to include("env -u DATABASE_URL -u CABLE_DATABASE_URL yarn build:css")
   end
 
+  it "runs query performance specs through the database.yml test connection flow" do
+    performance_step = workflow.fetch("jobs").fetch("test").fetch("steps")
+      .find { |step| step["name"] == "Run query performance benchmarks" }
+
+    expect(performance_step.fetch("run")).to eq(
+      "env -u DATABASE_URL -u CABLE_DATABASE_URL COVERAGE=false bin/rspec spec/performance"
+    )
+  end
+
   it "gives the test job enough time to complete the full RSpec suite" do
     expect(workflow.fetch("jobs").fetch("test").fetch("timeout-minutes")).to eq(180)
   end
