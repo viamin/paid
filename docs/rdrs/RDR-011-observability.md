@@ -5,7 +5,7 @@
 ## Metadata
 
 - **Date**: 2025-01-23
-- **Status**: Partially Implemented
+- **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: Medium
 - **Related Issues**: N/A (foundational decision)
@@ -13,9 +13,9 @@
 
 ## Implementation Status
 
-Implemented with targeted follow-up scope reductions. Paid exposes Prometheus-compatible metrics at `/api/metrics`, collects application metrics through `Metrics::PrometheusCollector`, includes in-app queue monitoring/alerts, and now checks in Prometheus configuration/rules, Grafana provisioning assets, Alertmanager routing, exporter definitions, and a Compose observability overlay.
+Implemented with targeted scope reductions that were closed out on August 5, 2026. Paid exposes Prometheus-compatible metrics at `/api/metrics`, collects application metrics through `Metrics::PrometheusCollector`, includes in-app queue monitoring/alerts, and checks in Prometheus configuration/rules, Grafana provisioning assets, Alertmanager routing, exporter definitions, and a Compose observability overlay.
 
-The design was reconciled away from the original `prometheus-client` gem sketch. The shipped implementation keeps the current hand-rolled collector as the Rails metrics source of truth and uses Temporal's native Prometheus exporter for worker runtime telemetry.
+The design was reconciled away from the original `prometheus-client` gem sketch. The shipped implementation keeps the current hand-rolled collector as the Rails metrics source of truth and uses Temporal's native Prometheus exporter for worker runtime telemetry. Remaining observability enhancements that are still desired are now tracked explicitly in follow-up issues instead of leaving this RDR ambiguous: application-level counters/histograms and derived alerts/dashboards in [#3238](https://github.com/viamin/paid/issues/3238), and centralized log aggregation in [#3239](https://github.com/viamin/paid/issues/3239).
 
 ## Problem Statement
 
@@ -588,7 +588,7 @@ groups:
 
 ### Prerequisites
 
-- [ ] Docker Compose environment set up
+- [x] Docker Compose environment set up
 - [x] Rails metrics endpoint exposed
 - [x] Prometheus/Grafana/Alertmanager assets checked in
 
@@ -600,7 +600,7 @@ Completed. The `prometheus-client` gem approach from the original draft was supe
 
 #### Step 2: Expand the Shipped Metrics Surface as Needed
 
-Partially complete. Paid ships operational gauges for agent runs, GoodJob, container usage, service containers, and Temporal worker capacity. Additional counters and histograms can be added later if new alerting or dashboard needs require them.
+Reduced and deferred. Paid ships the operational gauges needed for the current stack, and the original `prometheus-client` counter/histogram sketch was intentionally not treated as a blocker for stack adoption. Follow-up instrumentation for run outcomes, duration, tokens, and cost is tracked in [#3238](https://github.com/viamin/paid/issues/3238).
 
 #### Step 3: Docker Compose Services
 
@@ -668,6 +668,10 @@ volumes:
 #### Step 4: Create Grafana Dashboards
 
 Complete. Dashboard provisioning now lives under `grafana/provisioning/`, and the starter dashboard JSON is checked in under `grafana/dashboards/`.
+
+#### Step 5: Close Out Remaining Gaps
+
+Complete. The August 5, 2026 closeout audit determined that the core observability stack decision is implemented and that the remaining work is follow-up scope, not a blocker for RDR completion. Remaining gaps are tracked in [#3238](https://github.com/viamin/paid/issues/3238) and [#3239](https://github.com/viamin/paid/issues/3239).
 
 ### Files to Create/Modify
 
@@ -747,5 +751,5 @@ Complete. Dashboard provisioning now lives under `grafana/provisioning/`, and th
 
 - Start with key metrics; add more as needed
 - Tune alert thresholds based on observed patterns
-- Consider Loki for log aggregation later
+- Centralized log aggregation remains a follow-up tracked in [#3239](https://github.com/viamin/paid/issues/3239)
 - Dashboard templates can be shared via Grafana JSON export
