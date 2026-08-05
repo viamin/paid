@@ -33,22 +33,11 @@ module Api
         return if performed?
 
         service_key = external_agent_run_params[:external_source_key].to_s
-        if service_key.blank?
-          render json: { errors: [ "external_source_key is required" ] }, status: :unprocessable_content
-          return
-        end
-
-        credentials = integration_credentials_for(service_key, auth_kinds: INBOUND_AUTH_KINDS)
-
-        if credentials.blank?
-          render json: { errors: [ "No active integration credential configured for #{service_key.presence || "this source"}" ] }, status: :unauthorized
-          return
-        end
-
-        provided_token = bearer_token || request.headers["X-Api-Key"].presence
-        return if credentials.any? { |credential| secure_token_match?(provided_token, credential.secret) }
-
-        render json: { errors: [ "Invalid integration credential" ] }, status: :unauthorized
+        authenticate_integration_credential!(
+          service_key,
+          auth_kinds: INBOUND_AUTH_KINDS,
+          missing_message: "external_source_key is required"
+        )
       end
 
       def external_agent_run_params

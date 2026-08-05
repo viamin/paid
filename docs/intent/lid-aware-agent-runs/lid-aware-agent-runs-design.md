@@ -40,6 +40,18 @@ Finally, coherence checking is operational and intentionally soft-blocking:
 failed reports are persisted on the run and surfaced in the PR body rather
 than silently discarded.
 
+External-agent entry points now expose the same contract explicitly instead of
+assuming callers will infer it from run metadata:
+
+- the authenticated project-interop API exposes the effective LID mode,
+  detection metadata, and the rendered LID workflow contract for the project
+- the read-only MCP `get_project` tool returns the same LID contract so remote
+  agents using Paid's MCP surface can discover it without out-of-band docs
+- `lid_planning` is explicitly supported for external orchestration through the
+  existing run-trigger surface, including named plan docs
+- Planning-PR correction remains explicitly unsupported for external agents
+  until the dedicated correction loop in `LID-RUNS-004` ships
+
 ## Active Gap
 
 RDR-051 is still partially implemented. The remaining work is not "teach the

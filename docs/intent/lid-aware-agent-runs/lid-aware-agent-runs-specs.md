@@ -37,6 +37,11 @@
   SHALL enforce a stable output contract for how authored plan-doc sections map
   into HLD, LLD, and EARS artifacts.
 
-- [ ] **LID-RUNS-006** — External-agent entry points SHALL receive the same
+- [x] **LID-RUNS-006** — External-agent entry points SHALL receive the same
   LID-aware prompt discipline and coherence reporting that native Paid agent
   runs already receive.
+  *Code:* `app/services/interop/external_agent_lid_contract.rb`,
+  `app/controllers/api/projects/external_agent_contracts_controller.rb`,
+  `app/mcp/tools/get_project.rb`.
+  *Tests:* `spec/requests/project_interoperability_spec.rb`,
+  `spec/mcp/tools/get_project_spec.rb`.
