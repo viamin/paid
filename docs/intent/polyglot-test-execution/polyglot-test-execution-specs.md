@@ -14,12 +14,12 @@
   `spec/helpers/application_helper_project_type_badge_spec.rb`,
   `spec/services/knowledge/collectors/routes_collector_spec.rb`.
 
-- [ ] **POLYGLOT-TEST-002** — When a project is imported or re-detected, the
+- [x] **POLYGLOT-TEST-002** — When a project is imported or re-detected, the
   system SHALL persist a unified language/framework profile that downstream
   consumers can read instead of independently re-detecting from different code
   paths.
 
-- [ ] **POLYGLOT-TEST-003** — When quality hooks or prompt builders need test
+- [x] **POLYGLOT-TEST-003** — When quality hooks or prompt builders need test
   and lint commands, the system SHALL derive them from the persisted language
   profile for the configured test languages rather than defaulting every
   project to Ruby commands.

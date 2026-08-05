@@ -10,7 +10,9 @@ module Prompts
       "typescript" => "npm test",
       "python" => "pytest",
       "go" => "go test ./...",
-      "rust" => "cargo test"
+      "rust" => "cargo test",
+      "elixir" => "mix test",
+      "swift" => "swift test"
     }.freeze
 
     LANGUAGE_LINT_COMMANDS = {
@@ -19,7 +21,9 @@ module Prompts
       "typescript" => "npm run lint",
       "python" => "ruff check .",
       "go" => "golangci-lint run",
-      "rust" => "cargo clippy"
+      "rust" => "cargo clippy",
+      "elixir" => "mix credo --strict",
+      "swift" => "swift format lint --recursive ."
     }.freeze
 
     DEFAULT_LANGUAGE = "ruby"
@@ -34,6 +38,30 @@ module Prompts
       else
         DEFAULT_LANGUAGE
       end
+    end
+
+    def self.test_languages(project) # @spec POLYGLOT-TEST-003
+      languages = if project.respond_to?(:test_languages)
+        Array(project.test_languages)
+      else
+        []
+      end
+
+      languages = [ detected_language(project) ] if languages.empty?
+      languages.map(&:to_s).map(&:strip).reject(&:blank?).uniq
+    end
+
+    def self.test_command(project) # @spec POLYGLOT-TEST-003
+      command_for(project, LANGUAGE_TEST_COMMANDS, "echo \"No test command configured\"")
+    end
+
+    def self.lint_command(project) # @spec POLYGLOT-TEST-003
+      command_for(project, LANGUAGE_LINT_COMMANDS, "echo \"No lint command configured\"")
+    end
+
+    def self.command_for(project, mapping, fallback)
+      commands = test_languages(project).filter_map { |language| mapping[language] }.uniq
+      commands.presence&.join(" && ") || fallback
     end
   end
 end

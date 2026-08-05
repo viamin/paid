@@ -148,7 +148,11 @@ module PreCommitRequirements
     include OutputSanitizer
 
     def detected_language(project)
-      language = project.detected_language if project.respond_to?(:detected_language)
+      language = if project.respond_to?(:test_languages)
+        Array(project.test_languages).first
+      elsif project.respond_to?(:detected_language)
+        project.detected_language
+      end
       language.presence || "ruby"
     end
 

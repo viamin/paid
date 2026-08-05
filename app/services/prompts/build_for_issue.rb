@@ -255,11 +255,11 @@ module Prompts
     end
 
     def test_command
-      LANGUAGE_TEST_COMMANDS.fetch(detected_language, "echo \"No test command configured\"")
+      LanguageCommands.test_command(project)
     end
 
     def lint_command
-      LANGUAGE_LINT_COMMANDS.fetch(detected_language, "echo \"No lint command configured\"")
+      LanguageCommands.lint_command(project)
     end
 
     def detected_language

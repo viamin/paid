@@ -6,30 +6,18 @@ module Containers
   module QualityHooks
     extend ActiveSupport::Concern
 
-    DB_DEPENDENT_TEST_LANGUAGES = %w[ruby].freeze
+    DB_DEPENDENT_TEST_LANGUAGES = %w[ruby elixir].freeze
 
     def install_quality_hooks(git_ops, agent_run) # @spec QUALITY-LOOPS-004
-      language = detect_language(agent_run.project)
-      lint_cmd = Prompts::BuildForIssue::LANGUAGE_LINT_COMMANDS[language]
-      test_cmd = Prompts::BuildForIssue::LANGUAGE_TEST_COMMANDS[language]
-      mutation_cmd = resolve_mutation_command(agent_run.project, agent_run.settings_user, language)
+      languages = command_languages(agent_run.project)
+      lint_cmd = join_commands(languages.filter_map { |language| Prompts::BuildForIssue::LANGUAGE_LINT_COMMANDS[language] })
+      test_languages = runnable_test_languages(agent_run.project, languages)
+      test_cmd = join_commands(test_languages.filter_map { |language| Prompts::BuildForIssue::LANGUAGE_TEST_COMMANDS[language] })
+      mutation_cmd = resolve_mutation_command(agent_run.project, agent_run.settings_user, test_languages)
 
       # Skip hook installation when no checks exist.
       # When only one or two exist, the others get a no-op fallback (true).
       return unless lint_cmd || test_cmd || mutation_cmd
-
-      # Convert the test hook to a no-op for DB-dependent languages when no
-      # database container is running. Rails test suites (rspec) fail
-      # unconditionally without a database, trapping the agent in a commit
-      # loop it cannot escape (hooks reject the commit, the agent can't skip
-      # hooks, and retries until timeout). Non-DB languages (JS, Go, Rust)
-      # keep their test hooks since their suites typically run without postgres.
-      # The prompt already tells the agent to run tests manually and report
-      # which tests couldn't execute due to missing services.
-      if DB_DEPENDENT_TEST_LANGUAGES.include?(language) && !agent_run.project.has_running_database_container?
-        test_cmd = nil
-        mutation_cmd = nil
-      end
 
       git_ops.install_git_hooks(
         lint_command: lint_cmd || "true",
@@ -43,10 +31,10 @@ module Containers
       lang.presence || "ruby"
     end
 
-    def resolve_mutation_command(project, user, language) # @spec QUALITY-LOOPS-003
-      return unless language == "ruby"
+    def resolve_mutation_command(project, user, languages) # @spec QUALITY-LOOPS-003
+      return unless Array(languages).include?("ruby")
 
-      requirement = resolve_mutation_requirement(project, user, language)
+      requirement = resolve_mutation_requirement(project, user, "ruby")
       return unless requirement
 
       MutantResultsReader.with_results_dir(requirement.command)
@@ -60,6 +48,20 @@ module Containers
     end
 
     private
+
+    def command_languages(project)
+      Prompts::LanguageCommands.test_languages(project)
+    end
+
+    def runnable_test_languages(project, languages)
+      return languages if project.has_running_database_container?
+
+      Array(languages).reject { |language| DB_DEPENDENT_TEST_LANGUAGES.include?(language) }
+    end
+
+    def join_commands(commands)
+      commands.uniq.presence&.join(" && ")
+    end
 
     def resolve_mutation_requirement(project, user, language)
       return unless language == "ruby"

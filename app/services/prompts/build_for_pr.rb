@@ -596,11 +596,11 @@ module Prompts
     end
 
     def detected_lint_command
-      BuildForIssue::LANGUAGE_LINT_COMMANDS.fetch(detected_language, "echo \"No lint command configured\"")
+      LanguageCommands.lint_command(project)
     end
 
     def detected_test_command
-      BuildForIssue::LANGUAGE_TEST_COMMANDS.fetch(detected_language, "echo \"No test command configured\"")
+      LanguageCommands.test_command(project)
     end
   end
 end

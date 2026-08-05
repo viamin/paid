@@ -9,7 +9,9 @@ RSpec.describe Prompts::LanguageCommands do
         "ruby" => "bundle exec rspec",
         "python" => "pytest",
         "go" => "go test ./...",
-        "rust" => "cargo test"
+        "rust" => "cargo test",
+        "elixir" => "mix test",
+        "swift" => "swift test"
       )
     end
 
@@ -29,7 +31,9 @@ RSpec.describe Prompts::LanguageCommands do
         "ruby" => "bundle exec rubocop",
         "python" => "ruff check .",
         "go" => "golangci-lint run",
-        "rust" => "cargo clippy"
+        "rust" => "cargo clippy",
+        "elixir" => "mix credo --strict",
+        "swift" => "swift format lint --recursive ."
       )
     end
 
@@ -69,6 +73,37 @@ RSpec.describe Prompts::LanguageCommands do
       project.define_singleton_method(:detected_language) { nil }
 
       expect(described_class.detected_language(project)).to eq("ruby")
+    end
+  end
+
+  describe ".test_languages" do
+    it "reads the project's configured test languages" do # @spec POLYGLOT-TEST-003
+      project = create(:project, repo_profile: { "test_languages" => %w[elixir javascript] })
+
+      expect(described_class.test_languages(project)).to eq(%w[elixir javascript])
+    end
+
+    it "falls back to the detected language" do
+      project = create(:project)
+      project.define_singleton_method(:detected_language) { "python" }
+
+      expect(described_class.test_languages(project)).to eq(%w[python])
+    end
+  end
+
+  describe ".test_command" do
+    it "joins commands for all configured test languages" do # @spec POLYGLOT-TEST-003
+      project = create(:project, repo_profile: { "test_languages" => %w[elixir javascript] })
+
+      expect(described_class.test_command(project)).to eq("mix test && npm test")
+    end
+  end
+
+  describe ".lint_command" do
+    it "joins commands for all configured lint languages" do # @spec POLYGLOT-TEST-003
+      project = create(:project, repo_profile: { "test_languages" => %w[ruby typescript] })
+
+      expect(described_class.lint_command(project)).to eq("bundle exec rubocop && npm run lint")
     end
   end
 
