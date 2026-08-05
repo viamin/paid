@@ -343,7 +343,7 @@ class AgentRun < ApplicationRecord
   scope :excluding_preview_provisioning, -> {
     where(preview_provisioning_exclusion_sql)
   }
-  scope :reported_create_pr, -> { where(goal: "create_pr").excluding_preview_provisioning }
+  scope :reported_create_pr, -> { where(goal: "create_pr").excluding_synthetic }
   scope :finished, -> { where(status: FINISHED_STATUSES) }
   scope :paid_native, -> { where(execution_origin: "paid_native") }
   scope :external_execution, -> { where(execution_origin: "external") }

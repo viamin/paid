@@ -266,7 +266,7 @@ RSpec.describe Dashboard::Stats do
           cost_cents: 100, tokens_input: 1000, tokens_output: 500, duration_seconds: 60)
         create(:agent_run, :completed, :internal_agent, project: project, goal: "create_pr",
           cost_cents: 9_999, tokens_input: 9000, tokens_output: 9000, duration_seconds: 999,
-          external_metadata: { "preview_session" => true })
+          synthetic: true, external_metadata: { "preview_session" => true })
       end
 
       it "breaks down by goal type" do
@@ -785,7 +785,7 @@ RSpec.describe Dashboard::Stats do
       it "excludes preview provisioning runs from merged PR aggregates" do
         create(:agent_run, :completed, :internal_agent, project: project, issue: merged_issue,
           duration_seconds: 9_999, created_at: 1.day.ago, started_at: 1.day.ago,
-          external_metadata: { "preview_session" => true })
+          synthetic: true, external_metadata: { "preview_session" => true })
 
         expect(stats[:issue_completion][:runs_per_issue][:avg]).to eq(3.0)
         expect(stats[:issue_completion][:agent_run_seconds][:avg_seconds]).to eq(600)
@@ -917,7 +917,7 @@ RSpec.describe Dashboard::Stats do
         it "excludes preview provisioning runs from create_pr totals" do
           create(:agent_run, :completed, :internal_agent, project: project, goal: "create_pr",
             completed_at: 2.days.ago,
-            external_metadata: { "preview_session" => true })
+            synthetic: true, external_metadata: { "preview_session" => true })
 
           result = stats[:daily_outcome_chart]
           expect(result[:overall_total]).to eq(4)
@@ -1157,7 +1157,7 @@ RSpec.describe Dashboard::Stats do
           create(:agent_run, :completed, :internal_agent, project: project, goal: "create_pr",
             duration_seconds: 9_999,
             completed_at: Time.zone.local(2026, 5, 1, 16, 0, 0),
-            external_metadata: { "preview_session" => true })
+            synthetic: true, external_metadata: { "preview_session" => true })
 
           avg_series = chart[:series].find { |s| s[:name] == "Average" }
           expect(avg_series[:data]["2026-05-01"]).to eq(150)

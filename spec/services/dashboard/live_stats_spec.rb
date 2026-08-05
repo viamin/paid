@@ -58,6 +58,7 @@ RSpec.describe Dashboard::LiveStats do
         project: project,
         goal: "create_pr",
         started_at: 4.minutes.ago,
+        synthetic: true,
         external_metadata: { "preview_session" => true }
       )
 
