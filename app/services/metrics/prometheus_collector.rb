@@ -4,7 +4,7 @@ module Metrics
   # Collects application metrics and renders them in Prometheus text exposition format.
   # Used by the /api/metrics endpoint to feed external auto-scaling systems.
   class PrometheusCollector
-    def self.call
+    def self.call # @spec OBSERVABILITY-002
       Rails.cache.fetch("prometheus_metrics", expires_in: 15.seconds) do
         new.call
       end

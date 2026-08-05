@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe PreCommitRequirement do
+RSpec.describe PreCommitRequirement do # @spec QUALITY-LOOPS-001
   describe "associations" do
     it { is_expected.to belong_to(:account) }
     it { is_expected.to belong_to(:project).optional }
@@ -310,7 +310,7 @@ RSpec.describe PreCommitRequirement do
 
     it "merges mutation_test requirements across scopes" do
       create(:pre_commit_requirement, :mutation_test, account: account, name: "mutant")
-      account_req = create(:pre_commit_requirement, account: account, name: "lint")
+      create(:pre_commit_requirement, account: account, name: "lint")
 
       result = described_class.resolve(project: project)
 

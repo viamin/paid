@@ -25,7 +25,7 @@ module Activities
 
     attr_reader :project, :agent_run, :issue, :source_pull_request_number
 
-    def evaluate(input)
+    def evaluate(input) # @spec QUALITY-LOOPS-005
       bypass_reason = bypass_reason(input)
       return allowed_result(reason: bypass_reason, bypassed: true) if bypass_reason
       return allowed_result(reason: "quality_gates_disabled") unless project.quality_gates_enabled?
@@ -166,7 +166,7 @@ module Activities
       }
     end
 
-    def record_workflow_state(input, result)
+    def record_workflow_state(input, result) # @spec QUALITY-LOOPS-005
       workflow_id = input[:workflow_id]
       return if workflow_id.blank?
 
