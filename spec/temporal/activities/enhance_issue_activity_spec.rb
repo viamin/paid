@@ -95,6 +95,26 @@ RSpec.describe Activities::EnhanceIssueActivity do
     ]
   end
 
+  # Mirrors the production app-backed path: Paid posts both the clarifying
+  # questions and the captured answers as its own GitHub App bot
+  # (`paid-agents[bot]`), which Project#trusted_github_user? deliberately
+  # excludes. Comment admission re-admits these structured marker comments.
+  def bot_answered_reevaluation_comments
+    bot_login = "paid-agents[bot]"
+    [
+      OpenStruct.new(
+        body: "#{described_class::COMMENT_MARKER}\n## Clarifying questions\n1. Which events should be recorded?",
+        user: OpenStruct.new(login: bot_login),
+        created_at: Time.zone.parse("2026-04-20 12:00:00 UTC")
+      ),
+      OpenStruct.new(
+        body: "#{ClarifyingQuestions::Load::ANSWER_MARKER}\n\n## Clarifying question answers\n\n**Q1: Which events should be recorded?**\n**A1:** Record sign-in, permission, and billing events.",
+        user: OpenStruct.new(login: bot_login),
+        created_at: Time.zone.parse("2026-04-20 13:00:00 UTC")
+      )
+    ]
+  end
+
   describe "#execute" do
     it "posts an implementation context comment" do
       result = activity.execute(agent_run_id: agent_run.id)
@@ -485,6 +505,39 @@ RSpec.describe Activities::EnhanceIssueActivity do
       )
       expect_comment_including("## Implementation context")
       expect(issue.reload.enhance_issue_rounds).to eq(1)
+    end
+
+    context "when the clarifying Q&A comments are authored by the paid-agents bot" do
+      # Production app-backed path: Paid posts both the clarifying questions and
+      # the captured answers as its own GitHub App bot (`paid-agents[bot]`),
+      # which Project#trusted_github_user? deliberately excludes. Only comment
+      # admission re-admits these structured marker comments.
+      let(:project) { create(:project, :with_github_installation) }
+      let(:issue) do
+        create(:issue, :in_progress, project: project, github_number: 42,
+                                      title: "Add audit log", body: "Record user actions")
+      end
+      let(:agent_run) { create(:agent_run, project: project, issue: issue, goal: "enhance_issue") }
+      let(:comments) { bot_answered_reevaluation_comments }
+
+      before do
+        allow(Github::AppInstallation).to receive(:token_for).and_return("fake-app-installation-token")
+      end
+
+      it "re-evaluates using the bot's own marker comments (app-backed project)" do # @spec ISSUE-ENHANCEMENT-005
+        issue.update!(enhance_issue_rounds: 1)
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(AgentHarness).to have_received(:send_message).with(
+          a_string_including(
+            "Which events should be recorded?",
+            "Record sign-in, permission, and billing events."
+          ),
+          hash_including(provider: :claude)
+        )
+        expect_comment_including("## Implementation context")
+      end
     end
   end
 end
