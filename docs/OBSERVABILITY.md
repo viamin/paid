@@ -225,6 +225,7 @@ adds the current container name for troubleshooting:
 | `source` | Log source (`docker`) |
 | `compose_project` | Docker Compose project name |
 | `compose_service` | Stable service name such as `web` or `worker` |
+
 High-cardinality fields remain in the JSON payload instead of becoming labels.
 That includes correlation keys such as `request_id`, `agent_run_id`,
 `project_id`, `workflow_id`, `job_id`, and `chat_session_id`.
