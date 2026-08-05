@@ -9,7 +9,7 @@
 - **Type**: Architecture
 - **Priority**: P1
 - **Related Issues**: #2235, #2236, #2237, #2238, #2239, #2240
-- **Related RDRs**: RDR-007 (Agent CLI Abstraction), RDR-008 (Model Selection Strategy), RDR-025 (Runner Quota Tracking)
+- **Related RDRs**: RDR-007 (Agent CLI Abstraction), RDR-008 (Model Selection Strategy), RDR-025a (Runner Quota Tracking)
 
 ## Implementation Status
 
@@ -307,7 +307,7 @@ end
 ### Phase 1 — Data Model
 
 1. Add `tier_models` JSON column to `runners` and `providers`. Default `{}`.
-2. Add `resolved_model_id` and `resolved_provider_id` to the `runners_attempted` JSON entries (no migration — JSON-only). Or, if `runner_attempts` becomes a table per RDR-025 work, add columns there.
+2. Add `resolved_model_id` and `resolved_provider_id` to the `runners_attempted` JSON entries (no migration — JSON-only). Or, if `runner_attempts` becomes a table per RDR-025a work, add columns there.
 3. Make `model_selections.llm_model_id` nullable; ensure `tier` is NOT NULL.
 4. Backfill `tier_models` from `direct_outbound_model_id` for `kilocode`, `opencode`, `pi`.
 
@@ -365,7 +365,7 @@ end
 
 - [RDR-007](RDR-007-agent-cli-abstraction.md) — agent-harness as the LLM interface
 - [RDR-008](RDR-008-model-selection.md) — meta-agent + rules selection (extended, not replaced, by this RDR)
-- [RDR-025](RDR-025-runner-quota-tracking.md) — runner-level state (rate limit, circuit breaker)
+- [RDR-025a](RDR-025a-runner-quota-tracking.md) — runner-level state (rate limit, circuit breaker)
 - [`run_agent_activity.rb:826-833`](../../app/temporal/activities/run_agent_activity.rb#L826-L833) — current model-compat filter
 - [`run_agent_activity.rb:731-749`](../../app/temporal/activities/run_agent_activity.rb#L731-L749) — `runner_compatible_with_model?`
 - [`default_tier_model_ids.rb`](../../app/services/runners/default_tier_model_ids.rb) — hardcoded runner→provider map
