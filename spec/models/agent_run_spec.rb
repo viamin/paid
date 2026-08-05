@@ -4522,6 +4522,58 @@ RSpec.describe AgentRun do
     end
   end
 
+  # @spec LIVE-PREVIEW-003
+  describe "synthetic run visibility and totals" do
+    let(:project) { create(:project) }
+
+    describe ".excluding_synthetic" do
+      it "omits internal_agent runs" do
+        real = create(:agent_run, :running, project: project)
+        create(:agent_run, :running, :internal_agent, :with_custom_prompt, project: project)
+
+        expect(project.agent_runs.excluding_synthetic.recent).to eq([ real ])
+      end
+    end
+
+    describe "agent_runs_count" do
+      it "does not increment when a synthetic run is created" do
+        expect { create(:agent_run, :running, :internal_agent, :with_custom_prompt, project: project) }
+          .not_to change { project.reload.agent_runs_count }.from(0)
+      end
+
+      it "stays unchanged when a synthetic run completes" do
+        agent_run = create(:agent_run, :running, :internal_agent, :with_custom_prompt, project: project)
+        expect { agent_run.update!(status: "completed", completed_at: Time.current, duration_seconds: 10) }
+          .not_to change { project.reload.agent_runs_count }
+      end
+
+      it "does not change when a synthetic run is destroyed" do
+        agent_run = create(:agent_run, :running, :internal_agent, :with_custom_prompt, project: project)
+        expect { agent_run.destroy! }
+          .not_to change { project.reload.agent_runs_count }.from(0)
+      end
+
+      it "still increments for a real run" do
+        expect { create(:agent_run, :running, project: project) }
+          .to change { project.reload.agent_runs_count }.by(1)
+      end
+    end
+
+    describe "completed_agent_runs_count" do
+      it "does not increment when a synthetic run completes" do
+        agent_run = create(:agent_run, :running, :internal_agent, :with_custom_prompt, project: project)
+        expect { agent_run.update!(status: "completed", completed_at: Time.current, duration_seconds: 10) }
+          .not_to change { project.reload.completed_agent_runs_count }.from(0)
+      end
+
+      it "still increments when a real run completes" do
+        agent_run = create(:agent_run, :running, project: project)
+        expect { agent_run.update!(status: "completed", completed_at: Time.current, duration_seconds: 10) }
+          .to change { project.reload.completed_agent_runs_count }.by(1)
+      end
+    end
+  end
+
   describe "#pause!" do
     it "transitions a running run to paused with violation context" do
       agent_run = create(:agent_run, :running)

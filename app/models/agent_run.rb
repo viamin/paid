@@ -215,7 +215,7 @@ class AgentRun < ApplicationRecord
   before_update :store_project_counter_cache_state, if: :project_counter_cache_state_changed?
   before_destroy :store_destroyed_project_counter_cache_state
 
-  after_commit :update_completed_agent_runs_counter_cache, on: [ :create, :update, :destroy ]
+  after_commit :update_agent_run_counter_caches, on: [ :create, :update, :destroy ]
   after_commit :reload_project_counter_cache_association, on: [ :create, :update, :destroy ]
   after_commit :broadcast_project_updates, on: [ :create, :update ]
   after_commit :update_project_last_agent_run_at, on: :create
@@ -342,6 +342,12 @@ class AgentRun < ApplicationRecord
   scope :finished, -> { where(status: FINISHED_STATUSES) }
   scope :paid_native, -> { where(execution_origin: "paid_native") }
   scope :external_execution, -> { where(execution_origin: "external") }
+  # Synthetic `internal_agent` runs (e.g. live-preview provisioning) reuse the
+  # agent-run lifecycle to drive infrastructure but never execute a real agent
+  # and cannot produce a PR/issue/review artifact. Excluded from user-facing run
+  # history and metrics so previews do not masquerade as ordinary agent runs or
+  # inflate totals. See `synthetic_operational_run?`.
+  scope :excluding_synthetic, -> { where.not(agent_type: "internal_agent") }
 
   def update_columns(attributes)
     super(attributes)
@@ -2922,9 +2928,21 @@ class AgentRun < ApplicationRecord
     user_setting&.max_execution_seconds
   end
 
-  def update_completed_agent_runs_counter_cache
+  # Maintains both project counter caches (`completed_agent_runs_count` and
+  # `agent_runs_count`) so synthetic `internal_agent` runs (live-preview
+  # provisioning) never inflate user-facing run totals.
+  #
+  # `completed_agent_runs_count` is fully custom-managed here and skips synthetic
+  # runs entirely. `agent_runs_count` is Rails' default `counter_cache: true`,
+  # which auto-increments/decrements for every run including synthetic ones; the
+  # correction below reverses that automatic adjustment for synthetic runs so
+  # previews do not count toward the displayed "Runs" total.
+  def update_agent_run_counter_caches
     completed_agent_runs_counter_deltas.each do |project_id, delta|
       Project.update_counters(project_id, completed_agent_runs_count: delta)
+    end
+    agent_runs_count_correction_deltas.each do |project_id, delta|
+      Project.update_counters(project_id, agent_runs_count: delta)
     end
   end
 
@@ -3030,6 +3048,9 @@ class AgentRun < ApplicationRecord
   end
 
   def completed_agent_runs_counter_deltas
+    # Synthetic runs never reach a real "completed" outcome that should count.
+    return {} if synthetic_operational_run?
+
     previous_state = @project_counter_cache_state_before_last_commit || {}
     previous_project_id = previous_state[:project_id]
     previous_status = previous_state[:status]
@@ -3054,6 +3075,25 @@ class AgentRun < ApplicationRecord
     end
   ensure
     @project_counter_cache_state_before_last_commit = nil
+  end
+
+  # Reverses Rails' default `counter_cache: true` adjustment of
+  # `agent_runs_count` for synthetic runs only. Rails auto-increments on create,
+  # auto-decrements on destroy, and moves the count on a project change for every
+  # run; synthetic runs must not be counted, so each automatic delta is negated.
+  # Real runs are left entirely to Rails' default counter cache (no delta here).
+  def agent_runs_count_correction_deltas
+    return {} unless synthetic_operational_run?
+
+    deltas = Hash.new(0)
+    if destroyed?
+      deltas[project_id] += 1 if project_id.present?
+    else
+      previous_project_id = previous_changes.fetch("project_id", [ project_id, project_id ]).first
+      deltas[previous_project_id] += 1 if previous_project_id.present?
+      deltas[project_id] -= 1 if project_id.present?
+    end
+    deltas.reject { |_project_id, delta| delta.zero? }
   end
 
   def counter_cache_deltas_for_completed_transition(previous_project_id:, previous_status:, current_project_id:, current_status:)

@@ -27,7 +27,7 @@ class ProjectsController < ApplicationController
       PreviewSession.for_project(@project).where(status: PreviewSession::TERMINAL_STATUSES).recent.first
     tracker_configuration = IssueTrackers::ResolveConfiguration.call(project: @project, user: current_user)
     @external_links = @project.header_external_links(tracker_configuration: tracker_configuration)
-    @recent_agent_runs = @project.agent_runs.recent.includes(:runner, :issue, project: [ :created_by, :account ]).limit(10).to_a
+    @recent_agent_runs = @project.agent_runs.excluding_synthetic.recent.includes(:runner, :issue, project: [ :created_by, :account ]).limit(10).to_a
     AgentRun.preload_final_runner_records(@recent_agent_runs)
     @stale_agent_runs_count = @project.agent_runs.stale_for_cleanup.count
     @show_stale_cleanup_action = policy(@project).update? && @stale_agent_runs_count.positive?
