@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe Activities::CheckQualityGateActivity do
+RSpec.describe Activities::CheckQualityGateActivity do # @spec QUALITY-LOOPS-005
   subject(:activity) { described_class.new }
 
   let(:project) do

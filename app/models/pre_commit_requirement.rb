@@ -67,7 +67,7 @@ class PreCommitRequirement < ApplicationRecord
   # @param project [Project] The project context
   # @param user [User, nil] The user context (optional)
   # @return [Array<PreCommitRequirement>] Ordered list of effective requirements
-  def self.resolve(project:, user: nil)
+  def self.resolve(project:, user: nil) # @spec QUALITY-LOOPS-001
     account = project.account
 
     account_reqs = for_account(account).ordered

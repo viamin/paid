@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe Paid::ExceptionNotifier do
+RSpec.describe Paid::ExceptionNotifier do # @spec EXCEPTION-NOTIFY-001 # @spec EXCEPTION-NOTIFY-002
   include ActiveJob::TestHelper
 
   subject(:notifier) { described_class.new }

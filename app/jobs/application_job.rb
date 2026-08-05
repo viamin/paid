@@ -22,7 +22,7 @@ class ApplicationJob < ActiveJob::Base
   # guarantees such a job eventually fails instead of hanging the process.
   class_attribute :perform_timeout, default: nil
 
-  rescue_from(StandardError) do |exception|
+  rescue_from(StandardError) do |exception| # @spec EXCEPTION-NOTIFY-003
     notify_terminal_failure(exception) if executions >= self.class.max_attempts
     raise exception
   end
@@ -52,7 +52,7 @@ class ApplicationJob < ActiveJob::Base
   # intercepts those errors before the base hook, so the final attempt must
   # report explicitly (it then re-raises so the adapter still marks the job
   # failed). HandleExceptionJob is skipped to avoid an infinite notify loop.
-  def notify_terminal_failure(exception)
+  def notify_terminal_failure(exception) # @spec EXCEPTION-NOTIFY-003
     return if is_a?(HandleExceptionJob)
 
     Paid::ExceptionNotifier.new.call(

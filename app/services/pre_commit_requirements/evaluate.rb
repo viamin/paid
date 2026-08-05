@@ -26,7 +26,7 @@ module PreCommitRequirements
       new(...).call
     end
 
-    def call
+    def call # @spec QUALITY-LOOPS-002
       requirements = PreCommitRequirement.resolve(
         project: agent_run.project,
         user: agent_run.settings_user
@@ -118,7 +118,7 @@ module PreCommitRequirements
       result.success?
     end
 
-    def resolve_command(requirement)
+    def resolve_command(requirement) # @spec QUALITY-LOOPS-003
       return requirement.command unless requirement.check_type == "mutation_test"
 
       MutantResultsReader.with_results_dir(requirement.command)

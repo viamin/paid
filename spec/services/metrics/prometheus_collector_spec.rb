@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe Metrics::PrometheusCollector do
+RSpec.describe Metrics::PrometheusCollector do # @spec OBSERVABILITY-002
   before do
     GoodJob::Job.delete_all
   end

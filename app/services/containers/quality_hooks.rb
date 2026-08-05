@@ -8,7 +8,7 @@ module Containers
 
     DB_DEPENDENT_TEST_LANGUAGES = %w[ruby].freeze
 
-    def install_quality_hooks(git_ops, agent_run)
+    def install_quality_hooks(git_ops, agent_run) # @spec QUALITY-LOOPS-004
       language = detect_language(agent_run.project)
       lint_cmd = Prompts::BuildForIssue::LANGUAGE_LINT_COMMANDS[language]
       test_cmd = Prompts::BuildForIssue::LANGUAGE_TEST_COMMANDS[language]
@@ -43,7 +43,7 @@ module Containers
       lang.presence || "ruby"
     end
 
-    def resolve_mutation_command(project, user, language)
+    def resolve_mutation_command(project, user, language) # @spec QUALITY-LOOPS-003
       return unless language == "ruby"
 
       requirement = resolve_mutation_requirement(project, user, language)

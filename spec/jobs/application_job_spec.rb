@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe ApplicationJob do
+RSpec.describe ApplicationJob do # @spec EXCEPTION-NOTIFY-003
   describe "notification_subsystem" do
     it "defaults to 'general'" do
       expect(described_class.notification_subsystem).to eq("general")

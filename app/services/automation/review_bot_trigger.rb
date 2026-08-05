@@ -12,7 +12,7 @@ module Automation
     # support) and falls back to the legacy single +request_login+ field
     # so in-flight workflow histories that pre-date the chain encoding
     # still produce the same single-bot activity invocation on replay.
-    def review_bot_reviewers_from(trigger)
+    def review_bot_reviewers_from(trigger) # @spec QUALITY-LOOPS-006
       return [] unless trigger
 
       chain = trigger[:request_logins]
