@@ -29,7 +29,9 @@ need explicit LID coverage.
 
 For repositories with `project.lid_mode`, prompt building appends a LID-aware
 workflow section that tells the agent to read the HLD/LLDs/EARS, work
-tests-first, add `@spec` annotations, and run the coherence checker.
+tests-first, add `@spec` annotations, run the coherence checker, and
+materialize any confirmed elicited intent from enhancement into draft or
+updated LLD/EARS artifacts before or alongside code changes.
 
 Paid also ships a dedicated `lid_planning` run path. Users can queue a
 docs-only planning run, optionally weight it toward a named plan doc via
@@ -48,7 +50,7 @@ agent LID exists" but "complete the surrounding lifecycle":
 - tighten the `lid_planning` output contract and plan-doc weighting rules
 - add the dedicated review-goal correction loop for Planning PR feedback
 - finish the stronger materialization path from elicited issue intent into LLD
-  and EARS artifacts
+  and EARS artifacts outside the native `create_pr` prompt path
 - expose the same LID-aware behavior cleanly to external-agent entry points
 
 ## What this is not

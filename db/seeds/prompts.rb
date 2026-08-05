@@ -202,6 +202,7 @@ upsert_global_prompt.call(
 
     - Read `docs/high-level-design.md`, the relevant LLDs under `docs/intent/`, and the cited EARS specs for the area this issue or PR touches.
     - Walk the arrow before changing code: confirm the EARS trace to the LLD and the LLD traces to the HLD. If intent changed, update the spec and design docs first, then cascade into tests and code.
+    - When the run includes confirmed elicited intent from issue enhancement, materialize that intent into draft or updated LLD and EARS artifacts before or alongside code changes.
     - Work tests first. Add `@spec` annotations in tests citing the EARS IDs, then add matching `@spec` annotations at the implementation-graph entry points for the behavior you changed.
     - Run `{{coherence_check_command}}` for the structural checks before you finish. Treat failures as soft-blocks: fix forward, never skip hooks, and never use `--no-verify`.
     - Record LID phase progress in the PR description: which specs you touched, what tests-first evidence you added, and the coherence-check result.

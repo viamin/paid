@@ -70,7 +70,8 @@ intent for the implementation prompt.
 For LID-configured projects, the same captured answers are surfaced forward to
 `Prompts::BuildForIssue` as explicit elicited intent. The implementation run
 then carries those human answers into the repo's LID process, where the agent
-materializes them into LLD/EARS updates while implementing the change.
+must draft or update the relevant LLD and EARS artifacts before or alongside
+the code changes that implement them.
 
 The enhancement flow itself does not create LID artifacts. It captures and
 surfaces intent; the later `create_pr` run materializes that intent when the
