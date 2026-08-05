@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_04_144228) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_05_002623) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2779,7 +2779,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_04_144228) do
     t.datetime "updated_at", null: false
     t.jsonb "worker_settings", default: {}, null: false
     t.index ["account_id"], name: "index_tenant_settings_on_account_id", unique: true
-    t.check_constraint "queue_fairness_mode::text = ANY (ARRAY['fair_share'::character varying, 'strict_priority'::character varying]::text[])", name: "chk_queue_fairness_mode"
+    t.check_constraint "queue_fairness_mode::text = ANY (ARRAY['fair_share'::character varying::text, 'strict_priority'::character varying::text])", name: "chk_queue_fairness_mode"
   end
 
   create_table "token_usages", force: :cascade do |t|
@@ -3983,6 +3983,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_04_144228) do
        LANGUAGE sql
        STABLE
       AS $function$
+        -- @spec POSTGRESQL-PERSISTENCE-007
+        -- version: 1
         SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
       $function$
   SQL
@@ -3993,6 +3995,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_04_144228) do
        LANGUAGE sql
        STABLE
       AS $function$
+        -- @spec POSTGRESQL-PERSISTENCE-007
+        -- version: 1
         SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
       $function$
   SQL
