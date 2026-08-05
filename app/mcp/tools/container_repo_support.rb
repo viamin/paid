@@ -41,10 +41,7 @@ module Tools
 
     def project_for_manifest_entry(project_id)
       @manifest_projects ||= {}
-      @manifest_projects[project_id] ||= TenantContext.with_system_access do
-        project = Project.find_by(id: project_id)
-        project if project&.account_id == session&.account_id
-      end
+      @manifest_projects[project_id] ||= Project.find_by(id: project_id)
     end
 
     def project_for_authorization!(repo_path)
