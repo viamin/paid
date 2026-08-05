@@ -15,7 +15,8 @@ class PreviewsController < ApplicationController
   def stop
     authorize @preview_session, :stop?
 
-    Previews::Lifecycle.stop_session!(preview_session: @preview_session, terminal_status: "stopped")
+    Previews::Teardown.call(@preview_session)
+    @preview_session.mark_stopped!
     audit_event("preview.stopped", metadata: { preview_session_id: @preview_session.id })
 
     redirect_to @preview_session.project, notice: "Preview stopped."
@@ -34,9 +35,23 @@ class PreviewsController < ApplicationController
 
   # @spec LIVE-PREVIEW-004
   def show_token_preview
-    return show_wrapper_fallback if params[:path].blank? && request.path_parameters[:token].match?(/\A\d+\z/)
+    @preview_session = PreviewSession.find_accessible_by_token(request.path_parameters[:token])
+    return show_wrapper_fallback if @preview_session.nil? && params[:path].blank? && request.path_parameters[:token].match?(/\A\d+\z/)
+    return head :not_found unless @preview_session && policy(@preview_session).show?
+    return head :not_found unless @preview_session.proxiable?
 
-    head :not_found
+    redirect_to proxy_root_path, status: :moved_permanently
+  end
+
+  # The exact `/previews/:token` (no trailing path) is not matched by the
+  # PreviewsProxy middleware, so redirect to the trailing-slash root and let the
+  # full proxy path serve it (Location/Set-Cookie/CSP rewriting, WebSocket
+  # support). Proxying the root document here would drop upstream redirect
+  # headers and resolve relative asset URLs against `/previews` instead of the
+  # token-scoped prefix.
+  def proxy_root_path
+    root = "#{@preview_session.proxy_prefix}/"
+    request.query_string.present? ? "#{root}?#{request.query_string}" : root
   end
 
   def show_wrapper_fallback

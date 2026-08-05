@@ -57,6 +57,25 @@ RSpec.describe PreviewSession do
     end
   end
 
+  describe "#mark_provisioning!" do
+    it "transitions a queued session to the provisioning state" do
+      session = create(:preview_session, status: "pending")
+
+      session.mark_provisioning!
+
+      expect(session.reload).to be_provisioning
+    end
+
+    it "clears a stale error message when leaving the failed state" do
+      session = create(:preview_session, :failed)
+
+      session.mark_provisioning!
+
+      expect(session.reload).to be_provisioning
+      expect(session.error_message).to be_nil
+    end
+  end
+
   describe "#framework_label" do
     it "formats the stored framework key for preview metadata" do
       session = build(:preview_session, framework: "phoenix")
@@ -117,6 +136,20 @@ RSpec.describe PreviewSession do
       end
     end
 
+    it "distinguishes in-progress, pending, provisioning, and starting states" do
+      expect(build(:preview_session, status: "pending")).to be_pending
+      expect(build(:preview_session, status: "provisioning")).to be_provisioning
+      expect(build(:preview_session, status: "starting")).to be_starting
+
+      %w[pending provisioning starting].each do |status|
+        expect(build(:preview_session, status:)).to be_in_progress,
+          "#{status} should be in progress"
+      end
+
+      expect(build(:preview_session, :ready)).not_to be_in_progress
+      expect(build(:preview_session, :stopped)).not_to be_in_progress
+    end
+
     it "clears error_message when leaving failed" do
       session = create(:preview_session, :failed)
 
@@ -124,6 +157,17 @@ RSpec.describe PreviewSession do
       session.valid?
 
       expect(session.error_message).to be_nil
+    end
+  end
+
+  describe "#status_label" do
+    it "maps each lifecycle status to a user-facing label" do
+      expect(build(:preview_session, status: "pending").status_label).to eq("Queued")
+      expect(build(:preview_session, status: "provisioning").status_label).to eq("Provisioning")
+      expect(build(:preview_session, status: "starting").status_label).to eq("Starting")
+      expect(build(:preview_session, status: "ready").status_label).to eq("Ready")
+      expect(build(:preview_session, status: "stopped").status_label).to eq("Stopped")
+      expect(build(:preview_session, status: "failed").status_label).to eq("Failed")
     end
   end
 
@@ -252,6 +296,27 @@ RSpec.describe PreviewSession do
       session.touch_last_accessed!
 
       expect(session.reload.last_active_at.to_i).to eq(original.to_i)
+    end
+  end
+
+  describe "project preview broadcasts" do
+    it "refreshes the project preview stream on lifecycle changes" do
+      project = create(:project)
+      allow(Turbo::StreamsChannel).to receive(:broadcast_refresh_to)
+
+      preview_session = create(:preview_session, project:)
+      preview_session.update!(status: "failed", error_message: "boom")
+
+      expect(Turbo::StreamsChannel).to have_received(:broadcast_refresh_to).with(project, :project_updates).twice
+    end
+
+    it "does not broadcast for access timestamp touches" do
+      preview_session = create(:preview_session, :ready)
+      allow(Turbo::StreamsChannel).to receive(:broadcast_refresh_to)
+
+      preview_session.touch_last_active!
+
+      expect(Turbo::StreamsChannel).not_to have_received(:broadcast_refresh_to)
     end
   end
 end

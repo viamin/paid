@@ -216,18 +216,18 @@ class AgentRun < ApplicationRecord
   before_update :store_project_counter_cache_state, if: :project_counter_cache_state_changed?
   before_destroy :store_destroyed_project_counter_cache_state
 
-  after_commit :update_completed_agent_runs_counter_cache, on: [ :create, :update, :destroy ]
+  after_commit :update_agent_run_counter_caches, on: [ :create, :update, :destroy ]
   after_commit :reload_project_counter_cache_association, on: [ :create, :update, :destroy ]
   after_commit :broadcast_project_updates, on: [ :create, :update ]
-  after_commit :update_project_last_agent_run_at, on: :create
+  after_commit :update_project_last_agent_run_at, on: :create, unless: :synthetic_operational_run?
   after_commit :invalidate_runner_options_cache_on_change, on: [ :create, :update ]
-  after_commit :enqueue_quality_metrics_collection, on: :update, if: :just_finished?
-  after_commit :enqueue_anomaly_detection, on: :update, if: :just_finished?
-  after_commit :enqueue_resource_profile_refresh, on: :update, if: :just_finished?
+  after_commit :enqueue_quality_metrics_collection, on: :update, if: :real_run_just_finished?
+  after_commit :enqueue_anomaly_detection, on: :update, if: :real_run_just_finished?
+  after_commit :enqueue_resource_profile_refresh, on: :update, if: :real_run_just_finished?
   after_commit :enqueue_container_metrics_collection, on: :update, if: :just_started_running?
   after_commit :enqueue_issue_goal_timeout_retry, on: :update, if: :just_timed_out_issue_goal?
   after_commit :enqueue_failure_recovery_decision, on: :update, if: :recovery_decision_required?
-  after_commit :record_dispatch_circuit_breaker_outcome, on: :update, if: :just_finished?
+  after_commit :record_dispatch_circuit_breaker_outcome, on: :update, if: :real_run_just_finished?
 
   validates :agent_type, presence: true, inclusion: { in: AGENT_TYPES }
   validates :status, presence: true, inclusion: { in: STATUSES }
@@ -343,10 +343,22 @@ class AgentRun < ApplicationRecord
   scope :excluding_preview_provisioning, -> {
     where(preview_provisioning_exclusion_sql)
   }
-  scope :reported_create_pr, -> { where(goal: "create_pr").excluding_preview_provisioning }
+  scope :reported_create_pr, -> {
+    where(goal: "create_pr")
+      .excluding_preview_provisioning
+      .excluding_synthetic
+  }
   scope :finished, -> { where(status: FINISHED_STATUSES) }
   scope :paid_native, -> { where(execution_origin: "paid_native") }
   scope :external_execution, -> { where(execution_origin: "external") }
+  # Synthetic operational runs (e.g. live-preview provisioning) reuse the
+  # agent-run lifecycle to drive infrastructure but never execute a real agent
+  # and cannot produce a PR/issue/review artifact. Excluded from user-facing run
+  # history and metrics so previews do not masquerade as ordinary agent runs or
+  # inflate totals. Keyed off the `synthetic` flag rather than `agent_type`,
+  # because `internal_agent` is shared with legitimate externally-ingested runs
+  # (AgentRuns::IngestExternal). See `synthetic_operational_run?`.
+  scope :excluding_synthetic, -> { where(synthetic: false) }
 
   def update_columns(attributes)
     super(attributes)
@@ -728,6 +740,11 @@ class AgentRun < ApplicationRecord
 
   # Returns the count of active create_pr runs for the given account.
   # Used to enforce the account-level create_pr concurrency cap.
+  #
+  # Synthetic operational runs (e.g. live-preview provisioning) reuse the
+  # create_pr pipeline to drive container provisioning but never produce a PR.
+  # They are excluded so opening a preview cannot consume one of the tenant's
+  # PR-work slots and block unrelated issue/PR automation.
   def self.active_create_pr_count_for_account(account)
     capacity_inflight
       .joins(:project)
@@ -1532,6 +1549,18 @@ class AgentRun < ApplicationRecord
 
   def lid_planning_goal?
     goal == "lid_planning"
+  end
+
+  # Synthetic operational runs (e.g. live-preview provisioning) reuse the
+  # agent-run lifecycle to drive container provisioning but never execute a real
+  # agent and cannot produce a PR, issue, or review artifact. They must bypass
+  # run-quality collection, anomaly detection, dispatch circuit-breaker
+  # accounting, and failure-recovery decisions so they don't record bogus
+  # create-pr metrics or enqueue follow-up work for a run that produces nothing.
+  # Marked by an explicit `synthetic` flag at creation rather than `agent_type`,
+  # since `internal_agent` is also a legitimate externally-ingested run type.
+  def synthetic_operational_run?
+    synthetic?
   end
 
   def plan_docs_present?
@@ -2923,9 +2952,21 @@ class AgentRun < ApplicationRecord
     user_setting&.max_execution_seconds
   end
 
-  def update_completed_agent_runs_counter_cache
+  # Maintains both project counter caches (`completed_agent_runs_count` and
+  # `agent_runs_count`) so synthetic operational runs (live-preview provisioning)
+  # never inflate user-facing run totals.
+  #
+  # `completed_agent_runs_count` is fully custom-managed here and skips synthetic
+  # runs entirely. `agent_runs_count` is Rails' default `counter_cache: true`,
+  # which auto-increments/decrements for every run including synthetic ones; the
+  # correction below reverses that automatic adjustment for synthetic runs so
+  # previews do not count toward the displayed "Runs" total.
+  def update_agent_run_counter_caches
     completed_agent_runs_counter_deltas.each do |project_id, delta|
       Project.update_counters(project_id, completed_agent_runs_count: delta)
+    end
+    agent_runs_count_correction_deltas.each do |project_id, delta|
+      Project.update_counters(project_id, agent_runs_count: delta)
     end
   end
 
@@ -2946,6 +2987,13 @@ class AgentRun < ApplicationRecord
 
   def just_finished?
     previous_changes.key?("status") && finished?
+  end
+
+  # True when a real (non-synthetic) agent run just reached a terminal state.
+  # Synthetic operational runs (preview provisioning) finish via update too, but
+  # they must not trigger terminal-state side effects, so they are excluded.
+  def real_run_just_finished?
+    just_finished? && !synthetic_operational_run?
   end
 
   def enqueue_quality_metrics_collection
@@ -3024,6 +3072,9 @@ class AgentRun < ApplicationRecord
   end
 
   def completed_agent_runs_counter_deltas
+    # Synthetic runs never reach a real "completed" outcome that should count.
+    return {} if synthetic_operational_run?
+
     previous_state = @project_counter_cache_state_before_last_commit || {}
     previous_project_id = previous_state[:project_id]
     previous_status = previous_state[:status]
@@ -3050,6 +3101,25 @@ class AgentRun < ApplicationRecord
     @project_counter_cache_state_before_last_commit = nil
   end
 
+  # Reverses Rails' default `counter_cache: true` adjustment of
+  # `agent_runs_count` for synthetic runs only. Rails auto-increments on create,
+  # auto-decrements on destroy, and moves the count on a project change for every
+  # run; synthetic runs must not be counted, so each automatic delta is negated.
+  # Real runs are left entirely to Rails' default counter cache (no delta here).
+  def agent_runs_count_correction_deltas
+    return {} unless synthetic_operational_run?
+
+    deltas = Hash.new(0)
+    if destroyed?
+      deltas[project_id] += 1 if project_id.present?
+    else
+      previous_project_id = previous_changes.fetch("project_id", [ project_id, project_id ]).first
+      deltas[previous_project_id] += 1 if previous_project_id.present?
+      deltas[project_id] -= 1 if project_id.present?
+    end
+    deltas.reject { |_project_id, delta| delta.zero? }
+  end
+
   def counter_cache_deltas_for_completed_transition(previous_project_id:, previous_status:, current_project_id:, current_status:)
     deltas = Hash.new(0)
     deltas[previous_project_id] -= 1 if previous_project_id.present? && previous_status == "completed"
@@ -3062,6 +3132,8 @@ class AgentRun < ApplicationRecord
   end
 
   def recovery_decision_required?
+    return false if synthetic_operational_run?
+
     previous_changes.key?("status") && status.in?(recovery_decision_statuses)
   end
 

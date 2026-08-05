@@ -1,0 +1,34 @@
+<%# Preview session metadata shown across all lifecycle states. %>
+<% ttl_classes = preview_session.ttl_warning? ? "text-amber-700" : "text-gray-500" %>
+<% remaining = preview_session.time_remaining %>
+<dl class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+  <div>
+    <dt class="text-sm font-medium text-gray-500">Branch</dt>
+    <dd class="mt-1 text-sm text-gray-900">
+      <code class="rounded bg-gray-100 px-2 py-1 font-mono text-xs"><%= preview_session.branch_name %></code>
+    </dd>
+  </div>
+  <div>
+    <dt class="text-sm font-medium text-gray-500">Framework</dt>
+    <dd class="mt-1 text-sm text-gray-900"><%= preview_session.framework_label.presence || preview_session.framework.presence || "Unknown" %></dd>
+  </div>
+  <div>
+    <dt class="text-sm font-medium text-gray-500">Expires</dt>
+    <dd class="mt-1 text-sm <%= ttl_classes %>">
+      <%= local_time(preview_session.expires_at) %>
+      <% if preview_session.active? && remaining.positive? %>
+        (<%= distance_of_time_in_words(remaining) %> remaining)
+      <% end %>
+    </dd>
+  </div>
+  <div>
+    <dt class="text-sm font-medium text-gray-500">Tunnel Port</dt>
+    <dd class="mt-1 text-sm text-gray-900">
+      <% if preview_session.tunnel_port.present? %>
+        <%= preview_session.tunnel_port %>
+      <% else %>
+        <span class="text-gray-400">Pending</span>
+      <% end %>
+    </dd>
+  </div>
+</dl>

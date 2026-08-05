@@ -65,6 +65,7 @@ RSpec.describe Roi::MetricsCalculator do
       cost_cents: 20_000,
       goal: "create_pr",
       pull_request_number: 12,
+      synthetic: true,
       external_metadata: { "preview_session" => true })
     create(:quality_metric, :human, agent_run: run, created_at: 1.day.ago, scores: { "pr_merged" => 1.0 })
     run

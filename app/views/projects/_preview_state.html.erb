@@ -1,0 +1,49 @@
+<%# Renders the lifecycle-appropriate body for the preview panel. Each terminal
+    or in-progress state surfaces clear, actionable messaging; only a live,
+    proxiable session embeds the iframe. %>
+<% if preview_session.expired? %>
+  <p class="text-sm font-medium text-gray-900">This preview has expired.</p>
+  <p class="mt-1 text-sm text-gray-500">Start a new preview to relaunch a disposable app environment.</p>
+<% elsif preview_session.live? %>
+  <% if preview_session.proxiable? %>
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <p class="text-sm font-medium text-gray-900">Preview is live.</p>
+      <%= link_to "Open full preview", preview_session_path(preview_session),
+        class: "text-sm font-semibold text-indigo-600 hover:text-indigo-500", target: "_blank", rel: "noopener" %>
+    </div>
+    <iframe
+      src="<%= preview_session.proxy_prefix %>/"
+      title="Preview for <%= preview_session.branch_name %>"
+      class="mt-3 h-[32rem] w-full rounded-md border border-gray-200 bg-white"
+      loading="lazy"
+      sandbox="allow-forms allow-modals allow-popups allow-presentation allow-scripts"
+      referrerpolicy="no-referrer"></iframe>
+  <% else %>
+    <p class="text-sm font-medium text-amber-700">Finalizing preview tunnel.</p>
+    <p class="mt-1 text-sm text-amber-600">The app is ready and the preview tunnel is opening. This page updates automatically.</p>
+  <% end %>
+<% elsif preview_session.failed? %>
+  <p class="text-sm font-medium text-red-700">Preview provisioning failed.</p>
+  <p class="mt-1 text-sm text-red-600"><%= preview_session.error_message.presence || "Unknown error" %></p>
+  <p class="mt-1 text-sm text-gray-500">Restart to provision a fresh disposable app environment.</p>
+<% elsif preview_session.stopped? %>
+  <p class="text-sm font-medium text-gray-900">Preview stopped.</p>
+  <p class="mt-1 text-sm text-gray-500">Start a new preview to create a fresh disposable app environment.</p>
+<% elsif preview_session.in_progress? %>
+  <p class="text-sm font-medium text-amber-700">Preview is provisioning.</p>
+  <p class="mt-1 text-sm text-amber-600">
+    <% if preview_session.pending? %>
+      Queued and waiting to provision a container.
+    <% elsif preview_session.starting? %>
+      Starting the application and opening the preview tunnel.
+    <% else %>
+      Booting the container and installing dependencies.
+    <% end %>
+    This page updates as the preview progresses.
+  </p>
+  <p class="mt-1 text-sm text-gray-500">
+    Tunnel readiness: <% if preview_session.tunnel_port.present? %>allocated (<%= preview_session.tunnel_port %>)<% else %>pending<% end %>.
+  </p>
+<% else %>
+  <p class="text-sm font-medium text-gray-900">Preview session is <%= preview_session.status_label.downcase %>.</p>
+<% end %>
