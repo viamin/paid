@@ -63,6 +63,39 @@ groups:
           summary: Temporal workflow slots are saturated
           description: Workflow slot utilization has exceeded 90 percent for 10 minutes.
 
+      - alert: PaidAgentRunFailureRateHigh
+        expr: |
+          (
+            sum(increase(paid_agent_run_outcomes_total{outcome="failure"}[15m]))
+            /
+            clamp_min(sum(increase(paid_agent_run_outcomes_total[15m])), 1)
+          ) > 0.4
+          and
+          sum(increase(paid_agent_run_outcomes_total[15m])) >= 5
+        for: 15m
+        labels:
+          severity: warning
+          service: paid-web
+        annotations:
+          summary: Agent run failure rate is elevated
+          description: More than 40 percent of finished agent runs have ended unsuccessfully for 15 minutes, with at least 5 finished runs observed.
+
+      - alert: PaidAgentRunDurationP95High
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (
+              rate(paid_agent_run_duration_seconds_bucket{outcome="success"}[15m])
+            )
+          ) > 1800
+        for: 15m
+        labels:
+          severity: warning
+          service: paid-web
+        annotations:
+          summary: Successful agent runs are taking longer than expected
+          description: The p95 duration for successful agent runs has exceeded 30 minutes for 15 minutes.
+
       - alert: PaidTemporalWorkflowScheduleToStartP95High
         expr: |
           histogram_quantile(

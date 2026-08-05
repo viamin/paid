@@ -5,6 +5,7 @@ require "rails_helper"
 RSpec.describe Metrics::PrometheusCollector do # @spec OBSERVABILITY-002
   before do
     GoodJob::Job.delete_all
+    Rails.cache.clear
   end
 
   describe ".call" do
@@ -19,6 +20,10 @@ RSpec.describe Metrics::PrometheusCollector do # @spec OBSERVABILITY-002
       expect(output).to include("paid_agent_runs_total")
       expect(output).to include("paid_agent_runs_active")
       expect(output).to include("paid_agent_runs_queued")
+      expect(output).to include("paid_agent_run_outcomes_total")
+      expect(output).to include("paid_agent_run_duration_seconds")
+      expect(output).to include("paid_agent_run_tokens_total")
+      expect(output).to include("paid_agent_run_cost_cents_total")
     end
 
     it "includes GoodJob metrics" do
@@ -54,7 +59,9 @@ RSpec.describe Metrics::PrometheusCollector do # @spec OBSERVABILITY-002
         create(:agent_run, :running, container_id: "ctr-2")
         create(:agent_run, :queued)
         create(:agent_run, :queued, temporal_workflow_id: "wf-123")
-        create(:agent_run, :completed)
+        create(:agent_run, :completed, :with_metrics, duration_seconds: 120)
+        create(:agent_run, :failed, tokens_input: 30, tokens_output: 10, cost_cents: 7, duration_seconds: 300)
+        create(:agent_run, :cancelled, tokens_input: 20, tokens_output: 0, cost_cents: 0, duration_seconds: 90)
       end
 
       it "reports correct active count" do
@@ -71,6 +78,31 @@ RSpec.describe Metrics::PrometheusCollector do # @spec OBSERVABILITY-002
 
       it "reports active container count" do
         expect(output).to include("paid_containers_active 2")
+      end
+
+      it "reports terminal run outcomes as counters" do
+        expect(output).to include('paid_agent_run_outcomes_total{status="completed",outcome="success"} 1')
+        expect(output).to include('paid_agent_run_outcomes_total{status="failed",outcome="failure"} 1')
+        expect(output).to include('paid_agent_run_outcomes_total{status="cancelled",outcome="failure"} 1')
+      end
+
+      it "reports duration histogram buckets and aggregates" do
+        expect(output).to include('paid_agent_run_duration_seconds_bucket{outcome="success",le="300"} 1')
+        expect(output).to include('paid_agent_run_duration_seconds_bucket{outcome="failure",le="300"} 2')
+        expect(output).to include('paid_agent_run_duration_seconds_sum{outcome="success"} 120')
+        expect(output).to include('paid_agent_run_duration_seconds_count{outcome="failure"} 2')
+      end
+
+      it "reports token counters split by direction and outcome" do
+        expect(output).to include('paid_agent_run_tokens_total{direction="input",outcome="success"} 10000')
+        expect(output).to include('paid_agent_run_tokens_total{direction="output",outcome="success"} 5000')
+        expect(output).to include('paid_agent_run_tokens_total{direction="input",outcome="failure"} 50')
+        expect(output).to include('paid_agent_run_tokens_total{direction="output",outcome="failure"} 10')
+      end
+
+      it "reports cost counters by outcome" do
+        expect(output).to include('paid_agent_run_cost_cents_total{outcome="success"} 150')
+        expect(output).to include('paid_agent_run_cost_cents_total{outcome="failure"} 7')
       end
     end
 

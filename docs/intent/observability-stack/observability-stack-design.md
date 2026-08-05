@@ -37,6 +37,10 @@ scrapes while keeping the data fresh enough for dashboards and alerts.
 application metrics. It emits:
 
 - agent-run status counts plus active and queued totals
+- terminal agent-run outcome counters split by success/failure and status
+- completed agent-run duration histograms
+- completed agent-run token counters
+- completed agent-run cost counters
 - unfinished/running/errored GoodJob queue depth
 - active agent-container counts plus recent CPU and memory aggregates
 - warm container-pool counts and effective target size
@@ -57,9 +61,11 @@ The repo also checks in the observability overlay and provisioning assets:
 - `prometheus/prometheus.yml` scrapes the Rails `/api/metrics` endpoint, the
   Temporal worker exporter, postgres-exporter, node-exporter, and cAdvisor.
 - `prometheus/rules/paid.yml` defines availability and capacity alerts against
-  the shipped metric names.
+  the shipped metric names, including application-level run failure-rate and
+  long-duration alerts backed by collector-exported metrics.
 - `grafana/provisioning/` and `grafana/dashboards/paid-overview.json`
-  provision a Prometheus datasource and a default dashboard.
+  provision a Prometheus datasource and a default dashboard covering both stack
+  health and application-level run outcomes, duration, token usage, and spend.
 - `alertmanager/alertmanager.yml` provides the initial routing/inhibition
   configuration for those Prometheus alerts.
 

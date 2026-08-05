@@ -17,6 +17,10 @@ The checked-in observability stack assets use that split explicitly:
 | `paid_agent_runs_total` | gauge | `status` | Number of agent runs by status (queued, pending, running, completed, failed, etc.) |
 | `paid_agent_runs_active` | gauge | — | Currently active agent runs (pending + running) |
 | `paid_agent_runs_queued` | gauge | — | Agent runs waiting in queue |
+| `paid_agent_run_outcomes_total` | counter | `status`, `outcome` | Total finished runs by terminal status, normalized to `success` (`completed`) or `failure` (all other finished statuses) |
+| `paid_agent_run_duration_seconds` | histogram | `outcome`, `le` | Finished run duration histogram in seconds. Exported with classic Prometheus `_bucket`, `_sum`, and `_count` series |
+| `paid_agent_run_tokens_total` | counter | `direction`, `outcome` | Total finished-run tokens by `input`/`output` direction and normalized outcome |
+| `paid_agent_run_cost_cents_total` | counter | `outcome` | Total finished-run cost in cents by normalized outcome |
 
 ## GoodJob Queue Metrics
 
@@ -90,6 +94,14 @@ scrape_configs:
 
 ### Recommended dashboard queries
 
+- Agent run failure ratio over 15 minutes:
+  `sum(increase(paid_agent_run_outcomes_total{outcome="failure"}[15m])) / clamp_min(sum(increase(paid_agent_run_outcomes_total[15m])), 1)`
+- Successful agent run duration p95 over 15 minutes:
+  `histogram_quantile(0.95, sum by (le) (rate(paid_agent_run_duration_seconds_bucket{outcome="success"}[15m])))`
+- Agent run token throughput by direction:
+  `sum by (direction) (rate(paid_agent_run_tokens_total[15m]))`
+- Agent run spend rate in USD/hour:
+  `sum(rate(paid_agent_run_cost_cents_total[15m])) * 3600 / 100`
 - Workflow task queue `schedule_to_start` p95 by task queue:
   `histogram_quantile(0.95, sum by (task_queue, le) (rate(temporal_workflow_task_schedule_to_start_latency_seconds_bucket[5m])))`
 - Activity task queue `schedule_to_start` p95 by task queue:
@@ -108,6 +120,6 @@ Recommended auto-scaling signals:
 
 ## Collector Design
 
-The original observability RDR proposed adopting the `prometheus-client` Ruby gem. Paid instead ships a hand-rolled collector in `Metrics::PrometheusCollector`, and the checked-in Prometheus rules and Grafana dashboards now target that collector as the source of truth.
+The original observability RDR proposed adopting the `prometheus-client` Ruby gem. Paid instead ships a hand-rolled collector in `Metrics::PrometheusCollector`, and the checked-in Prometheus rules and Grafana dashboards target that collector as the source of truth.
 
-That design choice has a direct consequence: some example metrics from the original RDR, such as cost counters or quality-score histograms, do not exist yet and therefore are not referenced by the shipped alert rules or dashboard panels. If Paid later adds counter or histogram-style instrumentation, those assets can be expanded without changing the deployment shape.
+That design choice means every exported series is derived from persisted application state at scrape time rather than from process-local in-memory counters. The current shipped surface now includes application-level outcome, duration, token, and cost metrics on top of the original queue/capacity gauges, while still keeping the deployment shape unchanged.

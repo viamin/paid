@@ -79,7 +79,9 @@ RSpec.describe ObservabilityAssets, :no_db do
       "PaidMetricsEndpointDown",
       "PaidQueuedRunsBacklog",
       "PaidGoodJobBacklog",
-      "PaidTemporalWorkflowSlotsSaturated"
+      "PaidTemporalWorkflowSlotsSaturated",
+      "PaidAgentRunFailureRateHigh",
+      "PaidAgentRunDurationP95High"
     )
   end
 
@@ -91,7 +93,14 @@ RSpec.describe ObservabilityAssets, :no_db do
     expect(datasources.fetch("datasources").first.fetch("uid")).to eq("prometheus")
     expect(dashboards.fetch("providers").first.dig("options", "path")).to eq("/var/lib/grafana/dashboards")
     expect(overview.fetch("uid")).to eq("paid-overview")
-    expect(overview.fetch("panels")).not_to be_empty
+    titles = overview.fetch("panels").map { |panel| panel.fetch("title") }
+
+    expect(titles).to include(
+      "Agent Run Outcome Rate",
+      "Agent Run Duration p95",
+      "Agent Run Tokens",
+      "Agent Run Cost"
+    )
   end
 
   it "ships a safe default Alertmanager routing config" do

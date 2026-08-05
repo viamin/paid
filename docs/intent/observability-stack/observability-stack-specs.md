@@ -12,15 +12,18 @@
   *Test:* `spec/requests/api/metrics_spec.rb`.
 
 - [x] **OBSERVABILITY-002** — The application metrics collector SHALL expose
-  agent-run, GoodJob, agent-container, warm-pool, service-container, and
-  Temporal-capacity metrics in Prometheus HELP/TYPE format and SHALL cache the
-  rendered payload for 15 seconds.
+  agent-run status gauges, terminal run outcome counters, run duration
+  histograms, token/cost counters, GoodJob, agent-container, warm-pool,
+  service-container, and Temporal-capacity metrics in Prometheus HELP/TYPE
+  format and SHALL cache the rendered payload for 15 seconds.
   *Code:* `app/services/metrics/prometheus_collector.rb`.
   *Test:* `spec/services/metrics/prometheus_collector_spec.rb`.
 
 - [x] **OBSERVABILITY-003** — The repository SHALL check in an observability
   overlay that wires Prometheus scraping/rules, Grafana provisioning, and
-  Alertmanager routing around the shipped metric names.
+  Alertmanager routing around the shipped metric names, including application-
+  level run outcome and duration views/alerts only when those metrics are
+  exported by the collector.
   *Code:* `docker-compose.observability.yml`, `prometheus/prometheus.yml`,
   `prometheus/rules/paid.yml`, `grafana/provisioning/datasources/prometheus.yml`,
   `grafana/provisioning/dashboards/dashboards.yml`,
