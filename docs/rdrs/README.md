@@ -107,7 +107,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | [RDR-031](RDR-031-focused-agent-runs.md) | Focused Agent Runs — Single-Problem-Per-Run | Implemented | P1 |
 | [RDR-032](RDR-032-eager-queue-seeding.md) | Eager Queue Seeding — Eliminate Auto-Pick Throttling | Implemented | P1 |
 | [RDR-035](RDR-035-style-guide-evolution.md) | Style Guide Evolution | Accepted | High |
-| [RDR-036](RDR-036-mutation-testing-for-ai-generated-tests.md) | Mutation Testing for AI-Generated Tests (Mutant) | Partially Implemented | P1 |
+| [RDR-036](RDR-036-mutation-testing-for-ai-generated-tests.md) | Mutation Testing for AI-Generated Tests (Mutant) | Implemented | P1 |
 | [RDR-045](RDR-045-live-web-app-preview-agent-verification.md) | Live Web App Preview and Interactive Agent Verification | Partially Implemented | High |
 | [RDR-046](RDR-046-polyglot-language-detection-and-test-execution.md) | Polyglot Language Detection and Test Execution | Partially Implemented | High |
 | [RDR-047](RDR-047-work-category-queue-priority.md) | Work-Category-Aware Queue Priority — PR Continuation Over Fresh Issues | Implemented | P1 |
@@ -119,8 +119,8 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 |-----|-------|--------|----------|
 | [RDR-025](RDR-025-runner-quota-tracking.md) | Runner Quota Tracking and Quota-Aware Routing | Partially Implemented | Medium |
 | [RDR-025](RDR-025-provider-quota-tracking.md) | Provider Quota Tracking and Quota-Aware Routing | Superseded | Medium |
-| [RDR-038](RDR-038-free-models-catalog-and-runner.md) | Free Models Catalog and Runner | Partially Implemented | P1 |
-| [RDR-040](RDR-040-runner-model-compatibility-contracts.md) | Runner Model Compatibility Contracts | Partially Implemented | P1 |
+| [RDR-038](RDR-038-free-models-catalog-and-runner.md) | Free Models Catalog and Runner | Implemented | P1 |
+| [RDR-040](RDR-040-runner-model-compatibility-contracts.md) | Runner Model Compatibility Contracts | Implemented | P1 |
 
 ### Semantic Understanding
 

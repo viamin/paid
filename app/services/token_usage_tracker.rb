@@ -16,6 +16,7 @@ class TokenUsageTracker
   #   applying in-flight token/cost hard-stop behavior. Use for end-of-run
   #   summary reconciliation after the provider process has already exited.
   def self.track(tracked_run:, usage:, update_aggregates: true, enforce_guardrails: true)
+    # @spec CHAT-API-005
     raise ArgumentError, "tracked_run is required" unless tracked_run.present?
 
     tokens_input  = usage.fetch(:tokens_input, 0).to_i

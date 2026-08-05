@@ -1324,30 +1324,29 @@ RSpec.describe "Projects" do
   describe "GET /previews/:token" do
     before { sign_in user }
 
-    it "renders the embedded simulated preview for a live session" do
+    # @spec LIVE-PREVIEW-004
+    it "redirects a live preview token to the canonical proxy root" do
       project = create(:project, account: account, github_token: github_token, name: "My Project")
       session = create(:preview_session, :ready, project: project, branch_name: "feature/preview", framework: "rails",
         tunnel_port: 8242, expires_at: 20.minutes.from_now)
+      session.update!(container_id: "container-live")
 
       get preview_path(session.token)
 
-      expect(response).to have_http_status(:ok)
-      expect(response.headers["Content-Security-Policy"]).to include("frame-ancestors 'self'")
-      expect(response.headers["X-Frame-Options"]).to eq("SAMEORIGIN")
-      expect(response.body).to include("Simulated preview")
-      expect(response.body).to include("feature/preview")
-      expect(response.body).to include(project.full_name)
+      expect(response).to redirect_to("#{session.proxy_prefix}/")
     end
 
     it "supports nested preview paths on the same token route" do
       project = create(:project, account: account, github_token: github_token)
       session = create(:preview_session, :ready, project: project, branch_name: "feature/preview",
         tunnel_port: 8242, expires_at: 20.minutes.from_now)
+      session.update!(container_id: "container-live")
+      stub_preview_proxy_response
 
       get preview_path(session.token, path: "health")
 
       expect(response).to have_http_status(:ok)
-      expect(response.body).to include("/health")
+      expect(response.body).to eq("<html>ok</html>")
     end
 
     it "strips sensitive upstream headers while preserving safe caching headers" do
@@ -1390,6 +1389,7 @@ RSpec.describe "Projects" do
     allow(Net::HTTP::Get).to receive(:new).and_return(request)
     allow(request).to receive(:[]=)
     allow(request).to receive(:request_body_permitted?).and_return(false)
+    allow(request).to receive(:body=)
     allow(upstream_response).to receive(:each_header).and_yield("cache-control", "no-store")
       .and_yield("etag", %("preview-etag"))
       .and_yield("set-cookie", "_paid_session=attacker")

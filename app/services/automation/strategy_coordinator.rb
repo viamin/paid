@@ -2,6 +2,16 @@
 
 module Automation
   class StrategyCoordinator
+    PullRequestScanOutcome = ::Data.define(:result, :metadata, :legacy_trigger) do
+      def noop?
+        result.decisions.all? { |decision| decision.type == "noop" }
+      end
+
+      def to_h
+        metadata.merge(result.to_h)
+      end
+    end
+
     attr_reader :project, :selector
 
     def initialize(project:, selector: Automation::Strategies::Select)
@@ -23,6 +33,20 @@ module Automation
     def evaluate_pull_request(record:, metadata:, strategy_types: %i[auto_continue])
       context = Context.build(record: record, project: project, metadata: metadata)
       evaluate(context:, strategy_types:)
+    end
+
+    def evaluate_pull_request_scan(record:, scan:, lifecycle:, strategy_types: %i[auto_continue])
+      metadata = {}
+      metadata[:scan] = scan if scan
+      metadata[:lifecycle] = lifecycle if lifecycle
+
+      result = evaluate_pull_request(record:, metadata:, strategy_types:)
+
+      PullRequestScanOutcome.new(
+        result: result,
+        metadata: pull_request_scan_metadata(record, scan, lifecycle),
+        legacy_trigger: legacy_trigger_for(record, scan, lifecycle, result)
+      )
     end
 
     private
@@ -88,6 +112,57 @@ module Automation
       return {} unless value.is_a?(Hash)
 
       value.deep_stringify_keys
+    end
+
+    def pull_request_scan_metadata(record, scan, lifecycle)
+      metadata = {
+        issue_id: record.id,
+        pr_number: record.github_number,
+        phase: lifecycle&.dig(:phase),
+        draft: lifecycle&.dig(:draft),
+        lifecycle_phase: lifecycle&.dig(:phase),
+        lifecycle_draft: lifecycle&.dig(:draft),
+        owner_reviewer_login: lifecycle&.dig(:owner_reviewer_login)
+      }
+      metadata.merge!(scan.except(:decisions)) if scan.is_a?(Hash)
+      metadata
+    end
+
+    def legacy_trigger_for(record, scan, lifecycle, result)
+      decisions = result.decisions
+      escalate = decisions.find { |decision| decision.type == "escalate" }
+      return {
+        pr_number: record.github_number,
+        phase: lifecycle&.dig(:phase),
+        draft: lifecycle&.dig(:draft),
+        owner_reviewer_login: escalate.payload[:owner_reviewer_login],
+        triggers: [ {
+          type: "escalate_to_owner",
+          details: escalate.payload[:reason],
+          reason_key: escalate.payload[:reason_key]
+        } ]
+      } if escalate
+
+      return scan if scan.is_a?(Hash)
+
+      mark_ready = decisions.find { |decision| decision.type == "mark_ready" }
+      return {
+        pr_number: record.github_number,
+        phase: lifecycle&.dig(:phase),
+        draft: lifecycle&.dig(:draft),
+        owner_reviewer_login: mark_ready.payload[:owner_reviewer_login],
+        triggers: [ { type: "ready_for_owner" } ]
+      } if mark_ready
+
+      merge = decisions.find { |decision| decision.type == "merge" }
+      return {
+        pr_number: record.github_number,
+        phase: lifecycle&.dig(:phase),
+        draft: lifecycle&.dig(:draft),
+        triggers: [ { type: "owner_approved" } ]
+      } if merge
+
+      nil
     end
 
     def resolve(decisions)

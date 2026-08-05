@@ -33,6 +33,8 @@ module ChatSessions
     end
 
     def call
+      # @spec CHAT-API-002
+      # @spec CHAT-API-005
       validate_content!
       validate_session_state!
       check_token_limit!

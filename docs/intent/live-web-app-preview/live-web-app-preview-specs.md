@@ -30,10 +30,14 @@
   `spec/requests/projects_spec.rb`,
   `spec/jobs/preview_sessions/expire_job_spec.rb`.
 
-- [ ] **LIVE-PREVIEW-004** — When a preview is served at `/previews/:token`,
+- [x] **LIVE-PREVIEW-004** — When a preview is served at `/previews/:token`,
   the system SHALL route the root-path experience through the tunnel-backed
   proxy path instead of mixing real proxying with controller-side simulated
   preview fallback.
+  *Code:* `app/middleware/previews_proxy.rb`,
+  `app/controllers/previews_controller.rb`.
+  *Test:* `spec/middleware/previews_proxy_spec.rb`,
+  `spec/requests/previews_spec.rb`, `spec/requests/projects_spec.rb`.
 
 - [ ] **LIVE-PREVIEW-005** — When an agent performs interactive verification,
   the system SHALL persist a verification outcome and related artifacts beyond

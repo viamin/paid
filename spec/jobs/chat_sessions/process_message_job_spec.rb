@@ -3,6 +3,7 @@
 require "rails_helper"
 
 RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
+  # @spec CHAT-API-002
   let(:account) { create(:account) }
   let(:user) { create(:user, :owner, account: account) }
   let(:chat_session) { create(:chat_session, account: account, created_by: user) }
@@ -52,6 +53,7 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
   end
 
   it "broadcasts message_complete with nil tokens when a write tool pauses" do
+    # @spec CHAT-API-003
     pending_msg = create(:chat_message, chat_session: chat_session,
       role: "assistant", content: nil,
       tool_name: "trigger_agent_run", tool_call_id: "call_pause",
@@ -76,6 +78,7 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
   end
 
   it "does not broadcast an error when a write tool pauses" do
+    # @spec CHAT-API-003
     pending_msg = create(:chat_message, chat_session: chat_session,
       role: "assistant", content: nil,
       tool_name: "trigger_agent_run", tool_call_id: "call_pause",

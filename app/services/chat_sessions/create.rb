@@ -38,6 +38,7 @@ module ChatSessions
     alias_method :provider_id, :runner_id
 
     def call
+      # @spec CHAT-API-001
       validate!
 
       session = ActiveRecord::Base.transaction do
@@ -136,6 +137,7 @@ module ChatSessions
     end
 
     def persist_system_message(session, prompt_text)
+      # @spec CHAT-API-001
       session.messages.create!(
         role: "system",
         content: prompt_text
