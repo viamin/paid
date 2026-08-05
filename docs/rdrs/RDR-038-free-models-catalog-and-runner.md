@@ -9,7 +9,7 @@
 - **Type**: Architecture
 - **Priority**: P1
 - **Related Issues**: #2378 (tracking), #2381 (phase 1), #2380 (phase 2), #2379 (phase 3a), #2383 (phase 3b), #2382 (phase 3c), #2384 (phase 4), #2385 (phase 5), #3170 (closeout audit)
-- **Related RDRs**: [RDR-007](RDR-007-agent-cli-abstraction.md) (agent-harness), [RDR-008](RDR-008-model-selection.md) (model selection), [RDR-034](RDR-034-tier-based-runner-fallback.md) (tier-based fallback), [RDR-025](RDR-025-runner-quota-tracking.md) (runner quota tracking)
+- **Related RDRs**: [RDR-007](RDR-007-agent-cli-abstraction.md) (agent-harness), [RDR-008](RDR-008-model-selection.md) (model selection), [RDR-034](RDR-034-tier-based-runner-fallback.md) (tier-based fallback), [RDR-025a](RDR-025a-runner-quota-tracking.md) (runner quota tracking)
 
 ## Implementation Status
 
@@ -726,7 +726,7 @@ A guardrail that runs during model selection as a safety net:
 - [RDR-007](RDR-007-agent-cli-abstraction.md) — agent-harness as the LLM interface
 - [RDR-008](RDR-008-model-selection.md) — model selection strategy (free models extend, not replace)
 - [RDR-034](RDR-034-tier-based-runner-fallback.md) — tier-based fallback (free models use the same tier resolution)
-- [RDR-025](RDR-025-runner-quota-tracking.md) — runner state and circuit breaker
+- [RDR-025a](RDR-025a-runner-quota-tracking.md) — runner state and circuit breaker
 - [`app/models/runner.rb`](../../app/models/runner.rb) — runner model and direct-outbound provider config
 - [`app/models/llm_model.rb`](../../app/models/llm_model.rb) — model catalog
 - [`app/services/models/seed_known_models.rb`](../../app/services/models/seed_known_models.rb) — existing model seeding
