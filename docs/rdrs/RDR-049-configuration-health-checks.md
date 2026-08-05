@@ -259,8 +259,8 @@ Rejected. With network checks in scope (review-bot-installed-on-repo, registry d
 The work is broken into phased issues hanging off a tracking (umbrella) issue. Issues use explicit `Depends on #...` lines so auto-pick honors the order. Parallelizable phases are grouped; each phase references this RDR.
 
 Implemented via phased issues #3051–#3058, with closeout audit work tracked in
-#3172 as of August 5, 2026. The phased plan is retained in the issue history;
-the design sections above now describe the fully shipped system.
+issue #3172 as of August 5, 2026. The phased plan is retained in the issue
+history; the design sections above now describe the fully shipped system.
 
 ## Validation
 
