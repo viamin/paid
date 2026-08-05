@@ -1,8 +1,9 @@
 # frozen_string_literal: true
 
 module Tools
+  # @spec CONFIG-PROFILES-004
   class ApplyConfigurationProfile < BaseTool
-    authorize :update?, ->(args) { project_for(args.fetch(:project_id)) }, policy_class: ProjectPolicy
+    authorize :show?, ->(args) { project_for(args.fetch(:project_id)) }, policy_class: ProjectPolicy
 
     def self.tool_name = "apply_configuration_profile"
     def self.write_operation? = true
@@ -29,14 +30,15 @@ module Tools
 
       project = project_for(project_id)
       profile = Configuration::Profiles::Registry.fetch(profile_id)
-      plan = Configuration::Profiles::Planner.call(profile:, project:, overrides:)
+      plan = Configuration::Profiles::Planner.call(profile:, project:, overrides:, actor: user)
       result = Configuration::Profiles::Applier.call(plan:, project:, actor: user)
 
       {
         profile_id: profile.name,
         profile_name: profile.display_name,
         project_id: project.id,
-        applied_changes: result,
+        applied_changes: result.fetch(:applied_changes),
+        skipped_levels: result.fetch(:skipped_levels),
         applied_overrides: plan.applied_overrides
       }
     end

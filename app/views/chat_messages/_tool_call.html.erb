@@ -28,6 +28,9 @@
           <div class="mt-3 rounded-md border border-gray-200 bg-white px-3 py-2">
             <% field_key = change[:key] || change[:field] %>
             <div class="text-xs font-medium text-gray-700"><%= configuration_profile_field_label(field_key) %></div>
+            <% if change[:level].present? %>
+              <div class="mt-1 text-[11px] uppercase tracking-wide text-gray-500"><%= change[:level] %> settings</div>
+            <% end %>
             <div class="mt-1 text-xs text-gray-600">
               <span class="font-medium text-gray-900">From:</span>
               <code><%= format_configuration_profile_change_value(change[:from]) %></code>
@@ -36,6 +39,13 @@
               <span class="font-medium text-gray-900">To:</span>
               <code><%= format_configuration_profile_change_value(change[:to]) %></code>
             </div>
+          </div>
+        <% end %>
+
+        <% Array(configuration_profile_plan[:skipped_levels]).each do |skipped| %>
+          <div class="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            <div class="font-medium"><%= skipped[:level].to_s.humanize %> settings skipped</div>
+            <div class="mt-1"><%= skipped[:reason] %></div>
           </div>
         <% end %>
       </div>
