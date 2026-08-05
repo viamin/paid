@@ -1054,16 +1054,27 @@ class Runner < ApplicationRecord
   end
 
   def parked_run_recovery_needed?
-    Runners::RecoverParkedRunsJob.parked_runs_for(user).exists?
-  rescue ActiveRecord::Deadlocked => e
-    Rails.logger.warn(
-      message: "runners.parked_run_recovery_skipped_deadlock",
-      runner_id: id,
-      user_id: user_id,
-      account_id: user&.account_id,
-      error_class: e.class.name
-    )
-    false
+    deadlock_retries = 0
+
+    begin
+      Runners::RecoverParkedRunsJob.parked_runs_for(user).exists?
+    rescue ActiveRecord::Deadlocked => e
+      deadlock_retries += 1
+
+      if deadlock_retries <= 3
+        sleep(0.01 * deadlock_retries)
+        retry
+      end
+
+      Rails.logger.warn(
+        message: "runners.parked_run_recovery_forced_after_deadlock",
+        runner_id: id,
+        user_id: user_id,
+        account_id: user&.account_id,
+        error_class: e.class.name
+      )
+      true
+    end
   end
 
   def display_name_config_changed?

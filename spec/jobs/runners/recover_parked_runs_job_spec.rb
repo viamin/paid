@@ -133,7 +133,7 @@ RSpec.describe Runners::RecoverParkedRunsJob do
       }.not_to have_enqueued_job(described_class)
     end
 
-    it "skips recovery when checking parked runs deadlocks" do
+    it "enqueues recovery when checking parked runs keeps deadlocking" do
       user
       clear_enqueued_jobs
       parked_runs = instance_double(ActiveRecord::Relation)
@@ -145,7 +145,7 @@ RSpec.describe Runners::RecoverParkedRunsJob do
         create(:runner, user: user, runner_key: "codex", auth_type: "subscription")
       }.not_to raise_error
 
-      expect(described_class).not_to have_been_enqueued
+      expect(described_class).to have_been_enqueued.with(user.id)
     end
 
     it "does not enqueue recovery for parked runs owned by another user in the same account" do
