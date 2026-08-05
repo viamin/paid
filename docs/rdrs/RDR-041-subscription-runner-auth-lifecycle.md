@@ -9,7 +9,7 @@
 - **Revised**: 2026-08-02
 - **Priority**: P1
 - **Related Issues**: [#2690](https://github.com/viamin/paid/issues/2690), [#2683](https://github.com/viamin/paid/issues/2683), [#2685](https://github.com/viamin/paid/issues/2685), [#2684](https://github.com/viamin/paid/issues/2684), [#2686](https://github.com/viamin/paid/issues/2686), [#2687](https://github.com/viamin/paid/issues/2687), [#2688](https://github.com/viamin/paid/issues/2688), [#2689](https://github.com/viamin/paid/issues/2689), [#2958](https://github.com/viamin/paid/issues/2958), [#2959](https://github.com/viamin/paid/issues/2959), [#2960](https://github.com/viamin/paid/issues/2960), [#2961](https://github.com/viamin/paid/issues/2961), [#2962](https://github.com/viamin/paid/issues/2962), [#2963](https://github.com/viamin/paid/issues/2963), [#2964](https://github.com/viamin/paid/issues/2964), [#2965](https://github.com/viamin/paid/issues/2965), [#2966](https://github.com/viamin/paid/issues/2966)
-- **Related RDRs**: RDR-004 (Container Isolation), RDR-006 (Secrets Proxy Architecture), RDR-007 (Agent CLI Abstraction), RDR-010 (Multi-Tenancy and RBAC), RDR-025 (Runner Quota Tracking), RDR-040 (Runner Model Compatibility Contracts), RDR-048 (Multi-Host Docker Backend Support)
+- **Related RDRs**: RDR-004 (Container Isolation), RDR-006 (Secrets Proxy Architecture), RDR-007 (Agent CLI Abstraction), RDR-010 (Multi-Tenancy and RBAC), RDR-025a (Runner Quota Tracking), RDR-040 (Runner Model Compatibility Contracts), RDR-048 (Multi-Host Docker Backend Support)
 
 ## Implementation Status
 

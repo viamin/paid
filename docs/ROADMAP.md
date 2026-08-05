@@ -709,7 +709,7 @@ Deliverables:
 
 **Why this matters**: Users with active subscriptions (Claude Pro, Codex Pro, Copilot Business, Z.ai Coding Max) need to know how close each runner is to hitting its quota, and Paid should proactively avoid routing to nearly-exhausted runners instead of waiting for 429 errors.
 
-**RDR**: [RDR-025](rdrs/RDR-025-runner-quota-tracking.md)
+**RDR**: [RDR-025a](rdrs/RDR-025a-runner-quota-tracking.md)
 
 **Approach**: Provider-specific quota API knowledge and response parsing live in agent-harness (per AGENTS.md boundary). Paid stores credentials, persists snapshots, displays data, and makes routing decisions. Starts with a quick win showing existing internal usage data, then layers on upstream quota polling.
 

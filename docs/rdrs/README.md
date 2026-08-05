@@ -62,7 +62,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | [RDR-010](RDR-010-multi-tenancy-rbac.md) | Multi-Tenancy and RBAC | Implemented | Medium |
 | [RDR-011](RDR-011-observability.md) | Observability Stack | Implemented | Medium |
 | [RDR-039](RDR-039-exception-notification-custom-notifier.md) | Exception Reporting via `exception_notification` Custom Notifier | Implemented | P2 |
-| [RDR-018](RDR-018-billing-aggregation.md) | Billing Aggregation System | Implemented | P2 |
+| [RDR-018a](RDR-018a-billing-aggregation.md) | Billing Aggregation System | Implemented | P2 |
 | [RDR-024](RDR-024-multi-tenancy-isolation-strategy.md) | Multi-Tenancy Isolation Strategy | Implemented | High |
 | [RDR-026](RDR-026-admin-interface-strategy.md) | Admin Interface Strategy | Implemented | Medium |
 | [RDR-029](RDR-029-multi-tenancy-preparation.md) | Multi-Tenancy Preparation | Implemented | High |
@@ -118,7 +118,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
-| [RDR-025](RDR-025-runner-quota-tracking.md) | Runner Quota Tracking and Quota-Aware Routing | Partially Implemented | Medium |
+| [RDR-025a](RDR-025a-runner-quota-tracking.md) | Runner Quota Tracking and Quota-Aware Routing | Partially Implemented | Medium |
 | [RDR-025](RDR-025-provider-quota-tracking.md) | Provider Quota Tracking and Quota-Aware Routing | Superseded | Medium |
 | [RDR-038](RDR-038-free-models-catalog-and-runner.md) | Free Models Catalog and Runner | Implemented | P1 |
 | [RDR-040](RDR-040-runner-model-compatibility-contracts.md) | Runner Model Compatibility Contracts | Implemented | P1 |

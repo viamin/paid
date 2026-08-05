@@ -13,7 +13,7 @@
 
 ## Implementation Status
 
-Superseded by [RDR-025: Runner Quota Tracking and Quota-Aware Routing](RDR-025-runner-quota-tracking.md), which uses the current runner terminology. The active runner quota RDR is partially implemented: Paid has internal usage and reactive rate-limit state, but not proactive upstream quota polling, snapshots, refresh, display, or quota-aware routing.
+Superseded by [RDR-025a: Runner Quota Tracking and Quota-Aware Routing](RDR-025a-runner-quota-tracking.md), which uses the current runner terminology. The active runner quota RDR is partially implemented: Paid has internal usage and reactive rate-limit state, but not proactive upstream quota polling, snapshots, refresh, display, or quota-aware routing.
 
 ## Problem Statement
 

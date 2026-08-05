@@ -9,7 +9,7 @@
 - **Type**: Architecture
 - **Priority**: High
 - **Related Issues**: #740 (Multi-Tenancy Phase 3.7), #729, #730, #731, #732, #733
-- **Related RDRs**: RDR-010 (Multi-Tenancy and RBAC), RDR-024 (Isolation Strategy), RDR-018 (Billing Aggregation)
+- **Related RDRs**: RDR-010 (Multi-Tenancy and RBAC), RDR-024 (Isolation Strategy), RDR-018a (Billing Aggregation)
 - **Related Tests**: `spec/services/accounts/provision_spec.rb`, `spec/models/concerns/tenant_enforcement_spec.rb`
 
 ## Implementation Status
@@ -210,7 +210,7 @@ All changes are additive. The `TenantEnforcement` concern can be removed from `A
 
 - RDR-010: Multi-Tenancy and RBAC (foundational architecture)
 - RDR-024: Multi-Tenancy Isolation Strategy (isolation decisions)
-- RDR-018: Billing Aggregation (billing system design)
+- RDR-018a: Billing Aggregation (billing system design)
 - `app/services/tenant_context.rb` — Context management
 - `app/models/tenant_setting.rb` — Per-tenant configuration
 - `app/services/billing/` — Billing services

@@ -1,4 +1,4 @@
-# RDR-025: Runner Quota Tracking and Quota-Aware Routing
+# RDR-025a: Runner Quota Tracking and Quota-Aware Routing
 
 > Revise during planning; lock at implementation. If wrong, abandon code and iterate RDR.
 
