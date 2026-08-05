@@ -79,15 +79,24 @@ Pick exactly one based on what step 1 found, not on issue-closed state:
 ### 6. Label hygiene (do not block auto-pick)
 
 Closeout and child-gap issues that Paid automation should pick up must **not**
-carry any label from the auto-pick skip set. The default skip labels are
-defined in `app/models/concerns/auto_pick_skip_labels.rb`:
+carry any label from the repository's **effective** auto-pick skip set. That
+set is resolved by `Project#effective_auto_pick_skip_labels` in this order:
+
+1. `project.auto_pick_skip_labels`
+2. `project.effective_owner.user_setting.auto_pick_skip_labels`
+3. `project.account.tenant_setting.auto_pick_skip_labels`
+4. `AutoPickSkipLabels::DEFAULTS`
+
+The built-in fallback defaults in
+`app/models/concerns/auto_pick_skip_labels.rb` are:
 
 ```
 planning, research, waiting, tracking, epic, needs-manual-setup
 ```
 
 - [ ] Confirm the closeout issue (and each child-gap issue) carries **none** of
-      the skip labels above if it should be auto-picked.
+      the effective skip labels configured for that project if it should be
+      auto-picked.
 - [ ] In particular, never label an automation-pickable closeout issue
       `planning` — that label keeps it out of the queue indefinitely.
 - [ ] Reserve `planning` for issues that need human/LLM planning before any
