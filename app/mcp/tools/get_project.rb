@@ -21,6 +21,7 @@ module Tools
     end
 
     def perform(project_id:)
+      # @spec LID-RUNS-006
       project = project_for(project_id)
 
       recent_runs = project.agent_runs.recent.limit(5)
@@ -31,6 +32,7 @@ module Tools
         repo: project.full_name,
         active: project.active,
         default_branch: project.default_branch,
+        lid: Interop::ExternalAgentLidContract.call(project: project),
         recent_runs: recent_runs.map { |r| run_summary(r) },
         created_at: project.created_at,
         updated_at: project.updated_at

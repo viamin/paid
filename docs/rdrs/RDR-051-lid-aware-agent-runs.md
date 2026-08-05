@@ -41,8 +41,11 @@ Phase-by-phase reconciliation:
   `[inferred]` review feedback remains open in #3199.
 - **Phase 5 (conversion polish, coherence gating, incremental tagging)**: partially
   shipped. Coherence checking and PR reporting exist for `create_pr`, `review`, and
-  `lid_planning` runs. Incremental `@spec` maturation remains the intended posture, and the
-  remaining external-agent exposure work is tracked in #3201.
+  `lid_planning` runs. Incremental `@spec` maturation remains the intended posture.
+  External-agent discovery is now shipped through the authenticated interop API and MCP
+  `get_project` surface: callers can discover the effective `lid_mode`, inspect detection
+  metadata, consume the rendered LID workflow contract, and see that `lid_planning` is
+  supported while Planning-PR correction remains unsupported until #3199 lands.
 
 ## Problem Statement
 
