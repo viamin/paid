@@ -107,6 +107,28 @@ RSpec.describe Previews::Lifecycle do
     end
   end
 
+  describe ".stop_project!" do
+    it "serializes project-wide teardown behind the advisory lock" do
+      previous_run = create_existing_preview_agent_run
+      previous = create_existing_preview_session(previous_run)
+      raw_connection = instance_double(PG::Connection, exec_params: true)
+      connection = ActiveRecord::Base.connection
+      allow(connection).to receive(:raw_connection).and_return(raw_connection)
+      lock_key = project.id % 2_147_483_647
+
+      stopped_count = described_class.stop_project!(project:)
+
+      aggregate_failures do
+        expect(stopped_count).to eq(1)
+        expect(previous.reload.status).to eq("stopped")
+        expect(raw_connection).to have_received(:exec_params)
+          .with("SELECT pg_advisory_lock($1, $2)", [ described_class::LOCK_NAMESPACE, lock_key ]).once
+        expect(raw_connection).to have_received(:exec_params)
+          .with("SELECT pg_advisory_unlock($1, $2)", [ described_class::LOCK_NAMESPACE, lock_key ]).once
+      end
+    end
+  end
+
   describe ".stop_session!" do
     it "tears down preview resources, clears the tunnel association, and finalizes the agent run" do
       agent_run = create_existing_preview_agent_run(service_container_ids: [ 101, 202 ], database_url: "postgres://preview")
@@ -121,6 +143,25 @@ RSpec.describe Previews::Lifecycle do
       expect_stopped_preview_agent_run(agent_run)
       expect_preview_resources_to_be_cleaned_up(agent_run, [ 101, 202 ], "postgres://preview")
       expect(PreviewProvisionState.find_by(agent_run: agent_run)).to be_nil
+    end
+
+    it "serializes single-session teardown behind the project advisory lock" do
+      agent_run = create_existing_preview_agent_run
+      session = create_existing_preview_session(agent_run)
+      raw_connection = instance_double(PG::Connection, exec_params: true)
+      connection = ActiveRecord::Base.connection
+      allow(connection).to receive(:raw_connection).and_return(raw_connection)
+      lock_key = project.id % 2_147_483_647
+
+      described_class.stop_session!(preview_session: session)
+
+      aggregate_failures do
+        expect(session.reload.status).to eq("stopped")
+        expect(raw_connection).to have_received(:exec_params)
+          .with("SELECT pg_advisory_lock($1, $2)", [ described_class::LOCK_NAMESPACE, lock_key ]).once
+        expect(raw_connection).to have_received(:exec_params)
+          .with("SELECT pg_advisory_unlock($1, $2)", [ described_class::LOCK_NAMESPACE, lock_key ]).once
+      end
     end
   end
 

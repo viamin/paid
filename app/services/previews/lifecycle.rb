@@ -36,26 +36,40 @@ module Previews
     end
 
     def start!(project:, branch_name:, created_by:)
-      with_project_start_lock(project) do
+      with_project_lock(project) do
         start_unlocked(project:, branch_name:, created_by:)
       end
     end
 
     def restart!(project:, branch_name:, created_by:)
-      with_project_start_lock(project) do
+      with_project_lock(project) do
         start_unlocked(project:, branch_name:, created_by:)
       end
     end
 
     def stop_project!(project:)
+      with_project_lock(project) do
+        stop_project_unlocked(project:)
+      end
+    end
+
+    def stop_session!(preview_session:, terminal_status: "stopped")
+      with_project_lock(preview_session.project) do
+        stop_session_unlocked(preview_session:, terminal_status:)
+      end
+    end
+
+    private
+
+    def stop_project_unlocked(project:)
       sessions = PreviewSession.for_project(project).non_terminal.recent.to_a
       sessions.each do |preview_session|
-        stop_session!(preview_session:, terminal_status: "stopped")
+        stop_session_unlocked(preview_session:, terminal_status: "stopped")
       end
       sessions.size
     end
 
-    def stop_session!(preview_session:, terminal_status: "stopped")
+    def stop_session_unlocked(preview_session:, terminal_status:)
       return false if preview_session.terminal? && terminal_status == "stopped"
 
       agent_run = preview_session.agent_run
@@ -71,10 +85,8 @@ module Previews
       raise Error.new(e.message, preview_session: preview_session)
     end
 
-    private
-
     def start_unlocked(project:, branch_name:, created_by:)
-      stop_project!(project:)
+      stop_project_unlocked(project:)
 
       preview_session = nil
       agent_run = nil
@@ -245,7 +257,7 @@ module Previews
       preview_session.update!(attributes)
     end
 
-    def with_project_start_lock(project)
+    def with_project_lock(project)
       connection = ActiveRecord::Base.connection
       lock_key = project.id % 2_147_483_647
       raw_connection = connection.raw_connection
