@@ -30,7 +30,10 @@ RSpec.describe "chat_messages/_tool_call", :no_db, type: :view do
         "profile_name" => "Solo Automated",
         "project_id" => 42,
         "changes" => [
-          { "key" => "auto_pick_enabled", "from" => false, "to" => true }
+          { "key" => "auto_pick_enabled", "from" => false, "to" => true, "level" => "project" }
+        ],
+        "skipped_levels" => [
+          { "level" => "tenant", "reason" => "Not authorized to update tenant settings" }
         ],
         "unmet_prerequisites" => [],
         "applied_overrides" => {}
@@ -69,6 +72,9 @@ RSpec.describe "chat_messages/_tool_call", :no_db, type: :view do
     expect(rendered).to include("Configuration Profile Plan")
     expect(rendered).to include("Solo Automated for project #42")
     expect(rendered).to include("Auto-pick issues")
+    expect(rendered).to include("project settings")
+    expect(rendered).to include("Tenant settings skipped")
+    expect(rendered).to include("Not authorized to update tenant settings")
     expect(rendered).to include("From:")
     expect(rendered).to include("To:")
     expect(rendered).not_to include("Prerequisites")

@@ -33,6 +33,7 @@ services:
     restart: unless-stopped
     depends_on:
       - prometheus
+      - loki
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-paid-observability}
@@ -59,6 +60,36 @@ services:
       - ./alertmanager:/etc/alertmanager:ro
     ports:
       - "9093:9093"
+    networks:
+      - paid_internal
+
+  loki:
+    image: grafana/loki:3.1.1
+    profiles: ["observability"]
+    restart: unless-stopped
+    command:
+      - -config.file=/etc/loki/config.yml
+    volumes:
+      - ./loki:/etc/loki:ro
+      - loki-data:/loki
+    ports:
+      - "3100:3100"
+    networks:
+      - paid_internal
+
+  promtail:
+    image: grafana/promtail:3.1.1
+    profiles: ["observability"]
+    restart: unless-stopped
+    depends_on:
+      - loki
+    command:
+      - -config.file=/etc/promtail/config.yml
+    volumes:
+      - ./promtail:/etc/promtail:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "9080:9080"
     networks:
       - paid_internal
 
@@ -110,6 +141,7 @@ services:
 volumes:
   prometheus-data:
   grafana-data:
+  loki-data:
 
 secrets:
   # `docker compose` requires the source file to exist on the host when the

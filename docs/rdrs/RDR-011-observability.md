@@ -15,7 +15,7 @@
 
 Implemented with targeted scope reductions that were closed out on August 5, 2026. Paid exposes Prometheus-compatible metrics at `/api/metrics`, collects application metrics through `Metrics::PrometheusCollector`, includes in-app queue monitoring/alerts, and checks in Prometheus configuration/rules, Grafana provisioning assets, Alertmanager routing, exporter definitions, and a Compose observability overlay.
 
-The design was reconciled away from the original `prometheus-client` gem sketch. The shipped implementation keeps the current hand-rolled collector as the Rails metrics source of truth and uses Temporal's native Prometheus exporter for worker runtime telemetry. Remaining observability enhancements that are still desired are now tracked explicitly in follow-up issues instead of leaving this RDR ambiguous: application-level counters/histograms and derived alerts/dashboards in [#3238](https://github.com/viamin/paid/issues/3238), and centralized log aggregation in [#3239](https://github.com/viamin/paid/issues/3239).
+The design was reconciled away from the original `prometheus-client` gem sketch. The shipped implementation keeps the current hand-rolled collector as the Rails metrics source of truth, uses Temporal's native Prometheus exporter for worker runtime telemetry, and now ships centralized self-hosted log aggregation through Loki/Promtail for the Compose observability overlay. Remaining observability enhancement scope is tracked explicitly in focused follow-up issues instead of leaving this RDR ambiguous, such as application-level counters/histograms and derived alerts/dashboards in [#3238](https://github.com/viamin/paid/issues/3238).
 
 ## Problem Statement
 
@@ -751,5 +751,5 @@ Complete. The August 5, 2026 closeout audit determined that the core observabili
 
 - Start with key metrics; add more as needed
 - Tune alert thresholds based on observed patterns
-- Centralized log aggregation remains a follow-up tracked in [#3239](https://github.com/viamin/paid/issues/3239)
+- Centralized structured log aggregation is part of the shipped Compose observability overlay.
 - Dashboard templates can be shared via Grafana JSON export

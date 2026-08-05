@@ -154,7 +154,7 @@ class DashboardController < ApplicationController
   private
 
   def live_agent_runs
-    AgentRun.joins(:project).where(projects: { account_id: current_account.id })
+    AgentRun.excluding_synthetic.joins(:project).where(projects: { account_id: current_account.id })
   end
 
   def set_live_agent_run

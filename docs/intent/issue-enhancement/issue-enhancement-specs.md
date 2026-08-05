@@ -38,7 +38,10 @@
 
 - [x] **ISSUE-ENHANCEMENT-003** — When a project is marked with a non-empty
   `lid_mode` and the issue has answered clarifying questions, the system SHALL
-  surface those answers into the `create_pr` issue prompt as elicited intent.
+  surface those answers into the `create_pr` issue prompt as elicited intent
+  and instruct the implementation run to draft or update the relevant LLD and
+  EARS artifacts from that confirmed human intent before or alongside code
+  changes.
   *Tests:* `spec/services/prompts/build_for_issue_spec.rb`.
   *Code:* `app/services/prompts/build_for_issue.rb#clarifying_answers_section`.
 
