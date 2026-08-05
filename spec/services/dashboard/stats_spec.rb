@@ -406,6 +406,25 @@ RSpec.describe Dashboard::Stats do
       end
     end
 
+    # @spec LIVE-PREVIEW-003
+    context "with synthetic operational runs" do
+      before do
+        create(:agent_run, :completed, project: project, duration_seconds: 100,
+          created_at: 2.days.ago)
+        create(:agent_run, :running, :synthetic, project: project, started_at: 1.minute.ago)
+        create(:agent_run, :synthetic, :completed, project: project, duration_seconds: 50,
+          created_at: 1.day.ago)
+      end
+
+      it "excludes synthetic runs from run volume, active counts, and project breakdowns" do
+        aggregate_failures do
+          expect(stats[:run_volume][:total]).to eq(1)
+          expect(stats[:run_volume][:active]).to eq(0)
+          expect(stats[:runs_by_project].sum { |_name, count| count }).to eq(1)
+        end
+      end
+    end
+
     context "with many completed runs for phase breakdown" do
       it "limits phase breakdown to recent completed runs" do
         travel_to Time.zone.parse("2026-03-20 12:00:00 UTC") do

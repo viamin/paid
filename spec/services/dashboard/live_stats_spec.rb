@@ -37,6 +37,18 @@ RSpec.describe Dashboard::LiveStats do
       )
     end
 
+    # @spec LIVE-PREVIEW-003
+    it "excludes synthetic operational runs from live dashboard counts" do
+      create(:agent_run, project: project, status: "running", started_at: 5.minutes.ago)
+      create(:agent_run, :running, :synthetic, project: project, started_at: 3.minutes.ago)
+      create(:agent_run, :synthetic, project: project, status: "completed", completed_at: 1.hour.ago)
+
+      stats = described_class.call(account: account)
+
+      expect(stats[:active_runs]).to eq(1)
+      expect(stats[:completed_today]).to eq(0)
+    end
+
     it "caches the aggregated payload" do
       create(:agent_run, project: project, status: "running", started_at: 5.minutes.ago)
 

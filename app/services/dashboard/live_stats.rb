@@ -41,7 +41,7 @@ module Dashboard
     end
 
     def agent_runs
-      @agent_runs ||= AgentRun.joins(:project).where(projects: { account_id: account.id })
+      @agent_runs ||= AgentRun.excluding_synthetic.joins(:project).where(projects: { account_id: account.id })
     end
 
     def cache_key

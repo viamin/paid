@@ -139,7 +139,7 @@ module Dashboard
     end
 
     def account_agent_runs
-      @account_agent_runs ||= AgentRun.joins(:project).where(projects: { account_id: account.id })
+      @account_agent_runs ||= AgentRun.excluding_synthetic.joins(:project).where(projects: { account_id: account.id })
     end
 
     def stream_name

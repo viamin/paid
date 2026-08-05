@@ -180,6 +180,17 @@ RSpec.describe Dashboard::LiveBroadcaster do
         )
       )
     end
+
+    # @spec LIVE-PREVIEW-003
+    it "excludes synthetic operational runs from the active-runs broadcast" do
+      real_run = create(:agent_run, project: project, status: "running", started_at: 5.minutes.ago)
+      create(:agent_run, :running, :synthetic, project: project, started_at: 1.minute.ago)
+
+      described_class.call(account: account, agent_run: real_run)
+
+      expect(broadcasted_active_runs).to include(have_attributes(id: real_run.id))
+      expect(broadcasted_active_runs).not_to include(have_attributes(synthetic: true))
+    end
   end
 
   def broadcasted_active_runs

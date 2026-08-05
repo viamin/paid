@@ -48,6 +48,17 @@ RSpec.describe Dashboard::RecentActivity do
       expect(described_class.call(account: account)).to be_empty
     end
 
+    # @spec LIVE-PREVIEW-003
+    it "excludes synthetic operational runs" do
+      create(:agent_run, project: project, status: "completed", completed_at: 1.minute.ago)
+      create(:agent_run, :synthetic, project: project, status: "completed", completed_at: 30.seconds.ago)
+
+      items = described_class.call(account: account)
+
+      expect(items.size).to eq(1)
+      expect(items).not_to include(have_attributes(synthetic: true))
+    end
+
     it "excludes PRs that have not been merged" do
       create(:issue, :pull_request, project: project, pr_review_phase: "ready",
                                     github_updated_at: 1.minute.ago)
