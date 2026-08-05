@@ -5,26 +5,41 @@
 ## Metadata
 
 - **Date**: 2026-05-25
-- **Status**: Partially Implemented
+- **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: P1
-- **Related Issues**: viamin/paid#2371 (this amendment), viamin/paid#2367 (gem-source switch), viamin/paid#2368 (`--usage` cleanup), viamin/paid#2370 (customer UI)
+- **Related Issues**: viamin/paid#3169 (closeout audit), viamin/paid#2371 (this amendment), viamin/paid#2367 (gem-source switch), viamin/paid#2368 (`--usage` cleanup), viamin/paid#2370 (customer UI)
 - **Related RDRs**:
   - [RDR-013](RDR-013-code-quality-backpressure.md) (Code Quality and Backpressure)
   - [RDR-009](RDR-009-prompt-evolution.md) (Prompt Evolution)
   - [RDR-031](RDR-031-focused-agent-runs.md) (Focused Agent Runs)
   - [RDR-035](RDR-035-style-guide-evolution.md) (Style Guide Evolution)
-- **Related Tests**: (to be created during implementation)
+- **Related Tests**:
+  - `spec/system/projects/mutation_test_requirements_spec.rb`
+  - `spec/services/quality_metrics/collect_mutation_score_spec.rb`
+  - `spec/services/quality_feedback/parse_mutant_spec.rb`
 
 ## Implementation Status
 
-Partially implemented. Paid has mutation CI, `bin/mutation`, managed-project mutation pre-commit requirements, container quality-hook support, Mutant feedback parsing, mutation quality metrics, scheduled sweeps, and dashboard reporting. Remaining work includes completing the sanctioned-source transition to `viamin/mutant` as the default, cleaning stale `--usage`/licensing artifacts, and finishing customer-facing configuration tracked by #2370.
+Implemented as of 2026-08-04. Paid ships mutation CI, `bin/mutation`, managed-project mutation pre-commit requirements, container quality-hook support, Mutant feedback parsing, mutation quality metrics, scheduled sweeps, dashboard reporting, the `viamin/mutant` default source, the `--usage`/licensing cleanup, and the project settings UI for customer-facing mutation-test configuration.
+
+See [audit-report-2026-08-04-rdr-036.md](audit-report-2026-08-04-rdr-036.md).
+
+## 2026-08-04 Closeout
+
+The closeout audit for issue [#3169](https://github.com/viamin/paid/issues/3169), recorded in [audit-report-2026-08-04-rdr-036.md](audit-report-2026-08-04-rdr-036.md), confirmed that the three remaining follow-up issues referenced by this RDR are fully shipped:
+
+- `#2367` landed the sanctioned-source switch to `viamin/mutant` for `Gemfile`, `bin/mutation`, and `.github/workflows/mutation.yml`.
+- `#2368` removed stale `--usage` handling and `MUTANT_LICENSE_KEY` plumbing from the mutation command path.
+- `#2370` shipped the project settings UI and seeded defaults for opt-in `mutation_test` pre-commit requirements.
+
+No additional mutation-testing gap remained from the original RDR scope after reconciling the repo state against those issues, so this RDR now closes as fully implemented.
 
 ## Amendment 1 (2026-05-29)
 
 ### Decision
 
-Paid switches the sanctioned mutation-testing source from `mbj/mutant` to the MIT-licensed `viamin/mutant` fork. Follow-on implementation is tracked in `viamin/paid#2367` (gem-source switch), `viamin/paid#2368` (`--usage` cleanup), and `viamin/paid#2370` (customer UI work).
+Paid switches the sanctioned mutation-testing source from `mbj/mutant` to the MIT-licensed `viamin/mutant` fork. That amendment was later completed through `viamin/paid#2367` (gem-source switch), `viamin/paid#2368` (`--usage` cleanup), and `viamin/paid#2370` (customer UI work), all confirmed shipped by the 2026-08-04 closeout audit.
 
 ### Rationale and trade-off
 
@@ -32,7 +47,7 @@ This amendment removes the customer commercial-license burden from the design. T
 
 ### Switch blockers
 
-The upstream blockers that originally gated the switch (`viamin/mutant#9`, `viamin/mutant#10`, `viamin/mutant#11`, `viamin/mutant#12`, and the `--usage` compatibility cleanup in `viamin/mutant#16`) are now closed. Paid should therefore treat `viamin/mutant` as the default sanctioned source and keep `#2370` focused on customer-facing enablement/configuration UX rather than source selection or licensing flow.
+The upstream blockers that originally gated the switch (`viamin/mutant#9`, `viamin/mutant#10`, `viamin/mutant#11`, `viamin/mutant#12`, and the `--usage` compatibility cleanup in `viamin/mutant#16`) are now closed. Paid now treats `viamin/mutant` as the default sanctioned source, and the customer-facing enablement/configuration work originally called out here shipped in `#2370`.
 
 ## Problem Statement
 
@@ -65,7 +80,7 @@ Mutation testing executes the test suite once normally, then re-runs it many tim
 
 The kill rate (killed / total) is the *mutation score*. Unlike line coverage, mutation score cannot be gamed by writing assertion-free tests — those tests will not kill mutations.
 
-Mutant is the selected Ruby implementation family. This RDR now assumes `viamin/mutant` as the sanctioned source, with the adoption blockers tracked in `viamin/mutant#9`, `viamin/mutant#10`, `viamin/mutant#11`, `viamin/mutant#12`, and `viamin/mutant#16`. It supports RSpec (`mutant-rspec`) and Minitest (`mutant-minitest`), runs Ruby 3.2–4.0 on Linux/macOS, forks a worker per CPU, and persists run results under `.mutant/results/` for incremental analysis.
+Mutant is the selected Ruby implementation family. This RDR now assumes `viamin/mutant` as the sanctioned source. The upstream adoption blockers previously tracked in `viamin/mutant#9`, `viamin/mutant#10`, `viamin/mutant#11`, `viamin/mutant#12`, and `viamin/mutant#16` were later closed before Paid completed the source switch. It supports RSpec (`mutant-rspec`) and Minitest (`mutant-minitest`), runs Ruby 3.2–4.0 on Linux/macOS, forks a worker per CPU, and persists run results under `.mutant/results/` for incremental analysis.
 
 Critical mechanics:
 
@@ -95,7 +110,7 @@ Critical mechanics:
 
 | Tool | Status for Paid |
 |------|------|
-| **Mutant** (`viamin/mutant`) | Sanctioned source after Amendment 1. Native Ruby AST mutation, RSpec/Minitest support, incremental mode, structured output under `.mutant/results/`, with current adoption blockers tracked in `viamin/mutant#9`, `viamin/mutant#10`, `viamin/mutant#11`, `viamin/mutant#12`, and `viamin/mutant#16`. **Selected.** |
+| **Mutant** (`viamin/mutant`) | Sanctioned source after Amendment 1. Native Ruby AST mutation, RSpec/Minitest support, incremental mode, and structured output under `.mutant/results/`. The upstream blockers cited during design are now closed. **Selected.** |
 | **mutest** | Mutant fork. Less active. No clear advantage for our use. |
 | **Stryker (Ruby port)** | Not maintained. |
 | **PIT / Stryker JS / Cosmic Ray** | Wrong language. Relevant only if Paid expands beyond Ruby for managed projects — out of scope for this RDR. |
@@ -176,8 +191,8 @@ The design below assumes incremental-by-default and reserves full runs for offli
 2. **`PreCommitRequirement` as the opt-in mechanism.** No new top-level configuration model. Customers already configure pre-commit checks per account/project; adding `mutation_test` as a `check_type` is one row, not a new subsystem.
 3. **`warn` as the default `failure_behavior`.** Mutant findings are noisy on first adoption (many surviving mutations point at redundant production code that should be deleted, not at missing tests). Defaulting to `warn` lets agents and humans triage rather than blocking commits until the corpus is clean.
 4. **Mutation score as one more `QualityMetric`, not a parallel pipeline.** The composite scoring, gating, pause-on-regression, prompt evolution, and style-guide evolution machinery already exists. Surfacing mutation score as a new column rather than a new framework means we get all of those behaviors for free.
-5. **Licensing path (historical only after Amendment 1).** ~~Paid uses `--usage opensource`; customers bring their own license for commercial projects. Paid itself is OSS and runs mutant for free under the opensource usage flag. For Paid-managed projects whose source is *not* open source, the customer holds the commercial license. Paid never proxies, stores, or transmits a customer's mutant license — it lives in the customer's `Gemfile`, `MUTANT_LICENSE_KEY` env, or Rails credentials, exposed to the agent container the same way the customer's GitHub PAT and LLM API keys already are. This avoids both legal exposure for Paid and a secrets-proxy detour. The customer-facing setting form for the `mutation_test` requirement surfaces an "Is this project open source?" toggle that switches the rendered command between `--usage opensource` and `--usage commercial`.~~ Amendment 1 supersedes this with the `viamin/mutant` source switch and the cleanup tracked in `viamin/paid#2368`.
-6. **Tier-1 subjects for Paid itself before whole-codebase ambition.** Security-critical modules first: `Prompts::BuildForIssue.fetch_trusted_comments`, `Prompts::BuildForPr.select_trusted_comments`, `TenantContext`, `SecretsProxyController` policy, `Pundit` policies for high-blast-radius models. Score these to 100% kill before expanding scope. This keeps the runtime budget honest and the signal-to-noise ratio high while `viamin/mutant` closes the blocker set in `viamin/mutant#9`, `viamin/mutant#10`, `viamin/mutant#11`, and `viamin/mutant#12`.
+5. **Licensing path (historical only after Amendment 1).** ~~Paid uses `--usage opensource`; customers bring their own license for commercial projects. Paid itself is OSS and runs mutant for free under the opensource usage flag. For Paid-managed projects whose source is *not* open source, the customer holds the commercial license. Paid never proxies, stores, or transmits a customer's mutant license — it lives in the customer's `Gemfile`, `MUTANT_LICENSE_KEY` env, or Rails credentials, exposed to the agent container the same way the customer's GitHub PAT and LLM API keys already are. This avoids both legal exposure for Paid and a secrets-proxy detour. The customer-facing setting form for the `mutation_test` requirement surfaces an "Is this project open source?" toggle that switches the rendered command between `--usage opensource` and `--usage commercial`.~~ Amendment 1 superseded that path with the `viamin/mutant` source switch, and `viamin/paid#2368` completed the cleanup by removing the stale `--usage` and license-key plumbing from the shipped integration.
+6. **Tier-1 subjects for Paid itself before whole-codebase ambition.** Security-critical modules first: `Prompts::BuildForIssue.fetch_trusted_comments`, `Prompts::BuildForPr.select_trusted_comments`, `TenantContext`, `SecretsProxyController` policy, `Pundit` policies for high-blast-radius models. Score these to 100% kill before expanding scope. This keeps the runtime budget honest and the signal-to-noise ratio high; the upstream blocker set cited during design was resolved before the shipped `viamin/mutant` rollout.
 
 ### Technical Design
 
@@ -254,7 +269,7 @@ jobs:
     # ...same setup, no --since, results posted to internal dashboard
 ```
 
-Amendment 1 removes any separate usage-flag or license-key path from the target design. The local task and CI job should use the same sanitized `viamin/mutant` invocation once `viamin/paid#2367` and `viamin/paid#2368` land.
+Amendment 1 removes any separate usage-flag or license-key path from the target design. The shipped local task and CI job now use the same sanitized `viamin/mutant` invocation after `viamin/paid#2367` and `viamin/paid#2368` landed.
 
 #### 3. PreCommitRequirement extension
 
@@ -394,7 +409,7 @@ For projects with a `mutation_test` requirement, a per-project nightly job runs 
 | Full or incremental in the agent loop? | **Incremental (`--since HEAD~1`).** Full only in nightly sweeps. |
 | Per-worker DBs or `--jobs 1`? | **`--jobs 1` in Phase 1.** Template DBs in Phase 2 if runtime becomes a blocker. |
 | Where to put mutation score? | **`QualityMetric#mutation_kill_rate`.** No parallel pipeline. |
-| Does Paid itself need a mutant license? | **Historical only after Amendment 1:** ~~No. Paid is open source; CI runs `--usage opensource`.~~ The sanctioned `viamin/mutant` source removes this split-path requirement once `viamin/paid#2367` and `viamin/paid#2368` land. |
+| Does Paid itself need a mutant license? | **Historical only after Amendment 1:** ~~No. Paid is open source; CI runs `--usage opensource`.~~ No. The shipped `viamin/mutant` source removed this split-path requirement when `viamin/paid#2367` and `viamin/paid#2368` landed. |
 | Who owns the license for commercial customer projects? | **Historical only after Amendment 1:** ~~The customer. They provide `MUTANT_LICENSE_KEY` as a project env var; Paid forwards it to the agent container but never persists it.~~ Amendment 1 removes customer license-key handling from the target design. |
 | Where to start for Paid itself? | **Tier-1 security-critical subjects.** Expand only after they reach 100% kill. |
 
@@ -483,19 +498,19 @@ For projects with a `mutation_test` requirement, a per-project nightly job runs 
   **Mitigation**: Skip silently when `RUBY_VERSION` is outside the supported range; record `mutation_kill_rate: nil`; log a one-time per-project warning.
 
 - **Risk**: Historical licensing path created compliance and credential UX burden.
-  **Mitigation**: Amendment 1 removes that path by switching the sanctioned source to `viamin/mutant`; the remaining adoption risk is upstream readiness, tracked in `viamin/mutant#9`, `viamin/mutant#10`, `viamin/mutant#11`, `viamin/mutant#12`, and `viamin/mutant#16`.
+  **Mitigation**: Amendment 1 removed that path by switching the sanctioned source to `viamin/mutant`; the upstream readiness concerns cited during design were resolved before the shipped source switch.
 
 ## Implementation Plan
 
 ### Phase 1: Paid Self-Quality (tier-1 only)
 
-1. Add `mutant` and `mutant-rspec` to `Gemfile` (test group) with a comment explaining the configurable source, `bundle install`. ✅ (viamin/paid#2367)
+1. Add `mutant` and `mutant-rspec` to `Gemfile` (test group) with a comment explaining the configurable source, `bundle install`. Completed in `viamin/paid#2367`.
 2. Author `.mutant.yml` at repo root with tier-1 subjects.
 3. Iterate on tier-1 subjects until kill rate is 100%; any surviving mutation either gets a new test or the production code is deleted.
 4. Add `.github/workflows/mutation.yml` with the incremental PR job and nightly cron.
 5. Add a Make/Rake task `bin/mutation` for local incremental runs.
 
-**Gem-source switch (viamin/paid#2367)**: `Gemfile` now sources `mutant` and `mutant-rspec` directly from `https://github.com/viamin/mutant`, making the MIT-licensed fork the default sanctioned source for local runs and CI. The temporary alternate `Gemfile.viamin` / parity-job setup is no longer needed once the upstream blocker set is closed.
+**Gem-source switch (viamin/paid#2367)**: `Gemfile` now sources `mutant` and `mutant-rspec` directly from `https://github.com/viamin/mutant`, making the MIT-licensed fork the default sanctioned source for local runs and CI. The temporary alternate `Gemfile.viamin` / parity-job setup is no longer needed and has been removed.
 
 Historical only after Amendment 1 (2026-05-29): ~~No mutant license key, secret, or credential entry is added to Paid for its own runs.~~ With the default source now on `viamin/mutant`, Paid's own runs, CI, and `.mutant.yml` no longer carry usage-flag or license-key assumptions.
 
@@ -507,7 +522,7 @@ Historical only after Amendment 1 (2026-05-29): ~~No mutant license key, secret,
 4. `Containers::QualityHooks` extension (Section 4 above).
 5. `git_operations.rb` support for `mutation_command` in `install_git_hooks`.
 6. `QualityFeedback::ParseMutant` parser and feedback-loop wiring in `AgentExecutionWorkflow`.
-7. Keep `viamin/paid#2370` focused on the customer-facing settings UI / Avo admin work that remains after the gem-source switch and `--usage` cleanup.
+7. Customer-facing settings UI / Avo admin work shipped in `viamin/paid#2370` after the gem-source switch and `--usage` cleanup.
 
 ### Phase 3: Quality signal integration
 
@@ -523,8 +538,8 @@ Historical only after Amendment 1 (2026-05-29): ~~No mutant license key, secret,
 
 - `Gemfile`, `Gemfile.lock` — add `mutant-rspec`
 - `.mutant.yml` (new)
-- `.github/workflows/mutation.yml` (new; historical draft assumed `--usage opensource`, Amendment 1 removes that split path after `viamin/paid#2368`)
-- `bin/mutation` (new; historical draft assumed `--usage opensource`, Amendment 1 removes that split path after `viamin/paid#2368`)
+- `.github/workflows/mutation.yml` (new; shipped without the old `--usage opensource` split path after `viamin/paid#2368`)
+- `bin/mutation` (new; shipped without the old `--usage opensource` split path after `viamin/paid#2368`)
 
 **Container integration:**
 
@@ -551,11 +566,11 @@ Historical only after Amendment 1 (2026-05-29): ~~No mutant license key, secret,
 ### Dependencies
 
 - `mutant` and `mutant-rspec` gems (test group)
-- `viamin/paid#2367` to switch the sanctioned source to `viamin/mutant`
-- `viamin/paid#2368` to remove `--usage` plumbing
-- `viamin/paid#2370` for customer UI work after the source switch
+- `viamin/paid#2367` switched the sanctioned source to `viamin/mutant`
+- `viamin/paid#2368` removed `--usage` plumbing
+- `viamin/paid#2370` shipped the customer UI work after the source switch
 - Postgres template DB tooling (Phase 2 only, if `--jobs > 1` becomes necessary)
-- Upstream readiness in `viamin/mutant#9`, `viamin/mutant#10`, `viamin/mutant#11`, `viamin/mutant#12`, and `viamin/mutant#16`
+- Historical upstream readiness work in `viamin/mutant#9`, `viamin/mutant#10`, `viamin/mutant#11`, `viamin/mutant#12`, and `viamin/mutant#16` that was resolved before rollout
 
 ## Validation
 

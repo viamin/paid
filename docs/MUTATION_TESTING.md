@@ -8,7 +8,7 @@ Paid now uses the MIT-licensed [`viamin/mutant`](https://github.com/viamin/mutan
 
 - `Gemfile` resolves `mutant` and `mutant-rspec` from `https://github.com/viamin/mutant` on `main`.
 - `.mutant.yml`, `bin/mutation`, and CI all use the same default source and do not carry `--usage` or license-key plumbing.
-- Customer-facing mutation-test enablement and configuration remain tracked separately in `#2370`.
+- Customer-facing mutation-test enablement and configuration ship through the project settings UI and seeded `mutation_test` defaults.
 
 ## CI jobs
 
