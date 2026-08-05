@@ -4,15 +4,23 @@
 
 ## Metadata
 
-- **Status**: Partially Implemented
+- **Status**: Implemented
 - **Date**: 2026-06-13
 - **Priority**: P1
-- **Related Issues**: #2600
+- **Related Issues**: #3171 (closeout), #2600 (implementation)
 - **Related RDRs**: RDR-007 (Agent CLI Abstraction), RDR-008 (Model Selection Strategy), RDR-034 (Tier-Based Runner Fallback), RDR-038 (Free Models Catalog and Runner)
 
 ## Implementation Status
 
-Partially implemented. Paid wraps `AgentHarness.model_compatibility`, filters default tier selection, validates runner tier model maps, rejects incompatible tier candidates during resolution, guards Codex host model leakage, and detects some model-health failures reactively. Remaining work includes applying compatibility in general `Models::Select` override paths, using full compatibility during fallback ordering, passing provider runtime into compatibility checks, and adding proactive drift reporting for active model rows versus runner contracts.
+Implemented. As of the August 4, 2026 closeout audit in
+`docs/rdrs/audit-report-2026-08-04-rdr-040.md`, Paid:
+
+- applies runner compatibility checks across bound-run override paths in `Models::Select`
+- uses `Runners::ModelCompatibility` during compatibility-aware fallback ordering
+- forwards provider runtime into compatibility checks where concrete runner runtime matters
+- proactively reports active `LlmModel` drift against runner contracts through `Models::DetectContractDrift`
+
+`Models::DetectBrokenRunnerModels` remains the reactive backstop, not the primary enforcement point.
 
 ## Problem Statement
 
