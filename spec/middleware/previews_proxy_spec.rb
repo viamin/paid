@@ -130,19 +130,11 @@ RSpec.describe PreviewsProxy do
       stub_request(:any, %r{\Ahttp://127\.0\.0\.1:#{port}/})
     end
 
-    it "redirects the exact /previews/:token root to the canonical slash path" do
+    it "passes the exact /previews/:token root through so Rails can handle the canonical redirect" do
       response = mock_request.get("/previews/s3cret-token")
 
-      expect(response.status).to eq(302)
-      expect(response.headers["location"]).to eq("/previews/s3cret-token/")
-      expect(response.headers["cache-control"]).to eq("no-store")
-    end
-
-    it "preserves the query string when redirecting the exact token root" do
-      response = mock_request.get("/previews/s3cret-token?theme=dark")
-
-      expect(response.status).to eq(302)
-      expect(response.headers["location"]).to eq("/previews/s3cret-token/?theme=dark")
+      expect(response.status).to eq(200)
+      expect(response.body).to eq("fallback")
     end
 
     it "forwards the request to the resolved tunnel port and returns the body" do

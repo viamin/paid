@@ -36,7 +36,8 @@ module PreviewSessions
 
     def reap_session(session)
       TenantContext.with(session.account) do
-        Previews::Lifecycle.stop_session!(preview_session: session, terminal_status: "stopped")
+        Previews::Teardown.call(session)
+        session.mark_stopped!
       end
       true
     rescue Previews::Lifecycle::Error => e

@@ -16,6 +16,47 @@ RSpec.describe "Projects" do
     Projects::Screenshots::RepoConfig::Result.new(config: config, content: content, error: error)
   end
 
+  # Stubs the Docker backend (an external dependency) so preview teardown in the
+  # request flow can be observed without a live Docker daemon, and records the
+  # container id it reports as running so the removal can be asserted.
+  def stub_preview_container_removal(container_id)
+    container = instance_double(Docker::Container, info: { "State" => { "Running" => true } })
+    backend = instance_double(Containers::Backends::Base)
+    allow(backend).to receive(:get_container).with(container_id).and_return(container)
+    allow(backend).to receive(:stop_container)
+    allow(backend).to receive(:delete_container)
+    allow(Containers).to receive(:backend).and_return(backend)
+    @stubbed_preview_backend = backend
+  end
+
+  attr_reader :stubbed_preview_backend
+
+  # Like +stub_preview_container_removal+ but accepts removal of any container
+  # id, for flows that tear down more than one in-flight preview session.
+  def stub_preview_container_removal_for_any
+    container = instance_double(Docker::Container, info: { "State" => { "Running" => true } })
+    backend = instance_double(Containers::Backends::Base)
+    allow(backend).to receive(:get_container).and_return(container)
+    allow(backend).to receive(:stop_container)
+    allow(backend).to receive(:delete_container)
+    allow(Containers).to receive(:backend).and_return(backend)
+    @stubbed_preview_backend = backend
+  end
+
+  # Asserts the preview's live infrastructure was actually torn down: the tunnel
+  # port reservation is released back to the pool and the container removed, not
+  # just the session row updated.
+  def expect_preview_infrastructure_torn_down(reservation:)
+    expect(PreviewTunnelPortReservation.exists?(reservation.id)).to be(false)
+    expect(stubbed_preview_backend).to have_received(:delete_container)
+      .with(anything, force: true, v: true)
+  end
+
+  def enqueued_preview_job_arg
+    job = ActiveJob::Base.queue_adapter.enqueued_jobs.find { |j| j[:job] == PreviewSessions::ProvisionJob }
+    job[:args]
+  end
+
   describe "GET /projects" do
     context "when not authenticated" do
       it "redirects to the sign in page" do
@@ -574,17 +615,41 @@ RSpec.describe "Projects" do
 
         expect(response.body).to include(
           "Live Preview",
+          "Ready",
           "feature/preview",
-          "phoenix",
+          "Phoenix",
           "8242",
-          "Preview session is ready.",
-          %(src="#{preview_path(session.token)}"),
+          "Preview is live.",
+          %(src="#{preview_path(session.token)}/"),
           %(sandbox="allow-forms allow-modals allow-popups allow-presentation allow-scripts"),
           %(referrerpolicy="no-referrer"),
           stop_preview_project_path(project),
           restart_preview_project_path(project)
         )
         expect(response.body).not_to include("allow-same-origin")
+      end
+
+      it "surfaces a provisioning lifecycle state without embedding an iframe" do
+        project = create(:project, account: account, github_token: github_token)
+        create(:preview_session, :provisioning, project: project, branch_name: "feature/wip",
+          tunnel_port: nil, expires_at: 20.minutes.from_now)
+
+        get project_path(project)
+
+        expect(response.body).to include("Provisioning")
+        expect(response.body).to include("Booting the container and installing dependencies")
+        expect(response.body).not_to include("<iframe")
+      end
+
+      it "surfaces a failed state with the error message" do
+        project = create(:project, account: account, github_token: github_token)
+        create(:preview_session, :failed, project: project, branch_name: "feature/broken",
+          error_message: "Could not install dependencies")
+
+        get project_path(project)
+
+        expect(response.body).to include("Failed")
+        expect(response.body).to include("Could not install dependencies")
       end
 
       it "shows the latest terminal preview session instead of an expired active session" do
@@ -1226,49 +1291,38 @@ RSpec.describe "Projects" do
   describe "POST /projects/:id/start_preview" do
     before { sign_in user }
 
-    it "starts a live preview session and redirects back to the preview panel" do
+    it "queues a preview session in the pending state and redirects back to the preview panel" do
       project = create(:project, account: account, github_token: github_token, default_branch: "develop")
-      session = create(:preview_session, :ready, project: project, branch_name: "develop", tunnel_port: 8242,
+      previous = create(:preview_session, :ready, project: project, branch_name: "develop", tunnel_port: 8242,
         container_id: "container-live", agent_run: create(:agent_run, :running, :with_custom_prompt, project: project))
-      allow(Previews::Lifecycle).to receive(:start!).and_return(session)
+      stub_preview_container_removal(previous.container_id)
 
-      post start_preview_project_path(project)
-
-      expect(response).to redirect_to("#{project_path(project)}#preview")
-      expect(flash[:notice]).to eq("Preview started for develop.")
-      expect(Previews::Lifecycle).to have_received(:start!).with(
-        project: project,
-        branch_name: "develop",
-        created_by: user
-      )
-    end
-
-    it "surfaces provisioning failures on the preview session" do
-      project = create(:project, account: account, github_token: github_token, default_branch: "develop")
-      failed_session = create(:preview_session, :failed, project: project, branch_name: "develop", error_message: "preview boot failed")
-      error = Previews::Lifecycle::Error.new("preview boot failed", preview_session: failed_session)
-      allow(Previews::Lifecycle).to receive(:start!).and_raise(error)
-
-      post start_preview_project_path(project)
+      expect {
+        post start_preview_project_path(project)
+      }.to have_enqueued_job(PreviewSessions::ProvisionJob)
 
       expect(response).to redirect_to("#{project_path(project)}#preview")
-      expect(flash[:alert]).to eq("Preview failed for develop: preview boot failed")
-      expect(project.preview_sessions.recent.first).to eq(failed_session)
+      expect(flash[:notice]).to include("Preview queued for develop.")
+      session = project.preview_sessions.recent.first
+      expect(session).to be_present
+      expect(session.id).not_to eq(previous.id)
+      expect(session.branch_name).to eq("develop")
+      expect(session.status).to eq("pending")
+      expect(session.tunnel_port).to be_nil
+      preview_job = ActiveJob::Base.queue_adapter.enqueued_jobs.find do |job|
+        job[:job] == PreviewSessions::ProvisionJob
+      end
+      expect(preview_job[:args]).to eq([ session.id ])
     end
 
     it "starts a preview session for an explicit branch name" do
       project = create(:project, account: account, github_token: github_token, default_branch: "main")
-      allow(Previews::Lifecycle).to receive(:start!).and_return(build_stubbed(:preview_session, project: project))
 
       post start_preview_project_path(project), params: { branch_name: "feature/review-me" }
 
       expect(response).to redirect_to("#{project_path(project)}#preview")
-      expect(flash[:notice]).to eq("Preview started for feature/review-me.")
-      expect(Previews::Lifecycle).to have_received(:start!).with(
-        project: project,
-        branch_name: "feature/review-me",
-        created_by: user
-      )
+      expect(flash[:notice]).to include("feature/review-me")
+      expect(project.preview_sessions.recent.first.branch_name).to eq("feature/review-me")
     end
 
     it "forbids viewers from starting a preview" do
@@ -1287,15 +1341,24 @@ RSpec.describe "Projects" do
   describe "POST /projects/:id/stop_preview" do
     before { sign_in user }
 
-    it "stops the active preview session and tears down its resources" do
+    it "stops the active preview session and tears down its live infrastructure" do
       project = create(:project, account: account, github_token: github_token)
-      allow(Previews::Lifecycle).to receive(:stop_project!).and_return(1)
+      session = create(:preview_session, :ready, project: project, tunnel_port: 8251)
+      reservation = PreviewTunnelPortReservation.create!(
+        reservation_key: "preview_session:#{session.id}",
+        tunnel_port: 8251
+      )
+      stub_preview_container_removal(session.container_id)
 
       post stop_preview_project_path(project)
 
       expect(response).to redirect_to("#{project_path(project)}#preview")
       expect(flash[:notice]).to eq("Preview stopped.")
-      expect(Previews::Lifecycle).to have_received(:stop_project!).with(project: project)
+      expect(session.reload.status).to eq("stopped")
+      expect(session.tunnel_port).to be_nil
+      # Real teardown: the tunnel port reservation is released back to the pool
+      # and the preview container is removed, not just the row updated.
+      expect_preview_infrastructure_torn_down(reservation:)
     end
   end
 
@@ -1304,28 +1367,70 @@ RSpec.describe "Projects" do
 
     it "restarts the latest preview branch and replaces the active session" do
       project = create(:project, account: account, github_token: github_token)
-      create(:preview_session, :ready, project: project, branch_name: "feature/restart")
-      current = create(:preview_session, :ready, project: project, branch_name: "feature/restart", tunnel_port: 8243,
-        container_id: "container-current", agent_run: create(:agent_run, :running, :with_custom_prompt, project: project))
-      allow(Previews::Lifecycle).to receive(:restart!).and_return(current)
+      previous = create(:preview_session, :ready, project: project, branch_name: "feature/restart", tunnel_port: 8252)
+      stub_preview_container_removal(previous.container_id)
+
+      expect {
+        post restart_preview_project_path(project)
+      }.to have_enqueued_job(PreviewSessions::ProvisionJob)
+
+      expect(response).to redirect_to("#{project_path(project)}#preview")
+      expect(flash[:notice]).to include("Preview restarted for feature/restart.")
+      expect(previous.reload.status).to eq("stopped")
+
+      current = project.preview_sessions.recent.first
+      expect(current.id).not_to eq(previous.id)
+      expect(current.branch_name).to eq("feature/restart")
+      expect(current.status).to eq("pending")
+      expect(enqueued_preview_job_arg).to eq([ current.id ])
+    end
+
+    it "tears down the previous session's infrastructure before queueing the new one" do
+      project = create(:project, account: account, github_token: github_token)
+      previous = create(:preview_session, :ready, project: project, branch_name: "feature/restart", tunnel_port: 8252)
+      reservation = PreviewTunnelPortReservation.create!(
+        reservation_key: "preview_session:#{previous.id}",
+        tunnel_port: 8252
+      )
+      stub_preview_container_removal(previous.container_id)
 
       post restart_preview_project_path(project)
 
-      expect(response).to redirect_to("#{project_path(project)}#preview")
-      expect(flash[:notice]).to eq("Preview restarted for feature/restart.")
-      expect(Previews::Lifecycle).to have_received(:restart!).with(
-        project: project,
-        branch_name: "feature/restart",
-        created_by: user
+      # Repeated restarts would otherwise leak reservations until the port pool
+      # is exhausted and keep serving a preview the UI reports as stopped.
+      expect_preview_infrastructure_torn_down(reservation:)
+    end
+
+    it "stops and tears down every in-flight session, so no session is stopped without its infrastructure being released" do
+      project = create(:project, account: account, github_token: github_token)
+      first = create(:preview_session, :ready, project: project, branch_name: "feature/a", tunnel_port: 8261)
+      second = create(:preview_session, :ready, project: project, branch_name: "feature/b", tunnel_port: 8262)
+      first_reservation = PreviewTunnelPortReservation.create!(
+        reservation_key: "preview_session:#{first.id}", tunnel_port: 8261
       )
+      second_reservation = PreviewTunnelPortReservation.create!(
+        reservation_key: "preview_session:#{second.id}", tunnel_port: 8262
+      )
+      backend = stub_preview_container_removal_for_any
+
+      post restart_preview_project_path(project)
+
+      expect(first.reload).to be_stopped
+      expect(second.reload).to be_stopped
+      # The set we stop must be exactly the set we tear down: every stopped
+      # session's tunnel port reservation and container is released, not just a
+      # pre-lock snapshot subset (which would leak a session made non-terminal
+      # between selection and the mark_stopped! sweep).
+      expect(PreviewTunnelPortReservation.exists?(first_reservation.id)).to be(false)
+      expect(PreviewTunnelPortReservation.exists?(second_reservation.id)).to be(false)
+      expect(backend).to have_received(:delete_container).twice.with(anything, force: true, v: true)
     end
   end
 
   describe "GET /previews/:token" do
     before { sign_in user }
 
-    # @spec LIVE-PREVIEW-004
-    it "redirects a live preview token to the canonical proxy root" do
+    it "redirects the exact token root to the trailing-slash proxy path" do
       project = create(:project, account: account, github_token: github_token, name: "My Project")
       session = create(:preview_session, :ready, project: project, branch_name: "feature/preview", framework: "rails",
         tunnel_port: 8242, expires_at: 20.minutes.from_now)
@@ -1333,7 +1438,11 @@ RSpec.describe "Projects" do
 
       get preview_path(session.token)
 
-      expect(response).to redirect_to("#{session.proxy_prefix}/")
+      # The exact `/previews/:token` root is not matched by the PreviewsProxy
+      # middleware; the controller redirects to the trailing-slash URL so the
+      # full proxy path serves it instead of proxying directly here.
+      expect(response).to have_http_status(:moved_permanently)
+      expect(response).to redirect_to("/previews/#{session.token}/")
     end
 
     it "supports nested preview paths on the same token route" do
@@ -1366,6 +1475,18 @@ RSpec.describe "Projects" do
       expect(response.body).to eq("<html>ok</html>")
     end
 
+    it "returns bad gateway over the proxy path when the tunnel never accepts the connection" do
+      project = create(:project, account: account, github_token: github_token)
+      session = create(:preview_session, project: project, branch_name: "feature/proxy", status: "ready",
+        tunnel_port: 8242, container_id: "container-123", expires_at: 20.minutes.from_now)
+      allow(Net::HTTP).to receive(:new).with("127.0.0.1", 8242).and_raise(Errno::ECONNREFUSED, "Connection refused")
+
+      get "#{session.proxy_prefix}/"
+
+      expect(response).to have_http_status(:bad_gateway)
+      expect(response.body).to include("Preview upstream unavailable")
+    end
+
     it "returns not found for expired preview sessions" do
       project = create(:project, account: account, github_token: github_token)
       session = create(:preview_session, :expired, project: project, branch_name: "feature/preview", tunnel_port: 8242)
@@ -1384,7 +1505,7 @@ RSpec.describe "Projects" do
     allow(Net::HTTP).to receive(:new).with("127.0.0.1", 8242).and_return(http)
     allow(http).to receive(:open_timeout=).with(2)
     allow(http).to receive(:read_timeout=).with(5)
-    allow(http).to receive_messages(active?: false, get: upstream_response)
+    allow(http).to receive(:active?).and_return(false)
     allow(http).to receive(:request).with(request).and_yield(upstream_response)
     allow(Net::HTTP::Get).to receive(:new).and_return(request)
     allow(request).to receive(:[]=)

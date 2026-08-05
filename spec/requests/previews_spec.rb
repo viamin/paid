@@ -32,13 +32,16 @@ RSpec.describe "Previews" do
 
         expect(response.body).to include("Live preview")
         expect(response.body).to include("feature/widget")
-        expect(response.body).to include("ready")
+        expect(response.body).to include("Ready")
       end
 
-      it "renders the stop control" do
+      it "hides the stop control from non-admin project members" do
         get preview_session_path(preview_session)
 
-        expect(response.body).to include("Stop preview")
+        # stop? requires an owner/admin account role; a plain project member
+        # can view the preview but must not tear it down.
+        expect(response.body).not_to include("Stop preview")
+        expect(response.body).to include("Back to project")
       end
     end
 
@@ -52,6 +55,12 @@ RSpec.describe "Previews" do
 
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("/previews/iframe-token/")
+      end
+
+      it "renders the stop control" do
+        get preview_session_path(preview_session)
+
+        expect(response.body).to include("Stop preview")
       end
     end
 
@@ -99,6 +108,61 @@ RSpec.describe "Previews" do
         get preview_session_path(id: 999_999_999)
 
         expect(response).to redirect_to(root_path)
+      end
+    end
+
+    context "with lifecycle states" do
+      let(:user) { create(:user, :admin, account: account) }
+
+      before { sign_in user }
+
+      it "surfaces a provisioning state without an iframe" do
+        session = create(:preview_session, :provisioning, project: project,
+          branch_name: "feature/wip", tunnel_port: nil)
+
+        get preview_session_path(session)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Provisioning")
+        expect(response.body).to include("Booting the container and installing dependencies")
+        expect(response.body).not_to include("<iframe")
+      end
+
+      it "surfaces a failed state with the error message" do
+        session = create(:preview_session, :failed, project: project,
+          branch_name: "feature/broken", error_message: "Could not start the app server")
+
+        get preview_session_path(session)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Failed")
+        expect(response.body).to include("Could not start the app server")
+        expect(response.body).not_to include("<iframe")
+      end
+
+      it "surfaces a stopped state with guidance to start a new preview" do
+        session = create(:preview_session, :stopped, project: project,
+          branch_name: "feature/old")
+
+        get preview_session_path(session)
+
+        expect(response).to have_http_status(:ok)
+        expect(response.body).to include("Stopped")
+        expect(response.body).to include("Start a new preview")
+        expect(response.body).not_to include("<iframe")
+      end
+
+      it "only renders the stop control for an active session" do
+        active = create(:preview_session, :provisioning, project: project,
+          branch_name: "feature/active", tunnel_port: nil)
+        stopped = create(:preview_session, :stopped, project: project,
+          branch_name: "feature/done")
+
+        get preview_session_path(active)
+        expect(response.body).to include("Stop preview")
+
+        get preview_session_path(stopped)
+        expect(response.body).not_to include("Stop preview")
       end
     end
   end
@@ -157,6 +221,28 @@ RSpec.describe "Previews" do
       end
     end
 
+    context "when the request hits the exact token root" do
+      let(:user) { create(:user, :viewer, account: account) }
+
+      before do
+        create(:project_membership, project: project, user: user, role: :member)
+        sign_in user
+      end
+
+      it "redirects to the trailing-slash proxy path so the middleware serves it" do
+        get "/previews/#{preview_session.token}"
+
+        expect(response).to have_http_status(:moved_permanently)
+        expect(response).to redirect_to("#{preview_session.proxy_prefix}/")
+      end
+
+      it "preserves the query string across the redirect" do
+        get "/previews/#{preview_session.token}?refresh=1"
+
+        expect(response).to redirect_to("#{preview_session.proxy_prefix}/?refresh=1")
+      end
+    end
+
     context "when the user is not authenticated" do
       it "returns 404 to avoid revealing that the preview exists" do
         get "#{preview_session.proxy_prefix}/"
@@ -176,6 +262,24 @@ RSpec.describe "Previews" do
         expect(response).to have_http_status(:not_found)
       end
     end
+
+    context "when the session is live but not yet proxiable" do
+      let(:user) { create(:user, :viewer, account: account) }
+
+      before do
+        create(:project_membership, project: project, user: user, role: :member)
+        sign_in user
+      end
+
+      it "returns 404 instead of proxying to a nil port" do
+        session = create(:preview_session, :ready, :without_port, project: project,
+          branch_name: "feature/transitional", token: "no-port-token")
+
+        get "/previews/#{session.token}"
+
+        expect(response).to have_http_status(:not_found)
+      end
+    end
   end
 
   describe "POST /projects/:project_id/preview_sessions/:id/stop" do
@@ -183,16 +287,24 @@ RSpec.describe "Previews" do
 
     before { sign_in user }
 
-    it "tears down the preview and redirects to the project" do
-      allow(Previews::Lifecycle).to receive(:stop_session!).and_return(true)
+    it "marks the preview as stopped, tearing down its infrastructure, and redirects to the project" do
+      reservation = PreviewTunnelPortReservation.create!(
+        reservation_key: "preview_session:#{preview_session.id}",
+        tunnel_port: preview_session.tunnel_port
+      )
+      container = instance_double(Docker::Container, info: { "State" => { "Running" => true } })
+      backend = instance_double(Containers::Backends::Base)
+      allow(backend).to receive(:get_container).and_return(container)
+      allow(backend).to receive(:stop_container)
+      allow(backend).to receive(:delete_container)
+      allow(Containers).to receive(:backend).and_return(backend)
 
       post stop_project_preview_session_path(project, preview_session)
 
-      expect(Previews::Lifecycle).to have_received(:stop_session!).with(
-        preview_session: preview_session,
-        terminal_status: "stopped"
-      )
       expect(response).to redirect_to(project_path(project))
+      expect(preview_session.reload.status).to eq("stopped")
+      expect(PreviewTunnelPortReservation.exists?(reservation.id)).to be(false)
+      expect(backend).to have_received(:delete_container).with(container, force: true, v: true)
     end
 
     it "does not allow a non-admin member to stop" do

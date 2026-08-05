@@ -1,16 +1,24 @@
-<% status = preview_session&.status || "not_started" %>
-<% status_label = status == "not_started" ? "Not Started" : status.humanize %>
+<%# Live preview panel: reflects the real PreviewSession lifecycle
+    (queued -> provisioning -> starting -> ready -> failed -> stopped). %>
+<% status = preview_session&.status %>
+<% if preview_session&.expired? %>
+  <% status_badge = "Expired" %>
+<% else %>
+  <% status_badge = preview_session&.status_label || "Not started" %>
+<% end %>
 <% status_classes = case status
                     when "ready"
                       "bg-green-100 text-green-700"
                     when "failed"
                       "bg-red-100 text-red-700"
-                    when "stopped", "not_started"
+                    when "stopped"
                       "bg-gray-100 text-gray-700"
-                    else
+                    when "provisioning", "starting", "pending"
                       "bg-amber-100 text-amber-700"
+                    else
+                      "bg-gray-100 text-gray-700"
                     end %>
-<% ttl_classes = preview_session&.ttl_warning? ? "text-amber-700" : "text-gray-500" %>
+<% show_controls = policy(project).update? %>
 <% branch_field_value = preview_session&.branch_name.presence || project.default_branch %>
 
 <div id="preview" class="mt-6 overflow-hidden rounded-lg bg-white shadow" data-testid="project-preview-panel">
@@ -20,96 +28,31 @@
         <div class="flex flex-wrap items-center gap-3">
           <h2 class="text-lg font-medium text-gray-900">Live Preview</h2>
           <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium <%= status_classes %>" data-testid="project-preview-status">
-            <%= status_label %>
+            <%= status_badge %>
           </span>
         </div>
         <p class="mt-1 text-sm text-gray-500">
           Start a disposable app preview for this project and track its lifecycle from the project page.
         </p>
       </div>
-      <% if policy(project).update? %>
-        <div class="flex flex-wrap items-center gap-2">
-          <% if preview_session&.active? %>
-            <%= button_to "Restart", restart_preview_project_path(project), method: :post,
-              class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 cursor-pointer" %>
-            <%= button_to "Stop", stop_preview_project_path(project), method: :post,
-              class: "inline-flex items-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 cursor-pointer" %>
-          <% else %>
-            <%= form_with url: start_preview_project_path(project), method: :post, class: "flex flex-wrap items-center gap-2" do |form| %>
-              <div>
-                <%= form.label :branch_name, "Branch", class: "sr-only" %>
-                <%= form.text_field :branch_name, value: branch_field_value,
-                  class: "block w-48 rounded-md border-0 px-3 py-2 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600",
-                  placeholder: project.default_branch %>
-              </div>
-              <%= form.submit "Start Preview",
-                class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 cursor-pointer" %>
-            <% end %>
-            <% if preview_session.present? %>
-              <%= button_to "Restart", restart_preview_project_path(project), method: :post,
-                class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 cursor-pointer" %>
-            <% end %>
-          <% end %>
-        </div>
+      <% if show_controls %>
+        <%= render "projects/preview_controls", project: project, preview_session: preview_session,
+          branch_field_value: branch_field_value %>
       <% end %>
     </div>
   </div>
 
   <div class="px-4 py-5 sm:px-6">
     <% if preview_session.present? %>
-      <dl class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <div>
-          <dt class="text-sm font-medium text-gray-500">Branch</dt>
-          <dd class="mt-1 text-sm text-gray-900">
-            <code class="rounded bg-gray-100 px-2 py-1 font-mono text-xs"><%= preview_session.branch_name %></code>
-          </dd>
-        </div>
-        <div>
-          <dt class="text-sm font-medium text-gray-500">Framework</dt>
-          <dd class="mt-1 text-sm text-gray-900"><%= preview_session.framework.presence || "Unknown" %></dd>
-        </div>
-        <div>
-          <dt class="text-sm font-medium text-gray-500">Expires</dt>
-          <dd class="mt-1 text-sm <%= ttl_classes %>">
-            <%= local_time(preview_session.expires_at) %>
-            <% if preview_session.active? %>
-              (<%= local_time(preview_session.expires_at, format: :relative) %> remaining)
-            <% end %>
-          </dd>
-        </div>
-        <div>
-          <dt class="text-sm font-medium text-gray-500">Tunnel Port</dt>
-          <dd class="mt-1 text-sm text-gray-900"><%= preview_session.tunnel_port || "Pending" %></dd>
-        </div>
-      </dl>
-
+      <%= render "projects/preview_meta", preview_session: preview_session %>
       <div class="mt-4 rounded-md border border-dashed border-gray-200 bg-gray-50 p-4">
-        <% if preview_session.live? %>
-          <p class="text-sm font-medium text-gray-900">Preview session is ready.</p>
-          <iframe
-            src="<%= preview_path(preview_session.token) %>"
-            title="Preview for <%= preview_session.branch_name %>"
-            class="mt-3 h-[32rem] w-full rounded-md border border-gray-200 bg-white"
-            loading="lazy"
-            sandbox="allow-forms allow-modals allow-popups allow-presentation allow-scripts"
-            referrerpolicy="no-referrer"
-          ></iframe>
-        <% elsif preview_session.failed? %>
-          <p class="text-sm font-medium text-red-700">Preview provisioning failed.</p>
-          <p class="mt-1 text-sm text-red-600"><%= preview_session.error_message.presence || "Unknown error" %></p>
-        <% elsif preview_session.stopped? %>
-          <p class="text-sm font-medium text-gray-900">Preview session stopped.</p>
-          <p class="mt-1 text-sm text-gray-500">Start a new preview to create a fresh disposable app environment.</p>
-        <% else %>
-          <p class="text-sm font-medium text-amber-700">Preview session is starting.</p>
-          <p class="mt-1 text-sm text-amber-600">Provisioning is in progress. Refresh the page to see the latest state.</p>
-        <% end %>
+        <%= render "projects/preview_state", project: project, preview_session: preview_session %>
       </div>
     <% else %>
       <div class="rounded-md border border-dashed border-gray-200 bg-gray-50 p-4">
         <p class="text-sm font-medium text-gray-900">No preview has been started yet.</p>
         <p class="mt-1 text-sm text-gray-500">
-          Preview sessions default to the project’s configured branch: <code class="rounded bg-white px-1.5 py-0.5 font-mono text-xs"><%= project.default_branch %></code>.
+          Preview sessions default to the project's configured branch: <code class="rounded bg-white px-1.5 py-0.5 font-mono text-xs"><%= project.default_branch %></code>.
         </p>
       </div>
     <% end %>

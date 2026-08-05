@@ -27,7 +27,7 @@ class ProjectsController < ApplicationController
       PreviewSession.for_project(@project).where(status: PreviewSession::TERMINAL_STATUSES).recent.first
     tracker_configuration = IssueTrackers::ResolveConfiguration.call(project: @project, user: current_user)
     @external_links = @project.header_external_links(tracker_configuration: tracker_configuration)
-    @recent_agent_runs = @project.agent_runs.recent.includes(:runner, :issue, project: [ :created_by, :account ]).limit(10).to_a
+    @recent_agent_runs = @project.agent_runs.excluding_synthetic.recent.includes(:runner, :issue, project: [ :created_by, :account ]).limit(10).to_a
     AgentRun.preload_final_runner_records(@recent_agent_runs)
     @stale_agent_runs_count = @project.agent_runs.stale_for_cleanup.count
     @show_stale_cleanup_action = policy(@project).update? && @stale_agent_runs_count.positive?
@@ -383,24 +383,29 @@ class ProjectsController < ApplicationController
     redirect_to project_path(@project), notice: message
   end
 
+  # @spec LIVE-PREVIEW-003
+  # Starts a preview and queues it for real provisioning. The session is left
+  # in the +provisioning+ lifecycle state so the UI reflects the asynchronous
+  # provisioning lifecycle rather than declaring readiness before a live app,
+  # tunnel, or container exists. The provisioning worker transitions it to
+  # +ready+ (or +failed+) once the app is actually serving.
   def start_preview
     # @spec LIVE-PREVIEW-003
     authorize @project, :update?
 
     branch_name = preview_branch_name_param.presence || @project.default_branch
-    Previews::Lifecycle.start!(project: @project, branch_name:, created_by: current_user)
+    queue_preview_provision!(branch_name:)
 
-    redirect_to project_path(@project, anchor: "preview"), notice: "Preview started for #{branch_name}."
-  rescue Previews::Lifecycle::Error => e
-    message = e.preview_session&.error_message.presence || e.message
-    redirect_to project_path(@project, anchor: "preview"), alert: "Preview failed for #{branch_name}: #{message}"
+    redirect_to project_path(@project, anchor: "preview"),
+      notice: "Preview queued for #{branch_name}. It will become available once provisioning completes."
   end
 
   def stop_preview
     authorize @project, :update?
 
-    stopped_count = Previews::Lifecycle.stop_project!(project: @project)
-    notice = stopped_count.zero? ? "No preview was running." : "Preview stopped."
+    sessions = PreviewSession.for_project(@project).non_terminal.to_a
+    sessions.each { |session| stop_preview_session(session) }
+    notice = sessions.empty? ? "No preview was running." : "Preview stopped."
 
     redirect_to project_path(@project, anchor: "preview"), notice: notice
   rescue Previews::Lifecycle::Error => e
@@ -413,12 +418,10 @@ class ProjectsController < ApplicationController
 
     last_branch = PreviewSession.for_project(@project).recent.first&.branch_name
     branch_name = preview_branch_name_param.presence || last_branch.presence || @project.default_branch
-    Previews::Lifecycle.restart!(project: @project, branch_name:, created_by: current_user)
+    queue_preview_provision!(branch_name:)
 
-    redirect_to project_path(@project, anchor: "preview"), notice: "Preview restarted for #{branch_name}."
-  rescue Previews::Lifecycle::Error => e
-    message = e.preview_session&.error_message.presence || e.message
-    redirect_to project_path(@project, anchor: "preview"), alert: "Preview restart failed for #{branch_name}: #{message}"
+    redirect_to project_path(@project, anchor: "preview"),
+      notice: "Preview restarted for #{branch_name}. It will become available once provisioning completes."
   end
 
   def destroy
@@ -463,6 +466,59 @@ class ProjectsController < ApplicationController
     params[:branch_name].to_s.strip.presence
   end
 
+  # @spec LIVE-PREVIEW-003
+  # Stops any in-flight previews for the project and creates a new session in
+  # the +pending+ (queued) lifecycle state, then enqueues provisioning. The
+  # session stays +pending+ until the worker actually picks it up and begins
+  # real work, so the UI can show a distinct "queued" state under worker
+  # backlog instead of advertising provisioning before anything has started.
+  # It is never marked ready until a live app, tunnel, and container exist.
+  def queue_preview_provision!(branch_name:)
+    session = nil
+    sessions_to_teardown = []
+
+    PreviewSession.transaction do
+      @project.with_lock do
+        # Select in-flight sessions and mark them stopped under the same lock so
+        # that the sessions we stop are exactly the sessions we tear down.
+        # Capturing the set before the lock left a race: the provision job or
+        # another request could make a session non-terminal in the gap between
+        # the snapshot and the mark_stopped! sweep, stopping its row without
+        # ever calling Previews::Teardown — leaking its container, tunnel, and
+        # port reservation until a later orphan sweep.
+        PreviewSession.for_project(@project).non_terminal.each do |existing|
+          existing.mark_stopped!
+          sessions_to_teardown << existing
+        end
+        session = PreviewSession.build_for(
+          project: @project,
+          branch_name: branch_name,
+          created_by: current_user
+        )
+        session.save!
+      end
+    end
+
+    # Teardown runs AFTER the transaction committed so external side effects
+    # (container stop/delete, tunnel port release) are never orphaned by a
+    # rollback: if the transaction fails, the sessions still look active and
+    # still have their live resources intact; if it succeeds, the rows are
+    # already stopped before we tear anything down.
+    sessions_to_teardown.each { |s| Previews::Teardown.call(s) }
+    PreviewSessions::ProvisionJob.perform_later(session.id)
+  end
+
+  # Tears down a preview session's live infrastructure (tunnel port + container)
+  # before transitioning it to stopped, so stopping a preview releases the
+  # resources it actually provisioned rather than only updating the row.
+  #
+  # Callers wrapped in a DB transaction MUST NOT use this method inline;
+  # instead split the two steps across the transaction boundary (see
+  # +queue_preview_provision!+ above for the pattern).
+  def stop_preview_session(session)
+    Previews::Teardown.call(session)
+    session.mark_stopped!
+  end
   def apply_nulls_last_ordering(scope)
     sort = @q.sorts.first
     return scope unless sort && NULLS_LAST_SORT_ATTRIBUTES.include?(sort.name)

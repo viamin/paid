@@ -33,8 +33,6 @@ These are real execution surfaces, not placeholders.
 
 The remaining work is end-to-end wiring and lifecycle correctness:
 
-- preview UI still reflects stubbed states instead of a fully asynchronous
-  queued/provisioning/ready/failed lifecycle
 - agent verification still stops at provisioning the browser sidecar instead of
   driving the changed app and persisting a verification outcome
 

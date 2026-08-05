@@ -1,0 +1,21 @@
+<%# Preview lifecycle controls. The available actions depend on the current
+    PreviewSession state so expiry/stopped/failed states stay actionable. %>
+<div class="flex flex-wrap items-center gap-2">
+  <% if preview_session&.active? %>
+    <%= button_to "Restart", restart_preview_project_path(project), method: :post,
+      class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 cursor-pointer" %>
+    <%= button_to "Stop", stop_preview_project_path(project), method: :post,
+      class: "inline-flex items-center rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-red-500 cursor-pointer" %>
+  <% else %>
+    <%= form_with url: start_preview_project_path(project), method: :post, class: "flex flex-wrap items-center gap-2" do |form| %>
+      <div>
+        <%= form.label :branch_name, "Branch", class: "sr-only" %>
+        <%= form.text_field :branch_name, value: branch_field_value,
+          class: "block w-48 rounded-md border-0 px-3 py-2 text-sm text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600",
+          placeholder: project.default_branch %>
+      </div>
+      <%= form.submit preview_session.present? ? "Start New Preview" : "Start Preview",
+        class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 cursor-pointer" %>
+    <% end %>
+  <% end %>
+</div>

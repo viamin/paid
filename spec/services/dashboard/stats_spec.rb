@@ -266,7 +266,7 @@ RSpec.describe Dashboard::Stats do
           cost_cents: 100, tokens_input: 1000, tokens_output: 500, duration_seconds: 60)
         create(:agent_run, :completed, :internal_agent, project: project, goal: "create_pr",
           cost_cents: 9_999, tokens_input: 9000, tokens_output: 9000, duration_seconds: 999,
-          external_metadata: { "preview_session" => true })
+          synthetic: true, external_metadata: { "preview_session" => true })
       end
 
       it "breaks down by goal type" do
@@ -406,6 +406,25 @@ RSpec.describe Dashboard::Stats do
 
       it "only includes runs from the specified account" do
         expect(stats[:run_volume][:total]).to eq(1)
+      end
+    end
+
+    # @spec LIVE-PREVIEW-003
+    context "with synthetic operational runs" do
+      before do
+        create(:agent_run, :completed, project: project, duration_seconds: 100,
+          created_at: 2.days.ago)
+        create(:agent_run, :running, :synthetic, project: project, started_at: 1.minute.ago)
+        create(:agent_run, :synthetic, :completed, project: project, duration_seconds: 50,
+          created_at: 1.day.ago)
+      end
+
+      it "excludes synthetic runs from run volume, active counts, and project breakdowns" do
+        aggregate_failures do
+          expect(stats[:run_volume][:total]).to eq(1)
+          expect(stats[:run_volume][:active]).to eq(0)
+          expect(stats[:runs_by_project].sum { |_name, count| count }).to eq(1)
+        end
       end
     end
 
@@ -766,7 +785,7 @@ RSpec.describe Dashboard::Stats do
       it "excludes preview provisioning runs from merged PR aggregates" do
         create(:agent_run, :completed, :internal_agent, project: project, issue: merged_issue,
           duration_seconds: 9_999, created_at: 1.day.ago, started_at: 1.day.ago,
-          external_metadata: { "preview_session" => true })
+          synthetic: true, external_metadata: { "preview_session" => true })
 
         expect(stats[:issue_completion][:runs_per_issue][:avg]).to eq(3.0)
         expect(stats[:issue_completion][:agent_run_seconds][:avg_seconds]).to eq(600)
@@ -898,7 +917,7 @@ RSpec.describe Dashboard::Stats do
         it "excludes preview provisioning runs from create_pr totals" do
           create(:agent_run, :completed, :internal_agent, project: project, goal: "create_pr",
             completed_at: 2.days.ago,
-            external_metadata: { "preview_session" => true })
+            synthetic: true, external_metadata: { "preview_session" => true })
 
           result = stats[:daily_outcome_chart]
           expect(result[:overall_total]).to eq(4)
@@ -1138,7 +1157,7 @@ RSpec.describe Dashboard::Stats do
           create(:agent_run, :completed, :internal_agent, project: project, goal: "create_pr",
             duration_seconds: 9_999,
             completed_at: Time.zone.local(2026, 5, 1, 16, 0, 0),
-            external_metadata: { "preview_session" => true })
+            synthetic: true, external_metadata: { "preview_session" => true })
 
           avg_series = chart[:series].find { |s| s[:name] == "Average" }
           expect(avg_series[:data]["2026-05-01"]).to eq(150)

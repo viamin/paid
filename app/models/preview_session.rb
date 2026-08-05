@@ -17,6 +17,7 @@ class PreviewSession < ApplicationRecord
   belongs_to :created_by, class_name: "User", optional: true
 
   before_validation :generate_token, on: :create
+  after_commit :broadcast_project_preview_refresh, on: [ :create, :update ], if: :broadcast_project_preview_refresh?
 
   validates :token, presence: true, uniqueness: true, length: { maximum: 64 }
   validates :branch_name, presence: true
@@ -76,6 +77,24 @@ class PreviewSession < ApplicationRecord
     status == "stopped"
   end
 
+  def pending?
+    status == "pending"
+  end
+
+  def provisioning?
+    status == "provisioning"
+  end
+
+  def starting?
+    status == "starting"
+  end
+
+  # True while the preview is advancing toward ready but not yet serving
+  # traffic (queued, provisioning the container, or starting the app/tunnel).
+  def in_progress?
+    %w[pending provisioning starting].include?(status)
+  end
+
   def accessible?
     live? && !expired?
   end
@@ -96,6 +115,10 @@ class PreviewSession < ApplicationRecord
 
   def ttl_warning?
     active? && time_remaining <= EXPIRY_WARNING_SECONDS
+  end
+
+  def mark_provisioning!
+    update!(status: "provisioning")
   end
 
   def mark_ready!(tunnel_port:, container_id: nil)
@@ -135,6 +158,19 @@ class PreviewSession < ApplicationRecord
     Projects::FrameworkProfile.label_for(framework)
   end
 
+  STATUS_LABELS = {
+    "pending" => "Queued",
+    "provisioning" => "Provisioning",
+    "starting" => "Starting",
+    "ready" => "Ready",
+    "stopped" => "Stopped",
+    "failed" => "Failed"
+  }.freeze
+
+  def status_label
+    STATUS_LABELS.fetch(status) { status.humanize }
+  end
+
   def status=(value)
     super
     self.error_message = nil if value != "failed" && error_message.present?
@@ -150,5 +186,18 @@ class PreviewSession < ApplicationRecord
     return unless agent_run && agent_run.project_id != project_id
 
     errors.add(:agent_run, "must belong to the same project")
+  end
+
+  def broadcast_project_preview_refresh?
+    previous_changes.key?("id") ||
+      saved_change_to_status? ||
+      saved_change_to_tunnel_port? ||
+      saved_change_to_error_message? ||
+      saved_change_to_expires_at? ||
+      saved_change_to_branch_name?
+  end
+
+  def broadcast_project_preview_refresh
+    Turbo::StreamsChannel.broadcast_refresh_to(project, :project_updates)
   end
 end

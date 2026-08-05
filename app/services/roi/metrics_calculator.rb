@@ -96,7 +96,7 @@ module Roi
       return {} if issue_ids.empty?
 
       if relation_like?(related_runs)
-        scope = related_runs.excluding_preview_provisioning.where(issue_id: issue_ids).where.not(goal: "create_issue")
+        scope = related_runs.excluding_synthetic.where(issue_id: issue_ids).where.not(goal: "create_issue")
         scope = scope.where(created_at: window) if window
 
         scope.pluck(:issue_id, :created_at).each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |(issue_id, created_at), memo|
@@ -104,7 +104,7 @@ module Roi
         end
       else
         related_runs
-          .select { |run| issue_ids.include?(run.issue_id) && run.goal != "create_issue" && !run.preview_provisioning? }
+          .select { |run| issue_ids.include?(run.issue_id) && run.goal != "create_issue" && !run.synthetic_operational_run? }
           .select { |run| window.nil? || window.cover?(run.created_at) }
           .each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |run, memo|
             memo[run.issue_id] << run.created_at
@@ -126,7 +126,7 @@ module Roi
       runs
         .select do |run|
           run.goal == "create_pr" &&
-            !run.preview_provisioning? &&
+            !run.synthetic_operational_run? &&
             run.status == "completed" &&
             run.pull_request_number.present? &&
             (window.nil? || window.cover?(run.created_at))

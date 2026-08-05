@@ -44,11 +44,11 @@ class PreviewsProxy
     end
   end
 
-  # Matches preview proxy paths for both the canonical root document and nested
-  # assets/routes. Exact `/previews/:token` requests are intercepted only when
-  # the segment resolves to a live preview token; otherwise they fall through
-  # so the numeric wrapper route (`/previews/:id`) can still render normally.
-  PATH_PATTERN = %r{\A/previews/([^/]+)(/.*)?\z}.freeze
+  # Matches `/previews/:token/<path>` where <path> is any non-empty segment,
+  # including the bare root `/`. The exact `/previews/:token` (no trailing path)
+  # intentionally does NOT match — PreviewsController#show redirects it to the
+  # trailing-slash root so this proxy path serves it with full header rewriting.
+  PATH_PATTERN = %r{\A/previews/([^/]+)(/.*)\z}.freeze
 
   # Hop-by-hop headers per RFC 7230 §6.1 — never forwarded verbatim on HTTP.
   # (WebSocket upgrades forward Connection/Upgrade via the raw request path.)
@@ -97,32 +97,30 @@ class PreviewsProxy
     @app.call(env)
   end
 
+  def preview_response_for(env, match:)
+    serve_preview_safely(env, match:)
+  end
+
   # @spec LIVE-PREVIEW-004
-  def serve_preview_safely(env, match:, session:)
-    serve_preview(env, match:, session:)
+  def serve_preview_safely(env, match:)
+    serve_preview(env, match:)
   rescue StandardError => e
     log_error("previews_proxy.request_failed", token: match[1], error: e.message)
     error_response
   end
 
-  def preview_response_for(env, match:)
-    session = resolve_session(match[1])
-    return if passthrough_to_wrapper_route?(match, session)
+  # @spec LIVE-PREVIEW-004
+  def serve_preview(env, match:)
+    token = match[1]
+    proxied_path = match[2]
 
-    serve_preview_safely(env, match:, session:)
-  end
-
-  def serve_preview(env, match:, session:)
-    proxied_path = match[2].presence || "/"
-
+    session = resolve_session(token)
     return not_found unless session&.proxiable?
 
     request = ActionDispatch::Request.new(env)
     return not_found unless authorized_viewer?(request, session)
 
     session.touch_last_accessed!
-    return canonical_root_redirect(request, session) if exact_preview_root?(match)
-    return simulated_response(session, proxied_path) if simulated_session?(session)
 
     if websocket_upgrade?(request)
       hijack_websocket(env, request:, session:, proxied_path:)
@@ -142,10 +140,6 @@ class PreviewsProxy
   rescue ActiveRecord::ConnectionNotEstablished, ActiveRecord::StatementInvalid => e
     log_error("previews_proxy.session_lookup_failed", token:, error: e.message)
     nil
-  end
-
-  def passthrough_to_wrapper_route?(match, session)
-    match[2].nil? && session.nil?
   end
 
   def authorized_viewer?(request, session)
@@ -232,58 +226,6 @@ class PreviewsProxy
     path = proxied_path.to_s
     path = "/" if path.empty?
     query_string.to_s.empty? ? path : "#{path}?#{query_string}"
-  end
-
-  def simulated_session?(session)
-    session.container_id.to_s.start_with?("preview-")
-  end
-
-  def simulated_response(session, proxied_path)
-    current_path = proxied_path.presence || "/"
-    project_name = ERB::Util.html_escape(session.project.full_name)
-    branch_name = ERB::Util.html_escape(session.branch_name)
-    framework = ERB::Util.html_escape(session.framework_label.presence || "unknown")
-
-    body = <<~HTML
-      <!DOCTYPE html>
-      <html lang="en">
-        <head>
-          <meta charset="utf-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1">
-          <title>Preview for #{project_name}</title>
-        </head>
-        <body>
-          <main>
-            <p>Simulated preview</p>
-            <h1>#{project_name}</h1>
-            <p>Branch: #{branch_name}</p>
-            <p>Framework: #{framework}</p>
-            <p>Path: #{ERB::Util.html_escape(current_path)}</p>
-          </main>
-        </body>
-      </html>
-    HTML
-
-    [
-      200,
-      {
-        "content-type" => "text/html; charset=utf-8",
-        "content-security-policy" => "frame-ancestors 'self'",
-        "x-frame-options" => "SAMEORIGIN"
-      },
-      [ body ]
-    ]
-  end
-
-  def exact_preview_root?(match)
-    match[2].nil?
-  end
-
-  def canonical_root_redirect(request, session)
-    target = "#{session.proxy_prefix}/"
-    target = "#{target}?#{request.query_string}" if request.query_string.present?
-
-    [ 302, { "location" => target, "cache-control" => "no-store" }, [] ]
   end
 
   def build_upstream_headers(request:, session:)

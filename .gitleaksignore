@@ -22,3 +22,5 @@ spec/services/policy_controls/evaluate_spec.rb:generic-api-key:32
 spec/services/knowledge/redaction/scanner_spec.rb:private-key:119
 spec/services/knowledge/redaction/scanner_spec.rb:jwt:66
 spec/temporal/activities/create_agent_run_activity_spec.rb:generic-api-key:689
+spec/requests/projects_spec.rb:github-pat:1255
+spec/requests/projects_spec.rb:github-pat:1260

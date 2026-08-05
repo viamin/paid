@@ -13,10 +13,14 @@ FactoryBot.define do
       status { "provisioning" }
     end
 
+    trait :starting do
+      status { "starting" }
+    end
+
     trait :ready do
       status { "ready" }
       sequence(:tunnel_port) { |n| 8200 + (n % 90) }
-      container_id { "preview-abc123" }
+      container_id { "a1b2c3d4e5f6" }
       last_active_at { Time.current }
     end
 

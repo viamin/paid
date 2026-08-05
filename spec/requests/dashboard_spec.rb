@@ -432,6 +432,18 @@ RSpec.describe "Dashboard" do
         expect(response.body).to include("42s")
       end
 
+      # @spec LIVE-PREVIEW-003
+      it "hides synthetic operational runs from the active-runs panel" do
+        real_run = create(:agent_run, project: project, status: "running", started_at: 5.minutes.ago)
+        synthetic_run = create(:agent_run, :running, :synthetic, project: project, started_at: 1.minute.ago)
+
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
+        expect(doc.at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(real_run, :dashboard_row)}"]))).to be_present
+        expect(doc.at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(synthetic_run, :dashboard_row)}"]))).to be_nil
+      end
+
       it "shows knowledge runner health and pipeline metrics" do
         create(:runner_state, :rate_limited, user: user, runner_name: user.settings.kb_embedding_runner)
         create(:runner_state, user: user, runner_name: user.settings.kb_chat_runner, failure_count: 2)

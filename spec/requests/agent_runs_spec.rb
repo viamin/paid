@@ -31,6 +31,17 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include(project.name)
       end
 
+      # @spec LIVE-PREVIEW-003
+      it "excludes synthetic operational runs from the account-wide index" do
+        real = create(:agent_run, :running, project: project)
+        create(:agent_run, :running, :synthetic, project: project)
+
+        get agent_runs_path
+
+        expect(response.body).to include(project_agent_run_path(project, real))
+        expect(response.body).not_to include(project_agent_run_path(project, AgentRun.where(synthetic: true).last))
+      end
+
       it "shows each run goal type label without redundant tooltips" do
         run = create(:agent_run, :with_custom_prompt, project: project, goal: "create_pr",
           custom_prompt: "Implement multi-step OAuth token refresh handling for stale sessions")

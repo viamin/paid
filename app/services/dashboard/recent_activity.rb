@@ -34,7 +34,7 @@ module Dashboard
     end
 
     def completed_agent_runs
-      AgentRun.joins(:project)
+      AgentRun.excluding_synthetic.joins(:project)
         .where(projects: { account_id: account.id })
         .finished
         .where.not(completed_at: nil)
@@ -46,7 +46,7 @@ module Dashboard
     end
 
     def created_agent_runs
-      AgentRun.joins(:project)
+      AgentRun.excluding_synthetic.joins(:project)
         .where(projects: { account_id: account.id })
         .finished
         .where(completed_at: nil)
