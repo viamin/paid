@@ -154,6 +154,7 @@ RSpec.describe Prompts::BuildForIssue do
         expect(prompt).to include("These answers came from the issue's clarifying-question flow.")
         expect(prompt).to include("Treat them as confirmed human intent while implementing the change.")
         expect(prompt).to include("Carry them into any LID artifact updates you make while implementing the change.")
+        expect(prompt).to include("Draft or update the relevant LLD and EARS artifacts from these answers before or alongside code changes.")
         expect(prompt).to include("What problem are we solving for admins?")
         expect(prompt).to include("the system should send the user to `/dashboard`")
       end
