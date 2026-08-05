@@ -4,19 +4,20 @@
 
 ## Metadata
 
-- **Status**: Partially Implemented
+- **Status**: Implemented
 - **Date**: 2026-07-29
 - **Priority**: P1
-- **Related Issues**: #3050 (tracking/closeout), #3049 (RDR PR), implemented phases #3051–#3057, remaining phase #3058 still open as of August 3, 2026
+- **Related Issues**: #3050 (tracking umbrella), #3172 (closeout audit), #3049 (RDR PR), implemented phases #3051–#3058
 - **Related RDRs**: RDR-008 (Model Selection Strategy), RDR-022 (Auto-Merge PR Strategy), RDR-023 (Automation Modularization Architecture), RDR-030 (GitHub App Bot Account), RDR-040 (Runner Model Compatibility Contracts), RDR-041 (Subscription Runner Auth Lifecycle)
 
 ## Implementation Status
 
-Substantially implemented as of August 3, 2026. The shipped system includes the
-`Finding` / `Result` / `Check` registry, isolated coordinator, cached
-per-project `Result`, daily account sweep, dedicated project health page, and
-auto-resolving notification sync. Final closeout remains pending while #3058 is
-still open. No schema changes were introduced.
+Implemented as of August 5, 2026. The shipped system includes the `Finding` /
+`Result` / `Check` registry, isolated coordinator, cached per-project `Result`,
+daily account sweep, dedicated project health page, and auto-resolving
+notification sync. Closeout validation is recorded in
+`docs/rdrs/audit-report-2026-08-05-rdr-049.md`. No schema changes were
+introduced.
 
 ## Problem Statement
 
@@ -257,10 +258,9 @@ Rejected. With network checks in scope (review-bot-installed-on-repo, registry d
 
 The work is broken into phased issues hanging off a tracking (umbrella) issue. Issues use explicit `Depends on #...` lines so auto-pick honors the order. Parallelizable phases are grouped; each phase references this RDR.
 
-Implemented via phased issues #3051–#3057; remaining phase #3058 is still open
-as of August 3, 2026. The plan is retained in the issue history; the current
-design sections above reflect the shipped system to date rather than marking
-the closeout as finished early.
+Implemented via phased issues #3051–#3058, with closeout audit work tracked in
+issue #3172 as of August 5, 2026. The phased plan is retained in the issue
+history; the design sections above now describe the fully shipped system.
 
 ## Validation
 
