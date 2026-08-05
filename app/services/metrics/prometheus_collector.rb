@@ -6,6 +6,12 @@ module Metrics
   class PrometheusCollector
     DURATION_BUCKETS = [ 30, 60, 120, 300, 600, 900, 1_800, 3_600, 7_200 ].freeze
     RUN_OUTCOMES = %w[success failure].freeze
+    RUN_OUTCOME_METRIC = "paid_agent_run_outcomes".freeze
+    RUN_DURATION_BUCKET_METRIC = "paid_agent_run_duration_seconds_bucket".freeze
+    RUN_DURATION_SUM_METRIC = "paid_agent_run_duration_seconds_sum".freeze
+    RUN_DURATION_COUNT_METRIC = "paid_agent_run_duration_seconds_count".freeze
+    RUN_TOKEN_METRIC = "paid_agent_run_tokens".freeze
+    RUN_COST_METRIC = "paid_agent_run_cost_cents".freeze
 
     def self.call # @spec OBSERVABILITY-002
       Rails.cache.fetch("prometheus_metrics", expires_in: 15.seconds) do
@@ -43,7 +49,7 @@ module Metrics
       append_metric_sample(lines, "paid_agent_runs_queued", queued)
 
       collect_agent_run_outcome_metrics(lines)
-      collect_agent_run_duration_histogram(lines)
+      collect_agent_run_duration_metrics(lines)
       collect_agent_run_token_metrics(lines)
       collect_agent_run_cost_metrics(lines)
     end
@@ -170,11 +176,11 @@ module Metrics
     def collect_agent_run_outcome_metrics(lines)
       outcome_counts = finished_run_counts_by_status
 
-      append_metric_header(lines, "paid_agent_run_outcomes_total", "counter", "Total finished agent runs by terminal status and normalized outcome.")
+      append_metric_header(lines, RUN_OUTCOME_METRIC, "gauge", "Current finished agent runs by terminal status and normalized outcome.")
       AgentRun::FINISHED_STATUSES.each do |status|
         append_metric_sample(
           lines,
-          "paid_agent_run_outcomes_total",
+          RUN_OUTCOME_METRIC,
           outcome_counts.fetch(status) { 0 },
           status: status,
           outcome: normalized_outcome_for(status)
@@ -182,40 +188,42 @@ module Metrics
       end
     end
 
-    def collect_agent_run_duration_histogram(lines)
+    def collect_agent_run_duration_metrics(lines)
       duration_counts = finished_run_durations_by_status
 
-      append_metric_header(lines, "paid_agent_run_duration_seconds", "histogram", "Finished agent run durations in seconds by normalized outcome.")
+      append_metric_header(lines, RUN_DURATION_BUCKET_METRIC, "gauge", "Current finished agent run duration bucket counts by normalized outcome.")
+      append_metric_header(lines, RUN_DURATION_SUM_METRIC, "gauge", "Current total finished agent run duration in seconds by normalized outcome.")
+      append_metric_header(lines, RUN_DURATION_COUNT_METRIC, "gauge", "Current finished agent run counts with duration samples by normalized outcome.")
       RUN_OUTCOMES.each do |outcome|
         cumulative = 0
         grouped_counts = duration_counts.fetch(outcome) { Hash.new(0) }
 
         DURATION_BUCKETS.each do |bucket|
           cumulative += grouped_counts.fetch(bucket, 0)
-          append_metric_sample(lines, "paid_agent_run_duration_seconds_bucket", cumulative, outcome: outcome, le: bucket)
+          append_metric_sample(lines, RUN_DURATION_BUCKET_METRIC, cumulative, outcome: outcome, le: bucket)
         end
 
         total_count = grouped_counts.values.sum
-        append_metric_sample(lines, "paid_agent_run_duration_seconds_bucket", total_count, outcome: outcome, le: "+Inf")
-        append_metric_sample(lines, "paid_agent_run_duration_seconds_sum", finished_run_duration_sums.fetch(outcome) { 0 }, outcome: outcome)
-        append_metric_sample(lines, "paid_agent_run_duration_seconds_count", total_count, outcome: outcome)
+        append_metric_sample(lines, RUN_DURATION_BUCKET_METRIC, total_count, outcome: outcome, le: "+Inf")
+        append_metric_sample(lines, RUN_DURATION_SUM_METRIC, finished_run_duration_sums.fetch(outcome) { 0 }, outcome: outcome)
+        append_metric_sample(lines, RUN_DURATION_COUNT_METRIC, total_count, outcome: outcome)
       end
     end
 
     def collect_agent_run_token_metrics(lines)
-      append_metric_header(lines, "paid_agent_run_tokens_total", "counter", "Total finished agent-run tokens by direction and normalized outcome.")
+      append_metric_header(lines, RUN_TOKEN_METRIC, "gauge", "Current finished agent-run tokens by direction and normalized outcome.")
 
       RUN_OUTCOMES.each do |outcome|
-        append_metric_sample(lines, "paid_agent_run_tokens_total", finished_run_input_token_sums.fetch(outcome) { 0 }, direction: "input", outcome: outcome)
-        append_metric_sample(lines, "paid_agent_run_tokens_total", finished_run_output_token_sums.fetch(outcome) { 0 }, direction: "output", outcome: outcome)
+        append_metric_sample(lines, RUN_TOKEN_METRIC, finished_run_input_token_sums.fetch(outcome) { 0 }, direction: "input", outcome: outcome)
+        append_metric_sample(lines, RUN_TOKEN_METRIC, finished_run_output_token_sums.fetch(outcome) { 0 }, direction: "output", outcome: outcome)
       end
     end
 
     def collect_agent_run_cost_metrics(lines)
-      append_metric_header(lines, "paid_agent_run_cost_cents_total", "counter", "Total finished agent-run cost in cents by normalized outcome.")
+      append_metric_header(lines, RUN_COST_METRIC, "gauge", "Current finished agent-run cost in cents by normalized outcome.")
 
       RUN_OUTCOMES.each do |outcome|
-        append_metric_sample(lines, "paid_agent_run_cost_cents_total", finished_run_cost_sums.fetch(outcome) { 0 }, outcome: outcome)
+        append_metric_sample(lines, RUN_COST_METRIC, finished_run_cost_sums.fetch(outcome) { 0 }, outcome: outcome)
       end
     end
 

@@ -750,15 +750,15 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(rate(paid_agent_run_outcomes_total{outcome=\"success\"}[15m]))",
-          "legendFormat": "successes/sec",
+          "expr": "sum(paid_agent_run_outcomes{outcome=\"success\"})",
+          "legendFormat": "successes",
           "range": true,
           "refId": "A"
         },
         {
           "editorMode": "code",
-          "expr": "sum(rate(paid_agent_run_outcomes_total{outcome=\"failure\"}[15m]))",
-          "legendFormat": "failures/sec",
+          "expr": "sum(paid_agent_run_outcomes{outcome=\"failure\"})",
+          "legendFormat": "failures",
           "range": true,
           "refId": "B"
         }
@@ -848,7 +848,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum by (le, outcome) (rate(paid_agent_run_duration_seconds_bucket[15m])))",
+          "expr": "histogram_quantile(0.95, sum by (le, outcome) (paid_agent_run_duration_seconds_bucket))",
           "legendFormat": "{{outcome}} p95",
           "range": true,
           "refId": "A"
@@ -939,8 +939,8 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum by (direction) (rate(paid_agent_run_tokens_total[15m]))",
-          "legendFormat": "{{direction}} tokens/sec",
+          "expr": "sum by (direction) (paid_agent_run_tokens)",
+          "legendFormat": "{{direction}} tokens",
           "range": true,
           "refId": "A"
         }
@@ -1030,8 +1030,8 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(rate(paid_agent_run_cost_cents_total[15m])) * 3600 / 100",
-          "legendFormat": "USD/hour",
+          "expr": "sum(paid_agent_run_cost_cents) / 100",
+          "legendFormat": "USD total",
           "range": true,
           "refId": "A"
         }

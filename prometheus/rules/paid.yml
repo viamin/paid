@@ -66,26 +66,26 @@ groups:
       - alert: PaidAgentRunFailureRateHigh
         expr: |
           (
-            sum(increase(paid_agent_run_outcomes_total{outcome="failure"}[15m]))
+            sum(paid_agent_run_outcomes{outcome="failure"})
             /
-            clamp_min(sum(increase(paid_agent_run_outcomes_total[15m])), 1)
+            clamp_min(sum(paid_agent_run_outcomes), 1)
           ) > 0.4
           and
-          sum(increase(paid_agent_run_outcomes_total[15m])) >= 5
+          sum(paid_agent_run_outcomes) >= 5
         for: 15m
         labels:
           severity: warning
           service: paid-web
         annotations:
           summary: Agent run failure rate is elevated
-          description: More than 40 percent of finished agent runs have ended unsuccessfully for 15 minutes, with at least 5 finished runs observed.
+          description: More than 40 percent of current finished agent runs have ended unsuccessfully for 15 minutes, with at least 5 finished runs present.
 
       - alert: PaidAgentRunDurationP95High
         expr: |
           histogram_quantile(
             0.95,
             sum by (le) (
-              rate(paid_agent_run_duration_seconds_bucket{outcome="success"}[15m])
+              paid_agent_run_duration_seconds_bucket{outcome="success"}
             )
           ) > 1800
         for: 15m

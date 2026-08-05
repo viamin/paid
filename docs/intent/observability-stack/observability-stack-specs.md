@@ -12,10 +12,11 @@
   *Test:* `spec/requests/api/metrics_spec.rb`.
 
 - [x] **OBSERVABILITY-002** — The application metrics collector SHALL expose
-  agent-run status gauges, terminal run outcome counters, run duration
-  histograms, token/cost counters, GoodJob, agent-container, warm-pool,
-  service-container, and Temporal-capacity metrics in Prometheus HELP/TYPE
-  format and SHALL cache the rendered payload for 15 seconds.
+  agent-run status gauges, snapshot gauges for terminal run outcomes,
+  run-duration bucket/sum/count aggregates, token/cost totals, GoodJob,
+  agent-container, warm-pool, service-container, and Temporal-capacity
+  metrics in Prometheus HELP/TYPE format and SHALL cache the rendered payload
+  for 15 seconds.
   *Code:* `app/services/metrics/prometheus_collector.rb`.
   *Test:* `spec/services/metrics/prometheus_collector_spec.rb`.
 

@@ -37,10 +37,10 @@ scrapes while keeping the data fresh enough for dashboards and alerts.
 application metrics. It emits:
 
 - agent-run status counts plus active and queued totals
-- terminal agent-run outcome counters split by success/failure and status
-- completed agent-run duration histograms
-- completed agent-run token counters
-- completed agent-run cost counters
+- current terminal agent-run outcome gauges split by success/failure and status
+- current completed agent-run duration bucket/sum/count aggregates
+- current completed agent-run token totals
+- current completed agent-run cost totals
 - unfinished/running/errored GoodJob queue depth
 - active agent-container counts plus recent CPU and memory aggregates
 - warm container-pool counts and effective target size

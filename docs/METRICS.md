@@ -17,10 +17,12 @@ The checked-in observability stack assets use that split explicitly:
 | `paid_agent_runs_total` | gauge | `status` | Number of agent runs by status (queued, pending, running, completed, failed, etc.) |
 | `paid_agent_runs_active` | gauge | — | Currently active agent runs (pending + running) |
 | `paid_agent_runs_queued` | gauge | — | Agent runs waiting in queue |
-| `paid_agent_run_outcomes_total` | counter | `status`, `outcome` | Total finished runs by terminal status, normalized to `success` (`completed`) or `failure` (all other finished statuses) |
-| `paid_agent_run_duration_seconds` | histogram | `outcome`, `le` | Finished run duration histogram in seconds. Exported with classic Prometheus `_bucket`, `_sum`, and `_count` series |
-| `paid_agent_run_tokens_total` | counter | `direction`, `outcome` | Total finished-run tokens by `input`/`output` direction and normalized outcome |
-| `paid_agent_run_cost_cents_total` | counter | `outcome` | Total finished-run cost in cents by normalized outcome |
+| `paid_agent_run_outcomes` | gauge | `status`, `outcome` | Current finished runs by terminal status, normalized to `success` (`completed`) or `failure` (all other finished statuses) |
+| `paid_agent_run_duration_seconds_bucket` | gauge | `outcome`, `le` | Current cumulative finished-run duration bucket counts in seconds |
+| `paid_agent_run_duration_seconds_sum` | gauge | `outcome` | Current total finished-run duration in seconds |
+| `paid_agent_run_duration_seconds_count` | gauge | `outcome` | Current number of finished runs with duration samples |
+| `paid_agent_run_tokens` | gauge | `direction`, `outcome` | Current finished-run tokens by `input`/`output` direction and normalized outcome |
+| `paid_agent_run_cost_cents` | gauge | `outcome` | Current finished-run cost in cents by normalized outcome |
 
 ## GoodJob Queue Metrics
 
@@ -94,14 +96,14 @@ scrape_configs:
 
 ### Recommended dashboard queries
 
-- Agent run failure ratio over 15 minutes:
-  `sum(increase(paid_agent_run_outcomes_total{outcome="failure"}[15m])) / clamp_min(sum(increase(paid_agent_run_outcomes_total[15m])), 1)`
-- Successful agent run duration p95 over 15 minutes:
-  `histogram_quantile(0.95, sum by (le) (rate(paid_agent_run_duration_seconds_bucket{outcome="success"}[15m])))`
-- Agent run token throughput by direction:
-  `sum by (direction) (rate(paid_agent_run_tokens_total[15m]))`
-- Agent run spend rate in USD/hour:
-  `sum(rate(paid_agent_run_cost_cents_total[15m])) * 3600 / 100`
+- Current agent run failure ratio:
+  `sum(paid_agent_run_outcomes{outcome="failure"}) / clamp_min(sum(paid_agent_run_outcomes), 1)`
+- Current successful agent run duration p95:
+  `histogram_quantile(0.95, sum by (le) (paid_agent_run_duration_seconds_bucket{outcome="success"}))`
+- Current agent run token totals by direction:
+  `sum by (direction) (paid_agent_run_tokens)`
+- Current finished-run spend in USD:
+  `sum(paid_agent_run_cost_cents) / 100`
 - Workflow task queue `schedule_to_start` p95 by task queue:
   `histogram_quantile(0.95, sum by (task_queue, le) (rate(temporal_workflow_task_schedule_to_start_latency_seconds_bucket[5m])))`
 - Activity task queue `schedule_to_start` p95 by task queue:
@@ -122,4 +124,4 @@ Recommended auto-scaling signals:
 
 The original observability RDR proposed adopting the `prometheus-client` Ruby gem. Paid instead ships a hand-rolled collector in `Metrics::PrometheusCollector`, and the checked-in Prometheus rules and Grafana dashboards target that collector as the source of truth.
 
-That design choice means every exported series is derived from persisted application state at scrape time rather than from process-local in-memory counters. The current shipped surface now includes application-level outcome, duration, token, and cost metrics on top of the original queue/capacity gauges, while still keeping the deployment shape unchanged.
+That design choice means every exported series is derived from persisted application state at scrape time rather than from process-local in-memory counters. The current shipped surface now includes application-level outcome, duration, token, and cost snapshot gauges on top of the original queue/capacity gauges, while still keeping the deployment shape unchanged.
