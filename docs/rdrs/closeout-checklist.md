@@ -108,7 +108,7 @@ planning, research, waiting, tracking, epic, needs-manual-setup
 Closeout issues filed before this checklist existed do not need to be rewritten.
 New and existing closeout issues should simply reference this checklist:
 
-> Follows the [RDR Closeout Checklist](./closeout-checklist.md).
+> Follows the [RDR Closeout Checklist](https://github.com/viamin/paid/blob/main/docs/rdrs/closeout-checklist.md).
 
 so the process lives in one place rather than being reinvented per issue.
 
