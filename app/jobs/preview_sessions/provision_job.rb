@@ -85,6 +85,7 @@ module PreviewSessions
         initiating_user: preview_session.created_by,
         agent_type: "internal_agent",
         synthetic: true,
+        external_metadata: { AgentRun::PREVIEW_SESSION_EXTERNAL_METADATA_KEY => true },
         goal: "create_pr",
         custom_prompt: "Provision preview session #{preview_session.id} for #{preview_session.branch_name}",
         trigger_type: "manual",

@@ -21,6 +21,8 @@ RSpec.describe PreviewSessions::ProvisionJob do
     expect(agent_run).to be_present
     expect(agent_run.agent_type).to eq("internal_agent")
     expect(agent_run).to be_synthetic
+    expect(agent_run.preview_provisioning?).to be(true)
+    expect(agent_run.external_metadata).to include(AgentRun::PREVIEW_SESSION_EXTERNAL_METADATA_KEY => true)
     expect(agent_run.branch_name).to eq("feature/live-preview")
     expect(agent_run.status).to eq("completed")
     expect(Previews::Provision).to have_received(:new).with(
