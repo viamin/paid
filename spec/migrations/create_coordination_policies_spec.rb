@@ -42,8 +42,8 @@ RSpec.describe CreateCoordinationPolicies, :aggregate_failures do
 
   it "allows rollback to continue when one policy table was already dropped" do
     migration.up
-    connection.remove_reference(qualified_table_name("coordination_policies"), :current_version, index: true)
-    connection.drop_table(qualified_table_name("coordination_policy_versions"))
+    connection.remove_reference(:coordination_policies, :current_version, index: true)
+    connection.drop_table(:coordination_policy_versions)
     clear_schema_metadata!(connection)
 
     expect { migration.down }.not_to raise_error
