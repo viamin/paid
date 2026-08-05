@@ -42,6 +42,26 @@ module Api
       credentials.where(auth_kind: Array(auth_kinds).map(&:to_s))
     end
 
+    def authenticate_integration_credential!(service_key, auth_kinds:, missing_message: nil)
+      if service_key.blank?
+        render json: { errors: [ missing_message || "service key is required" ] }, status: :unprocessable_content
+        return false
+      end
+
+      credentials = integration_credentials_for(service_key, auth_kinds:)
+
+      if credentials.blank?
+        render json: { errors: [ "No active integration credential configured for #{service_key}" ] }, status: :unauthorized
+        return false
+      end
+
+      provided_token = bearer_token || request.headers["X-Api-Key"].presence
+      return true if credentials.any? { |credential| secure_token_match?(provided_token, credential.secret) }
+
+      render json: { errors: [ "Invalid integration credential" ] }, status: :unauthorized
+      false
+    end
+
     def bearer_token
       request.authorization.to_s.delete_prefix("Bearer ").presence
     end

@@ -8,6 +8,19 @@ RSpec.describe Tools::GetProject do
   let(:session) { create(:chat_session, account: account, created_by: user) }
   let(:tool) { described_class.new(user: user, session: session) }
 
+  def lid_project
+    create(
+      :project,
+      account: account,
+      lid_mode: "full",
+      lid_detection: {
+        "version" => "1.3.0",
+        "sources" => [ "docs/intent/" ],
+        "warnings" => []
+      }
+    )
+  end
+
   describe "#call" do
     it "returns project details" do
       project = create(:project, account: account)
@@ -28,6 +41,23 @@ RSpec.describe Tools::GetProject do
 
       expect(result[:recent_runs].size).to eq(1)
       expect(result[:recent_runs].first[:id]).to eq(run.id)
+    end
+
+    it "includes the external-agent LID contract" do
+      project = lid_project
+
+      result = tool.call(project_id: project.id)
+
+      expect(result.dig(:lid, :configured)).to be(true)
+      expect(result.dig(:lid, :mode)).to eq("full")
+      expect(result.dig(:lid, :detection)).to include(
+        "version" => "1.3.0",
+        "sources" => [ "docs/intent/" ]
+      )
+      expect(result.dig(:lid, :workflow_contract, :implementation_prompt))
+        .to include("## LID-Aware Workflow", "This repository declares Linked-Intent Development mode: `full`.")
+      expect(result.dig(:lid, :planning, :trigger_goal)).to eq("lid_planning")
+      expect(result.dig(:lid, :planning, :planning_pr_correction_supported)).to be(false)
     end
 
     it "raises for project in another account" do

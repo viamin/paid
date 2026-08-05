@@ -24,6 +24,10 @@ module Lid
       new(...).call
     end
 
+    def self.section_for(project:)
+      new(prompt: "", project: project).section
+    end
+
     attr_reader :prompt, :project
 
     def initialize(prompt:, project:)
@@ -34,10 +38,14 @@ module Lid
     def call
       return prompt if prompt.include?(SECTION_HEADING)
 
-      section = build_section
+      section = section()
       return prompt if section.blank?
 
       "#{prompt.rstrip}\n\n#{section}\n"
+    end
+
+    def section
+      build_section
     end
 
     private
