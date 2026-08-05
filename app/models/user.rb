@@ -202,7 +202,7 @@ class User < ApplicationRecord
         return false unless membership
 
         if account_id == account.id
-          successor_membership = account_memberships.where.not(id: membership.id).order(:id).first
+          successor_membership = AccountMembership.where(user_id: id).where.not(id: membership.id).order(:id).first
 
           if successor_membership
             update!(account: successor_membership.account)

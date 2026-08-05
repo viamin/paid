@@ -36,7 +36,12 @@ RSpec.describe Tools::ProposePullRequest do
     run_cmd!("git", "-C", repo.fetch(:host_path), "config", "user.email", "rspec@example.test")
     File.write(File.join(repo.fetch(:host_path), "README.md"), "# Repo One Updated\n")
     run_cmd!("git", "-C", repo.fetch(:host_path), "add", "README.md")
-    run_cmd!("git", "-C", repo.fetch(:host_path), "commit", "-m", "Update README")
+    run_cmd!(
+      "git", "-C", repo.fetch(:host_path),
+      "-c", "user.name=RSpec",
+      "-c", "user.email=rspec@example.test",
+      "commit", "-m", "Update README"
+    )
     run_cmd!("git", "-C", repo.fetch(:source_path), "config", "receive.denyCurrentBranch", "updateInstead")
 
     allow(Tools::RepoWriteCredentialResolver).to receive(:new).and_return(
@@ -447,7 +452,12 @@ RSpec.describe Tools::ProposePullRequest do
         run_cmd!("git", "-C", repo_two.fetch(:host_path), "config", "user.email", "rspec@example.test")
         File.write(File.join(repo_two.fetch(:host_path), "README.md"), "# Upstream change\n")
         run_cmd!("git", "-C", repo_two.fetch(:host_path), "add", "README.md")
-        run_cmd!("git", "-C", repo_two.fetch(:host_path), "commit", "-m", "Upstream change")
+        run_cmd!(
+          "git", "-C", repo_two.fetch(:host_path),
+          "-c", "user.name=RSpec",
+          "-c", "user.email=rspec@example.test",
+          "commit", "-m", "Upstream change"
+        )
         run_cmd!("git", "-C", repo_two.fetch(:source_path), "config", "receive.denyCurrentBranch", "updateInstead")
 
         allow(Tools::RepoWriteCredentialResolver).to receive(:new) do |project:, **|

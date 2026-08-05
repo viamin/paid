@@ -69,8 +69,9 @@ module ChatSessions
     end
 
     def project_for_entry(entry)
-      TenantContext.with(chat_session.account) do
+      TenantContext.with_system_access do
         Project.find_by(id: entry[:project_id])
+          &.then { |project| project if project.account_id == chat_session.account_id }
       end
     end
 

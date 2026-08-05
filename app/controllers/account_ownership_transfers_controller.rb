@@ -6,7 +6,9 @@ class AccountOwnershipTransfersController < ApplicationController
   def create
     authorize current_account, :destroy?
 
-    membership = current_account.account_memberships.find(params[:membership_id])
+    membership = TenantContext.with_system_access do
+      AccountMembership.find_by!(id: params[:membership_id], account_id: current_account.id)
+    end
 
     Accounts::TransferOwnership.call(
       account: current_account,

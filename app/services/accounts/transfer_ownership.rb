@@ -15,28 +15,29 @@ module Accounts
     def call
       TenantContext.with_system_access do
         current_owner = account.account_memberships.find_by!(user: actor)
-        new_owner = new_owner_membership.user
+        target_membership = account.account_memberships.includes(:user).find(new_owner_membership.id)
+        new_owner = target_membership.user
 
         raise AdministrationError, "Only an owner can transfer ownership." unless current_owner.owner?
-        raise AdministrationError, "Membership does not belong to this account." unless new_owner_membership.account_id == account.id
-        raise AdministrationError, "Select a different member." if new_owner_membership.user_id == actor.id
+        raise AdministrationError, "Membership does not belong to this account." unless target_membership.account_id == account.id
+        raise AdministrationError, "Select a different member." if target_membership.user_id == actor.id
 
         ActiveRecord::Base.transaction do
           account.account_memberships.where(role: :owner).find_each do |membership|
             membership.update!(role: :admin)
           end
 
-          new_owner_membership.update!(role: :owner)
+          target_membership.update!(role: :owner)
           new_owner.update!(account: account) if new_owner.account_id != account.id
 
           Accounts::RecordActivity.call(
             account: account,
             actor: actor,
             action: "ownership.transferred",
-            subject: new_owner_membership,
+            subject: target_membership,
             metadata: {
               from_email: actor.email,
-              to_email: new_owner_membership.user.email
+              to_email: target_membership.user.email
             }
           )
         end
