@@ -8,6 +8,10 @@ RSpec.describe Tools::ApplyConfigurationProfile do
   let(:project) { create(:project, account:) }
   let(:session) { create(:chat_session, account:, created_by: owner, project:) }
 
+  before do
+    allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
+  end
+
   def call(profile_id:, overrides: {}, confirmed: true, user: owner)
     described_class.new(user:, session:).call(profile_id:, project_id: project.id, overrides:, confirmed:)
   end
@@ -46,10 +50,8 @@ RSpec.describe Tools::ApplyConfigurationProfile do
   end
 
   it "refuses to apply a blocked profile" do
-    allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(false)
-
     expect {
-      call(profile_id: "team_reviewed", overrides: { owner_reviewer_login: "octocat" })
+      call(profile_id: "team_reviewed")
     }.to raise_error(Configuration::Profiles::BlockedError)
   end
 end

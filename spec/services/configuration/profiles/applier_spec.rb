@@ -11,6 +11,10 @@ RSpec.describe Configuration::Profiles::Applier do
   let(:plan) { Configuration::Profiles::Planner.call(profile:, project:) }
 
   describe "#call" do
+    before do
+      allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
+    end
+
     it "applies each planned change and persists it" do
       results = described_class.call(plan:, project:, actor: owner)
 
@@ -63,7 +67,6 @@ RSpec.describe Configuration::Profiles::Applier do
     end
 
     it "refuses to apply a blocked plan" do
-      allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(false)
       blocked_plan = Configuration::Profiles::Planner.call(profile: Configuration::Profiles::TeamReviewed, project:)
 
       expect(blocked_plan).to be_blocked

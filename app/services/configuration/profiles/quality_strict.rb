@@ -2,12 +2,12 @@
 
 module Configuration
   module Profiles
-    # Broad, high-autonomy posture for a solo operator.
-    module SoloAutomated
+    # High-quality posture with automated review and a strict merge gate.
+    module QualityStrict
       include Base
 
       def self.description
-        "Maximum autonomy for a solo developer: auto-pick, auto-merge everything, paid-agent review, and full auto-release."
+        "Prioritize output quality: paid-agent review and an enabled quality gate gate every change, with auto-enhance filtering issues before work starts. No auto-merge."
       end
 
       def self.targets
@@ -15,30 +15,21 @@ module Configuration
           "auto_pick_enabled" => true,
           "auto_scan_prs" => true,
           "automation_on_label_enabled" => true,
-          "auto_merge_mode" => "all",
+          "auto_merge_mode" => "off",
           "auto_fix_merge_conflicts" => true,
           "merge_method" => "squash",
-          "auto_release_granularity" => "all",
+          "auto_release_granularity" => "off",
           "auto_enhance_enabled" => true,
           "auto_add_labels_enabled" => true,
           "pr_aggregation_enabled" => true,
           "auto_scan_security" => true,
           "knowledge_evolution_enabled" => true,
-          "allow_bot_authored_pr_auto_merge" => true,
-          "adoption_mode" => "full_execution",
+          "allow_bot_authored_pr_auto_merge" => false,
+          "adoption_mode" => "review_only",
           "review_paid_agent" => true,
           "review_copilot" => false,
-          "quality_gate_enabled" => false
+          "quality_gate_enabled" => true
         }
-      end
-
-      def self.clarifying_questions
-        [
-          {
-            id: "quality_gate_enabled",
-            question: "Block PR creation when the quality gate composite score drops below threshold?"
-          }
-        ]
       end
 
       def self.prerequisites_for(_project, targets:)

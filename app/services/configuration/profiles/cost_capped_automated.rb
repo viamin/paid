@@ -2,20 +2,20 @@
 
 module Configuration
   module Profiles
-    # Observation posture with the broader operating-mode surface pinned off.
-    module ObserveOnly
+    # Automation posture that keeps throughput up while reducing spend.
+    module CostCappedAutomated
       include Base
 
       def self.description
-        "Watch the repository without taking any automated action. Safe default while evaluating Paid."
+        "Keep auto-pick and auto-continue running for throughput, but cap spend by limiting auto-merge to dependabot and disabling auto-release, auto-enhance, and knowledge evolution."
       end
 
       def self.targets
         {
-          "auto_pick_enabled" => false,
-          "auto_scan_prs" => false,
-          "automation_on_label_enabled" => false,
-          "auto_merge_mode" => "off",
+          "auto_pick_enabled" => true,
+          "auto_scan_prs" => true,
+          "automation_on_label_enabled" => true,
+          "auto_merge_mode" => "dependabot_only",
           "auto_fix_merge_conflicts" => false,
           "merge_method" => "squash",
           "auto_release_granularity" => "off",
@@ -25,20 +25,11 @@ module Configuration
           "auto_scan_security" => false,
           "knowledge_evolution_enabled" => false,
           "allow_bot_authored_pr_auto_merge" => false,
-          "adoption_mode" => "observe_only",
+          "adoption_mode" => "full_execution",
           "review_paid_agent" => false,
           "review_copilot" => false,
           "quality_gate_enabled" => false
         }
-      end
-
-      def self.clarifying_questions
-        [
-          {
-            id: "active",
-            question: "Keep the project active so Paid continues polling GitHub and observing activity?"
-          }
-        ]
       end
     end
   end

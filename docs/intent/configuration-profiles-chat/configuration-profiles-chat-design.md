@@ -44,13 +44,12 @@ The implementation can build on already-shipped primitives:
 
 ## Active Gap
 
-The missing product surface is substantial:
+The chat-integrated profile flow now exists, but two gaps remain:
 
-- no `update_project_settings` chat tool
-- no profile registry or planner/applier service
-- no batched plan/apply confirmation model for multi-record settings changes
-- no profile-aware system-prompt guidance steering the chat toward vetted
-  operating modes
+- project-only chat profiles still need follow-up work for tenant/user scope
+- operating-mode field coverage and profile catalog must stay unified under the
+  chat-integrated `Configuration::Profiles::*` path instead of drifting against
+  the legacy `ConfigurationProfiles::*` posture helpers
 
 ## What this is not
 
