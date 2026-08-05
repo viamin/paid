@@ -5,6 +5,7 @@ require "shellwords"
 class MutantResultsReader
   RESULTS_DIRECTORY = ".mutant/results"
   RESULT_PATTERNS = [ "*.yml", "*.yaml" ].freeze
+  ENV_ASSIGNMENT_PATTERN = /\A[A-Za-z_][A-Za-z0-9_]*=.*/.freeze
 
   def self.read(worktree_path)
     new(worktree_path:).read
@@ -16,24 +17,47 @@ class MutantResultsReader
     tokens = Shellwords.split(command)
     return command if tokens.empty?
 
+    env_tokens, command_tokens = split_env_prefix(tokens)
     stripped = []
     index = 0
 
-    while index < tokens.length
-      case tokens[index]
+    while index < command_tokens.length
+      case command_tokens[index]
       when "--results-dir"
         index += 2
       when /\A--results-dir=/
         index += 1
       else
-        stripped << tokens[index]
+        stripped << command_tokens[index]
         index += 1
       end
     end
 
-    stripped.concat([ "--results-dir", RESULTS_DIRECTORY ])
-    Shellwords.join(stripped)
+    normalized_env = ensure_test_env(env_tokens)
+    normalized_command = stripped + [ "--results-dir", RESULTS_DIRECTORY ]
+
+    [ normalized_env.join(" "), Shellwords.join(normalized_command) ].reject(&:blank?).join(" ")
   end
+
+  def self.split_env_prefix(tokens)
+    env_tokens = []
+    index = 0
+
+    while index < tokens.length && tokens[index].match?(ENV_ASSIGNMENT_PATTERN)
+      env_tokens << tokens[index]
+      index += 1
+    end
+
+    [ env_tokens, tokens.drop(index) ]
+  end
+  private_class_method :split_env_prefix
+
+  def self.ensure_test_env(env_tokens)
+    return env_tokens if env_tokens.any? { |token| token.start_with?("RAILS_ENV=") }
+
+    env_tokens + [ "RAILS_ENV=test" ]
+  end
+  private_class_method :ensure_test_env
 
   def initialize(worktree_path:)
     @worktree_path = worktree_path

@@ -73,12 +73,13 @@ module Containers
       tokens = Shellwords.split(command.to_s)
       return if tokens.empty?
 
+      env_tokens, command_tokens = MutantResultsReader.send(:split_env_prefix, tokens)
       normalized = []
       jobs_overridden = false
       index = 0
 
-      while index < tokens.length
-        token = tokens[index]
+      while index < command_tokens.length
+        token = command_tokens[index]
 
         case token
         when "--since"
@@ -104,8 +105,7 @@ module Containers
       end
 
       normalized.concat([ "--jobs", "1" ]) unless jobs_overridden
-      normalized.concat([ "--results-dir", MutantResultsReader::RESULTS_DIRECTORY ])
-      Shellwords.join(normalized)
+      MutantResultsReader.with_results_dir(Shellwords.join(env_tokens + normalized))
     end
   end
 end
