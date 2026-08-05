@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_05_045119) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_05_120812) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -333,6 +333,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_05_045119) do
     t.index ["prompt_version_id"], name: "index_agent_runs_on_prompt_version_id"
     t.index ["proxy_token"], name: "index_agent_runs_on_proxy_token", unique: true
     t.index ["runner_id"], name: "index_agent_runs_on_runner_id"
+    t.index ["status", "completed_at"], name: "index_agent_runs_on_status_completed_at"
     t.index ["status"], name: "index_agent_runs_on_status"
     t.index ["temporal_workflow_id"], name: "index_agent_runs_on_temporal_workflow_id"
   end

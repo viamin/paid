@@ -5,6 +5,7 @@ require "rails_helper"
 RSpec.describe Metrics::PrometheusCollector do # @spec OBSERVABILITY-002
   before do
     GoodJob::Job.delete_all
+    Rails.cache.clear
   end
 
   describe ".call" do
@@ -19,6 +20,12 @@ RSpec.describe Metrics::PrometheusCollector do # @spec OBSERVABILITY-002
       expect(output).to include("paid_agent_runs_total")
       expect(output).to include("paid_agent_runs_active")
       expect(output).to include("paid_agent_runs_queued")
+      expect(output).to include("paid_agent_run_outcomes_window")
+      expect(output).to include("paid_agent_run_duration_seconds_bucket_window")
+      expect(output).to include("paid_agent_run_duration_seconds_sum_window")
+      expect(output).to include("paid_agent_run_duration_seconds_count_window")
+      expect(output).to include("paid_agent_run_tokens_window")
+      expect(output).to include("paid_agent_run_cost_cents_window")
     end
 
     it "includes GoodJob metrics" do
@@ -54,7 +61,9 @@ RSpec.describe Metrics::PrometheusCollector do # @spec OBSERVABILITY-002
         create(:agent_run, :running, container_id: "ctr-2")
         create(:agent_run, :queued)
         create(:agent_run, :queued, temporal_workflow_id: "wf-123")
-        create(:agent_run, :completed)
+        create(:agent_run, :completed, :with_metrics, duration_seconds: 120)
+        create(:agent_run, :failed, tokens_input: 30, tokens_output: 10, cost_cents: 7, duration_seconds: 300)
+        create(:agent_run, :cancelled, tokens_input: 20, tokens_output: 0, cost_cents: 0, duration_seconds: 90)
       end
 
       it "reports correct active count" do
@@ -71,6 +80,71 @@ RSpec.describe Metrics::PrometheusCollector do # @spec OBSERVABILITY-002
 
       it "reports active container count" do
         expect(output).to include("paid_containers_active 2")
+      end
+
+      it "reports terminal run outcomes as snapshot gauges" do
+        expect(output).to include('paid_agent_run_outcomes_window{status="completed",outcome="success"} 1')
+        expect(output).to include('paid_agent_run_outcomes_window{status="failed",outcome="failure"} 1')
+        expect(output).to include('paid_agent_run_outcomes_window{status="cancelled",outcome="non_provider"} 1')
+      end
+
+      it "maps no_output to the success outcome bucket" do
+        create(:agent_run, :no_output, tokens_input: 400, tokens_output: 0, cost_cents: 3,
+               completed_at: Time.current, duration_seconds: 45)
+        Rails.cache.clear
+        refreshed = described_class.call
+
+        expect(refreshed).to include('paid_agent_run_outcomes_window{status="no_output",outcome="success"} 1')
+        expect(refreshed).to include('paid_agent_run_tokens_window{direction="input",outcome="success"} 10400')
+      end
+
+      it "reports duration distribution gauges and aggregates" do
+        expect(output).to include('paid_agent_run_duration_seconds_bucket_window{outcome="success",le="300"} 1')
+        expect(output).to include('paid_agent_run_duration_seconds_bucket_window{outcome="failure",le="300"} 1')
+        expect(output).to include('paid_agent_run_duration_seconds_bucket_window{outcome="non_provider",le="300"} 1')
+        expect(output).to include('paid_agent_run_duration_seconds_sum_window{outcome="success"} 120')
+        expect(output).to include('paid_agent_run_duration_seconds_sum_window{outcome="failure"} 300')
+        expect(output).to include('paid_agent_run_duration_seconds_sum_window{outcome="non_provider"} 90')
+        expect(output).to include('paid_agent_run_duration_seconds_count_window{outcome="success"} 1')
+        expect(output).to include('paid_agent_run_duration_seconds_count_window{outcome="failure"} 1')
+        expect(output).to include('paid_agent_run_duration_seconds_count_window{outcome="non_provider"} 1')
+      end
+
+      it "reports token gauges split by direction and outcome" do
+        expect(output).to include('paid_agent_run_tokens_window{direction="input",outcome="success"} 10000')
+        expect(output).to include('paid_agent_run_tokens_window{direction="output",outcome="success"} 5000')
+        expect(output).to include('paid_agent_run_tokens_window{direction="input",outcome="failure"} 30')
+        expect(output).to include('paid_agent_run_tokens_window{direction="output",outcome="failure"} 10')
+        expect(output).to include('paid_agent_run_tokens_window{direction="input",outcome="non_provider"} 20')
+        expect(output).to include('paid_agent_run_tokens_window{direction="output",outcome="non_provider"} 0')
+      end
+
+      it "reports cost gauges by outcome" do
+        expect(output).to include('paid_agent_run_cost_cents_window{outcome="success"} 150')
+        expect(output).to include('paid_agent_run_cost_cents_window{outcome="failure"} 7')
+        expect(output).to include('paid_agent_run_cost_cents_window{outcome="non_provider"} 0')
+      end
+
+      it "updates finished-run gauges when a terminal row mutates" do
+        expect(output).to include('paid_agent_run_outcomes_window{status="failed",outcome="failure"} 1')
+        AgentRun.find_by!(status: "failed").update!(status: "retried")
+        Rails.cache.clear
+        refreshed_output = described_class.call
+        expect(refreshed_output).to include('paid_agent_run_outcomes_window{status="failed",outcome="failure"} 0')
+        expect(refreshed_output).to include('paid_agent_run_outcomes_window{status="retried",outcome="non_provider"} 1')
+      end
+
+      it "excludes finished runs older than the FINISHED_RUN_WINDOW" do
+        create(
+          :agent_run,
+          :completed,
+          :with_metrics,
+          duration_seconds: 45,
+          completed_at: (Metrics::PrometheusCollector::FINISHED_RUN_WINDOW + 1.hour).ago
+        )
+
+        expect(output).not_to include('paid_agent_run_outcomes_window{status="completed",outcome="success"} 2')
+        expect(output).to include('paid_agent_run_outcomes_window{status="completed",outcome="success"} 1')
       end
     end
 
@@ -214,6 +288,15 @@ RSpec.describe Metrics::PrometheusCollector do # @spec OBSERVABILITY-002
       expect(help_lines).not_to be_empty
       expect(type_lines).not_to be_empty
       expect(type_lines.length).to eq(help_lines.length)
+    end
+
+    it "declares mutable finished-run aggregates as gauges" do
+      expect(output).to include("# TYPE paid_agent_run_outcomes_window gauge\n")
+      expect(output).to include("# TYPE paid_agent_run_duration_seconds_bucket_window gauge\n")
+      expect(output).to include("# TYPE paid_agent_run_duration_seconds_sum_window gauge\n")
+      expect(output).to include("# TYPE paid_agent_run_duration_seconds_count_window gauge\n")
+      expect(output).to include("# TYPE paid_agent_run_tokens_window gauge\n")
+      expect(output).to include("# TYPE paid_agent_run_cost_cents_window gauge\n")
     end
   end
 end
