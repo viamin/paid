@@ -2207,7 +2207,7 @@ RSpec.describe ProcessRunQueueJob do
     )
   end
 
-  describe "#temporal_priority_for" do
+  describe "#temporal_priority_for" do # @spec QUEUE-TIER-001
     let(:project) { create(:project) }
     let(:expected_temporal_keys) do
       {

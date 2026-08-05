@@ -194,11 +194,14 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
       end
 
       if workflow_path == ".github/workflows/ci.yml"
+        # @spec POSTGRESQL-PERSISTENCE-007
         it "replays migrations in a dedicated CI job" do
           job = workflow.fetch("jobs").fetch("migrations")
           setup_step = job.fetch("steps").find { |step| step["name"] == "Replay migrations" }
+          drift_step = job.fetch("steps").find { |step| step["name"] == "Verify canonical schema dump" }
 
           expect(setup_step).not_to be_nil, "expected migrations job to include a Replay migrations step"
+          expect(drift_step).not_to be_nil, "expected migrations job to verify schema dump drift"
           expect(job.fetch("env")).to include(
             "PAID_TEST_DATABASE" => "paid_test",
             "RAILS_TEST_KEY" => "${{ secrets.RAILS_TEST_KEY }}",
@@ -206,6 +209,7 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
             "DB_PASSWORD" => "postgres"
           )
           expect(setup_step.fetch("run")).to eq("env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails db:create db:migrate")
+          expect(drift_step.fetch("run").strip).to eq("bin/rails db:schema:dump\ngit diff --exit-code db/schema.rb")
         end
       end
     end

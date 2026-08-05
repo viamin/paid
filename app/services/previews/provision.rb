@@ -39,7 +39,7 @@ module Previews
       end
 
       def release_baseline(agent_run)
-        with_provision_state(agent_run) do |state|
+        with_provision_state(agent_run, create_if_missing: false) do |state|
           return empty_provision_state_snapshot unless state
 
           state.active_count -= 1
@@ -57,14 +57,15 @@ module Previews
 
       private
 
-      def with_provision_state(agent_run)
+      def with_provision_state(agent_run, create_if_missing: true)
         PreviewProvisionState.transaction do
-          yield(lock_provision_state(agent_run))
+          yield(lock_provision_state(agent_run, create_if_missing:))
         end
       end
 
-      def lock_provision_state(agent_run)
-        PreviewProvisionState.lock.find_by(agent_run_id: agent_run.id) || create_provision_state!(agent_run)
+      def lock_provision_state(agent_run, create_if_missing: true)
+        PreviewProvisionState.lock.find_by(agent_run_id: agent_run.id) ||
+          (create_provision_state!(agent_run) if create_if_missing)
       end
 
       def create_provision_state!(agent_run)
@@ -175,6 +176,7 @@ module Previews
 
     def provision_container!
       @container_service = Containers::Provision.new(
+        agent_run: agent_run,
         project:,
         worktree_path: repo_path,
         memory_bytes: MEMORY_BYTES,
@@ -192,7 +194,7 @@ module Previews
         agent_run:
       )
       git_ops.clone_and_checkout_branch(
-        branch_name: agent_run.branch_name,
+        branch_name: preview_branch_name,
         pull_request_number: agent_run.pull_request_number,
         persist: false
       )
@@ -368,6 +370,10 @@ module Previews
           project.detected_framework
         framework&.to_sym || Screenshots::DetectFramework.detect_framework_only(repo_path:)
       end
+    end
+
+    def preview_branch_name
+      preview_session&.branch_name.presence || agent_run.branch_name
     end
 
     def readiness_probe_command

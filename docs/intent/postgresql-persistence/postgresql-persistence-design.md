@@ -19,12 +19,17 @@ indexing features.
 
 The application schema uses PostgreSQL features directly: JSONB columns, GIN and
 trigram indexes, full-text search, row-level security, and database-backed job
-infrastructure. Rails remains on `db/schema.rb`, with PostgreSQL functions and
-triggers handled through `fx` where applicable.
+infrastructure. Rails remains on `db/schema.rb`, which is the canonical schema
+artifact. PostgreSQL functions and triggers are handled through versioned `fx`
+definitions, and CI rejects migration paths that dump a different `schema.rb`
+than the checked-in canonical copy.
 
 Tenant isolation is enforced in PostgreSQL with helper functions driven by
 `paid.current_account_id` and `paid.bypass_tenant_rls`. The application also
-guards against unsafe runtime roles that would bypass those policies.
+guards against unsafe runtime roles that would bypass those policies. The
+shipped policy set does not just hide rows on reads; it also rejects
+cross-tenant join rows and direct-account writes whose foreign keys point at a
+different tenant.
 
 Sensitive GitHub tokens are encrypted at rest through Rails encrypted
 attributes, and the token records retain change history through Logidze.

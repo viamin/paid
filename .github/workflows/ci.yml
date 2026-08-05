@@ -364,6 +364,11 @@ jobs:
       - name: Replay migrations
         run: env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails db:create db:migrate
 
+      - name: Verify canonical schema dump
+        run: |
+          bin/rails db:schema:dump
+          git diff --exit-code db/schema.rb
+
   fasterer:
     if: >-
       github.event_name != 'pull_request'

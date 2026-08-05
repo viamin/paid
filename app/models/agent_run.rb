@@ -4,6 +4,7 @@ class AgentRun < ApplicationRecord
   attribute :focus, :string, default: "general"
   attribute :execution_origin, :string, default: "paid_native"
   attribute :external_metadata, :json, default: {}
+  attribute :verification_result, :json, default: {}
   attr_accessor :preloaded_final_runner_record, :preloaded_final_runner_record_loaded
 
   MAX_RUNNER_ATTEMPT_ERROR_MESSAGE_LENGTH = 500
@@ -16,7 +17,7 @@ class AgentRun < ApplicationRecord
   ].freeze
   STATUSES = %w[queued running paused completed no_output failed cancelled timeout token_budget_exceeded retried auth_expired rate_limited].freeze
   AGENT_TYPES = %w[claude_code cursor codex copilot gemini opencode kilocode pi api devin factory internal_agent].freeze
-  FOCUSES = %w[general ci_fix review_feedback merge_conflict conversation issue_implementation label_action].freeze
+  FOCUSES = %w[general ci_fix review_feedback merge_conflict conversation issue_implementation label_action].freeze # @spec FOCUSED-RUN-001
   # analyze_issue is automation-only (triggered via Automation::Decision), not exposed in the manual run form.
   GOALS = %w[create_pr create_issue review enhance_issue analyze_issue lid_planning].freeze
   TRIGGER_TYPES = %w[manual automatic].freeze
@@ -163,6 +164,7 @@ class AgentRun < ApplicationRecord
   # cleanup, not by the runner — in particular, do not increment runner
   # circuit-breaker counters on its behalf.
   STALE_CLEANUP_ERROR_PREFIX = "Marked stale on startup"
+  PREVIEW_SESSION_EXTERNAL_METADATA_KEY = "preview_session".freeze
 
   STALE_DETECTOR_ERROR_PREFIX = "Stale run detected"
 
@@ -338,6 +340,10 @@ class AgentRun < ApplicationRecord
   }
   scope :active, -> { where(status: ACTIVE_STATUSES) }
   scope :capacity_inflight, -> { running.or(claimed) }
+  scope :excluding_preview_provisioning, -> {
+    where(preview_provisioning_exclusion_sql)
+  }
+  scope :reported_create_pr, -> { where(goal: "create_pr").excluding_preview_provisioning }
   scope :finished, -> { where(status: FINISHED_STATUSES) }
   scope :paid_native, -> { where(execution_origin: "paid_native") }
   scope :external_execution, -> { where(execution_origin: "external") }
@@ -352,6 +358,10 @@ class AgentRun < ApplicationRecord
 
   def external_execution?
     execution_origin == "external"
+  end
+
+  def preview_provisioning?
+    ActiveModel::Type::Boolean.new.cast(external_metadata&.[](PREVIEW_SESSION_EXTERNAL_METADATA_KEY))
   end
 
   scope :recent, -> { order(created_at: :desc) }
@@ -721,8 +731,16 @@ class AgentRun < ApplicationRecord
   def self.active_create_pr_count_for_account(account)
     capacity_inflight
       .joins(:project)
-      .where(projects: { account_id: account.id }, goal: "create_pr")
+      .where(projects: { account_id: account.id })
+      .reported_create_pr
       .count
+  end
+
+  def self.preview_provisioning_exclusion_sql(table_name: self.table_name)
+    sanitize_sql_array([
+      "COALESCE(#{table_name}.external_metadata->>?, 'false') != 'true'",
+      PREVIEW_SESSION_EXTERNAL_METADATA_KEY
+    ])
   end
 
   def self.stale_running_timeout(goal: nil)
@@ -924,7 +942,7 @@ class AgentRun < ApplicationRecord
   # runs because issue creation is lighter-weight and often unblocks
   # downstream PR work. Within each goal type, runs are FIFO by
   # created_at, with id as a stable tiebreaker.
-  QUEUE_PRIORITIES = {
+  QUEUE_PRIORITIES = { # @spec QUEUE-TIER-001
     manual: { label: "Manual", indicator: 1 },
     pr_p1: { label: "PR · P1", indicator: 2 },
     pr_p2: { label: "PR · P2", indicator: 3 },
@@ -938,7 +956,7 @@ class AgentRun < ApplicationRecord
   UNKNOWN_PRIORITY = { label: "Unknown", indicator: nil }.freeze
   QUEUE_GOAL_PRIORITY_GOALS = %w[create_issue enhance_issue analyze_issue lid_planning].freeze
 
-  def queue_priority_tier
+  def queue_priority_tier # @spec QUEUE-TIER-002
     return :manual if manual?
 
     category = existing_pr? ? "pr" : "issue"
@@ -1146,7 +1164,7 @@ class AgentRun < ApplicationRecord
   # trigger_type = 'automatic' is not re-checked below the first WHEN:
   # TRIGGER_TYPES only has 'manual'/'automatic', so anything that reaches
   # the second WHEN is already known to be automatic.
-  QUEUE_PRIORITY_CASE_SQL = <<~SQL.squish.freeze
+  QUEUE_PRIORITY_CASE_SQL = <<~SQL.squish.freeze # @spec QUEUE-TIER-001
     CASE
       WHEN trigger_type = 'manual' THEN 0
       WHEN source_pull_request_number IS NOT NULL THEN (#{LABEL_RANK_CASE_SQL})
@@ -1190,7 +1208,7 @@ class AgentRun < ApplicationRecord
   #   in_progress          → tie-break within the manual tier only (PR continuation first)
   #   goal_priority        → create_issue ahead of create_pr
   #   created_at, id       → FIFO tiebreaker
-  QUEUE_ORDER = [
+  QUEUE_ORDER = [ # @spec QUEUE-TIER-003 @spec QUEUE-TIER-005 @spec EAGER-QUEUE-008
     PROJECT_ACTIVE_COUNT_SQL,
     USER_ACTIVE_COUNT_SQL,
     QUEUE_PRIORITY_SQL,
@@ -1467,7 +1485,7 @@ class AgentRun < ApplicationRecord
     end
   end
 
-  def existing_pr?
+  def existing_pr? # @spec QUEUE-TIER-002
     source_pull_request_number.present?
   end
 
@@ -1522,7 +1540,7 @@ class AgentRun < ApplicationRecord
     Array(external_metadata["plan_docs"]).any? { |doc| doc.respond_to?(:[]) && doc["name"].present? }
   end
 
-  def focused?
+  def focused? # @spec FOCUSED-RUN-001
     focus != "general"
   end
 

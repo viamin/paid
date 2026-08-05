@@ -12,7 +12,7 @@ module Issues
       @skip_project_gate = skip_project_gate
     end
 
-    def call
+    def call # @spec EAGER-QUEUE-003
       return [] unless skip_project_gate || Issues::AutoPickProjectGate.call(project)
 
       counts = { created: 0, existing: 0, skipped: 0 }

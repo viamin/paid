@@ -79,6 +79,14 @@ arrows:
     taxonomy: chat
     status: OK
     audited: 2026-08-03
+  api-mode-chat:
+    title: API-Mode Chat
+    path: docs/intent/api-mode-chat/api-mode-chat-design.md
+    specs: docs/intent/api-mode-chat/api-mode-chat-specs.md
+    parent: PAID
+    taxonomy: chat
+    status: OK
+    audited: 2026-08-04
   free-model-sync:
     title: Free Model Sync
     path: docs/intent/free-model-sync/free-model-sync-design.md
@@ -217,6 +225,38 @@ arrows:
     title: Account Administration
     path: docs/intent/account-administration/account-administration-design.md
     specs: docs/intent/account-administration/account-administration-specs.md
+    parent: PAID
+    taxonomy: operations
+    status: OK
+    audited: 2026-08-04
+  focused-agent-runs:
+    title: Focused Agent Runs
+    path: docs/intent/focused-agent-runs/focused-agent-runs-design.md
+    specs: docs/intent/focused-agent-runs/focused-agent-runs-specs.md
+    parent: PAID
+    taxonomy: automation
+    status: OK
+    audited: 2026-08-04
+  eager-queue-seeding:
+    title: Eager Queue Seeding
+    path: docs/intent/eager-queue-seeding/eager-queue-seeding-design.md
+    specs: docs/intent/eager-queue-seeding/eager-queue-seeding-specs.md
+    parent: PAID
+    taxonomy: automation
+    status: OK
+    audited: 2026-08-04
+  queue-priority-tiers:
+    title: Queue Priority Tiers
+    path: docs/intent/queue-priority-tiers/queue-priority-tiers-design.md
+    specs: docs/intent/queue-priority-tiers/queue-priority-tiers-specs.md
+    parent: PAID
+    taxonomy: automation
+    status: OK
+    audited: 2026-08-04
+  worker-pool-scaling:
+    title: Worker Pool Scaling Advisor
+    path: docs/intent/worker-pool-scaling/worker-pool-scaling-design.md
+    specs: docs/intent/worker-pool-scaling/worker-pool-scaling-specs.md
     parent: PAID
     taxonomy: operations
     status: OK

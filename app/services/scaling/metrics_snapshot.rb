@@ -12,7 +12,7 @@ module Scaling
   #     busy_workers: 2,
   #     timestamp: Time.current
   #   )
-  class MetricsSnapshot
+  class MetricsSnapshot # @spec WORKER-POOL-SCALING-002
     attr_reader :queue_depth, :active_workers, :busy_workers, :timestamp
 
     def initialize(queue_depth:, active_workers:, busy_workers:, timestamp: Time.current)

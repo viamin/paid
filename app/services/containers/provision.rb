@@ -220,6 +220,7 @@ module Containers
     # Provisions a new container with security hardening.
     # Ensures the selected network exists before creating the container,
     # and applies firewall rules for restricted proxy-mode runs after start.
+    # @spec CONTAINER-RUNTIME-001
     #
     # Signal-aware: a rescue clause for SignalException (e.g. Interrupt from
     # Thread#raise on cancellation) runs cleanup before re-raising so the

@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe "Api::SecretsProxy" do
+RSpec.describe "Api::SecretsProxy" do # @spec SECRETS-PROXY-001 # @spec SECRETS-PROXY-002 # @spec SECRETS-PROXY-003
   let(:project) { create(:project) }
   let(:agent_run) { create(:agent_run, :running, project: project) }
   let(:knowledge_run) { create(:knowledge_run, :running, project: project) }
