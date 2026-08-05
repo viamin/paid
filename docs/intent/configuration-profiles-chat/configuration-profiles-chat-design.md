@@ -42,15 +42,16 @@ The implementation can build on already-shipped primitives:
 - audit logging of settings mutations
 - project/tenant/user settings models with established defaults
 
-## Active Gap
+## Remaining Gap
 
-The missing product surface is substantial:
+The core profile flow is now shipped, including vetted profile discovery,
+multi-scope planning, project/user/tenant application, and one-confirmation
+batched writes. The main follow-up work still tracked separately is narrower:
 
-- no `update_project_settings` chat tool
-- no profile registry or planner/applier service
-- no batched plan/apply confirmation model for multi-record settings changes
-- no profile-aware system-prompt guidance steering the chat toward vetted
-  operating modes
+- broaden profile coverage and reconcile it with the older legacy posture
+  registry
+- add dedicated profile audit/rollback semantics instead of relying on generic
+  settings-changed activity metadata
 
 ## What this is not
 

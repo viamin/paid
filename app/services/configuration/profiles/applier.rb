@@ -3,22 +3,19 @@
 module Configuration
   module Profiles
     # Applies a {Plan} to a {Project} transactionally and idempotently.
+    # @spec CONFIG-PROFILES-004
     #
     # Guarantees (RDR-044):
     # - +transactional+: all writes (project save + activity record) succeed or
     #   all roll back.
     # - +idempotent+: re-applying a plan whose targets already hold is a no-op
     #   (no save, no activity, empty result).
-    # - +per-level authorized+: each distinct change level is authorized via
-    #   its policy before any write. Today only +:project+ exists.
+    # - +per-level authorized+: unauthorized levels are skipped and reported
+    #   before any write executes.
     # - +returns per-change results+: one hash per applied change
     #   (<tt>{ key:, from:, to:, applied: true }</tt>).
     # - +records activity+ once per apply via {Accounts::RecordActivity}.
     class Applier
-      LEVEL_POLICIES = {
-        project: { policy_class: ProjectPolicy, query: :update? }
-      }.freeze
-
       def self.call(...) = new(...).call
 
       def initialize(plan:, project:, actor:)
@@ -29,45 +26,59 @@ module Configuration
 
       def call
         raise BlockedError, block_message if plan.blocked?
-        return [] if plan.no_op?
+        return { applied_changes: [], skipped_levels: [] } if plan.no_op?
 
-        authorize!
+        skipped_levels = authorization.reject { |entry| entry.fetch("allowed", false) }
+        applied = applyable_changes
+        return { applied_changes: [], skipped_levels: skipped_levels } if applied.empty?
 
-        applied = []
-        Project.transaction do
-          plan.changes.each do |change|
-            descriptor = Settings.fetch(change.key)
-            next if descriptor.read.call(project) == change.to
-
-            descriptor.write.call(project, change.to)
-            applied << change
-          end
-
-          next unless applied.any?
-
-          project.save!
+        context.project.class.transaction do
+          persist!(apply_changes!(applied))
           record_activity!(applied)
         end
 
-        applied.map { |change| result_for(change) }
+        {
+          applied_changes: applied.map { |change| result_for(change) },
+          skipped_levels:
+        }
       end
 
       private
 
       attr_reader :plan, :project, :actor
 
-      def authorize!
-        levels.each do |level|
-          config = LEVEL_POLICIES.fetch(level)
-          policy = config.fetch(:policy_class).new(actor, project)
-          next if policy.public_send(config.fetch(:query))
+      def context
+        @context ||= Context.build(project:, actor:)
+      end
 
-          raise UnauthorizedError, "Not authorized to apply #{level}-level configuration changes"
+      def authorization
+        @authorization ||= Authorization.call(actor:, context:, changes: plan.changes)
+      end
+
+      def applyable_changes
+        skipped = skipped_levels.index_by { |entry| entry.fetch("level") }
+        plan.changes.filter do |change|
+          next false if skipped.key?(change.level.to_s)
+          next false if Settings.read(context, change.key) == change.to
+
+          true
         end
       end
 
-      def levels
-        plan.changes.filter_map { |change| Settings.fetch(change.key).level }.uniq
+      def skipped_levels
+        @skipped_levels ||= authorization.reject { |entry| entry.fetch("allowed", false) }
+      end
+
+      def apply_changes!(applied)
+        applied.map { |change| Settings.write(context, change.key, change.to) }.uniq
+      end
+
+      def persist!(records)
+        records.each do |record|
+          next unless record.changed?
+
+          record.save!
+        end
       end
 
       def record_activity!(applied)
@@ -79,13 +90,14 @@ module Configuration
           metadata: {
             profile: plan.profile_name,
             changed_fields: applied.map(&:key),
-            changes: applied.map { |change| { "key" => change.key, "from" => change.from, "to" => change.to } }
+            skipped_levels: skipped_levels,
+            changes: applied.map { |change| { "key" => change.key, "from" => change.from, "to" => change.to, "level" => change.level.to_s } }
           }
         )
       end
 
       def result_for(change)
-        { key: change.key, from: change.from, to: change.to, applied: true }
+        { key: change.key, from: change.from, to: change.to, level: change.level.to_s, applied: true }
       end
 
       def block_message

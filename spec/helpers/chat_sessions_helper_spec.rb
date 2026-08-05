@@ -101,8 +101,8 @@ RSpec.describe ChatSessionsHelper do
           profile_id: "solo_automated",
           project_id: 42,
           changes: [
-            { key: "auto_pick_enabled", from: false, to: true },
-            { key: "adoption_mode", from: "observe_only", to: "full_execution" }
+            { key: "auto_pick_enabled", from: false, to: true, level: "project" },
+            { key: "adoption_mode", from: "observe_only", to: "full_execution", level: "project" }
           ]
         })
 
@@ -123,8 +123,8 @@ RSpec.describe ChatSessionsHelper do
       payload = {
         profile_id: "solo_automated",
         changes: [
-          { key: "auto_pick_enabled", from: false, to: true },
-          { key: "adoption_mode", from: "observe_only", to: "full_execution" }
+          { key: "auto_pick_enabled", from: false, to: true, level: "project" },
+          { key: "adoption_mode", from: "observe_only", to: "full_execution", level: "project" }
         ]
       }
 

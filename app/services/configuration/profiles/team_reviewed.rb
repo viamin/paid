@@ -17,7 +17,9 @@ module Configuration
           "active" => true,
           "auto_pick_enabled" => false,
           "adoption_mode" => "review_only",
-          "review_enabled" => true
+          "review_enabled" => true,
+          "run_concurrency_mode" => "manual",
+          "agent_auto_continue" => false
         }
       end
 
