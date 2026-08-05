@@ -52,7 +52,7 @@ module Configuration
       attr_reader :plan, :project, :actor
 
       def context
-        @context ||= Context.build(project:, actor:)
+        @context ||= Context.build(project:, actor:, materialize_missing: true)
       end
 
       def authorization

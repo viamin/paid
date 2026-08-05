@@ -146,6 +146,18 @@ RSpec.describe Configuration::Profiles::Planner do
         include("level" => "tenant", "reason" => "Not authorized to update tenant settings")
       )
     end
+
+    it "does not create missing settings rows while planning a mixed-scope profile" do
+      expect(actor.user_setting).to be_nil
+      expect(project.account.tenant_setting).to be_nil
+
+      expect {
+        described_class.call(profile: Configuration::Profiles::ObserveOnly, project:, actor:)
+      }.not_to change { [ UserSetting.count, TenantSetting.count ] }
+
+      expect(actor.reload.user_setting).to be_nil
+      expect(project.account.reload.tenant_setting).to be_nil
+    end
   end
 
   describe "prerequisites" do
