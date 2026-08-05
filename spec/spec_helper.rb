@@ -17,21 +17,9 @@ unless defined?(SpecRunMode)
   end
 end
 
-coverage_enabled = if defined?(::Mutant)
-  # Mutant loads spec_helper in its main process (via the rspec integration),
-  # and each forked worker inherits that state. A mutation sweep only exercises
-  # a handful of subjects, so whole-codebase line coverage is near zero and
-  # would trip the minimum_coverage gate below — failing otherwise-healthy
-  # runs and adding per-fork coverage overhead that stalls the sweep. Line
-  # coverage is irrelevant to mutation testing, so never start SimpleCov here.
-  false
-elsif ENV.key?("COVERAGE")
-  ENV["COVERAGE"] != "false"
-else
-  # DB-less verification runs intentionally execute only a small subset of the
-  # suite, so enforcing the global coverage floor there creates false failures.
-  ENV["ALLOW_DBLESS_SPECS"] != "true"
-end
+require_relative "support/spec_coverage_decision"
+
+coverage_enabled = SpecCoverageDecision.call(env: ENV, mutant_defined: defined?(::Mutant))
 
 if coverage_enabled
   require "simplecov"

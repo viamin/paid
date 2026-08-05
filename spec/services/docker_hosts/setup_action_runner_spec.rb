@@ -11,7 +11,8 @@ RSpec.describe DockerHosts::SetupActionRunner do
       result = described_class.call(
         host: host,
         action: "generate_client_bundle",
-        params: ActionController::Parameters.new(client_common_name: "paid-client")
+        params: ActionController::Parameters.new(client_common_name: "paid-client"),
+        key_size: 1024
       )
 
       expect(result.success?).to be(true)
@@ -416,7 +417,7 @@ RSpec.describe DockerHosts::SetupActionRunner do
   end
 
   def build_uploaded_client_bundle(ca_subject: "/CN=paid-upload-ca", ca_serial: 1, client_serial: 2)
-    ca_key = OpenSSL::PKey::RSA.new(2048)
+    ca_key = OpenSSL::PKey::RSA.new(1024)
     ca_cert = build_certificate(
       subject: ca_subject,
       issuer: nil,
@@ -425,7 +426,7 @@ RSpec.describe DockerHosts::SetupActionRunner do
       serial: ca_serial,
       is_ca: true
     )
-    client_key = OpenSSL::PKey::RSA.new(2048)
+    client_key = OpenSSL::PKey::RSA.new(1024)
     client_cert = build_certificate(
       subject: "/CN=paid-client",
       issuer: ca_cert,
