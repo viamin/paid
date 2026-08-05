@@ -678,36 +678,39 @@ module Dashboard
       # dedicated merged_at column yet. It can drift when a PR is updated
       # after merge (comments, labels, etc.). A future migration should add
       # issues.merged_at populated by MergePullRequestActivity (#230).
-      sql = <<~SQL.squish
-        WITH per_issue AS (
-          SELECT issues.id,
-                 COUNT(agent_runs.id) AS run_count,
-                 EXTRACT(EPOCH FROM issues.github_updated_at
-                   - MIN(COALESCE(agent_runs.started_at, agent_runs.created_at))) AS wall_seconds,
-                 COALESCE(SUM(agent_runs.duration_seconds), 0) AS total_run_seconds
-          FROM issues
-          INNER JOIN agent_runs ON agent_runs.issue_id = issues.id
-          WHERE issues.is_pull_request = true
-            AND issues.pr_review_phase = 'merged'
-            AND issues.project_id IN (#{project_ids_sql})
-            AND agent_runs.goal = 'create_pr'
-            AND #{AgentRun.preview_provisioning_exclusion_sql(table_name: "agent_runs")}
-            AND COALESCE(agent_runs.started_at, agent_runs.created_at) <= issues.github_updated_at
-          GROUP BY issues.id, issues.github_updated_at
-        )
-        SELECT COUNT(*) AS merged_count,
-               AVG(run_count) AS avg_runs,
-               MIN(run_count) AS min_runs,
-               MAX(run_count) AS max_runs,
-               percentile_cont(0.5) WITHIN GROUP (ORDER BY run_count) AS median_runs,
-               AVG(wall_seconds) AS avg_wall_seconds,
-               percentile_cont(0.5) WITHIN GROUP (ORDER BY wall_seconds) AS p50_wall_seconds,
-               percentile_cont(0.9) WITHIN GROUP (ORDER BY wall_seconds) AS p90_wall_seconds,
-               AVG(total_run_seconds) AS avg_run_seconds,
-               percentile_cont(0.5) WITHIN GROUP (ORDER BY total_run_seconds) AS p50_run_seconds,
-               percentile_cont(0.9) WITHIN GROUP (ORDER BY total_run_seconds) AS p90_run_seconds
-        FROM per_issue
-      SQL
+      sql = ActiveRecord::Base.sanitize_sql_array([
+        <<~SQL.squish,
+          WITH per_issue AS (
+            SELECT issues.id,
+                   COUNT(agent_runs.id) AS run_count,
+                   EXTRACT(EPOCH FROM issues.github_updated_at
+                     - MIN(COALESCE(agent_runs.started_at, agent_runs.created_at))) AS wall_seconds,
+                   COALESCE(SUM(agent_runs.duration_seconds), 0) AS total_run_seconds
+            FROM issues
+            INNER JOIN agent_runs ON agent_runs.issue_id = issues.id
+            WHERE issues.is_pull_request = true
+              AND issues.pr_review_phase = 'merged'
+              AND issues.project_id IN (#{project_ids_sql})
+              AND agent_runs.goal = 'create_pr'
+              AND COALESCE(agent_runs.external_metadata->>?, 'false') != 'true'
+              AND COALESCE(agent_runs.started_at, agent_runs.created_at) <= issues.github_updated_at
+            GROUP BY issues.id, issues.github_updated_at
+          )
+          SELECT COUNT(*) AS merged_count,
+                 AVG(run_count) AS avg_runs,
+                 MIN(run_count) AS min_runs,
+                 MAX(run_count) AS max_runs,
+                 percentile_cont(0.5) WITHIN GROUP (ORDER BY run_count) AS median_runs,
+                 AVG(wall_seconds) AS avg_wall_seconds,
+                 percentile_cont(0.5) WITHIN GROUP (ORDER BY wall_seconds) AS p50_wall_seconds,
+                 percentile_cont(0.9) WITHIN GROUP (ORDER BY wall_seconds) AS p90_wall_seconds,
+                 AVG(total_run_seconds) AS avg_run_seconds,
+                 percentile_cont(0.5) WITHIN GROUP (ORDER BY total_run_seconds) AS p50_run_seconds,
+                 percentile_cont(0.9) WITHIN GROUP (ORDER BY total_run_seconds) AS p90_run_seconds
+          FROM per_issue
+        SQL
+        AgentRun::PREVIEW_SESSION_EXTERNAL_METADATA_KEY
+      ])
 
       ActiveRecord::Base.connection.select_one(sql)
     end
