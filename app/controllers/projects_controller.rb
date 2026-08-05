@@ -470,21 +470,20 @@ class ProjectsController < ApplicationController
   # backlog instead of advertising provisioning before anything has started.
   # It is never marked ready until a live app, tunnel, and container exist.
   def queue_preview_provision!(branch_name:)
-    previous_sessions = PreviewSession.for_project(@project).non_terminal.to_a
-
-    # Tear down the live infrastructure (tunnel port reservation + preview
-    # container) of any in-flight previews before they are marked stopped, so
-    # the port is released back to the pool and the old container is removed
-    # immediately rather than lingering until a later orphan sweep. Repeated
-    # restarts would otherwise leak reservations until the port pool is
-    # exhausted and keep serving a preview the UI reports as stopped.
-    previous_sessions.each { |session| Previews::Teardown.call(session) }
-
     session = nil
 
     PreviewSession.transaction do
       @project.with_lock do
-        PreviewSession.for_project(@project).non_terminal.find_each(&:mark_stopped!)
+        # Select in-flight sessions and tear them down under the same lock that
+        # stops them, so the sessions we stop are exactly the sessions we tear
+        # down. Capturing the set before the lock left a race: the provision job
+        # or another request could make a session non-terminal in the gap
+        # between the snapshot and the mark_stopped! sweep, stopping its row
+        # without ever calling Previews::Teardown — leaking its container,
+        # tunnel, and port reservation until a later orphan sweep.
+        PreviewSession.for_project(@project).non_terminal.each do |existing|
+          stop_preview_session(existing)
+        end
         session = PreviewSession.build_for(
           project: @project,
           branch_name: branch_name,

@@ -31,6 +31,18 @@ RSpec.describe "Projects" do
 
   attr_reader :stubbed_preview_backend
 
+  # Like +stub_preview_container_removal+ but accepts removal of any container
+  # id, for flows that tear down more than one in-flight preview session.
+  def stub_preview_container_removal_for_any
+    container = instance_double(Docker::Container, info: { "State" => { "Running" => true } })
+    backend = instance_double(Containers::Backends::Base)
+    allow(backend).to receive(:get_container).and_return(container)
+    allow(backend).to receive(:stop_container)
+    allow(backend).to receive(:delete_container)
+    allow(Containers).to receive(:backend).and_return(backend)
+    @stubbed_preview_backend = backend
+  end
+
   # Asserts the preview's live infrastructure was actually torn down: the tunnel
   # port reservation is released back to the pool and the container removed, not
   # just the session row updated.
@@ -1383,6 +1395,31 @@ RSpec.describe "Projects" do
       # Repeated restarts would otherwise leak reservations until the port pool
       # is exhausted and keep serving a preview the UI reports as stopped.
       expect_preview_infrastructure_torn_down(reservation:)
+    end
+
+    it "stops and tears down every in-flight session, so no session is stopped without its infrastructure being released" do
+      project = create(:project, account: account, github_token: github_token)
+      first = create(:preview_session, :ready, project: project, branch_name: "feature/a", tunnel_port: 8261)
+      second = create(:preview_session, :ready, project: project, branch_name: "feature/b", tunnel_port: 8262)
+      first_reservation = PreviewTunnelPortReservation.create!(
+        reservation_key: "preview_session:#{first.id}", tunnel_port: 8261
+      )
+      second_reservation = PreviewTunnelPortReservation.create!(
+        reservation_key: "preview_session:#{second.id}", tunnel_port: 8262
+      )
+      backend = stub_preview_container_removal_for_any
+
+      post restart_preview_project_path(project)
+
+      expect(first.reload).to be_stopped
+      expect(second.reload).to be_stopped
+      # The set we stop must be exactly the set we tear down: every stopped
+      # session's tunnel port reservation and container is released, not just a
+      # pre-lock snapshot subset (which would leak a session made non-terminal
+      # between selection and the mark_stopped! sweep).
+      expect(PreviewTunnelPortReservation.exists?(first_reservation.id)).to be(false)
+      expect(PreviewTunnelPortReservation.exists?(second_reservation.id)).to be(false)
+      expect(backend).to have_received(:delete_container).twice.with(anything, force: true, v: true)
     end
   end
 
