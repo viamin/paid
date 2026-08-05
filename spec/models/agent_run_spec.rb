@@ -4521,6 +4521,18 @@ RSpec.describe AgentRun do
       expect(real).not_to be_synthetic_operational_run
     end
 
+    it "does not update project last_agent_run_at for synthetic run creation" do
+      expect {
+        create(:agent_run, :running, :synthetic, project: project)
+      }.not_to change { project.reload.last_agent_run_at }
+    end
+
+    it "updates project last_agent_run_at for real run creation" do
+      expect {
+        create(:agent_run, :running, project: project)
+      }.to change { project.reload.last_agent_run_at }.from(nil)
+    end
+
     it "does not enqueue run-quality collection for a synthetic run finishing" do
       agent_run = create(:agent_run, :running, :synthetic, project: project)
 

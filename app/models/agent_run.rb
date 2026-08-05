@@ -219,7 +219,7 @@ class AgentRun < ApplicationRecord
   after_commit :update_agent_run_counter_caches, on: [ :create, :update, :destroy ]
   after_commit :reload_project_counter_cache_association, on: [ :create, :update, :destroy ]
   after_commit :broadcast_project_updates, on: [ :create, :update ]
-  after_commit :update_project_last_agent_run_at, on: :create
+  after_commit :update_project_last_agent_run_at, on: :create, unless: :synthetic_operational_run?
   after_commit :invalidate_runner_options_cache_on_change, on: [ :create, :update ]
   after_commit :enqueue_quality_metrics_collection, on: :update, if: :real_run_just_finished?
   after_commit :enqueue_anomaly_detection, on: :update, if: :real_run_just_finished?
