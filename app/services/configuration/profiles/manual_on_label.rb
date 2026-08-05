@@ -7,13 +7,13 @@ module Configuration
       include Base
 
       def self.description
-        "Only act when a human adds the automation label. No auto-merge and no automated review; humans stay in the loop."
+        "Only pick up work when a human adds the automation label. PR scanning stays on for follow-up and optional review, but nothing auto-merges and humans stay in the loop."
       end
 
       def self.targets
         {
           "auto_pick_enabled" => false,
-          "auto_scan_prs" => false,
+          "auto_scan_prs" => true,
           "automation_on_label_enabled" => true,
           "auto_merge_mode" => "off",
           "auto_fix_merge_conflicts" => false,
@@ -36,7 +36,7 @@ module Configuration
         [
           {
             id: "review_paid_agent",
-            question: "Add a paid-agent review pass before labeled work can ship?"
+            question: "Add a paid-agent review pass on PRs created from labeled work before they can ship?"
           }
         ]
       end

@@ -92,6 +92,20 @@ RSpec.describe Configuration::Profiles::Settings do
       expect(project.review_settings["enabled"]).to be false
     end
 
+    it "keeps the top-level review toggle on while another review method remains enabled" do
+      project.review_settings = {
+        "enabled" => true,
+        "methods" => {
+          "manual" => { "enabled" => true, "reviewer_login" => "octocat" }
+        }
+      }
+
+      described_class.write(project, "review_paid_agent", false)
+
+      expect(project.review_settings["enabled"]).to be true
+      expect(project.review_settings.dig("methods", "manual", "enabled")).to be true
+    end
+
     it "round-trips the quality gate flag" do
       described_class.write(project, "quality_gate_enabled", true)
       project.save!

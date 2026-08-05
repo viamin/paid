@@ -49,7 +49,6 @@ module Configuration
 
         value.strip
       end
-      REVIEW_METHODS = %w[paid_agent copilot].freeze
       MODE_RELEVANT_COLUMN_PATTERNS = [
         /\Aauto_/,
         /_enabled\z/,
@@ -293,7 +292,7 @@ module Configuration
         settings["methods"] ||= {}
         settings["methods"][method_name] ||= {}
         settings["methods"][method_name]["enabled"] = enabled
-        settings["enabled"] = REVIEW_METHODS.any? { |name| settings.dig("methods", name, "enabled") == true }
+        settings["enabled"] = any_review_method_enabled?(settings)
         project.review_settings = settings
       end
 
@@ -301,6 +300,12 @@ module Configuration
         settings = project.quality_gate_settings.is_a?(Hash) ? project.quality_gate_settings.deep_stringify_keys : {}
         settings["enabled"] = enabled
         project.quality_gate_settings = settings
+      end
+
+      def any_review_method_enabled?(settings)
+        settings.fetch("methods", {}).any? do |_method_name, method_settings|
+          method_settings.is_a?(Hash) && method_settings["enabled"] == true
+        end
       end
     end
   end
