@@ -69,6 +69,6 @@ RSpec.describe CiWorkflowFile, :no_db do
   end
 
   it "gives the test job enough time to complete the full RSpec suite" do
-    expect(workflow.fetch("jobs").fetch("test").fetch("timeout-minutes")).to eq(180)
+    expect(workflow.fetch("jobs").fetch("test").fetch("timeout-minutes")).to eq(360)
   end
 end

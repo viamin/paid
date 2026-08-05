@@ -174,10 +174,11 @@ jobs:
       || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
       || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
     runs-on: ubuntu-24.04
-    # This job runs both the main non-system RSpec suite and the dedicated
-    # query performance specs, so keep enough headroom to avoid false
-    # cancellations from GitHub's job timeout.
-    timeout-minutes: 180
+    # This job has repeatedly hit GitHub's hard timeout while the main
+    # non-system RSpec suite is still running. Keep enough headroom to let the
+    # suite finish and reach the dedicated query performance step instead of
+    # being force-cancelled mid-run.
+    timeout-minutes: 360
 
     services:
       postgres:
