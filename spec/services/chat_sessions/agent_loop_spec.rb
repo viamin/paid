@@ -3,6 +3,7 @@
 require "rails_helper"
 
 RSpec.describe ChatSessions::AgentLoop do
+  # @spec CHAT-API-003
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
   let(:chat_session) { create(:chat_session, account: account, created_by: user) }

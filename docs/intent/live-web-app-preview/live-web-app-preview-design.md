@@ -33,16 +33,6 @@ These are real execution surfaces, not placeholders.
 
 The remaining work is end-to-end wiring and lifecycle correctness:
 
-- `ProjectsController#start_preview` and `#restart_preview` now leave sessions
-  in the `provisioning` lifecycle state (decoupled from the stubbed
-  instant-ready state); invoking the real `Previews::Provision` worker to
-  transition pending/provisioning -> ready/failed still needs wiring
-  (LIVE-PREVIEW-003).
-- preview root-path serving now routes exclusively through the tunnel-backed
-  proxy path; the controller-side simulated preview fallback has been removed
-  (LIVE-PREVIEW-004).
-- preview UI reflects the full queued/provisioning/starting/ready/failed/stopped
-  lifecycle with explicit, actionable states for expiry, failure, and stop.
 - agent verification still stops at provisioning the browser sidecar instead of
   driving the changed app and persisting a verification outcome
 

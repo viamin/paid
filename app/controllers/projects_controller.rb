@@ -390,6 +390,7 @@ class ProjectsController < ApplicationController
   # tunnel, or container exists. The provisioning worker transitions it to
   # +ready+ (or +failed+) once the app is actually serving.
   def start_preview
+    # @spec LIVE-PREVIEW-003
     authorize @project, :update?
 
     branch_name = preview_branch_name_param.presence || @project.default_branch
@@ -407,9 +408,12 @@ class ProjectsController < ApplicationController
     notice = sessions.empty? ? "No preview was running." : "Preview stopped."
 
     redirect_to project_path(@project, anchor: "preview"), notice: notice
+  rescue Previews::Lifecycle::Error => e
+    redirect_to project_path(@project, anchor: "preview"), alert: "Preview stop failed: #{e.message}"
   end
 
   def restart_preview
+    # @spec LIVE-PREVIEW-003
     authorize @project, :update?
 
     last_branch = PreviewSession.for_project(@project).recent.first&.branch_name

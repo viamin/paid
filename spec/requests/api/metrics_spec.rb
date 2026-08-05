@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe "Api::Metrics" do
+RSpec.describe "Api::Metrics" do # @spec OBSERVABILITY-001
   describe "GET /api/metrics" do
     it "returns 200 with Prometheus text content type" do
       get "/api/metrics"

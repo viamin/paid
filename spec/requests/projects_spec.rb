@@ -1293,6 +1293,9 @@ RSpec.describe "Projects" do
 
     it "queues a preview session in the pending state and redirects back to the preview panel" do
       project = create(:project, account: account, github_token: github_token, default_branch: "develop")
+      previous = create(:preview_session, :ready, project: project, branch_name: "develop", tunnel_port: 8242,
+        container_id: "container-live", agent_run: create(:agent_run, :running, :with_custom_prompt, project: project))
+      stub_preview_container_removal(previous.container_id)
 
       expect {
         post start_preview_project_path(project)
@@ -1302,6 +1305,7 @@ RSpec.describe "Projects" do
       expect(flash[:notice]).to include("Preview queued for develop.")
       session = project.preview_sessions.recent.first
       expect(session).to be_present
+      expect(session.id).not_to eq(previous.id)
       expect(session.branch_name).to eq("develop")
       expect(session.status).to eq("pending")
       expect(session.tunnel_port).to be_nil
@@ -1430,6 +1434,7 @@ RSpec.describe "Projects" do
       project = create(:project, account: account, github_token: github_token, name: "My Project")
       session = create(:preview_session, :ready, project: project, branch_name: "feature/preview", framework: "rails",
         tunnel_port: 8242, expires_at: 20.minutes.from_now)
+      session.update!(container_id: "container-live")
 
       get preview_path(session.token)
 
@@ -1444,6 +1449,7 @@ RSpec.describe "Projects" do
       project = create(:project, account: account, github_token: github_token)
       session = create(:preview_session, :ready, project: project, branch_name: "feature/preview",
         tunnel_port: 8242, expires_at: 20.minutes.from_now)
+      session.update!(container_id: "container-live")
       stub_preview_proxy_response
 
       get preview_path(session.token, path: "health")
@@ -1504,6 +1510,7 @@ RSpec.describe "Projects" do
     allow(Net::HTTP::Get).to receive(:new).and_return(request)
     allow(request).to receive(:[]=)
     allow(request).to receive(:request_body_permitted?).and_return(false)
+    allow(request).to receive(:body=)
     allow(upstream_response).to receive(:each_header).and_yield("cache-control", "no-store")
       .and_yield("etag", %("preview-etag"))
       .and_yield("set-cookie", "_paid_session=attacker")

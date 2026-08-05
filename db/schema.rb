@@ -3984,6 +3984,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_05_045119) do
        LANGUAGE sql
        STABLE
       AS $function$
+        -- @spec POSTGRESQL-PERSISTENCE-007
+        -- version: 1
         SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
       $function$
   SQL
@@ -3994,6 +3996,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_05_045119) do
        LANGUAGE sql
        STABLE
       AS $function$
+        -- @spec POSTGRESQL-PERSISTENCE-007
+        -- version: 1
         SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
       $function$
   SQL

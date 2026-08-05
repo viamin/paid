@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe Automation::ReviewBotTrigger do
+RSpec.describe Automation::ReviewBotTrigger do # @spec QUALITY-LOOPS-006
   subject(:instance) { klass.new }
 
   let(:klass) do

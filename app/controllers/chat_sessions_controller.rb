@@ -90,6 +90,7 @@ class ChatSessionsController < ApplicationController
 
   def create
     authorize ChatSession.new(account: current_account), :create?
+    # @spec CHAT-API-001
     session = ChatSessions::Create.call(
       account: current_account,
       user: current_user,
@@ -280,6 +281,7 @@ class ChatSessionsController < ApplicationController
     return unless mode
     return if permitted[:container_capability].present?
 
+    # @spec CHAT-API-001
     permitted[:container_capability] = container_capability_for_legacy_mode(mode)
   end
 
@@ -351,6 +353,7 @@ class ChatSessionsController < ApplicationController
   end
 
   def session_scope_with_token_totals
+    # @spec CHAT-API-005
     policy_scope(ChatSession)
       .visible
       .with_preview_content

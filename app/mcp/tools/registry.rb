@@ -102,6 +102,7 @@ module Tools
       # so confirmation always originates from the human approver, never the
       # model itself. See RDR-028.
       def chat_definitions_for(user:, session: nil)
+        # @spec CHAT-API-003
         tools_for(session:, user:).map { |klass| chat_definition_for(klass) }
       end
 

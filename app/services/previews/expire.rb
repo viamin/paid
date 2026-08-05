@@ -37,7 +37,7 @@ module Previews
       Previews::Teardown.call(session)
       session.mark_stopped!
       true
-    rescue StandardError => e
+    rescue Previews::Lifecycle::Error => e
       Rails.logger.warn(
         message: "previews.expire_failed",
         preview_session_id: session.id,

@@ -11,7 +11,7 @@ module Api
     before_action :authenticate_metrics_token!, if: -> { ENV["METRICS_TOKEN"].present? }
 
     # GET /api/metrics
-    def show
+    def show # @spec OBSERVABILITY-001
       render plain: Metrics::PrometheusCollector.call,
              content_type: "text/plain; version=0.0.4; charset=utf-8"
     end

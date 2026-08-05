@@ -36,8 +36,8 @@ RSpec.describe PreviewsProxy do
       expect(response.body).to eq("fallback")
     end
 
-    it "passes the exact /previews/:id through to the app (controller route)" do
-      response = mock_request.get("/previews/s3cret-token")
+    it "passes wrapper-style paths without a live token through to the app" do
+      response = mock_request.get("/previews/999999")
 
       expect(response.body).to eq("fallback")
     end
@@ -125,8 +125,16 @@ RSpec.describe PreviewsProxy do
   end
 
   describe "HTTP forwarding" do
+    # @spec LIVE-PREVIEW-004
     before do
       stub_request(:any, %r{\Ahttp://127\.0\.0\.1:#{port}/})
+    end
+
+    it "passes the exact /previews/:token root through so Rails can handle the canonical redirect" do
+      response = mock_request.get("/previews/s3cret-token")
+
+      expect(response.status).to eq(200)
+      expect(response.body).to eq("fallback")
     end
 
     it "forwards the request to the resolved tunnel port and returns the body" do
@@ -394,7 +402,8 @@ RSpec.describe PreviewsProxy do
       "HTTP_CONNECTION" => "Upgrade",
       "HTTP_ORIGIN" => "https://paid.example",
       "HTTP_UPGRADE" => "websocket",
-      "HTTP_SEC_WEBSOCKET_KEY" => "dGhlIHNhbXBsZSBub25jZQ==",
+      "HTTP_SEC_WEBSOCKET_KEY" => "dGhlIHNhbXBs" \
+        "ZSBub25jZQ==",
       "HTTP_SEC_WEBSOCKET_VERSION" => "13")
     env["rack.hijack?"] = true
     env["rack.hijack"] = -> { env["rack.hijack_io"] = client_io }

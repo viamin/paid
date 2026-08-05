@@ -91,9 +91,17 @@ class PreviewsProxy
     # exception-handling middleware to render 404/500 responses.
     return @app.call(env) unless match
 
+    response = preview_response_for(env, match:)
+    return response if response
+
+    @app.call(env)
+  end
+
+  def preview_response_for(env, match:)
     serve_preview_safely(env, match:)
   end
 
+  # @spec LIVE-PREVIEW-004
   def serve_preview_safely(env, match:)
     serve_preview(env, match:)
   rescue StandardError => e

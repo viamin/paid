@@ -20,6 +20,8 @@ class PreviewsController < ApplicationController
     audit_event("preview.stopped", metadata: { preview_session_id: @preview_session.id })
 
     redirect_to @preview_session.project, notice: "Preview stopped."
+  rescue Previews::Lifecycle::Error => e
+    redirect_to @preview_session.project, alert: "Preview stop failed: #{e.message}"
   end
 
   private

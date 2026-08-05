@@ -17,6 +17,16 @@ RSpec.describe PreviewSessions::ExpireJob do
     expect(fresh.reload.status).to eq("pending")
   end
 
+  it "tears down expired live preview resources before stopping the session" do
+    expired = create(:preview_session, :expired, project: project, tunnel_port: 8210)
+    allow(Previews::Teardown).to receive(:call).and_return(true)
+
+    described_class.new.perform
+
+    expect(Previews::Teardown).to have_received(:call).with(expired)
+    expect(expired.reload.status).to eq("stopped")
+  end
+
   it "is a no-op when nothing has expired" do
     create(:preview_session, project: project, expires_at: 10.minutes.from_now)
 

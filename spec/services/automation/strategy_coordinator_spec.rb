@@ -106,6 +106,107 @@ RSpec.describe Automation::StrategyCoordinator do
     end
   end
 
+  describe "#evaluate_pull_request_scan" do
+    let(:pull_request) { create(:issue, :pull_request, project: project, github_number: 42) }
+    let(:strategy) { instance_double(Automation::Strategies::AutoContinue) }
+    let(:scan) do
+      {
+        issue_id: pull_request.id,
+        pr_number: 42,
+        phase: "ready",
+        draft: false,
+        triggers: [ { type: "changes_requested" } ],
+        focus: "review_feedback"
+      }
+    end
+    let(:lifecycle) do
+      {
+        issue_id: pull_request.id,
+        pr_number: 42,
+        phase: "ready",
+        draft: false,
+        owner_reviewer_login: "owner"
+      }
+    end
+
+    before do
+      allow(Automation::Strategies::Select).to receive(:call)
+        .with(strategy_type: :auto_continue, project: project)
+        .and_return(strategy)
+    end
+
+    def evaluate_scan(decisions:, scan: self.scan)
+      allow(strategy).to receive(:evaluate)
+        .and_return(Automation::Result.new(decisions: decisions))
+
+      coordinator.evaluate_pull_request_scan(
+        record: pull_request,
+        scan: scan,
+        lifecycle: lifecycle
+      )
+    end
+
+    it "returns merged scan metadata plus strategy decisions" do
+      outcome = evaluate_scan(decisions: [
+        Automation::Decision.queue_create_pr_run(
+          issue_id: pull_request.id,
+          source_pull_request_number: 42
+        )
+      ])
+
+      expect(outcome).to have_attributes(
+        noop?: false,
+        legacy_trigger: scan
+      )
+      expect(outcome.to_h).to include(
+        issue_id: pull_request.id,
+        pr_number: 42,
+        phase: "ready",
+        draft: false,
+        focus: "review_feedback",
+        decisions: [ hash_including(type: "queue_create_pr_run", issue_id: pull_request.id) ]
+      )
+    end
+
+    it "prefers escalate decisions over the raw scan payload for legacy triggers" do
+      outcome = evaluate_scan(decisions: [
+        Automation::Decision.escalate(
+          issue_id: pull_request.id,
+          pr_number: 42,
+          owner_reviewer_login: "owner",
+          reason: "Stuck",
+          reason_key: "failure_streak"
+        )
+      ])
+
+      expect(outcome.legacy_trigger).to eq(
+        pr_number: 42,
+        phase: "ready",
+        draft: false,
+        owner_reviewer_login: "owner",
+        triggers: [ {
+          type: "escalate_to_owner",
+          details: "Stuck",
+          reason_key: "failure_streak"
+        } ]
+      )
+    end
+
+    it "maps merge decisions to the legacy owner_approved trigger" do
+      outcome = evaluate_scan(
+        decisions: [ Automation::Decision.merge(issue_id: pull_request.id, pr_number: 42) ],
+        scan: nil
+      )
+
+      expect(outcome.legacy_trigger).to eq(
+        pr_number: 42,
+        phase: "ready",
+        draft: false,
+        triggers: [ { type: "owner_approved" } ]
+      )
+    end
+  end
+
   describe "DB-backed strategy selection" do
     def create_strategy_for(decision_type, content: {}, selection_rules: {})
       strategy = create(:strategy, :global, decision_type: decision_type, selection_rules: selection_rules)

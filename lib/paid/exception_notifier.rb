@@ -6,7 +6,7 @@ module Paid
     MAX_MESSAGE_LENGTH = 10_000
     MAX_BACKTRACE_FRAMES = 20
 
-    def call(exception, options = {})
+    def call(exception, options = {}) # @spec EXCEPTION-NOTIFY-001 # @spec EXCEPTION-NOTIFY-002
       data = normalized_hash(options&.fetch(:data, {}))
       account = data[:account] || Current.account
       return nil unless account

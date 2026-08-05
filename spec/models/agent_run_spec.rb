@@ -2300,6 +2300,24 @@ RSpec.describe AgentRun do
       expect(described_class.active_create_pr_count_for_account(account)).to eq(2)
     end
 
+    it "excludes preview provisioning runs from the create_pr capacity count" do
+      account = create(:account)
+      user = create(:user, account: account)
+      project = create(:project, account: account, created_by: user)
+
+      create(:agent_run, :running, project: project, goal: "create_pr")
+      create(
+        :agent_run,
+        :running,
+        :internal_agent,
+        project: project,
+        goal: "create_pr",
+        external_metadata: { "preview_session" => true }
+      )
+
+      expect(described_class.active_create_pr_count_for_account(account)).to eq(1)
+    end
+
     it "returns zero when no active create_pr runs exist" do
       account = create(:account)
       user = create(:user, account: account)
@@ -2330,6 +2348,24 @@ RSpec.describe AgentRun do
              project: project, goal: "create_pr")
 
       expect(described_class.active_create_pr_count_for_account(account)).to eq(1)
+    end
+  end
+
+  describe ".reported_create_pr" do
+    it "includes user-facing create_pr runs and excludes preview provisioning runs" do
+      project = create(:project)
+      included_run = create(:agent_run, :completed, project: project, goal: "create_pr")
+      create(
+        :agent_run,
+        :completed,
+        :internal_agent,
+        project: project,
+        goal: "create_pr",
+        external_metadata: { "preview_session" => true }
+      )
+      create(:agent_run, :completed, :review_goal, project: project)
+
+      expect(described_class.reported_create_pr).to contain_exactly(included_run)
     end
   end
 

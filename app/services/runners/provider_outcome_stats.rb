@@ -103,7 +103,7 @@ module Runners
       scope = AgentRun
         .joins(:project)
         .where(projects: { account_id: account.id })
-        .where(goal: "create_pr")
+        .reported_create_pr
         .where(status: TRACKED_STATUSES)
         .where.not(completed_at: nil)
 

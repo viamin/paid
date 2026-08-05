@@ -49,6 +49,23 @@ RSpec.describe Dashboard::LiveStats do
       expect(stats[:completed_today]).to eq(0)
     end
 
+    it "excludes preview provisioning runs from the active create_pr metric" do
+      create(:agent_run, :running, project: project, goal: "create_pr", started_at: 5.minutes.ago)
+      create(
+        :agent_run,
+        :running,
+        :internal_agent,
+        project: project,
+        goal: "create_pr",
+        started_at: 4.minutes.ago,
+        external_metadata: { "preview_session" => true }
+      )
+
+      stats = described_class.call(account: account)
+
+      expect(stats[:active_create_pr_runs]).to eq(1)
+    end
+
     it "caches the aggregated payload" do
       create(:agent_run, project: project, status: "running", started_at: 5.minutes.ago)
 

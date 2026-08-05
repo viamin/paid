@@ -10,6 +10,7 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
   end
 
   def perform(chat_session_id:, content:, stream_message_id:)
+    # @spec CHAT-API-002
     chat_session = ChatSession.find(chat_session_id)
     stream_name = "chat_session:#{chat_session.id}"
 
@@ -81,6 +82,7 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
   private
 
   def broadcast_persisted_message(stream_name, message, stream_message_id: nil)
+    # @spec CHAT-API-002
     event_type = if message.role == "tool"
       "message_tool_result"
     elsif message.role == "assistant" && message.tool_name.present? && message.content.nil?

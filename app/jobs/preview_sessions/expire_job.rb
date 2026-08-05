@@ -40,7 +40,7 @@ module PreviewSessions
         session.mark_stopped!
       end
       true
-    rescue StandardError => e
+    rescue Previews::Lifecycle::Error => e
       Rails.logger.error(
         message: "preview_session.expire_failed",
         preview_session_id: session.id,
