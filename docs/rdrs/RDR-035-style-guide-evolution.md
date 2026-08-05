@@ -52,7 +52,7 @@ Four hard design questions must be resolved before implementation:
 - Resolves applicable guides via `StyleGuide.resolve_for(project)` (specificity inheritance: project > account > global)
 - Injects formatted guides into the prompt within a byte budget
 
-The main issue-run path has an important exception today: `CreateAgentRunActivity` can render and persist an issue `custom_prompt` up front, then apply `ProjectConventions::InjectIntoPrompt` directly. That bypasses `StyleGuides::InjectIntoPrompt`, so any design that relies on assignment or exposure tracking at style-guide injection time must explicitly cover that path.
+At draft time, the main issue-run path had an important exception: `CreateAgentRunActivity` could render and persist an issue `custom_prompt` up front, then apply `ProjectConventions::InjectIntoPrompt` directly, bypassing `StyleGuides::InjectIntoPrompt`. The shipped implementation closes that gap for PromptVersion-backed issue runs by calling `maybe_inject_style_guides!` immediately after creating the `AgentRun` whenever a caller did not provide a custom prompt. Caller-supplied custom prompts still intentionally skip style-guide injection, so any future design that needs assignment or exposure tracking for fully custom prompts must cover that path explicitly.
 
 `ChatSessions::BuildSystemPrompt` also renders style guide content, but it currently builds that section inline rather than calling `StyleGuides::InjectIntoPrompt`. Because the design below is built around `AgentRun`-backed assignment, exposure recording, and later quality-score attribution, chat-session prompt rendering is explicitly out of scope for the initial implementation.
 
