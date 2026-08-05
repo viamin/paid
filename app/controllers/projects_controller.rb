@@ -475,18 +475,20 @@ class ProjectsController < ApplicationController
   # It is never marked ready until a live app, tunnel, and container exist.
   def queue_preview_provision!(branch_name:)
     session = nil
+    sessions_to_teardown = []
 
     PreviewSession.transaction do
       @project.with_lock do
-        # Select in-flight sessions and tear them down under the same lock that
-        # stops them, so the sessions we stop are exactly the sessions we tear
-        # down. Capturing the set before the lock left a race: the provision job
-        # or another request could make a session non-terminal in the gap
-        # between the snapshot and the mark_stopped! sweep, stopping its row
-        # without ever calling Previews::Teardown — leaking its container,
-        # tunnel, and port reservation until a later orphan sweep.
+        # Select in-flight sessions and mark them stopped under the same lock so
+        # that the sessions we stop are exactly the sessions we tear down.
+        # Capturing the set before the lock left a race: the provision job or
+        # another request could make a session non-terminal in the gap between
+        # the snapshot and the mark_stopped! sweep, stopping its row without
+        # ever calling Previews::Teardown — leaking its container, tunnel, and
+        # port reservation until a later orphan sweep.
         PreviewSession.for_project(@project).non_terminal.each do |existing|
-          stop_preview_session(existing)
+          existing.mark_stopped!
+          sessions_to_teardown << existing
         end
         session = PreviewSession.build_for(
           project: @project,
@@ -497,17 +499,26 @@ class ProjectsController < ApplicationController
       end
     end
 
+    # Teardown runs AFTER the transaction committed so external side effects
+    # (container stop/delete, tunnel port release) are never orphaned by a
+    # rollback: if the transaction fails, the sessions still look active and
+    # still have their live resources intact; if it succeeds, the rows are
+    # already stopped before we tear anything down.
+    sessions_to_teardown.each { |s| Previews::Teardown.call(s) }
     PreviewSessions::ProvisionJob.perform_later(session.id)
   end
 
   # Tears down a preview session's live infrastructure (tunnel port + container)
   # before transitioning it to stopped, so stopping a preview releases the
   # resources it actually provisioned rather than only updating the row.
+  #
+  # Callers wrapped in a DB transaction MUST NOT use this method inline;
+  # instead split the two steps across the transaction boundary (see
+  # +queue_preview_provision!+ above for the pattern).
   def stop_preview_session(session)
     Previews::Teardown.call(session)
     session.mark_stopped!
   end
-
   def apply_nulls_last_ordering(scope)
     sort = @q.sorts.first
     return scope unless sort && NULLS_LAST_SORT_ATTRIBUTES.include?(sort.name)
