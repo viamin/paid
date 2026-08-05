@@ -17,7 +17,7 @@ follow-up issues were filed from this audit.
 
 - Tracking umbrella [#3050](https://github.com/viamin/paid/issues/3050) is closed as of Wednesday, August 5, 2026.
 - Phase issues [#3051](https://github.com/viamin/paid/issues/3051), [#3052](https://github.com/viamin/paid/issues/3052), [#3053](https://github.com/viamin/paid/issues/3053), [#3054](https://github.com/viamin/paid/issues/3054), [#3055](https://github.com/viamin/paid/issues/3055), [#3056](https://github.com/viamin/paid/issues/3056), [#3057](https://github.com/viamin/paid/issues/3057), and [#3058](https://github.com/viamin/paid/issues/3058) are all closed.
-- Closeout work remains tracked by the still-open audit issue [#3172](https://github.com/viamin/paid/issues/3172).
+- Closeout work was tracked in audit issue [#3172](https://github.com/viamin/paid/issues/3172).
 
 ## Verified Against The RDR
 
