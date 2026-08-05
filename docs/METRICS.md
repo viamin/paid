@@ -17,12 +17,12 @@ The checked-in observability stack assets use that split explicitly:
 | `paid_agent_runs_total` | gauge | `status` | Number of agent runs by status (queued, pending, running, completed, failed, etc.) |
 | `paid_agent_runs_active` | gauge | — | Currently active agent runs (pending + running) |
 | `paid_agent_runs_queued` | gauge | — | Agent runs waiting in queue |
-| `paid_agent_run_outcomes` | gauge | `status`, `outcome` | Current finished runs by terminal status, normalized to `success` (`completed`, `no_output`), `failure` (`failed`, `timeout`, `token_budget_exceeded`, `auth_expired`, `rate_limited`), or `non_provider` (`cancelled`, `retried`) |
-| `paid_agent_run_duration_seconds_bucket` | gauge | `outcome`, `le` | Current cumulative finished-run duration bucket counts in seconds |
-| `paid_agent_run_duration_seconds_sum` | gauge | `outcome` | Current total finished-run duration in seconds |
-| `paid_agent_run_duration_seconds_count` | gauge | `outcome` | Current number of finished runs with duration samples |
-| `paid_agent_run_tokens` | gauge | `direction`, `outcome` | Current finished-run tokens by `input`/`output` direction and normalized outcome |
-| `paid_agent_run_cost_cents` | gauge | `outcome` | Current finished-run cost in cents by normalized outcome |
+| `paid_agent_run_outcomes_window` | gauge | `status`, `outcome` | Current finished runs in the last 6h by terminal status, normalized to `success` (`completed`, `no_output`), `failure` (`failed`, `timeout`, `token_budget_exceeded`, `auth_expired`, `rate_limited`), or `non_provider` (`cancelled`, `retried`). Sliding-window snapshot — not a monotonic counter. |
+| `paid_agent_run_duration_seconds_bucket_window` | gauge | `outcome`, `le` | Current cumulative finished-run duration bucket counts in the last 6h. Sliding-window snapshot — not a cumulative Prometheus histogram. |
+| `paid_agent_run_duration_seconds_sum_window` | gauge | `outcome` | Total finished-run duration in seconds in the last 6h. Sliding-window snapshot. |
+| `paid_agent_run_duration_seconds_count_window` | gauge | `outcome` | Number of finished runs with duration samples in the last 6h. Sliding-window snapshot. |
+| `paid_agent_run_tokens_window` | gauge | `direction`, `outcome` | Finished-run tokens in the last 6h by `input`/`output` direction and normalized outcome. Sliding-window snapshot. |
+| `paid_agent_run_cost_cents_window` | gauge | `outcome` | Finished-run cost in cents in the last 6h by normalized outcome. Sliding-window snapshot. |
 
 ## GoodJob Queue Metrics
 
@@ -96,14 +96,14 @@ scrape_configs:
 
 ### Recommended dashboard queries
 
-- Current agent run failure ratio:
-  `sum(paid_agent_run_outcomes{outcome="failure"}) / clamp_min(sum(paid_agent_run_outcomes), 1)`
-- Current successful agent run duration p95:
-  `histogram_quantile(0.95, sum by (le) (paid_agent_run_duration_seconds_bucket{outcome="success"}))`
+- Current agent run failure ratio (use `max without(instance, pod, job)` to deduplicate across web replicas):
+  `max without(instance, pod, job) (paid_agent_run_outcomes_window{outcome="failure"}) / clamp_min(max without(instance, pod, job) (paid_agent_run_outcomes_window{outcome!="non_provider"}), 1)`
+- Current successful agent run duration p95 (snapshot quantile from the sliding window):
+  `histogram_quantile(0.95, max without(instance, pod, job) (paid_agent_run_duration_seconds_bucket_window{outcome="success"}))`
 - Current agent run token totals by direction:
-  `sum by (direction) (paid_agent_run_tokens)`
+  `max without(instance, pod, job) (paid_agent_run_tokens_window)`
 - Current finished-run spend in USD:
-  `sum(paid_agent_run_cost_cents) / 100`
+  `max without(instance, pod, job) (paid_agent_run_cost_cents_window) / 100`
 - Workflow task queue `schedule_to_start` p95 by task queue:
   `histogram_quantile(0.95, sum by (task_queue, le) (rate(temporal_workflow_task_schedule_to_start_latency_seconds_bucket[5m])))`
 - Activity task queue `schedule_to_start` p95 by task queue:

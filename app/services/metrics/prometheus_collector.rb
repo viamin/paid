@@ -3,16 +3,29 @@
 module Metrics
   # Collects application metrics and renders them in Prometheus text exposition format.
   # Used by the /api/metrics endpoint to feed external auto-scaling systems.
+  #
+  # DESIGN NOTE — sliding-window gauges, not monotonic counters:
+  # The finished-run metrics (outcomes, duration, tokens, cost) are derived from a
+  # 6-hour SQL window (FINISHED_RUN_WINDOW). Each scrape queries the DB directly and
+  # emits the current snapshot as gauges, not as ever-increasing counters. Values can
+  # drop when runs age past the window boundary. These metrics must NOT be used with
+  # PromQL rate()/increase() or cumulative-histogram operations (histogram_quantile
+  # on rate()-fed data). The _window suffix signals this semantic contract.
+  #
+  # Replica awareness: /api/metrics is a database-backed snapshot — every web replica
+  # exports the same values. Any PromQL aggregator across replicas should use
+  # max without(instance, pod, job) (or equivalent) to avoid multiplying values by
+  # replica count. Do NOT use sum(...) on these metrics in alert rules or dashboards.
   class PrometheusCollector
     DURATION_BUCKETS = [ 30, 60, 120, 300, 600, 900, 1_800, 3_600, 7_200 ].freeze
     FINISHED_RUN_WINDOW = 6.hours.freeze
-  RUN_OUTCOMES = %w[success failure non_provider].freeze
-    RUN_OUTCOME_METRIC = "paid_agent_run_outcomes".freeze
-    RUN_DURATION_BUCKET_METRIC = "paid_agent_run_duration_seconds_bucket".freeze
-    RUN_DURATION_SUM_METRIC = "paid_agent_run_duration_seconds_sum".freeze
-    RUN_DURATION_COUNT_METRIC = "paid_agent_run_duration_seconds_count".freeze
-    RUN_TOKEN_METRIC = "paid_agent_run_tokens".freeze
-    RUN_COST_METRIC = "paid_agent_run_cost_cents".freeze
+    RUN_OUTCOMES = %w[success failure non_provider].freeze
+    RUN_OUTCOME_METRIC = "paid_agent_run_outcomes_window".freeze
+    RUN_DURATION_BUCKET_METRIC = "paid_agent_run_duration_seconds_bucket_window".freeze
+    RUN_DURATION_SUM_METRIC = "paid_agent_run_duration_seconds_sum_window".freeze
+    RUN_DURATION_COUNT_METRIC = "paid_agent_run_duration_seconds_count_window".freeze
+    RUN_TOKEN_METRIC = "paid_agent_run_tokens_window".freeze
+    RUN_COST_METRIC = "paid_agent_run_cost_cents_window".freeze
 
     def self.call # @spec OBSERVABILITY-002
       Rails.cache.fetch("prometheus_metrics", expires_in: 15.seconds) do
@@ -177,7 +190,7 @@ module Metrics
     def collect_agent_run_outcome_metrics(lines)
       outcome_counts = finished_run_counts_by_status
 
-      append_metric_header(lines, RUN_OUTCOME_METRIC, "gauge", "Finished agent runs in the last #{FINISHED_RUN_WINDOW.in_hours.to_i}h by terminal status and normalized outcome.")
+      append_metric_header(lines, RUN_OUTCOME_METRIC, "gauge", "Finished agent runs in the last #{FINISHED_RUN_WINDOW.in_hours.to_i}h by terminal status and normalized outcome. This is a sliding-window snapshot gauge, not a monotonic counter.")
       AgentRun::FINISHED_STATUSES.each do |status|
         append_metric_sample(
           lines,
@@ -192,9 +205,9 @@ module Metrics
     def collect_agent_run_duration_metrics(lines)
       duration_counts = finished_run_durations_by_status
 
-      append_metric_header(lines, RUN_DURATION_BUCKET_METRIC, "gauge", "Finished agent run duration bucket counts in the last #{FINISHED_RUN_WINDOW.in_hours.to_i}h by normalized outcome.")
-      append_metric_header(lines, RUN_DURATION_SUM_METRIC, "gauge", "Total finished agent run duration in seconds in the last #{FINISHED_RUN_WINDOW.in_hours.to_i}h by normalized outcome.")
-      append_metric_header(lines, RUN_DURATION_COUNT_METRIC, "gauge", "Finished agent run counts with duration samples in the last #{FINISHED_RUN_WINDOW.in_hours.to_i}h by normalized outcome.")
+      append_metric_header(lines, RUN_DURATION_BUCKET_METRIC, "gauge", "Finished agent run duration bucket counts in the last #{FINISHED_RUN_WINDOW.in_hours.to_i}h by normalized outcome. Sliding-window snapshot; not a cumulative Prometheus histogram.")
+      append_metric_header(lines, RUN_DURATION_SUM_METRIC, "gauge", "Total finished agent run duration in seconds in the last #{FINISHED_RUN_WINDOW.in_hours.to_i}h by normalized outcome. Sliding-window snapshot.")
+      append_metric_header(lines, RUN_DURATION_COUNT_METRIC, "gauge", "Finished agent run counts with duration samples in the last #{FINISHED_RUN_WINDOW.in_hours.to_i}h by normalized outcome. Sliding-window snapshot.")
       RUN_OUTCOMES.each do |outcome|
         cumulative = 0
         grouped_counts = duration_counts.fetch(outcome) { Hash.new(0) }
@@ -212,7 +225,7 @@ module Metrics
     end
 
     def collect_agent_run_token_metrics(lines)
-      append_metric_header(lines, RUN_TOKEN_METRIC, "gauge", "Finished agent-run tokens in the last #{FINISHED_RUN_WINDOW.in_hours.to_i}h by direction and normalized outcome.")
+      append_metric_header(lines, RUN_TOKEN_METRIC, "gauge", "Finished agent-run tokens in the last #{FINISHED_RUN_WINDOW.in_hours.to_i}h by direction and normalized outcome. Sliding-window snapshot.")
 
       RUN_OUTCOMES.each do |outcome|
         append_metric_sample(lines, RUN_TOKEN_METRIC, finished_run_input_token_sums.fetch(outcome) { 0 }, direction: "input", outcome: outcome)
@@ -221,7 +234,7 @@ module Metrics
     end
 
     def collect_agent_run_cost_metrics(lines)
-      append_metric_header(lines, RUN_COST_METRIC, "gauge", "Finished agent-run cost in cents in the last #{FINISHED_RUN_WINDOW.in_hours.to_i}h by normalized outcome.")
+      append_metric_header(lines, RUN_COST_METRIC, "gauge", "Finished agent-run cost in cents in the last #{FINISHED_RUN_WINDOW.in_hours.to_i}h by normalized outcome. Sliding-window snapshot.")
 
       RUN_OUTCOMES.each do |outcome|
         append_metric_sample(lines, RUN_COST_METRIC, finished_run_cost_sums.fetch(outcome) { 0 }, outcome: outcome)

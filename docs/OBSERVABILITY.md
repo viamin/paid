@@ -52,12 +52,12 @@ Metrics are defined in `Metrics::PrometheusCollector` and rendered in Prometheus
 | `paid_agent_runs_total` | gauge | Number of agent runs by status |
 | `paid_agent_runs_active` | gauge | Currently active agent runs |
 | `paid_agent_runs_queued` | gauge | Agent runs waiting in queue |
-| `paid_agent_run_outcomes` | gauge | Current finished runs by terminal status and normalized outcome |
-| `paid_agent_run_duration_seconds_bucket` | gauge | Current finished run duration bucket counts in seconds |
-| `paid_agent_run_duration_seconds_sum` | gauge | Current total finished run duration in seconds |
-| `paid_agent_run_duration_seconds_count` | gauge | Current number of finished runs with duration samples |
-| `paid_agent_run_tokens` | gauge | Current finished-run tokens by direction and normalized outcome |
-| `paid_agent_run_cost_cents` | gauge | Current finished-run cost in cents by normalized outcome |
+| `paid_agent_run_outcomes_window` | gauge | Finished runs in the last 6h by terminal status and normalized outcome. Sliding-window snapshot. |
+| `paid_agent_run_duration_seconds_bucket_window` | gauge | Finished run duration bucket counts in the last 6h. Sliding-window snapshot; not a cumulative Prometheus histogram. |
+| `paid_agent_run_duration_seconds_sum_window` | gauge | Total finished run duration in seconds in the last 6h. Sliding-window snapshot. |
+| `paid_agent_run_duration_seconds_count_window` | gauge | Number of finished runs with duration samples in the last 6h. Sliding-window snapshot. |
+| `paid_agent_run_tokens_window` | gauge | Finished-run tokens in the last 6h by direction and normalized outcome. Sliding-window snapshot. |
+| `paid_agent_run_cost_cents_window` | gauge | Finished-run cost in cents in the last 6h by normalized outcome. Sliding-window snapshot. |
 
 #### GoodJob Queue Metrics
 

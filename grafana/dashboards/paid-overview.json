@@ -750,20 +750,20 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(paid_agent_run_outcomes{outcome=\"success\"})",
+          "expr": "max without(instance, pod, job) (paid_agent_run_outcomes_window{outcome=\"success\"})",
           "legendFormat": "successes",
           "range": true,
           "refId": "A"
         },
         {
           "editorMode": "code",
-          "expr": "sum(paid_agent_run_outcomes{outcome=\"failure\"})",
+          "expr": "max without(instance, pod, job) (paid_agent_run_outcomes_window{outcome=\"failure\"})",
           "legendFormat": "failures",
           "range": true,
           "refId": "B"
         }
       ],
-      "title": "Agent Run Outcome Rate",
+      "title": "Agent Run Outcomes",
       "type": "timeseries"
     },
     {
@@ -848,7 +848,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum by (le, outcome) (paid_agent_run_duration_seconds_bucket))",
+          "expr": "histogram_quantile(0.95, max without(instance, pod, job) (paid_agent_run_duration_seconds_bucket_window))",
           "legendFormat": "{{outcome}} p95",
           "range": true,
           "refId": "A"
@@ -939,7 +939,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum by (direction) (paid_agent_run_tokens)",
+          "expr": "max without(instance, pod, job) (paid_agent_run_tokens_window)",
           "legendFormat": "{{direction}} tokens",
           "range": true,
           "refId": "A"
@@ -1030,7 +1030,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "sum(paid_agent_run_cost_cents) / 100",
+          "expr": "max without(instance, pod, job) (paid_agent_run_cost_cents_window) / 100",
           "legendFormat": "USD total",
           "range": true,
           "refId": "A"

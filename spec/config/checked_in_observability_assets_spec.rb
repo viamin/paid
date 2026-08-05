@@ -30,7 +30,7 @@ RSpec.describe CheckedInObservabilityAssets, :no_db do # @spec OBSERVABILITY-003
 
     expect(dashboards).to include("path: /var/lib/grafana/dashboards")
     expect(Rails.root.join("grafana/dashboards/paid-overview.json").read).to include(
-      "Agent Run Outcome Rate",
+      "Agent Run Outcomes",
       "Agent Run Duration p95",
       "Agent Run Tokens",
       "Agent Run Cost"

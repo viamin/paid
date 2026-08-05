@@ -96,7 +96,7 @@ RSpec.describe ObservabilityAssets, :no_db do
     titles = overview.fetch("panels").map { |panel| panel.fetch("title") }
 
     expect(titles).to include(
-      "Agent Run Outcome Rate",
+      "Agent Run Outcomes",
       "Agent Run Duration p95",
       "Agent Run Tokens",
       "Agent Run Cost"
