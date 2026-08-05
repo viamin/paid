@@ -213,6 +213,7 @@ RSpec.describe Tools::ProposePullRequest do
 
         it "raises the rejection without retrying" do
           tool = described_class.new(user:, session:)
+          allow(tool).to receive(:project_for_manifest_entry).and_return(project)
           with_github_origin(repo:, full_name: project.full_name)
           rejection = "! [remote rejected] feature/pr-proposal (refusing to allow a GitHub App)"
           push_envs = script_pushes(tool:, results: [ [ "", rejection, 1 ] ])

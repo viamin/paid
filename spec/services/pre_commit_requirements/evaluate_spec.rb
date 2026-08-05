@@ -157,8 +157,11 @@ RSpec.describe PreCommitRequirements::Evaluate do
 
       before do
         create(:pre_commit_requirement, :mutation_test, account: account, project: project, name: "mutant", failure_behavior: "warn")
+        mutant_command = MutantResultsReader.with_results_dir(
+          "bundle exec mutant run --since HEAD\\~1 --use rspec --jobs 1 --results-dir .mutant/results"
+        )
         allow(agent_run).to receive(:execute_in_container).with(
-          "bundle exec mutant run --since HEAD\\~1 --use rspec --jobs 1 --results-dir .mutant/results",
+          mutant_command,
           stream: false
         ).and_return(success_result)
 

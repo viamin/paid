@@ -2,15 +2,18 @@
 
 require "rails_helper"
 require Rails.root.join("db/migrate/20260509101016_create_coordination_policies")
+require Rails.root.join("db/migrate/20260704043457_add_idempotency_key_to_evolution_tables")
 RSpec.describe CreateCoordinationPolicies, :aggregate_failures do
   self.use_transactional_tests = false
 
   let(:migration) { described_class.new }
+  let(:idempotency_migration) { AddIdempotencyKeyToEvolutionTables.new }
   let(:connection) { ActiveRecord::Base.connection }
 
   around do |example|
     policies_table_existed = connection.table_exists?(:coordination_policies)
     versions_table_existed = connection.table_exists?(:coordination_policy_versions)
+    idempotency_key_existed = connection.column_exists?(:coordination_policy_versions, :idempotency_key)
 
     migration.down if policies_table_existed || versions_table_existed
     clear_schema_metadata!(connection)
@@ -20,6 +23,7 @@ RSpec.describe CreateCoordinationPolicies, :aggregate_failures do
     migration.down if connection.table_exists?(:coordination_policies) || connection.table_exists?(:coordination_policy_versions)
 
     migration.up if policies_table_existed || versions_table_existed
+    idempotency_migration.up if idempotency_key_existed
     clear_schema_metadata!(connection)
   end
 
