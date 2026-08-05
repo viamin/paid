@@ -66,12 +66,12 @@ groups:
       - alert: PaidAgentRunFailureRateHigh
         expr: |
           (
-            max without(instance, pod, job) (paid_agent_run_outcomes_window{outcome="failure"})
+            sum(max without(instance, pod, job) (paid_agent_run_outcomes_window{outcome="failure"}))
             /
-            clamp_min(max without(instance, pod, job) (paid_agent_run_outcomes_window{outcome!="non_provider"}), 1)
+            clamp_min(sum(max without(instance, pod, job) (paid_agent_run_outcomes_window{outcome!="non_provider"})), 1)
           ) > 0.4
           and
-          max without(instance, pod, job) (paid_agent_run_outcomes_window{outcome!="non_provider"}) >= 5
+          sum(max without(instance, pod, job) (paid_agent_run_outcomes_window{outcome!="non_provider"})) >= 5
         for: 15m
         labels:
           severity: warning

@@ -750,14 +750,14 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "max without(instance, pod, job) (paid_agent_run_outcomes_window{outcome=\"success\"})",
+          "expr": "sum(max without(instance, pod, job) (paid_agent_run_outcomes_window{outcome=\"success\"}))",
           "legendFormat": "successes",
           "range": true,
           "refId": "A"
         },
         {
           "editorMode": "code",
-          "expr": "max without(instance, pod, job) (paid_agent_run_outcomes_window{outcome=\"failure\"})",
+          "expr": "sum(max without(instance, pod, job) (paid_agent_run_outcomes_window{outcome=\"failure\"}))",
           "legendFormat": "failures",
           "range": true,
           "refId": "B"
@@ -939,7 +939,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "max without(instance, pod, job) (paid_agent_run_tokens_window)",
+          "expr": "sum by (direction) (max without(instance, pod, job) (paid_agent_run_tokens_window))",
           "legendFormat": "{{direction}} tokens",
           "range": true,
           "refId": "A"
@@ -1030,7 +1030,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "max without(instance, pod, job) (paid_agent_run_cost_cents_window) / 100",
+          "expr": "sum(max without(instance, pod, job) (paid_agent_run_cost_cents_window)) / 100",
           "legendFormat": "USD total",
           "range": true,
           "refId": "A"

@@ -96,14 +96,14 @@ scrape_configs:
 
 ### Recommended dashboard queries
 
-- Current agent run failure ratio (use `max without(instance, pod, job)` to deduplicate across web replicas):
-  `max without(instance, pod, job) (paid_agent_run_outcomes_window{outcome="failure"}) / clamp_min(max without(instance, pod, job) (paid_agent_run_outcomes_window{outcome!="non_provider"}), 1)`
+- Current agent run failure ratio (use `max without(instance, pod, job)` to deduplicate across web replicas, then `sum` to aggregate across remaining labels):
+  `sum(max without(instance, pod, job) (paid_agent_run_outcomes_window{outcome="failure"})) / clamp_min(sum(max without(instance, pod, job) (paid_agent_run_outcomes_window{outcome!="non_provider"})), 1)`
 - Current successful agent run duration p95 (snapshot quantile from the sliding window):
   `histogram_quantile(0.95, max without(instance, pod, job) (paid_agent_run_duration_seconds_bucket_window{outcome="success"}))`
 - Current agent run token totals by direction:
-  `max without(instance, pod, job) (paid_agent_run_tokens_window)`
+  `sum by (direction) (max without(instance, pod, job) (paid_agent_run_tokens_window))`
 - Current finished-run spend in USD:
-  `max without(instance, pod, job) (paid_agent_run_cost_cents_window) / 100`
+  `sum(max without(instance, pod, job) (paid_agent_run_cost_cents_window)) / 100`
 - Workflow task queue `schedule_to_start` p95 by task queue:
   `histogram_quantile(0.95, sum by (task_queue, le) (rate(temporal_workflow_task_schedule_to_start_latency_seconds_bucket[5m])))`
 - Activity task queue `schedule_to_start` p95 by task queue:
