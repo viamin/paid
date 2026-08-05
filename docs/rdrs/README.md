@@ -60,7 +60,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
 | [RDR-010](RDR-010-multi-tenancy-rbac.md) | Multi-Tenancy and RBAC | Implemented | Medium |
-| [RDR-011](RDR-011-observability.md) | Observability Stack | Partially Implemented | Medium |
+| [RDR-011](RDR-011-observability.md) | Observability Stack | Implemented | Medium |
 | [RDR-039](RDR-039-exception-notification-custom-notifier.md) | Exception Reporting via `exception_notification` Custom Notifier | Implemented | P2 |
 | [RDR-018](RDR-018-billing-aggregation.md) | Billing Aggregation System | Implemented | P2 |
 | [RDR-024](RDR-024-multi-tenancy-isolation-strategy.md) | Multi-Tenancy Isolation Strategy | Implemented | High |
