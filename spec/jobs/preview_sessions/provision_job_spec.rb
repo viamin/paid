@@ -74,6 +74,26 @@ RSpec.describe PreviewSessions::ProvisionJob do
     expect(Previews::Provision).not_to have_received(:new)
   end
 
+  # @spec LIVE-PREVIEW-003
+  it "does not enqueue run-quality, anomaly, or recovery jobs when the preview run finishes" do
+    preview_session = create(:preview_session, :provisioning, project:, account:, created_by: user, branch_name: "feature/live-preview")
+    provision = instance_double(Previews::Provision, call: true)
+
+    allow(Dir).to receive(:mktmpdir).and_yield("/tmp/paid-preview-session-spec")
+    allow(Previews::Provision).to receive(:new).and_return(provision)
+
+    described_class.perform_now(preview_session.id)
+
+    enqueued = ApplicationJob.queue_adapter.enqueued_jobs.map { |job| job[:job] }
+    # Synthetic preview runs reuse the create_pr lifecycle to drive provisioning
+    # but never execute a real agent, so finishing them must not trigger the
+    # normal run-quality / anomaly / recovery followups.
+    expect(enqueued).not_to include(QualityMetricsCollectionJob)
+    expect(enqueued).not_to include(HumanFeedbackCollectionJob)
+    expect(enqueued).not_to include(AnomalyDetectionJob)
+    expect(enqueued).not_to include(FailureRecoveryDecisionJob)
+  end
+
   it "cleans up and does not resurrect a session stopped during provisioning" do
     preview_session = create(:preview_session, :provisioning, project:, account:, created_by: user)
     provision = instance_double(Previews::Provision, cleanup!: true)

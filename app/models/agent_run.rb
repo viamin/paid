@@ -220,13 +220,13 @@ class AgentRun < ApplicationRecord
   after_commit :broadcast_project_updates, on: [ :create, :update ]
   after_commit :update_project_last_agent_run_at, on: :create
   after_commit :invalidate_runner_options_cache_on_change, on: [ :create, :update ]
-  after_commit :enqueue_quality_metrics_collection, on: :update, if: :just_finished?
-  after_commit :enqueue_anomaly_detection, on: :update, if: :just_finished?
-  after_commit :enqueue_resource_profile_refresh, on: :update, if: :just_finished?
+  after_commit :enqueue_quality_metrics_collection, on: :update, if: :real_run_just_finished?
+  after_commit :enqueue_anomaly_detection, on: :update, if: :real_run_just_finished?
+  after_commit :enqueue_resource_profile_refresh, on: :update, if: :real_run_just_finished?
   after_commit :enqueue_container_metrics_collection, on: :update, if: :just_started_running?
   after_commit :enqueue_issue_goal_timeout_retry, on: :update, if: :just_timed_out_issue_goal?
   after_commit :enqueue_failure_recovery_decision, on: :update, if: :recovery_decision_required?
-  after_commit :record_dispatch_circuit_breaker_outcome, on: :update, if: :just_finished?
+  after_commit :record_dispatch_circuit_breaker_outcome, on: :update, if: :real_run_just_finished?
 
   validates :agent_type, presence: true, inclusion: { in: AGENT_TYPES }
   validates :status, presence: true, inclusion: { in: STATUSES }
@@ -1521,6 +1521,16 @@ class AgentRun < ApplicationRecord
 
   def lid_planning_goal?
     goal == "lid_planning"
+  end
+
+  # Synthetic `internal_agent` runs (e.g. live-preview provisioning) reuse the
+  # agent-run lifecycle to drive container provisioning but never execute a real
+  # agent and cannot produce a PR, issue, or review artifact. They must bypass
+  # run-quality collection, anomaly detection, dispatch circuit-breaker
+  # accounting, and failure-recovery decisions so they don't record bogus
+  # create-pr metrics or enqueue follow-up work for a run that produces nothing.
+  def synthetic_operational_run?
+    agent_type == "internal_agent"
   end
 
   def plan_docs_present?
@@ -2937,6 +2947,13 @@ class AgentRun < ApplicationRecord
     previous_changes.key?("status") && finished?
   end
 
+  # True when a real (non-synthetic) agent run just reached a terminal state.
+  # Synthetic internal_agent runs (preview provisioning) finish via update too,
+  # but they must not trigger terminal-state side effects, so they are excluded.
+  def real_run_just_finished?
+    just_finished? && !synthetic_operational_run?
+  end
+
   def enqueue_quality_metrics_collection
     QualityMetricsCollectionJob.perform_later(id)
     HumanFeedbackCollectionJob.set(wait: 5.minutes).perform_later(id) if successful?
@@ -3051,6 +3068,8 @@ class AgentRun < ApplicationRecord
   end
 
   def recovery_decision_required?
+    return false if synthetic_operational_run?
+
     previous_changes.key?("status") && status.in?(recovery_decision_statuses)
   end
 

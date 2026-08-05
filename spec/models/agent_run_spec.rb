@@ -4458,6 +4458,70 @@ RSpec.describe AgentRun do
     end
   end
 
+  # @spec LIVE-PREVIEW-003
+  describe "synthetic operational run finish callbacks" do
+    let(:project) { create(:project) }
+
+    it "flags internal_agent runs as synthetic operational runs" do
+      synthetic = create(:agent_run, :running, :internal_agent, :with_custom_prompt, project: project)
+      real = create(:agent_run, :running, project: project)
+
+      expect(synthetic).to be_synthetic_operational_run
+      expect(real).not_to be_synthetic_operational_run
+    end
+
+    it "does not enqueue run-quality collection for an internal_agent run finishing" do
+      agent_run = create(:agent_run, :running, :internal_agent, :with_custom_prompt, project: project)
+
+      expect {
+        agent_run.update!(status: "completed", completed_at: Time.current, duration_seconds: 10)
+      }.not_to have_enqueued_job(QualityMetricsCollectionJob)
+    end
+
+    it "does not enqueue human feedback collection for an internal_agent run finishing" do
+      agent_run = create(:agent_run, :running, :internal_agent, :with_custom_prompt, project: project)
+
+      expect {
+        agent_run.update!(status: "completed", completed_at: Time.current, duration_seconds: 10)
+      }.not_to have_enqueued_job(HumanFeedbackCollectionJob)
+    end
+
+    it "does not enqueue anomaly detection for an internal_agent run finishing" do
+      agent_run = create(:agent_run, :running, :internal_agent, :with_custom_prompt, project: project)
+
+      expect {
+        agent_run.update!(status: "completed", completed_at: Time.current, duration_seconds: 10)
+      }.not_to have_enqueued_job(AnomalyDetectionJob)
+    end
+
+    it "does not record a dispatch circuit-breaker outcome for an internal_agent run finishing" do
+      agent_run = create(:agent_run, :running, :internal_agent, :with_custom_prompt,
+                         project: project, final_runner: "claude")
+
+      expect {
+        agent_run.update!(status: "completed", completed_at: Time.current, duration_seconds: 10)
+      }.not_to have_enqueued_job(DispatchCircuitBreakerOutcomeJob)
+    end
+
+    it "does not enqueue failure-recovery for a failed internal_agent run" do
+      agent_run = create(:agent_run, :running, :internal_agent, :with_custom_prompt, project: project)
+
+      expect {
+        agent_run.update!(status: "failed", completed_at: Time.current,
+                          error_message: "preview boot failed", duration_seconds: 10)
+      }.not_to have_enqueued_job(FailureRecoveryDecisionJob)
+    end
+
+    it "still enqueues run-quality and anomaly collection for a real run finishing" do
+      agent_run = create(:agent_run, :running, project: project)
+
+      expect {
+        agent_run.update!(status: "completed", completed_at: Time.current, duration_seconds: 10)
+      }.to have_enqueued_job(QualityMetricsCollectionJob).with(agent_run.id)
+        .and have_enqueued_job(AnomalyDetectionJob).with(agent_run.id)
+    end
+  end
+
   describe "#pause!" do
     it "transitions a running run to paused with violation context" do
       agent_run = create(:agent_run, :running)
