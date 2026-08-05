@@ -118,6 +118,19 @@ RSpec.describe Metrics::PrometheusCollector do # @spec OBSERVABILITY-002
         expect(refreshed_output).to include('paid_agent_run_outcomes{status="failed",outcome="failure"} 0')
         expect(refreshed_output).to include('paid_agent_run_outcomes{status="retried",outcome="failure"} 1')
       end
+
+      it "excludes finished runs older than the FINISHED_RUN_WINDOW" do
+        create(
+          :agent_run,
+          :completed,
+          :with_metrics,
+          duration_seconds: 45,
+          completed_at: (Metrics::PrometheusCollector::FINISHED_RUN_WINDOW + 1.hour).ago
+        )
+
+        expect(output).not_to include('paid_agent_run_outcomes{status="completed",outcome="success"} 2')
+        expect(output).to include('paid_agent_run_outcomes{status="completed",outcome="success"} 1')
+      end
     end
 
     context "with container resource metrics" do

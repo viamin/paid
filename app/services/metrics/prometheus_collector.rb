@@ -5,6 +5,7 @@ module Metrics
   # Used by the /api/metrics endpoint to feed external auto-scaling systems.
   class PrometheusCollector
     DURATION_BUCKETS = [ 30, 60, 120, 300, 600, 900, 1_800, 3_600, 7_200 ].freeze
+    FINISHED_RUN_WINDOW = 6.hours.freeze
     RUN_OUTCOMES = %w[success failure].freeze
     RUN_OUTCOME_METRIC = "paid_agent_run_outcomes".freeze
     RUN_DURATION_BUCKET_METRIC = "paid_agent_run_duration_seconds_bucket".freeze
@@ -176,7 +177,7 @@ module Metrics
     def collect_agent_run_outcome_metrics(lines)
       outcome_counts = finished_run_counts_by_status
 
-      append_metric_header(lines, RUN_OUTCOME_METRIC, "gauge", "Current finished agent runs by terminal status and normalized outcome.")
+      append_metric_header(lines, RUN_OUTCOME_METRIC, "gauge", "Finished agent runs in the last #{FINISHED_RUN_WINDOW.in_hours.to_i}h by terminal status and normalized outcome.")
       AgentRun::FINISHED_STATUSES.each do |status|
         append_metric_sample(
           lines,
@@ -191,9 +192,9 @@ module Metrics
     def collect_agent_run_duration_metrics(lines)
       duration_counts = finished_run_durations_by_status
 
-      append_metric_header(lines, RUN_DURATION_BUCKET_METRIC, "gauge", "Current finished agent run duration bucket counts by normalized outcome.")
-      append_metric_header(lines, RUN_DURATION_SUM_METRIC, "gauge", "Current total finished agent run duration in seconds by normalized outcome.")
-      append_metric_header(lines, RUN_DURATION_COUNT_METRIC, "gauge", "Current finished agent run counts with duration samples by normalized outcome.")
+      append_metric_header(lines, RUN_DURATION_BUCKET_METRIC, "gauge", "Finished agent run duration bucket counts in the last #{FINISHED_RUN_WINDOW.in_hours.to_i}h by normalized outcome.")
+      append_metric_header(lines, RUN_DURATION_SUM_METRIC, "gauge", "Total finished agent run duration in seconds in the last #{FINISHED_RUN_WINDOW.in_hours.to_i}h by normalized outcome.")
+      append_metric_header(lines, RUN_DURATION_COUNT_METRIC, "gauge", "Finished agent run counts with duration samples in the last #{FINISHED_RUN_WINDOW.in_hours.to_i}h by normalized outcome.")
       RUN_OUTCOMES.each do |outcome|
         cumulative = 0
         grouped_counts = duration_counts.fetch(outcome) { Hash.new(0) }
@@ -211,7 +212,7 @@ module Metrics
     end
 
     def collect_agent_run_token_metrics(lines)
-      append_metric_header(lines, RUN_TOKEN_METRIC, "gauge", "Current finished agent-run tokens by direction and normalized outcome.")
+      append_metric_header(lines, RUN_TOKEN_METRIC, "gauge", "Finished agent-run tokens in the last #{FINISHED_RUN_WINDOW.in_hours.to_i}h by direction and normalized outcome.")
 
       RUN_OUTCOMES.each do |outcome|
         append_metric_sample(lines, RUN_TOKEN_METRIC, finished_run_input_token_sums.fetch(outcome) { 0 }, direction: "input", outcome: outcome)
@@ -220,7 +221,7 @@ module Metrics
     end
 
     def collect_agent_run_cost_metrics(lines)
-      append_metric_header(lines, RUN_COST_METRIC, "gauge", "Current finished agent-run cost in cents by normalized outcome.")
+      append_metric_header(lines, RUN_COST_METRIC, "gauge", "Finished agent-run cost in cents in the last #{FINISHED_RUN_WINDOW.in_hours.to_i}h by normalized outcome.")
 
       RUN_OUTCOMES.each do |outcome|
         append_metric_sample(lines, RUN_COST_METRIC, finished_run_cost_sums.fetch(outcome) { 0 }, outcome: outcome)
@@ -229,6 +230,7 @@ module Metrics
 
     def finished_run_scope
       AgentRun.where(status: AgentRun::FINISHED_STATUSES)
+              .where(completed_at: FINISHED_RUN_WINDOW.ago..)
     end
 
     def finished_run_counts_by_status
