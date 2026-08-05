@@ -5,15 +5,35 @@
 ## Metadata
 
 - **Date**: 2026-05-30
-- **Status**: Partially Implemented
+- **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: P1
-- **Related Issues**: #2378 (tracking), #2381 (phase 1), #2380 (phase 2), #2379 (phase 3a), #2383 (phase 3b), #2382 (phase 3c), #2384 (phase 4), #2385 (phase 5)
+- **Related Issues**: #2378 (tracking), #2381 (phase 1), #2380 (phase 2), #2379 (phase 3a), #2383 (phase 3b), #2382 (phase 3c), #2384 (phase 4), #2385 (phase 5), #3170 (closeout audit)
 - **Related RDRs**: [RDR-007](RDR-007-agent-cli-abstraction.md) (agent-harness), [RDR-008](RDR-008-model-selection.md) (model selection), [RDR-034](RDR-034-tier-based-runner-fallback.md) (tier-based fallback), [RDR-025](RDR-025-runner-quota-tracking.md) (runner quota tracking)
 
 ## Implementation Status
 
-Partially implemented. Paid has free-model fields on `LlmModel`, project data classification, the `openrouter_free` runner, OpenRouter data-routing controls, free-model defaults, rotation for knowledge execution, catalog UI, exclusions, and runner wiring. OpenRouter model sync/classification/quality filtering is not implemented yet and remains tracked by #2380.
+Implemented. Paid ships the full free-model catalog and runner flow described here: `LlmModel` free-model fields, project `data_classification`, the `openrouter_free` runner, OpenRouter data-routing controls, daily OpenRouter free-model sync, deterministic classification, quality-bar filtering, default tier selection, rotation for knowledge execution, catalog UI, exclusions, and runner wiring. The phase chain that originally tracked this work (#2378, #2381, #2380, #2379, #2383, #2382, #2384, #2385) is closed.
+
+## Closeout Audit (2026-08-04)
+
+The closeout audit in [#3170](https://github.com/viamin/paid/issues/3170) verified
+that the phase-2 gap previously called out here is shipped:
+
+- `FreeModels::Sync` persists zero-priced OpenRouter models into `LlmModel` with
+  `pricing_tier: "free"` and `catalog_source: "openrouter_sync"`, links paid
+  counterparts, preserves upstream metadata, and deactivates disappeared synced
+  rows.
+- `FreeModels::Classify` derives capability score and tier from deterministic
+  metadata heuristics.
+- `FreeModels::QualityFilter` marks weak models with
+  `metadata["below_quality_bar"]`.
+- `FreeModels::SyncJob` is scheduled daily through GoodJob.
+- `FreeModels::DefaultTierModels` and free-model rotation skip
+  `below_quality_bar` models by default.
+
+As a result, closed issue [#2380](https://github.com/viamin/paid/issues/2380)
+should be treated as completed implementation work, not as an active gap.
 
 ## Problem Statement
 
@@ -72,7 +92,7 @@ Key components:
 - **`Models::Select`** — model selection pipeline that picks a tier and model based on complexity, preferences, and runner configuration.
 - **`Runners::ResolveTierModel`** — resolves `(runner, tier) → concrete model_id` at execution time.
 
-### What's Missing
+### What Was Missing At Proposal Time
 
 - `LlmModel` has no `pricing_tier` column — all models are implicitly paid.
 - There is no scheduled job that syncs OpenRouter's free model catalog into `LlmModel`.
