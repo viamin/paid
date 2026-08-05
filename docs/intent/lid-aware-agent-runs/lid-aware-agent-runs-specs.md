@@ -9,7 +9,10 @@
 - [x] **LID-RUNS-001** — When a project declares `lid_mode`, prompt building
   SHALL append a LID-aware workflow section instructing the agent to read the
   design tree, work tests-first, add `@spec` annotations, and run the
-  coherence checker before finishing.
+  coherence checker before finishing. When the run includes confirmed elicited
+  intent from issue enhancement, that section SHALL also instruct the agent to
+  draft or update the relevant LLD and EARS artifacts before or alongside code
+  changes.
   *Code:* `app/services/lid/inject_into_prompt.rb`.
   *Test:* `spec/services/lid/inject_into_prompt_spec.rb`.
 

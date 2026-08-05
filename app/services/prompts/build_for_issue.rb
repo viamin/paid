@@ -235,6 +235,7 @@ module Prompts
 
       if lid_enabled?
         guidance << "Carry them into any LID artifact updates you make while implementing the change."
+        guidance << "Draft or update the relevant LLD and EARS artifacts from these answers before or alongside code changes."
       end
 
       guidance.join(" ")
