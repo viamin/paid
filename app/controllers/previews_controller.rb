@@ -26,6 +26,7 @@ class PreviewsController < ApplicationController
   def stop
     authorize @preview_session, :stop?
 
+    Previews::Teardown.call(@preview_session)
     @preview_session.mark_stopped!
     audit_event("preview.stopped", metadata: { preview_session_id: @preview_session.id })
 

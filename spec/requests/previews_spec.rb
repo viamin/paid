@@ -258,11 +258,24 @@ RSpec.describe "Previews" do
 
     before { sign_in user }
 
-    it "marks the preview as stopped and redirects to the project" do
+    it "marks the preview as stopped, tearing down its infrastructure, and redirects to the project" do
+      reservation = PreviewTunnelPortReservation.create!(
+        reservation_key: "preview_session:#{preview_session.id}",
+        tunnel_port: preview_session.tunnel_port
+      )
+      container = instance_double(Docker::Container, info: { "State" => { "Running" => true } })
+      backend = instance_double(Containers::Backends::Base)
+      allow(backend).to receive(:get_container).and_return(container)
+      allow(backend).to receive(:stop_container)
+      allow(backend).to receive(:delete_container)
+      allow(Containers).to receive(:backend).and_return(backend)
+
       post stop_project_preview_session_path(project, preview_session)
 
       expect(preview_session.reload.status).to eq("stopped")
       expect(response).to redirect_to(project_path(project))
+      expect(PreviewTunnelPortReservation.exists?(reservation.id)).to be(false)
+      expect(backend).to have_received(:delete_container).with(container, force: true, v: true)
     end
 
     it "does not allow a non-admin member to stop" do

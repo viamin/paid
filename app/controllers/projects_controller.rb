@@ -403,7 +403,7 @@ class ProjectsController < ApplicationController
     authorize @project, :update?
 
     sessions = PreviewSession.for_project(@project).non_terminal.to_a
-    sessions.each(&:mark_stopped!)
+    sessions.each { |session| stop_preview_session(session) }
     notice = sessions.empty? ? "No preview was running." : "Preview stopped."
 
     redirect_to project_path(@project, anchor: "preview"), notice: notice
@@ -468,6 +468,16 @@ class ProjectsController < ApplicationController
   # asynchronous provisioning lifecycle; it is not marked ready until a live
   # app, tunnel, and container exist.
   def queue_preview_provision!(branch_name:)
+    previous_sessions = PreviewSession.for_project(@project).non_terminal.to_a
+
+    # Tear down the live infrastructure (tunnel port reservation + preview
+    # container) of any in-flight previews before they are marked stopped, so
+    # the port is released back to the pool and the old container is removed
+    # immediately rather than lingering until a later orphan sweep. Repeated
+    # restarts would otherwise leak reservations until the port pool is
+    # exhausted and keep serving a preview the UI reports as stopped.
+    previous_sessions.each { |session| Previews::Teardown.call(session) }
+
     session = nil
 
     PreviewSession.transaction do
@@ -484,6 +494,14 @@ class ProjectsController < ApplicationController
     end
 
     PreviewSessions::ProvisionJob.perform_later(session.id)
+  end
+
+  # Tears down a preview session's live infrastructure (tunnel port + container)
+  # before transitioning it to stopped, so stopping a preview releases the
+  # resources it actually provisioned rather than only updating the row.
+  def stop_preview_session(session)
+    Previews::Teardown.call(session)
+    session.mark_stopped!
   end
 
   def apply_nulls_last_ordering(scope)

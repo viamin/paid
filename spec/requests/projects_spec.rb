@@ -16,6 +16,35 @@ RSpec.describe "Projects" do
     Projects::Screenshots::RepoConfig::Result.new(config: config, content: content, error: error)
   end
 
+  # Stubs the Docker backend (an external dependency) so preview teardown in the
+  # request flow can be observed without a live Docker daemon, and records the
+  # container id it reports as running so the removal can be asserted.
+  def stub_preview_container_removal(container_id)
+    container = instance_double(Docker::Container, info: { "State" => { "Running" => true } })
+    backend = instance_double(Containers::Backends::Base)
+    allow(backend).to receive(:get_container).with(container_id).and_return(container)
+    allow(backend).to receive(:stop_container)
+    allow(backend).to receive(:delete_container)
+    allow(Containers).to receive(:backend).and_return(backend)
+    @stubbed_preview_backend = backend
+  end
+
+  attr_reader :stubbed_preview_backend
+
+  # Asserts the preview's live infrastructure was actually torn down: the tunnel
+  # port reservation is released back to the pool and the container removed, not
+  # just the session row updated.
+  def expect_preview_infrastructure_torn_down(reservation:)
+    expect(PreviewTunnelPortReservation.exists?(reservation.id)).to be(false)
+    expect(stubbed_preview_backend).to have_received(:delete_container)
+      .with(anything, force: true, v: true)
+  end
+
+  def enqueued_preview_job_arg
+    job = ActiveJob::Base.queue_adapter.enqueued_jobs.find { |j| j[:job] == PreviewSessions::ProvisionJob }
+    job[:args]
+  end
+
   describe "GET /projects" do
     context "when not authenticated" do
       it "redirects to the sign in page" do
@@ -1296,9 +1325,14 @@ RSpec.describe "Projects" do
   describe "POST /projects/:id/stop_preview" do
     before { sign_in user }
 
-    it "stops the active preview session" do
+    it "stops the active preview session and tears down its live infrastructure" do
       project = create(:project, account: account, github_token: github_token)
       session = create(:preview_session, :ready, project: project, tunnel_port: 8251)
+      reservation = PreviewTunnelPortReservation.create!(
+        reservation_key: "preview_session:#{session.id}",
+        tunnel_port: 8251
+      )
+      stub_preview_container_removal(session.container_id)
 
       post stop_preview_project_path(project)
 
@@ -1306,6 +1340,9 @@ RSpec.describe "Projects" do
       expect(flash[:notice]).to eq("Preview stopped.")
       expect(session.reload.status).to eq("stopped")
       expect(session.tunnel_port).to be_nil
+      # Real teardown: the tunnel port reservation is released back to the pool
+      # and the preview container is removed, not just the row updated.
+      expect_preview_infrastructure_torn_down(reservation:)
     end
   end
 
@@ -1315,6 +1352,7 @@ RSpec.describe "Projects" do
     it "restarts the latest preview branch and replaces the active session" do
       project = create(:project, account: account, github_token: github_token)
       previous = create(:preview_session, :ready, project: project, branch_name: "feature/restart", tunnel_port: 8252)
+      stub_preview_container_removal(previous.container_id)
 
       expect {
         post restart_preview_project_path(project)
@@ -1328,10 +1366,23 @@ RSpec.describe "Projects" do
       expect(current.id).not_to eq(previous.id)
       expect(current.branch_name).to eq("feature/restart")
       expect(current.status).to eq("provisioning")
-      preview_job = ActiveJob::Base.queue_adapter.enqueued_jobs.find do |job|
-        job[:job] == PreviewSessions::ProvisionJob
-      end
-      expect(preview_job[:args]).to eq([ current.id ])
+      expect(enqueued_preview_job_arg).to eq([ current.id ])
+    end
+
+    it "tears down the previous session's infrastructure before queueing the new one" do
+      project = create(:project, account: account, github_token: github_token)
+      previous = create(:preview_session, :ready, project: project, branch_name: "feature/restart", tunnel_port: 8252)
+      reservation = PreviewTunnelPortReservation.create!(
+        reservation_key: "preview_session:#{previous.id}",
+        tunnel_port: 8252
+      )
+      stub_preview_container_removal(previous.container_id)
+
+      post restart_preview_project_path(project)
+
+      # Repeated restarts would otherwise leak reservations until the port pool
+      # is exhausted and keep serving a preview the UI reports as stopped.
+      expect_preview_infrastructure_torn_down(reservation:)
     end
   end
 
