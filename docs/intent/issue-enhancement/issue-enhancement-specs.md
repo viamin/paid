@@ -21,6 +21,19 @@
   *Code:* `app/temporal/activities/enhance_issue_activity.rb#prompt_for`,
   `app/services/clarifying_questions/load.rb`.
 
+- [x] **ISSUE-ENHANCEMENT-005** — When issue enhancement re-evaluates an issue
+  after the user answers clarifying questions, the system SHALL include the
+  prior clarifying questions and answers in the conversation context supplied
+  to the LLM, even though those comments are authored by the project's GitHub
+  App bot (which the human-only comment trust filter deliberately excludes).
+  The system SHALL re-admit only Paid's own structured marker comments via
+  comment admission, never arbitrary bot comments, so the re-evaluation
+  considers already-provided answers rather than re-asking them.
+  *Tests:* `spec/temporal/activities/enhance_issue_activity_spec.rb`.
+  *Code:* `app/temporal/activities/enhance_issue_activity.rb#trusted_comments`,
+  `app/services/clarifying_questions/comment_admission.rb`,
+  `app/models/project.rb#paid_bot_author?`.
+
 ## LID-aware prompt materialization
 
 - [x] **ISSUE-ENHANCEMENT-003** — When a project is marked with a non-empty
