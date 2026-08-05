@@ -17,7 +17,9 @@ module Configuration
         {
           "adoption_mode" => "observe_only",
           "auto_pick_enabled" => false,
-          "automation_on_label_enabled" => false
+          "automation_on_label_enabled" => false,
+          "run_concurrency_mode" => "manual",
+          "agent_auto_continue" => false
         }
       end
 

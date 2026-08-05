@@ -2,6 +2,7 @@
 
 require "rails_helper"
 
+# @spec CONFIG-PROFILES-003
 RSpec.describe Tools::PlanConfigurationProfile do
   let(:account) { create(:account) }
   let(:owner) { create(:user, :owner, account:) }
@@ -19,9 +20,10 @@ RSpec.describe Tools::PlanConfigurationProfile do
       profile_id: "observe_only",
       profile_name: "Observe Only",
       project_id: project.id,
-      blocked: false
+      blocked: false,
+      skipped_levels: []
     )
-    expect(result[:changes]).to all(include(:key, :from, :to))
+    expect(result[:changes]).to all(include(:key, :from, :to, :level))
   end
 
   it "accepts bounded overrides declared by the profile" do
@@ -50,5 +52,18 @@ RSpec.describe Tools::PlanConfigurationProfile do
     expect {
       call(profile_id: "observe_only", overrides: { active: "no" })
     }.to raise_error(ArgumentError, /Invalid boolean override/)
+  end
+
+  it "reports skipped levels for callers who cannot update every target" do
+    member = create(:user, :member, account:)
+    member.settings.update!(run_concurrency_mode: "auto")
+    member_session = create(:chat_session, account:, created_by: member, project:)
+
+    result = described_class.new(user: member, session: member_session).call(profile_id: "observe_only", project_id: project.id, overrides: {})
+
+    expect(result[:skipped_levels]).to contain_exactly(
+      include("level" => "project", "reason" => "Not authorized to update project settings"),
+      include("level" => "tenant", "reason" => "Not authorized to update tenant settings")
+    )
   end
 end

@@ -17,7 +17,9 @@ module Configuration
           "active" => true,
           "auto_pick_enabled" => false,
           "automation_on_label_enabled" => true,
-          "adoption_mode" => "full_execution"
+          "adoption_mode" => "full_execution",
+          "run_concurrency_mode" => "manual",
+          "agent_auto_continue" => false
         }
       end
 
