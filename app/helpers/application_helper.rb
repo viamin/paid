@@ -495,18 +495,20 @@ module ApplicationHelper
     AGENT_RUN_GOAL_LABELS.fetch(run.goal, run.goal.to_s.titleize)
   end
 
-  # Returns the best "back" URL: checks params[:return_to] first, then
-  # request.referer, then falls back to the provided default path.
-  # Only internal (same-host, path-only) URLs are accepted to prevent open redirects.
+  # Destination for a "Back to X" link. Deterministic by default: the link
+  # navigates to +default_path+ (the page its label names), so a link labeled
+  # "Back to Projects" always lands on the projects index. An explicit,
+  # same-host params[:return_to] is still honored when a controller sets one
+  # intentionally (e.g. deep-linking back into a project after a sub-flow).
+  # Only internal (path-only) URLs are accepted to prevent open redirects.
+  #
+  # The previous request.referer fallback was removed because it routed users
+  # to whatever page they happened to arrive from, so "Back to Projects" could
+  # land on the Dashboard (or anywhere) — the link never did what its label
+  # promised.
   def back_link_path(default_path)
     return_to = params[:return_to].to_s if params[:return_to].present?
-    if return_to.present? && safe_return_path?(return_to)
-      return_to
-    elsif request.referer.present? && safe_referer?(request.referer)
-      request.referer
-    else
-      default_path
-    end
+    (return_to.present? && safe_return_path?(return_to)) ? return_to : default_path
   end
 
   def safe_return_path_or(path, fallback)
@@ -804,10 +806,6 @@ module ApplicationHelper
     return false unless path.start_with?("/") && !path.start_with?("//")
 
     safe_url_from(path).present?
-  end
-
-  def safe_referer?(url)
-    safe_url_from(url.to_s).present?
   end
 
   def priority_tier_for_label(project, label)

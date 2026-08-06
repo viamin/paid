@@ -38,25 +38,16 @@ RSpec.describe ApplicationHelper do
       end
     end
 
-    context "when return_to is absent but referer is a same-host URL" do
-      it "returns the referer" do
+    context "when params[:return_to] is absent" do
+      it "returns the default path regardless of referer (deterministic)" do
         allow(helper).to receive(:params).and_return(ActionController::Parameters.new({}))
         allow(helper.request).to receive_messages(referer: "http://test.host/agent_runs", host: "test.host")
-
-        expect(helper.back_link_path(default_path)).to eq("http://test.host/agent_runs")
-      end
-    end
-
-    context "when referer is from a different host" do
-      it "falls back to default" do
-        allow(helper).to receive(:params).and_return(ActionController::Parameters.new({}))
-        allow(helper.request).to receive_messages(referer: "https://other.com/page", host: "test.host")
 
         expect(helper.back_link_path(default_path)).to eq(default_path)
       end
     end
 
-    context "when neither return_to nor referer is available" do
+    context "when neither return_to nor a referer is available" do
       it "returns the default path" do
         allow(helper).to receive(:params).and_return(ActionController::Parameters.new({}))
         allow(helper.request).to receive(:referer).and_return(nil)
@@ -66,7 +57,7 @@ RSpec.describe ApplicationHelper do
     end
 
     context "when both return_to and referer are present" do
-      it "uses return_to over referer" do
+      it "uses return_to and ignores referer" do
         allow(helper).to receive(:params).and_return(ActionController::Parameters.new(return_to: "/specific_page"))
         allow(helper.request).to receive_messages(referer: "http://test.host/other_page", host: "test.host")
 

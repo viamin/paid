@@ -19,7 +19,7 @@
   </div>
 
   <% if has_more && sidebar_next_frame_id && sidebar_next_params %>
-    <%= turbo_frame_tag sidebar_next_frame_id, src: sidebar_page_chat_sessions_path(sidebar_next_params), loading: :lazy do %>
+    <%= turbo_frame_tag sidebar_next_frame_id, src: sidebar_page_chat_sessions_path(sidebar_next_params), loading: :lazy, target: "_top" do %>
       <p class="py-3 text-center text-xs text-gray-400">Loading more...</p>
     <% end %>
   <% end %>
