@@ -269,6 +269,12 @@ Rails.application.routes.draw do
       resource :clarifying_questions, only: [ :show, :create ],
         controller: "projects/clarifying_questions"
     end
+    resources :change_intents, only: [ :show ], controller: "projects/change_intents" do
+      member do
+        post :approve
+        post :discard
+      end
+    end
     post :detect_services, on: :member
     resource :context_intake, only: [ :show, :create, :update ],
       controller: "knowledge/context_intake" do
