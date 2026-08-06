@@ -2,17 +2,21 @@
 
 module Configuration
   module Profiles
-    # Describes how to read the current resolved value of a profile target key
-    # from a {Project} and how to write a new value back. Each descriptor also
-    # declares its authorization +level+ (today only +:project+) so {Applier}
-    # can authorize per level, and the +attribute+ name surfaced in activity
-    # metadata.
+    # from a {Context} and how to write a new value back. Each descriptor also
+    # declares its authorization +level+ so {Planner}/{Applier} can report
+    # mixed-scope changes and skipped levels consistently, and carries metadata
+    # (+kind+, +column+, +options+, +method_name+) surfaced in activity
+    # recording and tool output.
     class Descriptor < Struct.new(
-      :key, :attribute, :level, :label, :read, :write, :coerce, :kind, :column, :options, :method_name, :target,
+      :key, :attribute, :level, :label, :record, :read, :write, :coerce, :kind, :column, :options, :method_name, :target,
       keyword_init: true
     )
       def level
         super || :project
+      end
+
+      def record
+        super || ->(context) { context.project }
       end
 
       def coerce
@@ -225,6 +229,21 @@ module Configuration
           read: ->(project) { project.quality_gates_enabled? },
           write: ->(project, value) { write_quality_gate(project, value) },
           coerce: BOOLEAN
+        ),
+        "run_concurrency_mode" => Descriptor.new(
+          key: "run_concurrency_mode", attribute: "run_concurrency_mode", level: :user,
+          label: "Run concurrency mode",
+          record: ->(context) { context.user_setting },
+          read: ->(user_setting) { user_setting&.run_concurrency_mode },
+          write: ->(user_setting, value) { user_setting.run_concurrency_mode = value.to_s }
+        ),
+        "agent_auto_continue" => Descriptor.new(
+          key: "agent_auto_continue", attribute: "agent_settings", level: :tenant,
+          label: "Agent auto-continue",
+          record: ->(context) { context.tenant_setting },
+          read: ->(tenant_setting) { tenant_setting&.effective_agent_settings&.dig("auto_continue") },
+          write: ->(tenant_setting, value) { merge_jsonb(tenant_setting, :agent_settings, "auto_continue", value) },
+          coerce: BOOLEAN
         )
       }.freeze
 
@@ -246,13 +265,21 @@ module Configuration
         raise ArgumentError, "Unsupported configuration profile setting: #{key.inspect}"
       end
 
-      def read(project, key)
-        fetch(key).read.call(project)
+      def read(context, key)
+        descriptor = fetch(key)
+        record = resolve_record(descriptor, context)
+        descriptor.read.call(record)
       end
 
-      def write(project, key, value)
+      def write(context, key, value)
         descriptor = fetch(key)
-        descriptor.write.call(project, descriptor.coerce.call(value))
+        record = resolve_record(descriptor, context)
+        descriptor.write.call(record, descriptor.coerce.call(value))
+        record
+      end
+
+      def resolve_record(descriptor, context)
+        context.is_a?(Context) ? descriptor.record.call(context) : context
       end
 
       def normalize(key, value)
@@ -268,21 +295,22 @@ module Configuration
         EXCLUDED_ATTRIBUTE_COLUMNS.keys.freeze
       end
 
-      def snapshot(project)
-        profile_target_keys.to_h { |key| [ key, read(project, key) ] }
-      end
 
       def equivalent?(left, right)
         normalize_equivalent_value(left) == normalize_equivalent_value(right)
       end
-
+      def snapshot(project)
+        context = Context.build(project:, actor: nil)
+        profile_target_keys.to_h { |key| [ key, read(context, key) ] }
+      end
       # Deep-merges a single key into a JSONB-backed column, preserving the
       # rest of the stored hash. Used for nested settings
-      # (+interop_settings+, +review_settings+, +quality_gate_settings+).
-      def merge_jsonb(project, column, key, value)
-        current = project.public_send(column)
+      # (+interop_settings+, +review_settings+, +quality_gate_settings+,
+      # +agent_settings+).
+      def merge_jsonb(record, column, key, value)
+        current = record.public_send(column)
         current = current.is_a?(Hash) ? current.deep_stringify_keys : {}
-        project.public_send(:"#{column}=", current.merge(key => value))
+        record.public_send(:"#{column}=", current.merge(key => value))
       end
 
       def normalize_equivalent_value(value)

@@ -29,7 +29,9 @@ module Configuration
           "review_paid_agent" => true,
           "review_copilot" => false,
           "review_manual" => false,
-          "quality_gate_enabled" => true
+          "quality_gate_enabled" => true,
+          "run_concurrency_mode" => "manual",
+          "agent_auto_continue" => false
         }
       end
 

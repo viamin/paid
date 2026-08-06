@@ -63,6 +63,42 @@ groups:
           summary: Temporal workflow slots are saturated
           description: Workflow slot utilization has exceeded 90 percent for 10 minutes.
 
+      - alert: PaidAgentRunFailureRateHigh
+        expr: |
+          (
+            sum(max without(instance, pod, job) (paid_agent_run_outcomes_window{outcome="failure"}))
+            /
+            clamp_min(sum(max without(instance, pod, job) (paid_agent_run_outcomes_window{outcome!="non_provider"})), 1)
+          ) > 0.4
+          and
+          sum(max without(instance, pod, job) (paid_agent_run_outcomes_window{outcome!="non_provider"})) >= 5
+        for: 15m
+        labels:
+          severity: warning
+          service: paid-web
+        annotations:
+          summary: Agent run failure rate is elevated
+          description: More than 40 percent of current finished agent runs have ended unsuccessfully for 15 minutes, with at least 5 finished runs present.
+
+      - alert: PaidAgentRunDurationP95High
+        # Sliding-window gauge: histogram_quantile on snapshot buckets approximates the
+        # current-window p95. This is not a true cumulative Prometheus histogram — the
+        # quantile can shift as runs age past the 6h window boundary.
+        expr: |
+          histogram_quantile(
+            0.95,
+            max without(instance, pod, job) (
+              paid_agent_run_duration_seconds_bucket_window{outcome="success"}
+            )
+          ) > 1800
+        for: 15m
+        labels:
+          severity: warning
+          service: paid-web
+        annotations:
+          summary: Successful agent runs are taking longer than expected
+          description: The p95 duration for successful agent runs has exceeded 30 minutes for 15 minutes.
+
       - alert: PaidTemporalWorkflowScheduleToStartP95High
         expr: |
           histogram_quantile(

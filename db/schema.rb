@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_05_002623) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_05_120812) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -300,6 +300,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_05_002623) do
     t.datetime "started_at"
     t.string "status", limit: 50, default: "queued", null: false
     t.jsonb "streaming_turns_data", default: [], null: false, comment: "Per-turn metrics from streaming JSONL events (turn number, tokens, duration)"
+    t.boolean "synthetic", default: false, null: false, comment: "Operational-only run that reuses the agent-run lifecycle to drive infrastructure (e.g. live-preview provisioning) but never executes a real agent or produces a PR/issue/review artifact. Excluded from user-facing run history and totals. Keyed off this flag rather than agent_type because internal_agent is shared with legitimate externally-ingested runs."
     t.string "temporal_run_id", limit: 255
     t.string "temporal_workflow_id", limit: 255
     t.string "token_limit_status", limit: 50
@@ -332,6 +333,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_05_002623) do
     t.index ["prompt_version_id"], name: "index_agent_runs_on_prompt_version_id"
     t.index ["proxy_token"], name: "index_agent_runs_on_proxy_token", unique: true
     t.index ["runner_id"], name: "index_agent_runs_on_runner_id"
+    t.index ["status", "completed_at"], name: "index_agent_runs_on_status_completed_at"
     t.index ["status"], name: "index_agent_runs_on_status"
     t.index ["temporal_workflow_id"], name: "index_agent_runs_on_temporal_workflow_id"
   end

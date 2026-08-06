@@ -42,7 +42,7 @@ The implementation can build on already-shipped primitives:
 - audit logging of settings mutations
 - project/tenant/user settings models with established defaults
 
-## Active Gap
+## Remaining Gap
 
 The chat-integrated profile flow now exists, but two gaps remain:
 

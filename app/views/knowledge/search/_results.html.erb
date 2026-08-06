@@ -21,7 +21,7 @@
                 <% if result[:identifier].present? %>
                   <span class="text-sm font-medium text-gray-900">
                     <% if result[:artifact_id] %>
-                      <%= link_to result[:identifier], knowledge_artifact_path(result[:artifact_id]), class: "hover:text-indigo-600" %>
+                      <%= link_to result[:identifier], knowledge_artifact_path(result[:artifact_id]), class: "hover:text-indigo-600", data: { turbo_frame: "_top" } %>
                     <% else %>
                       <%= result[:identifier] %>
                     <% end %>

@@ -24,16 +24,18 @@ module ConfigurationProfiles
       def enum? = kind == :enum_attribute
     end
 
-    FIELDS = Configuration::Profiles::Settings.target_descriptors.map do |descriptor|
-      Field.new(
-        key: descriptor.key.to_sym,
-        kind: descriptor.kind,
-        label: descriptor.label,
-        column: descriptor.column,
-        options: descriptor.options,
-        method: descriptor.method_name
-      )
-    end.freeze
+    FIELDS = Configuration::Profiles::Settings.target_descriptors
+      .select { |d| d.level == :project }
+      .map do |descriptor|
+        Field.new(
+          key: descriptor.key.to_sym,
+          kind: descriptor.kind,
+          label: descriptor.label,
+          column: descriptor.column,
+          options: descriptor.options,
+          method: descriptor.method_name
+        )
+      end.freeze
 
     MODE_RELEVANT_COLUMN_PATTERNS = Configuration::Profiles::Settings::MODE_RELEVANT_COLUMN_PATTERNS
     EXCLUDED_ATTRIBUTE_COLUMNS = Configuration::Profiles::Settings::EXCLUDED_ATTRIBUTE_COLUMNS
@@ -68,7 +70,8 @@ module ConfigurationProfiles
       # Reads every field into a {String} => value hash. Used for snapshots,
       # posture matching, and activity audit metadata.
       def snapshot(project)
-        Configuration::Profiles::Settings.snapshot(project).transform_keys(&:to_s)
+        Configuration::Profiles::Settings.snapshot(project)
+          .slice(*keys.map(&:to_s))
       end
 
       # Values considered "equivalent" for posture matching — normalizes

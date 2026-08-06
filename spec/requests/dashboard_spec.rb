@@ -288,6 +288,29 @@ RSpec.describe "Dashboard" do
         expect(banner.text).to include("Session expired")
       end
 
+      it "escapes the deferred frame for the Review runners link in the auth-health banner" do
+        allow(Runners::AuthHealth).to receive(:call).and_return([
+          Runners::AuthHealth::Result.new(
+            runner: "Claude",
+            runner_key: "claude",
+            owner_name: user.name,
+            owner_email: user.email,
+            valid: false,
+            expires_at: 1.hour.ago,
+            source: :host_forwarded,
+            error: "Session expired"
+          )
+        ])
+
+        get dashboard_auth_health_path
+
+        document = Nokogiri::HTML(response.body)
+        review_link = document.at_css(%([data-testid='dashboard-auth-health-banner'] a[href="#{runners_path}"]))
+
+        expect(review_link).to be_present
+        expect(review_link["data-turbo-frame"]).to eq("_top")
+      end
+
       it "shows live metrics section with active runs" do
         create(:agent_run, project: project, status: "running", started_at: 5.minutes.ago)
         create(:agent_run, project: project, status: "completed", completed_at: 1.minute.ago, duration_seconds: 42)
@@ -378,7 +401,7 @@ RSpec.describe "Dashboard" do
         expect(cancel_form.at_css("button")&.text).to include("Cancel")
       end
 
-      it "disables Turbo navigation for the project link in the upcoming queue" do
+      it "escapes the dashboard frame for the project link in the upcoming queue" do
         issue = create(:issue, project: project, github_number: 92, title: "Navigate from the queue")
         run = create(:agent_run, :queued, project: project, issue: issue, created_at: 2.minutes.ago)
 
@@ -390,7 +413,7 @@ RSpec.describe "Dashboard" do
         project_link = row.at_css(%(a[href="#{project_path(project)}"]))
 
         expect(project_link).to be_present
-        expect(project_link["data-turbo"]).to eq("false")
+        expect(project_link["data-turbo-frame"]).to eq("_top")
       end
 
       it "does not render a Cancel button in the upcoming queue for users who cannot run agents" do
@@ -430,6 +453,18 @@ RSpec.describe "Dashboard" do
 
         expect(response.body).to include(project.full_name)
         expect(response.body).to include("42s")
+      end
+
+      # @spec LIVE-PREVIEW-003
+      it "hides synthetic operational runs from the active-runs panel" do
+        real_run = create(:agent_run, project: project, status: "running", started_at: 5.minutes.ago)
+        synthetic_run = create(:agent_run, :running, :synthetic, project: project, started_at: 1.minute.ago)
+
+        get dashboard_path
+
+        doc = Nokogiri::HTML(response.body)
+        expect(doc.at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(real_run, :dashboard_row)}"]))).to be_present
+        expect(doc.at_css(%(tr[id="#{ActionView::RecordIdentifier.dom_id(synthetic_run, :dashboard_row)}"]))).to be_nil
       end
 
       it "shows knowledge runner health and pipeline metrics" do

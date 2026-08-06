@@ -29,4 +29,26 @@ RSpec.describe Previews::Expire do
     expect(mine.reload.status).to eq("stopped")
     expect(theirs.reload.status).to eq("ready")
   end
+
+  it "tears down the tunnel port reservation and preview container before stopping" do
+    session = create(:preview_session, :expired, project: project,
+      tunnel_port: 8210, container_id: "preview-container-1")
+    reservation = PreviewTunnelPortReservation.create!(
+      reservation_key: "preview_session:#{session.id}",
+      tunnel_port: 8210
+    )
+    container = instance_double(Docker::Container, info: { "State" => { "Running" => true } })
+    backend = instance_double(Containers::Backends::Base)
+    allow(Containers).to receive(:backend).and_return(backend)
+    allow(backend).to receive(:get_container).with("preview-container-1").and_return(container)
+    allow(backend).to receive(:stop_container)
+    allow(backend).to receive(:delete_container)
+
+    described_class.call(project: project)
+
+    expect(session.reload.status).to eq("stopped")
+    expect(PreviewTunnelPortReservation.exists?(reservation.id)).to be(false)
+    expect(backend).to have_received(:stop_container).with(container, timeout: 0)
+    expect(backend).to have_received(:delete_container).with(container, force: true, v: true)
+  end
 end

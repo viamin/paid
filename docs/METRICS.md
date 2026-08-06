@@ -17,6 +17,12 @@ The checked-in observability stack assets use that split explicitly:
 | `paid_agent_runs_total` | gauge | `status` | Number of agent runs by status (queued, pending, running, completed, failed, etc.) |
 | `paid_agent_runs_active` | gauge | — | Currently active agent runs (pending + running) |
 | `paid_agent_runs_queued` | gauge | — | Agent runs waiting in queue |
+| `paid_agent_run_outcomes_window` | gauge | `status`, `outcome` | Current finished runs in the last 6h by terminal status, normalized to `success` (`completed`, `no_output`), `failure` (`failed`, `timeout`, `token_budget_exceeded`, `auth_expired`, `rate_limited`), or `non_provider` (`cancelled`, `retried`). Sliding-window snapshot — not a monotonic counter. |
+| `paid_agent_run_duration_seconds_bucket_window` | gauge | `outcome`, `le` | Current cumulative finished-run duration bucket counts in the last 6h. Sliding-window snapshot — not a cumulative Prometheus histogram. |
+| `paid_agent_run_duration_seconds_sum_window` | gauge | `outcome` | Total finished-run duration in seconds in the last 6h. Sliding-window snapshot. |
+| `paid_agent_run_duration_seconds_count_window` | gauge | `outcome` | Number of finished runs with duration samples in the last 6h. Sliding-window snapshot. |
+| `paid_agent_run_tokens_window` | gauge | `direction`, `outcome` | Finished-run tokens in the last 6h by `input`/`output` direction and normalized outcome. Sliding-window snapshot. |
+| `paid_agent_run_cost_cents_window` | gauge | `outcome` | Finished-run cost in cents in the last 6h by normalized outcome. Sliding-window snapshot. |
 
 ## GoodJob Queue Metrics
 
@@ -90,6 +96,14 @@ scrape_configs:
 
 ### Recommended dashboard queries
 
+- Current agent run failure ratio (use `max without(instance, pod, job)` to deduplicate across web replicas, then `sum` to aggregate across remaining labels):
+  `sum(max without(instance, pod, job) (paid_agent_run_outcomes_window{outcome="failure"})) / clamp_min(sum(max without(instance, pod, job) (paid_agent_run_outcomes_window{outcome!="non_provider"})), 1)`
+- Current successful agent run duration p95 (snapshot quantile from the sliding window):
+  `histogram_quantile(0.95, max without(instance, pod, job) (paid_agent_run_duration_seconds_bucket_window{outcome="success"}))`
+- Current agent run token totals by direction:
+  `sum by (direction) (max without(instance, pod, job) (paid_agent_run_tokens_window))`
+- Current finished-run spend in USD:
+  `sum(max without(instance, pod, job) (paid_agent_run_cost_cents_window)) / 100`
 - Workflow task queue `schedule_to_start` p95 by task queue:
   `histogram_quantile(0.95, sum by (task_queue, le) (rate(temporal_workflow_task_schedule_to_start_latency_seconds_bucket[5m])))`
 - Activity task queue `schedule_to_start` p95 by task queue:
@@ -108,6 +122,6 @@ Recommended auto-scaling signals:
 
 ## Collector Design
 
-The original observability RDR proposed adopting the `prometheus-client` Ruby gem. Paid instead ships a hand-rolled collector in `Metrics::PrometheusCollector`, and the checked-in Prometheus rules and Grafana dashboards now target that collector as the source of truth.
+The original observability RDR proposed adopting the `prometheus-client` Ruby gem. Paid instead ships a hand-rolled collector in `Metrics::PrometheusCollector`, and the checked-in Prometheus rules and Grafana dashboards target that collector as the source of truth.
 
-That design choice has a direct consequence: some example metrics from the original RDR, such as cost counters or quality-score histograms, do not exist yet and therefore are not referenced by the shipped alert rules or dashboard panels. If Paid later adds counter or histogram-style instrumentation, those assets can be expanded without changing the deployment shape.
+That design choice means every exported series is derived from persisted application state at scrape time rather than from process-local in-memory counters. The current shipped surface now includes application-level outcome, duration, token, and cost snapshot gauges on top of the original queue/capacity gauges, while still keeping the deployment shape unchanged.

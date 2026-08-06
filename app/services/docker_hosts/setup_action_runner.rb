@@ -5,16 +5,18 @@ require "shellwords"
 
 module DockerHosts
   class SetupActionRunner
+    DEFAULT_KEY_SIZE = 4096
     Result = Struct.new(:success?, :message, :server_private_key_pem, keyword_init: true)
 
-    def self.call(host:, action:, params:)
-      new(host:, action:, params:).call
+    def self.call(host:, action:, params:, key_size: DEFAULT_KEY_SIZE)
+      new(host:, action:, params:, key_size:).call
     end
 
-    def initialize(host:, action:, params:)
+    def initialize(host:, action:, params:, key_size: DEFAULT_KEY_SIZE)
       @host = host
       @action = action.to_s
       @params = params
+      @key_size = key_size
     end
 
     def call
@@ -40,10 +42,17 @@ module DockerHosts
 
     private
 
-    attr_reader :host, :action, :params
+    attr_reader :host, :action, :params, :key_size
+
+    # Generates an RSA keypair at the configured size. Production uses the
+    # 4096-bit default; specs override via the +key_size:+ kwarg to avoid the
+    # ~1s cost of a 4096-bit key when the assertions don't depend on key size.
+    def generate_rsa_key
+      OpenSSL::PKey::RSA.new(key_size)
+    end
 
     def generate_client_bundle
-      ca_key = OpenSSL::PKey::RSA.new(4096)
+      ca_key = generate_rsa_key
       ca_cert = Certificates.build_certificate(
         subject: "/CN=#{host.identifier}-paid-remote-docker-ca",
         issuer: nil,
@@ -53,7 +62,7 @@ module DockerHosts
         is_ca: true
       )
 
-      client_key = OpenSSL::PKey::RSA.new(4096)
+      client_key = generate_rsa_key
       client_cert = Certificates.build_certificate(
         subject: "/CN=#{params[:client_common_name].presence || "#{host.identifier}-paid-client"}",
         issuer: ca_cert,
@@ -396,7 +405,7 @@ module DockerHosts
     def generate_server_certificate(common_name:, san_entries:)
       ca_cert = OpenSSL::X509::Certificate.new(stored_client_ca_pem!)
       ca_key = OpenSSL::PKey.read(stored_client_ca_key_pem!)
-      server_key = OpenSSL::PKey::RSA.new(4096)
+      server_key = generate_rsa_key
       server_cert = Certificates.build_certificate(
         subject: "/CN=#{common_name}",
         issuer: ca_cert,
@@ -424,7 +433,7 @@ module DockerHosts
     end
 
     def generate_server_csr(common_name:, san_entries:)
-      server_key = OpenSSL::PKey::RSA.new(4096)
+      server_key = generate_rsa_key
       csr = Certificates.build_certificate_request(
         subject: "/CN=#{common_name}",
         private_key: server_key,

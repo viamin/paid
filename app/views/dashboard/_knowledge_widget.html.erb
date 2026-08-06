@@ -272,7 +272,7 @@
   <% end %>
 
   <div class="mt-4">
-    <%= link_to "Search Knowledge Base", knowledge_search_path, class: "text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+    <%= link_to "Search Knowledge Base", knowledge_search_path, class: "text-sm font-medium text-indigo-600 hover:text-indigo-500", data: { turbo_frame: "_top" } %>
   </div>
 </div>
 <% end %>

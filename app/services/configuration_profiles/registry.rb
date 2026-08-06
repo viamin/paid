@@ -7,13 +7,18 @@ module ConfigurationProfiles
   module Registry
     module_function
 
+    PROJECT_LEVEL_KEYS = Configuration::Profiles::Settings.target_descriptors
+      .select { |d| d.level == :project }
+      .map(&:key)
+      .freeze
+
     def all
       @all ||= Configuration::Profiles::Registry.all.map do |profile|
         Profile.new(
           key: profile.name.to_sym,
           name: profile.display_name,
           description: profile.description,
-          values: profile.targets.slice(*Configuration::Profiles::Settings.profile_target_keys)
+          values: profile.targets.slice(*PROJECT_LEVEL_KEYS)
         )
       end.freeze
     end
