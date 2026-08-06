@@ -132,6 +132,15 @@ module Containers
 
     attr_reader :project, :target_size, :container_host
 
+    # Image warmed and claimed for this project's pool. Resolves from the
+    # project's language profile (RDR-046 / POLYGLOT-TEST-004) so a warmed
+    # container matches the image a run will actually request via
+    # +Containers::Provision+. Falls back to the base image when the project
+    # has no extended runtime needs.
+    def resolved_image
+      Containers::ImageResolver.resolve(project)
+    end
+
     def enabled_for?(agent_run)
       target_size.positive? &&
         agent_run.worktree_path.blank? &&
@@ -155,7 +164,7 @@ module Containers
 
     def warm_scope(options:, container_host:)
       scope = project.container_pool_entries.warm.where(
-        image: options.fetch(:image, Provision::DEFAULTS[:image]),
+        image: options.fetch(:image, resolved_image),
         network: pool_network_name
       )
       return scope if container_host.blank?
@@ -179,7 +188,7 @@ module Containers
     def warm_one
       entry = project.container_pool_entries.create!(
         status: "warming",
-        image: Provision::DEFAULTS[:image],
+        image: resolved_image,
         network: pool_network_name,
         container_host: container_host,
         workspace_volume: "paid-pool-workspace-#{SecureRandom.hex(12)}"
@@ -244,7 +253,7 @@ module Containers
 
     def current_pool_entries
       project.container_pool_entries.where(
-        image: Provision::DEFAULTS[:image],
+        image: resolved_image,
         network: pool_network_name,
         container_host: container_host
       ).where(
@@ -258,7 +267,7 @@ module Containers
 
     def stale_warm_pool_entries
       project.container_pool_entries.warm.where(container_host: container_host).where.not(
-        image: Provision::DEFAULTS[:image],
+        image: resolved_image,
         network: pool_network_name
       )
     end

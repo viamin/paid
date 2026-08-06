@@ -251,6 +251,34 @@ RSpec.describe Containers::Provision do
       expect(custom_service.options[:cpu_quota]).to eq(200_000)
     end
 
+    it "defaults to the base image for a project with no detected runtime" do
+      expect(service.options[:image]).to eq(Containers::ImageResolver::BASE_IMAGE)
+    end
+
+    it "resolves a project-specific combo image from the language profile" do
+      project.update!(primary_language: "Go")
+
+      svc = described_class.new(agent_run: agent_run, worktree_path: worktree_path)
+
+      expect(svc.options[:image]).to eq("paid-agent:go")
+    end
+
+    it "resolves a polyglot combo image from the language profile" do
+      project.update!(language_profile: { "languages" => %w[Elixir JavaScript Ruby] })
+
+      svc = described_class.new(agent_run: agent_run, worktree_path: worktree_path)
+
+      expect(svc.options[:image]).to eq("paid-agent:elixir-node-ruby")
+    end
+
+    it "lets an explicit image override override the resolved project image" do
+      project.update!(primary_language: "Go")
+
+      svc = described_class.new(agent_run: agent_run, worktree_path: worktree_path, image: "custom:latest")
+
+      expect(svc.options[:image]).to eq("custom:latest")
+    end
+
     it "applies container_memory_bytes from user settings" do
       create(:user_setting, user: project.created_by, container_memory_bytes: 2 * 1024 * 1024 * 1024)
 

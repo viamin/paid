@@ -36,9 +36,32 @@
   `spec/services/containers/git_operations_spec.rb`,
   `spec/services/prompts/build_for_issue_spec.rb`.
 
-- [ ] **POLYGLOT-TEST-004** — When a project requires additional runtimes, the
+- [x] **POLYGLOT-TEST-004** — When a project requires additional runtimes, the
   container/image selection path SHALL resolve a language-appropriate agent
   image instead of using one monolithic hardcoded image for every repo.
+  Projects whose detected languages are a subset of the base image runtimes
+  (Ruby, Node, Python) SHALL resolve to the base image; projects requiring
+  additional runtimes (Go, Rust, Elixir, Swift) SHALL resolve to a combo image
+  tag derived from their language set. Chat and knowledge containers SHALL use
+  the base image because they run analysis tooling, not the project's own
+  runtime.
+  *Code:* `app/services/containers/image_resolver.rb`,
+  `app/services/containers/provision.rb`,
+  `app/services/containers/pool_manager.rb`,
+  `app/services/containers/provision_for_chat.rb`,
+  `app/services/knowledge/containerized_runner.rb`,
+  `app/services/knowledge/embedding_runner.rb`,
+  `app/services/knowledge/analysis_runner.rb`.
+  *Test:* `spec/services/containers/image_resolver_spec.rb`.
+
+- [x] **POLYGLOT-TEST-006** — When the image resolver cannot map a detected
+  runtime to any supported agent image, it SHALL surface the unsupported
+  runtime(s) rather than silently substituting the base image. In strict mode
+  the resolver SHALL raise so callers that must run in the correct image fail
+  loudly; in the default fallback mode it SHALL resolve to the base image and
+  expose the unsupported languages for observability.
+  *Code:* `app/services/containers/image_resolver.rb`.
+  *Test:* `spec/services/containers/image_resolver_spec.rb`.
 
 - [D] **POLYGLOT-TEST-005** — Swift support SHALL remain limited to
   Linux-capable Swift Package Manager projects; iOS-only Xcode targets are out

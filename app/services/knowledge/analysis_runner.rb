@@ -21,7 +21,9 @@ module Knowledge
     class TimeoutError < ContainerError; end
 
     CONTAINER_DEFAULTS = {
-      image: "paid-agent:latest",
+      # LLM analysis runs never need the project's own runtime — always the
+      # base image (RDR-046 / POLYGLOT-TEST-004).
+      image: Containers::ImageResolver::BASE_IMAGE,
       memory_bytes: 256 * 1024 * 1024,  # 256MB
       cpu_quota: 100_000,                # 1 CPU
       pids_limit: 100,
