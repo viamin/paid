@@ -47,8 +47,27 @@ dashboard queue, answer form, and answer-ingestion flow.
 ## Codebase-grounded questions and sufficiency
 
 Question-generation and answer-sufficiency judgment are codebase questions at
-their core (RDR-052). The enhancement prompt therefore grounds both in the
-actual repository rather than knowledge-base snapshots alone:
+their core (RDR-052). The enhancement prompt therefore grounds both — today
+in the supplied retrieval results and knowledge-base context, and eventually
+in the repository itself.
+
+**Current execution capability (pre-Phase 1):** `enhance_issue` runs as a
+direct LLM call (`AgentHarness.send_message` with `tools: :none`) inside the
+Temporal worker process. The workflow short-circuits `enhance_issue` to the
+activity at `agent_execution_workflow.rb:151`, so the run is in the
+`skip_clone` set at `agent_execution_workflow.rb:234` and never provisions a
+container or clones the repository. The agent's only codebase view is the
+retrieval results (`Knowledge::Search`) and knowledge-base context bundle
+(`Knowledge::ContextBundle::Build`) attached to the prompt. The prompt
+states this constraint explicitly so the agent does not fabricate file paths
+or claim a repo read it never made.
+
+**RDR-052 Phase 1 (#3254) — read-only containerized execution.** When that
+work lands, `enhance_issue` will route through container provisioning with a
+read-only repo mount (`app/services/containers/provision_for_chat.rb` is the
+closest analog) and authenticate via the DB-stored runner credential. At that
+point the following claims become behavioral rather than aspirational, and
+ISSUE-ENHANCEMENT-006 / 007 move from `[D]` to `[x]`:
 
 - **Self-answer what the code determines.** The agent explores the repository,
   retrieval results, and knowledge-base context to answer for itself the things

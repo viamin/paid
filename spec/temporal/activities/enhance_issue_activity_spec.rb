@@ -507,7 +507,13 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(issue.reload.enhance_issue_rounds).to eq(1)
     end
 
-    it "instructs the agent to self-answer codebase questions and skip repo-answerable ones" do # @spec ISSUE-ENHANCEMENT-006
+    it "frames the prompt as knowledge-base-grounded since the agent has no repository access" do
+      # `enhance_issue` is a direct LLM call with `tools: :none` and is in the
+      # `skip_clone` set in `agent_execution_workflow.rb`, so the agent cannot
+      # explore the repository. The prompt must say so and lean on the supplied
+      # retrieval results / context bundle rather than claim a repo read.
+      # Issue #3254 will introduce the containerized, codebase-aware execution
+      # path that backs the deferred ISSUE-ENHANCEMENT-006/007 specs.
       captured_prompt = nil
       allow(AgentHarness).to receive(:send_message) do |prompt, **|
         captured_prompt = prompt
@@ -516,13 +522,27 @@ RSpec.describe Activities::EnhanceIssueActivity do
 
       activity.execute(agent_run_id: agent_run.id)
 
-      expect(captured_prompt).to include("grounded in the ACTUAL repository")
-      expect(captured_prompt).to include("self-answer every question the code can determine")
-      expect(captured_prompt).to include("Do NOT ask the human anything the repository already answers")
-      expect(captured_prompt).to include("genuine product, scope, or intent ambiguities")
+      expect(captured_prompt).to include("You do not have repository access")
+      expect(captured_prompt).to include("use the retrieval results and context bundle")
+      expect(captured_prompt).to include("Do not invent facts about the repository")
+      expect(captured_prompt).not_to include("explore the repository")
+      expect(captured_prompt).not_to include("grounded in the ACTUAL repository")
     end
 
-    it "grounds the sufficiency verdict in answers plus the actual codebase on re-evaluation" do # @spec ISSUE-ENHANCEMENT-007
+    it "asks plain-language questions about product, scope, or intent only" do
+      captured_prompt = nil
+      allow(AgentHarness).to receive(:send_message) do |prompt, **|
+        captured_prompt = prompt
+        llm_response
+      end
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(captured_prompt).to include("Ask the human ONLY about genuine product, scope, or intent ambiguities")
+      expect(captured_prompt).to include("Do not use Linked-Intent Development or other process jargon")
+    end
+
+    it "grounds the re-evaluation verdict in the supplied knowledge-base context alongside prior answers" do
       issue.update!(enhance_issue_rounds: 1)
       allow(client).to receive(:issue_comments).and_return(answered_reevaluation_comments)
       captured_prompt = nil
@@ -534,9 +554,10 @@ RSpec.describe Activities::EnhanceIssueActivity do
       activity.execute(agent_run_id: agent_run.id)
 
       expect(captured_prompt).to include("re-evaluation after the human answered")
-      expect(captured_prompt).to include("TOGETHER WITH the actual codebase")
-      expect(captured_prompt).to include("not the knowledge-base context alone")
+      expect(captured_prompt).to include("TOGETHER WITH the supplied knowledge-base")
+      expect(captured_prompt).to include("context yield enough context to proceed")
       expect(captured_prompt).to include("Record sign-in, permission, and billing events.")
+      expect(captured_prompt).not_to include("TOGETHER WITH the actual codebase")
     end
 
     it "omits the re-evaluation guidance on the initial enhancement pass" do
@@ -552,7 +573,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(issue.enhance_issue_rounds).to be_zero
     end
 
-    it "instructs the agent to cite real files and symbols in implementation context" do
+    it "tells the agent to cite paths and symbols only from the supplied context" do
       captured_prompt = nil
       allow(AgentHarness).to receive(:send_message) do |prompt, **|
         captured_prompt = prompt
@@ -561,7 +582,8 @@ RSpec.describe Activities::EnhanceIssueActivity do
 
       activity.execute(agent_run_id: agent_run.id)
 
-      expect(captured_prompt).to include("cite actual paths and symbols, not guesses")
+      expect(captured_prompt).to include("cite paths and symbols that")
+      expect(captured_prompt).to include("appear in that context")
     end
 
     context "when the issue surfaces a CIR-worthy constraint" do
