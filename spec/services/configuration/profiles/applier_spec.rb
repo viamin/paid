@@ -3,6 +3,7 @@
 require "rails_helper"
 
 # @spec CONFIG-PROFILES-004
+# @spec CONFIG-PROFILES-007
 RSpec.describe Configuration::Profiles::Applier do
   let(:account) { create(:account) }
   let(:owner) { create(:user, :owner, account:) }
@@ -34,19 +35,25 @@ RSpec.describe Configuration::Profiles::Applier do
       expect(results.fetch(:applied_changes).map { |result| result[:key] }).to match_array(plan.changes.map(&:key))
     end
 
-    it "records a single activity event capturing profile and changed fields" do
+    it "records a dedicated configuration_profile.applied event with previous_values and applied_values" do
       expect {
         described_class.call(plan:, project:, actor: owner)
       }.to change(AccountActivityEvent, :count).by(1)
 
       event = account.account_activity_events.last
       expect(event).to have_attributes(
-        action: "project.settings_changed",
+        action: "configuration_profile.applied",
         actor: owner,
         subject: project
       )
       expect(event.metadata["profile"]).to eq("solo_automated")
+      expect(event.metadata["source"]).to eq("configuration_profile")
+      expect(event.metadata["label"]).to eq("Apply solo_automated posture")
       expect(event.metadata["changed_fields"]).to include("auto_pick_enabled")
+      expect(event.metadata["previous_values"]).to be_a(Hash)
+      expect(event.metadata["previous_values"]["auto_pick_enabled"]).to be false
+      expect(event.metadata["applied_values"]).to be_a(Hash)
+      expect(event.metadata["applied_values"]["auto_pick_enabled"]).to be true
     end
 
     it "is idempotent when re-applying the same plan" do
@@ -116,6 +123,14 @@ RSpec.describe Configuration::Profiles::Applier do
         result = described_class.call(plan: no_op_plan, project:, actor: owner)
         expect(result).to eq(applied_changes: [], skipped_levels: [])
       }.not_to change(AccountActivityEvent, :count)
+    end
+
+    it "merges extra_metadata into the recorded activity event" do
+      described_class.call(plan:, project:, actor: owner, extra_metadata: { reverted_from_activity_id: 42 })
+
+      event = account.account_activity_events.last
+      expect(event.metadata["reverted_from_activity_id"]).to eq(42)
+      expect(event.metadata["profile"]).to eq("solo_automated")
     end
 
     context "when applying team_reviewed with a reviewer override" do

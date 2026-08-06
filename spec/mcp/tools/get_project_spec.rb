@@ -57,7 +57,7 @@ RSpec.describe Tools::GetProject do
       expect(result.dig(:lid, :workflow_contract, :implementation_prompt))
         .to include("## LID-Aware Workflow", "This repository declares Linked-Intent Development mode: `full`.")
       expect(result.dig(:lid, :planning, :trigger_goal)).to eq("lid_planning")
-      expect(result.dig(:lid, :planning, :planning_pr_correction_supported)).to be(false)
+      expect(result.dig(:lid, :planning, :planning_pr_correction_supported)).to be(true)
     end
 
     it "raises for project in another account" do

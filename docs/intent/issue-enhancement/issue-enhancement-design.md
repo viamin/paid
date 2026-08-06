@@ -44,6 +44,51 @@ The activity still emits the same markdown shape:
 That preserves the existing parser, `paid_state: "needs_input"` handling,
 dashboard queue, answer form, and answer-ingestion flow.
 
+## Codebase-grounded questions and sufficiency
+
+Question-generation and answer-sufficiency judgment are codebase questions at
+their core (RDR-052). The enhancement prompt therefore grounds both — today
+in the supplied retrieval results and knowledge-base context, and eventually
+in the repository itself.
+
+**Current execution capability (pre-Phase 1):** `enhance_issue` runs as a
+direct LLM call (`AgentHarness.send_message` with `tools: :none`) inside the
+Temporal worker process. The workflow short-circuits `enhance_issue` to the
+activity at `agent_execution_workflow.rb:151`, so the run is in the
+`skip_clone` set at `agent_execution_workflow.rb:234` and never provisions a
+container or clones the repository. The agent's only codebase view is the
+retrieval results (`Knowledge::Search`) and knowledge-base context bundle
+(`Knowledge::ContextBundle::Build`) attached to the prompt. The prompt
+states this constraint explicitly so the agent does not fabricate file paths
+or claim a repo read it never made.
+
+**RDR-052 Phase 1 (#3254) — read-only containerized execution.** When that
+work lands, `enhance_issue` will route through container provisioning with a
+read-only repo mount (`app/services/containers/provision_for_chat.rb` is the
+closest analog) and authenticate via the DB-stored runner credential. At that
+point the following claims become behavioral rather than aspirational, and
+ISSUE-ENHANCEMENT-006 / 007 move from `[D]` to `[x]`:
+
+- **Self-answer what the code determines.** The agent explores the repository,
+  retrieval results, and knowledge-base context to answer for itself the things
+  the code already says — existing models/types, platform targets, persistence
+  format, current architecture and patterns. It SHALL NOT ask the human
+  clarifying questions whose answers are directly readable from the repository
+  (ISSUE-ENHANCEMENT-006 / RDR R3); it asks only about genuine product, scope,
+  or intent ambiguities the code cannot resolve.
+- **Grounded sufficiency verdict.** On re-evaluation, the agent judges readiness
+  against the user's answers TOGETHER WITH the actual codebase it reads, not
+  the knowledge-base snapshot alone (ISSUE-ENHANCEMENT-007 / RDR R4). This
+  keeps the readiness gatekeeper at least as informed as the `create_pr` run it
+  authorizes.
+- **Grounded implementation context.** When the issue is ready, the posted
+  implementation context cites real files, symbols, and patterns read from the
+  repository, not inferred-from-snapshot guesses.
+
+The workspace is read-only: the agent may explore the repository to ground its
+questions and verdict but cannot modify files, commit, or push (RDR R2). Its
+only outputs remain the posted comment and label state.
+
 ## Re-evaluation comment admission
 
 When the user answers, the `needs_input` label is cleared and a re-evaluation

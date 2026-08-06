@@ -430,6 +430,14 @@ RSpec.describe Project do
     end
 
     describe "#detected_framework" do
+      it "prefers the persisted repo profile framework" do
+        project = build(:project,
+          repo_profile: { "framework" => "phoenix" },
+          screenshot_settings: { "detection" => { "framework" => "Next.js" } })
+
+        expect(project.detected_framework).to eq("phoenix")
+      end
+
       it "normalizes persisted screenshot detection metadata" do
         project = build(:project, screenshot_settings: {
           "detection" => { "framework" => "Next.js" }
@@ -440,6 +448,35 @@ RSpec.describe Project do
 
       it "returns nil when no framework is set" do
         expect(build(:project).detected_framework).to be_nil
+      end
+    end
+
+    describe "#detected_languages" do
+      it "returns the persisted repo languages" do
+        project = build(:project, repo_profile: { "languages" => %w[ruby javascript] })
+
+        expect(project.detected_languages).to eq(%w[ruby javascript])
+      end
+
+      it "falls back to the primary language" do
+        expect(build(:project, primary_language: "Ruby").detected_languages).to eq(%w[ruby])
+      end
+    end
+
+    describe "#test_languages" do
+      it "returns persisted test languages when present" do
+        project = build(:project, repo_profile: {
+          "languages" => %w[elixir javascript],
+          "test_languages" => %w[elixir]
+        })
+
+        expect(project.test_languages).to eq(%w[elixir])
+      end
+
+      it "falls back to detected languages" do
+        project = build(:project, repo_profile: { "languages" => %w[ruby javascript] })
+
+        expect(project.test_languages).to eq(%w[ruby javascript])
       end
     end
 
