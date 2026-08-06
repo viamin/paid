@@ -507,6 +507,111 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(issue.reload.enhance_issue_rounds).to eq(1)
     end
 
+    context "when the issue surfaces a CIR-worthy constraint" do
+      let(:cir_output) do
+        {
+          sufficient_context: true,
+          comment_body: "## Implementation context\n### Suggested approach\n1. Add rate limiter",
+          change_intent_draft: {
+            title: "Sliding window rate limiting over token bucket",
+            intent: "Smooth per-user request limiting for the public API.",
+            constraints: "Use Redis and follow the auth middleware layout.",
+            decisions_made: "Rejected token bucket; harder to reason about for support."
+          }
+        }.to_json
+      end
+
+      before do
+        allow(llm_response).to receive(:output).and_return(cir_output)
+        allow(ChangeIntents::SyncKnowledgeArtifact).to receive(:call)
+      end
+
+      it "drafts an issue-linked change intent instead of only clarifying questions" do # @spec CHANGE-INTENT-004
+        activity.execute(agent_run_id: agent_run.id)
+
+        draft = ChangeIntent.find_by(project: project, issue: issue)
+        expect(draft).to have_attributes(
+          status: "draft",
+          title: "Sliding window rate limiting over token bucket",
+          intent: "Smooth per-user request limiting for the public API.",
+          constraints: "Use Redis and follow the auth middleware layout.",
+          decisions_made: "Rejected token bucket; harder to reason about for support."
+        )
+      end
+
+      it "makes the proposed CIR visible in the comment with an approve path" do
+        activity.execute(agent_run_id: agent_run.id)
+
+        draft = ChangeIntent.find_by(project: project, issue: issue)
+        expect_comment_including(
+          "## Proposed Change Intent Record",
+          "Sliding window rate limiting over token bucket",
+          "Smooth per-user request limiting for the public API.",
+          "Use Redis and follow the auth middleware layout",
+          "Rejected token bucket",
+          "/projects/#{project.id}/change_intents/#{draft.id}"
+        )
+      end
+
+      it "keeps the draft out of the knowledge pipeline until approval" do
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(ChangeIntents::SyncKnowledgeArtifact).not_to have_received(:call)
+        expect(ChangeIntent.find_by(project: project, issue: issue).status).to eq("draft")
+      end
+
+      it "does not duplicate the draft across re-evaluation rounds" do
+        issue.update!(enhance_issue_rounds: 1)
+        allow(client).to receive(:issue_comments).and_return(answered_reevaluation_comments)
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(ChangeIntent.where(project: project, issue: issue).count).to eq(1)
+      end
+
+      it "instructs the LLM to evaluate non-obvious constraints and rejected alternatives" do
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(AgentHarness).to have_received(:send_message).with(
+          a_string_including(
+            "non-obvious constraint",
+            "rejected reasonable alternative",
+            "change_intent_draft",
+            "independent of whether the issue has sufficient implementation"
+          ),
+          anything
+        )
+      end
+    end
+
+    context "when the issue body is not CIR-worthy" do
+      before do
+        allow(llm_response).to receive(:output).and_return(
+          {
+            sufficient_context: false,
+            comment_body: "## Clarifying questions\n1. Which events should be recorded?"
+          }.to_json
+        )
+      end
+
+      it "asks clarifying questions without drafting a change intent" do # @spec CHANGE-INTENT-004
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(ChangeIntent.where(project: project, issue: issue)).to be_empty
+        expect_comment_including("## Clarifying questions")
+      end
+
+      it "does not surface a proposed Change Intent Record section" do
+        activity.execute(agent_run_id: agent_run.id)
+
+        expect(client).to have_received(:add_comment).with(
+          project.full_name,
+          issue.github_number,
+          satisfy { |body| !body.include?("## Proposed Change Intent Record") }
+        )
+      end
+    end
+
     context "when the clarifying Q&A comments are authored by the paid-agents bot" do
       # Production app-backed path: Paid posts both the clarifying questions and
       # the captured answers as its own GitHub App bot (`paid-agents[bot]`),
