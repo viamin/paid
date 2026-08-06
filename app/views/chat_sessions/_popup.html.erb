@@ -3,13 +3,14 @@
 <% can_archive_chat_session = policy(chat_session).archive? && !archived_chat_session %>
 <% can_unarchive_chat_session = policy(chat_session).unarchive? && archived_chat_session %>
 <% can_create_chat_session = policy(ChatSession.new(account: current_account)).create? %>
+<% session_title = chat_session_title(chat_session) %>
 
 <section class="flex h-full flex-col overflow-hidden rounded-[1.75rem] bg-white shadow-[0_32px_80px_-32px_rgba(15,23,42,0.45)] ring-1 ring-slate-200"
          data-controller="chat"
          data-chat-session-id-value="<%= chat_session.id %>">
   <header class="shrink-0 border-b border-slate-200 bg-[radial-gradient(circle_at_top,_rgba(99,102,241,0.12),_transparent_60%),linear-gradient(180deg,_#ffffff_0%,_#f8fafc_100%)] px-3.5 py-2.5">
     <div class="flex items-center gap-2">
-      <h2 class="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900" title="<%= chat_session_title(chat_session) %>"><%= chat_session_title(chat_session) %></h2>
+      <h2 class="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900" title="<%= session_title %>"><%= session_title %></h2>
 
       <p class="shrink-0 text-[11px] font-medium text-slate-400">
         <span data-chat-target="tokenUsage"><%= number_with_delimiter(chat_session.total_tokens) %></span>
