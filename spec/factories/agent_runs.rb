@@ -1,6 +1,10 @@
 # frozen_string_literal: true
 
 FactoryBot.define do
+  sequence :imported_external_run_key do |n|
+    "imported-run-#{n}"
+  end
+
   factory :agent_run do
     project
     issue { association :issue, project: project }
@@ -165,6 +169,28 @@ FactoryBot.define do
 
     trait :internal_agent do
       agent_type { "internal_agent" }
+    end
+
+    # A legitimate run ingested from the internal_agent_workflows external source.
+    # Shares the internal_agent agent_type with synthetic preview runs but is a
+    # real run: execution_origin "external" plus the required external keys. Used
+    # to assert the synthetic filter does not swallow genuine imported history.
+    trait :imported_internal_agent do
+      agent_type { "internal_agent" }
+      execution_origin { "external" }
+      external_source_key { "internal_agent_workflows" }
+      external_run_key { generate(:imported_external_run_key) }
+    end
+
+    # A synthetic operational run (e.g. live-preview provisioning): reuses the
+    # agent-run lifecycle to drive infrastructure but never runs a real agent.
+    # Carries the `synthetic` flag that excludes it from user-facing history and
+    # totals; `internal_agent` is the agent_type but is NOT what marks it
+    # synthetic (that type is shared with legitimate externally-ingested runs).
+    trait :synthetic do
+      agent_type { "internal_agent" }
+      synthetic { true }
+      custom_prompt { "Provision a live-preview session" }
     end
 
     trait :manual do

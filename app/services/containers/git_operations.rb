@@ -366,11 +366,15 @@ module Containers
     # and exits successfully.
     # Existing hooks (from Husky, Lefthook, etc.) are never overwritten.
     #
-    # @param lint_command [String] command to run for linting
-    # @param test_command [String] command to run for tests
+    # +lint_command+ and +test_command+ accept a single command string or an
+    # array of command strings — the array form lets polyglot repos run each
+    # language's suite in its own availability-checked block.
+    #
+    # @param lint_command [String, Array<String>] one or more lint commands
+    # @param test_command [String, Array<String>] one or more test commands
     # @param mutation_command [String] command to run for mutation testing
     # @return [void]
-    def install_git_hooks(lint_command:, test_command:, mutation_command: "true")
+    def install_git_hooks(lint_command:, test_command:, mutation_command: "true") # @spec POLYGLOT-TEST-003
       install_hook("pre-commit", pre_commit_script(lint_command, test_command, mutation_command))
     rescue Error => e
       # Expected failures: hook write/chmod failed, unsafe command, etc.
@@ -1275,8 +1279,10 @@ module Containers
     end
 
     def pre_commit_script(lint_command, test_command, mutation_command)
-      validate_hook_command!(lint_command)
-      validate_hook_command!(test_command)
+      lint_commands = Array(lint_command)
+      test_commands = Array(test_command)
+      lint_commands.each { |cmd| validate_hook_command!(cmd) }
+      test_commands.each { |cmd| validate_hook_command!(cmd) }
       validate_hook_command!(mutation_command)
 
       <<~SHELL
@@ -1285,32 +1291,57 @@ module Containers
         # All quality checks run here so the agent gets immediate feedback
         # and can fix issues before the commit succeeds.
 
+        #{lint_section(lint_commands)}
+        #{test_section(test_commands)}
+        #{mutation_section(mutation_command)}
+      SHELL
+    end
+
+    # Runs a repo-level bin/lint when present, otherwise each language lint
+    # command in its own availability-checked block (polyglot support).
+    def lint_section(commands)
+      checks = commands.filter_map { |cmd| availability_block(cmd, "lint") }.join("\n")
+      <<~SHELL
         if [ -f bin/lint ]; then
           echo "Running bin/lint --staged..."
           bin/lint --staged || exit 1
-        elif command -v #{lint_command.split.first} >/dev/null 2>&1; then
-          echo "Running #{lint_command}..."
-          #{lint_command} || exit 1
         else
-          echo "Warning: lint tool not available yet, skipping lint check"
+        #{checks.presence || "  true"}
         fi
+      SHELL
+    end
 
-        if command -v #{test_command.split.first} >/dev/null 2>&1; then
-          echo "Running #{test_command}..."
-          #{test_command} || exit 1
-        else
-          echo "Warning: test tool not available, skipping test check"
-        fi
+    # One availability-checked block per test command (polyglot support).
+    def test_section(commands)
+      commands.filter_map { |cmd| availability_block(cmd, "test") }.join("\n")
+    end
 
-        if [ "#{mutation_command}" = "true" ]; then
+    # Skips mutation checks unless the Gemfile declares mutant (Ruby-only).
+    def mutation_section(mutation_command)
+      return "true" if mutation_command == "true"
+
+      binary = mutation_command.split.first
+      <<~SHELL
+        if ! grep -Eq "^[[:space:]]*gem[[:space:]]+['\\\"]mutant-(rspec|minitest)['\\\"]" Gemfile 2>/dev/null; then
           true
-        elif ! grep -Eq "^[[:space:]]*gem[[:space:]]+['\\\"]mutant-(rspec|minitest)['\\\"]" Gemfile 2>/dev/null; then
-          true
-        elif command -v #{mutation_command.split.first} >/dev/null 2>&1; then
+        elif command -v #{binary} >/dev/null 2>&1; then
           echo "Running #{mutation_command}..."
           #{mutation_command} || exit 1
         else
           echo "Warning: mutation tool not available, skipping mutation check"
+        fi
+      SHELL
+    end
+
+    # Emits a shell block that runs +command+ only when its binary is on PATH.
+    def availability_block(command, kind)
+      binary = command.split.first
+      <<~SHELL
+        if command -v #{binary} >/dev/null 2>&1; then
+          echo "Running #{command}..."
+          #{command} || exit 1
+        else
+          echo "Warning: #{kind} tool not available, skipping #{kind} check"
         fi
       SHELL
     end

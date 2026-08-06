@@ -106,6 +106,7 @@ RSpec.describe Accounts::RoiDashboardStats do
       cost_cents:,
       goal: "create_pr",
       pull_request_number:,
+      synthetic: true,
       external_metadata: { "preview_session" => true })
     create(:quality_metric, :human, agent_run: run, created_at: merged_at, scores: { "pr_merged" => 1.0 })
   end

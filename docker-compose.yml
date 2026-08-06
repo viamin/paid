@@ -77,6 +77,8 @@ services:
       DB_ADMIN_USERNAME: paid_admin
       DB_ADMIN_PASSWORD: paid_admin
       RAILS_ENV: development
+      RAILS_LOG_TO_STDOUT: "1"
+      PAID_LOG_FORMAT: json
       REDIS_URL: redis://redis:6379/0
       TEMPORAL_HOST: temporal:7233
       PAID_PROXY_PORT: "3000"
@@ -201,6 +203,8 @@ services:
       - TEMPORAL_POLL_TASK_QUEUE=paid-poll-tasks
       - TEMPORAL_AGENT_TASK_QUEUE=paid-agent-tasks
       - RAILS_ENV=development
+      - RAILS_LOG_TO_STDOUT=1
+      - PAID_LOG_FORMAT=json
       - PAID_PROXY_PORT=3000
       - CLAUDE_CONFIG_DIR=${CLAUDE_CONFIG_DIR:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}

@@ -1,4 +1,4 @@
-# RDR-018: Billing Aggregation System
+# RDR-018a: Billing Aggregation System
 
 - **Date**: 2026-04-17
 - **Status**: Implemented

@@ -104,7 +104,7 @@ module Dashboard
     end
 
     def agent_runs
-      @agent_runs ||= AgentRun.joins(:project).where(projects: { account_id: account.id })
+      @agent_runs ||= AgentRun.excluding_synthetic.joins(:project).where(projects: { account_id: account.id })
     end
 
     def reported_create_pr_runs(scope = agent_runs)
@@ -679,7 +679,7 @@ module Dashboard
       # after merge (comments, labels, etc.). A future migration should add
       # issues.merged_at populated by MergePullRequestActivity (#230).
       sql = ActiveRecord::Base.sanitize_sql_array([
-        <<~SQL.squish,
+        <<~SQL.squish
           WITH per_issue AS (
             SELECT issues.id,
                    COUNT(agent_runs.id) AS run_count,
@@ -691,8 +691,7 @@ module Dashboard
             WHERE issues.is_pull_request = true
               AND issues.pr_review_phase = 'merged'
               AND issues.project_id IN (#{project_ids_sql})
-              AND agent_runs.goal = 'create_pr'
-              AND COALESCE(agent_runs.external_metadata->>?, 'false') != 'true'
+              AND agent_runs.synthetic = false
               AND COALESCE(agent_runs.started_at, agent_runs.created_at) <= issues.github_updated_at
             GROUP BY issues.id, issues.github_updated_at
           )
@@ -709,7 +708,6 @@ module Dashboard
                  percentile_cont(0.9) WITHIN GROUP (ORDER BY total_run_seconds) AS p90_run_seconds
           FROM per_issue
         SQL
-        AgentRun::PREVIEW_SESSION_EXTERNAL_METADATA_KEY
       ])
 
       ActiveRecord::Base.connection.select_one(sql)

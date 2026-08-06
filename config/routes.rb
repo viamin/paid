@@ -269,6 +269,12 @@ Rails.application.routes.draw do
       resource :clarifying_questions, only: [ :show, :create ],
         controller: "projects/clarifying_questions"
     end
+    resources :change_intents, only: [ :show ], controller: "projects/change_intents" do
+      member do
+        post :approve
+        post :discard
+      end
+    end
     post :detect_services, on: :member
     resource :context_intake, only: [ :show, :create, :update ],
       controller: "knowledge/context_intake" do
@@ -314,6 +320,7 @@ Rails.application.routes.draw do
   # API endpoints for agent containers
   namespace :api do
     resources :projects, only: [] do
+      resource :external_agent_contract, only: [ :show ], controller: "projects/external_agent_contracts"
       resources :external_agent_runs, only: [ :create ], controller: "projects/external_agent_runs"
       resources :connector_events, only: [ :create ], controller: "projects/connector_events"
     end

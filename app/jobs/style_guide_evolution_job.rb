@@ -35,6 +35,10 @@ class StyleGuideEvolutionJob < ApplicationJob
     scope = StyleGuide.active
       .where.not(current_version_id: nil)
       .where.not(account_id: nil, project_id: nil)
+      # WHERE NOT (account_id IS NULL AND project_id IS NULL)
+      # → account_id IS NOT NULL OR project_id IS NOT NULL
+      # This includes both account-level guides (account_id set, project_id nil)
+      # and project-level guides (both set). Only global guides (both nil) are excluded.
       .where.not(id: StyleGuideAbTest.running.select(:style_guide_id))
       .where.not(account_id: accounts_with_running_tests)
       .joins(:style_guide_run_exposures)

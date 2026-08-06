@@ -34,13 +34,19 @@ pipeline.
 Retrieval is also live: change intents appear as a distinct section in context
 bundles and are available through MCP read tools for later agent turns.
 
+Issue enhancement is now a second capture surface. `EnhanceIssueActivity`
+asks the enhancement model to evaluate whether an issue contains a non-obvious
+constraint or a rejected reasonable alternative worth preserving. When it does,
+the flow drafts an issue-linked `ChangeIntent` (in `draft` status) via
+`ChangeIntents::DraftFromIssue`, surfaces the proposal in the enhancement
+comment with a review link, and never indexes it until a human approves it
+through the `Projects::ChangeIntentsController` review path.
+
 ## Active Gap
 
-The missing work is around broader capture surfaces, not the core record
-mechanics:
+The remaining work is around broader capture surfaces and heuristics, not the
+core record mechanics:
 
-- issue-enhancement flows do not yet offer or create Change Intent Records from
-  issue constraints
 - the system does not yet automatically suggest a CIR-worthy capture path at
   every intent-rich touchpoint
 - broader policy around which directions deserve capture still relies on prompt

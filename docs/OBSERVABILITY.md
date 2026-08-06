@@ -52,6 +52,12 @@ Metrics are defined in `Metrics::PrometheusCollector` and rendered in Prometheus
 | `paid_agent_runs_total` | gauge | Number of agent runs by status |
 | `paid_agent_runs_active` | gauge | Currently active agent runs |
 | `paid_agent_runs_queued` | gauge | Agent runs waiting in queue |
+| `paid_agent_run_outcomes_window` | gauge | Finished runs in the last 6h by terminal status and normalized outcome. Sliding-window snapshot. |
+| `paid_agent_run_duration_seconds_bucket_window` | gauge | Finished run duration bucket counts in the last 6h. Sliding-window snapshot; not a cumulative Prometheus histogram. |
+| `paid_agent_run_duration_seconds_sum_window` | gauge | Total finished run duration in seconds in the last 6h. Sliding-window snapshot. |
+| `paid_agent_run_duration_seconds_count_window` | gauge | Number of finished runs with duration samples in the last 6h. Sliding-window snapshot. |
+| `paid_agent_run_tokens_window` | gauge | Finished-run tokens in the last 6h by direction and normalized outcome. Sliding-window snapshot. |
+| `paid_agent_run_cost_cents_window` | gauge | Finished-run cost in cents in the last 6h by normalized outcome. Sliding-window snapshot. |
 
 #### GoodJob Queue Metrics
 
@@ -176,7 +182,7 @@ scrape_configs:
 
 ### Log Format
 
-Paid uses Rails `ActiveSupport::TaggedLogging` with `config.log_tags = [:request_id]`. This prepends the request ID to each log line for correlation across a request lifecycle.
+Paid uses Rails `ActiveSupport::TaggedLogging` with `config.log_tags = [:request_id]` in the default app configuration. For the supported self-hosted Compose deployment path, the `web` and `worker` services also set `PAID_LOG_FORMAT=json` and `RAILS_LOG_TO_STDOUT=1`, so the structured `Rails.logger.info(message: ..., **metadata)` calls already used across the codebase are emitted as newline-delimited JSON to container stdout, with `request_id` lifted directly from `Current.request_id` when present.
 
 ```ruby
 # config/application.rb (or environment config)
@@ -187,27 +193,64 @@ config.log_tags = [:request_id]
 
 `Current.request_id` (provided by Rails) is used for correlation within a request. There is no custom `RequestIdMiddleware` — Rails sets `request_id` automatically via `ActionDispatch::RequestId`.
 
-### Log Aggregation [PLANNED]
+### Log Aggregation [IMPLEMENTED]
 
-Logs are planned to be collected and shipped to Grafana Loki:
+Self-hosted Paid ships Loki + Promtail as the supported centralized log path:
 
 ```yaml
-# docker-compose.yml (logging section)
+# docker-compose.observability.yml
 services:
   loki:
-    image: grafana/loki:latest
-    ports:
-      - "3100:3100"
+    image: grafana/loki:3.1.1
     volumes:
+      - ./loki:/etc/loki:ro
       - loki-data:/loki
 
   promtail:
-    image: grafana/promtail:latest
+    image: grafana/promtail:3.1.1
     volumes:
-      - /var/log:/var/log:ro
-      - ./promtail-config.yml:/etc/promtail/config.yml
+      - ./promtail:/etc/promtail:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     command: -config.file=/etc/promtail/config.yml
 ```
+
+Promtail discovers Docker containers through the Docker socket, unwraps
+Docker's outer log envelope, and forwards the underlying JSON log lines to
+Loki. Grafana provisions both the Prometheus and Loki datasources, so operators
+can use Grafana Explore for log search while keeping the existing dashboards
+for metrics and alerts.
+
+### Stable Labels And Correlation Fields
+
+Promtail promotes the stable routing metadata below to Loki labels and also
+adds the current container name for troubleshooting:
+
+| Label | Meaning |
+|-------|---------|
+| `job` | Promtail scrape job (`docker`) |
+| `source` | Log source (`docker`) |
+| `compose_project` | Docker Compose project name |
+| `compose_service` | Stable service name such as `web` or `worker` |
+
+High-cardinality fields remain in the JSON payload instead of becoming labels.
+That includes correlation keys such as `request_id`, `agent_run_id`,
+`project_id`, `workflow_id`, `job_id`, and `chat_session_id`.
+
+### Querying Rails And Worker Logs
+
+Use Grafana Explore with the `Loki` datasource.
+
+- Rails request logs:
+  `{compose_service="web"} | json | request_id="abc-123"`
+- Worker activity for a single agent run:
+  `{compose_service="worker"} | json | agent_run_id=12345`
+- All container-manager events across web and worker:
+  `{compose_service=~"web|worker"} | json | message=~"container_manager\\..*"`
+- Rails + worker correlation by project:
+  `{compose_service=~"web|worker"} | json | project_id=42`
+
+The supported pattern is: use labels to bound the stream first, then `| json`
+to filter on request/run/workflow fields inside the log body.
 
 ---
 
@@ -486,7 +529,7 @@ Notes:
 - The overlay scrapes the Rails app (`web:3000`) and Temporal SDK worker (`worker:9464`) because those are the metrics endpoints Paid exports today.
 - Temporal server metrics are not included here because the current Compose topology does not enable a dedicated Prometheus listener on the Temporal server container.
 - The `paid` scrape job reads its Bearer token from `/etc/prometheus/metrics_token` (a `secrets:` mount of the host file at `${METRICS_TOKEN_FILE:-./tmp/prometheus/metrics_token}`). `bin/setup` materializes this file from the host's `METRICS_TOKEN` environment variable when that variable is present in the current process environment, and creates an empty file when it is absent (so `docker compose --profile observability up` can start on a fresh checkout). The default path lives under `./tmp/` so a live token never lands in the tracked working tree. The `web` service propagates `METRICS_TOKEN` into the Rails container so the two stay in sync; when `METRICS_TOKEN` is absent, helper processes leave the existing token file untouched, and the Rails side accepts the scrape because its auth check is gated on `ENV["METRICS_TOKEN"].present?`.
-- Loki/Promtail remain out of scope for this stack. Paid already emits structured logs, but log aggregation is still an optional follow-up rather than part of the required RDR-011 asset set.
+- Loki/Promtail are now part of the checked-in self-hosted observability path for Compose deployments.
 
 ---
 

@@ -60,9 +60,9 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
 | [RDR-010](RDR-010-multi-tenancy-rbac.md) | Multi-Tenancy and RBAC | Implemented | Medium |
-| [RDR-011](RDR-011-observability.md) | Observability Stack | Partially Implemented | Medium |
+| [RDR-011](RDR-011-observability.md) | Observability Stack | Implemented | Medium |
 | [RDR-039](RDR-039-exception-notification-custom-notifier.md) | Exception Reporting via `exception_notification` Custom Notifier | Implemented | P2 |
-| [RDR-018](RDR-018-billing-aggregation.md) | Billing Aggregation System | Implemented | P2 |
+| [RDR-018a](RDR-018a-billing-aggregation.md) | Billing Aggregation System | Implemented | P2 |
 | [RDR-024](RDR-024-multi-tenancy-isolation-strategy.md) | Multi-Tenancy Isolation Strategy | Implemented | High |
 | [RDR-026](RDR-026-admin-interface-strategy.md) | Admin Interface Strategy | Implemented | Medium |
 | [RDR-029](RDR-029-multi-tenancy-preparation.md) | Multi-Tenancy Preparation | Implemented | High |
@@ -106,18 +106,19 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | [RDR-023](RDR-023-automation-modularization-architecture.md) | Automation Modularization Architecture | Partially Implemented | High |
 | [RDR-031](RDR-031-focused-agent-runs.md) | Focused Agent Runs — Single-Problem-Per-Run | Implemented | P1 |
 | [RDR-032](RDR-032-eager-queue-seeding.md) | Eager Queue Seeding — Eliminate Auto-Pick Throttling | Implemented | P1 |
-| [RDR-035](RDR-035-style-guide-evolution.md) | Style Guide Evolution | Accepted | High |
+| [RDR-035](RDR-035-style-guide-evolution.md) | Style Guide Evolution | Implemented | High |
 | [RDR-036](RDR-036-mutation-testing-for-ai-generated-tests.md) | Mutation Testing for AI-Generated Tests (Mutant) | Implemented | P1 |
 | [RDR-045](RDR-045-live-web-app-preview-agent-verification.md) | Live Web App Preview and Interactive Agent Verification | Partially Implemented | High |
 | [RDR-046](RDR-046-polyglot-language-detection-and-test-execution.md) | Polyglot Language Detection and Test Execution | Partially Implemented | High |
 | [RDR-047](RDR-047-work-category-queue-priority.md) | Work-Category-Aware Queue Priority — PR Continuation Over Fresh Issues | Implemented | P1 |
+| [RDR-049](RDR-049-configuration-health-checks.md) | Configuration Health Checks | Implemented | P1 |
 | [RDR-050](RDR-050-account-queue-fairness-mode.md) | Account-Level Queue Fairness Mode — Strict Priority vs. Cross-Project Fair Share | Implemented | P1 |
 
 ### Runner Intelligence
 
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
-| [RDR-025](RDR-025-runner-quota-tracking.md) | Runner Quota Tracking and Quota-Aware Routing | Partially Implemented | Medium |
+| [RDR-025a](RDR-025a-runner-quota-tracking.md) | Runner Quota Tracking and Quota-Aware Routing | Partially Implemented | Medium |
 | [RDR-025](RDR-025-provider-quota-tracking.md) | Provider Quota Tracking and Quota-Aware Routing | Superseded | Medium |
 | [RDR-038](RDR-038-free-models-catalog-and-runner.md) | Free Models Catalog and Runner | Implemented | P1 |
 | [RDR-040](RDR-040-runner-model-compatibility-contracts.md) | Runner Model Compatibility Contracts | Implemented | P1 |
@@ -130,6 +131,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 | [RDR-021](RDR-021-knowledge-base.md) | Knowledge Base Architecture | Implemented | High |
 | [RDR-027](RDR-027-auto-enhance-knowledge-evolution.md) | Auto-Enhance and Knowledge Base Evolution | Partially Implemented | High |
 | [RDR-042](RDR-042-change-intent-records.md) | Change Intent Records for the Knowledge Base | Partially Implemented | Medium |
+| [RDR-052](RDR-052-codebase-aware-enhance-issue.md) | Codebase-Aware Issue Enhancement | Draft | P1 |
 
 ### AI-Native Evolution (Phase 4)
 
@@ -194,7 +196,7 @@ For more information, see the [RDR methodology](https://github.com/cwensel/rdr).
 2. **Research**: Investigation, findings integration, alternative exploration
 3. **Finalize**: Lock before development; status becomes "Final"
 4. **Implement**: Use as specification; no modifications during coding
-5. **Close Out**: Use a final audit issue that depends on the implementation chain. That issue updates the RDR and README statuses to "Implemented" only after validating the shipped implementation against the RDR plan and acceptance criteria. If gaps are found, it creates specific dependent follow-up issues and leaves the RDR status unchanged or "Partially Implemented". Store the audit as an RDR-specific artifact such as `audit-report-2026-08-04-rdr-044.md` so multiple closeouts on the same date do not collide on one generic filename.
+5. **Close Out**: Use a final audit issue that depends on the implementation chain. That issue updates the RDR and README statuses to "Implemented" only after validating the shipped implementation against the RDR plan and acceptance criteria. If gaps are found, it creates specific dependent follow-up issues and leaves the RDR status unchanged or "Partially Implemented". Follow the [RDR Closeout Checklist](closeout-checklist.md) for the full, reusable process (including label hygiene so automation-pickable closeout issues are not accidentally blocked). Store the audit as an RDR-specific artifact such as `audit-report-2026-08-04-rdr-044.md` so multiple closeouts on the same date do not collide on one generic filename.
 6. **Post-Mortem**: Add lessons learned after implementation, when useful.
 
 **Critical Rule**: If implementation exposes fundamental flaws in an RDR, abandon the code, incorporate learnings back into the RDR, and restart.

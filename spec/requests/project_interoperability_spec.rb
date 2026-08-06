@@ -206,6 +206,67 @@ RSpec.describe "Project interoperability" do
     end
   end
 
+  describe "GET /api/projects/:project_id/external_agent_contract" do
+    let!(:cursor_credential) do
+      create(
+        :integration_credential,
+        account: account,
+        created_by: owner_user,
+        service_key: "cursor",
+        auth_kind: "api_key",
+        secret: "cursor-shared-secret"
+      )
+    end
+    let(:external_contract_headers) { { "Authorization" => "Bearer #{cursor_credential.secret}" } }
+
+    before do
+      project.update!(
+        lid_mode: "scoped",
+        lid_detection: {
+          "version" => "1.3.0",
+          "sources" => [ "AGENTS.md ## LID block" ],
+          "warnings" => [ "Scoped LID declared without a ## LID Scope section; defaulting future scope checks to in-scope." ],
+          "scope_defaults_to_in_scope" => true
+        },
+        lid_mode_overridden: false,
+        interop_settings: {
+          "adoption_mode" => "advisory",
+          "external_execution_sources" => { "cursor" => true }
+        }
+      )
+    end
+
+    it "returns the effective LID contract for authenticated external agents" do
+      get api_project_external_agent_contract_path(project),
+        params: { external_source_key: "cursor" },
+        headers: external_contract_headers
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include(
+        "project_id" => project.id,
+        "external_source_key" => "cursor"
+      )
+      expect(response.parsed_body.dig("lid", "configured")).to be(true)
+      expect(response.parsed_body.dig("lid", "mode")).to eq("scoped")
+      expect(response.parsed_body.dig("lid", "detection")).to include(
+        "version" => "1.3.0",
+        "sources" => [ "AGENTS.md ## LID block" ],
+        "scope_defaults_to_in_scope" => true
+      )
+      expect(response.parsed_body.dig("lid", "workflow_contract", "implementation_prompt"))
+        .to include("## LID-Aware Workflow", "This repository declares Linked-Intent Development mode: `scoped`.")
+      expect(response.parsed_body.dig("lid", "planning", "trigger_goal")).to eq("lid_planning")
+      expect(response.parsed_body.dig("lid", "planning", "planning_pr_correction_supported")).to be(false)
+    end
+
+    it "requires a valid inbound integration credential" do
+      get api_project_external_agent_contract_path(project), params: { external_source_key: "cursor" }
+
+      expect(response).to have_http_status(:unauthorized)
+      expect(response.parsed_body.fetch("errors")).to include("Invalid integration credential")
+    end
+  end
+
   describe "POST /projects/:project_id/interoperability_imports" do
     before do
       sign_in owner_user

@@ -84,6 +84,16 @@ RSpec.configure do |config|
   config.after do
     ProviderSupport.reset_supported_provider_keys!
     RunnerSupport.reset_supported_runner_keys!
+    # The ActiveJob TestAdapter accumulates enqueued/performed jobs across the
+    # whole run (it is process-global and never auto-cleared). Specs that assert
+    # against the global queue (e.g. expect(...).not_to include(SomeJob)) flake
+    # under random seeds where a prior spec left jobs behind. Clear both arrays
+    # after every example so no spec can pollute another.
+    adapter = ApplicationJob.queue_adapter
+    if adapter.respond_to?(:enqueued_jobs)
+      adapter.enqueued_jobs.clear
+      adapter.performed_jobs.clear
+    end
   end
 
   config.filter_run_excluding :runner_smoke unless ENV["RUN_RUNNER_SMOKE"] == "true"

@@ -9,7 +9,10 @@
 - [x] **LID-RUNS-001** — When a project declares `lid_mode`, prompt building
   SHALL append a LID-aware workflow section instructing the agent to read the
   design tree, work tests-first, add `@spec` annotations, and run the
-  coherence checker before finishing.
+  coherence checker before finishing. When the run includes confirmed elicited
+  intent from issue enhancement, that section SHALL also instruct the agent to
+  draft or update the relevant LLD and EARS artifacts before or alongside code
+  changes.
   *Code:* `app/services/lid/inject_into_prompt.rb`.
   *Test:* `spec/services/lid/inject_into_prompt_spec.rb`.
 
@@ -37,6 +40,11 @@
   SHALL enforce a stable output contract for how authored plan-doc sections map
   into HLD, LLD, and EARS artifacts.
 
-- [ ] **LID-RUNS-006** — External-agent entry points SHALL receive the same
+- [x] **LID-RUNS-006** — External-agent entry points SHALL receive the same
   LID-aware prompt discipline and coherence reporting that native Paid agent
   runs already receive.
+  *Code:* `app/services/interop/external_agent_lid_contract.rb`,
+  `app/controllers/api/projects/external_agent_contracts_controller.rb`,
+  `app/mcp/tools/get_project.rb`.
+  *Tests:* `spec/requests/project_interoperability_spec.rb`,
+  `spec/mcp/tools/get_project_spec.rb`.

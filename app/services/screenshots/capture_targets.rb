@@ -212,6 +212,11 @@ module Screenshots
       project_knowledge_browse_show: Target.new(slug: "project_knowledge_browse_show", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/knowledge/browse/route" }, requires_auth: true),
       project_knowledge_artifact_show: Target.new(slug: "project_knowledge_artifact_show", path_builder: ->(seed_data) { "/knowledge_artifacts/#{seed_data.fetch(:knowledge_artifact).id}" }, requires_auth: true),
       project_knowledge_recommendations: Target.new(slug: "project_knowledge_recommendations", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/knowledge_recommendations" }, requires_auth: true),
+      project_change_intent_show: Target.new(
+        slug: "project_change_intent_show",
+        path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/change_intents/#{seed_data.fetch(:change_intent).id}" },
+        requires_auth: true
+      ),
       workflow_status: Target.new(slug: "workflow_status", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/workflow_status" }, requires_auth: true)
     }.freeze
 
@@ -322,6 +327,7 @@ module Screenshots
       "knowledge/artifacts_controller.rb" => [ :project_knowledge_artifact_show ],
       "knowledge/context_intake_controller.rb" => [ :project_context_intake ],
       "projects/cost_budgets_controller.rb" => [ :project_cost_dashboard ],
+      "projects/change_intents_controller.rb" => [ :project_change_intent_show ],
       "projects/clarifying_questions_controller.rb" => [ :project_issue_clarifying_questions ],
       "projects/health_check_controller.rb" => [ :project_health_check ],
       "projects/connector_events_controller.rb" => [ :project_edit ],
@@ -692,6 +698,7 @@ module Screenshots
       when "show.html.erb" then [ :project_show ]
       when "edit.html.erb" then [ :project_edit ]
       when "clarifying_questions/show.html.erb" then [ :project_issue_clarifying_questions ]
+      when "change_intents/show.html.erb" then [ :project_change_intent_show ]
       when /\A_/
         base = File.basename(leaf, ".html.erb")
         if PROJECT_SHOW_PARTIALS.include?(base)

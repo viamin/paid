@@ -9,7 +9,7 @@
 - **Type**: Architecture
 - **Priority**: Medium
 - **Related Issues**: #2011 (Avo Operator Console), #2012 (User-Facing Account Administration)
-- **Related RDRs**: [RDR-010](RDR-010-multi-tenancy-rbac.md) (Multi-Tenancy and RBAC), [RDR-024](RDR-024-multi-tenancy-isolation-strategy.md) (Multi-Tenancy Isolation Strategy), [RDR-018](RDR-018-billing-aggregation.md) (Billing Aggregation)
+- **Related RDRs**: [RDR-010](RDR-010-multi-tenancy-rbac.md) (Multi-Tenancy and RBAC), [RDR-024](RDR-024-multi-tenancy-isolation-strategy.md) (Multi-Tenancy Isolation Strategy), [RDR-018a](RDR-018a-billing-aggregation.md) (Billing Aggregation)
 
 ## Implementation Status
 
