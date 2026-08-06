@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 RSpec.shared_examples "a configuration profile" do
+  # @spec CONFIG-PROFILES-001
   it "exposes a stable underscored name" do
     expect(described_class.name).to match(/\A[a-z0-9_]+\z/)
   end
@@ -24,6 +25,10 @@ RSpec.shared_examples "a configuration profile" do
     described_class.targets.each_key do |key|
       expect(Configuration::Profiles::Settings.fetch(key).label).to be_present
     end
+  end
+
+  it "covers the canonical operating-mode field set exactly" do
+    expect(described_class.targets.keys).to match_array(Configuration::Profiles::Settings.profile_target_keys)
   end
 
   it "derives override keys from clarifying-question ids only" do

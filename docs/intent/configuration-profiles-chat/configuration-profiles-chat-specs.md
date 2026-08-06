@@ -25,3 +25,9 @@
 - [D] **CONFIG-PROFILES-005** — The profile system MAY later support carefully
   bounded overrides per profile, but the primary contract remains choosing from
   code-curated operating modes rather than arbitrary free-form reconfiguration.
+
+- [ ] **CONFIG-PROFILES-006** — When a new operating-mode-relevant project
+  setting ships, the canonical chat-integrated `Configuration::Profiles::*`
+  registry SHALL fail regression coverage until every configuration profile
+  either covers the setting or explicitly exempts it from operating-mode
+  posture handling.
