@@ -186,6 +186,14 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to eq([ "project_issue_clarifying_questions" ])
     end
 
+    it "maps the change intents controller and show view to the change intent target" do
+      controller_targets = described_class.call(changed_files: [ "app/controllers/projects/change_intents_controller.rb" ])
+      view_targets = described_class.call(changed_files: [ "app/views/projects/change_intents/show.html.erb" ])
+
+      expect(controller_targets.map(&:slug)).to eq([ "project_change_intent_show" ])
+      expect(view_targets.map(&:slug)).to eq([ "project_change_intent_show" ])
+    end
+
     it "maps the clarifying-questions Stimulus controller to its screenshot target" do
       targets = described_class.call(changed_files: [ "app/javascript/controllers/clarifying_questions_controller.js" ])
 

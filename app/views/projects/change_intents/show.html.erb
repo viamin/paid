@@ -1,0 +1,77 @@
+<% content_for(:title) { "Change Intent Record - #{@project.name} - Paid" } %>
+
+<div class="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
+  <div class="mb-6">
+    <%= link_to project_path(@project), class: "inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700" do %>
+      <svg class="mr-1 h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+        <path fill-rule="evenodd" d="M17 10a.75.75 0 0 1-.75.75H5.612l4.158 3.96a.75.75 0 1 1-1.04 1.08l-5.5-5.25a.75.75 0 0 1 0-1.08l5.5-5.25a.75.75 0 1 1 1.04 1.08L5.612 9.25H16.25A.75.75 0 0 1 17 10Z" clip-rule="evenodd" />
+      </svg>
+      Back to <%= @project.name %>
+    <% end %>
+  </div>
+
+  <div class="rounded-lg bg-white shadow ring-1 ring-black/5">
+    <div class="px-6 py-5">
+      <div class="flex items-center justify-between">
+        <div>
+          <span class="inline-flex items-center rounded-full bg-yellow-100 px-2.5 py-0.5 text-xs font-medium text-yellow-800"><%= @change_intent.status.capitalize %></span>
+          <h1 class="mt-2 text-xl font-semibold text-gray-900"><%= @change_intent.title %></h1>
+          <% if @change_intent.issue %>
+            <p class="mt-1 text-sm text-gray-500">
+              Drafted from issue #<%= @change_intent.issue.github_number %>.
+            </p>
+          <% end %>
+        </div>
+      </div>
+
+      <dl class="mt-6 space-y-5 text-sm text-gray-700">
+        <div>
+          <dt class="font-medium text-gray-900">Intent</dt>
+          <dd class="mt-1 whitespace-pre-wrap"><%= @change_intent.intent %></dd>
+        </div>
+
+        <% if @change_intent.behavior.present? %>
+          <div>
+            <dt class="font-medium text-gray-900">Behavior</dt>
+            <dd class="mt-1 whitespace-pre-wrap"><%= @change_intent.behavior %></dd>
+          </div>
+        <% end %>
+
+        <% if @change_intent.constraints.present? %>
+          <div>
+            <dt class="font-medium text-gray-900">Constraints</dt>
+            <dd class="mt-1 whitespace-pre-wrap"><%= @change_intent.constraints %></dd>
+          </div>
+        <% end %>
+
+        <% if @change_intent.decisions_made.present? %>
+          <div>
+            <dt class="font-medium text-gray-900">Rejected alternatives</dt>
+            <dd class="mt-1 whitespace-pre-wrap"><%= @change_intent.decisions_made %></dd>
+          </div>
+        <% end %>
+      </dl>
+
+      <% if @change_intent.status == "draft" && policy(@change_intent).update? %>
+        <div class="mt-8 flex flex-col gap-3 border-t border-gray-200 pt-6 sm:flex-row">
+          <div class="text-sm text-gray-500 sm:flex-1">
+            Approving adds this record to the knowledge base so future agents can reuse it. Discarding removes the draft.
+          </div>
+          <div class="flex gap-3">
+            <%= button_to "Discard", discard_project_change_intent_path(@project, @change_intent),
+                  method: :post,
+                  class: "inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-3.5 py-2 text-sm font-semibold text-gray-900 shadow-sm hover:bg-gray-50",
+                  data: { turbo_confirm: "Discard this proposed Change Intent Record?" } %>
+            <%= button_to "Approve", approve_project_change_intent_path(@project, @change_intent),
+                  method: :post,
+                  class: "inline-flex items-center justify-center rounded-md bg-indigo-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+          </div>
+        </div>
+      <% elsif @change_intent.status != "draft" %>
+        <p class="mt-8 border-t border-gray-200 pt-6 text-sm text-gray-500">
+          This record has already been <%= @change_intent.status %>.
+        </p>
+      <% end %>
+    </div>
+  </div>
+</div>

@@ -1,6 +1,10 @@
 # frozen_string_literal: true
 
 class ChangeIntentPolicy < ApplicationPolicy
+  def show?
+    ProjectPolicy.new(user, record.project).show?
+  end
+
   def create?
     ProjectPolicy.new(user, record.project).update?
   end

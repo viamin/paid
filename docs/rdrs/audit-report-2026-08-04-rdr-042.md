@@ -60,9 +60,9 @@ Tracked acceptance criteria:
 
 ## Conclusion
 
-RDR-042 should now be treated as **partially implemented**:
+RDR-042 should now be treated as **implemented**:
 
 - Phase 1 shipped.
 - Phase 2 shipped.
 - Phase 3's external-agent lookup tools shipped.
-- Phase 3's issue-enhancement CIR detection is still missing and is now tracked in [#3213](https://github.com/viamin/paid/issues/3213).
+- Phase 3's issue-enhancement CIR detection shipped on 2026-08-06 ([#3213](https://github.com/viamin/paid/issues/3213)): `EnhanceIssueActivity` now detects CIR-worthy issue content, drafts an issue-linked `ChangeIntent` via `ChangeIntents::DraftFromIssue`, surfaces the draft in the enhancement comment with a review link, and indexes it only after human approval via `Projects::ChangeIntentsController`. The remaining heuristics work remains deferred (CHANGE-INTENT-005).

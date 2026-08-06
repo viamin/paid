@@ -5,7 +5,7 @@
 ## Metadata
 
 - **Date**: 2026-06-27
-- **Status**: Partially Implemented
+- **Status**: Implemented
 - **Type**: Process + Architecture
 - **Priority**: Medium
 - **Related Issues**: #3162 (closeout), #2695 (phase 1), #2696 (phase 2), #2697 (original phase 3), #2740 (phase 1 implementation), #2739 (phase 2 implementation), #2761 (phase 3 implementation claim), #3213 (remaining phase 3 issue-enhancement gap)
@@ -13,17 +13,17 @@
 
 ## Implementation Status
 
-Partially implemented as of 2026-08-04.
+Partially implemented as of 2026-08-04; issue-enhancement CIR drafting shipped on 2026-08-06.
 
 Shipped behavior:
 
 - Phase 1 shipped: the `change_intents` table/model, project-scoped policy, lifecycle services, knowledge-artifact sync, collectors, and context-bundle section are present.
 - Phase 2 shipped: `record_change_intent` exists as a post-dispatch write tool, the chat flow supports draft approval/denial, and the chat system prompt instructs the model to offer a CIR when the user gives a non-obvious constraint or rejects a reasonable alternative.
-- Phase 3 shipped in part: external agents can retrieve CIRs through `search_intents` and `get_intent`.
+- Phase 3 shipped: external agents can retrieve CIRs through `search_intents` and `get_intent`, and issue enhancement (`EnhanceIssueActivity`) detects CIR-worthy issue content, drafts an issue-linked `ChangeIntent` via `ChangeIntents::DraftFromIssue`, surfaces it in the enhancement comment with a review link, and indexes it only after human approval via `Projects::ChangeIntentsController`.
 
 Remaining gap:
 
-- Phase 3 issue enhancement is still missing. `EnhanceIssueActivity` currently asks clarifying questions, but it does not create or surface linked CIR drafts from issue bodies. That remaining gap is now tracked in [#3213](https://github.com/viamin/paid/issues/3213). See [audit-report-2026-08-04-rdr-042.md](audit-report-2026-08-04-rdr-042.md).
+- Broader CIR capture heuristics beyond chat and issue enhancement remain deferred (see CHANGE-INTENT-005).
 
 The original RDR text below is kept as the architectural plan. The closeout above records what actually shipped and where implementation still diverges.
 
@@ -211,9 +211,9 @@ A new MCP tool `record_change_intent` is available in chat sessions:
 4. The human reviews and approves/edits via the chat UI (same approve/deny pattern as write tool confirmation)
 5. On approval, status transitions to `active` and knowledge artifacts are created
 
-**Issue-level creation (future):**
+**Issue-level creation (Phase 3, shipped):**
 
-During issue enhancement (`EnhanceIssueActivity`), if the issue body contains constraint-heavy language, the system can offer to create a CIR. This is Phase 3.
+During issue enhancement (`EnhanceIssueActivity`), if the issue body contains constraint-heavy language, the enhancement model drafts an issue-linked `ChangeIntent` (in `draft` status). The draft is surfaced in the enhancement comment with a review link, and enters the knowledge pipeline only after human approval via the review path.
 
 ### Decision Rationale
 

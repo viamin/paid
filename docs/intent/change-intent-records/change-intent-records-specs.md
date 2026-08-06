@@ -24,10 +24,16 @@
   *Code:* `app/services/knowledge/context_bundle/build.rb`.
   *Test:* `spec/services/knowledge/context_bundle/build_spec.rb`.
 
-- [ ] **CHANGE-INTENT-004** — When issue enhancement or other issue-scoped
+- [x] **CHANGE-INTENT-004** — When issue enhancement or other issue-scoped
   intake surfaces encounter constraint-heavy human direction, the system SHALL
   offer a Change Intent Record creation path instead of limiting capture to
   chat-only sessions.
+  *Code:* `app/temporal/activities/enhance_issue_activity.rb`,
+  `app/services/change_intents/draft_from_issue.rb`,
+  `app/controllers/projects/change_intents_controller.rb`.
+  *Test:* `spec/temporal/activities/enhance_issue_activity_spec.rb`,
+  `spec/services/change_intents/draft_from_issue_spec.rb`,
+  `spec/requests/projects/change_intents_spec.rb`.
 
 - [D] **CHANGE-INTENT-005** — Heuristics for automatically suggesting that a
   direction is CIR-worthy may expand over time, but the current contract

@@ -95,6 +95,15 @@ module Screenshots
             record.labels = [ project.enhance_issue_needs_input_label_name ]
           end
 
+          change_intent = project.change_intents.find_or_create_by!(title: "Draft change intent for screenshot coverage") do |record|
+            record.issue = clarifying_issue
+            record.intent = "Persist a confirmed directional intent so future agents reuse it instead of re-eliciting."
+            record.behavior = "Given a reviewer approves a draft change intent, the record becomes active and joins the knowledge base."
+            record.constraints = "Drafts stay draft until a human reviewer approves them; they never enter the knowledge pipeline on their own."
+            record.decisions_made = "Rejected auto-activating drafts without human review to preserve intent provenance."
+            record.status = "draft"
+          end
+
           provider = user.runners.subscription.first!
           provider.update!(enabled_for_agent_runs: true, enabled_for_fallback: true)
 
@@ -412,6 +421,7 @@ module Screenshots
             "chat_session" => { "id" => chat_session.id, "name" => chat_session.title },
             "knowledge_artifact" => { "id" => knowledge_artifact.id },
             "remediation_decision" => { "id" => remediation_decision.id },
+            "change_intent" => { "id" => change_intent.id },
             "installation_project" => { "id" => installation_project.id, "name" => installation_project.name }
           }
         end

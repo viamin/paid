@@ -48,7 +48,8 @@ module Activities
       response = call_llm(agent_run, prompt_for(project, issue, comments, context))
       parsed = parse_response!(agent_run, response)
       parsed = stop_after_max_rounds(parsed, project, issue)
-      comment_body = comment_body_for(parsed)
+      draft = build_change_intent_draft(agent_run, project, issue, parsed)
+      comment_body = comment_body_for(parsed, draft)
       gh_comment = client.add_comment(project.full_name, issue.github_number, comment_body)
       label_result = apply_label_state(client, project, issue, parsed)
 
@@ -223,6 +224,7 @@ module Activities
 
     # @spec ISSUE-ENHANCEMENT-001
     # @spec ISSUE-ENHANCEMENT-002
+    # @spec CHANGE-INTENT-004
     def prompt_for(project, issue, comments, context)
       <<~PROMPT
         You analyze GitHub issues for implementation readiness.
@@ -242,8 +244,23 @@ module Activities
         Respond with ONLY valid JSON:
         {
           "sufficient_context": true or false,
-          "comment_body": "Markdown comment to post on the issue"
+          "comment_body": "Markdown comment to post on the issue",
+          "change_intent_draft": {
+            "title": "Short title of the constraint or rejected alternative",
+            "intent": "What the human was trying to accomplish",
+            "behavior": "Expected behavior or scenarios, when applicable",
+            "constraints": "The non-obvious constraint or requirement",
+            "decisions_made": "Which reasonable alternative was rejected and why"
+          }
         }
+
+        The "change_intent_draft" is OPTIONAL. Include it only when the issue
+        contains a non-obvious constraint or a rejected reasonable alternative
+        that a future contributor might overlook and try a different way. Do not
+        include it when the constraint is self-evident, obvious from the code, or
+        no alternative was actually rejected — more records means more noise. This
+        judgment is independent of whether the issue has sufficient implementation
+        context.
 
         The comment_body must follow one of these structures:
 
@@ -334,8 +351,69 @@ module Activities
       )
     end
 
-    def comment_body_for(parsed)
-      [ COMMENT_MARKER, parsed[:comment_body].to_s.truncate(MAX_COMMENT_BODY) ].join("\n")
+    def comment_body_for(parsed, draft = nil)
+      sections = [ COMMENT_MARKER, parsed[:comment_body].to_s.truncate(MAX_COMMENT_BODY) ]
+      sections << change_intent_section(draft) if draft
+      sections.join("\n\n")
+    end
+
+    # @spec CHANGE-INTENT-004
+    def build_change_intent_draft(agent_run, project, issue, parsed)
+      payload = parsed[:change_intent_draft]
+      return unless payload
+
+      ChangeIntents::DraftFromIssue.call(project: project, issue: issue, payload: payload).tap do |draft|
+        next unless draft
+
+        logger.info(
+          message: "agent_execution.enhance_issue_cir_drafted",
+          agent_run_id: agent_run.id,
+          project_id: project.id,
+          issue_id: issue.id,
+          change_intent_id: draft.id
+        )
+      end
+    rescue ActiveRecord::RecordInvalid => e
+      logger.warn(
+        message: "agent_execution.enhance_issue_cir_draft_failed",
+        agent_run_id: agent_run.id,
+        project_id: project.id,
+        issue_id: issue.id,
+        error: e.message
+      )
+      nil
+    end
+
+    def change_intent_section(draft)
+      review_url = change_intent_review_url(draft.project, draft)
+      lines = [
+        "## Proposed Change Intent Record",
+        "",
+        "This issue contains a non-obvious constraint worth preserving for future work.",
+        "",
+        "**#{draft.title}**",
+        "",
+        draft.intent
+      ]
+      lines << "**Constraints:** #{draft.constraints}" if draft.constraints.present?
+      lines << "**Rejected alternatives:** #{draft.decisions_made}" if draft.decisions_made.present?
+      lines << ""
+      lines << "Review and approve or discard this proposal: #{review_url}"
+      lines.join("\n")
+    end
+
+    def change_intent_review_url(project, change_intent)
+      helpers.project_change_intent_url(project, change_intent, **url_host_options)
+    rescue ArgumentError
+      helpers.project_change_intent_path(project, change_intent)
+    end
+
+    def url_host_options
+      ActionMailer::Base.default_url_options.slice(:host, :port)
+    end
+
+    def helpers
+      Rails.application.routes.url_helpers
     end
 
     def stop_after_max_rounds(parsed, project, issue)
