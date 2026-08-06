@@ -70,9 +70,11 @@ runner-credential path:
 - `app/temporal/activities/enhance_issue_activity.rb:186` —
   `response = AgentHarness.send_message(prompt, **llm_options(provider))`
 - `app/temporal/activities/enhance_issue_activity.rb:213-223` — `llm_options`
-  builds `{ provider:, timeout:, dangerous_mode: false, tools: :none }` and
-  resolves the API key from the environment (the `ANTHROPIC_API_KEY`-from-ENV
-  gap the RDR Problem Statement identifies).
+  builds `{ provider:, timeout:, dangerous_mode: false, tools: :none }` and (for
+  the default provider) merges `Llm::TextMode.options`, which gates the HTTP text
+  transport on `ANTHROPIC_API_KEY` presence in the host ENV. The activity never
+  reads the key itself; it is resolved inside `AgentHarness.send_message` — the
+  `ANTHROPIC_API_KEY`-from-ENV gap the RDR Problem Statement identifies.
 
 This is precisely the credential bifurcation the RDR set out to close
 (R7 / AE4). It is still open.
