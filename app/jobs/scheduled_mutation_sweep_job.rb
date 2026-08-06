@@ -51,9 +51,9 @@ class ScheduledMutationSweepJob < ApplicationJob
     end
   end
 
-    def ruby_project?(project)
-      Prompts::LanguageCommands.test_languages(project).include?("ruby")
-    end
+  def ruby_project?(project)
+    Prompts::LanguageCommands.test_languages(project).include?("ruby")
+  end
 
   def swept_on_date?(project)
     QualityMetric.by_project(project.id)
