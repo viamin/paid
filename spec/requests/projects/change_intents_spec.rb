@@ -66,6 +66,17 @@ RSpec.describe "Projects::ChangeIntents" do
       follow_redirect!
       expect(response.body).to include("discarded")
     end
+
+    it "redirects gracefully when the record is no longer a draft" do
+      change_intent.update!(status: "active")
+
+      post discard_project_change_intent_path(project, change_intent)
+
+      expect(response).to redirect_to(project_change_intent_path(project, change_intent))
+      follow_redirect!
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("cannot discard from active")
+    end
   end
 
   describe "authorization" do

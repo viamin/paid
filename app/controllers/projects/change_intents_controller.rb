@@ -28,6 +28,8 @@ module Projects
       ChangeIntents::DiscardDraft.call(change_intent: @change_intent)
 
       redirect_to project_path(@project), notice: "Proposed Change Intent Record discarded."
+    rescue ChangeIntent::InvalidTransitionError => e
+      redirect_to project_change_intent_path(@project, @change_intent), alert: e.message
     end
 
     private
