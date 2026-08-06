@@ -36,7 +36,20 @@ updated LLD/EARS artifacts before or alongside code changes.
 Paid also ships a dedicated `lid_planning` run path. Users can queue a
 docs-only planning run, optionally weight it toward a named plan doc via
 `plan_doc_source`, and have PR creation generate a Planning PR body that keeps
-the inferred-decision checklist visible for human review.
+the inferred-decision checklist visible for human review. The run path now
+carries two explicit contracts:
+
+- **Authored-intent weighting (LID-RUNS-005).** Named plan docs are authored
+  intent, not a free-form hint. The prompt instructs the agent that decisions
+  sourced from named plan docs map into HLD/LLD/EARS as authored rationale and
+  MUST NOT carry an `[inferred]` marker; only code-sourced rationale is
+  `[inferred]`.
+- **Output artifact contract (LID-RUNS-007).** A successful run must produce the
+  required docs-only artifact set, validated run-kind aware: adoption runs (no
+  `lid_mode`) require the HLD, at least one LLD and its EARS specs, the `## LID`
+  block, and `docs/arrows/index.yaml`; refinement runs (`lid_mode` present)
+  require at least one LLD and its EARS specs. The contract is server-side
+  enforced at PR creation alongside the docs-only allowlist.
 
 Finally, coherence checking is operational and intentionally soft-blocking:
 failed reports are persisted on the run and surfaced in the PR body rather
@@ -59,8 +72,8 @@ assuming callers will infer it from run metadata:
 RDR-051 is still partially implemented. The remaining work is not "teach the
 agent LID exists" but "complete the surrounding lifecycle":
 
-- tighten the `lid_planning` output contract and plan-doc weighting rules
 - add the dedicated review-goal correction loop for Planning PR feedback
+  (LID-RUNS-004)
 - finish the stronger materialization path from elicited issue intent into LLD
   and EARS artifacts outside the native `create_pr` prompt path
 - expose the same LID-aware behavior cleanly to external-agent entry points
