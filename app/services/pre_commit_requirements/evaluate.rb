@@ -147,22 +147,13 @@ module PreCommitRequirements
 
     include OutputSanitizer
 
-    def detected_language(project)
-      language = if project.respond_to?(:test_languages)
-        Array(project.test_languages).first
-      elsif project.respond_to?(:detected_language)
-        project.detected_language
-      end
-      language.presence || "ruby"
-    end
-
     def attach_quality_feedback(requirement, result)
       return result unless requirement.check_type == "mutation_test"
       return result if agent_run.worktree_path.blank?
 
       feedback = QualityFeedbackService.new(
         worktree_path: agent_run.worktree_path,
-        language: detected_language(agent_run.project)
+        language: "ruby"
       ).mutation_result
       return result if feedback.errors.empty?
 
