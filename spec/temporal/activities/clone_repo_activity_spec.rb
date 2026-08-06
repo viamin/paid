@@ -93,9 +93,7 @@ RSpec.describe Activities::CloneRepoActivity do
     end
 
     context "when project uses a non-DB-dependent language without database container" do
-      before do
-        allow(activity).to receive(:detect_language).and_return("javascript")
-      end
+      let(:project) { create(:project, primary_language: "JavaScript") }
 
       it "keeps the test hook for non-DB-dependent languages" do
         expect(git_ops).to receive(:install_git_hooks).with(
