@@ -52,7 +52,7 @@ class ScheduledMutationSweepJob < ApplicationJob
   end
 
   def ruby_project?(project)
-    detect_language(project) == "ruby"
+    Prompts::LanguageCommands.test_languages(project).include?("ruby")
   end
 
   def swept_on_date?(project)

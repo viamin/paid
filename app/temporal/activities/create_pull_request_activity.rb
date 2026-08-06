@@ -33,7 +33,13 @@ module Activities
         # of publishing a misleading "Planning PR". This check runs
         # regardless of whether the PR is new or already exists, so a
         # retry that finds an open PR cannot bypass it.
-        validate_lid_planning_changed_files!(agent_run, client) if agent_run.lid_planning_goal?
+        if agent_run.lid_planning_goal?
+          # Fetch changed files once and thread the result into both checks
+          # (allowlist then output contract) to avoid a redundant GitHub
+          # compare request on every lid_planning PR creation.
+          changed_files = validate_lid_planning_changed_files!(agent_run, client)
+          enforce_lid_planning_contract!(agent_run, changed_files: changed_files)
+        end
 
         if existing_pr
           pr = existing_pr
@@ -752,6 +758,9 @@ module Activities
     # file list is unavailable (no client or missing commit SHAs). The
     # docs-only contract is server-side enforced; skipping validation
     # because comparison data is unavailable would defeat it.
+    #
+    # Returns the changed file list so the caller can reuse it for the
+    # output-contract check without a second GitHub compare request.
     def validate_lid_planning_changed_files!(agent_run, client)
       changed_files = fetch_changed_files(agent_run, client)
       if changed_files.nil?
@@ -759,7 +768,7 @@ module Activities
       end
 
       rejected = changed_files.reject { |path| lid_planning_allowed?(path) }
-      return if rejected.empty?
+      return changed_files if rejected.empty?
 
       logger.error(
         message: "agent_execution.lid_planning_allowlist_violation",
@@ -773,6 +782,34 @@ module Activities
         "is outside docs/ and the instruction file. The run is aborted."
       )
       raise "LID planning changed files outside allowlist: #{rejected.join(', ')}"
+    end
+
+    # Enforces the positive output contract for a lid_planning run: that the
+    # required LID artifact set (HLD, LLDs, EARS, and — for adoption — the
+    # ## LID block + arrow index) was actually produced. This is separate from
+    # the docs-only allowlist, which only rejects forbidden paths. The
+    # contract is run-kind aware (adoption vs refinement).
+    #
+    # Raises when required artifacts are missing so a run that produces no
+    # LID output cannot publish a misleading "Planning PR".
+    # @spec LID-RUNS-007
+    def enforce_lid_planning_contract!(agent_run, changed_files:)
+      result = Lid::PlanningContract.call(agent_run: agent_run, changed_files: changed_files)
+      return if result.valid?
+
+      logger.error(
+        message: "agent_execution.lid_planning_contract_violation",
+        agent_run_id: agent_run.id,
+        kind: result.kind,
+        missing: result.missing,
+        plan_doc_weighted: result.plan_doc_weighted
+      )
+      agent_run.log!(
+        "system",
+        "LID planning output contract not met (#{result.kind}): missing #{result.missing.to_sentence}. " \
+        "The run is aborted."
+      )
+      raise "LID planning output contract violated: missing #{result.missing.join(', ')}"
     end
 
     def lid_planning_allowed?(path)

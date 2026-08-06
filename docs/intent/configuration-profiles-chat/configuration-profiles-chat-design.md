@@ -44,14 +44,12 @@ The implementation can build on already-shipped primitives:
 
 ## Remaining Gap
 
-The core profile flow is now shipped, including vetted profile discovery,
-multi-scope planning, project/user/tenant application, and one-confirmation
-batched writes. The main follow-up work still tracked separately is narrower:
+The chat-integrated profile flow now exists, but two gaps remain:
 
-- broaden profile coverage and reconcile it with the older legacy posture
-  registry
-- add dedicated profile audit/rollback semantics instead of relying on generic
-  settings-changed activity metadata
+- project-only chat profiles still need follow-up work for tenant/user scope
+- operating-mode field coverage and profile catalog must stay unified under the
+  chat-integrated `Configuration::Profiles::*` path instead of drifting against
+  the legacy `ConfigurationProfiles::*` posture helpers
 
 ## What this is not
 

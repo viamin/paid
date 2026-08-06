@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_05_150519) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_06_013539) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2010,6 +2010,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_05_150519) do
     t.boolean "knowledge_evolution_enabled", default: false, null: false
     t.string "knowledge_status", limit: 50, default: "pending", null: false
     t.jsonb "label_mappings", default: {}, null: false
+    t.jsonb "language_profile", default: {}, null: false, comment: "Persisted repo-derived language/framework profile. Drives polyglot test/lint command routing (e.g. { \"languages\": [...], \"test_languages\": [...] }). Populated by detection (#3207) and optional .paid.yml manifest."
     t.datetime "last_agent_run_at"
     t.datetime "last_code_scanning_scan_at"
     t.datetime "last_github_activity_at"

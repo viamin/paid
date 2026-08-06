@@ -25,7 +25,10 @@ module Containers
       cpu_quota: 100_000,                       # 1 CPU (vs 2 for agent runs)
       pids_limit: 500,
       idle_timeout: 30.minutes,
-      image: "paid-agent:latest",
+      # Chat containers always use the base image: they run interactive agent
+      # tooling, not the project's own test suite, so they never need
+      # project-specific runtimes (RDR-046 / POLYGLOT-TEST-004).
+      image: Containers::ImageResolver::BASE_IMAGE,
       user: "agent",
       workspace_mount: "/workspace"
     }.freeze

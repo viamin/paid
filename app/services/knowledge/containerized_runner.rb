@@ -39,7 +39,10 @@ module Knowledge
     # killer (exit 137). Other collectors use far less memory but share
     # this container, so we size for the heaviest workload.
     CONTAINER_DEFAULTS = {
-      image: "paid-agent:latest",
+      # Knowledge collectors run read-only analysis tooling, never the
+      # project's own runtime, so they always use the base image
+      # (RDR-046 / POLYGLOT-TEST-004).
+      image: Containers::ImageResolver::BASE_IMAGE,
       memory_bytes: 4 * 1024 * 1024 * 1024,  # 4GB
       cpu_quota: 100_000,                     # 1 CPU
       pids_limit: 200,

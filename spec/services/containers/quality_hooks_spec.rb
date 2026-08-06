@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUALITY-LOOPS-004
+RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUALITY-LOOPS-004 # @spec POLYGLOT-TEST-003
   subject(:host) { host_class.new }
 
   let(:host_class) do
@@ -35,23 +35,103 @@ RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUA
       host.install_quality_hooks(git_ops, agent_run)
 
       expect(git_ops).to have_received(:install_git_hooks).with(
-        lint_command: "bundle exec rubocop",
-        test_command: "true",
+        lint_command: [ "bundle exec rubocop" ],
+        test_command: [],
+        mutation_command: "true"
+      )
+    end
+
+    it "keeps test and mutation hooks when a database container is running" do
+      allow(project).to receive_messages(
+        detected_language: "ruby",
+        has_running_database_container?: true
+      )
+      create(
+        :pre_commit_requirement,
+        :mutation_test,
+        account: account,
+        project: project,
+        name: "mutant",
+        command: "bundle exec mutant run --since HEAD~1 --use rspec --jobs 1"
+      )
+      host.install_quality_hooks(git_ops, agent_run)
+
+      expect(git_ops).to have_received(:install_git_hooks).with(
+        lint_command: [ "bundle exec rubocop" ],
+        test_command: [ "bundle exec rspec" ],
+        mutation_command: "bundle exec mutant run --since HEAD\\~1 --use rspec --jobs 1 --results-dir .mutant/results"
+      )
+    end
+
+    it "keeps test hooks for non-DB-dependent languages without a database" do
+      allow(project).to receive_messages(
+        detected_language: "go",
+        has_running_database_container?: false
+      )
+      host.install_quality_hooks(git_ops, agent_run)
+
+      expect(git_ops).to have_received(:install_git_hooks).with(
+        lint_command: [ "golangci-lint run" ],
+        test_command: [ "go test ./..." ],
+        mutation_command: "true"
+      )
+    end
+
+    it "gates Elixir/Phoenix test hooks the same as Ruby when no database is running" do
+      allow(project).to receive_messages(
+        detected_language: "elixir",
+        has_running_database_container?: false
+      )
+      host.install_quality_hooks(git_ops, agent_run)
+
+      expect(git_ops).to have_received(:install_git_hooks).with(
+        lint_command: [ "mix credo --strict" ],
+        test_command: [],
+        mutation_command: "true"
+      )
+    end
+
+    it "runs each language's commands for a polyglot repo with a database" do
+      project.update!(language_profile: { "test_languages" => [ "ruby", "elixir" ] })
+      allow(project).to receive(:has_running_database_container?).and_return(true)
+      create(
+        :pre_commit_requirement,
+        :mutation_test,
+        account: account,
+        project: project,
+        name: "mutant",
+        command: "bundle exec mutant run --since HEAD~1 --use rspec --jobs 1"
+      )
+      host.install_quality_hooks(git_ops, agent_run)
+
+      expect(git_ops).to have_received(:install_git_hooks).with(
+        lint_command: [ "bundle exec rubocop", "mix credo --strict" ],
+        test_command: [ "bundle exec rspec", "mix test" ],
+        mutation_command: "bundle exec mutant run --since HEAD\\~1 --use rspec --jobs 1 --results-dir .mutant/results"
+      )
+    end
+
+    it "gates only DB-dependent languages for a polyglot repo without a database" do
+      project.update!(language_profile: { "test_languages" => [ "ruby", "go" ] })
+      allow(project).to receive(:has_running_database_container?).and_return(false)
+      host.install_quality_hooks(git_ops, agent_run)
+
+      expect(git_ops).to have_received(:install_git_hooks).with(
+        lint_command: [ "bundle exec rubocop", "golangci-lint run" ],
+        test_command: [ "go test ./..." ],
         mutation_command: "true"
       )
     end
 
     it "keeps non-db test commands when the repo profile is polyglot" do # @spec POLYGLOT-TEST-003
-      allow(project).to receive_messages(
-        test_languages: %w[elixir javascript],
-        has_running_database_container?: false
-      )
+      project.update!(language_profile: { "test_languages" => %w[elixir javascript] })
+      allow(project).to receive(:has_running_database_container?).and_return(false)
 
       host.install_quality_hooks(git_ops, agent_run)
 
       expect(git_ops).to have_received(:install_git_hooks).with(
-        lint_command: "mix credo --strict && npm run lint",
-        test_command: "npm test",
+        lint_command: [ "mix credo --strict", "npm run lint" ],
+        test_command: [ "npm test" ],
         mutation_command: "true"
       )
     end

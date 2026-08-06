@@ -32,13 +32,23 @@
   *Test:* `spec/services/lid/coherence_check_spec.rb`,
   `spec/temporal/activities/create_pull_request_activity_spec.rb`.
 
-- [ ] **LID-RUNS-004** — When a Planning PR receives review feedback on
-  inferred decisions, the system SHALL trigger a dedicated correction loop that
-  rewrites the LID artifacts rather than relying on a generic review flow.
+- [x] **LID-RUNS-004** — When a Planning PR receives review feedback on
+  inferred decisions, the system SHALL detect that the `review` goal is acting
+  on a `lid_planning` PR and carry the review feedback into a dedicated
+  intent-correction prompt path that instructs the agent to revise the affected
+  LLD/EARS content and replace `[inferred]` markers with authored rationale,
+  rather than treating the Planning PR like a generic code-review PR.
+  *Code:* `app/models/agent_run.rb` (`planning_run_for_pr`),
+  `app/services/prompts/build_for_pr.rb` (`planning_pr_revision_section`).
+  *Test:* `spec/services/prompts/build_for_pr_spec.rb`.
 
-- [ ] **LID-RUNS-005** — When `lid_planning` uses named plan docs, the system
-  SHALL enforce a stable output contract for how authored plan-doc sections map
-  into HLD, LLD, and EARS artifacts.
+- [x] **LID-RUNS-005** — When `lid_planning` uses named plan docs, the system
+  SHALL treat them as authored intent (not inferred): the prompt SHALL instruct
+  the agent that decisions sourced from named plan docs map into HLD, LLD, and
+  EARS as authored rationale and MUST NOT carry an `[inferred]` marker, while
+  code-sourced rationale remains `[inferred]`.
+  *Code:* `app/services/prompts/build_for_lid_planning.rb`.
+  *Test:* `spec/services/prompts/build_for_lid_planning_spec.rb`.
 
 - [x] **LID-RUNS-006** — External-agent entry points SHALL receive the same
   LID-aware prompt discipline and coherence reporting that native Paid agent
@@ -48,3 +58,15 @@
   `app/mcp/tools/get_project.rb`.
   *Tests:* `spec/requests/project_interoperability_spec.rb`,
   `spec/mcp/tools/get_project_spec.rb`.
+
+- [x] **LID-RUNS-007** — A successful `lid_planning` run SHALL satisfy an
+  explicit output contract beyond the prompt: it SHALL produce the required
+  docs-only artifact set, validated separately for adoption (the project has no
+  `lid_mode` — requires HLD, LLD(s), EARS specs, the `## LID` block, and
+  `docs/arrows/index.yaml`) versus refinement (the project declares `lid_mode` —
+  requires at least one LLD and its EARS specs). The run SHALL fail when the
+  contract is not met.
+  *Code:* `app/services/lid/planning_contract.rb`,
+  `app/temporal/activities/create_pull_request_activity.rb`.
+  *Test:* `spec/services/lid/planning_contract_spec.rb`,
+  `spec/temporal/activities/create_pull_request_activity_spec.rb`.
