@@ -59,6 +59,7 @@ CODEX_CONFIG_TOML_BODY=$(cd "${PROJECT_ROOT}" && "${RUBY_CONTRACT_ENV[@]}" bundl
 
 CODEX_NOTIFY_LINE=$(cd "${PROJECT_ROOT}" && "${RUBY_CONTRACT_ENV[@]}" bundle exec ruby -e "
   require 'bundler/setup'
+  require_relative 'app/services/containers/image_resolver'
   require_relative 'app/services/containers/provision'
   puts Containers::Provision.codex_notify_line
 ")
