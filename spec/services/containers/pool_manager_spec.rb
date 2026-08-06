@@ -317,6 +317,21 @@ RSpec.describe Containers::PoolManager do
       expect(entry.container_host).to eq("local")
     end
 
+    it "warms entries with the project-resolved image for extended runtimes" do
+      project.update!(primary_language: "Go")
+      provision = instance_double(Containers::Provision)
+      allow(Containers::Provision).to receive(:new).and_return(provision)
+      allow(provision).to receive_messages(
+        network_name: "paid_agent",
+        provision: Containers::Provision::Result.success(container_id: "warm-go", container_host: "local")
+      )
+
+      described_class.new(project: project, target_size: 1).replenish
+
+      entry = project.container_pool_entries.sole
+      expect(entry.image).to eq("paid-agent:go")
+    end
+
     it "keeps host-specific target counts separate during replenishment" do
       create(:container_pool_entry, project: project, container_host: "local")
       provision = instance_double(Containers::Provision)
