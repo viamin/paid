@@ -256,7 +256,7 @@ RSpec.describe "Project interoperability" do
       expect(response.parsed_body.dig("lid", "workflow_contract", "implementation_prompt"))
         .to include("## LID-Aware Workflow", "This repository declares Linked-Intent Development mode: `scoped`.")
       expect(response.parsed_body.dig("lid", "planning", "trigger_goal")).to eq("lid_planning")
-      expect(response.parsed_body.dig("lid", "planning", "planning_pr_correction_supported")).to be(false)
+      expect(response.parsed_body.dig("lid", "planning", "planning_pr_correction_supported")).to be(true)
     end
 
     it "requires a valid inbound integration credential" do

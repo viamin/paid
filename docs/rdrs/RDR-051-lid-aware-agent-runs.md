@@ -38,16 +38,19 @@ Phase-by-phase reconciliation:
   output contract (`Lid::PlanningContract`) that enforces the required artifact
   set for adoption versus refinement runs, plus authored-intent weighting for
   named plan docs (#3198).
-- **Phase 4 (Planning PR confirmation via review)**: partially shipped. Planning PRs can
-  carry the expected checklist, but the dedicated `review`-goal correction loop for
-  `[inferred]` review feedback remains open in #3199.
+- **Phase 4 (Planning PR confirmation via review)**: shipped. Planning PRs can
+  carry the expected checklist, and the dedicated `review`-goal correction loop
+  for `[inferred]` review feedback is now shipped: `BuildForPr` detects when a
+  review run acts on a `lid_planning` PR and injects an intent-correction
+  prompt section that instructs the agent to revise the affected LLD/EARS
+  content and replace the `[inferred]` marker with authored rationale (#3199).
 - **Phase 5 (conversion polish, coherence gating, incremental tagging)**: partially
   shipped. Coherence checking and PR reporting exist for `create_pr`, `review`, and
   `lid_planning` runs. Incremental `@spec` maturation remains the intended posture.
   External-agent discovery is now shipped through the authenticated interop API and MCP
   `get_project` surface: callers can discover the effective `lid_mode`, inspect detection
   metadata, consume the rendered LID workflow contract, and see that `lid_planning` is
-  supported while Planning-PR correction remains unsupported until #3199 lands.
+  supported with Planning-PR correction available via the `review`-goal loop.
 
 ## Problem Statement
 
@@ -821,19 +824,20 @@ in the planning prompt.
 
 **Prerequisites:**
 
-- [x] Phase 3 foundation complete
+- [x] Phase 3 complete
 - [x] `review`-goal runs can act on a Planning PR (docs-only diff handling exists; the
-  dedicated correction loop remains open)
+  dedicated correction loop is wired in Step 2)
 
 **Step 1**: [ ] On Planning-PR creation, build the "Confirm these inferred decisions" checklist
 into the PR description from the load-bearing `[inferred]` markers and edge-audit gaps.
 The current Planning-PR path appends a checklist by extracting it heuristically from the
 agent summary; a dedicated checklist builder still belongs here.
 
-**Step 2**: [ ] Wire the existing `review`-goal run to revise Planning PRs: when a reviewer
+**Step 2**: [x] Wire the existing `review`-goal run to revise Planning PRs: when a reviewer
 requests changes with an inline comment on a `[inferred]` line, the run applies the
 correction to the LLD/EARS and replaces the marker with the user's authored rationale.
-Tracked in #3199.
+The `BuildForPr` prompt builder detects Planning PRs via `AgentRun.planning_run_for_pr`
+and injects a dedicated intent-correction prompt section.
 
 **Files to create/modify:**
 
@@ -845,7 +849,7 @@ Tracked in #3199.
 
 **Prerequisites:**
 
-- [ ] Phases 3 and 4 complete
+- [x] Phases 3 and 4 complete
 
 **Step 1**: [x] Conversion-specific prompt weighting (favor named plan docs; map
 problem/alternatives/validation → HLD/LLD/EARS as in the table above). Named plan
