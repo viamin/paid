@@ -766,6 +766,17 @@ RSpec.describe Activities::CreateAgentRunActivity do
         expect(agent_run.custom_prompt).to include("Lint: bundle exec rubocop")
       end
 
+      # @spec POLYGLOT-TEST-003
+      it "renders every language's command for a polyglot project" do
+        project.update!(language_profile: { "test_languages" => [ "ruby", "elixir" ] })
+
+        result = activity.execute(project_id: project.id, issue_id: issue.id)
+
+        agent_run = AgentRun.find(result[:agent_run_id])
+        expect(agent_run.custom_prompt).to include("Test: bundle exec rspec, then mix test")
+        expect(agent_run.custom_prompt).to include("Lint: bundle exec rubocop, then mix credo --strict")
+      end
+
       it "does not assign prompt_version when custom_prompt is provided" do
         result = activity.execute(
           project_id: project.id,
