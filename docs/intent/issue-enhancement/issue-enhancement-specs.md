@@ -21,6 +21,16 @@
   *Code:* `app/temporal/activities/enhance_issue_activity.rb#prompt_for`,
   `app/services/clarifying_questions/load.rb`.
 
+- [x] **ISSUE-ENHANCEMENT-006** — When generating clarifying questions, the
+  system SHALL ground question-generation in the actual repository: it SHALL
+  self-answer codebase-determinable questions (existing models, platform
+  targets, persistence format, current patterns) from the code and SHALL NOT
+  ask the human clarifying questions whose answers are directly readable from
+  the repository, asking only about genuine product, scope, or intent
+  ambiguities the code cannot resolve (RDR-052 R3).
+  *Tests:* `spec/temporal/activities/enhance_issue_activity_spec.rb`.
+  *Code:* `app/temporal/activities/enhance_issue_activity.rb#grounding_instructions`.
+
 - [x] **ISSUE-ENHANCEMENT-005** — When issue enhancement re-evaluates an issue
   after the user answers clarifying questions, the system SHALL include the
   prior clarifying questions and answers in the conversation context supplied
@@ -33,6 +43,14 @@
   *Code:* `app/temporal/activities/enhance_issue_activity.rb#trusted_comments`,
   `app/services/clarifying_questions/comment_admission.rb`,
   `app/models/project.rb#paid_bot_author?`.
+
+- [x] **ISSUE-ENHANCEMENT-007** — When re-evaluating an issue after the user
+  answers clarifying questions, the system SHALL judge answer-sufficiency
+  against the user's answers TOGETHER WITH the actual codebase it reads, not
+  against the supplied knowledge-base context alone, so the readiness verdict
+  is grounded in the real code (RDR-052 R4).
+  *Tests:* `spec/temporal/activities/enhance_issue_activity_spec.rb`.
+  *Code:* `app/temporal/activities/enhance_issue_activity.rb#reevaluation_guidance`.
 
 ## LID-aware prompt materialization
 

@@ -224,15 +224,54 @@ module Activities
 
     # @spec ISSUE-ENHANCEMENT-001
     # @spec ISSUE-ENHANCEMENT-002
+    # @spec ISSUE-ENHANCEMENT-006
+    # @spec ISSUE-ENHANCEMENT-007
     # @spec CHANGE-INTENT-004
     def prompt_for(project, issue, comments, context)
       <<~PROMPT
-        You analyze GitHub issues for implementation readiness.
+        You analyze a GitHub issue for implementation readiness,
+        grounded in the ACTUAL repository supplied below. The workspace is
+        read-only: you may explore the repository to ground your questions and
+        verdict, but you cannot modify files, commit, or push.
 
-        Decide whether the issue has enough context for an implementation agent.
-        Use the issue text, conversation, and knowledge base context. Do not invent
-        facts. If requirements are missing or ambiguous, ask specific questions in
-        plain language. Do not use Linked-Intent Development or other process jargon.
+        #{grounding_instructions(issue)}
+        #{output_contract}
+        ## Repository
+        #{project.full_name}
+
+        ## Issue
+        Title: #{issue.title}
+        Number: ##{issue.github_number}
+        Author: #{issue.github_creator_login}
+
+        #{issue.body.to_s.truncate(20_000)}
+
+        ## Conversation
+        #{format_comments(comments)}
+
+        ## Repository Codebase
+        #{format_search_results(context[:search_results])}
+
+        #{context[:bundle_content].presence || "## Codebase Context\nNo context bundle entries were available."}
+      PROMPT
+    end
+
+    # @spec ISSUE-ENHANCEMENT-006
+    def grounding_instructions(issue)
+      <<~INSTRUCTIONS
+        First, explore the repository, retrieval results, and knowledge-base
+        context below to self-answer every question the code can determine on its
+        own — existing models, types, and schemas; platform or runtime targets;
+        persistence or serialization format; current architecture and patterns;
+        available libraries and helpers; naming conventions. Do not invent facts.
+
+        Do NOT ask the human anything the repository already answers (for example
+        "do existing models already exist?", "what platform does this target?",
+        "how is data persisted?"). Self-answer those from the code.
+
+        Ask the human ONLY about genuine product, scope, or intent ambiguities the
+        code cannot resolve, in plain language.
+        Do not use Linked-Intent Development or other process jargon.
         Prefer questions that uncover:
         - the problem being solved,
         - the desired behavior, ideally phrased as "when X happens, the system should Y",
@@ -240,7 +279,26 @@ module Activities
         - alternatives that were considered or rejected,
         - what is in scope versus out of scope,
         - how the user will know the work is done.
+        #{reevaluation_guidance(issue)}
+      INSTRUCTIONS
+    end
 
+    # @spec ISSUE-ENHANCEMENT-007
+    def reevaluation_guidance(issue)
+      return "" unless issue.enhance_issue_rounds.positive?
+
+      <<~GUIDANCE
+        This is a re-evaluation after the human answered earlier questions. The
+        conversation below contains the prior questions and answers. Judge whether
+        the user's answers TOGETHER WITH the actual codebase yield enough context
+        to proceed — weigh the answers against the real code you read,
+        not the knowledge-base context alone. Do not re-ask a question the code or
+        a prior answer already resolved.
+      GUIDANCE
+    end
+
+    def output_contract
+      <<~CONTRACT
         Respond with ONLY valid JSON:
         {
           "sufficient_context": true or false,
@@ -275,6 +333,10 @@ module Activities
         ### Related context
         - ...
 
+        Ground "Relevant files and symbols" and "Architecture notes" in the real
+        files, types, and patterns you read from the repository —
+        cite actual paths and symbols, not guesses or snapshot inferences.
+
         If sufficient_context is false:
         ## Clarifying questions
         1. ...
@@ -282,25 +344,7 @@ module Activities
         - ...
 
         Keep the comment concise, actionable, and grounded in the supplied context.
-
-        ## Repository
-        #{project.full_name}
-
-        ## Issue
-        Title: #{issue.title}
-        Number: ##{issue.github_number}
-        Author: #{issue.github_creator_login}
-
-        #{issue.body.to_s.truncate(20_000)}
-
-        ## Conversation
-        #{format_comments(comments)}
-
-        ## Retrieval Results
-        #{format_search_results(context[:search_results])}
-
-        #{context[:bundle_content].presence || "## Codebase Context\nNo context bundle entries were available."}
-      PROMPT
+      CONTRACT
     end
 
     def format_comments(comments)

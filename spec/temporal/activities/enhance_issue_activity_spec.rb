@@ -507,6 +507,63 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(issue.reload.enhance_issue_rounds).to eq(1)
     end
 
+    it "instructs the agent to self-answer codebase questions and skip repo-answerable ones" do # @spec ISSUE-ENHANCEMENT-006
+      captured_prompt = nil
+      allow(AgentHarness).to receive(:send_message) do |prompt, **|
+        captured_prompt = prompt
+        llm_response
+      end
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(captured_prompt).to include("grounded in the ACTUAL repository")
+      expect(captured_prompt).to include("self-answer every question the code can determine")
+      expect(captured_prompt).to include("Do NOT ask the human anything the repository already answers")
+      expect(captured_prompt).to include("genuine product, scope, or intent ambiguities")
+    end
+
+    it "grounds the sufficiency verdict in answers plus the actual codebase on re-evaluation" do # @spec ISSUE-ENHANCEMENT-007
+      issue.update!(enhance_issue_rounds: 1)
+      allow(client).to receive(:issue_comments).and_return(answered_reevaluation_comments)
+      captured_prompt = nil
+      allow(AgentHarness).to receive(:send_message) do |prompt, **|
+        captured_prompt = prompt
+        llm_response
+      end
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(captured_prompt).to include("re-evaluation after the human answered")
+      expect(captured_prompt).to include("TOGETHER WITH the actual codebase")
+      expect(captured_prompt).to include("not the knowledge-base context alone")
+      expect(captured_prompt).to include("Record sign-in, permission, and billing events.")
+    end
+
+    it "omits the re-evaluation guidance on the initial enhancement pass" do
+      captured_prompt = nil
+      allow(AgentHarness).to receive(:send_message) do |prompt, **|
+        captured_prompt = prompt
+        llm_response
+      end
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(captured_prompt).not_to include("re-evaluation after the human answered")
+      expect(issue.enhance_issue_rounds).to be_zero
+    end
+
+    it "instructs the agent to cite real files and symbols in implementation context" do
+      captured_prompt = nil
+      allow(AgentHarness).to receive(:send_message) do |prompt, **|
+        captured_prompt = prompt
+        llm_response
+      end
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(captured_prompt).to include("cite actual paths and symbols, not guesses")
+    end
+
     context "when the issue surfaces a CIR-worthy constraint" do
       let(:cir_output) do
         {

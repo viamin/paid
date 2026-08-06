@@ -44,6 +44,32 @@ The activity still emits the same markdown shape:
 That preserves the existing parser, `paid_state: "needs_input"` handling,
 dashboard queue, answer form, and answer-ingestion flow.
 
+## Codebase-grounded questions and sufficiency
+
+Question-generation and answer-sufficiency judgment are codebase questions at
+their core (RDR-052). The enhancement prompt therefore grounds both in the
+actual repository rather than knowledge-base snapshots alone:
+
+- **Self-answer what the code determines.** The agent explores the repository,
+  retrieval results, and knowledge-base context to answer for itself the things
+  the code already says — existing models/types, platform targets, persistence
+  format, current architecture and patterns. It SHALL NOT ask the human
+  clarifying questions whose answers are directly readable from the repository
+  (ISSUE-ENHANCEMENT-006 / RDR R3); it asks only about genuine product, scope,
+  or intent ambiguities the code cannot resolve.
+- **Grounded sufficiency verdict.** On re-evaluation, the agent judges readiness
+  against the user's answers TOGETHER WITH the actual codebase it reads, not
+  the knowledge-base snapshot alone (ISSUE-ENHANCEMENT-007 / RDR R4). This
+  keeps the readiness gatekeeper at least as informed as the `create_pr` run it
+  authorizes.
+- **Grounded implementation context.** When the issue is ready, the posted
+  implementation context cites real files, symbols, and patterns read from the
+  repository, not inferred-from-snapshot guesses.
+
+The workspace is read-only: the agent may explore the repository to ground its
+questions and verdict but cannot modify files, commit, or push (RDR R2). Its
+only outputs remain the posted comment and label state.
+
 ## Re-evaluation comment admission
 
 When the user answers, the `needs_input` label is cleared and a re-evaluation
