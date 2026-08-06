@@ -1,4 +1,4 @@
-<%= turbo_frame_tag frame_id do %>
+<%= turbo_frame_tag frame_id, target: "_top" do %>
   <% sessions.each do |sidebar_session| %>
     <%= render "session_card", chat_session: sidebar_session %>
   <% end %>
