@@ -32,9 +32,15 @@
   *Test:* `spec/services/lid/coherence_check_spec.rb`,
   `spec/temporal/activities/create_pull_request_activity_spec.rb`.
 
-- [ ] **LID-RUNS-004** — When a Planning PR receives review feedback on
-  inferred decisions, the system SHALL trigger a dedicated correction loop that
-  rewrites the LID artifacts rather than relying on a generic review flow.
+- [x] **LID-RUNS-004** — When a Planning PR receives review feedback on
+  inferred decisions, the system SHALL detect that the `review` goal is acting
+  on a `lid_planning` PR and carry the review feedback into a dedicated
+  intent-correction prompt path that instructs the agent to revise the affected
+  LLD/EARS content and replace `[inferred]` markers with authored rationale,
+  rather than treating the Planning PR like a generic code-review PR.
+  *Code:* `app/models/agent_run.rb` (`planning_run_for_pr`),
+  `app/services/prompts/build_for_pr.rb` (`planning_pr_revision_section`).
+  *Test:* `spec/services/prompts/build_for_pr_spec.rb`.
 
 - [ ] **LID-RUNS-005** — When `lid_planning` uses named plan docs, the system
   SHALL enforce a stable output contract for how authored plan-doc sections map
