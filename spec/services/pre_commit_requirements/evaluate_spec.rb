@@ -191,6 +191,48 @@ RSpec.describe PreCommitRequirements::Evaluate do # @spec QUALITY-LOOPS-002 # @s
       end
     end
 
+    context "with a mutation_test requirement in a polyglot repo where Ruby is not the first test language" do # @spec POLYGLOT-TEST-002
+      let(:agent_run) do
+        create(:agent_run, :with_git_context, project: project, container_id: "container-123", initiating_user: initiating_user).tap do |run|
+          run.update!(worktree_path: Dir.mktmpdir("mutant-results"))
+        end
+      end
+
+      before do
+        allow(project).to receive(:test_languages).and_return(%w[elixir ruby])
+        create(:pre_commit_requirement, :mutation_test, account: account, project: project, name: "mutant", failure_behavior: "warn")
+        allow(agent_run).to receive(:execute_in_container).with(
+          "bundle exec mutant run --since HEAD\\~1 --use rspec --jobs 1 --results-dir .mutant/results",
+          stream: false
+        ).and_return(success_result)
+
+        FileUtils.mkdir_p(File.join(agent_run.worktree_path, ".mutant/results"))
+        File.write(
+          File.join(agent_run.worktree_path, ".mutant/results/run.yml"),
+          <<~YAML
+            alive_mutations:
+              - subject: Foo#bar
+                subject_path: app/models/foo.rb
+                source_line: 42
+                mutation_diff: return true -> return false
+          YAML
+        )
+      end
+
+      after do
+        FileUtils.remove_entry(agent_run.worktree_path)
+      end
+
+      it "still surfaces Ruby mutation feedback instead of dropping it for the first language" do
+        result = described_class.call(agent_run: agent_run)
+
+        check = result[:results].first
+        expect(check[:passed]).to be false
+        expect(check[:quality_feedback]).to be_a(QualityFeedbackService::CheckResult)
+        expect(check[:output]).to include("Surviving mutation in Foo#bar")
+      end
+    end
+
     context "with a container execution error" do
       before do
         create(:pre_commit_requirement, account: account, name: "lint", command: "bin/lint")

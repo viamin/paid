@@ -54,7 +54,9 @@ module Screenshots
     def detected_framework
       @detected_framework ||= begin
         overrides = Screenshots::ConfigParser.ui_detection_overrides(project:, repo_path:)
-        overrides[:framework] || Screenshots::DetectFramework.detect_framework_only(repo_path:)
+        framework = Projects::FrameworkProfile.normalize(overrides[:framework]) ||
+          project.detected_framework
+        framework&.to_sym || Screenshots::DetectFramework.detect_framework_only(repo_path:)
       end
     end
 

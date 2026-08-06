@@ -717,18 +717,32 @@ class Project < ApplicationRecord
     status
   end
 
-  # Framework detected by the screenshot framework detector, surfaced as
-  # preview metadata (RDR-045). Returns nil when no detection has run.
-  def detected_framework
-    Projects::FrameworkProfile.normalize(
-      effective_screenshot_settings.dig("detection", "framework")
+  def effective_repo_profile
+    return @effective_repo_profile if defined?(@effective_repo_profile) && @effective_repo_profile
+
+    @effective_repo_profile = Projects::RepoProfile.normalize(
+      repo_profile,
+      primary_language: primary_language,
+      screenshot_framework: effective_screenshot_settings.dig("detection", "framework")
     )
   end
 
+  def detected_languages
+    effective_repo_profile.fetch("languages", [])
+  end
+
+  def test_languages
+    effective_repo_profile.fetch("test_languages", detected_languages)
+  end
+
+  # Framework detected by the screenshot framework detector, surfaced as
+  # preview metadata (RDR-045). Returns nil when no detection has run.
+  def detected_framework
+    effective_repo_profile["framework"]
+  end
+
   def detected_framework_label
-    Projects::FrameworkProfile.label_for(
-      effective_screenshot_settings.dig("detection", "framework")
-    )
+    Projects::FrameworkProfile.label_for(detected_framework)
   end
 
   def screenshot_preview_config(repo_config: {}, settings: nil)
@@ -944,9 +958,15 @@ class Project < ApplicationRecord
 
   def reload(*)
     @effective_interop_settings = nil
+    @effective_repo_profile = nil
     @effective_screenshot_settings = nil
     @effective_review_settings = nil
     @automation_configuration = nil
+    super
+  end
+
+  def repo_profile=(value)
+    @effective_repo_profile = nil
     super
   end
 

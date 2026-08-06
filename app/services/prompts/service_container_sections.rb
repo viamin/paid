@@ -174,7 +174,7 @@ module Prompts
     def setup_database_instruction
       ServiceContainerSections.render_database_instruction(
         has_db: has_database_container?,
-        language: detected_language,
+        language: LanguageCommands.detected_language(project),
         project: project
       )
     end
@@ -193,7 +193,7 @@ module Prompts
       services = available_services_section
       sections << services if services.present?
 
-      if has_database_container? && detected_language == "ruby"
+      if has_database_container? && LanguageCommands.detected_language(project) == "ruby"
         sections << ServiceContainerSections.render_schema_workflow_ruby(project: project)
       end
 

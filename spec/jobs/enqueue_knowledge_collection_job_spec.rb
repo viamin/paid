@@ -5,13 +5,16 @@ require "rails_helper"
 RSpec.describe EnqueueKnowledgeCollectionJob do
   let(:project) { create(:project) }
   let(:commit_sha) { "a" * 40 }
+  let(:checkout_path) { "/tmp/checkout" }
   let(:worktree_service) { instance_double(WorktreeService) }
 
   before do
     allow(WorktreeService).to receive(:new).with(project).and_return(worktree_service)
     allow(worktree_service).to receive(:ensure_cloned)
-    allow(worktree_service).to receive(:current_commit_sha).and_return(commit_sha)
+    allow(worktree_service).to receive_messages(current_commit_sha: commit_sha)
+    allow(worktree_service).to receive(:with_temporary_checkout).with(commit_sha).and_yield(checkout_path)
     allow(ProjectConventions::DetectForImport).to receive(:call)
+    allow(Projects::DetectRepoProfile).to receive(:call).and_return({ "languages" => [ "ruby" ] })
   end
 
   describe "#perform" do
@@ -19,6 +22,19 @@ RSpec.describe EnqueueKnowledgeCollectionJob do
       described_class.new.perform(project.id)
 
       expect(worktree_service).to have_received(:ensure_cloned)
+    end
+
+    it "detects the repo profile against a temporary working-tree checkout" do
+      described_class.new.perform(project.id)
+
+      expect(worktree_service).to have_received(:with_temporary_checkout).with(commit_sha)
+    end
+
+    it "persists the detected repo profile from the cloned repository" do # @spec POLYGLOT-TEST-002
+      described_class.new.perform(project.id)
+
+      expect(Projects::DetectRepoProfile).to have_received(:call).with(project: project, repo_path: checkout_path)
+      expect(project.reload.repo_profile).to include("languages" => [ "ruby" ])
     end
 
     it "sets knowledge_status to collecting" do
@@ -88,6 +104,23 @@ RSpec.describe EnqueueKnowledgeCollectionJob do
           message: "knowledge.import_convention_detection_failed",
           project_id: project.id,
           commit_sha: commit_sha
+        )
+      )
+    end
+
+    it "logs and continues when repo profile detection fails" do
+      allow(Projects::DetectRepoProfile).to receive(:call).and_raise(StandardError, "boom")
+      allow(Rails.logger).to receive(:error)
+
+      expect {
+        described_class.new.perform(project.id)
+      }.to have_enqueued_job(RunCollectorsJob).with(project.id, commit_sha, branch: "main")
+
+      expect(Rails.logger).to have_received(:error).with(
+        hash_including(
+          message: "knowledge.repo_profile_detection_failed",
+          project_id: project.id,
+          repo_path: checkout_path
         )
       )
     end
