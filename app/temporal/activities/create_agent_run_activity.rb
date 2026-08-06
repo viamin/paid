@@ -603,18 +603,14 @@ module Activities
       user_settings&.max_execution_seconds || project.max_execution_seconds
     end
 
+    # @spec POLYGLOT-TEST-003
     def test_command_for(project)
-      Prompts::LanguageCommands::LANGUAGE_TEST_COMMANDS.fetch(
-        Prompts::LanguageCommands.detected_language(project),
-        "echo \"No test command configured\""
-      )
+      Prompts::LanguageCommands.format_for_prompt(Prompts::LanguageCommands.test_commands_for(project))
     end
 
+    # @spec POLYGLOT-TEST-003
     def lint_command_for(project)
-      Prompts::LanguageCommands::LANGUAGE_LINT_COMMANDS.fetch(
-        Prompts::LanguageCommands.detected_language(project),
-        "echo \"No lint command configured\""
-      )
+      Prompts::LanguageCommands.format_for_prompt(Prompts::LanguageCommands.lint_commands_for(project))
     end
 
     def validate_runnable_runner!(project:, runner_id:, agent_type:, goal:)

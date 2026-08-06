@@ -588,19 +588,19 @@ module Prompts
       "#{body[0, max_comment_length]}… [truncated]"
     end
 
+    # Primary detected language, used for DB-aware setup guidance by the
+    # ServiceContainerSections concern. Test/lint command resolution is
+    # polyglot-aware via LanguageCommands below.
     def detected_language
-      @detected_language ||= begin
-        lang = project.detected_language if project.respond_to?(:detected_language)
-        lang.presence || "ruby"
-      end
+      @detected_language ||= LanguageCommands.detected_language(project)
     end
 
     def detected_lint_command
-      BuildForIssue::LANGUAGE_LINT_COMMANDS.fetch(detected_language, "echo \"No lint command configured\"")
+      LanguageCommands.format_for_prompt(LanguageCommands.lint_commands_for(project))
     end
 
     def detected_test_command
-      BuildForIssue::LANGUAGE_TEST_COMMANDS.fetch(detected_language, "echo \"No test command configured\"")
+      LanguageCommands.format_for_prompt(LanguageCommands.test_commands_for(project))
     end
   end
 end

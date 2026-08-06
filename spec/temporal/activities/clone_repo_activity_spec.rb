@@ -50,8 +50,8 @@ RSpec.describe Activities::CloneRepoActivity do
 
     it "installs lint-only git hooks for Ruby projects when no database container is running" do
       expect(git_ops).to receive(:install_git_hooks).with(
-        lint_command: "bundle exec rubocop",
-        test_command: "true",
+        lint_command: [ "bundle exec rubocop" ],
+        test_command: [],
         mutation_command: "true"
       )
 
@@ -83,8 +83,8 @@ RSpec.describe Activities::CloneRepoActivity do
         create(:pre_commit_requirement, :mutation_test, account: project.account, project: project, name: "mutant")
 
         expect(git_ops).to receive(:install_git_hooks).with(
-          lint_command: "bundle exec rubocop",
-          test_command: "bundle exec rspec",
+          lint_command: [ "bundle exec rubocop" ],
+          test_command: [ "bundle exec rspec" ],
           mutation_command: "bundle exec mutant run --since HEAD\\~1 --use rspec --jobs 1 --results-dir .mutant/results"
         )
 
@@ -94,13 +94,13 @@ RSpec.describe Activities::CloneRepoActivity do
 
     context "when project uses a non-DB-dependent language without database container" do
       before do
-        allow(activity).to receive(:detect_language).and_return("javascript")
+        project.update!(primary_language: "JavaScript")
       end
 
       it "keeps the test hook for non-DB-dependent languages" do
         expect(git_ops).to receive(:install_git_hooks).with(
-          lint_command: "npm run lint",
-          test_command: "npm test",
+          lint_command: [ "npm run lint" ],
+          test_command: [ "npm test" ],
           mutation_command: "true"
         )
 
@@ -156,8 +156,8 @@ RSpec.describe Activities::CloneRepoActivity do
 
       it "installs lint-only git hooks for Ruby projects when no database container is running" do
         expect(git_ops).to receive(:install_git_hooks).with(
-          lint_command: "bundle exec rubocop",
-          test_command: "true",
+          lint_command: [ "bundle exec rubocop" ],
+          test_command: [],
           mutation_command: "true"
         )
 
@@ -182,8 +182,8 @@ RSpec.describe Activities::CloneRepoActivity do
           create(:pre_commit_requirement, :mutation_test, account: project.account, project: project, name: "mutant")
 
           expect(git_ops).to receive(:install_git_hooks).with(
-            lint_command: "bundle exec rubocop",
-            test_command: "bundle exec rspec",
+            lint_command: [ "bundle exec rubocop" ],
+            test_command: [ "bundle exec rspec" ],
             mutation_command: "bundle exec mutant run --since HEAD\\~1 --use rspec --jobs 1 --results-dir .mutant/results"
           )
 
