@@ -99,7 +99,7 @@ module Projects
     end
 
     def detected_framework
-      framework = Screenshots::DetectFramework.detect_framework_only(repo_path:)
+      framework = ::Screenshots::DetectFramework.detect_framework_only(repo_path:)
       framework == :generic ? nil : framework.to_s
     end
 

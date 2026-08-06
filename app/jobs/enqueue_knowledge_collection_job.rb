@@ -27,10 +27,14 @@ class EnqueueKnowledgeCollectionJob < ApplicationJob
 
     worktree_service = WorktreeService.new(project)
     worktree_service.ensure_cloned
-    detect_repo_profile(project, worktree_service.repo_path)
     commit_sha = worktree_service.current_commit_sha
 
     project.update!(knowledge_status: "collecting") if project.knowledge_status.in?(%w[pending stale])
+
+    worktree_service.with_temporary_checkout(commit_sha) do |checkout_path|
+      detect_repo_profile(project, checkout_path)
+    end
+
     detect_import_conventions(project, commit_sha)
 
     RunCollectorsJob.perform_later(
