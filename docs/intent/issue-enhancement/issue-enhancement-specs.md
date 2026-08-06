@@ -21,6 +21,21 @@
   *Code:* `app/temporal/activities/enhance_issue_activity.rb#prompt_for`,
   `app/services/clarifying_questions/load.rb`.
 
+- [D] **ISSUE-ENHANCEMENT-006** — When generating clarifying questions, the
+  system SHALL ground question-generation in the actual repository: it SHALL
+  self-answer codebase-determinable questions (existing models, platform
+  targets, persistence format, current patterns) from the code and SHALL NOT
+  ask the human clarifying questions whose answers are directly readable from
+  the repository, asking only about genuine product, scope, or intent
+  ambiguities the code cannot resolve (RDR-052 R3).
+  *Deferred:* Requires the read-only containerized execution path that lands
+  with RDR-052 Phase 1 (#3254). Today `enhance_issue` is a direct LLM call
+  (`tools: :none`, `enhance_issue` in `skip_clone` at
+  `app/temporal/workflows/agent_execution_workflow.rb:234`) with no
+  repository access; the prompt is grounded in the supplied retrieval
+  results and knowledge-base context only. Restored when the agent has
+  actual filesystem / repo access.
+
 - [x] **ISSUE-ENHANCEMENT-005** — When issue enhancement re-evaluates an issue
   after the user answers clarifying questions, the system SHALL include the
   prior clarifying questions and answers in the conversation context supplied
@@ -33,6 +48,17 @@
   *Code:* `app/temporal/activities/enhance_issue_activity.rb#trusted_comments`,
   `app/services/clarifying_questions/comment_admission.rb`,
   `app/models/project.rb#paid_bot_author?`.
+
+- [D] **ISSUE-ENHANCEMENT-007** — When re-evaluating an issue after the user
+  answers clarifying questions, the system SHALL judge answer-sufficiency
+  against the user's answers TOGETHER WITH the actual codebase it reads, not
+  against the supplied knowledge-base context alone, so the readiness verdict
+  is grounded in the real code (RDR-052 R4).
+  *Deferred:* Same dependency as ISSUE-ENHANCEMENT-006 — the agent has no
+  repository access until #3254 lands. Today the re-evaluation prompt
+  instructs the agent to weigh the user's answers against the supplied
+  knowledge-base context, which is the strongest grounding available
+  pre-Phase 1.
 
 ## LID-aware prompt materialization
 
