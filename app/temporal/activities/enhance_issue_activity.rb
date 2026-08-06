@@ -257,10 +257,10 @@ module Activities
         ## Conversation
         #{format_comments(comments)}
 
-        ## Codebase Context
+        ## Retrieval Results
         #{format_search_results(context[:search_results])}
 
-        #{context[:bundle_content].presence || "## Codebase Context\nNo context bundle entries were available."}
+        #{context[:bundle_content].presence || "No context bundle entries were available."}
       PROMPT
     end
 
