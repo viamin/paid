@@ -6,7 +6,9 @@ module Configuration
     # +previous_values+ recorded in the originating {AccountActivityEvent}'s
     # metadata. Builds an inverse {Plan} from those values and applies it via
     # {Applier}, which records its own +configuration_profile.reverted+
-    # activity entry — so the undo is itself auditable.
+    # activity entry — so the undo is itself auditable. The reverted event
+    # carries +reverted_from_activity_id+ pointing back at the originating
+    # apply, so each revert can be paired with the change it reverses.
     # @spec CONFIG-PROFILES-008
     class Rollback
       def self.call(activity_event, actor: nil)
@@ -38,7 +40,8 @@ module Configuration
           project: project,
           actor: actor,
           action: Applier::REVERTED_ACTION,
-          label: "Revert #{profile_name} posture"
+          label: "Revert #{profile_name} posture",
+          extra_metadata: { reverted_from_activity_id: activity_event.id }
         )
       end
 

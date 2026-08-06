@@ -18,19 +18,22 @@ module Configuration
     # - +records activity+ once per apply via {Accounts::RecordActivity} using
     #   the dedicated +configuration_profile.applied+ (or +reverted+) action,
     #   carrying every key's previous value and applied value so the change can
-    #   be reversed by {Rollback}.
+    #   be reversed by {Rollback}. An optional +extra_metadata+ hash is merged
+    #   into the recorded activity metadata, letting callers (e.g. {Rollback})
+    #   thread audit-pairing keys such as the originating event id.
     class Applier
       APPLIED_ACTION = "configuration_profile.applied"
       REVERTED_ACTION = "configuration_profile.reverted"
 
       def self.call(...) = new(...).call
 
-      def initialize(plan:, project:, actor:, action: APPLIED_ACTION, label: nil)
+      def initialize(plan:, project:, actor:, action: APPLIED_ACTION, label: nil, extra_metadata: {})
         @plan = plan
         @project = project
         @actor = actor
         @action = action
         @label = label
+        @extra_metadata = extra_metadata
       end
 
       def call
@@ -54,7 +57,7 @@ module Configuration
 
       private
 
-      attr_reader :plan, :project, :actor, :action, :label
+      attr_reader :plan, :project, :actor, :action, :label, :extra_metadata
 
       def context
         @context ||= Context.build(project:, actor:)
@@ -110,7 +113,7 @@ module Configuration
           previous_values: applied.to_h { |change| [ change.key.to_s, change.from ] },
           applied_values: applied.to_h { |change| [ change.key.to_s, change.to ] },
           skipped_levels: skipped_levels
-        }
+        }.merge(extra_metadata)
       end
 
       def default_label

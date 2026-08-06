@@ -125,6 +125,14 @@ RSpec.describe Configuration::Profiles::Applier do
       }.not_to change(AccountActivityEvent, :count)
     end
 
+    it "merges extra_metadata into the recorded activity event" do
+      described_class.call(plan:, project:, actor: owner, extra_metadata: { reverted_from_activity_id: 42 })
+
+      event = account.account_activity_events.last
+      expect(event.metadata["reverted_from_activity_id"]).to eq(42)
+      expect(event.metadata["profile"]).to eq("solo_automated")
+    end
+
     context "when applying team_reviewed with a reviewer override" do
       let(:profile) { Configuration::Profiles::TeamReviewed }
       let(:plan) do

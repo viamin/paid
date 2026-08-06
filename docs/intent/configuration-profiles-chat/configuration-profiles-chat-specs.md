@@ -42,4 +42,7 @@
   profile is rolled back through `Configuration::Profiles::Rollback`, the
   system SHALL restore the recorded previous values, refuse to act on events
   that are not `configuration_profile.applied`, and record a matching
-  `configuration_profile.reverted` activity event for the same project.
+  `configuration_profile.reverted` activity event for the same project whose
+  metadata identifies the originating applied event (via
+  `reverted_from_activity_id`), so each revert can be paired with the apply
+  it reverses.

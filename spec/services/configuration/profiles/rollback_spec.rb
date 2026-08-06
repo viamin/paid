@@ -33,8 +33,25 @@ RSpec.describe Configuration::Profiles::Rollback do
         expect(reverted.metadata["changed_fields"]).to include("auto_pick_enabled")
         expect(reverted.metadata["previous_values"]["auto_pick_enabled"]).to be true
         expect(reverted.metadata["applied_values"]["auto_pick_enabled"]).to be false
+        expect(reverted.metadata["reverted_from_activity_id"]).to eq(applied_event.id)
         expect(result[:applied_changes]).to include(include(key: "auto_pick_enabled", applied: true))
       end
+    end
+
+    it "pairs each reverted event with its originating applied event" do
+      apply_profile
+      first_apply = latest_applied_event
+      described_class.call(first_apply, actor: owner)
+
+      # A second apply/revert cycle on the same project must be distinguishable
+      # from the first: each reverted event points at its own originating apply.
+      apply_profile
+      second_apply = latest_applied_event
+      described_class.call(second_apply, actor: owner)
+
+      reverted_events = account.account_activity_events.where(action: "configuration_profile.reverted").order(:id).to_a
+      expect(reverted_events.map { |event| event.metadata["reverted_from_activity_id"] })
+        .to eq([ first_apply.id, second_apply.id ])
     end
 
     it "is a no-op (no reverted event) when the project already matches the previous values" do
