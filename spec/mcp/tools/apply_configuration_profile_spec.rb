@@ -9,6 +9,10 @@ RSpec.describe Tools::ApplyConfigurationProfile do
   let(:project) { create(:project, account:) }
   let(:session) { create(:chat_session, account:, created_by: owner, project:) }
 
+  before do
+    allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
+  end
+
   def call(profile_id:, overrides: {}, confirmed: true, user: owner)
     described_class.new(user:, session:).call(profile_id:, project_id: project.id, overrides:, confirmed:)
   end
@@ -48,11 +52,20 @@ RSpec.describe Tools::ApplyConfigurationProfile do
   end
 
   it "refuses to apply a blocked profile" do
-    allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(false)
-
     expect {
-      call(profile_id: "team_reviewed", overrides: { owner_reviewer_login: "octocat" })
+      call(profile_id: "team_reviewed")
     }.to raise_error(Configuration::Profiles::BlockedError)
+  end
+
+  it "applies team_reviewed with the owner reviewer override" do
+    project.update_columns(allowed_github_usernames: [ "octocat" ])
+
+    result = call(profile_id: "team_reviewed", overrides: { owner_reviewer_login: "octocat" })
+
+    expect(result[:applied_overrides]).to eq({ "owner_reviewer_login" => "octocat" })
+    expect(project.reload.review_method_enabled?("manual")).to be true
+    expect(project.review_method(:manual).reviewer_login).to eq("octocat")
+    expect(project.owner_reviewer_login).to eq("octocat")
   end
 
   it "applies only authorized levels and returns skipped-level details" do

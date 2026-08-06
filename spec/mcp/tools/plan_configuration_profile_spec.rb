@@ -9,6 +9,10 @@ RSpec.describe Tools::PlanConfigurationProfile do
   let(:project) { create(:project, account:) }
   let(:session) { create(:chat_session, account:, created_by: owner, project:) }
 
+  before do
+    allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
+  end
+
   def call(profile_id:, overrides: {}, user: owner)
     described_class.new(user:, session:).call(profile_id:, project_id: project.id, overrides:)
   end

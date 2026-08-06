@@ -13,6 +13,10 @@ RSpec.describe Configuration::Profiles::Planner do
   end
 
   describe "#call" do
+    before do
+      allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
+    end
+
     it "produces a change for every target that differs from the current state" do
       plan = described_class.call(profile:, project:, actor:)
 
@@ -87,9 +91,7 @@ RSpec.describe Configuration::Profiles::Planner do
       let(:profile) { Configuration::Profiles::TeamReviewed }
 
       it "normalizes the login before returning the plan" do
-        allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(true)
-
-        plan = described_class.call(profile:, project:, overrides: { "owner_reviewer_login" => " octocat " }, actor:)
+        plan = described_class.call(profile:, project:, overrides: { "owner_reviewer_login" => " octocat " })
 
         expect(plan.applied_overrides).to include("owner_reviewer_login" => "octocat")
       end
@@ -162,11 +164,19 @@ RSpec.describe Configuration::Profiles::Planner do
 
   describe "prerequisites" do
     it "surfaces unmet prerequisites on the plan" do
-      allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(false)
-      plan = described_class.call(profile: Configuration::Profiles::TeamReviewed, project:, actor:)
+      plan = described_class.call(profile: Configuration::Profiles::TeamReviewed, project:)
 
       expect(plan).to be_blocked
       expect(plan.unmet_prerequisites).to include(a_string_matching(/owner_reviewer_login/i))
+    end
+
+    it "blocks profiles that enable paid-agent review without the review bot app" do
+      allow(Github::ReviewBotInstallationToken).to receive(:configured?).and_return(false)
+
+      plan = described_class.call(profile: Configuration::Profiles::QualityStrict, project:)
+
+      expect(plan).to be_blocked
+      expect(plan.unmet_prerequisites).to include(a_string_matching(/review bot/i))
     end
   end
 end

@@ -49,11 +49,11 @@ RSpec.describe ConfigurationProfiles::Applier do
       expect(result.activity).to be_nil
     end
 
-    it "rolls back the transaction if save fails" do
+    it "rejects invalid enum values before recording activity" do
       plan = ConfigurationProfiles::Planner.for_values(
         project, { merge_method: "totally_invalid" }, label: "bad", source: :custom
       )
-      expect { described_class.call(project, plan, actor: actor) }.to raise_error(ActiveRecord::RecordInvalid)
+      expect { described_class.call(project, plan, actor: actor) }.to raise_error(ArgumentError, /expected one of/)
       expect(account.account_activity_events.where(action: "configuration_profile.applied")).to be_empty
     end
   end

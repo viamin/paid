@@ -13,7 +13,9 @@ module Configuration
         SoloAutomated,
         TeamReviewed,
         ObserveOnly,
-        ManualOnLabel
+        ManualOnLabel,
+        CostCappedAutomated,
+        QualityStrict
       ].freeze
 
       def all

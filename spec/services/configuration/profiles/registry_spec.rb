@@ -3,13 +3,21 @@
 require "rails_helper"
 
 RSpec.describe Configuration::Profiles::Registry do
-  it "enumerates the four curated profiles" do
-    expect(described_class.names).to eq(%w[solo_automated team_reviewed observe_only manual_on_label])
+  # @spec CONFIG-PROFILES-001
+  it "enumerates the curated operating-mode profiles" do
+    expect(described_class.names).to eq(%w[
+      solo_automated
+      team_reviewed
+      observe_only
+      manual_on_label
+      cost_capped_automated
+      quality_strict
+    ])
   end
 
   it "returns profile modules from #all" do
     expect(described_class.all).to all(be_a(Module))
-    expect(described_class.all.length).to eq(4)
+    expect(described_class.all.length).to eq(6)
   end
 
   it "finds a profile by name" do
@@ -33,6 +41,10 @@ RSpec.describe Configuration::Profiles::Registry do
         name: "Solo Automated",
         description: Configuration::Profiles::SoloAutomated.description,
         clarifying_questions: Configuration::Profiles::SoloAutomated.clarifying_questions
+      ),
+      include(
+        profile_id: "quality_strict",
+        name: "Quality Strict"
       )
     )
   end

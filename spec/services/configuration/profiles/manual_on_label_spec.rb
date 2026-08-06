@@ -5,12 +5,12 @@ require "rails_helper"
 RSpec.describe Configuration::Profiles::ManualOnLabel do
   it_behaves_like "a configuration profile"
 
-  it "targets full execution driven by label only" do
+  it "targets advisory execution driven by label only" do
     expect(described_class.targets).to include(
-      "active" => true,
       "auto_pick_enabled" => false,
+      "auto_scan_prs" => true,
       "automation_on_label_enabled" => true,
-      "adoption_mode" => "full_execution"
+      "adoption_mode" => "advisory"
     )
   end
 end
