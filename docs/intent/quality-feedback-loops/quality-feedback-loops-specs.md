@@ -45,7 +45,7 @@
   *Test:* `spec/temporal/activities/check_quality_gate_activity_spec.rb`.
 
 - [x] **QUALITY-LOOPS-006** — The review-bot trigger parser SHALL preserve the
-  ordered reviewer chain from `request_logids` when present and SHALL fall back
+  ordered reviewer chain from `request_logins` when present and SHALL fall back
   to the legacy single `request_login` field when the array is absent or empty.
   *Code:* `app/services/automation/review_bot_trigger.rb`.
   *Test:* `spec/services/automation/review_bot_trigger_spec.rb`.

@@ -13,7 +13,7 @@ RSpec.describe Containers::GitOperations do
   let(:success_result) { Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0) }
   let(:failure_result) { Containers::Provision::Result.failure(error: "git failed", stdout: "", stderr: "error", exit_code: 1) }
 
-  # Helper (not a `let`) so we stay within the RSpec/MultipleMemoizedHooks
+  # Helper (not a `let`) so we stay within the RSpec/MultipleMemoizedHelpers
   # limit. Resolves the default "claude" subscription provider auto-created
   # for the project owner and used throughout the specs for trailer setup.
   def runner
