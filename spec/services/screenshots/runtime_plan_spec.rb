@@ -7,7 +7,12 @@ RSpec.describe Screenshots::RuntimePlan, :no_db do
     Dir.mktmpdir do |repo_path|
       File.write(File.join(repo_path, "package.json"), JSON.dump({ "dependencies" => { "next" => "15.0.0" } }))
 
-      project = instance_double(Project, detected_framework: "phoenix")
+      project = instance_double(
+        Project,
+        detected_framework: "phoenix",
+        screenshot_settings: {},
+        effective_screenshot_settings: {}
+      )
       config = instance_double(
         Screenshots::Configuration,
         setup_commands: [],
