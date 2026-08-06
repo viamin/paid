@@ -1751,8 +1751,9 @@ RSpec.describe AgentRun do
 
         prompt = agent_run.send(:prompt_for_goal)
 
-        expect(prompt).to include("Bootstrap or refine Linked-Intent Development artifacts for #{project.full_name}.")
+        expect(prompt).to include("Adopt Linked-Intent Development for #{project.full_name}")
         expect(prompt).to include("docs/rdrs/RDR-051.md")
+        expect(prompt).to include("Treat named plan docs as authored intent")
       end
     end
 

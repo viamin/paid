@@ -32,10 +32,12 @@ Phase-by-phase reconciliation:
   plain-language intent questions for all projects, and LID projects surface answered
   clarifying questions as `# Elicited Intent` in `create_pr` prompts. The stronger
   materialization promise remains open in #3200.
-- **Phase 3 (`lid_planning` goal)**: foundation shipped. The goal exists end-to-end with
-  prompt building, UI/API trigger surfaces, stored `plan_doc_source`, Planning-PR body
-  handling, and docs-only diff validation. The remaining output-contract and
-  plan-doc-weighting work is tracked in #3198.
+- **Phase 3 (`lid_planning` goal)**: shipped. The goal exists end-to-end with
+  prompt building, UI/API trigger surfaces, stored `plan_doc_source`, Planning-PR
+  body handling, docs-only diff validation, and an explicit run-kind-aware
+  output contract (`Lid::PlanningContract`) that enforces the required artifact
+  set for adoption versus refinement runs, plus authored-intent weighting for
+  named plan docs (#3198).
 - **Phase 4 (Planning PR confirmation via review)**: shipped. Planning PRs can
   carry the expected checklist, and the dedicated `review`-goal correction loop
   for `[inferred]` review feedback is now shipped: `BuildForPr` detects when a
@@ -805,13 +807,16 @@ named plan docs; produce docs-only HLD/LLD/EARS with `[inferred]`/authored marke
 `## LID` block on adoption; create `docs/arrows/index.yaml`); instructs a docs-only PR.
 
 **Step 3**: [x] Trigger surface — "Start using LID" project action (adoption) and a
-plan-doc-source input (conversion). Both queue a `lid_planning` run. Output-contract
-hardening remains open in #3198.
+plan-doc-source input (conversion). Both queue a `lid_planning` run. The output
+contract is server-side enforced via `Lid::PlanningContract` (adoption vs
+refinement artifact sets), and named plan docs carry authored-intent weighting
+in the planning prompt.
 
 **Files to create/modify:**
 
 - `app/models/agent_run.rb` (`GOALS`, predicate, `prompt_for_goal`)
 - `app/services/prompts/build_for_lid_planning.rb`
+- `app/services/lid/planning_contract.rb`
 - `db/seeds/prompts.rb`
 - controller/view for the trigger (adoption + conversion)
 
@@ -819,9 +824,9 @@ hardening remains open in #3198.
 
 **Prerequisites:**
 
-- [x] Phase 3 foundation complete
+- [x] Phase 3 complete
 - [x] `review`-goal runs can act on a Planning PR (docs-only diff handling exists; the
-  dedicated correction loop remains open)
+  dedicated correction loop is wired in Step 2)
 
 **Step 1**: [ ] On Planning-PR creation, build the "Confirm these inferred decisions" checklist
 into the PR description from the load-bearing `[inferred]` markers and edge-audit gaps.
@@ -844,11 +849,12 @@ and injects a dedicated intent-correction prompt section.
 
 **Prerequisites:**
 
-- [ ] Phases 3 and 4 complete
+- [x] Phases 3 and 4 complete
 
-**Step 1**: [ ] Conversion-specific prompt weighting (favor named plan docs; map
-problem/alternatives/validation → HLD/LLD/EARS as in the table above).
-Tracked with the `lid_planning` output-contract work in #3198.
+**Step 1**: [x] Conversion-specific prompt weighting (favor named plan docs; map
+problem/alternatives/validation → HLD/LLD/EARS as in the table above). Named plan
+docs are treated as authored intent (no `[inferred]` marker); code-sourced
+rationale remains `[inferred]`.
 
 **Step 2**: [x] Run `bin/coherence-check.mjs` as a structural soft-block at the end of every
 `lid_planning` and LID-aware run; surface failures in the PR description.
