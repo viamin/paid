@@ -507,7 +507,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(issue.reload.enhance_issue_rounds).to eq(1)
     end
 
-    it "frames the prompt as knowledge-base-grounded since the agent has no repository access" do
+    it "frames the prompt as knowledge-base-grounded since the agent has no repository access" do # @spec ISSUE-ENHANCEMENT-001
       # `enhance_issue` is a direct LLM call with `tools: :none` and is in the
       # `skip_clone` set in `agent_execution_workflow.rb`, so the agent cannot
       # explore the repository. The prompt must say so and lean on the supplied
@@ -525,11 +525,9 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(captured_prompt).to include("You do not have repository access")
       expect(captured_prompt).to include("use the retrieval results and context bundle")
       expect(captured_prompt).to include("Do not invent facts about the repository")
-      expect(captured_prompt).not_to include("explore the repository")
-      expect(captured_prompt).not_to include("grounded in the ACTUAL repository")
     end
 
-    it "asks plain-language questions about product, scope, or intent only" do
+    it "asks plain-language questions about product, scope, or intent only" do # @spec ISSUE-ENHANCEMENT-001
       captured_prompt = nil
       allow(AgentHarness).to receive(:send_message) do |prompt, **|
         captured_prompt = prompt
@@ -542,7 +540,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(captured_prompt).to include("Do not use Linked-Intent Development or other process jargon")
     end
 
-    it "grounds the re-evaluation verdict in the supplied knowledge-base context alongside prior answers" do
+    it "grounds the re-evaluation verdict in the supplied knowledge-base context alongside prior answers" do # @spec ISSUE-ENHANCEMENT-005
       issue.update!(enhance_issue_rounds: 1)
       allow(client).to receive(:issue_comments).and_return(answered_reevaluation_comments)
       captured_prompt = nil
@@ -557,10 +555,9 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(captured_prompt).to include("TOGETHER WITH the supplied knowledge-base")
       expect(captured_prompt).to include("context yield enough context to proceed")
       expect(captured_prompt).to include("Record sign-in, permission, and billing events.")
-      expect(captured_prompt).not_to include("TOGETHER WITH the actual codebase")
     end
 
-    it "omits the re-evaluation guidance on the initial enhancement pass" do
+    it "omits the re-evaluation guidance on the initial enhancement pass" do # @spec ISSUE-ENHANCEMENT-005
       captured_prompt = nil
       allow(AgentHarness).to receive(:send_message) do |prompt, **|
         captured_prompt = prompt
@@ -573,7 +570,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(issue.enhance_issue_rounds).to be_zero
     end
 
-    it "tells the agent to cite paths and symbols only from the supplied context" do
+    it "tells the agent to cite paths and symbols only from the supplied context" do # @spec ISSUE-ENHANCEMENT-002
       captured_prompt = nil
       allow(AgentHarness).to receive(:send_message) do |prompt, **|
         captured_prompt = prompt

@@ -264,6 +264,7 @@ module Activities
       PROMPT
     end
 
+    # @spec ISSUE-ENHANCEMENT-001
     def grounding_instructions(issue)
       <<~INSTRUCTIONS
         Use the retrieval results and knowledge-base context below to inform
@@ -283,6 +284,7 @@ module Activities
       INSTRUCTIONS
     end
 
+    # @spec ISSUE-ENHANCEMENT-005
     def reevaluation_guidance(issue)
       return "" unless issue.enhance_issue_rounds.positive?
 
@@ -295,6 +297,7 @@ module Activities
       GUIDANCE
     end
 
+    # @spec ISSUE-ENHANCEMENT-002
     def output_contract
       <<~CONTRACT
         Respond with ONLY valid JSON:
