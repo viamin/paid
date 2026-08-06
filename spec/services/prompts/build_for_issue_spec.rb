@@ -265,6 +265,35 @@ RSpec.describe Prompts::BuildForIssue do
       end
     end
 
+    context "when project is polyglot" do
+      let(:polyglot_project) do
+        OpenStruct.new(
+          full_name: "owner-1/repo-1",
+          allowed_github_usernames: [ "viamin" ],
+          service_containers: service_containers_relation,
+          detected_language: "ruby",
+          language_profile: { "test_languages" => [ "ruby", "elixir" ] }
+        ).tap do |p|
+          def p.trusted_github_user?(login)
+            return false if login.nil?
+            allowed_github_usernames.any? { |u| u.downcase == login.downcase }
+          end
+        end
+      end
+
+      it "lists every language's test command in sequence" do
+        prompt = described_class.call(issue: issue, project: polyglot_project)
+
+        expect(prompt).to include("bundle exec rspec, then mix test")
+      end
+
+      it "lists every language's lint command in sequence" do
+        prompt = described_class.call(issue: issue, project: polyglot_project)
+
+        expect(prompt).to include("bundle exec rubocop, then mix credo --strict")
+      end
+    end
+
     context "when project has unknown language" do
       let(:project_with_language) do
         OpenStruct.new(

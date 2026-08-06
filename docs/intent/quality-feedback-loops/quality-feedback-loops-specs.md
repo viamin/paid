@@ -28,10 +28,12 @@
   *Test:* `spec/services/pre_commit_requirements/evaluate_spec.rb`,
   `spec/services/containers/quality_hooks_spec.rb`.
 
-- [x] **QUALITY-LOOPS-004** — When a DB-dependent language project has no
-  running database service container, the installed container quality hooks
-  SHALL replace the test and mutation commands with no-ops so commits are not
-  trapped behind infrastructure-dependent hook failures.
+- [x] **QUALITY-LOOPS-004** — When a DB-dependent language project (Ruby/Rails or
+  Elixir/Phoenix) has no running database service container, the installed
+  container quality hooks SHALL replace that language's test and mutation
+  commands with no-ops so commits are not trapped behind infrastructure-dependent
+  hook failures. Non-DB languages keep their test hooks; in a polyglot repo only
+  the DB-dependent languages are gated.
   *Code:* `app/services/containers/quality_hooks.rb`.
   *Test:* `spec/services/containers/quality_hooks_spec.rb`.
 
@@ -43,7 +45,7 @@
   *Test:* `spec/temporal/activities/check_quality_gate_activity_spec.rb`.
 
 - [x] **QUALITY-LOOPS-006** — The review-bot trigger parser SHALL preserve the
-  ordered reviewer chain from `request_logins` when present and SHALL fall back
+  ordered reviewer chain from `request_logids` when present and SHALL fall back
   to the legacy single `request_login` field when the array is absent or empty.
   *Code:* `app/services/automation/review_bot_trigger.rb`.
   *Test:* `spec/services/automation/review_bot_trigger_spec.rb`.

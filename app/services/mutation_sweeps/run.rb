@@ -44,7 +44,11 @@ module MutationSweeps
     attr_reader :project, :sweep_date
 
     def command
-      @command ||= resolve_scheduled_mutation_command(project, project.effective_owner, detect_language(project))
+      @command ||= resolve_scheduled_mutation_command(
+        project,
+        project.effective_owner,
+        Prompts::LanguageCommands.test_languages(project)
+      )
     end
 
     def worktree_service

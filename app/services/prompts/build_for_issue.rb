@@ -255,13 +255,16 @@ module Prompts
     end
 
     def test_command
-      LANGUAGE_TEST_COMMANDS.fetch(detected_language, "echo \"No test command configured\"")
+      LanguageCommands.format_for_prompt(LanguageCommands.test_commands_for(project))
     end
 
     def lint_command
-      LANGUAGE_LINT_COMMANDS.fetch(detected_language, "echo \"No lint command configured\"")
+      LanguageCommands.format_for_prompt(LanguageCommands.lint_commands_for(project))
     end
 
+    # Primary detected language, used for DB-aware setup guidance by the
+    # ServiceContainerSections concern. Test/lint command resolution is
+    # polyglot-aware via LanguageCommands above.
     def detected_language
       @detected_language ||= LanguageCommands.detected_language(project)
     end

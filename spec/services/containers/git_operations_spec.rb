@@ -2,6 +2,7 @@
 
 require "rails_helper"
 require "shellwords"
+require "open3"
 
 RSpec.describe Containers::GitOperations do
   let(:project) { create(:project) }
@@ -12,11 +13,30 @@ RSpec.describe Containers::GitOperations do
   let(:success_result) { Containers::Provision::Result.success(stdout: "", stderr: "", exit_code: 0) }
   let(:failure_result) { Containers::Provision::Result.failure(error: "git failed", stdout: "", stderr: "error", exit_code: 1) }
 
-  # Helper (not a `let`) so we stay within the RSpec/MultipleMemoizedHelpers
+  # Helper (not a `let`) so we stay within the RSpec/MultipleMemoizedHooks
   # limit. Resolves the default "claude" subscription provider auto-created
   # for the project owner and used throughout the specs for trailer setup.
   def runner
     project.effective_owner.runners.find_by!(runner_key: "claude")
+  end
+
+  # Installs git hooks with the given commands and returns the captured
+  # pre-commit hook content written to the container.
+  def capture_pre_commit_hook(**commands)
+    allow(container_service).to receive(:execute).and_return(hook_missing_result)
+    allow(container_service).to receive(:execute)
+      .with(a_string_matching(/chmod/), anything)
+      .and_return(success_result)
+
+    captured = nil
+    allow(container_service).to receive(:execute)
+      .with(a_string_matching(/cat > \.git\/hooks\/pre-commit/), timeout: nil, stream: false) { |cmd, **|
+        captured = cmd
+        success_result
+      }
+
+    git_ops.install_git_hooks(**commands)
+    captured
   end
 
   def stub_auto_commit_prerequisites(status_stdout: "M  file.rb\n", staged_stdout: "file.rb\n")
@@ -1884,6 +1904,23 @@ RSpec.describe Containers::GitOperations do
       expect(pre_commit_script).to include("ruff check .")
       expect(pre_commit_script).to include("pytest")
       expect(pre_commit_script).to include("bundle exec mutant run")
+    end
+
+    it "emits one availability-checked block per command for a polyglot repo" do
+      captured = capture_pre_commit_hook(
+        lint_command: [ "bundle exec rubocop", "mix credo --strict" ],
+        test_command: [ "bundle exec rspec", "mix test" ],
+        mutation_command: "true"
+      )
+
+      [ "bundle exec rubocop", "mix credo --strict", "bundle exec rspec", "mix test" ].each do |command|
+        expect(captured).to include(command)
+      end
+
+      # The generated hook must be syntactically valid POSIX shell.
+      script = captured.match(/<< 'HOOKEOF'\n(.*)\nHOOKEOF\z/m)[1]
+      _out, err, status = Open3.capture3("sh", "-n", stdin_data: script)
+      expect(status.success?).to be(true), err
     end
 
     it "skips mutation checks when the project Gemfile does not declare mutant" do
