@@ -262,10 +262,6 @@ module Prompts
       LanguageCommands.lint_command(project)
     end
 
-    def detected_language
-      @detected_language ||= LanguageCommands.detected_language(project)
-    end
-
     # @spec ISSUE-ENHANCEMENT-004
     def lid_enabled?
       project.respond_to?(:lid_mode) && project.lid_mode.present?

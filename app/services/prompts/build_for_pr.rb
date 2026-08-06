@@ -588,13 +588,6 @@ module Prompts
       "#{body[0, max_comment_length]}… [truncated]"
     end
 
-    def detected_language
-      @detected_language ||= begin
-        lang = project.detected_language if project.respond_to?(:detected_language)
-        lang.presence || "ruby"
-      end
-    end
-
     def detected_lint_command
       LanguageCommands.lint_command(project)
     end
