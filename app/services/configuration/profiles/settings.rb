@@ -176,7 +176,10 @@ module Configuration
           key: "owner_reviewer_login", attribute: "owner_reviewer_login", label: "Owner reviewer login",
           kind: :string_attribute, column: "owner_reviewer_login",
           read: ->(project) { project.owner_reviewer_login },
-          write: ->(project, value) { project.owner_reviewer_login = value },
+          write: ->(project, value) {
+            project.owner_reviewer_login = value
+            propagate_owner_reviewer_to_manual(project)
+          },
           coerce: GITHUB_LOGIN,
           target: false
         ),
@@ -207,6 +210,13 @@ module Configuration
           kind: :review_method, method_name: "copilot",
           read: ->(project) { review_method_enabled?(project, "copilot") },
           write: ->(project, value) { write_review_method(project, "copilot", value) },
+          coerce: BOOLEAN
+        ),
+        "review_manual" => Descriptor.new(
+          key: "review_manual", attribute: "review_settings", label: "Manual review",
+          kind: :review_method, method_name: "manual",
+          read: ->(project) { review_method_enabled?(project, "manual") },
+          write: ->(project, value) { write_review_method(project, "manual", value) },
           coerce: BOOLEAN
         ),
         "quality_gate_enabled" => Descriptor.new(
@@ -292,7 +302,34 @@ module Configuration
         settings["methods"] ||= {}
         settings["methods"][method_name] ||= {}
         settings["methods"][method_name]["enabled"] = enabled
+        sync_manual_reviewer_login(project, settings) if method_name == "manual"
         settings["enabled"] = any_review_method_enabled?(settings)
+        project.review_settings = settings
+      end
+
+      # Mirror the project's +owner_reviewer_login+ into the manual review
+      # method's +reviewer_login+ so applying a profile that wires the manual
+      # method (e.g. team_reviewed) actually requests the configured reviewer.
+      # When manual is disabled we leave +reviewer_login+ in place so the
+      # value survives a later re-enable; when enabled we always sync so the
+      # two stay in lockstep regardless of write order.
+      def sync_manual_reviewer_login(project, settings)
+        manual = settings["methods"]["manual"]
+        return unless manual["enabled"] == true
+
+        manual["reviewer_login"] = project.owner_reviewer_login.presence
+      end
+
+      # When the owner reviewer login changes, push the new value into the
+      # manual review method's +reviewer_login+ if manual review is enabled
+      # so the gate the scanner enforces tracks the configured reviewer.
+      def propagate_owner_reviewer_to_manual(project)
+        return unless review_method_enabled?(project, "manual")
+
+        settings = project.review_settings.is_a?(Hash) ? project.review_settings.deep_stringify_keys : {}
+        settings["methods"] ||= {}
+        settings["methods"]["manual"] ||= {}
+        settings["methods"]["manual"]["reviewer_login"] = project.owner_reviewer_login.presence
         project.review_settings = settings
       end
 

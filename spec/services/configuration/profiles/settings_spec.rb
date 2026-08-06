@@ -48,7 +48,7 @@ RSpec.describe Configuration::Profiles::Settings do
   describe ".profile_target_keys" do
     it "returns the canonical operating-mode field list" do
       expect(described_class.profile_target_keys).to include(
-        "auto_pick_enabled", "auto_merge_mode", "adoption_mode", "review_paid_agent", "quality_gate_enabled"
+        "auto_pick_enabled", "auto_merge_mode", "adoption_mode", "review_paid_agent", "review_manual", "quality_gate_enabled"
       )
       expect(described_class.profile_target_keys).not_to include("active", "owner_reviewer_login")
     end
@@ -104,6 +104,61 @@ RSpec.describe Configuration::Profiles::Settings do
 
       expect(project.review_settings["enabled"]).to be true
       expect(project.review_settings.dig("methods", "manual", "enabled")).to be true
+    end
+
+    it "round-trips the manual review flag" do
+      described_class.write(project, "review_manual", true)
+      project.save(validate: false)
+
+      expect(described_class.read(project.reload, "review_manual")).to be true
+    end
+
+    it "syncs owner_reviewer_login into manual.reviewer_login when manual review is enabled" do
+      project.update_columns(owner_reviewer_login: "octocat")
+
+      described_class.write(project, "review_manual", true)
+
+      expect(project.review_settings.dig("methods", "manual", "reviewer_login")).to eq("octocat")
+    end
+
+    it "preserves an existing manual.reviewer_login when manual review is disabled" do
+      project.review_settings = {
+        "enabled" => true,
+        "methods" => {
+          "manual" => { "enabled" => true, "reviewer_login" => "octocat" }
+        }
+      }
+
+      described_class.write(project, "review_manual", false)
+
+      expect(project.review_settings.dig("methods", "manual", "enabled")).to be false
+      expect(project.review_settings.dig("methods", "manual", "reviewer_login")).to eq("octocat")
+    end
+
+    it "propagates a new owner_reviewer_login into manual.reviewer_login when manual review is on" do
+      project.review_settings = {
+        "enabled" => true,
+        "methods" => {
+          "manual" => { "enabled" => true, "reviewer_login" => nil }
+        }
+      }
+
+      described_class.write(project, "owner_reviewer_login", "octocat")
+
+      expect(project.review_settings.dig("methods", "manual", "reviewer_login")).to eq("octocat")
+    end
+
+    it "leaves manual.reviewer_login alone when manual review is disabled and the owner reviewer changes" do
+      project.review_settings = {
+        "enabled" => false,
+        "methods" => {
+          "manual" => { "enabled" => false, "reviewer_login" => "old-reviewer" }
+        }
+      }
+
+      described_class.write(project, "owner_reviewer_login", "octocat")
+
+      expect(project.review_settings.dig("methods", "manual", "reviewer_login")).to eq("old-reviewer")
     end
 
     it "round-trips the quality gate flag" do

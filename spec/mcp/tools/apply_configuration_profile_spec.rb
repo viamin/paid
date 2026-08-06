@@ -54,4 +54,15 @@ RSpec.describe Tools::ApplyConfigurationProfile do
       call(profile_id: "team_reviewed")
     }.to raise_error(Configuration::Profiles::BlockedError)
   end
+
+  it "applies team_reviewed with the owner reviewer override" do
+    project.update_columns(allowed_github_usernames: [ "octocat" ])
+
+    result = call(profile_id: "team_reviewed", overrides: { owner_reviewer_login: "octocat" })
+
+    expect(result[:applied_overrides]).to eq({ "owner_reviewer_login" => "octocat" })
+    expect(project.reload.review_method_enabled?("manual")).to be true
+    expect(project.review_method(:manual).reviewer_login).to eq("octocat")
+    expect(project.owner_reviewer_login).to eq("octocat")
+  end
 end

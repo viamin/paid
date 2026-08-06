@@ -14,6 +14,14 @@ RSpec.describe Configuration::Profiles::TeamReviewed do
     )
   end
 
+  it "configures manual review as the enforced blocking review gate" do
+    expect(described_class.targets).to include(
+      "review_paid_agent" => false,
+      "review_copilot" => false,
+      "review_manual" => true
+    )
+  end
+
   it "requires an owner reviewer login override" do
     project = build(:project)
     prerequisites = described_class.prerequisites_for(project, targets: described_class.targets)

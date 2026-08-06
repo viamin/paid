@@ -93,5 +93,33 @@ RSpec.describe Configuration::Profiles::Applier do
         expect(result).to eq([])
       }.not_to change(AccountActivityEvent, :count)
     end
+
+    context "when applying team_reviewed with a reviewer override" do
+      let(:profile) { Configuration::Profiles::TeamReviewed }
+      let(:plan) do
+        Configuration::Profiles::Planner.call(
+          profile:, project:, overrides: { "owner_reviewer_login" => "octocat" }
+        )
+      end
+
+      before do
+        project.update_columns(allowed_github_usernames: [ "octocat" ])
+      end
+
+      it "enables manual review and wires the owner reviewer login into it" do
+        described_class.call(plan:, project:, actor: owner)
+
+        expect(project.reload.review_method_enabled?("manual")).to be true
+        expect(project.review_method(:manual).reviewer_login).to eq("octocat")
+        expect(project.owner_reviewer_login).to eq("octocat")
+      end
+
+      it "leaves the bot-backed review methods disabled" do
+        described_class.call(plan:, project:, actor: owner)
+
+        expect(project.reload.review_method_enabled?("paid_agent")).to be false
+        expect(project.review_method_enabled?("copilot")).to be false
+      end
+    end
   end
 end

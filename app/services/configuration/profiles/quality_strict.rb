@@ -28,6 +28,7 @@ module Configuration
           "adoption_mode" => "review_only",
           "review_paid_agent" => true,
           "review_copilot" => false,
+          "review_manual" => false,
           "quality_gate_enabled" => true
         }
       end
