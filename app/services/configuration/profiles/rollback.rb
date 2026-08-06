@@ -7,6 +7,7 @@ module Configuration
     # metadata. Builds an inverse {Plan} from those values and applies it via
     # {Applier}, which records its own +configuration_profile.reverted+
     # activity entry — so the undo is itself auditable.
+    # @spec CONFIG-PROFILES-008
     class Rollback
       def self.call(activity_event, actor: nil)
         new(activity_event, actor:).call

@@ -4,6 +4,7 @@ module Configuration
   module Profiles
     # Applies a {Plan} to a {Project} transactionally and idempotently.
     # @spec CONFIG-PROFILES-004
+    # @spec CONFIG-PROFILES-007
     #
     # Guarantees (RDR-044):
     # - +transactional+: all writes (project save + activity record) succeed or
