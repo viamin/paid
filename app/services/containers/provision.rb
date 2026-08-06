@@ -152,7 +152,7 @@ module Containers
       tmpfs_tmp_size: 1024 * 1024 * 1024,        # 1GB for /tmp
       tmpfs_cache_size: 512 * 1024 * 1024,       # 512MB for /home/agent/.cache
       tmpfs_codex_size: 256 * 1024 * 1024,       # 256MB for /home/agent/.codex
-      image: "paid-agent:latest",
+      image: Containers::ImageResolver::BASE_IMAGE,
       user: "agent",
       workspace_mount: "/workspace"
     }.freeze
@@ -209,7 +209,7 @@ module Containers
       @workspace_volume = workspace_volume
       @preview_tunnel_option = options.delete(:preview_tunnel)
       @pool_mode = options.delete(:pool_mode) { false }
-      @options = DEFAULTS.merge(resolve_user_setting_overrides).merge(options)
+      @options = DEFAULTS.merge(resolve_user_setting_overrides).merge(resolve_project_image).merge(options)
       @backend = backend
       @container = nil
       @heartbeat_age_cache = {}
@@ -1178,6 +1178,19 @@ module Containers
       overrides = {}
       overrides[:memory_bytes] = resolve_memory_limit_bytes(settings)
       overrides
+    end
+
+    # Resolves the language-appropriate agent image from the project's detected
+    # runtime profile (RDR-046 / POLYGLOT-TEST-004). Sits between user-setting
+    # overrides and caller-supplied options, so an explicit +image:+ (e.g. pool
+    # reconnect, credential maintenance) still wins. Returns an empty hash when
+    # there is no project or the project resolves to the base image, leaving
+    # +DEFAULTS[:image]+ as the effective default.
+    def resolve_project_image
+      return {} unless project
+
+      resolved = Containers::ImageResolver.resolve(project)
+      resolved == Containers::ImageResolver::BASE_IMAGE ? {} : { image: resolved }
     end
 
     # In manual mode the memory limit comes straight from
