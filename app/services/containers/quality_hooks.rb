@@ -21,7 +21,6 @@ module Containers
       mutation_cmd = nil if ruby_db_gated?(languages, db_available)
 
       return unless lint_commands.any? || test_commands.any? || mutation_cmd
-
       git_ops.install_git_hooks(
         lint_command: lint_commands,
         test_command: test_commands,

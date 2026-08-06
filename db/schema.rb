@@ -2044,6 +2044,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_06_013539) do
     t.jsonb "quality_pause_metadata", default: {}, null: false
     t.datetime "quality_paused_at"
     t.string "repo", null: false
+    t.jsonb "repo_profile", default: {}, null: false, comment: "Persisted repo-derived language/framework profile used by prompts, hooks, and preview/runtime consumers."
     t.jsonb "review_settings", default: {}, null: false
     t.string "scheduler_pause_reason"
     t.datetime "scheduler_paused_at"

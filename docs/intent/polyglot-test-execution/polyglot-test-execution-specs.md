@@ -14,7 +14,7 @@
   `spec/helpers/application_helper_project_type_badge_spec.rb`,
   `spec/services/knowledge/collectors/routes_collector_spec.rb`.
 
-- [ ] **POLYGLOT-TEST-002** — When a project is imported or re-detected, the
+- [x] **POLYGLOT-TEST-002** — When a project is imported or re-detected, the
   system SHALL persist a unified language/framework profile that downstream
   consumers can read instead of independently re-detecting from different code
   paths.
