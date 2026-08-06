@@ -14,14 +14,22 @@ module Configuration
     #   before any write executes.
     # - +returns per-change results+: one hash per applied change
     #   (<tt>{ key:, from:, to:, applied: true }</tt>).
-    # - +records activity+ once per apply via {Accounts::RecordActivity}.
+    # - +records activity+ once per apply via {Accounts::RecordActivity} using
+    #   the dedicated +configuration_profile.applied+ (or +reverted+) action,
+    #   carrying every key's previous value and applied value so the change can
+    #   be reversed by {Rollback}.
     class Applier
+      APPLIED_ACTION = "configuration_profile.applied"
+      REVERTED_ACTION = "configuration_profile.reverted"
+
       def self.call(...) = new(...).call
 
-      def initialize(plan:, project:, actor:)
+      def initialize(plan:, project:, actor:, action: APPLIED_ACTION, label: nil)
         @plan = plan
         @project = project
         @actor = actor
+        @action = action
+        @label = label
       end
 
       def call
@@ -34,7 +42,7 @@ module Configuration
 
         context.project.class.transaction do
           persist!(apply_changes!(applied))
-          record_activity!(applied)
+          record_activity!(applied, skipped_levels)
         end
 
         {
@@ -45,7 +53,7 @@ module Configuration
 
       private
 
-      attr_reader :plan, :project, :actor
+      attr_reader :plan, :project, :actor, :action, :label
 
       def context
         @context ||= Context.build(project:, actor:)
@@ -81,19 +89,35 @@ module Configuration
         end
       end
 
-      def record_activity!(applied)
+      def record_activity!(applied, skipped_levels)
         Accounts::RecordActivity.call(
           account: project.account,
           actor: actor,
-          action: "project.settings_changed",
+          action: action,
           subject: project,
-          metadata: {
-            profile: plan.profile_name,
-            changed_fields: applied.map(&:key),
-            skipped_levels: skipped_levels,
-            changes: applied.map { |change| { "key" => change.key, "from" => change.from, "to" => change.to, "level" => change.level.to_s } }
-          }
+          metadata: activity_metadata(applied, skipped_levels)
         )
+      end
+
+      def activity_metadata(applied, skipped_levels)
+        {
+          profile: plan.profile_name,
+          label: label || default_label,
+          source: "configuration_profile",
+          project_name: project.name,
+          changed_fields: applied.map { |change| change.key.to_s },
+          previous_values: applied.to_h { |change| [ change.key.to_s, change.from ] },
+          applied_values: applied.to_h { |change| [ change.key.to_s, change.to ] },
+          skipped_levels: skipped_levels
+        }
+      end
+
+      def default_label
+        if action == REVERTED_ACTION
+          "Revert #{plan.profile_name} posture"
+        else
+          "Apply #{plan.profile_name} posture"
+        end
       end
 
       def result_for(change)
