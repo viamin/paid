@@ -477,6 +477,15 @@ RSpec.describe Activities::CreatePullRequestActivity do
         expect(result[:pull_request_url]).to eq("https://github.com/owner/repo/pull/42")
       end
 
+      it "fetches changed files once for both allowlist and contract checks" do
+        expect(github_client).to receive(:compare_changed_files)
+          .with(project.full_name, lid_agent_run.base_commit_sha, lid_agent_run.result_commit_sha)
+          .once
+          .and_return(full_adoption_files("AGENTS.md"))
+
+        activity.execute(agent_run_id: lid_agent_run.id)
+      end
+
       it "uses goal-specific PR body when agent summary is present" do
         lid_agent_run.log!("stdout", "## LID Brownfield Analysis\n\nInferred decisions...")
 
