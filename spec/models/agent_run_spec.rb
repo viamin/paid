@@ -2644,6 +2644,44 @@ RSpec.describe AgentRun do
     end
   end
 
+  # @spec LID-RUNS-004
+  describe ".planning_run_for_pr" do
+    let(:project) { create(:project) }
+
+    it "returns the lid_planning run that opened the PR" do
+      run = create(:agent_run, :lid_planning_goal, :completed, project: project, pull_request_number: 42)
+
+      result = described_class.planning_run_for_pr(project_id: project.id, pr_number: 42)
+
+      expect(result).to eq(run)
+    end
+
+    it "returns the most recent lid_planning run when multiple exist" do
+      create(:agent_run, :lid_planning_goal, :completed, project: project, pull_request_number: 42, created_at: 2.hours.ago)
+      latest = create(:agent_run, :lid_planning_goal, :completed, project: project, pull_request_number: 42, created_at: 1.hour.ago)
+
+      result = described_class.planning_run_for_pr(project_id: project.id, pr_number: 42)
+
+      expect(result).to eq(latest)
+    end
+
+    it "returns nil when no lid_planning run opened the PR" do
+      create(:agent_run, :completed, project: project, pull_request_number: 42, goal: "create_pr")
+
+      result = described_class.planning_run_for_pr(project_id: project.id, pr_number: 42)
+
+      expect(result).to be_nil
+    end
+
+    it "returns nil when the lid_planning run targeted a different PR" do
+      create(:agent_run, :lid_planning_goal, :completed, project: project, pull_request_number: 99)
+
+      result = described_class.planning_run_for_pr(project_id: project.id, pr_number: 42)
+
+      expect(result).to be_nil
+    end
+  end
+
   describe ".peek_next_queued_run" do
     def claim_peeked_run
       run = described_class.claim_next_queued_run(target_id: described_class.peek_next_queued_run.id)

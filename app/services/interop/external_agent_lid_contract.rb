@@ -55,7 +55,7 @@ module Interop
         trigger_via: "trigger_agent_run",
         can_start_from_external_agent: true,
         named_plan_docs_supported: true,
-        planning_pr_correction_supported: false
+        planning_pr_correction_supported: true
       }
     end
   end

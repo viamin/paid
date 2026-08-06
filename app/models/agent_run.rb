@@ -1472,6 +1472,19 @@ class AgentRun < ApplicationRecord
     latest_pr_run.trigger_type == "manual" ? "manual" : "automatic"
   end
 
+  # @spec LID-RUNS-004
+  # Finds the lid_planning run that opened a given Planning PR, if any.
+  # Used by the review-goal prompt path to detect that a PR is a Planning PR
+  # and route the follow-up through the intent-correction flow rather than
+  # generic code review.
+  def self.planning_run_for_pr(project_id:, pr_number:)
+    where(
+      project_id: project_id,
+      goal: "lid_planning",
+      pull_request_number: pr_number
+    ).order(created_at: :desc).first
+  end
+
   def runner_belongs_to_project_owner
     owner = project&.effective_owner
     return unless owner

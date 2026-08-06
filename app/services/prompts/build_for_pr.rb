@@ -71,6 +71,20 @@ module Prompts
       include_section?(:code_review) && review_threads_present?
     end
 
+    # @spec LID-RUNS-004
+    # Returns true when this PR was opened by a lid_planning run and has
+    # unresolved review threads. The review-goal follow-up on a Planning PR
+    # carries the [inferred]-correction feedback and needs a distinct prompt
+    # path rather than generic code-review framing.
+    def planning_pr_revision?
+      return false unless includes_review_threads?
+
+      @planning_pr_revision ||= AgentRun.planning_run_for_pr(
+        project_id: project.id,
+        pr_number: pr_number
+      ).present?
+    end
+
     def unresolved_review_thread_ids
       return [] unless includes_review_threads?
 
@@ -126,6 +140,7 @@ module Prompts
       sections << merge_conflicts_section if include_merge_conflicts_section?
       sections << ci_failures_section if include_ci_failures_section?
       sections << code_review_section if includes_review_threads?
+      sections << planning_pr_revision_section if planning_pr_revision?
       sections << conversation_section if include_conversation_section?
       other_issues = other_issues_section
       sections << other_issues if other_issues.present?
@@ -345,6 +360,34 @@ module Prompts
 
         Address each thread: fix the code if the reviewer is correct, or explain
         your reasoning in a code comment if you disagree. Do not ignore review feedback.
+      SECTION
+    end
+
+    # @spec LID-RUNS-004
+    # Reframes the review feedback as intent corrections for a Planning PR.
+    # The review threads above (shown by code_review_section) target [inferred]
+    # decision markers in the LID design artifacts — the agent must revise the
+    # LLD/EARS content and replace the markers with authored rationale, not
+    # treat the feedback as code fixes.
+    def planning_pr_revision_section
+      <<~SECTION
+        # Planning PR Intent Correction
+
+        This pull request is a LID Planning PR containing docs-only design
+        artifacts. The review comments above target `[inferred]` decision markers
+        in the LID design tree. Treat each review comment as a correction to the
+        design intent, not a code-fix request.
+
+        For each unresolved review thread targeting an `[inferred]` marker:
+        1. Locate the marker in the LLD or EARS file under `docs/intent/`.
+        2. Revise the affected LLD/EARS content to incorporate the reviewer's
+           correction.
+        3. Replace the `[inferred]` marker with the reviewer's authored rationale.
+        4. Keep changes docs-only — edit only files under `docs/` and the
+           instruction file (`AGENTS.md`/`CLAUDE.md`). Do not modify code.
+
+        The `[inferred]` markers sit inline in the diff. The review comments ARE
+        the corrections — apply them directly to the LID artifacts.
       SECTION
     end
 
