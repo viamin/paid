@@ -26,13 +26,18 @@ module Activities
         phase_group: "agent",
         agent_run: agent_run
       ) do
-        enhance_issue(agent_run)
+        if input[:post_run]
+          enhance_issue_post_run(agent_run)
+        else
+          enhance_issue_direct(agent_run)
+        end
       end
     end
 
     private
 
-    def enhance_issue(agent_run)
+    # Direct LLM path (legacy, kept for backward compatibility during transition).
+    def enhance_issue_direct(agent_run)
       agent_run.start!
       project = agent_run.project
       issue = agent_run.issue
@@ -47,13 +52,37 @@ module Activities
       context = build_context(agent_run, project, issue)
       response = call_llm(agent_run, prompt_for(project, issue, comments, context))
       parsed = parse_response!(agent_run, response)
+      track_tokens(agent_run, response)
+      finish_enhance_issue(agent_run, project, issue, client, parsed, context)
+    end
+
+    # Post-run path: the agent has already run in the container via
+    # RunAgentActivity.  Read its structured JSON output from the run logs
+    # and handle comment posting + label state (RDR-052 Phase 1).
+    # @spec ISSUE-ENHANCEMENT-006
+    def enhance_issue_post_run(agent_run)
+      project = agent_run.project
+      issue = agent_run.issue
+      raise ArgumentError, "enhance_issue run requires an issue" unless issue
+      ensure_trusted_issue!(issue)
+
+      client = github_client(project)
+      comments = trusted_comments(project, client.issue_comments(project.full_name, issue.github_number))
+      existing_comment = enhancement_comment(comments)
+      return complete_existing(agent_run, client, project, issue, existing_comment) if existing_comment && issue.enhance_issue_rounds.zero?
+
+      parsed = parse_agent_output!(agent_run)
+      finish_enhance_issue(agent_run, project, issue, client, parsed, {})
+    end
+
+    # Shared post-parse logic: build comment, post, apply labels, complete run.
+    def finish_enhance_issue(agent_run, project, issue, client, parsed, context)
       parsed = stop_after_max_rounds(parsed, project, issue)
       draft = build_change_intent_draft(agent_run, project, issue, parsed)
       comment_body = comment_body_for(parsed, draft)
       gh_comment = client.add_comment(project.full_name, issue.github_number, comment_body)
       label_result = apply_label_state(client, project, issue, parsed)
 
-      track_tokens(agent_run, response)
       agent_run.log!("stdout", comment_body)
       complete_run!(agent_run, paid_state_for(parsed, project, issue))
       ProcessRunQueueJob.perform_later
@@ -68,8 +97,8 @@ module Activities
         max_rounds_reached: label_result[:max_rounds_reached],
         enhance_issue_rounds: issue.enhance_issue_rounds,
         comment_url: gh_comment.html_url,
-        knowledge_results: context[:knowledge_results_count],
-        knowledge_sections: context[:bundle_sections]
+        knowledge_results: context[:knowledge_results_count] || 0,
+        knowledge_sections: context[:bundle_sections] || 0
       )
 
       {
@@ -79,6 +108,33 @@ module Activities
         sufficient_context: parsed[:sufficient_context],
         label_applied: label_result[:applied],
         max_rounds_reached: label_result[:max_rounds_reached]
+      }
+    end
+
+    # Reads the agent's structured JSON output from run logs and parses it.
+    # The agent (run via RunAgentActivity) writes a JSON object to stdout
+    # with :sufficient_context and :comment_body keys.
+    def parse_agent_output!(agent_run)
+      raw = agent_run.agent_run_logs.stdout.recent.limit(1).pick(:content)
+      return fallback_parsed(agent_run) if raw.blank?
+
+      parsed = JSON.parse(strip_markdown_fence(raw.to_s.strip), symbolize_names: true)
+      return parsed if parsed.key?(:sufficient_context) && parsed[:comment_body].present?
+
+      raise JSON::ParserError, "missing sufficient_context or comment_body"
+    rescue JSON::ParserError => e
+      agent_run.log!("stderr", "Failed to parse agent output: #{e.message}")
+      fallback_parsed(agent_run)
+    end
+
+    # Fallback when the agent output cannot be parsed as structured JSON.
+    # Posts the raw output as a comment with a needs-input marker so the issue
+    # re-enters the enhancement loop rather than silently failing.
+    def fallback_parsed(agent_run)
+      raw = agent_run.agent_summary(limit: 2000)
+      {
+        sufficient_context: false,
+        comment_body: raw.presence || "Enhancement completed but no structured output was produced."
       }
     end
 

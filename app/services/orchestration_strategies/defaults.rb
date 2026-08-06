@@ -217,7 +217,8 @@ module OrchestrationStrategies
         },
         "agent_types" => AgentRun::AGENT_TYPES,
         "goals" => AgentRun::GOALS,
-        "non_container_goals" => %w[enhance_issue analyze_issue]
+        # @spec ISSUE-ENHANCEMENT-006
+        "non_container_goals" => %w[analyze_issue]
       }
     end
 
