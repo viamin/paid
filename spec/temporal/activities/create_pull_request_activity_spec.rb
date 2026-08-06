@@ -29,6 +29,18 @@ RSpec.describe Activities::CreatePullRequestActivity do
     )
   end
 
+  # Returns a docs-only file set that satisfies the adoption output contract,
+  # using +instruction_file+ (AGENTS.md / CLAUDE.md / copilot-instructions.md).
+  def full_adoption_files(instruction_file = "AGENTS.md")
+    [
+      "docs/high-level-design.md",
+      "docs/intent/auth/auth-design.md",
+      "docs/intent/auth/auth-specs.md",
+      "docs/arrows/index.yaml",
+      instruction_file
+    ]
+  end
+
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
     allow(github_client).to receive_messages(
@@ -447,11 +459,12 @@ RSpec.describe Activities::CreatePullRequestActivity do
       before do
         # All lid_planning runs require changed-file validation.
         # Set result_commit_sha and stub the compare API so the
-        # allowlist check passes by default (docs-only files).
-        # Tests that need different files override the stub.
+        # allowlist check and output contract pass by default (a full
+        # adoption artifact set). Tests that need different files
+        # override the stub.
         lid_agent_run.update!(result_commit_sha: "abc123def456789012345678901234567890abcd")
         allow(github_client).to receive(:compare_changed_files)
-          .and_return([ "docs/high-level-design.md" ])
+          .and_return(full_adoption_files("AGENTS.md"))
       end
 
       it "uses the lid_planning PR title" do
@@ -629,30 +642,86 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
         it "allows docs/ files without raising" do
           allow(github_client).to receive(:compare_changed_files)
-            .and_return([ "docs/high-level-design.md", "docs/intent/auth/auth-specs.md" ])
+            .and_return(full_adoption_files("AGENTS.md") + [ "docs/README.md" ])
 
           expect { activity.execute(agent_run_id: lid_agent_run.id) }.not_to raise_error
         end
 
         it "allows instruction files without raising" do
           allow(github_client).to receive(:compare_changed_files)
-            .and_return([ "docs/high-level-design.md", "AGENTS.md" ])
+            .and_return(full_adoption_files("AGENTS.md"))
 
           expect { activity.execute(agent_run_id: lid_agent_run.id) }.not_to raise_error
         end
 
         it "allows CLAUDE.md without raising" do
           allow(github_client).to receive(:compare_changed_files)
-            .and_return([ "docs/high-level-design.md", "CLAUDE.md" ])
+            .and_return(full_adoption_files("CLAUDE.md"))
 
           expect { activity.execute(agent_run_id: lid_agent_run.id) }.not_to raise_error
         end
 
         it "allows .github/copilot-instructions.md without raising" do
           allow(github_client).to receive(:compare_changed_files)
-            .and_return([ "docs/high-level-design.md", ".github/copilot-instructions.md" ])
+            .and_return(full_adoption_files(".github/copilot-instructions.md"))
 
           expect { activity.execute(agent_run_id: lid_agent_run.id) }.not_to raise_error
+        end
+      end
+
+      # @spec LID-RUNS-007
+      context "when adopting LID (project has no lid_mode)" do
+        before do
+          lid_agent_run.update!(result_commit_sha: "abc123def456789012345678901234567890abcd")
+        end
+
+        it "succeeds when the full artifact set is present" do
+          allow(github_client).to receive(:compare_changed_files)
+            .and_return(full_adoption_files("AGENTS.md"))
+
+          expect { activity.execute(agent_run_id: lid_agent_run.id) }.not_to raise_error
+        end
+
+        it "raises when required artifacts are missing" do
+          allow(github_client).to receive(:compare_changed_files)
+            .and_return([ "docs/high-level-design.md", "docs/intent/auth/auth-specs.md" ])
+
+          expect {
+            activity.execute(agent_run_id: lid_agent_run.id)
+          }.to raise_error(RuntimeError, /output contract violated/)
+        end
+
+        it "raises when no docs/intent artifacts were produced" do
+          allow(github_client).to receive(:compare_changed_files)
+            .and_return([ "docs/high-level-design.md", "AGENTS.md", "docs/arrows/index.yaml" ])
+
+          expect {
+            activity.execute(agent_run_id: lid_agent_run.id)
+          }.to raise_error(RuntimeError, /output contract violated/)
+        end
+      end
+
+      # @spec LID-RUNS-007
+      context "when refining an existing LID project (lid_mode present)" do
+        before do
+          lid_agent_run.update!(result_commit_sha: "abc123def456789012345678901234567890abcd")
+          project.update!(lid_mode: "full")
+        end
+
+        it "succeeds with only an LLD and EARS specs" do
+          allow(github_client).to receive(:compare_changed_files)
+            .and_return([ "docs/intent/billing/billing-design.md", "docs/intent/billing/billing-specs.md" ])
+
+          expect { activity.execute(agent_run_id: lid_agent_run.id) }.not_to raise_error
+        end
+
+        it "raises when no EARS spec is present" do
+          allow(github_client).to receive(:compare_changed_files)
+            .and_return([ "docs/intent/billing/billing-design.md" ])
+
+          expect {
+            activity.execute(agent_run_id: lid_agent_run.id)
+          }.to raise_error(RuntimeError, /output contract violated/)
         end
       end
     end

@@ -236,7 +236,8 @@ module Activities
       Prompts::BuildForLidPlanning.call(
         project_name: project.full_name,
         project_description: Prompts::BuildForLidPlanning.project_description_for(project),
-        plan_docs: plan_docs
+        plan_docs: plan_docs,
+        adoption: project.lid_mode.blank?
       )
     end
 

@@ -2729,7 +2729,8 @@ class AgentRun < ApplicationRecord
     Prompts::BuildForLidPlanning.call(
       project_name: project.full_name,
       project_description: Prompts::BuildForLidPlanning.project_description_for(project),
-      plan_docs: docs
+      plan_docs: docs,
+      adoption: project.lid_mode.blank?
     )
   end
 
