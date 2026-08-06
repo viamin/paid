@@ -59,7 +59,7 @@ RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUA
       expect(git_ops).to have_received(:install_git_hooks).with(
         lint_command: [ "bundle exec rubocop" ],
         test_command: [ "bundle exec rspec" ],
-        mutation_command: "bundle exec mutant run --since HEAD\\~1 --use rspec --jobs 1 --results-dir .mutant/results"
+        mutation_command: "RAILS_ENV=test bundle exec mutant run --since HEAD\\~1 --use rspec --jobs 1 --results-dir .mutant/results"
       )
     end
 
@@ -107,7 +107,7 @@ RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUA
       expect(git_ops).to have_received(:install_git_hooks).with(
         lint_command: [ "bundle exec rubocop", "mix credo --strict" ],
         test_command: [ "bundle exec rspec", "mix test" ],
-        mutation_command: "bundle exec mutant run --since HEAD\\~1 --use rspec --jobs 1 --results-dir .mutant/results"
+        mutation_command: "RAILS_ENV=test bundle exec mutant run --since HEAD\\~1 --use rspec --jobs 1 --results-dir .mutant/results"
       )
     end
 
