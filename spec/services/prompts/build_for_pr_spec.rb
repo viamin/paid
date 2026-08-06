@@ -466,6 +466,114 @@ RSpec.describe Prompts::BuildForPr do
     end
   end
 
+  # @spec LID-RUNS-004
+  describe "Planning PR intent-correction section" do
+    let(:review_threads) do
+      [
+        {
+          id: "thread_1",
+          is_resolved: false,
+          comments: [
+            { body: "Wrong — we key on idempotency headers, fix it.", path: "docs/intent/billing/billing-design.md", line: 15, author: "reviewer" }
+          ]
+        }
+      ]
+    end
+
+    before do
+      allow(github_client).to receive(:review_threads)
+        .with(project.full_name, 42)
+        .and_return(review_threads)
+    end
+
+    describe "#planning_pr_revision?" do
+      it "returns true when a lid_planning run opened this PR and review threads are present" do
+        create(:agent_run, :lid_planning_goal, project: project, pull_request_number: 42, status: "completed")
+
+        builder = described_class.new(
+          project: project,
+          pr_number: 42,
+          github_client: github_client,
+          rebase_succeeded: true
+        )
+
+        expect(builder.planning_pr_revision?).to be(true)
+      end
+
+      it "returns false when no lid_planning run opened this PR" do
+        builder = described_class.new(
+          project: project,
+          pr_number: 42,
+          github_client: github_client,
+          rebase_succeeded: true
+        )
+
+        expect(builder.planning_pr_revision?).to be(false)
+      end
+
+      it "returns false when there are no unresolved review threads" do
+        create(:agent_run, :lid_planning_goal, project: project, pull_request_number: 42, status: "completed")
+        allow(github_client).to receive(:review_threads)
+          .with(project.full_name, 42)
+          .and_return([])
+
+        builder = described_class.new(
+          project: project,
+          pr_number: 42,
+          github_client: github_client,
+          rebase_succeeded: true
+        )
+
+        expect(builder.planning_pr_revision?).to be(false)
+      end
+    end
+
+    it "includes the intent-correction section when the PR is a Planning PR" do
+      create(:agent_run, :lid_planning_goal, project: project, pull_request_number: 42, status: "completed")
+
+      prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true
+      )
+
+      expect(prompt).to include("Planning PR Intent Correction")
+      expect(prompt).to include("LID Planning PR containing docs-only design")
+      expect(prompt).to include("Replace the `[inferred]` marker")
+      expect(prompt).to include("Keep changes docs-only")
+    end
+
+    it "carries the review feedback into the correction section" do
+      create(:agent_run, :lid_planning_goal, project: project, pull_request_number: 42, status: "completed")
+
+      prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true
+      )
+
+      expect(prompt).to include("Code Review Comments")
+      expect(prompt).to include("Wrong — we key on idempotency headers, fix it.")
+      expect(prompt).to include("docs/intent/billing/billing-design.md:15")
+      expect(prompt).to include("Planning PR Intent Correction")
+    end
+
+    it "does not include the correction section for a regular PR" do
+      create(:agent_run, project: project, pull_request_number: 42, status: "completed")
+
+      prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true
+      )
+
+      expect(prompt).not_to include("Planning PR Intent Correction")
+    end
+  end
+
   describe "conversation comments section" do
     let(:recent_comments) do
       [
