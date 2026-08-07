@@ -1,5 +1,67 @@
 # Changelog
 
+## [1.9.0](https://github.com/viamin/paid/compare/v1.8.0...v1.9.0) (2026-08-07)
+
+
+### Features
+
+* Back out opencode version override once agent-harness[#316](https://github.com/viamin/paid/issues/316) ships ([#3156](https://github.com/viamin/paid/issues/3156)) ([11fb7da](https://github.com/viamin/paid/commit/11fb7da89ff4650eb3a93e9b8d4d7f1d7a0fbde9))
+* Backfill LID coverage from implemented GitHub and account-administration RDRs ([#3218](https://github.com/viamin/paid/issues/3218)) ([fbbd7cd](https://github.com/viamin/paid/commit/fbbd7cd8715b0d26b92d8ba51e750cbb66dfcbca))
+* Backfill LID coverage from implemented interactive chat API-mode RDR scope ([#3229](https://github.com/viamin/paid/issues/3229)) ([bd336d2](https://github.com/viamin/paid/commit/bd336d2d77136113229af16d2b463556186d8856))
+* Backfill LID coverage from implemented queue and automation RDRs ([#3226](https://github.com/viamin/paid/issues/3226)) ([2645248](https://github.com/viamin/paid/commit/264524805c8b8f058ea1233e59264b4c9440fdc2))
+* Broaden chat configuration profile coverage and reconcile the duplicate legacy posture registry ([#3251](https://github.com/viamin/paid/issues/3251)) ([25e7c2a](https://github.com/viamin/paid/commit/25e7c2a0ec3302ad513c56cd502bf736e688788c))
+* **chat-popup:** redesign popup header and fix message form cutoff ([#3268](https://github.com/viamin/paid/issues/3268)) ([bcea884](https://github.com/viamin/paid/commit/bcea8846865eaf67d084f324dcfdbf8618c35a70))
+* **chat:** propose_pull_request tool with cross-repo dependency coordination (RDR-037) ([#3116](https://github.com/viamin/paid/issues/3116)) ([e4511fe](https://github.com/viamin/paid/commit/e4511fecc423a1f05f2250ed0ccc5d814edbc933))
+* Complete preview proxy routing and tunnel-backed root-path handling ([#3220](https://github.com/viamin/paid/issues/3220)) ([8a0748e](https://github.com/viamin/paid/commit/8a0748e46c168dfc309164fe8997e4b2785020b2))
+* **container-runtime:** backfill LID coverage for container runtime ([#3225](https://github.com/viamin/paid/issues/3225)) ([969f11e](https://github.com/viamin/paid/commit/969f11e5875f5166ecfb06c6e9009b4e03ba9fa0))
+* Convert RDR gap areas into LID intent coverage ([#3214](https://github.com/viamin/paid/issues/3214)) ([1998b7b](https://github.com/viamin/paid/commit/1998b7b531898bdcbc9f69f18720a3cc160482aa))
+* Create a reusable RDR closeout checklist for implementation audits ([#3240](https://github.com/viamin/paid/issues/3240)) ([7174c02](https://github.com/viamin/paid/commit/7174c0261ffa0808f3db0e34b692765bd685511c))
+* Expand chat configuration profiles to tenant/user settings with per-level authorization ([#3250](https://github.com/viamin/paid/issues/3250)) ([dc65289](https://github.com/viamin/paid/commit/dc652899f0652c36b7e9527e8202c57fb1fa36d6))
+* Finish live preview UI lifecycle and access flows around real preview sessions ([#3228](https://github.com/viamin/paid/issues/3228)) ([ca6b81c](https://github.com/viamin/paid/commit/ca6b81cc93a89b5176d49c1c0bd023d3cd4b245e))
+* Implement end-to-end agent self-verification beyond browser sidecar provisioning ([#3222](https://github.com/viamin/paid/issues/3222)) ([4850cd2](https://github.com/viamin/paid/commit/4850cd23f752267291e4bb58e0a8b05c3663ea04))
+* **interop:** expose LID contract to external agents ([#3249](https://github.com/viamin/paid/issues/3249)) ([ecf339e](https://github.com/viamin/paid/commit/ecf339eaf9250ab8248a65bd8583453728bcdcfa))
+* **lid:** backfill agent model prompt intent coverage ([#3216](https://github.com/viamin/paid/issues/3216)) ([fa6549d](https://github.com/viamin/paid/commit/fa6549d78ae3a4be7ffb9acc78647f69867b9512))
+* **lid:** backfill quality and observability coverage ([#3243](https://github.com/viamin/paid/issues/3243)) ([b777599](https://github.com/viamin/paid/commit/b77759986933fe741cfec62720e63ac81fe9fd95))
+* **lid:** backfill tenant security and access coverage ([#3224](https://github.com/viamin/paid/issues/3224)) ([3dc4dcb](https://github.com/viamin/paid/commit/3dc4dcb41ae499b19672945d627a835d0e9daa73))
+* **lid:** materialize elicited intent into artifact updates ([#3248](https://github.com/viamin/paid/issues/3248)) ([4809436](https://github.com/viamin/paid/commit/4809436feb542cac4ab29a561568c5506fa25fde))
+* **lid:** teach review runs to revise Planning PR inferred decisions ([#3199](https://github.com/viamin/paid/issues/3199)) ([#3262](https://github.com/viamin/paid/issues/3262)) ([b10525b](https://github.com/viamin/paid/commit/b10525be2b7a431e0466bc8ad814a0b831f8b9d5))
+* observability: add application-level Prometheus metrics for run outcomes, duration, tokens, and cost ([#3245](https://github.com/viamin/paid/issues/3245)) ([898c72f](https://github.com/viamin/paid/commit/898c72f52482a6e3eb024ec52b2270c984e7d8c0))
+* observability: ship centralized structured log aggregation for Rails and worker processes ([#3246](https://github.com/viamin/paid/issues/3246)) ([cf2aae1](https://github.com/viamin/paid/commit/cf2aae1a9ff255db4a928812a4ccbb220dfa7621))
+* RDR-023: finish automation modularization and shrink scanner orchestration ([#3230](https://github.com/viamin/paid/issues/3230)) ([ffff6d6](https://github.com/viamin/paid/commit/ffff6d6427d1462ffa272b6e6b4a466f7c3e32ea))
+* RDR-035: implement StyleGuide evolution pipeline or close out accepted scope ([#3231](https://github.com/viamin/paid/issues/3231)) ([949406b](https://github.com/viamin/paid/commit/949406bcb3b8d954c17b8ffa64d26e060c8f2a00))
+* RDR-036: close out mutation testing status after completed follow-ups ([#3232](https://github.com/viamin/paid/issues/3232)) ([d50efb2](https://github.com/viamin/paid/commit/d50efb27b79bd71e1ac8dc83a09d58d73c894f4f))
+* RDR-037: re-open containerized multi-repo chat implementation gap ([#3219](https://github.com/viamin/paid/issues/3219)) ([aae29a9](https://github.com/viamin/paid/commit/aae29a91f3e06eb00c743e020f7bca2dc13c1047))
+* RDR-042: close out Change Intent Records against shipped implementation ([#3210](https://github.com/viamin/paid/issues/3210)) ([3ad65a6](https://github.com/viamin/paid/commit/3ad65a65d592ddf8a2b3a1a7b805498e78dd16c0))
+* RDR-042: restore CIR auto-detection and draft creation in EnhanceIssueActivity ([#3259](https://github.com/viamin/paid/issues/3259)) ([b805aa8](https://github.com/viamin/paid/commit/b805aa80d61118b8b16c82d77027a272c142d048))
+* RDR-044: close out chat-driven configuration profiles against shipped tools ([#3212](https://github.com/viamin/paid/issues/3212)) ([df51203](https://github.com/viamin/paid/commit/df51203202233311a15ae5e77e4d2073ee796e95))
+* RDR-046 follow-up: expand test/lint command routing and quality hooks for polyglot execution ([#3258](https://github.com/viamin/paid/issues/3258)) ([683b4e0](https://github.com/viamin/paid/commit/683b4e07e347257fb69a8ff9ad81d5437d2fbf45))
+* RDR-046 follow-up: replace GitHub primary-language shortcuts with a unified repo language/framework profile ([#3252](https://github.com/viamin/paid/issues/3252)) ([5325951](https://github.com/viamin/paid/commit/5325951505e4cd9aa6ec14673e8919f75effbd30))
+* RDR-046 follow-up: resolve agent container images from project language/runtime requirements ([#3263](https://github.com/viamin/paid/issues/3263)) ([8ea16cc](https://github.com/viamin/paid/commit/8ea16cc89bd165e52c92b5f470977c9abc85b334))
+* RDR-049: close out configuration health checks now that [#3058](https://github.com/viamin/paid/issues/3058) is closed ([#3237](https://github.com/viamin/paid/issues/3237)) ([add2317](https://github.com/viamin/paid/commit/add2317b6619e448a4dc870c834e15a1d8013a03))
+* RDR-050: implement account-level queue fairness mode ([#3189](https://github.com/viamin/paid/issues/3189)) ([aa95169](https://github.com/viamin/paid/commit/aa95169c1b57dfb2ee36c53e8a71b4a8b5dda589))
+* RDR-051: reconcile shipped LID detection with remaining LID-aware agent-run scope ([#3203](https://github.com/viamin/paid/issues/3203)) ([0cccff4](https://github.com/viamin/paid/commit/0cccff42c90a69e832d5a9968b0092660d4cb912))
+* RDR-051: validate `lid_planning` output contract and plan-doc-weighted conversion ([#3260](https://github.com/viamin/paid/issues/3260)) ([b12039e](https://github.com/viamin/paid/commit/b12039ef65374883d274ff50e3a091170b953338))
+* RDR-052 Phase 1: run enhance_issue in a read-only container ([#3267](https://github.com/viamin/paid/issues/3267)) ([f530695](https://github.com/viamin/paid/commit/f53069529ec1dcd97d1f8299ef772e7384038512))
+* RDR-052 Phase 2: codebase-grounded enhance_issue questions + re-evaluation ([#3264](https://github.com/viamin/paid/issues/3264)) ([cb1d0d6](https://github.com/viamin/paid/commit/cb1d0d6acb960ec7dd4b68199c8d394c04b082c6))
+* Restore dedicated audit and rollback semantics for chat-applied configuration profiles ([#3261](https://github.com/viamin/paid/issues/3261)) ([03eeed3](https://github.com/viamin/paid/commit/03eeed38e2075475417bbd43671a3c086b929274))
+* **runners:** complete proactive quota tracking ([#3190](https://github.com/viamin/paid/issues/3190)) ([a3d0b5c](https://github.com/viamin/paid/commit/a3d0b5c23a484e7cd460b4be970ff69a0f334e60))
+* Wire project preview actions to real PreviewSession provisioning and teardown ([#3223](https://github.com/viamin/paid/issues/3223)) ([3981d51](https://github.com/viamin/paid/commit/3981d512cdf328bae130d2a909510d639687546c))
+
+
+### Bug Fixes
+
+* **accounts:** add padding to form inputs on account settings page ([#3275](https://github.com/viamin/paid/issues/3275)) ([70dacef](https://github.com/viamin/paid/commit/70dacef89b7c4049f68482603f559d9ee628a11e)), closes [#3269](https://github.com/viamin/paid/issues/3269)
+* **agent-runs:** re-admit bot clarifying Q&A in enhance_issue re-evaluation ([#3235](https://github.com/viamin/paid/issues/3235)) ([2d6d682](https://github.com/viamin/paid/commit/2d6d682930c4630a3b10b761f9344d80a4cff205))
+* **agent-runs:** stop one invalid agent_type from stalling the dispatch queue ([#3273](https://github.com/viamin/paid/issues/3273)) ([9f8edbd](https://github.com/viamin/paid/commit/9f8edbd3317246f06d19b1ada110ef15c3a83637))
+* **agent-runs:** stop spamming LID coherence soft-block on followup comments ([#3278](https://github.com/viamin/paid/issues/3278)) ([f2a0d34](https://github.com/viamin/paid/commit/f2a0d343acd8df07f05465e0306a5db60abd82d6))
+* **chat:** broaden auto-approve to reversible write tools ([#3270](https://github.com/viamin/paid/issues/3270)) ([#3276](https://github.com/viamin/paid/issues/3276)) ([0190d6f](https://github.com/viamin/paid/commit/0190d6f832d5b6532ed498b8b58b9b755dbc33a9))
+* **db:** canonicalize schema dump metadata ([#3234](https://github.com/viamin/paid/issues/3234)) ([7e8a4ea](https://github.com/viamin/paid/commit/7e8a4ea9244e2362d796f6989e8747560f42b68f))
+* **models:** exclude OpenRouter-synced free models from catalog drift detection ([#3280](https://github.com/viamin/paid/issues/3280)) ([b5a46bb](https://github.com/viamin/paid/commit/b5a46bb19dfd0e865d496ce22026f0d1804bb2d3)), closes [#3279](https://github.com/viamin/paid/issues/3279)
+* **pr-scanner:** stop failure-streak reset on unresolved create_pr runs ([#3271](https://github.com/viamin/paid/issues/3271)) ([#3277](https://github.com/viamin/paid/issues/3277)) ([d678905](https://github.com/viamin/paid/commit/d6789058d09169435b4a9b9119d2e85460001666))
+* **previews:** reuse shared runtime detection ([#3221](https://github.com/viamin/paid/issues/3221)) ([de29639](https://github.com/viamin/paid/commit/de296396df135e190d7e9612db78e3eb616717c0))
+* **trace-viewer:** align durable trace artifact keys ([#3227](https://github.com/viamin/paid/issues/3227)) ([f8e66cc](https://github.com/viamin/paid/commit/f8e66cce5a007b9d26f8708170c754c365b9292e))
+* **ui:** repair turbo-frame links and deterministic back navigation ([#3257](https://github.com/viamin/paid/issues/3257)) ([940f571](https://github.com/viamin/paid/commit/940f571014533783f4b86a400268513179c50a24))
+
 ## [1.8.0](https://github.com/viamin/paid/compare/v1.7.0...v1.8.0) (2026-08-04)
 
 
