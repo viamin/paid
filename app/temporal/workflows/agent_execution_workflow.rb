@@ -148,7 +148,6 @@ module Workflows
           return { success: false, quality_gate_blocked: true, agent_run_id: agent_run_id }
         end
 
-
         if goal == "analyze_issue"
           result = run_activity(Activities::AnalyzeIssueActivity,
             { agent_run_id: agent_run_id },
@@ -305,7 +304,6 @@ module Workflows
 
           return { success: true, agent_run_id: agent_run_id, **enhance_result.slice(:sufficient_context) }
         end
-
 
         if goal == "create_issue"
           # Issue goal: check if the agent created an issue via the proxy
