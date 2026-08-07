@@ -66,7 +66,8 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
       activity.execute(agent_run_id: agent_run.id)
     end
 
-    it "surfaces coherence soft-block even when summary comments are disabled" do
+    # @spec LID-RUNS-003
+    it "does not spam a coherence soft-block followup comment (#3272)" do
       agent_run.update!(
         external_metadata: {
           "pre_run_head_sha" => "fedcba9876543210012345678901234567890abc",
@@ -78,10 +79,7 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
       )
 
       expect(github_client).not_to receive(:compare_summary)
-      expect(github_client).to receive(:add_comment) do |_, _, body|
-        expect(body).to include("## LID Coherence Soft-Block")
-        expect(body).to include("Coherence soft-block: 1 reverse orphan.")
-      end
+      expect(github_client).not_to receive(:add_comment)
 
       activity.execute(agent_run_id: agent_run.id)
     end
