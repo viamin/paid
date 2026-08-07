@@ -143,6 +143,31 @@ RSpec.describe RunnerSupport do
     end
   end
 
+  describe ".agent_type_for" do
+    it "maps claude to claude_code" do
+      expect(described_class.agent_type_for("claude")).to eq("claude_code")
+    end
+
+    it "passes through other runner keys unchanged" do
+      expect(described_class.agent_type_for("codex")).to eq("codex")
+      expect(described_class.agent_type_for("omp")).to eq("omp")
+    end
+
+    # Guards against the drift that poisoned the dispatch queue: a runner key
+    # was added to CONTAINER_EXECUTABLE_RUNNER_KEYS without also being added to
+    # AgentRun::AGENT_TYPES, so agent_type_for returned a value the model could
+    # never validate. Every container-executable runner must map to a valid
+    # agent type so dequeue-time binding can never write an unclaimable run.
+    it "returns a valid agent type for every container-executable runner key" do
+      described_class::CONTAINER_EXECUTABLE_RUNNER_KEYS.each do |runner_key|
+        agent_type = described_class.agent_type_for(runner_key)
+        expect(AgentRun::AGENT_TYPES).to include(agent_type),
+          "#{runner_key.inspect} maps to #{agent_type.inspect}, which is not in AgentRun::AGENT_TYPES. " \
+          "Add it to the constant."
+      end
+    end
+  end
+
   describe "API_SERVICE_TYPES" do
     it "includes the expected service types" do
       expect(described_class::API_SERVICE_TYPES).to include(

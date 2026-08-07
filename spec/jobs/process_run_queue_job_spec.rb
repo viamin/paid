@@ -994,6 +994,33 @@ RSpec.describe ProcessRunQueueJob do
       expect(started_ids).to eq([ eligible_run.id ])
     end
 
+    it "force-fails an unclaimable run at the queue head and continues dispatching the rest" do
+      project = create(:project)
+      user = project.created_by
+      user.settings.update!(max_concurrent_runs: 2)
+
+      # Reproduce the production scenario: a bound run whose agent_type drifted
+      # out of AgentRun::AGENT_TYPES (written via a validation-bypassing path).
+      # It is already bound to a runner, so BindRunner does not overwrite the
+      # bad value. Claiming calls update!, which re-validates and raises
+      # RecordInvalid — without the rescue this stalls every dispatch tick.
+      poisoned = create(:agent_run, :queued, project: project, created_at: 3.minutes.ago)
+      poisoned.update_columns(agent_type: "bogus_invalid_type", runner_id: create(:runner, user: user).id)
+      eligible = create(:agent_run, :queued, project: project, created_at: 1.minute.ago)
+
+      started_ids = []
+      allow(temporal_client).to receive(:start_workflow) do |_wf, input, **_opts|
+        started_ids << input[:agent_run_id]
+        workflow_handle
+      end
+
+      expect { described_class.new.perform }.not_to raise_error
+
+      expect(poisoned.reload.status).to eq("failed")
+      expect(poisoned.reload.error_message).to match(/Agent type/i)
+      expect(started_ids).to include(eligible.id)
+    end
+
     it "does not start queued runs when user is at capacity" do
       project = create(:project, auto_pick_enabled: true)
       user = project.created_by
