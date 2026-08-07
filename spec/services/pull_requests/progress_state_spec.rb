@@ -167,6 +167,86 @@ RSpec.describe PullRequests::ProgressState, :no_db do
     expect(result.last_meaningful_progress_at).to eq(now - 5.minutes)
   end
 
+  it "does not reset the streak for a completed create_pr whose head is unresolved (#3271)" do
+    now = Time.zone.parse("2026-05-15 12:00:00")
+    head_sha = "abc123"
+    runs = [
+      build_run(goal: "create_pr", status: "completed", at: now, result_commit_sha: head_sha)
+    ]
+
+    result = described_class.call(
+      project: project,
+      issue: issue,
+      runs: runs,
+      current_head_sha: head_sha,
+      current_head_updated_at: now,
+      current_head_resolved: false
+    )
+
+    expect(result.consecutive_unsuccessful_automatic_runs).to eq(1)
+    expect(result.last_meaningful_progress_at).to be_nil
+  end
+
+  it "resets the streak for a completed create_pr whose head is resolved" do
+    now = Time.zone.parse("2026-05-15 12:00:00")
+    head_sha = "abc123"
+    runs = [
+      build_run(goal: "create_pr", status: "failed", at: now),
+      build_run(goal: "create_pr", status: "completed", at: now - 5.minutes, result_commit_sha: head_sha)
+    ]
+
+    result = described_class.call(
+      project: project,
+      issue: issue,
+      runs: runs,
+      current_head_sha: head_sha,
+      current_head_updated_at: now - 5.minutes,
+      current_head_resolved: true
+    )
+
+    expect(result.consecutive_unsuccessful_automatic_runs).to eq(1)
+    expect(result.last_meaningful_progress_at).to eq(now - 5.minutes)
+  end
+
+  it "resets the streak for a completed create_pr when head resolution is unknown" do
+    now = Time.zone.parse("2026-05-15 12:00:00")
+    head_sha = "abc123"
+    runs = [
+      build_run(goal: "create_pr", status: "failed", at: now),
+      build_run(goal: "create_pr", status: "completed", at: now - 5.minutes, result_commit_sha: head_sha)
+    ]
+
+    result = described_class.call(
+      project: project,
+      issue: issue,
+      runs: runs,
+      current_head_sha: head_sha,
+      current_head_updated_at: now - 5.minutes
+    )
+
+    expect(result.consecutive_unsuccessful_automatic_runs).to eq(1)
+    expect(result.last_meaningful_progress_at).to eq(now - 5.minutes)
+  end
+
+  it "does not penalize a completed create_pr that did not push the unresolved head" do
+    now = Time.zone.parse("2026-05-15 12:00:00")
+    runs = [
+      build_run(goal: "create_pr", status: "completed", at: now - 5.minutes, result_commit_sha: "old-head")
+    ]
+
+    result = described_class.call(
+      project: project,
+      issue: issue,
+      runs: runs,
+      current_head_sha: "new-head",
+      current_head_updated_at: now,
+      current_head_resolved: false
+    )
+
+    expect(result.consecutive_unsuccessful_automatic_runs).to eq(0)
+    expect(result.last_meaningful_progress_at).to eq(now)
+  end
+
   it "resets the unified streak after a review is posted" do
     now = Time.zone.parse("2026-05-15 12:00:00")
     runs = [
