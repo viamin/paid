@@ -52,23 +52,23 @@
         <%= form_with model: current_account, url: account_path, method: :patch, class: "mt-6 grid gap-4 md:grid-cols-2" do |form| %>
           <div class="md:col-span-2">
             <%= form.label :name, "Account name", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
-            <%= form.text_field :name, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+            <%= form.text_field :name, class: "mt-1 block w-full rounded-xl border-gray-300 px-3 py-1.5 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
           </div>
           <div>
             <%= label_tag :account_slug, "Slug", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
-            <%= text_field_tag :account_slug, current_account.slug, disabled: true, class: "mt-1 block w-full rounded-xl border-gray-300 bg-gray-50 text-sm text-gray-500 shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-gray-400" %>
+            <%= text_field_tag :account_slug, current_account.slug, disabled: true, class: "mt-1 block w-full rounded-xl border-gray-300 bg-gray-50 px-3 py-1.5 text-sm text-gray-500 shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-gray-400" %>
           </div>
           <div>
             <%= form.label :default_max_tokens_per_run, "Default max tokens per run", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
-            <%= form.number_field :default_max_tokens_per_run, min: 1, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+            <%= form.number_field :default_max_tokens_per_run, min: 1, class: "mt-1 block w-full rounded-xl border-gray-300 px-3 py-1.5 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
           </div>
           <div>
             <%= label_tag :account_trial_ends_at, "Trial ends", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
-            <%= text_field_tag :account_trial_ends_at, current_account.trial_ends_at&.to_date || "N/A", disabled: true, class: "mt-1 block w-full rounded-xl border-gray-300 bg-gray-50 text-sm text-gray-500 shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-gray-400" %>
+            <%= text_field_tag :account_trial_ends_at, current_account.trial_ends_at&.to_date || "N/A", disabled: true, class: "mt-1 block w-full rounded-xl border-gray-300 bg-gray-50 px-3 py-1.5 text-sm text-gray-500 shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-gray-400" %>
           </div>
           <div>
             <%= label_tag :account_scheduler_paused, "Scheduler", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
-            <%= text_field_tag :account_scheduler_paused, current_account.scheduler_paused? ? "Paused" : "Running", disabled: true, class: "mt-1 block w-full rounded-xl border-gray-300 bg-gray-50 text-sm text-gray-500 shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-gray-400" %>
+            <%= text_field_tag :account_scheduler_paused, current_account.scheduler_paused? ? "Paused" : "Running", disabled: true, class: "mt-1 block w-full rounded-xl border-gray-300 bg-gray-50 px-3 py-1.5 text-sm text-gray-500 shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-gray-400" %>
           </div>
           <% if policy(current_account).update? %>
             <div class="md:col-span-2 flex justify-end">
@@ -104,7 +104,7 @@
                     <td class="px-4 py-4">
                       <%= select_tag "account[remediation_policy][#{action}][mode]",
                             options_for_select(Account::REMEDIATION_POLICY_MODES.map { |mode| [mode.humanize, mode] }, policy["mode"]),
-                            class: "w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+                            class: "w-full rounded-xl border-gray-300 px-3 py-1.5 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
                     </td>
                     <td class="px-4 py-4">
                       <%= number_field_tag "account[remediation_policy][#{action}][minimum_confidence]",
@@ -112,14 +112,14 @@
                             min: 0,
                             max: 1,
                             step: 0.01,
-                            class: "w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+                            class: "w-full rounded-xl border-gray-300 px-3 py-1.5 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
                     </td>
                     <td class="px-4 py-4">
                       <%= number_field_tag "account[remediation_policy][#{action}][filing_threshold]",
                             policy["filing_threshold"],
                             min: 1,
                             step: 1,
-                            class: "w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+                            class: "w-full rounded-xl border-gray-300 px-3 py-1.5 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
                     </td>
                   </tr>
                 <% end %>
@@ -150,15 +150,15 @@
           <%= form_with url: account_memberships_path, method: :post, class: "mt-6 grid gap-4 rounded-2xl border border-dashed border-amber-300 bg-amber-50/70 p-4 dark:border-amber-700 dark:bg-amber-950/20 md:grid-cols-4" do %>
             <div class="md:col-span-2">
               <%= label_tag "invitation_email", "Email", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
-              <%= email_field_tag "invitation[email]", nil, required: true, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              <%= email_field_tag "invitation[email]", nil, required: true, class: "mt-1 block w-full rounded-xl border-gray-300 px-3 py-1.5 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
             </div>
             <div>
               <%= label_tag "invitation_name", "Name", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
-              <%= text_field_tag "invitation[name]", nil, class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              <%= text_field_tag "invitation[name]", nil, class: "mt-1 block w-full rounded-xl border-gray-300 px-3 py-1.5 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
             </div>
             <div>
               <%= label_tag "invitation_role", "Role", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
-              <%= select_tag "invitation[role]", options_for_select(AccountMembership.roles.keys.reject { |role| role == "owner" }.map { |role| [role.humanize, role] }, "member"), class: "mt-1 block w-full rounded-xl border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+              <%= select_tag "invitation[role]", options_for_select(AccountMembership.roles.keys.reject { |role| role == "owner" }.map { |role| [role.humanize, role] }, "member"), class: "mt-1 block w-full rounded-xl border-gray-300 px-3 py-1.5 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
             </div>
             <div class="md:col-span-4 flex justify-end">
               <%= submit_tag "Send invitation", class: "rounded-full bg-gray-900 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-gray-700 dark:bg-amber-500 dark:text-gray-900 dark:hover:bg-amber-400" %>
@@ -186,7 +186,7 @@
                   <td class="px-4 py-4">
                     <% if policy(current_account).update? && !membership.owner? %>
                       <%= form_with model: membership, url: account_membership_path(membership), method: :patch, class: "flex items-center gap-2" do |form| %>
-                        <%= form.select :role, options_for_select(AccountMembership.roles.keys.reject { |role| role == "owner" }.map { |role| [role.humanize, role] }, membership.role), {}, class: "rounded-full border-gray-300 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
+                        <%= form.select :role, options_for_select(AccountMembership.roles.keys.reject { |role| role == "owner" }.map { |role| [role.humanize, role] }, membership.role), {}, class: "rounded-full border-gray-300 px-3 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-white" %>
                         <%= form.submit "Update", class: "rounded-full border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-900" %>
                       <% end %>
                     <% else %>
