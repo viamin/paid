@@ -4,12 +4,15 @@ class AccountOwnershipTransfersController < ApplicationController
   include AccountAdministrationPage
 
   def create
-    authorize current_account, :destroy?
+    account = current_account
+    authorize account, :destroy?
 
-    membership = current_account.account_memberships.includes(:user).find(params[:membership_id])
+    membership = TenantContext.with_system_access do
+      AccountMembership.find_by!(id: params[:membership_id], account_id: account.id)
+    end
 
     Accounts::TransferOwnership.call(
-      account: current_account,
+      account: account,
       new_owner_membership: membership,
       actor: current_user
     )

@@ -85,7 +85,7 @@ RSpec.describe Activities::CloneRepoActivity do
         expect(git_ops).to receive(:install_git_hooks).with(
           lint_command: [ "bundle exec rubocop" ],
           test_command: [ "bundle exec rspec" ],
-          mutation_command: "bundle exec mutant run --since HEAD\\~1 --use rspec --jobs 1 --results-dir .mutant/results"
+          mutation_command: "RAILS_ENV=test bundle exec mutant run --since HEAD\\~1 --use rspec --jobs 1 --results-dir .mutant/results"
         )
 
         activity.execute(agent_run_id: agent_run.id)
@@ -184,7 +184,7 @@ RSpec.describe Activities::CloneRepoActivity do
           expect(git_ops).to receive(:install_git_hooks).with(
             lint_command: [ "bundle exec rubocop" ],
             test_command: [ "bundle exec rspec" ],
-            mutation_command: "bundle exec mutant run --since HEAD\\~1 --use rspec --jobs 1 --results-dir .mutant/results"
+            mutation_command: "RAILS_ENV=test bundle exec mutant run --since HEAD\\~1 --use rspec --jobs 1 --results-dir .mutant/results"
           )
 
           activity.execute(agent_run_id: agent_run.id)

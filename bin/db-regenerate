@@ -164,7 +164,9 @@ disable_triggers() {
   CACHED_TRIGGER_TABLES="$tables"
   while IFS= read -r table; do
     [[ -z "$table" ]] && continue
-    run_sql_exec "$db" -c "ALTER TABLE \"$table\" DISABLE TRIGGER ALL;" 2>/dev/null || true
+    # Match db_helpers.sh: the app role cannot toggle PostgreSQL system
+    # triggers, so suspend only user-defined triggers during practice restores.
+    run_sql_exec "$db" -c "ALTER TABLE \"$table\" DISABLE TRIGGER USER;" 2>/dev/null || true
   done <<< "$tables"
 }
 
@@ -177,7 +179,7 @@ enable_triggers() {
     return 0
   fi
 
-  run_table_alter_required "$db" "$tables" "ENABLE TRIGGER ALL" "enable triggers"
+  run_table_alter_required "$db" "$tables" "ENABLE TRIGGER USER" "enable triggers"
 }
 
 get_row_counts() {

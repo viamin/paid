@@ -7,25 +7,37 @@ RSpec.describe MutantResultsReader do
     it "appends --results-dir when absent" do
       result = described_class.with_results_dir("bundle exec mutant run --use rspec")
 
-      expect(result).to eq("bundle exec mutant run --use rspec --results-dir .mutant/results")
+      expect(result).to eq("RAILS_ENV=test bundle exec mutant run --use rspec --results-dir .mutant/results")
     end
 
     it "strips existing space-separated --results-dir and replaces with canonical path" do
       result = described_class.with_results_dir("bundle exec mutant run --results-dir /custom/path --use rspec")
 
-      expect(result).to eq("bundle exec mutant run --use rspec --results-dir .mutant/results")
+      expect(result).to eq("RAILS_ENV=test bundle exec mutant run --use rspec --results-dir .mutant/results")
     end
 
     it "strips existing equals-separated --results-dir and replaces with canonical path" do
       result = described_class.with_results_dir("bundle exec mutant run --results-dir=/custom/path --use rspec")
 
-      expect(result).to eq("bundle exec mutant run --use rspec --results-dir .mutant/results")
+      expect(result).to eq("RAILS_ENV=test bundle exec mutant run --use rspec --results-dir .mutant/results")
     end
 
     it "strips dangling --results-dir at end of command and replaces with canonical path" do
       result = described_class.with_results_dir("bundle exec mutant run --use rspec --results-dir")
 
-      expect(result).to eq("bundle exec mutant run --use rspec --results-dir .mutant/results")
+      expect(result).to eq("RAILS_ENV=test bundle exec mutant run --use rspec --results-dir .mutant/results")
+    end
+
+    it "preserves existing environment prefixes and adds RAILS_ENV=test when absent" do
+      result = described_class.with_results_dir("FOO=1 bundle exec mutant run --use rspec")
+
+      expect(result).to eq("FOO=1 RAILS_ENV=test bundle exec mutant run --use rspec --results-dir .mutant/results")
+    end
+
+    it "keeps an explicit RAILS_ENV unchanged" do
+      result = described_class.with_results_dir("RAILS_ENV=development bundle exec mutant run --use rspec")
+
+      expect(result).to eq("RAILS_ENV=development bundle exec mutant run --use rspec --results-dir .mutant/results")
     end
 
     it "returns blank string unchanged" do

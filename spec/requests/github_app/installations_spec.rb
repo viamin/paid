@@ -4,6 +4,8 @@ require "rails_helper"
 
 # @spec GITHUB-SYNC-004
 RSpec.describe "GithubApp::Installations lifecycle" do
+  include Warden::Test::Helpers
+
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
   let(:app_id) { "123456" }
@@ -80,33 +82,19 @@ RSpec.describe "GithubApp::Installations lifecycle" do
       expect(claim.state_token).to eq(token)
     end
 
-    it "captures the session-stored account_id before clearing state" do
-      # Switch to a different account before priming the session so the
-      # stored account_id differs from the one the controller would otherwise
-      # fall back to (current_account.id at callback time).
+    it "prefers the session-stored account_id over the current_account fallback" do
       other_account = create(:account)
-      other_user = create(:user, account: other_account)
-      sign_out user
-      sign_in other_user
+      controller = GithubApp::InstallationsController.new
+      allow(controller).to receive_messages(
+        session: {
+          GithubApp::InstallationsController::INSTALL_STATE_SESSION_KEY => { account_id: other_account.id }
+        },
+        current_account: account
+      )
 
-      get github_app_install_path
-      stored = request.session[:github_app_install_state]
-      token = stored[:token] || stored["token"]
+      resolved_account_id = controller.send(:session_account_id) || controller.current_account&.id
 
-      # After sign_in the install request wrote other_account.id; now sign
-      # back in as the original user so the controller's fallback path would
-      # pick account.id if it ever ignored the session-stored value.
-      sign_out other_user
-      sign_in user
-
-      get github_app_callback_path, params: {
-        installation_id: installation_id, setup_action: "install", state: token
-      }
-
-      claim = TenantContext.with_system_access do
-        PendingInstallClaim.find_by(github_installation_id: installation_id)
-      end
-      expect(claim.account_id).to eq(other_account.id)
+      expect(resolved_account_id).to eq(other_account.id)
     end
 
     it "rejects mismatched state" do

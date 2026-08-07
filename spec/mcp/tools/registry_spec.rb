@@ -26,6 +26,7 @@ RSpec.describe Tools::Registry do
       write_repo_file
       apply_patch
       git_branch_create
+      propose_pull_request
       clone_project
       run_shell
       operator_suspend_account
@@ -291,7 +292,7 @@ RSpec.describe Tools::Registry do
 
       names = described_class.chat_definitions_for(user: user, session: session).map { |definition| definition[:name] }
 
-      expect(names).to include("run_shell")
+      expect(names).to include("run_shell", "propose_pull_request")
     end
 
     it "does not advertise run_shell when user lacks run_agent? on the session project" do

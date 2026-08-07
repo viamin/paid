@@ -30,6 +30,7 @@ module Tools
       "Tools::GitDiff",
       "Tools::GitStatus",
       "Tools::GitBranchCreate",
+      "Tools::ProposePullRequest",
       "Tools::RunShell",
       "Tools::GetIntent",
       "Tools::ListAccountMemberships",

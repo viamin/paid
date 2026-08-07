@@ -59,7 +59,7 @@ RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUA
       expect(git_ops).to have_received(:install_git_hooks).with(
         lint_command: [ "bundle exec rubocop" ],
         test_command: [ "bundle exec rspec" ],
-        mutation_command: "bundle exec mutant run --since HEAD\\~1 --use rspec --jobs 1 --results-dir .mutant/results"
+        mutation_command: "RAILS_ENV=test bundle exec mutant run --since HEAD\\~1 --use rspec --jobs 1 --results-dir .mutant/results"
       )
     end
 
@@ -107,7 +107,7 @@ RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUA
       expect(git_ops).to have_received(:install_git_hooks).with(
         lint_command: [ "bundle exec rubocop", "mix credo --strict" ],
         test_command: [ "bundle exec rspec", "mix test" ],
-        mutation_command: "bundle exec mutant run --since HEAD\\~1 --use rspec --jobs 1 --results-dir .mutant/results"
+        mutation_command: "RAILS_ENV=test bundle exec mutant run --since HEAD\\~1 --use rspec --jobs 1 --results-dir .mutant/results"
       )
     end
 
@@ -152,7 +152,7 @@ RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUA
     it "returns the resolved mutation command with results dir injected" do
       expect(
         host.resolve_mutation_command(project, user, "ruby")
-      ).to eq("bundle exec mutant run --since HEAD\\~1 --use rspec --jobs 1 --results-dir .mutant/results")
+      ).to eq("RAILS_ENV=test bundle exec mutant run --since HEAD\\~1 --use rspec --jobs 1 --results-dir .mutant/results")
     end
   end
 
@@ -169,7 +169,7 @@ RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUA
 
       expect(
         host.resolve_scheduled_mutation_command(project, user, "ruby")
-      ).to eq("bundle exec mutant run --use rspec --jobs 1 Foo\\* --results-dir .mutant/results")
+      ).to eq("RAILS_ENV=test bundle exec mutant run --use rspec --jobs 1 Foo\\* --results-dir .mutant/results")
     end
 
     it "preserves shell escaping for quoted arguments" do
@@ -184,7 +184,7 @@ RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUA
 
       expect(
         host.resolve_scheduled_mutation_command(project, user, "ruby")
-      ).to eq('bundle exec mutant run --include-subject app/models/user\ profile.rb --jobs 1 --results-dir .mutant/results')
+      ).to eq('RAILS_ENV=test bundle exec mutant run --include-subject app/models/user\ profile.rb --jobs 1 --results-dir .mutant/results')
     end
 
     it "strips existing --results-dir and replaces with canonical path" do
@@ -199,7 +199,7 @@ RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUA
 
       expect(
         host.resolve_scheduled_mutation_command(project, user, "ruby")
-      ).to eq("bundle exec mutant run --use rspec --jobs 1 --results-dir .mutant/results")
+      ).to eq("RAILS_ENV=test bundle exec mutant run --use rspec --jobs 1 --results-dir .mutant/results")
     end
 
     it "strips existing equals-form --results-dir=value and replaces with canonical path" do
@@ -214,7 +214,7 @@ RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUA
 
       expect(
         host.resolve_scheduled_mutation_command(project, user, "ruby")
-      ).to eq("bundle exec mutant run --use rspec --jobs 1 --results-dir .mutant/results")
+      ).to eq("RAILS_ENV=test bundle exec mutant run --use rspec --jobs 1 --results-dir .mutant/results")
     end
   end
 end

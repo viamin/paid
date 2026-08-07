@@ -170,7 +170,15 @@ RSpec.describe Database::SafetyBackup do
   end
 
   describe ".dump_env" do
-    it "uses a PostgreSQL-compatible statement_timeout default" do
+    it "uses a PostgreSQL-compatible statement timeout value" do
+      env = described_class.send(:dump_env, primary)
+
+      expect(env.fetch("PGOPTIONS")).to eq("-c statement_timeout=300000")
+    end
+
+    it "strips numeric separators from a configured statement timeout" do
+      allow(ENV).to receive(:fetch).with("DB_DUMP_STATEMENT_TIMEOUT_MS", "300000").and_return("300_000")
+
       env = described_class.send(:dump_env, primary)
 
       expect(env.fetch("PGOPTIONS")).to eq("-c statement_timeout=300000")

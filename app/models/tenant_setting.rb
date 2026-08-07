@@ -420,7 +420,7 @@ class TenantSetting < ApplicationRecord
     return nil if value.nil?
 
     WORKER_SETTING_INTEGER_KEYS.include?(key.to_s) ? value.to_i : value.to_s
-  rescue ActiveRecord::NoDatabaseError, PG::ConnectionBad
+  rescue ActiveRecord::NoDatabaseError, PG::ConnectionBad, ActiveRecord::StatementInvalid
     nil
   end
 

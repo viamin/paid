@@ -3,32 +3,35 @@
 require "rails_helper"
 require Rails.root.join("db/migrate/20260509101016_create_coordination_policies")
 require Rails.root.join("db/migrate/20260704043457_add_idempotency_key_to_evolution_tables")
-
 RSpec.describe CreateCoordinationPolicies, :aggregate_failures do
   self.use_transactional_tests = false
 
   let(:migration) { described_class.new }
+  let(:idempotency_migration) { AddIdempotencyKeyToEvolutionTables.new }
   let(:connection) { ActiveRecord::Base.connection }
 
   around do |example|
-    versions_existed = connection.table_exists?(:coordination_policy_versions)
-    policies_existed = connection.table_exists?(:coordination_policies)
-    migration.down if versions_existed || policies_existed
+    policies_table_existed = connection.table_exists?(:coordination_policies)
+    versions_table_existed = connection.table_exists?(:coordination_policy_versions)
+    idempotency_key_existed = connection.column_exists?(:coordination_policy_versions, :idempotency_key)
+
+    migration.down if policies_table_existed || versions_table_existed
+    clear_schema_metadata!(connection)
 
     example.run
   ensure
-    migration.down if connection.table_exists?(:coordination_policy_versions) || connection.table_exists?(:coordination_policies)
-    if policies_existed || versions_existed
-      migration.up
-      restore_columns_added_by_later_migrations
-    end
+    migration.down if connection.table_exists?(:coordination_policies) || connection.table_exists?(:coordination_policy_versions)
+
+    migration.up if policies_table_existed || versions_table_existed
+    idempotency_migration.up if idempotency_key_existed
+    clear_schema_metadata!(connection)
   end
 
   it "creates the policy catalog and version tables with indexes, comments, and tenant RLS" do
     migration.up
 
-    expect(connection.table_exists?(:coordination_policies)).to be(true)
-    expect(connection.table_exists?(:coordination_policy_versions)).to be(true)
+    expect(table_exists_in_test_schema?("coordination_policies")).to be(true)
+    expect(table_exists_in_test_schema?("coordination_policy_versions")).to be(true)
     expect_policy_schema
     expect_version_schema
     expect_indexes
@@ -41,22 +44,20 @@ RSpec.describe CreateCoordinationPolicies, :aggregate_failures do
     migration.up
     connection.remove_reference(:coordination_policies, :current_version, index: true)
     connection.drop_table(:coordination_policy_versions)
+    clear_schema_metadata!(connection)
 
     expect { migration.down }.not_to raise_error
-    expect(connection.table_exists?(:coordination_policies)).to be(false)
+    expect(table_exists_in_test_schema?("coordination_policies")).to be(false)
   end
 
   private
 
-  # +CreateCoordinationPolicies+ recreates the tables in their original form,
-  # which predates later migrations that added columns production code now
-  # depends on (e.g. +idempotency_key+ on +coordination_policy_versions+, added
-  # by +AddIdempotencyKeyToEvolutionTables+). Re-applying those later migrations
-  # restores the canonical schema so downstream specs see the columns they
-  # expect. Each migration is idempotent (guarded on column/index existence),
-  # so this is safe whether or not the columns are already present.
-  def restore_columns_added_by_later_migrations
-    AddIdempotencyKeyToEvolutionTables.new.up
+  def clear_schema_metadata!(connection)
+    connection.schema_cache.clear!
+    %w[coordination_policies coordination_policy_versions].each do |table_name|
+      connection.schema_cache.clear_data_source_cache!(table_name)
+    end
+    [ CoordinationPolicy, CoordinationPolicyVersion ].each(&:reset_column_information)
   end
 
   def expect_policy_schema
@@ -136,14 +137,14 @@ RSpec.describe CreateCoordinationPolicies, :aggregate_failures do
   end
 
   def table_comment(table_name)
-    connection.select_value("SELECT obj_description('public.#{table_name}'::regclass, 'pg_class')")
+    connection.select_value("SELECT obj_description('#{qualified_table_name(table_name)}'::regclass, 'pg_class')")
   end
 
   def column_comment(table_name, column_name)
     connection.select_value(
       ActiveRecord::Base.sanitize_sql_array([
         <<~SQL.squish,
-          SELECT col_description('public.#{table_name}'::regclass, ordinal_position)
+          SELECT col_description('#{qualified_table_name(table_name)}'::regclass, ordinal_position)
           FROM information_schema.columns
           WHERE table_schema = 'public'
             AND table_name = ?
@@ -163,7 +164,7 @@ RSpec.describe CreateCoordinationPolicies, :aggregate_failures do
           INNER JOIN pg_attrdef d
             ON d.adrelid = a.attrelid
            AND d.adnum = a.attnum
-          WHERE a.attrelid = 'public.#{table_name}'::regclass
+          WHERE a.attrelid = '#{qualified_table_name(table_name)}'::regclass
             AND a.attname = ?
         SQL
         column_name
@@ -172,11 +173,11 @@ RSpec.describe CreateCoordinationPolicies, :aggregate_failures do
   end
 
   def row_level_security_enabled?(table_name)
-    truthy?(connection.select_value("SELECT relrowsecurity FROM pg_class WHERE oid = 'public.#{table_name}'::regclass"))
+    truthy?(connection.select_value("SELECT relrowsecurity FROM pg_class WHERE oid = '#{qualified_table_name(table_name)}'::regclass"))
   end
 
   def row_level_security_forced?(table_name)
-    truthy?(connection.select_value("SELECT relforcerowsecurity FROM pg_class WHERE oid = 'public.#{table_name}'::regclass"))
+    truthy?(connection.select_value("SELECT relforcerowsecurity FROM pg_class WHERE oid = '#{qualified_table_name(table_name)}'::regclass"))
   end
 
   def tenant_policy_present?(table_name)
@@ -187,6 +188,14 @@ RSpec.describe CreateCoordinationPolicies, :aggregate_failures do
         AND tablename = '#{table_name}'
         AND policyname = 'tenant_isolation'
     SQL
+  end
+
+  def table_exists_in_test_schema?(table_name)
+    connection.data_source_exists?(table_name)
+  end
+
+  def qualified_table_name(table_name)
+    "public.#{table_name}"
   end
 
   def truthy?(value)
