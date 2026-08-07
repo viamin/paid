@@ -34,16 +34,7 @@ module CoordinationPolicyEvolution
             candidate = find_existing_version(policy, index)
             next candidate if candidate
 
-            candidate = policy.coordination_policy_versions.create!(
-              version: next_version,
-              status: "draft",
-              rules: candidate_rules(mutation),
-              parameters: candidate_parameters(mutation),
-              metadata: candidate_metadata(mutation),
-              reasoning: mutation.reasoning,
-              llm_prompt: policy_snapshot[:llm_prompt],
-              idempotency_key: candidate_idempotency_key(index)
-            )
+            candidate = policy.coordination_policy_versions.create!(candidate_attributes(mutation, next_version, index))
             next_version += 1
             candidate
           end
@@ -59,15 +50,33 @@ module CoordinationPolicyEvolution
     # version a previous attempt already created for this mutation position
     # instead of inserting a duplicate (#2770).
     def find_existing_version(policy, index)
-      return unless idempotency_key
+      return unless idempotency_key_supported?
 
       policy.coordination_policy_versions.find_by(idempotency_key: candidate_idempotency_key(index))
+    end
+
+    def candidate_attributes(mutation, next_version, index)
+      {
+        version: next_version,
+        status: "draft",
+        rules: candidate_rules(mutation),
+        parameters: candidate_parameters(mutation),
+        metadata: candidate_metadata(mutation),
+        reasoning: mutation.reasoning,
+        llm_prompt: policy_snapshot[:llm_prompt]
+      }.tap do |attributes|
+        attributes[:idempotency_key] = candidate_idempotency_key(index) if idempotency_key_supported?
+      end
     end
 
     def candidate_idempotency_key(index)
       return nil unless idempotency_key
 
       Activities::IdempotencyKey.compute(idempotency_key, index)
+    end
+
+    def idempotency_key_supported?
+      idempotency_key.present? && CoordinationPolicyVersion.column_names.include?("idempotency_key")
     end
 
     def validate_policy_type!

@@ -198,7 +198,7 @@ module Database
           "DB_HOST" => cfg[:host].to_s,
           "DB_USER" => cfg[:username].to_s,
           "DB_PASSWORD" => cfg[:password].to_s,
-          "PGOPTIONS" => "-c statement_timeout=#{ENV.fetch('DB_DUMP_STATEMENT_TIMEOUT_MS', '300000')}"
+          "PGOPTIONS" => "-c statement_timeout=#{ENV.fetch('DB_DUMP_STATEMENT_TIMEOUT_MS', '300000').delete('_')}"
         }
       end
 

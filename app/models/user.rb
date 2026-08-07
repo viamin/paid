@@ -196,21 +196,23 @@ class User < ApplicationRecord
   end
 
   def revoke_account_access!(account)
-    with_lock do
-      membership = account_memberships.find_by(account: account)
-      return false unless membership
+    TenantContext.with_system_access do
+      with_lock do
+        membership = account_memberships.find_by(account: account)
+        return false unless membership
 
-      if account_id == account.id
-        successor_membership = account_memberships.where.not(id: membership.id).order(:id).first
+        if account_id == account.id
+          successor_membership = AccountMembership.where(user_id: id).where.not(id: membership.id).order(:id).first
 
-        if successor_membership
-          update!(account: successor_membership.account)
-          membership.destroy!
+          if successor_membership
+            update!(account: successor_membership.account)
+            membership.destroy!
+          else
+            destroy!
+          end
         else
-          destroy!
+          membership.destroy!
         end
-      else
-        membership.destroy!
       end
     end
 

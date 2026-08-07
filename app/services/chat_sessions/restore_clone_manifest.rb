@@ -42,10 +42,10 @@ module ChatSessions
     end
 
     def restore_entry(entry)
-      project = Project.find_by(id: entry[:project_id])
+      project = project_for_entry(entry)
       return mark_stale(entry, "project_missing", "Project is no longer available") unless project
 
-      resolved = resolve_clone_credential(project)
+      resolved = TenantContext.with(chat_session.account) { resolve_clone_credential(project) }
       return mark_stale(entry, "token_missing", "Project no longer has an active GitHub credential") unless resolved
 
       token = resolved.credential
@@ -66,6 +66,13 @@ module ChatSessions
       mark_stale(entry, "clone_failed", output)
     rescue Docker::Error::DockerError => e
       mark_stale(entry, "clone_failed", redact_clone_output(e.message, token))
+    end
+
+    def project_for_entry(entry)
+      TenantContext.with_system_access do
+        Project.find_by(id: entry[:project_id])
+          &.then { |project| project if project.account_id == chat_session.account_id }
+      end
     end
 
     # Reuses the same credential-resolution path as Tools::CloneProject so a

@@ -20,7 +20,7 @@ taxonomy:
     description: Automated work selection and queueing behavior.
   chat:
     label: Chat
-    description: Interactive chat session behavior and workspace lifecycle.
+    description: Interactive chat session behavior, workspace lifecycle, and mutation tooling.
   catalog:
     label: Catalog
     description: Model and configuration catalog synchronization behavior.
@@ -60,6 +60,12 @@ arrows:
     taxonomy: automation
     status: OK
     audited: 2026-08-01
+  chat-pr-proposal:
+    title: Chat PR Proposal
+    path: docs/intent/chat-pr-proposal/chat-pr-proposal-design.md
+    specs: docs/intent/chat-pr-proposal/chat-pr-proposal-specs.md
+    parent: PAID
+    taxonomy: chat
   repo-secret-scan:
     title: Repo Secret Scan
     path: docs/intent/repo-secret-scan/repo-secret-scan-design.md

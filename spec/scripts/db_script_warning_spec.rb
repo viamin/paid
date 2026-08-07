@@ -53,6 +53,27 @@ RSpec.describe DbScriptWarning do
     end
   end
 
+  it "fails when db-restore cannot disable user triggers before restore" do
+    Dir.mktmpdir("db-script-spec", exec_tmpdir) do |dir|
+      script_path = prepare_script_fixture(dir, "db-restore")
+      write_stub(dir, "docker", docker_stub)
+      write_stub(dir, "pg_restore", "#!/bin/sh\nexit 0\n")
+      write_stub(dir, "psql", db_restore_disable_trigger_psql_stub)
+
+      backup_path = File.join(dir, "backups", "sample.dump")
+      File.write(backup_path, "backup")
+
+      env = base_env(dir)
+      stdout, stderr, status = Open3.capture3(env, script_path, "sample.dump", chdir: dir)
+
+      expect(status.success?).to be(false), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(stdout).not_to include("Restore complete")
+      expect(stderr).to include("disable trigger failed")
+      expect(stderr).to include("WARNING: failed to disable triggers on widgets")
+      expect(stderr).to include("Cleaning up after error")
+    end
+  end
+
   it "fails when db-regenerate cannot re-enable RLS before completion" do
     Dir.mktmpdir("db-script-spec", exec_tmpdir) do |dir|
       script_path = prepare_script_fixture(dir, "db-regenerate")
@@ -154,7 +175,7 @@ RSpec.describe DbScriptWarning do
         *"rowsecurity = true"*)
           echo "widgets"
           ;;
-        *"ENABLE TRIGGER ALL"*)
+        *"ENABLE TRIGGER USER"*)
           echo "enable trigger failed" >&2
           exit 1
           ;;
@@ -164,6 +185,26 @@ RSpec.describe DbScriptWarning do
           ;;
         *"FORCE ROW LEVEL SECURITY"*)
           echo "force failed" >&2
+          exit 1
+          ;;
+      esac
+    SH
+  end
+
+  def db_restore_disable_trigger_psql_stub
+    <<~SH
+      #!/bin/sh
+      args="$*"
+
+      case "$args" in
+        *"tablename NOT IN ('ar_internal_metadata', 'schema_migrations')"*)
+          echo "widgets"
+          ;;
+        *"rowsecurity = true"*)
+          echo "widgets"
+          ;;
+        *"DISABLE TRIGGER USER"*)
+          echo "disable trigger failed" >&2
           exit 1
           ;;
       esac
