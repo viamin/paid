@@ -353,27 +353,47 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
 
     before do
       allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: true)
+      allow(workflow).to receive(:run_activity) do |klass, _input, **_opts|
+        case klass.name
+        when "Activities::CreateAgentRunActivity"
+          { agent_run_id: 42, focus: "general", runner_attempt_count: 1,
+            agent_timeout_seconds: 3600, issue_goal_timeout_seconds: 600 }
+        when "Activities::RunAgentActivity"
+          { agent_run_id: 42, success: true, has_changes: false }
+        when "Activities::EnhanceIssueActivity" then { agent_run_id: 42, success: true }
+        else {}
+        end
+      end
     end
 
-    it "runs EnhanceIssueActivity without provisioning or running an agent container" do
-      allow(workflow).to receive(:run_activity) do |activity_class, _input, **_opts|
-        case activity_class.name
-        when "Activities::CreateAgentRunActivity" then { agent_run_id: 42 }
-        when "Activities::EnhanceIssueActivity" then { agent_run_id: 42, success: true }
+    it "runs EnhanceIssueActivity in post-run mode after container provisioning" do
+      result = workflow.execute(input)
+      expect(result).to eq(success: true, agent_run_id: 42)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::EnhanceIssueActivity, { agent_run_id: 42, post_run: true },
+          start_to_close_timeout: 300, retry_policy: described_class::NO_RETRY)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::ProvisionContainerActivity, anything, any_args)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::RunAgentActivity, anything, any_args)
+    end
+
+    it "propagates sufficient_context from EnhanceIssueActivity into the workflow result" do
+      allow(workflow).to receive(:run_activity) do |klass, _input, **_opts|
+        case klass.name
+        when "Activities::CreateAgentRunActivity"
+          { agent_run_id: 42, focus: "general", runner_attempt_count: 1,
+            agent_timeout_seconds: 3600, issue_goal_timeout_seconds: 600 }
+        when "Activities::RunAgentActivity"
+          { agent_run_id: 42, success: true, has_changes: false }
+        when "Activities::EnhanceIssueActivity"
+          { agent_run_id: 42, success: true, sufficient_context: true }
         else {}
         end
       end
 
       result = workflow.execute(input)
-
-      expect(result).to eq(success: true, agent_run_id: 42)
-      expect(workflow).to have_received(:run_activity)
-        .with(Activities::EnhanceIssueActivity, { agent_run_id: 42 },
-          start_to_close_timeout: 300, retry_policy: described_class::NO_RETRY)
-      expect(workflow).not_to have_received(:run_activity)
-        .with(Activities::ProvisionContainerActivity, anything, any_args)
-      expect(workflow).not_to have_received(:run_activity)
-        .with(Activities::RunAgentActivity, anything, any_args)
+      expect(result).to eq(success: true, agent_run_id: 42, sufficient_context: true)
     end
   end
 
