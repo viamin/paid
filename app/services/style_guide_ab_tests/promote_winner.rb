@@ -14,6 +14,7 @@ module StyleGuideAbTests
       new(...).promote
     end
 
+    # @spec STYLE-GUIDE-EVOLUTION-014
     def promote
       validate!
 

@@ -36,6 +36,7 @@ RSpec.describe StyleGuideEvolution::Mutate do
     )
   end
 
+  # @spec STYLE-GUIDE-EVOLUTION-007
   it "redacts the style guide content before sending it to the LLM" do
     sent_prompt = nil
     allow(Knowledge::Redaction::Redactor).to receive(:call)
@@ -53,6 +54,7 @@ RSpec.describe StyleGuideEvolution::Mutate do
     expect(sent_prompt).not_to include(source_content)
   end
 
+  # @spec STYLE-GUIDE-EVOLUTION-007
   it "drops oversized generated mutations" do
     oversized = "x" * (described_class::MAX_GENERATED_TEMPLATE_LENGTH + 1)
     allow(response).to receive(:output).and_return(

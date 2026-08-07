@@ -14,6 +14,7 @@ module StyleGuideAbTests
       new(...).analyze
     end
 
+    # @spec STYLE-GUIDE-EVOLUTION-013
     def analyze
       variants = style_guide_ab_test.style_guide_ab_test_variants.order(:id).to_a
       control = variants.find(&:is_control)

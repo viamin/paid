@@ -5,6 +5,7 @@ class StyleGuideEvolutionJob < ApplicationJob
 
   SAMPLE_DAYS = StyleGuideEvolution::SampleRuns::DEFAULT_DAYS
 
+  # @spec STYLE-GUIDE-EVOLUTION-009
   def perform(project_id: nil, style_guide_id: nil, sample_days: SAMPLE_DAYS)
     eligible_style_guides(project_id:, style_guide_id:, sample_days:).find_each do |style_guide|
       Paid.temporal_client.start_workflow(

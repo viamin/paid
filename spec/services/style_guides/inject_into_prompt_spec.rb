@@ -128,6 +128,7 @@ RSpec.describe StyleGuides::InjectIntoPrompt do
         expect(result).not_to include("Other Guide")
       end
 
+      # @spec STYLE-GUIDE-EVOLUTION-003
       it "records run exposures when an agent run is provided" do
         guide = create(:style_guide, account: account, project: nil, name: "Account Guide", raw_content: "Account rules")
 
@@ -139,6 +140,7 @@ RSpec.describe StyleGuides::InjectIntoPrompt do
         expect(exposure.injected_via).to eq("Spec")
       end
 
+      # @spec STYLE-GUIDE-EVOLUTION-004
       it "uses an assigned style-guide A/B test variant and records the assignment" do
         guide = create(:style_guide, account: account, project: nil, name: "Account Guide", raw_content: "Control rules")
         variant_version = create(:style_guide_version,

@@ -27,6 +27,7 @@ module StyleGuideEvolution
       @strategies = Array(raw_strategies) & STRATEGIES
     end
 
+    # @spec STYLE-GUIDE-EVOLUTION-007
     def mutate
       response = AgentHarness.send_message(
         build_prompt,

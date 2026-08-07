@@ -4,6 +4,7 @@ module Workflows
   class StyleGuideEvolutionWorkflow < BaseWorkflow
     AB_TEST_TIMEOUT = 30
 
+    # @spec STYLE-GUIDE-EVOLUTION-010
     def execute(input)
       style_guide_id = input[:style_guide_id]
       project_id = input[:project_id]

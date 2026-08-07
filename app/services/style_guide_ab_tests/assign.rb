@@ -13,6 +13,7 @@ module StyleGuideAbTests
       new(...).assign
     end
 
+    # @spec STYLE-GUIDE-EVOLUTION-005
     def assign
       raise ArgumentError, "A/B test is not running" unless style_guide_ab_test.running?
 

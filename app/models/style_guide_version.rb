@@ -53,12 +53,14 @@ class StyleGuideVersion < ApplicationRecord
 
   private
 
+  # @spec STYLE-GUIDE-EVOLUTION-001
   def immutable_content_after_creation
     return unless (changes.keys & IMMUTABLE_ATTRIBUTES).any?
 
     errors.add(:base, "style guide version content fields are immutable after creation")
   end
 
+  # @spec STYLE-GUIDE-EVOLUTION-002
   def parent_version_belongs_to_style_guide
     return if parent_version.nil?
     return if parent_version.style_guide_id == style_guide_id

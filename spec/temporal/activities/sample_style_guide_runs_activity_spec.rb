@@ -49,6 +49,7 @@ RSpec.describe Activities::SampleStyleGuideRunsActivity do
         end
       end
 
+      # @spec STYLE-GUIDE-EVOLUTION-006
       it "returns the current version as an evolution candidate" do
         result = activity.execute(input)
 

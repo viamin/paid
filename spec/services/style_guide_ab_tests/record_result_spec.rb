@@ -58,6 +58,7 @@ RSpec.describe StyleGuideAbTests::RecordResult do
     control_variant.update!(sample_count: 1, total_quality_score: score, avg_quality_score: score)
   end
 
+  # @spec STYLE-GUIDE-EVOLUTION-011
   it "updates an existing score and adjusts aggregates when update_existing is true" do
     record_result(0.8)
     record_result(0.6, update_existing: true)
