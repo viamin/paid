@@ -256,7 +256,19 @@ class ProcessRunQueueJob < ApplicationJob
         # claim_next_queued_run returns nil if another process claimed or
         # transitioned this run between peek and claim. Skip it and continue
         # processing the queue rather than stopping entirely.
-        agent_run = AgentRun.claim_next_queued_run(target_id: next_run.id)
+        begin
+          agent_run = AgentRun.claim_next_queued_run(target_id: next_run.id)
+        rescue ActiveRecord::RecordInvalid => e
+          # The run is in a state that can never pass validation (e.g. an
+          # agent_type that drifted out of AGENT_TYPES), so claiming it — which
+          # calls update! and re-validates — raises RecordInvalid. Force-fail it
+          # so it leaves the queue instead of stalling every dispatch tick
+          # behind one unclaimable run.
+          force_fail_run(next_run, error: "Unclaimable run: #{e.record.errors.full_messages.to_sentence}")
+          skipped_ids.add(next_run.id)
+          next
+        end
+
         unless agent_run
           skipped_ids.add(next_run.id)
           next
