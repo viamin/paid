@@ -1072,7 +1072,7 @@ RSpec.describe Activities::RunAgentActivity do
 
       expect(prompt).to include(base_prompt)
       expect(prompt).not_to include("## Codebase Context")
-      expect(prompt).to include("Only add a comment to issue ##{issue.github_number}")
+      expect(prompt).to include("Read issue ##{issue.github_number}")
     end
   end
 

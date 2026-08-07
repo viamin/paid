@@ -3704,12 +3704,16 @@ module Activities
         -H "X-Proxy-Token: $PROXY_TOKEN"
       ```
 
-      When you are finished, produce ONLY a valid JSON object on stdout (no surrounding text or markdown fences):
+      When you are finished, print your result on stdout wrapped between
+      delimiter lines (exactly `paid-enhance-issue-output` on its own line,
+      before and after the JSON). Print nothing else between the markers:
 
+      paid-enhance-issue-output
       {
         "sufficient_context": true or false,
         "comment_body": "Markdown comment with implementation context or clarifying questions"
       }
+      paid-enhance-issue-output
 
       If sufficient_context is true, the comment_body should include:
       ## Implementation context

@@ -122,7 +122,6 @@ The enhancement flow itself does not create LID artifacts. It captures and
 surfaces intent; the later `create_pr` run materializes that intent when the
 project's LID mode says it should.
 
-
 ## Containerized, read-only execution (RDR-052)
 
 As of RDR-052 Phase 1, `enhance_issue` runs as a **containerized agent with

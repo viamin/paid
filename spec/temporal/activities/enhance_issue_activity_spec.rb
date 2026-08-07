@@ -720,5 +720,103 @@ RSpec.describe Activities::EnhanceIssueActivity do
         expect_comment_including("## Implementation context")
       end
     end
+
+    # @spec ISSUE-ENHANCEMENT-006
+    context "when running in post-run mode (containerized agent)" do
+      def structured_output
+        {
+          sufficient_context: true,
+          comment_body: "## Implementation context\n### Relevant files and symbols\n- `app/models/audit_log.rb`"
+        }.to_json
+      end
+
+      def delimiter
+        described_class::OUTPUT_DELIMITER
+      end
+
+      def log_agent_stdout(chunks)
+        chunks.each { |chunk| agent_run.log!("stdout", chunk) }
+      end
+
+      def delimiter_wrapped(json)
+        "#{delimiter}\n#{json}\n#{delimiter}"
+      end
+
+      it "parses delimited JSON that spans multiple stdout chunks" do
+        json = structured_output
+        mid = json.length / 2
+        log_agent_stdout([
+          "Exploring repo...\n",
+          "#{delimiter}\n#{json[0...mid]}",
+          "#{json[mid..]}\n#{delimiter}\n",
+          "runner trailing line\n"
+        ])
+
+        result = activity.execute(agent_run_id: agent_run.id, post_run: true)
+
+        expect(result[:sufficient_context]).to be true
+        expect_comment_including(described_class::COMMENT_MARKER, "## Implementation context")
+        expect(issue.reload.paid_state).to eq("completed")
+      end
+
+      it "parses delimited JSON even when runner logs output after the markers" do
+        log_agent_stdout([ delimiter_wrapped(structured_output), "\nrunner noise after result\n" ])
+
+        result = activity.execute(agent_run_id: agent_run.id, post_run: true)
+
+        expect(result[:sufficient_context]).to be true
+        expect_comment_including("## Implementation context")
+      end
+
+      it "parses undelimited JSON as a backward-compatible fallback" do
+        log_agent_stdout([ structured_output ])
+
+        result = activity.execute(agent_run_id: agent_run.id, post_run: true)
+
+        expect(result[:sufficient_context]).to be true
+      end
+
+      it "raises a non-retryable error instead of posting garbled output when stdout is unparseable" do
+        log_agent_stdout([ "not valid json at all {{{" ])
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id, post_run: true)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+          expect(error.type).to eq("EnhanceIssueUnparseableOutput")
+          expect(error.non_retryable).to be(true)
+        }
+
+        expect(client).not_to have_received(:add_comment)
+        expect(issue.reload.paid_state).to eq("in_progress")
+      end
+
+      it "raises a non-retryable error when no stdout was captured" do
+        expect {
+          activity.execute(agent_run_id: agent_run.id, post_run: true)
+        }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+          expect(error.type).to eq("EnhanceIssueUnparseableOutput")
+        }
+
+        expect(client).not_to have_received(:add_comment)
+      end
+
+      it "builds the context bundle for observability even though the agent explored the repo" do
+        log_agent_stdout([ delimiter_wrapped(structured_output) ])
+
+        activity.execute(agent_run_id: agent_run.id, post_run: true)
+
+        expect(Knowledge::ContextBundle::Build).to have_received(:call).with(
+          issue: issue, project: project, agent_run: agent_run, agent_run_id: agent_run.id
+        )
+      end
+
+      it "does not invoke the direct LLM path" do
+        log_agent_stdout([ delimiter_wrapped(structured_output) ])
+
+        activity.execute(agent_run_id: agent_run.id, post_run: true)
+
+        expect(AgentHarness).not_to have_received(:send_message)
+      end
+    end
   end
 end

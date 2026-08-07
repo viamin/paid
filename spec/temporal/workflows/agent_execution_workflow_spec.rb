@@ -377,6 +377,24 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
       expect(workflow).to have_received(:run_activity)
         .with(Activities::RunAgentActivity, anything, any_args)
     end
+
+    it "propagates sufficient_context from EnhanceIssueActivity into the workflow result" do
+      allow(workflow).to receive(:run_activity) do |klass, _input, **_opts|
+        case klass.name
+        when "Activities::CreateAgentRunActivity"
+          { agent_run_id: 42, focus: "general", runner_attempt_count: 1,
+            agent_timeout_seconds: 3600, issue_goal_timeout_seconds: 600 }
+        when "Activities::RunAgentActivity"
+          { agent_run_id: 42, success: true, has_changes: false }
+        when "Activities::EnhanceIssueActivity"
+          { agent_run_id: 42, success: true, sufficient_context: true }
+        else {}
+        end
+      end
+
+      result = workflow.execute(input)
+      expect(result).to eq(success: true, agent_run_id: 42, sufficient_context: true)
+    end
   end
 
   describe "quality gate" do

@@ -9,6 +9,12 @@ module Activities
     activity_name "EnhanceIssue"
 
     COMMENT_MARKER = "<!-- paid:enhance-issue -->"
+    # The containerized agent wraps its JSON result between two
+    # OUTPUT_DELIMITER lines so the parser can anchor on it even when the
+    # runner interleaves its own log output. Kept in sync with the
+    # FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT and the goal.enhance_issue seed.
+    OUTPUT_DELIMITER = "paid-enhance-issue-output"
+    STDOUT_TAIL_CHUNKS = 50
     MAX_SEARCH_RESULTS = 10
     MAX_COMMENTS = 50
     MAX_COMMENT_BODY = 50_000
@@ -72,7 +78,8 @@ module Activities
       return complete_existing(agent_run, client, project, issue, existing_comment) if existing_comment && issue.enhance_issue_rounds.zero?
 
       parsed = parse_agent_output!(agent_run)
-      finish_enhance_issue(agent_run, project, issue, client, parsed, {})
+      context = post_run_context(agent_run, project, issue)
+      finish_enhance_issue(agent_run, project, issue, client, parsed, context)
     end
 
     # Shared post-parse logic: build comment, post, apply labels, complete run.
@@ -111,31 +118,55 @@ module Activities
       }
     end
 
-    # Reads the agent's structured JSON output from run logs and parses it.
-    # The agent (run via RunAgentActivity) writes a JSON object to stdout
-    # with :sufficient_context and :comment_body keys.
+    # Reads the agent's structured JSON output from the run logs and parses it.
+    # The agent (run via RunAgentActivity) emits its JSON between
+    # OUTPUT_DELIMITER lines so it survives runner log noise and chunking.
+    # @spec ISSUE-ENHANCEMENT-006
     def parse_agent_output!(agent_run)
-      raw = agent_run.agent_run_logs.stdout.recent.limit(1).pick(:content)
-      return fallback_parsed(agent_run) if raw.blank?
+      raw = collect_agent_stdout(agent_run)
+      raise_parse_error!(agent_run, "no structured output captured") if raw.blank?
 
-      parsed = JSON.parse(strip_markdown_fence(raw.to_s.strip), symbolize_names: true)
+      parsed = JSON.parse(strip_markdown_fence(extract_json_payload(raw)), symbolize_names: true)
       return parsed if parsed.key?(:sufficient_context) && parsed[:comment_body].present?
 
-      raise JSON::ParserError, "missing sufficient_context or comment_body"
+      raise_parse_error!(agent_run, "missing sufficient_context or comment_body")
     rescue JSON::ParserError => e
-      agent_run.log!("stderr", "Failed to parse agent output: #{e.message}")
-      fallback_parsed(agent_run)
+      raise_parse_error!(agent_run, e.message)
     end
 
-    # Fallback when the agent output cannot be parsed as structured JSON.
-    # Posts the raw output as a comment with a needs-input marker so the issue
-    # re-enters the enhancement loop rather than silently failing.
-    def fallback_parsed(agent_run)
-      raw = agent_run.agent_summary(limit: 2000)
-      {
-        sufficient_context: false,
-        comment_body: raw.presence || "Enhancement completed but no structured output was produced."
-      }
+    # Concatenates the recent stdout chunks in chronological order. The runner
+    # logs stdout per chunk (Containers::Provision#log_output), so the agent's
+    # delimited JSON can span several chunks.
+    def collect_agent_stdout(agent_run)
+      agent_run.agent_run_logs.stdout.recent.limit(STDOUT_TAIL_CHUNKS).pluck(:content).reverse.join
+    end
+
+    # Extracts the JSON payload from concatenated stdout. The agent prompt
+    # wraps its JSON between OUTPUT_DELIMITER lines; if no delimiter is
+    # present the whole tail is treated as the payload.
+    def extract_json_payload(raw)
+      match = raw.match(/#{Regexp.escape(OUTPUT_DELIMITER)}\s*(.*?)\s*#{Regexp.escape(OUTPUT_DELIMITER)}/m)
+      match ? match[1].strip : raw.strip
+    end
+
+    # Fail loudly rather than posting garbled agent output as an enhancement
+    # comment. A non-retryable error surfaces the problem for investigation
+    # without marking the issue enhanced with unparseable content.
+    def raise_parse_error!(agent_run, detail)
+      agent_run.log!("stderr", "Failed to parse agent output: #{detail}")
+      raise Temporalio::Error::ApplicationError.new(
+        "EnhanceIssue agent produced unparseable structured output: #{detail}",
+        type: "EnhanceIssueUnparseableOutput",
+        non_retryable: true
+      )
+    end
+
+    # The containerized agent explored the repo directly, so the activity does
+    # not re-run a knowledge search for prompt context. It still builds the
+    # context bundle so the bundle/section observability metrics stay populated.
+    def post_run_context(agent_run, project, issue)
+      bundle = context_bundle(agent_run, project, issue)
+      { bundle_sections: bundle[:sections], bundle_tokens: bundle[:total_tokens] }
     end
 
     def complete_existing(agent_run, client, project, issue, existing_comment)
