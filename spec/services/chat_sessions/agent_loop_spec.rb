@@ -215,6 +215,27 @@ RSpec.describe ChatSessions::AgentLoop do
         end.new
       end
 
+      let(:issue_client) do
+        Class.new do
+          def initialize(responses)
+            @responses = responses
+            @index = 0
+          end
+
+          def call(_conversation, tools: nil)
+            @index += 1
+            @responses.fetch(@index - 1)
+          end
+        end.new([
+          {
+            content: "I'll file a new issue.",
+            tool_calls: [ { id: "issue_call", name: "create_issue", arguments: { "project_id" => 1, "title" => "Bug" } } ],
+            tokens_input: 40, tokens_output: 15, model: "gpt-4o"
+          },
+          { content: "Filed.", tool_calls: [], tokens_input: 4, tokens_output: 2, model: "gpt-4o" }
+        ])
+      end
+
       before do
         allow(Tools::Registry).to receive(:chat_definitions_for).with(user: user, session: anything).and_return(tool_definitions)
         allow(Tools::Registry).to receive(:dispatch).and_return({ "id" => 99, "status" => "queued" })
@@ -241,6 +262,25 @@ RSpec.describe ChatSessions::AgentLoop do
         approved = chat_session.messages.find_by(tool_status: "approved")
         expect(approved.tool_name).to eq("trigger_agent_run")
         expect(chat_session.messages.find_by(role: "tool").tool_result).to eq({ "id" => 99, "status" => "queued" })
+      end
+
+      # @spec CHAT-TOOL-CONFIRMATION-002
+      it "auto-approves reversible GitHub issue writes like filing a new issue" do
+        allow(Tools::Registry).to receive(:dispatch).and_return({ "number" => 7, "url" => "https://example/7" })
+
+        result = described_class.new(chat_session: chat_session, llm_client: issue_client).run
+
+        expect(result).to be_present
+        expect(Tools::Registry).to have_received(:dispatch).with(
+          hash_including(
+            name: "create_issue",
+            arguments: hash_including("confirmed" => true, "title" => "Bug"),
+            user: user,
+            session: chat_session
+          )
+        )
+        expect(chat_session.messages.where(tool_status: "pending")).not_to exist
+        expect(chat_session.messages.find_by(tool_status: "approved").tool_name).to eq("create_issue")
       end
 
       it "still requires a manual confirmation for write tools outside the auto-approve allowlist" do
