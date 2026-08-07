@@ -8,12 +8,23 @@
 - **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: Medium
-- **Related Issues**: N/A (future enhancement)
+- **Related Issues**: #3174 (closeout audit)
 - **Related RDRs**: RDR-007 (Agent Abstraction), RDR-014 (Learned Orchestration), RDR-015 (End-to-End Optimization)
 
 ## Implementation Status
 
-Implemented with follow-up gaps. Paid has coordination policy/version models, orchestration decision logging, decomposition and recovery policy services, coordination policy evolution workflows, coordination experiments, runtime parallelism policy hooks, and decision metrics. Scheduled coordination policy evolution and experiment-to-policy promotion are not yet wired as production automation.
+Implemented. The shipped acceptance scope covers coordination policy and policy-version models, orchestration and decomposition decision logging, the decomposition, failure-recovery, and escalation decision services, coordination experiments, runtime parallelism policy hooks, and decision metrics.
+
+Scheduled coordination policy evolution and experiment resolution are wired as production automation:
+
+- `CoordinationPolicyEvolutionJob` runs on a weekly cron (`config/initializers/good_job.rb`) and drives a Temporal workflow that analyzes decision patterns, generates candidate policy versions, and persists draft `CoordinationPolicyVersion` records.
+- `CoordinationExperimentResolutionJob` runs every four hours, evaluates running coordination experiments for promotion readiness via `CoordinationExperiments::PromotionReadiness`, and records the winning variant (highest `avg_coordination_score` that passes all guardrails).
+
+Promotion of a winning experiment variant to the active `CoordinationPolicyVersion` is intentionally a human-review step, not a missing capability. Candidate versions are created with `approval_state: {required: true, status: "pending_review", auto_promote: false}`, and an operator activates the chosen version via `CoordinationPolicy#activate_version!`. This deliberate safety gate keeps a human in the loop on the final policy activation, mirroring the approval model used by prompt evolution.
+
+## 2026-08-04 Closeout
+
+Issue [#3174](https://github.com/viamin/paid/issues/3174) reconciled the "Implemented with follow-up gaps" wording against the shipped code. The previously named gap — "scheduled coordination policy evolution and experiment-to-policy promotion are not yet wired as production automation" — was stale: the scheduled evolution and winner-selection jobs are present and wired, and the final promotion is an intentional human-review gate by design. See the [audit report](audit-report-2026-08-04-rdr-016-rdr-017.md). No follow-up production work is desired; the RDR remains **Implemented**.
 
 ## Problem Statement
 
