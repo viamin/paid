@@ -12,3 +12,22 @@
   `spec/mcp/tools/edit_issue_spec.rb`, `spec/mcp/tools/set_labels_spec.rb`.
   *Code:* `app/mcp/tools/create_issue.rb#perform`,
   `app/mcp/tools/edit_issue.rb#perform`, `app/mcp/tools/set_labels.rb#perform`.
+
+- [x] **CHAT-TOOL-CONFIRMATION-002** - When the per-session auto-approve toggle
+  is enabled, the system SHALL auto-dispatch eligible reversible write tools by
+  injecting `confirmed: true` without showing a confirmation prompt, covering
+  agent-run creation and GitHub issue creation, edits, and label changes, while
+  higher-blast-radius mutations (settings, memberships, API keys, and Change
+  Intent Records) SHALL keep requiring manual approval. Eligibility is declared
+  per tool, not hardcoded by name, so new reversible write tools opt in where the
+  toggle should apply.
+
+  *Tests:* `spec/services/chat_sessions/agent_loop_spec.rb`
+  ("auto-approves reversible GitHub issue writes like filing a new issue",
+  "still requires a manual confirmation for write tools outside the auto-approve
+  allowlist"), `spec/mcp/tools/registry_spec.rb` (`.auto_approve_eligible?`).
+  *Code:* `ChatSessions::AgentLoop#auto_approve_eligible?`,
+  `Tools::Registry.auto_approve_eligible?`,
+  `Tools::BaseTool.auto_approve_eligible?`,
+  `Tools::GithubIssueToolSupport` (ClassMethods),
+  `Tools::TriggerAgentRun.auto_approve_eligible?`.
