@@ -140,18 +140,16 @@ jobs:
           fi
 
       - name: Build assets
-        run: |
-          env -u DATABASE_URL -u CABLE_DATABASE_URL yarn build
-          env -u DATABASE_URL -u CABLE_DATABASE_URL yarn build:css
+        run: yarn build && yarn build:css
 
       - name: Set up database
-        run: env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails db:create db:migrate
+        run: bin/rails db:create db:schema:load
 
       - name: Bootstrap test defaults
-        run: env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails ci:bootstrap_test_defaults
+        run: bin/rails ci:bootstrap_test_defaults
 
       - name: Run system specs
-        run: env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rspec spec/system
+        run: bin/rspec spec/system
 
       - name: Upload failure artifacts
         if: failure()

@@ -10,98 +10,60 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
   workflow_expectations = {
     ".github/workflows/ci.yml" => {
       "test" => {
-        "db_username" => "paid",
-        "db_password" => "paid",
-        "creates_application_role" => true,
-        "database_setup_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails db:create db:migrate",
-        "bootstrap_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails ci:bootstrap_test_defaults"
+        "db_username" => "postgres",
+        "db_password" => "postgres",
+        "creates_application_role" => false
       },
       "performance" => {
-        "db_username" => "paid",
-        "db_password" => "paid",
-        "creates_application_role" => true,
-        "database_setup_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails db:create db:migrate",
-        "bootstrap_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails ci:bootstrap_test_defaults"
+        "db_username" => "postgres",
+        "db_password" => "postgres",
+        "creates_application_role" => false
       }
     },
     ".github/workflows/system_tests.yml" => {
       "system" => {
         "db_username" => "paid",
         "db_password" => "paid",
-        "creates_application_role" => true,
-        "uses_database_url" => true,
-        "asset_build_command" => [
-          "env -u DATABASE_URL -u CABLE_DATABASE_URL yarn build",
-          "env -u DATABASE_URL -u CABLE_DATABASE_URL yarn build:css"
-        ],
-        "database_setup_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails db:create db:migrate",
-        "bootstrap_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails ci:bootstrap_test_defaults",
-        "test_command_snippets" => [ "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rspec spec/system" ]
+        "creates_application_role" => true
       }
     },
     ".github/workflows/pr-screenshots.yml" => {
-        "capture" => {
-          "db_username" => "paid",
-          "db_password" => "paid",
-          "creates_application_role" => true,
-          "uses_database_url" => true,
-          "database_setup_command" => "bin/rails db:create db:schema:load",
-          "bootstrap_command" => "bin/rails ci:bootstrap_test_defaults"
-        }
-      },
-    ".github/workflows/test_prof.yml" => {
-        "profile" => {
-          "db_username" => "paid",
-          "db_password" => "paid",
-          "creates_application_role" => true,
-          "database_setup_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails db:create db:migrate",
-          "bootstrap_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails ci:bootstrap_test_defaults",
-          "test_command_snippets" => [
-            "env -u DATABASE_URL -u CABLE_DATABASE_URL FPROF=1 bin/rspec",
-            "env -u DATABASE_URL -u CABLE_DATABASE_URL FDOC=1 bin/rspec"
-          ]
-        }
-      },
-    ".github/workflows/ephemeral_tests.yml" => {
-        "run-tests" => {
-          "db_username" => "paid",
-          "db_password" => "paid",
-          "creates_application_role" => true,
-          "asset_build_command" => [
-            "env -u DATABASE_URL -u CABLE_DATABASE_URL yarn build",
-            "env -u DATABASE_URL -u CABLE_DATABASE_URL yarn build:css"
-          ],
-          "database_setup_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails db:create db:migrate",
-          "bootstrap_command" => "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails ci:bootstrap_test_defaults",
-          "test_command_snippets" => [ "env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rspec $spec_files" ]
-        }
+      "capture" => {
+        "db_username" => "paid",
+        "db_password" => "paid",
+        "creates_application_role" => true
       }
+    },
+    ".github/workflows/test_prof.yml" => {
+      "profile" => {
+        "db_username" => "postgres",
+        "db_password" => "postgres",
+        "creates_application_role" => false
+      }
+    },
+    ".github/workflows/ephemeral_tests.yml" => {
+      "run-tests" => {
+        "db_username" => "postgres",
+        "db_password" => "postgres",
+        "creates_application_role" => false
+      }
+    }
   }.freeze
 
   workflow_expectations.each do |workflow_path, jobs|
     context workflow_path do
       subject(:workflow) { Psych.safe_load_file(Rails.root.join(workflow_path), aliases: true) }
 
-      def step_by_name(job, name)
-        job.fetch("steps").find { |step| step["name"] == name }
-      end
-
       def expect_application_role_database_url!(job, expectations)
         return unless expectations.fetch("creates_application_role")
 
-        if expectations.fetch("uses_database_url", false)
-          expect(job.fetch("env")).to include(
-            "DATABASE_URL" => "postgres://paid:paid@localhost:5432/paid_test"
-          )
-          expect(job.fetch("env")).not_to have_key("CABLE_DATABASE_URL")
-        else
-          expect(job.fetch("env")).not_to have_key("DATABASE_URL")
-          expect(job.fetch("env")).not_to have_key("CABLE_DATABASE_URL")
-        end
+        expect(job.fetch("env")).to include(
+          "DATABASE_URL" => "postgres://paid:paid@localhost:5432/paid_test"
+        )
       end
 
       def expect_database_yml_connection!(job, expectations)
-        return if expectations.fetch("uses_database_url", false)
+        return if expectations.fetch("creates_application_role")
 
         expect(job.fetch("env")).not_to have_key("DATABASE_URL")
         expect(job.fetch("env")).not_to have_key("CABLE_DATABASE_URL")
@@ -164,36 +126,18 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
           expect(prepare_index).to be < node_index
         end
 
-        it "uses the expected database bootstrap command for #{job_name}" do
+        it "bootstraps a schema-only test database for #{job_name}" do
           job = workflow.fetch("jobs").fetch(job_name)
           setup_step = job.fetch("steps").find { |step| step["name"] == "Set up database" }
 
-          expect(setup_step.fetch("run")).to eq(expectations.fetch("database_setup_command"))
+          expect(setup_step.fetch("run")).to eq("bin/rails db:create db:schema:load")
         end
 
-        it "bootstraps required orchestration defaults after database setup for #{job_name}" do
+        it "bootstraps required orchestration defaults after schema load for #{job_name}" do
           job = workflow.fetch("jobs").fetch(job_name)
           bootstrap_step = job.fetch("steps").find { |step| step["name"] == "Bootstrap test defaults" }
 
-          expect(bootstrap_step.fetch("run")).to eq(expectations.fetch("bootstrap_command"))
-        end
-
-        it "avoids inherited database urls when building assets or running tests for #{job_name}" do
-          job = workflow.fetch("jobs").fetch(job_name)
-
-          if expectations.key?("asset_build_command")
-            build_step = step_by_name(job, "Build assets")
-
-            expect(build_step.fetch("run")).to include(*expectations.fetch("asset_build_command"))
-          end
-
-          next unless expectations.key?("test_command_snippets")
-
-          test_step = job.fetch("steps").find do |step|
-            step["name"]&.start_with?("Run ")
-          end
-
-          expect(test_step.fetch("run")).to include(*expectations.fetch("test_command_snippets"))
+          expect(bootstrap_step.fetch("run")).to eq("bin/rails ci:bootstrap_test_defaults")
         end
       end
 
@@ -212,17 +156,8 @@ RSpec.describe CiDatabaseWorkflowFile, :no_db do
             "DB_USERNAME" => "postgres",
             "DB_PASSWORD" => "postgres"
           )
-          expect(setup_step.fetch("run")).to eq("env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails db:create db:migrate")
+          expect(setup_step.fetch("run")).to eq("bin/rails db:create db:migrate")
           expect(drift_step.fetch("run").strip).to eq("bin/rails db:schema:dump\ngit diff --exit-code db/schema.rb")
-        end
-
-        it "runs the query performance suite through the database.yml test connection flow" do
-          job = workflow.fetch("jobs").fetch("test")
-          performance_step = step_by_name(job, "Run query performance benchmarks")
-
-          expect(performance_step.fetch("run")).to eq(
-            "env -u DATABASE_URL -u CABLE_DATABASE_URL COVERAGE=false bin/rspec spec/performance"
-          )
         end
       end
     end

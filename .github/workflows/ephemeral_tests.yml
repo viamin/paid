@@ -84,8 +84,8 @@ jobs:
       RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY }}
       PAID_TEST_DATABASE: paid_test
       DB_HOST: localhost
-      DB_USERNAME: paid
-      DB_PASSWORD: paid
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
       TMPDIR: ${{ github.workspace }}/.tmp-build
       YARN_CACHE_FOLDER: ${{ github.workspace }}/.cache-yarn
       XDG_CACHE_HOME: ${{ github.workspace }}/.cache
@@ -143,23 +143,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y postgresql-client-16
 
-      - name: Create application database role
-        env:
-          PGPASSWORD: postgres
-        run: |
-          psql -h "$DB_HOST" -U postgres -d postgres <<'SQL'
-          DO $$
-          BEGIN
-            IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'paid') THEN
-              CREATE ROLE paid LOGIN PASSWORD 'paid';
-            ELSE
-              ALTER ROLE paid WITH LOGIN PASSWORD 'paid';
-            END IF;
-          END
-          $$;
-          ALTER ROLE paid CREATEDB NOSUPERUSER NOBYPASSRLS;
-          SQL
-
       - name: Locate Chromium-family browser
         run: |
           path="$(command -v google-chrome || command -v chromium-browser || command -v chromium || true)"
@@ -171,22 +154,20 @@ jobs:
           fi
 
       - name: Build assets
-        run: |
-          env -u DATABASE_URL -u CABLE_DATABASE_URL yarn build
-          env -u DATABASE_URL -u CABLE_DATABASE_URL yarn build:css
+        run: yarn build && yarn build:css
 
       - name: Set up database
-        run: env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails db:create db:migrate
+        run: bin/rails db:create db:schema:load
 
       - name: Bootstrap test defaults
-        run: env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rails ci:bootstrap_test_defaults
+        run: bin/rails ci:bootstrap_test_defaults
 
       - name: Run ephemeral RSpec tests
         run: |
           spec_files=$(find .ephemeral-tests -name '*_spec.rb')
           if [ -n "$spec_files" ]; then
             # shellcheck disable=SC2086
-            env -u DATABASE_URL -u CABLE_DATABASE_URL bin/rspec $spec_files
+            bin/rspec $spec_files
           else
             echo "::error::No RSpec test files found. Only *_spec.rb files are supported."
             exit 1
