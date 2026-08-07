@@ -6,6 +6,7 @@ module Tools
 
     def self.tool_name = "trigger_agent_run"
     def self.write_operation? = true
+    def self.auto_approve_eligible? = true
 
     def self.description
       "Start an agent run on a project. Pass issue_id to target an existing issue. To open a brand-new " \

@@ -132,6 +132,14 @@ module Tools
         find(name)&.confirmation_mode == :post_dispatch
       end
 
+      # Whether the per-session auto-approve toggle may dispatch this tool
+      # without a manual confirmation. Delegates to each tool's own
+      # +auto_approve_eligible?+ declaration (issue #3270).
+      # @spec CHAT-TOOL-CONFIRMATION-002
+      def auto_approve_eligible?(name)
+        find(name)&.auto_approve_eligible? ? true : false
+      end
+
       def resolve_confirmation(name:, decision:, pending_result:, user:, session:)
         registry = registry_for(name)
         raise ArgumentError, "Unknown tool: #{name}" unless registry

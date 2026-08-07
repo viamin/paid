@@ -12,3 +12,16 @@ Each pre-dispatch GitHub issue write tool (`create_issue`, `edit_issue`, and
 before side effects, while approved chat resolutions and explicit MCP clients
 that pass `confirmed: true` can proceed through normal Pundit authorization and
 tool execution.
+
+## Auto-approve eligibility
+
+The per-session "Auto-approve actions" toggle lets a session owner skip the
+manual confirmation click for a scoped set of reversible write tools. Rather
+than hardcoding tool names in the agent loop, each tool declares its own
+`auto_approve_eligible?` (default `false`): `trigger_agent_run` and the GitHub
+issue write tools (`create_issue`, `edit_issue`, `set_labels`) opt in because
+their effects are reversible and scoped to a single repo or run, while
+higher-blast-radius mutations — settings, memberships, API keys, and Change
+Intent Records — keep RDR-028's manual-confirmation default. `confirmed` is
+still injected by the loop on the human's behalf (exactly as a manual approval
+does); it never originates from the model.

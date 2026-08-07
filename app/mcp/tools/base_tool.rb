@@ -69,6 +69,16 @@ module Tools
       :pre_dispatch
     end
 
+    # Whether the per-session "Auto-approve actions" toggle is allowed to
+    # dispatch this write tool without a manual confirmation click. Defaults to
+    # +false+ so RDR-028's manual-confirmation guarantee holds; individual
+    # reversible, low-blast-radius write tools opt in (issue #3270).
+    # Authorization is still re-checked by Pundit at dispatch time, and
+    # +confirmed+ never originates from the model itself.
+    def self.auto_approve_eligible?
+      false
+    end
+
     def self.available_to?(user:)
       user.present?
     end

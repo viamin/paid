@@ -315,6 +315,28 @@ RSpec.describe Tools::Registry do
     end
   end
 
+  describe ".auto_approve_eligible?" do
+    # @spec CHAT-TOOL-CONFIRMATION-002
+    it "opts in reversible write tools (agent runs and GitHub issue writes)" do
+      expect(described_class.auto_approve_eligible?("trigger_agent_run")).to be(true)
+      expect(described_class.auto_approve_eligible?("create_issue")).to be(true)
+      expect(described_class.auto_approve_eligible?("edit_issue")).to be(true)
+      expect(described_class.auto_approve_eligible?("set_labels")).to be(true)
+    end
+
+    it "keeps high-blast-radius write tools requiring manual confirmation" do
+      expect(described_class.auto_approve_eligible?("record_change_intent")).to be(false)
+      expect(described_class.auto_approve_eligible?("update_tenant_settings")).to be(false)
+      expect(described_class.auto_approve_eligible?("invite_account_member")).to be(false)
+      expect(described_class.auto_approve_eligible?("create_provider_api_key")).to be(false)
+    end
+
+    it "returns false for read-only and unknown tools" do
+      expect(described_class.auto_approve_eligible?("get_project")).to be(false)
+      expect(described_class.auto_approve_eligible?("does_not_exist")).to be(false)
+    end
+  end
+
   describe ".dispatch_read_only" do
     it "rejects write tools even when the user is authorized to see them in the full registry" do
       account = create(:account)
