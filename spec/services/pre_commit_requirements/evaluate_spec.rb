@@ -204,8 +204,11 @@ RSpec.describe PreCommitRequirements::Evaluate do # @spec QUALITY-LOOPS-002 # @s
       before do
         allow(project).to receive(:test_languages).and_return(%w[elixir ruby])
         create(:pre_commit_requirement, :mutation_test, account: account, project: project, name: "mutant", failure_behavior: "warn")
+        mutant_command = MutantResultsReader.with_results_dir(
+          "bundle exec mutant run --since HEAD\\~1 --use rspec --jobs 1 --results-dir .mutant/results"
+        )
         allow(agent_run).to receive(:execute_in_container).with(
-          "bundle exec mutant run --since HEAD\\~1 --use rspec --jobs 1 --results-dir .mutant/results",
+          mutant_command,
           stream: false
         ).and_return(success_result)
 
