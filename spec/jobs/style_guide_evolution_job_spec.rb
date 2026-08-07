@@ -69,6 +69,7 @@ RSpec.describe StyleGuideEvolutionJob do
     )
   end
 
+  # @spec STYLE-GUIDE-EVOLUTION-009
   it "starts a workflow for an eligible account-level guide" do
     style_guide = create(:style_guide, account: account, project: nil)
     create_exposure(style_guide: style_guide, project: project)

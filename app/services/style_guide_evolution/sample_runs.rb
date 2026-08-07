@@ -68,6 +68,7 @@ module StyleGuideEvolution
       end
     end
 
+    # @spec STYLE-GUIDE-EVOLUTION-006
     def identify_candidates(stats)
       stats.filter_map do |_id, version_stats|
         next if version_stats[:run_count] < MIN_RUNS_FOR_EVALUATION

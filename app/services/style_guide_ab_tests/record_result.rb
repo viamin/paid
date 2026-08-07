@@ -17,6 +17,7 @@ module StyleGuideAbTests
       new(...).record
     end
 
+    # @spec STYLE-GUIDE-EVOLUTION-011
     def record
       validate_quality_score!
 
@@ -57,6 +58,7 @@ module StyleGuideAbTests
       end
     end
 
+    # @spec STYLE-GUIDE-EVOLUTION-012
     def check_auto_completion
       style_guide_ab_test.reload
       return unless style_guide_ab_test.running?
