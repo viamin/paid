@@ -15,11 +15,22 @@ Automatic PR retries now use one PR-level progress model for both `create_pr` an
 
 ## What resets the stuck state
 
-- A completed `create_pr` run
+- A completed `create_pr` run **whose commit resolved the triggering condition**
+  (a completed `create_pr` that pushed the current head while the head still has
+  unresolved triggers — e.g. failing CI checks — does NOT reset the streak)
 - A completed `review` run or any `review` run that posted a review
 - A new PR head commit
 - `issues.review_goal_retry_reset_at`
 - `issues.operational_failure_reset_at`
+
+### Total follow-up hard gate
+
+In addition to the streak-based escalation, `pr_followup_count` is enforced as a
+hard gate. Once a ready/escalated PR has queued `max_pr_followup_runs` total
+follow-up runs, no additional `create_pr` runs are queued. Ready-phase PRs
+escalate to the owner at that point; escalated PRs simply stop receiving
+follow-ups. This prevents infinite CI-fixing loops where each completed run
+resets the streak without actually resolving the triggering condition (#3271).
 
 Phase transitions by themselves do not reset the streak. Removing the
 `paid-escalated` label also does not clear failures anymore; dismissal just
