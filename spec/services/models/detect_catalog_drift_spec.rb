@@ -136,6 +136,27 @@ RSpec.describe Models::DetectCatalogDrift do
     expect(result.providers).to be_empty
   end
 
+  it "does not flag OpenRouter-synced free models as deprecated" do
+    LlmModel.create!(
+      model_id: "openai/gpt-oss-20b:free",
+      display_name: "GPT OSS 20B Free",
+      provider: "openai",
+      category: "coding",
+      tier: "low",
+      pricing_tier: "free",
+      catalog_source: "openrouter_sync"
+    )
+
+    registry = fake_registry(
+      "openai" => [ reg_model(id: "gpt-5.1", provider: "openai", created_at: nov_2025) ]
+    )
+
+    result = described_class.call(providers: %w[openai], registry: registry)
+
+    expect(result.drift?).to be(false)
+    expect(result.providers).to be_empty
+  end
+
   it "produces a stable fingerprint for the same finding set" do
     registry = fake_registry(
       "openai" => [
