@@ -54,6 +54,19 @@ module AgentRuns
 
       apply_resolution!(runner, resolved_agent_type)
       runner
+    rescue ActiveRecord::RecordInvalid => e
+      # The resolved runner/agent_type failed model validation (e.g. an
+      # agent_type that drifted out of AGENT_TYPES). Persisting it would write
+      # an unclaimable run that later raises RecordInvalid on claim and stalls
+      # the queue. Return nil so the run is parked/skipped like any other
+      # unbindable run instead.
+      Rails.logger.error(
+        message: "bind_runner.invalid_resolution",
+        agent_run_id: agent_run.id,
+        runner_id: runner&.id,
+        error: e.message
+      )
+      nil
     end
 
     private
@@ -68,7 +81,7 @@ module AgentRuns
       updates = { runner_id: runner.id }
       updates[:agent_type] = target_agent_type unless target_agent_type == agent_run.agent_type
 
-      agent_run.update_columns(updates) if updates.any?
+      agent_run.update!(updates) if updates.any?
     end
   end
 end
