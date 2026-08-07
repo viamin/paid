@@ -2406,10 +2406,11 @@ module Containers
 
     def host_config
       binds = []
+      mount_mode = workspace_mount_mode
       if @workspace_volume
-        binds << "#{@workspace_volume}:#{options[:workspace_mount]}:rw"
+        binds << "#{@workspace_volume}:#{options[:workspace_mount]}:#{mount_mode}"
       elsif backend.supports_host_paths? && host_worktree_path.present?
-        binds << "#{host_worktree_path}:#{options[:workspace_mount]}:rw"
+        binds << "#{host_worktree_path}:#{options[:workspace_mount]}:#{mount_mode}"
       end
 
       binds << "#{heartbeat_dir_host}:#{HEARTBEAT_MOUNT_POINT}:rw" if heartbeat_dir_host
@@ -2522,6 +2523,18 @@ module Containers
         "Binds" => binds,
         "NetworkMode" => container_network
       }
+    end
+
+    # Returns the mount mode for the workspace bind.  enhance_issue runs
+    # are read-only (RDR-052) — the agent can explore the repo but cannot
+    # modify files, commit, or push.  All other goals mount read-write.
+    # @spec ISSUE-ENHANCEMENT-006
+    def workspace_mount_mode
+      if agent_run&.enhance_issue_goal?
+        "ro"
+      else
+        "rw"
+      end
     end
 
     # Proxy-mode API key auth uses the restricted paid_agent network.

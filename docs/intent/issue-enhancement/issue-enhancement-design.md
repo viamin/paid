@@ -121,3 +121,29 @@ the code changes that implement them.
 The enhancement flow itself does not create LID artifacts. It captures and
 surfaces intent; the later `create_pr` run materializes that intent when the
 project's LID mode says it should.
+
+## Containerized, read-only execution (RDR-052)
+
+As of RDR-052 Phase 1, `enhance_issue` runs as a **containerized agent with
+repository access** instead of a direct `AgentHarness.send_message` call inside
+the worker process. The agent authenticates via the runner-credential injection
+path (DB-stored credential → container-injected), removing this step's
+dependency on `ANTHROPIC_API_KEY` in the environment.
+
+The run is **read-only**:
+
+- *Structural* — the workspace bind mount uses `:ro` (state/scratch volumes
+  under `/home/agent/` remain writable). See
+  `app/services/containers/provision.rb#workspace_mount_mode`.
+- *Behavioral* — the agent prompt states the workspace is read-only so the
+  agent does not attempt writes that would fail.
+
+The run uses the default shallow clone (`--depth 1`), which is sufficient for
+codebase exploration during enhancement. The existing `<!-- paid:enhance-issue -->`
+marker, needs-input / clarifying-questions flow, and re-evaluation loop are
+unchanged.
+
+After the agent finishes exploring the repo and producing structured output,
+`EnhanceIssueActivity` (post-run mode) reads the agent's JSON output from the
+run logs, builds the comment with the marker, posts it via the GitHub client,
+and applies label state — preserving the existing output contract.

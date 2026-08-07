@@ -76,3 +76,18 @@
   clarifying-question comments exist.
   *Tests:* `spec/services/prompts/build_for_issue_spec.rb`.
   *Code:* `app/services/prompts/build_for_issue.rb#lid_enabled?`.
+
+## Containerized read-only execution (RDR-052)
+
+- [x] **ISSUE-ENHANCEMENT-006** — When issue enhancement runs, the system SHALL
+  execute it as a containerized agent with read-only repository access,
+  authenticating via the injected runner credential instead of the
+  `ANTHROPIC_API_KEY` environment variable. The workspace bind mount SHALL be
+  `:ro` and the agent prompt SHALL state the read-only constraint. The run
+  SHALL produce no file changes, commits, or pushes — only the posted
+  `<!-- paid:enhance-issue -->` comment and label state.
+  *Tests:* `spec/temporal/activities/enhance_issue_activity_spec.rb`.
+  *Code:* `app/temporal/activities/enhance_issue_activity.rb#enhance_issue_post_run`,
+  `app/temporal/workflows/agent_execution_workflow.rb`,
+  `app/services/containers/provision.rb#workspace_mount_mode`,
+  `app/services/orchestration_strategies/defaults.rb#non_container_goals`.
