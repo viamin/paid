@@ -54,6 +54,7 @@ RSpec.describe StyleGuideAbTests::PromoteWinner do
     style_guide_ab_test.update!(winner_variant: winner_variant)
   end
 
+  # @spec STYLE-GUIDE-EVOLUTION-014
   it "promotes the winning version and mirrors its raw content onto the style guide row" do
     described_class.call(style_guide_ab_test: style_guide_ab_test)
 
