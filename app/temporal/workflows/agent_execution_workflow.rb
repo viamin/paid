@@ -148,16 +148,6 @@ module Workflows
           return { success: false, quality_gate_blocked: true, agent_run_id: agent_run_id }
         end
 
-        if goal == "enhance_issue"
-          run_activity(Activities::EnhanceIssueActivity,
-            { agent_run_id: agent_run_id },
-            start_to_close_timeout: 300,
-            retry_policy: NO_RETRY)
-
-          agent_step_succeeded = true
-          return { success: true, agent_run_id: agent_run_id }
-        end
-
         if goal == "analyze_issue"
           result = run_activity(Activities::AnalyzeIssueActivity,
             { agent_run_id: agent_run_id },
@@ -231,7 +221,7 @@ module Workflows
         # Rails app is down (e.g. PendingMigration), the proxy is unreachable
         # and git operations fail. This check polls until the proxy recovers,
         # effectively pausing the workflow until credentials are available.
-        skip_clone = goal.in?(%w[create_issue enhance_issue analyze_issue]) && source_pull_request_number.blank?
+        skip_clone = goal.in?(%w[create_issue analyze_issue]) && source_pull_request_number.blank?
         unless skip_clone
           ensure_proxy_healthy(agent_run_id)
         end
@@ -267,7 +257,7 @@ module Workflows
         # (from CreateAgentRunActivity), plus a small Temporal buffer.
         # Issue goals use a shorter timeout since they only need to create
         # a GitHub issue via curl, not write code.
-        per_runner_timeout = if goal.in?(%w[create_issue enhance_issue analyze_issue])
+        per_runner_timeout = if goal.in?(%w[create_issue analyze_issue])
           issue_goal_timeout_seconds
         else
           agent_timeout_seconds
@@ -300,6 +290,20 @@ module Workflows
         end
 
         agent_step_succeeded = true
+
+        # @spec ISSUE-ENHANCEMENT-006
+        if goal == "enhance_issue"
+          # Containerized enhance_issue: the agent explored the repo and
+          # produced structured JSON output.  EnhanceIssueActivity (post-run
+          # mode) reads the output, posts the comment, and applies labels
+          # (RDR-052 Phase 1).
+          enhance_result = run_activity(Activities::EnhanceIssueActivity,
+            { agent_run_id: agent_run_id, post_run: true },
+            start_to_close_timeout: 300,
+            retry_policy: NO_RETRY)
+
+          return { success: true, agent_run_id: agent_run_id, **enhance_result.slice(:sufficient_context) }
+        end
 
         if goal == "create_issue"
           # Issue goal: check if the agent created an issue via the proxy

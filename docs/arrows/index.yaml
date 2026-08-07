@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-08-04
+last_updated: 2026-08-07
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -30,6 +30,9 @@ taxonomy:
   knowledge:
     label: Knowledge
     description: Intent and decision artifacts captured for reuse by agents.
+  intelligence:
+    label: Agent Intelligence
+    description: Prompt, model, and style-guide behavior that adapts based on run outcomes.
   integrations:
     label: Integrations
     description: External repository and service connectivity behavior.
@@ -261,6 +264,14 @@ arrows:
     taxonomy: operations
     status: OK
     audited: 2026-08-04
+  style-guide-evolution:
+    title: Style Guide Evolution
+    path: docs/intent/style-guide-evolution/style-guide-evolution-design.md
+    specs: docs/intent/style-guide-evolution/style-guide-evolution-specs.md
+    parent: PAID
+    taxonomy: intelligence
+    status: OK
+    audited: 2026-08-07
 
 # Items found during mapping that don't yet belong to a segment.
 # arrow-maintenance cleans this up on each audit.

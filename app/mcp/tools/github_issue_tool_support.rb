@@ -22,6 +22,13 @@ module Tools
       rescue Pundit::NotAuthorizedError
         false
       end
+
+      # GitHub issue mutations (create/edit/label) are reversible and scoped to
+      # a single repo, so they are safe for the per-session auto-approve toggle
+      # (issue #3270). Pundit still authorizes manage_issues? at dispatch time.
+      def auto_approve_eligible?
+        true
+      end
     end
 
     private

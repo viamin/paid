@@ -1675,6 +1675,74 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when a completed create_pr does not resolve the triggering condition (#3271)" do
+      before do
+        project.update!(max_pr_followup_runs: 3)
+      end
+
+      context "when the total followup limit is reached with CI still failing" do
+        before do
+          create(:issue, :pull_request,
+            project: project, github_number: 42,
+            labels: [ "paid-generated", "paid-automation", "paid-ready" ],
+            pr_review_phase: "ready", paid_state: "completed",
+            pr_followup_count: 3)
+          create(:agent_run, :completed,
+            project: project,
+            goal: "create_pr",
+            source_pull_request_number: 42,
+            result_commit_sha: "abc123",
+            base_commit_sha: "abc123",
+            created_at: 1.hour.ago,
+            updated_at: 1.hour.ago,
+            completed_at: 1.hour.ago)
+          stub_github_for_pr(
+            checks: [ { name: "ci", conclusion: "failure" } ],
+            head_committed_at: 30.minutes.ago
+          )
+        end
+
+        it "escalates instead of queuing another create_pr followup" do
+          result = activity.execute(project_id: project.id)
+
+          expect(automation_scan_results(result).size).to eq(1)
+          trigger = automation_scan_results(result).first[:triggers].first
+          expect(trigger[:type]).to eq("escalate_to_owner")
+          expect(trigger[:details]).to include("Follow-up run limit reached")
+        end
+      end
+
+      context "when below the followup limit the streak is not falsely reset" do
+        before do
+          create(:issue, :pull_request,
+            project: project, github_number: 42,
+            labels: [ "paid-generated", "paid-automation", "paid-ready" ],
+            pr_review_phase: "ready", paid_state: "completed",
+            pr_followup_count: 1)
+          create(:agent_run, :completed,
+            project: project,
+            goal: "create_pr",
+            source_pull_request_number: 42,
+            result_commit_sha: "abc123",
+            base_commit_sha: "abc123",
+            created_at: 1.hour.ago,
+            updated_at: 1.hour.ago,
+            completed_at: 1.hour.ago)
+          stub_github_for_pr(
+            checks: [ { name: "ci", conclusion: "failure" } ],
+            head_committed_at: 30.minutes.ago
+          )
+        end
+
+        it "reports a non-zero failure streak since the completed run did not resolve CI" do
+          result = activity.execute(project_id: project.id)
+
+          state = result[:pr_progress_states].first
+          expect(state[:consecutive_unsuccessful_automatic_runs]).to be >= 1
+        end
+      end
+    end
+
     context "when review threads are from untrusted users" do
       before do
         create(:issue, :pull_request,

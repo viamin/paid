@@ -241,18 +241,20 @@ module ChatSessions
     end
 
     # Splits a write-tool batch into tools the per-session auto-approve toggle
-    # covers vs. tools that still require an explicit human confirmation. The
-    # toggle is intentionally scoped to `trigger_agent_run` (issue #2894):
-    # agent-run creation is the workflow's primary reason to want hands-off
-    # approvals, while broader mutations (settings, memberships, API keys,
-    # CIRs, etc.) keep RDR-028's manual-confirmation default so we do not
-    # silently widen the blast radius of a single checkbox.
+    # covers vs. tools that still require an explicit human confirmation.
+    # Eligibility is declared per-tool via `Tools::Registry.auto_approve_eligible?`
+    # (issue #3270): reversible, low-blast-radius mutations such as agent-run
+    # creation and GitHub issue writes opt in, while broader mutations
+    # (settings, memberships, API keys, CIRs, etc.) keep RDR-028's
+    # manual-confirmation default so a single checkbox does not silently widen
+    # their blast radius.
     def partition_auto_approved(write_calls)
       write_calls.partition { |tool_call| auto_approve_eligible?(tool_call[:name]) }
     end
 
+    # @spec CHAT-TOOL-CONFIRMATION-002
     def auto_approve_eligible?(tool_name)
-      chat_session.auto_approve? && tool_name == "trigger_agent_run"
+      chat_session.auto_approve? && Tools::Registry.auto_approve_eligible?(tool_name)
     end
 
     # With auto-approve enabled for a covered tool, the write tool is

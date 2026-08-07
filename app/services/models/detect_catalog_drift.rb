@@ -57,12 +57,15 @@ module Models
 
     # A catalog model is "deprecated" only when the registry loaded healthily
     # for that provider and no longer knows the model; otherwise a degraded
-    # registry fetch would raise false alarms.
+    # registry fetch would raise false alarms. OpenRouter-synced free models are
+    # excluded: they are backed by the OpenRouter catalog (not this registry) and
+    # are deactivated by FreeModels::Sync when OpenRouter retires them, so they
+    # would otherwise always read as "deprecated" here.
     def deprecated_models_for(provider)
       return [] unless @registry.healthy?(provider)
 
       registry_bases = @registry.for_provider(provider).to_set { |model| base_id(model.id) }
-      LlmModel.active.by_provider(provider).pluck(:model_id)
+      LlmModel.active.by_provider(provider).excluding_openrouter_synced_free.pluck(:model_id)
         .reject { |id| registry_bases.include?(base_id(id)) }
         .sort
     end

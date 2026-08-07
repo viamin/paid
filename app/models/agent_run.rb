@@ -16,7 +16,14 @@ class AgentRun < ApplicationRecord
     [ /(Bearer\s)[A-Za-z0-9\-._~+\/]+=*/i, "\\1[REDACTED]" ]
   ].freeze
   STATUSES = %w[queued running paused completed no_output failed cancelled timeout token_budget_exceeded retried auth_expired rate_limited].freeze
-  AGENT_TYPES = %w[claude_code cursor codex copilot gemini opencode kilocode pi api devin factory internal_agent].freeze
+  # Must include every value RunnerSupport.agent_type_for produces for a
+  # container-executable runner key (RunnerSupport::CONTAINER_EXECUTABLE_RUNNER_KEYS),
+  # otherwise dequeue-time runner binding writes an agent_type that can never be
+  # re-validated — poisoning the dispatch queue. The invariant is enforced by
+  # spec/lib/runner_support_spec.rb ("returns a valid agent type for every
+  # container-executable runner key"). When you add a runner key, add its
+  # agent_type here too.
+  AGENT_TYPES = %w[claude_code cursor codex copilot gemini opencode openrouter_free openrouter_pareto kilocode pi omp api devin factory internal_agent].freeze
   FOCUSES = %w[general ci_fix review_feedback merge_conflict conversation issue_implementation label_action].freeze # @spec FOCUSED-RUN-001
   # analyze_issue is automation-only (triggered via Automation::Decision), not exposed in the manual run form.
   GOALS = %w[create_pr create_issue review enhance_issue analyze_issue lid_planning].freeze
@@ -1587,10 +1594,11 @@ class AgentRun < ApplicationRecord
   end
 
   # Whether this run has a cloned git repository in its container.
-  # create_issue, enhance_issue, and analyze_issue goals skip cloning
-  # unless they target an existing PR branch (source_pull_request_number present).
+  # create_issue and analyze_issue goals skip cloning unless they target
+  # an existing PR branch (source_pull_request_number present).
+  # enhance_issue runs containerized with repo access (RDR-052).
   def repo_cloned?
-    return true unless create_issue_goal? || enhance_issue_goal? || analyze_issue_goal?
+    return true unless create_issue_goal? || analyze_issue_goal?
 
     source_pull_request_number.present?
   end

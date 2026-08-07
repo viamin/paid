@@ -3675,14 +3675,14 @@ module Activities
 
       ---
       IMPORTANT: Your goal is to ENHANCE AN EXISTING ISSUE by adding context or asking clarifying questions.
-      Do NOT write code, create PRs, or create new issues.
+      Do NOT write code, create PRs, create new issues, or push commits.
 
-      Read issue #{{issue_number}} in {{repo}} — its description and all comments — then add a SINGLE comment that either:
+      The workspace is READ-ONLY — you can explore and read files but cannot modify them.
+      State directories (under /home/agent/) are writable for scratch/tooling needs.
 
-      1. **Provides implementation context** — relevant files, architecture notes, suggested approach,
-         related patterns — if the issue has enough information to be implemented.
-      2. **Asks specific clarifying questions** — if the issue is ambiguous, missing acceptance criteria,
-         or has unstated constraints that need answers before implementation can begin.
+      Read issue #{{issue_number}} in {{repo}} — its description and all comments.  Explore the repository
+      to self-answer codebase-determinable questions (existing models, platform targets, patterns, etc.)
+      before asking the human.  Only ask about genuine product, scope, or intent ambiguities.
 
       You can search the project's knowledge base to look up existing code,
       symbols, routes, and patterns before asking questions:
@@ -3693,34 +3693,42 @@ module Activities
         -H "X-Proxy-Token: $PROXY_TOKEN"
       ```
 
-      Use this to check whether something already exists in the codebase before
-      asking a clarifying question. If the knowledge base answers your question,
-      provide the answer as implementation context instead.
-
-      Use curl to interact with the GitHub API via the proxy. Write JSON payloads to a temp file to avoid
-      shell quoting issues:
+      Use the GitHub API proxy to read issue details and comments:
 
       ```bash
-      tmpfile=$(mktemp)
-      cat > "$tmpfile" <<'COMMENT_JSON'
-      {
-        "body": "Your comment in markdown"
-      }
-      COMMENT_JSON
-      curl -X POST --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/{{repo}}/issues/{{issue_number}}/comments" \
-        -H "Content-Type: application/json" \
+      curl -s --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/{{repo}}/issues/{{issue_number}}" \
         -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
-        -H "X-Proxy-Token: $PROXY_TOKEN" \
-        --data-binary @"$tmpfile"
-      rm -f "$tmpfile"
+        -H "X-Proxy-Token: $PROXY_TOKEN"
+      curl -s --connect-timeout 10 --max-time 30 "$GITHUB_API_URL/repos/{{repo}}/issues/{{issue_number}}/comments" \
+        -H "X-Agent-Run-Id: $AGENT_RUN_ID" \
+        -H "X-Proxy-Token: $PROXY_TOKEN"
       ```
 
-      Available endpoints:
-      - GET  $GITHUB_API_URL/repos/{{repo}}/issues/{{issue_number}} — get issue details
-      - GET  $GITHUB_API_URL/repos/{{repo}}/issues/{{issue_number}}/comments — list comments
-      - POST $GITHUB_API_URL/repos/{{repo}}/issues/{{issue_number}}/comments — add comment
+      When you are finished, print your result on stdout wrapped between
+      delimiter lines (exactly `paid-enhance-issue-output` on its own line,
+      before and after the JSON). Print nothing else between the markers:
 
-      Do NOT push code, create issues, or create pull requests. Only add a comment to issue #{{issue_number}}.
+      paid-enhance-issue-output
+      {
+        "sufficient_context": true or false,
+        "comment_body": "Markdown comment with implementation context or clarifying questions"
+      }
+      paid-enhance-issue-output
+
+      If sufficient_context is true, the comment_body should include:
+      ## Implementation context
+      ### Relevant files and symbols
+      - ...
+      ### Architecture notes
+      - ...
+      ### Suggested approach
+      - ...
+
+      If sufficient_context is false, the comment_body should include:
+      ## Clarifying questions
+      1. ...
+      ## Current context
+      - ...
     AUGMENTED
 
     def augment_prompt_for_issue_goal(agent_run, prompt)

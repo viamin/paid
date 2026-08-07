@@ -66,6 +66,7 @@ RSpec.describe StyleGuideAbTests::Analyze do
     test_variant.update!(sample_count: scores.size)
   end
 
+  # @spec STYLE-GUIDE-EVOLUTION-013
   it "returns control_wins when every significant difference favors control" do
     add_scores(
       style_guide_ab_test: style_guide_ab_test,

@@ -94,6 +94,7 @@ module StyleGuides
       "## #{guide.name} #{label}\n\n#{content}"
     end
 
+    # @spec STYLE-GUIDE-EVOLUTION-004
     def resolve_guide_version(guide)
       assignment = existing_assignment_for(guide) || assign_running_ab_test_for(guide)
       version = assignment&.style_guide_ab_test_variant&.style_guide_version || guide.current_version
@@ -125,6 +126,7 @@ module StyleGuides
       StyleGuideAbTests::Assign.call(style_guide_ab_test: ab_test, agent_run: agent_run)
     end
 
+    # @spec STYLE-GUIDE-EVOLUTION-003
     def record_exposures!(selected_guides)
       return unless agent_run
 
