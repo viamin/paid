@@ -8,18 +8,31 @@
 - **Status**: Implemented
 - **Type**: Research
 - **Priority**: Low
-- **Related Issues**: N/A (foundational research)
+- **Related Issues**: #3174 (closeout audit)
 - **Related RDRs**: RDR-014 (Learned Orchestration), RDR-015 (End-to-End Optimization)
 
 ## Implementation Status
 
-Implemented with follow-up gaps. Paid records scaling observations, assigns scaling experiments, analyzes scaling behavior, integrates learned allocation into feature orchestration, and uses `Scaling::ResourceAllocator` for dynamic allocation. Confidence interval reporting and a dedicated scaling experiment dashboard are now present. The remaining gap versus the original proposal is statistical ambition: Paid currently uses descriptive confidence intervals, log-log slope intervals, and explicit threshold reporting rather than the full comparative regression suite originally proposed.
+Implemented. The shipped acceptance scope covers scaling observation recording, scaling experiment creation/assignment/result-recording, statistical analysis, dynamic resource allocation, orchestration integration, and a dedicated dashboard:
+
+- Scaling observations, experiments, and assignments (`ScalingObservation`, `ScalingExperiment`, `ScalingExperimentAssignment`).
+- Statistical analysis via `ScalingExperiments::Statistics`, `SummarizeResults`, and `AnalyzeScalingLaw`: Wilson score intervals for rates, normal-approximation intervals for means, log-log slope intervals for scaling exponents, diminishing-returns detection, efficiency scoring, and explicit below-threshold reporting against the 30-sample-per-arm RDR target.
+- Dynamic allocation via `Scaling::ResourceAllocator`, integrated into feature orchestration through Temporal activities.
+- A scaling experiment dashboard that surfaces confidence intervals and documents intentional simplifications.
+
+### Non-Blocking Future Research
+
+The original proposal described a full comparative regression suite — power-law, logarithmic, and linear fits with R²-based model selection, context-segmented comparison, and exponent-weighted Lagrangian allocation. This is explicitly deferred as **non-blocking future research**, not desired production work. The RDR is a Type: Research, Priority: Low record; the descriptive confidence intervals and log-log slope analysis are sufficient for its goal of discovering scaling behavior and informing allocation. The shipped code documents this simplification in place (`ScalingExperiments::AnalyzeScalingLaw#statistical_rigor` and `SummarizeResults#simplifications`) and the dashboard surfaces an "Intentional Simplifications" banner.
 
 ### Current Simplifications
 
 - Confidence intervals use Wilson intervals for rates and normal-approximation intervals for means.
 - Scaling exponent confidence uses a log-log linear fit on aggregated arm summaries rather than the full power-law/logarithmic/linear regression comparison suite.
 - Experiment reporting flags experiments configured below the 30-sample-per-arm RDR target instead of enforcing that threshold retroactively on existing experiments.
+
+## 2026-08-04 Closeout
+
+Issue [#3174](https://github.com/viamin/paid/issues/3174) reconciled the "Implemented with follow-up gaps" wording against the shipped code. The remaining "statistical ambition" gap — the comparative regression suite — is classified as explicitly non-blocking future research for a Low-priority Research RDR, not a blocker or desired production work, so no follow-up issue is required. See the [audit report](audit-report-2026-08-04-rdr-016-rdr-017.md). The RDR remains **Implemented**.
 
 ## Problem Statement
 
