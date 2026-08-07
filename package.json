@@ -21,7 +21,7 @@
     "chart.js": "4.5.1",
     "chartkick": "5.0.1",
     "highlight.js": "11.11.1",
-    "marked": "18.0.7",
+    "marked": "18.0.9",
     "playwright": "1.62.1",
     "sortablejs": "1.15.7",
     "tailwindcss": "4.3.3"
