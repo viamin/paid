@@ -6,12 +6,19 @@ module PullRequests
   # progress or when an explicit reset marker is recorded on the issue.
   #
   # Reset conditions:
-  # - a completed create_pr run
+  # - a completed create_pr run whose commit actually resolved the PR's
+  #   triggering condition (see +current_head_resolved+)
   # - a completed review run or a review run that posted a review
   # - a new PR HEAD commit (when the current head SHA is supplied, and
   #   head-commit time is known for failed runs without result_commit_sha)
   # - issue.review_goal_retry_reset_at
   # - issue.operational_failure_reset_at
+  #
+  # When +current_head_resolved+ is +false+ the caller asserts that the
+  # live PR head still has unresolved triggers (e.g. failing CI checks). In
+  # that state a completed create_pr whose pushed commit IS the current head
+  # did not resolve the triggering condition, so it does NOT count as
+  # meaningful progress and contributes to the failure streak instead (#3271).
   class ProgressState
     GOALS = %w[create_pr review].freeze
     RUN_BATCH_SIZE = 100
@@ -71,12 +78,19 @@ module PullRequests
     # pull request's generic updated_at. Failed runs without result_commit_sha
     # need actual head-commit recency to decide whether a human push
     # superseded them.
-    def initialize(project:, issue:, runs: nil, current_head_sha: nil, current_head_updated_at: nil)
+    #
+    # current_head_resolved communicates whether the live PR head still has
+    # unresolved triggers. When false, a completed create_pr that pushed the
+    # current head is NOT meaningful progress — the triggering condition was
+    # not resolved (#3271).
+    def initialize(project:, issue:, runs: nil, current_head_sha: nil, current_head_updated_at: nil,
+      current_head_resolved: nil)
       @project = project
       @issue = issue
       @runs = runs
       @current_head_sha = current_head_sha
       @current_head_updated_at = current_head_updated_at
+      @current_head_resolved = current_head_resolved
     end
 
     def call
@@ -132,7 +146,8 @@ module PullRequests
 
     private
 
-    attr_reader :project, :issue, :runs, :current_head_sha, :current_head_updated_at
+    attr_reader :project, :issue, :runs, :current_head_sha, :current_head_updated_at,
+      :current_head_resolved
 
     def each_relevant_run(explicit_reset_at:, &block)
       return enum_for(__method__, explicit_reset_at:) unless block
@@ -251,7 +266,22 @@ module PullRequests
     end
 
     def create_pr_progress?(run)
-      run.goal == "create_pr" && run.status == "completed"
+      return false unless run.goal == "create_pr" && run.status == "completed"
+      return false if unresolved_head_run?(run)
+
+      true
+    end
+
+    # When the current PR head still has unresolved triggers, a completed
+    # create_pr that pushed that exact head did not make meaningful progress.
+    # Only applies when the caller has explicitly signalled an unresolved head
+    # (current_head_resolved == false); nil preserves the legacy optimistic
+    # behaviour where any completed create_pr counts as progress.
+    def unresolved_head_run?(run)
+      return false unless current_head_resolved == false
+      return false if current_head_sha.blank? || run.result_commit_sha.blank?
+
+      run.result_commit_sha == current_head_sha
     end
 
     def review_progress?(run)

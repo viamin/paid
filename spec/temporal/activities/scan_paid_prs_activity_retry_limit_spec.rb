@@ -563,10 +563,10 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     it "promotes the head-aware state into the default cache entry" do
       allow(PullRequests::ProgressState).to receive(:call)
-        .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
+        .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil, current_head_resolved: nil)
         .and_return(stale_state)
       allow(PullRequests::ProgressState).to receive(:call)
-        .with(project:, issue:, current_head_sha: "abc123", current_head_updated_at: kind_of(Time))
+        .with(project:, issue:, current_head_sha: "abc123", current_head_updated_at: kind_of(Time), current_head_resolved: nil)
         .and_return(head_aware_state)
 
       expect(activity.send(:pr_progress_state, project, issue)).to eq(stale_state)
@@ -587,10 +587,10 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     it "does not reuse a same-sha cache entry computed before head commit time was known" do
       allow(PullRequests::ProgressState).to receive(:call)
-        .with(project:, issue:, current_head_sha: "abc123", current_head_updated_at: nil)
+        .with(project:, issue:, current_head_sha: "abc123", current_head_updated_at: nil, current_head_resolved: nil)
         .and_return(stale_state)
       allow(PullRequests::ProgressState).to receive(:call)
-        .with(project:, issue:, current_head_sha: "abc123", current_head_updated_at: fetched_at)
+        .with(project:, issue:, current_head_sha: "abc123", current_head_updated_at: fetched_at, current_head_resolved: nil)
         .and_return(head_aware_state)
 
       expect(cached_progress_state(current_head_updated_at: nil)).to eq(stale_state)
@@ -599,10 +599,10 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
     it "promotes a same-sha cache entry into the default slot even before head commit time is known" do
       allow(PullRequests::ProgressState).to receive(:call)
-        .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
+        .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil, current_head_resolved: nil)
         .and_return(stale_state)
       allow(PullRequests::ProgressState).to receive(:call)
-        .with(project:, issue:, current_head_sha: "abc123", current_head_updated_at: nil)
+        .with(project:, issue:, current_head_sha: "abc123", current_head_updated_at: nil, current_head_resolved: nil)
         .and_return(head_aware_state)
 
       expect(activity.send(:pr_progress_state, project, issue)).to eq(stale_state)
@@ -800,7 +800,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       allow(activity).to receive(:active_run_exists?).with(project, issue).and_return(false)
       allow(activity).to receive(:logger).and_return(instance_double(Logger, info: true, warn: true))
       allow(PullRequests::ProgressState).to receive(:call)
-        .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil)
+        .with(project:, issue:, current_head_sha: nil, current_head_updated_at: nil, current_head_resolved: nil)
         .and_return(first_progress_state, second_progress_state)
 
       first_result = activity.execute(project_id: project.id)
@@ -878,6 +878,47 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       allow(activity).to receive(:no_progress_stuck?).with(project, issue, progress_state).and_return(true)
 
       expect(activity.send(:followup_limit_reached?, project, issue, progress_state)).to be(true)
+    end
+  end
+
+  describe "#total_followup_limit_reached?", :no_db do
+    before do
+      stub_const("TotalFollowupProjectStub", Class.new)
+      stub_const("TotalFollowupIssueStub", Class.new)
+    end
+
+    let(:activity) { described_class.new }
+    let(:project) { instance_double(TotalFollowupProjectStub, max_pr_followup_runs: 3) }
+
+    it "returns true when pr_followup_count reaches the limit in ready phase" do
+      issue = instance_double(TotalFollowupIssueStub, pr_review_phase: "ready", pr_followup_count: 3)
+
+      expect(activity.send(:total_followup_limit_reached?, project, issue)).to be(true)
+    end
+
+    it "returns true when pr_followup_count exceeds the limit in escalated phase" do
+      issue = instance_double(TotalFollowupIssueStub, pr_review_phase: "escalated", pr_followup_count: 5)
+
+      expect(activity.send(:total_followup_limit_reached?, project, issue)).to be(true)
+    end
+
+    it "returns false when pr_followup_count is below the limit" do
+      issue = instance_double(TotalFollowupIssueStub, pr_review_phase: "ready", pr_followup_count: 2)
+
+      expect(activity.send(:total_followup_limit_reached?, project, issue)).to be(false)
+    end
+
+    it "returns false in draft phase regardless of count" do
+      issue = instance_double(TotalFollowupIssueStub, pr_review_phase: "draft", pr_followup_count: 99)
+
+      expect(activity.send(:total_followup_limit_reached?, project, issue)).to be(false)
+    end
+
+    it "returns false when the limit is zero (disabled)" do
+      project = instance_double(TotalFollowupProjectStub, max_pr_followup_runs: 0)
+      issue = instance_double(TotalFollowupIssueStub, pr_review_phase: "ready", pr_followup_count: 99)
+
+      expect(activity.send(:total_followup_limit_reached?, project, issue)).to be(false)
     end
   end
 

@@ -135,6 +135,7 @@ module Activities
           end
 
           result = scan_pr(project, client, issue)
+          apply_head_resolution_to_progress_state!(project, issue, result)
           lifecycle_signals = build_lifecycle_signals(project, issue)
           next if result == :skipped
           scanned_count += 1
@@ -343,21 +344,23 @@ module Activities
 
       backfill_review_goal_retry_reset_at!(issue)
 
-      pr_data = nil
-      progress_state = nil
+      check_rate_budget!(client)
+      pr_data = fetch_pr_data(client, project, issue)
+      return :skipped if pr_data.nil?
 
-      if pr_data.nil?
-        check_rate_budget!(client)
-        pr_data = fetch_pr_data(client, project, issue)
-        return :skipped if pr_data.nil?
-      end
-      live_pr_states[issue.id] = { draft: pr_data.draft == true }
+      head_sha = pr_head_sha(pr_data)
+      head_updated_at = pr_head_commit_timestamp(client, project, issue, pr_data)
+      live_pr_states[issue.id] = {
+        draft: pr_data.draft == true,
+        head_sha: head_sha,
+        head_updated_at: head_updated_at
+      }
 
-      progress_state ||= pr_progress_state(
+      progress_state = pr_progress_state(
         project,
         issue,
-        current_head_sha: pr_head_sha(pr_data),
-        current_head_updated_at: pr_head_commit_timestamp(client, project, issue, pr_data)
+        current_head_sha: head_sha,
+        current_head_updated_at: head_updated_at
       )
 
       retry_needed = review_goal_retry_needed?(project, issue, progress_state:)
@@ -698,6 +701,10 @@ module Activities
       return :skipped if triggers.nil?
       return nil if triggers.empty?
 
+      # Hard gate: stop queuing create_pr follow-ups once the total run limit
+      # is hit and escalate instead (#3271).
+      return followup_limit_escalate(issue, project) if total_followup_limit_reached?(project, issue)
+
       log_triggers(project, issue, triggers)
 
       {
@@ -741,14 +748,30 @@ module Activities
         check_actionable_labels(project, issue)
     end
 
-    def followup_limit_escalation(issue, triggers, progress_state: pr_progress_state(issue.project, issue))
-      project = issue.project
-      types_summary = triggers.map { |t| t[:type] }.uniq.join(", ")
-      streak = progress_state.consecutive_unsuccessful_automatic_runs
+    # Hard gate based on the *total* number of create_pr follow-ups queued
+    # for this PR (pr_followup_count), independent of the failure streak.
+    # The streak can be falsely reset by completed create_pr runs that don't
+    # resolve the triggering condition (e.g. a CI-fix run that pushes a commit
+    # but leaves CI red). This gate provides a hard backstop that bounds the
+    # loop regardless (#3271).
+    def total_followup_limit_reached?(project, issue)
+      return false unless issue.pr_review_phase.in?(%w[ready escalated])
+      limit = project.max_pr_followup_runs
+      return false if limit <= 0
+
+      issue.pr_followup_count >= limit
+    end
+
+    def followup_limit_escalate(issue, project)
       escalate_trigger(issue,
-        reason: "Follow-up run limit reached " \
-                "(#{streak}/#{project.max_pr_followup_runs}); " \
-                "unresolved: #{types_summary}")
+        reason: followup_limit_reason(project, issue),
+        reason_key: Issue::PR_ESCALATION_REASON_FAILURE_STREAK)
+    end
+
+    def followup_limit_reason(project, issue)
+      "Follow-up run limit reached " \
+        "(#{issue.pr_followup_count}/#{project.max_pr_followup_runs}); " \
+        "triggering condition remains unresolved"
     end
 
     # --- Escalated phase scanning ---
@@ -781,6 +804,10 @@ module Activities
         pr_data: pr_data, checks: checks, reviews: reviews, unresolved_threads: unresolved_threads)
       return :skipped if triggers.nil?
       return nil if triggers.empty?
+
+      # Hard gate: once the follow-up limit is hit on an escalated PR, stop
+      # queuing additional create_pr runs (#3271).
+      return nil if total_followup_limit_reached?(project, issue)
 
       log_triggers(project, issue, triggers)
 
@@ -1083,7 +1110,8 @@ module Activities
     def merge_conflict_rescan_needed?(project, issue)
       project.auto_fix_merge_conflicts &&
         issue.pr_review_phase.in?(%w[ready escalated]) &&
-        !followup_limit_reached?(project, issue)
+        !followup_limit_reached?(project, issue) &&
+        !total_followup_limit_reached?(project, issue)
     end
 
     def scan_merge_conflict_only(project, client, issue)
@@ -1121,11 +1149,12 @@ module Activities
         .exists?
     end
 
-    def pr_progress_state(project, issue, current_head_sha: nil, current_head_updated_at: nil)
+    def pr_progress_state(project, issue, current_head_sha: nil, current_head_updated_at: nil,
+      current_head_resolved: nil)
       @pr_progress_states ||= {}
       cache = (@pr_progress_states[issue.id] ||= {})
       cache_key = if current_head_sha.present?
-        [ current_head_sha, current_head_updated_at ]
+        [ current_head_sha, current_head_updated_at, current_head_resolved ]
       else
         :default
       end
@@ -1133,7 +1162,8 @@ module Activities
         project:,
         issue:,
         current_head_sha:,
-        current_head_updated_at:
+        current_head_updated_at:,
+        current_head_resolved:
       )
       # Once we know the live PR head SHA, promote that result to the default
       # cache entry so later callers in the same scan don't reuse a stale
@@ -1164,6 +1194,44 @@ module Activities
     def invalidate_pr_progress_state(issue)
       @pr_progress_states&.delete(issue.id)
       issue.invalidate_pr_progress_state_cache! if issue.respond_to?(:invalidate_pr_progress_state_cache!)
+    end
+
+    # After the scan detects triggers, we know whether the current PR head
+    # still has unresolved issues a create_pr would address. If it does, a
+    # completed create_pr that pushed this head did NOT actually resolve the
+    # triggering condition. Recompute the progress state with
+    # current_head_resolved: false so that run does not falsely reset the
+    # failure streak (#3271).
+    def apply_head_resolution_to_progress_state!(project, issue, result)
+      return unless result.is_a?(Hash)
+      return unless unresolved_create_pr_triggers?(result[:triggers])
+
+      head_info = live_pr_states[issue.id]
+      return unless head_info && head_info[:head_sha].present?
+
+      invalidate_pr_progress_state(issue)
+      pr_progress_state(project, issue,
+        current_head_sha: head_info[:head_sha],
+        current_head_updated_at: head_info[:head_updated_at],
+        current_head_resolved: false)
+    end
+
+    # Trigger types that indicate the PR head still has issues a create_pr
+    # follow-up would address. Pending-review triggers are excluded because
+    # they lead to review runs, not create_pr runs.
+    UNRESOLVED_CREATE_PR_TRIGGER_TYPES = %w[
+      ci_failure
+      changes_requested
+      review_bot_comments
+      review_bot_threads
+      review_threads
+      conversation_comments
+      merge_conflicts
+      actionable_labels
+    ].freeze
+
+    def unresolved_create_pr_triggers?(triggers)
+      Array(triggers).any? { |t| UNRESOLVED_CREATE_PR_TRIGGER_TYPES.include?(t[:type].to_s) }
     end
 
     def pr_head_sha(pr_data)
