@@ -1060,6 +1060,12 @@ RSpec.describe Activities::RunAgentActivity do
       expect(prompt).to include("## Codebase Context")
       expect(prompt).to include("Hunt#last_active uses prey.updated_at")
       expect(prompt).to include("Read issue ##{issue.github_number} in #{project.full_name}")
+      # Pin the read-only / no-write safety instructions (RDR-052 Phase 1):
+      # the prompt must explicitly forbid code/PR/commit/issue writes and
+      # declare the workspace read-only so an accidental edit to the
+      # FALLBACK_ENHANCE_ISSUE_GOAL_PROMPT template is caught by the spec.
+      expect(prompt).to include("Do NOT write code, create PRs, create new issues, or push commits")
+      expect(prompt).to include("workspace is READ-ONLY")
     end
 
     it "renders without knowledge context when no artifacts are available" do
@@ -1073,6 +1079,10 @@ RSpec.describe Activities::RunAgentActivity do
       expect(prompt).to include(base_prompt)
       expect(prompt).not_to include("## Codebase Context")
       expect(prompt).to include("Read issue ##{issue.github_number}")
+      # Pin the read-only / no-write safety instructions regardless of
+      # whether the knowledge base produced context for this run.
+      expect(prompt).to include("Do NOT write code, create PRs, create new issues, or push commits")
+      expect(prompt).to include("workspace is READ-ONLY")
     end
   end
 
