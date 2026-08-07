@@ -99,15 +99,17 @@ module Activities
       )
     end
 
+    # The coherence soft-block is intentionally NOT appended to followup
+    # comments. The repo-wide coherence state is identical across runs in a
+    # review cycle, so posting it on every followup buries useful signal
+    # under dozens of identical comments (#3272). It remains in the PR body
+    # (CreatePullRequestActivity, per LID-RUNS-003) and in structured logs +
+    # agent-run metadata (Lid::CoherenceCheck).
     def build_comment_body(client, project, pr_number, agent_run)
       summary = summary_comments_enabled?(agent_run) ? generate_summary(client, project, pr_number, agent_run) : nil
-      coherence = lid_coherence_section(agent_run)
-      return if summary.blank? && coherence.blank?
+      return if summary.blank?
 
-      sections = [ "#{COMMENT_MARKER}\n#{SUMMARY_PREFIX}" ]
-      sections << summary if summary.present?
-      sections << coherence if coherence.present?
-      sections.join("\n\n")
+      "#{COMMENT_MARKER}\n#{SUMMARY_PREFIX}\n\n#{summary}"
     end
 
     def summary_comments_enabled?(agent_run)
@@ -147,13 +149,6 @@ module Activities
           metadata: { operation: "agent_update_summary" }
         },
         enforce_guardrails: false
-      )
-    end
-
-    def lid_coherence_section(agent_run)
-      Lid::CoherenceSection.render(
-        agent_run,
-        closing_note: "The run continued intentionally; address these findings in the next LID-aware pass."
       )
     end
   end
