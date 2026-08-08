@@ -817,6 +817,32 @@ RSpec.describe UserSetting do
       expect(setting.errors[:kb_embedding_fallback_runners]).to include("must be an array")
       expect(setting.errors[:kb_chat_fallback_runners]).to include("must be an array")
     end
+
+    it "allows a blank issue analysis runner (no forced default)" do
+      setting.issue_analysis_runner = ""
+      setting.issue_analysis_fallback_runners = []
+
+      expect(setting).to be_valid
+      expect(setting.issue_analysis_runner).to eq("")
+    end
+
+    it "normalizes and deduplicates issue analysis fallback runners" do
+      setting.issue_analysis_runner = " Codex "
+      setting.issue_analysis_fallback_runners = [ "Cursor ", "", "cursor", "Gemini" ]
+
+      expect(setting).to be_valid
+      expect(setting.issue_analysis_runner).to eq("codex")
+      expect(setting.issue_analysis_fallback_runners).to eq(%w[cursor gemini])
+    end
+
+    it "rejects unsupported issue analysis runners" do
+      setting.issue_analysis_runner = "not-a-runner"
+      setting.issue_analysis_fallback_runners = [ "codex", "also-invalid" ]
+
+      expect(setting).not_to be_valid
+      expect(setting.errors[:issue_analysis_runner]).to include("is not a supported issue analysis runner")
+      expect(setting.errors[:issue_analysis_fallback_runners]).to include("contains unsupported runners: also-invalid")
+    end
   end
 
   describe "runner token normalization" do

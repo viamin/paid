@@ -24,6 +24,7 @@ class UserSetting < ApplicationRecord
   KB_EMBEDDING_RUNNER_DEFAULT = "openai"
   KB_CHAT_RUNNERS = RunnerSupport::APP_RUNNER_KEYS.freeze
   KB_CHAT_RUNNER_DEFAULT = "claude"
+  ISSUE_ANALYSIS_RUNNERS = RunnerSupport::APP_RUNNER_KEYS.freeze
   RUNNER_SELECTION_MODES = %w[single round_robin random].freeze
   RUNNER_SELECTION_MODE_DEFAULT = "single"
   AGENT_UPDATE_COMMENT_MODES = %w[off summary].freeze
@@ -224,6 +225,8 @@ class UserSetting < ApplicationRecord
   validate :validate_kb_embedding_fallback_runners
   validate :validate_kb_chat_runner
   validate :validate_kb_chat_fallback_runners
+  validate :validate_issue_analysis_runner
+  validate :validate_issue_analysis_fallback_runners
   validate :validate_max_concurrent_runs_for_mode
   validates :auto_weight_enabled, inclusion: { in: [ true, false ] }
   validates :default_auto_approve, inclusion: { in: [ true, false ] }
@@ -375,6 +378,25 @@ class UserSetting < ApplicationRecord
   # Sets allowed_service_images from a comma-separated string
   def allowed_service_images_csv=(value)
     self.allowed_service_images = value.to_s.split(",").map(&:strip).reject(&:blank?).uniq
+  end
+
+  # Returns issue_analysis_fallback_runners as a comma-separated string for editing.
+  def issue_analysis_fallback_runners_csv
+    (issue_analysis_fallback_runners || []).join(", ")
+  end
+
+  # Sets issue_analysis_fallback_runners from a comma-separated string.
+  def issue_analysis_fallback_runners_csv=(value)
+    self.issue_analysis_fallback_runners = value.to_s.split(",").map(&:strip).reject(&:blank?).uniq
+  end
+
+  # Select options ([label, key]) for the issue analysis runner dropdown: the
+  # owner's chat-enabled runners plus all other supported chat runners, so a
+  # user can pin a specific runner or leave it blank to use all chat runners.
+  def issue_analysis_runner_options
+    owned = user&.runners&.kept_only&.for_chat&.ordered&.pluck(:runner_key).to_a.uniq
+    candidates = (owned + ISSUE_ANALYSIS_RUNNERS.to_a).uniq & ISSUE_ANALYSIS_RUNNERS.to_a
+    candidates.map { |key| [ Runner.display_name_for(key), key ] }
   end
 
   # Returns the ordered list of runners to try: primary first, then fallbacks.
@@ -706,6 +728,22 @@ class UserSetting < ApplicationRecord
       kb_chat_fallback_runners,
       attribute: :kb_chat_fallback_runners,
       supported_runners: KB_CHAT_RUNNERS
+    )
+  end
+
+  def validate_issue_analysis_runner
+    self.issue_analysis_runner = issue_analysis_runner.to_s.strip.downcase
+    return if issue_analysis_runner.blank?
+    return if ISSUE_ANALYSIS_RUNNERS.include?(issue_analysis_runner)
+
+    errors.add(:issue_analysis_runner, "is not a supported issue analysis runner")
+  end
+
+  def validate_issue_analysis_fallback_runners
+    self.issue_analysis_fallback_runners = normalize_kb_runner_list(
+      issue_analysis_fallback_runners,
+      attribute: :issue_analysis_fallback_runners,
+      supported_runners: ISSUE_ANALYSIS_RUNNERS
     )
   end
 
