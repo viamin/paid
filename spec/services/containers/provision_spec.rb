@@ -1098,6 +1098,18 @@ RSpec.describe Containers::Provision do
         described_class.new(agent_run: agent_run).provision
       end
 
+      it "keeps enhance_issue workspace volume writable so clone can populate the review workspace" do
+        enhance_run = create(:agent_run, :enhance_issue_goal, project: project)
+
+        expect(Docker::Container).to receive(:create) do |config|
+          binds = config["HostConfig"]["Binds"]
+          expect(binds).to include("paid-workspace-#{enhance_run.id}:/workspace:rw")
+          mock_container
+        end
+
+        described_class.new(agent_run: enhance_run).provision
+      end
+
       it "raises ProvisionError for non-existent path" do
         service = described_class.new(agent_run: agent_run, worktree_path: "/nonexistent/path")
 

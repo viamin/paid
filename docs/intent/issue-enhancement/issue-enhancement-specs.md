@@ -80,12 +80,13 @@
 ## Containerized read-only execution (RDR-052)
 
 - [x] **ISSUE-ENHANCEMENT-006** — When issue enhancement runs, the system SHALL
-  execute it as a containerized agent with read-only repository access,
-  authenticating via the injected runner credential instead of the
-  `ANTHROPIC_API_KEY` environment variable. The workspace bind mount SHALL be
-  `:ro` and the agent prompt SHALL state the read-only constraint. The run
-  SHALL produce no file changes, commits, or pushes — only the posted
-  `<!-- paid:enhance-issue -->` comment and label state.
+  execute it as a containerized agent with repository access, authenticating
+  via the injected runner credential instead of the `ANTHROPIC_API_KEY`
+  environment variable. The agent prompt SHALL instruct the agent that the run
+  is comment-only: workspace modifications are discarded and the agent SHALL
+  NOT commit, push, or create a pull request. The workflow SHALL post the
+  `<!-- paid:enhance-issue -->` comment and label state without committing,
+  pushing, or creating a pull request.
   *Tests:* `spec/temporal/activities/enhance_issue_activity_spec.rb`.
   *Code:* `app/temporal/activities/enhance_issue_activity.rb#enhance_issue_post_run`,
   `app/temporal/workflows/agent_execution_workflow.rb`,

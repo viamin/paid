@@ -5,9 +5,12 @@ module Activities
   # or asks focused clarifying questions when the issue is not actionable yet.
   #
   # Containerized execution: the agent has already explored the repo in a
-  # read-only container via RunAgentActivity (RDR-052 Phase 1) and emitted a
-  # structured JSON result between OUTPUT_DELIMITER lines. This activity reads
-  # that result, posts the enhancement comment, and applies label state.
+  # comment-only containerized run via RunAgentActivity (RDR-052 Phase 1) and
+  # emitted a structured JSON result between OUTPUT_DELIMITER lines. The
+  # workspace mount is :rw so the platform could clone into /workspace, but
+  # RunAgentActivity skipped git post-processing and the prompt instructed
+  # the agent not to commit/push. This activity reads that result, posts the
+  # enhancement comment, and applies label state.
   # @spec ISSUE-ENHANCEMENT-006
   class EnhanceIssueActivity < BaseActivity
     include Llm::OutputNormalizer

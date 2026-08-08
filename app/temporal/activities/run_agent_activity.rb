@@ -324,8 +324,14 @@ module Activities
             # until those failures age out of the inspection window.
             clear_issue_runner_retry_abandonment(agent_run)
 
-            # Skip git post-processing for goals that don't clone a repo.
-            # These runs only interact via the GitHub API proxy — no git repo exists.
+            # Skip git post-processing for runs that have nothing to commit:
+            #   - Goals that never clone a repo (they only interact via the
+            #     GitHub API proxy — no git repo exists).
+            #   - enhance_issue DOES clone (the workspace mount is :rw so the
+            #     platform can populate /workspace for inspection), but the
+            #     workflow is comment-only: it never commits, pushes, or opens
+            #     a PR. Skipping here keeps the run from spuriously reporting
+            #     file changes or attempting to commit.
             #
             # Keep heartbeats flowing during post-run bookkeeping too. By the
             # time we reach this block the runner may already have posted a PR
@@ -338,7 +344,7 @@ module Activities
             bookkeeping_result = with_periodic_heartbeat("post_run_bookkeeping", runner) do
               # Evaluate pre-commit requirements against the working directory
               # before committing, so blocking failures prevent commits.
-              if agent_run.repo_cloned?
+              if agent_run.repo_cloned? && !agent_run.enhance_issue_goal?
                 record_verification_result(
                   agent_run,
                   fallback_result: runner_result[:verification_fallback_result]
@@ -362,7 +368,11 @@ module Activities
                 commit_uncommitted_changes(agent_run)
               end
 
-              { has_changes: agent_run.repo_cloned? ? check_for_changes(agent_run, pre_agent_sha) : false }
+              {
+                has_changes: agent_run.repo_cloned? && !agent_run.enhance_issue_goal? ?
+                  check_for_changes(agent_run, pre_agent_sha) :
+                  false
+              }
             end
 
             attempt_finished = true
@@ -3677,7 +3687,9 @@ module Activities
       IMPORTANT: Your goal is to ENHANCE AN EXISTING ISSUE by adding context or asking clarifying questions.
       Do NOT write code, create PRs, create new issues, or push commits.
 
-      The workspace is READ-ONLY — you can explore and read files but cannot modify them.
+      This run is comment-only: do NOT modify files in /workspace, do NOT commit, push, or
+      create a PR. The workflow discards any /workspace modifications — only the posted
+      comment and label state matter. You can explore and read the repo freely.
       State directories (under /home/agent/) are writable for scratch/tooling needs.
 
       Read issue #{{issue_number}} in {{repo}} — its description and all comments.  Explore the repository

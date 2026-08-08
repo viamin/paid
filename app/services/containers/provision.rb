@@ -2525,16 +2525,13 @@ module Containers
       }
     end
 
-    # Returns the mount mode for the workspace bind.  enhance_issue runs
-    # are read-only (RDR-052) — the agent can explore the repo but cannot
-    # modify files, commit, or push.  All other goals mount read-write.
+    # Returns the mount mode for the workspace bind. The platform must clone
+    # the repo into /workspace before enhance_issue can inspect it, so the
+    # Docker mount stays writable even though the enhance prompt forbids
+    # changing files and the workflow never pushes enhance_issue output.
     # @spec ISSUE-ENHANCEMENT-006
     def workspace_mount_mode
-      if agent_run&.enhance_issue_goal?
-        "ro"
-      else
-        "rw"
-      end
+      "rw"
     end
 
     # Proxy-mode API key auth uses the restricted paid_agent network.

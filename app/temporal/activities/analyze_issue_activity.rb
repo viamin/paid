@@ -306,7 +306,35 @@ module Activities
     end
 
     def extract_analysis_json(output)
-      JSON.parse(strip_markdown_fence(output.to_s.strip), symbolize_names: true)
+      parse_analysis_candidate(output) ||
+        raise(JSON::ParserError, "no analysis JSON object found")
+    end
+
+    def parse_analysis_candidate(output)
+      analysis_json_candidates(output).each do |candidate|
+        parsed = JSON.parse(candidate, symbolize_names: true)
+        return parsed if parsed.is_a?(Hash)
+      rescue JSON::ParserError
+        next
+      end
+
+      nil
+    end
+
+    def analysis_json_candidates(output)
+      stripped = output.to_s.strip
+      candidates = [ strip_markdown_fence(stripped) ]
+      candidates.concat(stripped.scan(/```(?:json)?\s*(.*?)\s*```/m).flatten)
+      candidates << embedded_json_object(stripped)
+      candidates.compact.uniq
+    end
+
+    def embedded_json_object(output)
+      start = output.index("{")
+      finish = output.rindex("}")
+      return unless start && finish && finish > start
+
+      output[start..finish]
     end
 
     def track_tokens(agent_run, response)
