@@ -22,6 +22,17 @@ class UserSetting < ApplicationRecord
   MAX_DELAY_SECONDS = 86_400
   KB_EMBEDDING_RUNNERS = Runner::OPENAI_COMPATIBLE_DIRECT_OUTBOUND_API_PROVIDER_KEYS.freeze
   KB_EMBEDDING_RUNNER_DEFAULT = "openai"
+  # @spec KNOWLEDGE-EMBED-001
+  # Default embedding model + dimensions. Mirrors the legacy hardcoded
+  # text-embedding-3-large / 3072 pair so existing knowledge bases do not
+  # need a re-embed on upgrade.
+  KB_EMBEDDING_MODEL_DEFAULT = Knowledge::Embeddings::Generate::DEFAULT_MODEL
+  KB_EMBEDDING_DIMENSIONS_DEFAULT = Knowledge::Embeddings::Generate::DEFAULT_DIMENSIONS
+  # Upper bound on embedding dimensions. The largest production models
+  # (OpenAI text-embedding-3-large, Cohere embed-v3) emit at most a few
+  # thousand dimensions; the cap keeps storage/index sizes predictable
+  # and prevents typos from blowing up the vector index.
+  KB_EMBEDDING_DIMENSIONS_MAX = 16_384
   KB_CHAT_RUNNERS = RunnerSupport::APP_RUNNER_KEYS.freeze
   KB_CHAT_RUNNER_DEFAULT = "claude"
   ISSUE_ANALYSIS_RUNNERS = RunnerSupport::APP_RUNNER_KEYS.freeze
@@ -113,6 +124,23 @@ class UserSetting < ApplicationRecord
 
   def kb_embedding_fallback_providers=(value)
     self.kb_embedding_fallback_runners = value
+  end
+
+  # Effective embedding model id used by the knowledge pipeline. Falls back
+  # to the bundled default when the column is blank so settings imported
+  # from older exports still resolve.
+  def kb_embedding_model
+    self[:kb_embedding_model].to_s.presence || KB_EMBEDDING_MODEL_DEFAULT
+  end
+
+  # Effective vector dimensions used by the knowledge pipeline. Coerces
+  # blank/nil to the bundled default so legacy rows and JSONB round-trips
+  # that stored nil/empty values still produce a usable integer.
+  def kb_embedding_dimensions
+    raw = self[:kb_embedding_dimensions]
+    return KB_EMBEDDING_DIMENSIONS_DEFAULT if raw.nil? || raw.to_s.strip.empty?
+
+    Integer(raw)
   end
 
   # Polling & Timing
@@ -223,6 +251,8 @@ class UserSetting < ApplicationRecord
   validate :validate_fallback_runners
   validate :validate_kb_embedding_runner
   validate :validate_kb_embedding_fallback_runners
+  validate :validate_kb_embedding_model
+  validate :validate_kb_embedding_dimensions
   validate :validate_kb_chat_runner
   validate :validate_kb_chat_fallback_runners
   validate :validate_issue_analysis_runner
@@ -714,6 +744,40 @@ class UserSetting < ApplicationRecord
       attribute: :kb_embedding_fallback_runners,
       supported_runners: KB_EMBEDDING_RUNNERS
     )
+  end
+
+  # @spec KNOWLEDGE-EMBED-001
+  # Normalize the user-configurable embedding model. Blank values fall back
+  # to the bundled default so legacy rows keep working. Length is bounded so
+  # a misconfigured form cannot blow up the column or the secrets-proxy
+  # header that carries the value.
+  def validate_kb_embedding_model
+    normalized = self[:kb_embedding_model].to_s.strip
+    self[:kb_embedding_model] = normalized.presence || KB_EMBEDDING_MODEL_DEFAULT
+
+    if self[:kb_embedding_model].length > 200
+      errors.add(:kb_embedding_model, "is too long (maximum 200 characters)")
+    end
+  end
+
+  # @spec KNOWLEDGE-EMBED-001
+  # Coerce the user-configurable embedding dimensions to a positive integer
+  # bounded by KB_EMBEDDING_DIMENSIONS_MAX. Values outside that range almost
+  # always indicate a typo and would silently inflate the Qdrant index.
+  def validate_kb_embedding_dimensions
+    raw = self[:kb_embedding_dimensions]
+    if raw.is_a?(String) && raw.strip.empty?
+      self[:kb_embedding_dimensions] = KB_EMBEDDING_DIMENSIONS_DEFAULT
+      return
+    end
+
+    coerced = Integer(raw, exception: false)
+    if coerced.nil? || coerced < 1 || coerced > KB_EMBEDDING_DIMENSIONS_MAX
+      errors.add(:kb_embedding_dimensions, "must be an integer between 1 and #{KB_EMBEDDING_DIMENSIONS_MAX}")
+      return
+    end
+
+    self[:kb_embedding_dimensions] = coerced
   end
 
   def validate_kb_chat_runner

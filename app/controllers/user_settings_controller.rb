@@ -78,6 +78,8 @@ class UserSettingsController < ApplicationController
       :fallback_enabled,
       :fallback_runners,
       :kb_embedding_runner,
+      :kb_embedding_model,
+      :kb_embedding_dimensions,
       :kb_chat_runner,
       :issue_analysis_runner,
       :issue_analysis_fallback_runners_csv,

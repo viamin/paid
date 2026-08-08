@@ -75,3 +75,27 @@
   `app/temporal/activities/record_knowledge_recommendations_activity.rb`.
   *Test:* `spec/temporal/workflows/knowledge_evolution_workflow_spec.rb`,
   `spec/temporal/activities/record_knowledge_recommendations_activity_spec.rb`.
+
+- [x] **KNOWLEDGE-EMBED-001** — When a user configures a knowledge base, the
+  system SHALL let them pick any embedding model id served by the configured
+  embedding runner together with the dimensions the model emits, validate
+  the model id (non-blank, bounded length) and dimensions (positive integer
+  bounded by a sensible ceiling), and SHALL use those values when the
+  embedding pipeline generates or re-embeds chunks. Defaults preserve the
+  legacy `text-embedding-3-large` / 3072 pair so existing knowledge bases
+  continue to work without a re-embed. The runner-selection log line that
+  warns about embedding fallback SHALL reference the configured model and
+  dimensions rather than a hardcoded constant.
+  *Code:* `app/models/user_setting.rb`,
+  `app/services/knowledge/embeddings/generate.rb`,
+  `app/services/knowledge/embeddings/proxy_generator.rb`,
+  `app/services/knowledge/runner_selector.rb`,
+  `app/services/knowledge/provider_selector.rb`,
+  `app/controllers/user_settings_controller.rb`,
+  `app/views/user_settings/edit.html.erb`,
+  `db/migrate/20260808071316_add_kb_embedding_model_to_user_settings.rb`.
+  *Test:* `spec/models/user_setting_spec.rb`,
+  `spec/services/knowledge/embeddings/generate_spec.rb`,
+  `spec/services/knowledge/embeddings/proxy_generator_spec.rb`,
+  `spec/services/knowledge/runner_selector_spec.rb`,
+  `spec/services/knowledge/provider_selector_spec.rb`.

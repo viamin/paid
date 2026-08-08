@@ -31,6 +31,8 @@ RSpec.describe Knowledge::Embeddings::ProxyGenerator do
       expect(results).to eq([ result ])
       expect(Knowledge::Embeddings::Generate).to have_received(:call).with(
         texts: [ "hello" ],
+        model: "text-embedding-3-large",
+        dimensions: 3072,
         base_url: "http://web:3000/api/proxy/openai/v1",
         headers: hash_including(
           "Authorization" => "Bearer paid-knowledge-run:#{knowledge_run.id}:#{knowledge_run.proxy_token}",
@@ -42,6 +44,73 @@ RSpec.describe Knowledge::Embeddings::ProxyGenerator do
       expect(knowledge_run.provider_attempts.first).to include("provider" => "openrouter")
       expect(knowledge_run.provider_attempts.first["attempted_at"]).to match(/\A.+\z/)
       expect(knowledge_run.status).to eq("completed")
+    end
+
+    it "uses the user-configured embedding model and dimensions" do
+      project.effective_owner.settings.update!(kb_embedding_model: "text-embedding-3-small", kb_embedding_dimensions: 1536)
+      proxy_generator = described_class.new(
+        project: project,
+        provider_configs: provider_configs,
+        knowledge_run: knowledge_run,
+        containerize: false
+      )
+      allow(Knowledge::Embeddings::Generate).to receive(:call).and_return([ result ])
+
+      proxy_generator.call(texts: [ "hello" ])
+      proxy_generator.close
+
+      expect(Knowledge::Embeddings::Generate).to have_received(:call).with(
+        hash_including(model: "text-embedding-3-small", dimensions: 1536)
+      )
+      expect(proxy_generator.model).to eq("text-embedding-3-small")
+      expect(proxy_generator.dimensions).to eq(1536)
+    end
+
+    it "falls back to bundled defaults when user settings return blanks" do
+      # The schema enforces NOT NULL on kb_embedding_dimensions, so the
+      # in-memory fallback is exercised by stubbing the resolved values
+      # to blank/nil on the live user_setting.
+      allow(project.effective_owner.settings).to receive_messages(
+        kb_embedding_model: "",
+        kb_embedding_dimensions: nil
+      )
+      proxy_generator = described_class.new(
+        project: project,
+        provider_configs: provider_configs,
+        knowledge_run: knowledge_run,
+        containerize: false
+      )
+      allow(Knowledge::Embeddings::Generate).to receive(:call).and_return([ result ])
+
+      proxy_generator.call(texts: [ "hello" ])
+      proxy_generator.close
+
+      expect(Knowledge::Embeddings::Generate).to have_received(:call).with(
+        hash_including(model: "text-embedding-3-large", dimensions: 3072)
+      )
+    end
+
+    it "uses the user setting's blank-fallback dimension when the underlying column is empty" do
+      # The schema enforces NOT NULL, but the in-memory accessor coerces
+      # blank strings to the bundled default so legacy data and broken
+      # JSONB round-trips do not silently drop dimensions.
+      settings = project.effective_owner.settings
+      settings.update!(kb_embedding_dimensions: 1)
+      allow(settings).to receive(:kb_embedding_dimensions).and_return(Knowledge::Embeddings::Generate::DEFAULT_DIMENSIONS)
+      proxy_generator = described_class.new(
+        project: project,
+        provider_configs: provider_configs,
+        knowledge_run: knowledge_run,
+        containerize: false
+      )
+      allow(Knowledge::Embeddings::Generate).to receive(:call).and_return([ result ])
+
+      proxy_generator.call(texts: [ "hello" ])
+      proxy_generator.close
+
+      expect(Knowledge::Embeddings::Generate).to have_received(:call).with(
+        hash_including(dimensions: 3072)
+      )
     end
 
     it "falls back to later configured providers" do

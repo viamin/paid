@@ -845,6 +845,75 @@ RSpec.describe UserSetting do
     end
   end
 
+  describe "knowledge base embedding model + dimensions" do
+    let(:setting) { build(:user_setting) }
+
+    it "exposes the bundled defaults via the accessors" do
+      expect(setting.kb_embedding_model).to eq(UserSetting::KB_EMBEDDING_MODEL_DEFAULT)
+      expect(setting.kb_embedding_dimensions).to eq(UserSetting::KB_EMBEDDING_DIMENSIONS_DEFAULT)
+    end
+
+    it "normalizes blank model input to the bundled default" do
+      setting.kb_embedding_model = "   "
+
+      expect(setting).to be_valid
+      expect(setting.kb_embedding_model).to eq(UserSetting::KB_EMBEDDING_MODEL_DEFAULT)
+    end
+
+    it "trims surrounding whitespace from the model id" do
+      setting.kb_embedding_model = "  text-embedding-3-small  "
+
+      expect(setting).to be_valid
+      expect(setting.kb_embedding_model).to eq("text-embedding-3-small")
+    end
+
+    it "rejects an embedding model id longer than 200 characters" do
+      setting.kb_embedding_model = "a" * 201
+
+      expect(setting).not_to be_valid
+      expect(setting.errors[:kb_embedding_model]).to include("is too long (maximum 200 characters)")
+    end
+
+    it "coerces string dimensions to an integer" do
+      setting.kb_embedding_dimensions = "1536"
+
+      expect(setting).to be_valid
+      expect(setting.kb_embedding_dimensions).to eq(1536)
+    end
+
+    it "rejects dimensions below 1" do
+      setting.kb_embedding_dimensions = 0
+
+      expect(setting).not_to be_valid
+      expect(setting.errors[:kb_embedding_dimensions]).to include(/between 1 and/)
+    end
+
+    it "rejects dimensions above the bundled ceiling" do
+      setting.kb_embedding_dimensions = UserSetting::KB_EMBEDDING_DIMENSIONS_MAX + 1
+
+      expect(setting).not_to be_valid
+      expect(setting.errors[:kb_embedding_dimensions]).to include(/between 1 and/)
+    end
+
+    it "rejects non-integer dimension values" do
+      setting.kb_embedding_dimensions = "not-a-number"
+
+      expect(setting).not_to be_valid
+      expect(setting.errors[:kb_embedding_dimensions]).to include(/between 1 and/)
+    end
+
+    it "coerces blank-string dimensions back to the bundled default" do
+      raw_setting = build(:user_setting)
+      raw_setting[:kb_embedding_dimensions] = ""
+
+      # Integer columns coerce blank strings to nil before validations run.
+      # The accessor still needs to fall back so legacy rows (or rows that
+      # round-trip through JSONB and lose their integer) produce a usable
+      # value instead of crashing the embedding pipeline.
+      expect(raw_setting.kb_embedding_dimensions).to eq(UserSetting::KB_EMBEDDING_DIMENSIONS_DEFAULT)
+    end
+  end
+
   describe "runner token normalization" do
     let(:user) { create(:user) }
     let(:setting) { build(:user_setting, user: user) }
