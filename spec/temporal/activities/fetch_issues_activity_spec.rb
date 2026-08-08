@@ -2339,6 +2339,43 @@ RSpec.describe Activities::FetchIssuesActivity do
           expect(issue.reload.github_state).to eq("open")
         end
 
+        it "does not re-fetch issues already reconciled since their last GitHub update" do
+          create(:issue, project: project, github_issue_id: 6010,
+                 github_number: 60, github_state: "open",
+                 labels: [ "enhancement" ],
+                 github_updated_at: 2.days.ago,
+                 reconciled_at: 1.hour.ago,
+                 relationships_parsed_at: nil)
+          allow(github_client).to receive(:issues).and_return([ updated_issue ])
+          allow(github_client).to receive(:issues).with(project.full_name, hash_including(state: "open"))
+            .and_return([ OpenStruct.new(number: 60, pull_request: nil) ])
+          allow(github_client).to receive(:issue)
+
+          activity.execute(project_id: project.id)
+
+          expect(github_client).not_to have_received(:issue).with(project.full_name, 60)
+        end
+
+        it "eagerly enqueues reconciled issues when auto-pick is enabled" do
+          project.update!(auto_pick_enabled: true)
+          allow(Issues::EnqueueEligible).to receive(:call)
+          issue = create(:issue, project: project, github_issue_id: 6010,
+                         github_number: 60, github_state: "open",
+                         labels: [ "research" ], github_updated_at: 2.days.ago,
+                         relationships_parsed_at: nil)
+          allow(github_client).to receive(:issues).and_return([ updated_issue ])
+          allow(github_client).to receive(:issues).with(project.full_name, hash_including(state: "open"))
+            .and_return([ OpenStruct.new(number: 60, pull_request: nil) ])
+          allow(github_client).to receive(:issue).with(project.full_name, 60)
+            .and_return(github_issue(60, id: 6010, labels: [ "paid-build" ]))
+
+          activity.execute(project_id: project.id)
+
+          expect(Issues::EnqueueEligible).to have_received(:call).with(
+            issue, project: project, skip_project_gate: true
+          )
+        end
+
         it "skips reconciliation when truncated" do
           stub_const("#{described_class}::DEFAULT_PER_PAGE", 2)
           stub_const("#{described_class}::DEFAULT_MAX_PAGES", 1)

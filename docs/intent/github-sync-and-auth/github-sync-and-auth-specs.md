@@ -63,3 +63,15 @@
   of discarding them.
   *Code:* `app/controllers/admin/github_app/setup_controller.rb`.
   *Test:* `spec/requests/admin/github_app/setup_spec.rb`.
+
+- [x] **GITHUB-SYNC-008** — When the hourly issue reconciliation runs, the
+  system SHALL re-fetch and re-upsert every locally-open issue whose
+  `github_updated_at` predates the watermark and has not been reconciled since
+  its last GitHub update, so that missed label changes (e.g., a skip label
+  removed on GitHub) are corrected without waiting for the issue to be updated
+  on GitHub. Each issue SHALL be reconciled at most once per change; the
+  system tracks a per-issue `reconciled_at` timestamp so that issues already
+  verified are not re-fetched on subsequent cycles. Per-issue API failures
+  SHALL be logged and SHALL NOT abort the full sync.
+  *Code:* `app/temporal/activities/fetch_issues_activity.rb`.
+  *Test:* `spec/temporal/activities/fetch_issues_activity_spec.rb`.

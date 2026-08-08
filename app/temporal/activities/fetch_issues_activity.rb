@@ -954,7 +954,7 @@ module Activities
 
     # Mirrors reconcile_open_pull_requests for issues. Fetches all open issue
     # numbers from GitHub and closes locally-open issues not in that set.
-    # Gated by ISSUE_RECONCILIATION_INTERVAL (default 1 hour) to limit API
+    # Gated by ISSUE_RECONCILIATION_INTERVAL (default 1 hour) to limit API cost.
     def reconcile_open_issues(project, client, eager_queue_enabled: false, eligible_issues: nil)
       return { changed: false, closed_count: 0 } unless issue_reconciliation_due?(project)
 
@@ -977,7 +977,13 @@ module Activities
         eager_queue_enabled: eager_queue_enabled,
         eligible_issues: eligible_issues
       )
-      reconciled_count = reconcile_open_issue_state(project, client, open_numbers)
+      reconciled_count = reconcile_open_issue_state(
+        project,
+        client,
+        open_numbers,
+        eager_queue_enabled: eager_queue_enabled,
+        eligible_issues: eligible_issues
+      )
 
       stale = project.issues
         .where(github_state: "open", is_pull_request: false, source: Issue::GITHUB_SOURCE)
@@ -1024,18 +1030,31 @@ module Activities
       missing_numbers.size
     end
 
-    def reconcile_open_issue_state(project, client, open_issue_numbers)
+    def reconcile_open_issue_state(project, client, open_issue_numbers, eager_queue_enabled: false, eligible_issues: nil)
       existing_open_numbers = project.issues
         .where(github_state: "open", is_pull_request: false, github_number: open_issue_numbers)
         .where("github_updated_at < ?", project.last_issue_sync_at)
+        .where("reconciled_at IS NULL OR reconciled_at < github_updated_at")
         .pluck(:github_number)
 
-      existing_open_numbers.count { |number| reconcile_one_open_issue(project, client, number) }
+      existing_open_numbers.count do |number|
+        reconcile_one_open_issue(
+          project, client, number,
+          eager_queue_enabled: eager_queue_enabled,
+          eligible_issues: eligible_issues
+        )
+      end
     end
 
-    def reconcile_one_open_issue(project, client, number)
+    def reconcile_one_open_issue(project, client, number, eager_queue_enabled: false, eligible_issues: nil)
       github_issue = client.issue(project.full_name, number)
-      sync_issue(project, github_issue)[:changed]
+      result = sync_issue(
+        project, github_issue,
+        eager_queue_enabled: eager_queue_enabled,
+        eligible_issues: eligible_issues
+      )
+      project.issues.where(id: result[:id]).update_all(reconciled_at: Time.current)
+      result[:changed]
     rescue GithubClient::Error => e
       logger.warn(
         message: "github_sync.reconcile_open_issue_failed",
