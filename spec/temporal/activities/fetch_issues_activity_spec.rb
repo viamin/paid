@@ -2339,6 +2339,25 @@ RSpec.describe Activities::FetchIssuesActivity do
           expect(issue.reload.github_state).to eq("open")
         end
 
+        it "re-raises rate limit errors so Temporal can retry" do
+          create(:issue, project: project, github_issue_id: 6010,
+                         github_number: 60, github_state: "open",
+                         github_updated_at: 2.days.ago,
+                         relationships_parsed_at: nil)
+          project.update_columns(last_issue_reconciliation_at: 2.hours.ago, last_issue_sync_at: 1.day.ago)
+          allow(github_client).to receive(:issues).and_return([ updated_issue ])
+          allow(github_client).to receive(:issues).with(project.full_name, hash_including(state: "open"))
+            .and_return([ OpenStruct.new(number: 60, pull_request: nil) ])
+          allow(github_client).to receive(:issue).with(project.full_name, 60)
+            .and_raise(GithubClient::RateLimitError.new(Time.current + 3600))
+
+          expect {
+            activity.execute(project_id: project.id)
+          }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+            expect(error.type).to eq("RateLimit")
+          }
+        end
+
         it "does not re-fetch issues already reconciled since their last GitHub update" do
           create(:issue, project: project, github_issue_id: 6010,
                  github_number: 60, github_state: "open",

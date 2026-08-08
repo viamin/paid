@@ -1058,6 +1058,8 @@ module Activities
       )
       project.issues.where(id: result[:id]).update_all(reconciled_at: Time.current)
       result[:changed]
+    rescue GithubClient::RateLimitError
+      raise
     rescue GithubClient::Error => e
       logger.warn(
         message: "github_sync.reconcile_open_issue_failed",
