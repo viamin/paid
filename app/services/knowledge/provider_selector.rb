@@ -11,8 +11,8 @@ module Knowledge
         message: "knowledge.provider_selector.embedding_fallback_requires_compatible_model",
         user_setting_id: user_setting.id,
         providers: candidates,
-        model: Knowledge::Embeddings::Generate::MODEL,
-        dimensions: Knowledge::Embeddings::Generate::DIMENSIONS
+        model: embedding_model,
+        dimensions: embedding_dimensions
       )
     end
 

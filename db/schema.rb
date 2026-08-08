@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_08_055358) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_08_071316) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2864,7 +2864,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_08_055358) do
     t.integer "issue_goal_timeout_seconds", default: 600, null: false
     t.jsonb "kb_chat_fallback_runners", default: [], null: false
     t.string "kb_chat_runner", default: "claude", null: false
+    t.integer "kb_embedding_dimensions", default: 3072, null: false, comment: "Vector dimensions to request from the embedding model. Must match what the chosen kb_embedding_model emits; changing this on a populated knowledge base requires re-embedding."
     t.jsonb "kb_embedding_fallback_runners", default: [], null: false
+    t.string "kb_embedding_model", default: "text-embedding-3-large", null: false, comment: "User-configurable embedding model id. Defaults to text-embedding-3-large; users may pick any model from the provider catalog the configured embedding runner serves."
     t.string "kb_embedding_runner", default: "openai", null: false
     t.jsonb "log_data"
     t.boolean "marketplace_auto_attach_enabled", default: false, null: false, comment: "Whether this user opts their own agent runs into automatic and team-default marketplace attachments."

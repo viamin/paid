@@ -3,11 +3,28 @@
 module Knowledge
   module Embeddings
     class Generate
-      MODEL = "text-embedding-3-large"
-      DIMENSIONS = 3_072
-      COST_PER_MILLION_TOKENS = 0.13
+      # @spec KNOWLEDGE-EMBED-001
+      # Default embedding model used when the user has not configured a
+      # specific model on their user_settings. Matches the legacy hardcoded
+      # value so existing knowledge bases continue to work without
+      # re-embedding.
+      DEFAULT_MODEL = "text-embedding-3-large".freeze
+      # Default vector dimensions matching DEFAULT_MODEL's natural output.
+      DEFAULT_DIMENSIONS = 3_072
+      # Cost-per-million-tokens (USD) used by +estimate_cost+ when no model
+      # catalog entry is available. This is a generic OpenAI-compatible
+      # default; callers that need model-specific pricing can compute it
+      # themselves.
+      DEFAULT_COST_PER_MILLION_TOKENS = 0.13
       MAX_RETRIES = 3
       BASE_DELAY = 1.0
+
+      # Backward-compatible aliases. Older callers and tests still reference
+      # the +MODEL+ and +DIMENSIONS+ constants; they are now the defaults, not
+      # the only values the class accepts.
+      MODEL = DEFAULT_MODEL
+      DIMENSIONS = DEFAULT_DIMENSIONS
+      COST_PER_MILLION_TOKENS = DEFAULT_COST_PER_MILLION_TOKENS
 
       attr_reader :model, :dimensions
 
@@ -21,16 +38,39 @@ module Knowledge
         Errno::ECONNRESET
       ].freeze
 
-      def initialize(model: MODEL, dimensions: DIMENSIONS, base_url:, headers: {}, timeout: AgentHarness::OpenAICompatibleTransport::DEFAULT_TIMEOUT)
+      def initialize(
+        model: DEFAULT_MODEL,
+        dimensions: DEFAULT_DIMENSIONS,
+        cost_per_million_tokens: DEFAULT_COST_PER_MILLION_TOKENS,
+        base_url:,
+        headers: {},
+        timeout: AgentHarness::OpenAICompatibleTransport::DEFAULT_TIMEOUT
+      )
         @model = model
         @dimensions = dimensions
+        @cost_per_million_tokens = cost_per_million_tokens
         @base_url = base_url
         @headers = headers
         @timeout = timeout
       end
 
-      def self.call(texts:, model: MODEL, dimensions: DIMENSIONS, base_url:, headers: {}, timeout: AgentHarness::OpenAICompatibleTransport::DEFAULT_TIMEOUT)
-        new(model: model, dimensions: dimensions, base_url: base_url, headers: headers, timeout: timeout).call(texts: texts)
+      def self.call(
+        texts:,
+        model: DEFAULT_MODEL,
+        dimensions: DEFAULT_DIMENSIONS,
+        cost_per_million_tokens: DEFAULT_COST_PER_MILLION_TOKENS,
+        base_url:,
+        headers: {},
+        timeout: AgentHarness::OpenAICompatibleTransport::DEFAULT_TIMEOUT
+      )
+        new(
+          model: model,
+          dimensions: dimensions,
+          cost_per_million_tokens: cost_per_million_tokens,
+          base_url: base_url,
+          headers: headers,
+          timeout: timeout
+        ).call(texts: texts)
       end
 
       # Returns an array of Result structs with :vector and :token_count
@@ -124,8 +164,12 @@ module Knowledge
         RETRYABLE_PROVIDER_ERRORS.any? { |klass| error.original_error.is_a?(klass) }
       end
 
-      def self.estimate_cost(token_count)
-        (token_count.to_f / 1_000_000 * COST_PER_MILLION_TOKENS).round(6)
+      def self.estimate_cost(token_count, cost_per_million_tokens: COST_PER_MILLION_TOKENS)
+        (token_count.to_f / 1_000_000 * cost_per_million_tokens).round(6)
+      end
+
+      def estimate_cost(token_count)
+        self.class.estimate_cost(token_count, cost_per_million_tokens: @cost_per_million_tokens)
       end
     end
   end

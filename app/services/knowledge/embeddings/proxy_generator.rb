@@ -5,13 +5,14 @@ module Knowledge
     class ProxyGenerator
       attr_reader :project, :model, :dimensions
 
-      def initialize(project:, provider_configs: nil, knowledge_run: nil, containerize: false)
+      def initialize(project:, provider_configs: nil, knowledge_run: nil, containerize: false,
+        model: nil, dimensions: nil)
         @project = project
         @provider_configs = Array(provider_configs || Knowledge::RunnerConfiguration.for_embedding_candidate_runners(project: project))
         @knowledge_run = knowledge_run
         @containerize = containerize
-        @model = Generate::MODEL
-        @dimensions = Generate::DIMENSIONS
+        @model = (model.presence || resolve_user_setting_model).to_s
+        @dimensions = dimensions || resolve_user_setting_dimensions
         @attempted_providers = existing_attempted_providers
         @failed = false
         @successful = false
@@ -29,7 +30,13 @@ module Knowledge
           results = if use_container?
             container_runner.generate(texts: texts, provider: config.runner, model: model, dimensions: dimensions)
           else
-            Generate.call(texts: texts, base_url: proxy_embeddings_url, headers: proxy_headers(config.runner))
+            Generate.call(
+              texts: texts,
+              model: model,
+              dimensions: dimensions,
+              base_url: proxy_embeddings_url,
+              headers: proxy_headers(config.runner)
+            )
           end
 
           mark_success!(config.runner)
@@ -79,6 +86,38 @@ module Knowledge
 
       def proxy_embeddings_url
         "#{proxy_base_url}/api/proxy/openai/v1"
+      end
+
+      # Resolves the user-configurable embedding model from the project's
+      # owner settings, falling back to the bundled default so unsaved
+      # settings (or projects with no owner) still produce a usable value.
+      def resolve_user_setting_model
+        settings = user_settings
+        return Generate::DEFAULT_MODEL unless settings
+
+        resolved = settings.kb_embedding_model
+        resolved.to_s.presence || Generate::DEFAULT_MODEL
+      end
+
+      # Resolves the user-configurable embedding dimensions, falling back
+      # to the bundled default. Reading through the model's effective
+      # accessor (rather than the raw column) keeps blank-string rows from
+      # the legacy schema from blowing up the Qdrant index.
+      def resolve_user_setting_dimensions
+        settings = user_settings
+        return Generate::DEFAULT_DIMENSIONS unless settings
+
+        resolved = settings.kb_embedding_dimensions
+        resolved.is_a?(Integer) && resolved.positive? ? resolved : Generate::DEFAULT_DIMENSIONS
+      end
+
+      def user_settings
+        owner = project&.effective_owner
+        return nil unless owner
+
+        owner.settings
+      rescue ActiveRecord::RecordNotFound
+        nil
       end
 
       def proxy_base_url

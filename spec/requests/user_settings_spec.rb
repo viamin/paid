@@ -457,6 +457,32 @@ RSpec.describe "UserSettings" do
         expect(settings.kb_embedding_runner).to eq("openai")
         expect(settings.kb_embedding_fallback_runners).to eq([ "openrouter" ])
       end
+
+      it "updates the embedding model and dimensions" do
+        patch user_settings_path, params: {
+          user_setting: {
+            kb_embedding_model: "text-embedding-3-small",
+            kb_embedding_dimensions: 1536
+          }
+        }
+
+        expect(response).to redirect_to(edit_user_settings_path)
+
+        settings = user.reload.settings
+        expect(settings.kb_embedding_model).to eq("text-embedding-3-small")
+        expect(settings.kb_embedding_dimensions).to eq(1536)
+      end
+
+      it "rejects an out-of-range embedding dimension" do
+        patch user_settings_path, params: {
+          user_setting: {
+            kb_embedding_dimensions: 99_999
+          }
+        }
+
+        expect(response).to have_http_status(:unprocessable_content)
+        expect(response.body).to include("between 1 and")
+      end
     end
   end
 end

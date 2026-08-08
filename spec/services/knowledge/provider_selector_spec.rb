@@ -38,8 +38,22 @@ RSpec.describe Knowledge::ProviderSelector do
           message: "knowledge.provider_selector.embedding_fallback_requires_compatible_model",
           user_setting_id: setting.id,
           providers: %w[openai openrouter deepseek],
-          model: Knowledge::Embeddings::Generate::MODEL,
-          dimensions: Knowledge::Embeddings::Generate::DIMENSIONS
+          model: Knowledge::Embeddings::Generate::DEFAULT_MODEL,
+          dimensions: Knowledge::Embeddings::Generate::DEFAULT_DIMENSIONS
+        )
+      )
+    end
+
+    it "logs the configured model and dimensions in the embedding fallback warning" do
+      setting.update!(kb_embedding_model: "text-embedding-3-small", kb_embedding_dimensions: 1536)
+      allow(Rails.logger).to receive(:warn)
+
+      described_class.for_embedding(user_setting: setting)
+
+      expect(Rails.logger).to have_received(:warn).with(
+        hash_including(
+          model: "text-embedding-3-small",
+          dimensions: 1536
         )
       )
     end
