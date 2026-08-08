@@ -1037,13 +1037,16 @@ module Activities
         .where("reconciled_at IS NULL OR reconciled_at < github_updated_at")
         .pluck(:github_number)
 
-      existing_open_numbers.count do |number|
-        reconcile_one_open_issue(
+      changed_count = 0
+      existing_open_numbers.each_with_index do |number, index|
+        heartbeat("fetch_issues.reconcile_issue", project_id: project.id, issue_number: number, index: index, total: existing_open_numbers.size)
+        changed_count += 1 if reconcile_one_open_issue(
           project, client, number,
           eager_queue_enabled: eager_queue_enabled,
           eligible_issues: eligible_issues
         )
       end
+      changed_count
     end
 
     def reconcile_one_open_issue(project, client, number, eager_queue_enabled: false, eligible_issues: nil)
