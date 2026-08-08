@@ -2103,6 +2103,17 @@ expect(container_service).to receive(:execute).with(
         expect(result[:success]).to be true
       end
 
+      it "does not commit or report file changes for enhance_issue runs" do
+        agent_run.update!(goal: "enhance_issue")
+        allow(git_ops).to receive(:has_changes_since?).with("pre_agent_sha_abc123").and_return(true)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:has_changes]).to be false
+        expect(git_ops).not_to have_received(:commit_uncommitted_changes)
+        expect(git_ops).not_to have_received(:has_changes_since?)
+      end
+
       it "returns review_threads_already_addressed when the agent emits the marker" do
         marker_success = Containers::Provision::Result.success(
           stdout: "Reviewed the branch.\n#{Prompts::BuildForPr::ALREADY_ADDRESSED_MARKER}\n",

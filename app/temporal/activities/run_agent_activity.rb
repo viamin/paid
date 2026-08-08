@@ -338,7 +338,7 @@ module Activities
             bookkeeping_result = with_periodic_heartbeat("post_run_bookkeeping", runner) do
               # Evaluate pre-commit requirements against the working directory
               # before committing, so blocking failures prevent commits.
-              if agent_run.repo_cloned?
+              if agent_run.repo_cloned? && !agent_run.enhance_issue_goal?
                 record_verification_result(
                   agent_run,
                   fallback_result: runner_result[:verification_fallback_result]
@@ -362,7 +362,11 @@ module Activities
                 commit_uncommitted_changes(agent_run)
               end
 
-              { has_changes: agent_run.repo_cloned? ? check_for_changes(agent_run, pre_agent_sha) : false }
+              {
+                has_changes: agent_run.repo_cloned? && !agent_run.enhance_issue_goal? ?
+                  check_for_changes(agent_run, pre_agent_sha) :
+                  false
+              }
             end
 
             attempt_finished = true

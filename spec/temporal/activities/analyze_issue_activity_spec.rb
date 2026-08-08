@@ -143,6 +143,25 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       expect(agent_run.reload.status).to eq("completed")
     end
 
+    it "extracts fenced analysis JSON when the LLM adds prose before it" do
+      allow(llm_response).to receive(:output).and_return(<<~OUTPUT)
+        I'll assess the issue and return the requested JSON.
+
+        ```json
+        {
+          "sufficient_context": false,
+          "reasoning": "The issue leaves the persistence format unspecified.",
+          "missing_context_areas": ["persistence format"]
+        }
+        ```
+      OUTPUT
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:sufficient_context]).to be(false)
+      expect(result[:missing_context_areas]).to eq([ "persistence format" ])
+    end
+
     it "tracks token usage correctly" do
       activity.execute(agent_run_id: agent_run.id)
 
