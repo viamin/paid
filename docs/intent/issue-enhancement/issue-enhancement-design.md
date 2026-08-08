@@ -62,12 +62,15 @@ retrieval results (`Knowledge::Search`) and knowledge-base context bundle
 states this constraint explicitly so the agent does not fabricate file paths
 or claim a repo read it never made.
 
-**RDR-052 Phase 1 (#3254) — read-only containerized execution.** When that
-work lands, `enhance_issue` will route through container provisioning with a
-read-only repo mount (`app/services/containers/provision_for_chat.rb` is the
-closest analog) and authenticate via the DB-stored runner credential. At that
-point the following claims become behavioral rather than aspirational, and
-ISSUE-ENHANCEMENT-006 / 007 move from `[D]` to `[x]`:
+**RDR-052 Phase 1 (#3254) — comment-only containerized execution.** Phase 1
+routes `enhance_issue` through container provisioning (with the workspace
+mounted writable so the platform can clone the repo before the agent starts)
+and authenticates via the DB-stored runner credential. The run itself is
+comment-only at the workflow level — `RunAgentActivity` skips git
+post-processing and `workspace_mount_mode` is `:rw` so clone can populate
+`/workspace` — and the agent prompt instructs the agent accordingly. This
+moved the following claims from aspirational to behavioral, and
+ISSUE-ENHANCEMENT-006 / 007 from `[D]` to `[x]`:
 
 - **Self-answer what the code determines.** The agent explores the repository,
   retrieval results, and knowledge-base context to answer for itself the things
@@ -85,9 +88,13 @@ ISSUE-ENHANCEMENT-006 / 007 move from `[D]` to `[x]`:
   implementation context cites real files, symbols, and patterns read from the
   repository, not inferred-from-snapshot guesses.
 
-The workspace is read-only: the agent may explore the repository to ground its
-questions and verdict but cannot modify files, commit, or push (RDR R2). Its
-only outputs remain the posted comment and label state.
+The workspace is mounted writable so the platform can clone the repo into
+`/workspace` before the agent runs, but the run is **comment-only**: the
+workflow discards any workspace modifications, never commits, never pushes,
+and never opens a PR (RDR R2). The agent may explore the repository to ground
+its questions and verdict, but its only durable outputs are the posted comment
+and label state. The agent prompt must instruct the agent that the run is
+comment-only so it does not attempt writes that would be discarded anyway.
 
 ## Re-evaluation comment admission
 
@@ -122,7 +129,7 @@ The enhancement flow itself does not create LID artifacts. It captures and
 surfaces intent; the later `create_pr` run materializes that intent when the
 project's LID mode says it should.
 
-## Containerized, read-only execution (RDR-052)
+## Containerized, comment-only execution (RDR-052)
 
 As of RDR-052 Phase 1, `enhance_issue` runs as a **containerized agent with
 repository access** instead of a direct `AgentHarness.send_message` call inside
@@ -130,13 +137,16 @@ the worker process. The agent authenticates via the runner-credential injection
 path (DB-stored credential → container-injected), removing this step's
 dependency on `ANTHROPIC_API_KEY` in the environment.
 
-The run is **read-only**:
+The run is **comment-only**:
 
-- *Structural* — the workspace bind mount uses `:ro` (state/scratch volumes
-  under `/home/agent/` remain writable). See
-  `app/services/containers/provision.rb#workspace_mount_mode`.
-- *Behavioral* — the agent prompt states the workspace is read-only so the
-  agent does not attempt writes that would fail.
+- *Structural* — the workspace bind mount is `:rw` (state/scratch volumes
+  under `/home/agent/` are also writable). The platform populates `/workspace`
+  via the normal clone path before the agent starts; the workflow skips git
+  post-processing for `enhance_issue` so any agent writes are discarded. See
+  `app/services/containers/provision.rb#workspace_mount_mode` and
+  `app/temporal/activities/run_agent_activity.rb`.
+- *Behavioral* — the agent prompt instructs the agent that the run is
+  comment-only so it does not attempt writes that would be discarded anyway.
 
 The run uses the default shallow clone (`--depth 1`), which is sufficient for
 codebase exploration during enhancement. The existing `<!-- paid:enhance-issue -->`
