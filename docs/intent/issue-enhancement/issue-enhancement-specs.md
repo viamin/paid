@@ -82,8 +82,9 @@
 - [x] **ISSUE-ENHANCEMENT-006** — When issue enhancement runs, the system SHALL
   execute it as a containerized agent with repository access, authenticating
   via the injected runner credential instead of the `ANTHROPIC_API_KEY`
-  environment variable. The agent prompt SHALL state the read-only constraint,
-  and the workflow SHALL treat the run as comment-only: it SHALL post the
+  environment variable. The agent prompt SHALL instruct the agent that the run
+  is comment-only: workspace modifications are discarded and the agent SHALL
+  NOT commit, push, or create a pull request. The workflow SHALL post the
   `<!-- paid:enhance-issue -->` comment and label state without committing,
   pushing, or creating a pull request.
   *Tests:* `spec/temporal/activities/enhance_issue_activity_spec.rb`.
