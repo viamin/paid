@@ -203,6 +203,28 @@
             </div>
             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Maximum character length per comment in agent prompts. Default is 2000.</p>
           </div>
+
+          <hr class="my-6 border-gray-200 dark:border-gray-600">
+          <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300">Issue Analysis</h4>
+
+          <div>
+            <%= form.label :issue_analysis_runner, "Issue Analysis Runner", class: "block text-sm font-medium leading-6 text-gray-900 dark:text-gray-100" %>
+            <div class="mt-2">
+              <%= form.select :issue_analysis_runner,
+                options_for_select([["Automatic (use my chat runners)", ""]] + @user_setting.issue_analysis_runner_options, @user_setting.issue_analysis_runner),
+                {},
+                class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 dark:text-gray-100 dark:bg-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+            </div>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Runner used for the lightweight issue-readiness assessment before a run starts. Leave on Automatic to use your chat-enabled runners in priority order.</p>
+          </div>
+
+          <div>
+            <%= form.label :issue_analysis_fallback_runners_csv, "Issue Analysis Fallback Runners", class: "block text-sm font-medium leading-6 text-gray-900 dark:text-gray-100" %>
+            <div class="mt-2">
+              <%= form.text_field :issue_analysis_fallback_runners_csv, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 dark:text-gray-100 dark:bg-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6", placeholder: "codex, gemini" %>
+            </div>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Comma-separated runners tried when the primary issue analysis runner is unavailable. Only used when a specific runner is selected above.</p>
+          </div>
         </fieldset>
 
         <hr class="my-8 border-gray-200 dark:border-gray-600">

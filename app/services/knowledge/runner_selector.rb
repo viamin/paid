@@ -10,6 +10,10 @@ module Knowledge
       new(user_setting:).runners_for(:chat)
     end
 
+    def self.for_issue_analysis(user_setting:)
+      new(user_setting:).runners_for(:issue_analysis)
+    end
+
     # Broadens chat selection beyond the kb_chat settings to every
     # chat-enabled Runner the user owns, applying the same circuit-breaker /
     # rate-limit availability filter as #runners_for. Used when the
@@ -67,6 +71,8 @@ module Knowledge
         [ user_setting.kb_embedding_runner, *Array(user_setting.kb_embedding_fallback_runners) ]
       when :chat
         [ user_setting.kb_chat_runner, *Array(user_setting.kb_chat_fallback_runners) ]
+      when :issue_analysis
+        [ user_setting.issue_analysis_runner, *Array(user_setting.issue_analysis_fallback_runners) ]
       else
         raise ArgumentError, "Unsupported knowledge runner operation: #{operation}"
       end
@@ -84,7 +90,7 @@ module Knowledge
       case operation.to_sym
       when :embedding
         UserSetting::KB_EMBEDDING_RUNNERS
-      when :chat
+      when :chat, :issue_analysis
         UserSetting::KB_CHAT_RUNNERS
       else
         raise ArgumentError, "Unsupported knowledge runner operation: #{operation}"

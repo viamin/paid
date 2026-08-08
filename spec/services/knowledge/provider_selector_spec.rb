@@ -82,6 +82,42 @@ RSpec.describe Knowledge::ProviderSelector do
     end
   end
 
+  # @spec ISSUE-ANALYSIS-001
+  describe ".for_issue_analysis" do
+    let(:issue_setting) do
+      create(
+        :user_setting,
+        user: user,
+        issue_analysis_runner: "codex",
+        issue_analysis_fallback_runners: %w[cursor gemini],
+        circuit_breaker_timeout_seconds: 300
+      )
+    end
+
+    it "returns the configured issue analysis runner order" do
+      expect(described_class.for_issue_analysis(user_setting: issue_setting)).to eq(%w[codex cursor gemini])
+    end
+
+    it "returns an empty array when no issue analysis runner is configured" do
+      blank_setting = create(:user_setting, user: create(:user), issue_analysis_runner: "", issue_analysis_fallback_runners: [])
+
+      expect(described_class.for_issue_analysis(user_setting: blank_setting)).to eq([])
+    end
+
+    it "filters out unavailable runners" do
+      create(:runner_state, :rate_limited, user: user, runner_name: "codex")
+
+      expect(described_class.for_issue_analysis(user_setting: issue_setting)).to eq(%w[cursor gemini])
+    end
+
+    it "rejects an unsupported runner configured outside the supported set" do
+      issue_setting.update_columns(issue_analysis_runner: "not-a-runner")
+      allow(Rails.logger).to receive(:warn)
+
+      expect(described_class.for_issue_analysis(user_setting: issue_setting)).to eq(%w[cursor gemini])
+    end
+  end
+
   # @spec ISSUE-ANALYSIS-002
   describe ".available_chat_runner_keys" do
     before { user.runners.delete_all }

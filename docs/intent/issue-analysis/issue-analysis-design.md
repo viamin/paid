@@ -24,23 +24,25 @@ assignment (including dispatch reroute / fallback) governs *which runner
 executes the agent container*; the analysis activity resolves its own LLM
 provider independently, through the knowledge/chat provider layer:
 
-1. **Configured preference.** `Knowledge::ProviderSelector.for_chat` reads the
-   owner's `kb_chat_runner` + `kb_chat_fallback_runners`, filtered by circuit
-   breaker / rate-limit availability (`RunnerState#unavailable?`).
-2. **Broadening.** When the preference yields no candidates (the configured
-   runner is unavailable), `Knowledge::ProviderSelector.available_chat_runner_keys`
+1. **Issue-analysis preference.** `Knowledge::ProviderSelector.for_issue_analysis`
+   reads the owner's `issue_analysis_runner` + `issue_analysis_fallback_runners`,
+   filtered by circuit breaker / rate-limit availability (`RunnerState#unavailable?`).
+   This is a user-configurable selection of which API keys are eligible for the
+   assessment; it is blank by default.
+2. **Broadening.** When the preference yields no candidates (none configured or
+   the configured runner is unavailable), `Knowledge::ProviderSelector.available_chat_runner_keys`
    widens to every chat-enabled `Runner` the owner actually has, applying the
    same availability filter. This is what lets an analysis succeed on `codex`
-   when `claude` is rate-limited.
-3. **Platform default, availability-gated.** Only when nothing above produces a
-   candidate does the activity fall back to `DEFAULT_PROVIDER` ("claude") — and
-   only if that default is not itself currently unavailable for the owner.
+   when `claude` is rate-limited, and what serves the default case where no
+   explicit issue-analysis runner is set.
 
-The previous design forced `[DEFAULT_PROVIDER]` whenever the preference list was
-empty, which re-selected the exact provider the availability filter had just
-excluded and guaranteed the call targeted a known-unhealthy runner. That is the
-run-17220 failure mode this segment now guards against (see
-`ISSUE-ANALYSIS-002`).
+There is no hardcoded platform default. The previous design forced
+`[DEFAULT_PROVIDER]` ("claude") whenever the candidate list was empty, which
+silently routed the call onto an Anthropic-only credential path
+(`ANTHROPIC_API_KEY` in the host ENV) even when the owner had other valid API
+keys configured. That is the run-17220 / RDR-052 failure mode this segment now
+guards against (see `ISSUE-ANALYSIS-002`): analysis selects from the owner's
+configured runners rather than assuming Anthropic.
 
 If no provider is available at all, `call_llm` raises a non-retryable
 `AnalyzeIssueLlmFailed` ("No LLM provider produced an issue analysis") rather

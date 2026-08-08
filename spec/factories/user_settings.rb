@@ -31,6 +31,8 @@ FactoryBot.define do
     kb_embedding_fallback_runners { [] }
     kb_chat_runner { UserSetting::KB_CHAT_RUNNER_DEFAULT }
     kb_chat_fallback_runners { [] }
+    issue_analysis_runner { "" }
+    issue_analysis_fallback_runners { [] }
     allowed_service_images { [ "postgres:16", "redis:7-alpine", "selenium/standalone-chromium:latest" ] }
   end
 end

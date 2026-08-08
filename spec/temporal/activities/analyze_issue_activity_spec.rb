@@ -302,6 +302,73 @@ RSpec.describe Activities::AnalyzeIssueActivity do
     end
   end
 
+  describe "issue analysis runner selection" do
+    let(:account) { create(:account) }
+    let(:owner) { create(:user, account: account) }
+    let(:project) { create(:project, account: account, created_by: owner) }
+    let(:issue) do
+      create(:issue, :in_progress,
+        project: project,
+        github_number: 77,
+        title: "Add audit log",
+        body: "Record user actions for compliance tracking")
+    end
+    let(:agent_run) { create(:agent_run, project: project, issue: issue, goal: "analyze_issue") }
+
+    before do
+      allow(project).to receive(:broadcast_agent_run_detail_update)
+      allow(GithubClient).to receive(:new).and_return(client)
+      allow(client).to receive(:issue_comments).with(project.full_name, issue.github_number).and_return(comments)
+      allow(Knowledge::Search).to receive(:call).and_return(results: [], meta: {})
+      allow(Knowledge::ContextBundle::Build).to receive(:call).and_return(content: "", sections: [], total_tokens: 0)
+      allow(AgentHarness).to receive(:send_message).and_return(llm_response)
+      allow(ProcessRunQueueJob).to receive(:perform_later)
+    end
+
+    # @spec ISSUE-ANALYSIS-001
+    it "uses the configured issue_analysis_runner as the primary provider" do
+      create(:runner, user: owner, runner_key: "codex", enabled_for_chat: true)
+      owner.settings.update!(issue_analysis_runner: "codex", issue_analysis_fallback_runners: [])
+
+      selected_provider = nil
+      allow(AgentHarness).to receive(:send_message) do |_, **opts|
+        selected_provider = opts[:provider]
+        llm_response
+      end
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(selected_provider).to eq(:codex)
+    end
+
+    # @spec ISSUE-ANALYSIS-001
+    it "tries issue_analysis_fallback_runners before broadening to all chat runners" do
+      create(:runner, user: owner, runner_key: "codex", enabled_for_chat: true)
+      create(:runner, user: owner, runner_key: "gemini", enabled_for_chat: true)
+      owner.settings.update!(issue_analysis_runner: "codex", issue_analysis_fallback_runners: [ "gemini" ])
+      create(:runner_state, :rate_limited, user: owner, runner_name: "codex")
+
+      selected_provider = nil
+      allow(AgentHarness).to receive(:send_message) do |_, **opts|
+        selected_provider = opts[:provider]
+        llm_response
+      end
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(selected_provider).to eq(:gemini)
+    end
+
+    it "does not force claude when the owner has no chat runner available" do
+      # The default runner (claude) is rate-limited and no other runner exists.
+      create(:runner_state, :rate_limited, user: owner, runner_name: "claude")
+
+      expect {
+        activity.execute(agent_run_id: agent_run.id)
+      }.to raise_error(Temporalio::Error::ApplicationError, "No LLM provider produced an issue analysis")
+    end
+  end
+
   describe "knowledge usage attribution" do
     include_context "without qdrant vector search"
 

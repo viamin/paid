@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_08_06_013539) do
+ActiveRecord::Schema[8.1].define(version: 2026_08_08_055358) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2858,6 +2858,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_08_06_013539) do
     t.integer "git_push_timeout_seconds", default: 60, null: false
     t.integer "git_unshallow_timeout_seconds", default: 1800, null: false
     t.integer "github_token_cache_ttl_minutes", default: 60, null: false
+    t.jsonb "issue_analysis_fallback_runners", default: [], null: false, comment: "Ordered fallback runner keys for analyze_issue when the primary runner is unavailable."
+    t.string "issue_analysis_runner", default: "", null: false, comment: "Preferred runner key for analyze_issue LLM assessment. Blank falls back to the owner's chat-enabled runners."
     t.integer "issue_goal_idle_timeout_seconds", default: 120, null: false
     t.integer "issue_goal_timeout_seconds", default: 600, null: false
     t.jsonb "kb_chat_fallback_runners", default: [], null: false
