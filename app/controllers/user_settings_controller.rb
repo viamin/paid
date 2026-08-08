@@ -79,6 +79,8 @@ class UserSettingsController < ApplicationController
       :fallback_runners,
       :kb_embedding_runner,
       :kb_chat_runner,
+      :issue_analysis_runner,
+      :issue_analysis_fallback_runners_csv,
       auto_pick_skip_labels: []
     )
 
