@@ -112,9 +112,20 @@ module Knowledge
         message: "knowledge.runner_selector.embedding_fallback_requires_compatible_model",
         user_setting_id: user_setting.id,
         runners: candidates,
-        model: Knowledge::Embeddings::Generate::MODEL,
-        dimensions: Knowledge::Embeddings::Generate::DIMENSIONS
+        model: embedding_model,
+        dimensions: embedding_dimensions
       )
+    end
+
+    # Returns the user-configured embedding model id, falling back to the
+    # bundled default. Centralized so the warn-log message reflects the
+    # actual model the pipeline will request — not the legacy constant.
+    def embedding_model
+      user_setting.kb_embedding_model.presence || Knowledge::Embeddings::Generate::DEFAULT_MODEL
+    end
+
+    def embedding_dimensions
+      user_setting.kb_embedding_dimensions
     end
 
     def log_unsupported_runners(operation, runners)
