@@ -49,11 +49,14 @@ module Activities
       ensure_trusted_issue!(issue)
 
       client = github_client(project)
-      comments = trusted_comments(project, client.issue_comments(project.full_name, issue.github_number))
+      raw_comments = client.issue_comments(project.full_name, issue.github_number)
+      comments = trusted_comments(project, raw_comments)
       existing_comment = enhancement_comment(comments)
       return complete_existing(agent_run, client, project, issue, existing_comment) if existing_comment && issue.enhance_issue_rounds.zero?
 
-      parsed = parse_agent_output!(agent_run)
+      parsed = parse_agent_output!(agent_run, project, issue, client, raw_comments)
+      return parsed if parsed[:recovered_paid_question_comment]
+
       finish_enhance_issue(agent_run, project, issue, client, parsed)
     end
 
@@ -96,16 +99,16 @@ module Activities
     # The agent (run via RunAgentActivity) emits its JSON between
     # OUTPUT_DELIMITER lines so it survives runner log noise and chunking.
     # @spec ISSUE-ENHANCEMENT-006
-    def parse_agent_output!(agent_run)
+    def parse_agent_output!(agent_run, project, issue, client, comments)
       raw = collect_agent_stdout(agent_run)
-      raise_parse_error!(agent_run, "no structured output captured") if raw.blank?
+      return recover_or_raise_parse_error!(agent_run, project, issue, client, comments, "no structured output captured") if raw.blank?
 
       parsed = JSON.parse(strip_markdown_fence(extract_json_payload(raw)), symbolize_names: true)
       return parsed if parsed.key?(:sufficient_context) && parsed[:comment_body].present?
 
-      raise_parse_error!(agent_run, "missing sufficient_context or comment_body")
+      recover_or_raise_parse_error!(agent_run, project, issue, client, comments, "missing sufficient_context or comment_body")
     rescue JSON::ParserError => e
-      raise_parse_error!(agent_run, e.message)
+      recover_or_raise_parse_error!(agent_run, project, issue, client, comments, e.message)
     end
 
     # Concatenates the recent stdout chunks in chronological order. The runner
@@ -135,6 +138,38 @@ module Activities
       )
     end
 
+    def recover_or_raise_parse_error!(agent_run, project, issue, client, comments, detail)
+      return recover_paid_question_comment!(agent_run, project, issue, client, comments) if paid_question_comment?(project, agent_run, comments)
+
+      raise_parse_error!(agent_run, detail)
+    end
+
+    def recover_paid_question_comment!(agent_run, project, issue, client, comments)
+      comment = paid_question_comment(project, agent_run, comments)
+      label_result = apply_label_state(client, project, issue, sufficient_context: false)
+      complete_run!(agent_run, "needs_input")
+      ProcessRunQueueJob.perform_later
+
+      agent_run.log!("system", "Recovered Paid-authored clarifying question comment: #{comment.html_url}")
+      logger.info(
+        message: "agent_execution.enhance_issue_recovered_paid_question_comment",
+        agent_run_id: agent_run.id,
+        issue_id: issue.id,
+        issue_number: issue.github_number,
+        comment_url: comment.html_url
+      )
+
+      {
+        agent_run_id: agent_run.id,
+        issue_number: issue.github_number,
+        comment_url: comment.html_url,
+        sufficient_context: false,
+        label_applied: label_result[:applied],
+        max_rounds_reached: label_result[:max_rounds_reached],
+        recovered_paid_question_comment: true
+      }
+    end
+
     def complete_existing(agent_run, client, project, issue, existing_comment)
       label_result = reconcile_existing_label_state(client, project, issue, existing_comment)
       complete_run!(agent_run, existing_paid_state(issue, existing_comment))
@@ -154,9 +189,10 @@ module Activities
 
     def reconcile_existing_label_state(client, project, issue, existing_comment)
       if existing_comment.body.to_s.include?("## Auto-enhancement stopped")
-        removed = labels_removed(client, project, issue, [ project.enhance_issue_needs_input_label_name ])
-        merge_local_labels(issue, remove: removed)
-        return { applied: nil, max_rounds_reached: true, sufficient_context: false }
+        added = labels_added(client, project, issue, [ project.enhance_issue_needs_input_label_name ])
+        require_label_added!(project.enhance_issue_needs_input_label_name, added)
+        merge_local_labels(issue, add: added)
+        return { applied: added.first, max_rounds_reached: true, sufficient_context: false }
       end
 
       sufficient_context = !existing_comment.body.to_s.include?("## Clarifying questions")
@@ -165,8 +201,8 @@ module Activities
     end
 
     def existing_paid_state(issue, existing_comment)
-      return "completed" if existing_comment.body.to_s.include?("## Auto-enhancement stopped")
       return "needs_input" if issue.has_label?(issue.project.enhance_issue_needs_input_label_name)
+      return "needs_input" if existing_comment.body.to_s.include?("## Auto-enhancement stopped")
       return "needs_input" if existing_comment.body.to_s.include?("## Clarifying questions")
 
       "completed"
@@ -299,9 +335,10 @@ module Activities
       end
 
       if max_rounds_reached?(project, issue)
-        removed = labels_removed(client, project, issue, [ project.enhance_issue_needs_input_label_name ])
-        merge_local_labels(issue, remove: removed)
-        return { applied: nil, max_rounds_reached: true }
+        added = labels_added(client, project, issue, [ project.enhance_issue_needs_input_label_name ])
+        require_label_added!(project.enhance_issue_needs_input_label_name, added)
+        merge_local_labels(issue, add: added)
+        return { applied: added.first, max_rounds_reached: true }
       end
 
       added = labels_added(client, project, issue, [ project.enhance_issue_needs_input_label_name ])
@@ -313,7 +350,6 @@ module Activities
 
     def paid_state_for(parsed, project, issue)
       return "completed" if parsed[:sufficient_context]
-      return "completed" if max_rounds_reached?(project, issue)
 
       "needs_input"
     end
@@ -378,6 +414,32 @@ module Activities
 
       labels = (Array(issue.labels) - remove) | add
       issue.update!(labels: labels)
+    end
+
+    def paid_question_comment?(project, agent_run, comments)
+      paid_question_comment(project, agent_run, comments).present?
+    end
+
+    def paid_question_comment(project, agent_run, comments)
+      comments.reverse.find do |comment|
+        paid_bot_comment?(project, comment) &&
+          comment_after_run?(comment, agent_run) &&
+          comment_needs_human_input?(comment.body.to_s)
+      end
+    end
+
+    def paid_bot_comment?(project, comment)
+      project.paid_bot_author?(comment.user&.login)
+    end
+
+    def comment_after_run?(comment, agent_run)
+      created_at = comment.created_at
+      created_at && created_at.to_time >= agent_run.created_at
+    end
+
+    def comment_needs_human_input?(body)
+      body.match?(/^##\s+Clarifying questions\b/i) ||
+        body.match?(/\b(question|decision|confirm|blocked|answer)\b/i)
     end
 
     def github_client(project)
