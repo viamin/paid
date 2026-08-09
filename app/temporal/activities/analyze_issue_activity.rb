@@ -313,7 +313,7 @@ module Activities
     def parse_analysis_candidate(output)
       analysis_json_candidates(output).each do |candidate|
         parsed = JSON.parse(candidate, symbolize_names: true)
-        return parsed if parsed.is_a?(Hash)
+        return parsed if parsed.is_a?(Hash) && parsed.key?(:sufficient_context) && parsed.key?(:reasoning)
       rescue JSON::ParserError
         next
       end
