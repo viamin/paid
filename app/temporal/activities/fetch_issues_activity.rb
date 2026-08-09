@@ -55,7 +55,11 @@ module Activities
         enhance_issue_rechecks = enhance_issue_result[:rechecks]
         sync_changed ||= enhance_issue_result[:changed]
 
-        needs_input_changed = detect_needs_input_label_removals(project, synced_issues)
+        needs_input_changed = detect_needs_input_label_removals(
+          project,
+          synced_issues,
+          ignored_issue_ids: enhance_issue_result[:handled_issue_ids]
+        )
         sync_changed ||= needs_input_changed
 
         paused_changed = sync_paused_state(project, synced_issues)
@@ -313,6 +317,7 @@ module Activities
     def detect_enhance_issue_rechecks(project, synced_issues)
       label = project.enhance_issue_needs_input_label_name
       changed = false
+      handled_issue_ids = []
 
       rechecks = synced_issues.filter_map do |issue_data|
         next unless Array(issue_data[:removed_labels]).include?(label)
@@ -320,11 +325,12 @@ module Activities
         issue = project.issues.find(issue_data[:id])
         next if issue.is_pull_request? || issue.github_state == "closed" || issue.paid_state != "needs_input"
 
+        handled_issue_ids << issue.id
         changed = true
         enqueue_enhance_issue_recheck(project, issue)
       end
 
-      { rechecks: rechecks, changed: changed }
+      { rechecks: rechecks, changed: changed, handled_issue_ids: handled_issue_ids }
     end
 
     def enhance_issue_needs_input?(project, issue_data)
@@ -358,8 +364,13 @@ module Activities
     end
 
     def stop_enhance_issue_recheck(project, issue, max_rounds)
+      project.client.add_labels_to_issue(
+        project.full_name,
+        issue.github_number,
+        [ project.enhance_issue_needs_input_label_name ]
+      )
       post_enhance_issue_limit_comment(project, issue, max_rounds)
-      issue.update!(paid_state: "completed")
+      restore_enhance_issue_recheck_signal(project, issue)
 
       logger.info(
         message: "agent_execution.enhance_issue_recheck_limit_reached",
@@ -398,13 +409,15 @@ module Activities
       end
     end
 
-    def detect_needs_input_label_removals(project, synced_issues)
+    def detect_needs_input_label_removals(project, synced_issues, ignored_issue_ids: [])
       needs_input_label = project.label_for_stage("needs_input") ||
         Activities::HandleNoOutputIssueRunActivity::PAID_NEEDS_INPUT_LABEL
+      ignored_issue_ids = ignored_issue_ids.to_set
       changed = false
 
       synced_issues.each_with_index do |issue_data, index|
         heartbeat("fetch_issues.needs_input_removal", project_id: project.id, issue_id: issue_data[:id], index: index, total: synced_issues.size)
+        next if ignored_issue_ids.include?(issue_data[:id])
         next unless Array(issue_data[:removed_labels]).include?(needs_input_label)
 
         issue = project.issues.find(issue_data[:id])
