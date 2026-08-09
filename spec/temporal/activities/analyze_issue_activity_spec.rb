@@ -162,6 +162,31 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       expect(result[:missing_context_areas]).to eq([ "persistence format" ])
     end
 
+    it "skips a non-analysis JSON object and extracts the analysis JSON from a later fenced block" do
+      allow(llm_response).to receive(:output).and_return(<<~OUTPUT)
+        Here's the config I referenced earlier:
+
+        ```json
+        { "type": "session.mcp_servers_loaded", "servers": [] }
+        ```
+
+        And here is the analysis:
+
+        ```json
+        {
+          "sufficient_context": false,
+          "reasoning": "The issue leaves the persistence format unspecified.",
+          "missing_context_areas": ["persistence format"]
+        }
+        ```
+      OUTPUT
+
+      result = activity.execute(agent_run_id: agent_run.id)
+
+      expect(result[:sufficient_context]).to be(false)
+      expect(result[:missing_context_areas]).to eq([ "persistence format" ])
+    end
+
     it "tracks token usage correctly" do
       activity.execute(agent_run_id: agent_run.id)
 
