@@ -17,6 +17,8 @@ module ChatSessions
     EMPTY_RESPONSE_MESSAGE = "I couldn't complete that turn because the model returned an empty response. Please try again."
     SOFT_STOP_PROMPT = "You've reached the maximum number of tool calls for this turn. Summarize what you've found so far and suggest what the user should do next. Do not call any more tools."
     SOFT_STOP_FALLBACK_MESSAGE = "I've reached the maximum number of tool calls for this turn. Please send another message to continue."
+    TOKEN_BUDGET_SOFT_STOP_PROMPT = "You've reached the token budget for this chat session. Summarize what you've found so far and suggest what the user should do next. Do not call any more tools."
+    TOKEN_BUDGET_SOFT_STOP_FALLBACK_MESSAGE = "I've reached the token budget for this chat session. Please increase the session token limit or start a new chat to continue."
 
     attr_reader :chat_session, :llm_client, :on_chunk, :on_message_persisted, :stream_message_id,
       :created_message_ids
@@ -73,7 +75,13 @@ module ChatSessions
         # reaches the remaining budget there is nothing left for another
         # LLM round-trip, so continuing would overrun the configured limit.
         if budget && (aggregate_tokens[:input] + aggregate_tokens[:output]) >= budget
-          final_assistant_message = run_soft_stop(conversation, aggregate_tokens:, model: last_response_model)
+          final_assistant_message = run_soft_stop(
+            conversation,
+            aggregate_tokens:,
+            model: last_response_model,
+            prompt: TOKEN_BUDGET_SOFT_STOP_PROMPT,
+            fallback_message: TOKEN_BUDGET_SOFT_STOP_FALLBACK_MESSAGE
+          )
           break
         end
 
@@ -114,7 +122,13 @@ module ChatSessions
 
         next unless iteration == (limit - 1)
 
-        final_assistant_message = run_soft_stop(conversation, aggregate_tokens:, model: last_response_model)
+        final_assistant_message = run_soft_stop(
+          conversation,
+          aggregate_tokens:,
+          model: last_response_model,
+          prompt: SOFT_STOP_PROMPT,
+          fallback_message: SOFT_STOP_FALLBACK_MESSAGE
+        )
       end
 
       stamp_aggregate_tokens(final_assistant_message, aggregate_tokens, last_response_model)
@@ -130,15 +144,15 @@ module ChatSessions
     # Injects a wrap-up instruction and calls the model one final time without
     # tools so it must produce a text summary. Used both when the iteration cap
     # is reached and when the token budget is exhausted mid-loop.
-    def run_soft_stop(conversation, aggregate_tokens:, model:)
-      conversation << { role: "user", content: SOFT_STOP_PROMPT }
+    def run_soft_stop(conversation, aggregate_tokens:, model:, prompt:, fallback_message:)
+      conversation << { role: "user", content: prompt }
 
       response = call_llm(conversation, exclude_tools: true)
       aggregate_tokens[:input] += response[:tokens_input].to_i
       aggregate_tokens[:output] += response[:tokens_output].to_i
 
       create_assistant_message(
-        content: response[:content].presence || SOFT_STOP_FALLBACK_MESSAGE,
+        content: response[:content].presence || fallback_message,
         model: response[:model] || model
       )
     end

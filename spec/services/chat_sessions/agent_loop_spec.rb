@@ -465,6 +465,8 @@ RSpec.describe ChatSessions::AgentLoop do
         # Iteration 1: +15 = 30 tokens, 30 > 25 → soft-stop (3rd call)
         expect(result.content).to include("token budget")
         expect(client.seen_conversations.length).to eq(3)
+        expect(client.seen_conversations.last.last[:content]).to include("token budget")
+        expect(client.seen_conversations.last.last[:content]).not_to include("maximum number of tool calls")
         expect(chat_session.messages.where(role: "tool").count).to eq(1)
       end
 
