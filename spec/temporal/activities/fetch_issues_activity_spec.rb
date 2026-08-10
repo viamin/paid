@@ -1184,6 +1184,14 @@ RSpec.describe Activities::FetchIssuesActivity do
               )
             end
           end
+          allow(github_client).to receive(:issue) do |_repo, number|
+            OpenStruct.new(
+              id: 3999 + number, number: number, title: "Issue #{number}", body: "Body", state: "open",
+              labels: [ OpenStruct.new(name: "paid-build") ], pull_request: nil,
+              user: OpenStruct.new(login: "viamin"),
+              created_at: 2.days.ago, updated_at: 1.day.ago
+            )
+          end
         end
 
         it "advances the watermark when the probe page is empty" do
@@ -1564,7 +1572,7 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(issue.relationships_parsed_at).to be_nil
 
         # Second sync — github_updated_at has NOT changed, but the fetch now succeeds
-        allow(github_client).to receive(:issue_comments_batch).and_return({})
+        allow(github_client).to receive_messages(issue: flaky_issue, issue_comments_batch: {})
         activity.execute(project_id: project.id)
 
         expect(github_client).to have_received(:issue_comments_batch).with(project.full_name, [ 85 ]).twice
@@ -1585,7 +1593,7 @@ RSpec.describe Activities::FetchIssuesActivity do
 
       before do
         stub_issues_by_label(nil => [ parsed_issue ])
-        allow(github_client).to receive(:issue_comments_batch).and_return({})
+        allow(github_client).to receive_messages(issue_comments_batch: {}, issue: parsed_issue)
       end
 
       it "re-parses issue relationships after allowed_github_usernames changes" do
@@ -2310,6 +2318,101 @@ RSpec.describe Activities::FetchIssuesActivity do
 
           expect(github_client).not_to have_received(:issue).with(project.full_name, 52)
           expect(project.issues.find_by(github_number: 52)).to be_nil
+        end
+
+        it "refreshes labels on an existing open issue older than the watermark" do
+          issue = create(:issue, project: project, github_issue_id: 6010,
+                         github_number: 60, github_state: "open",
+                         labels: [ "enhancement", "research" ],
+                         github_updated_at: 2.days.ago,
+                         relationships_parsed_at: nil)
+          refreshed = OpenStruct.new(
+            id: issue.github_issue_id, number: 60, title: "Issue 60", body: "Body", state: "open",
+            labels: [ OpenStruct.new(name: "enhancement") ],
+            pull_request: nil, user: OpenStruct.new(login: "viamin"),
+            created_at: 2.days.ago, updated_at: 30.minutes.ago
+          )
+          allow(github_client).to receive(:issues).and_return([ updated_issue ])
+          allow(github_client).to receive(:issues).with(project.full_name, hash_including(state: "open"))
+            .and_return([ OpenStruct.new(number: 60, pull_request: nil) ])
+          allow(github_client).to receive(:issue).with(project.full_name, 60).and_return(refreshed)
+          allow(Rails.logger).to receive_messages(info: nil, warn: nil)
+
+          activity.execute(project_id: project.id)
+
+          expect(issue.reload.labels).to eq([ "enhancement" ])
+        end
+
+        it "continues reconciliation when one open issue fetch fails" do
+          issue = create(:issue, project: project, github_issue_id: 6010,
+                         github_number: 60, github_state: "open",
+                         github_updated_at: 2.days.ago,
+                         relationships_parsed_at: nil)
+          project.update_columns(last_issue_reconciliation_at: 2.hours.ago, last_issue_sync_at: 1.day.ago)
+          allow(github_client).to receive(:issues).and_return([ updated_issue ])
+          allow(github_client).to receive(:issues).with(project.full_name, hash_including(state: "open"))
+            .and_return([ OpenStruct.new(number: 60, pull_request: nil) ])
+          allow(github_client).to receive(:issue).with(project.full_name, 60)
+            .and_raise(GithubClient::Error.new("temporary failure"))
+
+          expect { activity.execute(project_id: project.id) }.not_to raise_error
+          expect(issue.reload.github_state).to eq("open")
+        end
+
+        it "re-raises rate limit errors so Temporal can retry" do
+          create(:issue, project: project, github_issue_id: 6010,
+                         github_number: 60, github_state: "open",
+                         github_updated_at: 2.days.ago,
+                         relationships_parsed_at: nil)
+          project.update_columns(last_issue_reconciliation_at: 2.hours.ago, last_issue_sync_at: 1.day.ago)
+          allow(github_client).to receive(:issues).and_return([ updated_issue ])
+          allow(github_client).to receive(:issues).with(project.full_name, hash_including(state: "open"))
+            .and_return([ OpenStruct.new(number: 60, pull_request: nil) ])
+          allow(github_client).to receive(:issue).with(project.full_name, 60)
+            .and_raise(GithubClient::RateLimitError.new(Time.current + 3600))
+
+          expect {
+            activity.execute(project_id: project.id)
+          }.to raise_error(Temporalio::Error::ApplicationError) { |error|
+            expect(error.type).to eq("RateLimit")
+          }
+        end
+
+        it "does not re-fetch issues already reconciled since their last GitHub update" do
+          create(:issue, project: project, github_issue_id: 6010,
+                 github_number: 60, github_state: "open",
+                 labels: [ "enhancement" ],
+                 github_updated_at: 2.days.ago,
+                 reconciled_at: 1.hour.ago,
+                 relationships_parsed_at: nil)
+          allow(github_client).to receive(:issues).and_return([ updated_issue ])
+          allow(github_client).to receive(:issues).with(project.full_name, hash_including(state: "open"))
+            .and_return([ OpenStruct.new(number: 60, pull_request: nil) ])
+          allow(github_client).to receive(:issue)
+
+          activity.execute(project_id: project.id)
+
+          expect(github_client).not_to have_received(:issue).with(project.full_name, 60)
+        end
+
+        it "eagerly enqueues reconciled issues when auto-pick is enabled" do
+          project.update!(auto_pick_enabled: true)
+          allow(Issues::EnqueueEligible).to receive(:call)
+          issue = create(:issue, project: project, github_issue_id: 6010,
+                         github_number: 60, github_state: "open",
+                         labels: [ "research" ], github_updated_at: 2.days.ago,
+                         relationships_parsed_at: nil)
+          allow(github_client).to receive(:issues).and_return([ updated_issue ])
+          allow(github_client).to receive(:issues).with(project.full_name, hash_including(state: "open"))
+            .and_return([ OpenStruct.new(number: 60, pull_request: nil) ])
+          allow(github_client).to receive(:issue).with(project.full_name, 60)
+            .and_return(github_issue(60, id: 6010, labels: [ "paid-build" ]))
+
+          activity.execute(project_id: project.id)
+
+          expect(Issues::EnqueueEligible).to have_received(:call).with(
+            issue, project: project, skip_project_gate: true
+          )
         end
 
         it "skips reconciliation when truncated" do
