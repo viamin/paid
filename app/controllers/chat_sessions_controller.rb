@@ -431,6 +431,8 @@ class ChatSessionsController < ApplicationController
     return if ChatSessions::BuildLlmClient.usable_runner?(runner)
 
     raise ArgumentError, "runner must be an API-key chat runner with a configured API key"
+  rescue ActiveRecord::RecordNotFound
+    raise ArgumentError, "runner must belong to the same account"
   end
 
   def update_error_message(error)

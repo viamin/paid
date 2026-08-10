@@ -158,6 +158,8 @@ module ChatSessions
       else
         default_runner_for_user
       end
+    rescue ActiveRecord::RecordNotFound
+      raise ArgumentError, "runner must belong to the same account"
     end
 
     def resolved_model
