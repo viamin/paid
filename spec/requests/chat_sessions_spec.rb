@@ -654,6 +654,32 @@ RSpec.describe "ChatSessions" do
         expect(chat_session.reload.runner_id).not_to eq(runner.id)
       end
 
+      it "accepts an API-key chat runner owned by another user in the same account" do
+        teammate = create(:user, account: account)
+        runner = create(:runner, :api_key, user: teammate, runner_key: "opencode",
+          provider_api_key: create(:provider_api_key, user: teammate, api_service_type: "openrouter"),
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2" } })
+
+        patch chat_session_path(chat_session, format: :json), params: { runner_id: runner.id }
+
+        expect(response).to have_http_status(:ok)
+        expect(chat_session.reload.runner_id).to eq(runner.id)
+      end
+
+      it "rejects runners from a different account" do
+        other_account = create(:account)
+        other_user = create(:user, account: other_account)
+        runner = create(:runner, :api_key, user: other_user, runner_key: "opencode",
+          provider_api_key: create(:provider_api_key, user: other_user, api_service_type: "openrouter"),
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2" } })
+
+        patch chat_session_path(chat_session, format: :json), params: { runner_id: runner.id }
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(response.parsed_body["error"]).to include("must belong to the same account")
+        expect(chat_session.reload.runner_id).not_to eq(runner.id)
+      end
+
       it "updates popup metadata context" do
         patch chat_session_path(chat_session, format: :json), params: {
           metadata: {

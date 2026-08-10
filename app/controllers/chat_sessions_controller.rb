@@ -427,7 +427,10 @@ class ChatSessionsController < ApplicationController
   def validate_api_chat_runner!(runner_id)
     return if runner_id.blank?
 
-    runner = current_user.runners.kept_only.find(runner_id)
+    runner = Runner.kept_only.find(runner_id)
+    unless runner.user&.account_id == current_account.id
+      raise ArgumentError, "runner must belong to the same account"
+    end
     return if ChatSessions::BuildLlmClient.usable_runner?(runner)
 
     raise ArgumentError, "runner must be an API-key chat runner with a configured API key"
