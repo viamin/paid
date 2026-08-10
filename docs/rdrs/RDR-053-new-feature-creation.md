@@ -186,7 +186,7 @@ If `lid_mode` is not set but `lid_requested` is `true`, the run's completion mes
 ### Decision rationale
 
 1. **One new goal, not a new subsystem.** `create_feature` is deliberately shaped like `lid_planning` (docs-only PR from a containerized, codebase-aware run) plus one additional capability (filing an issue tree). Reusing `prompt_for_goal`, container provisioning, and `cross_repo_issues` means the only genuinely new code is the RDR/feature-brief prompt, `Features::RdrContract`, and the decomposition step itself.
-2. **Contract-gate the RDR before the PR, not after.** `Lid::PlanningContract` established the pattern of validating structure before opening a PR rather than relying on human review to catch missing sections. `Features::RdrContract` applies the same gate to RDR generation, catching the "generation cut off mid-document" failure mode this very RDR exhibited before this revision.
+2. **Contract-gate the RDR before the PR, not after.** `Lid::PlanningContract` established the pattern of validating structure before opening a PR rather than relying on human review to catch missing sections. `Features::RdrContract` applies the same gate to RDR generation, catching the "generation cut off mid-document" failure mode before it reaches review.
 3. **Decompose in the same run as generation.** A second run re-reading the RDR would re-derive context the first run already had, doubling cost for no accuracy gain. Decomposing immediately after the contract check keeps the RDR and its issue tree consistent with each other.
 4. **LID chaining is a second run, not inline logic.** Keeping `lid_planning` as a distinct triggered run (rather than folding its logic into `create_feature`) preserves RDR-051 Decision #4 (distinct output shape → distinct goal) and avoids `create_feature` growing a second, conditional output contract.
 
@@ -239,8 +239,8 @@ If `lid_mode` is not set but `lid_requested` is `true`, the run's completion mes
 
 ### Risks and mitigations
 
-- **Risk**: Generation is cut off mid-document (as happened in this RDR's own first draft) and produces an incomplete RDR PR.
-  **Mitigation**: `Features::RdrContract` blocks the PR from opening until all required sections are present — this is the direct fix for the failure mode the reviewer identified.
+- **Risk**: Generation is cut off mid-document and produces an incomplete RDR PR.
+  **Mitigation**: `Features::RdrContract` blocks the PR from opening until all required sections are present.
 - **Risk**: The filed issue tree references an RDR PR that is later rejected or substantially reworked, leaving stale issues.
   **Mitigation**: Issues are filed against the still-open RDR PR (not a merged one); if the PR is closed unmerged, the run closes the issues it filed. See Outstanding Questions for the merge-timing alternative.
 - **Risk**: `lid_requested: true` on a non-LID project triggers an unwanted repo-wide LID bootstrap.
@@ -289,7 +289,7 @@ If `lid_mode` is not set but `lid_requested` is `true`, the run's completion mes
 
 ### Testing approach
 
-1. Unit: `Features::RdrContract` fails validation when a required RDR section is missing, and passes when all are present — the direct regression test for the failure mode this revision fixes.
+1. Unit: `Features::RdrContract` fails validation when a required RDR section is missing, and passes when all are present.
 2. Integration: a chat-initiated `create_feature` run (brief already settled) produces a docs-only PR containing a contract-valid RDR and no code changes.
 3. Integration: a directly triggered `create_feature` run with an insufficient brief posts clarifying questions and moves to `paid_state: "needs_input"`, matching the existing needs-input flow.
 4. Integration: the filed issue tree's dependency text is parseable by `Issues::ParseDependencies` and each issue references the source RDR.
